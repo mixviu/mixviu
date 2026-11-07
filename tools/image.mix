@@ -5,7 +5,7 @@
 -- trees for MixViu (LAB: lab/image-builder, discovery only, never lands).
 --
 --   mix tools/image.mix conf  --kind build|runtime
---   mix tools/image.mix all   --kind build|runtime --work DIR [--cache DIR] [--keep]
+--   mix tools/image.mix all   --kind build|runtime --work DIR [--cache DIR] [--keep] [--repro] [--purge]
 --   mix tools/image.mix build --kind K --work DIR [--cache DIR]
 --   mix tools/image.mix pack  --kind K --work DIR
 --   mix tools/image.mix prove --work DIR
@@ -23,14 +23,15 @@
 -- `cargo build --locked -p mix` chrooted inside it (with_mounts), with this
 -- checkout bound read-only at /src. survey builds mixd, viu and viud there
 -- too and maps each engine's ldd output to the packages that own it. all
--- runs build, pack, prove (build kind), survey (build kind) and, unless
--- --keep, clean. Each step prints one `IMAGE_EVIDENCE <json>` line.
+-- runs build, pack, prove (build kind), survey (build kind), with --repro a
+-- second build and pack compared with the first, and, unless --keep, clean
+-- (--purge removes the --cache too). Each step prints one `IMAGE_EVIDENCE <json>` line.
 --
 -- Root only, on a build worker, in a scratch DIR that does not exist yet.
 -- It never creates a dataset, a machine or a registry push. clean refuses
 -- while anything is still mounted under DIR.
 
-$o = getopt(args(), {kind: {arg: true}, work: {arg: true}, cache: {arg: true}, keep: {}})
+$o = getopt(args(), {kind: {arg: true}, work: {arg: true}, cache: {arg: true}, keep: {}, repro: {}, purge: {}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
   eprint("usage: mix tools/image.mix conf|all|build|pack|prove|survey|clean --kind build|runtime --work DIR [--cache DIR] [--keep]")
   exit(64)
@@ -292,10 +293,12 @@ fn cmd_pack($kind, $work)
   run_logged(["tar", "--create", "--file", $out, "--directory", $oci, "--sort=name", "--numeric-owner",
     "--owner=0", "--group=0", "--mtime=@" .. $epoch, "."], 1800)
   verify_layout($oci)
-  evidence("pack", {kind: $kind, snapshot: $day, tag: $tag, manifest_digest: $manifest.digest,
+  $ev = {kind: $kind, snapshot: $day, tag: $tag, manifest_digest: $manifest.digest,
     config_digest: $config.digest, layer_digest: "sha256:" .. $layer_digest, diff_id: "sha256:" .. $diff_id,
     layer_tar_bytes: $tar_bytes, layer_gz_bytes: $layer_size, oci_tar: $out, oci_tar_bytes: stat($out).size,
-    oci_tar_sha256: hash_file($out, "sha256"), packages: len($meta.packages), tar_ms: $tar_ms, gzip_ms: $gz_ms})
+    oci_tar_sha256: hash_file($out, "sha256"), packages: len($meta.packages), tar_ms: $tar_ms, gzip_ms: $gz_ms}
+  write_file($work .. "/pack.json", json_encode($ev))
+  evidence("pack", $ev)
 end
 
 fn check_blob($oci, $desc)
@@ -391,7 +394,8 @@ fn cmd_survey($work)
       if len($m) == 1 then
         $path = $m[0].groups[0]
         push($libs, basename($path))
-        $own = run_argv(["pacman", "--root", $v, "-Qqo", $path], {timeout: 30})
+        -- -Qo takes the host path of the file; --root picks the database.
+        $own = run_argv(["pacman", "--root", $v, "-Qqo", $v .. $path], {timeout: 30})
         $pkg = if $own.ok then trim($own.stdout) else "UNOWNED:" .. $path end
         if not contains($pkgs, $pkg) then push($pkgs, $pkg) end
         if not contains($all, $pkg) then push($all, $pkg) end
@@ -403,6 +407,22 @@ fn cmd_survey($work)
   evidence("survey", {cargo_ms: $ms, engines: $per, linked_packages: sort($all),
     linked_not_listed: sort(filter($all, fn($p) = not contains($runtime, $p))),
     listed_not_linked: sort(filter($runtime, fn($p) = not contains($all, $p)))})
+end
+
+-- Build and pack the same kind again from the same snapshot and cache, then
+-- compare: equal layer diff_ids mean a reproducible tree; otherwise list the
+-- files whose contents differ.
+fn cmd_repro($kind, $work, $cache)
+  $first = json_parse(read_file($work .. "/pack.json"))
+  $again = $work .. "/again"
+  cmd_build($kind, $again, $cache)
+  cmd_pack($kind, $again)
+  $second = json_parse(read_file($again .. "/pack.json"))
+  $d = run_argv(["diff", "-rq", "--no-dereference", $work .. "/root", $again .. "/root"],
+    {timeout: 1800, max_output: 4000000, stderr: "stdout"})
+  $files = map(lines(trim($d.stdout)), fn($l) = replace(replace($l, $work .. "/root", ""), $again .. "/root", ""))
+  evidence("repro", {same_diff_id: $first.diff_id == $second.diff_id, first: $first.diff_id, second: $second.diff_id,
+    same_manifest: $first.manifest_digest == $second.manifest_digest, differing: len($files), files: slice($files, 0, 40)})
 end
 
 fn cmd_clean($work, $cache)
@@ -440,9 +460,12 @@ elif $cmd == "all" then
       cmd_prove($WORK)
       cmd_survey($WORK)
     end
+    if $o.opts.repro then cmd_repro($KIND, $WORK, $o.opts.cache) end
   finally
-    -- A shared --cache survives `all` for a retry; `clean --cache` removes it.
-    if not $o.opts.keep and exists($WORK) then cmd_clean($WORK, nil) end
+    -- A shared --cache survives `all` for a retry unless --purge.
+    if not $o.opts.keep and exists($WORK) then
+      cmd_clean($WORK, if $o.opts.purge then $o.opts.cache else nil end)
+    end
   end
 else
   eprint("unknown command " .. $cmd)
