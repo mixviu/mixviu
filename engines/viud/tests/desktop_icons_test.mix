@@ -15,7 +15,7 @@ $share = $tmp .. "/share"
 $data = $tmp .. "/data"
 export XDG_DATA_DIRS=$share
 export XDG_DATA_HOME=$data
-$apps = require($repo .. "/services/compd/scripts/lib/apps.mix")
+$apps = require($repo .. "/engines/viud/scripts/lib/apps.mix")
 $models = require($repo .. "/share/scenes/lib/models.mix")
 $SIZES = [16, 22, 24, 32, 48, 128]
 $CAPTIONS = ["window-minimize-symbolic", "window-maximize-symbolic", "window-restore-symbolic", "window-close-symbolic"]
@@ -205,7 +205,7 @@ try
     end
   end
 
-  -- The live MixOS app aliases.
+  -- The live MixViu app aliases.
   for each $app in ["term", "ced", "dopus", "cap", "screenshot", "scene-editor", "workshop", "prefs", "media", "backdrop"]
     $name = "dev.mixos." .. $app .. "-symbolic"
     check(contains($aliases, $name), "the live app " .. $app .. " has no alias in the manifest")
@@ -225,7 +225,7 @@ try
   -- 4. The default theme: the bundle is selected without a desktop, and a user's
   -- own preference still wins.
   $probe = $tmp .. "/theme-probe.mix"
-  write_file($probe, "$a = require(" .. json_encode($repo .. "/services/compd/scripts/lib/apps.mix") .. ")\nprint($a.default_theme())\n")
+  write_file($probe, "$a = require(" .. json_encode($repo .. "/engines/viud/scripts/lib/apps.mix") .. ")\nprint($a.default_theme())\n")
   $home_plain = $tmp .. "/home-plain"
   mkdir($home_plain)
   check(trim(run_argv_must([$mix, $probe], {env: {HOME: $home_plain}})) == "mixos", "the bundle theme is not the default without a desktop preference")
@@ -357,7 +357,7 @@ try
   refuse($fx, "index-context", "ICON_INDEX")
 
   $fx = fixture("index-inherits")
-  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "Name=MixOS", "Name=MixOS\nInherits=material"))
+  put($fx .. "/index.theme", replace(read_file($fx .. "/index.theme"), "Name=MixViu", "Name=MixViu\nInherits=material"))
   refuse($fx, "index-inherits", "ICON_INDEX")
 
   $fx = fixture("stroke")

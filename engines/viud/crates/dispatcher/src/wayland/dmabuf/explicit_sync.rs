@@ -6,7 +6,7 @@
 //! can leave a client waiting on a fence or release that never comes, and
 //! from then on refuses new explicit-sync commits: it signals the commit's
 //! release point and disconnects the client, rather than accept a buffer it
-//! may never release correctly. compd has no retirement worker (smithay
+//! may never release correctly. viud has no retirement worker (smithay
 //! releases buffers), so its faults are:
 //! - a failed release-point signal (vendored smithay counts them:
 //!   `drm_syncobj::signal_failures`);
@@ -29,7 +29,7 @@ pub fn fault(reason: impl Into<String>) {
     if !FAULTED.swap(true, Ordering::AcqRel) {
         let reason = reason.into();
         error!(
-            "explicit sync FAULTED ({reason}); new syncobj commits are refused until compd restarts"
+            "explicit sync FAULTED ({reason}); new syncobj commits are refused until viud restarts"
         );
         *REASON
             .lock()

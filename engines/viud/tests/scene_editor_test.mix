@@ -41,7 +41,7 @@ end
 -- ── 1. the template, evaluated ──────────────────────────────────────────
 $source = read_file($editor .. "/scene.mix")
 check(len($source) < 262144, "scene.mix stays under the 256 KiB document bound")
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-scene-editor.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-scene-editor.XXXXXXXX"]))
 
 fn fence($src)
   return data_parse(before(after($src, "```mix\n"), "\n```"))
@@ -335,7 +335,7 @@ $p20 = $e.build(data($big, $templates, $props, []), $ui).selected.problems
 check(length($p20) == 20 and $p20[19].id == "p_more" and contains($p20[19].cells[0], "11 more"), "problems capped at 20 rows")
 
 -- First run: an empty loader with first_run, templates listed.
-$fresh = {needs_setup: true, root: "/home/user/.config/mixos/scenes", templates_root: (mixos_path("prefix", "share") .. "/scenes"), state_ok: true, revision: 1, diagnostic: nil,
+$fresh = {needs_setup: true, root: "/home/user/.config/mix/scenes", templates_root: (mix_path("prefix", "share") .. "/scenes"), state_ok: true, revision: 1, diagnostic: nil,
   editor: {user_copy: false, user_dirty: false, mounted: true, visible: true, source: "shipped", safe: true, fallback: nil, behaviour: "running",
     view: "gallery", scene: nil, first_run: true, request_seq: 1, problems: []}, scenes: []}
 $five = []
@@ -344,7 +344,7 @@ for each $t in ["panel", "launcher", "calendar", "notes", "settings"]
   push($five, {template: $t, name: $t, title: $t, description: "d", edge: "right", kind: "edge", behaviour: true, recommended: true, order: $k, requires: [], installed_as: []})
   $k = $k + 10
 end
-$fresh_t = {root: (mixos_path("prefix", "share") .. "/scenes"), templates: $five}
+$fresh_t = {root: (mix_path("prefix", "share") .. "/scenes"), templates: $five}
 $fui = $e.apply_request($e.default_ui(), $fresh.editor)
 $fm = $e.build(data($fresh, $fresh_t, nil, []), $fui)
 model_ok($fm, "first run")
@@ -381,7 +381,7 @@ for $i = 1 to 128
   $n = "scene-number-" .. to_string($i)
   push($rows, {name: $n, installed: true, enabled: true, mounted: true, behaviour: "running", template: "panel", diagnostic: nil,
     title: "Scene " .. to_string($i), edge: "right", page: "scene-" .. $n, kind: "edge", forked_from: nil,
-    files: {scene: "/home/user/.config/mixos/scenes/" .. $n .. "/scene.mix"}, digests: {}, problems: [],
+    files: {scene: "/home/user/.config/mix/scenes/" .. $n .. "/scene.mix"}, digests: {}, problems: [],
     attempted_digest: "", accepted_digest: ""})
   push($declared, "scene-" .. $n)
 end
@@ -456,7 +456,7 @@ check(len($long_plan.steps[0].retry.args.name) == 64 and re_match($long_plan.ste
 -- recommended: install what is missing, enable what is off, stop at the first refusal.
 $rl = $list
 $rl.scenes[0].enabled = false
-$rt = {root: (mixos_path("prefix", "share") .. "/scenes"), templates: [
+$rt = {root: (mix_path("prefix", "share") .. "/scenes"), templates: [
   {template: "panel", name: "panel", title: "Panel", recommended: true, order: 10, requires: [], installed_as: ["panel"]},
   {template: "launcher", name: "launcher", title: "Applications", recommended: true, order: 20, requires: [], installed_as: []},
   {template: "notes", name: "notes", title: "Notifications", recommended: true, order: 40, requires: [], installed_as: ["notes"]},
@@ -502,11 +502,11 @@ check(click("editor.scene.remove", cargs("btn_remove", nil), $q.ui).kind == "ui"
 
 -- edit: ced.open when ced is registered, else apps.launch; then hide the editor; then push problems.
 $x = run_plan($e.plan_click("editor.scene.edit", cargs("btn_edit_scene", nil), $sel, data($list, $templates, $props, ["ced"])), [])
-check(deep_eq($x.calls[0], ["ced", "ced.open", {paths: ["/home/user/.config/mixos/scenes/panel/scene.mix"], line: 12}]), "ced.open at the first problem line: " .. json_encode($x.calls[0]))
+check(deep_eq($x.calls[0], ["ced", "ced.open", {paths: ["/home/user/.config/mix/scenes/panel/scene.mix"], line: 12}]), "ced.open at the first problem line: " .. json_encode($x.calls[0]))
 check(deep_eq($x.calls[1], ["scenes", "scenes.editor.close", {}]), "then the editor hides")
 check($x.calls[2][1] == "ced.diagnostics" and $x.calls[2][2].source == "scenes" and $x.calls[2][2].digest == "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e" and $x.calls[2][2].diagnostics[0].line == 12 and $x.calls[2][2].diagnostics[0].severity == "error", "then the scene's problems are pushed")
 $x = run_plan($e.plan_click("editor.scene.edit", cargs("btn_edit_behaviour", nil), $sel, data($list, $templates, $props, [])), [])
-check(deep_eq($x.calls, [["apps", "apps.launch", {id: "dev.mixos.ced", uris: ["/home/user/.config/mixos/scenes/panel/behaviour.mix"]}], ["scenes", "scenes.editor.close", {}]]), "no ced: apps.launch, never a spawn")
+check(deep_eq($x.calls, [["apps", "apps.launch", {id: "dev.mixos.ced", uris: ["/home/user/.config/mix/scenes/panel/behaviour.mix"]}], ["scenes", "scenes.editor.close", {}]]), "no ced: apps.launch, never a spawn")
 check($x.plan.subject.pushed == false and $x.message == "Editing behaviour.mix in ced", "the push waits for ced")
 $x = run_plan($e.plan_click("editor.scene.edit", cargs("btn_edit_scene", nil), $sel, data($list, $templates, $props, ["ced"])), [ok({}), refused("NOT_FOUND", "gone"), refused("UNIMPLEMENTED", "later")])
 check(length($x.calls) == 3 and $x.plan.failed == nil and contains($x.message, "Hide the Scene Editor: gone"), "close and push are soft")
@@ -604,8 +604,8 @@ end
 
 -- ── ced diagnostics diff ────────────────────────────────────────────────
 $cur = $e.file_problems($list)
-$panel_scene = "/home/user/.config/mixos/scenes/panel/scene.mix"
-$panel_beh = "/home/user/.config/mixos/scenes/panel/behaviour.mix"
+$panel_scene = "/home/user/.config/mix/scenes/panel/scene.mix"
+$panel_beh = "/home/user/.config/mix/scenes/panel/behaviour.mix"
 check(has_key($cur, $panel_beh) and length($cur[$panel_beh].diagnostics) == 0 and length($cur[$panel_scene].diagnostics) == 1, "every file is tracked, clean ones too")
 $d1 = $e.diag_diff({}, $cur)
 $paths = []

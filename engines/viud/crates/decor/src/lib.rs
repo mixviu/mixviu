@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! decor: server-side window chrome (SSD) for compd.
+//! decor: server-side window chrome (SSD) for viud.
 //!
-//! compd draws its chrome as scene elements. The decoration engine is
+//! viud draws its chrome as scene elements. The decoration engine is
 //! [`layout`]: the three styles (mac / win11 / mixos), the layout of a
 //! window's frame around its content, and hit-testing. The rest of the crate
 //! builds around it:

@@ -22,6 +22,13 @@ and SPDX headers moved with their files unchanged.
 | `engines/compd/README.md` | `engines/viud/README.md` |
 | `engines/compd/CHANGELOG.md` | `engines/viud/CHANGELOG.md` |
 | `engines/mix-shell` | `libraries/mix-shell` |
+| `engines/viud/i18n/en/compd.ftl` | `engines/viud/i18n/en/viud.ftl` |
+| `engines/viud/units/compd@.service` | `engines/viud/units/viud@.service` |
+| `engines/viud/units/compd-headless@.service` | `engines/viud/units/viud-headless@.service` |
+
+Runtime names followed (Mark, 2026-11-07): compd became viud in code, units,
+configuration paths, environment variables, messages and comments. The Bus
+service `comp` and its `comp.*` commands keep their names.
 
 ## Packages
 

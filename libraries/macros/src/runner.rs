@@ -124,17 +124,17 @@ impl Runner {
             .name("macro-runner".into())
             .spawn(move || {
                 let mut command = Command::new(&roots.mix);
-                command.env_remove("MIXOS_MACRO_TARGET");
+                command.env_remove("MIX_MACRO_TARGET");
                 if let Some(target) = target {
-                    command.env("MIXOS_MACRO_TARGET", target);
+                    command.env("MIX_MACRO_TARGET", target);
                 }
                 command
                     .arg(&entry.path)
                     .current_dir(&roots.home)
-                    .env("MIXOS_MACRO_APP", app)
-                    .env("MIXOS_MACRO_ID", &entry.id)
-                    .env("MIXOS_MACRO_TIER", entry.tier.as_str())
-                    .env("MIXOS_MACRO_PATH", &entry.path)
+                    .env("MIX_MACRO_APP", app)
+                    .env("MIX_MACRO_ID", &entry.id)
+                    .env("MIX_MACRO_TIER", entry.tier.as_str())
+                    .env("MIX_MACRO_PATH", &entry.path)
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());

@@ -3,7 +3,7 @@
 //! The scene store: transactional `shell.scene.*` semantics.
 //!
 //! Its shape:
-//! - the page registry and the dialog seat are the store's own (compd has no
+//! - the page registry and the dialog seat are the store's own (viud has no
 //!   Quoin carousel to hold them), so a mount carries only output, owner and
 //!   receipt;
 //! - `dispatch` returns the topic wires to publish, in order, so the port

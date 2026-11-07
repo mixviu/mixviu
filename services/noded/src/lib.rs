@@ -32,7 +32,7 @@ mod spec_release;
 mod subscription;
 
 /// `--version` line including git sha + build time (build-provenance
-/// contract). `MIXOS_*` are set by `build.rs` → `buildinfo::emit()`.
+/// contract). `MIX_*` are set by `build.rs` → `buildinfo::emit()`.
 ///
 /// NB: this uses `env!` (not `option_env!`) deliberately — a daemon that
 /// advertises a provenance version line MUST have the `build.rs`; if a
@@ -43,9 +43,9 @@ mod subscription;
 const VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (",
-    env!("MIXOS_GIT_SHA"),
+    env!("MIX_GIT_SHA"),
     ", built ",
-    env!("MIXOS_BUILD_TIME"),
+    env!("MIX_BUILD_TIME"),
     ")"
 );
 

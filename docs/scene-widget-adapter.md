@@ -36,7 +36,7 @@ with explicit dimensions. Arbitrary file/network image sources refuse at load.
 Window declarations remain host metadata; window nodes are not renderable
 content. Unsupported content families refuse during preparation. Other existing
 partial flex/style-port limitations in runtime-lab.md remain explicit; this is
-not a complete compd renderer or compositor extraction.
+not a complete viud renderer or compositor extraction.
 
 ## Identity, geometry and focus
 
@@ -77,7 +77,7 @@ IDs/order; inconsistent published definitions refuse instead of diverging from
 that catalogue. A dynamic application registry is a later scope. Existing native
 Bus ingress bounds, NOT_READY/BUSY and model-ready reply boundaries remain.
 
-This adapter is isolated lab code. Existing compd, production/reference apps
+This adapter is isolated lab code. Existing viud, production/reference apps
 and the preserved VT4 binaries remain available. No viud split, replacement
 broker, main merge, production acceptance or performance-parity claim follows.
 
@@ -125,7 +125,7 @@ backend from environment variables alone.
 Menu automation opens actual egui popups against fresh geometry. Bar, compact
 button and explicit top-content popup forms share the same application command
 data. The native `hosting` adapter projects an application-owned command bar
-into the existing compd wire contract. Disabled/toggled state stays application
+into the existing viud wire contract. Disabled/toggled state stays application
 data. Nested items use a bounded identity codec to open the same native popup;
 leaf command IDs retain their application meaning. Hosts acknowledge the offer
 by querying its registered form before client controls detach. `SceneView`

@@ -45,7 +45,7 @@ pub fn install(
     state: &mut Loop,
     event_loop: &EventLoop<Loop>,
 ) -> Result<Option<Adapter>, Box<dyn std::error::Error>> {
-    let Some(fd) = std::env::var_os("COMPD_WLCS_FD") else {
+    let Some(fd) = std::env::var_os("VIUD_WLCS_FD") else {
         return Ok(None);
     };
     let fd: i32 = fd.to_str().ok_or("wlcs fd not UTF-8")?.parse()?;
@@ -181,7 +181,7 @@ impl Adapter {
                     let snapshot = policy_host::project::project(
                         state,
                         policy_host::project::Identity {
-                            service: "compd".into(),
+                            service: "viud".into(),
                             version: env!("CARGO_PKG_VERSION").into(),
                             backend: "headless",
                             engine: "wlcs",

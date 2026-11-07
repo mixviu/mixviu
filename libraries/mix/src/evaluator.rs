@@ -1107,7 +1107,7 @@ pub(crate) struct InvocationReplyHandle {
     #[allow(dead_code)]
     id: InvocationId,
     /// The requester — becomes the response `to`. Best-effort and
-    /// cosmetic: the MixOS transport correlates a reply back to its
+    /// cosmetic: the MixViu transport correlates a reply back to its
     /// caller by `id` (noded's `pending_responses` map), NOT by `to`.
     /// Routinely **empty** for a correlated request — noded strips the
     /// wire `from` for anonymous callers (the normal CLI / MCP-bridge
@@ -8063,7 +8063,7 @@ impl Evaluator {
 
     /// Load the standard prelude (utility functions).
     /// Checks the user's config dir for a `prelude.mix` override first —
-    /// `$MIXOS_ETC`, else `$MIXOS/etc`, else `~/.config/mixos` — and
+    /// `$MIX_ETC`, else `$MIX_ROOT/etc`, else `~/.config/mix` — and
     /// falls back to the built-in prelude.
     ///
     /// B10 (TODO-mix 2026-09-24): failures used to be PRINTED and
@@ -8082,12 +8082,12 @@ impl Evaluator {
 
         // Check for user override
         let (source, override_path) = if let Some(home) = dirs_home() {
-            let etc = std::env::var_os("MIXOS_ETC")
+            let etc = std::env::var_os("MIX_ETC")
                 .map(std::path::PathBuf::from)
                 .or_else(|| {
-                    std::env::var_os("MIXOS").map(|r| std::path::PathBuf::from(r).join("etc"))
+                    std::env::var_os("MIX_ROOT").map(|r| std::path::PathBuf::from(r).join("etc"))
                 })
-                .unwrap_or_else(|| home.join(".config/mixos"));
+                .unwrap_or_else(|| home.join(".config/mix"));
             let user_prelude = etc.join("prelude.mix");
             if user_prelude.exists() {
                 match std::fs::read_to_string(&user_prelude) {
@@ -19484,9 +19484,9 @@ mod fifo_arity_tests {
 mod standing_interrupt_tests {
     use super::{Evaluator, Value};
 
-    const CHILD_ENV: &str = "MIX_STANDING_INTERRUPT_CHILD";
-    const CASE_ENV: &str = "MIX_STANDING_INTERRUPT_CASE";
-    const MARKER_ENV: &str = "MIX_STANDING_INTERRUPT_MARKER";
+    const CHILD_ENV: &str = "MIX_TEST_STANDING_INTERRUPT_CHILD";
+    const CASE_ENV: &str = "MIX_TEST_STANDING_INTERRUPT_CASE";
+    const MARKER_ENV: &str = "MIX_TEST_STANDING_INTERRUPT_MARKER";
     /// How long one case's child may run before it is killed and the test
     /// fails, so a regression fails instead of hanging the suite.
     const CASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);

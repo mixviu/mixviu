@@ -3,12 +3,12 @@
 //! Command line: backend selection plus the flags the desktop gates pass.
 //!
 //! The desktop gates launch the compositor as
-//! `compd --nested --socket S [--bus-service N]` and
-//! `compd kms-live --device D --connector C --scale S`.
-//! compd accepts the flags that map onto something it really does, and refuses
+//! `viud --nested --socket S [--bus-service N]` and
+//! `viud kms-live --device D --connector C --scale S`.
+//! viud accepts the flags that map onto something it really does, and refuses
 //! the rest by name, so a gate never silently runs the wrong compositor.
 //!
-//! | flag | compd |
+//! | flag | viud |
 //! |---|---|
 //! | `--nested` | nested (winit) backend |
 //! | `--headless` | render node only, virtual `headless-0` output, no seat or XWayland |
@@ -20,7 +20,7 @@
 //! | `--device PATH` | implies KMS; scanout DRM node (overrides `scanout_node`); conflicts with headless-only flags |
 //! | `--connector NAME` | implies KMS; drive this connector (`HDMI-A-1`, `eDP-1`, …); conflicts with headless-only flags |
 //! | `--scale S` | implies no backend (every backend takes it); output scale, 0.5 ≤ S ≤ 4, rounded to 1/120; KMS/headless default to 1, nested follows the host |
-//! | `--kms-confirm` | accepted, no effect: compd never asks a human to confirm a takeover |
+//! | `--kms-confirm` | accepted, no effect: viud never asks a human to confirm a takeover |
 //! | `--config-file PATH` | the settings file (read by `model::environment::config`) |
 //! | `--bus-service NAME` | the `comp` Bus service name (default `comp` on KMS, `comp-nested` nested, `comp-headless` headless) |
 //! | `--scene-service NAME` | the Mix Scenes host's fallback Bus name when `shell` is taken (overrides the `scene_service` preference; the host runs only with `scene_host` on) |
@@ -66,7 +66,7 @@ pub struct Cli {
     pub scale: Option<f64>,
 }
 
-const USAGE: &str = "usage: compd [--nested | --kms | kms-live | --headless] [--socket NAME] \
+const USAGE: &str = "usage: viud [--nested | --kms | kms-live | --headless] [--socket NAME] \
 [--device PATH] [--connector NAME] [--size WxH] [--render-node PATH] [--scale S] [--kms-confirm] [--config-file PATH] \
 [--bus-service NAME] [--scene-service NAME] [--debug[=LEVEL]] [--backends] [--version] [--help]\n\
 Levels: off|error|warn|info|debug|trace (default warn; --debug means debug)";
@@ -88,21 +88,21 @@ pub fn compiled_backends() -> Vec<&'static str> {
 }
 
 fn refuse(msg: &str) -> ! {
-    eprintln!("compd: {msg}");
+    eprintln!("viud: {msg}");
     eprintln!("{USAGE}");
     exit(2);
 }
 
 /// Parse `std::env::args`. Prints and exits for `--help`/`--version` and for every
 /// refused or malformed flag; never returns an error. `version` is the buildinfo
-/// line (`compd <semver> (<sha12>, built <ts>)`).
+/// line (`viud <semver> (<sha12>, built <ts>)`).
 pub fn parse(version: &str) -> Cli {
     parse_from(std::env::args().skip(1), version)
 }
 
 pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
     let mut cli = Cli::default();
-    let mut raw: Vec<String> = std::iter::once("compd".to_owned()).chain(args).collect();
+    let mut raw: Vec<String> = std::iter::once("viud".to_owned()).chain(args).collect();
     let _ = logging::debug::strip_args(&mut raw).unwrap_or_else(|error| refuse(&error.to_string()));
     let mut args = raw.into_iter().skip(1).peekable();
     let set_backend = |cli: &mut Cli, b: Backend| {
@@ -134,7 +134,7 @@ pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
                 println!("{version}");
                 exit(0);
             }
-            // Install checks: gold refuses a compd without `native` (KMS).
+            // Install checks: gold refuses a viud without `native` (KMS).
             "--backends" => {
                 println!("{}", compiled_backends().join(" "));
                 exit(0);
@@ -164,11 +164,11 @@ pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
                 }
             }
             "--kms-confirm" => {
-                // An opt-in human gate on a KMS takeover. compd never asks
+                // An opt-in human gate on a KMS takeover. viud never asks
                 // (agentic-first: unattended is the default), so it is a no-op.
             }
             "--chrome" => refuse(
-                "--chrome: compd draws its own window decorations; there are no \
+                "--chrome: viud draws its own window decorations; there are no \
                  selectable chrome styles",
             ),
             "--bus-service" => {
@@ -222,7 +222,7 @@ fn infer_backend(cli: &mut Cli) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// The smallest and largest output scale compd accepts.
+/// The smallest and largest output scale viud accepts.
 pub const SCALE_MIN: f64 = 0.5;
 pub const SCALE_MAX: f64 = 4.0;
 
@@ -239,7 +239,7 @@ pub fn parse_size(value: &str) -> Result<(i32, i32), &'static str> {
 
 /// `--scale`'s value: a finite number in [`SCALE_MIN`, `SCALE_MAX`], rounded
 /// to 1/120 (the unit `wp_fractional_scale_v1` carries, so the scale a client
-/// is told is exactly the one compd renders at).
+/// is told is exactly the one viud renders at).
 pub fn parse_scale(value: &str) -> Result<f64, &'static str> {
     let scale: f64 = value.trim().parse().map_err(|_| "not a number")?;
     if !scale.is_finite() {
@@ -308,13 +308,13 @@ fn resolve_with(
     }
 }
 
-/// Environment knobs compd does not implement. Environment leaks in from parent
+/// Environment knobs viud does not implement. Environment leaks in from parent
 /// sessions far more often than flags, so these warn instead of refusing.
 pub const UNSUPPORTED_ENV: &[&str] = &[
-    "COMPD_CAPTURE_DIR",
-    "COMPD_CAPTURE_EVERY",
-    "COMPD_CAPTURE_ON_SIGNAL",
-    "COMPD_QUOIN_PRIVATE_INTERACTION",
+    "VIUD_CAPTURE_DIR",
+    "VIUD_CAPTURE_EVERY",
+    "VIUD_CAPTURE_ON_SIGNAL",
+    "VIUD_QUOIN_PRIVATE_INTERACTION",
 ];
 
 #[cfg(test)]
@@ -451,11 +451,11 @@ mod tests {
 
     #[test]
     fn bus_service_is_accepted_and_defaults_by_backend() {
-        let c = p(&["--nested", "--bus-service", "compd-smoke-7"]);
-        assert_eq!(c.bus_service.as_deref(), Some("compd-smoke-7"));
+        let c = p(&["--nested", "--bus-service", "viud-smoke-7"]);
+        assert_eq!(c.bus_service.as_deref(), Some("viud-smoke-7"));
         assert_eq!(
             crate::comp::service_name(Backend::Nested, c.bus_service.as_deref()),
-            "compd-smoke-7"
+            "viud-smoke-7"
         );
         assert_eq!(
             crate::comp::service_name(Backend::Nested, None),

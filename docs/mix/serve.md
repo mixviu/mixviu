@@ -87,7 +87,7 @@ See [filesystem events](io.md#native-filesystem-events),
 
 ## First, "substrate"
 
-**The substrate is MixOS itself** — the agent-operable computing environment,
+**The substrate is MixViu itself** — the agent-operable computing environment,
 not any one app on it: the message Bus (the broker `noded`), the services
 running on it, and the WireGuard mesh that joins nodes into one fabric. The word
 is chosen over "OS" or "desktop" on purpose — it is meant to be *legible,
@@ -95,9 +95,9 @@ modifiable, and reconstructible* by an AI agent, the ground the system is built
 on rather than a feature bolted onto one. **Citizens (below) are the live
 services the substrate is made of.**
 
-## What "citizen" means in MixOS
+## What "citizen" means in MixViu
 
-A **citizen** is a process that is a first-class, named member of the MixOS
+A **citizen** is a process that is a first-class, named member of the MixViu
 substrate — not a throwaway script but a resident participant on the Bus. A plain
 `mix script.mix` run is anonymous and one-shot: nothing can address it and it
 exits when the script ends. Turning it into a citizen (`mix --serve`) gives it a
@@ -121,7 +121,7 @@ system, and the whole mesh, can talk to. Concretely, a citizen has:
 - **Provenance** — its binary (`mix-shell`) and version show in `noded.list`, so
   a fleet of agents can see exactly what is running and where.
 
-In short: a citizen is the MixOS substrate's unit of **live, addressable,
+In short: a citizen is the MixViu substrate's unit of **live, addressable,
 agent-operable service**. The rest of this page is how you make one and how it
 behaves.
 
@@ -222,12 +222,12 @@ stem**:
 ```text
 mix --serve worker.mix                 # service name = "worker"  (stem)
 mix --serve worker.mix --name probe    # service name = "probe"   (--name wins)
-mix --serve /usr/local/lib/mixos/statecache.mix   # → "statecache"
+mix --serve /usr/local/lib/mix/statecache.mix   # → "statecache"
 ```
 
 Two normalization rules apply (from `derive_serve_name` in `main.rs`):
 
-- **A leading `mixos-` is stripped** from either source. The system user is `mixos-<svc>` but the Bus namespace uses the bare `<svc>` token, so a script (or `--name`) accidentally named after the POSIX user still yields the canonical Bus identity: `mixos-statecache.mix` → `statecache`, `--name mixos-foo` → `foo`. Surrounding whitespace is trimmed.
+- **A leading `mixos-` is stripped** from either source. The system user is `mixos-<svc>` but the Bus namespace uses the bare `<svc>` token, so a script (or `--name`) accidentally named after the POSIX user still yields the canonical Bus identity: `mix-statecache.mix` → `statecache`, `--name mixos-foo` → `foo`. Surrounding whitespace is trimmed.
 - **An anonymous citizen is rejected.** If no name can be derived — an empty path, a root path, a dotfile-only stem (`.foo`, whose `file_stem()` is the whole `.`-led name), or a `--name` that resolves empty or to a leading dot — `--serve` is a launch error and exits non-zero. There is no nameless citizen.
 
 ```text
@@ -768,15 +768,15 @@ entry in the citizen UID band and a unit whose `ExecStart` runs the script under
 `--serve`. The shape is identical to `mixos-{noded,maild,webd}.service`:
 
 ```ini
-# /etc/systemd/system/mixos-statecache.service  (illustrative)
+# /etc/systemd/system/mix-statecache.service  (illustrative)
 [Unit]
 Description=statecache Mix citizen
 After=noded.service
 
 [Service]
-ExecStart=<prefix>/bin/mix --serve /usr/local/lib/mixos/statecache.mix
-User=mixos-statecache
-Group=mixos-statecache
+ExecStart=<prefix>/bin/mix --serve /usr/local/lib/mix/statecache.mix
+User=mix-statecache
+Group=mix-statecache
 Restart=on-failure
 
 [Install]

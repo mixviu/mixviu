@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! comp-service: compd's native Bus transport for the `comp` service, the
-//! `comp.*` Bus surface served from inside compd.
+//! comp-service: viud's native Bus transport for the `comp` service, the
+//! `comp.*` Bus surface served from inside viud.
 //!
 //! Threads and channels:
 //!
 //! ```text
-//!  noded ──ws── [compd-port thread: current-thread tokio]
+//!  noded ──ws── [viud-port thread: current-thread tokio]
 //!                 worker_loop ── dispatch_incoming (classify, permits)
 //!                    │  responders (JoinSet) ── reply_loop ── respond_parts
 //!                    │  publisher_loop ◀── ObservationOutbox (crossbeam)

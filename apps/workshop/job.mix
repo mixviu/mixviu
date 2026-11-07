@@ -20,7 +20,7 @@ on job.run
     end
     reply(0,json_encode($commands))
   elif $a.op=="call" then
-    send $p.service $p.command body=$p.body timeout=8
-    reply(0,json_encode($core.call_outcome($rc,$reply,$result)))
+    send $p.service $p.command body=$p.body timeout=30 reply_mode="raw"
+    reply(0,json_encode($reply))
   else raise("OP","Unknown Workshop operation") end
 end

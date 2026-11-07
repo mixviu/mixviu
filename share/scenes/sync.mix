@@ -12,7 +12,7 @@
 $here = dirname(realpath($0))
 $argv = args()
 $apply = contains($argv, "--apply")
-$env_path = "/etc/mixos/session/4.env"
+$env_path = "/etc/mix/session/4.env"
 if contains($argv, "--env") then
   $env_path = $argv[index_of($argv, "--env") + 1]
 end
@@ -87,8 +87,8 @@ if not $lib_changed then
   exit(0)
 end
 
-$cli = realpath($here .. "/../../services/compd/scripts/scenes_cli.mix")
-$listed = run_argv([(mixos_path("prefix") .. "/bin/mix"), $cli, "list", "--json"], {env: $envmap})
+$cli = realpath($here .. "/../../engines/viud/scripts/scenes_cli.mix")
+$listed = run_argv([(mix_path("prefix") .. "/bin/mix"), $cli, "list", "--json"], {env: $envmap})
 if $listed["exit_code"] != 0 then
   raise("SCENES_LIST", "could not list scenes", {stderr: $listed["stderr"]})
 end
@@ -100,7 +100,7 @@ end
 
 for $n in $names
   if $apply then
-    $r = run_argv([(mixos_path("prefix") .. "/bin/mix"), $cli, "reload", $n], {env: $envmap})
+    $r = run_argv([(mix_path("prefix") .. "/bin/mix"), $cli, "reload", $n], {env: $envmap})
     print("reload " .. $n .. " -> rc=" .. to_string($r["exit_code"]) .. " " .. $r["stdout"])
   else
     print("would reload " .. $n)

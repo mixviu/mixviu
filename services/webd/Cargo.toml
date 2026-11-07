@@ -10,7 +10,7 @@ license.workspace = true
 repository.workspace = true
 description = "Lightweight web server daemon — axum-based CMS API backed by SQLite"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "webd"
 kind = "service"
 layer = "core"

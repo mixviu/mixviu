@@ -23,7 +23,7 @@ Menu, title, action and caption alignment follow the desktop profile. Native
 caption widgets and automatic backend framing detection are reusable Viu code;
 the owner retains quit, persistence and reply-delivery rules. Menu form/popup
 queries and native geometry are available through the same Bus surface.
-The native host adapter offers the existing compd revisioned icon-bar contract.
+The native host adapter offers the existing viud revisioned icon-bar contract.
 A registered host query acknowledges support before the ordinary client row
 is detached. Menu and nested action popups remain the same shared Viu controls.
 The historical `dev.mixos.<service>` application-ID namespace and three service

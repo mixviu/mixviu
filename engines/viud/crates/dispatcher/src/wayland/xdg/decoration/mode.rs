@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! xdg-decoration mode negotiation, and whether compd draws a toplevel's
+//! xdg-decoration mode negotiation, and whether viud draws a toplevel's
 //! chrome.
 //!
 //! - SSD disabled (`decorations_ssd` preference off): client-side, always.
 //! - Otherwise server-side unless the client explicitly asked for client-side,
-//!   which is honoured (compd used to override it).
+//!   which is honoured (viud used to override it).
 //! - The mode is only recorded until the initial configure has gone out: that
 //!   configure carries it (Chromium CHECK-crashes on a second configure before
 //!   it acked the first; see the handler impl in `state.rs`).
@@ -41,7 +41,7 @@ fn reverted(toplevel: &ToplevelSurface) -> bool {
     })
 }
 
-/// The mode compd answers `requested` with (`None`: new decoration object or
+/// The mode viud answers `requested` with (`None`: new decoration object or
 /// `unset_mode`).
 pub fn answer(requested: Option<Mode>, ssd_enabled: bool) -> Mode {
     match requested {
@@ -72,7 +72,7 @@ pub fn destroyed(toplevel: &ToplevelSurface) {
     set_reverted(toplevel, true);
 }
 
-/// Whether compd draws this toplevel's chrome: the client acked server-side
+/// Whether viud draws this toplevel's chrome: the client acked server-side
 /// (the committed state, so chrome appears with the configure the client
 /// acted on, never before) and still has its decoration object.
 pub fn server_side(toplevel: &ToplevelSurface) -> bool {

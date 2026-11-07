@@ -288,7 +288,7 @@ impl Child {
         // spawned FROM the enrolled shell must see neither seed fd nor marker.
         std::fs::write(
             home.path().join(".mixrc"),
-            "print(\"RC_MARKER=[\" .. env(\"MIXOS_SESSION_FD\") .. \"]\")\n",
+            "print(\"RC_MARKER=[\" .. env(\"MIX_SESSION_FD\") .. \"]\")\n",
         )
         .unwrap();
         let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
@@ -315,21 +315,21 @@ impl Child {
         let env = vec![
             launch.marker(),
             ("HOME".into(), home.path().display().to_string()),
-            ("MIXOS_SRC".into(), home.path().display().to_string()),
+            ("MIX_SRC".into(), home.path().display().to_string()),
             (
-                "MIXOS_BIN".into(),
+                "MIX_BIN".into(),
                 current_mix().parent().unwrap().display().to_string(),
             ),
-            ("MIXOS_NODE_CONFIG".into(), config.display().to_string()),
+            ("MIX_NODE_CONFIG".into(), config.display().to_string()),
             (
-                "MIXOS_BUS_SOCKET".into(),
+                "MIX_BUS_SOCKET".into(),
                 broker.endpoint.display().to_string(),
             ),
             (
-                "MIXOS_RUN".into(),
+                "MIX_RUN".into(),
                 home.path().join("run").display().to_string(),
             ),
-            ("MIXOS_BROKER_ACCOUNT".into(), account),
+            ("MIX_BROKER_ACCOUNT".into(), account),
             ("MIX_STATS".into(), "off".into()),
             ("MIX_EDITOR".into(), editor.into()),
             ("TERM".into(), "xterm-256color".into()),
@@ -556,7 +556,7 @@ fn mix_child_bootstrap_proves_end_to_end() {
         let context = child.context();
         let context = serde_json::to_string(&context).unwrap();
         for forbidden in [
-            "MIXOS_SESSION_FD",
+            "MIX_SESSION_FD",
             "native_session",
             "session_seed",
             "SigningKey",
@@ -571,12 +571,12 @@ fn mix_child_bootstrap_proves_end_to_end() {
         let descriptors = std::fs::read_dir(format!("/proc/{}/fd", child.pid())).unwrap();
         assert!(!descriptors.filter_map(Result::ok).any(|entry| {
             std::fs::read_link(entry.path())
-                .is_ok_and(|target| target.to_string_lossy().contains("memfd:mixos-session"))
+                .is_ok_and(|target| target.to_string_lossy().contains("memfd:mix-session"))
         }));
         let helper = child.home.path().join("descendant.mix");
         std::fs::write(
             &helper,
-            "print(\"DESCENDANT=[\" .. env(\"MIXOS_SESSION_FD\") .. \"]\")\n",
+            "print(\"DESCENDANT=[\" .. env(\"MIX_SESSION_FD\") .. \"]\")\n",
         )
         .unwrap();
         child.send(&format!(
@@ -748,7 +748,7 @@ fn valid_handoff_with_broker_down_does_not_delay_first_source() {
         // neither name-service latency nor broker retry delays first source.
         let start = Instant::now();
         let mut child = Child::spawn_with(&broker, &launch, "owned", &[
-            ("MIXOS_RUN".into(), fallback.path().display().to_string()),
+            ("MIX_RUN".into(), fallback.path().display().to_string()),
         ]);
         drop(launch);
         drop(key);
@@ -845,7 +845,7 @@ fn enrolled_exec_restart_revokes_and_replacement_stays_unbound() {
         assert!(
             !serde_json::to_string(&child.context())
                 .unwrap()
-                .contains("MIXOS_SESSION_FD")
+                .contains("MIX_SESSION_FD")
         );
         child.exit();
         parent.revoke_and_verify(&broker).await;
@@ -884,7 +884,7 @@ fn bootstrap_source_boundary_and_builtin_inventory_exclude_seed_state() {
         .unwrap();
     assert!(output.status.success());
     let builtins = String::from_utf8(output.stdout).unwrap();
-    for forbidden in ["MIXOS_SESSION_FD", "native_session", "session_seed"] {
+    for forbidden in ["MIX_SESSION_FD", "native_session", "session_seed"] {
         assert!(!builtins.contains(forbidden));
     }
 }
@@ -2086,8 +2086,11 @@ fn stage_d_an_abandoned_admission_never_executes_and_its_retry_does_not_re_run()
         // Stall the editor past the admit budget, so the owner gives up while
         // the envelope is still queued — the one interleaving timing alone
         // cannot produce.
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_ADMIT_DELAY_MS".into(), "2500".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_ADMIT_DELAY_MS".into(), "2500".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let submission = execute_request(&f.bound, 1, generation, "print(\"MUST_NOT_RUN\")");
         let error = execute_call(&mut f.parent, &f.bound, "shell.execute", submission.clone())
@@ -2137,8 +2140,11 @@ fn stage_d_a_keystroke_during_the_reservation_refuses_the_admission_intact() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
         // Long enough that the human types while the reservation stands.
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_RESERVE_HOLD_MS".into(), "1200".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_RESERVE_HOLD_MS".into(), "1200".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let submitting = tokio::spawn({
             let name = f.bound.name.clone();
@@ -2385,8 +2391,11 @@ fn stage_d_paste_and_search_drafts_are_preserved_with_exact_refusals() {
 fn stage_d_an_abandoned_reservation_returns_the_prompt_to_the_human() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_ADMIT_DELAY_MS".into(), "2500".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_ADMIT_DELAY_MS".into(), "2500".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let _ = execute_call(
             &mut f.parent,
@@ -2415,8 +2424,11 @@ fn stage_d_an_abandoned_reservation_returns_the_prompt_to_the_human() {
 fn stage_d_a_refused_submission_may_be_retried_under_the_same_id() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_RESERVE_HOLD_MS".into(), "1200".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_RESERVE_HOLD_MS".into(), "1200".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let body = execute_request(&f.bound, 1, generation, "print(\"RETRY_RAN\")");
         let submitting = tokio::spawn({
@@ -2466,8 +2478,11 @@ fn stage_d_an_undetermined_admission_still_resolves_to_its_real_outcome() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
         // Stall AFTER the claim, past budget + grace, so abandon loses.
-        let mut f =
-            stage_d_fixture_with("owned", &[("MIX_CLAIM_DELAY_MS".into(), "2200".into())]).await;
+        let mut f = stage_d_fixture_with(
+            "owned",
+            &[("MIX_TEST_CLAIM_DELAY_MS".into(), "2200".into())],
+        )
+        .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
         let error = execute_call(
             &mut f.parent,
@@ -2740,12 +2755,12 @@ fn p4_a_task_inherits_only_what_it_was_given() {
             "PATH",
             "LANG",
             "TERM",
-            "MIXOS",
-            "MIXOS_SRC",
-            "MIXOS_BIN",
-            "MIXOS_ETC",
-            "MIXOS_NODE_CONFIG",
-            "MIXOS_BROKER_ACCOUNT",
+            "MIX_ROOT",
+            "MIX_SRC",
+            "MIX_BIN",
+            "MIX_ETC",
+            "MIX_NODE_CONFIG",
+            "MIX_BROKER_ACCOUNT",
             "P4_OVERLAY",
         ]
         .into_iter()
@@ -3006,7 +3021,7 @@ fn p4_termination_is_hard_and_the_outcome_names_the_policy() {
             4,
             serde_json::json!({
                 "source": "41 + 1",
-                "env": [["MIX_RESULT_TORN", "1"]],
+                "env": [["MIX_TEST_RESULT_TORN", "1"]],
                 "timeout_ms": "20000",
             }),
         )

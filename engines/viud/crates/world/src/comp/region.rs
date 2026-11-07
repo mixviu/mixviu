@@ -14,7 +14,7 @@
 //! screen position over the output's scale).
 //!
 //! The command, its timers and its reply are the host's (policy-host `region`,
-//! compd). The overlay is [`overlay`]: plain solids (the dim and the
+//! viud). The overlay is [`overlay`]: plain solids (the dim and the
 //! selection's outline) and one CPU-rasterised hint, drawn only while a
 //! selection runs on the output being drawn, plus the clean-frame record the
 //! selected reply waits for (a selection is never claimed without a frame
@@ -490,7 +490,7 @@ const HINT_PAD: (f64, f64) = (16.0, 8.0);
 const HINT_RADIUS: f64 = 10.0;
 const HINT_TOP: f64 = 24.0;
 
-/// The overlay's colours, straight-alpha sRGB, from the session's MixOS
+/// The overlay's colours, straight-alpha sRGB, from the session's MixViu
 /// theme through `toolkit::style` (the embedded theme until the shell
 /// delivers one, as for `capture::style`): the outline is the theme's focus ring (held to 3:1
 /// against its surfaces; its accent if it has none), the hint its popover

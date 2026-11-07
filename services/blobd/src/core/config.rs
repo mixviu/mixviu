@@ -328,7 +328,7 @@ fn default_system_root() -> PathBuf {
 /// `$STATE_DIRECTORY` (the unit's `StateDirectory`, a named instance's
 /// drop-in included; the first entry when it lists several), else
 /// system var root's `blobd` child. Never the XDG resolver — under the unit's
-/// `HOME=%S/mixos/blobd` redirect a non-root uid resolves that
+/// `HOME=%S/mix/blobd` redirect a non-root uid resolves that
 /// somewhere under the state dir, not to it.
 pub fn default_root(state_directory: Option<&str>) -> PathBuf {
     state_directory
@@ -345,12 +345,12 @@ mod tests {
     #[test]
     fn default_root_is_the_state_directory_else_the_documented_path() {
         assert_eq!(
-            default_root(Some("/var/lib/mixos/blobd-two")),
-            PathBuf::from("/var/lib/mixos/blobd-two")
+            default_root(Some("/var/lib/mix/blobd-two")),
+            PathBuf::from("/var/lib/mix/blobd-two")
         );
         assert_eq!(
-            default_root(Some("/var/lib/mixos/blobd:/var/lib/other")),
-            PathBuf::from("/var/lib/mixos/blobd")
+            default_root(Some("/var/lib/mix/blobd:/var/lib/other")),
+            PathBuf::from("/var/lib/mix/blobd")
         );
         assert_eq!(default_root(Some("")), default_system_root());
         assert_eq!(default_root(None), default_system_root());
@@ -368,14 +368,14 @@ mod tests {
     #[test]
     fn parses_every_key() {
         let cfg = Config::parse(
-            "# comment\nroot: /var/lib/mixos/blobd-two\nname: two\n\
+            "# comment\nroot: /var/lib/mix/blobd-two\nname: two\n\
              lane_bind: 10.42.0.5:4210\nlane_max_uploads: 8\nfetch_max_concurrent: 3\n\
              fetch_queue_max: 8\ncommand_max_concurrent: 2\nquota_total_bytes: 100GiB\n\
              quota_owner_default_bytes: 512MiB\nquota_owner: maild=1GiB\n\
              quota_owner: capture=2 GiB\ncas_group: blob\nignored_key: whatever\n",
         )
         .unwrap();
-        assert_eq!(cfg.root, Some(PathBuf::from("/var/lib/mixos/blobd-two")));
+        assert_eq!(cfg.root, Some(PathBuf::from("/var/lib/mix/blobd-two")));
         assert_eq!(cfg.name.as_deref(), Some("two"));
         assert_eq!(cfg.service_name(), "blobd-two");
         assert_eq!(

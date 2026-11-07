@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "Bayesian mail classification"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "maild"
 kind = "service"
 layer = "core"

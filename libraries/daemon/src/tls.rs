@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! TLS primitives shared by webd, maild, and any future MixOS
+//! TLS primitives shared by webd, maild, and any future MixViu
 //! daemon that terminates TLS on a public-facing or mesh-facing
 //! socket. Gated behind the existing `tls` Cargo feature.
 //!

@@ -5,7 +5,7 @@
 use serde_json::{Value, json};
 use std::path::Path;
 
-/// The MixOS image modes a start path may write to `mixos:run/mode`.
+/// The MixViu image modes a start path may write to `mix:run/mode`.
 const MODES: &[&str] = &["nested", "shared", "isolated", "metal"];
 
 pub fn collect(root: &Path) -> Value {
@@ -18,7 +18,7 @@ pub fn collect(root: &Path) -> Value {
         "hostname": read("proc/sys/kernel/hostname").map(|s| s.trim().to_owned()),
         "kernel": read("proc/sys/kernel/osrelease").map(|s| s.trim().to_owned()),
         "os": os,
-        "mode": read("run/mixos/mode").and_then(|s| mode(&s)),
+        "mode": read("run/mix/mode").and_then(|s| mode(&s)),
         "container": read("run/systemd/container").map(|s| s.trim().to_owned()),
         "uptime_s": read("proc/uptime").and_then(|s| uptime(&s)),
         "cpu": read("proc/cpuinfo").map(|s| cpu(&s)),
@@ -119,7 +119,7 @@ mod tests {
         };
         put("proc/sys/kernel/hostname", "example\n");
         put("usr/lib/os-release", "ID=arch\n");
-        put("run/mixos/mode", "shared\n");
+        put("run/mix/mode", "shared\n");
         let v = collect(dir.path());
         assert_eq!(v["hostname"], "example");
         assert_eq!(v["os"]["id"], "arch");

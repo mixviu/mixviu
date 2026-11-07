@@ -81,7 +81,7 @@ as `interactive`, `script`, `c`, `stdin`, or `serve`. Set `MIX_STATS=off` (also
 statistics](stats.md).
 
 When Term supplies a native-session launch fd, Mix consumes and closes it and
-scrubs `MIXOS_SESSION_FD` before startup hooks or user source. Binding and renews
+scrubs `MIX_SESSION_FD` before startup hooks or user source. Binding and renews
 run on a private resident thread; the seed has no Mix language or `mix context`
 representation. Invalid bootstrap input reports the failed stage and leaves the
 shell usable. Without the marker, all entry modes keep their ordinary silent
@@ -413,7 +413,7 @@ From a Mix script, drive a remote mix through the ssh builtins instead of raw
 which ships whole Mix source over ssh stdin into `<prefix>/bin/mix -`,
 bypassing every shell-quoting layer — for anything with quoting. A remote
 whose mix lives elsewhere takes the `mix_bin` option, or set
-`MIX_REMOTE_BIN` locally for every call (see
+`MIX_REMOTE_EXE` locally for every call (see
 [`ssh_mix`](remote.md#ssh_mixhost-source-opts--map)). The
 [`ssh_mix` + heredoc headline idiom](remote.md#headline-idiom-ssh_mix--heredoc)
 shows the interpolation and bindings rules.
@@ -443,8 +443,8 @@ $ mix --no-prelude -c 'print("" .. range(1, 3))'   # range is a builtin, still w
 
 The prelude source is `mixos-lib-mix/std/prelude.mix`, compiled into the binary.
 A user override at `<base>/prelude.mix` is honoured if it exists, where `<base>`
-is `$MIXOS_SRC` when that variable is set, otherwise `$MIXOS`. (Setting
-`$MIXOS_SRC` *replaces* the base — `$MIXOS/prelude.mix` is then not consulted.)
+is `$MIX_SRC` when that variable is set, otherwise `$MIX_ROOT`. (Setting
+`$MIX_SRC` *replaces* the base — `$MIX_ROOT/prelude.mix` is then not consulted.)
 Otherwise the built-in prelude is used.
 
 ## `--check` — syntax check without running
@@ -480,7 +480,7 @@ $ mix --serve worker.mix --name probe # explicit service name
 
 Name derivation (SPEC 18 §3.1): `--name` wins; otherwise the default is the
 script's file **stem**. A leading `mixos-` is stripped from either source
-(`/usr/local/lib/mixos/statecache.mix` → `statecache`, and `--name mixos-foo`
+(`/usr/local/lib/mix/statecache.mix` → `statecache`, and `--name mixos-foo`
 canonicalises to `foo`). An anonymous serve with no derivable name is a launch
 error — never a nameless citizen. Serve mode takes **no positional script args**
 (a daemon has no argv); only `--name` and `--no-prelude` may follow the script

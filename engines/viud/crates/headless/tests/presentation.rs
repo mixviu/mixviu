@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Independent-rate probe against an owned render-node compd. Run with
+//! Independent-rate probe against an owned render-node viud. Run with
 //! --nocapture to retain the baseline and positive-control summary lines.
-//! For timing, select an optimised compd through COMPD_TEST_BINARY. The
+//! For timing, select an optimised viud through VIUD_TEST_BINARY. The
 //! harness and probe need not be optimised; buffer preparation precedes the
 //! timer deadline. A debug compositor's render time counts towards misses.
 use std::{
@@ -50,7 +50,7 @@ fn measurement(process: &mut process::Process, stalled: bool) -> (f64, usize, us
     );
     let summary = stdout
         .lines()
-        .find(|line| line.starts_with("COMPD_PRESENTATION_PROBE PASS "))
+        .find(|line| line.starts_with("VIUD_PRESENTATION_PROBE PASS "))
         .unwrap();
     let value = |key: &str| {
         summary
@@ -81,7 +81,7 @@ fn measurement(process: &mut process::Process, stalled: bool) -> (f64, usize, us
 }
 
 #[test]
-#[ignore = "needs a render node, built headless compd and testkit-presentation-probe; two 60 s runs"]
+#[ignore = "needs a render node, built headless viud and testkit-presentation-probe; two 60 s runs"]
 fn independent_60hz_and_stall_control() {
     let mut process = process::spawn_measurement();
     process.extend_watchdog(Duration::from_secs(180));
@@ -90,9 +90,9 @@ fn independent_60hz_and_stall_control() {
         assert!(
             process.child.try_wait().unwrap().is_none(),
             "{}",
-            fs::read_to_string(process.root.join("compd.log")).unwrap()
+            fs::read_to_string(process.root.join("viud.log")).unwrap()
         );
-        assert!(Instant::now() < deadline, "compd socket startup timed out");
+        assert!(Instant::now() < deadline, "viud socket startup timed out");
         thread::sleep(Duration::from_millis(10));
     }
     let (hz, clean, clean_cadence) = measurement(&mut process, false);

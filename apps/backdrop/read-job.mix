@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+on job.run
+  $out=[]
+  for $request in $event.args.requests
+    try
+      if $request.timeout==8 then send $request.target $request.command body=$request.body timeout=8
+      else send $request.target $request.command body=$request.body timeout=5 end
+      push($out,{key:$request.key,command:$request.command,rc:$rc,body:$reply,message:if $rc==0 then nil else to_string($result) end})
+    catch $message
+      push($out,{key:$request.key,command:$request.command,rc:20,body:nil,message:$message})
+    end
+  end
+  reply(0,json_encode({results:$out}))
+end

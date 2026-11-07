@@ -74,10 +74,10 @@ fn ensure_output_post_processing(fd: libc::c_int) {
     }
 }
 
-/// Check for the claude-resume flag file in $MIXOS_SRC.
+/// Check for the claude-resume flag file in $MIX_SRC.
 /// Returns the resume command if the flag exists.
 fn check_resume_flag() -> Option<String> {
-    let flag = crate::paths::mixos_src().join(RESUME_FLAG);
+    let flag = crate::paths::mix_src().join(RESUME_FLAG);
     if flag.exists() {
         std::fs::read_to_string(&flag).ok()
     } else {
@@ -87,7 +87,7 @@ fn check_resume_flag() -> Option<String> {
 
 /// Delete the resume flag file.
 fn clear_resume_flag() {
-    let _ = std::fs::remove_file(crate::paths::mixos_src().join(RESUME_FLAG));
+    let _ = std::fs::remove_file(crate::paths::mix_src().join(RESUME_FLAG));
 }
 
 /// exec() into the new Mix binary, preserving args so the new instance
@@ -99,7 +99,7 @@ fn exec_restart(eval: &mut Evaluator, rl: &mut Editor, history_path: &std::path:
     }
     let _ = rl.save_history(history_path);
 
-    let mix_bin = crate::paths::mixos_path(crate::paths::Dir::Bin)
+    let mix_bin = crate::paths::mix_path(crate::paths::Dir::Bin)
         .join("mix")
         .to_string_lossy()
         .into_owned();

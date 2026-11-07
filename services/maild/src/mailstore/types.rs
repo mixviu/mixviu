@@ -257,7 +257,7 @@ impl MailboxRole {
 }
 
 /// JMAP `Mailbox.myRights` (RFC 8621 §2.0). Per-account ACL mask the
-/// JMAP client uses to gate UI affordances. MixOS is a personal
+/// JMAP client uses to gate UI affordances. MixViu is a personal
 /// substrate today (single-tenant accounts, no shared mailboxes), so
 /// the canonical projection is [`MailboxRights::full`]; the struct
 /// exists to (a) keep the JMAP wire shape honest and (b) leave room

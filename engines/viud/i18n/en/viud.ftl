@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
-# compd's own user-visible strings: capture overlays and dialogs, the
+# viud's own user-visible strings: capture overlays and dialogs, the
 # region-select hint, the frame-rate overlay.
 
 capture-setup-title = Capture setup

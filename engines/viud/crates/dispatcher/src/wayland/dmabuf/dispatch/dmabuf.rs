@@ -32,7 +32,7 @@ pub mod wire {
         // No GLES validator for this buffer (no GPU binding, or none for the
         // composite node): smithay default import, counted as accepted. A
         // client gone before the answer still counts: the ledger records
-        // what compd decided, as on the validated path.
+        // what viud decided, as on the validated path.
         let _ = notifier.successful::<WireObject>();
         dispatch.dmabuf_ledger.record_accepted();
     }

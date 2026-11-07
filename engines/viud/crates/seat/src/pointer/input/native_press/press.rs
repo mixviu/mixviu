@@ -161,7 +161,7 @@ pub fn apply_focus(
     // interaction: no raise, no activation, and the keyboard stays where it
     // is. The X client holds its own grab; the button still reaches the
     // surface. Tracked X11 popups (`x11_popup_focus`, a menu with a parent)
-    // keep their keyboard exception, because compd refuses X popup grabs and
+    // keep their keyboard exception, because viud refuses X popup grabs and
     // a search box in a menu would otherwise get no keys.
     if let SurfaceHit::Window { window, .. } | SurfaceHit::WindowChrome { window, .. } = hit
         && window

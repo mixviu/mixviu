@@ -193,3 +193,7 @@ does not claim embedded Viu event latency.
 ### Integration revalidation
 
 The [desk4 integration receipt](desk4-integration.md) records the full 55-figure, 46/46 Bus and 19-state live Prefs revalidation at 9643f92, and the release-byte quick recheck after merging accepted Ced at `4f2c0fd518336e2b2bb74aac9c3305fb9a2be8f0`. The latter retains zero whole/region distortion for Processes and all seven Performance pages and matches 46/46 structured replies. Exact release hashes, worker paths, CBC jobs and private evidence identifiers are in that receipt. P1 and the previously accepted raster edges are unchanged; no new Monitor deviation is proposed.
+
+## Four-app release integration at 1804bb9
+
+Release-byte revalidation **PASS**. Exact four-engine hashes, complete native/visual results, all residual figures, deferred-reply witnesses, two same-worker timing comparisons and provenance debt are in [four-app-integration-acceptance.md](four-app-integration-acceptance.md). The runtime source is `1804bb98a5ab305111bd35412bf6f3902bc24013`; following commits are documentation receipts.

@@ -15,15 +15,15 @@
 -- broken-behaviour refusal and the launched behaviour's marker file are what
 -- prove the calls ran on this Mix, not on the replacement or a PATH fallback.
 --
--- Run from the checkout root: mix services/compd/tests/scenes_io_test.mix
--- Needs cp, mv and a noded binary (MIXOS_TEST_NODED, else <prefix>/bin/noded).
+-- Run from the checkout root: mix engines/viud/tests/scenes_io_test.mix
+-- Needs cp, mv and a noded binary (MIX_TEST_NODED_EXE, else <prefix>/bin/noded).
 
 $repo = dirname(dirname(dirname(dirname(realpath($0)))))
 $pb = require("../../../tests/lib/private_bus.mix")
 -- This test's own interpreter, the same reference the loader now uses.
 $SELF = "/proc/" .. to_string(pid()) .. "/exe"
-$noded = env("MIXOS_TEST_NODED", "")
-if $noded == "" then $noded = (mixos_path("prefix") .. "/bin/noded") end
+$noded = env("MIX_TEST_NODED_EXE", "")
+if $noded == "" then $noded = (mix_path("prefix") .. "/bin/noded") end
 
 fn check($ok, $message)
   if not $ok then raise("SCENES_IO_TEST", $message) end
@@ -62,7 +62,7 @@ fn inner_source($tmp)
     "-- Loader stand-in: a copied Mix that replaces its own executable, then",
     "-- drives the real scenes_io adapter exactly as scenes.mix does.",
     "$tmp = " .. json_encode($tmp),
-    "$io = require(" .. json_encode($repo .. "/services/compd/scripts/lib/scenes_io.mix") .. ")",
+    "$io = require(" .. json_encode($repo .. "/engines/viud/scripts/lib/scenes_io.mix") .. ")",
     "fn fail($why)",
     "  print(\"INNER-FAILED: \" .. $why)",
     "  exit(1)",
@@ -123,7 +123,7 @@ fn inner_source($tmp)
   ], "\n") .. "\n"
 end
 
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-scenes-io-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-scenes-io-test.XXXXXXXX"]))
 $bus = nil
 try
   mkdir($tmp .. "/bin")

@@ -3361,7 +3361,7 @@ pub fn read_meta_json(path: &Path) -> Result<MetaV1, MetaReadError> {
 ///
 /// Filesystems that don't support directory fsync (FAT, some network
 /// mounts) surface `EINVAL` here — propagated rather than swallowed,
-/// because webd's `mixos:var/webd/acme/` is assumed to live on
+/// because webd's `mix:var/webd/acme/` is assumed to live on
 /// a real local filesystem and a surprise EINVAL is a deployment
 /// configuration bug worth surfacing loudly.
 pub fn write_atomic_pem(path: &Path, pem: &str) -> std::io::Result<()> {
@@ -5322,7 +5322,7 @@ mod tests {
         _stage_fake_live(tmp.path(), "covered.example");
         let mut row = _acme_prod_row("covered.example");
         row.cert_blob_id =
-            Some("fs:/var/lib/mixos/webd/acme/covered.example/live/fullchain.pem".into());
+            Some("fs:/var/lib/mix/webd/acme/covered.example/live/fullchain.pem".into());
         let event = NamespaceEvent::VhostSet {
             fqdn: "covered.example".to_string(),
             row: Box::new(row),

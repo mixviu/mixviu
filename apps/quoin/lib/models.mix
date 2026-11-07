@@ -284,9 +284,9 @@ fn task_tip($w, $name, $ws_current)
   if $w.minimized then push($lines, text("minimised")) end
   if $t.elsewhere($w, $ws_current) then push($lines, text("on_workspace", {n: $w.workspace})) end
   $out = tip($app, $title != $app ? $title : "", $lines)
-  -- A live preview of the window (drawn by compd over the card).
+  -- A live preview of the window (drawn by viud over the card).
   if type($w.width) == "number" and type($w.height) == "number" and $w.width > 0 and $w.height > 0 then
-    -- decorated: compd draws the frame around it, so the box takes the
+    -- decorated: viud draws the frame around it, so the box takes the
     -- frame's aspect (the content plus the server-side chrome).
     $out.thumbnail = {id: $w.id, generation: $w.generation, w: $w.width, h: $w.height,
       decorated: $w.decoration == "server" and not ($w.fullscreen ?? false)}

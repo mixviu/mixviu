@@ -66,7 +66,7 @@ uniform float tint;
 uniform mat3 u_frag_to_phys;
 uniform vec4 u_clip;
 uniform float u_radius;
-// Diagnosis only (COMPD_CHROME_CLIP_DEBUG=1): the content is replaced by its
+// Diagnosis only (VIUD_CHROME_CLIP_DEBUG=1): the content is replaced by its
 // own placement: red = p.x mod 256, green = p.y mod 256, blue = coverage.
 uniform float u_debug;
 
@@ -102,12 +102,12 @@ void main() {
 }
 "#;
 
-/// `COMPD_CHROME_CLIP_DEBUG=1`: draw the clipped content as its own placement
+/// `VIUD_CHROME_CLIP_DEBUG=1`: draw the clipped content as its own placement
 /// (see the shader), for diagnosing the clip on a live output. Read once.
 pub fn debug() -> bool {
     use std::sync::OnceLock;
     static DEBUG: OnceLock<bool> = OnceLock::new();
-    *DEBUG.get_or_init(|| std::env::var_os("COMPD_CHROME_CLIP_DEBUG").is_some_and(|v| v == "1"))
+    *DEBUG.get_or_init(|| std::env::var_os("VIUD_CHROME_CLIP_DEBUG").is_some_and(|v| v == "1"))
 }
 
 /// The rounded rectangle content is cut to: the decorated window's whole

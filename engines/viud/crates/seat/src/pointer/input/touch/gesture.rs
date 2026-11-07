@@ -102,7 +102,7 @@ pub fn end(_loop: &mut Loop, mode: Mode, time: u32, cancelled: bool) {
             // camera controls); nothing to fire.
             _loop.inner.gesture.active = false;
         }
-        // compd: a four-finger pinch framed windows through the navigator; cut.
+        // viud: a four-finger pinch framed windows through the navigator; cut.
         Mode::Fit => {}
         Mode::None => {}
     }

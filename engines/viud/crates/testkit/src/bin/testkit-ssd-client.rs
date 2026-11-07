@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! testkit-ssd-client: a minimal xdg toplevel that asks for server-side
-//! decorations, for compd's chrome pixel gate.
+//! decorations, for viud's chrome pixel gate.
 //!
 //!   testkit-ssd-client [--colour RRGGBB] [--size WxH] [--mode server|client|none]
 //!       [--report-scale]
@@ -11,13 +11,13 @@
 //! a configure with a size wins), and negotiates xdg-decoration: `server`
 //! (default) asks for server-side, `client` for client-side, `none` binds no
 //! decoration object at all. No title, so nothing of the client's own shows in
-//! a titlebar. Prints `mapped decoration=<mode compd answered>` once the first
+//! a titlebar. Prints `mapped decoration=<mode viud answered>` once the first
 //! buffer is committed after the initial configure, then serves configures
 //! until killed. Exits 2 on a setup or protocol error.
 //!
 //! `--report-scale` binds wp_fractional_scale_v1 on the surface and prints
 //! `preferred_scale <N>` (N/120, the protocol's unit) for every preferred scale
-//! compd sends: the scale gates read what a client is told.
+//! viud sends: the scale gates read what a client is told.
 //! The buffer is still drawn at the logical size; only the report changes.
 
 use std::fs::File;
@@ -50,7 +50,7 @@ struct State {
     pending_serial: Option<u32>,
     /// The size the last toplevel configure asked for (0 = client's choice).
     size: Option<(i32, i32)>,
-    /// What compd answered the decoration request with.
+    /// What viud answered the decoration request with.
     mode: Option<&'static str>,
     closed: bool,
 }

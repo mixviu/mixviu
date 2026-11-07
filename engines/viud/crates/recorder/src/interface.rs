@@ -1100,7 +1100,7 @@ fn commit_save(state: &mut Loop, renderer: &mut GlesRenderer, target: PathBuf) {
             if auto || optimize_checked || cfr {
                 let codec = optimized_codec();
                 if auto {
-                    // Background, no progress UI: writes a `.compd-encoding` partial
+                    // Background, no progress UI: writes a `.viud-encoding` partial
                     // and renames to `target` when done (lossless fallback on fail).
                     reencode_detached(temp, target, codec, cfr, capture_render_node());
                     close_save_dialog(state);

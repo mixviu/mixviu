@@ -260,13 +260,13 @@ mod tests {
         for name in SceneCommand::names("shell") {
             assert!(SceneCommand::parse("shell", &name).is_some(), "{name}");
             assert!(
-                SceneCommand::parse("compd-scenes", &name).is_some(),
+                SceneCommand::parse("viud-scenes", &name).is_some(),
                 "{name}"
             );
         }
-        for name in SceneCommand::names("compd-scenes") {
+        for name in SceneCommand::names("viud-scenes") {
             assert!(
-                SceneCommand::parse("compd-scenes", &name).is_some(),
+                SceneCommand::parse("viud-scenes", &name).is_some(),
                 "{name}"
             );
             assert!(SceneCommand::parse("shell", &name).is_none(), "{name}");

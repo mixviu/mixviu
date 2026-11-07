@@ -2106,7 +2106,7 @@ mod handler_impls {
             }
         }
         fn grab(&mut self, surface: PopupSurface, seat: WlSeat, serial: Serial) {
-            // compd (integration F2): while a layer holds the exclusive-keyboard
+            // viud (integration F2): while a layer holds the exclusive-keyboard
             // latch, a popup grab rooted anywhere else is denied.
             if let Some(latched) = self.exclusive_latch.as_ref() {
                 let kind = smithay::desktop::PopupKind::Xdg(surface.clone());
@@ -2386,7 +2386,7 @@ mod handler_impls {
                 trace!("syncobj: acquire point but no new buffer; skipping blocker");
                 return;
             }
-            // compd F6: once explicit sync has faulted, no new explicit-sync
+            // viud F6: once explicit sync has faulted, no new explicit-sync
             // use is accepted.
             if !crate::wayland::dmabuf::explicit_sync::healthy() {
                 refuse_explicit_sync(surface, _dh, "explicit sync faulted");
@@ -2412,7 +2412,7 @@ mod handler_impls {
 
     /// Signal the refused commit's release point (the client is not left
     /// waiting on it) and disconnect the client, rather than accept a buffer
-    /// compd cannot release correctly.
+    /// viud cannot release correctly.
     fn refuse_explicit_sync(
         surface: &WlSurface,
         dh: &smithay::reexports::wayland_server::DisplayHandle,
@@ -3295,7 +3295,7 @@ pub mod xwm_impls {
                 request: crate::wire::trait_::surface_event::WindowRequest::Minimize,
             });
         }
-        // compd (integration E2): the four requests the comp policy answers
+        // viud (integration E2): the four requests the comp policy answers
         // (policy-host `apply_client_requests`); queued like `minimize_request`.
         fn unminimize_request(&mut self, _xwm: XwmId, window: X11Surface) {
             self.push_surface_event(crate::wire::trait_::surface_event::SurfaceEvent::Request {
@@ -3341,7 +3341,7 @@ pub mod xwm_impls {
                     crate::wire::trait_::surface_event::SurfaceEvent::x11_names(&window),
                 );
             }
-            // compd (integration E4): the owner a move follows to OR children.
+            // viud (integration E4): the owner a move follows to OR children.
             if matches!(property, WmWindowProperty::TransientFor) {
                 self.push_surface_event(
                     crate::wire::trait_::surface_event::SurfaceEvent::x11_transient_for(&window),

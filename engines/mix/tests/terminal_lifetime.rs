@@ -73,7 +73,7 @@ impl Shell {
         cmd.env("HOME", home.path())
             .env("MIX_STATS", "off")
             .env("MIX_EDITOR", editor)
-            .env_remove("MIXOS_SESSION_FD")
+            .env_remove("MIX_SESSION_FD")
             .stdin(slave.try_clone().unwrap())
             .stdout(slave.try_clone().unwrap())
             .stderr(slave);

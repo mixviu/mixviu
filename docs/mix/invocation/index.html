@@ -11,7 +11,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>Invoking Mix — MixOS</title>
+    <title>Invoking Mix — MixViu</title>
     <link rel="canonical" href="https://mixos.dev/mix/invocation/">
     <link rel="alternate" type="text/markdown" href="/mix/invocation.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
@@ -90,7 +90,7 @@
 <button class="menu-toggle" data-sidebar="right"><i data-lucide="menu"></i></button>
 
 <nav class="topnav">
-    <h1><a class="brand" href="/">MixOS &middot; <span>Server &amp; Desktop Systems</span></a></h1>
+    <h1><a class="brand" href="/">MixViu &middot; <span>Server &amp; Desktop Systems</span></a></h1>
 </nav>
 
 <!-- ================= LEFT SIDEBAR: documentation panels ================= -->
@@ -109,7 +109,7 @@
         <div class="panel-track">
 
             <div class="panel">
-                <div class="panel-title">MixOS</div>
+                <div class="panel-title">MixViu</div>
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
@@ -319,7 +319,7 @@ as <code>interactive</code>, <code>script</code>, <code>c</code>, <code>stdin</c
 <code>0</code> or <code>false</code>) to skip collection and all stats I/O. See <a href="/mix/stats/">usage
 statistics</a>.</p>
 <p>When Term supplies a native-session launch fd, Mix consumes and closes it and
-scrubs <code>MIXOS_SESSION_FD</code> before startup hooks or user source. Binding and renews
+scrubs <code>MIX_SESSION_FD</code> before startup hooks or user source. Binding and renews
 run on a private resident thread; the seed has no Mix language or <code>mix context</code>
 representation. Invalid bootstrap input reports the failed stage and leaves the
 shell usable. Without the marker, all entry modes keep their ordinary silent
@@ -583,7 +583,7 @@ hostname is: node1
 which ships whole Mix source over ssh stdin into <code>&lt;prefix&gt;/bin/mix -</code>,
 bypassing every shell-quoting layer — for anything with quoting. A remote
 whose mix lives elsewhere takes the <code>mix_bin</code> option, or set
-<code>MIX_REMOTE_BIN</code> locally for every call (see
+<code>MIX_REMOTE_EXE</code> locally for every call (see
 <a href="/mix/remote/#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>). The
 <a href="/mix/remote/#headline-idiom-ssh_mix--heredoc"><code>ssh_mix</code> + heredoc headline idiom</a>
 shows the interpolation and bindings rules.</p>
@@ -607,8 +607,8 @@ after the script path.</p>
 </code></pre>
 <p>The prelude source is <code>mixos-lib-mix/std/prelude.mix</code>, compiled into the binary.
 A user override at <code>&lt;base&gt;/prelude.mix</code> is honoured if it exists, where <code>&lt;base&gt;</code>
-is <code>$MIXOS_SRC</code> when that variable is set, otherwise <code>$MIXOS</code>. (Setting
-<code>$MIXOS_SRC</code> <em>replaces</em> the base — <code>$MIXOS/prelude.mix</code> is then not consulted.)
+is <code>$MIX_SRC</code> when that variable is set, otherwise <code>$MIX_ROOT</code>. (Setting
+<code>$MIX_SRC</code> <em>replaces</em> the base — <code>$MIX_ROOT/prelude.mix</code> is then not consulted.)
 Otherwise the built-in prelude is used.</p>
 <h2 id="--check--syntax-check-without-running"><code>--check</code> — syntax check without running</h2>
 <p><code>--check</code> lexes and parses a script and prints <code>&lt;file&gt;: OK</code>, or the first
@@ -634,7 +634,7 @@ $ mix --serve worker.mix --name probe # explicit service name
 </code></pre>
 <p>Name derivation (SPEC 18 §3.1): <code>--name</code> wins; otherwise the default is the
 script's file <strong>stem</strong>. A leading <code>mixos-</code> is stripped from either source
-(<code>/usr/local/lib/mixos/statecache.mix</code> → <code>statecache</code>, and <code>--name mixos-foo</code>
+(<code>/usr/local/lib/mix/statecache.mix</code> → <code>statecache</code>, and <code>--name mixos-foo</code>
 canonicalises to <code>foo</code>). An anonymous serve with no derivable name is a launch
 error — never a nameless citizen. Serve mode takes <strong>no positional script args</strong>
 (a daemon has no argv); only <code>--name</code> and <code>--no-prelude</code> may follow the script
@@ -671,7 +671,7 @@ time/collection caps stay unset for binary-run scripts.</p>
 <li><a href="https://github.com/markc/mixos">Mix repo</a> · <a href="https://en.wikipedia.org/wiki/ARexx">ARexx background</a></li>
 </ul>
         </article>
-        <p class="doc-source"><a href="/mix/invocation.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/mix/invocation.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixViu.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

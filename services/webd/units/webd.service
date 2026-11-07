@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # Copyright 2026 Mark Constable <mc@mixos.dev>
 [Unit]
-Description=MixOS web service
+Description=MixViu web service
 Documentation=https://mixos.dev/webd/
 After=network-online.target noded.service
 Wants=network-online.target noded.service
@@ -10,13 +10,13 @@ Wants=network-online.target noded.service
 Type=simple
 User=webd
 Group=webd
-StateDirectory=mixos/webd
+StateDirectory=mix/webd
 StateDirectoryMode=0750
-RuntimeDirectory=mixos/webd
+RuntimeDirectory=mix/webd
 RuntimeDirectoryMode=0750
-ConfigurationDirectory=mixos/webd
+ConfigurationDirectory=mix/webd
 ConfigurationDirectoryMode=0755
-WorkingDirectory=%S/mixos/webd
+WorkingDirectory=%S/mix/webd
 # Per-vhost content and mutable state live under /srv/<domain>/ (docroot,
 # cms.db, uploads). ProtectSystem=strict makes everything outside the state
 # directory read-only, so webd must be granted write access to /srv or every
@@ -24,14 +24,14 @@ WorkingDirectory=%S/mixos/webd
 ReadWritePaths=/srv
 # The database is pinned under the state directory. The default resolves to a
 # root-owned parent that webd cannot write.
-ExecStart=@{prefix}/bin/webd serve --db-path %S/mixos/webd/web.db
+ExecStart=@{prefix}/bin/webd serve --db-path %S/mix/webd/web.db
 Restart=on-failure
 RestartSec=5s
 Environment=RUST_LOG=webd=info
-Environment=HOME=%S/mixos/webd
+Environment=HOME=%S/mix/webd
 # Node config is pinned so that listen address, TLS paths, the JMAP upstream
 # and the noded URL come from the per-host config, not from fallbacks.
-Environment=MIXOS_ETC=@{etc}
+Environment=MIX_ETC=@{etc}
 # Journald is the sink. Stray stdout and stderr also go there, and the rate
 # limit stops a crash loop from flooding the journal.
 StandardOutput=journal

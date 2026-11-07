@@ -44,9 +44,9 @@ if [ -n "$REMOTE_SENDMAIL_STANDIN" ]; then
     echo "fake ssh: refusing to run a real sendmail" >&2
     exit 99
   fi
-  FAKE_HOST=$host exec "$MIX_UNDER_TEST" - < "$SENDMAIL_CAPTURE.rewritten"
+  FAKE_HOST=$host exec "$MIX_TEST_ACTIVE" - < "$SENDMAIL_CAPTURE.rewritten"
 fi
-FAKE_HOST=$host exec "$MIX_UNDER_TEST" -
+FAKE_HOST=$host exec "$MIX_TEST_ACTIVE" -
 "#;
 
 struct Bed {
@@ -82,10 +82,10 @@ impl Bed {
         cmd.arg("-c")
             .arg(program)
             .env("PATH", path)
-            .env("MIX_UNDER_TEST", env!("CARGO_BIN_EXE_mix"))
+            .env("MIX_TEST_ACTIVE", env!("CARGO_BIN_EXE_mix"))
             .env("SENDMAIL_CAPTURE", self.capture())
             .env_remove("REMOTE_SENDMAIL_STANDIN")
-            .env_remove("MIX_REMOTE_BIN");
+            .env_remove("MIX_REMOTE_EXE");
         for (k, v) in extra {
             cmd.env(k, v);
         }

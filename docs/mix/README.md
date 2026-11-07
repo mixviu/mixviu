@@ -77,7 +77,7 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 
 ## Where Mix lives
 
-Mix is the MixOS shell and scripting language. The interpreter lives in the
+Mix is the MixViu shell and scripting language. The interpreter lives in the
 `mix` library at `libs/mix`; `cli/mix-shell` owns the interactive shell and
 native ABP citizen runtime, and `engines/mix` builds the `mix` binary.
 The source versions are declared in

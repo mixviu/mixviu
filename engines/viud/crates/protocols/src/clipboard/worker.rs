@@ -123,7 +123,7 @@ impl Worker {
         let (commands, inbox) = channel();
         let (finished, done) = channel();
         let spawned = std::thread::Builder::new()
-            .name("compd-clipboard".to_string())
+            .name("viud-clipboard".to_string())
             .spawn(move || run(inbox, wake_read, finished, ping));
         if let Err(err) = spawned {
             warn!("clipboard worker: could not spawn err={err:?}");

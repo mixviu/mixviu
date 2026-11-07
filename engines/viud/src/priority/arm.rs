@@ -8,7 +8,7 @@
 //!
 //! `SCHED_RESET_ON_FORK` is per-THREAD (`sched_setscheduler(0, …)` acts on the
 //! caller, not the process), so this covers only what the calling thread goes
-//! on to create. Threads that already exist — the `compd-launch` worker among
+//! on to create. Threads that already exist — the `viud-launch` worker among
 //! them — keep the raw boost and hand it to anything THEY fork; a fork site on
 //! such a thread must reset scheduling itself between fork and exec (see
 //! `launch.execute`).

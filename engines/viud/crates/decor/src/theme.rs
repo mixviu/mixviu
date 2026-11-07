@@ -189,9 +189,9 @@ impl ChromeTheme {
     }
 }
 
-/// The shared theme file: `theme.conf.mix` in the MixOS etc dir
-/// (`config::path(Dir::Etc)`: `$MIXOS_ETC`, else `$MIXOS/etc`, else
-/// `/etc/mixos` for root, else `$XDG_CONFIG_HOME/mixos`).
+/// The shared theme file: `theme.conf.mix` in the MixViu etc dir
+/// (`config::path(Dir::Etc)`: `$MIX_ETC`, else `$MIX_ROOT/etc`, else
+/// `/etc/mix` for root, else `$XDG_CONFIG_HOME/mix`).
 pub fn theme_path() -> PathBuf {
     config::path(config::Dir::Etc).join("theme.conf.mix")
 }
@@ -202,7 +202,7 @@ fn compile(source: &str) -> Option<UnstampedResolvedDesign> {
     // file. Resolve that selection against the embedded design, without
     // changing its legacy crosswalk (which the compiler validates separately).
     let (document, selection) =
-        match design::parse_design_source(SourceIdentity::new("compd:chrome"), source) {
+        match design::parse_design_source(SourceIdentity::new("viud:chrome"), source) {
             Ok(document) => {
                 let selection = document.legacy.clone();
                 (document, selection)
@@ -220,7 +220,7 @@ fn compile(source: &str) -> Option<UnstampedResolvedDesign> {
                     return None;
                 }
                 let document = design::parse_design_source(
-                    SourceIdentity::new("compd:chrome:selection"),
+                    SourceIdentity::new("viud:chrome:selection"),
                     design::EMBEDDED_DEFAULT_SOURCE,
                 )
                 .ok()?;

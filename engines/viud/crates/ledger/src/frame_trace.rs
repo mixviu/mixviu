@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-// The record line format and the COMPD_FRAME_TRACE* environment names are
+// The record line format and the VIUD_FRAME_TRACE* environment names are
 // fixed so the existing trace readers keep working; the `component=comp`
 // field is the trace's component name, not the binary's.
 
@@ -58,17 +58,17 @@ fn clock_us(clock: libc::clockid_t) -> u64 {
         .saturating_add(value.tv_nsec as u64 / 1_000)
 }
 
-/// Resolve the record ceiling. `COMPD_FRAME_TRACE_LIMIT` overrides the default
+/// Resolve the record ceiling. `VIUD_FRAME_TRACE_LIMIT` overrides the default
 /// (0 == unbounded, for a file sink capturing a long session); an unset or
 /// unparsable value keeps the stderr-safe default so the fast path is unchanged.
 fn resolve_limit() -> u64 {
-    match std::env::var("COMPD_FRAME_TRACE_LIMIT") {
+    match std::env::var("VIUD_FRAME_TRACE_LIMIT") {
         Ok(raw) => raw.trim().parse::<u64>().unwrap_or(LIMIT),
         Err(_) => LIMIT,
     }
 }
 
-/// A line sink for the trace thread: a file when `COMPD_FRAME_TRACE_FILE` names
+/// A line sink for the trace thread: a file when `VIUD_FRAME_TRACE_FILE` names
 /// a writable path, else stderr. The file is truncated on open so each capture
 /// starts clean, and a path that cannot be opened falls back to stderr rather
 /// than losing the trace.
@@ -79,7 +79,7 @@ enum Sink {
 
 impl Sink {
     fn open() -> Self {
-        if let Ok(path) = std::env::var("COMPD_FRAME_TRACE_FILE")
+        if let Ok(path) = std::env::var("VIUD_FRAME_TRACE_FILE")
             && !path.is_empty()
         {
             match std::fs::File::create(&path) {
@@ -106,11 +106,11 @@ impl Sink {
 
 fn recorder() -> Option<&'static Recorder> {
     RECORDER.get_or_init(|| {
-        if std::env::var("COMPD_FRAME_TRACE").as_deref() != Ok("1") { return None; }
+        if std::env::var("VIUD_FRAME_TRACE").as_deref() != Ok("1") { return None; }
         let limit = resolve_limit();
         // A file sink can absorb a long capture, so it gets a deeper backlog;
         // stderr keeps the tight channel that never lets tracing dominate a run.
-        let file_sink = std::env::var("COMPD_FRAME_TRACE_FILE").map(|p| !p.is_empty()).unwrap_or(false);
+        let file_sink = std::env::var("VIUD_FRAME_TRACE_FILE").map(|p| !p.is_empty()).unwrap_or(false);
         let depth = if file_sink { 65_536 } else { 4096 };
         let (sender, receiver) = sync_channel::<Record>(depth);
         std::thread::Builder::new().name("frame-trace".into()).spawn(move || {

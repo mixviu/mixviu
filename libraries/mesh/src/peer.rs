@@ -74,7 +74,7 @@ pub struct MeshConfig {
     /// SPEC 13 §9a D2 admission seed (2-c-1c) — this node's `kind:"d2"` private
     /// seed, used by the bridge prover to sign the admission transcript. NOT in
     /// `mesh.conf.mix`; injected at startup by noded from
-    /// `mixos:etc/noded/d2.seed`. `None` ⇒ the node cannot prove itself
+    /// `mix:etc/noded/d2.seed`. `None` ⇒ the node cannot prove itself
     /// (prover-incapable; the broker logs `unproven:no-proof`).
     #[serde(skip)]
     pub d2_seed: Option<[u8; 32]>,
@@ -92,7 +92,7 @@ impl MeshConfig {
     }
 
     /// Load `mesh.conf.mix` from the default directory
-    /// (`~/.config/mixos/`), or return an empty config. Best-effort: a
+    /// (`~/.config/mix/`), or return an empty config. Best-effort: a
     /// present-but-broken config warns and falls back to empty rather
     /// than silently masking it with a different file.
     pub fn load_default(node_name: &str) -> Self {
@@ -1247,7 +1247,7 @@ mod tests {
     }
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("mixos-mesh-cfg-{tag}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("mix-mesh-cfg-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -1270,7 +1270,7 @@ mod tests {
 
     #[test]
     fn load_missing_path_is_error() {
-        assert!(MeshConfig::load("/nonexistent/mixos/mesh.conf.mix").is_err());
+        assert!(MeshConfig::load("/nonexistent/mix/mesh.conf.mix").is_err());
     }
 
     #[test]

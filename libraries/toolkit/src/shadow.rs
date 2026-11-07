@@ -244,7 +244,7 @@ impl NativeShadow {
             return Ok(());
         };
         let tiles = protocol_tiles(settings);
-        let path = std::env::temp_dir().join(format!("mixos-shadow-{}", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("mix-shadow-{}", uuid::Uuid::new_v4()));
         let mut file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)

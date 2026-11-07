@@ -1,0 +1,34 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$s=require("schedule.mix")
+fn check($condition,$message)
+  if not $condition then raise("SCHEDULE_TEST",$message) end
+end
+$state=$s.schedule(["/a.png","/b.png","/a.png","/c.png"],5,false,0)
+check(len($state.files)==3,"deduplicate in source order")
+check(not $s.due($state,4) and $s.due($state,5),"deadline")
+$proposal=$s.advance($state,7)
+check($s.current($state)=="/a.png" and $s.current($proposal)=="/b.png" and $proposal.due==12,"proposals copy and use completion time")
+$state=$s.skip_failed($state,$proposal,8)
+check($s.current($state)=="/a.png" and $state.due==13,"failed decode holds pixels and defers retry")
+$state=$s.advance($state,13)
+check($s.current($state)=="/c.png","failed image skipped on next attempt")
+$state=$s.advance($state,18)
+check($s.current($state)=="/a.png","sequential wrap")
+$single=$s.schedule(["/a.png","/a.png"],5,true,0)
+check($single.due==nil and not $s.due($single,100),"one unique image has no automatic timer")
+check($s.current($s.advance($single,100))=="/a.png","manual refresh still possible")
+$state=$s.schedule(["/a.png","/b.png","/c.png"],5,true,0)
+$previous=nil
+for $cycle=0 to 99
+  $seen=[]
+  for $step=0 to 2
+    $current=$s.current($state)
+    check($current!=$previous and not contains($seen,$current),"shuffle repeats within cycle or at boundary")
+    push($seen,$current);$previous=$current
+    $state=$s.advance($state,($cycle*3+$step+1)*5)
+  end
+end
+$other=$s.schedule(["/d.png","/e.png"],600,false,0)
+check(not $s.due($other,599) and $s.due($state,1505),"independent deadlines")
+print("backdrop schedules: sequential/shuffle cycles, failed-entry traversal, deduplication, singleton sleep and independent deadlines pass")

@@ -2,10 +2,10 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-service `.conf.mix` I/O.
 //!
-//! Each service owns its own file at `~/.config/mixos/<service>.conf.mix`.
+//! Each service owns its own file at `~/.config/mix/<service>.conf.mix`.
 //! Define a typed `*Settings` struct with `Default + Serialize + Deserialize`,
 //! then call `load_service::<T>("name")` to read it. Missing files are
-//! materialized with defaults so `cat ~/.config/mixos/<name>.conf.mix` is
+//! materialized with defaults so `cat ~/.config/mix/<name>.conf.mix` is
 //! always a self-documenting view of the live configuration.
 //!
 //! `.conf.mix` is the only config format. The legacy `.toml`
@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-/// Configuration directory (resolved via `MIXOS_ETC`).
+/// Configuration directory (resolved via `MIX_ETC`).
 pub fn config_dir() -> PathBuf {
     crate::path(crate::Dir::Etc)
 }
@@ -29,7 +29,7 @@ fn conf_mix_path(dir: &Path, service: &str) -> PathBuf {
     dir.join(format!("{service}.conf.mix"))
 }
 
-/// Load a per-service `.conf.mix` file from `~/.config/mixos/`.
+/// Load a per-service `.conf.mix` file from `~/.config/mix/`.
 ///
 /// Resolution order:
 /// 1. `<service>.conf.mix` — parsed via the strict-data serde bridge.
@@ -53,7 +53,7 @@ where
 /// Directory-explicit core of [`load_service`]. Public so a daemon's
 /// own config tests can drive the full store contract (missing file
 /// materialises defaults; present-but-unparsable is fatal) against a
-/// throwaway dir instead of mutating the `MIXOS_ETC` env var (which
+/// throwaway dir instead of mutating the `MIX_ETC` env var (which
 /// would poison the `OnceLock`-cached path resolver in `paths.rs` for
 /// sibling tests) — same hermeticity discipline as `node.rs`.
 pub fn load_service_in<T>(dir: &Path, service: &str) -> Result<T>
@@ -129,7 +129,7 @@ mod tests {
     }
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("mixos-store-test-{tag}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("mix-store-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d

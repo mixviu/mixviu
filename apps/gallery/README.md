@@ -20,7 +20,7 @@ and headings flow through `SceneView` into `Widgets::widget`; changing that
 layout needs no Rust rebuild. The declarative layout is shared, while widget
 definitions and reducers remain independently authored in Rust and Mix.
 
-Run the CBC-built `viu-gallery` in a MixOS graphical session:
+Run the CBC-built `viu-gallery` in a MixViu graphical session:
 
 ```
 viu-gallery rust
@@ -28,7 +28,7 @@ viu-gallery mix /path/to/apps/gallery/gallery.mix
 ```
 
 The applications register as `gallery-rust` and `gallery-mix` on the existing
-native Bus (`MIXOS_NODED_URL`). There is no application socket or extra broker
+native Bus (`MIX_NODED_URL`). There is no application socket or extra broker
 implementation. Both paths have bounded ingress. The Mix interpreter runs on
 its own worker; Rust applies its own controller, without invoking Mix.
 

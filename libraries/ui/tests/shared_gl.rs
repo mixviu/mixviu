@@ -10,11 +10,11 @@
 //! with one:
 //!
 //! ```text
-//! COMPD_TEST_RENDER_NODE=/dev/dri/renderD128 \
+//! VIUD_TEST_RENDER_NODE=/dev/dri/renderD128 \
 //!     cargo test -p ui --test shared_gl -- --ignored --nocapture
 //! ```
 //!
-//! `COMPD_TEST_OUT=<dir>` also writes the two images as PNG for a look.
+//! `VIUD_TEST_OUT=<dir>` also writes the two images as PNG for a look.
 
 use std::os::fd::OwnedFd;
 
@@ -80,7 +80,7 @@ fn close(actual: [u8; 4], expected: [u8; 4], what: &str) {
 }
 
 fn save(bytes: &[u8], name: &str) {
-    let Some(dir) = std::env::var_os("COMPD_TEST_OUT") else {
+    let Some(dir) = std::env::var_os("VIUD_TEST_OUT") else {
         return;
     };
     let path = std::path::Path::new(&dir).join(name);
@@ -99,7 +99,7 @@ fn save(bytes: &[u8], name: &str) {
 #[ignore = "needs a GPU render node"]
 fn egui_paints_into_the_shared_context_and_smithay_composites_it() {
     let node =
-        std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -260,7 +260,7 @@ impl ui::UiProgram for Fill {
 #[ignore = "needs a GPU render node"]
 fn two_painters_alternate_with_smithay_draws() {
     let node =
-        std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -413,7 +413,7 @@ impl ui::UiProgram for Transient {
 #[ignore = "needs a GPU render node"]
 fn a_texture_dropped_in_its_own_pass_still_draws() {
     let node =
-        std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        std::env::var("VIUD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)

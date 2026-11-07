@@ -1,7 +1,7 @@
 -- Real loader transitions + filesystem; fake native process/ABP endpoints.
 -- No broker, no timers, no Cargo, no native W1 dependency required.
 $l = require("../scripts/lib/scenes.mix")
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-scenes-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-scenes-test.XXXXXXXX"]))
 $log = $tmp .. "/calls"
 $checks = {count:0}
 $host_state = {panels:{}, apply:false, nil_command:nil, refuse_command:nil, unload_error:nil, unload_absent:nil, unload_text:nil, load_error:nil, names:["test-shell"],
@@ -1150,7 +1150,7 @@ try
   $root = $tmp .. "/se-fr5"
   mkdir($root)
   $state_path = $root .. "/state.conf.mix"
-  write_file($state_path, read_file($repo .. "/services/compd/tests/fixtures/scene-editor/state-unreadable.txt"))
+  write_file($state_path, read_file($repo .. "/engines/viud/tests/fixtures/scene-editor/state-unreadable.txt"))
   $bytes = read_file($state_path)
   $x = $l.initial($root, $tpl, "test-shell", "test-scenes", $io)
   $x = $l.rescan($x, false)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! §2.16: the MixOS app domains and overrides. `terminal.*`, `email.*` and
+//! §2.16: the MixViu app domains and overrides. `terminal.*`, `email.*` and
 //! `ced.*` leaves are registry entries whose values their own modules check
 //! (`terminal.rs`, `email.rs`, `content.rs`), unchanged: each domain's
 //! stored leaves are laid onto its default record and the module validates

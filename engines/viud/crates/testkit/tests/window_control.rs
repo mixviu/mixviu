@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Window control on compd's real engine: the
+//! Window control on viud's real engine: the
 //! client's own maximise / minimise requests reach the host's queue, the
 //! minimise LIFO picks the restore rule's candidate, and a destroyed window
 //! takes its maximise record with it. The commands' replies and refusals are
@@ -612,7 +612,7 @@ fn interactive_grab_events_fold_into_one_record() {
 }
 
 /// A corner configuration change moves both revisions, so the edge pass
-/// publishes `props.changed input.corners.*` and `compd.truth` brackets it;
+/// publishes `props.changed input.corners.*` and `viud.truth` brackets it;
 /// an unchanged set moves neither.
 #[test]
 fn a_corner_config_change_moves_both_revisions() {

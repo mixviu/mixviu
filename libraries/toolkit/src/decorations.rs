@@ -41,7 +41,7 @@ pub fn initialise(display: &impl HasDisplayHandle) {
         .display_handle()
         .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
     let environment =
-        std::env::var_os("MIXOS_DECORATIONS").map(|value| value.to_string_lossy().into_owned());
+        std::env::var_os("MIX_DECORATIONS").map(|value| value.to_string_lossy().into_owned());
     design::decorations::install(Arc::new(Resolver::new(
         move || detect(wayland),
         move || environment.clone(),

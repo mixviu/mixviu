@@ -1,0 +1,45 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$mesh=require("mesh.mix");$counter=require("counter.mix");$actions=require("actions.mix")
+fn count_cell($v) return {text:to_string($v),mono:true} end
+fn project($s)
+  $now=$mesh.now_ms();$m=$s.mesh;$snap=$mesh.snapshot($m,$now);$nodes=[];$links={}
+  for $n in $m.nodes
+    push($nodes,{id:$n.name,label:$n.name,detail:$n.wg_ip,primary:$n.self,failed:$mesh.ping_failed($m,$n.name),accessible:$n.name..(if $n.self then " · this node" else " · mesh peer" end),out_label:"Filter Traffic with "..$n.name.." · Out",in_label:"Filter Traffic with "..$n.name.." · In"})
+  end
+  for $l in $snap.links $links[$l.b]={out:$l.out_5m,in:$l.in_5m} end
+  $events=[]
+  for $e in $m.recent
+    push($events,{seq:$e.seq,t:$e.t,size:$e.size,kind:if $e.dir=="local" then "ripple" else "travel" end,peer:if $e.dir=="mesh_out" then $e.to else $e.from end,out:$e.dir=="mesh_out",hue:if contains(["rejected","dropped"],$e.outcome) then "danger" elif $e.dir=="mesh_out" then "accent" elif $e.dir=="mesh_in" then "warning" else "dim" end,delay_s:if $e.type=="response" and $e.dir!="local" then 1.1 else 0 end,duration_s:if $e.dir=="local" then 0.9 else 1.1 end})
+  end
+  $inspected=$s.mesh_inspected ?? $m.self_name
+  if not any($m.nodes,fn($n)=$n.name==$inspected) then $inspected=$m.self_name end
+  $self=$inspected==$m.self_name;$node_links=filter($snap.links,fn($l)=$l.b==$inspected);$link=if len($node_links)>0 then $node_links[0] else nil end
+  $out=[0,0,0];$input=[0,0,0]
+  for $l in $snap.links
+    if $self or $l.b==$inspected then
+      for $i=0 to 2
+        $out[$i]=$counter.add($out[$i],[$l.out_msgs,$l.out_1m,$l.out_5m][$i]);$input[$i]=$counter.add($input[$i],[$l.in_msgs,$l.in_1m,$l.in_5m][$i])
+      end
+    end
+  end
+  $grid=[["Messages","Out","In"]]
+  for $i=0 to 2 push($grid,[["Since start","Last minute","Last 5 minutes"][$i],count_cell($out[$i]),count_cell($input[$i])]) end
+  $stats=if $self then $snap.local else $link end;$services=[];$commands=[]
+  if $stats!=nil then
+    for $pair in [["top_services","Top services"],["top_commands","Top commands"]]
+      $rows=[{id:"label",kind:"text",text:$pair[1],strong:true}]
+      for $entry in $stats[$pair[0]] push($rows,{id:$entry.name,kind:"text",text:$entry.name.." × "..to_string($entry.count)}) end
+      if $pair[0]=="top_services" then $services=$rows else $commands=$rows end
+    end
+  end
+  $ping=$snap.probe.results[$inspected]
+  $ping_text=if $self then "" elif $ping==nil then "This peer has not been pinged." elif $ping.ok then "Last ping: "..to_string($ping.ms ?? 0).." ms · "..to_string(floor($ping.age_ms/1000)).." seconds ago" else "Last ping: no reply · "..to_string(floor($ping.age_ms/1000)).." seconds ago" end
+  $unplaced=[]
+  for $l in $snap.links
+    if not any($m.nodes,fn($n)=$n.name==$l.b) then push($unplaced,{id:$l.b,kind:"text",text:(if $l.b=="?" then "Unnamed mesh node: " else $l.b.." · unplaced mesh peer: " end)..to_string($l.out_msgs).." out · "..to_string($l.in_msgs).." in since start."..(if $l.b=="?" then " These events cannot be placed on the map." else "" end)}) end
+  end
+  $history=$mesh.history($m,$inspected,$now)
+  $age=if $m.last_observe_ms==nil then "No observe events received yet" else "Last observe event "..to_string(floor(max(0,$now-$m.last_observe_ms)/1000)).." seconds ago" end
+  $all=$actions.registry($s);$ping_enabled=filter($all,fn($a)=$a.id=="mesh.ping")[0].enabled;$observe_enabled=filter($all,fn($a)=$a.id=="bus.observe")[0].enabled
+  return {mesh_observation:{id:"mesh-observation",kind:"label-run",label:"Observation",initial:[{text:if $m.observing then "Observation subscribed" else "Observation stopped" end,hue:if $m.observing then "accent" else "dim" end},{text:$age}]},mesh_legend:{id:"mesh-legend",kind:"label-run",label:"Legend",initial:[{text:"→ Outgoing",hue:"accent"},{text:"← Incoming",hue:"warning"},{text:"◯ Local",weak:true},{text:"Rejected, dropped or failed ping",hue:"danger"}]},mesh_empty:len($nodes)==0,mesh_observing:$m.observing,mesh_age:$age,mesh_loss:if $counter.compare($m.ring_dropped,0)>0 then to_string($m.ring_dropped).." observe events lost to broker ring overflow" else "" end,mesh_observe_error:if $m.observe_error!=nil then "Observation unavailable: "..$m.observe_error else "" end,mesh_nodes_error:if $m.nodes_error!=nil then "Could not refresh mesh nodes: "..$m.nodes_error else "" end,mesh_start_visible:not $m.observing and $m.observe_ticket==nil,mesh_ping:{id:"mesh-ping",kind:"button",label:"Ping peers",initial:"",properties:{text:"Ping peers",style:"secondary",enabled:$ping_enabled}},mesh_start:{id:"mesh-start",kind:"button",label:"Start observation",initial:"",properties:{text:"Start observation",style:"secondary",enabled:$observe_enabled}},mesh_canvas:{id:"mesh-canvas",kind:"network-map",label:"Mesh",initial:{epoch_ms:$m.started_ms,now_ms:$now,nodes:$nodes,events:$events,links:$links,inspected:$inspected}},mesh_inspector_title:$inspected..(if $self then " · this node" else " · mesh peer" end),mesh_counts:{id:"mesh-counts",kind:"cell-grid",label:"Messages",initial:$grid,properties:{striped:true}},mesh_local:$self,mesh_local_text:"Local: "..to_string($snap.local.msgs).." since start · "..to_string($snap.local.msgs_1m).." in 1 minute · "..to_string($snap.local.msgs_5m).." in 5 minutes",mesh_history:{id:"mesh-history",kind:"history-lines",label:"Messages/s · last 5 minutes · out solid, in dashed",initial:{samples:300,interval_s:1,height_lines:4,max:$history.max,readout:"{series}: {value} messages/s · {age} s ago",series:[{name:"Out",hue:"accent",values:$history.out},{name:"In",hue:"warning",values:$history.input}]}},mesh_services:{id:"mesh-services",kind:"block-list",label:"Top services",initial:$services,properties:{scroll:false}},mesh_commands:{id:"mesh-commands",kind:"block-list",label:"Top commands",initial:$commands,properties:{scroll:false}},mesh_has_stats:$stats!=nil,mesh_ping_text:$ping_text,mesh_unplaced:{id:"mesh-unplaced",kind:"block-list",label:"Unplaced peers",initial:$unplaced,properties:{scroll:false}}}
+end

@@ -1,4 +1,4 @@
-//! The user-key layer on compd's real seat keyboard: xkb, the layer
+//! The user-key layer on viud's real seat keyboard: xkb, the layer
 //! (`world::comp::bindings::user_key`, the call the seat's key path makes),
 //! the focused client's `wl_keyboard`, the keymap file loader, and the
 //! workspace model a `comp.workspace.switch` binding drives. The layer's
@@ -33,7 +33,7 @@ const WORKSPACE_KEYMAP: &str = r#"{"version":1,"physical":[
 
 /// A fresh directory for one test's keymap file.
 fn keymap_file(test: &str, text: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("compd-user-keys-{}-{test}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("viud-user-keys-{}-{test}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("keymap.json");

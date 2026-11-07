@@ -8,7 +8,7 @@ use std::io::{self, Seek, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use zeroize::Zeroizing;
 
-pub const MARKER: &str = "MIXOS_SESSION_FD";
+pub const MARKER: &str = "MIX_SESSION_FD";
 
 fn inherited_fd(value: &str) -> Option<RawFd> {
     value.parse::<RawFd>().ok().filter(|fd| *fd >= 3)
@@ -97,7 +97,7 @@ impl LaunchFd {
         // SAFETY: static NUL-terminated name, supported Linux flags.
         let raw = unsafe {
             libc::memfd_create(
-                c"mixos-session".as_ptr(),
+                c"mix-session".as_ptr(),
                 libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
             )
         };
@@ -214,7 +214,7 @@ mod tests {
     /// Executed as a fresh process by the inheritance test, never as a shell.
     #[test]
     fn fd_child_reports_open_descriptors() {
-        let Ok(expected) = std::env::var("MIXOS_FD_TEST_COUNT") else {
+        let Ok(expected) = std::env::var("MIX_TEST_FD_COUNT") else {
             return;
         };
         let fds: Vec<i32> = std::fs::read_dir("/proc/self/fd")
@@ -224,7 +224,7 @@ mod tests {
                 let target = std::fs::read_link(entry.path()).ok()?;
                 target
                     .to_string_lossy()
-                    .contains("memfd:mixos-session")
+                    .contains("memfd:mix-session")
                     .then(|| entry.file_name().to_str().unwrap().parse().unwrap())
             })
             .collect();
@@ -251,7 +251,7 @@ mod tests {
                     "session_fd::tests::fd_child_reports_open_descriptors",
                     "--nocapture",
                 ])
-                .env("MIXOS_FD_TEST_COUNT", "0")
+                .env("MIX_TEST_FD_COUNT", "0")
                 .output()
                 .unwrap();
             assert!(
@@ -267,7 +267,7 @@ mod tests {
     fn helper(fd: Option<&LaunchFd>) -> String {
         let executable = std::env::current_exe().unwrap();
         let mut env = vec![(
-            "MIXOS_FD_TEST_COUNT".into(),
+            "MIX_TEST_FD_COUNT".into(),
             if fd.is_some() { "1" } else { "0" }.into(),
         )];
         if let Some(fd) = fd {

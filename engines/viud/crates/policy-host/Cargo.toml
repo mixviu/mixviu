@@ -1,6 +1,6 @@
 [package]
 name = "policy-host"
-description = "compd's comp policy host: projects the engine into the comp.* props tree, executes policy effects and detects observation edges"
+description = "viud's comp policy host: projects the engine into the comp.* props tree, executes policy effects and detects observation edges"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,8 +12,8 @@ repository.workspace = true
 # `warnings = "allow"`.
 publish = false
 
-[package.metadata.mixos]
-component = "compd"
+[package.metadata.mixviu]
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"
@@ -23,7 +23,7 @@ wlcs = []
 
 [dependencies]
 ui-surface.workspace = true
-# The MixOS etc dir rule.
+# The MixViu etc dir rule.
 config = { workspace = true }
 comp-model.workspace = true
 motion.workspace = true

@@ -1,10 +1,11 @@
 # viud
 
-The MixViu Wayland compositor: the MixOS compd compositor without the
-in-process egui widget toolkit. Furniture and applications run out of process
-in `viu`. `cargo tree --locked -p viud -e normal` must show no `egui`,
-`egui-wgpu`, `egui-winit` or `toolkit`.
+The MixViu Wayland compositor: the gold MixOS compositor (compd) without the in-process
+egui widget toolkit. Furniture and applications run out of process in `viu`.
+`cargo tree --locked -p viud -e normal` must show no `egui`, `egui-wgpu`,
+`egui-winit` or `toolkit`.
 
-Its private crates live in `crates/`. Bus service names, configuration paths
-and environment variables keep their compd names for now (`comp`,
-`~/.config/compd`, `COMPD_*`); renaming them is a runtime change of its own.
+Its private crates live in `crates/`, its units in `units/` (`viud@`,
+`viud-headless@`). Configuration lives in `~/.config/mix/viud`, environment
+variables are `VIUD_*` (and `MIX_VIUD_CONFIG`). The Bus service is still
+`comp` with its `comp.*` commands: that is the protocol name.

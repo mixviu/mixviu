@@ -5,10 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "compd render-node backend with a virtual output and no seat"
+description = "viud render-node backend with a virtual output and no seat"
 
-[package.metadata.mixos]
-component = "compd"
+[package.metadata.mixviu]
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

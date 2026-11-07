@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! testkit: compd's headless test harness.
+//! testkit: viud's headless test harness.
 //!
-//! Runs compd's real protocol engine with no GPU, no backend and no socket:
+//! Runs viud's real protocol engine with no GPU, no backend and no socket:
 //!
-//! - **Real:** `dispatcher::Dispatch` (every smithay handler compd ships),
+//! - **Real:** `dispatcher::Dispatch` (every smithay handler viud ships),
 //!   `Wire::drain_protocol` (the outbox drain the event loop runs once per
 //!   iteration), and the comp registry, `world::comp::CompState`, fed by
 //!   the same `WireTrait::surface_event` calls the `Orchestrator` makes.

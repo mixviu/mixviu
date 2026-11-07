@@ -114,12 +114,12 @@ on the host, the **same binary** becomes mesh-viable on next invocation — no
 reinstall, no recompile, no script edits. A runtime lazy-probe decides
 bare-vs-mesh at execution time.
 
-MixOS locations use `mixos_path(root[, rel[, opts]])`, backed by the shared
+MixViu locations use `mix_path(root[, rel[, opts]])`, backed by the shared
 [paths resolver](../paths/README.md). For example,
-`mix -c 'print(mixos_path("prefix"))'` prints the current installation prefix.
+`mix -c 'print(mix_path("prefix"))'` prints the current installation prefix.
 The roots are `prefix`, `share`, `etc`, `var`, `run`, `cache`. Defaults follow
 the process uid. `{tier: "system"}` or `{tier: "user"}` selects a tier
-explicitly, for example `mixos_path("etc", "node.conf.mix", {tier: "system"})`.
+explicitly, for example `mix_path("etc", "node.conf.mix", {tier: "system"})`.
 
 Before installation, a staged binary can print target defaults independently
 of its own location: `mix layout defaults --tier system --json`, with an
@@ -238,7 +238,7 @@ with `mix -c '<code>'` and trust what it prints. The full topic list lives in
 
 ## Related projects
 
-- **[bus](https://github.com/markc/mixos)** — the MixOS Agent Bus (the Bus) library family Mix consumes for `send` / `call` / topic subscription.
+- **[bus](https://github.com/markc/mixos)** — the MixViu Agent Bus (the Bus) library family Mix consumes for `send` / `call` / topic subscription.
 - **[cos](https://github.com/markc/mixos)** — the mixos daemon family: ships `noded` (the broker `--serve` connects to) plus mail, web, DNS, the knowledge indexer, and the display compositor.
 - **[Datastar](https://data-star.dev)** — the hypermedia framework the `ds_*` builtins frame SSE events for (server-side reactive UI from Mix).
 - **[ARexx background](https://en.wikipedia.org/wiki/ARexx)** — the message-port scripting model Mix descends from.

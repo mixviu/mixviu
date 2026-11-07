@@ -26,7 +26,7 @@ if [ "$host" = "down" ]; then
   echo "ssh: connect to host down port 22: Connection refused" >&2
   exit 255
 fi
-FAKE_HOST=$host exec "$MIX_UNDER_TEST" -
+FAKE_HOST=$host exec "$MIX_TEST_ACTIVE" -
 "#;
 
 struct Bed {
@@ -56,7 +56,7 @@ impl Bed {
             .arg("-c")
             .arg(program)
             .env("PATH", path)
-            .env("MIX_UNDER_TEST", env!("CARGO_BIN_EXE_mix"))
+            .env("MIX_TEST_ACTIVE", env!("CARGO_BIN_EXE_mix"))
             .output()
             .expect("spawn mix");
         (

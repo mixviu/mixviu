@@ -180,11 +180,11 @@ const BASE_NAMES: &[&str] = &[
     "PATH",
     "LANG",
     "MIXOS",
-    "MIXOS_SRC",
-    "MIXOS_BIN",
-    "MIXOS_ETC",
-    "MIXOS_NODE_CONFIG",
-    "MIXOS_BROKER_ACCOUNT",
+    "MIX_SRC",
+    "MIX_BIN",
+    "MIX_ETC",
+    "MIX_NODE_CONFIG",
+    "MIX_BROKER_ACCOUNT",
 ];
 
 /// Called once from `main`, before Bus dispatch starts and therefore before any
@@ -780,14 +780,14 @@ fn reap_registered(pid: libc::pid_t) {
 /// THIS one, normally: the interpreter a caller is talking to should be the one
 /// that runs its task. Deriving a path from the install layout instead asks
 /// where a mix OUGHT to be, which fails for any shell not running from
-/// `$MIXOS/bin` — a dev build, a test harness, a relocated tree — with
+/// `$MIX_ROOT/bin` — a dev build, a test harness, a relocated tree — with
 /// NOT_FOUND for a binary that is demonstrably running. Where the derived path
 /// happens to exist it is worse than a refusal: the task is evaluated by a
 /// DIFFERENT build than the shell, silently.
 ///
 /// But `current_exe` reads `/proc/self/exe`, which names the ORIGINAL inode and
 /// is suffixed " (deleted)" once that inode is unlinked. A mesh deploy replaces
-/// `mixos:prefix/bin/mix` under long-lived shells, and BOTH shapes of replace do
+/// `mix:prefix/bin/mix` under long-lived shells, and BOTH shapes of replace do
 /// unlink it — measured, not assumed: `rm`-then-write and an atomic
 /// rename-over each produce `…/mix (deleted)`, with the on-disk inode differing
 /// from the running one. Re-exec'ing that path would fail, or worse resolve to
@@ -804,7 +804,7 @@ fn interpreter() -> std::path::PathBuf {
 /// image, and a fixture cannot ask `current_exe` for a different answer.
 fn interpreter_from(exe: std::io::Result<std::path::PathBuf>) -> std::path::PathBuf {
     use std::os::unix::ffi::OsStrExt;
-    let installed = || crate::paths::mixos_path(crate::paths::Dir::Bin).join("mix");
+    let installed = || crate::paths::mix_path(crate::paths::Dir::Bin).join("mix");
     let Ok(path) = exe else {
         eprintln!("mix: cannot read this process's own path; a source task will use the install");
         return installed();
@@ -814,7 +814,7 @@ fn interpreter_from(exe: std::io::Result<std::path::PathBuf>) -> std::path::Path
         // deploy did — so stripping the marker names the new binary, whatever
         // shape the deploy took. Deriving an install path instead would be
         // wrong twice over: with no checkout above it, the resolver answers
-        // `~/.local/bin` (or `/usr/local/bin` as root), not `mixos:prefix/bin`,
+        // `~/.local/bin` (or `/usr/local/bin` as root), not `mix:prefix/bin`,
         // so on a canonical fleet host it names a file that does not exist —
         // and on a developer's host it names their dev build, resurrecting the
         // silently-wrong-interpreter hazard this whole function exists to kill.
@@ -1615,7 +1615,7 @@ mod tests {
         // no checkout above the binary the resolver answers ~/.local/bin or
         // /usr/local/bin, so on a canonical fleet host it names a file that is
         // not there, and on a developer's host it names their dev build.
-        let derived = crate::paths::mixos_path(crate::paths::Dir::Bin).join("mix");
+        let derived = crate::paths::mix_path(crate::paths::Dir::Bin).join("mix");
         assert_ne!(
             interpreter_from(Ok(std::path::PathBuf::from(
                 "/opt/example-toolkit/bin/mix (deleted)"

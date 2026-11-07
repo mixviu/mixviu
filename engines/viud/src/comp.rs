@@ -2,9 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The native `comp` Bus service.
 //!
-//! comp-service owns the transport: a worker thread ("compd-port") with its own
+//! comp-service owns the transport: a worker thread ("viud-port") with its own
 //! current-thread tokio runtime and the supervised noded connection. This
-//! module wires its engine half into compd's calloop loop:
+//! module wires its engine half into viud's calloop loop:
 //!
 //! - the comp-service waker is a calloop ping; its source only marks work pending,
 //!   so the loop wakes for Bus traffic and never polls for it;
@@ -15,7 +15,7 @@
 //!
 //! Answered: `comp.ping`, the reads (`comp.info`, `comp.props.*`,
 //! `comp.windows.list`) from the projection, `comp.window.wait`,
-//! `comp.props.watch`, `compd.truth`, and the workspace controls
+//! `comp.props.watch`, `viud.truth`, and the workspace controls
 //! (`comp.workspace.switch`, `comp.window.send_to_workspace`, the
 //! `workspaces.*` / `windows.s<id>.workspace` sets). Every other control command
 //! answers `busy` until it is implemented (an honest refusal, never a fake
@@ -88,7 +88,7 @@ use crate::cli::Backend;
 
 /// The renderer `info.engine` reports. Both backend contracts are GLES
 /// (nested `WinitContract::id`, native `NativeContract::id`); Vulkan is
-/// not in compd's build.
+/// not in viud's build.
 const RENDERER: RendererId = RendererId::Gles;
 
 /// Only a session backend loses agent authority on pause; every backend
@@ -344,7 +344,7 @@ impl Bus {
         handle: &LoopHandle<'static, Loop>,
     ) -> Result<Self, String> {
         let session = session::Session::new(
-            std::env::var("MIXOS_VT").ok().as_deref(),
+            std::env::var("MIX_VT").ok().as_deref(),
             session::unix_millis(),
         );
         let (ping, source) = make_ping().map_err(|error| format!("Bus wake source: {error}"))?;
@@ -1124,7 +1124,7 @@ impl CompEngine for Engine<'_> {
         self.pointer_lease.renew(Instant::now());
     }
 
-    // compd.truth: compd's own view, for the Bus-truth comparator.
+    // viud.truth: viud's own view, for the Bus-truth comparator.
     fn truth(&mut self) -> Value {
         policy_host::truth(self.lp)
     }

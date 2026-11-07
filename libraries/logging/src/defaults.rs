@@ -115,7 +115,7 @@ impl LogDefaults {
     ///
     /// The standing directive (2026-06-04) is that every daemon logs
     /// to journald and leans on systemd, rather than maintaining its
-    /// own rolling log file under `~/.local/log/mixos/`. So `journald`
+    /// own rolling log file under `~/.local/log/mix/`. So `journald`
     /// is `true` and `log_file` is `None` out of the box; an operator
     /// who still wants a file sink opts in via `with_log_file(...)`.
     /// With no `log_file` directory to derive a stats path from,

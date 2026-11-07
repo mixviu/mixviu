@@ -12,7 +12,7 @@
 //! Decided 2026-10-03: only the Top and Overlay strata can latch, as the
 //! wlr-layer-shell spec guarantees exclusive keyboard only there. Latching
 //! any stratum would let a Bottom or Background client asking for Exclusive
-//! hold the keyboard forever; compd refuses to seize the keyboard for it. A
+//! hold the keyboard forever; viud refuses to seize the keyboard for it. A
 //! concealed layer (Quoin's holder enforcement) never latches. A session
 //! lock takes precedence: no latch while it is in force.
 

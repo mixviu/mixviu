@@ -40,7 +40,7 @@ impl VideoEncoder {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let temp = std::env::temp_dir().join(format!("compd-capture-{nanos}.mp4"));
+        let temp = std::env::temp_dir().join(format!("viud-capture-{nanos}.mp4"));
 
         let mut cmd = command("ffmpeg");
         cmd.args([

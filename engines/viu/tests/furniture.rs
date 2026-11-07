@@ -66,7 +66,7 @@ fn spawn(root: &Path, binary: &Path, old: bool, url: &str, parent: Option<&Path>
         json!({"scene_host":old}).to_string(),
     )
     .unwrap();
-    let log = root.join("compd.log");
+    let log = root.join("viud.log");
     let file = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
     if let Some(parent) = parent {
@@ -94,15 +94,15 @@ fn spawn(root: &Path, binary: &Path, old: bool, url: &str, parent: Option<&Path>
         .env("XDG_DATA_HOME", root.join("data"))
         .env("XDG_CACHE_HOME", root.join("cache"))
         .env("HOME", root)
-        .env("MIXOS_ETC", root.join("etc"))
-        .env("MIXOS_RUN", root.join("run"))
-        .env("MIXOS_VAR", root.join("var"))
-        .env("MIXOS_NODED_URL", url)
-        .env("COMPD_FRAME_TRACE", "1")
-        .env("COMPD_FRAME_TRACE_LIMIT", "0")
-        .env("COMPD_FRAME_TRACE_FILE", root.join("frames.log"))
+        .env("MIX_ETC", root.join("etc"))
+        .env("MIX_RUN", root.join("run"))
+        .env("MIX_VAR", root.join("var"))
+        .env("MIX_NODED_URL", url)
+        .env("VIUD_FRAME_TRACE", "1")
+        .env("VIUD_FRAME_TRACE_LIMIT", "0")
+        .env("VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
         .env_remove("NOTIFY_SOCKET")
-        .env_remove("MIXOS_VT")
+        .env_remove("MIX_VT")
         .stdout(file.try_clone().unwrap())
         .stderr(file)
         .spawn()
@@ -136,7 +136,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
         std::env::var(if old {
             "COMPD_INPROC_TEST_BINARY"
         } else {
-            "COMPD_NATIVE_TEST_BINARY"
+            "VIUD_NATIVE_TEST_BINARY"
         })
         .expect("build gate supplies exact binaries"),
     );
@@ -164,11 +164,11 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             .env("XDG_CONFIG_HOME", root.path().join("config"))
             .env("XDG_STATE_HOME", root.path().join("state"))
             .env("XDG_DATA_HOME", root.path().join("data"))
-            .env("MIXOS_NODED_URL", &broker.url)
+            .env("MIX_NODED_URL", &broker.url)
             .env("VIU_COMP_SERVICE", "comp-headless")
             .env_remove("DISPLAY")
             .env_remove("NOTIFY_SOCKET")
-            .env_remove("MIXOS_VT")
+            .env_remove("MIX_VT")
             .stdout(file.try_clone().unwrap())
             .stderr(file)
             .spawn()
@@ -457,7 +457,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
     client.close().await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "CBC GPU process gate; requires exact native/default compd binaries"]
+#[ignore = "CBC GPU process gate; requires exact native/default viud binaries"]
 async fn native_client_maps_reserves_pings_receives_corners_and_measures_idle_cpu() {
     exercise(false, None).await;
     exercise(true, None).await;
@@ -466,7 +466,7 @@ async fn native_client_maps_reserves_pings_receives_corners_and_measures_idle_cp
     // parent, preserving the existing headless seat refusal contract.
     let broker = test_broker::Broker::start();
     let root = tempfile::tempdir().unwrap();
-    let binary = PathBuf::from(std::env::var("COMPD_NATIVE_TEST_BINARY").unwrap());
+    let binary = PathBuf::from(std::env::var("VIUD_NATIVE_TEST_BINARY").unwrap());
     let _parent = spawn(root.path(), &binary, false, &broker.url, None);
     let until = Instant::now() + Duration::from_secs(15);
     while !root.path().join("wayland-furniture-test").exists() {

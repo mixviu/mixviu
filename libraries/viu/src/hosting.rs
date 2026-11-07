@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Existing compd titlebar wire contract, derived from application-owned
+//! Existing viud titlebar wire contract, derived from application-owned
 //! command-bar data. No file-manager actions or availability policy live here.
 use serde_json::{Value, json};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};

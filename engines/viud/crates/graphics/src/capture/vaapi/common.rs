@@ -32,8 +32,8 @@ pub(crate) fn averr(ret: c_int) -> String {
 
 // C accessor shim (helpers.c) for AVFormatContext fields bindgen renders opaque.
 unsafe extern "C" {
-    pub(crate) fn compd_avfmt_set_pb(ctx: *mut ffi::AVFormatContext, pb: *mut ffi::AVIOContext);
-    pub(crate) fn compd_avfmt_get_pb(ctx: *mut ffi::AVFormatContext) -> *mut ffi::AVIOContext;
+    pub(crate) fn viud_avfmt_set_pb(ctx: *mut ffi::AVFormatContext, pb: *mut ffi::AVIOContext);
+    pub(crate) fn viud_avfmt_get_pb(ctx: *mut ffi::AVFormatContext) -> *mut ffi::AVIOContext;
 }
 
 /// mp4 output: one video stream fed from an already-opened codec context.
@@ -81,7 +81,7 @@ impl Muxer {
         if r < 0 {
             return Err(format!("avio_open: {}", averr(r)));
         }
-        compd_avfmt_set_pb(m.fmt_ctx, pb);
+        viud_avfmt_set_pb(m.fmt_ctx, pb);
         let r = ffi::avformat_write_header(m.fmt_ctx, ptr::null_mut());
         if r < 0 {
             return Err(format!("avformat_write_header: {}", averr(r)));
@@ -141,10 +141,10 @@ impl Drop for Muxer {
                 ffi::av_packet_free(&mut self.packet);
             }
             if !self.fmt_ctx.is_null() {
-                let mut pb = compd_avfmt_get_pb(self.fmt_ctx);
+                let mut pb = viud_avfmt_get_pb(self.fmt_ctx);
                 if !pb.is_null() {
                     ffi::avio_closep(&mut pb);
-                    compd_avfmt_set_pb(self.fmt_ctx, ptr::null_mut());
+                    viud_avfmt_set_pb(self.fmt_ctx, ptr::null_mut());
                 }
                 ffi::avformat_free_context(self.fmt_ctx);
                 self.fmt_ctx = ptr::null_mut();

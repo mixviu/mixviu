@@ -1,6 +1,6 @@
 [package]
 name = "ledger"
-description = "Frame, presentation and redraw-reason ledgers for compd (engine-neutral)"
+description = "Frame, presentation and redraw-reason ledgers for viud (engine-neutral)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,8 +8,8 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
-component = "compd"
+[package.metadata.mixviu]
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

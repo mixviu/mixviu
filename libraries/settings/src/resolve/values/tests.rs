@@ -622,7 +622,7 @@ fn seam_keys_change_the_effective_look_and_its_digest() {
     }
 }
 
-/// `settings.palette` reports the fonts MixOS draws: the bundled families
+/// `settings.palette` reports the fonts MixViu draws: the bundled families
 /// at the design's sizes by default, and the session's choices over them.
 #[test]
 fn the_palette_reports_the_fonts() {

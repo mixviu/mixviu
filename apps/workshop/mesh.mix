@@ -1,0 +1,158 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Bounded map tally adapted from pinned gold inspector/mesh.rs.
+$c=require("counter.mix")
+fn now_ms() return floor(time()*1000) end
+fn text($v) return if type($v)=="string" then substr($v,0,256) else "" end end
+fn initial($name,$observer,$now)
+  return {self_name:text($name),observer:text($observer),started_ms:$now,last_observe_ms:nil,observing:false,observe_error:nil,nodes_error:nil,nodes:[],links:{},local:{msgs:0,bytes:0,rejected:0,dropped:0,last_ms:nil,services:{},commands:{}},recent:[],pings:{},probe_at_ms:nil,seen:0,ring_dropped:0,recent_capped:0,seq:0,buckets:{},pending:{},reads:{},ping_queue:[],ping_ticket:nil,nodes_ticket:nil,observe_ticket:nil,resume_observe:false,topology_needed:false,revision:0}
+end
+fn iso_ms($ms)
+  if $ms==nil then return nil end
+  return date_format(floor($ms/1000),"%Y-%m-%dT%H:%M:%S",{utc:true}).."."..lpad(to_string(floor($ms%1000)),3,"0").."Z"
+end
+fn ts_ms($iso)
+  if type($iso)!="string" or not re_match($iso,"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$") then return nil end
+  try
+    $fraction=if contains($iso,".") then to_number(substr(after($iso,".").."000",0,3)) else 0 end
+    return date_parse($iso)*1000+$fraction
+  catch $why return nil end
+end
+fn node_of($address)
+  if type($address)!="string" or not ends_with($address,".bus") then return nil end
+  $parts=split(strip_suffix($address,".bus"),".");$node=$parts[len($parts)-1]
+  return if $node!="" then $node else nil end
+end
+fn service_of($address)
+  if type($address)!="string" or $address=="" then return "anonymous" end
+  $parts=split($address,".")
+  return if len($parts)==2 and $parts[1]=="bus" then "noded" else $parts[0] end
+end
+fn bump($counts,$key)
+  $key=text($key)
+  if not has_key($counts,$key) and len($counts)>=40 then $key="(other)" end
+  $counts[$key]=$c.add($counts[$key] ?? 0,1);return $counts
+end
+fn top($counts,$n)
+  $rows=map(sort(keys($counts)),fn($key)={name:$key,count:$counts[$key]})
+  if any(values($counts),fn($v)=type($v)=="string") then return take(jq($rows,"sort_by([-(.count|tonumber),.name])"),$n) end
+  return take(sort_by($rows,fn($r)=-$r.count),$n)
+end
+fn set_nodes($m,$info,$peers)
+  $info=if type($info)=="map" then $info else {} end;$peers=if type($peers)=="map" then $peers else {} end
+  $m.revision=$m.revision+1;$m.self_name=text($info.name ?? $info.node ?? $m.self_name)
+  $authority=$peers.authority ?? {};$entries=$authority.routing_view ?? $peers.peers ?? [];$nodes={}
+  for $peer in take($entries,4096)
+    if type($peer)!="map" or type($peer.name)!="string" then continue end
+    if $peer.name==$m.self_name or ($peer.class!=nil and $peer.class!="active-bus") then continue end
+    if len($nodes)>=64 then break end
+    $name=text($peer.name);$nodes[$name]={name:$name,wg_ip:if type($peer.wg_ip ?? $peer.mesh_ip)=="string" then text($peer.wg_ip ?? $peer.mesh_ip) else nil end,self:false}
+  end
+  $m.nodes=[{name:$m.self_name,wg_ip:if type($info.wg_ip ?? $peers.wg_ip)=="string" then text($info.wg_ip ?? $peers.wg_ip) else nil end,self:true}]
+  for $key in sort(keys($nodes)) $m.nodes=push($m.nodes,$nodes[$key]) end
+  for $name in keys($m.pings) if not any($m.nodes,fn($n)=not $n.self and $n.name==$name) then $m.pings=delete($m.pings,$name) end end
+  $m.nodes_error=nil;return $m
+end
+fn set_observing($m,$on,$error)
+  $m.revision=$m.revision+1;$m.observing=$on;$m.observe_error=if $on then nil elif $error!=nil then text($error) else nil end
+  return $m
+end
+fn set_probe($m,$results,$now)
+  $m.revision=$m.revision+1;$m.probe_at_ms=$now
+  for $node in $m.nodes
+    $r=$results[$node.name]
+    if $node.self or type($r)!="map" then continue end
+    $ping={ok:$r.ok==true,rc:if type($r.rc)=="number" then $r.rc else nil end,ms:if type($r.ms)=="number" then $r.ms else nil end,at_ms:$r.at ?? $now}
+    $old=$m.pings[$node.name]
+    if $old==nil or $old.at_ms<=$ping.at_ms then $m.pings[$node.name]=$ping end
+  end
+  return $m
+end
+fn ping_failed($m,$node)
+  $p=$m.pings[$node];$link=$m.links[$node] ?? {}
+  return $p!=nil and not $p.ok and ($link.last_in_ms==nil or $link.last_in_ms<=$p.at_ms)
+end
+fn new_link() return {out_msgs:0,out_bytes:0,in_msgs:0,in_bytes:0,rejected:0,dropped:0,last_ms:nil,last_in_ms:nil,commands:{},services:{}} end
+fn bounded($m)
+  if len($m.recent)>2000 then $m.recent_capped=$m.recent_capped+len($m.recent)-2000;$m.recent=slice($m.recent,len($m.recent)-2000) end
+  while len($m.buckets)>301
+    $keys=sort_by(keys($m.buckets),fn($k)=to_number($k));$m.buckets=delete($m.buckets,$keys[0])
+  end
+  while len($m.pending)>2000
+    $keys=sort_by(sort(keys($m.pending)),fn($k)=$m.pending[$k].t);$m.pending=delete($m.pending,$keys[0])
+  end
+  return $m
+end
+fn prune($m,$now)
+  $m.revision=$m.revision+1;$m.recent=filter($m.recent,fn($r)=max(0,$now-$r.t)<=15000)
+  for $second in keys($m.buckets)
+    if to_number($second)<max(0,floor($now/1000)-300) or to_number($second)>floor($now/1000)+5 then $m.buckets=delete($m.buckets,$second) end
+  end
+  for $key in keys($m.pending) if max(0,$now-$m.pending[$key].t)>60000 then $m.pending=delete($m.pending,$key) end end
+  return bounded($m)
+end
+fn add_event($m,$e,$now)
+  $m=prune($m,$now);$m.revision=$m.revision+1;$m.last_observe_ms=$now;$m.seen=$c.add($m.seen,1);$m.ring_dropped=$c.add($m.ring_dropped,$e.dropped_count ?? 0)
+  if $e.from==$m.observer or $e.to==$m.observer then return $m end
+  $dir=$e.direction ?? ""
+  if not contains(["local","mesh_out","mesh_in"],$dir) then return $m end
+  $t=min(ts_ms($e.ts) ?? $now,$now);$size=max(0,$e.size ?? 0);$command=text($e.command ?? "?");$outcome=$e.outcome ?? "";$kind=$e.message_type ?? ""
+  if $dir=="local" then
+    $m.local.msgs=$c.add($m.local.msgs,1);$m.local.bytes=$c.add($m.local.bytes,$size)
+    if $outcome=="rejected" then $m.local.rejected=$c.add($m.local.rejected,1) end
+    if $outcome=="dropped" then $m.local.dropped=$c.add($m.local.dropped,1) end
+    $m.local.last_ms=max($m.local.last_ms ?? 0,$t)
+    $m.local.services=bump($m.local.services,service_of($e.to));$m.local.commands=bump($m.local.commands,$command)
+    $from=$m.self_name;$to=$m.self_name;$bucket="local"
+  else
+    $out=$dir=="mesh_out";$corr=if type($e.correlation_id)=="string" and byte_length($e.correlation_id)<=256 then $e.correlation_id else nil end
+    $pending=if $corr!=nil then $m.pending[$corr] else nil end
+    $named=if type($e.peer)=="string" and $e.peer!="" then $e.peer else nil end
+    $address=node_of(if $out then $e.to else $e.from end)
+    $peer=text($named ?? $address ?? (if $pending!=nil and $kind=="response" and max(0,$now-$pending.t)<=60000 then $pending.node else "?" end))
+    if $peer!="?" and not any($m.nodes,fn($n)=$n.name==$peer) then $m.topology_needed=true end
+    if not has_key($m.links,$peer) and len($m.links)>=64 then $peer="?" end
+    if $corr!=nil then
+      if $out and $kind=="request" then $m.pending[$corr]={node:$peer,t:$t}
+      elif $kind=="response" then $m.pending=delete($m.pending,$corr) end
+    end
+    $link=$m.links[$peer] ?? new_link()
+    if $out then $link.out_msgs=$c.add($link.out_msgs,1);$link.out_bytes=$c.add($link.out_bytes,$size)
+    else $link.in_msgs=$c.add($link.in_msgs,1);$link.in_bytes=$c.add($link.in_bytes,$size);$link.last_in_ms=max($link.last_in_ms ?? 0,$t) end
+    if $outcome=="rejected" then $link.rejected=$c.add($link.rejected,1) end
+    if $outcome=="dropped" then $link.dropped=$c.add($link.dropped,1) end
+    $link.last_ms=max($link.last_ms ?? 0,$t);$link.commands=bump($link.commands,$command);$link.services=bump($link.services,service_of(if $out then $e.to else $e.from end));$m.links[$peer]=$link
+    $bucket=(if $out then "out:" else "in:" end)..$peer
+    $from=if $out then $m.self_name else $peer end;$to=if $out then $peer else $m.self_name end
+  end
+  $second=to_string(floor($t/1000));$counts=$m.buckets[$second] ?? {};$counts[$bucket]=$c.add($counts[$bucket] ?? 0,1);$m.buckets[$second]=$counts
+  $m.seq=$c.add($m.seq,1);$m.recent=push($m.recent,{seq:$m.seq,t:$t,dir:$dir,from:$from,to:$to,size:$size,command:$command,type:$kind,outcome:text($outcome)})
+  return bounded($m)
+end
+fn window($m,$key,$from,$now)
+  $total=0
+  for $second in keys($m.buckets)
+    if to_number($second)>=floor($from/1000) and to_number($second)<=floor($now/1000)+5 then $total=$c.add($total,$m.buckets[$second][$key] ?? 0) end
+  end
+  return $total
+end
+fn history($m,$peer,$now)
+  $out=[];$input=[];$max=0
+  for $i=0 to 299
+    $second=floor($now/1000)-(299-$i);$bucket=$m.buckets[to_string($second)] ?? {}
+    $o=to_number($bucket["out:"..$peer] ?? 0);$in=to_number($bucket["in:"..$peer] ?? 0)
+    push($out,$o);push($input,$in);$max=max($max,max($o,$in))
+  end
+  return {out:$out,input:$input,max:$max}
+end
+fn snapshot($m,$now)
+  $m1=max(0,$now-60000);$m5=max(0,$now-300000);$links=[];$pings={}
+  for $peer in sort(keys($m.links))
+    $link=$m.links[$peer]
+    push($links,{a:$m.self_name,b:$peer,out_msgs:$link.out_msgs,out_bytes:$link.out_bytes,in_msgs:$link.in_msgs,in_bytes:$link.in_bytes,out_1m:window($m,"out:"..$peer,$m1,$now),in_1m:window($m,"in:"..$peer,$m1,$now),out_5m:window($m,"out:"..$peer,$m5,$now),in_5m:window($m,"in:"..$peer,$m5,$now),rejected:$link.rejected,dropped:$link.dropped,top_commands:top($link.commands,5),top_services:top($link.services,6),last_at:iso_ms($link.last_ms)})
+  end
+  for $peer in sort(keys($m.pings))
+    $p=$m.pings[$peer];$pings[$peer]={ok:$p.ok,rc:$p.rc,ms:$p.ms,at:iso_ms($p.at_ms),age_ms:max(0,$now-$p.at_ms),failed:ping_failed($m,$peer)}
+  end
+  $recent=map(filter($m.recent,fn($r)=max(0,$now-$r.t)<=15000),fn($r)=merge($r,{t:iso_ms($r.t)}))
+  return {written_at:iso_ms($now),this_node:if len($m.nodes)>0 then $m.nodes[0] else nil end,peers:filter($m.nodes,fn($n)=not $n.self),nodes:$m.nodes,observer:{name:$m.observer,node:$m.self_name,started_at:iso_ms($m.started_ms),observing:$m.observing,observe_error:$m.observe_error,events_seen:$m.seen,last_event_at:iso_ms($m.last_observe_ms),last_event_age_ms:if $m.last_observe_ms!=nil then max(0,$now-$m.last_observe_ms) else nil end,ring_dropped:$m.ring_dropped,recent_capped:$m.recent_capped},nodes_error:$m.nodes_error,links:$links,local:{msgs:$m.local.msgs,bytes:$m.local.bytes,msgs_1m:window($m,"local",$m1,$now),msgs_5m:window($m,"local",$m5,$now),rejected:$m.local.rejected,dropped:$m.local.dropped,top_services:top($m.local.services,6),top_commands:top($m.local.commands,5),last_at:iso_ms($m.local.last_ms)},probe:{at:iso_ms($m.probe_at_ms),results:$pings,running:$m.ping_ticket!=nil},recent:$recent}
+end

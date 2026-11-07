@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! §2.9 `input.*`: the keyboard is applied by inputd (xkb), pointers and
-//! tablets by compd.
+//! tablets by viud.
 use super::{DefaultValue as D, Domain::*, KeyDef as K, Kind, Kind::*};
 
 const fn keyboard(path: &'static str, kind: Kind, default: D) -> K {
@@ -12,7 +12,7 @@ const fn keyboard(path: &'static str, kind: Kind, default: D) -> K {
 const fn pointer(page: &'static str, path: &'static str, kind: Kind, default: D) -> K {
     K::new(path, kind, default)
         .on(page, &[Input])
-        .applied("compd")
+        .applied("viud")
 }
 const fn mouse(path: &'static str, kind: Kind, default: D) -> K {
     pointer("input/mouse", path, kind, default)

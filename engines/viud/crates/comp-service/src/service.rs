@@ -124,7 +124,7 @@ impl LongReply {
     }
 }
 
-/// What compd's engine provides to the `comp` service. Every method runs on
+/// What viud's engine provides to the `comp` service. Every method runs on
 /// the engine's own loop, inside [`PortService::service`], at a stable
 /// dispatch boundary; the engine applies policy (policy) and executes
 /// its effects before answering.
@@ -152,7 +152,7 @@ pub trait CompEngine {
     fn watch_props(&mut self, active: bool) -> bool;
     /// Renew the pointer observation lease.
     fn renew_pointer_lease(&mut self);
-    /// `compd.truth` ([`crate::port::TRUTH_COMMAND`]): the engine's own view, as JSON.
+    /// `viud.truth` ([`crate::port::TRUTH_COMMAND`]): the engine's own view, as JSON.
     /// Default: null (an engine with no truth to offer).
     fn truth(&mut self) -> Value {
         Value::Null

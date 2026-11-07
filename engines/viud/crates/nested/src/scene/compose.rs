@@ -439,7 +439,7 @@ fn compose(context: &mut WinitRenderContext, state: &mut Loop) -> ComposedFrame 
                     result.damage.filter(|damage| !damage.is_empty()).cloned()
                 }
                 Err(err) => {
-                    // A render error must not kill compd: nothing of this frame is
+                    // A render error must not kill viud: nothing of this frame is
                     // shown (no damage: `draw` treats it as an empty frame, paced
                     // one refresh later), and the next renders in full (age 0).
                     if context.render_failures == 0 {

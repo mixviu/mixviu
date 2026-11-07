@@ -7,8 +7,8 @@ license.workspace = true
 publish = false
 build = "build.rs"
 
-[package.metadata.mixos]
-component = "compd"
+[package.metadata.mixviu]
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

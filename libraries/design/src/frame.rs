@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Shared top-level window geometry and pixels. Extracted from compd's decor
+//! Shared top-level window geometry and pixels. Extracted from viud's decor
 //! presets/raster; no window-system or GPU types belong here.
 use crate::{ResolvedDictionary, ResolvedMetricKind, WindowStyle};
 
@@ -71,7 +71,7 @@ pub fn border_width(style: WindowStyle) -> f32 {
 pub struct Frame {
     pub radius: f32,
     pub border_width: f32,
-    /// Straight sRGB, just as compd resolves its non-text border/ring slots.
+    /// Straight sRGB, just as viud resolves its non-text border/ring slots.
     pub border_focused: [f32; 4],
     pub border_unfocused: [f32; 4],
     pub shadow: ShadowSpec,
@@ -137,7 +137,7 @@ pub struct ShadowTile {
     pub pixels: Vec<[f32; 4]>,
 }
 
-/// Compd's original rounded-box smoothstep raster, including its exact float
+/// Viud's original rounded-box smoothstep raster, including its exact float
 /// operation order. The centre is dense; the nine slices stretch independently.
 pub fn shadow_tile(colour: [f32; 4], alpha: f32, radius: f32, softness: f32) -> ShadowTile {
     let corner = (softness + radius).ceil().max(1.0) as u32;
@@ -178,7 +178,7 @@ pub struct ShadowPieces {
     pub extents: [i32; 4],
 }
 
-/// Eight slices from the same shadow compd paints. Corners include their
+/// Eight slices from the same shadow viud paints. Corners include their
 /// inward radius and the vertical offset. Cut out the *unshifted* client
 /// rounded rect, retaining shadow beneath transparent corner pixels.
 pub fn shadow_pieces(

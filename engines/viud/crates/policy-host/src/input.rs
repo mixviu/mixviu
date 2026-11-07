@@ -22,7 +22,7 @@
 //! the agent pointer and `{window}` coordinates in the host Space's, which is
 //! what `windows.*` and `outputs.*` report.
 //!
-//! `comp.input.sequence` runs on the compd host's driver through
+//! `comp.input.sequence` runs on the viud host's driver through
 //! [`run_step`]; [`clear_agent`] handles lost input authority;
 //! `input.seats` is [`project_seats`].
 
@@ -1081,7 +1081,7 @@ fn agent_target(lp: &Loop, surface: &WlSurface) -> Option<AgentTarget> {
         x11: matches!(record.role(), SurfaceRole::X11 { .. }),
         root_mapped: record.mapped(),
         tree_mapped: tree_mapped(lp, id),
-        // compd has no presentation ledger yet: a mapped surface is presentable
+        // viud has no presentation ledger yet: a mapped surface is presentable
         // (as in `control::window_facts`).
         input_presentable: true,
         has_client: client.is_some(),

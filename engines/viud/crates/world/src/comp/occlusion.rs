@@ -6,7 +6,7 @@
 //! `window::draw::occlude::record` while it draws; nothing in CompState moves
 //! when a decision does, so the edge pass would never diff it. [`service`]
 //! turns the windows whose decision changed into a revision bump and a
-//! `wayland.occlusion` cause on their rows. Not content: `compd.truth` does
+//! `wayland.occlusion` cause on their rows. Not content: `viud.truth` does
 //! not carry occlusion, so the truth revision stays put.
 
 use surfaces::SurfaceId;

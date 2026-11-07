@@ -1,8 +1,8 @@
-//! The user-key layer: compd's half of the §6.0 rule that the user's keys
+//! The user-key layer: viud's half of the §6.0 rule that the user's keys
 //! belong to the user.
 //!
 //! The user keys are bare F1–F12 and Right Ctrl, Right Alt or Right Shift
-//! with an arrow ([`inputd_schema::is_user_key`]). On a MixOS VT compd reads
+//! with an arrow ([`inputd_schema::is_user_key`]). On a MixViu VT viud reads
 //! the keyboard itself, so it enforces the rule itself, ahead of its own
 //! binding table ([`crate::bindings`]):
 //!
@@ -30,7 +30,7 @@ use inputd_core::inputd_schema::{
 use inputd_core::{BindError, Edge, Fire, Interceptor, Resolver};
 use serde_json::Value;
 
-/// The service a fired command runs on inside compd, through the same code a
+/// The service a fired command runs on inside viud, through the same code a
 /// Bus `comp.*` request takes, rather than over the Bus.
 pub const COMP_SERVICE: &str = "comp";
 
@@ -69,7 +69,7 @@ impl UserFire {
         })
     }
 
-    /// True when the command runs inside compd ([`COMP_SERVICE`]).
+    /// True when the command runs inside viud ([`COMP_SERVICE`]).
     pub fn is_comp(&self) -> bool {
         self.service == COMP_SERVICE
     }
@@ -280,7 +280,7 @@ pub struct LoadedKeymap {
 /// grammar, service name, args shape and size, the row ceiling; a later row
 /// on the same stroke replaces an earlier one). A row on a stroke that is
 /// not a user key is dropped: this layer binds only the user keys, and
-/// every other stroke belongs to compd's table and the clients.
+/// every other stroke belongs to viud's table and the clients.
 pub fn parse_keymap(text: &str) -> Result<LoadedKeymap, String> {
     let value: Value = serde_json::from_str(text).map_err(|error| format!("not JSON: {error}"))?;
     let Some(object) = value.as_object() else {
@@ -290,7 +290,7 @@ pub fn parse_keymap(text: &str) -> Result<LoadedKeymap, String> {
         Some(version) if version == u64::from(KEYMAP_SCHEMA_VERSION) => {}
         Some(version) => {
             return Err(format!(
-                "keymap version {version}; this compd reads {KEYMAP_SCHEMA_VERSION}"
+                "keymap version {version}; this viud reads {KEYMAP_SCHEMA_VERSION}"
             ));
         }
         None => return Err("missing or non-integer version".into()),

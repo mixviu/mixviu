@@ -946,7 +946,7 @@ end
 -- modes, so the file stays through shell refactor phase 1: without it, a
 -- crash with a popup pinned would strand a docked, empty edge. Phase 2
 -- (popup pins retired) deletes it.
-$PIN_FILE = env("XDG_STATE_HOME", env("HOME", "/tmp") .. "/.local/state") .. "/mixos/quoin-panel-pins.json"
+$PIN_FILE = env("XDG_STATE_HOME", env("HOME", "/tmp") .. "/.local/state") .. "/mix/quoin-panel-pins.json"
 
 fn read_pins()
   try

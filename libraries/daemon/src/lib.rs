@@ -29,11 +29,11 @@ pub mod http_host;
 // module on `tls`. webd is the first consumer; maild migrates later.
 pub mod listen;
 
-/// Returns the log directory: `~/.local/log/mixos/`.
+/// Returns the log directory: `~/.local/log/mix/`.
 pub fn log_dir() -> std::path::PathBuf {
     std::env::var("HOME")
-        .map(|h| std::path::PathBuf::from(h).join(".local/log/mixos"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/mixos-log"))
+        .map(|h| std::path::PathBuf::from(h).join(".local/log/mix"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/mix-log"))
 }
 
 /// Wait for a shutdown signal (Ctrl+C or SIGTERM on Unix).

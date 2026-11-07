@@ -135,7 +135,7 @@ mod tests {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 ui.fonts_mut(|fonts| {
                     let _ = fonts.layout_no_wrap(
-                        "MixOS Preferences Hamburgefonts 0123456789".into(),
+                        "MixViu Preferences Hamburgefonts 0123456789".into(),
                         FontId::proportional(24.0),
                         egui::Color32::WHITE,
                     );

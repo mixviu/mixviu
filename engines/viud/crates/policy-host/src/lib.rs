@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! policy-host: compd's comp policy host.
+//! policy-host: viud's comp policy host.
 //!
 //! The engine side of the `comp` Bus service, kept free of the transport: no
-//! comp-service and no tokio here. compd's `CompEngine` adapter calls in
+//! comp-service and no tokio here. viud's `CompEngine` adapter calls in
 //! and hands over what only the transport knows (the port's identity and
 //! counters) as plain comp-model values.
 //!
 //! - [`project`]: the props-tree projection (`Loop` → `CompSnapshot`);
 //! - [`edges`]: the observation edge pass (`surface.*`, `focus.changed`,
 //!   `props.changed`);
-//! - [`truth`]: `compd.truth`, compd's own view for the Bus-truth comparator.
+//! - [`truth`]: `viud.truth`, viud's own view for the Bus-truth comparator.
 //!
-//! - [`control`]: the control commands compd answers (workspaces, windows) and
+//! - [`control`]: the control commands viud answers (workspaces, windows) and
 //!   the executor for the policy effects they return.
 //! - [`input`]: `comp.input.*`, Bus-injected input on the human and agent
 //!   seats.

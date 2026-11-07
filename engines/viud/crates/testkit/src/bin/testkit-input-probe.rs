@@ -3,7 +3,7 @@
 //! testkit-input-probe: a minimal SHM toplevel that echoes the seat input it
 //! receives.
 //!
-//! Gate client for compd's input and window commands. Maps one xdg toplevel
+//! Gate client for viud's input and window commands. Maps one xdg toplevel
 //! (title, app id and size from the arguments), follows the compositor's
 //! configure size, redraws on every frame callback with presentation
 //! feedback, and prints one `PROBE ...` line per event:
@@ -28,7 +28,7 @@
 //! `--seats` lists and labels every seat's keyboard/pointer events.
 //! `--idle-timeout-ms N` also enables this mode and subscribes to one
 //! ext-idle-notify notification per seat. Seat names are whatever the
-//! compositor advertises (compd: `seat0` for the human seat, `agent` for the
+//! compositor advertises (viud: `seat0` for the human seat, `agent` for the
 //! agent seat), quoted and escaped; e.g. `PROBE seat "agent" idled`.
 //! `PROBE seats_ready` follows a sync after device/notification creation;
 //! `PROBE seats_done` follows the final sync. Without either flag, the

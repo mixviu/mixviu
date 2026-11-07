@@ -1,4 +1,4 @@
-# toolkit: the shared shell for MixOS egui applications — theme, fonts,
+# toolkit: the shared shell for MixViu egui applications — theme, fonts,
 # icons, the command registry and Fluent strings (AGENTS.md §4.1).
 [package]
 name = "toolkit"
@@ -10,7 +10,7 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "toolkit"
 kind = "lib"
 layer = "desktop"

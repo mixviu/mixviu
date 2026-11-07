@@ -1321,7 +1321,7 @@ mod tests {
     fn scratch() -> PathBuf {
         static N: AtomicU32 = AtomicU32::new(0);
         let d = std::env::temp_dir().join(format!(
-            "mixos_fsops_{}_{}",
+            "mix_fsops_{}_{}",
             std::process::id(),
             N.fetch_add(1, Ordering::Relaxed)
         ));

@@ -6,11 +6,18 @@ fn session_topics()
   return ["settingsd.desktop.look.default","settingsd.desktop.keys.default.keymaps","noded.props.changed","theme.changed"]
 end
 fn session_new($instance)
-  return {binding:{instance:$instance,profile:"default"},retargeted:false,incarnation:nil,revision:nil,lost:false,values:{},changed:false,failures:0,retry:nil,error:nil}
+  return {binding:{instance:$instance,profile:"default"},retargeted:false,incarnation:nil,revision:nil,lost:false,values:{},accepted_values:{},changed:false,failures:0,retry:nil,error:nil}
 end
 fn session_revision($value)
   if type($value)!="string" or not re_match($value,"^(0|[1-9][0-9]*)$") then raise("SESSION_REVISION","Revision must be canonical decimal text") end
   return $value
+end
+fn session_appearance_values($values)
+  $out={}
+  for $key in keys($values)
+    if any(["appearance.","state.appearance.","accessibility.","apps.","tune.","window."],fn($prefix)=starts_with($key,$prefix)) then $out[$key]=$values[$key] end
+  end
+  return $out
 end
 fn session_older($a,$b)
   if len($a)!=len($b) then return len($a)<len($b) end
@@ -39,6 +46,7 @@ fn session_answer($state,$rc,$body,$error)
   $revision=session_revision($body.revision)
   if $state.incarnation==$body.incarnation and $state.revision!=nil and (session_older($revision,$state.revision) or ($revision==$state.revision and not $state.lost)) then return $state end
   $state.incarnation=$body.incarnation;$state.revision=$revision;$state.values=$body.values
+  $state.accepted_values=session_appearance_values($body.values)
   $state.changed=true;$state.lost=false;$state.failures=0
   return $state
 end

@@ -9,7 +9,7 @@
 -- publishes. No poll, no debounce sleep, no self-emit.
 -- Helpers come from $SCENE_DIR/lib.mix (beside this file, so a user copy of
 -- the editor edits its own logic); only runtime.mix comes from the shared lib.
-$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mix/scenes/lib")
 $DIR = env("SCENE_DIR", cwd())
 $r = require($LIB .. "/runtime.mix")
 $e = require($DIR .. "/lib.mix")

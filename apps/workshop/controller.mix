@@ -1,0 +1,254 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$tree=require("tree.mix");$work=require("work.mix");$discovery=require("discovery.mix");$text=require("text.mix");$actions=require("actions.mix");$theme=require("theme.mix")
+$macros=require("macro.mix")
+$agents=require("agents.mix");$traffic=require("traffic.mix");$mesh=require("mesh.mix");$mesh_flow=require("mesh-flow.mix");$counter=require("counter.mix")
+$saved=require("saved.mix")
+fn result($s,$body) return {state:$s,rc:0,body:$body,deferred:false} end
+fn refused($s,$code,$message) return {state:$s,rc:10,body:{error_code:$code,message:$message},deferred:false} end
+fn guard($s) return $s.dialog!=nil or $s.quitting end
+fn theme_edit($s,$args)
+  $edit=$theme.theme_edit($s.theme_choice,$args)
+  if not $edit.ok then return refused($s,"ARGUMENT",$edit.message) end
+  send "viu-local" "native.theme" body=$edit.choice
+  if $rc!=0 then return {state:$s,rc:$rc,body:$reply,deferred:false} end
+  $s.theme_choice=$edit.choice;$s.theme_effective=$reply;$body=$edit.choice;$body.effective=$reply
+  return result($s,$body)
+end
+fn target($s,$a)
+  if has_key($a,"service")!=has_key($a,"command") or (has_key($a,"service") and (type($a.service)!="string" or type($a.command)!="string")) then raise("ARGUMENT","Select an advertised command before calling") end
+  $selected=$s.selection ?? {}
+  $service=$a.service ?? $selected.service;$command=$a.command ?? $selected.command
+  if $service==nil or $command==nil then raise("ARGUMENT","Select an advertised command before calling") end
+  return {service:$service,command:$command}
+end
+fn start_call($s,$a,$event)
+  $target=target($s,$a)
+  if has_key($a,"body") and type($a.body)!="string" then return refused($s,"ARGUMENT","body must be JSON text") end
+  $body=$a.body ?? $s.body
+  if not $s.connected then return refused($s,"DISCONNECTED","An operation is already running") end
+  if $m.busy($s) or guard($s) then return refused($s,"BUSY","An operation is already running") end
+  if $m.command($s,$target)==nil then return refused($s,"ARGUMENT","Select an advertised command before calling") end
+  if byte_length($body)>65536 then return refused($s,"ARGUMENT","JSON body exceeds 65,536 bytes; edit refused") end
+  try if trim($body)!="" then $parsed=json_parse($body) end catch $why return refused($s,"ARGUMENT","Invalid JSON; no call sent: "..strip_prefix($why,"json_parse: ")) end
+  $id=if $event!=nil then $work.defer($event) else nil end
+  $s.call={target:$target,body:$body,reply:$id};$s.status="Calling command…"
+  $s=$work.enqueue($s,{owner:"call",op:"call",service:$target.service,command:$target.command,body:$body,timeout:30,lane:"mutation"})
+  $s=$work.launch($s)
+  return {state:$s,rc:0,body:nil,deferred:$event!=nil}
+end
+fn select_row($s,$key)
+  $r=$tree.find_row($s,$key)
+  if $r==nil then return refused($s,"ARGUMENT","no row has that key") end
+  $s.row_key=$key;$s.selection=$r.selection
+  if $r.kind=="command" then $s.service=$r.selection.service;$s.command=$r.selection.command end
+  if $r.kind!="macro" then $s.macro_selected=nil end
+  if $r.kind=="macro" then $s=$macros.enqueue($s,"macros.open",{app:$r.app,id:$r.macro_id},nil) end
+  if $r.kind=="agent_session" then $s=$agents.select_session($s,$r.node,$r.session)
+  elif $r.kind=="mesh_map" then $s=$mesh_flow.ensure($mesh_flow.refresh($s))
+  elif $r.kind=="agents" then $s=$agents.refresh($s)
+  elif $r.kind=="agents_node" then $s=$agents.refresh_node($s,$r.node) end
+  return result($s,{row_key:$s.row_key,selection:$s.selection})
+end
+fn execute($s,$id,$origin)
+  $s.busy=$m.busy($s);$matches=filter($actions.registry($s),fn($a)=$a.id==$id)
+  if len($matches)==0 then return refused($s,"UNKNOWN_ACTION","Unknown Workshop command") end
+  if not $matches[0].enabled then return refused($s,"DISABLED","That command is not available right now") end
+  if $id=="file.refresh" then $s=$discovery.begin($s,nil)
+  elif $id=="file.quit" then $s.quitting=true;$s.window_close=not $m.busy($s) and $origin!="bus"
+  elif $id=="edit.format" then $o=$text.format_body($s.body);$s.body=$o.body;if not $o.ok then $s.status=$o.status end
+  elif $id=="edit.clear" then $s.body=""
+  elif $id=="edit.copy" then send "viu-local" "native.copy" body={text:$s.answer}
+  elif $id=="bus.call" then
+    if $s.macro_selected!=nil then $s=$macros.ui_command($s,"macros.run") else $out=start_call($s,{},nil);$s=$out.state end
+  elif $id=="macro.new" then $s.dialog="new_macro";$s.macro_new_title=""
+  elif starts_with($id,"macro.") then $s=$macros.ui_command($s,replace_first($id,"macro.","macros."))
+  elif $id=="help.macros" then $s.macros_open=not $s.macros_open
+  elif $id=="view.search" then $s.focus_id="filter";$s.focus_serial=$s.focus_serial+1
+  elif $id=="help.about" then $s.dialog="about"
+  elif $id=="help.shortcuts" then $s.dialog="shortcuts"
+  elif $id=="view.traffic" then $s.dock_open=not $s.dock_open
+  elif $id=="mesh.ping" then return $mesh_flow.ping($s)
+  elif $id=="bus.observe" then $s=$mesh_flow.queue($s,"observe",{on:$s.subscription==nil},nil)
+  elif starts_with($id,"view.traffic.") then $s.dock_side=strip_prefix($id,"view.traffic.")
+  else
+    $axis=if starts_with($id,"view.theme.") then "scheme" elif starts_with($id,"view.style.") then "style" elif starts_with($id,"view.decorations.") then "decorations" elif starts_with($id,"view.captions.") then "caption_side" else "mode" end
+    $parts=split($id,".");$value=$parts[len($parts)-1]
+    if $id=="view.mode" then $value=if ($s.theme_effective.mode ?? "dark")=="dark" then "light" else "dark" end end
+    $edit={};$edit[$axis]=if $value=="session" then nil else $value end
+    $out=theme_edit($s,$edit);$s=$out.state;if $out.rc!=0 then return $out end
+  end
+  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+  return result($s,{executed:$id})
+end
+fn request($s,$event)
+  $a=$event.args;$cmd=$event.command
+  if type($a)!="map" then
+    if starts_with($cmd,"workshop.macros.") and not contains(["workshop.macros.open","workshop.macros.new"],$cmd) then return refused($s,"INVALID_ARGUMENT","invalid macro arguments") end
+    return refused($s,"ARGUMENT","arguments must be a JSON object")
+  end
+  if $cmd=="workshop.mesh" or $cmd=="workshop.mesh.ping" then
+    if len($a)!=0 then return refused($s,"ARGUMENT","expected an empty object") end
+    if $cmd=="workshop.mesh.ping" then return $mesh_flow.ping($s) end
+    return result($s,$mesh.snapshot($s.mesh,$mesh.now_ms()))
+  elif $cmd=="workshop.traffic" then
+    if any(keys($a),fn($k)=not contains(["limit","filter"],$k)) or (has_key($a,"limit") and (type($a.limit)!="number" or $a.limit<0 or $a.limit>1024 or floor($a.limit)!=$a.limit)) or (has_key($a,"filter") and type($a.filter)!="string") then return refused($s,"INVALID_ARGUMENT","invalid traffic arguments") end
+    return result($s,{rows:$traffic.rows($s,$a.limit ?? 100,$a.filter ?? ""),dropped:$s.dropped,ignored_observations:$s.ignored_observations,observe:$s.observe})
+  elif $cmd=="noded.observe.event" then
+    $s.ignored_observations=$counter.add($s.ignored_observations,1)
+    return refused($s,"INVALID_ARGUMENT","observe deliveries require a live broker event")
+  elif $cmd=="workshop.observe" then
+    if $s.mesh.observe_ticket!=nil then return refused($s,"BUSY","an observe change is already running") end
+    if $s.quitting then return refused($s,"BUSY","Workshop is closing") end
+    $id=$work.defer($event);$s=$mesh_flow.queue($s,"observe",$a,$id)
+    return {state:$s,rc:0,body:nil,deferred:true}
+  end
+  if $cmd=="workshop.agents" or starts_with($cmd,"workshop.agents.") then return $agents.request($s,$event) end
+  if starts_with($cmd,"workshop.macros.") then
+    $limit=if $cmd=="workshop.macros.put" then 1581056 else 8192 end
+    if byte_length($event.body)>$limit then return refused($s,"INVALID_ARGUMENT","request exceeds "..to_string($limit).." bytes") end
+    if $s.quitting then return refused($s,"BUSY","Workshop is closing") end
+    $id=$work.defer($event);$op=strip_prefix($cmd,"workshop.")
+    if not has_key($a,"app") and not contains(["macros.open","macros.new","macros.ced","macros.dopus"],$op) then $s=$macros.enqueue($s,$op,$a,$id)
+    else $s=$macros.invoke($s,$op,$a,$id) end
+    return {state:$s,rc:0,body:nil,deferred:true}
+  end
+  if $cmd=="workshop.ping" then return result($s,{schema:"workshop.v1",version:viu_context().version})
+  elif $cmd=="workshop.info" then
+    send "viu-local" "native.saved" body=$saved.project($s)
+    if $rc==0 then $s.saved=$reply end
+    return result($s,$m.info($s,viu_context()))
+  elif $cmd=="workshop.tree" then return result($s,{rows:$tree.rows($s)})
+  elif $cmd=="workshop.reply" then return result($s,{text:$s.answer,value:$s.last_reply})
+  elif $cmd=="workshop.actions" then $s.busy=$m.busy($s);return result($s,{actions:$actions.registry($s)})
+  elif $cmd=="workshop.execute" then
+    if type($a.id)!="string" then return refused($s,"ARGUMENT","id must be a command id string") end
+    return execute($s,$a.id,"bus")
+  elif $cmd=="workshop.theme" then return theme_edit($s,$a)
+  elif $cmd=="workshop.dialog" then
+    if not has_key($a,"open") or ($a.open!=nil and not contains(["about","shortcuts"],$a.open)) then return refused($s,"ARGUMENT",'open must be "about", "shortcuts" or null') end
+    if $a.open!=nil and guard($s) then return refused($s,"BUSY","An operation is already running") end
+    $s.dialog=$a.open;return result($s,{dialog:$s.dialog})
+  elif $cmd=="workshop.call" then return start_call($s,$a,$event)
+  elif $cmd=="workshop.refresh" then
+    if not $s.connected then return refused($s,"DISCONNECTED","Disconnected — requests are never replayed") end
+    if $s.dialog!=nil or $m.busy($s) or $s.quitting then return refused($s,"BUSY","An operation is already running") end
+    $id=$work.defer($event);$s=$discovery.begin($s,$id);return {state:$s,rc:0,body:nil,deferred:true}
+  elif $cmd=="workshop.show" then
+    if $s.quitting then return refused($s,"BUSY","An operation is already running") end
+    $id=$work.defer($event);$s.activation_next=$s.activation_next+1;$ticket=$s.activation_next;$s.activations=push($s.activations,$ticket)
+    $s=$work.enqueue($s,{owner:"activation",op:"show",job:"activation-job.mix",comp:$s.comp,pid:viu_context().pid,reply:$id,ticket:$ticket,lane:"activation"})
+    return {state:$work.launch($s),rc:0,body:nil,deferred:true}
+  elif $cmd=="workshop.quit" then
+    if $m.busy($s) or $s.dialog!=nil then return refused($s,"BUSY","An operation is already running") end
+    $s.quitting=true;return result($s,{quitting:true})
+  elif $cmd=="workshop.select" then
+    if $m.busy($s) or guard($s) then return refused($s,"BUSY","An operation is already running") end
+    $s=$m.select_target($s,target($s,$a));return result($s,$m.info($s,viu_context()))
+  end
+  if $s.dialog!=nil then return refused($s,"BUSY","An operation is already running") end
+  if $cmd=="workshop.body" then
+    if type($a.text)!="string" then return refused($s,"ARGUMENT","text must be a string") end
+    if $s.call!=nil then return refused($s,"BUSY","An operation is already running") end
+    if byte_length($a.text)>65536 then return refused($s,"ARGUMENT","JSON body exceeds 65,536 bytes; edit refused") end
+    $s.body=$a.text;return result($s,{body:$s.body})
+  elif $cmd=="workshop.filter" then
+    if type($a.text)!="string" then return refused($s,"ARGUMENT","text must be a string") end
+    $s.filter=$a.text;return result($s,{filter:$s.filter,rows:$tree.rows($s)})
+  elif $cmd=="workshop.split" then
+    if type($a.value)!="number" or $a.value<0 or $a.value>1 then return refused($s,"ARGUMENT","value must be a number from 0 to 1") end
+    $s.split=$m.share(clamp($a.value,0.1,0.8));return result($s,{split:round($s.split*1000)/1000})
+  elif $cmd=="workshop.dock" then
+    if not contains(["auto","bottom","right"],$a.side) then return refused($s,"ARGUMENT","side must be auto, bottom or right") end
+    if has_key($a,"size") and (type($a.size)!="number" or $a.size<0 or $a.size>1) then return refused($s,"ARGUMENT","size must be a number from 0 to 1") end
+    if has_key($a,"open") and type($a.open)!="bool" then return refused($s,"ARGUMENT","open must be a bool") end
+    $s.dock_side=$a.side;$side=$m.effective_dock($s)
+    if has_key($a,"size") then
+      if $s.dock_side=="auto" or $side=="right" then $s.dock_width=$m.share(clamp($a.size,0.2,0.5)) end
+      if $s.dock_side=="auto" or $side=="bottom" then $s.dock_height=$m.share(clamp($a.size,0.12,0.5)) end
+    end
+    if has_key($a,"open") then $s.dock_open=$a.open end
+    return result($s,{side:$s.dock_side,effective:$side,width:round($s.dock_width*1000)/1000,height:round($s.dock_height*1000)/1000,open:$s.dock_open})
+  elif $cmd=="workshop.expand" then
+    if type($a.key)!="string" then return refused($s,"ARGUMENT","key must be a string") end
+    if type($a.open)!="bool" then return refused($s,"ARGUMENT","open must be a bool") end
+    $r=$tree.find_row($s,$a.key)
+    if $r==nil or $r.children==0 then return refused($s,"ARGUMENT","no row with children has that key") end
+    $s.expanded=filter($s.expanded,fn($k)=$k!=$a.key)
+    if $a.open then $s.expanded=push($s.expanded,$a.key) end
+    return result($s,{key:$a.key,expanded:$tree.find_row($s,$a.key).expanded,rows:$tree.rows($s)})
+  elif $cmd=="workshop.select_row" then
+    if type($a.key)!="string" then return refused($s,"ARGUMENT","key must be a string") end
+    return select_row($s,$a.key)
+  end
+  return refused($s,"UNKNOWN_COMMAND","unknown Workshop command")
+end
+fn received($s,$d)
+  $task=$s.jobs[$d.tag.id]
+  if $task==nil then return $s end
+  $s.jobs=delete($s.jobs,$d.tag.id)
+  if $task.owner=="discovery" then
+    $before=$s.discovery!=nil;$s=$discovery.received($s,$task,$d)
+    if $before and $s.discovery==nil and $s.snapshot.error==nil then $s=$agents.discovered($s);$s=$macros.enqueue($s,"catalogues",{},nil) end
+    return $s
+  end
+  if $task.owner=="macros" then return $work.launch($macros.received($s,$task,$d)) end
+  if $task.owner=="mesh" then return $mesh_flow.received($s,$task,$d) end
+  if $task.owner=="agents" and $task.departed!=true then return $work.launch($agents.received($s,$task,$d)) end
+  if $task.owner=="activation" then
+    $s.activations=filter($s.activations,fn($t)=$t!=$task.ticket);$work.answer($task.reply,$d.rc,$d.body);return $work.launch($s)
+  end
+  if $task.owner=="call" and $s.call!=nil then
+    $call=$s.call;$s.call=nil;$t=$call.target
+    $reply={service:$t.service,command:$t.command,request_body:$call.body}
+    if $d.rc==0 then
+      $reply.rc=$d.body.rc;$reply.body=$d.body.body
+      $s.answer=$text.render($t.service,$t.command,$d.body)
+    else
+      $reply.transport_error=$d.body.transport_error ?? json_encode($d.body);$reply.outcome_unknown=$d.body.outcome_unknown ?? true;$reply.retried=false
+      $s.answer=$text.bounded($t.service.."  "..$t.command.."\nTransport error; the call was not retried and its outcome may be unknown\n"..$reply.transport_error)
+    end
+    $s.last_reply=$reply;$s.status=if $s.connected then "Connected" else "Disconnected — requests are never replayed" end
+    $payload=nil;$request=nil
+    try $payload=json_parse($reply.body ?? "") catch $why $payload=nil end
+    try $request=json_parse($call.body) catch $why $request=nil end
+    $stamp=now_iso();$stamp=if len($stamp)>=23 then substr($stamp,11,12) else $stamp end
+    $s=$traffic.retain($s,{ts:$stamp,ms:floor(($d.elapsed_us ?? 0)/1000),direction:"local",from:"workshop",service:$t.service,command:$t.command,rc:$reply.rc,payload:$payload,request:$request})
+    $work.answer($call.reply,if $d.rc==0 then 0 else 10 end,$reply)
+  end
+  return $work.launch($s)
+end
+fn notice($s,$event)
+  $cmd=$event.args.command;$a=$event.args.args;$headers=$event.headers
+  if $cmd=="bus.connected" then
+    $s.connected=true;$s.status="Connected"
+    for $topic in ["noded.props.changed","agent.session.updated","agent.session.ended","agent.permission.requested",viu_context().citizen..".macros.finished"] subscribe($topic) end
+    $s=$discovery.begin($s,nil);$s=$agents.refresh($s);$s=$macros.enqueue($s,"catalogues",{},nil);$s=$mesh_flow.refresh($s)
+    if $s.mesh.resume_observe or not $s.mesh.ever_connected then $s=$mesh_flow.ensure($s) end
+    $s.mesh.ever_connected=true
+    if $s.startup_macro!=nil then $s=$macros.enqueue($s,"macros.open",$s.startup_macro,nil);$s.startup_macro=nil end
+  elif $cmd=="bus.disconnected" then
+    $s.connected=false;$s.status="Disconnected — requests are never replayed";$s=$mesh_flow.disconnect($s)
+  elif contains(["agent.session.updated","agent.session.ended","agent.permission.requested"],$cmd) then
+    $a=$counter.decode($event.body).args;$s=$agents.topic($s,$cmd,$a)
+  elif $cmd=="noded.props.changed" then
+    if $a.path=="services.registered" then
+      $entry=$s.agents.nodes[$agents.local_name($s)]
+      if $entry!=nil and $entry.available==false then $s=$agents.refresh_node($s,$agents.local_name($s)) end
+      if $m.busy($s) then $s.refetch=true else $s=$discovery.begin($s,nil) end
+    end
+  elif $cmd=="bus.overflow" or $cmd=="citizen.topic.gap" then
+    $s.dropped=$s.dropped+($a.dropped ?? 0);$s=$agents.refresh_node($s,$agents.local_name($s))
+    if $s.agents.selected!=nil and $s.agents.selected.node==$agents.local_name($s) and not $s.agents.transcript.filling then $s=$agents.read_transcript($s) end
+  elif $cmd=="noded.observe.event" then
+    $s=$mesh_flow.observed($s,$event)
+  elif ends_with($cmd,".action.executed") or ends_with($cmd,".macros.finished") then
+    if ends_with($cmd,".macros.finished") then $s.macro_message=json_encode($a);$s.traffic_filter="" end
+    $stamp=now_iso();$stamp=if len($stamp)>=23 then substr($stamp,11,12) else $stamp end
+    $s=$traffic.retain($s,{ts:$stamp,direction:"topic",from:$headers.from,service:$headers.from,command:$cmd,payload:$a})
+  end
+  return $s
+end
+fn follow_up($s)
+  if $s.refetch and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
+  return $work.launch($s)
+end

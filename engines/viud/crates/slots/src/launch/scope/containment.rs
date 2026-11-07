@@ -32,7 +32,7 @@ pub fn begin_spawn() -> Result<SpawnPermit, String> {
 }
 
 pub fn enabled() -> bool {
-    std::env::var_os("MIXOS_CONTAIN_CHILDREN").is_some_and(|value| value == "1")
+    std::env::var_os("MIX_VIUD_CONTAIN_CHILDREN").is_some_and(|value| value == "1")
 }
 
 fn relative_cgroup(source: &str) -> Result<PathBuf, String> {
@@ -57,7 +57,7 @@ fn relative_cgroup(source: &str) -> Result<PathBuf, String> {
 fn initialise() -> Result<PathBuf, String> {
     let membership = fs::read_to_string("/proc/self/cgroup").map_err(|error| error.to_string())?;
     let parent = Path::new("/sys/fs/cgroup").join(relative_cgroup(&membership)?);
-    let apps = parent.join(format!("compd-{}-apps", std::process::id()));
+    let apps = parent.join(format!("viud-{}-apps", std::process::id()));
     // Fail closed if a same-name group already exists: never adopt an old or
     // foreign group merely because a PID has been reused.
     fs::create_dir(&apps).map_err(|error| format!("create delegated apps cgroup: {error}"))?;

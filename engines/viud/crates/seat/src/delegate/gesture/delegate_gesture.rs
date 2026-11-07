@@ -52,7 +52,7 @@ pub fn process_input_event<I: InputBackend>(_loop: &mut Loop, event: &InputEvent
                 let scale = _loop.inner.gesture.pinch_scale;
                 let _ = scale;
                 _loop.inner.gesture.pinch_fingers = 0;
-                // compd: a four-finger pinch framed windows through the navigator; cut.
+                // viud: a four-finger pinch framed windows through the navigator; cut.
             } else {
                 crate::pointer::input::pinch::end::<I>(event, _loop);
             }

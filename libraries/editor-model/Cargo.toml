@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 description = "Headless text-editing model: commands and motions, highlighting, diagnostics, and the edit-service mirror"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "editor-model"
 kind = "lib"
 layer = "core"

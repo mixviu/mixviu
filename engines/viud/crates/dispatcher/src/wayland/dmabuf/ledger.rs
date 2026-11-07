@@ -4,7 +4,7 @@
 //!
 //! What the advertised format table claims and what an import actually did
 //! are different facts; only the second is true. Every
-//! `zwp_linux_buffer_params_v1` import compd answers is counted here, and
+//! `zwp_linux_buffer_params_v1` import viud answers is counted here, and
 //! every refusal keeps its format, modifier and reason, so a "works on AMD,
 //! blank window on the VM" bug reads from `comp.props.get dmabuf`.
 //!

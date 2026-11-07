@@ -440,7 +440,7 @@ fn ui_panes(state: &Loop, size: Size<i32, Physical>) -> Vec<ui_surface::PaneView
 /// GLES resources. Always runs on the (winit/native) GLES renderer — separate
 /// from the renderer-agnostic `scene()`.
 ///
-/// compd: also the ONE window in which wgpu touches GL. wgpu runs on the
+/// viud: also the ONE window in which wgpu touches GL. wgpu runs on the
 /// renderer's own EGL context ([`gpu`](crate::scene::gpu)), so `gpu::begin` makes it current
 /// (and builds the GPU context on the first frame) before any UI or capture
 /// work, and `gpu::end` restores the GL state smithay assumes before it draws.

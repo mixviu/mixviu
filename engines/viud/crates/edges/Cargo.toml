@@ -8,8 +8,8 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
-component = "compd"
+[package.metadata.mixviu]
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

@@ -75,10 +75,10 @@ impl Citizen {
             name,
         ])
         .env("HOME", &dir.0)
-        .env("MIXOS_NODE_CONFIG", node_conf)
-        .env("MIXOS_ETC", &dir.0)
+        .env("MIX_NODE_CONFIG", node_conf)
+        .env("MIX_ETC", &dir.0)
         .env("MIX_STATS", "off")
-        .env_remove("MIXOS_SESSION_FD")
+        .env_remove("MIX_SESSION_FD")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));

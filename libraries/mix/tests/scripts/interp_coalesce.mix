@@ -13,7 +13,7 @@
 -- default is variable: true
 
 -- Unbound name → default (no error, unlike a bare `${unbound}`).
-print "unbound default: " .. ("${MIX_COALESCE_UNBOUND_XYZ ?? "fallback"}" == "fallback")
+print "unbound default: " .. ("${MIX_TEST_COALESCE_UNBOUND_XYZ ?? "fallback"}" == "fallback")
 
 -- Explicit nil value → default fires.
 $x = nil
@@ -31,8 +31,8 @@ print "nil-only keeps empty: " .. ("${e ?? "X"}" == "")
 print "falsy replaces empty: " .. ("${e ?: "X"}" == "X")
 
 -- The default is a full Mix expression.
-print "default is expression: " .. ("${MIX_COALESCE_UNBOUND_XYZ ?? upper("hi")}" == "HI")
+print "default is expression: " .. ("${MIX_TEST_COALESCE_UNBOUND_XYZ ?? upper("hi")}" == "HI")
 
 -- The default can reference another variable.
 $fb = "viavar"
-print "default is variable: " .. ("${MIX_COALESCE_UNBOUND_XYZ ?? $fb}" == "viavar")
+print "default is variable: " .. ("${MIX_TEST_COALESCE_UNBOUND_XYZ ?? $fb}" == "viavar")

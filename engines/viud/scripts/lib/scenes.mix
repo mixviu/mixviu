@@ -336,7 +336,7 @@ fn inventory($s)
       revision:$e.revision, generation:$e.generation, behaviour:$e.status, ready:$e.ready,
       template:$s.desired.origins[$name], diagnostic:$diagnostic, diagnostics:$diagnostics, exit:$e.exit,
       attempted_digest:$e.attempted, accepted_digest:$e.digest,
-      journal:"journalctl -u mixos-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
+      journal:"journalctl -u mix-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
       title:$shown.title ?? $name, edge:$e.edge ?? $shown.edge, page:$e.page ?? $shown.page,
       kind:$e.kind ?? $shown.kind ?? "edge", files:$e.files, digests:$e.digests ?? {},
       forked_from:type($fork) == "map" ? $fork.from : nil,

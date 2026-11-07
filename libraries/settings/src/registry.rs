@@ -64,7 +64,7 @@ pub const MAX_TUNE: usize = 128;
 /// What a key is to settingsd.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Class {
-    /// Authored in the sealed profile; a MixOS consumer reads it.
+    /// Authored in the sealed profile; a MixViu consumer reads it.
     Stored,
     /// Stored as above, and the named owner applies it to the system.
     Applied,
@@ -160,7 +160,7 @@ pub enum Grammar {
     Locale,
     /// A desktop-entry id (`firefox.desktop`).
     DesktopId,
-    /// A MixOS applet id.
+    /// A MixViu applet id.
     Applet,
     /// A strict design source; resolution compiles it.
     Source,

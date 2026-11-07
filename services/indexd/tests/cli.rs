@@ -64,8 +64,8 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
     let mut daemon = Child(
         tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
             .args(["-c", config.to_str().unwrap(), "serve"])
-            .env_remove("MIXOS_NODED_URL")
-            .env("MIXOS_NODE_CONFIG", &node_config)
+            .env_remove("MIX_NODED_URL")
+            .env("MIX_NODE_CONFIG", &node_config)
             .stdout(Stdio::null())
             .spawn()
             .unwrap(),
@@ -92,8 +92,8 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
             .arg("bridge")
             .arg("--node-config")
             .arg(&node_config)
-            .env_remove("MIXOS_NODED_URL")
-            .env("MIXOS_NODE_CONFIG", "/nonexistent/overridden.conf.mix")
+            .env_remove("MIX_NODED_URL")
+            .env("MIX_NODE_CONFIG", "/nonexistent/overridden.conf.mix")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -198,8 +198,8 @@ fn bridge_initial_connection_failure_replies_then_exits_nonzero() {
     std::fs::write(&path, "noded: { port: 0 }\n").unwrap();
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
         .arg("bridge")
-        .env_remove("MIXOS_NODED_URL")
-        .env("MIXOS_NODE_CONFIG", path)
+        .env_remove("MIX_NODED_URL")
+        .env("MIX_NODE_CONFIG", path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -223,8 +223,8 @@ async fn bridge_honours_url_override_with_empty_node_config() {
     let mut child = Child(
         tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
             .arg("bridge")
-            .env("MIXOS_NODE_CONFIG", "")
-            .env("MIXOS_NODED_URL", &broker.url)
+            .env("MIX_NODE_CONFIG", "")
+            .env("MIX_NODED_URL", &broker.url)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -261,7 +261,7 @@ fn call_is_in_process_and_uses_explicit_config() {
                 command_name,
                 body,
             ])
-            .env("MIXOS_NODED_URL", "ws://127.0.0.1:1/ws")
+            .env("MIX_NODED_URL", "ws://127.0.0.1:1/ws")
             .output()
             .unwrap()
     };
@@ -343,7 +343,7 @@ fn call_requires_offline_for_writes_and_always_refuses_background() {
 #[test]
 #[ignore = "slow: nightly"]
 fn slow_nightly_desktop_package_carries_indexd_and_owned_units() {
-    let mix = std::env::var("MIXOS_TEST_MIX").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+    let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
     let output = std::process::Command::new(mix)
         .args([
             concat!(env!("CARGO_MANIFEST_DIR"), "/tests/package_test.mix"),

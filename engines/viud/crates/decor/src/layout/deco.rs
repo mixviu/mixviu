@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The decoration model: one `DecoTheme` fully describes how compd lays out
+//! The decoration model: one `DecoTheme` fully describes how viud lays out
 //! and draws a window's server-side chrome.
 //!
 //! Two orthogonal axes select a theme:
@@ -10,7 +10,7 @@
 //!   or `mixos`.
 //! * `Scheme` x `Mode`: the palette. The mac and win11 styles are faithful to
 //!   their platforms and ignore the scheme; the mixos style keys its accent
-//!   off it. In compd every colour is then replaced by the design tokens
+//!   off it. In viud every colour is then replaced by the design tokens
 //!   (`crate::theme::apply_tokens`), so the preset palette only decides which
 //!   slots are drawn at all and with what alpha.
 //!

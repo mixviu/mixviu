@@ -571,3 +571,7 @@ release gate `20261107-082023-f8cb0b05`. Acceptance remains OPEN until that
 gate and the ten-group release-byte rerun, including native continued
 typing, finish. Spacious retains only the previously inspected Macros icon
 anti-aliasing edge. No deviation from gold or Fable decision is proposed.
+
+## Four-app release integration at 1804bb9
+
+Release-byte revalidation **PASS**. Exact four-engine hashes, complete native/visual results, all residual figures, deferred-reply witnesses, two same-worker timing comparisons and provenance debt are in [four-app-integration-acceptance.md](four-app-integration-acceptance.md). The runtime source is `1804bb98a5ab305111bd35412bf6f3902bc24013`; following commits are documentation receipts.

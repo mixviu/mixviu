@@ -29,6 +29,7 @@ pub struct Services {
     pub calls: Option<crate::calls::Calls>,
     pub timers: Option<crate::timers::Timers>,
     pub documents: Option<crate::documents::Documents>,
+    pub rasters: Option<crate::raster::Rasters>,
     pub macros: Option<macros::Session>,
     pub chooser: Option<crate::chooser::Service>,
     pub annotations: crate::annotation::Documents,
@@ -227,6 +228,7 @@ impl Runtime {
                         eval.set_serve_runtime(local.clone());
                         eval.register("viu_thumbnail",crate::native_primitives::thumbnail(worker_stop.clone()));
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
+                        eval.register("viu_store",crate::native_primitives::store());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_process",crate::process::binding());
@@ -246,14 +248,19 @@ impl Runtime {
                         let handles=mix::sync_ext(move |args| replies.reply_handle(args));
                         let owner=services.calls.clone().map(|c|c.binding()).unwrap_or_else(||mix::sync_ext(|_|Err(failure("owner receipt facility unavailable"))));
                         eval.register("viu_reply",Rc::new(move|args|if args.len()==3 {owner(args)}else{handles(args)}));
-                        if let Some(session)=services.macros.clone(){eval.register("viu_macros",crate::native_primitives::macro_commands(session));}
+                        if let Some(session)=services.macros.clone(){
+                            eval.register("viu_macros",crate::native_primitives::macro_commands(session.clone()));
+                            eval.register("viu_macro_library",crate::native_primitives::macro_library(session.clone()));
+                            eval.register("viu_macro_storage",crate::native_primitives::macro_storage(session));
+                        }
                         if let Some(chooser)=services.chooser.clone(){eval.register("viu_chooser",chooser.binding());}
                         eval.register("viu_settings",crate::native_primitives::settings_values());
                         eval.register("viu_token",crate::native_primitives::token());
                         eval.register("viu_fonts",crate::native_primitives::installed_fonts());
                         if let Some(documents)=services.documents.clone(){eval.register("viu_text_document",documents.binding());}
                         if let Some(timers)=services.timers.clone(){eval.register("viu_timer",timers.binding());}
-                        if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());}
+                        if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());eval.register("viu_exit",state.exit_binding());}
+                        if let Some(rasters)=services.rasters.clone(){eval.register("viu_raster",rasters.binding());}
                         if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
                         eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
                         eval.register("viu_maildoc",crate::native_primitives::mail_document());
@@ -266,6 +273,7 @@ impl Runtime {
                             "git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
                             "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
+                            "executable":std::env::current_exe().ok(),
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));

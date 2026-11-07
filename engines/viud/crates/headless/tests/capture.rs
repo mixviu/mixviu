@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real render-node compositor, Wayland clients and an owned private Bus.
-//! Build compd (backend-headless), noded and testkit binaries before running.
+//! Build viud (backend-headless), noded and testkit binaries before running.
 #[path = "support/pattern.rs"]
 mod pattern;
 #[path = "support/process.rs"]
@@ -103,18 +103,18 @@ impl Drop for Bus {
 }
 fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output {
     let mut command = Command::new(
-        std::env::var_os("MIXOS_TEST_MIX").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
     );
     command
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/bus.mix"))
         .arg(action)
         .arg(root)
         .args(rest)
-        .env("MIXOS_NODED_URL", url.unwrap_or("ws://127.0.0.1:1"))
-        .env("MIXOS_RUN", root.join("run"))
-        .env("MIXOS_ETC", root.join("etc"))
-        .env("MIXOS_VAR", root.join("var"))
-        .env("MIXOS_NODE_CONFIG", root.join("etc/node.conf.mix"));
+        .env("MIX_NODED_URL", url.unwrap_or("ws://127.0.0.1:1"))
+        .env("MIX_RUN", root.join("run"))
+        .env("MIX_ETC", root.join("etc"))
+        .env("MIX_VAR", root.join("var"))
+        .env("MIX_NODE_CONFIG", root.join("etc/node.conf.mix"));
     command.output().unwrap()
 }
 fn connect(process: &mut process::Process) -> UnixStream {
@@ -125,10 +125,10 @@ fn connect(process: &mut process::Process) -> UnixStream {
         }
         assert!(
             process.child.try_wait().unwrap().is_none(),
-            "compd exited: {}",
-            fs::read_to_string(process.root.join("compd.log")).unwrap()
+            "viud exited: {}",
+            fs::read_to_string(process.root.join("viud.log")).unwrap()
         );
-        assert!(Instant::now() < deadline, "compd startup timed out");
+        assert!(Instant::now() < deadline, "viud startup timed out");
         thread::sleep(Duration::from_millis(10));
     }
 }
@@ -186,7 +186,7 @@ fn frame_count(root: &Path) -> usize {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd, noded and testkit binaries"]
+#[ignore = "needs a GPU render node and built viud, noded and testkit binaries"]
 fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     let bus = Bus::start("pixels");
     let mut process = process::spawn(1, None, "pixels", Some(&bus.url));
@@ -313,7 +313,7 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     let still = bus.window()["presentation"]["presented"].as_u64().unwrap();
     assert_eq!(after, still, "callback-only commits must not present");
     // All callbacks have been consumed and the client stops committing. Count
-    // both presented and empty draws through compd's existing frame ledger.
+    // both presented and empty draws through viud's existing frame ledger.
     thread::sleep(Duration::from_millis(200));
     let frames = frame_count(&process.root);
     assert!(frames > 0, "frame tracing must be active");
@@ -365,7 +365,7 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built compd and noded binaries"]
+#[ignore = "needs a GPU render node and built viud and noded binaries"]
 fn bus_capture_completes_on_idle_output() {
     let bus = Bus::start("idle");
     let mut process = process::spawn(1, None, "idle", Some(&bus.url));

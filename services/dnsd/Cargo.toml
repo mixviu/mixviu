@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 description = "Authoritative WireGuard mesh DNS service"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "dnsd"
 kind = "service"
 layer = "core"
@@ -31,8 +31,8 @@ path = "src/main.rs"
 [features]
 # The default citizen includes node identity, logging and the read-only Bus.
 # Without defaults, the same DNS core serves explicit standalone listeners.
-default = ["mixos"]
-mixos = ["dep:config", "dep:bus", "dep:buildinfo", "dep:logging", "dep:serde_json", "dep:hickory-proto", "tokio/time"]
+default = ["mix"]
+mix = ["dep:config", "dep:bus", "dep:buildinfo", "dep:logging", "dep:serde_json", "dep:hickory-proto", "tokio/time"]
 
 [dependencies]
 dns-core = { path = "crates/dns-core" }

@@ -346,8 +346,8 @@ end
 fn description($id)
   return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root xmlns=\"urn:schemas-upnp-org:device-1-0\" xmlns:dlna=\"urn:schemas-dlna-org:device-1-0\"><specVersion><major>1</major><minor>0</minor></specVersion><device>" ..
     "<deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>" ..
-    "<friendlyName>" .. xml($id.name) .. "</friendlyName><manufacturer>MixOS</manufacturer><manufacturerURL>https://mixos.dev</manufacturerURL>" ..
-    "<modelName>dlnad</modelName><modelDescription>MixOS DLNA media server</modelDescription><modelNumber>1</modelNumber>" ..
+    "<friendlyName>" .. xml($id.name) .. "</friendlyName><manufacturer>MixViu</manufacturer><manufacturerURL>https://mixos.dev</manufacturerURL>" ..
+    "<modelName>dlnad</modelName><modelDescription>MixViu DLNA media server</modelDescription><modelNumber>1</modelNumber>" ..
     -- X_DLNADOC after UDN, minidlna's order: some stacks read the device as a sequence
     "<UDN>uuid:" .. xml($id.uuid) .. "</UDN><dlna:X_DLNADOC>DMS-1.50</dlna:X_DLNADOC><serviceList>" ..
     "<service><serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType><serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>" ..
@@ -472,7 +472,7 @@ end
 fn ssdp_notify($uuid, $nt, $nts, $location, $max_age)
   $o = "NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nNT: " .. $nt .. "\r\nNTS: ssdp:" .. $nts .. "\r\nUSN: " .. usn($uuid, $nt) .. "\r\n"
   if $nts == "alive" then
-    $o = $o .. "CACHE-CONTROL: max-age=" .. to_string($max_age) .. "\r\nLOCATION: " .. $location .. "\r\nSERVER: MixOS/1 UPnP/1.0 dlnad/1\r\n"
+    $o = $o .. "CACHE-CONTROL: max-age=" .. to_string($max_age) .. "\r\nLOCATION: " .. $location .. "\r\nSERVER: MixViu/1 UPnP/1.0 dlnad/1\r\n"
   end
   return $o .. "\r\n"
 end
@@ -500,5 +500,5 @@ end
 
 fn msearch_reply($uuid, $st, $location, $max_age, $date)
   return "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=" .. to_string($max_age) .. "\r\nDATE: " .. $date .. "\r\nEXT:\r\nLOCATION: " .. $location ..
-    "\r\nSERVER: MixOS/1 UPnP/1.0 dlnad/1\r\nST: " .. $st .. "\r\nUSN: " .. usn($uuid, $st) .. "\r\nContent-Length: 0\r\n\r\n"
+    "\r\nSERVER: MixViu/1 UPnP/1.0 dlnad/1\r\nST: " .. $st .. "\r\nUSN: " .. usn($uuid, $st) .. "\r\nContent-Length: 0\r\n\r\n"
 end

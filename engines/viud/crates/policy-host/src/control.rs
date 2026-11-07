@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The comp control commands compd answers, and the executor for the policy
+//! The comp control commands viud answers, and the executor for the policy
 //! effects they return.
 //!
 //! - `comp.workspace.switch`, `comp.window.send_to_workspace`;
 //! - `comp.window.{maximize,unmaximize,fullscreen,unfullscreen}`,
 //!   `minimize`, `restore` (named, or `{}` = rule 8's LIFO pick), `close`
-//!   (polite); `close {force}` is a long command (compd's waiter, kill via
+//!   (polite); `close {force}` is a long command (viud's waiter, kill via
 //!   [`kill_client`]);
 //! - `props.set` of `windows.s<id>.{minimized,maximized,fullscreen}`;
 //! - the client's own maximise / minimise requests ([`apply_client_requests`]);
@@ -172,7 +172,7 @@ pub fn refresh_default_output(lp: &mut Loop) {
     lp.inner.comp.default_output = default;
 }
 
-/// A `comp.window.*` / `comp.workspace.*` command, or `None` when compd does not
+/// A `comp.window.*` / `comp.workspace.*` command, or `None` when viud does not
 /// answer it yet (the caller replies `busy`).
 pub fn window(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
     let reply = window_op(lp, op);
@@ -723,7 +723,7 @@ fn untiled_by_unmaximize(
     state == WindowState::Maximized && !enabled && constrained_before && !constrained_after
 }
 
-/// The requested (not yet committed) state: compd's maximise record, the
+/// The requested (not yet committed) state: viud's maximise record, the
 /// engine's fullscreen record.
 fn requested(lp: &Loop, id: SurfaceId, state: WindowState) -> bool {
     match state {
@@ -997,7 +997,7 @@ pub fn window_facts(lp: &Loop, id: SurfaceId) -> WindowFacts {
     }
 }
 
-/// A `comp.props.set` compd answers, or `None` (the caller replies `busy`).
+/// A `comp.props.set` viud answers, or `None` (the caller replies `busy`).
 pub fn set(
     lp: &mut Loop,
     path: &str,
@@ -1361,7 +1361,7 @@ fn set_workspaces(
     }
 }
 
-/// Save the live workspace count and names as the ones compd starts with,
+/// Save the live workspace count and names as the ones viud starts with,
 /// and the live `preference` copy with them. The reply says whether it
 /// stuck: `persisted`, plus `persist_error` when the file was not written
 /// (the live change stands either way).
@@ -1972,7 +1972,7 @@ pub type Killed = (Option<i32>, Vec<u64>);
 /// window manager), never Xwayland, which every X11 window shares.
 ///
 /// `Err(reason)` (nothing killed) when no client can be attributed to the
-/// window, or the one found is compd itself or Xwayland.
+/// window, or the one found is viud itself or Xwayland.
 pub fn kill_client(lp: &Loop, id: SurfaceId, via: KillVia) -> Result<Killed, &'static str> {
     let window = window_of(lp, id).ok_or("client_unattributed")?;
     match via {
@@ -2000,7 +2000,7 @@ fn kill_x11_client(lp: &Loop, window: &Window) -> Result<Killed, &'static str> {
     let base = x11.x_client_base().ok_or("x11_disconnected")?;
     let display = &lp.inner.loader.display_handle;
     // The X server's own answer (XRes, SO_PEERCRED), else _NET_WM_PID:
-    // reported, and checked against compd and Xwayland, never signalled.
+    // reported, and checked against viud and Xwayland, never signalled.
     let pid = protocols::window::ident::pid(window, display);
     let xwayland_pid = x11
         .wl_surface()
@@ -2008,7 +2008,7 @@ fn kill_x11_client(lp: &Loop, window: &Window) -> Result<Killed, &'static str> {
         .and_then(|client| client.get_credentials(display).ok())
         .map(|credentials| credentials.pid as u32);
     if pid == Some(std::process::id()) {
-        return Err("client_is_compd");
+        return Err("client_is_viud");
     }
     if pid.is_some() && pid == xwayland_pid {
         return Err("client_is_xwayland");
@@ -2021,7 +2021,7 @@ fn kill_x11_client(lp: &Loop, window: &Window) -> Result<Killed, &'static str> {
     x11.kill_client().map_err(|error| match error {
         X11KillError::Disconnected => "x11_disconnected",
         X11KillError::ServerOwned => "x11_server_owned",
-        X11KillError::OwnConnection => "client_is_compd",
+        X11KillError::OwnConnection => "client_is_viud",
         X11KillError::Connection(_) => "x11_connection_error",
     })?;
     Ok((pid.and_then(|pid| i32::try_from(pid).ok()), windows))
@@ -2041,7 +2041,7 @@ fn kill_wayland_client(lp: &Loop, window: &Window) -> Result<Killed, &'static st
         .ok()
         .map(|credentials| credentials.pid);
     if pid.is_some_and(|pid| pid as u32 == std::process::id()) {
-        return Err("client_is_compd");
+        return Err("client_is_viud");
     }
     let windows = owned_windows(lp, |candidate| {
         candidate
@@ -2055,7 +2055,7 @@ fn kill_wayland_client(lp: &Loop, window: &Window) -> Result<Killed, &'static st
             code: 0,
             object_id: 0,
             object_interface: "wl_display".into(),
-            message: "killed by compd: comp.window.close {force} deadline passed".into(),
+            message: "killed by viud: comp.window.close {force} deadline passed".into(),
         },
     );
     Ok((pid, windows))

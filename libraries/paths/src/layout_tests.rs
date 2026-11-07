@@ -6,31 +6,25 @@ fn default_prefix_without_layout_keeps_user_xdg_roots() {
     let env = Environment {
         uid: 1000,
         home: Some("/home/user".into()),
-        exe: Some("/opt/mixos/bin/x".into()),
+        exe: Some("/opt/mix/bin/x".into()),
         xdg_runtime_dir: Some("/run/user/1000".into()),
         ..Environment::default()
     };
     // An absent layout file supplies no overrides. Prefix location never
     // changes the uid tier; installing defaults must not write a system map.
     let layout = Layout::from_source(&env, "").unwrap();
-    assert_eq!(layout.root(Root::Prefix), Path::new("/opt/mixos"));
-    assert_eq!(
-        layout.root(Root::Etc),
-        Path::new("/home/user/.config/mixos")
-    );
+    assert_eq!(layout.root(Root::Prefix), Path::new("/opt/mix"));
+    assert_eq!(layout.root(Root::Etc), Path::new("/home/user/.config/mix"));
     assert_eq!(
         layout.root(Root::Var),
-        Path::new("/home/user/.local/share/mixos")
+        Path::new("/home/user/.local/share/mix")
     );
-    assert_eq!(layout.root(Root::Run), Path::new("/run/user/1000/mixos"));
-    assert_eq!(
-        layout.root(Root::Cache),
-        Path::new("/home/user/.cache/mixos")
-    );
-    assert_eq!(layout.root(Root::Share), Path::new("/opt/mixos/share"));
-    // A root explicitly stored in layout.mx applies to every uid, like MIXOS.
-    let explicit = Layout::from_source(&env, "etc: '/etc/mixos'").unwrap();
-    assert_eq!(explicit.root(Root::Etc), Path::new("/etc/mixos"));
+    assert_eq!(layout.root(Root::Run), Path::new("/run/user/1000/mix"));
+    assert_eq!(layout.root(Root::Cache), Path::new("/home/user/.cache/mix"));
+    assert_eq!(layout.root(Root::Share), Path::new("/opt/mix/share"));
+    // A root explicitly stored in layout.mx applies to every uid, like MIX_ROOT.
+    let explicit = Layout::from_source(&env, "etc: '/etc/mix'").unwrap();
+    assert_eq!(explicit.root(Root::Etc), Path::new("/etc/mix"));
     assert_eq!(explicit.root(Root::Var), layout.root(Root::Var));
 }
 
@@ -39,7 +33,7 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
     // Expected Etc/Var/Run values were transcribed by applying the match arms
     // of 32650ae5:libs/config/src/dir.rs by hand, not by a second resolver.
     // Cache is additive: the same uid rule with XDG_CACHE_HOME/home/.cache.
-    // Share stays pinned by MIXOS_SHARE in desk fixtures; otherwise it moves.
+    // Share stays pinned by MIX_SHARE in desk fixtures; otherwise it moves.
     struct Fixture {
         name: &'static str,
         env: &'static [(&'static str, &'static str)],
@@ -51,64 +45,59 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
             name: "desk-isolated",
             env: &[
                 ("HOME", "/home/user"),
-                ("MIXOS_ETC", "/var/lib/mixos/desk/etc"),
-                ("MIXOS_VAR", "/var/lib/mixos/desk/var"),
-                ("MIXOS_RUN", "/run/mixos/session/3"),
-                ("MIXOS_SHARE", "/opt/mixos/share"),
-                ("XDG_RUNTIME_DIR", "/run/mixos/session/3/desktop"),
+                ("MIX_ETC", "/var/lib/mix/desk/etc"),
+                ("MIX_VAR", "/var/lib/mix/desk/var"),
+                ("MIX_RUN", "/run/mix/session/3"),
+                ("MIX_SHARE", "/opt/mix/share"),
+                ("XDG_RUNTIME_DIR", "/run/mix/session/3/desktop"),
             ],
             system: [
-                "/var/lib/mixos/desk/etc",
-                "/var/lib/mixos/desk/var",
-                "/run/mixos/session/3",
-                "/var/cache/mixos",
+                "/var/lib/mix/desk/etc",
+                "/var/lib/mix/desk/var",
+                "/run/mix/session/3",
+                "/var/cache/mix",
             ],
             user: [
-                "/var/lib/mixos/desk/etc",
-                "/var/lib/mixos/desk/var",
-                "/run/mixos/session/3",
-                "/home/user/.cache/mixos",
+                "/var/lib/mix/desk/etc",
+                "/var/lib/mix/desk/var",
+                "/run/mix/session/3",
+                "/home/user/.cache/mix",
             ],
         },
         Fixture {
             name: "desk-shared",
             env: &[
                 ("HOME", "/home/user"),
-                ("MIXOS_ETC", "/var/lib/mixos/vt/etc"),
-                ("MIXOS_VAR", "/var/lib/mixos/vt/var"),
-                ("MIXOS_RUN", "/run/mixos/session/4"),
-                ("MIXOS_SHARE", "/opt/mixos/share"),
-                ("XDG_RUNTIME_DIR", "/run/mixos/session/4/desktop"),
-                ("XDG_CONFIG_HOME", "/var/lib/mixos/vt/home/config"),
-                ("XDG_DATA_HOME", "/var/lib/mixos/vt/home/data"),
+                ("MIX_ETC", "/var/lib/mix/vt/etc"),
+                ("MIX_VAR", "/var/lib/mix/vt/var"),
+                ("MIX_RUN", "/run/mix/session/4"),
+                ("MIX_SHARE", "/opt/mix/share"),
+                ("XDG_RUNTIME_DIR", "/run/mix/session/4/desktop"),
+                ("XDG_CONFIG_HOME", "/var/lib/mix/vt/home/config"),
+                ("XDG_DATA_HOME", "/var/lib/mix/vt/home/data"),
             ],
             system: [
-                "/var/lib/mixos/vt/etc",
-                "/var/lib/mixos/vt/var",
-                "/run/mixos/session/4",
-                "/var/cache/mixos",
+                "/var/lib/mix/vt/etc",
+                "/var/lib/mix/vt/var",
+                "/run/mix/session/4",
+                "/var/cache/mix",
             ],
             user: [
-                "/var/lib/mixos/vt/etc",
-                "/var/lib/mixos/vt/var",
-                "/run/mixos/session/4",
-                "/home/user/.cache/mixos",
+                "/var/lib/mix/vt/etc",
+                "/var/lib/mix/vt/var",
+                "/run/mix/session/4",
+                "/home/user/.cache/mix",
             ],
         },
         Fixture {
             name: "system-unit",
-            env: &[("MIXOS_VAR", "/var/lib/mixos")],
-            system: [
-                "/etc/mixos",
-                "/var/lib/mixos",
-                "/run/mixos",
-                "/var/cache/mixos",
-            ],
+            env: &[("MIX_VAR", "/var/lib/mix")],
+            system: ["/etc/mix", "/var/lib/mix", "/run/mix", "/var/cache/mix"],
             user: [
-                "/root/.config/mixos",
-                "/var/lib/mixos",
-                "/tmp/mixos-run",
-                "/root/.cache/mixos",
+                "/root/.config/mix",
+                "/var/lib/mix",
+                "/tmp/mix-run",
+                "/root/.cache/mix",
             ],
         },
         Fixture {
@@ -117,39 +106,29 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
                 ("HOME", "/home/user"),
                 ("XDG_RUNTIME_DIR", "/run/user/1000"),
             ],
-            system: [
-                "/etc/mixos",
-                "/var/lib/mixos",
-                "/run/mixos",
-                "/var/cache/mixos",
-            ],
+            system: ["/etc/mix", "/var/lib/mix", "/run/mix", "/var/cache/mix"],
             user: [
-                "/home/user/.config/mixos",
-                "/home/user/.local/share/mixos",
-                "/run/user/1000/mixos",
-                "/home/user/.cache/mixos",
+                "/home/user/.config/mix",
+                "/home/user/.local/share/mix",
+                "/run/user/1000/mix",
+                "/home/user/.cache/mix",
             ],
         },
         Fixture {
             name: "bare-root",
             env: &[("HOME", "/root")],
-            system: [
-                "/etc/mixos",
-                "/var/lib/mixos",
-                "/run/mixos",
-                "/var/cache/mixos",
-            ],
+            system: ["/etc/mix", "/var/lib/mix", "/run/mix", "/var/cache/mix"],
             user: [
-                "/root/.config/mixos",
-                "/root/.local/share/mixos",
-                "/tmp/mixos-run",
-                "/root/.cache/mixos",
+                "/root/.config/mix",
+                "/root/.local/share/mix",
+                "/tmp/mix-run",
+                "/root/.cache/mix",
             ],
         },
     ];
     for fixture in fixtures {
         for uid in [0, 1000] {
-            for prefix in ["/opt/mixos", "/srv/moved tree"] {
+            for prefix in ["/opt/mix", "/srv/moved tree"] {
                 let get = |key: &str| -> Option<PathBuf> {
                     fixture
                         .env
@@ -181,7 +160,7 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
                     "{}",
                     fixture.name
                 );
-                let share = get("MIXOS_SHARE").unwrap_or_else(|| Path::new(prefix).join("share"));
+                let share = get("MIX_SHARE").unwrap_or_else(|| Path::new(prefix).join("share"));
                 assert_eq!(
                     layout.root(Root::Share),
                     share,
@@ -202,7 +181,7 @@ fn precedence_layout_tiers_and_non_utf8_inputs() {
         etc: Some("/override/etc".into()),
         uid: 1000,
         home: Some("/home/user".into()),
-        exe: Some("/opt/mixos/bin/x".into()),
+        exe: Some("/opt/mix/bin/x".into()),
         ..Environment::default()
     };
     let source = "etc: '/file/etc'\nvar: '/file/var'\nshare: '/file/share'\ncache: '/file/cache'";
@@ -213,14 +192,14 @@ fn precedence_layout_tiers_and_non_utf8_inputs() {
     assert_eq!(layout.root(Root::Cache), Path::new("/whole tree/cache"));
     assert_eq!(layout.root(Root::Share), Path::new("/file/share"));
     assert!(parse_layout("prefix: '/wrong'").is_err());
-    let user = Layout::defaults("user", Some(Path::new("/opt/mixos")), &env).unwrap();
+    let user = Layout::defaults("user", Some(Path::new("/opt/mix")), &env).unwrap();
     let system = Layout::defaults("system", Some(Path::new("/home/user/install")), &env).unwrap();
     assert_eq!(
         user.root(Root::Var),
-        Path::new("/home/user/.local/share/mixos")
+        Path::new("/home/user/.local/share/mix")
     );
-    assert_eq!(user.root(Root::Run), Path::new("/tmp/mixos-run"));
-    assert_eq!(system.root(Root::Etc), Path::new("/etc/mixos"));
+    assert_eq!(user.root(Root::Run), Path::new("/tmp/mix-run"));
+    assert_eq!(system.root(Root::Etc), Path::new("/etc/mix"));
     let non_utf8 = PathBuf::from(OsString::from_vec(b"/home/non-utf8-\xff".to_vec()));
     let env = Environment::from_lookup(
         |key: &str| {
@@ -235,7 +214,7 @@ fn precedence_layout_tiers_and_non_utf8_inputs() {
     );
     assert_eq!(
         Layout::resolve(&env).get(Dir::Var),
-        non_utf8.join(".local/share/mixos")
+        non_utf8.join(".local/share/mix")
     );
 }
 
@@ -251,7 +230,7 @@ fn relative_xdg_cache_is_ignored_and_relative_legacy_overrides_are_retained() {
         ..Environment::default()
     };
     let l = Layout::resolve(&env);
-    assert_eq!(l.root(Root::Cache), Path::new("/home/user/.cache/mixos"));
+    assert_eq!(l.root(Root::Cache), Path::new("/home/user/.cache/mix"));
     assert_eq!(l.get(Dir::Etc), Path::new("relative-etc"));
     assert_eq!(l.get(Dir::Var), Path::new("relative-var"));
     assert_eq!(l.get(Dir::Run), Path::new("relative-run"));
@@ -305,14 +284,14 @@ fn logical_paths_are_bounded_and_layout_fixture_contract() {
     };
     let l = Layout::resolve(&env);
     assert_eq!(
-        l.resolve_path("mixos:share/a/../b").unwrap(),
+        l.resolve_path("mix:share/a/../b").unwrap(),
         Path::new("/srv/moved tree/share/b")
     );
     for path in [
-        "mixos:prefix/../a",
-        "mixos:etc/a/../../b",
-        "mixos:config/a",
-        "mixos:prefix//etc",
+        "mix:prefix/../a",
+        "mix:etc/a/../../b",
+        "mix:config/a",
+        "mix:prefix//etc",
     ] {
         assert!(l.resolve_path(path).is_err(), "{path}");
     }
@@ -333,7 +312,7 @@ fn logical_paths_are_bounded_and_layout_fixture_contract() {
 
 #[test]
 fn real_layout_and_symlink_follow_a_move() {
-    let temp = std::env::temp_dir().join(format!("mixos-paths-{}", std::process::id()));
+    let temp = std::env::temp_dir().join(format!("mix-paths-{}", std::process::id()));
     let first = temp.join("first prefix");
     let moved = temp.join("moved prefix");
     std::fs::create_dir_all(first.join("bin")).unwrap();
@@ -378,14 +357,14 @@ fn an_empty_rel_names_the_root_without_a_trailing_slash() {
         assert_eq!(path.as_os_str(), "/srv/moved tree", "{rel:?}");
     }
     assert_eq!(
-        layout.resolve_path("mixos:prefix").unwrap().as_os_str(),
+        layout.resolve_path("mix:prefix").unwrap().as_os_str(),
         "/srv/moved tree"
     );
 }
 
 #[test]
 fn a_cargo_build_tree_is_not_an_install() {
-    let temp = std::env::temp_dir().join(format!("mixos-paths-cargo-{}", std::process::id()));
+    let temp = std::env::temp_dir().join(format!("mix-paths-cargo-{}", std::process::id()));
     let profile = temp.join("target/debug");
     std::fs::create_dir_all(profile.join(".fingerprint")).unwrap();
     std::fs::create_dir_all(profile.join("deps")).unwrap();
@@ -397,7 +376,7 @@ fn a_cargo_build_tree_is_not_an_install() {
             exe.display()
         );
     }
-    // MIXOS_PREFIX still wins over the build-tree default.
+    // MIX_PREFIX still wins over the build-tree default.
     let env = Environment {
         uid: 1000,
         home: Some("/home/user".into()),

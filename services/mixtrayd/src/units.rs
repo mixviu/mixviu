@@ -1,4 +1,4 @@
-//! The COS tab's unit states: systemd's `ActiveState` for each MixOS unit,
+//! The COS tab's unit states: systemd's `ActiveState` for each MixViu unit,
 //! read straight from systemd's D-Bus manager. Nothing here runs on a timer;
 //! the daemon reads them when the popup asks for a snapshot, and `watch`
 //! follows systemd's change signals for the same units.

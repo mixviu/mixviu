@@ -1,11 +1,11 @@
-# MixOS blob store daemon (blobd). The same identities as the previous unit it
+# MixViu blob store daemon (blobd). The same identities as the previous unit it
 # replaces: uid blobd, group blob (522), the same state root
 # @{var}/blobd and config @{etc}/blobd/config.conf.mix, so the
 # store is read in place. Stop blobd before starting this one: both
 # register as the Bus service "blobd" and both hold the lane port.
 
 [Unit]
-Description=MixOS blob store daemon (blobd)
+Description=MixViu blob store daemon (blobd)
 After=network-online.target noded.service
 Wants=network-online.target noded.service
 StartLimitIntervalSec=10min
@@ -16,19 +16,19 @@ Type=simple
 User=blobd
 Group=blobd
 SupplementaryGroups=blob
-StateDirectory=mixos/blobd
+StateDirectory=mix/blobd
 StateDirectoryMode=0750
-RuntimeDirectory=mixos/blobd
+RuntimeDirectory=mix/blobd
 RuntimeDirectoryMode=0750
-ConfigurationDirectory=mixos/blobd
+ConfigurationDirectory=mix/blobd
 ConfigurationDirectoryMode=0755
-WorkingDirectory=%S/mixos/blobd
-ExecStart=@{prefix}/bin/blobd -c %E/mixos/blobd/config.conf.mix
+WorkingDirectory=%S/mix/blobd
+ExecStart=@{prefix}/bin/blobd -c %E/mix/blobd/config.conf.mix
 Restart=on-failure
 RestartSec=30s
 Environment=RUST_LOG=blobd=info
-Environment=HOME=%S/mixos/blobd
-Environment=MIXOS_NODE_CONFIG=%E/mixos/node.conf.mix
+Environment=HOME=%S/mix/blobd
+Environment=MIX_NODE_CONFIG=%E/mix/node.conf.mix
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=blobd

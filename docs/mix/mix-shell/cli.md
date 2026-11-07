@@ -170,12 +170,12 @@ the old `mix.db`.
 | `~/.mixrc` | Interactive and `-i -c` startup file. |
 | `~/.mix_history` | Readline history. |
 | `node.conf.mix` | Read-only broker address input; see [Serve mode](serve-mode.md). |
-| `MIXOS_NODE_CONFIG` | Overrides the node configuration file path. |
-| `MIXOS_SRC` | Overrides the MixOS source/documentation root used by project and manual commands. |
-| `MIXOS_ETC` | Overrides the MixOS configuration directory. |
-| `MIXOS_BIN` | Overrides the install directory used by `mix build`. |
-| `MIXOS_MAN_SOURCE` | Selects `auto` or `local` manual resolution. |
-| `MIXOS_MAN_URL` | Overrides the canonical manual base URL. |
+| `MIX_NODE_CONFIG` | Overrides the node configuration file path. |
+| `MIX_SRC` | Overrides the MixViu source/documentation root used by project and manual commands. |
+| `MIX_ETC` | Overrides the MixViu configuration directory. |
+| `MIX_BIN` | Overrides the install directory used by `mix build`. |
+| `MIX_MAN_SOURCE` | Selects `auto` or `local` manual resolution. |
+| `MIX_MAN_URL` | Overrides the canonical manual base URL. |
 | `XDG_CACHE_HOME` | Sets the manual cache root; it must be absolute to be used as an XDG path. |
 | `XDG_STATE_HOME` | Sets the usage-statistics root; it must be absolute. |
 | `MIX_STATS=0` | Disables statistics for the process. |

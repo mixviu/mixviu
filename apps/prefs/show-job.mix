@@ -8,7 +8,7 @@ on job.run
     send $comp "comp.windows.list" body={} timeout=5
     if $rc!=0 then raise("SHOW",to_string($result)) end
     $window=filter($reply.windows,fn($w)=$w.app_id=="dev.mixos.prefs" and $w.pid==pid())[0]
-    if $window==nil then raise("SHOW","window not known to compd") end
+    if $window==nil then raise("SHOW","window not known to viud") end
     $target={id:$window.id,generation:$window.generation}
     send $comp "comp.window.restore" body=$target timeout=5
     if $rc!=0 or $reply.minimized!=false then raise("SHOW",to_string($result)) end

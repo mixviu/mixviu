@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The MixOS app domains kept from today's model (§2.16): `terminal.*`,
+//! The MixViu app domains kept from today's model (§2.16): `terminal.*`,
 //! `email.*`, `ced.*`, each decoded into its module's own record, so Term,
 //! Email and Ced read exactly the types they read today.
 use super::{Reader, View};

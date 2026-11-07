@@ -1,8 +1,8 @@
 # assets: the resolver for a pinned, immutable set of fonts, icons and emoji
 # published as `<root>/sets/<id>` behind a `current` link, locked by a
 # strict-data manifest with a SHA-256 and a BLAKE3 per file. The core takes
-# its search directories from the caller; the default `mixos` feature adds
-# the MixOS lookup (`mixos/assets` under the XDG data directories, then
+# its search directories from the caller; the default `mix` feature adds
+# the MixViu lookup (`mix/assets` under the XDG data directories, then
 # `assets` under the share directory `config` resolves), and the `verified`
 # feature adds immutable byte reads (`read_verified`) through
 # `config::atomic` descriptor-relative opens.
@@ -16,7 +16,7 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "assets"
 kind = "lib"
 layer = "core"
@@ -26,13 +26,13 @@ contract = "public"
 mod_module_files = "deny"
 
 [features]
-default = ["mixos"]
-# The MixOS search path. Without it the crate is the generic core only and
-# depends on no other MixOS crate but `strict`.
-mixos = ["verified"]
+default = ["mix"]
+# The MixViu search path. Without it the crate is the generic core only and
+# depends on no other MixViu crate but `strict`.
+mix = ["verified"]
 # Immutable verified byte reads (`AssetSet::read_verified`): every locked
 # file captured once through descriptor-relative opens in `config::atomic`.
-# Off, the core depends on no other MixOS crate but `strict`.
+# Off, the core depends on no other MixViu crate but `strict`.
 verified = ["dep:config"]
 
 [dependencies]

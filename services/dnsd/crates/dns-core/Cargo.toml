@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 description = "Private authoritative DNS model, parser, codec, resolver and serve loops for dnsd"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "dnsd"
 kind = "service"
 layer = "core"

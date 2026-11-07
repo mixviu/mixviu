@@ -6,7 +6,7 @@ description: Current Mix interpreter, shell and process-level regression test lo
 # Mix regression tests
 
 The former standalone `mix-bench` Cargo package is not in the current
-MixOS workspace. This page keeps its existing documentation address so
+MixViu workspace. This page keeps its existing documentation address so
 older links resolve, but its old package name, sibling-directory lookup
 and score command do not describe a tool that can be built here.
 

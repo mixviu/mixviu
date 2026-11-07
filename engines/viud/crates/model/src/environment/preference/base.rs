@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Live user **preferences** — the inline-reloaded counterpart to the read-once
 //! `environment.config` (settings.json). Stored in
-//! `~/.config/compd/preferences.json` (same dir). Loaded fresh ([`load`])
+//! `~/.config/mix/viud/preferences.json` (same dir). Loaded fresh ([`load`])
 //! rather than cached in a startup `OnceLock`: startup seeds the runtime cells,
 //! the settings window re-reads on open (so terminal edits show) and writes back
 //! with [`save`]; applied live, no reboot.
@@ -157,7 +157,7 @@ pub struct Preference {
     /// Persisted comp.props tiling leaves; the policy host validates each leaf.
     pub tiling: serde_json::Map<String, serde_json::Value>,
     /// Pointer cursor speed multiplier on relative motion (`1.0` = unscaled). The
-    /// same value gives the same logical speed at every output scale (compd
+    /// same value gives the same logical speed at every output scale (viud
     /// multiplies the delta by the output's scale as well).
     pub cursor_sensitivity: f64,
     /// Natural scrolling: invert the touchpad finger-axis direction for canvas
@@ -212,7 +212,7 @@ pub struct Preference {
     #[serde(default)]
     pub canvas_cursor: bool,
     /// Server-side window decorations (xdg-decoration): ON by default, so a
-    /// client that asks (or leaves it to compd) gets compd's chrome; an
+    /// client that asks (or leaves it to viud) gets viud's chrome; an
     /// explicit client-side request is always honoured. Off = every toplevel is
     /// told client-side. Mirrored into [`decorations_ssd`] for the protocol
     /// handlers; applies to decorations negotiated after the change.
@@ -289,7 +289,7 @@ pub struct Preference {
     /// as before — libxkbcommon reads the `XKB_DEFAULT_*` environment.
     pub keyboard: KeyboardLayout,
     /// Default background shader for new worlds: a bundle folder name under
-    /// `~/.local/share/compd/background/shader/`, or an absolute path. A world may
+    /// `~/.local/share/mix/viud/background/shader/`, or an absolute path. A world may
     /// override it in its own record; unset = the built-in parallax.
     pub background_shader: Option<String>,
     /// Anti-aliasing / graphics config for the pannable world (edited in the
@@ -344,7 +344,7 @@ pub struct Preference {
     /// Read live on every map, so a change takes effect on the next window.
     #[serde(default = "default_session_capture")]
     pub session_capture: String,
-    /// The workspace count compd starts with (`comp.workspaces.set_count`
+    /// The workspace count viud starts with (`comp.workspaces.set_count`
     /// with `persist` writes it). Out of range falls back to 4. Read at
     /// startup.
     #[serde(default = "default_workspaces_count")]
@@ -355,7 +355,7 @@ pub struct Preference {
     pub workspace_names: Vec<String>,
 }
 
-/// Default for `workspaces_count`. compd starts with this when the file has
+/// Default for `workspaces_count`. viud starts with this when the file has
 /// no count; `policy::workspaces::DEFAULT_WORKSPACE_COUNT` (the same 4) only
 /// replaces a saved count that is out of range. Keep the two in step.
 pub fn default_workspaces_count() -> u32 {
@@ -830,7 +830,7 @@ pub fn save_fields(fields: serde_json::Map<String, serde_json::Value>) -> Result
 ///
 /// Writers are serialised across processes by an exclusive lock on a sibling
 /// `<file>.lock` (held for the whole read-modify-write), and each write goes
-/// through its own exclusively created temporary file, so two compd instances
+/// through its own exclusively created temporary file, so two viud instances
 /// sharing a config directory never interleave or publish each other's
 /// payload.
 pub fn save_fields_at(

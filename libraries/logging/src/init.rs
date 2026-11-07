@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `init()` — the single entry point every MixOS binary calls.
+//! `init()` — the single entry point every MixViu binary calls.
 //!
 //! Resolves the pre-Bus precedence ladder for the bootstrap
 //! subscriber: env (`RUST_LOG`) > CLI (`LogOpts`) > defaults. A

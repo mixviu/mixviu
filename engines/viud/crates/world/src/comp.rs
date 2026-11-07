@@ -213,7 +213,7 @@ pub struct CompState {
     /// the usable area after the layer zones. Set by the scene host's owner
     /// each pass; absent is nothing reserved.
     pub reserved: BTreeMap<String, usable::Reserved>,
-    /// The Mix Scenes surfaces compd draws itself, as comp.props rows.
+    /// The Mix Scenes surfaces viud draws itself, as comp.props rows.
     pub scenes: scenes::SceneSurfaces,
     /// Each output's generation, by output name: bumped
     /// when its mode, size, scale or position changes, or when it comes back
@@ -249,7 +249,7 @@ pub struct CompState {
     /// Bus edge pass runs only when it moved.
     revision: u64,
     /// Bumped only when registry content (a role, the mapped/focused bits,
-    /// names, a uuid, a layer binding) actually changed: the `compd.truth`
+    /// names, a uuid, a layer binding) actually changed: the `viud.truth`
     /// revision, which stays put while a client merely redraws.
     content: u64,
 }
@@ -571,7 +571,7 @@ impl CompState {
     }
 
     /// Moves only when registry content (or the corner configuration)
-    /// changed (`compd.truth`'s revision).
+    /// changed (`viud.truth`'s revision).
     pub fn content_revision(&self) -> u64 {
         self.content.wrapping_add(self.corners.changes())
     }
@@ -636,7 +636,7 @@ impl CompState {
 
     /// The renderer's occlusion decision changed for windows `ids`: the
     /// edge pass must diff their rows, with the `wayland.occlusion` cause.
-    /// Not content (`compd.truth` carries no occlusion).
+    /// Not content (`viud.truth` carries no occlusion).
     pub fn occlusion_changed(&mut self, ids: &[u64]) {
         if ids.is_empty() {
             return;

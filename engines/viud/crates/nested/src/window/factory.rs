@@ -9,7 +9,7 @@ use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::utils::Transform;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// The nested output's scale chosen by compd (`--scale S`),
+/// The nested output's scale chosen by viud (`--scale S`),
 /// as `f64` bits; 0 = none, follow the host window's scale factor. One value
 /// for the process (per-output scale is a later step).
 static SCALE: AtomicU64 = AtomicU64::new(0);
@@ -23,7 +23,7 @@ pub fn set_scale(scale: Option<f64>) {
     SCALE.store(bits, Ordering::Relaxed);
 }
 
-/// The scale the nested output runs at: compd's choice when set, else `host`
+/// The scale the nested output runs at: viud's choice when set, else `host`
 /// (the host window's scale factor).
 pub fn output_scale(host: f64) -> Scale {
     match SCALE.load(Ordering::Relaxed) {
@@ -42,7 +42,7 @@ pub struct WinitWindow {
 pub fn create() -> Result<WinitWindow, String> {
     info!("Init winit backend");
 
-    // With compd's `--scale S` the window asks for 1280x800 × S PHYSICAL px, so
+    // With viud's `--scale S` the window asks for 1280x800 × S PHYSICAL px, so
     // the nested output is the same 1280x800 LOGICAL at any S and a gate's
     // coordinates mean what they mean at 1.0. The host
     // must have room for it (the gates run a 3840x2160 host at S != 1).
@@ -90,7 +90,7 @@ pub fn create() -> Result<WinitWindow, String> {
     );
 
     // The host scale is not known until the first Resized; until then the
-    // output is at compd's scale, or 1.
+    // output is at viud's scale, or 1.
     let scale = output_scale(1.0);
     // Transform NORMAL on the wire. The nested picture is drawn into a GL
     // default framebuffer (row 0 at the bottom), so it IS rendered through

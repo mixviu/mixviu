@@ -1,6 +1,6 @@
 [package]
 name = "design"
-description = "The MixOS design-token system: schemes, modes, palettes, typography, the strict-data design source and its compiler"
+description = "The MixViu design-token system: schemes, modes, palettes, typography, the strict-data design source and its compiler"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "design"
 kind = "lib"
 layer = "core"

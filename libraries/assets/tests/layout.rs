@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-#![cfg(feature = "mixos")]
+#![cfg(feature = "mix")]
 
 //! The installed layout, as `share/assets/install.mix` publishes it: the
 //! roles, families, file paths and stylesheet of the `2026-10-04-core-3`
 //! set, rebuilt in a temporary share directory with stand-in bytes, and
-//! resolved through the MixOS search path. A second test opens the real
+//! resolved through the MixViu search path. A second test opens the real
 //! installation when this machine has one.
 
 use std::ffi::OsString;
@@ -138,10 +138,10 @@ const FILES: &[(&str, &str, &str)] = &[
 ];
 
 const WEB_CSS: &str = "/* Relative URLs keep this stylesheet bound to its immutable asset set. */\n\
-@font-face { font-family: \"MixOS Sans\"; src: url(\"web/InterVariable.woff2\") format(\"woff2\"); font-style: normal; font-weight: 100 900; font-display: swap; }\n\
-@font-face { font-family: \"MixOS Display\"; src: url(\"fonts/Quicksand.ttf\") format(\"truetype\"); font-style: normal; font-weight: 300 700; font-display: swap; }\n\
-@font-face { font-family: \"MixOS Emoji\"; src: url(\"web/NotoColorEmoji-COLRv1.ttf\") format(\"truetype\"); font-display: swap; }\n\
-.mixos-symbol { font-family: \"MixOS Symbols Rounded\"; font-weight: 400; font-style: normal; font-size: 24px; line-height: 1; display: inline-block; white-space: nowrap; font-feature-settings: \"liga\"; font-variation-settings: \"FILL\" 0, \"wght\" 400, \"GRAD\" 0, \"opsz\" 24; }\n";
+@font-face { font-family: \"MixViu Sans\"; src: url(\"web/InterVariable.woff2\") format(\"woff2\"); font-style: normal; font-weight: 100 900; font-display: swap; }\n\
+@font-face { font-family: \"MixViu Display\"; src: url(\"fonts/Quicksand.ttf\") format(\"truetype\"); font-style: normal; font-weight: 300 700; font-display: swap; }\n\
+@font-face { font-family: \"MixViu Emoji\"; src: url(\"web/NotoColorEmoji-COLRv1.ttf\") format(\"truetype\"); font-display: swap; }\n\
+.mixos-symbol { font-family: \"MixViu Symbols Rounded\"; font-weight: 400; font-style: normal; font-size: 24px; line-height: 1; display: inline-block; white-space: nowrap; font-feature-settings: \"liga\"; font-variation-settings: \"FILL\" 0, \"wght\" 400, \"GRAD\" 0, \"opsz\" 24; }\n";
 
 /// Publish the core-3 layout under `share/assets` with stand-in bytes and
 /// the manifest written as the installer writes it (JSON syntax, which is
@@ -199,7 +199,7 @@ fn publish(share: &Path) -> PathBuf {
 #[test]
 fn an_unprivileged_reader_resolves_the_installed_layout() {
     let temp = tempfile::tempdir().unwrap();
-    let share = temp.path().join("opt/mixos/share");
+    let share = temp.path().join("opt/mix/share");
     let root = publish(&share);
     // Nothing in the XDG directories: the share root is the one that answers.
     let xdg = XdgData {
@@ -207,12 +207,12 @@ fn an_unprivileged_reader_resolves_the_installed_layout() {
         data_dirs: Some(OsString::from(temp.path().join("usr/share"))),
         home: Some(temp.path().join("home")),
     };
-    let lookup = assets::mixos::lookup_in(&xdg, &share);
+    let lookup = assets::mix::lookup_in(&xdg, &share);
     assert_eq!(
         lookup.roots(),
         [
-            temp.path().join("home/.local/share/mixos/assets"),
-            temp.path().join("usr/share/mixos/assets"),
+            temp.path().join("home/.local/share/mix/assets"),
+            temp.path().join("usr/share/mix/assets"),
             root.clone(),
         ]
     );
@@ -250,8 +250,8 @@ fn an_unprivileged_reader_resolves_the_installed_layout() {
 
     // A user override takes precedence once it exists, and the pinned
     // selection does not move.
-    let user_root = temp.path().join("home/.local/share/mixos/assets");
-    let user_set = publish(&temp.path().join("home/.local/share/mixos"));
+    let user_root = temp.path().join("home/.local/share/mix/assets");
+    let user_set = publish(&temp.path().join("home/.local/share/mix"));
     assert_eq!(user_set, user_root);
     assert_eq!(
         lookup.discover().unwrap().unwrap().assets_root(),
@@ -264,7 +264,7 @@ fn an_unprivileged_reader_resolves_the_installed_layout() {
 /// otherwise: the layout test above is the gate that always runs.
 #[test]
 fn the_real_installation_opens_and_verifies_when_present() {
-    let root = config::path(config::Dir::Share).join(assets::mixos::SHARE_SUBDIR);
+    let root = config::path(config::Dir::Share).join(assets::mix::SHARE_SUBDIR);
     if fs::symlink_metadata(root.join(assets::CURRENT_LINK)).is_err() {
         return;
     }

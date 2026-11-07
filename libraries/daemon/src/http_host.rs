@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Strict `Host` header parser shared by every MixOS daemon that
+//! Strict `Host` header parser shared by every MixViu daemon that
 //! serves HTTP and needs to dispatch by Host or to redirect to a
 //! Host-derived URL. The semantics match the NS 3.0 nginx `$host`
 //! rendering (without port, lowercased) and reject anything that

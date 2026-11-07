@@ -1,17 +1,17 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
-Description=MixOS scene loader for session %i
-Requires=compd@%i.service
-After=compd@%i.service apps@%i.service
-BindsTo=compd@%i.service
+Description=MixViu scene loader for session %i
+Requires=viud@%i.service
+After=viud@%i.service apps@%i.service
+BindsTo=viud@%i.service
 PartOf=session@%i.target
 
 [Service]
 Type=simple
-User=mixos
+User=mix
 EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
-ExecStart=@{prefix}/bin/mix --serve @{share}/compd/scripts/scenes.mix --name scenes
+ExecStart=@{prefix}/bin/mix --serve @{share}/viud/scripts/scenes.mix --name scenes
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure

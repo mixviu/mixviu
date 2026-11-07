@@ -65,7 +65,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const PATH: &str = "design.v1.families.chrome";
 
 /// Every chrome role. The vocabulary is shared with the desktop-editor
-/// chrome MixOS matches, name for name, so a value change there is a one-row
+/// chrome MixViu matches, name for name, so a value change there is a one-row
 /// change here. A role is added here first, then authored in each design.
 pub const ROLES: &[&str] = &[
     // Surfaces.

@@ -21,7 +21,7 @@ fn resolver() -> &'static Resolver {
 }
 
 pub(crate) fn resolve(source: &str, size: u32, app: Option<&str>) -> Option<PathBuf> {
-    if source.starts_with("mixos:") {
+    if source.starts_with("mix:") {
         let path = paths::resolve(source).ok()?;
         return path.is_file().then_some(path);
     }
@@ -41,9 +41,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires COMPD_ICON_ROOT pointing to an installed icon tree"]
+    #[ignore = "requires VIUD_ICON_ROOT pointing to an installed icon tree"]
     fn installed_icons_resolve_without_generic_placeholders() {
-        let root = PathBuf::from(std::env::var_os("COMPD_ICON_ROOT").expect("COMPD_ICON_ROOT"));
+        let root = PathBuf::from(std::env::var_os("VIUD_ICON_ROOT").expect("VIUD_ICON_ROOT"));
         let lookup = Lookup::in_data_dirs(
             "Adwaita",
             [root.join("usr/local/share"), root.join("usr/share")],

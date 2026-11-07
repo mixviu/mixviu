@@ -17,7 +17,7 @@
   "publisher_loss": 0,
   "recovery": {
     "degraded": false,
-    "dir": "/home/user/.local/state/mixos/edit/recovery",
+    "dir": "/home/user/.local/state/mix/edit/recovery",
     "enabled": true,
     "failures": 0,
     "ok": true,

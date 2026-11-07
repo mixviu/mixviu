@@ -4,7 +4,7 @@
 //! the seat is opened (see `factory`).
 //!
 //! The VT is the one standard input is (a unit with `TTYPath=/dev/ttyN` and
-//! `StandardInput=tty`, as compd's VT unit runs): character major
+//! `StandardInput=tty`, as viud's VT unit runs): character major
 //! 4, minor 1–63. Anything else (a pipe, a pty, no tty: a nested or
 //! dev run) does not wait. The kernel notifies `/sys/class/tty/tty0/active`
 //! (POLLPRI) on every console switch — the attribute systemd-logind watches

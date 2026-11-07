@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 autobins = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "blobd"
 kind = "service"
 layer = "core"

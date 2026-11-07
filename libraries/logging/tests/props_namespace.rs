@@ -52,7 +52,7 @@ fn body(pairs: &[(&str, &str)]) -> PropValue {
 
 #[test]
 fn property_reloads_resynchronise_the_log_facade() {
-    const CHILD: &str = "MIXOS_LOG_PROPS_FACADE_CHILD";
+    const CHILD: &str = "MIX_TEST_LOG_PROPS_FACADE_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([

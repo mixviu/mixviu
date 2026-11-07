@@ -6,7 +6,7 @@ use model::environment::preference::base::{Preference, save_fields_at};
 use serde_json::{Map, Value, json};
 
 fn scratch(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("compd-save-fields-{}-{name}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("viud-save-fields-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir.join("preferences.json")

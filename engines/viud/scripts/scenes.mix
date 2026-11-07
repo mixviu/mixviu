@@ -9,7 +9,7 @@
 -- (SCENES_FIRST_RUN=0 disables it) and the unreadable-state write guard.
 $loader = require("lib/scenes.mix")
 $io = require("lib/scenes_io.mix")
-$ROOT = env("SCENES_DIR", env("XDG_CONFIG_HOME", env("HOME") .. "/.config") .. "/mixos/scenes")
+$ROOT = env("SCENES_DIR", env("XDG_CONFIG_HOME", env("HOME") .. "/.config") .. "/mix/scenes")
 $TEMPLATES = $io.templates($0)
 export SCENES_LIB = env("SCENES_LIB", $TEMPLATES .. "/lib")
 $HOST = env("SCENE_HOST", "shell")

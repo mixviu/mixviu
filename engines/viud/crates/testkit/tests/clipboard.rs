@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The clipboard through compd's real selection handlers: the offer follows
+//! The clipboard through viud's real selection handlers: the offer follows
 //! keyboard focus, a copy survives its source going away, a copy made on the
 //! agent seat is offered on the primary seat, and an unfocused client cannot
 //! take the clipboard.
@@ -89,7 +89,7 @@ fn a_copy_survives_its_source_going_away() {
     assert_eq!(
         h.client.state.clipboard.served.len(),
         served,
-        "served from compd's copy, not by the gone source"
+        "served from viud's copy, not by the gone source"
     );
 }
 
@@ -137,7 +137,7 @@ fn an_agent_seat_copy_is_offered_on_the_primary_seat() {
     h.roundtrip_client(b);
     assert!(
         h.extra_clients[b].selection_mimes(PRIMARY).is_some(),
-        "the mirror was replaced by compd's copy, not cleared"
+        "the mirror was replaced by viud's copy, not cleared"
     );
     let mut read = h.extra_clients[b].receive(PRIMARY, TEXT);
     assert_eq!(finish(&mut h, &mut read), b"charlie");

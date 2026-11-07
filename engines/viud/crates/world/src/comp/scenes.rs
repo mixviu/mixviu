@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Mix Scenes surfaces compd draws itself, as comp.props shows them.
+//! The Mix Scenes surfaces viud draws itself, as comp.props shows them.
 //! Quoin's panels and dialog are layer surfaces, so `surfaces.*`, `stack`
-//! and `focus.keyboard` carry them; compd's scene host draws its own
+//! and `focus.keyboard` carry them; viud's scene host draws its own
 //! in-process, with no `wl_surface` and no registry record. Each scene
 //! surface gets a numeric id reserved from the registry's own counter (stable
-//! per scene for compd's lifetime; the wire's ids stay numbers) and a fresh
+//! per scene for viud's lifetime; the wire's ids stay numbers) and a fresh
 //! generation each time it maps.
 //!
-//! The owner of the scene host (compd's comp port) feeds this every pass;
+//! The owner of the scene host (viud's comp port) feeds this every pass;
 //! the projection reads the rows.
 
 use std::collections::BTreeMap;

@@ -51,12 +51,12 @@ fn parse_file_reads_a_fixture() {
 
 #[test]
 fn parse_file_missing_is_an_io_error_naming_the_path() {
-    let error = config::parse_file(Path::new("/nonexistent/mixos/sample.conf.mix")).unwrap_err();
+    let error = config::parse_file(Path::new("/nonexistent/mix/sample.conf.mix")).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Io);
     assert!(
         error
             .to_string()
-            .contains("/nonexistent/mixos/sample.conf.mix"),
+            .contains("/nonexistent/mix/sample.conf.mix"),
         "got: {error}"
     );
 }

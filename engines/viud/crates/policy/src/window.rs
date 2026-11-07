@@ -479,7 +479,7 @@ pub fn force_close_at_deadline<H: Clone + Eq + Hash>(
 }
 
 /// The deadline passed but the host would not kill: it could not
-/// attribute a client to the window (or the client is compd or
+/// attribute a client to the window (or the client is viud or
 /// Xwayland). The polite close was sent; the window is still open.
 pub fn kill_refused_reply(id: u64, generation: u64, waited_ms: u64, reason: &str) -> ControlReply {
     ControlReply::refused(

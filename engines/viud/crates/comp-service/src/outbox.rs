@@ -334,7 +334,7 @@ mod tests {
         assert_eq!((loss.first_lost_seq, loss.last_lost_seq), (1, 1_023));
     }
 
-    // New for compd: the shared sequence and its watermark.
+    // New for viud: the shared sequence and its watermark.
     #[test]
     fn offer_next_numbers_records_and_moves_the_watermark() {
         let lost = Arc::new(AtomicU64::new(0));

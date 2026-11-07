@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! The MixOS search path (the default `mixos` feature).
+//! The MixViu search path (the default `mix` feature).
 //!
-//! Order: `$XDG_DATA_HOME/mixos/assets`, each `$XDG_DATA_DIRS` entry's
-//! `mixos/assets`, then `assets` under the share directory `config`
-//! resolves (`MIXOS_SHARE`, default the derived prefix/share). Unset or empty
+//! Order: `$XDG_DATA_HOME/mix/assets`, each `$XDG_DATA_DIRS` entry's
+//! `mix/assets`, then `assets` under the share directory `config`
+//! resolves (`MIX_SHARE`, default the derived prefix/share). Unset or empty
 //! XDG variables take their defaults; relative entries are ignored.
 
 use std::path::Path;
@@ -17,7 +17,7 @@ use crate::lookup::{Lookup, XdgData};
 use crate::set::AssetSet;
 
 /// The subdirectory under each XDG data directory.
-pub const XDG_SUBDIR: &str = "mixos/assets";
+pub const XDG_SUBDIR: &str = "mix/assets";
 
 /// The subdirectory under the share directory.
 pub const SHARE_SUBDIR: &str = "assets";
@@ -42,12 +42,12 @@ pub fn mono_face(weight: u16) -> (&'static str, &'static [u8]) {
     }
 }
 
-/// The MixOS lookup, from the process environment.
+/// The MixViu lookup, from the process environment.
 pub fn lookup() -> Lookup {
     lookup_in(&XdgData::current(), &config::path(Dir::Share))
 }
 
-/// The MixOS lookup for explicit inputs: `xdg` and the resolved share
+/// The MixViu lookup for explicit inputs: `xdg` and the resolved share
 /// directory (what `config::path(Dir::Share)` returns).
 pub fn lookup_in(xdg: &XdgData, share: &Path) -> Lookup {
     Lookup::new()
@@ -55,12 +55,12 @@ pub fn lookup_in(xdg: &XdgData, share: &Path) -> Lookup {
         .root(share.join(SHARE_SUBDIR))
 }
 
-/// Select, open and verify the activated MixOS set once, at startup.
+/// Select, open and verify the activated MixViu set once, at startup.
 pub fn discover() -> Result<Option<AssetSet>> {
     lookup().discover()
 }
 
-/// Select and open the activated MixOS set without hashing its payload
+/// Select and open the activated MixViu set without hashing its payload
 /// ([`Lookup::select`]): layout, manifest and sizes checked, the
 /// installer's verification trusted for the bytes.
 pub fn select() -> Result<Option<AssetSet>> {
@@ -80,14 +80,14 @@ mod tests {
             data_dirs: Some(OsString::from("/usr/local/share:/usr/share")),
             home: Some(PathBuf::from("/u")),
         };
-        let lookup = lookup_in(&xdg, Path::new("/opt/mixos/share"));
+        let lookup = lookup_in(&xdg, Path::new("/opt/mix/share"));
         assert_eq!(
             lookup.roots(),
             [
-                PathBuf::from("/u/.local/share/mixos/assets"),
-                PathBuf::from("/usr/local/share/mixos/assets"),
-                PathBuf::from("/usr/share/mixos/assets"),
-                PathBuf::from("/opt/mixos/share/assets"),
+                PathBuf::from("/u/.local/share/mix/assets"),
+                PathBuf::from("/usr/local/share/mix/assets"),
+                PathBuf::from("/usr/share/mix/assets"),
+                PathBuf::from("/opt/mix/share/assets"),
             ]
         );
     }

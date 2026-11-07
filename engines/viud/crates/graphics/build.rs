@@ -5,7 +5,7 @@
 //! ffmpeg 8.1 is newer than those crates support, and we need full struct field
 //! access (AVFormatContext.pb/.streams) + the DRM_PRIME descriptor types.
 //!
-//! compd (Q-K / D11): all of it is behind the opt-in `capture-ffmpeg` feature.
+//! viud (Q-K / D11): all of it is behind the opt-in `capture-ffmpeg` feature.
 //! Without it this script does nothing, so the default build needs no ffmpeg
 //! headers and links no libav.
 

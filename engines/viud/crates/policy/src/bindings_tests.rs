@@ -336,9 +336,9 @@ fn print_screen_takes_a_region_shift_the_screen_alt_the_window() {
 fn a_screenshot_launch_names_its_mode_and_window() {
     let window = ScreenshotLaunch::new(ScreenshotMode::Window, Some((7, 3)));
     assert_eq!(
-        window.argv("/opt/mixos/bin/screenshot", "comp-nested"),
+        window.argv("/opt/mix/bin/screenshot", "comp-nested"),
         [
-            "/opt/mixos/bin/screenshot",
+            "/opt/mix/bin/screenshot",
             "--comp",
             "comp-nested",
             "--capture",

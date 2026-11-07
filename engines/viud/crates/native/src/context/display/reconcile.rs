@@ -358,7 +358,7 @@ fn add_output(
         .inner
         .map_output_everywhere(&output, smithay::utils::Point::from((x, 0)));
     let env = model::environment::config::base::get();
-    // compd: SDR only without the Vulkan renderer (see `new_hdr_active` above).
+    // viud: SDR only without the Vulkan renderer (see `new_hdr_active` above).
     let hdr_active = env.hdr && built.hdr.hdr_capable() && false;
     info!(
         "add_output: connector={:?} crtc={:?} mode={}x{} pos=({}, 0) → {} outputs total",

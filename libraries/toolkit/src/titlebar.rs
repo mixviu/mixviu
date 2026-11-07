@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The menu group, title, Action Bar and captions share the design title band
 //! layout with SSD. The mark stays with the menu. Registered SSD apps may
-//! expose their Action Bar through the drive for compd to host.
+//! expose their Action Bar through the drive for viud to host.
 
 use crate::action::{Origin, Registry};
 use crate::button::{IconButton, Link};
@@ -22,7 +22,7 @@ fn label(key: &str) -> String {
     crate::strings::own(key)
 }
 
-/// An undecorated window for a MixOS app: the title bar is drawn by [`show`].
+/// An undecorated window for a MixViu app: the title bar is drawn by [`show`].
 pub fn viewport(app_id: &str, title: &str) -> ViewportBuilder {
     // eframe does not copy its native root builder into egui's root state.
     // Keep the first (application) id for services called from that context.

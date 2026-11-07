@@ -32,28 +32,28 @@ impl AppDirs {
             return None;
         }
         let absolute = |path: PathBuf| path.is_absolute().then_some(path);
-        let root = get("MIXOS_APP_HOME")
+        let root = get("MIX_APP_HOME")
             .and_then(absolute)
             .or_else(|| {
-                get("MIXOS_APPS_HOME")
+                get("MIX_APPS_HOME")
                     .and_then(absolute)
                     .map(|p| p.join(component))
             })
             .or_else(|| {
-                get("MIXOS_VAR")
+                get("MIX_VAR")
                     .and_then(absolute)
-                    .or_else(|| get("MIXOS").and_then(absolute).map(|p| p.join("var")))
+                    .or_else(|| get("MIX_ROOT").and_then(absolute).map(|p| p.join("var")))
                     .map(|p| p.join("apps").join(component))
             })
             .or_else(|| {
                 get("XDG_STATE_HOME")
                     .and_then(absolute)
-                    .map(|p| p.join("mixos/apps").join(component))
+                    .map(|p| p.join("mix/apps").join(component))
             })
             .or_else(|| {
                 get("HOME")
                     .and_then(absolute)
-                    .map(|p| p.join(".local/state/mixos/apps").join(component))
+                    .map(|p| p.join(".local/state/mix/apps").join(component))
             })?;
         Some(Self { root })
     }
@@ -78,10 +78,10 @@ mod tests {
     #[test]
     fn isolated_roots_take_precedence_without_relocating_existing_user_state() {
         let vars = [
-            ("MIXOS_APP_HOME", "/one"),
-            ("MIXOS_APPS_HOME", "/two"),
-            ("MIXOS_VAR", "/three"),
-            ("MIXOS", "/four"),
+            ("MIX_APP_HOME", "/one"),
+            ("MIX_APPS_HOME", "/two"),
+            ("MIX_VAR", "/three"),
+            ("MIX_ROOT", "/four"),
             ("XDG_STATE_HOME", "/five"),
             ("HOME", "/six"),
         ];
@@ -90,8 +90,8 @@ mod tests {
             "/two/ced",
             "/three/apps/ced",
             "/four/var/apps/ced",
-            "/five/mixos/apps/ced",
-            "/six/.local/state/mixos/apps/ced",
+            "/five/mix/apps/ced",
+            "/six/.local/state/mix/apps/ced",
         ];
         for (offset, expected) in expected.into_iter().enumerate() {
             let dirs = AppDirs::resolve_with("ced", |key| {
@@ -122,14 +122,14 @@ mod tests {
         assert!(AppDirs::resolve_with("ced", |_| None).is_none());
         assert!(AppDirs::resolve_with("ced", |_| Some(PathBuf::from("relative"))).is_none());
         let dirs = AppDirs::resolve_with("ced", |key| match key {
-            "MIXOS_APP_HOME" => Some(PathBuf::from("relative")),
+            "MIX_APP_HOME" => Some(PathBuf::from("relative")),
             "HOME" => Some(PathBuf::from("/home/user")),
             _ => None,
         })
         .unwrap();
         assert_eq!(
             dirs.root(),
-            Path::new("/home/user/.local/state/mixos/apps/ced")
+            Path::new("/home/user/.local/state/mix/apps/ced")
         );
     }
 }

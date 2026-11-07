@@ -106,8 +106,8 @@ fn read_plain(path: &Path, max: usize) -> Result<Vec<u8>> {
 
 impl SpecRelease {
     pub fn from_env() -> Result<Option<Self>> {
-        let root = std::env::var_os("MIXOS_SPEC_RELEASE_DIR");
-        let pin = std::env::var_os("MIXOS_SPEC_RELEASE_SHA256");
+        let root = std::env::var_os("MIX_NODED_SPEC_RELEASE_DIR");
+        let pin = std::env::var_os("MIX_NODED_SPEC_RELEASE_SHA256");
         match (root, pin) {
             (None, None) => Ok(None),
             (Some(root), Some(pin)) => Ok(Some(Self::load(

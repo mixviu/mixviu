@@ -144,7 +144,7 @@ fn response_head($status, $headers)
   for $p in $headers
     $o = $o .. $p[0] .. ": " .. to_string($p[1]) .. "\r\n"
   end
-  return $o .. "Date: " .. http_date(time()) .. "\r\nServer: MixOS/1 UPnP/1.0 dlnad/1\r\nConnection: close\r\n\r\n"
+  return $o .. "Date: " .. http_date(time()) .. "\r\nServer: MixViu/1 UPnP/1.0 dlnad/1\r\nConnection: close\r\n\r\n"
 end
 
 -- A complete small response (head + body string).

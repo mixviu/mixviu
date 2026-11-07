@@ -26,7 +26,7 @@ running panel. See [the loader manual](../../docs/cos/scenes-loader.md) and
 
 The panel's buttons are icon-only; names and details are in their tooltips
 (`lib/models.mix`). A task's tooltip also shows a live thumbnail of its
-window, which compd draws into the card while it is up.
+window, which viud draws into the card while it is up.
 
 `settings/` is Settings/Appearance. It authors the scene `quoin-settings` on
 Quoin's declared page `settings.appearance`, so `{template:"settings"}`
@@ -112,7 +112,7 @@ different route.
 | --- | --- | --- |
 | Shared helpers (`lib/data.mix`, `lib/models.mix`, …) | `$SCENES_LIB`, which defaults to `$SCENES_TEMPLATES/lib` | Copy into the catalogue, then reload the scene that uses it |
 | A scene's own `scene.mix`, `behaviour.mix` or `template.conf.mix` | The user copy under `$SCENES_DIR/<name>/` | Reload re-reads the user copy. A template edit needs `reset` or a fresh install first |
-| Loader code (`services/compd/scripts/`) | The compd scenes service | Restart that service; reload does not run new loader code |
+| Loader code (`engines/viud/scripts/`) | The viud scenes service | Restart that service; reload does not run new loader code |
 
 The environment fixes the paths. On the VT4 session (`<config>/session/4.env`):
 
@@ -139,10 +139,10 @@ The steps it runs, for reference:
 
 1. Copy each changed file from `share/scenes/lib/` into the catalogue.
    `install.mix` copies everything but is not the right tool here: its
-   default destination is `$XDG_DATA_HOME/mixos/scenes`, not the VT4
+   default destination is `$XDG_DATA_HOME/mix/scenes`, not the VT4
    catalogue, and it does not report what changed.
 2. Reload each enabled scene:
-   `mix services/compd/scripts/scenes_cli.mix reload panel`.
+   `mix engines/viud/scripts/scenes_cli.mix reload panel`.
    The CLI sends `scenes.reload`, which re-checks `behaviour.mix`, re-renders
    `scene.mix` and remounts the scene. Use `--target scenes.<node>.bus` for
    another node. The CLI needs that session's D-Bus address, which the
@@ -159,8 +159,8 @@ dependent scenes) is planned, not built.
 
 A forced reload re-runs the behaviour, so it should pick up the new `lib/`
 files. That is the expected behaviour from reading `reconcile_one`
-(`services/compd/scripts/lib/scenes.mix`). It has not been confirmed on a
-live panel. If the old output persists after step 2, restart the compd
+(`engines/viud/scripts/lib/scenes.mix`). It has not been confirmed on a
+live panel. If the old output persists after step 2, restart the viud
 scenes service and check again. The unit's name is not recorded in this
 repo, so look it up on the host. `scenes.restart` is different: it is the
 loader's internal crash restart for a single scene, not a manual restart.

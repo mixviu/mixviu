@@ -37,7 +37,7 @@ pub struct Command {
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "host.info",
-        summary: "What this host is: hostname, kernel, OS, MixOS mode, CPU, memory",
+        summary: "What this host is: hostname, kernel, OS, MixViu mode, CPU, memory",
         tier: Tier::Read,
     },
     Command {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Portable frame state and optional compd placement. The caller supplies its
+//! Portable frame state and optional viud placement. The caller supplies its
 //! existing Bus transport; this module never starts a connection or switches
 //! the current workspace. Workspace and geometry refusals are independent.
 use serde::{Deserialize, Serialize};
@@ -96,7 +96,7 @@ impl Frame {
         });
     }
 
-    /// Probe compd by reading its window catalogue. `None` means absent,
+    /// Probe viud by reading its window catalogue. `None` means absent,
     /// refused, or no window belonging to this process. Never match another PID.
     pub async fn own_window<F, Fut>(app_id: &str, mut call: F) -> Option<Value>
     where
@@ -201,7 +201,7 @@ impl Frame {
                 .as_ref()
                 .is_some_and(|r| r["error"] == "invalid_args" && r["field"] == "output")
             {
-                // Older compd rejects the output field. Retry only this exact
+                // Older viud rejects the output field. Retry only this exact
                 // refusal; disconnected outputs and policy refusals stand.
                 let _ = call("comp.window.maximize", target).await;
             }

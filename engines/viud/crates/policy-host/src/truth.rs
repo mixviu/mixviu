@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `compd.truth`: compd's own view, for the Bus-truth
+//! `viud.truth`: viud's own view, for the Bus-truth
 //! comparator. Read straight from `CompState` and the engine, deliberately
 //! NOT through [`crate::project`], so a projection bug cannot agree with
 //! itself.
@@ -56,7 +56,7 @@
 //!     "titlebar_focused": [r, g, b, a], "titlebar_unfocused": [r, g, b, a],
 //!     "extents": {top, left, right, bottom},   // logical px
 //!     "corner_radius": 12,   // logical px (0 drawn when maximised)
-//!     "decorated": [1],        // drawn toplevels compd draws chrome for, as registry ids
+//!     "decorated": [1],        // drawn toplevels viud draws chrome for, as registry ids
 //!     "windows": {"1": {"frame": [x, y, w, h],   // what the content is cut to
 //!                 "titlebar": [x, y, w, h], "buttons": {"close": [x, y, w, h],
 //!                 "maximize": [..], "minimize": [..]}}}   // host Space, logical px
@@ -312,8 +312,8 @@ pub fn truth(lp: &Loop) -> Value {
     })
 }
 
-/// The chrome theme compd installed and draws with, so a pixel gate reads its
-/// expected colours from compd itself.
+/// The chrome theme viud installed and draws with, so a pixel gate reads its
+/// expected colours from viud itself.
 fn chrome(windows: BTreeMap<u64, Value>) -> Value {
     let decorated: Vec<u64> = windows.keys().copied().collect();
     let windows: serde_json::Map<String, Value> = windows

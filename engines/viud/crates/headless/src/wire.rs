@@ -16,7 +16,7 @@ use smithay::reexports::wayland_server::{DisplayHandle, protocol::wl_surface::Wl
 use smithay::utils::{DeviceFd, Physical, Size, Transform};
 use world::state::Loop;
 
-/// The human seat (`seat0`) of a headless compd: no physical input sources,
+/// The human seat (`seat0`) of a headless viud: no physical input sources,
 /// so no pointer and no touch, but the keyboard stays. The primary seat's
 /// keyboard is where window focus lives (`comp.window.focus`, focus on map,
 /// xdg Activated, `comp.props focus`); without it every focus request reads
@@ -115,15 +115,15 @@ pub fn wire(
         .kernel
         .get_mut(&render_gles::format::registrar::COMPOSITE_NODE_MUT) = Some(node);
     let renderer = render_gles::context::egl::create(&display)?;
-    let refresh = match std::env::var("COMPD_HEADLESS_REFRESH_HZ") {
+    let refresh = match std::env::var("VIUD_HEADLESS_REFRESH_HZ") {
         Ok(value) => value
             .parse::<i32>()
             .ok()
             .filter(|hz| (30..=60).contains(hz))
-            .ok_or("headless-refresh-invalid: COMPD_HEADLESS_REFRESH_HZ must be 30..=60")?,
+            .ok_or("headless-refresh-invalid: VIUD_HEADLESS_REFRESH_HZ must be 30..=60")?,
         Err(std::env::VarError::NotPresent) => 60,
         Err(_) => {
-            return Err("headless-refresh-invalid: COMPD_HEADLESS_REFRESH_HZ is not UTF-8".into());
+            return Err("headless-refresh-invalid: VIUD_HEADLESS_REFRESH_HZ is not UTF-8".into());
         }
     };
     let mode = Mode {

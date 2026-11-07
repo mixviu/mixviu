@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! toolkit: the shared shell for MixOS egui applications (AGENTS.md §4.1).
+//! toolkit: the shared shell for MixViu egui applications (AGENTS.md §4.1).
 //!
 //! - [`theme`]: the resolved design for one scheme, mode and contrast;
 //! - [`theme_menu`]: the View › Theme submenu that picks it, in every app;
@@ -97,7 +97,7 @@ pub use icons::Icon;
 pub use strings::Strings;
 pub use theme::Theme;
 
-/// Prepare `ctx` for a MixOS application: `theme`'s style and fonts, and the
+/// Prepare `ctx` for a MixViu application: `theme`'s style and fonts, and the
 /// image loaders the icons need.
 pub fn install(ctx: &egui::Context, theme: &Theme) {
     egui_extras::install_image_loaders(ctx);

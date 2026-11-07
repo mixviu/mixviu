@@ -1,0 +1,45 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$d=require("document.mix")
+fn check($condition,$message)
+  if not $condition then raise("CONTRACT",$message) end
+end
+fn refused($value)
+  $refused=false
+  try $d.document($value) catch $message $refused=true end
+  check($refused,"document accepted: "..json_encode($value))
+end
+check(deep_eq($d.document({schema:1}),{schema:1}),"omitted default means theme")
+check(deep_eq($d.document({schema:1,default:{colour:"#ABCDEF"}}),{schema:1,default:{colour:"#abcdef"}}),"canonical colour")
+for $mode in ["fill","fit","centre","tile","stretch"]
+  $value=$d.document({schema:1,default:{image:"/w/a.png",fit:$mode,fallback:"#010203"},outputs:{"DP-1":{image:"/w/a.png"}}})
+  check(($value.default.fit ?? "fill")==$mode,"effective fit")
+end
+for $value in [{schema:2},{schema:"1"},{schema:1,extra:1},{schema:1,default:{}},{schema:1,default:[]},{schema:1,default:{colour:"red"}},{schema:1,default:{colour:"#12345"}},{schema:1,default:{colour:42}},{schema:1,default:{colour:"#abcdef",image:"/a.png"}},{schema:1,default:{colour:"#abcdef",fit:"fill"}},{schema:1,default:{colour:"#abcdef",fallback:"#000000"}},{schema:1,default:{image:"relative.png"}},{schema:1,default:{image:"/a\u{0000}.png"}},{schema:1,default:{image:"/a.png",fit:"zoom"}},{schema:1,outputs:[]},{schema:1,outputs:{"..":{colour:"#000000"}}},{schema:1,outputs:{"a/b":{colour:"#000000"}}},{schema:1,outputs:{"é":{colour:"#000000"}}}]
+  refused($value)
+end
+for $slides in [{},{images:[]},{folder:"relative"},{images:["relative"]},{folder:"/w",images:["/a.png"]},{folder:"/w",interval_s:4},{folder:"/w",interval_s:5.5},{folder:"/w",interval_s:"5"},{folder:"/w",shuffle:"false"},{folder:"/w",unknown:1}]
+  refused({schema:1,default:{slideshow:$slides}})
+end
+$slide=$d.document({schema:1,default:{slideshow:{images:["/a.png","/b.jpg"]}}})
+refused({schema:1,outputs:nil})
+refused({schema:1,default:{slideshow:{folder:"/w",interval_s:nil}}})
+refused({schema:1,default:{slideshow:{folder:"/w",shuffle:nil}}})
+check($slide.default.slideshow.interval_s==600 and $slide.default.slideshow.shuffle==false,"slideshow defaults")
+$paths=[]
+for $i=0 to 4095 push($paths,"/w/"..to_string($i)..".png") end
+$large=$d.document({schema:1,default:{slideshow:{images:$paths}}})
+check(len($large.default.slideshow.images)==4096,"full bounded list is one resident source")
+push($paths,"/w/extra.png")
+refused({schema:1,default:{slideshow:{images:$paths}}})
+$outputs={}
+for $i=0 to 63 $outputs["DP-"..to_string($i)]={image:"/shared.png"} end
+$valid=$d.document({schema:1,outputs:$outputs})
+check(len(keys($valid.outputs))==64,"64 outputs sharing one source")
+$outputs["DP-64"]={image:"/shared.png"};refused({schema:1,outputs:$outputs})
+$outputs={}
+for $i=0 to 3 $outputs["DP-"..to_string($i)]={slideshow:{images:["/shared.png"]}} end
+$valid=$d.document({schema:1,outputs:$outputs})
+check(len(keys($valid.outputs))==4,"four independent streams sharing a path")
+refused({schema:1,default:{image:"/shared.png"},outputs:$outputs})
+print("backdrop gold document: canonical shapes, strict refusals, 4096 slides, 64 outputs and resident-source accounting pass")

@@ -49,7 +49,7 @@ pub(super) fn parse(source: &str) -> Result<BTreeMap<Root, PathBuf>> {
         };
         let root = Root::parse(&key)?;
         if root == Root::Prefix {
-            return Err("layout.mx refuses a prefix key; use MIXOS_PREFIX".into());
+            return Err("layout.mx refuses a prefix key; use MIX_PREFIX".into());
         }
         p.space();
         if p.chars.next() != Some(':') {

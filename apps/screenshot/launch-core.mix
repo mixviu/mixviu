@@ -22,7 +22,7 @@ fn service_name($comp,$headless)
   return $prefix.."--"..comp_hash($comp)
 end
 fn parse_cli($args)
-  $out={comp:env("MIXOS_COMP_SERVICE","comp"),service:nil,url:env("MIXOS_NODED_URL","ws://127.0.0.1:4200/ws"),headless:false,path:nil,capture:nil,window:nil,debug:nil}
+  $out={comp:env("MIX_COMP_SERVICE","comp"),service:nil,url:env("MIX_NODED_URL","ws://127.0.0.1:4200/ws"),headless:false,path:nil,capture:nil,window:nil,debug:nil}
   $positional=false;$i=0
   while $i<len($args)
     $arg=$args[$i];$i=$i+1

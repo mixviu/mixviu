@@ -5,13 +5,13 @@ use std::io::Read;
 use std::os::fd::FromRawFd;
 use std::process::{Command, Stdio};
 
-const CHILD: &str = "MIXOS_FATAL_FIXTURE";
+const CHILD: &str = "MIX_TEST_FATAL_FIXTURE";
 const ERROR: &str = "service already registered";
 
 #[test]
 fn fatal_errors_print_once_and_reach_enabled_sinks() {
     if let Ok(app) = std::env::var(CHILD) {
-        let level = std::env::var("MIXOS_FATAL_LEVEL").unwrap();
+        let level = std::env::var("MIX_TEST_FATAL_LEVEL").unwrap();
         let mut args = vec![app.clone(), format!("--debug={level}")];
         let _guard = logging::debug::init(&app, "warn", &mut args).unwrap();
         logging::debug::failure(&app, &ERROR);
@@ -48,7 +48,7 @@ fn fatal_errors_print_once_and_reach_enabled_sinks() {
                     "--nocapture",
                 ])
                 .env(CHILD, &app)
-                .env("MIXOS_FATAL_LEVEL", level)
+                .env("MIX_TEST_FATAL_LEVEL", level)
                 .env_remove("RUST_LOG")
                 .stdout(Stdio::null());
             let stderr = if tty {

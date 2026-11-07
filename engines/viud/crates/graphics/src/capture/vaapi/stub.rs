@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The hardware video encoders when compd is built WITHOUT `capture-ffmpeg`.
+//! The hardware video encoders when viud is built WITHOUT `capture-ffmpeg`.
 //!
-//! compd (Q-K / D11): the libav link is opt-in. Without the feature, graphics links
+//! viud (Q-K / D11): the libav link is opt-in. Without the feature, graphics links
 //! no ffmpeg at all and these stand-ins keep the encoder API callers compile
 //! against. Every `start`/`spawn_*` logs once why and returns `None`, which the
 //! capture driver already treats as "video unavailable". Screenshots (the GL
@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 /// Why every video encoder is unavailable in this build.
 pub const NOT_BUILT: &str =
-    "video capture needs the capture-ffmpeg feature (this compd was built without the libav link)";
+    "video capture needs the capture-ffmpeg feature (this viud was built without the libav link)";
 
 fn refuse() {
     error!("{NOT_BUILT}");

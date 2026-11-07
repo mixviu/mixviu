@@ -105,7 +105,7 @@ buildinfo.workspace = true
 # Compresses docs/mix into the embedded manual (src/manual.rs).
 structured-zstd = "0.0.58"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "mix-shell"
 kind = "cli"
 layer = "mix"

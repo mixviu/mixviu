@@ -313,7 +313,7 @@ fn builtins_generator_refuses_an_unplaced_category() {
 }
 
 /// `mix ARGS` in a home with no checkout, no installed share tree and no
-/// cache. `local` rules the network out (MIXOS_MAN_SOURCE=local); otherwise
+/// cache. `local` rules the network out (MIX_MAN_SOURCE=local); otherwise
 /// the default order applies, which reaches the built-in manual first.
 fn man_alone(args: &[&str], local: bool) -> std::process::Output {
     man_with_files(args, local, &[])
@@ -321,7 +321,7 @@ fn man_alone(args: &[&str], local: bool) -> std::process::Output {
 
 /// As [`man_alone`], with `(path under the home, body)` files written first:
 /// the checkout pages are `no-checkout/docs/mix/*.md`, the cached ones
-/// `no-cache/mixos/man/*.md`.
+/// `no-cache/mix/man/*.md`.
 fn man_with_files(args: &[&str], local: bool, files: &[(&str, &str)]) -> std::process::Output {
     let home = tempfile::tempdir().expect("temp home");
     let root = home.path().join("no-checkout");
@@ -335,15 +335,15 @@ fn man_with_files(args: &[&str], local: bool, files: &[(&str, &str)]) -> std::pr
     command
         .args(args)
         .env("HOME", home.path())
-        .env("MIXOS", &root)
-        .env("MIXOS_PREFIX", home.path().join("no-prefix"))
+        .env("MIX_ROOT", &root)
+        .env("MIX_PREFIX", home.path().join("no-prefix"))
         .env("XDG_CACHE_HOME", home.path().join("no-cache"))
         .env("MIX_STATS", "off")
         .env_remove("MIXRC")
-        .env_remove("MIXOS_MAN_URL")
-        .env_remove("MIXOS_MAN_SOURCE");
+        .env_remove("MIX_MAN_URL")
+        .env_remove("MIX_MAN_SOURCE");
     if local {
-        command.env("MIXOS_MAN_SOURCE", "local");
+        command.env("MIX_MAN_SOURCE", "local");
     }
     command.output().expect("run mix")
 }
@@ -430,7 +430,7 @@ fn local_mode_reads_and_searches_the_checkout_copy_first() {
 #[test]
 fn a_cached_copy_never_outranks_the_built_in_page() {
     let cached = &[(
-        "no-cache/mixos/man/overview.md",
+        "no-cache/mix/man/overview.md",
         "# overview\n\n## Quagga cached heading\n",
     )][..];
     for local in [true, false] {

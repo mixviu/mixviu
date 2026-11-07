@@ -28,7 +28,7 @@ pub(super) const KEYS: &[K] = &[
         "power.screen_off_s",
         OneOf(&[120, 300, 600, 900, 1800]),
         D::Null,
-        "compd",
+        "viud",
     ),
     k("power.suspend_ac_s", SUSPEND, D::Null, "hostd"),
     k("power.suspend_battery_s", SUSPEND, D::Null, "hostd"),

@@ -141,7 +141,7 @@ impl NvencCudaEncoder {
         let (tx, rx) = channel::<Msg>();
         let (init_tx, init_rx) = channel::<bool>();
         let join = std::thread::Builder::new()
-            .name("compd-nvenc-cuda".into())
+            .name("viud-nvenc-cuda".into())
             .spawn(move || worker(info, fps, codec, cq, rx, init_tx))
             .ok()?;
         match init_rx.recv() {
@@ -391,7 +391,7 @@ impl Session {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let temp = std::env::temp_dir().join(format!("compd-capture-{nanos}.mp4"));
+        let temp = std::env::temp_dir().join(format!("viud-capture-{nanos}.mp4"));
         let mux = match unsafe { Muxer::new(&temp, codec_ctx) } {
             Ok(m) => m,
             Err(e) => {

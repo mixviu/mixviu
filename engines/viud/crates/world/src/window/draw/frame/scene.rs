@@ -285,7 +285,7 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
-    // compd: no shader bundle composites windows (compositor.pipeline is cut),
+    // viud: no shader bundle composites windows (compositor.pipeline is cut),
     // so the engine always draws and occludes them itself.
     // Windows inside an active capture region must keep rendering (and getting
     // frame callbacks / presentation feedback) even when culled — the capture
@@ -741,7 +741,7 @@ where
     // because both suppressing modes existed to escape the full-slot backstop,
     // and with that gone a bundle asking for them gets a worse result than the
     // shared arm already gives it.
-    // compd: no shader bundle, so the letterbox policy is always the bars arm.
+    // viud: no shader bundle, so the letterbox policy is always the bars arm.
     let bars: Vec<Rectangle<i32, Physical>> = crop_slot.subtract_rect(content);
     // Per-window bank (see `scene.identity`), separate from the decoration crate's
     // — distinct types in the window's user data, so borders and bars never collide.

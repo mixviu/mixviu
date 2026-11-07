@@ -287,13 +287,13 @@ impl VectorDb {
         // index would return wrong search results while looking healthy.
         //
         // The rollback switch must work even when the LOADER is what's
-        // broken: under MIXOS_INDEXD_SEARCH=sqlite the mirror is
+        // broken: under MIX_INDEXD_SEARCH=sqlite the mirror is
         // neither built nor validated, so a bad corpus can't stop the
         // daemon from starting in fallback mode.
         if sqlite_search_fallback() {
             let version: String = conn.query_row("SELECT vec_version()", [], |r| r.get(0))?;
             info!(
-                "vector db opened at {path} (sqlite-vec {version}; in-memory search DISABLED via MIXOS_INDEXD_SEARCH=sqlite)"
+                "vector db opened at {path} (sqlite-vec {version}; in-memory search DISABLED via MIX_INDEXD_SEARCH=sqlite)"
             );
             return Ok(Self {
                 conn,
@@ -347,7 +347,7 @@ impl VectorDb {
         if !missing_vecs.is_empty() {
             anyhow::bail!(
                 "chunks without vectors (first 10): {missing_vecs:?} — repair before serving \
-                 (or MIXOS_INDEXD_SEARCH=sqlite to boot in fallback mode)"
+                 (or MIX_INDEXD_SEARCH=sqlite to boot in fallback mode)"
             );
         }
         let orphan_vecs: Vec<i64> = conn
@@ -357,7 +357,7 @@ impl VectorDb {
         if !orphan_vecs.is_empty() {
             anyhow::bail!(
                 "orphan vectors without chunks (first 10): {orphan_vecs:?} — repair before serving \
-                 (or MIXOS_INDEXD_SEARCH=sqlite to boot in fallback mode)"
+                 (or MIX_INDEXD_SEARCH=sqlite to boot in fallback mode)"
             );
         }
 

@@ -24,9 +24,9 @@ fn env_two_arg_default_contract() {
     let output = Command::new(mix_bin)
         .arg(&script)
         .env("MIX_STATS", "off")
-        .env("MIX_ENV_SET", "real")
-        .env("MIX_ENV_EMPTY", "")
-        .env_remove("MIX_ENV_UNSET")
+        .env("MIX_TEST_ENV_SET", "real")
+        .env("MIX_TEST_ENV_EMPTY", "")
+        .env_remove("MIX_TEST_ENV_UNSET")
         .output()
         .expect("failed to spawn mix binary");
 

@@ -14,7 +14,7 @@
 //!   reads as unmapped. Every role is tracked.
 //! - `focus.changed`: the primary seat's keyboard focus record changed (a
 //!   `focus_changed(None)` reads as no focus). `exclusive_latch` stays null
-//!   until compd has a latch to report.
+//!   until viud has a latch to report.
 //! - `props.changed`: while `comp.props.watch` holds a baseline, the leaves that
 //!   changed between it and a fresh projection (comp-model `diff`), one
 //!   record per leaf, cause [`CAUSE`].
@@ -43,10 +43,10 @@ use world::state::Loop;
 
 use crate::project::{Identity, project, project_focus, window_wl_surface};
 
-/// The `cause` of every `props.changed` record compd publishes: the diff runs
+/// The `cause` of every `props.changed` record viud publishes: the diff runs
 /// over the whole projection after the engine's own state moved, so there is
 /// one dirtying source.
-pub const CAUSE: &str = "compd.state";
+pub const CAUSE: &str = "viud.state";
 
 /// What observers last heard about one surface.
 #[derive(Clone, Debug)]
@@ -167,7 +167,7 @@ impl Edges {
             collect_snapshot_diff(baseline, &next, CAUSE, &mut changes);
             let unix_ms = unix_millis();
             // Each path carries the cause noted for the most specific subtree
-            // that changed it, else compd's generic one.
+            // that changed it, else viud's generic one.
             let causes = &lp.inner.comp.causes;
             records.extend(changes.into_iter().map(|(path, (old, new, cause))| {
                 let cause = causes.resolve(&path).unwrap_or(cause);
@@ -235,7 +235,7 @@ impl Edges {
             .surface_rows()
             .map(|record| (record.id().0, published(lp, record)))
             .collect();
-        // compd's scene surfaces map and unmap like the Quoin layer
+        // viud's scene surfaces map and unmap like the Quoin layer
         // surfaces they stand for.
         for row in &lp.inner.comp.scenes.rows {
             next.insert(

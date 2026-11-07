@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- dlnad configuration: copy to <etc>/dlnad/dlnad.conf.mix (mixos_path("etc")
+-- dlnad configuration: copy to <etc>/dlnad/dlnad.conf.mix (mix_path("etc")
 -- resolves <etc>). Strict data, loaded with load_data.
 {
   -- The directory to serve. Keep it flat or shallow: every folder is a
@@ -11,7 +11,7 @@
   listen: "192.0.2.30",
   port: 8200,
   -- The friendly name; dlnad.identity.rotate appends four hex digits.
-  name: "MixOS Media",
+  name: "MixViu Media",
   ssdp: true,
   -- Renderers that never join the SSDP multicast group (some TVs) still see
   -- the server if their address is listed: every advert is also unicast.

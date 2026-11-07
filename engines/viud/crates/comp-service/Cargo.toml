@@ -1,6 +1,6 @@
 [package]
 name = "comp-service"
-description = "Native Bus transport for compd's comp service: ingress, admission, worker, publisher, engine service"
+description = "Native Bus transport for viud's comp service: ingress, admission, worker, publisher, engine service"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,8 +8,8 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
-component = "compd"
+[package.metadata.mixviu]
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

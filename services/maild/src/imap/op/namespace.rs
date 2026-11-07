@@ -6,7 +6,7 @@
 //!
 //! v1 advertises a single personal namespace with prefix `""` and
 //! hierarchy delimiter `"/"`. There are no Other-users or Shared
-//! namespaces — MixOS is per-account single-tenant today; if
+//! namespaces — MixViu is per-account single-tenant today; if
 //! shared mailboxes appear later the response shape grows here and
 //! `mailbox_name.rs` grows decode rules to match.
 

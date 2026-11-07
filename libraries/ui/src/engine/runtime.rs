@@ -13,7 +13,7 @@
 //!    surface is off screen, with `set_suspended(true)` so its animations
 //!    stop waking the loop until it is shown again.
 //!
-//! Outside that phase only `tick_offscreen` runs (compd parked, its VT in
+//! Outside that phase only `tick_offscreen` runs (viud parked, its VT in
 //! the background): queued input and messages get their pass, the GPU is
 //! not touched, and the pass's texture changes wait for the next pass or
 //! paint inside a frame.
@@ -37,7 +37,7 @@ use super::wake::RuntimeWake;
 /// Observes every message a runtime applies, before `update` runs. The
 /// compositor uses it to act on what the user did without owning the
 /// program's state. It may run outside a frame (`UiRuntime::tick_offscreen`,
-/// compd parked): a handler sends or records, and never needs the renderer,
+/// viud parked): a handler sends or records, and never needs the renderer,
 /// the seat or anything else only a frame provides.
 pub trait MessageHandler<M>: Send + 'static {
     fn handle(&mut self, message: &M);
@@ -52,7 +52,7 @@ where
     }
 }
 
-/// The wgpu device a runtime paints with: the one sharing compd's GL context.
+/// The wgpu device a runtime paints with: the one sharing viud's GL context.
 #[derive(Clone, Debug)]
 pub struct Gpu {
     pub device: wgpu::Device,
@@ -279,7 +279,7 @@ impl<P: UiProgram> UiRuntime<P> {
         !self.events.is_empty() || !self.messages.is_empty()
     }
 
-    /// Run the pass queued input or messages owe, outside a frame (compd
+    /// Run the pass queued input or messages owe, outside a frame (viud
     /// parked): the program sees the input and its messages dispatch, but
     /// the GPU is not touched. The pass's texture changes wait, in order, for
     /// the next pass that runs inside a frame (`run_pass`), where the

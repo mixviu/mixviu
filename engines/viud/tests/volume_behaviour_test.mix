@@ -12,22 +12,22 @@
 -- Every wait is bounded. Bus callers (cli.mix) are not the host: every
 -- write commands must accept them.
 --
---   mix services/compd/tests/volume_behaviour_test.mix
+--   mix engines/viud/tests/volume_behaviour_test.mix
 --
--- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
+-- Needs a fresh mix and noded: MIX_TEST_MIX_EXE and MIX_TEST_NODED_EXE when set,
 -- else <prefix>/bin/mix and <prefix>/bin/noded.
 
-$root = env("MIXOS") != "" ? env("MIXOS") : realpath(dirname(realpath($0)) .. "/../../..")
+$root = env("MIX_ROOT") != "" ? env("MIX_ROOT") : realpath(dirname(realpath($0)) .. "/../../..")
 $pb = require("../../../tests/lib/private_bus.mix")
-$mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : (mixos_path("prefix") .. "/bin/mix")
-$noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : (mixos_path("prefix") .. "/bin/noded")
+$mix = env("MIX_TEST_MIX_EXE") != "" ? env("MIX_TEST_MIX_EXE") : (mix_path("prefix") .. "/bin/mix")
+$noded = env("MIX_TEST_NODED_EXE") != "" ? env("MIX_TEST_NODED_EXE") : (mix_path("prefix") .. "/bin/noded")
 $behaviour = $root .. "/share/scenes/volume/behaviour.mix"
 for $handler in ["audio.changed async", "audio.retry async", "bus.connected"]
   if not contains(read_file($behaviour), "on " .. $handler .. "\n  if len(keys($event.headers)) != 0 then return end\n") then
     raise("VOLUME_BEHAVIOUR_TEST", "missing internal-event guard: " .. $handler)
   end
 end
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-volume-behaviour-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-volume-behaviour-test.XXXXXXXX"]))
 $bus = nil
 $env = nil
 $shell_pid = nil
@@ -149,7 +149,7 @@ fn write_fixtures()
   mkdir($tmp .. "/bin", {parents: true})
   mkdir($tmp .. "/out", {parents: true})
   mkdir($tmp .. "/home", {parents: true})
-  $fixture = json_parse(read_file($root .. "/services/compd/tests/fixtures/scenes/volume-pactl.json"))
+  $fixture = json_parse(read_file($root .. "/engines/viud/tests/fixtures/scenes/volume-pactl.json"))
   write_file($tmp .. "/pactl/state.json", json_encode($fixture))
   write_file($tmp .. "/bin/pactl", $PACTL)
   chmod($tmp .. "/bin/pactl", 0o755)
@@ -262,7 +262,7 @@ end
 -- output_2, the named sources (input_1, input_2, "monitor" for the
 -- fixture's monitor), the fixture's streams, and the two default names.
 fn set_case($sink, $source, $sources)
-  $fx = json_parse(read_file($root .. "/services/compd/tests/fixtures/scenes/volume-pactl.json"))
+  $fx = json_parse(read_file($root .. "/engines/viud/tests/fixtures/scenes/volume-pactl.json"))
   $s = json_parse(read_file($tmp .. "/pactl/state.json"))
   $s.sinks = [merge($fx.sinks[0], {index: 301, name: "output_1", description: "Output 1"}),
     merge($fx.sinks[0], {index: 302, name: "output_2", description: "Output 2"})]

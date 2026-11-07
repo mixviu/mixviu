@@ -188,7 +188,7 @@ fn serve_version_exits_before_serving() {
     // or hang, so a clean one-line exit proves it stopped before serving.
     let o = mix()
         .args(["--serve", p.to_str().unwrap(), "--version"])
-        .env("MIXOS_NODED_URL", "ws://127.0.0.1:9/ws")
+        .env("MIX_NODED_URL", "ws://127.0.0.1:9/ws")
         .output()
         .unwrap();
     assert_version_line(&o, "citizen.mix", "0.2.0", body);
@@ -244,7 +244,7 @@ fn script_version_query_is_cold() {
     let p = write(d.path(), "deploy.mix", VERSIONED);
     let control = mix()
         .args(["--no-prelude", "-c", "print(1)"])
-        .env("MIXOS_SESSION_FD", "99999")
+        .env("MIX_SESSION_FD", "99999")
         .output()
         .unwrap();
     assert!(
@@ -253,7 +253,7 @@ fn script_version_query_is_cold() {
     );
     let o = mix()
         .args([p.to_str().unwrap(), "--version"])
-        .env("MIXOS_SESSION_FD", "99999")
+        .env("MIX_SESSION_FD", "99999")
         .output()
         .unwrap();
     assert_eq!(

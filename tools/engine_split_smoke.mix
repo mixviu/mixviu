@@ -4,7 +4,7 @@
 -- compd package no longer exists here (viud is its successor).
 -- Track A smoke: the shell-profile mix refuses a service builtin and names
 -- mixd; mixd runs the same script; doctor reports each profile.
--- usage: mix tools/engine_split_smoke.mix MIX_BIN MIXD_BIN
+-- usage: mix tools/engine_split_smoke.mix <mix binary> <mixd binary>
 $a = args()
 $mix = realpath($a[0])
 $mixd = realpath($a[1])

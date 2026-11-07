@@ -33,7 +33,7 @@ pub fn create_socket(name: Option<&str>) -> Socket {
 
 // pub fn create_socket_proprietary(uuid: String) -> Socket {
 //     // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
-//     let listening_socket = ListeningSocketSource::with_name(format!("compd-{:?}", uuid)).unwrap();
+//     let listening_socket = ListeningSocketSource::with_name(format!("viud-{:?}", uuid)).unwrap();
 //
 //     // Get the name of the listening socket.
 //     // Clients will connect to this socket.

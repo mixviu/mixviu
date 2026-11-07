@@ -217,7 +217,7 @@ mod tests {
 
     fn path() -> PathBuf {
         std::env::temp_dir()
-            .join(format!("mixos-uds-{:032x}", rand::random::<u128>()))
+            .join(format!("mix-uds-{:032x}", rand::random::<u128>()))
             .join("bus.sock")
     }
 

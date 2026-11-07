@@ -8,9 +8,9 @@ publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "MixOS tray daemon: answers the mixtray popup with COS, BUS, MIX and SSH state over the Bus"
+description = "MixViu tray daemon: answers the mixtray popup with COS, BUS, MIX and SSH state over the Bus"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "mixtrayd"
 kind = "service"
 layer = "desktop"

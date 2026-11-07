@@ -4,7 +4,7 @@
 //! SPEC 07 §2 property surface for the `log` sub-service (L1).
 //!
 //! The log module taps `noded.tap` and writes every Bus message to
-//! `~/.local/log/mixos/bus.log`. State exposed:
+//! `~/.local/log/mix/bus.log`. State exposed:
 //! - config: log_path
 //! - lifecycle: started_at, uptime_s, props_level, health, tap_subscribed
 //! - runtime: events_seen, bytes_logged (since module start)

@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "Deterministic inbound mail filtering rules"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "maild"
 kind = "service"
 layer = "core"

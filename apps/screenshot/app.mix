@@ -7,7 +7,7 @@ $macros=require("macros.mix")
 $ctx=viu_context()
 $launch={}
 if $app_args[1]=="--launch" then $launch=json_parse($app_args[2]) end
-$state=$states.initial($app_args[0] ?? env("MIXOS_COMP_SERVICE","comp"),if $app_args[1]=="--launch" then nil else $app_args[1] end,if $app_args[1]=="--launch" then nil else $app_args[2] end)
+$state=$states.initial($app_args[0] ?? env("MIX_COMP_SERVICE","comp"),if $app_args[1]=="--launch" then nil else $app_args[1] end,if $app_args[1]=="--launch" then nil else $app_args[2] end)
 $options=$ctx.options ?? {}
 $state.headless=$options.headless ?? false
 $state.build=$ctx.build

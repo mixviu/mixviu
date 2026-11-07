@@ -61,10 +61,10 @@ pub use comp_model::catalogue::{HEADLESS_SERVICE, NESTED_SERVICE, REGISTRY_TOPIC
 pub use comp_model::reply::validate_service_name;
 
 pub const PORT_QUEUE_CAPACITY: usize = 16;
-/// compd's read-only truth command: the engine's own view of the registry and
+/// viud's read-only truth command: the engine's own view of the registry and
 /// focus, beside (not inside) the frozen `comp.*` surface, for the Bus-truth
 /// comparator. Answered in control order, so it is fenced like a mutation.
-pub const TRUTH_COMMAND: &str = "compd.truth";
+pub const TRUTH_COMMAND: &str = "viud.truth";
 
 /// Every command this port serves, in catalogue order. The scene host has a
 /// separate port; toolkit drive commands are not served on this one.
@@ -118,7 +118,7 @@ const FIRE_CAPACITY: usize = 64;
 const FIRE_TTL: Duration = Duration::from_secs(2);
 const FIRE_SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// One command compd sends to another service, fire-and-forget: a user key's
+/// One command viud sends to another service, fire-and-forget: a user key's
 /// binding (world's user-key layer) whose service is not `comp`.
 #[derive(Debug)]
 pub struct OutboundFire {
@@ -180,7 +180,7 @@ async fn fire_loop<C: WorkerClient>(client: Arc<C>, mut fires: FireReceiver) {
     }
 }
 
-/// The broker URL when the caller names none: `MIXOS_NODED_URL`, else the
+/// The broker URL when the caller names none: `MIX_NODED_URL`, else the
 /// node config (`node.conf.mix`), else the loopback broker.
 pub fn default_noded_url() -> String {
     bus::noded_url()
@@ -757,7 +757,7 @@ impl PortStarter {
         let lost_count = self.lost_count;
         let fires = self.fires;
         let thread = thread::Builder::new()
-            .name("compd-port".into())
+            .name("viud-port".into())
             .spawn(move || {
                 let _completion = CompletionOnDrop(completion_tx);
                 let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -1434,7 +1434,7 @@ fn dispatch_incoming(
         );
         return;
     }
-    // compd's truth command is not part of the frozen `comp.*` surface, so it is
+    // viud's truth command is not part of the frozen `comp.*` surface, so it is
     // routed before `classify` (which answers every other name `unknown_command`).
     if command.command == TRUTH_COMMAND {
         let Ok(permit) = Arc::clone(responder_permits).try_acquire_owned() else {

@@ -66,7 +66,7 @@ fn software($s)
   end
   if any($s.apps,fn($r)=$n.group_of($r)=="other") then $group.choices=concat($group.choices,choices(["other"],["group-other"])) end
   $rows=[{id:"software.apps",title:"",kind:"table",scroll:true,inline:true,shown:len($n.apps_view($s).visible)>0,blocked:nil,value:$s.ui.selected,columns:map(["app","installed","latest","published","status"],fn($c)=$n.text_for("col-"..$c)),choices:map($n.apps_view($s).visible,fn($r)=software_row($r))},
-    {id:"software.notice",title:"",kind:"info",inline:true,separator_before:true,shown:true,value:replace($n.text_for("apps-scope"),"{ $prefix }","/opt/mixos"),blocked:nil},
+    {id:"software.notice",title:"",kind:"info",inline:true,separator_before:true,shown:true,value:replace($n.text_for("apps-scope"),"{ $prefix }","/opt/mix"),blocked:nil},
     {id:"software.availability",title:"",kind:"info",inline:true,shown:$s.releases=="missing" or len($n.apps_view($s).visible)==0,value:if $s.releases=="missing" then $n.text_for("missing") elif len($n.apps_view($s).visible)==0 then $n.text_for("group-empty") else "" end,blocked:nil}]
   $mutations=buttons($s,"software-mutations",["apps.install","apps.rollback","apps.remove"])
   $mutations.choices[0].primary=true;$mutations.separator_after=true

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! compd's user-visible strings, from its Fluent catalogue
-//! (`services/compd/i18n/en/compd.ftl`, AGENTS.md §4). A missing key renders
+//! viud's user-visible strings, from its Fluent catalogue
+//! (`engines/viud/i18n/en/viud.ftl`, AGENTS.md §4). A missing key renders
 //! as the key itself, so a gap shows instead of going blank.
 
 use theme::strings::Strings;
 
-const CATALOGUE: &str = include_str!("../../../i18n/en/compd.ftl");
+const CATALOGUE: &str = include_str!("../../../i18n/en/viud.ftl");
 
 thread_local! {
     // The compositor's UIs run on its one thread; a bundle per thread keeps

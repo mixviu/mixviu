@@ -437,7 +437,7 @@ pub struct Chrome {
     pub menu_style: design::MenuStyle,
     pub menu_side: design::MenuSide,
     pub band: design::title_band::Settings,
-    /// The same top-level frame geometry and shadow as compd.
+    /// The same top-level frame geometry and shadow as viud.
     pub frame: design::frame::Frame,
 }
 

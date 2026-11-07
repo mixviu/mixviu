@@ -1242,8 +1242,8 @@ mod tests {
             &[
                 ("fqdn", "manual-tls.example.com"),
                 ("www_dir", "/srv/manual-tls"),
-                ("tls.cert_path", "/etc/mixos/manual-tls/cert.pem"),
-                ("tls.key_path", "/etc/mixos/manual-tls/key.pem"),
+                ("tls.cert_path", "/etc/mix/manual-tls/cert.pem"),
+                ("tls.key_path", "/etc/mix/manual-tls/key.pem"),
             ],
         );
         let (rc, body) = vhost_add(&node, &add).await;

@@ -114,7 +114,7 @@ async fn write<S: AsyncRead + AsyncWrite + Unpin>(
 }
 fn capabilities(secure: bool) -> String {
     format!(
-        "\"IMPLEMENTATION\" \"MixOS maild\"\r\n\"VERSION\" \"1.0\"\r\n\"SIEVE\" \"{EXTENSIONS}\"\r\n\"SASL\" \"{}\"\r\n{}OK \"ManageSieve ready\"\r\n",
+        "\"IMPLEMENTATION\" \"MixViu maild\"\r\n\"VERSION\" \"1.0\"\r\n\"SIEVE\" \"{EXTENSIONS}\"\r\n\"SASL\" \"{}\"\r\n{}OK \"ManageSieve ready\"\r\n",
         if secure { "PLAIN LOGIN" } else { "" },
         if secure { "" } else { "\"STARTTLS\"\r\n" }
     )

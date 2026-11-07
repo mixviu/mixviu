@@ -108,7 +108,7 @@ fn bus_command($s,$e)
     return pump(queue_job($s,"macro",{call:$e.headers["viu-call"],command:replace($command,"ced.macros.",""),args:$a}))
   elif $command=="ced.actions" then reply(0,json_encode({actions:action_rows($s)}));return $s
   elif $command=="app.describe" then
-    reply(0,json_encode({contract:"ctk-app-control.v0",app:"ced",title:"MixOS Editor",view:if len($s.tabs)>0 then tab_row(current($s)).name else "" end,engine:"egui",version:$ctx.version ?? "0.1.2",description:"The MixOS Editor: an egui editor over the edit Bus service",controls:[],commands:$s.commands}));return $s
+    reply(0,json_encode({contract:"ctk-app-control.v0",app:"ced",title:"MixViu Editor",view:if len($s.tabs)>0 then tab_row(current($s)).name else "" end,engine:"egui",version:$ctx.version ?? "0.1.2",description:"The MixViu Editor: an egui editor over the edit Bus service",controls:[],commands:$s.commands}));return $s
   elif $command=="app.quit" then
     if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
     $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",timeout_ms:30000}))

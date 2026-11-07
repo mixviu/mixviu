@@ -114,7 +114,7 @@ pub fn start(
     true
 }
 
-/// Start the same grab from compd's own chrome (decor): a press on a
+/// Start the same grab from viud's own chrome (decor): a press on a
 /// window's titlebar (`edges` 0, a move) or resize band (the edge bits). The
 /// press hit compositor pixels, so the implicit click grab it opened has no
 /// client focus and the `over_window` check of [`start`] cannot apply; the

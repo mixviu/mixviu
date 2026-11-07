@@ -22,11 +22,11 @@ pub fn executable(path: &Path) -> bool {
 /// An explicit selection fails closed. Otherwise use the first executable
 /// `mix` on PATH, just as a child process would; absence can be skipped.
 pub fn select() -> Result<Option<PathBuf>, String> {
-    if let Some(path) = std::env::var_os("MIXOS_E2E_MIX_BIN") {
+    if let Some(path) = std::env::var_os("MIX_TEST_E2E_EXE") {
         let path = PathBuf::from(path);
         if !executable(&path) {
             return Err(format!(
-                "MIXOS_E2E_MIX_BIN is not an executable file: {}",
+                "MIX_TEST_E2E_EXE is not an executable file: {}",
                 path.display()
             ));
         }

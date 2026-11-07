@@ -2,14 +2,14 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The occlusion props, reported from the renderer's draw-time cull.
 //!
-//! compd reports what its renderer actually did, not a separate
+//! viud reports what its renderer actually did, not a separate
 //! opaque-coverage model: a window on a pane but not drawn there because
 //! opaque windows in front covered it ([`Drawn`](super::Drawn):
 //! `on_pane && !visible`) is `opaque-coverage`; one drawn anywhere is
 //! `exposed`; one no pane evaluated this pass (off every output, hidden by
 //! the comp policy, under the lock) is `unknown`: the report fails open.
 //! Where format/region rules and the renderer's strict deposits disagree,
-//! compd reports what it drew.
+//! viud reports what it drew.
 //!
 //! Per-pane votes are replaced each time that pane renders, so an output that
 //! is not redrawn keeps its last decisions. The record never schedules a

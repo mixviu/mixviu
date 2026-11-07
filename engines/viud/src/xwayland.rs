@@ -43,7 +43,7 @@ use x11_wm::display;
 /// Failure is never fatal: a session without an X server is a session where X11 apps
 /// do not run, which is strictly better than one that will not start.
 ///
-/// Gated on the `xwayland.enabled` switch (`COMPD_XWAYLAND` > the
+/// Gated on the `xwayland.enabled` switch (`VIUD_XWAYLAND` > the
 /// persisted per-socket file > on), read once here; a props set takes effect
 /// at the next start. The switch gates the FIRST generation only: the one retry
 /// is a recovery of a server this session already chose to run.
@@ -167,7 +167,7 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
         // One extra argument, and it is a REMOVAL. Everything else smithay passes
         // (`-rootless`, `-terminate`, the wm/displayfd/listenfd wiring) is the whole
         // contract, and the opt-in features — `-enable-ei-portal`, `-shm`, `-glamor`,
-        // `-dpi`, `-force-xrandr-emulation` — compd does not use. `-dpi` in particular
+        // `-dpi`, `-force-xrandr-emulation` — viud does not use. `-dpi` in particular
         // would undo the scale decision above by the other route: it changes the
         // resolution TOOLKITS read to size themselves, so X clients would lay out
         // larger in pixels and the camera would scale that again.
@@ -178,14 +178,14 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
         // of reach either way, and Xwayland only sees input while an X surface holds
         // focus, but "X11 apps cannot see each other's input" is the same explicit-
         // opt-in shape the wayland protocols here are held to, and RECORD is the one
-        // channel of it that costs nothing to close: nothing in compd speaks it (our
+        // channel of it that costs nothing to close: nothing in viud speaks it (our
         // x11rb is built without the `record` feature), and what breaks is keystroke
         // visualisers, `xtrace` and macro recorders.
         //
         // XTEST off for the same reason, from the other direction. RECORD is the READ
         // half of one capability and XTEST is the WRITE half: it lets an X client
         // synthesize key presses, buttons and motion into other X clients. Both are
-        // confined to the X domain — Xwayland's fake input never reaches compd's pointer
+        // confined to the X domain — Xwayland's fake input never reaches viud's pointer
         // or a wayland client, which is what `-enable-ei-portal` would change — so
         // removing them closes X-to-X snooping and X-to-X injection and nothing else.
         //
@@ -246,7 +246,7 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
                 match X11Wm::start_wm_with_config(xwm_handle.clone(), &source_dh, x11_socket, client.clone(), config) {
                     Ok(wm) => {
                         state.state.xwayland.xwm = Some(wm);
-                        // E7: a new server knows nothing compd mirrored into the
+                        // E7: a new server knows nothing viud mirrored into the
                         // last one; the next pass writes the desktops, every window
                         // and the stack afresh.
                         policy_host::x11::forget();
@@ -266,7 +266,7 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
                             publishes_shared_env(state),
                             &[("DISPLAY", &value)],
                         );
-                        // The per-socket descriptor (`compd/<socket>.xwayland.env`,
+                        // The per-socket descriptor (`mix/viud/<socket>.xwayland.env`,
                         // DISPLAY + GENERATION, 0600): what launchers read to hand `DISPLAY`
                         // to an X client without any global being set.
                         if let Err(err) = policy_host::xwayland::publish_descriptor(display_number) {
@@ -310,7 +310,7 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
 /// A generation failed (crashed, exited, or never came up). The one retry
 /// credit decides what follows: the first failure arms ONE restart after
 /// `XWAYLAND_RETRY_DELAY_SECS` (a one-shot backstop, not a poll), every later one
-/// leaves X11 down until compd restarts. Either way the Bus shows it:
+/// leaves X11 down until viud restarts. Either way the Bus shows it:
 /// `xwayland.display` null, `xwayland.state` `retrying` / `failed`, and
 /// `xwayland.failures` counted.
 fn after_failure<'l>(dh: &DisplayHandle, handle: &LoopHandle<'l, Loop>) {
@@ -332,14 +332,14 @@ fn after_failure<'l>(dh: &DisplayHandle, handle: &LoopHandle<'l, Loop>) {
             );
             if let Err(err) = armed {
                 error!(
-                    "XWayland: could not arm the restart: {err}; X11 stays down until compd restarts"
+                    "XWayland: could not arm the restart: {err}; X11 stays down until viud restarts"
                 );
                 policy_host::xwayland::note_gave_up();
             }
         }
         XwaylandRetryDecision::StayFailed => {
             error!(
-                "XWayland failed again ({failures} this session); X11 stays down until compd restarts"
+                "XWayland failed again ({failures} this session); X11 stays down until viud restarts"
             );
         }
     }

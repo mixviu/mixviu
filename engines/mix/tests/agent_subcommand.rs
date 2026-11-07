@@ -18,9 +18,9 @@ fn mix_agent(prefix: &std::path::Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_mix"))
         .arg("agent")
         .args(args)
-        // The prefix comes from MIXOS_PREFIX (else the binary's location);
-        // MIXOS sets the other roots, not this one.
-        .env("MIXOS_PREFIX", prefix)
+        // The prefix comes from MIX_PREFIX (else the binary's location);
+        // MIX_ROOT sets the other roots, not this one.
+        .env("MIX_PREFIX", prefix)
         .env("MIX_STATS", "off")
         .output()
         .expect("run mix agent")
@@ -56,7 +56,7 @@ fn says_so_when_agentd_is_not_installed() {
     assert_eq!(out.status.code(), Some(1));
     let err = String::from_utf8_lossy(&out.stderr);
     // It must name the temp prefix: a check that only looked for "not
-    // installed" passed while MIXOS_PREFIX was being ignored.
+    // installed" passed while MIX_PREFIX was being ignored.
     assert!(
         err.contains("not installed") && err.contains(&prefix.display().to_string()),
         "stderr={err}"
@@ -76,7 +76,7 @@ fn peers_runs_peersd_cli_with_its_args_and_exit_code() {
     let out = Command::new(env!("CARGO_BIN_EXE_mix"))
         .arg("peers")
         .args(["msg", "all", "landed"])
-        .env("MIXOS_PREFIX", &prefix)
+        .env("MIX_PREFIX", &prefix)
         .env("MIX_STATS", "off")
         .output()
         .expect("run mix peers");

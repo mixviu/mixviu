@@ -71,12 +71,12 @@ impl Citizen {
             "--name",
             SVC,
         ])
-        .env("MIXOS_NODE_CONFIG", node_conf)
-        .env("MIXOS_ETC", &dir.0)
+        .env("MIX_NODE_CONFIG", node_conf)
+        .env("MIX_ETC", &dir.0)
         .env("REL_TRACE", dir.0.join("trace"))
         .env("REL_STATE", dir.0.join("state"))
         .env("MIX_STATS", "off")
-        .env_remove("MIXOS_SESSION_FD")
+        .env_remove("MIX_SESSION_FD")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));
@@ -229,7 +229,7 @@ fn count_switches(pid: u32) -> BTreeMap<String, u64> {
     totals
 }
 
-const MIX_SCRIPT: &str = r#"
+const MIX_TEST_SCRIPT: &str = r#"
 $s = {}
 $TRACE = env("REL_TRACE")
 fn tlog($what, $fields)
@@ -286,11 +286,11 @@ async fn test_serve_socket_lifecycle() {
     let dir = Dir::new("sock-life");
     let mut broker = Broker::start();
 
-    let bin_path = std::env::var("MIX_SOCKET_TEST_BIN")
+    let bin_path = std::env::var("MIX_TEST_SOCKET_EXE")
         .unwrap_or_else(|_| env!("CARGO_BIN_EXE_mix").to_string());
 
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
-    let script = dir.write("svc.mix", MIX_SCRIPT);
+    let script = dir.write("svc.mix", MIX_TEST_SCRIPT);
 
     let mut citizen = Citizen::spawn(Path::new(&bin_path), &dir, &node_conf, &script);
     let c1 = connect(&broker).await;
@@ -353,10 +353,10 @@ async fn test_serve_socket_lifecycle() {
     let median = latencies[latencies.len() / 2];
     let p90 = latencies[(latencies.len() as f64 * 0.9) as usize];
 
-    let mode = std::env::var("MIX_SOCKET_TEST_PROFILE").unwrap_or_else(|_| {
+    let mode = std::env::var("MIX_TEST_SOCKET_PROFILE").unwrap_or_else(|_| {
         assert!(
-            std::env::var_os("MIX_SOCKET_TEST_BIN").is_none(),
-            "binary override requires explicit MIX_SOCKET_TEST_PROFILE"
+            std::env::var_os("MIX_TEST_SOCKET_EXE").is_none(),
+            "binary override requires explicit MIX_TEST_SOCKET_PROFILE"
         );
         if cfg!(debug_assertions) {
             "debug"

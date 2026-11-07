@@ -190,7 +190,7 @@ mod tests {
     fn a_personality_keeps_its_own_serve_subcommand() {
         // desk4 P1 regression: `editd serve` hit mixd's usage error.
         let r = route(&[
-            OsString::from("/opt/mixos/bin/editd"),
+            OsString::from("/opt/mix/bin/editd"),
             OsString::from("serve"),
         ]);
         assert_eq!(r, Route::Personality("editd"));
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn the_name_is_the_basename_without_a_login_dash() {
-        assert_eq!(personality_name(OsStr::new("/opt/mixos/bin/mixd")), "mixd");
+        assert_eq!(personality_name(OsStr::new("/opt/mix/bin/mixd")), "mixd");
         assert_eq!(personality_name(OsStr::new("-mixd")), "mixd");
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "policy"
-description = "compd window policy as pure logic: workspaces, window commands, hot corners, panel holders, agent-seat preflight"
+description = "viud window policy as pure logic: workspaces, window commands, hot corners, panel holders, agent-seat preflight"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,8 +8,8 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[package.metadata.mixos]
-component = "compd"
+[package.metadata.mixviu]
+component = "viud"
 kind = "service"
 layer = "desktop"
 contract = "none"

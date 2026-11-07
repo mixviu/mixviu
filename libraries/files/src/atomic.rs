@@ -123,7 +123,7 @@ pub fn land_verified(
     }
     drop(cleanup);
     sync_directory_with(dir, |path, error| {
-        eprintln!("mixos-files: directory fsync {}: {error}", path.display());
+        eprintln!("mix-files: directory fsync {}: {error}", path.display());
     });
     Ok(count)
 }
@@ -239,7 +239,7 @@ struct TempFile(std::path::PathBuf);
 impl Drop for TempFile {
     fn drop(&mut self) {
         cleanup_temp_with(&self.0, |path, error| {
-            eprintln!("mixos-files: staging cleanup {}: {error}", path.display());
+            eprintln!("mix-files: staging cleanup {}: {error}", path.display());
         });
     }
 }

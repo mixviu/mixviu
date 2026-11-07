@@ -59,10 +59,10 @@ impl Citizen {
         ])
         .env("HOME", dir)
         .env("XDG_STATE_HOME", dir)
-        .env("MIXOS_NODE_CONFIG", node_conf)
-        .env("MIXOS_ETC", dir)
+        .env("MIX_NODE_CONFIG", node_conf)
+        .env("MIX_ETC", dir)
         .env_remove("MIX_STATS")
-        .env_remove("MIXOS_SESSION_FD")
+        .env_remove("MIX_SESSION_FD")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));

@@ -5,20 +5,20 @@ fn absolute_env($key)
   return if starts_with($p,"/") then $p else nil end
 end
 fn state_directory()
-  $base=absolute_env("MIXOS_APP_HOME")
+  $base=absolute_env("MIX_APP_HOME")
   if $base!=nil then return $base end
-  $base=absolute_env("MIXOS_APPS_HOME")
+  $base=absolute_env("MIX_APPS_HOME")
   if $base!=nil then return path_join($base,"screenshot") end
-  $base=absolute_env("MIXOS_VAR")
+  $base=absolute_env("MIX_VAR")
   if $base!=nil then return path_join($base,"apps/screenshot") end
   $base=absolute_env("XDG_STATE_HOME")
-  if $base!=nil then return path_join($base,"mixos/apps/screenshot") end
+  if $base!=nil then return path_join($base,"mix/apps/screenshot") end
   $base=absolute_env("HOME")
   if $base==nil then raise("FAILED","no absolute application state directory") end
-  return path_join($base,".local/state/mixos/apps/screenshot")
+  return path_join($base,".local/state/mix/apps/screenshot")
 end
 fn screenshots_directory()
-  $base=absolute_env("MIXOS_SCREENSHOTS_DIR")
+  $base=absolute_env("MIX_SCREENSHOTS_DIR")
   if $base!=nil then return $base end
   $home=absolute_env("HOME")
   if $home==nil then raise("FAILED","HOME is not an absolute path") end

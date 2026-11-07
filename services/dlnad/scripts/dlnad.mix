@@ -12,7 +12,7 @@
 --   media_root  directory to serve (required)
 --   listen      the LAN IPv4 renderers reach; HTTP binds it, SSDP joins on it (required)
 --   port        HTTP port (default 8200)
---   name        friendly name base (default "MixOS Media")
+--   name        friendly name base (default "MixViu Media")
 --   ssdp        announce and answer M-SEARCH (default true; needs mix >= 0.118.0)
 --   renderers   IPv4s that also get every advert unicast (default []): for
 --               renderers that never join the SSDP multicast group
@@ -42,11 +42,11 @@ $CHUNK = 1048576
 $SEND_TIMEOUT = 3600
 
 fn conf_path()
-  return env("DLNAD_CONF") ?? mixos_path("etc", "dlnad/dlnad.conf.mix")
+  return env("DLNAD_CONF") ?? mix_path("etc", "dlnad/dlnad.conf.mix")
 end
 
 fn state_dir()
-  return env("DLNAD_STATE") ?? mixos_path("var", "dlnad")
+  return env("DLNAD_STATE") ?? mix_path("var", "dlnad")
 end
 
 fn load_conf($path)
@@ -58,7 +58,7 @@ fn load_conf($path)
   $c.media_root = re_replace($c.media_root, "/+$", "")
   $c.port = $c.port ?? 8200
   if type($c.port) != "number" or $c.port != floor($c.port) or $c.port < 1 or $c.port > 65535 then raise("CONFIG", "port must be 1..65535") end
-  $c.name = $c.name ?? "MixOS Media"
+  $c.name = $c.name ?? "MixViu Media"
   $c.ssdp = $c.ssdp ?? true
   $c.renderers = $c.renderers ?? []
   $c.announce_s = $c.announce_s ?? 60

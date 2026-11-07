@@ -1847,7 +1847,7 @@ mod tests {
             user,
             builtin: temp.path().join("builtin"),
             home: temp.path().into(),
-            mix: "/opt/mixos/bin/mix".into(),
+            mix: "/opt/mix/bin/mix".into(),
         });
         state.create_title();
         let result = state

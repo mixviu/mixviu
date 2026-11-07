@@ -8,7 +8,7 @@
 -- the whole state is read back, so a refused change shows the real level.
 -- A `pactl subscribe` stream (audio_watch) re-reads the snapshot on every
 -- batch (events are hints, state is truth). There is no polling fallback.
-$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mixos/scenes/lib")
+$LIB = env("SCENES_LIB", env("XDG_DATA_HOME", env("HOME") .. "/.local/share") .. "/mix/scenes/lib")
 $r = require($LIB .. "/runtime.mix")
 $m = require($LIB .. "/models.mix")
 $a = require($LIB .. "/audio.mix")

@@ -69,7 +69,7 @@ pub mod kind {
 /// without resolving it would leave a client waiting forever, so every
 /// path out of the ledger calls exactly one of `presented`/`discarded`.
 pub trait Feedback {
-    /// The engine's output type (smithay `Output` in compd).
+    /// The engine's output type (smithay `Output` in viud).
     type Output;
     /// Returns whether the feedback was actually sent as presented (a frame
     /// without a nameable output can only be sent as discarded).

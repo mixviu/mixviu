@@ -278,7 +278,7 @@ impl SequenceMap {
     /// **Invariants enforced (debug builds):**
     ///
     /// * Each UID is `<= u32::MAX`. RFC 9051 §9 defines wire UIDs as
-    ///   `nz-number` (1..=u32::MAX). MixOS's storage-side
+    ///   `nz-number` (1..=u32::MAX). MixViu's storage-side
     ///   `MembershipUid::uid` is `u64`, but it's widened from a `u32`
     ///   sequence (see `mailstore::next_seq`), so any larger value
     ///   here would indicate a violated invariant rather than legal

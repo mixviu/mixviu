@@ -310,7 +310,7 @@ fn pair_visuals(theme: &Theme) -> Visuals {
 }
 
 /// Install `theme` on `ctx`: its style, its chrome and its fonts. The style
-/// goes in both egui theme slots: the MixOS theme, not the system
+/// goes in both egui theme slots: the MixViu theme, not the system
 /// preference, picks the mode.
 pub fn apply(ctx: &egui::Context, theme: &Theme) {
     ctx.set_global_style(style(theme));

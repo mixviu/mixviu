@@ -16,7 +16,7 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
             // fractional scale. This fills the host window, but the output size/scale DO
             // track host DPI — intentionally a stress-test candidate for the output-size /
             // DPI-unaware code paths.
-            // compd's `--scale` replaces the host's factor:
+            // viud's `--scale` replaces the host's factor:
             // the gate host (weston headless) only ever reports integers.
             let scale = crate::window::factory::output_scale(*scale_factor);
             info!(

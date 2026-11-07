@@ -1,48 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.1.0
-$core=require("core.mix")
-$session=require("../../libraries/viu/mix/session.mix")
-$settings=$session.session_new(env("MIXOS_INSTANCE","desktop"))
-$ctx=viu_context();$revision=0;$follow=true;$error=nil
-$doc={schema:1,default:{colour:"#1e1e2e"}}
-if len($app_args)>0 then $doc=load_data($app_args[0]);$follow=false end
-fn show_document($doc,$revision)
-  $model=$core.document_model($doc)
-  $model.document=$doc;$model.serial=$revision
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
-end
-show_document($doc,$revision)
-on backdrop.ping
-  reply(0,json_encode({schema:1,service:"backdrop"}))
-end
-on backdrop.state
-  reply(0,json_encode({document:$doc,revision:$revision,follow:$follow,error:$error,endpoint:"scene model accepted; image decode and presentation separate"}))
-end
-on backdrop.set
-  $candidate=$event.args
-  $checked=$core.document_model($candidate)
-  $doc=$candidate;$revision=$revision+1;$follow=false
-  show_document($doc,$revision)
-  reply(0,json_encode({revision:$revision,endpoint:"model accepted"}))
-end
-on backdrop.follow
-  $follow=$event.args.on==true
-  reply(0,json_encode({follow:$follow}))
-end
-on viu.tick
-  if $follow then
-    try
-      send "settingsd" "settings.get" body={binding:$settings.binding,view:"values"}
-      $settings=$session.session_answer($settings,$rc,$reply,nil)
-      if $settings.changed and not $settings.lost then
-        $candidate=$core.settings_document($settings.values)
-        $checked=$core.document_model($candidate)
-        $doc=$candidate;$revision=$revision+1
-        show_document($doc,$revision)
-      end
-      $error=$settings.error
-    catch $message
-      $error=$message
-    end
-  end
+-- version: 0.2.0
+-- lint: globals app_args
+$startup_code=2
+try
+  include "runtime.mix"
+catch $message
+  viu_exit($startup_code,$message)
 end

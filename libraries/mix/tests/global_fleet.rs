@@ -7,9 +7,9 @@ use mix::{
 };
 
 #[test]
-#[ignore = "requires an operator-supplied MIX_GLOBAL_FLEET JSON corpus"]
+#[ignore = "requires an operator-supplied MIX_TEST_GLOBAL_FLEET JSON corpus"]
 fn global_bug_signature_fleet_sweep() {
-    let path = std::env::var("MIX_GLOBAL_FLEET").unwrap();
+    let path = std::env::var("MIX_TEST_GLOBAL_FLEET").unwrap();
     let corpus: Vec<(String, String)> =
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let mut parsed = 0;

@@ -12,7 +12,7 @@
 //!   reached the screen: the page-flip event on kms, the submit on nested):
 //!   the oldest queued frame of that output is folded in at its time.
 //!
-//! Content sources: compd's own UI surfaces
+//! Content sources: viud's own UI surfaces
 //! register through `ui_surface::source`; [`frame_queued`] drains the
 //! registrations into [`Presentation::sources`] and takes each source's report
 //! for that output's frame, and [`presented`] resolves them with the frame.

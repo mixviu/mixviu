@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! The Bus: MixOS's message bus wire format and broker client.
+//! The Bus: MixViu's message bus wire format and broker client.
 //!
 //! - [`wire`] is the frozen wire format every Bus peer speaks: `---`-fenced
 //!   headers plus an optional body ([`BusMessage`], [`parse`]). It needs

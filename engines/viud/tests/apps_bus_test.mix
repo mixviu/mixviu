@@ -11,17 +11,17 @@
 -- lookup retains its final /usr/share/pixmaps fallback; the pre-install miss
 -- checks assume that directory has no bundled aliases. Every fixture "binary"
 -- is a Mix script that records its argv and exits; no real app launches.
--- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
+-- Needs a fresh mix and noded: MIX_TEST_MIX_EXE and MIX_TEST_NODED_EXE when set,
 -- else /opt/mixos/bin/mix and /opt/mixos/bin/noded.
---   mix services/compd/tests/apps_bus_test.mix      (MIXOS overrides the root)
-$root = env("MIXOS") != "" ? env("MIXOS") : realpath(dirname(realpath($0)) .. "/../../..")
+--   mix engines/viud/tests/apps_bus_test.mix      (MIX_ROOT overrides the root)
+$root = env("MIX_ROOT") != "" ? env("MIX_ROOT") : realpath(dirname(realpath($0)) .. "/../../..")
 $pb = require("../../../tests/lib/private_bus.mix")
-$scripts = $root .. "/services/compd/scripts"
-$mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : "/opt/mixos/bin/mix"
-$noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : "/opt/mixos/bin/noded"
+$scripts = $root .. "/engines/viud/scripts"
+$mix = env("MIX_TEST_MIX_EXE") != "" ? env("MIX_TEST_MIX_EXE") : "/opt/mixos/bin/mix"
+$noded = env("MIX_TEST_NODED_EXE") != "" ? env("MIX_TEST_NODED_EXE") : "/opt/mixos/bin/noded"
 $icons_install = $root .. "/share/icons/install.mix"
 $brand_install = $root .. "/share/brand/install.mix"
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-apps-bus-test.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-apps-bus-test.XXXXXXXX"]))
 $tag = uuid()
 -- Pre-bound so the finally block can run even when a setup step fails
 -- before the broker or the citizen exists.
@@ -147,7 +147,7 @@ try
   fixture("data/icons/hicolor/22x22/apps-bus-test-icon.png", "")
   fixture("data/applications/xapp.desktop", "[Desktop Entry]\n" ..
     "Type=Application\nName=X App\nExec=" .. $tmp .. "/bin/display-recorder\n")
-  fixture("run/mixos-comp/wayland-apps-test.xwayland.env", "DISPLAY=:7\nGENERATION=1\n")
+  fixture("run/mix/viud/wayland-apps-test.xwayland.env", "DISPLAY=:7\nGENERATION=1\n")
   -- A program that does not exist, and one that is not executable.
   fixture("data/applications/ghost.desktop", "[Desktop Entry]\n" ..
     "Type=Application\nName=Ghost App\nExec=" .. $tmp .. "/bin/no-such-program\n")
@@ -200,14 +200,14 @@ try
   check(call("apps", "apps.launch", json_encode({id: "xapp"})).rc == 0, "xapp apps.launch failed")
   check(wait_file($tmp .. "/launched-display") == ":7\n", "launched app did not get the descriptor DISPLAY")
   $_rm = run_argv_must(["rm", "-f", "--", $tmp .. "/launched-display"])
-  fixture("run/mixos-comp/wayland-apps-test.xwayland.env", "DISPLAY=:9\nGENERATION=2\n")
+  fixture("run/mix/viud/wayland-apps-test.xwayland.env", "DISPLAY=:9\nGENERATION=2\n")
   check(call("apps", "apps.launch", json_encode({id: "xapp"})).rc == 0, "second xapp apps.launch failed")
   check(wait_file($tmp .. "/launched-display") == ":9\n", "launch reused a stale DISPLAY after an XWayland restart")
   -- No descriptor (XWayland down or restarting): the citizen's inherited
   -- DISPLAY=:0 must NOT reach the child -- DISPLAY is removed -- and the
   -- citizen logs why.
   $_rm = run_argv_must(["rm", "-f", "--", $tmp .. "/launched-display",
-    $tmp .. "/run/mixos-comp/wayland-apps-test.xwayland.env"])
+    $tmp .. "/run/mix/viud/wayland-apps-test.xwayland.env"])
   check(call("apps", "apps.launch", json_encode({id: "xapp"})).rc == 0, "descriptor-less xapp apps.launch failed")
   check(wait_file($tmp .. "/launched-display") == "UNSET\n", "an inherited DISPLAY leaked to a launch with no descriptor")
   $svc_log = read_file_or_nil($tmp .. "/svc.log")
@@ -344,5 +344,5 @@ finally
   stop_pid($svc_pid)
   if $bus != nil then $pb.stop($bus) end
   -- Only the unique mktemp tree created by this test is removed.
-  if starts_with($tmp, "/tmp/mixos-apps-bus-test.") then remove_dir($tmp) end
+  if starts_with($tmp, "/tmp/mix-apps-bus-test.") then remove_dir($tmp) end
 end

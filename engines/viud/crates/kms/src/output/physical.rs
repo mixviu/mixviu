@@ -66,7 +66,7 @@ pub fn create(info: &connector::Info, identity: &MonitorIdentity) -> Output {
 
 /// Apply the initial output state as the original did (preferred mode,
 /// origin position), plus an optional panel-orientation transform from
-/// `connector.kind`, at compd's scale ([`set_scale`]; 1.0 unless set, which
+/// `connector.kind`, at viud's scale ([`set_scale`]; 1.0 unless set, which
 /// is exactly the original's `Custom { 1, 1.0 }`).
 pub fn apply_initial_state(
     output: &Output,

@@ -679,8 +679,8 @@ impl Pty {
         }
         command
             .env("HOME", home.path())
-            .env("MIXOS", home.path())
-            .env("MIXOS_SRC", home.path())
+            .env("MIX_ROOT", home.path())
+            .env("MIX_SRC", home.path())
             .env("MIX_STATS", "off")
             .env("TERM", "xterm-256color")
             .env("MIX_EDITOR", if owned { "owned" } else { "rustyline" })

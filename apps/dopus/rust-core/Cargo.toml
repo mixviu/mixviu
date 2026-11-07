@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 description = "DOpus renderer-free navigation, listings, file operations and persistence"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "dopus"
 kind = "app"
 layer = "core"

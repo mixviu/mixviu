@@ -553,7 +553,7 @@ impl<A: WireTrait + 'static> Wire<A> {
                             parent: None,
                         });
                         self.inner.surface_event(SurfaceEvent::x11_names(x11));
-                        // compd (integration E4): the WM_TRANSIENT_FOR owner, which a
+                        // viud (integration E4): the WM_TRANSIENT_FOR owner, which a
                         // move follows to its override-redirect children.
                         self.inner
                             .surface_event(SurfaceEvent::x11_transient_for(x11));
@@ -961,7 +961,7 @@ impl<A: WireTrait + 'static> Wire<A> {
                 });
             if let Err(err) = result {
                 // The blocker is already on the surface and nothing will clear
-                // it: that commit never applies (compd F6: an explicit-sync fault).
+                // it: that commit never applies (viud F6: an explicit-sync fault).
                 warn!("failed to insert syncobj source err={err:?}");
                 crate::wayland::dmabuf::explicit_sync::fault(format!(
                     "syncobj fence source not inserted: {err:?}"

@@ -333,7 +333,7 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         ).unwrap()).unwrap();
         let lists = crate::templates::validate_templates(&tree).unwrap();
         // Where share/brand installs it: icons/mixos/symbolic/apps/dev.mixos.svg.
-        let root = std::env::temp_dir().join(format!("compd-launcher-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("viud-launcher-{}", std::process::id()));
         let mark = root.join("icons/mixos/symbolic/apps/dev.mixos.svg");
         std::fs::create_dir_all(mark.parent().unwrap()).unwrap();
         std::fs::copy(

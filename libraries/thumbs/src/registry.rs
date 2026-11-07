@@ -12,7 +12,7 @@
 //! ```
 //!
 //! Every thumbnail this library makes comes from one of these programs:
-//! they cover every format the system knows, and keep decoders MixOS cannot
+//! they cover every format the system knows, and keep decoders MixViu cannot
 //! ship (FFmpeg-backed video, for one) in their own process. An `Exec` line
 //! becomes an argv, never a shell command, and each placeholder fills
 //! exactly one argument.

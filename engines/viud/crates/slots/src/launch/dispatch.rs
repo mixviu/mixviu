@@ -52,7 +52,7 @@ impl LaunchWorker {
         let stopping = Arc::new(AtomicBool::new(false));
         let worker_stopping = stopping.clone();
         let thread = thread::Builder::new()
-            .name("compd-launch".into())
+            .name("viud-launch".into())
             .spawn(move || run(rx, outcomes, scope, worker_stopping))
             .unwrap_or_else(|e| abort!("spawn launch worker: {e:?}"));
         Self {

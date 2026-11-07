@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 description = "Samples the system and its processes, keeps history, and answers on the Bus"
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "monitord"
 kind = "service"
 layer = "core"

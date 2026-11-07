@@ -32,7 +32,7 @@ pub fn readback(ctx: &WgpuGlContext, tex: &wgpu::Texture) -> Option<Frame> {
     let padded = unpadded.div_ceil(align) * align;
 
     let buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("compd-capture-readback"),
+        label: Some("viud-capture-readback"),
         size: (padded as u64) * (height as u64),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
@@ -41,7 +41,7 @@ pub fn readback(ctx: &WgpuGlContext, tex: &wgpu::Texture) -> Option<Frame> {
     let mut encoder = ctx
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("compd-capture-readback"),
+            label: Some("viud-capture-readback"),
         });
     encoder.copy_texture_to_buffer(
         tex.as_image_copy(),
@@ -141,7 +141,7 @@ impl AsyncReadback {
             * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         if self.buffer.is_none() || self.width != w || self.height != h {
             self.buffer = Some(ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("compd-capture-async-readback"),
+                label: Some("viud-capture-async-readback"),
                 size: (padded as u64) * (h as u64),
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
@@ -169,7 +169,7 @@ impl AsyncReadback {
         let mut encoder = ctx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("compd-capture-async-readback"),
+                label: Some("viud-capture-async-readback"),
             });
         encoder.copy_texture_to_buffer(
             tex.as_image_copy(),

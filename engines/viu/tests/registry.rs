@@ -8,12 +8,12 @@ use std::collections::BTreeSet;
 
 const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
-/// The registry's `shell.*` names owned by compd, from its one-entry-per-line
+/// The registry's `shell.*` names owned by viud, from its one-entry-per-line
 /// form.
 fn registered() -> BTreeSet<String> {
     REGISTRY
         .lines()
-        .filter(|line| line.contains("owner:\"compd\""))
+        .filter(|line| line.contains("owner:\"viud\""))
         .filter_map(|line| line.split("name:\"").nth(1)?.split('"').next())
         .filter(|name| name.starts_with("shell."))
         .map(str::to_owned)
@@ -51,8 +51,8 @@ fn classes_follow_mutation() {
     }
 }
 
-/// compd's truth command sits beside the frozen `comp.*` surface.
+/// viud's truth command sits beside the frozen `comp.*` surface.
 #[test]
 fn truth_command_is_a_registered_query() {
-    assert_eq!(class_of("compd.truth"), Some("query"));
+    assert_eq!(class_of("viud.truth"), Some("query"));
 }
