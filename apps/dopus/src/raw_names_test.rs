@@ -21,10 +21,10 @@ fn mix_controller_selects_and_copies_a_non_utf8_name_without_replacing_its_bytes
     let wake: viu::runtime::Wake = Arc::new(|| {});
     let mut jobs = Jobs::new(1, wake.clone());
     let mut runtime = Runtime::new(4, wake, Some(jobs.backend(None)));
-    let path = app_dir.join("dopus.mix");
+    let path = app_dir.join("app.mix");
     runtime
         .load(Program {
-            source: std::fs::read_to_string(&path).unwrap(),
+            source: "$app_args=nil\n".to_owned() + &std::fs::read_to_string(&path).unwrap(),
             path,
             scene: "raw-name".into(),
             citizen: "raw-name".into(),

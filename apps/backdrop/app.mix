@@ -1,9 +1,293 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_args
 $startup_code=2
 try
-  include "runtime.mix"
+  -- SPDX-License-Identifier: MIT OR Apache-2.0
+  -- version: 0.2.0
+  -- lint: globals app_args
+  $wire=require("wire.mix");$engine=require("engine.mix");$projection=require("projection.mix");$launch=require("launch.mix");$schedule=require("schedule.mix")
+  $ctx=viu_context();$options=$launch.options($app_args,cwd(),false)
+  $startup_code=1
+  if $options.probe then raise("PROBE_RUNTIME","Probe rendering is not yet ported") end
+  $dirs=viu_app_dirs("backdrop")
+  $store=$options.config ?? if $dirs!=nil then path_join($dirs.config,"backdrop.mx") else nil end
+  $document={schema:1}
+  if $store!=nil then
+    $file=viu_read_optional($store)
+    if $file.found then $document=data_parse($file.text)
+    elif $options.config!=nil then raise("CONFIG","Required document is missing: "..$store) end
+  end
+  $document=$launch.override($document,$options)
+  $s=$engine.fresh();$running=nil
+  $views=require("views.mix");$live=$views.fresh()
+  $train=require("train.mix");$reader_module=require("reader.mix")
+  $snapshot=$train.fresh();$reader=$reader_module.fresh();$train_busy=nil;$train_generation=0
+  fn visible()
+    $outputs=viu_ui_state().outputs ?? {}
+    return any(values($outputs),fn($output)=$output.visible==true)
+  end
+  fn train_poll($reader,$snapshot,$live,$busy,$selected,$hint=false)
+    $drawn=$selected=="train" and visible()
+    $reader.hint=$reader.hint or $hint
+    if $busy!=nil then return {reader:$reader,busy:$busy} end
+    $plan=$reader_module.plan($reader,$live,$snapshot,$drawn,$reader.hint,monotonic());$reader=$plan.reader
+    if len($plan.requests)>0 then
+      $path=path_join(dirname(script_path()),"read-job.mix");$id="backdrop-read-"..to_string($plan.ticket)
+      $tag={kind:"train",key:$plan.key,ticket:$plan.ticket}
+      send "viu-local" "jobs.start" id=$id owner=$tag path=$path source=read_file($path) command="job.run" args={requests:$plan.requests}
+      if $rc==0 then $busy=$tag end
+    end
+    if $busy==nil then viu_timer("backdrop-train",$reader_module.wait_seconds($reader,$snapshot,$drawn,monotonic())*1000,{})
+    else viu_timer("backdrop-train",nil,{}) end
+    return {reader:$reader,busy:$busy}
+  end
+  fn snapshot($s)
+    $outputs=[];$native=viu_ui_state().outputs ?? {}
+    for $name in keys($native)
+      $raw=$native[$name]
+      $o={name:$name,width:$raw.width,height:$raw.height,scale:$raw.scale,shows:$raw.shows ?? "theme",presented_revision:$raw.presented_revision ?? 0,presented_frames:$raw.presented_frames ?? 0,presented_view_frames:$raw.presented_view_frames ?? 0,error:$raw.error,fit:$raw.fit}
+      push($outputs,$o)
+    end
+    return $engine.state($s,$ctx.citizen,$store,$outputs)
+  end
+  fn show_state($s)
+    $model=$projection.model($s,monotonic())
+    if $s.view=="train" and visible() then
+      $value=$train.model($snapshot,$live.renderer,$train_generation)
+      $model.values.root=$value;$model.surfaces={};$model.root={id:"root",kind:"composition",label:"",initial:{nodes:[]}}
+      -- Gold's train presents a view over the last drawn wallpaper revision.
+      -- A hidden wallpaper slideshow may advance without presenting its pixels.
+      $native=viu_ui_state().outputs ?? {}
+      for $name in keys($native)
+        $model.surfaces[$name]={serial:$native[$name].presented_revision ?? $s.active,values:$model.values,root:$model.root}
+      end
+    else $model.root={id:"root",kind:"image-fill",label:"",initial:{phase:"none",colour:[0,0,0],fit:"fill"}} end
+    for $key in keys($model.surfaces) $model.surfaces[$key].root=$model.root end
+    $model.layer={strict_callbacks:$s.view=="train",frame_ms:if $s.view=="train" then 100 else 0 end}
+    if $s.view=="train" and visible() then $model.layer.content="train" end
+    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+  end
+  fn answer($owed,$rc,$body)
+    if $owed.token!=nil then viu_reply("finish",$owed.token,{rc:$rc,body:$body}) end
+  end
+  fn owed($op)
+    $token=$event.headers["viu-call"]
+    if $token!=nil then viu_reply("hold",$token,{}) end
+    return {op:$op,token:$token}
+  end
+  fn handles($images)
+    return map(values($images),fn($i)=$i.handle)
+  end
+  fn release_obsolete($old,$new)
+    $keep=handles($new.images)
+    if $new.previous!=nil then $keep=concat($keep,handles($new.previous.images)) end
+    $release=handles($old.images)
+    if $old.previous!=nil then $release=concat($release,handles($old.previous.images)) end
+    for $handle in $release if not contains($keep,$handle) then viu_raster("release",$handle) end end
+  end
+  fn finish_fade($s)
+    $old=$s;$s.previous=nil;$s.fade=nil;release_obsolete($old,$s)
+    return $s
+  end
+  fn arm($s)
+    $deadline=nil
+    if $s.fade!=nil then $deadline=$s.fade+0.5
+    elif $s.pending==nil then
+      for $key in keys($s.schedules)
+        $due=$s.schedules[$key].due
+        if $due!=nil and ($deadline==nil or $due<$deadline) then $deadline=$due end
+      end
+    end
+    viu_timer("backdrop-deadline",if $deadline==nil then nil else max(0,($deadline-monotonic())*1000) end,{})
+  end
+  fn refuse($s,$code,$message,$path)
+    $p=$s.pending
+    if $p==nil then return $s end
+    viu_raster("close",$p.scope)
+    answer($p.owed,10,{error_code:$code,message:$message})
+    $s=$engine.refuse($s,$message,$path,monotonic());arm($s)
+    return $s
+  end
+  fn commit($s)
+    $p=$s.pending;$stored={stored:true,unconfirmed:false}
+    if $p.owed.op=="set" and $store!=nil then
+      $stored=viu_store($store,data_encode($p.config))
+      if not $stored.stored then return refuse($s,"STORE",$stored.message,nil) end
+    end
+    $old=$s;$s=$engine.apply($s,monotonic())
+    for $handle in handles($s.images) viu_raster("detach",$handle) end
+    viu_raster("close",$p.scope);release_obsolete($old,$s)
+    if contains(["set","next"],$p.owed.op) then
+      publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop."..$p.owed.op,"bus",nil,nil)))
+    end
+    $change={requested:$s.requested,active:$s.active,config_file:$store}
+    if $p.owed.op=="next" then answer($p.owed,0,snapshot($s))
+    elif $stored.unconfirmed then answer($p.owed,10,{error_code:"STORE",message:"applied; not confirmed stored: "..$stored.message})
+    else answer($p.owed,0,$change) end
+    arm($s)
+    return $s
+  end
+  fn stage($s,$document,$owed)
+    $candidate=$engine.stage($s,$document,$owed)
+    if $s.pending!=nil then
+      viu_raster("close",$s.pending.scope)
+      answer($s.pending.owed,10,{error_code:"SUPERSEDED",message:"superseded by revision "..to_string($candidate.requested)})
+    end
+    release_obsolete($s,$candidate)
+    $candidate.pending.scope=viu_raster("begin","")
+    return $candidate
+  end
+  fn advance($s,$keys,$owed)
+    $old=$s;$s=$engine.advance($s,$keys,$owed,monotonic());release_obsolete($old,$s)
+    $s.pending.scope=viu_raster("begin","");return $s
+  end
+  fn pump($s,$running)
+    if $s.pending==nil then arm($s);return {state:$s,running:$running} end
+    if len($s.pending.jobs)==0 and ($running==nil or $running.revision!=$s.pending.revision) then
+      $s=commit($s);return {state:$s,running:$running}
+    end
+    if $running!=nil then return {state:$s,running:$running} end
+    $job=$s.pending.jobs[0];$s.pending.jobs=slice($s.pending.jobs,1)
+    $path=path_join(dirname(script_path()),"decode-job.mix")
+    $id="backdrop-decode-"..to_string($s.pending.revision)
+    send "viu-local" "jobs.start" id=$id owner=$s.pending.revision path=$path source=read_file($path) command="job.run" args={job:$job,scope:$s.pending.scope}
+    if $rc!=0 then $s=refuse($s,"IMAGE","decoder worker could not start",nil)
+    else $running={id:$id,revision:$s.pending.revision,job:$job} end
+    return {state:$s,running:$running}
+  end
+  $s=stage($s,$document,{op:"startup",token:nil});show_state($s)
+  $p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
+  on backdrop.ping
+    reply(0,json_encode({schema:"backdrop.v1",service:$ctx.citizen}))
+  end
+  on backdrop.state
+    reply(0,json_encode(snapshot($s)))
+  end
+  on backdrop.set
+    try
+      $wire.check($event.args)
+      $checked=$launch.override($event.args,{colour:nil,image:nil})
+      $s=stage($s,$checked,owed("set"));$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
+      reply(0,json_encode({requested:$s.requested,active:$s.active,config_file:$store}))
+    catch $message
+      reply(10,json_encode({error_code:"ARGUMENT",message:$message}))
+    end
+  end
+  on backdrop.next
+    try
+      if type($event.args)!="map" or len(keys($event.args))!=0 then raise("ARGUMENT","body: expected the empty object {}") end
+      if len(keys($s.schedules))==0 then raise("NON_SLIDESHOW","the applied backdrop has no slideshow") end
+      if $s.pending!=nil then raise("BUSY","a set or advance is pending") end
+      $s=advance($s,keys($s.schedules),owed("next"));$p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
+      reply(0,"{}")
+    catch $message,$error
+      reply(10,json_encode({error_code:$error.code,message:$message}))
+    end
+  end
+  on backdrop.view.list
+    if type($event.args)!="map" or len(keys($event.args))!=0 then reply(10,json_encode({error_code:"ARGUMENT",message:"expected {}"}))
+    else reply(0,json_encode({views:["wallpaper","train"],selected:$s.view})) end
+  end
+  on backdrop.view.set
+    try
+      $candidate=$views.choose_view($live,$event.args)
+      if not deep_eq([$live.train_service,$live.buildd_service,$live.hours],[$candidate.train_service,$candidate.buildd_service,$candidate.hours]) then
+        $alerts=$snapshot.alerts;$snapshot=$train.fresh($candidate.hours);$snapshot.alerts=$alerts;$train_generation=$train_generation+1
+      end
+      $live=$candidate;$s.view=$event.args.view
+      $view_reply={view:$s.view}
+      publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.set","bus",$event.args,$view_reply)))
+      $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+      show_state($s);reply(0,json_encode($view_reply))
+    catch $message reply(10,json_encode({error_code:"ARGUMENT",message:"bad parameters for command \""..$event.command.."\": "..$message})) end
+  end
+  on backdrop.view.cycle
+    try
+      $s.view=$views.cycle($s.view,$event.args);$view_reply={view:$s.view}
+      publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.cycle","bus",$event.args,$view_reply)))
+      $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+      show_state($s);reply(0,json_encode($view_reply))
+    catch $message reply(10,json_encode({error_code:"ARGUMENT",message:"bad parameters for command \""..$event.command.."\": "..$message})) end
+  end
+  on viu.job.completed
+    $d=$event.args
+    if type($d.tag.owner)=="map" and $d.tag.owner.kind=="train" then
+      if $train_busy!=nil and $d.tag.owner.ticket==$train_busy.ticket then
+        $train_busy=nil
+        if $d.rc==0 then
+          $result=$reader_module.received($reader,$snapshot,$live,$d.tag.owner.key,$d.body.results,time());$reader=$result.reader
+          if not deep_eq($snapshot,$result.snapshot) then
+            $snapshot=$result.snapshot;$train_generation=$train_generation+1
+            if $s.view=="train" and visible() then show_state($s) end
+          end
+        end
+        $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view);$reader=$poll.reader;$train_busy=$poll.busy
+      end
+    end
+    if $running!=nil and $d.tag.id==$running.id then
+      $running=nil
+      if $s.pending!=nil and $d.tag.owner==$s.pending.revision then
+        if $d.rc!=0 then $s=refuse($s,"IMAGE",$d.body.message ?? "decoder failed",$d.body.path)
+        else
+          if $s.pending.images[$d.body.path]!=nil then viu_raster("release",$s.pending.images[$d.body.path].handle) end
+          $s=$engine.received($s,$d.tag.owner,$d.body)
+        end
+      end
+      $p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
+    end
+  end
+  on viu.timer
+    if $event.args.timer=="backdrop-train" then
+      $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view);$reader=$poll.reader;$train_busy=$poll.busy
+    end
+    if $event.args.timer=="backdrop-deadline" then
+      if $s.fade!=nil and monotonic()>=$s.fade+0.5 then $s=finish_fade($s) end
+      if $s.pending==nil and $s.fade==nil then
+        for $key in keys($s.schedules)
+          if $schedule.due($s.schedules[$key],monotonic()) then $s=advance($s,[$key],{op:"timer",token:nil});break end
+        end
+      end
+      $p=pump($s,$running);$s=$p.state;$running=$p.running;show_state($s)
+    end
+  end
+  on viu.layer.visibility
+    show_state($s)
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+  end
+  on bus.connected
+    for $topic in ["train.landed","train.rejected","buildd.started","buildd.done","pipeline.alert","pipeline.clear","pipeline.alerts"] subscribe($topic) end
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+  end
+  on train.landed
+    $reader.generation=$reader.generation+1
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+  end
+  on train.rejected
+    $reader.generation=$reader.generation+1
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+  end
+  on buildd.started
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+  end
+  on buildd.done
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+  end
+  on pipeline.alert
+    $next=$train.alert($snapshot,"pipeline.alert",$event.args)
+    if not deep_eq($next,$snapshot) then $snapshot=$next;$train_generation=$train_generation+1;show_state($s) end
+    $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+  end
+  on pipeline.clear
+    $next=$train.alert($snapshot,"pipeline.clear",$event.args)
+    if not deep_eq($next,$snapshot) then $snapshot=$next;$train_generation=$train_generation+1;show_state($s) end
+  end
+  on pipeline.alerts
+    $next=$train.alert($snapshot,"pipeline.alerts",$event.args)
+    if not deep_eq($next,$snapshot) then $snapshot=$next;$train_generation=$train_generation+1;show_state($s) end
+  end
+
 catch $message
   viu_exit($startup_code,$message)
 end

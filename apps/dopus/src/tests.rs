@@ -37,14 +37,14 @@ fn embedded_dopus_initialises_reduces_refuses_and_renders_the_shared_scene() {
     let config = json!({"schema_version":2,"left":{"path":left,"previews":false},"right":{"path":right,"previews":false},"bookmarks":[],"places":{"open":true,"width":0.15},"properties":{"open":true,"width":0.22},"split_ratio":0.5});
     std::fs::write(dir.path().join("config.conf.mix"), config.to_string()).unwrap();
     let app_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = app_dir.join("dopus.mix");
+    let path = app_dir.join("app.mix");
     let wake: viu::runtime::Wake = Arc::new(|| {});
     let mut jobs = Jobs::new(2, wake.clone());
     let mut runtime = Runtime::new(8, wake, Some(jobs.backend(None)));
     runtime
         .load(Program {
             path: path.clone(),
-            source: std::fs::read_to_string(path).unwrap(),
+            source: "$app_args=nil\n".to_owned() + &std::fs::read_to_string(path).unwrap(),
             scene: "dopus".into(),
             citizen: "dopus-test".into(),
         })

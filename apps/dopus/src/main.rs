@@ -1389,7 +1389,7 @@ fn main() -> eframe::Result {
             let mut runtime = None;
             let mut native = None;
             if mode == "mix" {
-                let path = app_dir.join("dopus.mix");
+                let path = app_dir.join("app.mix");
                 let mut worker = Runtime::with_services(
                     32,
                     wake.clone(),
@@ -1398,7 +1398,7 @@ fn main() -> eframe::Result {
                 );
                 worker
                     .load(Program {
-                        source: std::fs::read_to_string(&path).expect("Dopus Mix source"),
+                        source: "$app_args=nil\n".to_owned() + &std::fs::read_to_string(&path).expect("Dopus Mix source"),
                         path,
                         scene: "dopus".into(),
                         citizen: "dopus-mix".into(),

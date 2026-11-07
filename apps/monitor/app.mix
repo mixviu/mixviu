@@ -1,3 +1,4 @@
+-- host: viu
 $fetch=require("fetch.mix")
 $wire=require("wire.mix")
 $commands=require("actions.mix")

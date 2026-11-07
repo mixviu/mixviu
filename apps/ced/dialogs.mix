@@ -1,17 +1,19 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Gold window-dialog wire contract, independent of native input geometry.
 fn dialog_directory($s)
-  $dir=if len($s.tabs)>0 and current($s).path!=nil then dirname(current($s).path) else cwd() end
+  $core=require("core.mix")
+  $dir=if len($s.tabs)>0 and $core.current($s).path!=nil then dirname($core.current($s).path) else cwd() end
   return if ends_with($dir,"/") then $dir else $dir.."/" end
 end
 fn dialog_view($s)
+  $core=require("core.mix")
   $kind=if $s.open_dialog then "open" elif $s.save_dialog then "save_as" elif $s.goto_dialog then "goto" elif $s.close_dialog!=nil then "close_dirty" elif $s.disk_dialog!=nil then "disk_modified" elif contains(["keys","about"],$s.help) then $s.help elif $s.recovery_open ?? false then "recovered" else nil end
   if $kind==nil then return nil end
   $titles={open:"Open",save_as:"Save As",goto:"Go to Line",close_dirty:"Unsaved changes",disk_modified:"The file changed on disk",keys:"Keyboard Shortcuts",about:"About MixViu Editor",recovered:"Recovered documents"}
   $rows=if $kind=="open" then [["open","Open","default"],["cancel","Cancel","cancel"]] elif $kind=="save_as" then [["save","Save","default"],["cancel","Cancel","cancel"]] elif $kind=="goto" then [["go","Go","default"],["cancel","Cancel","cancel"]] elif $kind=="close_dirty" then [["save","Save","default"],["discard","Don't Save","other"],["cancel","Cancel","cancel"]] elif $kind=="disk_modified" then [["save","Save Anyway","default"],["cancel","Cancel","cancel"]] elif $kind=="recovered" then [["open","Open","default"],["discard","Discard","other"],["done","Close","cancel"]] else [["done","Close","default"]] end
   $v={kind:$kind,title:$titles[$kind],buttons:map($rows,fn($r)={id:$r[0],label:$r[1],role:$r[2]})}
   if $kind=="open" then $v.path=$s.path
-  elif $kind=="save_as" then $v.path=$s.save_path ?? if len($s.tabs)>0 then current($s).path ?? "" else "" end
+  elif $kind=="save_as" then $v.path=$s.save_path ?? if len($s.tabs)>0 then $core.current($s).path ?? "" else "" end
   elif $kind=="goto" then $v.text=$s.goto_text ?? ""
   elif $kind=="about" then $v.body="The MixViu Editor edits buffers shared through the edit service: other people and agents can edit the same document at the same time."
   elif $kind=="recovered" then
@@ -21,6 +23,7 @@ fn dialog_view($s)
   return $v
 end
 fn dialog_apply($s,$a)
+  $ui=require("ui.mix")
   $bad="expected open or a valid answer and its fields"
   if type($a)!="map" or any(keys($a),fn($k)=not contains(["open","answer","buffer","path","text"],$k)) or (contains(keys($a),"open") and len(keys($a))!=1) or (not contains(keys($a),"open") and not contains(keys($a),"answer") and len(keys($a))!=0) then raise("ARGUMENT",$bad) end
   $d=dialog_view($s)
@@ -46,21 +49,23 @@ fn dialog_apply($s,$a)
         if type($a.buffer)!="string" or not any($s.recovered,fn($r)=$r.buffer==$a.buffer) then raise("ARGUMENT","expected a valid button id and its fields") end
         $choice=if $a.answer=="open" then "recover:"..$a.buffer else "discard:"..$a.buffer end
       end
-      $s=ced_ui_intent($s,{id:"recovered-dialog",action:"answer",value:{choice:$choice}})
+      $s=$ui.ced_ui_intent($s,{id:"recovered-dialog",action:"answer",value:{choice:$choice}})
     elif $d.kind=="open" then
       $s=ced_ui_intent_open($s,$a.answer,$a.path ?? $a.text ?? $s.path)
     elif $d.kind=="save_as" or $d.kind=="goto" then
-      $s=ced_ui_intent($s,{id:if $d.kind=="save_as" then "save-dialog" else "goto-dialog" end,action:"answer",value:{choice:if $a.answer=="cancel" then "cancel" else "ok" end,field:$a.path ?? $a.text ?? if $d.kind=="save_as" then $d.path else $d.text end}})
-    else $s=ced_ui_intent($s,{id:if $d.kind=="disk_modified" then "disk-dialog" else "close-dialog" end,action:"answer",value:{choice:$a.answer}}) end
+      $s=$ui.ced_ui_intent($s,{id:if $d.kind=="save_as" then "save-dialog" else "goto-dialog" end,action:"answer",value:{choice:if $a.answer=="cancel" then "cancel" else "ok" end,field:$a.path ?? $a.text ?? if $d.kind=="save_as" then $d.path else $d.text end}})
+    else $s=$ui.ced_ui_intent($s,{id:if $d.kind=="disk_modified" then "disk-dialog" else "close-dialog" end,action:"answer",value:{choice:$a.answer}}) end
   end
   return $s
 end
 fn ced_ui_intent_open($s,$choice,$path)
+  $core=require("core.mix")
+  $session=require("session.mix")
   $s.path=$path
   if $choice=="open" then
     if trim($path)=="" or ends_with(trim($path),"/") then return $s end
-    $s=operation($s,"open",{path:trim($path)})
+    $s=$core.operation($s,"open",{path:trim($path)})
     if $s.dialog_call!=nil and $s.waits[$s.dialog_call]!=nil then $s.waits[$s.dialog_call]=merge($s.waits[$s.dialog_call],{kind:"open",documents:[$s.last_open],new:false});$s.dialog_call=nil end
-  else $s=dialog_cancel($s) end
+  else $s=$session.dialog_cancel($s) end
   $s.open_dialog=false;return $s
 end

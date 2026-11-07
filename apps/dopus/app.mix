@@ -1,5 +1,153 @@
+-- host: viu
 -- version: 0.1.0
-include "dopus.mix"
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Embedded Mix entry. Commands use the host's existing native Bus connection.
+$app=require("reducer.mix")
+$projection=require("presentation.mix")
+$core=require("core.mix")
+$contract=json_parse(read_file(dirname(script_path()).."/contract.json"))
+$state=nil
+$row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
+$dopus_profile=env("DOPUS_PROFILE","")=="1"
+fn dp_publish($state,$contract,$cache)
+  if $dopus_profile then
+    $start=monotonic()
+    $cache=$projection.dp_prepare_rows($state,$cache)
+    $prepared=monotonic()
+    $model=$projection.dp_project($state,$contract,$cache)
+    $projected=monotonic()
+    send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$model}
+    $published=monotonic()
+    print(json_encode({profile:"dopus",phase:"publication",serial:$state.serial,rows_us:($prepared-$start)*1000000,model_us:($projected-$prepared)*1000000,project_us:($projected-$start)*1000000,publish_us:($published-$projected)*1000000}))
+  else
+    $cache=$projection.dp_prepare_rows($state,$cache)
+    send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$projection.dp_project($state,$contract,$cache)}
+  end
+  if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
+  return $cache
+end
+fn dp_start($initial)
+  global $state, $row_cache
+  $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
+  $state=$app.dp_initialise($initial)
+  $state.appearance_choice={}
+  $state.appearance_session=$state.appearance
+  $state.default_keys={}
+  $state.window={}
+  for $action in $contract.actions $state.default_keys[$action.id]=$action.keys end
+  $state.owner=viu_context().generation
+  $state=$app.dp_update_previews($state)
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on dopus.initialise
+  dp_start($event.args)
+  reply(0,json_encode({ready:true}))
+end
+fn dp_request($request)
+  global $state, $row_cache, $contract
+  if $state==nil then reply(10,json_encode({error_code:"NOT_READY"}))
+  else
+    try
+      $profile_start=if $dopus_profile then monotonic() else 0 end
+      $a=$request.args;$name=$request.command
+      $candidate=$state;$candidate.focus=nil;$candidate.reply={ok:true}
+      $candidate.appearance_reset=nil
+      if $name=="dopus.execute" then $candidate=$app.dp_action($candidate,$contract,$a.id,$a.params ?? {})
+      elif $name=="dopus.dialog" then
+        $candidate=$app.dp_legacy_dialog($candidate,$contract,$a)
+        $candidate.reply={dialog:$projection.dp_legacy_view($candidate)}
+      elif $name=="dopus.intent" then $candidate=$app.dp_intent($candidate,$contract,$a)
+      elif $name=="dopus.open" then
+        $paths=$a.paths ?? []
+        if type($paths)!="list" or len($paths)==0 or any($paths,fn($path)=type($path)!="string" or $path=="") then raise("INVALID_ARGUMENT","paths must contain non-empty text") end
+        for $i=0 to min(1,len($paths)-1) $candidate=$app.dp_go($candidate,$i,$paths[$i]) end
+      elif $name=="dopus.theme.set" then
+        if $a.mode!=nil then
+          if not contains(["dark","light"],$a.mode) then raise("INVALID_ARGUMENT","Unknown theme mode") end
+          $candidate.appearance.mode=$a.mode
+        end
+        if $a.scheme!=nil then
+          if $contract.schemes[$a.scheme]==nil then raise("INVALID_ARGUMENT","Unknown colour scheme") end
+          $candidate.appearance.scheme=$a.scheme
+        end
+        if $a.style!=nil then
+          if not contains($contract.styles,$a.style) then raise("INVALID_ARGUMENT","Unknown widget style") end
+          $candidate.appearance.style=$a.style
+        end
+        $candidate.reply={scheme:$candidate.appearance.scheme,mode:$candidate.appearance.mode}
+        if $a.style!=nil then $candidate.reply.style=$candidate.appearance.style end
+        for $key in ["mode","scheme","style"] if $a[$key]!=nil then $candidate.appearance_choice[$key]=$a[$key] end end
+      elif $name=="dopus.session" then
+        $candidate.window=$a.window ?? {}
+        $appearance={mode:"dark",scheme:"studio",style:"default"}
+        for $key in keys($a.appearance) $appearance[$key]=$a.appearance[$key] end
+        $candidate.appearance_session=$appearance
+        for $key in keys($candidate.appearance_choice) $appearance[$key]=$candidate.appearance_choice[$key] end
+        $candidate.appearance=$appearance
+        for $i=0 to len($contract.actions)-1
+          $id=$contract.actions[$i].id
+          $contract.actions[$i].keys=$a.keymap[$id] ?? $candidate.default_keys[$id]
+        end
+      elif $name=="dopus.dialog.answer" then
+        if not deep_eq($a.instance,$candidate.form.instance) then raise("STALE_FORM","Read the current dialog instance before answering") end
+        if $a.text!=nil and type($a.text)!="string" then raise("INVALID_ARGUMENT","Dialog text must be text") end
+        if $a.text!=nil then $candidate.form.field=$a.text end
+        $candidate=$app.dp_handle_answer($candidate,$contract,$a.choice)
+      elif $name=="dopus.quit" or $name=="dopus.persist" then $candidate=$app.dp_persist($candidate)
+      else raise("UNKNOWN_COMMAND",$name) end
+      if $name=="dopus.execute" or $name=="dopus.intent" then
+        for $key in ["mode","scheme","style"]
+          if $candidate.appearance_reset!=$key and $candidate.appearance[$key]!=$state.appearance[$key] then $candidate.appearance_choice[$key]=$candidate.appearance[$key] end
+        end
+      end
+      $candidate.serial=$candidate.serial+1
+      $profile_reduced=if $dopus_profile then monotonic() else 0 end
+      $state=$app.dp_update_previews($candidate)
+      $profile_prepared=if $dopus_profile then monotonic() else 0 end
+      $row_cache=dp_publish($state,$contract,$row_cache)
+      if $dopus_profile then print(json_encode({profile:"dopus",phase:"callback",serial:$state.serial,command:$name,action:$a.id,reduce_us:($profile_reduced-$profile_start)*1000000,preview_us:($profile_prepared-$profile_reduced)*1000000})) end
+      reply(if $state.reply.error_code!=nil then 10 else 0 end,json_encode($state.reply))
+    catch $message,$error
+      reply(10,json_encode({error_code:$error.code,message:$message}))
+    end
+  end
+end
+on dopus.job.completed
+  if $state!=nil and $event.args.tag.owner==viu_context().generation then
+    if $state.effect_jobs[$event.args.tag.id]==true then
+      $state.effect_jobs=delete($state.effect_jobs,$event.args.tag.id)
+      $state.info=$event.args.body.message ?? if $event.args.rc==0 then "Completed" else "Application effect failed" end
+    elif $state.job==$event.args.tag.id then
+      $state.busy=false;$state.job=nil
+      $result=$event.args.body
+      $state.info=if $event.args.rc==0 then "Select a file or folder" else $result.message ?? "Operation failed" end
+      for $i=0 to 1 $state.panes[$i]=$core.dp_relist($state.panes[$i]) end
+    else
+      for $i=0 to 1
+        if $state.preview_slots[$i].job==$event.args.tag.id then
+          $state.preview_slots[$i].job=nil
+          $state.preview_slots[$i].value=if $event.args.rc==0 and $event.args.body.phase=="ready" then {phase:"ready",path:$event.args.body.path} else {phase:"none"} end
+        end
+      end
+    end
+    $state=$app.dp_update_previews($state)
+    $row_cache=dp_publish($state,$contract,$row_cache)
+  end
+end
+
+on dopus.call
+  dp_request($event.args)
+end
+on dopus.intent
+  dp_request({command:"dopus.intent",args:$event.args})
+end
+on dopus.execute
+  dp_request({command:"dopus.execute",args:$event.args})
+end
+
+if $app_args!=nil then
 $profile=$app_args[0] ?? path_join(env("XDG_CONFIG_HOME",path_join(env("HOME"),".config")),"dopus")
 mkdir($profile,{parents:true})
 dp_start({app_dir:dirname(script_path()),profile:$profile})
+end

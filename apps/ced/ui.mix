@@ -1,10 +1,14 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Ced composes reusable controls; command and dialog policy stays here.
 fn ui_form($open,$title,$body,$field=nil,$instance=0)
   return {open:$open,title:$title,body:$body,field:$field,instance:$instance,choices:[{id:"ok",label:if $title=="Save As" then "Save" elif $title=="Go to Line" then "Go" else "OK" end,enabled:true,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]}
 end
 fn ced_menus($s)
-  $menus=[];$rows=action_rows($s)
+  $core=require("core.mix")
+  $actions=require("actions.mix")
+  $menus=require("menus.mix")
+  $menus=[];$rows=$actions.action_rows($s)
   for $menu in ["File","Edit","Search","View","Tabs","Help"]
     $children=[];$last_group=nil;$markdown=[]
     $menu_rows=filter($rows,fn($a)=$a.menu==$menu)
@@ -13,28 +17,29 @@ fn ced_menus($s)
     for $a in $menu_rows
       if $a.id=="mail.headers" then continue end
       if starts_with($a.id,"view.markdown.") then
-        push($markdown,{id:$a.id,label:$a.label,enabled:$a.enabled,checked:len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]});continue
+        push($markdown,{id:$a.id,label:$a.label,enabled:$a.enabled,checked:len($s.tabs)>0 and ($s.previews[$core.current($s).document] ?? "source")==split($a.id,".")[2]});continue
       end
-      $group=menu_group($a.id)
+      $group=$menus.menu_group($a.id)
       if $last_group!=nil and $last_group!=$group then push($children,{separator:true}) end
       $last_group=$group
       $row={id:$a.id,label:$a.label,enabled:$a.enabled,shortcut:$a.keys[0] ?? ""}
       if contains(["edit.cut","edit.copy","edit.paste"],$a.id) and len($s.keys[$a.id] ?? [])==0 then $row.shortcut="" end
-      if starts_with($a.id,"view.markdown.") then $row.checked=len($s.tabs)>0 and ($s.previews[current($s).document] ?? "source")==split($a.id,".")[2]
-      elif $a.id=="edit.overwrite" then $row.checked=len($s.tabs)>0 and current($s).overwrite
+      if starts_with($a.id,"view.markdown.") then $row.checked=len($s.tabs)>0 and ($s.previews[$core.current($s).document] ?? "source")==split($a.id,".")[2]
+      elif $a.id=="edit.overwrite" then $row.checked=len($s.tabs)>0 and $core.current($s).overwrite
       elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$a.id) then $row.checked=$s[split($a.id,".")[1]] end
       push($children,$row)
     end
     if $menu=="View" then
       push($children,{separator:true});push($children,{id:"markdown",label:"Markdown",enabled:any($markdown,fn($a)=$a.enabled),children:$markdown})
-      push($children,{separator:true});push($children,{id:"theme",label:"Theme",enabled:true,children:theme_rows($s)})
+      push($children,{separator:true});push($children,{id:"theme",label:"Theme",enabled:true,children:$menus.theme_rows($s)})
     end
     push($menus,{id:"menu-"..lower($menu),label:$menu,enabled:true,children:$children})
   end
   return $menus
 end
 fn ced_toolbar($s)
-  $enabled=dialog_view($s)==nil
+  $dialogs=require("dialogs.mix")
+  $enabled=$dialogs.dialog_view($s)==nil
   return [{id:"help.macros",macro_anchor:true,label:"Macros",icon:"scroll-text",icon_only:true,enabled:$enabled},{id:"view.search",label:"Find",icon:"search",icon_only:true,enabled:$enabled and len($s.tabs)>0},{id:"help.keys",label:"Keyboard Shortcuts",icon:"keyboard",icon_only:true,enabled:$enabled},{id:"view.mode",label:"Toggle light/dark mode",icon:if $s.look.appearance.mode=="dark" then "sun" else "moon" end,icon_only:true,enabled:true}]
 end
 fn ced_status($s,$t)
@@ -48,7 +53,9 @@ fn ced_status($s,$t)
   return {left:if starts_with($s.status,"Failed:") or monotonic()<($s.status_until ?? 0) then $s.status else "" end,right:$right,icon:if $s.edit.epoch!=nil then "plug" else "unplug" end,error:$s.edit.epoch==nil}
 end
 fn ced_ui_model($s,$model)
-  $has=len($s.tabs)>0;$t=if $has then current($s) else {path:nil} end
+  $core=require("core.mix")
+  $actions=require("actions.mix")
+  $has=len($s.tabs)>0;$t=if $has then $core.current($s) else {path:nil} end
   $model.has_document=$has
   $items=[]
   for $i=0 to len($s.tabs)-1
@@ -72,10 +79,10 @@ fn ced_ui_model($s,$model)
   $body=if $s.help=="keys" then "" elif $s.help=="about" then "The MixViu Editor edits buffers shared through the edit service: other people and agents can edit the same document at the same time." else "" end
   $model.values["help-dialog"]=ui_form(contains(["keys","about"],$s.help),if $s.help=="keys" then "Keyboard Shortcuts" else "About MixViu Editor" end,$body)
   $model.values["help-dialog"].choices=[{id:"ok",label:"Close",enabled:true,default:true,cancel:true}]
-  if $s.help=="about" then $model.values["help-dialog"].footer="Version "..($ctx.version ?? "0.1.2") end
+  if $s.help=="about" then $model.values["help-dialog"].footer="Version "..(viu_context().version ?? "0.1.2") end
   if $s.help=="keys" then
     $model.values["help-dialog"].body="";$model.values["help-dialog"].items=[]
-    for $a in action_rows($s) if len($a.keys)>0 and (not contains(["edit.cut","edit.copy","edit.paste"],$a.id) or len($s.keys[$a.id] ?? [])>0) then $model.values["help-dialog"].items=push($model.values["help-dialog"].items,{label:$a.label,shortcut:$a.keys[0],choices:[]}) end end
+    for $a in $actions.action_rows($s) if len($a.keys)>0 and (not contains(["edit.cut","edit.copy","edit.paste"],$a.id) or len($s.keys[$a.id] ?? [])>0) then $model.values["help-dialog"].items=push($model.values["help-dialog"].items,{label:$a.label,shortcut:$a.keys[0],choices:[]}) end end
   end
   $items=[]
   for $row in $s.recovered ?? []
@@ -131,20 +138,25 @@ fn ced_ui_model($s,$model)
   return $model
 end
 fn ced_ui_intent($s,$a)
-  if $a.id=="problems-list" then $s=do_action($s,"search.goto_line",{line:$a.value.line,col:$a.value.col ?? 1}).state
+  $core=require("core.mix")
+  $session=require("session.mix")
+  $bus=require("bus.mix")
+  $actions=require("actions.mix")
+  $mail=require("mail.mix")
+  if $a.id=="problems-list" then $s=$actions.do_action($s,"search.goto_line",{line:$a.value.line,col:$a.value.col ?? 1}).state
   elif $a.id=="close-dialog" then
-    $i=tab_index($s,{tab:to_number($s.close_dialog)});$s.close_dialog=nil
+    $i=$bus.tab_index($s,{tab:to_number($s.close_dialog)});$s.close_dialog=nil
     if $i>=0 and $a.value.choice!="cancel" then
       $s.active=$i
-      $s=do_action($s,"file.close",if $a.value.choice=="save" then {save:true} else {force:true} end).state
+      $s=$actions.do_action($s,"file.close",if $a.value.choice=="save" then {save:true} else {force:true} end).state
     end
   elif $a.id=="disk-dialog" then
-    $i=tab_index($s,{tab:to_number($s.disk_dialog)});$s.disk_dialog=nil
-    if $i>=0 and $a.value.choice=="save" then $s=do_action($s,"file.save",{force:true},nil,$i).state end
+    $i=$bus.tab_index($s,{tab:to_number($s.disk_dialog)});$s.disk_dialog=nil
+    if $i>=0 and $a.value.choice=="save" then $s=$actions.do_action($s,"file.save",{force:true},nil,$i).state end
   elif $a.id=="find-bar" then
     if $a.action=="edit" then $s.find=$a.value
     elif $a.action=="close" then $s.find.open=false
-    else $id=if $a.action=="next" then "search.find_next" elif $a.action=="prev" then "search.find_prev" elif $a.action=="replace-all" then "search.replace_all" else "search.replace" end;$s=do_action($s,$id,$s.find).state end
+    else $id=if $a.action=="next" then "search.find_next" elif $a.action=="prev" then "search.find_prev" elif $a.action=="replace-all" then "search.replace_all" else "search.replace" end;$s=$actions.do_action($s,$id,$s.find).state end
   elif $a.id=="save-dialog" or $a.id=="goto-dialog" then
     $save=$a.id=="save-dialog";$key=if $save then "save_path" else "goto_text" end
     $s[$key]=if $a.action=="edit" then $a.value else $a.value.field end
@@ -153,11 +165,11 @@ fn ced_ui_intent($s,$a)
         $args=if $save then {path:$s[$key]} else {line:to_number(split($s[$key],":")[0]),col:to_number(split($s[$key],":")[1] ?? "1")} end
         $action=if $save then $s.save_action ?? "file.save_as" else "search.goto_line" end
         if $action=="file.close" then $args.save=true end
-        $document=if $save then $s.save_document ?? current($s).document else $s.goto_document ?? current($s).document end
-        $index=tab_index($s,{tab:to_number($document)})
-        if $index<0 then $s=dialog_cancel($s)
-        else $out=do_action($s,$action,$args,nil,$index);$out.target=to_number($document);if $out.op_id==nil then $out.result=$out.result ?? $args end;$s=dialog_complete($out.state,$out) end
-      else $s=dialog_cancel($s) end
+        $document=if $save then $s.save_document ?? $core.current($s).document else $s.goto_document ?? $core.current($s).document end
+        $index=$bus.tab_index($s,{tab:to_number($document)})
+        if $index<0 then $s=$session.dialog_cancel($s)
+        else $out=$actions.do_action($s,$action,$args,nil,$index);$out.target=to_number($document);if $out.op_id==nil then $out.result=$out.result ?? $args end;$s=$session.dialog_complete($out.state,$out) end
+      else $s=$session.dialog_cancel($s) end
       $s[if $save then "save_dialog" else "goto_dialog" end]=false
     end
   elif $a.id=="help-dialog" then $s.help=nil
@@ -168,33 +180,33 @@ fn ced_ui_intent($s,$a)
       if len($rows)>0 then
         $row=$rows[0]
         if $parts[0]=="recover" then
-          if $row.path!=nil then $s=operation($s,"open",{path:$row.path})
-          else $s.next_tab=$s.next_tab+1;$s=queue_job($s,"open",{document:to_string($s.next_tab),args:{recovery_id:$row.recovery_id}}) end
-        else $s=queue_job($s,"discard-recovery",{buffer:$row.buffer}) end
+          if $row.path!=nil then $s=$core.operation($s,"open",{path:$row.path})
+          else $s.next_tab=$s.next_tab+1;$s=$core.queue_job($s,"open",{document:to_string($s.next_tab),args:{recovery_id:$row.recovery_id}}) end
+        else $s=$core.queue_job($s,"discard-recovery",{buffer:$row.buffer}) end
         $s.recovered=filter($s.recovered,fn($r)=$r.buffer!=$row.buffer);$s.recovery_open=len($s.recovered)>0
       end
     end
   elif $a.id=="macros-dialog" then
     $s.macros_open=false
   elif $a.id=="mail-fields" then
-    $t=current($s);$key=$t.document
-    if $a.action=="edit" then $s=mail_preview($s,$key,$a.value)
-    elif $a.action=="commit" then $s=mail_commit($s,$key)
+    $t=$core.current($s);$key=$t.document
+    if $a.action=="edit" then $s=$mail.mail_preview($s,$key,$a.value)
+    elif $a.action=="commit" then $s=$mail.mail_commit($s,$key)
     elif $a.action=="command" then
-      $s=mail_commit($s,$key)
+      $s=$mail.mail_commit($s,$key)
       if $a.value=="attach" then $s.mail[$key].chooser=true;$s.mail[$key].chooser_instance=($s.mail[$key].chooser_instance ?? 0)+1
       else $shown=$s.mail[$key].shown ?? {};$shown[$a.value]=true;$s.mail[$key].shown=$shown end
     elif $a.action=="cancel" then $s.mail[$key].chooser=false
     elif $a.action=="picked" or $a.action=="remove" then
-      $s=mail_commit($s,$key);$h=$s.mail[$key].headers
+      $s=$mail.mail_commit($s,$key);$h=$s.mail[$key].headers
       if $a.action=="picked" then $h.attachments=concat($h.attachments,$a.value);$s.mail[$key].chooser=false
       else $h.attachments=concat(slice($h.attachments,0,$a.value),slice($h.attachments,$a.value+1)) end
-      $s=mail_headers($s,$key,$h)
+      $s=$mail.mail_headers($s,$key,$h)
     end
   elif $a.id=="notice-actions" then
     if contains($a.value.command,":") then
-      $parts=split($a.value.command,":");$v=viu_document("conflict",current($s).document,{rev:to_number($parts[1]),reinsert:$parts[0]=="reinsert"})
-    else $s=operation($s,$a.value.command,{}) end
+      $parts=split($a.value.command,":");$v=viu_document("conflict",$core.current($s).document,{rev:to_number($parts[1]),reinsert:$parts[0]=="reinsert"})
+    else $s=$core.operation($s,$a.value.command,{}) end
   end
-  return pump($s)
+  return $core.pump($s)
 end

@@ -1,8 +1,7 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
-include "mail.mix"
-include "../../libraries/viu/mix/macros.mix"
-include "../../libraries/viu/mix/app-call.mix"
+$macros=require("../../libraries/viu/mix/macro-policy.mix");$app_call=require("../../libraries/viu/mix/app-call.mix")
 fn load_session()
   $dirs=viu_app_dirs("ced");$path=if $dirs!=nil then path_join($dirs.state,"session.json") else nil end
   $empty={version:1,active:nil,tabs:[],recent:[]};$value=$empty
@@ -22,6 +21,7 @@ fn load_session()
   return {path:$path,value:$value}
 end
 fn open_recovery($a)
+  $mail=require("mail.mix")
   $missing=false
   if $a.recovery_id!=nil then
     send "edit" "edit.list" body={} timeout=30
@@ -36,7 +36,7 @@ fn open_recovery($a)
   end
   if $a.mail!=nil then
     if $a.existing_document!=nil then
-      send "edit" "edit.open" body={text:document_text($a.existing_document,8388608),language:"markdown",origin:"human:ced"} timeout=30
+      send "edit" "edit.open" body={text:$mail.document_text($a.existing_document,8388608),language:"markdown",origin:"human:ced"} timeout=30
       if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
       return $reply
     end
@@ -56,18 +56,18 @@ on job.run
     reply(0,json_encode({fallback:$rc<0 or $rc>=10,text:$a.text}));return
   elif $job.kind=="macro-panel" then
     $panel=$a.panel
-    if $a.action=="open" then $panel=macro_catalogue($panel)
-    elif $a.action=="edit" then $panel.form.field=$a.value;if $panel.page=="catalogue" then $panel.filter=$a.value;$panel=macro_catalogue($panel) end
-    else $panel.form.field=$a.value.field;$panel=macro_answer($panel,$a.value.choice) end
+    if $a.action=="open" then $panel=$macros.macro_catalogue($panel)
+    elif $a.action=="edit" then $panel.form.field=$a.value;if $panel.page=="catalogue" then $panel.filter=$a.value;$panel=$macros.macro_catalogue($panel) end
+    else $panel.form.field=$a.value.field;$panel=$macros.macro_answer($panel,$a.value.choice) end
     reply(0,json_encode($panel));return
   elif $job.kind=="caret" then send "edit" "edit.select" body=$a timeout=5;reply($rc,json_encode($reply));return
   elif $job.kind=="lex" then $v=viu_document("lex",$a.document,{});reply(0,"{}");return
   elif $job.kind=="preview" then $v=viu_document("preview",$a.document,{});reply(0,json_encode($v));return
-  elif $job.kind=="classify" then reply(0,json_encode(classify_document($a.document)));return
+  elif $job.kind=="classify" then reply(0,json_encode($mail.classify_document($a.document)));return
   elif $job.kind=="mail-hash" then
     $state=viu_document("state",$a.document,{})
-    $text=document_text($a.document,8388608)
-    reply(0,json_encode({hash:viu_digest("blake3",canonical_body($text)),view_gen:$state.view_gen}));return
+    $text=$mail.document_text($a.document,8388608)
+    reply(0,json_encode({hash:viu_digest("blake3",$mail.canonical_body($text)),view_gen:$state.view_gen}));return
   elif $job.kind=="mail-seed" then
     send "edit" "edit.open" body={text:$a.body,language:"markdown",origin:"human:ced"} timeout=30
     if $rc!=0 then raise("OPEN",json_encode($reply ?? $result)) end
@@ -75,7 +75,7 @@ on job.run
     send "edit" "edit.close" body={buffer:$a.buffer} timeout=5
   elif $job.kind=="mail-save" then
     try
-      $text=viu_maildoc("write",header_document($a.headers,document_text($a.document,8388608)))
+      $text=viu_maildoc("write",$mail.header_document($a.headers,$mail.document_text($a.document,8388608)))
     catch $message
       reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:$message,reason:nil}));return
     end
@@ -87,7 +87,7 @@ on job.run
     end
     reply(0,json_encode({text:$text,hash:viu_digest("blake3",viu_maildoc("parse",$text).body),message:"Saved"}));return
   elif $job.kind=="mail-send" then
-    $answer=viu_app_call("dev.mixos.email","email.send",{document:$a.path},10,120)
+    $answer=$app_call.viu_app_call("dev.mixos.email","email.send",{document:$a.path},10,120)
     if $answer.body.error_code=="OUTCOME_UNKNOWN" then $answer.rc=10;$answer.body={error_code:"INTERNAL",message:"The mail may have been sent; "..to_string($answer.message),reason:nil} end
     if $answer.rc==0 then $answer.body={message:$answer.body.message ?? "Sent"} end
     reply($answer.rc,json_encode($answer.body));return

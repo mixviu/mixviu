@@ -44,6 +44,8 @@ use crate::evaluator::{INLINE_SPECIAL_FORMS, split_interp_coalesce};
 use crate::scope::param_arity;
 use crate::token::{StringPart, Token};
 
+include!(concat!(env!("OUT_DIR"), "/viu_extensions.rs"));
+
 /// Diagnostic severity — the D3 wire values are lowercase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -571,6 +573,13 @@ fn has_dynamic_include(stmts: &[Stmt]) -> (bool, Option<usize>) {
 
 /// The whole-file analyzer entry point.
 pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Analysis {
+    let mut cfg = cfg.clone();
+    if matches!(cfg.source.as_deref().map(crate::parse_host_header),
+        Some(crate::HostHeader::Declared { host, .. }) if host == "viu") {
+        cfg.extensions.extend(VIU_EXTENSIONS.iter().map(|name| (*name).to_owned()));
+        cfg.allow_globals.push("app_args".to_owned());
+    }
+    let cfg = &cfg;
     // `-- lint:` pragmas live in comments, so they need the source text. A
     // `globals` pragma is an in-file `--allow-global`; the suppressions are
     // applied to the finished analysis.
