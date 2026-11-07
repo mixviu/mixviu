@@ -181,22 +181,63 @@ mod tests {
         crate::fonts::install(&ctx, 400, 600);
         let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
         widget.properties = json!({"focus_serial":1});
-        let shifted = egui::Modifiers {ctrl:true,shift:true,..egui::Modifiers::NONE};
-        for (input_events, modifiers, expected) in [
+        let shifted = egui::Modifiers {
+            ctrl: true,
+            shift: true,
+            ..egui::Modifiers::NONE
+        };
+        for (mut input_events, modifiers, expected) in [
             (vec![], shifted, 0),
-            (vec![egui::Event::Copy,egui::Event::Copy], shifted, 1),
-            (vec![egui::Event::Key {key:egui::Key::C,physical_key:None,pressed:false,repeat:false,modifiers:shifted},egui::Event::Copy],shifted,1),
-            (vec![egui::Event::Paste("wide: 中".into())],shifted,1),
-            (vec![egui::Event::Copy],egui::Modifiers {ctrl:true,..egui::Modifiers::NONE},0),
+            (vec![egui::Event::Copy, egui::Event::Copy], shifted, 1),
+            (
+                vec![
+                    egui::Event::Key {
+                        key: egui::Key::C,
+                        physical_key: None,
+                        pressed: false,
+                        repeat: false,
+                        modifiers: shifted,
+                    },
+                    egui::Event::Copy,
+                ],
+                shifted,
+                1,
+            ),
+            (vec![egui::Event::Paste("wide: 中".into())], shifted, 1),
+            (
+                vec![egui::Event::Copy],
+                egui::Modifiers {
+                    ctrl: true,
+                    ..egui::Modifiers::NONE
+                },
+                0,
+            ),
+            (vec![egui::Event::Copy, egui::Event::ModifiersChanged(egui::Modifiers::NONE)], shifted, 1),
         ] {
             let mut events = Vec::new();
-            ctx.run_ui(egui::RawInput {
-                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(900.0,560.0))),
-                events:input_events,modifiers,..Default::default()
-            }, |ui| { views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events); }).drop_without_applying_deltas();
-            let clipboard = events.iter().filter(|event| event.action=="clipboard").collect::<Vec<_>>();
-            assert_eq!(clipboard.len(),expected);
-            for event in clipboard { assert_eq!(event.value["handle"],"vt-1"); }
+            input_events.insert(0, egui::Event::ModifiersChanged(modifiers));
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 560.0),
+                    )),
+                    events: input_events,
+                    ..Default::default()
+                },
+                |ui| {
+                    views.draw(ui, &widget, &json!("vt-1"), &sessions, &mut events);
+                },
+            )
+            .drop_without_applying_deltas();
+            let clipboard = events
+                .iter()
+                .filter(|event| event.action == "clipboard")
+                .collect::<Vec<_>>();
+            assert_eq!(clipboard.len(), expected);
+            for event in clipboard {
+                assert_eq!(event.value["handle"], "vt-1");
+            }
         }
     }
 }
@@ -207,6 +248,7 @@ pub struct Views {
     composition: Composition,
     focused: Option<String>,
     clipboard: input::ClipboardInput,
+    modifiers: egui::Modifiers,
 }
 
 impl Views {
@@ -384,13 +426,17 @@ impl Views {
             self.focused = None;
             surface.preedit.clear();
             self.clipboard = input::ClipboardInput::default();
+            self.modifiers = egui::Modifiers::NONE;
         }
         if response.has_focus() {
             self.focused = Some(handle.into());
             self.composition.focus(pane_id);
             let input_events = ui.input(|i| i.events.clone());
             for event in input_events {
-                if let Some(clipboard) = self.clipboard.event(&event, ui.input(|i| i.modifiers)) {
+                if let egui::Event::ModifiersChanged(modifiers) = &event {
+                    self.modifiers = *modifiers;
+                }
+                if let Some(clipboard) = self.clipboard.event(&event, self.modifiers) {
                     let result = match clipboard {
                         input::Clipboard::Keys(keys) => terminal.keys(&keys, Instant::now()),
                         input::Clipboard::Ignore => Ok(()),
@@ -398,15 +444,25 @@ impl Views {
                             let value = match clipboard {
                                 input::Clipboard::Copy => json!({"kind":"copy","handle":handle}),
                                 input::Clipboard::Cut => json!({"kind":"cut","handle":handle}),
-                                input::Clipboard::Paste(text) => json!({"kind":"paste","handle":handle,"text":text}),
+                                input::Clipboard::Paste(text) => {
+                                    json!({"kind":"paste","handle":handle,"text":text})
+                                }
                                 _ => unreachable!(),
                             };
-                            events.push(Intent {id:widget.id.clone(),action:"clipboard".into(),value});
+                            events.push(Intent {
+                                id: widget.id.clone(),
+                                action: "clipboard".into(),
+                                value,
+                            });
                             Ok(())
                         }
                     };
                     if let Err(error) = result {
-                        events.push(Intent {id:widget.id.clone(),action:"error".into(),value:json!(error)});
+                        events.push(Intent {
+                            id: widget.id.clone(),
+                            action: "error".into(),
+                            value: json!(error),
+                        });
                     }
                     continue;
                 }
@@ -440,7 +496,7 @@ impl Views {
                         if !self.composition.has_owner() && !self.composition.stale() =>
                     {
                         terminal.keys(
-                            &input::typed(&text, ui.input(|i| i.modifiers)),
+                            &input::typed(&text, self.modifiers),
                             Instant::now(),
                         )
                     }

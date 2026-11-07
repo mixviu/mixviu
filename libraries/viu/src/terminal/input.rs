@@ -24,8 +24,15 @@ impl ClipboardInput {
         if !modifiers.ctrl {
             self.held = None;
         }
-        if let egui::Event::Key { key, pressed: false, .. } = event {
-            if self.held == Some(*key) { self.held = None; }
+        if let egui::Event::Key {
+            key,
+            pressed: false,
+            ..
+        } = event
+        {
+            if self.held == Some(*key) {
+                self.held = None;
+            }
         }
         let (letter, key) = match event {
             egui::Event::Copy => ('c', Key::C),
@@ -39,7 +46,9 @@ impl ClipboardInput {
         if !modifiers.shift || matches!(event, egui::Event::PasteImage(_)) {
             return Some(Clipboard::Keys(vec![TerminalKey::Control(letter)]));
         }
-        if self.held == Some(key) { return Some(Clipboard::Ignore); }
+        if self.held == Some(key) {
+            return Some(Clipboard::Ignore);
+        }
         self.held = Some(key);
         Some(match event {
             egui::Event::Copy => Clipboard::Copy,
@@ -55,25 +64,87 @@ mod clipboard_tests {
     use super::*;
     #[test]
     fn clipboard_controls_meta_shift_and_releases_match_gold() {
-        let ctrl = Modifiers { ctrl:true, ..Modifiers::NONE };
-        let shifted = Modifiers { shift:true, ..ctrl };
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..Modifiers::NONE
+        };
+        let shifted = Modifiers {
+            shift: true,
+            ..ctrl
+        };
         let mut input = ClipboardInput::default();
-        for (event, expected) in [(egui::Event::Copy,3), (egui::Event::Cut,24), (egui::Event::Paste("ignored".into()),22)] {
-            let Some(Clipboard::Keys(keys)) = input.event(&event,ctrl) else { panic!("control code required") };
-            assert_eq!(keys.into_iter().flat_map(super::super::model::encode).collect::<Vec<_>>(), vec![expected]);
+        for (event, expected) in [
+            (egui::Event::Copy, 3),
+            (egui::Event::Cut, 24),
+            (egui::Event::Paste("ignored".into()), 22),
+        ] {
+            let Some(Clipboard::Keys(keys)) = input.event(&event, ctrl) else {
+                panic!("control code required")
+            };
+            assert_eq!(
+                keys.into_iter()
+                    .flat_map(super::super::model::encode)
+                    .collect::<Vec<_>>(),
+                vec![expected]
+            );
         }
-        let Some(Clipboard::Keys(keys)) = input.event(&egui::Event::Copy, Modifiers {alt:true,..shifted}) else {panic!("Meta code required")};
-        assert_eq!(keys.into_iter().flat_map(super::super::model::encode).collect::<Vec<_>>(), vec![27,3]);
-        assert!(matches!(input.event(&egui::Event::Copy,shifted),Some(Clipboard::Copy)));
-        assert!(matches!(input.event(&egui::Event::Copy,shifted),Some(Clipboard::Ignore)));
-        input.event(&egui::Event::Key {key:Key::C,physical_key:None,pressed:false,repeat:false,modifiers:shifted},shifted);
-        assert!(matches!(input.event(&egui::Event::Copy,shifted),Some(Clipboard::Copy)));
-        assert!(matches!(input.event(&egui::Event::Cut,shifted),Some(Clipboard::Cut)));
-        assert!(matches!(input.event(&egui::Event::Paste("hi".into()),shifted),Some(Clipboard::Paste(text)) if text=="hi"));
-        input.event(&egui::Event::PointerGone,Modifiers::NONE);
-        assert!(matches!(input.event(&egui::Event::Paste("hi".into()),shifted),Some(Clipboard::Paste(_))));
-        let image=egui::Event::PasteImage(std::sync::Arc::new(egui::ColorImage::filled([1,1],egui::Color32::WHITE)));
-        assert!(matches!(input.event(&image,shifted),Some(Clipboard::Keys(_))));
+        let Some(Clipboard::Keys(keys)) = input.event(
+            &egui::Event::Copy,
+            Modifiers {
+                alt: true,
+                ..shifted
+            },
+        ) else {
+            panic!("Meta code required")
+        };
+        assert_eq!(
+            keys.into_iter()
+                .flat_map(super::super::model::encode)
+                .collect::<Vec<_>>(),
+            vec![27, 3]
+        );
+        assert!(matches!(
+            input.event(&egui::Event::Copy, shifted),
+            Some(Clipboard::Copy)
+        ));
+        assert!(matches!(
+            input.event(&egui::Event::Copy, shifted),
+            Some(Clipboard::Ignore)
+        ));
+        input.event(
+            &egui::Event::Key {
+                key: Key::C,
+                physical_key: None,
+                pressed: false,
+                repeat: false,
+                modifiers: shifted,
+            },
+            shifted,
+        );
+        assert!(matches!(
+            input.event(&egui::Event::Copy, shifted),
+            Some(Clipboard::Copy)
+        ));
+        assert!(matches!(
+            input.event(&egui::Event::Cut, shifted),
+            Some(Clipboard::Cut)
+        ));
+        assert!(
+            matches!(input.event(&egui::Event::Paste("hi".into()),shifted),Some(Clipboard::Paste(text)) if text=="hi")
+        );
+        input.event(&egui::Event::PointerGone, Modifiers::NONE);
+        assert!(matches!(
+            input.event(&egui::Event::Paste("hi".into()), shifted),
+            Some(Clipboard::Paste(_))
+        ));
+        let image = egui::Event::PasteImage(std::sync::Arc::new(egui::ColorImage::filled(
+            [1, 1],
+            egui::Color32::WHITE,
+        )));
+        assert!(matches!(
+            input.event(&image, shifted),
+            Some(Clipboard::Keys(_))
+        ));
     }
 }
 
