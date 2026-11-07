@@ -1613,6 +1613,9 @@ fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egu
 
 fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
+    if widget.properties["role"] == "heading" {
+        text=text.heading();
+    }
     if widget.properties["role"] == "status" {
         text = text.small();
     }

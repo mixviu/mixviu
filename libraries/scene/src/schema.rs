@@ -127,6 +127,19 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("on_action", "string", false, None),
         p("focused", "bool", false, None),
     ];
+    static CONTENT: [Port; 3] = [
+        p("children", "list", true, None),
+        p("settings", "map", true, None),
+        p("scroll", "bool", false, Some("true")),
+    ];
+    static PANES: [Port; 6] = [
+        p("children", "list", true, None),
+        pnd("left_fraction", "0.18", None),
+        pnd("right_fraction", "0.42", None),
+        p("right_visible", "bool", false, Some("true")),
+        pe("focus", "\"center\"", &["left", "center", "right"]),
+        p("on_change", "string", false, None),
+    ];
     static ROW: [Port; 11] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
@@ -248,6 +261,8 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "window" => &WINDOW,
         "column" => &BOX,
         "section" => &SECTION,
+        "content" => &CONTENT,
+        "panes" => &PANES,
         "row" => &ROW,
         "text" => &TEXT,
         "field" => &FIELD,

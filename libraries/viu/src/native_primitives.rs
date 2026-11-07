@@ -103,7 +103,12 @@ pub(crate) fn digest() -> mix::evaluator::ExtFn {
 /// The native Markdown detector, shared by document and message readers.
 pub(crate) fn markdown_detect() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
-        let [Value::String(text)]=args.as_slice() else {return Err(MixError::RuntimeError{msg:"viu_markdown_detect expects text".into(),span:None});};
+        let [Value::String(text)] = args.as_slice() else {
+            return Err(MixError::RuntimeError {
+                msg: "viu_markdown_detect expects text".into(),
+                span: None,
+            });
+        };
         Ok(Value::Bool(toolkit::markdown::looks_like_markdown(text)))
     })
 }

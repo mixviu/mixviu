@@ -61,6 +61,7 @@ end
 fn surface_model($m)
   $data=$wire_data[$active] ?? {};$state=$wire_views[$active] ?? {};$opened=$message ?? {}
   $m.places_ratio=$places_ratio;$m.list_ratio=$list_ratio;$m.pane=$pane;$m.ready=$state.state=="ready"
+  $m.reader_fraction=1-$list_ratio;$m.pane_focus=if $pane=="tree" then "left" elif $pane=="reader" then "right" else "center" end
   $tree_selected=if $box!="" then $active.."/mailbox/"..$box else $active end
   $nav=navigation_rows()
   $m.navigation={id:"account-tree",kind:"tree-table",label:"Accounts",initial:{key:"accounts",revision:$revision,rows:$nav,columns:[{id:"name",label:""}],selected_keys:if any($nav,fn($r)=$r.key==$tree_selected) then [$tree_selected] else [] end,focused_key:nil},properties:{style:"outline"}}
@@ -71,6 +72,12 @@ fn surface_model($m)
   $m.no_message=$message==nil;$m.message_subject=$opened.subject ?? "";$m.message_from="From: "..join(map($opened.from ?? [],fn($a)=address_display($a)),", ");$m.message_to="To: "..join(map($opened.to ?? [],fn($a)=address_display($a)),", ")
   $m.values["message-body"]=$opened.text ?? $opened.html ?? "";$m.values["message-markdown"]=$opened.text ?? ""
   $m.html_source=$message!=nil and $opened.text==nil and $opened.html!=nil;$m.markdown=$reader_markdown and $opened.text!=nil
+  $m.reader_content=$mail_settings.reader ?? {}
+  $m.message_body={id:"message-body",kind:"label",label:"",initial:"",properties:{wrap:true,mono:$m.html_source}}
+  $m.values["message-date"]=""
+  if $opened.date!=nil or $opened.receivedAt!=nil then
+    try $m.values["message-date"]=date_format(date_parse($opened.date ?? $opened.receivedAt),"%b %d %H:%M",{utc:true}) catch $bad_stamp $m.values["message-date"]="" end
+  end
   $m.account_state=if $state.state=="no_password" then "No password is saved for this account. Open Email Settings to set one." elif $state.state=="failed" then $state.error ?? "Connection failed" elif $state.state=="disabled" then "This account is disabled." else "Connecting…" end
   $m.values["connection-state"]=$m.account_state;$m.values["message-subject"]=$m.message_subject;$m.values["message-from"]=$m.message_from;$m.values["message-to"]=$m.message_to
   $m.values["search-mail"]=$search_text
@@ -93,7 +100,8 @@ fn surface_mailbox($account,$id)
 end
 fn surface_intent($a)
   global $pane,$places_ratio,$list_ratio,$tree_closed,$mail_selection,$mail_focus,$mail_sort,$mail_widths,$mail_hidden_columns,$mail_density,$search_text
-  if $a.id=="places-split" then $places_ratio=$a.value
+  if $a.id=="workspace" then $places_ratio=$a.value.left;$list_ratio=1-$a.value.right
+  elif $a.id=="places-split" then $places_ratio=$a.value
   elif $a.id=="reader-split" then $list_ratio=$a.value
   elif $a.id=="account-tree" then
     $key=$a.value.key

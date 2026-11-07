@@ -67,11 +67,19 @@ fn wire_session($update)
   if $update.binding!=nil then $mail_settings.binding=$update.binding end
   $next=map($v["email.accounts"] ?? [],fn($e)=$account_policy.entry($e))
   -- Gold keeps a nonempty cache when an authority temporarily advertises [].
-  if len($next)==0 and len($entries)>0 and $update.confirmed!=true then return end
+  if len($next)==0 and len($entries)>0 and $update.confirmed!=true then $next=$entries end
   $old=$entries;$entries=$next
   $mail_settings.default_account=$v["email.default_account"]
   for $pair in [["page_size",100],["mark_read_on_open",true],["confirm_delete",true],["quote_on_reply",true],["reply_position","above"]]
     $mail_settings[$pair[0]]=$v["email.mail."..$pair[0]] ?? $v["email.compose."..$pair[0]] ?? $pair[1]
+  end
+  for $surface in ["reader","composer"]
+    $font={}
+    for $key in ["family","size"]
+      $value=$v["email."..$surface..".font."..$key]
+      if $value!=nil then $font[$key]=$value end
+    end
+    $mail_settings[$surface]={padding:$v["email."..$surface..".padding"] ?? 8,light:$v["email."..$surface..".light"] ?? false,font:$font}
   end
   if not any($entries,fn($e)=$e.id==$active) then $active=if len($entries)>0 then $entries[0].id else "" end end
   for $e in $entries
@@ -107,7 +115,9 @@ fn wire_completed($d)
     if $answer.body.mailboxes!=nil then
       $wire_data[$job.account].boxes=$answer.body.mailboxes
       if $job.account==$active then $boxes=$answer.body.mailboxes end
-      $view=$wire_views[$job.account] ?? {};$view.unread=sum(map($answer.body.mailboxes,fn($b)=$b.unreadEmails));$wire_views[$job.account]=$view
+      $view=$wire_views[$job.account] ?? {};$view.unread=0
+      for $mailbox_count in $answer.body.mailboxes $view.unread=$view.unread+$mailbox_count.unreadEmails end
+      $wire_views[$job.account]=$view
     end
     for $kind in ["calendars","books"]
       if $answer.body[$kind]!=nil then
