@@ -29,6 +29,7 @@ struct State {
 #[derive(Default)]
 struct NativeOwner {
     supervisor: Option<super::session_actor::Supervisor>,
+    control: Option<Arc<dyn super::session_actor::ControlLane>>,
     attempted: bool,
     error: Option<String>,
 }
@@ -111,7 +112,24 @@ impl Sessions {
                 supervisor.wait_startup();
             }
         }
-        native.supervisor.as_ref().map(|s| s.handle.clone())
+        let handle = native.supervisor.as_ref().map(|s| s.handle.clone());
+        if native.control.is_none() {
+            if let Some(handle) = &handle {
+                let state = Arc::downgrade(&self.state);
+                let pane = Arc::new(move |id| {
+                    let state = state.upgrade()?;
+                    let state = state.lock().ok()?;
+                    let (key, _) = state.pane_ids.iter().find(|(_, existing)| **existing == id)?;
+                    state.sessions.get(key).cloned()
+                });
+                let control: Arc<dyn super::session_actor::ControlLane> = Arc::new(
+                    super::recipient::Recipient::new(handle.clone(), pane),
+                );
+                handle.install_control(&control);
+                native.control = Some(control);
+            }
+        }
+        handle
     }
 
     pub(crate) fn activity(&self) {
@@ -532,6 +550,7 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
+        assert_native_controls(&sessions, &bound);
         assert!(sessions.native.lock().unwrap().attempted);
         let natural_exit = std::env::var(CHILD).unwrap() == "exit";
         if natural_exit {
@@ -597,6 +616,61 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+    }
+
+    fn assert_native_controls(sessions: &Sessions, child: &bus::native_session::SessionRecord) {
+        use bus::native_client::{NodedClient, UnixConnectOutcome};
+        use bus::native_session::Role;
+        let (options,url)=bus::client_helpers::BrokerEnvironment::capture().resolve().unwrap();
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            let UnixConnectOutcome::VerifiedUnix(caller)=NodedClient::connect_unix("",&url,&options,None).await.unwrap() else {panic!("verified control caller required")};
+            let parent=caller.session_list().await.unwrap().records.into_iter().find(|r|r.role==Role::Term && Some(r.instance_id)==child.parent_instance).unwrap();
+            let target=json!({"instance_id":parent.instance_id,"incarnation":parent.incarnation,"pane_id":child.pane_id.unwrap(),"pane_generation":child.pane_generation.unwrap()});
+            let invoke=async |command: &str,body: Value| {
+                let (rc,body,_)=tokio::time::timeout(std::time::Duration::from_secs(6),caller.client().call_with_headers_raw(&parent.name,command,&Default::default(),&body.to_string())).await.unwrap().unwrap();
+                (rc,serde_json::from_str::<Value>(&body).unwrap())
+            };
+            let (rc,snapshot)=invoke("term.snapshot",json!({"target":target})).await;
+            assert_eq!(rc,0,"{snapshot}");
+            let generation=snapshot["foreground_generation"].as_u64().unwrap().to_string();
+            let text="print(\"PROTECTED_\" .. \"OWNER\")\n";
+            let request=json!({"target":target,"request_id":"1","foreground_generation":generation,"text":text});
+            let (rc,accepted)=invoke("term.type",request.clone()).await;
+            assert_eq!(rc,0,"{accepted}");
+            assert_eq!(accepted["status"],"accepted");
+            assert_eq!(accepted["operation_id"],"1");
+            assert_eq!(invoke("term.type",request.clone()).await,(0,accepted.clone()));
+            let mut conflict=request.clone();conflict["text"]=json!("different");
+            assert_eq!(invoke("term.type",conflict).await.1["error_code"],"CONFLICT");
+            tokio::time::timeout(std::time::Duration::from_secs(8),async {
+                loop {
+                    let (rc,screen)=invoke("term.snapshot",json!({"target":target,"contents":true})).await;
+                    assert_eq!(rc,0,"{screen}");
+                    if screen["text"].as_str().unwrap().contains("PROTECTED_OWNER") {break;}
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+            }).await.expect("protected input must execute in the real Mix shell");
+            let mut stale=target.clone();stale["pane_generation"]=json!((child.pane_generation.unwrap().0+1).to_string());
+            assert_eq!(invoke("term.snapshot",json!({"target":stale})).await,(10,json!({"error_code":"FORBIDDEN"})));
+            let stale_foreground=json!({"target":target,"request_id":"2","foreground_generation":"0","text":"must not write"});
+            assert_eq!(invoke("term.type",stale_foreground).await.1["error_code"],"STALE_GENERATION");
+            tokio::time::timeout(std::time::Duration::from_secs(10),async {
+                loop {
+                    let (rc,outcome)=invoke("term.operation",json!({"target":target,"operation_id":"1"})).await;
+                    assert_eq!(rc,0,"{outcome}");
+                    if outcome["boundary"]=="pty_write" {
+                        assert_eq!(outcome["status"],"completed");
+                        assert_eq!(outcome["delivered_bytes_lower_bound"].as_u64().unwrap(),text.len() as u64);
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+            }).await.expect("retained input outcome must settle at the PTY boundary");
+            assert_eq!(invoke("term.type",request).await,(0,accepted));
+            assert!(sessions.call("state","vt-1",json!({})).is_ok());
+            caller.client().close().await;
+        });
     }
 
     #[test]
