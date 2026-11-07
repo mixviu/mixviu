@@ -143,7 +143,8 @@ where
 #[tokio::test]
 #[ignore = "needs a running noded with a broker"]
 async fn comp_port_registers_answers_and_publishes_through_noded() {
-    let service = std::env::var("MIX_TEST_VIUD_ITEST_SERVICE").unwrap_or_else(|_| "viud-itest".into());
+    let service =
+        std::env::var("MIX_TEST_VIUD_ITEST_SERVICE").unwrap_or_else(|_| "viud-itest".into());
     let url = default_noded_url();
 
     // Engine thread: services the port only when the waker fires.

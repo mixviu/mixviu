@@ -58,7 +58,10 @@ fn log_root_for(var: &std::path::Path) -> std::path::PathBuf {
         return std::path::PathBuf::from("/var/log/mix");
     }
     if var.ends_with(".local/share/mix")
-        && let Some(home) = var.parent().and_then(|p| p.parent()).and_then(|p| p.parent())
+        && let Some(home) = var
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
     {
         return home.join(".local/log/mix");
     }
@@ -72,12 +75,18 @@ mod log_dir_tests {
 
     #[test]
     fn each_tier_has_its_own_log_root() {
-        assert_eq!(log_root_for(Path::new("/var/lib/mix")), Path::new("/var/log/mix"));
+        assert_eq!(
+            log_root_for(Path::new("/var/lib/mix")),
+            Path::new("/var/log/mix")
+        );
         assert_eq!(
             log_root_for(Path::new("/home/user/.local/share/mix")),
             Path::new("/home/user/.local/log/mix")
         );
-        assert_eq!(log_root_for(Path::new("/sandbox/var")), Path::new("/sandbox/var/log"));
+        assert_eq!(
+            log_root_for(Path::new("/sandbox/var")),
+            Path::new("/sandbox/var/log")
+        );
     }
 }
 

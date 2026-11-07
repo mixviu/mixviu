@@ -123,7 +123,9 @@ pub fn wire(
             .ok_or("headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ must be 30..=60")?,
         Err(std::env::VarError::NotPresent) => 60,
         Err(_) => {
-            return Err("headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ is not UTF-8".into());
+            return Err(
+                "headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ is not UTF-8".into(),
+            );
         }
     };
     let mode = Mode {

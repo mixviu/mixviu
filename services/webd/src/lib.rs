@@ -7097,7 +7097,8 @@ async fn async_main() -> Result<()> {
             daemon::selfcert::write_self_signed(&fqdn, &cert, &key)?;
         }
         Command::Init { db_path } => {
-            let db_path = db_path.unwrap_or_else(|| config::path(config::Dir::Var).join("webd").join("web.db"));
+            let db_path = db_path
+                .unwrap_or_else(|| config::path(config::Dir::Var).join("webd").join("web.db"));
             if let Some(parent) = db_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }

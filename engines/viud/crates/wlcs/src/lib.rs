@@ -142,8 +142,8 @@ impl Process {
         fs::create_dir(&root)?;
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let mut settings = model::environment::config::base::default_settings();
-        settings.render_node =
-            std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        settings.render_node = std::env::var("MIX_TEST_VIUD_RENDER_NODE")
+            .unwrap_or_else(|_| "/dev/dri/renderD128".into());
         fs::write(root.join("settings.json"), serde_json::to_vec(&settings)?)?;
         let (parent, child_socket) = UnixDatagram::pair()?;
         parent.set_read_timeout(Some(Duration::from_secs(10)))?;
@@ -151,7 +151,8 @@ impl Process {
         let fd = child_socket.as_raw_fd();
         let log = fs::File::create(root.join("viud.log"))?;
         let mut command = Command::new(
-            std::env::var_os("MIX_TEST_VIUD_WLCS_EXE").unwrap_or_else(|| "target/debug/viud".into()),
+            std::env::var_os("MIX_TEST_VIUD_WLCS_EXE")
+                .unwrap_or_else(|| "target/debug/viud".into()),
         );
         command
             .args([

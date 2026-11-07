@@ -127,9 +127,6 @@ mod tests {
             _ => None,
         })
         .unwrap();
-        assert_eq!(
-            dirs.root(),
-            Path::new("/home/user/.local/state/mix/ced")
-        );
+        assert_eq!(dirs.root(), Path::new("/home/user/.local/state/mix/ced"));
     }
 }

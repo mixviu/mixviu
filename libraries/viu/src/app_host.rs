@@ -1535,7 +1535,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         measurements: Default::default(),
         input_at: None,
         native_drive: bundle.manifest.native_drive,
-        service: std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
+        service: std::env::var("MIX_VIU_SERVICE")
+            .unwrap_or_else(|_| bundle.manifest.service.clone()),
         settings_reload: 0,
         session_update: None,
         deferred_replies: BTreeMap::new(),

@@ -134,7 +134,9 @@ fn resolve(env: Option<&str>, file: Option<&str>) -> (bool, Option<&'static str>
     if let Some(value) = env {
         match parse_env(value) {
             Some(enabled) => return (enabled, None),
-            None => note = Some("unrecognised MIX_VIUD_XWAYLAND; fell through to the persisted file"),
+            None => {
+                note = Some("unrecognised MIX_VIUD_XWAYLAND; fell through to the persisted file")
+            }
         }
     }
     if let Some(text) = file {
