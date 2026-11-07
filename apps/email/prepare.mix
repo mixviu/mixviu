@@ -8,7 +8,7 @@ try
   end
   if $rc==0 then
     $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
-    $out="/build/email-frame-artifacts/"..$sha;mkdir($out,{parents:true})
+    $out=path_join(args()[0] ?? "/build/email-frame-artifacts",$sha);mkdir($out,{parents:true})
     copy("target/debug/viu",$out.."/viu")
     print({artifact:$out,profile:"debug",sha256:hash_file($out.."/viu","sha256")})
   end
