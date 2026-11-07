@@ -275,7 +275,7 @@ impl SceneView {
                         // Native panels apply their own paint margins. Let a
                         // dock opt into that contract at the frame boundary.
                         if !self.tree.nodes.get("root").is_some_and(|node| {
-                            node.widget == "dock"
+                            node.family == "dock"
                                 && node.ports.get("clip") == Some(&Value::Bool(false))
                         }) {
                             ui.set_clip_rect(ui.clip_rect().intersect(rect));
