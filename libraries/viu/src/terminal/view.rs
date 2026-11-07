@@ -344,9 +344,18 @@ mod tests {
             let t = owner.lock().unwrap();
             assert!(t.snapshot().contains("native fixture"));
             let diagnostic = t.snapshot();
-            assert!(diagnostic.contains("VT_notification_to_GPU_snapshot:"), "{diagnostic}");
-            assert!(diagnostic.contains("gpu_prepare_cpu_side:n=0"), "unrendered egui fixture must not invent prepare samples: {diagnostic}");
-            assert!(t.stats.lock().unwrap().frames > 0, "live widget records GPU handoffs");
+            assert!(
+                diagnostic.contains("VT_notification_to_GPU_snapshot:"),
+                "{diagnostic}"
+            );
+            assert!(
+                diagnostic.contains("gpu_prepare_cpu_side:n=0"),
+                "unrendered egui fixture must not invent prepare samples: {diagnostic}"
+            );
+            assert!(
+                t.stats.lock().unwrap().frames > 0,
+                "live widget records GPU handoffs"
+            );
             assert!(t.grid_snapshot().dirty_rows.iter().all(|dirty| !dirty));
         }
     }
@@ -1101,7 +1110,11 @@ impl Views {
             )
         });
         let mut snapshot = terminal.grid_snapshot();
-        terminal.stats.lock().expect("metrics").gpu_frame(surface.pane.take_prepare());
+        terminal
+            .stats
+            .lock()
+            .expect("metrics")
+            .gpu_frame(surface.pane.take_prepare());
         let (shown, next) = surface.blink.frame(
             Instant::now(),
             response.has_focus() && ui.input(|i| i.focused),
