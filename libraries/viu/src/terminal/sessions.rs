@@ -182,7 +182,10 @@ impl Sessions {
         if op == "close" {
             let t = {
                 let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
-                let t = state.sessions.remove(handle).ok_or("stale terminal handle")?;
+                let t = state
+                    .sessions
+                    .remove(handle)
+                    .ok_or("stale terminal handle")?;
                 state.geometry.remove(handle);
                 t
             };
@@ -199,11 +202,19 @@ impl Sessions {
         match op {
             "state" => {
                 let (cols, rows) = t.dimensions();
-                let g = self.state.lock().map_err(|_| "terminal owner poisoned")?
-                    .geometry.get(handle).copied().unwrap_or([0.0; 4]);
-                Ok(json!({"pid":t.pid,"title":t.listener.title(),"cols":cols,"rows":rows,
+                let g = self
+                    .state
+                    .lock()
+                    .map_err(|_| "terminal owner poisoned")?
+                    .geometry
+                    .get(handle)
+                    .copied()
+                    .unwrap_or([0.0; 4]);
+                Ok(
+                    json!({"pid":t.pid,"title":t.listener.title(),"cols":cols,"rows":rows,
                     "geometry":{"x":g[0],"y":g[1],"w":g[2],"h":g[3]},
-                    "exited":t.listener.quit.load(Ordering::Acquire),"display_offset":t.display_offset(),"alternate":t.alternate_screen()}))
+                    "exited":t.listener.quit.load(Ordering::Acquire),"display_offset":t.display_offset(),"alternate":t.alternate_screen()}),
+                )
             }
             "snapshot" => Ok(json!(t.snapshot_with(
                 a["contents"] != false,
@@ -229,9 +240,16 @@ impl Sessions {
                     Some("bottom") => ScrollRequest::Bottom,
                     Some("page-up") => ScrollRequest::PageUp,
                     Some("page-down") => ScrollRequest::PageDown,
-                    _ if a["page"].is_number() => ScrollRequest::Pages(a["page"].as_f64()
-                        .filter(|n| n.is_finite() && n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0)
-                        .ok_or("whole scroll pages required")? as i64),
+                    _ if a["page"].is_number() => ScrollRequest::Pages(
+                        a["page"]
+                            .as_f64()
+                            .filter(|n| {
+                                n.is_finite()
+                                    && n.fract() == 0.0
+                                    && n.abs() <= 9_007_199_254_740_991.0
+                            })
+                            .ok_or("whole scroll pages required")? as i64,
+                    ),
                     _ => {
                         let n = a["lines"]
                             .as_f64()

@@ -318,7 +318,12 @@ impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
         if self.ready {
             let handles = self.terminals.take_changes();
-            if !handles.is_empty() && self.runtime.notify("viu.terminal.changed".into(), json!({"handles":handles})).is_err() {
+            if !handles.is_empty()
+                && self
+                    .runtime
+                    .notify("viu.terminal.changed".into(), json!({"handles":handles}))
+                    .is_err()
+            {
                 self.terminals.retry_changes(handles);
             }
         }

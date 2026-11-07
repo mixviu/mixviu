@@ -296,18 +296,21 @@ pub fn draw(
                 let name = i["name"].as_str().unwrap();
                 let (marker, name) = if value["split_markers"] == true {
                     toolkit::tabs::split_marker(name)
-                } else { (None, name) };
+                } else {
+                    (None, name)
+                };
                 toolkit::tabs::DocTab {
-                name: name.into(),
-                title: i["title"]
-                    .as_str()
-                    .unwrap_or(i["name"].as_str().unwrap())
-                    .into(),
-                meta: i["meta"].as_str().unwrap().into(),
-                dirty: i["dirty"] == true,
-                progress: (i["opening"] == true).then_some(0.0),
-                marker,
-            }})
+                    name: name.into(),
+                    title: i["title"]
+                        .as_str()
+                        .unwrap_or(i["name"].as_str().unwrap())
+                        .into(),
+                    meta: i["meta"].as_str().unwrap().into(),
+                    dirty: i["dirty"] == true,
+                    progress: (i["opening"] == true).then_some(0.0),
+                    marker,
+                }
+            })
             .collect::<Vec<_>>();
         let selected = items
             .iter()

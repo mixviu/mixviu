@@ -4,5 +4,5 @@ name: term
 citizen: term
 ---
 ```mix
-{root:{widget:"dock",children:["tabs","terminal"],padding:0,gap:0,placements:{tabs:{edge:"top",size:"content"},terminal:{edge:"fill"}}},tabs:{widget:"control",hidden:"= $model.window_close",definition:"= $model.tabs",on_intent:"term.intent"},terminal:{widget:"control",hidden:"= $model.window_close",definition:"= $model.terminal",on_intent:"term.intent"}}
+{root:{widget:"dock",children:["tabs","terminal"],placements:{tabs:{edge:"top",size:"content"},terminal:{edge:"fill"}}},tabs:{widget:"control",hidden:"= $model.window_close",definition:"= $model.tabs",on_intent:"term.intent"},terminal:{widget:"control",hidden:"= $model.window_close",definition:"= $model.terminal",on_intent:"term.intent"}}
 ```
