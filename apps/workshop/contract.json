@@ -2,6 +2,7 @@
   "host": {
     "activation": "workshop.show",
     "argument_error_exit": 1,
+    "retain_window_on_loss": false,
     "bus_surface": {
       "app_id": "dev.mixos.workshop",
       "commands": [

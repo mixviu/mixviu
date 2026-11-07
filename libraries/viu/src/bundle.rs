@@ -32,6 +32,9 @@ pub struct Manifest {
     pub reply_timeout_secs: u64,
     /// Keep the last authority-owned window choices while settingsd is absent.
     pub retain_window_on_loss: bool,
+    /// Background surfaces can keep accepted appearance on authority loss;
+    /// ordinary gold windows fall back to their file theme.
+    pub retain_appearance_on_loss: bool,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
     pub native_ui: bool,
@@ -81,6 +84,7 @@ impl Default for Manifest {
             owner_help: false,
             reply_timeout_secs: 180,
             retain_window_on_loss: true,
+            retain_appearance_on_loss: false,
             bus_surface: None,
             native_ui: false,
             native_macros: false,

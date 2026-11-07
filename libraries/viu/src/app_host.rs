@@ -1573,6 +1573,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 bus.backend(),
             )
             .expect("embedded session worker")
+            .with_appearance_retention(bundle.manifest.retain_appearance_on_loss)
         }),
         session_appearance: None,
         session_window: None,

@@ -73,7 +73,7 @@ test-only ones the test word first (MIX_TEST_VIUD_RENDER_NODE), and likewise
 viu (MIX_VIU_SERVICE, VIU_BIN -> MIX_VIU_EXE), noded (MIX_NODED_SERVICE),
 dlnad, hostd, indexd and maild. Labels and error codes that only share a
 spelling (VIUD_READY, VIUD_PRESENTATION_PROBE) are not variables and stay.
-`etc/env.conf.mix`: 180 names, loads with load_data, matches every
+`etc/env.conf.mix`: 198 names, loads with load_data, matches every
 `MIX_[A-Z0-9_]+` token outside vendor/, provenance/ and Cargo.lock (a few
 entries are Rust constants or a file name sharing the spelling; said so).
 
@@ -226,6 +226,81 @@ Other decisions for Mark:
   oracle; lab scripts pass the old `COMPD_NATIVE_TEST_BINARY`, now
   `VIUD_NATIVE_TEST_BINARY` in the test.
 
+## Release set and apps.tar
+
+The full cut-over gate (`tools/cutover_gate.mix gate`) ends by writing
+`/build/cutover-artifacts/<sha>/{mix,mixd,viu,viud,apps.tar,SHA256SUMS}`:
+the four release engines, then `tools/apps_bundle.mix` run with the release
+mix, then SHA256SUMS over all five. `cutover_gate.mix bundle` is the light
+check of the same step.
+
+apps.tar is laid out as installed under `/opt/mix` (root 0:0, commit mtime,
+sorted), with `share/mixviu/BUNDLE.conf.mix` listing every file's size and
+SHA-256:
+
+| Path | What |
+|---|---|
+| `share/mixviu/apps/<app>/` | the Mix apps backdrop, ced, dopus, email, gallery, monitor, prefs, quoin, screenshot, workshop (runtime files: no Rust, tests or gate drivers; gallery-reference is a Rust build and is left out) |
+| `share/mixviu/libraries/viu/mix/` | the Viu Mix library the apps require (`../../libraries/...`) |
+| `share/mixviu/units/` | unit templates with `@{prefix}`/`@{etc}`/`@{share}` placeholders: viud@, viud-headless@, apps@, scenes@, mix-headless.slice, clipd, clipd@, notifyd@, exportd-*, dlnad |
+| `share/mixviu/{LICENSE-APACHE,LICENSE-MIT,NOTICE}` | licences |
+| `share/scenes/`, `share/viud/scripts/` | scenes and the viud Mix scripts (apps@, scenes@) |
+| `lib/{clipd,notifyd,exportd,dlnad}/` | the Mix services, where their units start them |
+| `share/icons/`, `share/assets/`, `share/wallpapers/`, `share/layout/`, `share/daylight/` | icon theme (built by its offline installer), brand marks, the pinned font set `2026-10-14-core-5` with `current`, 12 wallpapers, layout and daylight data |
+
+Light run (cachyos, fa950b2, debug mix): 360 entries, 45,785,739 bytes of
+files, tar 46,161,920 bytes; top: share/mixviu 194, share/icons 49,
+share/scenes 45, share/assets 22, share/wallpapers 15, lib/exportd 10,
+share/viud 7, lib/dlnad 5, lib/clipd 4, share/layout 4, lib/notifyd 2,
+share/daylight 2. Retired lab hosts (viu-client, viu-dopus,
+viu-dopus-client) are not in it.
+
+The migration's `extract_bundle` still expects the old repo-relative layout
+(`apps/`, `libraries/viu/mix`, `share/scenes`, `engines/viud/scripts` at the
+tar root): it needs to unpack this tar at `/opt/mix` instead, and it can drop
+its `copy_tree` of gold `icons`, `wallpapers`, `brand` and `assets`.
+
+Asset store: the bundle copies the font set and wallpapers from a store and
+checks every byte against `share/assets/core.conf.mix` (SHA-256 and BLAKE3)
+and `share/wallpapers/manifest.conf.mix`. cbc2 and cbc3 have it at
+`/build/mixviu-assets` (staged from the host's gold install); elsewhere the
+gold `/opt/mixos/share` serves, read only.
+
+## Ported Mix services
+
+clipd, notifyd and exportd come from mixos 8779f33 (verbatim import, then
+renames; provenance `provenance/gold-mix-services.md`). New variables are
+registered: MIX_CLIPD_CONFIG, MIX_CLIPD_MODE, MIX_CLIPD_SESSION,
+MIX_CLIPD_TARGET, MIX_CLIPD_WATCH_TOKEN, MIX_EXPORTD_STATE,
+MIX_EXPORTD_COSMIC_ROOT, MIX_EXPORTD_GTKQT_HOME, MIX_EXPORTD_DRY_RUN,
+MIX_EXPORTD_KDE_STATE, MIX_EXPORTD_KDE_DRY, MIX_EXPORTD_KDE_RECONFIGURE,
+MIX_EXPORTD_KDE_KWRITECONFIG, MIX_EXPORTD_KDE_BUSCTL, MIX_NOTIFYD_STATE, MIX_SETTINGS_SERVICE, MIX_TEST_BLOBD_EXE,
+MIX_TEST_EXPORTD_REAL_KDE. clipd's config moves to
+`<etc>/clipd/clipboard.conf.mix`; units run as `User=mix`. Exported KDE/Qt
+names (MixOS-Dark/Light, MixOSDark/Light, the `[MixOS]` kdeglobals stamp) stay:
+they name files gold exportd already wrote. notifyd's default app name is
+MixViu. tests/cbc_checks.mix (a MixOS crate check) is not imported.
+
+Lint with this tree's mix (`cutover_gate.mix lint`, cachyos
+20261107-211822-f6329f7d): 34 files, 0 errors, 0 warnings (kde_test 2 notes).
+Unit tests with this tree's mix (`cutover_gate.mix mixtest`, cachyos
+20261107-212515-4a70d7c5): clipboard_test, notify_test, gtkqt_test,
+cosmic_test, busctl_test pass; kde_test passes its unit checks and then
+needs a built noded for its Bus part (not run). The gold mix cannot lint or
+run them (no `mix_path`).
+
+## Shared assets
+
+`provenance/shared-assets.md`: the 87 share files imported from mixos 8779f33
+(icons: Lucide ISC plus MIT OR Apache-2.0 caption glyphs; brand: MIT OR
+Apache-2.0; assets installer and pin manifest; layout; daylight from tzdb,
+public domain), the 17 pinned files of font set 2026-10-14-core-5 (all OFL-1.1:
+Inter, JetBrains Mono, Noto Sans, Noto Serif, Quicksand, Noto Color Emoji,
+with their licence texts; each with upstream URL, revision and hashes) and the 12 wallpapers: 6 Wikimedia Commons photos
+(CC0, CC BY 4.0 x2, CC BY-SA 4.0 x3) and 6 generated (MIT OR Apache-2.0).
+The JPEGs and fonts are not committed. The photos' CREDITS still asks for the
+Nunivak author to be named before a public release.
+
 ## Gate status
 
 No full gate on cbc2/cbc3 for this round (Mark: light worker only until the
@@ -246,4 +321,4 @@ Light checks on cachyos at 34a8d52 (one or two crates per job):
 - At 7fddb05: rustfmt clean (20261107-185355-f8c3d8cd); logging + indexd
   green (20261107-185418-c5fe3256).
 
-Branch cutover/four-engines; head is this last.md commit (source 7fddb05); gate: full run held for parity, light checks green apart from cachyos filesystem cases; CBC last full cutover-gate-2d7e1c7, light 20261107-185355-f8c3d8cd, 20261107-185418-c5fe3256, earlier cutover-gate-5d1ec61, cutover-gate-43de632, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
+Branch cutover/four-engines; head is this last.md commit (source 6fb20c11); gate: full run held for parity (the next full gate also writes the release set with apps.tar); light checks green apart from cachyos filesystem cases; CBC light bundle 20261107-212351-63549e61, lint 20261107-211822-f6329f7d, mixtest 20261107-212515-4a70d7c5, last full cutover-gate-2d7e1c7, earlier cutover-gate-5d1ec61, cutover-gate-43de632, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
