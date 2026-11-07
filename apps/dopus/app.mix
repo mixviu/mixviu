@@ -1,5 +1,35 @@
 -- version: 0.1.0
+-- lint: globals app_args app_launch
 include "dopus.mix"
 $profile=$app_args[0] ?? path_join(env("XDG_CONFIG_HOME",path_join(env("HOME"),".config")),"dopus")
 mkdir($profile,{parents:true})
 dp_start({app_dir:dirname(script_path()),profile:$profile})
+$state.bindings=[]
+for $action in $contract.actions
+  for $chord in $action.keys $state.bindings=push($state.bindings,{id:$action.id,chord:$chord}) end
+end
+$row_cache=dp_publish($state,$contract,$row_cache)
+on viu.frame.intent
+  dp_request({command:"dopus.execute",args:{id:$event.args.value.command,params:{}}})
+end
+on dopus.shortcut
+  dp_request({command:"dopus.execute",args:$event.args})
+end
+on viu.frame.close
+  $state=$app.dp_persist($state)
+  $model=dp_framed($state,$contract,$row_cache);$model.window_close=true
+  send "viu-local" "scenes.model" body={generation:viu_context().generation,value:$model}
+end
+on viu.session
+  $state.window=$event.args.state.values ?? {}
+  $state.appearance_session=$event.args.appearance
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on viu.theme.changed
+  $state.appearance=$event.args
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
+on viu.macros.changed
+  $state.macros_open=$event.args.open
+  $row_cache=dp_publish($state,$contract,$row_cache)
+end
