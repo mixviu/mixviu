@@ -383,7 +383,8 @@ impl Host {
             } else if sequence == crate::terminal::WRITE_ANSWER
                 && let Err(reason) = result
             {
-                self.platform_results.push_back(json!({"kind":"copy","reason":format!("{reason:?}")}));
+                self.platform_results
+                    .push_back(json!({"kind":"copy","reason":format!("{reason:?}")}));
             }
         }
         while let Some(result) = self.platform_results.front() {
