@@ -49,6 +49,11 @@ struct Window {
     fatal: Option<String>,
     frame: crate::window_frame::WindowFrame,
     session_values: Value,
+    session_snapshot: Value,
+    style_snapshot: Value,
+    app: String,
+    file_theme: toolkit::Theme,
+    last_ui: settings::model::CommonUi,
 }
 impl Window {
     fn new(
@@ -109,6 +114,11 @@ impl Window {
             fatal: None,
             frame: Default::default(),
             session_values: json!({}),
+            session_snapshot: json!({}),
+            style_snapshot: Value::Null,
+            app: app_dir.file_name().and_then(|name|name.to_str()).unwrap_or("files").into(),
+            file_theme: toolkit::Theme::load(),
+            last_ui: Default::default(),
         })
     }
     fn state(&self) -> Value {
@@ -189,6 +199,13 @@ impl Window {
         self.mapped = true;
         let ctx = ui.ctx().clone();
         let framed = self.model["frame"].is_object();
+        let style_key=json!({"values":self.session_snapshot["state"]["values"],"lost":self.session_snapshot["state"]["lost"]});
+        if framed && style_key["values"].is_object() && self.style_snapshot!=style_key {
+            match crate::appearance::install_session(&ctx,&self.session_snapshot,&self.app,&self.file_theme,&self.last_ui) {
+                Ok(common) => {self.last_ui=common;self.style_snapshot=style_key;ctx.request_repaint();},
+                Err(error) => self.error=error,
+            }
+        }
         if !framed {
             ui.painter().rect_filled(
                 ui.max_rect(),
@@ -689,6 +706,7 @@ impl eframe::App for Shell {
             }
             let window = self.windows.lock().unwrap().get(&id).cloned().unwrap();
             let mut window = window.lock().unwrap();
+            window.session_snapshot = self.session.snapshot.clone();
             let values = &self.session.snapshot["state"]["values"];
             if values.is_object() && window.session_values != *values {
                 window.session_values = values.clone();
