@@ -5,8 +5,9 @@ citizen: email
 ---
 ```mix
 {
-root:{widget:"column",native_spacing:true,padding:8,scroll:true,children:["compose-layout"]},
-"compose-layout":{widget:"dock",children:["compose-headers","compose-footer","compose-content"],placements:{"compose-headers":{edge:"top",size:"content",native_spacing:true},"compose-footer":{edge:"bottom",size:"content"},"compose-content":{edge:"fill"}}},
+root:{widget:"column",native_spacing:true,padding:8,scroll:true,children:["compose-owner-notice","compose-layout"]},
+"compose-owner-notice":{widget:"control",definition:{id:"compose-owner-notice",kind:"label",label:"",initial:"Close the other compose windows first. This window owns the Email process and will close when they finish.",properties:{wrap:true}},hidden:"= !$model.owner_wait"},
+"compose-layout":{widget:"dock",hidden:"= $model.parked",children:["compose-headers","compose-footer","compose-content"],placements:{"compose-headers":{edge:"top",size:"content",native_spacing:true},"compose-footer":{edge:"bottom",size:"content"},"compose-content":{edge:"fill"}}},
 "compose-headers":{widget:"control",definition:"= $model.headers",on_intent:"email.compose.intent"},
 "compose-content":{widget:"column",native_spacing:true,padding_top:4,children:["compose-surface"]},
 "compose-surface":{widget:"content",surface:"editor",settings:"= $model.reader_content",scroll:false,children:["compose-body"]},

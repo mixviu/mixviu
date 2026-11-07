@@ -12,10 +12,11 @@ $compose_suggest=require("suggest.mix")
 $compose_frame=require("../../libraries/viu/mix/gold-frame.mix")
 $compose_scene=read_file(path_join(dirname(script_path()),"composer-scene.mix"))
 fn composer_info($c)
+  if $c.parked==true then return nil end
   return {account:$c.account,from:$c.from,to:$c.to,cc:$c.cc,bcc:$c.bcc,subject:$c.subject,body:$c.body,attachments:$c.files,attachment_size:$c.attachment_size,attachment_error:$c.attachment_error,attachments_over_limit:$c.attachments_over_limit,sendable:composer_sendable($c),send_origin:$c.send_origin,in_reply_to:$c.in_reply_to,stale:$c.stale,busy:$c.busy,error:$c.error}
 end
 fn composer_sendable($c)
-  return not $c.busy and $c.stale==nil and $c.attachment_error==nil and wire_entry($c.account)!=nil and trim($c.to)!="" and trim($c.subject)!=""
+  return $c.parked!=true and not $c.busy and $c.stale==nil and $c.attachment_error==nil and wire_entry($c.account)!=nil and trim($c.to)!="" and trim($c.subject)!=""
 end
 fn composer_size($bytes)
   if $bytes==nil then return "unknown size" end
@@ -141,29 +142,52 @@ fn composer_close($key,$answer=nil)
     $compose_owner_closing=true;$status="Close the other compose windows first. This window owns the Email process and will close when they finish."
     return {rc:0,body:{}}
   end
-  if $answer==nil and ($c.revision>0 or $c.restored==true or len($c.attachments)>0 or len(keys($c.attempt))>0) then composer_save($key);$composers[$key].confirm=true;return {rc:0,body:{}} end
+  if $c.parked==true then $answer="parked" end
+  if $answer==nil and composer_keepable($c) then composer_save($key);$composers[$key].confirm=true;return {rc:0,body:{}} end
   if $answer==nil then $answer="discard" end
   if $answer=="cancel" then $composers[$key].confirm=false;$compose_quitting=false;$compose_owner_closing=false;return {rc:0,body:{}} end
   if $answer=="keep" then composer_save($key)
   elif $answer=="discard" then
     $path=path_join(viu_app_dirs("email").state,"drafts/"..$c.draft_id..".json")
     if exists($path) then viu_files("remove",{path:$path}) end
-  else return wire_refuse("INVALID_ARGUMENT","Unknown draft answer") end
+  elif $answer!="parked" then return wire_refuse("INVALID_ARGUMENT","Unknown draft answer") end
+  composer_retire($key)
+  return {rc:0,body:{}}
+end
+fn composer_keepable($c)
+  return $c.revision>0 or $c.restored==true or len($c.attachments)>0 or len(keys($c.attempt))>0
+end
+fn composer_retire($key)
+  global $composers,$compose_mru,$compose_focused,$chrome
   viu_timer("draft:"..$key,nil,{})
   $composers=delete($composers,$key)
   $compose_mru=filter($compose_mru,fn($k)=$k!=$key)
   if $compose_focused==$key then $compose_focused=if len($compose_mru)>0 then $compose_mru[len($compose_mru)-1] else nil end end
-  if $compose_owner_closing and $compose_root!=nil and len(keys($composers))==1 and $composers[$compose_root]!=nil then composer_close($compose_root) end
+  if $compose_root!=nil and len(keys($composers))==1 and $composers[$compose_root]!=nil and ($compose_owner_closing or $composers[$compose_root].parked==true) then composer_close($compose_root) end
   if ($compose_owner_closing or $compose_only) and len(keys($composers))==0 then $chrome.window_close=true end
   if $compose_quitting then composer_quit() end
-  return {rc:0,body:{}}
+end
+fn composer_set_aside($key)
+  global $composers,$compose_restore,$chrome
+  $c=$composers[$key]
+  if composer_keepable($c) then
+    composer_save($key)
+    $path=path_join(viu_app_dirs("email").state,"drafts/"..$c.draft_id..".json")
+    if not any($compose_restore,fn($d)=$d.id==$c.draft_id) then $compose_restore=concat([json_parse(viu_files("read-text",{path:$path,limit:8388608}))],$compose_restore) end
+  end
+  if $key==$compose_root then
+    $composers[$key].parked=true;$composers[$key].busy=false;$composers[$key].confirm=false
+    $composers[$key].notice="Close the other compose windows first. This window owns the Email process and will close when they finish."
+    if len(keys($composers))==1 then $chrome.window_close=true end
+  else composer_retire($key) end
 end
 fn composer_quit()
   global $compose_quitting,$chrome,$status
-  $waiting=filter(keys($composers),fn($key)=$composers[$key].revision>0 or $composers[$key].restored==true or len($composers[$key].attachments)>0 or len(keys($composers[$key].attempt))>0)
+  $all=concat(filter(keys($composers),fn($key)=$key!=$compose_root),filter(keys($composers),fn($key)=$key==$compose_root))
+  $waiting=filter($all,fn($key)=$composers[$key].parked!=true and composer_keepable($composers[$key]))
   $answer={rc:0,body:{quitting:len($waiting)==0,confirming:len($waiting)>0,windows:$waiting}}
   $compose_quitting=true
-  for $key in keys($composers)
+  for $key in $all
     if $composers[$key].busy then return $answer end
     composer_close($key)
     if $composers[$key]!=nil then return $answer end
@@ -314,6 +338,7 @@ fn composer_models($m)
     if $c.document_mode!=nil then $headers.initial.chooser=merge($headers.initial.chooser,{mode:$c.document_mode,instance:$c.chooser_instance,title:if $c.document_mode=="open" then "Open mail document" else "Save mail document as" end,confirm:if $c.document_mode=="open" then "Open" else "Save" end}) end
     $body={id:"compose-body",kind:"editor",label:"Body",initial:$c.body,properties:{native_document:true,prose:true,document:$c.draft_id,language:"text",soft_wrap:true,line_numbers:false,remote_carets:false,read_only:$c.busy,command:{serial:$c.edit_serial ?? 0,name:$c.edit_command ?? ""}}}
     $child={values:{},headers:$headers,body_editor:$body,reader_content:$mail_settings.composer ?? {},native_overlays:[],shortcuts:[],window_close:false}
+    $child.parked=$c.parked==true;$child.owner_wait=$child.parked or ($key==$compose_root and $compose_owner_closing)
     $child.reply_visible=$c.reply_quote!=nil;$child.stale_visible=$c.stale!=nil;$child.error_visible=$c.error!=nil;$child.busy=$c.busy
     $child.footer_visible=$child.reply_visible or $child.stale_visible or $child.error_visible or $c.busy
     $child.reply_toggle={id:"compose-position",kind:"toggle",label:"",initial:$c.reply_position=="below",properties:{text:"Reply below the quote",style:"gold",enabled:not $c.busy and $compose_quoting.moved($c.body,$c.reply_quote,$c.reply_signature,$c.reply_position)!=nil}}

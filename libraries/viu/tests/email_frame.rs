@@ -139,6 +139,10 @@ end
 on test.root.cancel
   composer_close($compose_root,"cancel");publish_email();reply(0,json_encode({alive:$composers[$compose_root]!=nil,closing:$compose_owner_closing}))
 end
+on test.root.account.gone
+  $entries=[];composer_reconcile();publish_email()
+  reply(0,json_encode({parked:$composers[$compose_root].parked,closing:$chrome.window_close,drafts:len($compose_restore),body:$compose_restore[0].body}))
+end
 "#);
     let (_root, mut runtime, rx) = isolated_runtime();
     runtime.load(program).unwrap();
@@ -164,6 +168,12 @@ end
     let reply = complete(&runtime, &rx).reply.unwrap();
     assert_eq!(reply.body["alive"], true);
     assert_eq!(reply.body["closing"], false);
+    runtime.event("test.root.account.gone".into(), json!({})).unwrap();
+    let reply = complete(&runtime, &rx).reply.unwrap();
+    assert_eq!(reply.body["parked"], true);
+    assert_eq!(reply.body["closing"], true);
+    assert_eq!(reply.body["drafts"], 1);
+    assert_eq!(reply.body["body"], "Root text");
 }
 
 #[test]
