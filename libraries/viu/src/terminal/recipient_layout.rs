@@ -17,7 +17,9 @@ impl Recipient {
             parent: own.1.clone(),
             hello: own.0.clone(),
             until: Instant::now() + Duration::from_secs(2),
-            pane: self.native.pane_guard(target.pane_id.0, target.pane_generation.0),
+            pane: self
+                .native
+                .pane_guard(target.pane_id.0, target.pane_generation.0),
             written: AtomicU64::new(0),
             notice: Mutex::new(None),
         });
@@ -42,7 +44,11 @@ impl Recipient {
                 let candidate = if *id == admitted.request.target.pane_id.0 {
                     Some(&admitted.request.target)
                 } else {
-                    admitted.request.affected.iter().find(|target| target.pane_id.0 == *id)
+                    admitted
+                        .request
+                        .affected
+                        .iter()
+                        .find(|target| target.pane_id.0 == *id)
                 };
                 if candidate.is_none_or(|target| {
                     !super::super::protocol::target_matches(&parent, target)
@@ -52,17 +58,33 @@ impl Recipient {
                 }
             }
             admitted.mutation_epoch()?;
-            let sequence = admitted.request.request_id.map(|id| id.0).filter(|id| *id > 0)
+            let sequence = admitted
+                .request
+                .request_id
+                .map(|id| id.0)
+                .filter(|id| *id > 0)
                 .ok_or_else(|| Reply::error("INVALID_ARGUMENT"))?;
-            replay.lock().unwrap().reserve_request_id(&admitted.identity, sequence, admitted.digest)?;
-            if !permit.valid() {return Err(Reply::error("FORBIDDEN"));}
+            replay.lock().unwrap().reserve_request_id(
+                &admitted.identity,
+                sequence,
+                admitted.digest,
+            )?;
+            if !permit.valid() {
+                return Err(Reply::error("FORBIDDEN"));
+            }
             Ok(())
         });
         let replay = self.replay.clone();
         let finish = Box::new(move |reply: &mut Reply, begun: bool| {
             if begun {
                 // Every begun request has reserved a positive native sequence.
-                replay.lock().unwrap().record_local_outcome(&identity, &target, sequence.unwrap().0, digest, reply);
+                replay.lock().unwrap().record_local_outcome(
+                    &identity,
+                    &target,
+                    sequence.unwrap().0,
+                    digest,
+                    reply,
+                );
             }
         });
         let (job, answer) = match self.layout.enqueue(payload, guard, finish) {
@@ -73,7 +95,10 @@ impl Recipient {
         // begun, cancellation retains UNKNOWN_OUTCOME and prevents reexecution.
         match tokio::time::timeout(Duration::from_secs(22), answer).await {
             Ok(Ok(reply)) => reply,
-            _ => {job.cancel(); Reply::error("UNKNOWN_OUTCOME")}
+            _ => {
+                job.cancel();
+                Reply::error("UNKNOWN_OUTCOME")
+            }
         }
     }
 }

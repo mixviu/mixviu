@@ -132,9 +132,13 @@ impl Sessions {
                 let state = Arc::downgrade(&self.state);
                 let metadata =
                     Arc::new(move || Some(state.upgrade()?.lock().ok()?.metadata.clone()));
-                let control: Arc<dyn super::session_actor::ControlLane> = Arc::new(
-                    super::recipient::Recipient::new(handle.clone(), pane, metadata, self.layout.clone()),
-                );
+                let control: Arc<dyn super::session_actor::ControlLane> =
+                    Arc::new(super::recipient::Recipient::new(
+                        handle.clone(),
+                        pane,
+                        metadata,
+                        self.layout.clone(),
+                    ));
                 handle.install_control(&control);
                 native.control = Some(control);
             }
@@ -824,8 +828,63 @@ end
             let mut denied_stale=denied;denied_stale["affected"]=json!([{"instance_id":parent.instance_id,"incarnation":parent.incarnation,"pane_id":"2","pane_generation":"0"}]);
             assert_eq!(invoke("term.tab.select",denied_stale).await.1["error_code"],"FORBIDDEN");
             assert_eq!(invoke("term.session",json!({"target":target})).await.1["request_high_water"],"8");
+            let ready_pane=async |id:u64| {
+                tokio::time::timeout(std::time::Duration::from_secs(20),async {
+                    loop {
+                        let (rc,state)=invoke("term.session",json!({"target":target})).await;
+                        assert_eq!(rc,0,"{state}");
+                        if let Some(pane)=state["panes"].as_array().unwrap().iter().find(|pane|pane["target"]["pane_id"]==id.to_string()) {
+                            return pane["target"].clone();
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    }
+                }).await.expect("new protected pane must enrol and publish native metadata")
+            };
+            let second=ready_pane(2).await;
+            let second_pid=sessions.call("state","vt-2",json!({})).unwrap()["pid"].as_u64().unwrap();
+            let new_tab=json!({"target":target,"affected":[second],"request_id":"9","request_epoch":epoch});
+            assert_eq!(invoke("term.tab.new",new_tab.clone()).await,(0,json!({"tab_id":2,"operation_id":"9"})));
+            assert_eq!(invoke("term.tab.new",new_tab).await,(0,json!({"tab_id":2,"operation_id":"9"})));
+            let third=ready_pane(3).await;
+            let third_pid=sessions.call("state","vt-3",json!({})).unwrap()["pid"].as_u64().unwrap();
+            let fourth_tab=json!({"target":target,"affected":[second,third],"request_id":"10","request_epoch":epoch});
+            assert_eq!(invoke("term.tab.new",fourth_tab).await,(0,json!({"tab_id":3,"operation_id":"10"})));
+            let fourth=ready_pane(4).await;
+            let fourth_pid=sessions.call("state","vt-4",json!({})).unwrap()["pid"].as_u64().unwrap();
+            // Closing an inactive singleton first selects it, then its following
+            // replacement. This must not silently close the former active pane.
+            let close_third=json!({"target":third,"affected":[fourth],"request_id":"11","request_epoch":epoch});
+            let closed_third=invoke("term.pane.close",close_third.clone()).await;
+            assert_eq!(closed_third,(0,json!({"closed":third,"operation_id":"11"})));
+            assert_eq!(invoke("term.pane.close",close_third).await,closed_third);
+            assert!(sessions.call("state","vt-3",json!({})).is_err());
+            assert!(sessions.call("state","vt-4",json!({})).is_ok());
+            let (rc,state)=invoke("term.session",json!({"target":target})).await;
+            assert_eq!(rc,0,"{state}");
+            assert_eq!(state["tabs"].as_array().unwrap().iter().find(|tab|tab["active"]==true).unwrap()["id"],3);
+            // Closing the last-position active tab needs every leaf of its
+            // previous replacement tab. A partial set cannot consume the id.
+            let partial=json!({"target":fourth,"affected":[target],"request_id":"12","request_epoch":epoch});
+            assert_eq!(invoke("term.tab.close",partial).await.1["error_code"],"FORBIDDEN");
+            let close_fourth=json!({"target":fourth,"affected":[target,second],"request_id":"12","request_epoch":epoch});
+            let closed_fourth=invoke("term.tab.close",close_fourth.clone()).await;
+            assert_eq!(closed_fourth,(0,json!({"closed":fourth,"operation_id":"12"})));
+            assert_eq!(invoke("term.tab.close",close_fourth).await,closed_fourth);
+            let close_second=json!({"target":second,"affected":[target],"request_id":"13","request_epoch":epoch});
+            let closed_second=invoke("term.pane.close",close_second.clone()).await;
+            assert_eq!(closed_second,(0,json!({"closed":second,"operation_id":"13"})));
+            assert_eq!(invoke("term.pane.close",close_second).await,closed_second);
+            assert_eq!(invoke("term.operation",json!({"target":second,"operation_id":"13"})).await,closed_second);
+            let (rc,state)=invoke("term.session",json!({"target":target})).await;
+            assert_eq!(rc,0,"{state}");assert_eq!(state["request_high_water"],"13");
+            assert_eq!(state["panes"].as_array().unwrap().len(),1);
+            assert_eq!(state["tabs"].as_array().unwrap().len(),1);
+            assert_eq!(state["tabs"][0]["id"],1);assert_eq!(state["tabs"][0]["active"],true);
+            for handle in ["vt-2","vt-3","vt-4"] {assert!(sessions.call("state",handle,json!({})).is_err());}
+            for pid in [second_pid,third_pid,fourth_pid] {
+                assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists(),"protected cleanup left child {pid}");
+            }
             stopped.store(true,Ordering::Release);pump.join().unwrap();
-            sessions.call("close","vt-2",json!({})).unwrap();
             caller.client().close().await;
         });
     }

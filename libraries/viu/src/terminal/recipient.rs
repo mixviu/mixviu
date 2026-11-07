@@ -25,10 +25,10 @@ use std::time::{Duration, Instant};
 
 #[path = "recipient_forwarding.rs"]
 mod forwarding;
-#[path = "recipient_metadata.rs"]
-mod metadata_reader;
 #[path = "recipient_layout.rs"]
 mod layout;
+#[path = "recipient_metadata.rs"]
+mod metadata_reader;
 
 type PaneLookup = Arc<dyn Fn(u64) -> Option<Arc<Mutex<Terminal>>> + Send + Sync>;
 type MetadataLookup = Arc<dyn Fn() -> Option<Metadata> + Send + Sync>;
@@ -64,7 +64,12 @@ impl Drop for SingleFlight<'_> {
 }
 
 impl Recipient {
-    pub fn new(native: NativeSession, pane: PaneLookup, metadata: MetadataLookup, layout: super::layout_control::Bridge) -> Self {
+    pub fn new(
+        native: NativeSession,
+        pane: PaneLookup,
+        metadata: MetadataLookup,
+        layout: super::layout_control::Bridge,
+    ) -> Self {
         let (notice_tx, notice_rx) = tokio::sync::mpsc::channel(256);
         Self {
             native,
@@ -139,7 +144,10 @@ impl Recipient {
             admitted.operation.as_str(),
             "term.session" | "term.list" | "term.tabs" | "term.panes"
         );
-        if matches!(admitted.capability, Capability::ManageLayout | Capability::Terminate) {
+        if matches!(
+            admitted.capability,
+            Capability::ManageLayout | Capability::Terminate
+        ) {
             return self.layout(connection, parent, own, admitted).await;
         }
         if !metadata_read && !matches!(admitted.operation.as_str(), "term.snapshot" | "term.type") {
