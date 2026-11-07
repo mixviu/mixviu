@@ -305,12 +305,21 @@ fn modal_tab_keeps_keyboard_focus_on_the_chosen_button() {
     let mut view = SceneView::new(&source).unwrap();
     let ctx = Context::default();
     viu::appearance::install(&ctx);
-    for _ in 0..3 { draw(&ctx, &mut view, vec![]); }
+    for _ in 0..3 {
+        draw(&ctx, &mut view, vec![]);
+    }
     let field = ctx.memory(|m| m.focused()).expect("field focus");
     draw(&ctx, &mut view, key(Key::Tab));
-    for _ in 0..3 { draw(&ctx, &mut view, vec![]); }
+    for _ in 0..3 {
+        draw(&ctx, &mut view, vec![]);
+    }
     let button = ctx.memory(|m| m.focused()).expect("button focus");
     assert_ne!(field, button);
     let submitted = draw(&ctx, &mut view, key(Key::Enter));
-    assert!(submitted.iter().any(|e| e.body["action"] == "answer" && e.body["value"]["choice"] == "ok"), "{submitted:?}");
+    assert!(
+        submitted
+            .iter()
+            .any(|e| e.body["action"] == "answer" && e.body["value"]["choice"] == "ok"),
+        "{submitted:?}"
+    );
 }
