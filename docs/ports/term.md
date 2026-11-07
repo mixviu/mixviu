@@ -1872,3 +1872,30 @@ Expanded private native.D8cydN captured eleven additional accepted-revision stat
 The expanded run later failed second-pane binding with no usable ready grant while the60s mint floor was pending. All five tracked PIDs stopped. The failed long-run admission case is retained independently; previous successful shorter pane proof does not close it. A lint-clean Prefs-only release variant is prepared, with this separate pane block excluded from its scope and long-idle admission explicitly still failed/open. Do not weaken the floor or label this harness change a fix.
 
 Next CBC `term-prefs-release-c7efc31c` runs `tools/gold_parity_gate.mix --prepare`. Read complete result/worker diff, exact-repeat as required, fetch matching release bytes/receipt and exact bundle and verify source/profile/hash. Run the prepared Prefs-only matrix on release, inspect captures including app-scale and absence of debug overlay, retain cleanup. Then compare equivalent gold states; complete auto/tune/app inputs and settings authority loss/recovery, long-idle pool/issuer expiry/revoke/enforcement, Bus/actions/topics/menu/macros/broker/IME/reporting/clipboard/search edge cases/show failures/conformance/visual acceptance. No Fable deviation, install, gold, desk or merge changes. NOT ACCEPTED.
+
+
+### Release Prefs matrix and matched Gold capture checkpoint
+
+CBC `term-prefs-release-c7efc31c-a1` passed exact source `c7efc31c1b0db76375ac8aef7b78076c2057c249`, no worker diff. Complete188137-byte log read in eleven contiguous chunks through GOLD_PARITY_PATCH_END and archived. Shared Viu/engine fmt, all-target check/clippy, tests and debug/release builds passed:478 tests, eleven retained ignores; existing warnings remain. Verified release source/profile receipt and SHA256 `70413e272cf96ca3aef4493179cefe7bc1d45446c6049acd509ddd695abdf84a`, exact-source bundle and ELF dependencies retained privately. This includes the app-specific text-scale repair and new VT conformance cases.
+
+Private native.48EkzI passes the release Prefs/search matrix on one unchanged candidate PID and vt-1 owner, with a real Attached Mix child. App-scale1.5 and reset, eleven broader Prefs states, query preservation and native search options/history pass; all thirteen relevant original captures inspected. Debug Unaligned overprint is absent from release. All five tracked PIDs stopped. Pane admission was explicitly outside this run; the earlier long-run grant failure remains open.
+
+Private native.YDKyxj then runs pinned Gold and these exact candidate release bytes sequentially on the same owned Bus, settingsd, canonical term identity and isolated home. Same real Mix pair() output,900x560 client pixels, same settings for each capture; all sixteen live changes preserve each app's PID. Settings apply receipts, titlebar/menu/window readbacks, snapshots,34 PNG hashes, complete calls,17 comparison sets and an inspected witness index are retained. All seven tracked processes stopped. Both originals plus all full side-by-side/difference figures inspected. Every tabs and terminal region has SSIM/RMSE distortion0.
+
+ImageMagick7.1.2-35 reports normalised distortion, lower is better:
+
+| Matched states | Whole SSIM / RMSE | Header SSIM / RMSE | Inspected difference |
+| --- | --- | --- | --- |
+| Baseline, baseline reset, app-scale1.5/reset, Ocean, Breeze style, orange accent, all reset (8 pairs) | 0 / 0 | 0 / 0 | Byte-identical |
+| Light/font18 and light/scale1.25/weight700 | 0.000394758 / 0.00393857 | 0.0058908 / 0.0151196 | Incorrect selected mode toolbar button |
+| Compact/square | 0.000141901 / 0.00474248 | 0.00248339 / 0.0198392 | Macro/search and Close icon raster edges |
+| Spacious/round, UI font, mono font, icon stroke | 8.11716e-9 / 0.0000306314 | 9.88176e-8 / 0.000106876 | Close glyph raster edge |
+| Per-app light/Crimson/high contrast and tunables | 0.000852412 / 0.0119387 | 0.010503 / 0.0416554 | Incorrect selected mode button plus Close raster edge |
+
+Regions follow Gold geometry: header height38/tabs32 normally, compact32/28, spacious46/38; terminal fills from their sum to560. Separate toolbar crop x620,width150 uses matching header height. Light toolbar SSIM/RMSE0.0471264/0.0427647; app-look/tune0.0840232/0.117819; compact0.019863/0.05611; all other toolbar regions0. Ocean to Breeze produces identical pixels in Gold too, closing the earlier question about this particular state. This does not establish every style/tunable or authority-recovery case.
+
+Code `d6aa18cbbeb3363ae82e4d58a94347cd52faea48` repairs the four light-mode pairs: pinned Gold toolkit titlebar::icon_bar explicitly excludes view.mode from toggled styling. Term now suppresses checked only on that toolbar projection, retaining the true checked action registry and moon/sun icon selection. Three regression assertions, Mix lint and diff check pass. This is Gold restoration, no Fable deviation. The exact-source release gate `term-toolbar-release-d6aa18cb` is submitted; gate result and new release-byte paired captures remain pending. Previous c7 captures remain failed for those four toolbar states, not retroactively accepted.
+
+Continue exact gate/log/patch processing, fetch matching release/receipt, rerun prepared17-state paired harness and region inspection. Then complete automatic mode/settings authority loss/recovery, remaining Prefs inputs/tunables, long-idle pane grant failure/issuer expiry/revoke, full Bus/actions/topics/menu/macros/broker, native IME/mouse/paste/clipboard failures/search edges/show failures, broader conformance and visual acceptance. No install, Gold/desk/VT or merge changes. Overall NOT ACCEPTED.
+
+branch: lab/parity-term; head SHA:d6aa18cbbeb3363ae82e4d58a94347cd52faea48 (mode-toolbar repair; latest tested release c7efc31c; receipt HEAD records checkpoint); NOT ACCEPTED — toolbar exact release/recapture and full parity matrix open, long-run pane grant failure retained; CBC job ids:term-prefs-release-c7efc31c-a1 (green exact;478 tests; native.48EkzI and native.YDKyxj17 matched states), term-toolbar-release-d6aa18cb (submitted).
