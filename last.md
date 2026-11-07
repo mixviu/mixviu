@@ -1,11 +1,11 @@
-# Integration close-out: cancelled gate needs clarification
+# Integration round 4: detached gate queued
 
-Runtime source: 1804bb98a5ab305111bd35412bf6f3902bc24013. CBC 20261107-123118-5c7ba675-a1 on cbc2 is no longer running: its authoritative receipt says cancelled, rc 143, cancel requested. The session timeout interrupted the workspace test stage. Read the full saved log: 823,451 bytes, 14,422 lines, SHA256 ab8bea10e5e302071cdb137e726bc91e84a693882b5236803b63c728fc96d11a; 397 completed batches and 8,444 passes, no reported test failure. This is an incomplete gate, not acceptance.
+Mark authorised requeueing the rc 143 session-closure cancellation. The replacement full gate is submitted with --detach, job 20261107-125735-43beb330, pinned to cbc2 at runtime source 1804bb98a5ab305111bd35412bf6f3902bc24013. It is queued behind an existing worker job; no duplicate submitted. Full gates and release builds use --detach from this checkpoint onward. Scoped checks use --light.
 
-The latest brief says do not requeue unless rc 75. No replacement was submitted after finding rc 143; an exception has been requested. Final release builds, four-app release-byte reruns, furniture/Track A completion and the final same-worker 2,000-row comparison remain pending. Native preflight at 4083f51 closes Screenshot's menu IDs and authority-loss fallback pixel-exactly; the formatting freeze at 1804bb9 changes no runtime behaviour.
+The full gate includes formatting, clippy, all tests, Monitor policy tests, bulk primitives, four release engines, P2 furniture and Track A. Four-app release-byte suites (including deferred-reply deadlines), the same-worker 2,000-row comparison and final hashes follow its completion. No final release acceptance is claimed yet.
 
-See docs/ports/desk4-integration.md for historical four-engine hashes and docs/ports/import-hash-debt.md for all 22 inherited import mismatches, when and why they arose, and the required production-derivation reconciliation. The historical 4755e9e artifacts must not be described as final 1804bb9 acceptance. No install or VT work.
+All 22 inherited import-hash mismatches are explained, with files, original/current hashes and first divergence, in docs/ports/import-hash-debt.md. This remains production-derivation provenance debt. The previous interrupted gate and historical artifacts are recorded in docs/ports/desk4-integration.md.
 
-The Backdrop/Workshop follow-on brief is read, remote heads verified, and not merged pending this close-out as instructed. Scoped checks will use --light; full acceptance/release builds stay on cbc2/cbc3.
+After this close-out, merge Backdrop 250f87d and Workshop 493ae42, reconcile shared facilities, wire Workshop's New macro editor to Ced's shared widget, and repeat all six release suites as required by the follow-on brief. No install or VT work.
 
-Branch lab/gold-parity; tested head 1804bb98a5ab305111bd35412bf6f3902bc24013 (this receipt commit follows); final artifacts PENDING, historical cbc3:/build/es-artifacts/4755e9e10bd2071cded1d18c7865c29d754a1009/ SHA256SUMS=9a70a839e3b4629c8a6ab8ccd6fa7748dd1c403fe4935bd8e37878b5e165c199; gates INCOMPLETE; CBC 20261107-123118-5c7ba675-a1 CANCELLED rc143, earlier 20261107-105201-a587a3c3-a1 PASS at4755e9e.
+Branch lab/gold-parity; runtime head 1804bb98a5ab305111bd35412bf6f3902bc24013 (receipt commit follows); artifacts PENDING, final gates QUEUED; CBC 20261107-125735-43beb330 DETACHED cbc2, previous 20261107-123118-5c7ba675-a1 CANCELLED rc143.
