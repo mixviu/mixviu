@@ -2,6 +2,21 @@
 -- Account navigation and table policy. Native widgets only report intent.+-- lint: globals entries active boxes box rows total offset selected message revision connected wire_views wire_sessions wire_data mail_settings c
 $mail_emails=[];$mail_selection=[];$mail_focus=nil;$mail_sort={column:"date",order:"descending"};$mail_widths={};$mail_hidden_columns=[];$mail_density="compact"
 $pane="list";$places_ratio=0.18;$list_ratio=0.58;$tree_closed=[];$search_text="";$reader_markdown=false;$attachments_inline=true
+$mode="mail";$attachment_policy=require("attachments.mix")
+$reader_detected=false;$reader_auto=true
+fn surface_info()
+  $accounts=[]
+  for $a in wire_accounts()
+    $d=$wire_data[$a.id] ?? {};$open=$d.message ?? {}; $emails=$d.emails ?? []
+    $a.mail={mailboxes:$d.boxes ?? [],selected:$d.box,emails:map($emails,fn($m)={id:$m.id,subject:$m.subject,from:address_display(($m.from ?? [])[0]),date:$m.date ?? $m.receivedAt,read:($m.keywords ?? {})["$seen"]==true,flagged:($m.keywords ?? {})["$flagged"]==true}),total:$d.total ?? 0,open:$open.id,reader:if $open.id==nil then nil else {format:if $reader_markdown then "markdown" else "plain" end,auto:$reader_auto,attachments_expanded:false,attachments_inline:$attachments_inline,attachments:map($open.attachments ?? [],fn($p)={part:$p.partId,preview:{state:"none"}})} end,attachments:if $open.id==nil then nil else $attachment_policy.metadata($open) end,busy:any(values($wire_pending),fn($p)=$p.account==$a.id and contains(["list","refresh-list"],$p.purpose)),selection:{ids:if $a.id==$active then $mail_selection else [] end,count:if $a.id==$active then len($mail_selection) else 0 end,all:false},sort:$mail_sort.column,order:if $mail_sort.order=="ascending" then "asc" else "desc" end,page:floor(($d.offset ?? 0)/$mail_settings.page_size),page_size:$mail_settings.page_size}
+    $a.calendar={calendars:$d.calendars ?? [],selected:$d.calendar,events:map($d.events ?? [],fn($e)={id:$e.id,title:$e.title ?? ($e.data ?? {}).title ?? "",start:$e.start,end:$e.end}),open:$d.open_event,busy:false}
+    $a.contacts={books:$d.books ?? [],selected:$d.book,filter:$d.contact_filter ?? "",contacts:map($d.contacts ?? [],fn($c)={id:$c.id,name:$c.full_name ?? (($c.data ?? {}).name ?? {}).full ?? "",email:$c.email ?? ""}),open:$d.open_contact,busy:false}
+    push($accounts,$a)
+  end
+  $expanded={};for $key in $tree_closed $expanded[$key]=false end
+  $selected_node=if $box!="" then $active.."/mailbox/"..$box else $active end
+  return {schema:"email.v1",version:$ctx.version,selected:if $active=="" then nil else $active end,mode:$mode,source:$mail_settings.source,status:$status,default_account:$mail_settings.default_account,mail_options:{page_size:$mail_settings.page_size,mark_read_on_open:$mail_settings.mark_read_on_open,confirm_delete:$mail_settings.confirm_delete,quote_on_reply:$mail_settings.quote_on_reply,reply_position:$mail_settings.reply_position},accounts:$accounts,tree:map(navigation_rows(),fn($r)={key:$r.key,depth:$r.depth,label:$r.cells[0],unread:$r.count,expandable:$r.branch,expanded:$r.expanded,selected:$r.key==$selected_node}),compose:nil,compose_windows:[],confirm:nil,drafts_offered:0,form:nil,dialog:$chrome.dialog,ui:{places:$places_ratio,reader:1-$list_ratio,cursor:nil,expanded:$expanded,theme_mode:$chrome.theme_choice.mode},migrating:false,exiting:$chrome.window_close,window:nil,owner_closing:false,quitting:$chrome.window_close}
+end
 fn address_display($a)
   return if $a==nil then "" elif $a.name!=nil and $a.name!="" then $a.name else $a.email ?? "" end
 end
@@ -67,13 +82,14 @@ fn surface_model($m)
   $m.navigation={id:"account-tree",kind:"tree-table",label:"Accounts",initial:{key:"accounts",revision:$revision,rows:$nav,columns:[{id:"name",label:""}],selected_keys:if any($nav,fn($r)=$r.key==$tree_selected) then [$tree_selected] else [] end,focused_key:nil},properties:{style:"outline"}}
   $found=filter($boxes,fn($b)=$b.id==$box);$name=if len($found)>0 then $found[0].name else "Mail" end
   $m.list_titles=concat([$name],if $total>0 then [to_string(len($rows)).." of "..to_string($total)] else [] end)
-  $m.native_table={id:"emails",kind:"tree-table",label:"emails",initial:{key:"emails",revision:$revision,rows:$rows,columns:[{id:"subject",label:"Subject",fraction:0.55,min_width:120},{id:"from",label:"From",remainder:true,min_width:80},{id:"date",label:"Date",width:90,align:"right"}],state:{sort:$mail_sort,page:floor($offset/$mail_settings.page_size),page_size:$mail_settings.page_size,selection:$mail_selection,focus:$mail_focus,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density},total:$total,empty:if any(values($wire_pending),fn($p)=$p.purpose=="list") then "Loading…" else "No emails" end,select_everything:"Select all "..to_string($total).." in folder",selected_keys:$mail_selection,focused_key:if $mail_focus!=nil then $rows[$mail_focus].key else nil end},properties:{style:"gold"}}
+  $m.native_table={id:"emails",kind:"tree-table",label:"emails",initial:{key:"emails",revision:$revision,rows:$rows,columns:[{id:"subject",label:"Subject",fraction:0.55,min_width:120},{id:"from",label:"From",remainder:true,min_width:80},{id:"date",label:"Date",samples:["23:58","Wed 23:58","28 May","28/05/2025"],align:"right"}],state:{sort:$mail_sort,page:floor($offset/$mail_settings.page_size),page_size:$mail_settings.page_size,selection:$mail_selection,focus:$mail_focus,widths:$mail_widths,hidden:$mail_hidden_columns,density:$mail_density},total:$total,empty:if any(values($wire_pending),fn($p)=$p.purpose=="list") then "Loading…" else "No emails" end,select_everything:"Select all "..to_string($total).." in folder",selected_keys:$mail_selection,focused_key:if $mail_focus!=nil then $rows[$mail_focus].key else nil end},properties:{style:"gold"}}
   $m.reader_actions=map([{id:"mail.reply",label:"Reply",icon:"reply"},{id:"mail.reply_all",label:"Reply All",icon:"reply-all"},{id:"mail.forward",label:"Forward",icon:"forward"},{id:"mail.delete",label:"Delete",icon:"trash"}],fn($a)=merge($a,{enabled:$message!=nil}))
-  $m.no_message=$message==nil;$m.message_subject=$opened.subject ?? "";$m.message_from="From: "..join(map($opened.from ?? [],fn($a)=address_display($a)),", ");$m.message_to="To: "..join(map($opened.to ?? [],fn($a)=address_display($a)),", ")
-  $m.values["message-body"]=$opened.text ?? $opened.html ?? "";$m.values["message-markdown"]=$opened.text ?? ""
+  $m.reader_actions=concat(slice($m.reader_actions,0,1),[{id:"reply-options",label:"",icon:"chevron-down",enabled:$message!=nil,children:map([{id:"mail.reply_quoted",label:"Reply with quote"},{id:"mail.reply_unquoted",label:"Reply without quote"},{id:"mail.reply_all_quoted",label:"Reply All with quote"},{id:"mail.reply_all_unquoted",label:"Reply All without quote"}],fn($a)=merge($a,{enabled:$message!=nil}))}],slice($m.reader_actions,1,3),[{separator:true}],slice($m.reader_actions,3))
+  $m.no_message=$message==nil;$m.message_subject=$opened.subject ?? "";$m.message_from="From: "..address_display(($opened.from ?? [])[0]);$m.message_to="To: "..join(map($opened.to ?? [],fn($a)=$a.email),", ")
+  $m.values["message-body"]=$opened.text ?? $opened.html ?? "This email has no body.";$m.values["message-markdown"]=$opened.text ?? ""
   $m.html_source=$message!=nil and $opened.text==nil and $opened.html!=nil;$m.markdown=$reader_markdown and $opened.text!=nil
   $m.reader_content=$mail_settings.reader ?? {}
-  $m.message_body={id:"message-body",kind:"label",label:"",initial:"",properties:{wrap:true,mono:$m.html_source}}
+  $m.message_body={id:"message-body",kind:"label",label:"",initial:"",properties:{wrap:true,mono:$m.html_source,weak:$opened.text==nil and $opened.html==nil}}
   $m.values["message-date"]=""
   if $opened.date!=nil or $opened.receivedAt!=nil then
     try $m.values["message-date"]=date_format(date_parse($opened.date ?? $opened.receivedAt),"%b %d %H:%M",{utc:true}) catch $bad_stamp $m.values["message-date"]="" end

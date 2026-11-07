@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
-$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix")
+$protocol=require("protocol.mix");$accounts=require("accounts.mix");$pim=require("pim.mix");$attachments=require("attachments.mix")
 on job.run
   $a=$event.args
   try
@@ -22,6 +22,8 @@ on job.run
       if $command=="email.search" then $p.query=$p.text end
       $answer=$protocol.list($e,$s,$p)
     elif $command=="email.get" or $command=="email.open" then $answer=$protocol.get($e,$s,$p.id)
+    elif $command=="email.attachments" then
+      $email=$protocol.get($e,$s,$p.id);$answer={id:$email.id,attachments:$attachments.metadata($email)}
     elif contains(["email.mark","email.move","email.junk","email.delete"],$command) then $answer=$protocol.batch($e,$s,$command,$p)
     elif contains(["email.mailbox.create","email.mailbox.rename","email.mailbox.delete"],$command) then $answer=$protocol.mailbox_write($e,$s,$command,$p)
     elif contains(["email.calendars","email.events","email.event.get","email.event.create","email.event.update","email.event.delete","email.books","email.contacts","email.contact.get","email.contact.create","email.contact.update","email.contact.delete"],$command) then $answer=$pim.dispatch($e,$s,$command,$p)

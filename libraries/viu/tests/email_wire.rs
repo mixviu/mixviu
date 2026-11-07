@@ -161,7 +161,7 @@ fn gold_token_session_and_query_preserve_bearer_auth_and_query_order() {
             json!({"token":"test-token","accountId":"1"}),
             session,
             json!({"methodResponses":[["Email/query",{"ids":["a","b"],"total":2},"c0"]]}),
-            json!({"methodResponses":[["Email/get",{"list":[{"id":"b","subject":"Second"},{"id":"a","subject":"First"}]},"c0"]]}),
+            json!({"methodResponses":[["Email/get",{"list":[{"id":"b","subject":"Second"},{"id":"a","subject":"First","hasAttachment":false}]},"c0"]]}),
         ],
         r#"if true then $s=$m.connect($e);$m.list($e,$s,{mailbox:"inbox",limit:100}) end"#,
         "protocol.mix",
@@ -175,7 +175,9 @@ fn gold_token_session_and_query_preserve_bearer_auth_and_query_order() {
     assert_eq!(rc, 0, "{body}");
     assert_eq!(body["emails"][0]["id"], "a");
     assert_eq!(body["emails"][1]["id"], "b");
-    assert_eq!(body["emails"][0]["body_values"], Value::Null);
+    assert!(body["emails"][0].get("bodyValues").is_some());
+    assert_eq!(body["emails"][0]["bodyValues"], Value::Null);
+    assert_eq!(body["emails"][0]["hasAttachment"], false);
     let (rc, body) = probe_module(
         vec![
             json!({"token":"test-token","accountId":"1"}),

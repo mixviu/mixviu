@@ -140,6 +140,10 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pe("focus", "\"center\"", &["left", "center", "right"]),
         p("on_change", "string", false, None),
     ];
+    static SIDES: [Port; 2] = [
+        p("children", "list", true, None),
+        p("wrap", "bool", false, Some("false")),
+    ];
     static ROW: [Port; 11] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
@@ -263,6 +267,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "section" => &SECTION,
         "content" => &CONTENT,
         "panes" => &PANES,
+        "sides" => &SIDES,
         "row" => &ROW,
         "text" => &TEXT,
         "field" => &FIELD,

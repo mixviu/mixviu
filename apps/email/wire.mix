@@ -91,7 +91,7 @@ fn wire_session($update)
   end
 end
 fn wire_completed($d)
-  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus
+  global $wire_pending,$wire_sessions,$wire_views,$wire_data,$entries,$session,$boxes,$box,$rows,$total,$offset,$selected,$message,$reader,$account,$mailbox,$connected,$revision,$status,$mail_emails,$mail_selection,$mail_focus,$reader_markdown,$reader_detected,$reader_auto
   $id=$d.tag.owner.id;$job=$wire_pending[$id]
   if $job==nil then return end
   $wire_pending=delete($wire_pending,$id)
@@ -132,7 +132,7 @@ fn wire_completed($d)
     if $answer.rc==0 and $job.account==$active then
       $session={account:$answer.session.account,accounts:map(keys($answer.session.raw.accounts),fn($k)=merge({id:$k},$answer.session.raw.accounts[$k]))}
       $boxes=$answer.body.mailboxes
-      $connected=true;$account=$entry.label.." · "..$entry.user;$status="Connected";$box="";$rows=[]
+      $connected=true;$account=$entry.label.." · "..$entry.user;$status="";$box="";$rows=[]
       $inbox=filter($boxes,fn($b)=$b.role=="inbox")
       if len($inbox)>0 then wire_start("email.list",{mailbox:$inbox[0].id,limit:$mail_settings.page_size},nil,"list") end
     end
@@ -147,7 +147,12 @@ fn wire_completed($d)
     $wire_data[$job.account].emails=$mail_emails;$wire_data[$job.account].total=$total;$wire_data[$job.account].offset=$offset;$wire_data[$job.account].box=$box
     $match=filter($boxes,fn($b)=$b.id==$box);$mailbox=if len($match)>0 then $match[0].name else "" end
   elif $answer.rc==0 and $job.command=="email.open" and $job.account==$active then
-    $m=$answer.body;$message=$m;$selected=$m.id;$reader=reader_text($message);$wire_data[$job.account].message=$m
+    $m=$answer.body;$old=$message ?? {}
+    if $old.id!=$m.id or $old.text!=$m.text then
+      $part=($m.textBody ?? [])[0] ?? {};$kind=lower(trim(split($part.type ?? "",";")[0]))
+      $reader_detected=contains(["text/markdown","text/x-markdown"],$kind) or (contains(["","text/plain"],$kind) and viu_markdown_detect($m.text ?? ""));$reader_markdown=$reader_detected;$reader_auto=true
+    end
+    $message=$m;$selected=$m.id;$reader=reader_text($message);$wire_data[$job.account].message=$m
     if $mail_settings.mark_read_on_open and ($m.keywords ?? {})["$seen"]!=true then wire_start("email.mark",{ids:[$m.id],read:true},nil,"mutation") end
     $answer.body={account:$job.account,id:$m.id,subject:$m.subject}
   end

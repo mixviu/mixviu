@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Attachment names and open policy from gold; byte transport stays generic.
+fn extension($mime)
+  $mime=lower(trim(split($mime ?? "",";")[0]))
+  $extensions={"application/pdf":"pdf","image/png":"png","image/jpeg":"jpg","image/gif":"gif","image/webp":"webp","image/svg+xml":"svg","text/plain":"txt","text/html":"html","text/markdown":"md","text/csv":"csv","text/calendar":"ics","text/vcard":"vcf","text/x-vcard":"vcf","message/rfc822":"eml","application/zip":"zip","application/gzip":"gz","application/x-tar":"tar","application/json":"json","audio/mpeg":"mp3","audio/ogg":"ogg","video/mp4":"mp4","application/vnd.oasis.opendocument.text":"odt","application/vnd.oasis.opendocument.spreadsheet":"ods","application/vnd.openxmlformats-officedocument.wordprocessingml.document":"docx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":"xlsx"}
+  return $extensions[$mime] ?? "bin"
+end
+fn cap($value,$bytes)
+  $length=min(len($value),$bytes)
+  $value=substr($value,0,$length)
+  while byte_length($value)>$bytes $length=$length-1;$value=substr($value,0,$length) end
+  return $value
+end
+fn file_name($name,$index,$mime)
+  $parts=split(replace($name ?? "","\\","/"),"/");$last=$parts[len($parts)-1]
+  $clean=trim(ltrim(trim(replace(re_replace($last,"\\p{Cc}",""),"..","")),"."))
+  if $clean=="" then return "attachment-"..to_string($index).."."..extension($mime) end
+  if byte_length($clean)<=200 then return $clean end
+  $parts=split($clean,".")
+  if len($parts)>1 and byte_length($parts[len($parts)-1])<=16 then
+    $ext=$parts[len($parts)-1];$stem=join(slice($parts,0,len($parts)-1),".")
+    if $stem!="" then return rtrim(cap($stem,199-byte_length($ext)).."."..$ext) end
+  end
+  return rtrim(cap($clean,200))
+end
+fn refuses_open($name,$mime)
+  $mime=lower(trim(split($mime ?? "",";")[0]));$parts=split(lower($name),".");$ext=if len($parts)>1 then $parts[len($parts)-1] else "" end
+  return contains(["application/x-executable","application/x-sharedlib","application/x-pie-executable","application/x-msdownload","application/x-ms-dos-executable","application/x-msi","application/x-sh","application/x-shellscript","application/x-csh","application/x-perl","application/x-python","text/x-python","text/x-shellscript","application/x-ruby","application/x-desktop","application/java-archive","application/x-java-archive","application/vnd.debian.binary-package","application/x-rpm","application/x-appimage","application/javascript","text/javascript"],$mime) or contains(["sh","bash","zsh","csh","fish","mix","py","pl","rb","php","js","mjs","jar","exe","com","bat","cmd","msi","ps1","vbs","scr","desktop","run","appimage","bin","so","dll","deb","rpm","elf","out"],$ext)
+end
+fn metadata($email)
+  $out=[];$index=0
+  for $part in $email.attachments ?? []
+    $index=$index+1;$name=file_name($part.name,$index,$part.type)
+    push($out,{part:$part.partId,name:$name,type:$part.type,size:$part.size,undecodable:$part.undecodable or $part.blobId==nil or $part.blobId=="",save_only:refuses_open($name,$part.type),transfer:nil})
+  end
+  return $out
+end

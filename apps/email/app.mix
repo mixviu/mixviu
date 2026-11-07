@@ -7,6 +7,7 @@ $rows=[];$selected=nil;$revision=0;$account="No account connected";$mailbox="No 
 $entries=[];$active="";$session=nil;$boxes=[];$box="";$offset=0;$total=0;$message=nil;$connected=false;$busy=false;$serial=0;$pending=nil;$status="Choose an account and Connect"
 $submission=nil;$receipt=nil;$last_receipt=nil
 $view="Mail"
+if not $fixture then $status="" end
 $frame=require("frame.mix");$actions=require("actions.mix")
 $chrome={bindings:{},theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark"},dialog:nil,macros_open:false,window_close:false}
 if not $fixture and len($app_args)>0 then
@@ -28,6 +29,12 @@ fn publish_email()
   $m.values["reader-body"]=if $message!=nil then $message.text ?? $message.html ?? "" else "" end
   if not $fixture then $m=surface_model($m) end
   $look=merge($chrome,{fixture:$fixture,accounts:len($entries),connected:$connected,status:$status})
+  if not $fixture then
+    $current=wire_entry($active);$state=$wire_views[$active] ?? {}
+    $look.status=if $current==nil then "" else $current.name.." — "..(if $state.state=="ready" then "Connected" elif $state.state=="connecting" then "Connecting…" else "Not connected" end) end
+    if $status!="" then $look.status=$look.status.." — "..$status end
+    if $mail_settings.source=="missing" then $look.status=$look.status.." — Settings service not running: showing the saved accounts, read-only" end
+  end
   $m=$frame.apply($m,$look)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$m}
 end
@@ -62,9 +69,10 @@ include "wire.mix"
 include "surface.mix"
 publish_email()
 on email.ping
-  reply(0,"{}")
+  reply(0,json_encode({pong:true,schema:"email.v1",version:$ctx.version,pid:$ctx.pid}))
 end
 on email.info
+  if not $fixture then reply(0,json_encode(surface_info()));return end
   reply(0,json_encode({fixture:$fixture,connected:$connected,busy:$busy,status:$status,accounts:map($entries,fn($e)={id:$e.id,label:$e.label,user:$e.user}),active:$active,server_accounts:if $session!=nil then $session.accounts else [] end,mailboxes:$boxes,mailbox:$box,rows:len($rows),total:$total,offset:$offset,selected:$selected,revision:$revision,draft:$draft,operation_id:if $submission!=nil then $submission.operation_id else nil end,receipt:$last_receipt}))
 end
 on email.message
@@ -302,6 +310,9 @@ on email.search
 end
 on email.get
   $r=wire_start("email.get",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.attachments
+  $r=wire_start("email.attachments",$event.args,$event);reply($r.rc,json_encode($r.body))
 end
 on email.open
   $r=wire_start("email.open",$event.args,$event,"open");reply($r.rc,json_encode($r.body))

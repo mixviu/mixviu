@@ -507,7 +507,12 @@ fn draw_grid(
             })
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
         for column in columns {
-            let width = if column["remainder"] == true {
+            let width = if let Some(samples)=column["samples"].as_array() {
+                let size=TextStyle::Body.resolve(ui.style()).size;
+                let font=toolkit::fonts::bound(ui.ctx(),toolkit::fonts::medium(size));
+                let width=std::iter::once(text(column,"label")).chain(samples.iter().filter_map(Value::as_str)).map(|text|ui.painter().layout_no_wrap(text.into(),font.clone(),ui.visuals().text_color()).size().x).fold(0.0,f32::max);
+                Width::Fixed(width+ui.spacing().item_spacing.x+2.0)
+            } else if column["remainder"] == true {
                 Column::remainder()
             } else if let Some(fraction) = column["fraction"].as_f64() {
                 Column::exact(room * fraction as f32)

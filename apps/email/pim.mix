@@ -2,7 +2,7 @@
 -- Gold maild CalendarEvent and JSContact policy; no independent transport.
 $p=require("protocol.mix");$arg=require("arguments.mix");$identity=require("identity.mix")
 fn calendars($rows)
-  return jq($rows,'map({id,name,color:(.color // null),description:(.description // null),isVisible:(.isVisible // null),sortOrder:(.sortOrder // 0)})')
+  return jq($rows,'map({id,name,color:(.color // null),description:(.description // null),isVisible:(if has("isVisible") then .isVisible else null end),sortOrder:(.sortOrder // 0)})')
 end
 fn books($rows)
   return jq($rows,'map({id,name,description:(.description // null),sortOrder:(.sortOrder // 0)})')

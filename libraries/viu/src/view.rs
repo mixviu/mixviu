@@ -490,6 +490,12 @@ impl SceneView {
                     ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
                 }
                 match node.family.as_str() {
+                    "sides"=>{
+                        let children=children(node).collect::<Vec<_>>();
+                        let draw=std::cell::RefCell::new((&mut *self,&mut *events));
+                        let sides=if node.ports.get("wrap")==Some(&Value::Bool(true)){egui::Sides::new().wrap()}else{egui::Sides::new()};
+                        sides.show(ui,|ui|{let mut draw=draw.borrow_mut();let (view,events)=&mut *draw;view.node(ui,children[0],nodes,route,depth+1,events);},|ui|{let mut draw=draw.borrow_mut();let (view,events)=&mut *draw;view.node(ui,children[1],nodes,route,depth+1,events);});
+                    },
                     "panes"=>self.panes(ui,&key,node,nodes,route,depth,events),
                     "content"=>{
                         let content:settings::content::Content=serde_json::from_value(node.ports.get("settings").cloned().unwrap_or_else(|| json!({}))).expect("validated prose content");
@@ -507,7 +513,15 @@ impl SceneView {
                             let shown=if let Some(items)=node.ports.get("actions").and_then(Value::as_array) {
                                 toolkit::panel::group_with_actions(ui,&key,|ui|{
                                     ui.horizontal(|ui|for item in items {
+                                        if item["separator"]==true {toolkit::bars::divider(ui,16.0);continue;}
                                         if let Some(icon)=item["icon"].as_str().and_then(crate::icons::Icon::from_name) {
+                                            if let Some(children)=item["children"].as_array() {
+                                                let button=ui.add_enabled(item["enabled"]!=false,toolkit::button::IconButton::new(icon).size(ui.spacing().interact_size.y*0.8));
+                                                egui::Popup::menu(&button).show(|ui|for child in children {
+                                                    if ui.add_enabled(child["enabled"]!=false,egui::Button::new(child["label"].as_str().unwrap_or(""))).clicked(){actions.push(child["id"].clone());}
+                                                });
+                                                continue;
+                                            }
                                             let r=ui.add_enabled(item["enabled"]!=false,toolkit::button::Link::new(icon,item["label"].as_str().unwrap_or("")));
                                             if r.clicked(){actions.push(item["id"].clone());}
                                         }
@@ -790,13 +804,14 @@ impl SceneView {
         let mut right_fraction = num(node, "right_fraction").unwrap_or(0.42);
         if node.ports.get("right_visible") != Some(&Value::Bool(false)) {
             let remaining = ui.available_width();
-            let right = egui::Panel::right(egui::Id::unique((ui.ctx().viewport_id(), key, "right")))
-                .resizable(true)
-                .default_size(remaining * right_fraction)
-                .frame(right_frame)
-                .show(ui, |ui| {
-                    self.node(ui, children[2], nodes, route, depth + 1, events)
-                });
+            let right =
+                egui::Panel::right(egui::Id::unique((ui.ctx().viewport_id(), key, "right")))
+                    .resizable(true)
+                    .default_size(remaining * right_fraction)
+                    .frame(right_frame)
+                    .show(ui, |ui| {
+                        self.node(ui, children[2], nodes, route, depth + 1, events)
+                    });
             right_fraction = right.response.rect.width() / remaining.max(1.0);
         }
         egui::CentralPanel::default()
@@ -1320,10 +1335,15 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                     }
                 }
             }
+            "sides" => {if children(node).count()!=2{return Err("sides requires left and right children".into());}}
             "content" => {
-                let content: settings::content::Content =
-                    serde_json::from_value(node.ports.get("settings").cloned().unwrap_or_else(|| json!({})))
-                        .map_err(|e| e.to_string())?;
+                let content: settings::content::Content = serde_json::from_value(
+                    node.ports
+                        .get("settings")
+                        .cloned()
+                        .unwrap_or_else(|| json!({})),
+                )
+                .map_err(|e| e.to_string())?;
                 if !content.font.size.is_finite()
                     || !(6.0..=48.0).contains(&content.font.size)
                     || ![1, 2, 4, 8, 16].contains(&content.padding)
