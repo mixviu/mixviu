@@ -327,4 +327,26 @@ UI and Bus, then complete inventory and verified session/clipboard/IME/
 search/live Prefs/release matched acceptance. No Fable question, install,
 merge or VT change.
 
-branch: lab/parity-term; head SHA: b095d72222c3c6b018f59edf2d2be2eac483401a (code; receipt HEAD contains this checkpoint); open items: exact repaired gate/close, full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-widget-r2-view-repair-a1 (133 pass, host/foreign green), term-widget-r2-bundle-probe-a1 (scene mismatch identified, consumed), term-widget-r2-node-fixed (next await).
+## Exact repaired widget checkpoint
+
+CBC3 `term-widget-r2-node-fixed-a1` passed at exact source
+`b095d72222c3c6b018f59edf2d2be2eac483401a`: 134 native tests passed,
+5 retained fixture/benchmark ignores, both actual-bundle integration tests,
+all three Mix policy suites, foreign dependency closure and generic debug
+host build. Complete saved log read; TERM_PATCH was empty. This does not
+attest ELF linkage, release bytes or application acceptance.
+
+Fetched debug artifact SHA256
+`08375b79ec45e965bd258a1660080f572d3ec9dbf2b75ad27db545abae3b5990`,
+verified against its source/profile receipt, and archived Mix sources from
+the same commit. Private `term-parity-20261107/native.uqPes6` retains the
+isolated real Mix shell output, 900×560 capture, effective forms, calls and
+normal close success. All tracked app/shell/settings/compositor/broker PIDs
+were stopped. This exact-source debug witness supersedes the composite
+first-load witness; the earlier visual FAIL remains open.
+
+Continuing live Mix tab/pane reducer integration and its Bus surface. Full
+verified session supervisor, input/clipboard/search, Prefs and release visual
+acceptance remain open. Gold unchanged. No Fable question.
+
+branch: lab/parity-term; head SHA: b095d72222c3c6b018f59edf2d2be2eac483401a (tested code; receipt HEAD contains this checkpoint); open items: full Mix app/Bus/Prefs, verified session and input/clipboard/search, release and visual acceptance; CBC job ids: term-widget-r2-view-repair-a1, term-widget-r2-bundle-probe-a1 (failed then repaired), term-widget-r2-node-fixed-a1 (green).
