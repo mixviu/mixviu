@@ -1063,9 +1063,16 @@ fn run_headless(bundle: Bundle) -> eframe::Result {
             let _ = rx.recv_timeout(delay);
         }
     }
-    let failed = host.bus.startup_error.lock().unwrap_or_else(|e|e.into_inner()).clone();
+    let failed = host
+        .bus
+        .startup_error
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     if let Some(error) = failed {
-        return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(error))));
+        return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+            error,
+        ))));
     }
     Ok(())
 }
