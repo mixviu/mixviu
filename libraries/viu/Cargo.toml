@@ -57,13 +57,13 @@ image = { version = "=0.25.10", default-features = false, features = ["png", "jp
 png = "=0.18.1"
 unicode-segmentation = "=1.13.3"
 scene = { path = "../scene" }
-serde_json = "=1.0.151"
+serde_json = "=1.0.154"
 serde.workspace = true
 reqwest.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "env-filter", "fmt", "registry", "tracing-log"] }
-tokio = { version = "=1.53.1", features = ["rt", "time", "macros", "sync"] }
+tokio = { version = "=1.54.1", features = ["rt", "time", "macros", "sync"] }
 egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
 
 [dev-dependencies]
