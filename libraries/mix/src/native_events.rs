@@ -1142,6 +1142,16 @@ impl NativeEvents {
         }
     }
 
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) fn own_audio_for_test(
+        &mut self,
+        handle: &str,
+        source: crate::desktop_events::AudioSource,
+    ) {
+        self.desktop
+            .insert(handle.to_owned(), crate::desktop_events::Source::Audio(source));
+    }
+
     fn remove_source_pending(&self, h: &str) {
         self.queue.pending.lock().unwrap().sources.remove(h);
         self.queue.ready.notify_waiters();

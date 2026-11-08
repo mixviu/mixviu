@@ -1933,7 +1933,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn audio_stream_lines_become_filtered_batches_and_unwatch_reaps_the_group() {
-        let q = audio_queue();
+        let mut owner = crate::native_events::NativeEvents::default();
+        let q = owner.queue.clone();
+        q.register_source_for_test("audio:1", "audio.changed");
         let source = linux::AudioSource::start(
             q.clone(),
             "audio:1".into(),
@@ -1945,6 +1947,8 @@ mod tests {
             ),
         )
         .unwrap();
+        let pid = source.pid;
+        owner.own_audio_for_test("audio:1", source);
         let ev = tokio::time::timeout(std::time::Duration::from_secs(5), q.next(None))
             .await
             .unwrap()
@@ -1956,8 +1960,16 @@ mod tests {
         assert_eq!(changes[0]["facility"], "sink");
         assert_eq!(changes[0]["index"], 5);
         assert!(body.get("closed").is_none());
-        let pid = source.pid;
-        drop(source);
+        // Pipe reads need not match the fixture's writes: a second normal
+        // batch can arrive after next(). Make that pending batch deterministic
+        // and exercise real unwatch, which retires its slot before cancellation.
+        q.source(
+            "audio:1",
+            vec![("sink#6".into(), serde_json::json!({"facility":"sink", "index":6}))],
+            false,
+        );
+        assert!(q.source_ready_for_test("audio:1"));
+        owner.source_unwatch("audio", "audio:1").unwrap();
         assert!(reaped(pid), "unwatch kills and reaps the pactl stand-in");
         // Cancellation is not an unexpected exit: no terminal batch appears.
         assert!(!q.source_ready_for_test("audio:1"));
