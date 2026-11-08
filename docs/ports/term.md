@@ -2901,3 +2901,12 @@ Independent Claude-family section surveys and the integrated90-file whole-specim
 Native.qbd7cJ pairs stale/no-target execute requests: Gold/candidate rc0 executed replies match, but the old candidate incorrectly writes layout errors into the clipboard notice. Both original figures inspected and all6 owned PIDs stopped. Repair preserves Gold reply/event semantics and retains clipboard notice. Action discovery now flushes changes it observes.13 Mix suites and app lint pass. These source repairs require CBC, matched native repeats, real multi-pane/broker-stall close proof, full release gate and final residual stress/acceptance audit. Overall NOT ACCEPTED. No installation, desk/VT or merge authorised.
 
 branch: lab/parity-term; head SHA:2469672ba95a20443b436203a8f4073276aa6ae9 (survey/lifecycle repair code; receipt HEAD contains checkpoint); NOT ACCEPTED — CBC/exact native/release validation and final survey disposition remain; CBC job ids:term-survey-fixes-2469672b (next scoped gate), term-startup-fd-exact-f2497f2d-a1 (green prior source, empty patch), term-startup-release-8c3ac72b-a1 (prior503-test release).
+
+
+### Pane-lease revoke seam compile correction
+
+CBC term-survey-fixes-2469672b-a1 passes all13 Mix suites, then fails Rust compilation with E0599: Terminal.retire calls revoke on the reusable native_session::PaneSession wrapper, which had exposed the callback only through consuming cleanup/Drop. Complete saved log reviewed and retained; TERM_PATCH is empty. No Rust test or artifact pass is claimed for that source.
+
+Repair6ec2a0d06252462963cc6a84b2e2650b120e68da exposes the existing local revoke callback as a non-consuming method. Cleanup and Drop reuse it; the existing ordering test now asserts authority is invalid immediately while cleanup has not run. No remote wait is added to local retirement. Diff check passes; CBC term-cleanup-revoke-6ec2a0d0 repeats the scoped gate, then worker formatting/exact repeats, matched native/release and outstanding acceptance audit continue. Overall NOT ACCEPTED. No install, desk/VT or merge.
+
+branch: lab/parity-term; head SHA:6ec2a0d06252462963cc6a84b2e2650b120e68da (compile correction; receipt HEAD contains checkpoint); NOT ACCEPTED — scoped Rust tests, exact native/release proof and residual survey disposition remain; CBC job ids:term-cleanup-revoke-6ec2a0d0 (next scoped gate), term-survey-fixes-2469672b-a1 (failed compilation after13 passing Mix suites).
