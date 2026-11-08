@@ -113,7 +113,7 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: System libraries
-        run: pacman -Syu --noconfirm --needed git rustup clang pkgconf libinput libxkbcommon wayland libdrm mesa seatd pixman systemd-libs dbus fontconfig freetype2 pipewire libpulse alsa-lib libxcb vulkan-icd-loader ttf-dejavu inetutils
+        run: pacman -Syu --noconfirm --needed git rustup clang pkgconf libinput libxkbcommon wayland libdrm mesa seatd pixman systemd-libs dbus fontconfig freetype2 pipewire libpulse alsa-lib libxcb vulkan-icd-loader ttf-dejavu adwaita-fonts noto-fonts-emoji inetutils
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
