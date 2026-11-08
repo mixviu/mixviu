@@ -267,6 +267,7 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     plan["comp"] = serde_json::json!(comp);
     bundle.launch = plan.clone();
     bundle.launch_plan = plan.clone();
+    plan["app_id"] = serde_json::json!(app_id(&bundle));
     let launch = serde_json::to_string(&plan).unwrap();
 
     bundle.program.source = format!(

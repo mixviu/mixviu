@@ -45,7 +45,6 @@ struct Host {
     quit_reply_closes: bool,
     windows: crate::child_windows::Windows,
 
-    headless: bool,
     deliveries: Vec<Arc<std::sync::atomic::AtomicU8>>,
     platform: crate::platform::Platform,
     selection: crate::terminal::clipboard::Clipboard,
@@ -137,15 +136,6 @@ struct Host {
     last_viewport: Option<[f32; 3]>,
     notice_command: Option<String>,
     saved: Option<crate::saved_state::Saved>,
-}
-impl Drop for Host {
-    fn drop(&mut self) {
-        // Stop authored mutations before draining terminal teardown. Keep this
-        // host's strong session/native owner alive across the whole drain;
-        // a transient actor Weak<State> upgrade cannot become its final owner.
-        self.runtime.shutdown();
-        self.terminals.shutdown();
-    }
 }
 impl Host {
     fn model_close_ready(&self) -> bool {
@@ -515,6 +505,7 @@ impl Host {
                         self.retained.insert(after, r.deferred);
                     }
                 }
+                Err(reply) => { let _=reply.send((10,json!({"error_code":"BUSY"}))); }
             }
         }
     }
@@ -1644,6 +1635,8 @@ fn macro_answer(answer: macros::commands::Answer) -> (u8, Value) {
 }
 impl Drop for Host {
     fn drop(&mut self) {
+        self.runtime.shutdown();
+        self.terminals.shutdown();
         for (_, (_, _, reply)) in std::mem::take(&mut self.deferred_replies) {
             self.calls.finish(
                 &reply,
@@ -1844,7 +1837,6 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         quit_reply_closes: bundle.manifest.quit_reply_closes,
         windows: Default::default(),
 
-        headless,
         deliveries: Vec::new(),
         platform,
         selection: crate::terminal::clipboard::Clipboard::none(),

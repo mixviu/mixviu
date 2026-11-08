@@ -774,9 +774,9 @@ mod tests {
             .iter()
             .all(|weight| available.iter().any(|face| face.weight.0 == *weight))
         {
-            let message = "fallback weight test requires installed DejaVu Sans Mono regular (400) and bold (700); set MIXOS_STRICT_FONT_TESTS=1 to require this fixture";
+            let message = "fallback weight test requires installed DejaVu Sans Mono regular (400) and bold (700); set MIX_TEST_STRICT_FONT=1 to require this fixture";
             assert!(
-                std::env::var("MIXOS_STRICT_FONT_TESTS").as_deref() != Ok("1"),
+                std::env::var("MIX_TEST_STRICT_FONT").as_deref() != Ok("1"),
                 "{message}"
             );
             eprintln!("{message}");

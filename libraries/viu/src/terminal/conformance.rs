@@ -365,7 +365,7 @@ fn real_mix_login_input_resize_exit_and_reap() {
         vec![
             ("HOME".into(), home.path().to_str().unwrap().into()),
             (
-                "MIXOS_BUS_SOCKET".into(),
+                "MIX_BUS_SOCKET".into(),
                 home.path().join("absent.sock").to_str().unwrap().into(),
             ),
         ],

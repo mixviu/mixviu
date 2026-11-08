@@ -1045,7 +1045,7 @@ impl Terminal {
                 let (name, value) = fd.marker();
                 args.push(format!("{name}={value}"));
                 let endpoint = handoff_endpoint(fd)?;
-                args.push(format!("MIXOS_BUS_SOCKET={endpoint}"));
+                args.push(format!("MIX_BUS_SOCKET={endpoint}"));
             }
             args.push(program.into());
             teletypewriter::create_pty_with_spawn_fd(

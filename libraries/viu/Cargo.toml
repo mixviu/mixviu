@@ -15,7 +15,6 @@ shell-profile = ["mix/json", "mix/regex", "mix/toml", "mix/datetime", "mix/url",
 test-support = []
 
 [dependencies]
-buildinfo = { path = "../buildinfo" }
 rio-vt = { git = "https://github.com/raphamorim/rio", rev = "932c1a7d9e07b4db5924f7a0dd689e823c3a1442", default-features = false, features = ["pty"] }
 paths = { path = "../paths" }
 fontdb = "=0.23.0"
@@ -52,7 +51,6 @@ egui-wgpu = { version = "=0.37.0", default-features = false }
 raw-window-handle = "=0.6.2"
 wayland-client = { version = "=0.31.15", default-features = false }
 files = { path = "../files" }
-fontdb = "=0.23.0"
 mimedb.workspace = true
 macros = { path = "../macros" }
 config = { path = "../config" }
