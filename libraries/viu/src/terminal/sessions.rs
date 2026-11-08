@@ -1007,19 +1007,32 @@ mod tests {
         let holder = std::thread::spawn(move || {
             let _pane = pane.lock().unwrap();
             entered.send(()).unwrap();
-            resumed.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+            resumed
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap();
         });
-        held.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+        held.recv_timeout(std::time::Duration::from_secs(1))
+            .unwrap();
         runtime.block_on(async {
             let UnixConnectOutcome::VerifiedUnix(caller) =
-                NodedClient::connect_unix("", &url, &options, None).await.unwrap()
-            else { panic!("verified burst caller required") };
-            let parent = caller.session_list().await.unwrap().records.into_iter()
+                NodedClient::connect_unix("", &url, &options, None)
+                    .await
+                    .unwrap()
+            else {
+                panic!("verified burst caller required")
+            };
+            let parent = caller
+                .session_list()
+                .await
+                .unwrap()
+                .records
+                .into_iter()
                 .find(|r| r.role == Role::Term && Some(r.instance_id) == child.parent_instance)
                 .unwrap();
             let body = json!({"target":{"instance_id":parent.instance_id,
                 "incarnation":parent.incarnation,"pane_id":child.pane_id.unwrap(),
-                "pane_generation":child.pane_generation.unwrap()}}).to_string();
+                "pane_generation":child.pane_generation.unwrap()}})
+            .to_string();
             // Use the actual verified transport and bounded recipient queue.
             // A fresh isolated owner keeps this pressure test independent of
             // the ordinary input/replay/expiry proof's connection lifecycle.
@@ -1033,11 +1046,18 @@ mod tests {
                 let barrier = barrier.clone();
                 calls.spawn(async move {
                     barrier.wait().await;
-                    tokio::time::timeout(std::time::Duration::from_secs(10),
-                        caller.client().call_with_headers_raw(&destination,"term.session",
-                            &Default::default(),&body)).await
-                        .expect("burst request must receive a bounded reply")
-                        .expect("burst transport must retain its caller")
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(10),
+                        caller.client().call_with_headers_raw(
+                            &destination,
+                            "term.session",
+                            &Default::default(),
+                            &body,
+                        ),
+                    )
+                    .await
+                    .expect("burst request must receive a bounded reply")
+                    .expect("burst transport must retain its caller")
                 });
             }
             barrier.wait().await;
@@ -1054,14 +1074,19 @@ mod tests {
                     assert!(body["panes"].as_array().is_some_and(|p| !p.is_empty()));
                     accepted += 1;
                 } else {
-                    assert_eq!(rc,10,"{body}");
-                    assert!(matches!(body["error_code"].as_str(),
-                        Some("RESOURCE_LIMIT" | "FORBIDDEN")),"{body}");
+                    assert_eq!(rc, 10, "{body}");
+                    assert!(
+                        matches!(
+                            body["error_code"].as_str(),
+                            Some("RESOURCE_LIMIT" | "FORBIDDEN")
+                        ),
+                        "{body}"
+                    );
                     refused += 1;
                 }
             }
-            assert_eq!(accepted + refused,128);
-            assert!(refused > 0,"the burst must exercise bounded refusal");
+            assert_eq!(accepted + refused, 128);
+            assert!(refused > 0, "the burst must exercise bounded refusal");
             println!("NATIVE_READ_BURST accepted={accepted} refused={refused} completed=128");
         });
         holder.join().unwrap();
