@@ -27,8 +27,6 @@ foreign: {
       exit: "tokenizers with the fancy-regex/pure-Rust regex backend"},
     "simdutf": {kind: "vendored", via: "rio-vt (Viu terminal widget); Fable D6: Viu is not strict",
       exit: "pure-Rust UTF-8 validation (std or simdutf8)"},
-    "zstd-sys": {kind: "vendored", via: "zip",
-      exit: "zip without zstd, or a pure-Rust zstd (ruzstd)"},
     "wayland-backend": {kind: "vendored", via: "wayland-client/server (smithay, winit, toolkit)",
       exit: "the pure-Rust Wayland backend (no client_system/server_system)"},
     -- system library bindings (desktop and compositor only)
@@ -52,16 +50,14 @@ foreign: {
   -- Foreign code a strict crate reaches today pending a decision (Mark):
   --   libmimalloc-sys: the multi-call binary global allocator (daemon speed);
   --     exit: measure the system allocator, or mimalloc only in daemon builds.
-  --   zstd-sys: zip archives in libs/mix; exit: a pure-Rust zstd (ruzstd).
   -- Fable D2/D3 admits mixd's existing vendored static C; its admission
-  -- boundary is no new DT_NEEDED library. These four are the pinned service
+  -- boundary is no new DT_NEEDED library. These three are the pinned service
   -- personalities' existing closure, not permission for Viu/Rio in mixd.
   -- The strict_forbid package check and --elf check still apply to mixd.
   strict_exceptions: {
     -- Existing executable allocator debt follows system's shell profile.
-    -- The shell no longer reaches system's former zstd-sys exception.
     "mix": ["libmimalloc-sys"],
-    "mixd": ["libmimalloc-sys", "onig_sys", "sqlite-vec", "zstd-sys"]
+    "mixd": ["libmimalloc-sys", "onig_sys", "sqlite-vec"]
   },
   -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
   -- A trailing * matches a prefix.

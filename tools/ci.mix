@@ -34,7 +34,9 @@ fn run_step($argv, $env = {})
 end
 
 fn ensure_mix($mix)
-  if not exists($mix) then
+  -- CBC reuses target/: existence alone can select another commit's shell.
+  -- Cargo checks this tree's inputs and preserves the separate shell profile.
+  if $mix == "target/debug/mix" or not exists($mix) then
     run_step(["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"])
   end
 end
