@@ -153,7 +153,7 @@ on term.info
   $state=command($state,"term.info",$event.args)
 end
 on viu.session
-  if $state.font_fence.incarnation==$event.args.state.incarnation and $state.font_fence.revision!=nil and $event.args.state.revision!=nil and $settings.session_older($event.args.state.revision,$state.font_fence.revision) then return end
+  if not $event.args.state.lost and $event.args.state.error==nil and $state.font_fence.incarnation==$event.args.state.incarnation and $state.font_fence.revision!=nil and $event.args.state.revision!=nil and $settings.session_older($event.args.state.revision,$state.font_fence.revision) then return end
   $state.look.appearance=$event.args.appearance
   $state.settings_lost=$event.args.state.lost
   $state.settings_connected=not $event.args.state.lost and $event.args.state.incarnation!=nil and $event.args.state.error==nil

@@ -34,8 +34,7 @@ fn exit_code<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u8, D:
 struct StartupPolicy;
 impl mix::evaluator::CapabilityPolicy for StartupPolicy {
     fn check_builtin(&self, name: &str) -> Result<(), String> {
-        use mix::evaluator::CapabilityPolicy;
-        crate::runtime::WorkerPolicy.check_builtin(name)?;
+        mix::evaluator::CapabilityPolicy::check_builtin(&crate::runtime::WorkerPolicy, name)?;
         self.check_class(mix::builtins::capability_category(name))
     }
     fn check_class(&self, class: mix::builtins::CapabilityClass) -> Result<(), String> {
