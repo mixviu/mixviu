@@ -1,0 +1,61 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Current reader ownership and a process-wide two-job download/decode budget.
+$preview_owner=nil;$preview_epoch=0;$preview_serial=0;$preview_entries={};$preview_jobs={}
+fn preview_eligible($p)
+  return not $p.undecodable and $p.blobId!=nil and $p.blobId!="" and $p.size<=16777216 and contains(["image/png","image/jpeg","image/gif","image/webp"],lower(trim($p.type ?? "")))
+end
+fn previews_sync()
+  global $preview_owner,$preview_epoch,$preview_entries,$preview_serial,$preview_jobs
+  $owner=if $attachments_inline and $mode=="mail" and $message!=nil then {account:$active,generation:$wire_generations[$active] ?? 0,email:$message.id,ticket:($wire_data[$active] ?? {}).open_ticket} else nil end
+  if not deep_eq($owner,$preview_owner) then
+    for $p in values($preview_entries) if $p.path!=nil then try viu_files("remove",{path:$p.path}) catch $ignored nil end end end
+    $preview_owner=$owner;$preview_epoch=$preview_epoch+1;$preview_entries={}
+    if $owner!=nil then for $p in $message.attachments ?? [] if preview_eligible($p) then $preview_entries[$p.blobId]={state:"queued"} end end end
+  end
+  if $owner==nil then return end
+  for $p in $message.attachments ?? []
+    if len(keys($preview_jobs))>=2 then break end
+    if ($preview_entries[$p.blobId] ?? {}).state!="queued" then continue end
+    $preview_serial=$preview_serial+1;$ticket=to_string($preview_serial)
+    $runtime=env("XDG_RUNTIME_DIR")
+    if $runtime==nil or $runtime=="" then $preview_entries[$p.blobId]={state:"failed",reason:"No runtime directory for previews"};continue end
+    $dir=path_join($runtime,"email-preview");viu_private_directory($dir)
+    $a={account:$owner.account,blob:$p.blobId,mime:lower(trim($p.type)),ticket:$ticket,epoch:$preview_epoch,source:path_join($dir,$ticket..".blob"),destination:path_join($dir,$ticket..".png")}
+    $preview_jobs[$ticket]=$a;$preview_entries[$p.blobId]={state:"loading"}
+    $r=wire_start("email.preview",$a,nil,"preview")
+    if $r.rc!=0 then $preview_jobs=delete($preview_jobs,$ticket);$preview_entries[$p.blobId]={state:"failed",reason:$r.body.message} end
+  end
+end
+fn preview_completed($job,$answer)
+  global $preview_jobs,$preview_entries
+  $a=$preview_jobs[$job.args.ticket];$preview_jobs=delete($preview_jobs,$job.args.ticket)
+  if $a==nil then return end
+  if $preview_owner==nil or $a.epoch!=$preview_epoch or not wire_current($job) then
+    if exists($a.destination) then viu_files("remove",{path:$a.destination}) end
+    return
+  end
+  $preview_entries[$a.blob]=if $answer.rc==0 then {state:"shown",path:$a.destination} else {state:"failed",reason:$answer.body.message} end
+end
+fn preview_info($account,$email,$part)
+  if $preview_owner==nil or $preview_owner.account!=$account or $preview_owner.email!=$email.id then return {state:"none"} end
+  $p=$preview_entries[$part.blobId]
+  if $p==nil then return {state:"none"} end
+  return if $p.state=="shown" then {state:"shown"} elif $p.state=="failed" then {state:"failed",reason:$p.reason} else {state:"loading"} end
+end
+fn preview_model($m)
+  $v=$m.attachment_tiles.initial;$items=[]
+  if $attachments_inline and $mode=="mail" then
+    $i=0
+    for $p in ($message ?? {}).attachments ?? []
+      $item=$v.items[$i];$i=$i+1
+      if not preview_eligible($p) then continue end
+      $shown=preview_info($active,$message,$p);$entry=$preview_entries[$p.blobId] ?? {}
+      $item.preview={phase:if $shown.state=="shown" then "ready" elif $shown.state=="failed" then "failed" else "pending" end,path:$entry.path}
+      $item.alt="Preview of "..$item.name;$item.status=if $shown.state=="failed" then "Couldn't show "..$item.name..": "..$shown.reason else "Loading "..$item.name.."…" end
+      push($items,$item)
+    end
+  end
+  $v.items=$items;$m.previews_visible=len($items)>0
+  $m.file_previews={id:"reader-previews",kind:"file-previews",label:"",initial:$v,properties:{}}
+  return $m
+end

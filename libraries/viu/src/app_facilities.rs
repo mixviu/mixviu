@@ -16,9 +16,12 @@ pub struct Facilities {
     app_commands: std::collections::BTreeSet<String>,
     ui: bool,
     debug: bool,
+    mix_describe: bool,
     installed: bool,
     context: Option<egui::Context>,
     pub surface: Option<Value>,
+    argument_error: String,
+    argument_error_overrides: BTreeMap<String, String>,
     pub macros: Option<macros::Session>,
     next: u64,
     pending: BTreeMap<u64, Reply>,
@@ -143,9 +146,16 @@ impl Facilities {
             } else {
                 Default::default()
             },
+            mix_describe: manifest.commands.iter().any(|name| name == "app.describe"),
+
             installed: false,
             context: None,
             surface,
+            argument_error: manifest
+                .argument_error
+                .clone()
+                .unwrap_or_else(|| "ARGUMENT".into()),
+            argument_error_overrides: manifest.argument_error_overrides.clone(),
             macros,
             next: 0,
             pending: BTreeMap::new(),
@@ -172,7 +182,7 @@ impl Facilities {
         self.events.lost_batch(lost);
         for record in records {
             self.events
-                .push(toolkit::executed::topic(&self.app), record.body(), 0);
+                .push(toolkit::executed::topic(&self.service), record.body(), 0);
         }
         if self.ui && !self.installed {
             toolkit::drive::install(ctx, &self.app);
@@ -269,11 +279,14 @@ impl Facilities {
             .as_ref()
             .is_some_and(|s| s["arguments_any"] != true)
             && !r.command.starts_with(&format!("{}.macros.", self.app))
+            && !(self.debug
+                && (r.command == format!("{}.debug", self.app)
+                    || r.command.starts_with(&format!("{}.debug.", self.app))))
             && !r.args.is_object()
         {
             let _ = r.reply.send((
                 10,
-                json!({"error_code":"ARGUMENT","message":"arguments must be a JSON object"}),
+                json!({"error_code":self.argument_error_overrides.get(&r.command).unwrap_or(&self.argument_error),"message":"arguments must be a JSON object"}),
             ));
             return None;
         }
@@ -285,7 +298,7 @@ impl Facilities {
                 r.args["id"] = json!(id);
             }
         }
-        if r.command == "app.describe" || r.command == "HELP" {
+        if (r.command == "app.describe" && !self.mix_describe) || r.command == "HELP" {
             if let Some(surface) = &self.surface {
                 let _ = r.reply.send((
                     0,

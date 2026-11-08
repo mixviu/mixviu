@@ -52,6 +52,8 @@ applications' own operation deadlines still apply independently.
 Window settings have an independent `retain_window_on_loss` contract
 (default `true`). A bundle selecting `false` uses the authority's empty
 window map during loss, so automatic decoration fallback remains native.
-Appearance palette retention is unchanged. Screenshot selects this policy
-to preserve its accepted gold behaviour; the other accepted bundles retain
-their last window choices.
+Appearance palette retention is independent. Screenshot and Workshop select
+this policy to preserve their accepted gold behaviour; other accepted window
+bundles retain their last window choices. Appearance retention after loss is
+separately opt-in for Backdrop. Exact-release native deadline/cancellation
+witnesses are in [six-app-integration-acceptance.md](six-app-integration-acceptance.md).

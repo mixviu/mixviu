@@ -55,14 +55,12 @@ deadlines and bounded image export are counted in
 [round2-native.md](round2-native.md); application inventories and deferrals are
 in [screenshot.md](screenshot.md) and [prefs.md](prefs.md).
 
-## Dopus inventory for a later round
+## Dopus migration
 
-No Dopus rewrite here. Its host additionally owns: application CLI/profile
-resolution; native/Rust comparator selection; file intents and key translation;
-modal reservations and reply fences; macros/jobs and chooser service wiring;
-appearance/settings synchronisation; decorated window/title-band slots;
-native menu/action hosting offers and acknowledgement; frame/input/capture
-receipts, compact state and command descriptions; asynchronous shutdown with
-persisted config and delivered replies. Some are reusable native mechanisms,
-others must move to Dopus Mix policy. They cannot simply be copied into the
-generic host as application-specific dispatch.
+Dopus now uses `viu run apps/dopus`. Its per-app Rust host and comparator
+are retired. Mix owns CLI policy, file actions, forms, configuration, chooser
+policy and application models. Reusable Viu facilities own native viewports,
+reply fences, timers, jobs, macros, live settings, native menus and capture.
+The chooser presenter lives in `libraries/viu/src/chooser_host.rs`; it accepts
+a Mix bundle and contains no Dopus reducer. See [dopus.md](dopus.md) for the
+full inventory, evidence and current acceptance verdict.

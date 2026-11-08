@@ -44,6 +44,11 @@ Do not use a dirty source checkout as the oracle.
    Seed a full constant 60-sample history when comparing chart geometry;
    startup/tick timing must not accidentally become different chart data.
    Use a separate varied/gapped history to test chart behaviour.
+   For restart/selection-reveal pairs, seed the same initial saved window
+   size before launching both processes. Equal final dimensions do not imply
+   equal reveal geometry if one process centred its selection before the
+   compositor resized its first frame. Retain startup sizing and in-progress
+   scroll captures as diagnostics; compare the settled, matched state.
 7. Stop all owned processes in `finally`; verify that every PID and the
    private broker exited. Keep failed runs and logs. Store private scripts,
    captures and receipts in the private hub, outside this public repository.
@@ -55,7 +60,9 @@ Bus traffic in this recipe is between independent processes.
 
 The reusable comparison driver is `tools/parity_compare.mix`. Run it with
 Mix, passing gold PNG, candidate PNG, a new output directory and optionally a
-JSON region map such as `{"header":[0,0,1040,38],"status":[0,650,1040,30]}`.
+path to a JSON region-map file containing, for example,
+`{"header":[0,0,1040,38],"status":[0,650,1040,30]}`. The fourth argument is
+a filename, not inline JSON.
 It refuses unequal sizes and existing output directories, writes crops,
 side-by-side/diff figures and `comparison.json`, and leaves its verdict as
 `inspection-required`. Choose region rectangles from the matching gold state.
@@ -97,6 +104,15 @@ surfaces with the same requests, including refusals and stale replies. Match
 structured replies rather than merely checking rc 0. Test callbacks through
 native input as well as direct Bus calls. Retain daemon-backed behaviour
 tests, representative large datasets and measured row-processing budgets.
+
+Preserve caller identity across operations whose contract depends on it.
+For example, Ced edits and their undo use one persistent native Bus citizen;
+a separate citizen tests cross-origin refusal. Spawning a new anonymous
+client for every request changes the contract under test. Verify the gold
+identity behaviour before changing a fixture, and retain its original
+assertions and deadlines. Run launch/interoperability witnesses without
+unrelated app suites competing for the same machine; retain any concurrent
+admission failures separately from the isolated paired result.
 
 While the candidate remains running, apply settingsd changes for mode, scheme,
 style, accent, density, roundness, font family/weight/size, mono family, text
@@ -192,3 +208,25 @@ identity fence and corrects the old inventory's UID/confirmation claim.
 Five live Prefs variants plus settings authority loss/recovery and Mix-owned
 close passed on one candidate PID; that separate frame test does not grant
 Monitor visual, functional or ABP acceptance. Overall verdict: **FAIL**.
+
+## Native caret phases
+
+Keep the first captures when a text caret blinks differently. Take additional
+read-only captures in both lanes without changing focus, selection or text.
+Compare the same native caret phase; retain every sample and record the chosen
+pair. Decoded pixel hashes can establish an exact match for the affected form
+before comparing all its regions. This closes a capture-state mismatch; a small
+SSIM score alone never grants a caret waiver. Keep functional input assertions
+and request deadlines unchanged, and never retry a refused input request.
+
+Fractional layouts also need inspection at their actual width. Use the row's
+final rectangle inside the native scroll area when checking metadata placement;
+the parent's available width can differ after pixel rounding. A one-pixel text
+shift is a layout defect when it comes from that measurement error.
+
+Match the first data-bearing layout too. A resizable table can retain column
+widths from its first draw, so equal final dimensions and rows are insufficient.
+For Email, both lanes start without accounts, receive the same window placement,
+then receive the same saved account. Preserve the password/readiness requests,
+all assertions and deadlines. Keep the original unmatched captures alongside
+the corrected pair; do not resize columns manually to manufacture agreement.

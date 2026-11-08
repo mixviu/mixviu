@@ -44,6 +44,20 @@ pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
                     r["id"].is_string()
                         && r["label"].is_string()
                         && r["value"].as_str().is_some_and(|s| s.len() <= 65536)
+                        && match r["type"].as_str() {
+                            None | Some("text" | "label") => true,
+                            Some("checkbox") => {
+                                matches!(r["value"].as_str(), Some("true" | "false"))
+                            }
+                            Some("select") => r["options"].as_array().is_some_and(|options| {
+                                options.len() <= 256
+                                    && options
+                                        .iter()
+                                        .all(|o| o["id"].is_string() && o["label"].is_string())
+                                    && options.iter().any(|o| o["id"] == r["value"])
+                            }),
+                            _ => false,
+                        }
                 })
         }),
         "document-tabs" => {
@@ -120,9 +134,9 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
                 .is_some_and(|(a, b)| {
                     a.len() == b.len()
                         && a.iter().zip(b).all(|(a, b)| {
-                            a["id"] == b["id"]
-                                && a["label"] == b["label"]
-                                && (a["read_only"] != true || a == b)
+                            let mut expected = a.clone();
+                            expected["value"] = b["value"].clone();
+                            expected == *b && (a["read_only"] != true || a == b)
                         })
                 })
         {
@@ -247,6 +261,90 @@ pub fn draw(
     if kind == "form-fields" {
         let mut rows = value.clone();
         let mut changed = false;
+        if rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["type"].is_string())
+        {
+            let response = ui
+                .vertical(|ui| {
+                    for row in rows.as_array_mut().unwrap() {
+                        let mut text = row["value"].as_str().unwrap().to_owned();
+                        ui.push_id(row["id"].as_str().unwrap(), |ui| {
+                            ui.add_enabled_ui(
+                                row["read_only"] != true || row["type"] == "label",
+                                |ui| match row["type"].as_str() {
+                                    Some("label") => {
+                                        ui.label(&text);
+                                    }
+                                    Some("checkbox") => {
+                                        let mut checked = text == "true";
+                                        changed |= ui
+                                            .checkbox(&mut checked, row["label"].as_str().unwrap())
+                                            .changed();
+                                        text = checked.to_string();
+                                    }
+                                    Some("select") => {
+                                        ui.horizontal(|ui| {
+                                            if row["inline_label"] != false {
+                                                ui.label(row["label"].as_str().unwrap());
+                                            }
+                                            let selected = row["options"]
+                                                .as_array()
+                                                .unwrap()
+                                                .iter()
+                                                .find(|o| o["id"] == text)
+                                                .unwrap()["label"]
+                                                .as_str()
+                                                .unwrap();
+                                            egui::ComboBox::from_id_salt("select")
+                                                .selected_text(selected)
+                                                .show_ui(ui, |ui| {
+                                                    for option in row["options"].as_array().unwrap()
+                                                    {
+                                                        if toolkit::selectable(
+                                                            ui,
+                                                            option["id"] == text,
+                                                            option["label"].as_str().unwrap(),
+                                                        )
+                                                        .clicked()
+                                                        {
+                                                            text = option["id"]
+                                                                .as_str()
+                                                                .unwrap()
+                                                                .to_owned();
+                                                            changed = true;
+                                                        }
+                                                    }
+                                                })
+                                                .response
+                                                .accessible_name(row["label"].as_str().unwrap());
+                                        });
+                                    }
+                                    _ => {
+                                        ui.horizontal(|ui| {
+                                            ui.label(row["label"].as_str().unwrap());
+                                            changed |= ui
+                                                .add(
+                                                    egui::TextEdit::singleline(&mut text)
+                                                        .desired_width(f32::INFINITY),
+                                                )
+                                                .changed();
+                                        });
+                                    }
+                                },
+                            );
+                        });
+                        row["value"] = json!(text);
+                    }
+                })
+                .response;
+            if changed {
+                emit(events, "edit", rows);
+            }
+            return response;
+        }
         return ui
             .scope(|ui| {
                 egui::Grid::new(id).num_columns(2).show(ui, |ui| {
