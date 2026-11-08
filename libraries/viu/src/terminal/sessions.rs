@@ -8,7 +8,11 @@ use super::{
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}, mpsc},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
 };
 #[path = "clipboard_requests.rs"]
 mod clipboard_requests;
@@ -76,33 +80,51 @@ struct Cleanup {
 }
 impl Cleanup {
     fn start(&mut self) -> Result<(), String> {
-        if self.sender.is_some() { return Ok(()); }
+        if self.sender.is_some() {
+            return Ok(());
+        }
         let (sender, receiver) = mpsc::sync_channel::<Arc<Mutex<Terminal>>>(32);
         let pending = self.pending.clone();
-        let worker = std::thread::Builder::new().name("viu-terminal-cleanup".into()).spawn(move || {
-            for terminal in receiver {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    terminal.lock().unwrap_or_else(|e| e.into_inner()).shutdown();
-                }));
-                if result.is_err() { eprintln!("terminal cleanup panicked; retiring its admission slot"); }
-                pending.fetch_sub(1, Ordering::AcqRel);
-            }
-        }).map_err(|e| format!("terminal cleanup worker: {e}"))?;
+        let worker = std::thread::Builder::new()
+            .name("viu-terminal-cleanup".into())
+            .spawn(move || {
+                for terminal in receiver {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        terminal
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .shutdown();
+                    }));
+                    if result.is_err() {
+                        eprintln!("terminal cleanup panicked; retiring its admission slot");
+                    }
+                    pending.fetch_sub(1, Ordering::AcqRel);
+                }
+            })
+            .map_err(|e| format!("terminal cleanup worker: {e}"))?;
         self.sender = Some(sender);
         self.worker = Some(worker);
         Ok(())
     }
-    fn reserve(&self) { self.pending.fetch_add(1, Ordering::AcqRel); }
+    fn reserve(&self) {
+        self.pending.fetch_add(1, Ordering::AcqRel);
+    }
     fn submit(&self, terminal: Arc<Mutex<Terminal>>) {
         // Active + pending panes never exceeds 32; this queue cannot fill
         // with nonempty removals, including while the worker is stalled.
-        self.sender.as_ref().expect("cleanup started before removal").send(terminal).expect("terminal cleanup owner alive");
+        self.sender
+            .as_ref()
+            .expect("cleanup started before removal")
+            .send(terminal)
+            .expect("terminal cleanup owner alive");
     }
 }
 impl Drop for Cleanup {
     fn drop(&mut self) {
         self.sender.take();
-        if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -118,8 +140,12 @@ struct State {
 }
 impl Drop for State {
     fn drop(&mut self) {
-        if self.sessions.is_empty() { return; }
-        if self.cleanup.start().is_err() { return; } // Terminal Drop still owns fallback cleanup.
+        if self.sessions.is_empty() {
+            return;
+        }
+        if self.cleanup.start().is_err() {
+            return;
+        } // Terminal Drop still owns fallback cleanup.
         for (_, terminal) in std::mem::take(&mut self.sessions) {
             terminal.lock().unwrap_or_else(|e| e.into_inner()).retire();
             self.cleanup.reserve();
@@ -211,23 +237,33 @@ impl Sessions {
         let removed = {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             state.closing = true;
-            if !state.sessions.is_empty() && state.cleanup.start().is_err() { return; }
+            if !state.sessions.is_empty() && state.cleanup.start().is_err() {
+                return;
+            }
             let removed = std::mem::take(&mut state.sessions);
             state.placements.clear();
             state.pane_ids.clear();
-            for _ in &removed { state.cleanup.reserve(); }
+            for _ in &removed {
+                state.cleanup.reserve();
+            }
             removed
         };
         for (_, terminal) in removed {
             terminal.lock().unwrap_or_else(|e| e.into_inner()).retire();
-            self.state.lock().unwrap_or_else(|e| e.into_inner()).cleanup.submit(terminal);
+            self.state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .cleanup
+                .submit(terminal);
         }
         let worker = {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             state.cleanup.sender.take();
             state.cleanup.worker.take()
         };
-        if let Some(worker) = worker { let _ = worker.join(); }
+        if let Some(worker) = worker {
+            let _ = worker.join();
+        }
     }
 
     fn native_handle(&self) -> Option<super::session_actor::NativeSession> {
@@ -476,8 +512,13 @@ impl Sessions {
             };
             let (id, pane_id) = {
                 let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
-                if state.closing { return Err("terminal owner closing".into()); }
-                if state.sessions.len().max(state.pane_ids.len()) + state.cleanup.pending.load(Ordering::Acquire) >= 32 {
+                if state.closing {
+                    return Err("terminal owner closing".into());
+                }
+                if state.sessions.len().max(state.pane_ids.len())
+                    + state.cleanup.pending.load(Ordering::Acquire)
+                    >= 32
+                {
                     return Err("terminal limit (32 active or closing panes) reached".into());
                 }
                 state.cleanup.start()?;
@@ -565,7 +606,11 @@ impl Sessions {
             // Serialize with native input before any teardown. Removal makes
             // this handle permanently stale; new panes receive a new handle.
             t.lock().unwrap_or_else(|e| e.into_inner()).retire();
-            self.state.lock().unwrap_or_else(|e| e.into_inner()).cleanup.submit(t);
+            self.state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .cleanup
+                .submit(t);
             return Ok(json!({"closed":true}));
         }
         let t = self.get(handle)?;
@@ -1178,6 +1223,17 @@ end
             assert_eq!(invoke("term.type",stale_layout).await.1["error_code"],"STALE_GENERATION","layout changes invalidate previously usable foreground input tokens");
             assert!(!invoke("term.snapshot",json!({"target":target,"contents":true})).await.1["text"].as_str().unwrap().contains("LAYOUT_STALE_MUST_NOT_WRITE"));
             for handle in ["vt-2","vt-3","vt-4"] {assert!(sessions.call("state",handle,json!({})).is_err());}
+            let retired_native=sessions.native.lock().unwrap().supervisor.as_ref().unwrap().handle.clone();
+            for id in [2,3,4] {assert!(retired_native.pane_generation(id).is_none(),"closed pane retained local input authority");}
+            // A retained close reply means local handles/authority are gone;
+            // the owned cleanup queue completes acknowledgement and reaping
+            // afterwards. Keep the real process proof, bounded as below for
+            // the final pane, without draining the surviving owner's session.
+            tokio::time::timeout(std::time::Duration::from_secs(5),async {
+                while [second_pid,third_pid,fourth_pid].iter().any(|pid|std::path::Path::new(&format!("/proc/{pid}")).exists()) {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            }).await.expect("protected closes must reap every owned child within the cleanup deadline");
             for pid in [second_pid,third_pid,fourth_pid] {
                 assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists(),"protected cleanup left child {pid}");
             }
@@ -1294,18 +1350,32 @@ end
         sessions.fixture_pane("vt-2", b"surviving cleanup");
         let borrowed = sessions.get("vt-1").unwrap();
         let poison = borrowed.clone();
-        assert!(std::thread::spawn(move || {
-            let _pane = poison.lock().unwrap();
-            panic!("controlled terminal poison fixture");
-        }).join().is_err());
-        borrowed.lock().unwrap_or_else(|e| e.into_inner()).before_pty_cleanup = Some(Box::new(|| panic!("controlled cleanup fixture")));
+        assert!(
+            std::thread::spawn(move || {
+                let _pane = poison.lock().unwrap();
+                panic!("controlled terminal poison fixture");
+            })
+            .join()
+            .is_err()
+        );
+        borrowed
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .before_pty_cleanup = Some(Box::new(|| panic!("controlled cleanup fixture")));
         sessions.call("close", "vt-1", json!({})).unwrap();
         sessions.call("close", "vt-2", json!({})).unwrap();
         let pending = sessions.state.lock().unwrap().cleanup.pending.clone();
         sessions.shutdown();
         assert_eq!(pending.load(Ordering::Acquire), 0);
         assert!(sessions.state.lock().unwrap().sessions.is_empty());
-        assert!(borrowed.lock().unwrap_or_else(|e| e.into_inner()).listener.type_text("late").is_err());
+        assert!(
+            borrowed
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .listener
+                .type_text("late")
+                .is_err()
+        );
     }
 
     #[test]
@@ -1317,7 +1387,9 @@ end
         let borrowed = sessions.get("vt-1").unwrap();
         let (release, blocked) = mpsc::sync_channel(1);
         borrowed.lock().unwrap().before_pty_cleanup = Some(Box::new(move || {
-            blocked.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            blocked
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
         }));
         let pending = sessions.state.lock().unwrap().cleanup.pending.clone();
         let start = std::time::Instant::now();
@@ -1331,14 +1403,22 @@ end
         assert!(!sessions.native.lock().unwrap().attempted);
         assert_eq!(pending.load(Ordering::Acquire), 1);
         release.send(()).unwrap();
-        assert!(elapsed < std::time::Duration::from_secs(1), "close waited for cleanup: {elapsed:?}");
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "close waited for cleanup: {elapsed:?}"
+        );
         assert!(borrowed.lock().unwrap().listener.type_text("late").is_err());
         // Owner teardown drains queued cleanup, while the native actor is
         // still retained. No detached job survives the final Sessions owner.
         let retained = sessions.clone();
         sessions.shutdown();
         assert_eq!(pending.load(Ordering::Acquire), 0);
-        assert!(retained.call("create", "", json!({})).unwrap_err().contains("owner closing"));
+        assert!(
+            retained
+                .call("create", "", json!({}))
+                .unwrap_err()
+                .contains("owner closing")
+        );
         drop(sessions);
         drop(retained);
     }

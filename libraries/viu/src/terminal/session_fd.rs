@@ -8,7 +8,10 @@ use std::fs::File;
 use std::io::{self, Seek, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::{Path, PathBuf};
-use std::sync::{OnceLock, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 use zeroize::Zeroizing;
 
 pub const MARKER: &str = "MIXOS_SESSION_FD";
@@ -43,12 +46,18 @@ fn quarantine(report: bool) {
         };
         // SAFETY: fcntl changes flags only; ownership is not assumed.
         if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
-            Some(format!("term inherited session descriptor unavailable: {}", io::Error::last_os_error()))
+            Some(format!(
+                "term inherited session descriptor unavailable: {}",
+                io::Error::last_os_error()
+            ))
         } else {
             None
         }
     });
-    if report && !REPORTED.swap(true, Ordering::AcqRel) && let Some(message) = diagnostic {
+    if report
+        && !REPORTED.swap(true, Ordering::AcqRel)
+        && let Some(message) = diagnostic
+    {
         eprintln!("{message}");
     }
 }
@@ -191,7 +200,10 @@ mod tests {
         }
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
         let version = crate::bundle::Bundle::load(&root, &["--version".into()]).unwrap();
-        assert!(matches!(crate::startup::evaluate(version.startup.as_ref().unwrap()).unwrap(), crate::startup::Choice::Exit { code: 0, .. }));
+        assert!(matches!(
+            crate::startup::evaluate(version.startup.as_ref().unwrap()).unwrap(),
+            crate::startup::Choice::Exit { code: 0, .. }
+        ));
         if std::env::var(MARKER).unwrap() == "64" {
             // Reuse an initially closed descriptor after the quiet fence. The
             // later report must retain the original unavailable diagnosis.
@@ -199,7 +211,10 @@ mod tests {
             assert_eq!(unsafe { libc::dup2(replacement.as_raw_fd(), 64) }, 64);
         }
         let help = crate::bundle::Bundle::load(&root, &["--help".into()]).unwrap();
-        assert!(matches!(crate::startup::evaluate(help.startup.as_ref().unwrap()).unwrap(), crate::startup::Choice::Exit { code: 0, .. }));
+        assert!(matches!(
+            crate::startup::evaluate(help.startup.as_ref().unwrap()).unwrap(),
+            crate::startup::Choice::Exit { code: 0, .. }
+        ));
         quarantine_inherited();
         quarantine_inherited();
     }
@@ -208,11 +223,20 @@ mod tests {
     fn startup_reports_the_original_descriptor_fault_once_after_silent_version() {
         for marker in ["invalid", "2147483647", "64"] {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "terminal::session_fd::tests::startup_diagnostic_child", "--nocapture"])
+                .args([
+                    "--exact",
+                    "terminal::session_fd::tests::startup_diagnostic_child",
+                    "--nocapture",
+                ])
                 .env("VIU_STARTUP_DIAGNOSTIC_CHILD", "1")
                 .env(MARKER, marker)
-                .output().unwrap();
-            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
             let expected = if marker == "invalid" {
                 "term inherited session descriptor marker is invalid\n"
             } else {

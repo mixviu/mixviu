@@ -430,7 +430,9 @@ impl Runtime {
     }
 }
 impl Drop for Runtime {
-    fn drop(&mut self) { self.shutdown(); }
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }
 
 async fn bounded<T>(
