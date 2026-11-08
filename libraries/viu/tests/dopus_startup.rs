@@ -31,19 +31,33 @@ fn bundle_autostarts_and_embedded_host_initialises_before_first_command() {
         if embedded {
             // The legacy Rust host was retired at cut-over. Retain the
             // explicit embedded contract alongside the production bundle.
-            runtime.load(Program {
-                source: "$app_args=nil\n".to_owned() + &std::fs::read_to_string(root.join("app.mix")).unwrap(),
-                path: root.join("app.mix"),
-                scene: "dopus".into(),
-                citizen: "dopus".into(),
-            }).unwrap();
-            runtime.event("dopus.initialise".into(), json!({"app_dir":root,"profile":profile.path()})).unwrap();
+            runtime
+                .load(Program {
+                    source: "$app_args=nil\n".to_owned()
+                        + &std::fs::read_to_string(root.join("app.mix")).unwrap(),
+                    path: root.join("app.mix"),
+                    scene: "dopus".into(),
+                    citizen: "dopus".into(),
+                })
+                .unwrap();
+            runtime
+                .event(
+                    "dopus.initialise".into(),
+                    json!({"app_dir":root,"profile":profile.path()}),
+                )
+                .unwrap();
         } else {
             runtime
                 .load(
-                    viu::launch::load(&root, &["--profile".into(), profile.path().to_string_lossy().into_owned()])
-                        .unwrap()
-                        .program,
+                    viu::launch::load(
+                        &root,
+                        &[
+                            "--profile".into(),
+                            profile.path().to_string_lossy().into_owned(),
+                        ],
+                    )
+                    .unwrap()
+                    .program,
                 )
                 .unwrap();
         }
