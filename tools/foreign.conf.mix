@@ -41,17 +41,14 @@ foreign: {
     "libseat-sys": {kind: "system", via: "smithay session", exit: "none planned: OS interface"},
     "khronos-egl": {kind: "system", via: "wgpu-hal GLES", exit: "none planned: GPU driver interface"},
     "x11-dl": {kind: "system", via: "winit X11 backend", exit: "disable winit's x11 feature"},
-    "libpulse-sys": {kind: "system", via: "drivers (audio)", exit: "PipeWire only"},
-    "libspa": {kind: "system", via: "pipewire (portald)", exit: "none planned: OS interface"},
-    "libspa-sys": {kind: "system", via: "pipewire (portald)", exit: "none planned: OS interface"},
-    "pipewire-sys": {kind: "system", via: "portald screen capture", exit: "none planned: OS interface"}
+    "libpulse-sys": {kind: "system", via: "drivers (audio)", exit: "PipeWire only"}
   },
   -- Crates that always declare a native helper but compile no foreign code
   -- when this feature is on (their build script skips it).
   pure_when: {"blake3": "pure"},
-  -- `system` builds the shipped `mix` binary (the multi-call shell with the
-  -- maild, noded, webd, dnsd and monitord personalities).
-  strict: ["mix", "mix-shell", "system", "mixd"],
+  -- Main split the former `system` package into the mix shell engine and
+  -- mixd service engine, and renamed the interpreter library to lib-mix.
+  strict: ["lib-mix", "mix-shell", "mix", "mixd"],
   -- Foreign code a strict crate reaches today pending a decision (Mark):
   --   libmimalloc-sys: the multi-call binary global allocator (daemon speed);
   --     exit: measure the system allocator, or mimalloc only in daemon builds.
@@ -61,12 +58,14 @@ foreign: {
   -- personalities' existing closure, not permission for Viu/Rio in mixd.
   -- The strict_forbid package check and --elf check still apply to mixd.
   strict_exceptions: {
-    "system": ["libmimalloc-sys", "zstd-sys"],
+    -- Existing executable allocator debt follows system's shell profile.
+    -- The shell no longer reaches system's former zstd-sys exception.
+    "mix": ["libmimalloc-sys"],
     "mixd": ["libmimalloc-sys", "onig_sys", "sqlite-vec", "zstd-sys"]
   },
   -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
   -- A trailing * matches a prefix.
-  strict_forbid: ["viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
+  strict_forbid: ["lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
     "glow", "glutin*", "smithay*", "wayland-*", "x11*", "xkbcommon*", "calloop-wayland-source",
     "iced*", "bevy*", "vello*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
   -- Shared libraries a built strict binary must not need (DT_NEEDED prefix).
