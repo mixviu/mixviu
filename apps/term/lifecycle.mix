@@ -31,6 +31,15 @@ fn select_pane($s,$id,$native)
   if $s.tabs[$s.active].active_pane!=$id then invalidate_active($s,$native) end
   return $next
 end
+fn focus_visible($s,$handle,$native)
+  if len($s.tabs)==0 then return $s end
+  $tab=$s.tabs[$s.active]
+  for $id in $model.leaves($tab.tree)
+    if $s.panes[to_string($id)].handle==$handle and $tab.active_pane!=$id then return select_pane($s,$id,$native) end
+  end
+  -- A delayed UI click may name a still-live pane in the previous tab.
+  return $s
+end
 fn close_tab($s,$id,$native)
   $was_active=$model.tab_index($s,$id)==$s.active
   $out=$model.close_tab($s,$id)

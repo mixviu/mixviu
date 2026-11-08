@@ -27,6 +27,10 @@ fn denied($op,$handle,$args)
   return {rc:10,body:{error_code:"FORBIDDEN"}}
 end
 $s=layout();$target={pane_id:"1",pane_generation:"9",instance_id:repeat("a",32),incarnation:repeat("b",32)}
+$lifecycle=require("lifecycle.mix")
+for $handle in ["vt-1","vt-3","vt-4","removed"]
+  check(deep_eq($lifecycle.focus_visible($s.layout,$handle,fn($op,$handle,$args)=denied($op,$handle,$args)),$s.layout),"stale, removed or already-focused UI handles cannot retarget another tab or invalidate control")
+end
 $out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"v",target:$target},fn($op,$handle,$args)=denied($op,$handle,$args))
 check($out.rc==10 and deep_eq($out.state,$s),"denied split preserves complete state")
 fn native($op,$handle,$args)

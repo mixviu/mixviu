@@ -256,9 +256,8 @@ on term.intent
     $out=$bus.dispatch($state,$name,{id:to_number($a.value)},$native)
     $state=pump_events($out.state);$state=publish_term($state);reply($out.rc,$out.body)
   elif $a.id=="terminal" and $a.action=="focus" then
-    for $p in values($state.layout.panes)
-      if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$lifecycle.select_pane($state.layout,$p.id,$native);$state=pump_events($state);$state=publish_term($state) end
-    end
+    $next=$lifecycle.focus_visible($state.layout,$a.value,$native)
+    if not deep_eq($next,$state.layout) then $state.layout=$next;$state=pump_events($state);$state=publish_term($state) end
   elif $a.id=="terminal-find" then $state=$find.intent($state,$a,$native);$state=publish_term($state)
   elif $a.id=="terminal" and $a.action=="search" then $state=$find.observed($state,$a.value,$native);$state=publish_term($state)
   elif $a.id=="terminal" and $a.action=="command" then
