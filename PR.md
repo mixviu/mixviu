@@ -37,8 +37,11 @@ or deployment.
   hook marker present in the opt-in debug binary and absent from ordinary
   debug and release binaries; release-feature rejection fired as intended.
 - Run: pinned gitleaks 8.30.1 full-history redacted scan passed after the
-  scanner exception commit. Only scanner fingerprints and documentation
-  changed after the CBC-tested Rust tree.
+  scanner exception commit.
+- GitHub exposed a lifecycle fixture trace race: formatted writes from its
+  readiness child interleaved with the citizen boot record. Assemble that
+  small record before appending it. Assertions and timeouts are unchanged;
+  targeted CBC validation follows this fixture-only change.
 - GitHub required checks: `ci-ok` and `security-ok`; live results are on PR #7.
 - Not tested: desktop sessions, installation or production deployment.
 

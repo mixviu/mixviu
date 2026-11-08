@@ -418,7 +418,11 @@ fn term_ignoring_child_fixture() {
         .create(true)
         .open(std::env::var_os("REL_TRACE").expect("fixture trace"))
         .unwrap();
-    writeln!(trace, "legacy-ready|{{\"pid\":{}}}|t=0", std::process::id()).unwrap();
+    // Formatting directly into the file writes fragments. The citizen can
+    // append its boot record between those fragments, corrupting both lines.
+    // Assemble first so the small readiness record is appended in one write.
+    let ready = format!("legacy-ready|{{\"pid\":{}}}|t=0\n", std::process::id());
+    trace.write_all(ready.as_bytes()).unwrap();
     loop {
         std::thread::park();
     }
