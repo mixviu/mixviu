@@ -3448,3 +3448,10 @@ A private one-line Mix overlay on the recorded release binary passes native prof
 Next term-font-fence-ca393a2e repeats the scoped gate, then worker formatting/exact native and full release validation. Final independent findings/queue stress and acceptance audit remain open. Overall NOT ACCEPTED; no install, desk/VT or merge.
 
 branch: lab/parity-term; head SHA:ca393a2e2b4f1e1403c80e46f8e6c9777f72a9a3 (first font fence initialisation and actual callback regression; receipt HEAD contains checkpoint); NOT ACCEPTED — exact CBC/native/release and independent findings disposition remain; CBC job ids:term-font-fence-ca393a2e (next scoped gate), term-survey-release-715f5518-a1 (green507 tests; native settings regression found).
+
+
+### Font callback regression reached recovery; numeric assertion corrected
+
+CBC term-font-fence-ca393a2e-a1 passes13 Mix suites and3 startup tests. The actual embedded bundle passes initial profile18.5, stale usable revision suppression and older authority loss with About disconnected, then reaches recovery16. It fails because serde_json distinguishes integer16 from float16.0 in the fixture assertion. Complete14752-byte saved log reviewed and retained; returned formatting-only patch applied. No scoped gate or artifact pass is claimed. Source61afd3bb927d025dd1e5c4ae57d19f804de05664 compares the actual JSON number through as_f64 against Some(expected), preserving exact numeric equality and all four transition checks. Production code is unchanged by this assertion correction. Next term-font-numeric-61afd3bb repeats the scoped gate; exact native/release validation and fresh survey findings disposition remain. Overall NOT ACCEPTED; no install, desk/VT or merge.
+
+branch: lab/parity-term; head SHA:61afd3bb927d025dd1e5c4ae57d19f804de05664 (numeric font callback fixture correction; receipt HEAD contains checkpoint); NOT ACCEPTED — scoped exact gate/native/release and independent findings disposition remain; CBC job ids:term-font-numeric-61afd3bb (next scoped gate), term-font-fence-ca393a2e-a1 (recovery reached; numeric assertion failure).
