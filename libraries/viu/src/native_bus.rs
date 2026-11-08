@@ -365,21 +365,45 @@ struct SendOnly {
 impl SendOnly {
     fn decode(spec: &Value) -> MixResult<Self> {
         let name = |key: &str, limit: usize| -> MixResult<String> {
-            spec[key].as_str().filter(|s| !s.is_empty() && s.len() <= limit && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)))
-                .map(str::to_owned).ok_or_else(|| failure(format!("native.send requires a bounded {key}")))
+            spec[key]
+                .as_str()
+                .filter(|s| {
+                    !s.is_empty()
+                        && s.len() <= limit
+                        && s.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+                })
+                .map(str::to_owned)
+                .ok_or_else(|| failure(format!("native.send requires a bounded {key}")))
         };
         let timeout = match spec.get("timeout") {
             None => 2.0,
-            Some(v) => v.as_f64().ok_or_else(|| failure("native.send timeout must be numeric"))?,
+            Some(v) => v
+                .as_f64()
+                .ok_or_else(|| failure("native.send timeout must be numeric"))?,
         };
-        if !timeout.is_finite() || !(0.1..=180.0).contains(&timeout) { return Err(failure("native.send timeout must be 0.1..180 seconds")); }
+        if !timeout.is_finite() || !(0.1..=180.0).contains(&timeout) {
+            return Err(failure("native.send timeout must be 0.1..180 seconds"));
+        }
         let body = spec["body"].to_string();
-        if body.len() > 1_048_576 { return Err(failure("native.send body exceeds budget")); }
-        Ok(Self { target: name("target",64)?, command: name("command",256)?, body, timeout: Duration::from_secs_f64(timeout) })
+        if body.len() > 1_048_576 {
+            return Err(failure("native.send body exceeds budget"));
+        }
+        Ok(Self {
+            target: name("target", 64)?,
+            command: name("command", 256)?,
+            body,
+            timeout: Duration::from_secs_f64(timeout),
+        })
     }
     async fn dispatch(self, native: Arc<SupervisedClient>) -> Result<(), String> {
-        tokio::time::timeout(self.timeout, native.send_with_headers(&self.target, &self.command, &BTreeMap::new(), &self.body))
-            .await.map_err(|_| "native.send transport timeout".to_owned())?.map_err(|e| e.to_string())
+        tokio::time::timeout(
+            self.timeout,
+            native.send_with_headers(&self.target, &self.command, &BTreeMap::new(), &self.body),
+        )
+        .await
+        .map_err(|_| "native.send transport timeout".to_owned())?
+        .map_err(|e| e.to_string())
     }
 }
 pub struct Bridge {
@@ -461,10 +485,15 @@ impl Bridge {
         // waits for a recipient response. The application owns payload policy.
         if target == "viu-local" && command == "native.send.batch" {
             let spec = crate::runtime::to_json(args)?;
-            let messages = spec["messages"].as_array().filter(|m| !m.is_empty() && m.len() <= 32)
+            let messages = spec["messages"]
+                .as_array()
+                .filter(|m| !m.is_empty() && m.len() <= 32)
                 .ok_or_else(|| failure("native.send.batch requires 1..32 messages"))?;
             // Preflight the whole batch before any message crosses the Bus.
-            let messages = messages.iter().map(SendOnly::decode).collect::<MixResult<Vec<_>>>()?;
+            let messages = messages
+                .iter()
+                .map(SendOnly::decode)
+                .collect::<MixResult<Vec<_>>>()?;
             let mut running = tokio::task::JoinSet::new();
             let mut results = vec![Value::Null; messages.len()];
             for (index, message) in messages.into_iter().enumerate() {
@@ -473,13 +502,19 @@ impl Bridge {
             }
             while let Some(result) = running.join_next().await {
                 let (index, result) = result.map_err(failure)?;
-                results[index] = match result { Ok(()) => json!({"dispatched":true}), Err(error) => json!({"dispatched":false,"error":error}) };
+                results[index] = match result {
+                    Ok(()) => json!({"dispatched":true}),
+                    Err(error) => json!({"dispatched":false,"error":error}),
+                };
             }
             let result = crate::runtime::from_json(json!({"results":results}))?;
-            return Ok((0,result.clone(),result));
+            return Ok((0, result.clone(), result));
         }
         if target == "viu-local" && command == "native.send" {
-            SendOnly::decode(&crate::runtime::to_json(args)?)?.dispatch(native).await.map_err(failure)?;
+            SendOnly::decode(&crate::runtime::to_json(args)?)?
+                .dispatch(native)
+                .await
+                .map_err(failure)?;
             let sent = crate::runtime::from_json(json!({"dispatched":true}))?;
             return Ok((0, sent.clone(), sent));
         }
