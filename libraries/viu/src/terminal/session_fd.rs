@@ -42,7 +42,7 @@ fn quarantine(report: bool) {
                 }
             }
             _ if report => eprintln!("term inherited session descriptor marker is invalid"),
-            _ => {},
+            _ => {}
         }
     }
 }
@@ -273,8 +273,14 @@ mod tests {
             let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
             let bundle = crate::bundle::Bundle::load(&root, &["--version".into()]).unwrap();
             let choice = crate::startup::evaluate(bundle.startup.as_ref().unwrap()).unwrap();
-            assert!(matches!(choice, crate::startup::Choice::Exit {code:0,..}));
-            assert_ne!(unsafe {libc::fcntl(fds[0],libc::F_GETFD)} & libc::FD_CLOEXEC,0);
+            assert!(matches!(
+                choice,
+                crate::startup::Choice::Exit { code: 0, .. }
+            ));
+            assert_ne!(
+                unsafe { libc::fcntl(fds[0], libc::F_GETFD) } & libc::FD_CLOEXEC,
+                0
+            );
             // Its first child must not inherit it, even without Mix support.
             quarantine_inherited();
             assert_ne!(
