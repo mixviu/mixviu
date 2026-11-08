@@ -18,8 +18,17 @@ fn surface_info()
   $selected_node=navigation_selected()
   return {schema:"email.v1",version:$ctx.version,selected:if $active=="" then nil else $active end,mode:$mode,source:$mail_settings.source,status:$status,default_account:$mail_settings.default_account,mail_options:{page_size:$mail_settings.page_size,mark_read_on_open:$mail_settings.mark_read_on_open,confirm_delete:$mail_settings.confirm_delete,quote_on_reply:$mail_settings.quote_on_reply,reply_position:$mail_settings.reply_position},accounts:$accounts,tree:map(navigation_rows(),fn($r)={key:$r.key,depth:$r.depth,label:$r.cells[0],unread:$r.count,expandable:$r.branch,expanded:$r.expanded,selected:$r.key==$selected_node}),compose:nil,compose_windows:[],confirm:nil,drafts_offered:len($compose_restore),form:form_info(),dialog:$chrome.dialog,ui:{places:$places_ratio,reader:1-$list_ratio,cursor:$tree_cursor,expanded:$expanded,theme_mode:$chrome.theme_choice.mode},migrating:$config_migration!=nil,exiting:$chrome.window_close,window:nil,owner_closing:$compose_owner_closing,quitting:$compose_quitting}
 end
+-- Presentation bounds only; keep full server data for reads, replies and exports.
+fn table_cell($value)
+  if type($value)!="string" then return "" end
+  if byte_length($value)<=4096 then return $value end
+  -- substr counts Unicode scalars: even four-byte scalars plus ellipsis fit.
+  return substr($value,0,1023).."…"
+end
 fn address_display($a)
-  return if $a==nil then "" elif $a.name!=nil and $a.name!="" then $a.name else $a.email ?? "" end
+  if type($a)=="string" then return table_cell($a) end
+  if type($a)!="map" then return "" end
+  return table_cell(if type($a.name)=="string" and $a.name!="" then $a.name else $a.email end)
 end
 fn action_context()
   $d=$wire_data[$active] ?? {}
@@ -49,13 +58,15 @@ fn compact_date($stamp)
   end
 end
 fn gold_rows($emails)
+  -- Bound display fields in one native pass; keep the bulk row expression pure.
+  $display=jq($emails,'def cell: if type!="string" then "" elif utf8bytelength<=4096 then . else .[0:1023]+"…" end; map({subject:(.subject|cell),sender:(.from | if type=="array" then .[0] else . end | if type=="string" then . else (if (.name|type)=="string" and .name!="" then .name else .email end) end | cell)})')
   $stamps=rows_project($emails,fn($m)=$m.receivedAt ?? $m.date ?? "")
   $instants=viu_instants($stamps);$now=$instants.now;$times=$instants.values
   $dates=rows_project($stamps,fn($stamp)=$times[$stamp]==nil ? "" : date_format($times[$stamp].unix,$times[$stamp].day==$now.day ? "%H:%M" : ($now.day-$times[$stamp].day>=1 and $now.day-$times[$stamp].day<=6 ? "%a %H:%M" : ($times[$stamp].year==$now.year ? "%-d %b" : "%d/%m/%Y"))))
-  return rows_project($emails,fn($m,$i)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$m.subject ?? "",len($m.from ?? [])>0 ? ($m.from[0].name!=nil and $m.from[0].name!="" ? $m.from[0].name : ($m.from[0].email ?? "")) : "",$dates[$i]],strong:($m.keywords ?? {})["$seen"]!=true,weak_cells:[false,false,($m.keywords ?? {})["$seen"]==true],markers:[$m.hasAttachment==true ? ((($m.keywords ?? {})["$flagged"]==true) ? ["paperclip","flag"] : ["paperclip"]) : ((($m.keywords ?? {})["$flagged"]==true) ? ["flag"] : []),[],[]]})
+  return rows_project($emails,fn($m,$i)={key:$m.id,depth:0,branch:false,expanded:false,selected:false,focused:false,cells:[$display[$i].subject,$display[$i].sender,$dates[$i]],strong:($m.keywords ?? {})["$seen"]!=true,weak_cells:[false,false,($m.keywords ?? {})["$seen"]==true],markers:[$m.hasAttachment==true ? ((($m.keywords ?? {})["$flagged"]==true) ? ["paperclip","flag"] : ["paperclip"]) : ((($m.keywords ?? {})["$flagged"]==true) ? ["flag"] : []),[],[]]})
 end
 fn outline_row($key,$depth,$label,$icon,$branch=false,$count=0)
-  return {key:$key,depth:$depth,branch:$branch,expanded:$branch and not contains($tree_closed,$key),selected:false,focused:false,cells:[$label],disclosure_label:(if contains($tree_closed,$key) then "Expand " else "Collapse " end)..$label,icon:$icon,count:$count,strong:$depth==0}
+  return {key:$key,depth:$depth,branch:$branch,expanded:$branch and not contains($tree_closed,$key),selected:false,focused:false,cells:[table_cell($label)],disclosure_label:(if contains($tree_closed,$key) then "Expand " else "Collapse " end)..$label,icon:$icon,count:$count,strong:$depth==0}
 end
 fn mailbox_icon($role)
   return if $role=="inbox" then "inbox" elif $role=="sent" then "send" elif $role=="drafts" then "file-text" elif $role=="trash" then "trash" elif $role=="junk" then "circle-alert" elif $role=="archive" or $role=="all" then "file-archive" else "folder" end
