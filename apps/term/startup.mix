@@ -4,7 +4,9 @@
 -- Authored bootstrap contract; generic host integration is a separate piece.
 $ctx=viu_context();$cli=require("startup-policy.mix")
 $version="term "..$ctx.version.." ("..$ctx.git_sha..", built "..$ctx.build_time..")"
-$choice=$cli.decide($app_args,$version,read_file(path_join(dirname(script_path()),"help.txt")))
+$help=""
+if $app_args[0]!="--version" and (contains($app_args,"--help") or contains($app_args,"-h")) then $help=read_file(path_join(dirname(script_path()),"help.txt")) end
+$choice=$cli.decide($app_args,$version,$help)
 if $choice.mode=="exit" then return $choice end
 $settings=$cli.config(env("TERM_FONT_PX"),fn($op,$handle,$args)=viu_terminal($op,$handle,$args))
 if $choice.print_config then return {mode:"exit",code:0,stdout:$cli.print_config($settings),stderr:""} end

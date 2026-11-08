@@ -15,4 +15,6 @@ end
 check(deep_eq($cli.decide(["--version","--unknown"],"own-version","help\n"),{mode:"exit",code:0,stdout:"own-version\n",stderr:""}),"leading version wins and reports own data")
 $settings={font_px:18.5,scrollback:1000,cursor:"underline",TERM:"xterm-256color"}
 check($cli.print_config($settings)=="{\n  \"font_px\": 18.5,\n  \"scrollback\": 1000,\n  \"cursor\": \"underline\",\n  \"TERM\": \"xterm-256color\"\n}\n","Gold print-config field order and formatting")
+$settings.font_px=6
+check(contains($cli.print_config($settings),'"font_px": 6.0,'),"integral native font sizes retain Gold's float formatting")
 print("term startup policy: flag precedence, unknown refusals, own version and config formatting passed")

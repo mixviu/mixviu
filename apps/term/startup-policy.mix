@@ -19,5 +19,7 @@ fn config($font,$native)
 end
 fn print_config($settings)
   -- Gold's struct field order and indentation, independent of map ordering.
-  return "{\n  \"font_px\": "..json_encode($settings.font_px)..",\n  \"scrollback\": "..json_encode($settings.scrollback)..",\n  \"cursor\": "..json_encode($settings.cursor)..",\n  \"TERM\": "..json_encode($settings.TERM).."\n}\n"
+  $font=json_encode($settings.font_px)
+  if floor($settings.font_px)==$settings.font_px then $font=$font..".0" end
+  return "{\n  \"font_px\": "..$font..",\n  \"scrollback\": "..json_encode($settings.scrollback)..",\n  \"cursor\": "..json_encode($settings.cursor)..",\n  \"TERM\": "..json_encode($settings.TERM).."\n}\n"
 end
