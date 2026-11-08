@@ -54,6 +54,12 @@ pub fn valid_font(px: f32) -> bool {
     (6.0..=48.0).contains(&px)
 }
 
+/// Preserve the native font configuration's f32 parse-before-range contract.
+/// The application decides which environment/setting supplied the text.
+pub fn parse_font(text: &str) -> Option<f32> {
+    text.parse().ok().filter(|px| valid_font(*px))
+}
+
 // VERIFY: term-selection — query the actual database without invoking a shell.
 // infocmp handles TERMINFO, TERMINFO_DIRS, ~/.terminfo and system databases.
 // Missing tools, missing entries and failed probes all keep the portable TERM.
@@ -118,6 +124,19 @@ mod tests {
     fn term_selection_success_and_failure() {
         assert_eq!(term_for_probe(true), "xterm-rio");
         assert_eq!(term_for_probe(false), "xterm-256color");
+    }
+
+    #[test]
+    fn font_text_is_parsed_at_native_precision_before_range_validation() {
+        for (text, expected) in [
+            ("6",Some(6.0)), ("48",Some(48.0)), ("18.5",Some(18.5)),
+            ("1e1",Some(10.0)), ("18.5000001",Some(18.5)),
+            ("5.9999999",Some(6.0)), ("48.0000001",Some(48.0)),
+            ("",None), ("5.9",None), ("48.1",None), ("NaN",None),
+            ("inf",None), ("eighteen",None), (" 18.5",None),
+        ] {
+            assert_eq!(parse_font(text),expected,"font text: {text:?}");
+        }
     }
 
     #[test]

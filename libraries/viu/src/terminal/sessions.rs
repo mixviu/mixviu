@@ -290,6 +290,19 @@ impl Sessions {
     }
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
+        if op == "config" {
+            // The terminal's defaults and bounded terminfo probe do not open
+            // a PTY or start native session ownership.
+            super::session_fd::quarantine_inherited();
+            return serde_json::to_value(Settings {
+                config: Config::default(),
+                term: super::config::selected_term().into(),
+            }).map_err(|e| e.to_string());
+        }
+        if op == "font.parse" {
+            let text = a["text"].as_str().ok_or("font text required")?;
+            return Ok(super::config::parse_font(text).map_or(Value::Null, |px| json!(px)));
+        }
         if op == "clipboard.configure" {
             self.configure_clipboard(
                 a["read_allowed"]
@@ -578,6 +591,21 @@ impl Sessions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn startup_config_and_font_parse_never_open_a_session_or_start_the_native_owner() {
+        let sessions = Sessions::with_native(Arc::new(|| {}));
+        let config = sessions.call("config", "", json!({})).unwrap();
+        assert_eq!(config["font_px"], json!(Config::default().font_px));
+        assert_eq!(config["scrollback"], 1000);
+        assert_eq!(config["cursor"], "underline");
+        assert!(matches!(config["TERM"].as_str(), Some("xterm-rio" | "xterm-256color")));
+        assert_eq!(sessions.call("font.parse","",json!({"text":"5.9999999"})).unwrap(),json!(6.0));
+        assert_eq!(sessions.call("font.parse","",json!({"text":" 18.5"})).unwrap(),Value::Null);
+        assert!(sessions.state.lock().unwrap().sessions.is_empty());
+        assert_eq!(sessions.state.lock().unwrap().next,0);
+        assert!(!sessions.native.lock().unwrap().attempted);
+        assert!(sessions.native.lock().unwrap().supervisor.is_none());
+    }
 
     #[test]
     fn search_bridge_reads_the_owned_grid_and_refuses_malformed_options() {

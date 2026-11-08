@@ -1,0 +1,21 @@
+term — Terminal, the MixOS terminal: tabs, split panes, a GPU-drawn grid
+Usage: term [--headless] [--print-config]
+Settings: the desktop profile's terminal.* (settingsd; Prefs), defaults without it
+Font: TERM_SPIKE_FONT=/path/to/font.ttf, TERM_FONT_PX=<6..48> until settingsd answers
+Keys: Ctrl+Shift+T/W new/close tab, Ctrl+PageUp/PageDown change tab,
+      Ctrl+Shift+E/O split side by side/stacked, Ctrl+Shift+X close pane,
+      Ctrl+Shift+arrows move focus, Ctrl+Shift+Q quit,
+      Tab / Shift+Tab switch split panes; Ctrl+Tab / Ctrl+Shift+Tab also cycle,
+      Ctrl+Shift+C copy; Ctrl+Shift+V or Shift+Insert paste the clipboard
+      Drag selects; double/triple click word/line; middle click pastes primary
+      Shift+mouse overrides application mouse reporting
+      Ctrl+plus/equal/minus/0 (and Ctrl+wheel) font size
+      Wheel scrolls; Shift+PageUp/PageDown page history
+      Shift+Home/End history top/bottom (primary screen only)
+      Input returns to bottom; single-pane Tab or Ctrl+I goes to the shell
+TERM_NOTIFY=0: no desktop notification when a pane's shell exits
+--headless: the tab set and the term.* commands, no window
+--version: print version and build hash, and nothing else
+--print-config: print resolved startup settings and exit
+Bus: serves `term` / `term.*`, the term.ui.* drive commands, term.actions and term.execute
+--debug[=LEVEL]: off|error|warn|info|debug|trace; --debug means debug. Default: the app baseline (usually warn). RUST_LOG overrides the baseline.

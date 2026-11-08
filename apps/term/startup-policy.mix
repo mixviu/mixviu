@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold CLI policy. Generic host bootstrap supplies args and native widget
+-- operations; no app-specific Rust flag handling or process starts belong here.
+fn decide($args,$version,$help)
+  if $args[0]=="--version" then return {mode:"exit",code:0,stdout:$version.."\n",stderr:""} end
+  if contains($args,"--help") or contains($args,"-h") then return {mode:"exit",code:0,stdout:$help,stderr:""} end
+  for $arg in $args
+    if not contains(["--headless","--print-config"],$arg) then
+      return {mode:"exit",code:2,stdout:"",stderr:"term: unknown option "..$arg.." (see --help)\n"}
+    end
+  end
+  return {mode:if contains($args,"--headless") then "headless" else "window" end,print_config:contains($args,"--print-config")}
+end
+fn config($font,$native)
+  $settings=$native("config","",{})
+  $px=$native("font.parse","",{text:$font})
+  if $px!=nil then $settings.font_px=$px end
+  return $settings
+end
+fn print_config($settings)
+  -- Gold's struct field order and indentation, independent of map ordering.
+  return "{\n  \"font_px\": "..json_encode($settings.font_px)..",\n  \"scrollback\": "..json_encode($settings.scrollback)..",\n  \"cursor\": "..json_encode($settings.cursor)..",\n  \"TERM\": "..json_encode($settings.TERM).."\n}\n"
+end
