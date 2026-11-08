@@ -113,7 +113,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || args[0].len() > 4000
         || args[1].len() > 4000
     {
-        return Err("expected preedit, commit, hold milliseconds and optional late; text <=4000 bytes".into());
+        return Err(
+            "expected preedit, commit, hold milliseconds and optional late; text <=4000 bytes"
+                .into(),
+        );
     }
     let hold: u64 = args[2].parse()?;
     if hold > 20_000 {
