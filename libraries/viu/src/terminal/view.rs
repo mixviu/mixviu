@@ -1323,12 +1323,26 @@ impl Views {
             .with_clip_rect(inner)
             .add(surface.pane.callback(grid, surface.raster.clone()));
         if !surface.preedit.is_empty() && response.has_focus() {
-            ui.painter().text(
+            let painter = ui.painter();
+            let galley = painter.layout_no_wrap(
+                surface.preedit.clone(),
+                egui::FontId::monospace(caret.height() * 0.8),
+                palette.text,
+            );
+            let rect = Rect::from_min_size(
                 caret.min,
-                egui::Align2::LEFT_TOP,
-                &surface.preedit,
-                egui::FontId::monospace(size),
-                Color32::WHITE,
+                egui::vec2(galley.size().x.max(caret.width()), caret.height()),
+            );
+            painter.rect_filled(rect, 0.0, palette.field);
+            painter.galley(
+                egui::pos2(rect.min.x, rect.center().y - galley.size().y / 2.0),
+                galley,
+                Color32::PLACEHOLDER,
+            );
+            painter.hline(
+                rect.x_range(),
+                rect.bottom() - 1.0,
+                egui::Stroke::new(1.0, palette.accent),
             );
         }
         response
