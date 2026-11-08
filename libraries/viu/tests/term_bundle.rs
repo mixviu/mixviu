@@ -319,23 +319,39 @@ fn term_bundle_child() {
         ("1", true, 6.0, 18.5),
         ("3", false, 16.0, 16.0),
     ] {
-        let changed = invoke(&mut runtime, &rx, "viu.session", json!({
-            "appearance":{"scheme":"studio","mode":"dark"},
-            "state":{"binding":{"instance":"example","profile":"default"},
-                "incarnation":"profile-fixture","revision":revision,
-                "lost":lost,"error":null,"values":{"terminal.font.size":size}}
-        }));
+        let changed = invoke(
+            &mut runtime,
+            &rx,
+            "viu.session",
+            json!({
+                "appearance":{"scheme":"studio","mode":"dark"},
+                "state":{"binding":{"instance":"example","profile":"default"},
+                    "incarnation":"profile-fixture","revision":revision,
+                    "lost":lost,"error":null,"values":{"terminal.font.size":size}}
+            }),
+        );
         if let Some(model) = changed.model {
-            assert_eq!(model["terminal"]["properties"]["font_size"], json!(expected));
+            assert_eq!(
+                model["terminal"]["properties"]["font_size"].as_f64(),
+                Some(expected)
+            );
         } else {
             assert_eq!(revision, "1", "a new profile must publish its model");
             assert!(!lost, "authority loss must publish its retained profile");
         }
         if lost {
             let about = invoke(&mut runtime, &rx, "term.dialog", json!({"open":"about"}));
-            assert!(about.model.unwrap()["native_overlays"].as_array().unwrap().iter()
-                .any(|overlay| overlay["definition"]["initial"]["body"].as_str()
-                    .is_some_and(|body| body.ends_with("Settings source: settingsd not connected"))));
+            assert!(
+                about.model.unwrap()["native_overlays"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|overlay| overlay["definition"]["initial"]["body"]
+                        .as_str()
+                        .is_some_and(
+                            |body| body.ends_with("Settings source: settingsd not connected")
+                        ))
+            );
             invoke(&mut runtime, &rx, "term.dialog", json!({"answer":"done"}));
         }
     }
