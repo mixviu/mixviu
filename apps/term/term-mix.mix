@@ -1,0 +1,8 @@
+#!/opt/mix/bin/mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Install as /opt/mix/bin/term-mix; keep the shared bundle at share/apps/term.
+$r = run_argv(concat(["/opt/mix/bin/viu", "run", "/opt/mix/share/apps/term",
+  "--service", "term-mix", "--app-id", "mixviu.term-mix", "--title", "Term (Mix)"], args()),
+  {timeout: 0, stdout: "inherit", stderr: "inherit"})
+exit($r.exit_code ?? 1)

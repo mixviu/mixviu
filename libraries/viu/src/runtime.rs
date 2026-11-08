@@ -296,7 +296,10 @@ impl Runtime {
                         if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());eval.register("viu_exit",state.exit_binding());}
                         if let Some(rasters)=services.rasters.clone(){eval.register("viu_raster",rasters.binding());}
                         if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
-                        let context=context(&program,generation);
+                        let mut context=context(&program,generation);
+                        context["options"]=services.options.clone();
+                        context["native_backend"]=json!(backend.is_some());
+                        context["native_facilities"]=json!(services.calls.is_some());
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(context.clone())));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));

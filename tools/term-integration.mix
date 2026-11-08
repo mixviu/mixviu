@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- CBC preparation: return the worker's lockfile/format patch, then restore it.+$result = 0
 try
-  for $cmd in [["cargo", "generate-lockfile"], ["cargo", "fmt", "--all"]]
+  for $cmd in [["cargo", "update", "--workspace"], ["cargo", "fmt", "--all"]]
     $r = run_argv($cmd, {timeout: 1800, stdout: "inherit", stderr: "inherit"})
     if $r.exit_code != 0 then
       $result = $r.exit_code

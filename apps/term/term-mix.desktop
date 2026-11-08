@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Term (Mix)
+Comment=Mix terminal comparison
+Exec=/opt/mix/bin/term-mix
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupWMClass=mixviu.term-mix

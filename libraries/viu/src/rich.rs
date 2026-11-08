@@ -254,6 +254,7 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
                     if value.get(flag).is_some_and(|v| !v.is_boolean()) {
                         return Err("dialog grid flags must be boolean".into());
                     }
+                }
             }
             for key in ["picks", "tools"] {
                 if let Some(rows) = value.get(key) {
