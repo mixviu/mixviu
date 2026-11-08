@@ -47,7 +47,7 @@ fn desk4_accounts_file_and_maild_string_sender_mount_before_and_after_connect() 
     let mut program = bundle.program;
     program.source.push_str(r#"
 on test.desk4
-  $p=require("protocol.mix")
+  $p=require($event.args.protocol)
   $mail_emails=$p.emails($event.args.messages)
   $active="local";$wire_views.local={state:"ready",unread:1};$connected=true
   $boxes=map(["Inbox","Drafts","Sent","Junk","Trash","Archive"],fn($name)={id:lower($name),name:$name,parentId:nil,role:lower($name),totalEmails:if contains(["Inbox","Sent"],$name) then 1 else 0 end,unreadEmails:if $name=="Inbox" then 1 else 0 end})
@@ -75,7 +75,7 @@ end
             messages[0]["from"] = json!([{"name":"λ".repeat(5000),"email":"mixos@example.test"}]);
         }
         runtime
-            .event("test.desk4".into(), json!({"messages":messages}))
+            .event("test.desk4".into(), json!({"messages":messages,"protocol":PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email/protocol.mix")}))
             .unwrap();
         let done = complete(&runtime, &rx);
         let model = done.model.unwrap();
