@@ -21,7 +21,9 @@ unable to compile under the full test gate).
 
 ## Risk tier
 
-1 — Mix CLI and builtins/runtime. No new dependencies or deployment.
+2 — Mix CLI/runtime plus the CI recipe and a single historical gitleaks
+false-positive fingerprint. Code-owner approval and the required review
+remain necessary. No new dependencies or deployment.
 
 ## How tested
 
@@ -53,5 +55,18 @@ ungated fault variables; no stored data or wire formats change.
 ## Authorship and review
 
 Authored by OpenAI Codex as `mixviu-agent[bot]` for Mark's Mix hygiene brief.
-Independent reviewer findings and human approval are pending. No PR opened,
-as required by the pre-cut-over brief.
+Independent reviewer findings and human approval are pending. This is PR #7;
+main is updated only through the protected squash-merge process.
+
+## Main synchronisation (2026-11-08)
+
+Merged origin/main (60cb127) without rebasing or rewriting branch history.
+Only last.md conflicted; both intent/evidence records were kept. CBC job
+20261108-153105-ab2990de-a1 resolved Cargo.lock with no changes and
+regenerated the baseline using the merged tree mix: no lint count increased
+against main. Full test/release gate at 7cb24b0b is running on CBC.
+
+Gitleaks found the historical help line `Keys: Ctrl+Shift+T/W new/close tab`
+in commit 1bbcf96c, before the squash cut-over. The exact one-finding
+fingerprint is ignored; the main gitleaks policy is unchanged. A full
+redacted history scan with the pinned gitleaks 8.30.1 now passes.
