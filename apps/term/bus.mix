@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Global command policy. The supplied native function owns PTYs, never tabs.
-$model=require("model.mix")
+$model=require("model.mix");$lifecycle=require("lifecycle.mix")
 $wire=require("wire.mix")
 $discovery=require("discovery.mix")
 fn change_topic($service,$topic)
@@ -21,7 +21,7 @@ fn refresh($s,$native)
   return $s
 end
 fn shut($s,$native)
-  for $tab in $s.layout.tabs $s=close_removed($s,$model.close_tab($s.layout,$tab.id),$native) end
+  for $tab in $s.layout.tabs $s=close_removed($s,$lifecycle.close_tab($s.layout,$tab.id,$native),$native) end
   $s.layout.closing=true;$s.closed=true
   return $s
 end
@@ -96,17 +96,17 @@ fn dispatch_fields($s,$command,$a,$native,$numbers)
       $model.ensure_slot($s.layout)
       $session=$native("create","",{pane_id:$s.layout.next_pane,cwd:$a.cwd,scrollback:$s.look.values["terminal.scrollback.lines"] ?? 1000,term:$s.look.values["terminal.env.term"] ?? "xterm-256color"})
       if $command=="term.tab.new" then
-        $s.layout=$model.open_tab($s.layout,$session,$a.title);$t=active($s)
+        $s.layout=$lifecycle.open_tab($s.layout,$session,$a.title,$native);$t=active($s)
         $body="opened id="..to_string($t.tab).." "..identity($s,$t).." binding="..($session.binding ?? "unavailable")
       else
         $dir=if starts_with($a.dir,"h") then "h" else "v" end
-        $s.layout=$model.split_pane($s.layout,$dir,$session);$t=active($s)
+        $s.layout=$lifecycle.split_pane($s.layout,$dir,$session,$native);$t=active($s)
         $body="split id="..to_string($t.pane).." dir="..$dir.." "..identity($s,$t)
       end
     elif $command=="term.tab.select" then
-      $s.layout=$model.select_tab($s.layout,$a.id);$body="selected id="..to_string($a.id).." "..identity($s,active($s))
+      $s.layout=$lifecycle.select_tab($s.layout,$a.id,$native);$body="selected id="..to_string($a.id).." "..identity($s,active($s))
     elif $command=="term.pane.select" then
-      $s.layout=$model.select_pane($s.layout,$a.id);$body="selected id="..to_string($a.id).." "..identity($s,active($s))
+      $s.layout=$lifecycle.select_pane($s.layout,$a.id,$native);$body="selected id="..to_string($a.id).." "..identity($s,active($s))
     elif $command=="term.tab.title" then
       $s.layout=$model.set_title($s.layout,$a.id,$a.title);$t=$model.resolve($s.layout,nil,$a.id)
       $body="retitled id="..to_string($a.id).." "..identity($s,$t)
@@ -114,11 +114,11 @@ fn dispatch_fields($s,$command,$a,$native,$numbers)
       $s.layout=$model.move_tab($s.layout,$a.id,$a.index);$t=$model.resolve($s.layout,nil,$a.id)
       $body="moved id="..to_string($a.id).." index="..to_string($model.tab_index($s.layout,$a.id)).." "..identity($s,$t)
     elif $command=="term.tab.close" then
-      $s=close_removed($s,$model.close_tab($s.layout,$a.id),$native)
+      $s=close_removed($s,$lifecycle.close_tab($s.layout,$a.id,$native),$native)
       $body="closed id="..to_string($a.id)..(if $s.closed then " last" else " remaining="..to_string(len($s.layout.tabs)) end).." revision="..to_string($s.layout.revision)
     elif $command=="term.pane.close" then
       $t=active($s);$index=$model.tab_index($s.layout,$t.tab);$count=len($model.leaves($s.layout.tabs[$index].tree))
-      $s=close_removed($s,$model.close_pane($s.layout,$t.pane),$native)
+      $s=close_removed($s,$lifecycle.close_pane($s.layout,$t.pane,$native),$native)
       $body="closed id="..to_string($t.pane)..(if $count==1 then " tab-closed" else " panes="..to_string($count-1) end).." tab="..to_string($t.tab).." revision="..to_string($s.layout.revision)
     elif contains(["term.snapshot","term.type","term.scroll"],$command) then
       $t=$model.resolve($s.layout,$a.pane,$a.tab);$handle=target_handle($s,$t)

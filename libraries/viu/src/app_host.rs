@@ -1270,37 +1270,6 @@ fn owner_wake(ctx: egui::Context) -> crate::runtime::Wake {
     Arc::new(move || ctx.request_repaint_of(egui::ViewportId::ROOT))
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn worker_completion_during_child_pass_wakes_root_owner() {
-        let ctx = egui::Context::default();
-        for _ in 0..3 {
-            ctx.run_ui(egui::RawInput::default(), |_| {})
-                .drop_without_applying_deltas();
-        }
-        let wake = super::owner_wake(ctx.clone());
-        let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let recorded = requests.clone();
-        ctx.set_request_repaint_callback(move |request| {
-            recorded.lock().unwrap().push(request.viewport_id);
-        });
-        let child = egui::ViewportId::from_hash_of("completion-child");
-        let mut input = egui::RawInput {
-            viewport_id: child,
-            ..Default::default()
-        };
-        input.viewports.insert(child, Default::default());
-        ctx.run_ui(input, |ui| {
-            assert_eq!(ui.ctx().viewport_id(), child);
-            requests.lock().unwrap().clear();
-            let wake = wake.clone();
-            std::thread::spawn(move || wake()).join().unwrap();
-            assert_eq!(*requests.lock().unwrap(), vec![egui::ViewportId::ROOT]);
-        })
-        .drop_without_applying_deltas();
-    }
-}
 struct LayerHost {
     bundle: Option<Bundle>,
     host: Option<Host>,
@@ -1374,4 +1343,36 @@ impl crate::layer::LayerProgram for LayerHost {
 }
 fn loading_view() -> SceneView {
     SceneView::new("---\nscene: 1\nname: loading\ncitizen: loading\n---\n```mix\n{root:{widget:\"text\",text:\"Loading…\"}}\n```\n").expect("static loading scene")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn worker_completion_during_child_pass_wakes_root_owner() {
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |_| {})
+                .drop_without_applying_deltas();
+        }
+        let wake = super::owner_wake(ctx.clone());
+        let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = requests.clone();
+        ctx.set_request_repaint_callback(move |request| {
+            recorded.lock().unwrap().push(request.viewport_id);
+        });
+        let child = egui::ViewportId::from_hash_of("completion-child");
+        let mut input = egui::RawInput {
+            viewport_id: child,
+            ..Default::default()
+        };
+        input.viewports.insert(child, Default::default());
+        ctx.run_ui(input, |ui| {
+            assert_eq!(ui.ctx().viewport_id(), child);
+            requests.lock().unwrap().clear();
+            let wake = wake.clone();
+            std::thread::spawn(move || wake()).join().unwrap();
+            assert_eq!(*requests.lock().unwrap(), vec![egui::ViewportId::ROOT]);
+        })
+        .drop_without_applying_deltas();
+    }
 }

@@ -455,6 +455,12 @@ impl Sessions {
         let t = self.get(handle)?;
         let t = t.lock().map_err(|_| "terminal poisoned")?;
         match op {
+            // Compound-widget policy decides when focus/geometry invalidates
+            // foreground input. Revoke under the same lock as native writes.
+            "invalidate-control" => {
+                t.listener.revoke_control();
+                Ok(json!({"foreground_generation":t.listener.foreground_generation()}))
+            }
             "state" => {
                 let (cols, rows) = t.dimensions();
                 let (placement, pane_id) = {
@@ -940,10 +946,12 @@ end
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 }
             });
+            let before_layout=invoke("term.snapshot",json!({"target":target})).await.1["foreground_generation"].as_u64().unwrap();
             let selection=json!({"target":target,"request_id":"6","request_epoch":epoch});
             let selected=invoke("term.tab.select",selection.clone()).await;
             assert_eq!(selected,(0,json!({"selected":target,"operation_id":"6"})));
             assert_eq!(invoke("term.tab.select",selection).await,selected);
+            assert_eq!(invoke("term.snapshot",json!({"target":target})).await.1["foreground_generation"],before_layout+1,"same-tab selection invalidates once; replay never invalidates again");
             let invalid=json!({"target":target,"request_id":"7","request_epoch":epoch,"dir":"invalid"});
             assert_eq!(invoke("term.pane.split",invalid.clone()).await.1["error_code"],"INVALID_ARGUMENT");
             assert_eq!(invoke("term.pane.split",invalid).await.1["error_code"],"INVALID_ARGUMENT");
@@ -951,6 +959,7 @@ end
             let split_reply=invoke("term.pane.split",split.clone()).await;
             assert_eq!(split_reply,(0,json!({"pane_id":2,"operation_id":"8"})));
             assert_eq!(invoke("term.pane.split",split).await,split_reply);
+            assert_eq!(invoke("term.snapshot",json!({"target":target})).await.1["foreground_generation"],before_layout+3,"protected split selects then invalidates the original tab");
             // A sibling now changes geometry too. Omitted authority refuses
             // before reservation and a stale sibling generation also refuses.
             let denied=json!({"target":target,"request_id":"9","request_epoch":epoch});
@@ -1010,6 +1019,10 @@ end
             assert_eq!(state["panes"].as_array().unwrap().len(),1);
             assert_eq!(state["tabs"].as_array().unwrap().len(),1);
             assert_eq!(state["tabs"][0]["id"],1);assert_eq!(state["tabs"][0]["active"],true);
+            assert_eq!(state["foreground_generation"],before_layout+7,"open, replacement-tab focus and sibling close preserve gold invalidation counts; refusals and retries do not revoke");
+            let stale_layout=json!({"target":target,"request_id":"14","request_epoch":epoch,"foreground_generation":before_layout.to_string(),"text":"LAYOUT_STALE_MUST_NOT_WRITE"});
+            assert_eq!(invoke("term.type",stale_layout).await.1["error_code"],"STALE_GENERATION","layout changes invalidate previously usable foreground input tokens");
+            assert!(!invoke("term.snapshot",json!({"target":target,"contents":true})).await.1["text"].as_str().unwrap().contains("LAYOUT_STALE_MUST_NOT_WRITE"));
             for handle in ["vt-2","vt-3","vt-4"] {assert!(sessions.call("state",handle,json!({})).is_err());}
             for pid in [second_pid,third_pid,fourth_pid] {
                 assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists(),"protected cleanup left child {pid}");

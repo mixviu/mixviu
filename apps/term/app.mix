@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_args app_launch
+$lifecycle=require("lifecycle.mix")
 $ctx=viu_context();$core=require("core.mix");$wire=require("wire.mix");$model=require("model.mix");$bus=require("bus.mix")
 $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
@@ -166,7 +167,7 @@ on viu.terminal.changed
   $state=$bus.refresh($state,$native)
   $exited=[]
   for $p in values($state.layout.panes) if $p.exited then push($exited,$p.id) end end
-  for $id in $exited $state=$bus.close_removed($state,$model.close_pane($state.layout,$id),$native) end
+  for $id in $exited $state=$bus.close_removed($state,$lifecycle.close_pane($state.layout,$id,$native),$native) end
   if not deep_eq($old,$state.layout) then $state=pump_events($state);$state=publish_term($state) end
 end
 on viu.terminal.control
@@ -226,7 +227,7 @@ on term.intent
     $state=command($state,$name,{id:to_number($a.value)})
   elif $a.id=="terminal" and $a.action=="focus" then
     for $p in values($state.layout.panes)
-      if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$model.select_pane($state.layout,$p.id);$state=pump_events($state);$state=publish_term($state) end
+      if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$lifecycle.select_pane($state.layout,$p.id,$native);$state=pump_events($state);$state=publish_term($state) end
     end
   elif $a.id=="terminal-find" then $state=$find.intent($state,$a,$native);$state=publish_term($state)
   elif $a.id=="terminal" and $a.action=="search" then $state=$find.observed($state,$a.value,$native);$state=publish_term($state)

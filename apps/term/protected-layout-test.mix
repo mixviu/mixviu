@@ -31,6 +31,7 @@ $out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"v",target:$target},fn(
 check($out.rc==10 and deep_eq($out.state,$s),"denied split preserves complete state")
 fn native($op,$handle,$args)
   if $op=="control.begin" then return {rc:0,body:{begun:true}} end
+  if $op=="invalidate-control" then return {} end
   if $op=="create" then
     check($args.pane_id==5 and $args.cwd==nil,"new child uses explicit logical identity and profile cwd")
     return session(5)
@@ -52,6 +53,7 @@ $out=$p.apply($s,{operation:"term.tab.close",pane:1,target:$target},fn($op,$hand
 check($out.rc==0 and $out.state.layout.tabs[$out.state.layout.active].id==3 and len(keys($out.state.layout.panes))==2,"inactive tab close preserves active tab and removes all its panes")
 fn failed($op,$handle,$args)
   if $op=="control.begin" then return {rc:0,body:{}} end
+  if $op=="invalidate-control" then return {} end
   raise("SPAWN","child refused")
 end
 $out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"v",target:$target},fn($op,$handle,$args)=failed($op,$handle,$args))
