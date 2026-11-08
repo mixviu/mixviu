@@ -72,5 +72,6 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# Our own crates only, pinned by rev in Cargo.lock.
-allow-git = ["https://github.com/markc/spamlite"]
+# Sources pinned by rev in manifests and Cargo.lock. Rio's terminal extraction
+# is the accepted Term specimen; tools/foreign_gate.mix keeps it Viu-only.
+allow-git = ["https://github.com/markc/spamlite", "https://github.com/raphamorim/rio"]
