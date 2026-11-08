@@ -44,11 +44,17 @@ impl PaneSession {
         rejected(reason);
     }
 
+    /// Invalidate local input authority without waiting for remote cleanup.
+    /// The issued lease stays owned until its cleanup callback is drained.
+    pub fn revoke(&self) {
+        (self.revoke)();
+    }
+
     pub fn revoke_before_cleanup(self) {
         // Local authority must be invalid before the cleanup callback can
         // wait for remote acknowledgement or release the PTY. Drop repeats
         // invalidation, so issuer revocation remains idempotent as in gold.
-        (self.revoke)();
+        self.revoke();
         (self.cleanup)();
     }
 }
@@ -57,7 +63,7 @@ impl Drop for PaneSession {
     fn drop(&mut self) {
         // Covers failed PTY launches as well as ordinary close. As in gold,
         // issuer invalidation must be idempotent.
-        (self.revoke)();
+        self.revoke();
     }
 }
 
@@ -87,6 +93,9 @@ mod tests {
             }),
             Arc::new(|_| {}),
         );
+        pane.revoke();
+        assert!(!live.load(Ordering::Acquire));
+        assert!(!cleanup_seen.load(Ordering::Acquire));
         pane.revoke_before_cleanup();
         assert!(!live.load(Ordering::Acquire));
         assert!(cleanup_seen.load(Ordering::Acquire));
