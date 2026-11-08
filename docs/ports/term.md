@@ -3005,3 +3005,12 @@ CBC term-read-burst-fd41e771-a1 passes all13 Mix suites,230 terminal tests/5 exi
 The complete70554-byte/1264-line saved log was reviewed against the previously reviewed protected-repairs log:1149 matching lines and all115 novel lines inspected. SHA25664fc273f3335b3be230fbf198d356b2b3bc1dc792b55967925111290fb557b53. CBC returned only Rust formatting in the new helper. Source161968f1cefe59262b268eaaea9026f7cfe67fad applies that patch without changing assertions or production behaviour. Next term-read-burst-exact-161968f1 repeats the scoped gate at the formatted source; full release, matching native proof and the residual acceptance audit remain. Overall NOT ACCEPTED; no install, desk/VT or merge.
 
 branch: lab/parity-term; head SHA:161968f1cefe59262b268eaaea9026f7cfe67fad (CBC read-burst formatting; receipt HEAD contains checkpoint); NOT ACCEPTED — exact repeat/full release/native and residual acceptance audit remain; CBC job ids:term-read-burst-exact-161968f1 (next scoped gate), term-read-burst-fd41e771-a1 (green230terminal, formatting patch).
+
+
+### Exact native read-pressure repeat passes
+
+CBC term-read-burst-exact-161968f1-a1 passes at161968f1cefe59262b268eaaea9026f7cfe67fad with empty TERM_PATCH:13 Mix suites,230 terminal tests/5 existing ignored and all scoped checks. The complete65966-byte/1171-line saved log was reviewed against the prior complete log:1149 matching lines and all22 novel lines inspected; SHA25641c4085e65b0cdf2adf268910fe6973403c51c828ccc0eb0748ebc8d68a1501f. All128 concurrent verified requests complete under the retained bounds and classifications, including required refusal. No production source change follows.
+
+Next term-residual-release-161968f1 runs the full exact gold_parity_gate --prepare. Read the complete saved log and handle any worker diff, then fetch source/profile/hash verified release bytes and repeat native font/settings/startup/protected/deep-layout proof. Slow Mix layout callback pressure, authority debounce timing, clipboard focus semantics, multi-pane throughput and the final acceptance audit remain separately scoped. Overall NOT ACCEPTED; no install, desk/VT or merge.
+
+branch: lab/parity-term; head SHA:161968f1cefe59262b268eaaea9026f7cfe67fad (exact formatted read-pressure source; receipt HEAD contains checkpoint); NOT ACCEPTED — full release/native and residual acceptance audit remain; CBC job ids:term-residual-release-161968f1 (next full gate), term-read-burst-exact-161968f1-a1 (green230terminal, empty patch).
