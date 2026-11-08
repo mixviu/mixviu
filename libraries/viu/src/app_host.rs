@@ -10,11 +10,12 @@ use eframe::egui;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
-fn validate_overlays(model: &Value) -> Result<(), String> {
+pub(crate) fn validate_overlays(model: &Value) -> Result<(), String> {
     if let Some(overlays) = model.get("native_overlays") {
         let overlays = overlays
             .as_array()
@@ -37,11 +38,15 @@ fn validate_overlays(model: &Value) -> Result<(), String> {
 struct Host {
     require_bus: bool,
     forward_output: bool,
+    quit_reply_closes: bool,
+    windows: crate::child_windows::Windows,
+
     platform: crate::platform::Platform,
     paste_waits: std::collections::VecDeque<String>,
     paste_deadline: Option<Instant>,
     platform_results: std::collections::VecDeque<Value>,
     calls: crate::calls::Calls,
+    close_replies: BTreeMap<String, Value>,
     timers: crate::timers::Timers,
     timer_results: std::collections::VecDeque<Value>,
     documents: crate::documents::Documents,
@@ -50,6 +55,7 @@ struct Host {
     measurements: crate::ui_state::Measurements,
     input_at: Option<Instant>,
     native_drive: bool,
+    host_macro_popup: bool,
     service: String,
     settings_reload: u64,
     session_update: Option<Value>,
@@ -95,6 +101,8 @@ struct Host {
     commands: BTreeSet<String>,
     scene_source: String,
     loaded: bool,
+    active_scene: String,
+    owner_close_pending: bool,
     model: Value,
     output: Option<String>,
     outputs: BTreeMap<String, Value>,
@@ -163,9 +171,24 @@ impl Host {
             .and_then(|output| model["surfaces"].get(output))
             .unwrap_or(model)
             .clone();
+        if model["native_root"].is_object() {
+            projected = model["native_root"]["model"].clone();
+            projected["native_windows"] = model["native_windows"].clone();
+            projected["native_root"] = model["native_root"].clone();
+            projected["window_close"] = model["window_close"].clone();
+            projected["__viu_root_key"] = model["native_root"]["key"].clone();
+        }
+        let style = ctx.global_style();
+        projected["__viu_metrics"] = json!({
+            "item_spacing_x":style.spacing.item_spacing.x,
+            "item_spacing_y":style.spacing.item_spacing.y,
+            "control_row_height":toolkit::button::icon_button_of(ctx).max(style.spacing.interact_size.y + 4.0)
+        });
+
         if self.framed {
-            projected["__viu_window_client"] =
-                json!(crate::window_frame::is_client(&self.window_settings(model)));
+            projected["__viu_window_client"] = json!(crate::window_frame::is_client(
+                &self.window_settings(&projected)
+            ));
             projected["__viu_header_hosted"] = json!(
                 projected["__viu_window_client"] == false
                     && toolkit::menu::form(ctx)["hosted"] == true
@@ -191,10 +214,15 @@ impl Host {
     fn dispatch(
         &mut self,
         command: String,
-        body: Value,
+        mut body: Value,
         mut headers: BTreeMap<String, String>,
         reply: Option<Reply>,
     ) {
+        if reply.is_none() && !headers.contains_key("viu-call") && body.is_object() {
+            if let Some(key) = self.model["__viu_root_key"].as_str() {
+                body["window"] = json!(key);
+            }
+        }
         // Only the host supplies this receipt. A Bus caller cannot forge it.
         let token = if let Some(reply) = reply {
             match self
@@ -239,14 +267,41 @@ impl Host {
         self.wire_deliveries.push(r.delivery.clone());
         r.headers.insert("viu_input".into(), "bus".into());
         r.headers.insert("from".into(), r.from.clone());
+        let mut close_reply = None;
+
         if self.native_drive {
             if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
-                r.command = "app.quit".into();
+                close_reply =
+                    toolkit::drive::request(ctx, 0, "window.state", &json!({})).map(|answer| {
+                        let mut body = answer.body;
+                        body["requested"] = json!("close");
+                        body
+                    });
+                r.command = format!("{}.quit", self.app);
+            }
+        }
+        if r.command.starts_with("viu.") {
+            if let Some(key) = r.args["window"].as_str().map(str::to_owned) {
+                if self.model["__viu_root_key"] == key {
+                    r.args.as_object_mut().unwrap().remove("window");
+                } else {
+                    self.windows.request(&key, r, ctx);
+                    return;
+                }
             }
         }
         let Some(r) = self.facilities.request(r, ctx) else {
             return;
         };
+        if self.quit_reply_closes
+            && (r.command == format!("{}.quit", self.app)
+                || (r.command == format!("{}.execute", self.app)
+                    && matches!(r.args["id"].as_str(), Some("file.quit" | "app.quit"))))
+        {
+            r.close_after_reply
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+
         if !self.commands.contains(&r.command) {
             let _ = r.reply.send((
                 10,
@@ -363,8 +418,15 @@ impl Host {
                     }
                 }
             }
-            _ => match self.calls.begin(r.reply, r.close_after_reply) {
+            _ => match self.calls.begin_with_retention(
+                r.reply,
+                r.close_after_reply,
+                r.deferred.clone(),
+            ) {
                 Ok(token) => {
+                    if let Some(body) = close_reply {
+                        self.close_replies.insert(token.clone(), body);
+                    }
                     let mut headers = r.headers;
                     headers.insert("viu-request-caller".into(), r.from);
                     let before = self.runtime.sequence();
@@ -384,9 +446,47 @@ impl Host {
 }
 impl eframe::App for Host {
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if self.framed
+            && self.model["window_close"] != true
+            && ctx.input(|i| i.viewport().close_requested())
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.owner_close_pending = true;
+        }
         self.pump(ctx);
+        if self.owner_close_pending && !toolkit::drive::pending(ctx) {
+            self.owner_close_pending = false;
+            self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
+        }
     }
     fn raw_input_hook(&mut self, _: &egui::Context, raw: &mut egui::RawInput) {
+        if self.windows.raw_input(raw) {
+            return;
+        }
+        raw.dropped_files.append(&mut self.input.dropped);
+        if !raw.dropped_files.is_empty() {
+            let paths = raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            if !paths.is_empty() {
+                self.dispatch(
+                    "viu.files.dropped".into(),
+                    json!({"paths":paths}),
+                    BTreeMap::new(),
+                    None,
+                );
+            }
+        }
+        if raw.events.contains(&egui::Event::WindowFocused(true)) {
+            self.dispatch(
+                "viu.window.focused".into(),
+                json!({}),
+                BTreeMap::new(),
+                None,
+            );
+        }
         if self.paste_deadline.is_some() {
             raw.events.retain(|event| {
                 if let egui::Event::Paste(text) = event {
@@ -467,6 +567,18 @@ impl Host {
             if self.facilities.macros.is_none() {
                 self.facilities
                     .event(format!("{}.macros.finished", self.app), body);
+            }
+        }
+        while self.runtime.has_capacity() {
+            let Some((key, event)) = self.windows.take_one() else {
+                break;
+            };
+            match self.runtime.event(event.command, event.body) {
+                Ok(sequence) => {
+                    self.inflight.insert(sequence);
+                    self.windows.submitted(sequence, key);
+                }
+                Err(_) => self.windows.rejected(&key),
             }
         }
         self.facilities.prepare(ctx, &self.bus);
@@ -693,6 +805,10 @@ impl Host {
                 if let Some(model) = done.model {
                     self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];
                     let projected = self.projection(&model, ctx);
+                    let source = model["native_root"]["scene"]
+                        .as_str()
+                        .unwrap_or(&self.scene_source)
+                        .to_owned();
                     let appearance = if self.framed
                         && self.session_appearance.is_none()
                         && (!self.loaded || self.model["appearance"] != model["appearance"])
@@ -704,13 +820,19 @@ impl Host {
                     let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
                         crate::appearance::theme_choice(&model["theme_choice"])?;
                         validate_overlays(&projected)?;
-                        if self.loaded {
+                        if model["native_root"].is_object() {
+                            self.windows.validate(
+                                &json!({"native_windows":[model["native_root"].clone()]}),
+                            )?;
+                        }
+                        self.windows.validate(&model)?;
+                        if self.loaded && self.active_scene == source {
                             self.view.apply_model(projected)
                         } else {
                             (if self.framed {
-                                crate::gold_frame::mount(&self.scene_source, projected)
+                                crate::gold_frame::mount(&source, projected)
                             } else {
-                                SceneView::with_model(&self.scene_source, projected)
+                                SceneView::with_model(&source, projected)
                             })
                             .map(|view| {
                                 self.view = view;
@@ -718,6 +840,7 @@ impl Host {
                                 self.view.set_rasters(self.rasters.clone());
                                 self.view.set_native_menus(self.native_drive);
                                 self.loaded = true;
+                                self.active_scene = source;
                             })
                         }
                     });
@@ -730,7 +853,38 @@ impl Host {
                                 crate::appearance::install_style(ctx, &model["appearance"], style);
                             }
                             self.ready = true;
-                            self.model = model;
+                            self.windows.sync(
+                                ctx,
+                                &self.app,
+                                &model,
+                                &self.documents,
+                                self.native_drive,
+                            );
+                            if let Some(root) = model.get("native_root").filter(|v| v.is_object()) {
+                                let key = root["key"].as_str().unwrap();
+                                toolkit::drive::register_viewport(
+                                    ctx,
+                                    egui::ViewportId::ROOT,
+                                    key,
+                                    egui::ViewportId::ROOT,
+                                );
+                                let title = root["title"].as_str().unwrap();
+                                if self.title != title {
+                                    self.title = title.into();
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                                        title.into(),
+                                    ));
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(
+                                        egui::vec2(
+                                            root["size"][0].as_f64().unwrap() as f32,
+                                            root["size"][1].as_f64().unwrap() as f32,
+                                        ),
+                                    ));
+                                }
+                                self.model = self.projection(&model, ctx);
+                            } else {
+                                self.model = model;
+                            }
                             ctx.request_repaint();
                             if let Some(saved) = &mut self.saved {
                                 if saved.announced {
@@ -742,6 +896,7 @@ impl Host {
                     }
                 }
             }
+            self.windows.completed(done.sequence);
             for (seq, answer) in done.answers {
                 if let Some(token) = self.pending.remove(&seq) {
                     self.calls.finish(&token, answer.rc, answer.body, false);
@@ -771,6 +926,7 @@ impl Host {
                         .finish(&token, 10, json!({"error":self.error}), false);
                 }
             }
+
             if let Some(reply) = self.pending.remove(&done.sequence) {
                 if self.error.is_empty()
                     && let Some(token) = done.deferred_token
@@ -798,7 +954,12 @@ impl Host {
                 } else {
                     (0, self.state())
                 };
-                self.calls.complete(&reply, answer.0, answer.1);
+                let body = self
+                    .close_replies
+                    .remove(&reply)
+                    .filter(|_| answer.0 == 0)
+                    .unwrap_or(answer.1);
+                self.calls.complete(&reply, answer.0, body);
             }
             if !done.behaviour_available {
                 self.retained.clear();
@@ -854,6 +1015,9 @@ impl Host {
             }
         }
         while !self.held_requests.is_empty() {
+            if !self.runtime.has_capacity() {
+                break;
+            }
             if self.ready && !self.headless && !self.view.current_revision_drawn() {
                 ctx.request_repaint();
                 break;
@@ -869,6 +1033,9 @@ impl Host {
             self.request(request, ctx);
         }
         for _ in 0..32 {
+            if !self.runtime.has_capacity() {
+                break;
+            }
             match self.bus.notices.try_recv() {
                 Ok(n) => {
                     if let Some(saved) = &self.saved {
@@ -963,14 +1130,8 @@ impl Host {
                                 }
                             }
                             self.last_ui = common_ui;
-                            let mut update = snapshot.clone();
-                            update["appearance"]["mode"] =
-                                json!(if ctx.global_style().visuals.dark_mode {
-                                    "dark"
-                                } else {
-                                    "light"
-                                });
-                            self.session_update = Some(update);
+                            self.session_update =
+                                Some(crate::appearance::session_update(ctx, &snapshot));
                             self.session_notice = Some(snapshot.clone());
                             self.session_dirty = false;
                             self.session_appearance = Some(appearance);
@@ -1007,12 +1168,19 @@ impl Host {
                                 ) {
                                     if let Ok(theme) = base.with_choice(&choice) {
                                         let _ = crate::appearance::install_theme(ctx, &theme);
-                                        let _ = self.runtime.notify(
-                                            "viu.theme.changed".into(),
-                                            crate::native_theme::describe(&theme),
-                                        );
                                     }
                                 }
+                            }
+                            if refresh_key.is_none() || key_changed {
+                                // Followers need the effective theme even when
+                                // no local override is selected (for example,
+                                // to switch the light/dark toolbar glyph).
+                                let _ = self.runtime.notify(
+                                    "viu.theme.changed".into(),
+                                    crate::native_theme::describe(
+                                        &crate::appearance::session_theme(ctx),
+                                    ),
+                                );
                             }
                         }
                         Err(error) => self.error = error,
@@ -1186,7 +1354,7 @@ impl Host {
                     self.dispatch("viu.key".into(), key, BTreeMap::new(), None);
                 }
             }
-            if !self.native_drive
+            if self.host_macro_popup
                 && self.facilities.macros.is_some()
                 && toolkit::macros::show_app(ui.ctx(), &self.app, self.model["macros_open"] == true)
             {
@@ -1201,7 +1369,11 @@ impl Host {
                 && self.model["native_focus"]["id"].is_string()
             {
                 if let Some(id) = self.model["native_focus"]["id"].as_str() {
-                    let _ = self.view.request_focus(id);
+                    let mut target = json!({"id":id});
+                    if self.model["native_focus"]["selection"].is_array() {
+                        target["selection"] = self.model["native_focus"]["selection"].clone();
+                    }
+                    let _ = self.view.request_focus_value(&target);
                 }
                 self.focus_serial = self.model["native_focus"]["serial"].clone();
                 ui.ctx().request_repaint();
@@ -1245,7 +1417,11 @@ impl Host {
                                 .as_deref()
                                 .is_some_and(|id| a.iter().any(|v| v == id))
                         });
-                        if ui.ctx().memory(|m| m.focused().is_some()) && !editor_focus && !allowed {
+                        if (self.view.text_input_active()
+                            || ui.ctx().memory(|m| m.focused().is_some()))
+                            && !editor_focus
+                            && !allowed
+                        {
                             continue;
                         }
                         if binding["enabled"] == false {
@@ -1287,7 +1463,8 @@ impl Host {
                     .geometry
                     .extend(self.window_frame.geometry.clone());
                 if self.window_frame.close_requested {
-                    self.dispatch("viu.frame.close".into(), json!({}), BTreeMap::new(), None);
+                    self.owner_close_pending = true;
+                    ui.ctx().request_repaint();
                 }
                 if self.model["window_close"] == true
                     && self.wire_deliveries.is_empty()
@@ -1299,6 +1476,7 @@ impl Host {
             }
             self.dispatching_ui = false;
         }
+        self.windows.show(ui, &self.app);
         self.ui_state.set(
             ui.ctx().content_rect(),
             &self.view.geometry,
@@ -1402,6 +1580,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             "viu.ui.hover",
             "viu.ui.scroll",
             "viu.ui.drag",
+            "viu.ui.drop",
             "viu.capture",
             "viu.quit",
             "viu.clipboard.image",
@@ -1518,15 +1697,19 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let capture_root = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
-        .join("mix/viu/captures");
+        .join("viu-captures");
     Host {
         require_bus: bundle.manifest.require_bus,
         forward_output: bundle.manifest.forward_output,
+        quit_reply_closes: bundle.manifest.quit_reply_closes,
+        windows: Default::default(),
+
         platform,
         paste_waits: Default::default(),
         paste_deadline: None,
         platform_results: Default::default(),
         calls,
+        close_replies: Default::default(),
         timers,
         timer_results: Default::default(),
         documents,
@@ -1535,6 +1718,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         measurements: Default::default(),
         input_at: None,
         native_drive: bundle.manifest.native_drive,
+        host_macro_popup: !bundle.manifest.native_drive || bundle.manifest.host_macro_popup,
         service: std::env::var("MIX_VIU_SERVICE")
             .unwrap_or_else(|_| bundle.manifest.service.clone()),
         settings_reload: 0,
@@ -1573,6 +1757,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 bus.backend(),
             )
             .expect("embedded session worker")
+            .with_appearance_retention(bundle.manifest.retain_appearance_on_loss)
         }),
         session_appearance: None,
         session_window: None,
@@ -1592,6 +1777,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         commands: declared,
         scene_source: bundle.scene,
         loaded: false,
+        active_scene: String::new(),
+        owner_close_pending: false,
         model: json!({}),
         output: None,
         outputs: BTreeMap::new(),
@@ -1644,6 +1831,34 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         std::process::exit(2);
     }
     let root = std::path::Path::new(&args[1]);
+    if args[2..].iter().any(|arg| arg == "--choose-service") {
+        let chooser_args = args[2..]
+            .iter()
+            .filter(|arg| arg.as_str() != "--choose-service")
+            .cloned()
+            .collect::<Vec<_>>();
+        let options = crate::launch::parse(&chooser_args)
+            .map_err(|error| eframe::Error::AppCreation(Box::new(std::io::Error::other(error))))?;
+        let profile = options.args.first().map(PathBuf::from).unwrap_or_else(|| {
+            std::env::var_os("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
+                })
+                .join("files")
+        });
+        let root = root
+            .canonicalize()
+            .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
+        return crate::chooser_host::run(
+            root,
+            profile,
+            options.service.unwrap_or_else(|| "files".into()),
+            options
+                .url
+                .unwrap_or_else(bus::client_helpers::resolve_noded_url),
+        );
+    }
     let preview = Bundle::load(root, &[]).unwrap_or_else(|e| {
         eprintln!("viu: {e}");
         std::process::exit(2)
@@ -1651,11 +1866,15 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let mut logging_args = std::iter::once("viu".to_owned())
         .chain(args.iter().cloned())
         .collect::<Vec<_>>();
-    let _logging = toolkit::debug::init(preview.manifest.app(), "warn", &mut logging_args)
-        .unwrap_or_else(|e| {
-            eprintln!("viu logging: {e}");
-            std::process::exit(2)
-        });
+    let _logging = toolkit::debug::init(
+        preview.manifest.app(),
+        preview.manifest.log_filter.as_deref().unwrap_or("warn"),
+        &mut logging_args,
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("viu logging: {e}");
+        std::process::exit(2)
+    });
     if logging_args
         .iter()
         .skip(3)
@@ -1665,6 +1884,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             print!("{help}");
             return Ok(());
         }
+
         println!(
             "Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]"
         );
@@ -1679,10 +1899,16 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         );
         return Ok(());
     }
-    let bundle = crate::launch::load(root, &logging_args[3..]).unwrap_or_else(|e| {
+    let mut bundle = crate::launch::load(root, &logging_args[3..]).unwrap_or_else(|e| {
         eprintln!("viu: {e}");
         std::process::exit(i32::from(preview.manifest.argument_error_exit))
     });
+    if let Some(output) = bundle.launch_plan["stdout"].as_str() {
+        print!("{output}");
+    }
+    if bundle.launch_plan["exit"] == true {
+        return Ok(());
+    }
     if bundle.launch["headless"] == true {
         return run_headless(bundle);
     }
@@ -1722,6 +1948,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             }
             let _ = rx.recv_timeout(Duration::from_millis(100));
         }
+
         return Ok(());
     }
     if bundle.manifest.surface == "background" {
@@ -1740,12 +1967,25 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         }
         return Ok(());
     }
-    if let Some(command) = &bundle.manifest.activation {
-        let fallback = vec![json!({"command":command,"body":{}})];
-        let plan = bundle.launch["activation"].as_array().unwrap_or(&fallback);
-        match crate::native_bus::activate_existing_plan(
+    let activation = bundle.launch_plan["activation"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| (row["command"].as_str().unwrap(), row["body"].clone()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            bundle
+                .manifest
+                .activation
+                .as_ref()
+                .map(|command| vec![(command.as_str(), json!({}))])
+                .unwrap_or_default()
+        });
+    if !activation.is_empty() && bundle.launch_plan["headless"] != true {
+        match crate::native_bus::activate_existing_commands(
             &std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone()),
-            plan,
+            &activation,
             &bundle.manifest.bus_url(),
         ) {
             Ok(true) => return Ok(()),
@@ -1755,6 +1995,58 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
                 std::process::exit(1);
             }
         }
+    }
+    if bundle.launch_plan["headless"] == true {
+        bundle.manifest.native_ui = false;
+        bundle.manifest.native_drive = false;
+        bundle.manifest.frame = None;
+        let prefix = format!("{}.", bundle.manifest.app());
+        if let Some(commands) = bundle
+            .manifest
+            .bus_surface
+            .as_mut()
+            .and_then(|surface| surface["commands"].as_array_mut())
+        {
+            commands.retain(|row| {
+                row["name"]
+                    .as_str()
+                    .and_then(|name| name.strip_prefix(&prefix))
+                    .is_none_or(|suffix| !toolkit::drive::COMMANDS.contains(&suffix))
+            });
+        }
+        let thread = std::thread::current();
+        let mut host = create(bundle, Arc::new(move || thread.unpark()));
+        let context = egui::Context::default();
+        crate::appearance::install(&context);
+        loop {
+            host.pump(&context);
+            if let Some(error) = host
+                .bus
+                .startup_error
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+            {
+                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                    error,
+                ))));
+            }
+            if !host.error.is_empty() {
+                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                    host.error.clone(),
+                ))));
+            }
+            if host.model["window_close"] == true
+                || host
+                    .bus
+                    .close_requested
+                    .load(std::sync::atomic::Ordering::Acquire)
+            {
+                break;
+            }
+            std::thread::park_timeout(Duration::from_millis(20));
+        }
+        return Ok(());
     }
     let title = bundle.manifest.title.clone();
     let size = bundle.manifest.size;

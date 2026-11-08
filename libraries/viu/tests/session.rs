@@ -69,6 +69,36 @@ end
 }
 
 #[test]
+fn session_notice_reports_mode_axis_instead_of_chrome_luminance() {
+    let ctx = egui::Context::default();
+    let snapshot = json!({"state":{"lost":false,"values":{
+        "appearance.mode":"auto", "state.appearance.daylight":true,
+        "appearance.scheme":"pro", "appearance.style":"pro"
+    }},"appearance":{"mode":"light"}});
+    viu::appearance::install_session_choice(
+        &ctx,
+        &snapshot,
+        "dopus",
+        &toolkit::Theme::embedded(),
+        &Default::default(),
+        &json!({}),
+    )
+    .unwrap();
+    assert_eq!(
+        viu::appearance::session_theme(&ctx).mode(),
+        design::Mode::Light
+    );
+    assert!(
+        ctx.global_style().visuals.dark_mode,
+        "Pro uses dark chrome in light mode"
+    );
+    assert_eq!(
+        viu::appearance::session_update(&ctx, &snapshot)["appearance"]["mode"],
+        "light"
+    );
+}
+
+#[test]
 fn settings_authority_loss_keeps_the_accepted_palette_and_geometry() {
     let file = toolkit::Theme::embedded();
     let mut snapshot = json!({"state":{"lost":false,"values":{"appearance.mode":"light","appearance.scheme":"mixos","appearance.density":"compact","appearance.roundness":"square","appearance.font_size":18}}});

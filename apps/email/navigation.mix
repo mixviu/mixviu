@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- A keyboard cursor is distinct from the account/folder currently selected.
+$tree_cursor=nil
+fn navigation_key($key)
+  global $tree_cursor,$tree_closed,$pane
+  $nav=navigation_rows()
+  if len($nav)==0 then return end
+  $at=index_of(map($nav,fn($r)=$r.key),$tree_cursor)
+  if $at==nil or $at<0 then $at=index_of(map($nav,fn($r)=$r.key),navigation_selected()) end
+  if $at==nil or $at<0 then $at=0 end
+  $r=$nav[$at]
+  if $key=="ArrowUp" then $tree_cursor=$nav[max(0,$at-1)].key
+  elif $key=="ArrowDown" then $tree_cursor=$nav[min(len($nav)-1,$at+1)].key
+  elif $key=="ArrowLeft" and $r.branch and $r.expanded then $tree_closed=unique(concat($tree_closed,[$r.key]));$tree_cursor=$r.key
+  elif $key=="ArrowLeft" then
+    $tree_cursor=$r.key
+    for $parent in reverse(slice($nav,0,$at)) if $parent.depth<$r.depth then $tree_cursor=$parent.key;break end end
+  elif $key=="ArrowRight" and $r.branch and not $r.expanded then $tree_closed=filter($tree_closed,fn($k)=$k!=$r.key);$tree_cursor=$r.key
+  elif $key=="ArrowRight" then $child=$nav[$at+1];$tree_cursor=if $child!=nil and $child.depth>$r.depth then $child.key else $r.key end
+  end
+  $pane="tree"
+end

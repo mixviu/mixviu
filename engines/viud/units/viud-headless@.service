@@ -18,7 +18,7 @@ RuntimeDirectory=mix/session/%i/desktop
 RuntimeDirectoryMode=0700
 # As in viud@, expose the desk's session bus to compositor children.
 ExecStartPre=-/usr/bin/ln -sfn @{run}/session/%i/dbus/bus @{run}/session/%i/desktop/bus
-ExecStart=@{prefix}/bin/viud --headless --socket ${WAYLAND_DISPLAY} --size ${MIX_VIUD_HEADLESS_SIZE} --scale ${MIX_VIUD_OUTPUT_SCALE} --config-file ${MIX_VIUD_CONFIG} --bus-service comp --scene-service shell
+ExecStart=@{prefix}/bin/viud --headless --socket ${WAYLAND_DISPLAY} --size ${MIX_VIUD_HEADLESS_SIZE} --scale ${MIX_VIUD_OUTPUT_SCALE} --config-file ${MIX_VIUD_CONFIG} --bus-service comp
 StandardOutput=journal
 StandardError=journal
 Nice=10

@@ -1,0 +1,89 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold form policy lives with the Email runtime, including connection fences.
+$mail_form=nil;$form_serial=0;$form_pim=require("pim.mix")
+fn form_info()
+  if $mail_form==nil then return nil end
+  $f=delete(delete($mail_form,"generation"),"instance")
+  return $f
+end
+fn form_open($kind,$ids=nil,$account=nil)
+  global $mail_form,$form_serial
+  $account=$account ?? $active;$d=$wire_data[$account] ?? {};$form_serial=$form_serial+1
+  $f={kind:$kind,account:$account,generation:$wire_generations[$account] ?? 0,instance:$form_serial,busy:false,error:nil}
+  if $kind=="event" then
+    $f.calendar=$d.calendar ?? ($d.calendars ?? [])[0].id
+    if $f.calendar==nil then return wire_refuse("DISABLED","That command cannot run now") end
+    $hour=floor(time()/3600)*3600+3600
+    $f.title="";$f.start=date_format($hour,"%Y-%m-%dT%H:%M:%S%:z");$f.end=date_format($hour+3600,"%Y-%m-%dT%H:%M:%S%:z");$f.location=""
+  elif $kind=="contact" then
+    $f.book=$d.book ?? ($d.books ?? [])[0].id
+    if $f.book==nil then return wire_refuse("DISABLED","That command cannot run now") end
+    $f.name="";$f.email="";$f.phone="";$f.organization=""
+  else
+    $f.ids=$ids ?? (if len($mail_selection)>0 then $mail_selection elif $message!=nil then [$message.id] else [] end)
+    if len($f.ids)==0 then return wire_refuse("DISABLED","That command cannot run now") end
+  end
+  $mail_form=$f
+  if $kind=="delete" and len($f.ids)==1 and not $mail_settings.confirm_delete then return form_submit(nil) end
+  return {rc:0,body:{}}
+end
+fn form_submit($choice)
+  global $mail_form
+  $f=$mail_form
+  if $f==nil then return wire_refuse("NOT_FOUND","No form is open") end
+  if $f.busy then return wire_refuse("BUSY","Saving…") end
+  if $f.generation!=($wire_generations[$f.account] ?? 0) or wire_entry($f.account)==nil then
+    $mail_form.error="This account changed while the form was open. Close it and open it again.";return wire_refuse("STALE_CONNECTION",$mail_form.error)
+  end
+  try
+    $a={account:$f.account}
+    if $f.kind=="event" then
+      if trim($f.title)=="" then raise("INVALID_ARGUMENT","A title is needed") end
+      $a=merge($a,{calendar:$f.calendar,title:trim($f.title),start:trim($f.start),end:trim($f.end),location:trim($f.location)})
+      $form_pim.event_patch($a,true);$command="email.event.create"
+    elif $f.kind=="contact" then
+      if trim($f.name)=="" then raise("INVALID_ARGUMENT","A name is needed") end
+      $a=merge($a,{book:$f.book,name:trim($f.name),emails:[trim($f.email)],phones:[trim($f.phone)],org:trim($f.organization)});$command="email.contact.create"
+    elif $f.kind=="delete" then $a.ids=$f.ids;$command="email.delete"
+    elif $f.kind=="move" then $a.ids=$f.ids;$a.mailbox=$choice;$command="email.move"
+    end
+    $r=wire_start($command,$a,nil,"form")
+    if $r.rc==0 then
+      if contains(["move","delete"],$f.kind) then $mail_form=nil else $mail_form.busy=true end
+    else $mail_form.error=$r.body.message end
+    return $r
+  catch $message,$error
+    $mail_form.error=$message;return wire_refuse("INVALID_ARGUMENT",$message)
+  end
+end
+fn form_intent($a)
+  global $mail_form
+  if $mail_form==nil then return wire_refuse("NOT_FOUND","No form is open") end
+  if $a.action=="edit" then
+    if $mail_form.busy then return wire_refuse("BUSY","Saving…") end
+    for $field in keys($a.value) if contains(["title","start","end","location","name","email","phone","organization"],$field) then $mail_form[$field]=$a.value[$field] end end
+    return {rc:0,body:{}}
+  end
+  if $a.value.choice=="cancel" then $mail_form=nil;return {rc:0,body:{}} end
+  return form_submit($a.value.choice)
+end
+fn form_model($m)
+  $f=$mail_form
+  if $f==nil then return $m end
+  $v={open:true,instance:$f.instance,title:"",body:"",choices:[{id:"save",label:"Save",enabled:not $f.busy,default:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}],fields:[],error:$f.error}
+  if $f.kind=="event" then
+    $v.title="New Event"
+    for $r in [["title","Title",""],["start","Starts","2026-10-17T09:00:00+10:00"],["end","Ends","2026-10-17T09:00:00+10:00"],["location","Location","optional"]] $v.fields=push($v.fields,{id:$r[0],label:$r[1],hint:$r[2],value:$f[$r[0]],enabled:not $f.busy}) end
+  elif $f.kind=="contact" then
+    $v.title="New Contact"
+    for $r in [["name","Full name",""],["email","Email","optional"],["phone","Phone","optional"],["organization","Company","optional"]] $v.fields=push($v.fields,{id:$r[0],label:$r[1],hint:$r[2],value:$f[$r[0]],enabled:not $f.busy}) end
+  elif $f.kind=="delete" then
+    $v.title="Delete";$v.body="Move to the Trash? Emails: "..to_string(len($f.ids));$v.choices[0].label="Delete"
+  else
+    $v.title="Move To";$v.body="Choose the mailbox to move this email to.";$v.choices=[$v.choices[1]];$v.items=[];$v.row_layout="selectable"
+    for $b in ($wire_data[$f.account] ?? {}).boxes ?? [] if $b.id!=$box then $v.items=push($v.items,{label:"",choices:[{id:$b.id,label:$b.name,enabled:true}]}) end end
+  end
+  if len($v.fields)==0 then $v=delete($v,"fields") end
+  $m.native_overlays=push($m.native_overlays,{command:"email.form.intent",definition:{id:"email-form",kind:"dialog-form",label:"",initial:$v,properties:{style:"gold"}}})
+  return $m
+end

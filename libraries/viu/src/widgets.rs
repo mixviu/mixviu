@@ -14,6 +14,8 @@ pub const KINDS: &[&str] = &[
     "search-bar",
     "form-fields",
     "header-form",
+    "file-tiles",
+    "file-previews",
     "status-line",
     "block-list",
     "label-run",
@@ -21,6 +23,8 @@ pub const KINDS: &[&str] = &[
     "cell-grid",
     "history-lines",
     "network-map",
+    "navigation-list",
+    "command-palette",
     "widget-row",
     "divider",
     "time-series",
@@ -275,6 +279,26 @@ impl Widget {
             );
         }
         self.validate_model(model)?;
+        if self.kind == "navigation-list" {
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            return Ok(self.value(model)["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    ui.painter()
+                        .layout_no_wrap(
+                            row["cells"][0].as_str().unwrap().into(),
+                            font.clone(),
+                            ui.visuals().text_color(),
+                        )
+                        .size()
+                        .x
+                })
+                .fold(0.0_f32, f32::max)
+                + 2.0 * ui.ctx().global_style().spacing.interact_size.x
+                + 2.0 * ui.ctx().global_style().spacing.item_spacing.x);
+        }
         if self.kind == "menubar" && self.properties["style"] == "gold" {
             let chrome = toolkit::chrome::Chrome::of(ui.ctx());
             if toolkit::menu::effective(ui.ctx()) != design::MenuStyle::Bar {
@@ -397,6 +421,9 @@ impl Widget {
             return crate::data_panels::validate(&self.kind, value);
         }
         if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            if self.kind == "property-grid" && !self.properties["preview"].is_null() {
+                crate::image_view::validate(&self.properties["preview"])?;
+            }
             if self.kind == "menubar" && self.properties["style"] == "gold" {
                 crate::native_menu::validate(value)?;
             }
@@ -460,6 +487,8 @@ impl Widget {
             "divider" => value.is_null(),
             "dashboard" => return crate::dashboard::validate(value),
             "time-series" => return crate::time_series::validate(value),
+            "navigation-list" => return crate::navigation_list::validate(value),
+            "command-palette" => return crate::command_palette::validate(value),
             "status-line" => {
                 value["left"].is_string()
                     && value["right"]
@@ -483,6 +512,8 @@ impl Widget {
                     && value["enabled"].is_boolean()
             }
             "image-view" => return crate::image_view::validate(value),
+            "file-tiles" => return crate::file_tiles::validate(value),
+            "file-previews" => return crate::file_previews::validate(value),
             "image-fill" => return crate::image_view::validate_fill(value),
             "image-canvas" => return crate::image_view::validate_canvas(value),
             "composition" => return crate::composition::validate(value),
@@ -541,7 +572,13 @@ impl Widget {
                 {
                     return Err("editor light must be bool".into());
                 }
-                for key in ["native_document", "soft_wrap", "line_numbers", "find_bar"] {
+                for key in [
+                    "native_document",
+                    "soft_wrap",
+                    "line_numbers",
+                    "find_bar",
+                    "prose",
+                ] {
                     if self.properties.get(key).is_some_and(|v| !v.is_boolean()) {
                         return Err(format!("editor {key} requires bool"));
                     }
@@ -554,6 +591,9 @@ impl Widget {
                                 "",
                                 "undo",
                                 "redo",
+                                "cut",
+                                "copy",
+                                "paste",
                                 "select-all",
                                 "duplicate-line",
                                 "delete-line",
@@ -609,6 +649,9 @@ impl Widget {
         }
     }
     pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "file-tiles" || self.kind == "file-previews" {
+            return vec!["toggle", "open", "save", "open-all", "save-all"];
+        }
         if self.kind == "macro-menu" {
             return vec!["close"];
         }
@@ -622,7 +665,9 @@ impl Widget {
             return vec!["select", "close"];
         }
         if self.kind == "header-form" {
-            return vec!["edit", "commit", "command", "remove", "picked", "cancel"];
+            return vec![
+                "edit", "commit", "command", "remove", "picked", "save", "cancel",
+            ];
         }
         if self.kind == "form-fields" {
             return vec!["edit"];
@@ -753,6 +798,13 @@ impl Widget {
         Ok(())
     }
     pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind == "file-tiles" || self.kind == "file-previews" {
+            return if crate::file_tiles::intent(self.value(model), action, value) {
+                Ok(())
+            } else {
+                Err("invalid file tile action".into())
+            };
+        }
         if self.properties["enabled"] == false
             || (self.kind == "swatches" && self.properties["read_only"] == true)
         {
@@ -877,6 +929,7 @@ impl Intent {
 
 #[derive(Default)]
 pub struct Widgets {
+    edits: BTreeMap<String, (String, std::collections::VecDeque<String>)>,
     native_menu: crate::native_menu::NativeMenu,
     gold_menus: bool,
     pub geometry: BTreeMap<String, Rect>,
@@ -886,6 +939,7 @@ pub struct Widgets {
     focus_error: Option<String>,
     images: crate::image_view::Images,
     surfaces: Option<crate::image_view::Images>,
+    media: Option<crate::image_view::Images>,
     editors: crate::editor::Editors,
     documents: crate::documents::Documents,
     canvases: Option<crate::image_view::Images>,
@@ -931,6 +985,9 @@ impl Widgets {
             images.begin();
         }
         if let Some(images) = &mut self.surfaces {
+            images.begin();
+        }
+        if let Some(images) = &mut self.media {
             images.begin();
         }
     }
@@ -1006,6 +1063,9 @@ impl Widgets {
             images.finish();
         }
         if let Some(images) = &mut self.surfaces {
+            images.finish();
+        }
+        if let Some(images) = &mut self.media {
             images.finish();
         }
         if let Some(id) = self.focus.take() {
@@ -1123,6 +1183,8 @@ impl Widgets {
                 ui.response()
             }
             "dashboard" => crate::dashboard::draw(ui, id, value, events),
+            "navigation-list" => crate::navigation_list::draw(ui, id, &widget.label, value, events),
+            "command-palette" => crate::command_palette::draw(ui, id, value, events),
             "time-series" => crate::time_series::draw(ui, id, value),
             "status-line" => {
                 ui.spacing_mut().item_spacing.x = ui.ctx().global_style().spacing.item_spacing.x;
@@ -1262,10 +1324,27 @@ impl Widgets {
             "block-list" | "form-grid" | "cell-grid" | "history-lines" | "label-run" => {
                 crate::data_panels::draw(ui, widget, value, &mut self.geometry, events)
             }
+            "file-tiles" => crate::file_tiles::draw(ui, id, value, events),
+            "file-previews" => crate::file_previews::draw(
+                ui,
+                id,
+                value,
+                self.media
+                    .get_or_insert_with(crate::image_view::Images::media),
+                events,
+            ),
+
             "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
             "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
             "menubar" | "command-bar" | "property-grid" | "dialog-form" | "settings-browser" => {
-                crate::rich::draw(ui, widget, value, &mut self.geometry, events)
+                crate::rich::draw(
+                    ui,
+                    widget,
+                    value,
+                    &mut self.geometry,
+                    events,
+                    &mut self.images,
+                )
             }
             "label" => {
                 if widget.properties["role"] == "section" {
@@ -1284,6 +1363,53 @@ impl Widgets {
                         })
                         .inner;
                     return self.remember(ui, id, &r);
+                }
+                if matches!(
+                    widget.properties["role"].as_str(),
+                    Some("warning" | "error")
+                ) {
+                    let colour = if widget.properties["role"] == "warning" {
+                        ui.visuals().warn_fg_color
+                    } else {
+                        ui.visuals().error_fg_color
+                    };
+                    let response = ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(value.as_str().unwrap_or_default()).color(colour),
+                        )
+                        .wrap(),
+                    );
+                    return self.remember(ui, id, &response);
+                }
+                if widget.properties["role"] == "panel-header" {
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), chrome.style.panel_header as f32),
+                        Sense::hover(),
+                    );
+                    let font = toolkit::fonts::bound(
+                        ui.ctx(),
+                        toolkit::fonts::medium(chrome.style.panel_pill_size as f32),
+                    );
+                    let galley = ui.painter().layout_no_wrap(
+                        value.as_str().unwrap_or_default().into(),
+                        font,
+                        chrome.palette.text,
+                    );
+                    ui.painter().galley(
+                        egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        chrome.palette.text,
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Label,
+                            ui.is_enabled(),
+                            value.as_str().unwrap_or_default(),
+                        )
+                    });
+
+                    return self.remember(ui, id, &response);
                 }
                 let text = label_text(ui, widget, value);
                 if widget.properties["role"] == "title" {
@@ -1310,6 +1436,8 @@ impl Widgets {
                 let mut label = egui::Label::new(text);
                 if widget.properties["truncate"] == true {
                     label = label.truncate();
+                } else if widget.properties["wrap"] == true {
+                    label = label.wrap();
                 }
                 if widget.properties["align"] == "center" {
                     label = label.halign(egui::Align::Center);
@@ -1418,7 +1546,24 @@ impl Widgets {
                 response
             }
             "field" | "multiline" | "editor" => {
-                let mut text = value.as_str().unwrap_or_default().to_owned();
+                let owner = value.as_str().unwrap_or_default().to_owned();
+                if let Some((base, pending)) = self.edits.get_mut(id) {
+                    if let Some(at) = pending.iter().position(|text| text == &owner) {
+                        pending.drain(..=at);
+                        *base = owner.clone();
+                    } else if *base != owner {
+                        pending.clear();
+                    }
+                    if pending.is_empty() {
+                        self.edits.remove(id);
+                    }
+                }
+                let mut text = self
+                    .edits
+                    .get(id)
+                    .and_then(|(_, pending)| pending.back())
+                    .cloned()
+                    .unwrap_or_else(|| owner.clone());
                 if self.focus.as_deref() == Some(id) {
                     if let Some(range) = &mut self.focus_selection {
                         let len = text.chars().count();
@@ -1438,7 +1583,12 @@ impl Widgets {
                     toolkit::field::text(ui, &mut text, widget.text("placeholder"), width)
                 } else {
                     let edit = if widget.kind == "field" {
-                        egui::TextEdit::singleline(&mut text)
+                        let edit = egui::TextEdit::singleline(&mut text);
+                        if widget.properties["weak"] == true {
+                            edit.text_color(ui.visuals().weak_text_color())
+                        } else {
+                            edit
+                        }
                     } else if widget.kind == "editor" {
                         let edit = egui::TextEdit::multiline(&mut text)
                             .desired_rows(rows)
@@ -1464,12 +1614,25 @@ impl Widgets {
                     )
                 };
                 // The key which ends editing belongs to the field this frame.
+                let r = if let Some(name) = widget.properties["accessible_name"].as_str() {
+                    r.accessible_name(name)
+                } else {
+                    r
+                };
                 self.text_input_active |= r.has_focus()
                     || (r.lost_focus()
                         && ui.input(|i| {
                             i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)
                         }));
                 if r.changed() {
+                    let (_, pending) = self
+                        .edits
+                        .entry(id.clone())
+                        .or_insert_with(|| (owner, Default::default()));
+                    pending.push_back(text.clone());
+                    if pending.len() > 256 {
+                        pending.pop_front();
+                    }
                     // Preserve native edit-before-submit/cancel ordering when
                     // a single input pass contains both text and a key.
                     events.push(Intent::set(id, json!(text)));
@@ -1508,7 +1671,12 @@ impl Widgets {
                 let r = if widget.kind == "checkbox" {
                     ui.checkbox(&mut checked, widget.text("text"))
                 } else {
-                    if widget.properties["style"] == "selectable" {
+                    if widget.properties["style"] == "gold" {
+                        ui.add_enabled(
+                            widget.properties["enabled"] != false,
+                            toolkit::toggle::Toggle::new(&mut checked, widget.text("text")),
+                        )
+                    } else if widget.properties["style"] == "selectable" {
                         let response = toolkit::selectable(ui, checked, widget.text("text"));
                         if response.clicked() {
                             checked = !checked;
@@ -1970,8 +2138,15 @@ impl Widgets {
                 .label(value.as_str().unwrap_or("Hover for help"))
                 .on_hover_text(widget.text("body")),
             "separator" => {
-                let r = ui.separator();
-                ui.small(value.as_str().unwrap_or("Section boundary"));
+                let r = if widget.properties["style"] == "hairline" {
+                    let rect = toolkit::bars::hairline(ui);
+                    ui.interact(rect, ui.scope_id().with(id), Sense::hover())
+                } else {
+                    ui.separator()
+                };
+                if let Some(text) = value.as_str().filter(|s| !s.is_empty()) {
+                    ui.small(text);
+                }
                 r
             }
             "icon" => {
@@ -2056,7 +2231,10 @@ fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egu
 
 fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
-    if widget.properties["role"] == "status" {
+    if widget.properties["role"] == "heading" {
+        text = text.heading();
+    }
+    if widget.properties["role"] == "status" || widget.properties["small"] == true {
         text = text.small();
     }
     if widget.properties["small"] == true {

@@ -1,6 +1,39 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 #[test]
+fn fixed_icon_bar_anchors_the_standard_macro_menu_to_its_button() {
+    let source = r#"---
+scene: 1
+name: anchored-toolbar
+citizen: toolbar
+---
+```mix
+{root:{widget:"control",definition:{id:"root",kind:"command-bar",label:"",initial:[{id:"help.macros",label:"Macros",enabled:true,icon:"scroll-text"}],properties:{style:"gold"}}}}
+```
+"#;
+    let mut view = viu::view::SceneView::new(source).unwrap();
+    let ctx = egui::Context::default();
+    viu::appearance::install(&ctx);
+    ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1040.0, 38.0),
+            )),
+            ..Default::default()
+        },
+        |ui| {
+            view.show(ui);
+        },
+    )
+    .drop_without_applying_deltas();
+    let anchor = ctx.data(|d| {
+        d.get_temp::<egui::Rect>(egui::Id::unique((egui::ViewportId::ROOT, "macro-anchor")))
+    });
+    assert_eq!(anchor, Some(view.geometry["root.command.help.macros"]));
+}
+
+#[test]
 fn toolbar_reserves_end_actions_and_omits_whole_optional_groups() {
     let source = r#"---
 scene: 1

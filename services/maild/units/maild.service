@@ -21,7 +21,7 @@ Environment=HOME=%S/mix/maild
 Environment=RUST_LOG=maild=info
 StateDirectory=mix/maild
 StateDirectoryMode=0750
-RuntimeDirectory=maild
+RuntimeDirectory=mix/maild
 RuntimeDirectoryMode=0750
 WorkingDirectory=%S/mix/maild
 ExecStart=@{prefix}/bin/maild -c @{etc}/maild/config.conf.mix serve

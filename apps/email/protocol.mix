@@ -1,0 +1,200 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- JMAP wire policy, derived from gold 8779f3328. No UI or storage access.
+$legacy=require("mail.mix");$accounts=require("accounts.mix");$arguments=require("arguments.mix")
+-- The owning worker supplies this caller-global transport state. Required
+-- module values are copied per call; tokens and reply ambiguity must survive
+-- successive calls in one job and be returned in its session receipt.
+fn session($s)
+  if contains(keys(($email_protocol_transport ?? {}).tokens ?? {}),$s.api) then $s.token=$email_protocol_transport.tokens[$s.api] end
+  return $s
+end
+fn ambiguous()
+  return ($email_protocol_transport ?? {}).ambiguous ?? true
+end
+fn origin($url)
+  $u=url_parse($url)
+  return lower($u.scheme).."://"..lower($u.host)..":"..to_string($u.port ?? (if $u.scheme=="https" then 443 else 80 end))
+end
+fn endpoint($e,$url)
+  if origin($e.url)!=origin($url) then raise("SERVER","Session endpoint is not the account's origin") end
+  return $url
+end
+fn request($e,$url,$method,$body,$token=nil)
+  $request={url:endpoint($e,$url),method:$method,body:$body,headers:{"Content-Type":"application/json"},timeout:300,max_request:16777216,max_response:16777216}
+  if $token!=nil then $request.headers.Authorization="Bearer "..$token
+  else $request.basic={username:$e.user,password:if $e.password_file!=nil then $legacy.secret($e.password_file) else $accounts.password($e.id) end} end
+  if $e.ca_file!=nil then
+    $ca=viu_read_optional($e.ca_file)
+    if not $ca.found or byte_length($ca.text)>65536 then raise("SERVER","Cannot read the CA bundle") end
+    $request.ca_pem=$ca.text
+  end
+  return $request
+end
+fn http($e,$url,$method,$body,$token=nil)
+  return viu_http(request($e,$url,$method,$body,$token))
+end
+fn exchange($e)
+  $base=rtrim($e.url,"/")
+  $issued=http($e,$base.."/auth/tokens/issue","POST",json_encode({label:"mixos-email"}))
+  $token=nil
+  if $issued.status==200 or $issued.status==201 then
+    $t=json_parse($issued.body)
+    if type($t.token)!="string" or $t.token=="" then raise("SERVER","The server issued an unusable token") end
+    $token=$t.token
+  elif not contains([404,405],$issued.status) then raise("SERVER","Token exchange HTTP "..to_string($issued.status)) end
+  return $token
+end
+fn connect($e)
+  $base=rtrim($e.url,"/");$token=exchange($e)
+  $r=http($e,$base.."/.well-known/jmap","GET","",$token)
+  if $r.status!=200 then raise("SERVER","Session HTTP "..to_string($r.status)) end
+  $s=json_parse($r.body)
+  for $key in ["apiUrl","uploadUrl","downloadUrl"]
+    if type($s[$key])!="string" or $s[$key]=="" then raise("SERVER","Session has no "..$key) end
+    endpoint($e,$s[$key])
+  end
+  if type($s.accounts)!="map" or type($s.capabilities)!="map" then raise("SERVER","Invalid JMAP session") end
+  $account=$s.primaryAccounts["urn:ietf:params:jmap:mail"]
+  if type($account)!="string" then raise("SERVER","Session has no mail primaryAccount") end
+  return {account:$account,token:$token,api:$s.apiUrl,using:keys($s.capabilities),raw:$s}
+end
+fn post($e,$s,$body)
+  global $email_protocol_transport
+  $email_protocol_transport=$email_protocol_transport ?? {tokens:{},ambiguous:true}
+  $email_protocol_transport.ambiguous=true;$s=session($s)
+  $r=http($e,$s.api,"POST",$body,$s.token)
+  if $r.status==401 and $s.token!=nil then
+    try $token=exchange($e)
+    catch $message $email_protocol_transport.ambiguous=false;raise("SERVER","unauthorized: token expired and the re-exchange was refused") end
+    $email_protocol_transport.tokens[$s.api]=$token
+    $r=http($e,$s.api,"POST",$body,$token)
+  end
+  if $r.status>=400 and $r.status<500 and $r.status!=408 then $email_protocol_transport.ambiguous=false end
+  return $r
+end
+fn call($e,$s,$method,$args)
+  global $email_protocol_transport
+  $args.accountId=$s.account
+  $r=post($e,$s,json_encode({using:$s.using,methodCalls:[[$method,$args,"c0"]]}))
+  if $r.status!=200 then raise("SERVER","JMAP HTTP "..to_string($r.status)) end
+  $reply=json_parse($r.body)
+  if type($reply.methodResponses)!="list" or len($reply.methodResponses)!=1 then raise("SERVER","Invalid JMAP response count") end
+  $v=$reply.methodResponses[0]
+  if len($v)!=3 or $v[2]!="c0" or type($v[1])!="map" then raise("SERVER","Invalid JMAP response identity") end
+  if $v[0]=="error" then $email_protocol_transport.ambiguous=false;raise(if $v[1].type=="notFound" then "NOT_FOUND" else "SERVER" end,"JMAP "..to_string($v[1].type)..": "..to_string($v[1].description ?? "")) end
+  if $v[0]!=$method then raise("SERVER","JMAP method did not match request") end
+  return $v[1]
+end
+fn chained($e,$s,$kind,$query)
+  $query.accountId=$s.account
+  $get={accountId:$s.account};$get["#ids"]={resultOf:"q0",name:$kind.."/query",path:"/ids"}
+  $calls=[[$kind.."/query",$query,"q0"],[$kind.."/get",$get,"g0"]]
+  $r=post($e,$s,json_encode({using:$s.using,methodCalls:$calls}))
+  if $r.status!=200 then raise("SERVER","JMAP HTTP "..to_string($r.status)) end
+  $response=json_parse($r.body).methodResponses
+  if type($response)!="list" or len($response)!=2 then raise("SERVER","Invalid JMAP response count") end
+  for $i=0 to 1
+    $reply=$response[$i]
+    if len($reply)!=3 or $reply[2]!=$calls[$i][2] or type($reply[1])!="map" then raise("SERVER","Invalid JMAP response identity") end
+    if $reply[0]=="error" then raise(if $reply[1].type=="notFound" then "NOT_FOUND" else "SERVER" end,"JMAP "..to_string($reply[1].type)) end
+    if $reply[0]!=$calls[$i][0] then raise("SERVER","JMAP method did not match request") end
+  end
+  return {query:$response[0][1],get:$response[1][1]}
+end
+fn boxes($raw)
+  return jq($raw,'map({id,name,parentId:(.parentId // null),role:(.role // null),sortOrder:(.sortOrder // 0),totalEmails:(.totalEmails // 0),unreadEmails:(.unreadEmails // 0)})')
+end
+fn emails($raw)
+  return jq($raw,'def address: if type=="string" then {name:null,email:.} else {name:(.name // null),email} end; def addresses: if .==null then null elif type=="array" then map(address) else [address] end; map({id,subject:(.subject // null),from:(.from|addresses),to:(.to|addresses),cc:(.cc|addresses),messageId:(.messageId // null),date:(.date // null),receivedAt:(.receivedAt // null),hasAttachment:(if has("hasAttachment") then .hasAttachment else null end),keywords:(.keywords // null),bodyValues:(.bodyValues // null),textBody:(if .textBody==null then null else [.textBody[]|{partId:.partId,type:(.type // null)}] end),htmlBody:(if .htmlBody==null then null else [.htmlBody[]|{partId:.partId,type:(.type // null)}] end),attachments:(if .attachments==null then null else [.attachments[]|{partId:(.partId // null),blobId:(.blobId // null),size:(.size // 0),name:(.name // null),type:(.type // null),disposition:(.disposition // null),cid:(.cid // null),undecodable:(.undecodable // false)}] end)})')
+end
+fn list($e,$s,$a)
+  $filter={}
+  if $a.mailbox!=nil then $filter.inMailbox=$a.mailbox end
+  if $a.query!=nil and $a.query!="" then $filter.text=$a.query end
+  $offset=$arguments.number($a,"offset") ?? 0;$limit=min(500,max(1,$arguments.number($a,"limit") ?? 100))
+  $q=call($e,$s,"Email/query",{filter:$filter,sort:[{property:$a.sort ?? "receivedAt",isAscending:$a.ascending ?? false}],position:$offset,limit:$limit,calculateTotal:true})
+  if type($q.ids)!="list" or len($q.ids)>$limit or len(unique($q.ids))!=len($q.ids) then raise("SERVER","Invalid query identities") end
+  if len($q.ids)==0 then return {emails:[],total:$q.total ?? 0,offset:$offset} end
+  $get=call($e,$s,"Email/get",{ids:$q.ids})
+  $by={};for $m in $get.list $by[$m.id]=$m end
+  if not deep_eq(sort(keys($by)),sort($q.ids)) then raise("SERVER","Query/get identities changed") end
+  return {emails:emails(map($q.ids,fn($id)=$by[$id])),total:$q.total ?? len($q.ids),offset:$offset}
+end
+fn get($e,$s,$id)
+  if type($id)!="string" or $id=="" then raise("INVALID_ARGUMENT","An email id is required") end
+  $r=call($e,$s,"Email/get",{ids:[$id],fetchTextBodyValues:true,fetchHTMLBodyValues:true})
+  if len($r.list ?? [])!=1 or $r.list[0].id!=$id then raise("NOT_FOUND","email "..$id.." is gone") end
+  $m=emails($r.list)[0];$m.text=nil
+  if len($m.textBody ?? [])>0 then $m.text=(($m.bodyValues ?? {})[$m.textBody[0].partId] ?? {}).value end
+  if $m.text==nil then
+    $m.html=nil
+    if len($m.htmlBody ?? [])>0 then $m.html=(($m.bodyValues ?? {})[$m.htmlBody[0].partId] ?? {}).value end
+  end
+  return $m
+end
+fn batch($e,$s,$command,$a)
+  $ids=$arguments.list($a,"ids") ?? $arguments.list($a,"id")
+  if $ids==nil or len($ids)==0 then raise("INVALID_ARGUMENT","ids is required") end
+  $patch={};$done=[];$failed=[];$destroy=$command=="email.delete" and ($arguments.flag($a,"destroy") ?? false)
+  if $command=="email.mark" then
+    if not contains(keys($a),"read") and not contains(keys($a),"flagged") then raise("INVALID_ARGUMENT","read or flagged is required") end
+    for $pair in [["read","keywords/$seen"],["flagged","keywords/$flagged"]]
+      if contains(keys($a),$pair[0]) then
+        if type($a[$pair[0]])!="bool" then raise("INVALID_ARGUMENT","read and flagged must be boolean") end
+        $patch[$pair[1]]=if $a[$pair[0]] then true else nil end
+      end
+    end
+  elif not $destroy then
+    if $command=="email.junk" and type($a.junk)!="bool" then raise("INVALID_ARGUMENT","junk must be boolean") end
+    $destination=$a.mailbox
+    if $command=="email.delete" or $command=="email.junk" then
+      $role=if $command=="email.delete" then "trash" elif $a.junk==true then "junk" else "inbox" end
+      $boxes=call($e,$s,"Mailbox/get",{}).list
+      $found=filter($boxes,fn($b)=$b.role==$role)
+      if len($found)==0 then raise("SERVER","no mailbox has the "..$role.." role") end
+      $destination=$found[0].id
+    end
+    if type($destination)!="string" then raise("INVALID_ARGUMENT","A mailbox id is required") end
+    $membership={};$membership[$destination]=true;$patch.mailboxIds=$membership
+  end
+  $at=0
+  while $at<len($ids)
+    $part=slice($ids,$at,$at+500);$at=$at+500
+    $args=if $destroy then {destroy:$part} else {update:{}} end
+    if not $destroy then for $id in $part $args.update[$id]=$patch end end
+    try
+      $r=call($e,$s,"Email/set",$args)
+      for $id in $part
+        $error=if $destroy then ($r.notDestroyed ?? {})[$id] else ($r.notUpdated ?? {})[$id] end
+        $confirmed=if $destroy then contains($r.destroyed ?? [],$id) else contains(keys($r.updated ?? {}),$id) end
+        if $error!=nil then push($failed,{id:$id,reason:to_string($error.type)..(if $error.description!=nil then ": "..$error.description else "" end)})
+        elif not $confirmed then push($failed,{id:$id,reason:"serverFail: server did not confirm "..json_encode($id).." as "..(if $destroy then "destroyed" else "updated" end)})
+        else push($done,$id) end
+      end
+    catch $message
+      for $id in $part push($failed,{id:$id,reason:$message}) end
+    end
+  end
+  if len($done)==0 and len($failed)>0 then raise(if all($failed,fn($f)=starts_with($f.reason,"notFound")) then "NOT_FOUND" else "SERVER" end,join(map($failed,fn($f)=$f.id.." ("..$f.reason..")"),", ")) end
+  $answer={ids:$ids,done:$done,failed:$failed,partial:len($done)>0 and len($failed)>0}
+  if $command=="email.move" or $command=="email.junk" then $answer.mailbox=$destination end
+  if $command=="email.delete" then $answer.destroyed=$destroy end
+  return $answer
+end
+fn mailbox_write($e,$s,$command,$a)
+  if $command=="email.mailbox.create" then
+    $r=call($e,$s,"Mailbox/set",{create:{c0:{name:$arguments.required($a,"name"),parentId:$arguments.text($a,"parent")}}})
+    if $r.created.c0.id==nil then raise("SERVER","Mailbox create was not confirmed") end
+    return {id:$r.created.c0.id}
+  end
+  $id=$arguments.required($a,"id")
+  $args={onDestroyRemoveEmails:false}
+  if $command=="email.mailbox.rename" then $args.update={};$args.update[$a.id]={name:$arguments.required($a,"name")}
+  else $args.destroy=[$a.id] end
+  $r=call($e,$s,"Mailbox/set",$args)
+  $error=if $command=="email.mailbox.rename" then ($r.notUpdated ?? {})[$a.id] else ($r.notDestroyed ?? {})[$a.id] end
+  if $error!=nil then raise(if $error.type=="notFound" then "NOT_FOUND" else "SERVER" end,to_string($error.type)..": "..to_string($error.description ?? "")) end
+  if $command=="email.mailbox.rename" and not contains(keys($r.updated ?? {}),$a.id) then raise("SERVER","Mailbox rename was not confirmed") end
+  if $command=="email.mailbox.delete" and not contains($r.destroyed ?? [],$a.id) then raise("SERVER","Mailbox delete was not confirmed") end
+  return {id:$a.id}
+end

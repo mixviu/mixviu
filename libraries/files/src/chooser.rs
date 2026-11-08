@@ -112,7 +112,7 @@ impl Filter {
     }
 
     /// The save-only `*.ext` rule; complex globs do not suggest an extension.
-    fn save_name(&self, name: &[u8]) -> Vec<u8> {
+    pub fn save_name(&self, name: &[u8]) -> Vec<u8> {
         let has_extension = name
             .iter()
             .enumerate()

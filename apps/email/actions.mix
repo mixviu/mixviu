@@ -1,0 +1,104 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Registry data adapted from the pinned gold actions/theme catalogue.
+$base=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+fn registry($s)
+  $out=[]
+  for $a in $base
+    if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end
+    -- The initial flags are a gold no-account readback. Connection-dependent
+    -- command policy is refined alongside the full feature port.
+    if $s.dialog!=nil then $a.enabled=false end
+    if starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.") then $a.enabled=true end
+    if $a.id=="help.macros" then $a.enabled=$s.macros_open or $s.dialog==nil end
+    if $a.id=="mail.compose" then $a.enabled=$s.composable==true and $s.dialog==nil and $s.form==nil end
+    if $a.id=="compose.new" then $a.enabled=($s.accounts ?? 0)>0 and $s.dialog==nil end
+    if contains(["mail.flag","mail.mark_unread"],$a.id) then $a.enabled=$s.targeted==true and $s.dialog==nil and $s.form==nil end
+    if contains(["mail.delete","mail.move","mail.junk","mail.not_junk"],$a.id) then $a.enabled=$s.targeted==true and $s.dialog==nil and $s.form==nil end
+    if $a.id=="calendar.new_event" then $a.enabled=$s.connected and ($s.calendars ?? 0)>0 and $s.dialog==nil and $s.form==nil end
+    if $a.id=="contacts.new_contact" then $a.enabled=$s.connected and ($s.books ?? 0)>0 and $s.dialog==nil and $s.form==nil end
+    if starts_with($a.id,"mail.reply") or $a.id=="mail.forward" then $a.enabled=$s.reading==true and $s.dialog==nil and $s.form==nil end
+    if $a.id=="mail.send_as_new" then $a.enabled=$s.reading==true and $s.dialog==nil and $s.form==nil end
+    if $a.id=="mail.flag" then $a.label=if $s.all_flagged==true then "Remove Star" else "Star" end end
+    if $a.id=="mail.mark_unread" then $a.label=if $s.some_unread==true then "Mark as Read" else "Mark as Unread" end end
+    if $a.id=="mail.junk" then $a.enabled=$a.enabled and $s.in_junk!=true and $s.has_junk==true;$a.label=if $s.has_junk==false then "Junk (this account has no Junk folder)" else "Junk" end end
+    if $a.id=="mail.not_junk" then $a.enabled=$a.enabled and $s.in_junk==true and $s.has_inbox==true end
+    if $a.id=="mail.attachments" then $a.enabled=$s.reading==true and $s.has_attachments==true and $s.dialog==nil;$a.checked=$s.attachments_expanded==true end
+    if $a.id=="mail.save_attachments" then $a.enabled=$s.reading==true and $s.save_attachments==true and $s.dialog==nil end
+    if $a.id=="mail.print" then $a.enabled=$s.reading==true and $s.dialog==nil end
+    if contains(["view.next_account","view.previous_account"],$a.id) then $a.enabled=($s.accounts ?? 0)>1 and $s.dialog==nil end
+    if $a.id=="view.reader.markdown" then $a.enabled=$s.reading==true and $s.has_text==true and $s.dialog==nil;$a.checked=$s.markdown==true end
+    if $a.id=="view.attachments_inline" then $a.checked=$s.attachments_inline!=false end
+    $a.reason=if $a.enabled then nil else "disabled" end
+    for $axis in [["theme","scheme"],["mode","mode"],["style","style"],["decorations","decorations"],["captions","caption_side"]]
+      $prefix="view."..$axis[0].."."
+      if starts_with($a.id,$prefix) then
+        $name=slice($a.id,len($prefix));$choice=$s.theme_choice[$axis[1]]
+        $a.checked=if $name=="session" then $choice==nil elif $name=="auto" then ($choice ?? "auto")=="auto" else $choice==$name end
+      end
+    end
+    push($out,$a)
+  end
+  return $out
+end
+fn binding_defaults() return $base end
+fn shortcuts($s)
+  $out=[]
+  for $a in registry($s)
+    $binding=$s.bindings[$a.id] ?? {}; $keys=$binding.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+    for $key in $keys $entry=$a;$entry.shortcut=$key;push($out,$entry) end
+  end
+  return $out
+end
+fn menus($s)
+  $actions=registry($s);$by={};for $a in $actions $by[$a.id]={id:$a.id,label:$a.label,enabled:$a.enabled,checked:$a.checked,shortcut:$a.shortcut} end
+  $theme=[];$last=nil
+  for $a in $actions
+    if not (starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode.") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.")) then continue end
+    $tg=if starts_with($a.id,"view.theme.") then (if contains(["pro","studio","classic","breeze","adwaita","mixos"],slice($a.id,11)) then 1 elif $a.id=="view.theme.session" then 2 else 0 end) elif starts_with($a.id,"view.mode.") then 3 elif starts_with($a.id,"view.style.") then 4 else 5 end
+    if $last!=nil and $last!=$tg then push($theme,{separator:true}) end
+    push($theme,$by[$a.id]);$last=$tg
+  end
+  $groups=[
+    {name:"File",groups:[["file.refresh"],["file.accounts"],["file.quit"]]},
+    {name:"Mail",groups:[["mail.compose"]]},
+    {name:"Message",groups:[["mail.reply","mail.reply_all","mail.forward","mail.send_as_new"],["mail.reply_quoted","mail.reply_unquoted","mail.reply_all_quoted","mail.reply_all_unquoted"],["mail.flag","mail.mark_unread"],["mail.junk","mail.not_junk"],["mail.move","mail.delete"],["mail.print","mail.attachments","mail.save_attachments"]]},
+    {name:"Calendar",groups:[["calendar.new_event"]]},
+    {name:"Contacts",groups:[["contacts.new_contact"]]},
+    {name:"View",groups:[["theme-menu","view.mail","view.calendar","view.contacts"],["view.next_account","view.previous_account"],["reader-menu","view.attachments_inline"]]},
+    {name:"Help",groups:[["help.macros","help.shortcuts"],["help.about"]]}
+  ];$out=[]
+  for $menu in $groups
+    $children=[];$first=true
+    for $group in $menu.groups
+      if not $first then push($children,{separator:true}) end
+      $first=false
+      for $id in $group
+        $row=if $id=="theme-menu" then {id:"theme-menu",label:"Theme",enabled:true,children:$theme}
+          elif $id=="reader-menu" then {id:"reader-menu",label:"Message",enabled:$by["view.reader.markdown"].enabled,children:[$by["view.reader.markdown"]]}
+          else $by[$id] end
+        push($children,$row)
+      end
+    end
+    push($out,{id:$menu.name,label:$menu.name,enabled:true,children:$children})
+  end
+  return $out
+end
+fn toolbar($s)
+  $actions=registry($s);$out=[]
+  for $pair in [["mail.compose","square-pen"],["help.macros","scroll-text"],["view.search","search"],["help.shortcuts","keyboard"],["view.mode",if ($s.theme_effective.mode ?? "dark")=="dark" then "sun" else "moon" end]]
+    $a=filter($actions,fn($a)=$a.id==$pair[0])[0];$a.icon=$pair[1];$a.icon_only=true;push($out,$a)
+  end
+  return $out
+end
+fn theme_edit($choice,$args)
+  $allowed={scheme:["ocean","crimson","stone","forest","sunset","mono","pro","studio","classic","breeze","adwaita","mixos"],mode:["light","dark"],style:["own","plain","pro","studio","classic","breeze","adwaita"],decorations:["auto","csd","ssd"],caption_side:["auto","left","center","right"]}
+  for $key in ["scheme","style","mode","decorations","caption_side"]
+    if contains(keys($args),$key) then
+      $v=$args[$key]
+      if $v!=nil and type($v)!="string" then return {ok:false,message:$key.." must be a name or null"} end
+      if $v!=nil and not contains($allowed[$key],$v) then return {ok:false,message:"unknown "..$key.." "..json_encode($v)} end
+    end
+  end
+  for $key in ["scheme","style","mode","decorations","caption_side"] if contains(keys($args),$key) then $choice[$key]=$args[$key] end end
+  return {ok:true,choice:$choice}
+end

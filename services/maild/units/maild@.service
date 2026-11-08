@@ -12,16 +12,16 @@ User=maild
 Group=maild
 EnvironmentFile=@{etc}/session/%i.env
 Environment=MIX_ETC=@{etc}
-Environment=MIX_VAR=%S/maild
-Environment=HOME=%S/maild
+Environment=MIX_VAR=%S/mix/maild/%i
+Environment=HOME=%S/mix/maild/%i
 Environment=RUST_LOG=maild=info
-StateDirectory=maild
+StateDirectory=mix/maild/%i
 StateDirectoryMode=0750
-RuntimeDirectory=maild
+RuntimeDirectory=mix/maild/%i
 RuntimeDirectoryMode=0750
 ConfigurationDirectory=mix/maild
 ConfigurationDirectoryMode=0750
-WorkingDirectory=%S/maild
+WorkingDirectory=%S/mix/maild/%i
 ExecStart=@{prefix}/bin/maild -c @{etc}/maild/config.conf.mix serve
 Restart=on-failure
 RestartSec=5s

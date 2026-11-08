@@ -6,10 +6,14 @@ pub mod app_host;
 pub mod appearance;
 pub mod bundle;
 pub mod capture;
+mod child_windows;
 pub mod chooser;
+pub mod chooser_host;
 pub mod clipboard;
+pub mod command_palette;
 pub mod composition;
 mod cuboids;
+
 pub mod debug;
 mod debug_recent;
 mod design_style;
@@ -24,7 +28,7 @@ pub mod http;
 pub mod icons;
 pub mod image_view;
 pub mod jobs;
-mod launch;
+pub mod launch;
 mod local_ui;
 pub mod macro_host;
 pub mod native_bus;
@@ -32,10 +36,12 @@ mod native_events;
 pub mod native_menu;
 mod native_primitives;
 mod native_theme;
+pub mod navigation_list;
 pub mod raster;
 pub mod raster_decode;
 pub mod raster_fill;
 pub mod raster_fit;
+
 pub mod rich;
 pub mod runtime;
 pub mod session;
@@ -56,8 +62,11 @@ pub mod platform;
 pub mod ui_state;
 
 pub mod editor_controls;
+pub mod file_previews;
+pub mod file_tiles;
 pub mod header_controls;
 mod media_gallery;
+pub mod media_preview;
 pub mod settings_browser;
 
 pub mod process;

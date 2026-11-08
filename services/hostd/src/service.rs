@@ -183,7 +183,7 @@ impl Host {
     pub fn fixture(dir: &std::path::Path) -> Self {
         Self {
             root: dir.into(),
-            state: dir.join("var/lib/hostd"),
+            state: dir.join("var/lib/mix/hostd"),
             limiter: Arc::default(),
             writer: Arc::default(),
             blocked: Arc::default(),
@@ -192,7 +192,7 @@ impl Host {
 }
 
 /// systemd's `StateDirectory=hostd`.
-pub const STATE: &str = "/var/lib/hostd";
+pub const STATE: &str = "/var/lib/mix/hostd";
 
 /// No read takes longer than this, on either transport; every source also
 /// has its own shorter deadline.
