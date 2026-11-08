@@ -41,7 +41,11 @@ or deployment.
 - GitHub exposed a lifecycle fixture trace race: formatted writes from its
   readiness child interleaved with the citizen boot record. Assemble that
   small record before appending it. Assertions and timeouts are unchanged;
-  targeted CBC validation follows this fixture-only change.
+  CBC job `20261108-161926-f3889961` at `2c80c0bf` passed both lifecycle
+  configurations (7 tests each, one existing subprocess helper ignored) and
+  ten further runs of the affected grace case. A fresh sibling mixd was
+  built first. Formatting and env checks also passed at this source.
+  Production code is unchanged from the full CBC gate.
 - GitHub required checks: `ci-ok` and `security-ok`; live results are on PR #7.
 - Not tested: desktop sessions, installation or production deployment.
 

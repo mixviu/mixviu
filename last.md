@@ -501,7 +501,25 @@ The historical scanner false positive and two notes quoting it have exact
 fingerprint exceptions. Main scanner rules are unchanged. Pinned gitleaks
 8.30.1 passes a full-history redacted scan. Only scanner exceptions and docs
 changed after the tested Rust tree. PR.md and PR #7 contain current evidence.
-Required GitHub ci-ok/security-ok are verified on the final pushed head;
+Required GitHub checks are ci-ok/security-ok, verified separately on the final pushed head;
 independent review and human approval are separate requirements.
 
 Branch fix/mix-hygiene; head: this evidence commit (tested Rust tree 7cb24b0b596befc40f05c55893e39124a5b463f7); gate: fmt/env/mix-lint/test/release-mix GREEN; CBC jobs 20261108-153105-ab2990de-a1, 20261108-153201-d97092aa-a1; PR #7.
+
+
+## Final CI fixture repair (2026-11-08)
+
+GitHub run 42453072066 exposed a readiness/boot trace interleaving in the
+existing serve_reload_lifecycle grace fixture. Formatting directly into a
+File wrote fragments; the child now formats the whole readiness record
+before write_all. All assertions and timeouts remain unchanged.
+
+Source 2c80c0bf0ff115ce5d0bfa1985cdf062d3a8424b passed formatting and env
+checks. CBC 20261108-161926-f3889961 built a fresh sibling mixd and passed
+both lifecycle configurations (7 tests each; existing subprocess helper
+ignored), plus ten further runs of the affected grace case. The full saved
+log was read. The first focused CBC job 20261108-161651-31de42e8 did not
+preserve Cargo failure details; the corrected job retained full output.
+Production code is unchanged from the green full gate at 7cb24b0b.
+
+Branch fix/mix-hygiene; head: this evidence commit (full tested tree 7cb24b0b596befc40f05c55893e39124a5b463f7, tested fixture 2c80c0bf0ff115ce5d0bfa1985cdf062d3a8424b); gate: fmt/env/mix-lint/test/release-mix GREEN plus lifecycle repeat GREEN; CBC jobs 20261108-153105-ab2990de-a1, 20261108-153201-d97092aa-a1, 20261108-161926-f3889961; PR #7.
