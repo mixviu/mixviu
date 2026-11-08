@@ -17,24 +17,24 @@ use std::{borrow::Borrow, hash::Hash, time::Instant};
 // error locally. Resolver construction performs no network I/O.
 struct OfflineTxt;
 
-impl ResolverCache<String, Txt> for OfflineTxt {
+impl ResolverCache<Box<str>, Txt> for OfflineTxt {
     fn get<Q>(&self, _: &Q) -> Option<Txt>
     where
-        String: Borrow<Q>,
+        Box<str>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        Some(Txt::Error(mail_auth::Error::InvalidRecordType))
+        Some(Txt::Error(mail_auth::Error::Dns(mail_auth::DnsError::InvalidRecordType)))
     }
 
     fn remove<Q>(&self, _: &Q) -> Option<Txt>
     where
-        String: Borrow<Q>,
+        Box<str>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         None
     }
 
-    fn insert(&self, _: String, _: Txt, _: Instant) {
+    fn insert(&self, _: Box<str>, _: Txt, _: Instant) {
         panic!("offline TXT cache must satisfy every lookup");
     }
 }
