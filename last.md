@@ -478,3 +478,30 @@ Final lab merge (2026-11-08): origin/lab/gold-parity at 01912877 (eight accepted
 Branch cutover/four-engines; head is this last.md commit (source db16141); full gate: the coordinator runs it on infra/pr-ci; CBC light 20261108-105611-7534e7c2, 20261108-104904-e4317f0f, 20261108-104841-c85e2532, 20261108-105441-54343276.
 
 Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa3c37ec19d; Email legacy account-tree startup FIXED; hot-apply apps/email/mail.mix + apps/email/surface.mix to /opt/mix/share/mixviu/apps/email/; CBC email-desk4-scope-r4-a1 rc0 (17/17), email-desk4-native-r5 rc0 (real maild before/after); no desk4/main/infra/pr-ci changes.
+
+
+## PR #7 main synchronisation (2026-11-08)
+
+Merged main 60cb127 into fix/mix-hygiene without rebasing or force-pushing.
+The only conflict was last.md; both evidence records were preserved. Main
+cut-over rules and the gated hooks coexist; the env registry has 194 names
+and zero problems.
+
+CBC 20261108-153105-ab2990de-a1 resolved Cargo.lock without changes and
+regenerated the lint baseline using the merged tree mix. Counts only shrink
+against main: 182 to 152 files and 1265 to 1211 diagnostics.
+
+CBC 20261108-153201-d97092aa-a1 at source
+7cb24b0b596befc40f05c55893e39124a5b463f7 passed fmt, env, mix-lint, full test
+and release-mix (BUILD_RC=0). All 611 test result summaries have zero failures.
+Both debug artefact checks and the release artefact check passed; the release
+feature guard refused fault injection. The full 904311-byte saved log was read.
+
+The historical scanner false positive and two notes quoting it have exact
+fingerprint exceptions. Main scanner rules are unchanged. Pinned gitleaks
+8.30.1 passes a full-history redacted scan. Only scanner exceptions and docs
+changed after the tested Rust tree. PR.md and PR #7 contain current evidence.
+Required GitHub ci-ok/security-ok are verified on the final pushed head;
+independent review and human approval are separate requirements.
+
+Branch fix/mix-hygiene; head: this evidence commit (tested Rust tree 7cb24b0b596befc40f05c55893e39124a5b463f7); gate: fmt/env/mix-lint/test/release-mix GREEN; CBC jobs 20261108-153105-ab2990de-a1, 20261108-153201-d97092aa-a1; PR #7.
