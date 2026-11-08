@@ -356,6 +356,32 @@ fn failure(error: impl ToString) -> MixError {
         span: None,
     }
 }
+struct SendOnly {
+    target: String,
+    command: String,
+    body: String,
+    timeout: Duration,
+}
+impl SendOnly {
+    fn decode(spec: &Value) -> MixResult<Self> {
+        let name = |key: &str, limit: usize| -> MixResult<String> {
+            spec[key].as_str().filter(|s| !s.is_empty() && s.len() <= limit && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)))
+                .map(str::to_owned).ok_or_else(|| failure(format!("native.send requires a bounded {key}")))
+        };
+        let timeout = match spec.get("timeout") {
+            None => 2.0,
+            Some(v) => v.as_f64().ok_or_else(|| failure("native.send timeout must be numeric"))?,
+        };
+        if !timeout.is_finite() || !(0.1..=180.0).contains(&timeout) { return Err(failure("native.send timeout must be 0.1..180 seconds")); }
+        let body = spec["body"].to_string();
+        if body.len() > 1_048_576 { return Err(failure("native.send body exceeds budget")); }
+        Ok(Self { target: name("target",64)?, command: name("command",256)?, body, timeout: Duration::from_secs_f64(timeout) })
+    }
+    async fn dispatch(self, native: Arc<SupervisedClient>) -> Result<(), String> {
+        tokio::time::timeout(self.timeout, native.send_with_headers(&self.target, &self.command, &BTreeMap::new(), &self.body))
+            .await.map_err(|_| "native.send transport timeout".to_owned())?.map_err(|e| e.to_string())
+    }
+}
 pub struct Bridge {
     client: SharedClient,
 }
@@ -433,27 +459,27 @@ impl Bridge {
         // A local, send-only request on the existing supervised connection.
         // Unlike emit this retains request framing, and unlike RPC it never
         // waits for a recipient response. The application owns payload policy.
-        if target == "viu-local" && command == "native.send" {
+        if target == "viu-local" && command == "native.send.batch" {
             let spec = crate::runtime::to_json(args)?;
-            let target = spec["target"].as_str().filter(|s| !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)))
-                .ok_or_else(|| failure("native.send requires a bounded target"))?;
-            let command = spec["command"].as_str().filter(|s| !s.is_empty() && s.len() <= 256 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)))
-                .ok_or_else(|| failure("native.send requires a bounded command"))?;
-            let timeout = match spec.get("timeout") {
-                None => 2.0,
-                Some(value) => value.as_f64().ok_or_else(|| failure("native.send timeout must be numeric"))?,
-            };
-            if !timeout.is_finite() || !(0.1..=180.0).contains(&timeout) {
-                return Err(failure("native.send timeout must be 0.1..180 seconds"));
+            let messages = spec["messages"].as_array().filter(|m| !m.is_empty() && m.len() <= 32)
+                .ok_or_else(|| failure("native.send.batch requires 1..32 messages"))?;
+            // Preflight the whole batch before any message crosses the Bus.
+            let messages = messages.iter().map(SendOnly::decode).collect::<MixResult<Vec<_>>>()?;
+            let mut running = tokio::task::JoinSet::new();
+            let mut results = vec![Value::Null; messages.len()];
+            for (index, message) in messages.into_iter().enumerate() {
+                let native = native.clone();
+                running.spawn(async move { (index, message.dispatch(native).await) });
             }
-            let body = spec["body"].to_string();
-            if body.len() > 1_048_576 {
-                return Err(failure("native.send body exceeds budget"));
+            while let Some(result) = running.join_next().await {
+                let (index, result) = result.map_err(failure)?;
+                results[index] = match result { Ok(()) => json!({"dispatched":true}), Err(error) => json!({"dispatched":false,"error":error}) };
             }
-            tokio::time::timeout(Duration::from_secs_f64(timeout),
-                native.send_with_headers(target, command, &BTreeMap::new(), &body))
-                .await.map_err(|_| failure("native.send transport timeout"))?
-                .map_err(failure)?;
+            let result = crate::runtime::from_json(json!({"results":results}))?;
+            return Ok((0,result.clone(),result));
+        }
+        if target == "viu-local" && command == "native.send" {
+            SendOnly::decode(&crate::runtime::to_json(args)?)?.dispatch(native).await.map_err(failure)?;
             let sent = crate::runtime::from_json(json!({"dispatched":true}))?;
             return Ok((0, sent.clone(), sent));
         }
@@ -605,16 +631,32 @@ mod tests {
     #[test]
     fn send_only_keeps_request_framing_without_waiting_for_a_recipient_reply() {
         let broker = test_broker::Broker::start();
-        let sender = Endpoint::start("send-source".into(), broker.url.clone(), Vec::new(), "app.quit".into(), Arc::new(|| {}));
-        let receiver = Endpoint::start("send-target".into(), broker.url.clone(), Vec::new(), "app.quit".into(), Arc::new(|| {}));
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let sender = Endpoint::start(
+            "send-source".into(),
+            broker.url.clone(),
+            Vec::new(),
+            "app.quit".into(),
+            Arc::new(|| {}),
+        );
+        let receiver = Endpoint::start(
+            "send-target".into(),
+            broker.url.clone(),
+            Vec::new(),
+            "app.quit".into(),
+            Arc::new(|| {}),
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         runtime.block_on(async {
             tokio::time::timeout(Duration::from_secs(5), async {
                 while sender.client().is_none() || receiver.client().is_none() {
                     tokio::time::sleep(Duration::from_millis(5)).await;
                 }
             }).await.unwrap();
-            let bridge = (sender.backend())();
+            let local = crate::local_ui::LocalUi::new(Arc::new(|| {}));
+            let bridge = (local.backend(sender.backend()))();
             let spec = crate::runtime::from_json(json!({"target":"send-target","command":"sample.completed","body":{"text":"中","pid":42},"timeout":2})).unwrap();
             // The receiver deliberately holds its reply until after this
             // completes: an accidental RPC must time out this outer bound.
@@ -638,6 +680,33 @@ mod tests {
                 assert!(bridge.send("viu-local", "native.send", &invalid).await.is_err());
             }
             assert!(receiver.requests.try_recv().is_err());
+            let batch = crate::runtime::from_json(json!({"messages":[
+                {"target":"send-target","command":"sample.completed","body":{"pane":1},"timeout":2},
+                {"target":"send-target","command":"sample.completed","body":{"pane":2},"timeout":2}
+            ]})).unwrap();
+            let (rc, result) = tokio::time::timeout(Duration::from_secs(1), bridge.send("viu-local", "native.send.batch", &batch)).await.unwrap().unwrap();
+            assert_eq!(rc, 0);
+            assert_eq!(crate::runtime::to_json(&result).unwrap(), json!({"results":[{"dispatched":true},{"dispatched":true}]}));
+            let mut panes = Vec::new();
+            for _ in 0..2 {
+                let request = tokio::time::timeout(Duration::from_secs(2), async {
+                    loop {
+                        if let Ok(request) = receiver.requests.try_recv() { break request; }
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                }).await.unwrap();
+                assert_eq!(request.headers.get("type").map(String::as_str), Some("request"));
+                panes.push(serde_json::from_str::<Value>(&request.body).unwrap()["pane"].as_u64().unwrap());
+                request.reply.send((0,json!({}))).unwrap();
+            }
+            panes.sort();
+            assert_eq!(panes, [1,2]);
+            let invalid = crate::runtime::from_json(json!({"messages":[
+                {"target":"send-target","command":"sample.completed","body":{"pane":3}},
+                {"target":"send-target","command":"sample.completed","timeout":"bad"}
+            ]})).unwrap();
+            assert!(bridge.send("viu-local","native.send.batch",&invalid).await.is_err());
+            assert!(receiver.requests.try_recv().is_err(), "batch preflight must precede every send");
         });
     }
     #[test]

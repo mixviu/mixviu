@@ -1,0 +1,28 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$n=require("notifications.mix");$m=require("model.mix");$core=require("core.mix")
+fn check($ok,$why) if not $ok then raise("TEST",$why) end end
+fn pane($id,$exited) return {handle:"vt-"..to_string($id),pid:1000+$id,exited:$exited} end
+$layout=$m.open_tab($m.initial(),pane(1,true),"First")
+$layout=$m.split_pane($layout,"v",pane(2,true));$layout=$m.open_tab($layout,pane(3,false),"Live")
+$layout.panes["1"].exited=true;$layout.panes["2"].exited=true
+$s=$n.collect($n.initial(""),$layout)
+check(len($s.queue)==2,"collect every natural exit before mutating any split tree")
+check(deep_eq($s.queue[0],{summary:"Terminal shell exited — First",body:"pane 1 (pid 1001) finished",urgency:"normal",category:"transfer.complete",icon:{lucide:"terminal"},dedupe_key:"term-pane-1"}),"exact Gold completion payload")
+check($s.queue[1].summary=="Terminal shell exited — First" and $s.queue[1].dedupe_key=="term-pane-2","each split retains its owning tab title")
+check(not $n.pending($n.collect($n.initial("0"),$layout)),"only TERM_NOTIFY=0 disables completion notes")
+for $setting in ["false","00","1"] check($n.pending($n.collect($n.initial($setting),$layout)),"other environment values remain enabled") end
+$messages=$n.messages($s)
+check(len($messages)==2 and $messages[0].target=="interact" and $messages[0].command=="interact.notify" and $messages[0].timeout==2,"separate concurrent bounded native notification batch")
+$s=$n.started($s);check($s.running and len($s.queue)==0 and $s.sequence==1,"admitted job retains pending lifetime")
+$later=$m.open_tab($m.initial(),pane(4,true),"Later");$later.panes["1"].exited=true
+$next=$n.collect($s,$later)
+check(len($next.queue)==1 and $next.running,"later exit cannot replace an admitted notification")
+$s=$n.finished($s);check(not $n.pending($s),"completed transport releases final close")
+$view={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},choice:{},bindings:{},effective:{},closed:true,layout:$m.initial(),notifications:$next}
+check(not $core.framed($view).window_close,"final pane close waits for notification job and queue")
+$view.notifications=$n.expire($next)
+check($core.framed($view).window_close,"bounded shutdown cannot hang on unavailable notification transport")
+check(not $n.pending($n.collect($view.notifications,$layout)),"expired shutdown does not rearm notifications")
+$live=$m.open_tab($m.initial(),pane(1,false),nil)
+check(not $n.pending($n.collect($n.initial(""),$live)),"explicitly closing a running pane does not manufacture a shell exit note")
+print("term notifications: payload, simultaneous exits, suppression, retained ownership and bounded final close passed")

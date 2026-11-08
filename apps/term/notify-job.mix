@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- One owned Mix job submits a bounded concurrent batch on the existing Bus
+-- connection. Transport completion is not recipient acknowledgement.
+on notifications.send
+  try
+    send "viu-local" "native.send.batch" messages=$event.args.messages
+    for $result in ($reply.results ?? [])
+      if not $result.dispatched then eprint("term notification not dispatched: "..to_string($result.error)) end
+    end
+    reply(0,json_encode({rc:$rc,body:$reply}))
+  catch $message
+    eprint("term notification not dispatched: "..$message)
+    reply(0,json_encode({rc:20,body:{error:$message}}))
+  end
+end

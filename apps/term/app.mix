@@ -17,6 +17,15 @@ $font=require("font-persistence.mix");$state.font=$font.initial();$state.font_jo
 $settings=require("../../libraries/viu/mix/session.mix")
 $state.version=$ctx.version;$state.build_line=$ctx.build_line;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
 $state.publishing=false;$state.event_job=0
+$notifications=require("notifications.mix");$state.notifications=$notifications.initial(env("TERM_NOTIFY"))
+fn pump_notifications($s)
+  if $s.notifications.running or $s.notifications.expired or len($s.notifications.queue)==0 then return $s end
+  $path=path_join(dirname(script_path()),"notify-job.mix")
+  send "viu-local" "jobs.start" id="terminal-notify-"..to_string($s.notifications.sequence+1) owner={kind:"terminal-notify"} path=$path source=read_file($path) command="notifications.send" args={messages:$notifications.messages($s.notifications)}
+  if $rc==0 then $s.notifications=$notifications.started($s.notifications)
+  else viu_timer("terminal-notify-retry",100,{kind:"terminal-notify-retry"}) end
+  return $s
+end
 fn pump_events($s)
   if $s.closed and not ($s.drain_expired ?? false) and ($s.publishing or len($s.layout.events)>0) then
     if not ($s.drain_close ?? false) then viu_timer("terminal-events-close",2000,{kind:"terminal-events-close"}) end
@@ -31,6 +40,12 @@ fn pump_events($s)
   return $s
 end
 fn publish_term($s)
+  if $s.closed and $notifications.pending($s.notifications) and not $s.notifications.closing_started then
+    -- Include host job admission/completion scheduling around each transport's
+    -- two-second bound. A silent recipient cannot delay final shutdown.
+    viu_timer("terminal-notify-close",2500,{kind:"terminal-notify-close"})
+    $s.notifications.closing_started=true
+  end
   $s=$find.sync($s)
   $published=$native("metadata","",$model.metadata($s.layout))
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
@@ -165,9 +180,11 @@ end
 on viu.terminal.changed
   $old=$state.layout
   $state=$bus.refresh($state,$native)
+  $state.notifications=$notifications.collect($state.notifications,$state.layout)
   $exited=[]
   for $p in values($state.layout.panes) if $p.exited then push($exited,$p.id) end end
   for $id in $exited $state=$bus.close_removed($state,$lifecycle.close_pane($state.layout,$id,$native),$native) end
+  $state=pump_notifications($state)
   if not deep_eq($old,$state.layout) then $state=pump_events($state);$state=publish_term($state) end
 end
 on viu.terminal.control
@@ -177,6 +194,10 @@ on viu.terminal.control
   $finished=$native("control.finish","",{rc:$out.rc,body:$out.body})
 end
 on viu.job.completed
+  if $event.args.tag.owner.kind=="terminal-notify" then
+    $state.notifications=$notifications.finished($state.notifications)
+    $state=pump_notifications($state);$state=publish_term($state)
+  end
   if $event.args.tag.owner.kind=="terminal-show" then
     $token=$event.args.tag.owner.token
     if $state.shows[$token]==$event.args.tag.id then
@@ -206,6 +227,8 @@ on viu.call.cancelled
   $state.shows=delete($state.shows,$event.args.token)
 end
 on viu.timer
+  if $event.args.value.kind=="terminal-notify-retry" then $state=pump_notifications($state);$state=publish_term($state) end
+  if $event.args.value.kind=="terminal-notify-close" then $state.notifications=$notifications.expire($state.notifications);$state=publish_term($state) end
   if $event.args.value.kind=="terminal-font" then $state=font_event($state,{kind:"timer"});$state=publish_term($state) end
   if $event.args.value.kind=="terminal-events" then $state=pump_events($state) end
   if $event.args.value.kind=="terminal-events-close" then $state.drain_expired=true;$state.drain_close=false;$state=publish_term($state) end

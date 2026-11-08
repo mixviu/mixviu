@@ -4,9 +4,10 @@ $layout=require("model.mix")
 $actions=require("actions.mix")
 $controls=require("controls.mix")
 $find=require("find.mix")
+$notifications=require("notifications.mix")
 fn framed($s)
   $s=$find.sync($s)
-  $model={window_close:$s.closed and not ($s.drain_close ?? false),layout_hidden:$s.closed,values:{}};$look=$s.look.values
+  $model={window_close:$s.closed and not ($s.drain_close ?? false) and not $notifications.pending($s.notifications),layout_hidden:$s.closed,values:{}};$look=$s.look.values
   $tabs=$s.layout.tabs;$active=$tabs[$s.layout.active]
   $selected=if $active==nil then "" else to_string($active.id) end
   $items=map($tabs,fn($t)={id:to_string($t.id),name:$t.title,meta:"",dirty:false})
