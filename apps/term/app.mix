@@ -41,9 +41,9 @@ fn pump_events($s)
 end
 fn publish_term($s)
   if $s.closed and $notifications.pending($s.notifications) and not $s.notifications.closing_started then
-    -- Include host job admission/completion scheduling around each transport's
-    -- two-second bound. A silent recipient cannot delay final shutdown.
-    viu_timer("terminal-notify-close",2500,{kind:"terminal-notify-close"})
+    -- Every outstanding batch retains its two-second transport allowance,
+    -- plus bounded host admission/completion scheduling, before shutdown.
+    viu_timer("terminal-notify-close",$notifications.drain_ms($s.notifications),{kind:"terminal-notify-close"})
     $s.notifications.closing_started=true
   end
   $s=$find.sync($s)

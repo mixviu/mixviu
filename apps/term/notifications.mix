@@ -20,6 +20,12 @@ end
 fn pending($s)
   return $s!=nil and not ($s.expired ?? false) and (($s.running ?? false) or len($s.queue ?? [])>0)
 end
+fn drain_ms($s)
+  -- Each queued batch needs its own complete transport allowance, even when
+  -- an earlier batch was already in flight when the last pane exited.
+  $batches=ceil(len($s.queue)/32)+(if $s.running then 1 else 0 end)
+  return max(1,$batches)*2500
+end
 fn messages($s)
   return map(slice($s.queue,0,32),fn($body)={target:"interact",command:"interact.notify",body:$body,timeout:2})
 end

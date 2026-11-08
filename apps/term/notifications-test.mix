@@ -17,6 +17,14 @@ $s=$n.started($s);check($s.running and len($s.queue)==0 and $s.sequence==1,"admi
 $later=$m.open_tab($m.initial(),pane(4,true),"Later");$later.panes["1"].exited=true
 $next=$n.collect($s,$later)
 check(len($next.queue)==1 and $next.running,"later exit cannot replace an admitted notification")
+check($n.drain_ms($s)==2500 and $n.drain_ms($next)==5000,"final close preserves full allowance for both in-flight and queued batches")
+$many=$n.initial("")
+for $i=1 to 33 $many.queue=push($many.queue,{id:$i}) end
+check($n.drain_ms($many)==5000,"partial second batch receives a whole transport allowance")
+$many=$n.started($many)
+check(len($many.queue)==1 and $n.drain_ms($many)==5000,"admission cannot shorten the total drain allowance")
+$many=$n.finished($many);$many=$n.started($many)
+check(len($many.queue)==0 and $n.drain_ms($many)==2500,"last batch retains its own full allowance")
 $s=$n.finished($s);check(not $n.pending($s),"completed transport releases final close")
 $view={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},choice:{},bindings:{},effective:{},closed:true,layout:$m.initial(),notifications:$next}
 check(not $core.framed($view).window_close,"final pane close waits for notification job and queue")
