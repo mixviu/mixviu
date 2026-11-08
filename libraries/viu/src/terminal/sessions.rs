@@ -81,7 +81,10 @@ impl Cleanup {
         let pending = self.pending.clone();
         let worker = std::thread::Builder::new().name("viu-terminal-cleanup".into()).spawn(move || {
             for terminal in receiver {
-                terminal.lock().unwrap_or_else(|e| e.into_inner()).shutdown();
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    terminal.lock().unwrap_or_else(|e| e.into_inner()).shutdown();
+                }));
+                if result.is_err() { eprintln!("terminal cleanup panicked; retiring its admission slot"); }
                 pending.fetch_sub(1, Ordering::AcqRel);
             }
         }).map_err(|e| format!("terminal cleanup worker: {e}"))?;
@@ -111,6 +114,7 @@ struct State {
     metadata: super::metadata::Metadata,
     clipboard_cursor: usize,
     cleanup: Cleanup,
+    closing: bool,
 }
 impl Drop for State {
     fn drop(&mut self) {
@@ -180,6 +184,7 @@ impl Sessions {
                 metadata: super::metadata::Metadata::default(),
                 clipboard_cursor: 0,
                 cleanup: Cleanup::default(),
+                closing: false,
             })),
             layout: super::layout_control::Bridge::new(wake.clone()),
             osc52_read: Arc::default(),
@@ -197,6 +202,32 @@ impl Sessions {
         let mut sessions = Self::new(wake, None);
         sessions.native_enabled = true;
         sessions
+    }
+
+    /// Called by the host after stopping its evaluator, before releasing the
+    /// native actor. Drain outside State's lock so actor metadata lookup and
+    /// transient Weak upgrades cannot make the actor join its own cleanup.
+    pub(crate) fn shutdown(&self) {
+        let removed = {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            state.closing = true;
+            if !state.sessions.is_empty() && state.cleanup.start().is_err() { return; }
+            let removed = std::mem::take(&mut state.sessions);
+            state.placements.clear();
+            state.pane_ids.clear();
+            for _ in &removed { state.cleanup.reserve(); }
+            removed
+        };
+        for (_, terminal) in removed {
+            terminal.lock().unwrap_or_else(|e| e.into_inner()).retire();
+            self.state.lock().unwrap_or_else(|e| e.into_inner()).cleanup.submit(terminal);
+        }
+        let worker = {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            state.cleanup.sender.take();
+            state.cleanup.worker.take()
+        };
+        if let Some(worker) = worker { let _ = worker.join(); }
     }
 
     fn native_handle(&self) -> Option<super::session_actor::NativeSession> {
@@ -445,6 +476,7 @@ impl Sessions {
             };
             let (id, pane_id) = {
                 let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
+                if state.closing { return Err("terminal owner closing".into()); }
                 if state.sessions.len().max(state.pane_ids.len()) + state.cleanup.pending.load(Ordering::Acquire) >= 32 {
                     return Err("terminal limit (32 active or closing panes) reached".into());
                 }
@@ -512,7 +544,7 @@ impl Sessions {
                 }
             });
             let answer = json!({"handle":handle,"pid":t.pid,"binding":binding,"native_id":pane_id});
-            let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             t.set_osc52_read(self.osc52_read.load(Ordering::Acquire));
             state.sessions.insert(handle, Arc::new(Mutex::new(t)));
             return Ok(answer);
@@ -532,8 +564,8 @@ impl Sessions {
             };
             // Serialize with native input before any teardown. Removal makes
             // this handle permanently stale; new panes receive a new handle.
-            t.lock().map_err(|_| "terminal poisoned")?.retire();
-            self.state.lock().map_err(|_| "terminal owner poisoned")?.cleanup.submit(t);
+            t.lock().unwrap_or_else(|e| e.into_inner()).retire();
+            self.state.lock().unwrap_or_else(|e| e.into_inner()).cleanup.submit(t);
             return Ok(json!({"closed":true}));
         }
         let t = self.get(handle)?;
@@ -1257,6 +1289,26 @@ end
     }
 
     #[test]
+    fn poisoned_terminal_and_cleanup_panic_do_not_poison_the_owner_or_lose_slots() {
+        let sessions = Sessions::fixture();
+        sessions.fixture_pane("vt-2", b"surviving cleanup");
+        let borrowed = sessions.get("vt-1").unwrap();
+        let poison = borrowed.clone();
+        assert!(std::thread::spawn(move || {
+            let _pane = poison.lock().unwrap();
+            panic!("controlled terminal poison fixture");
+        }).join().is_err());
+        borrowed.lock().unwrap_or_else(|e| e.into_inner()).before_pty_cleanup = Some(Box::new(|| panic!("controlled cleanup fixture")));
+        sessions.call("close", "vt-1", json!({})).unwrap();
+        sessions.call("close", "vt-2", json!({})).unwrap();
+        let pending = sessions.state.lock().unwrap().cleanup.pending.clone();
+        sessions.shutdown();
+        assert_eq!(pending.load(Ordering::Acquire), 0);
+        assert!(sessions.state.lock().unwrap().sessions.is_empty());
+        assert!(borrowed.lock().unwrap_or_else(|e| e.into_inner()).listener.type_text("late").is_err());
+    }
+
+    #[test]
     fn slow_cleanup_keeps_its_slot_without_blocking_close_or_borrowed_input_revocation() {
         let sessions = Sessions::fixture();
         for id in 2..=32 {
@@ -1283,8 +1335,12 @@ end
         assert!(borrowed.lock().unwrap().listener.type_text("late").is_err());
         // Owner teardown drains queued cleanup, while the native actor is
         // still retained. No detached job survives the final Sessions owner.
-        drop(sessions);
+        let retained = sessions.clone();
+        sessions.shutdown();
         assert_eq!(pending.load(Ordering::Acquire), 0);
+        assert!(retained.call("create", "", json!({})).unwrap_err().contains("owner closing"));
+        drop(sessions);
+        drop(retained);
     }
 
     #[test]

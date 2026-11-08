@@ -43,6 +43,9 @@ fn native($op,$handle,$args)
   if $op=="close" then check($handle=="vt-3" or $handle=="vt-1" or $handle=="vt-2","cleanup owns removed pane only");return {} end
   raise("TEST","unexpected native operation")
 end
+$visible=$m.select_pane($m.select_tab($s.layout,1),1)
+$focused=$lifecycle.focus_visible($visible,"vt-2",fn($op,$handle,$args)=native($op,$handle,$args))
+check($focused.tabs[0].active_pane==2 and $focused.focus_serial>$visible.focus_serial,"current visible pane click still selects its intended sibling")
 $out=$p.apply($s,{operation:"term.tab.select",pane:1,target:$target},fn($op,$handle,$args)=native($op,$handle,$args))
 check($out.rc==0 and $out.state.layout.active==0 and $out.state.layout.tabs[0].active_pane==1 and deep_eq($out.body,{selected:$target}),"protected tab selection also focuses explicit pane")
 $out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"horizontal",target:$target},fn($op,$handle,$args)=native($op,$handle,$args))

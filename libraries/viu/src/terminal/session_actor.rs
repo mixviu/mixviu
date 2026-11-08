@@ -321,7 +321,7 @@ impl NativeSession {
     /// Invalidates locally under a short lock, then queues remote revocation.
     /// Remote completion is asynchronous; this does not acquire the PTY mutex.
     pub fn revoke_pane(&self, id: u64) {
-        let mut shared = self.1.lock().unwrap();
+        let mut shared = self.1.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(state) = shared.panes.remove(&id).and_then(|p| p.upgrade()) {
             state.live.store(false, Ordering::Release);
             *state.binding.lock().unwrap() = None;

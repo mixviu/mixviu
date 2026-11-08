@@ -141,7 +141,8 @@ fn invoke($s,$id,$args,$native)
   end
   if $command!=nil then
     $out=$bus.dispatch($s,$command,$params,$native);$s=$out.state
-    if $out.rc!=0 then $s.notice=$out.body end
+    -- Gold accepts the registry action even if its stale target is a no-op.
+    -- A layout refusal is not a clipboard failure and must not replace notice.
   end
   return {state:$s,rc:0,body:{executed:$id},effects:$effects}
 end

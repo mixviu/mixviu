@@ -322,7 +322,7 @@ impl Listener {
         }
     }
     pub fn revoke_control(&self) {
-        Self::revoke_writer(&mut self.writes.lock().unwrap());
+        Self::revoke_writer(&mut self.writes.lock().unwrap_or_else(|e| e.into_inner()));
     }
     pub fn foreground_generation(&self) -> u64 {
         let mut writes = self.writes.lock().unwrap();
@@ -1603,7 +1603,7 @@ impl Terminal {
             return;
         };
         self.listener.quit.store(true, Ordering::Release);
-        if let Some(sender) = self.listener.writes.lock().unwrap().sender.take() {
+        if let Some(sender) = self.listener.writes.lock().unwrap_or_else(|e| e.into_inner()).sender.take() {
             let _ = sender.send(Msg::Shutdown);
         }
         let pid = self.pid;

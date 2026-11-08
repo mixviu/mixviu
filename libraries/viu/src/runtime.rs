@@ -418,10 +418,7 @@ impl Runtime {
     pub fn accepts(&self, completion: &Completion) -> bool {
         completion.generation == self.generation
     }
-}
-
-impl Drop for Runtime {
-    fn drop(&mut self) {
+    pub(crate) fn shutdown(&mut self) {
         self.stop.store(true, Ordering::Release);
         self.interrupt.store(true, Ordering::Release);
         self.tx.take();
@@ -431,6 +428,9 @@ impl Drop for Runtime {
             let _ = thread.join();
         }
     }
+}
+impl Drop for Runtime {
+    fn drop(&mut self) { self.shutdown(); }
 }
 
 async fn bounded<T>(

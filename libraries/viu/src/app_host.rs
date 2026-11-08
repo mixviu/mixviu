@@ -102,6 +102,15 @@ struct Host {
     tick: Option<Duration>,
     next_tick: Instant,
 }
+impl Drop for Host {
+    fn drop(&mut self) {
+        // Stop authored mutations before draining terminal teardown. Keep this
+        // host's strong session/native owner alive across the whole drain;
+        // a transient actor Weak<State> upgrade cannot become its final owner.
+        self.runtime.shutdown();
+        self.terminals.shutdown();
+    }
+}
 impl Host {
     fn window_settings(&self, model: &Value) -> Value {
         let mut settings = if self.native_drive && model["window_settings"].is_object() {

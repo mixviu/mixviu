@@ -26,6 +26,11 @@ check($out.state.zoom==0,"zoom roundtrip exact")
 $out=$a.invoke($s,"view.theme.ocean",{},$n)
 check($out.state.choice.scheme=="ocean" and $out.effects[0].kind=="theme","local theme effect")
 check($a.invoke($s,"absent",{},$n).body.error_code=="UNKNOWN_ACTION","unknown action refuses")
+for $args in [{id:"tab.select",tab:99},{id:"pane.focus",pane:99},{id:"tab.select"}]
+  $before=$s;$before.notice="retained clipboard notice"
+  $out=$a.invoke($before,$args.id,$args,$n)
+  check($out.rc==0 and $out.body.executed==$args.id and $out.state.notice==$before.notice,"Gold accepted stale/no-target action does not overwrite clipboard notice")
+end
 check($a.toolbar($s)[0].id=="help.macros" and len($a.toolbar($s))==4,"gold standard action tail")
 $light=$s;$light.effective.mode="light"
 check(not filter($a.registry($light),fn($v)=$v.id=="view.mode")[0].checked,"Gold mode toggle remains unchecked in the light action registry")
