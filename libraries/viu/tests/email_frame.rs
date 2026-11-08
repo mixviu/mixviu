@@ -35,6 +35,61 @@ fn isolated_runtime() -> (tempfile::TempDir, Runtime, mpsc::Receiver<()>) {
 }
 
 #[test]
+fn desk4_accounts_file_and_maild_string_sender_mount_before_and_after_connect() {
+    let root = tempfile::tempdir().unwrap();
+    let account_path = root.path().join("accounts.json");
+    std::fs::write(&account_path, json!({"accounts":[{"id":"local","label":"Desk4 local mail","password_file":root.path().join("password"),"submit_service":"maild","url":"http://127.0.0.1:4310","user":"mixos@example.test"}]}).to_string()).unwrap();
+    let bundle = Bundle::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+        &[account_path.to_str().unwrap().into()],
+    )
+    .unwrap();
+    let mut program = bundle.program;
+    program.source.push_str(r#"
+on test.desk4
+  $p=require("protocol.mix")
+  $mail_emails=$p.emails($event.args.messages)
+  $active="local";$wire_views.local={state:"ready",unread:1};$connected=true
+  $boxes=map(["Inbox","Drafts","Sent","Junk","Trash","Archive"],fn($name)={id:lower($name),name:$name,parentId:nil,role:lower($name),totalEmails:if contains(["Inbox","Sent"],$name) then 1 else 0 end,unreadEmails:if $name=="Inbox" then 1 else 0 end})
+  $wire_data.local={boxes:$boxes,emails:$mail_emails};$box="inbox";$rows=gold_rows($mail_emails);$total=2
+  $places_ratio=0.18000000715255737;$list_ratio=1-0.41999998688697815
+  publish_email();reply(0,json_encode({emails:$mail_emails}))
+end
+"#);
+    let (_home, mut runtime, rx) = isolated_runtime();
+    runtime.load(program).unwrap();
+    let initial = complete(&runtime, &rx).model.unwrap();
+    assert_eq!(initial["navigation"]["initial"]["rows"][0]["cells"], json!(["Desk4 local mail"]));
+    viu::tree_table::validate(&initial["navigation"]["initial"]).unwrap();
+    viu::gold_frame::mount(&bundle.scene, initial).unwrap();
+    let mut messages = vec![json!({"id":"inbox-1","from":"mixos@example.test","keywords":{},"receivedAt":"2026-11-06T14:26:33.705Z","subject":"Welcome to MixViu on desk4"}), json!({"id":"sent-1","from":"mixos@example.test","keywords":{},"receivedAt":"2026-11-06T14:26:33.705Z","subject":"Welcome to MixViu on desk4"})];
+    for oversized in [false, true] {
+        if oversized {
+            messages[0]["subject"] = json!("😀".repeat(5000));
+            messages[0]["from"] = json!([{"name":"λ".repeat(5000),"email":"mixos@example.test"}]);
+        }
+        runtime.event("test.desk4".into(), json!({"messages":messages})).unwrap();
+        let done = complete(&runtime, &rx);
+        let model = done.model.unwrap();
+        for table in ["navigation", "native_table", "pim_table"] {
+            viu::tree_table::validate(&model[table]["initial"]).unwrap();
+        }
+        let cells = &model["native_table"]["initial"]["rows"][0]["cells"];
+        assert_eq!(cells.as_array().unwrap().len(), 3);
+        if !oversized {
+            assert_eq!(cells[0], "Welcome to MixViu on desk4");
+            assert_eq!(cells[1], "mixos@example.test");
+        } else {
+            assert!(cells[0].as_str().unwrap().ends_with('…'));
+            assert!(cells[0].as_str().unwrap().len() <= 4096);
+            assert!(cells[1].as_str().unwrap().len() <= 4096);
+            assert_eq!(done.reply.unwrap().body["emails"][0]["subject"], messages[0]["subject"]);
+        }
+        viu::gold_frame::mount(&bundle.scene, model).unwrap();
+    }
+}
+
+#[test]
 fn modern_mail_row_projection_measures_2000_distinct_dates() {
     let bundle = Bundle::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
