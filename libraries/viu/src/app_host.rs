@@ -1728,7 +1728,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         );
     }
     let app = bundle.manifest.app();
-    commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{app}.{suffix}")));
+    if !headless { commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{app}.{suffix}"))); }
     commands.extend(macros::commands::SUFFIXES.map(|suffix| format!("{app}.macros.{suffix}")));
     commands.extend(["debug", "debug.set", "debug.recent"].map(|suffix| format!("{app}.{suffix}")));
     if !headless {
@@ -1812,9 +1812,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 help: facilities
                     .surface
                     .as_ref()
-                    .map(|s| s["commands"].clone())
-                    .or_else(|| bundle.manifest.authored_discovery.then(|| json!([]))),
-                owner_help: bundle.manifest.owner_help,
+                    .map(|s| s["commands"].clone()),
+                owner_help: bundle.manifest.owner_help || bundle.manifest.authored_discovery,
                 timeout: Duration::from_secs(bundle.manifest.reply_timeout_secs),
                 transport: crate::native_bus::Policy {
                     pid_fallback: bundle.manifest.registration_pid_fallback,
@@ -1882,7 +1881,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         quit_reply_closes: bundle.manifest.quit_reply_closes,
         windows: Default::default(),
 
-        no_window: bool,
+        no_window: headless,
     deliveries: Vec::new(),
         native_selection: bundle.manifest.native_selection,
         paste_waits: Default::default(),
