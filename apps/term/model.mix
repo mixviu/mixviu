@@ -18,9 +18,15 @@ fn changed($s,$topic,$tab,$pane,$kind)
   return $s
 end
 fn leaves($tree)
-  if $tree==nil then return [] end
-  if $tree.kind=="leaf" then return [$tree.pane] end
-  return concat(leaves($tree.first),leaves($tree.second))
+  $pending=[$tree];$out=[]
+  while len($pending)>0
+    $node=pop($pending)
+    if $node!=nil then
+      if $node.kind=="leaf" then push($out,$node.pane)
+      else push($pending,$node.second);push($pending,$node.first) end
+    end
+  end
+  return $out
 end
 fn tab_index($s,$id)
   for $i=0 to len($s.tabs)-1
@@ -67,30 +73,51 @@ fn resolve($s,$pane,$tab)
   return {tab:$s.tabs[$index].id,pane:$s.tabs[$index].active_pane}
 end
 fn surface_tree($s,$tree)
-  if $tree.kind=="leaf" then return $s.panes[to_string($tree.pane)].handle end
-  return {dir:$tree.dir,ratio:$tree.ratio,first:surface_tree($s,$tree.first),second:surface_tree($s,$tree.second)}
+  return transform_tree($tree,"surface",$s,nil,nil)
 end
 fn replace_leaf($tree,$id,$replacement)
-  if $tree.kind=="leaf" then
-    return if $tree.pane==$id then $replacement else $tree end
-  end
-  $tree.first=replace_leaf($tree.first,$id,$replacement)
-  $tree.second=replace_leaf($tree.second,$id,$replacement)
-  return $tree
+  return transform_tree($tree,"replace",nil,$id,$replacement)
 end
 fn without_leaf($tree,$id)
-  if $tree.kind=="leaf" then return if $tree.pane==$id then nil else $tree end end
-  $first=without_leaf($tree.first,$id);$second=without_leaf($tree.second,$id)
-  if $first==nil then return $second end
-  if $second==nil then return $first end
-  $tree.first=$first;$tree.second=$second
-  return $tree
+  return transform_tree($tree,"remove",nil,$id,nil)
+end
+-- Repeated splits may put all 32 leaves on one branch. Use an explicit
+-- postorder stack so layout depth never consumes evaluator call frames.
+fn transform_tree($tree,$operation,$s,$id,$replacement)
+  $pending=[{tree:$tree,joined:false}];$values=[]
+  while len($pending)>0
+    $item=pop($pending);$node=$item.tree
+    if $node.kind=="leaf" then
+      $value=$node
+      if $operation=="surface" then $value=$s.panes[to_string($node.pane)].handle
+      elif $node.pane==$id then $value=$replacement end
+      push($values,$value)
+    elif not $item.joined then
+      push($pending,{tree:$node,joined:true})
+      push($pending,{tree:$node.second,joined:false})
+      push($pending,{tree:$node.first,joined:false})
+    else
+      $second=pop($values);$first=pop($values)
+      if $operation=="remove" and $first==nil then $value=$second
+      elif $operation=="remove" and $second==nil then $value=$first
+      elif $operation=="surface" then $value={dir:$node.dir,ratio:$node.ratio,first:$first,second:$second}
+      else $value=$node;$value.first=$first;$value.second=$second end
+      push($values,$value)
+    end
+  end
+  return $values[0]
 end
 fn sibling_focus($tree,$id)
-  if $tree.kind=="leaf" then return nil end
-  if $tree.first.kind=="leaf" and $tree.first.pane==$id then return leaves($tree.second)[0] end
-  if $tree.second.kind=="leaf" and $tree.second.pane==$id then return leaves($tree.first)[0] end
-  return sibling_focus($tree.first,$id) ?? sibling_focus($tree.second,$id)
+  $pending=[$tree]
+  while len($pending)>0
+    $node=pop($pending)
+    if $node.kind!="leaf" then
+      if $node.first.kind=="leaf" and $node.first.pane==$id then return leaves($node.second)[0] end
+      if $node.second.kind=="leaf" and $node.second.pane==$id then return leaves($node.first)[0] end
+      push($pending,$node.second);push($pending,$node.first)
+    end
+  end
+  return nil
 end
 fn ensure_slot($s)
   if $s.closing then raise("CLOSING","application closing") end
@@ -210,11 +237,18 @@ fn move_tab($s,$id,$index)
   return $s
 end
 fn placed_leaves($tree,$g)
-  if $tree.kind=="leaf" then return [{id:$tree.pane,geometry:$g}] end
-  $first=$g;$second=$g
-  if $tree.dir=="v" then $first.w=$g.w*$tree.ratio;$second.x=$g.x+$first.w;$second.w=$g.w-$first.w
-  else $first.h=$g.h*$tree.ratio;$second.y=$g.y+$first.h;$second.h=$g.h-$first.h end
-  return concat(placed_leaves($tree.first,$first),placed_leaves($tree.second,$second))
+  $pending=[{tree:$tree,geometry:$g}];$out=[]
+  while len($pending)>0
+    $item=pop($pending);$node=$item.tree;$g=$item.geometry
+    if $node.kind=="leaf" then push($out,{id:$node.pane,geometry:$g})
+    else
+      $first=$g;$second=$g
+      if $node.dir=="v" then $first.w=$g.w*$node.ratio;$second.x=$g.x+$first.w;$second.w=$g.w-$first.w
+      else $first.h=$g.h*$node.ratio;$second.y=$g.y+$first.h;$second.h=$g.h-$first.h end
+      push($pending,{tree:$node.second,geometry:$second});push($pending,{tree:$node.first,geometry:$first})
+    end
+  end
+  return $out
 end
 fn neighbour($s,$direction)
   $tab=$s.tabs[$s.active];$leaves=map(leaves($tab.tree),fn($id)={id:$id,geometry:$s.panes[to_string($id)].geometry})

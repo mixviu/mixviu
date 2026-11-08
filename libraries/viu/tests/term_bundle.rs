@@ -310,9 +310,35 @@ fn term_bundle_child() {
     );
     assert!(body.ends_with("Settings source: settingsd not connected"));
     invoke(&mut runtime, &rx, "term.dialog", json!({"answer":"done"}));
+    // Standalone Mix tests use a different evaluator budget. Drive the real
+    // persistent app through the deepest supported layout, including its
+    // metadata, publication, focus and removal paths.
+    for id in 5..=35 {
+        let split = invoke(&mut runtime, &rx, "term.pane.split", json!({"dir":"v"}));
+        let reply = split.reply.unwrap();
+        assert_eq!(reply.rc, 0, "pane {id}: {}", reply.body);
+        assert!(reply.body.as_str().unwrap().starts_with(&format!("split id={id} ")));
+        if id == 35 {
+            viu::gold_frame::mount(&scene, split.model.unwrap())
+                .expect("32-pane published frame validates at native depth");
+        }
+    }
+    let panes = invoke(&mut runtime, &rx, "term.panes", json!({})).reply.unwrap();
+    assert_eq!(panes.body.as_str().unwrap().lines().count(), 32);
+    let overflow = invoke(&mut runtime, &rx, "term.pane.split", json!({"dir":"v"}))
+        .reply.unwrap();
+    assert_eq!(overflow.rc, 10);
+    assert_eq!(overflow.body, json!("tab limit (32) reached"));
+    let deepest = invoke(&mut runtime, &rx, "term.pane.close", json!({"id":35}));
+    assert_eq!(deepest.reply.unwrap().rc, 0);
+    let first = invoke(&mut runtime, &rx, "term.pane.close", json!({"id":3}));
+    assert_eq!(first.reply.unwrap().rc, 0);
+    let panes = invoke(&mut runtime, &rx, "term.panes", json!({})).reply.unwrap();
+    assert_eq!(panes.body.as_str().unwrap().lines().count(), 30);
     let quit = invoke(&mut runtime, &rx, "app.quit", json!({}));
     assert_eq!(quit.reply.unwrap().rc, 0);
     assert!(quit.model.unwrap()["window_close"] == true);
     assert!(sessions.call("state", "vt-3", json!({})).is_err());
+    assert!(sessions.call("state", "vt-35", json!({})).is_err());
     println!("TERM_BUNDLE_LOADED");
 }

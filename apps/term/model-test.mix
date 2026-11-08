@@ -37,6 +37,14 @@ for $i=2 to 32 $s=$m.split_pane($s,"v",session($i)) end
 $refused=false
 try $s=$m.open_tab($s,session(33),nil) catch $message $refused=$message=="tab limit (32) reached" end
 check($refused and len(keys($s.panes))==32,"gold 32-slot cap spans panes and tabs")
+$deep=$s.tabs[0].tree
+check(deep_eq($m.leaves($deep),range(1,32)),"deep layout retains ordered pane membership")
+check($m.sibling_focus($deep,32)==31 and $m.sibling_focus($deep,1)==2,"deep and outer removal choose the original sibling")
+$placed=$m.placed_leaves($deep,{x:0,y:0,w:1,h:1})
+check(len($placed)==32 and $placed[0].geometry.w==0.5 and $placed[31].geometry.w==pow(0.5,31),"deep placement retains every split ratio")
+$pruned=$m.without_leaf($deep,16)
+check(deep_eq($m.leaves($pruned),concat(range(1,15),range(17,32))),"deep removal collapses only the affected split")
+check($m.surface_tree($s,$deep).first=="vt-1","deep surface preserves native handle ownership")
 print("term model: tab/pane lifecycle and cap checks passed")
 
 -- Event order is independent of layout revisions and never blocks a mutation.
