@@ -1,3 +1,70 @@
+# Email desk4 launch repair — ready for hot-apply
+
+Branch `fix/email-desk4-tree-table`, based on `origin/cutover/four-engines`
+`b601bf828c13e9d9a82bff59c7bedd2409be7687`. Tested implementation commit:
+`1e38766b9a8dfcc260a8f377162aaaa3c37ec19d`; later receipt commits change only this document.
+
+Root cause: `mail.accounts()` accepted the legacy accounts.json catalogue and
+returned `label` but no `name`. `navigation_rows()` uses `entry.name`, so the
+first account-tree row was `{key:"local",cells:[nil]}` for its one column.
+The native validator correctly rejected that row before drawing any chrome.
+This happens before the email table receives messages; neither pim-list nor
+maild's string `from` caused the startup failure. The existing protocol already
+normalises string senders into address lists.
+
+The lab's connected UI suites created accounts with `email.account.set` through
+settingsd, or supplied both name and label in runtime tests. They exercised real
+maild but missed the positional legacy accounts-file startup path. The new
+regression loads that actual file shape, validates/mounts the initial navigation,
+then feeds both supplied messages through the existing JMAP normaliser and
+validates all three tables. It also covers oversized multi-byte subjects/sender
+names without altering the full server message or weakening native validation.
+
+## Files for Opus
+
+| Changed repository file | Installed destination / use |
+| --- | --- |
+| `apps/email/mail.mix` | `/opt/mix/share/mixviu/apps/email/mail.mix` — add canonical name from the validated legacy label; fixes the reported startup failure |
+| `apps/email/surface.mix` | `/opt/mix/share/mixviu/apps/email/surface.mix` — bounded string display cells and sender rendering; preserve full server values, bulk row projection and the native 4096-byte cell bound |
+| `libraries/viu/tests/email_frame.rs` | Regression test source only; no installed Email file |
+| `last.md` | This handoff only; no installed Email file |
+
+Apply the two Mix files from the tested commit together. No engine or validator
+change is needed. Nothing was applied to desk4; main and infra/pr-ci were not
+changed. This branch is for Opus hot-apply and PR/CI landing.
+
+## Checks
+
+* `email-desk4-scope-r4-a1`, cbc3, **BUILD_RC=0**: `cargo fmt --all` produced an
+  empty patch; `cargo test --locked -p lib-viu --test email_frame --test email_wire`
+  passed **17/17** tests, including the desk4 regression and 2,000-row projection.
+  Complete saved log read: `20261108-124907-cbc3-1e38766b9a8d-email-desk4-scope-r4-a1-fd116d2f.log`.
+* `email-desk4-native-r5`, native-only CBC light override, **BUILD_RC=0**: same
+  previously verified release Viu, old b601 bundle versus fixed Mix bundle,
+  isolated Bus and headless compositor with a real release maild process.
+  The supplied accounts.json fields, HTTP origin 127.0.0.1:4310 and schema-2 UI
+  config were reproduced. Maild submit seeded Inbox(1)/Sent(1); its own private
+  store was given the supplied receivedAt instant. Raw HTTP Email/get confirms
+  string from, empty keywords, Welcome subject and `2026-11-06T14:26:33.705Z`.
+  Old bundle: ready=false, revision=0, exact cell/column mismatch. Fixed bundle:
+  ready=true, account-tree label and three email cells valid, chrome/list captured
+  and inspected. All five owned PIDs stopped. No fake HTTP/JMAP service was used.
+  Complete saved log read: `20261108-125021-cachyos-1e38766b9a8d-email-desk4-native-r5-132b0730.log`.
+
+Earlier attempts are retained privately: missing worker script and renamed Cargo
+package invocation were harness preparation errors; the first display helper
+inside rows_project was rejected and repaired with a native jq preparation pass.
+The regression's protocol module path was corrected. Native harness checks were
+corrected to read viu.state on the deliberately broken old app, accept its
+documented empty error string on success, and preserve the supplied millisecond
+instant when seeding the private real store. No application assertion or native
+validator was loosened and no refused input request was retried.
+SHA256 `apps/email/mail.mix`: `deb91fa76ae98a6e5da067035dff1cf97a67fd129a3d6e386fdfe072a4f1b0de`.
+
+SHA256 `apps/email/surface.mix`: `2e1be2b720b0bae3da39212bfd7658f2216b08cc1661177635c2adb90880c54b`.
+
+## Earlier integration record (historical)
+
 # Four engines, compd -> viud, mixos -> mix: cut-over branch
 
 Branch `cutover/four-engines`, from `lab/gold-parity` 4755e9e, with
@@ -282,7 +349,22 @@ Unit templates: apps.tar carries every unit under engines/ and services/
 noded@, settingsd@, editd@, monitord, dnsd, blobd, hostd + socket, mixtrayd,
 maild + sockets, webd, indexd, dlnad, clipd, clipd@, notifyd@, exportd-*) and
 the sysusers/tmpfiles snippets, owner-prefixed. Desk-specific drop-ins and
-session@/seatd@/session-dbus@ (written by the desk image) are not in it.
+session@/seatd@/session-dbus@ (written by the desk image) are not in it,
+nor pipewire@/wireplumber@ (desk audio). Added since: monitord@ (per-session
+history in mix/monitord/%i), backdrop@ and viu-gallery@ (the gallery app
+ships in apps.tar); app unit templates come from apps/*/units. At 37e7f3b:
+390 entries, share/mixviu 224, 45,810,831 bytes (cachyos
+20261107-221523-0bbe5b3a; fonts upstream, wallpapers from the release).
+
+Directories per owner (37e7f3b): maild@ is one instance per session broker,
+so each keeps its own state: StateDirectory/RuntimeDirectory mix/maild/%i,
+MIX_VAR/HOME/WorkingDirectory %S/mix/maild/%i. maild.service RuntimeDirectory
+mix/maild; maild sysusers home @{var}/maild. hostd StateDirectory mix/hostd and
+code default /var/lib/mix/hostd. monitord StateDirectory mix/monitord, code
+default /var/lib/mix/monitord, sysusers home @{var}/monitord. dnsd tmpfiles
+creates @{etc}/dnsd (was @{prefix}/etc/dnsd). All other Directory= and
+sysusers homes were already mix/<owner>; noded@ and viud keep their
+session-scoped mix/session/%i/... runtime dirs; mixos-tls stays.
 viud@ and viud-headless@ no longer pass `--scene-service shell`: viud parses
 the flag (name check only) and its scene stub ignores it, because the shell
 furniture now runs in viu-host@ (`viu --host`), a new template in
@@ -358,20 +440,12 @@ Light checks on cachyos at 34a8d52 (one or two crates per job):
 - At 7fddb05: rustfmt clean (20261107-185355-f8c3d8cd); logging + indexd
   green (20261107-185418-c5fe3256).
 
-Branch cutover/four-engines; head is this last.md commit (source 6fb20c11); gate: full run held for parity (the next full gate also writes the release set with apps.tar); light checks green apart from cachyos filesystem cases; CBC light bundle 20261107-212351-63549e61, lint 20261107-211822-f6329f7d, mixtest 20261107-212515-4a70d7c5, last full cutover-gate-2d7e1c7, earlier cutover-gate-5d1ec61, cutover-gate-43de632, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
+Final lab merge (2026-11-08): origin/lab/gold-parity at 01912877 (eight accepted apps; Email 70ea474, Dopus c66fe3c; runtime e1bbea9). Conflicts took the lab side of libraries/viu (launch, app_host, chooser_host, Cargo.toml) with lib-viu/lib-mix put back, the Dopus Rust crates deleted as the lab retired them, and the lab Cargo.lock with the four-engine renames reapplied. Renames applied to the merged files: package names in the new Dopus/Email gate scripts, MIXOS_INSTANCE -> MIX_INSTANCE, MIXOS_COMP_SERVICE -> MIX_COMP_SERVICE, VIU_SERVICE -> MIX_VIU_SERVICE, /opt/mix, Dopus home ~/.local/state/mix/dopus, MixViu prose in the Dopus and Backdrop contracts. No new registry names. Kept as wire/data: theme value mixos and its MixOS label, the email token label mixos-email. apps.tar at 7bde4c0: 428 entries (share/mixviu 262), 46,138,946 bytes; fonts upstream, wallpapers from the release, none from gold (cachyos 20261108-105441-54343276). Light checks: fmt clean; cargo tree --locked -p viud ok; lib-viu --tests 263 passed, 3 failed (the known cachyos filesystem cases); dopus_contract, dopus_bundle, backdrop, app_ports pass at db16141.
 
-# Security TLS split
+Branch cutover/four-engines; head is this last.md commit (source db16141); full gate: the coordinator runs it on infra/pr-ci; CBC light 20261108-105611-7534e7c2, 20261108-104904-e4317f0f, 20261108-104841-c85e2532, 20261108-105441-54343276.
 
-Branch fix/security-tls starts at the requested infra/pr-ci base 395aab71. Final gated source: b664878c19868d5e8666700b0cc2f45ecbedbd11. This status and PR body are the following documentation-only commit.
+Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa3c37ec19d; Email legacy account-tree startup FIXED; hot-apply apps/email/mail.mix + apps/email/surface.mix to /opt/mix/share/mixviu/apps/email/; CBC email-desk4-scope-r4-a1 rc0 (17/17), email-desk4-native-r5 rc0 (real maild before/after); no desk4/main/infra/pr-ci changes.
 
-Clear 11 of 18 inherited advisories: rustls, rustls-webpki, webpki-roots, rustls-pemfile replacement, Tokio, ctutils and quick-xml. Remove unused mail-send to eliminate the old XML/ZIP6 report dependency path. Hickory and mail-auth versions and DNS APIs remain unchanged.
+# PR 8 TLS refresh
 
-Retain seven debt entries: two Hickory advisories point to fix/security-hickory; four ZIP advisories need a separately validated Candle stack upgrade; RSA has no patched release. PR.md records the versions, deferrals and undo: revert the dependency, adapter and advisory-policy commits together; no data change expected.
-
-Requested gate PASS: cargo deny, all affected-crate light jobs and the full CI test stage. Final full test receipt is BUILD_RC=0: 10,525 Rust tests passed, none failed, 90 ignored, plus all five Mix policy checks. Formatting, environment, clippy and the viud dependency gate passed.
-
-The complete all-stage recipe is not green: Mix lint reports eight inherited Backdrop/Workshop regression entries. The base comparison reproduces identical files, codes and counts. The scripts, linter and baseline were not changed or weakened.
-
-Independent round 1 review: Gemini 3.1 Pro Preview and DeepSeek V4 Pro both report no blocking findings at b664878c. DeepSeek’s ECHCONFIG nit was closed with source/lock evidence as pre-existing; PR.md records the reason. No source changes after review. Tier 2 code-owner approval remains required after cut-over. No PR opened, production install or deployment performed. Original fix/security-advisories remains at 40a3c75670d760544c17d2b74d695776ad298c12. Hickory adapters are preserved and pushed on their own unfinished branch.
-
-Branch fix/security-tls; head/source b664878c19868d5e8666700b0cc2f45ecbedbd11 (following status commit changes documentation only); gate requested PASS, all-stage Mix lint inherited FAIL; CBC 20261107-220026-acacbff6-a1, 20261107-220026-e6a5c094-a1, 20261107-220026-6d4dae71-a1, 20261107-220026-62cd04d9-a1, 20261107-220026-3d85fbf6-a1, 20261107-221648-810111e3-a1, 20261107-222839-4c5d81a1-a1, 20261107-222839-b8cd5ee7-a1, 20261107-223327-64e473bf-a1, 20261107-223349-8cb1d811-a1, base comparison 20261107-223537-fa2ce977-a1; needs Mark: code-owner review, later Hickory completion.
+Merging main; CBC dependency resolution and gates pending.

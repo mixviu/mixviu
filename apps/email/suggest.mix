@@ -1,0 +1,43 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold contact-first completion policy. The server's contact query is shared
+-- by the Bus and recipient fields; recently seen addresses remain in-process.
+$p=require("protocol.mix");$arg=require("arguments.mix")
+fn contacts($e,$s,$a)
+  $text=trim($arg.required($a,"text"))
+  if len($text)<2 then raise("INVALID_ARGUMENT","text needs at least 2 characters") end
+  $limit=min(50,max(1,$arg.number($a,"limit") ?? 8))
+  $rows=$p.chained($e,$s,"Contact",{filter:{text:$text},sort:[{property:"fullName",isAscending:true}],limit:20}).get.list
+  $out=[];$seen=[]
+  for $c in $rows
+    $name=$c.full_name ?? ($c.data.name ?? {}).full ?? ""
+    $emails=concat(if $c.email!=nil then [$c.email] else [] end,map(values(($c.data ?? {}).emails ?? {}),fn($a)=$a.address))
+    for $address in $emails
+      $address=trim($address ?? "");$key=lower($address)
+      if $key!="" and not contains($seen,$key) then push($out,{name:$name,email:$address,source:"contact"});push($seen,$key) end
+    end
+  end
+  return {suggestions:slice($out,0,$limit)}
+end
+fn ranked($contacts,$recent,$query,$limit=8,$present=[])
+  $out=[];$seen=map($present,fn($v)=lower($v));$query=lower(trim($query))
+  for $item in concat($contacts,filter($recent,fn($i)=contains(lower($i.name),$query) or contains(lower($i.email),$query)))
+    $key=lower(trim($item.email))
+    if $key!="" and not contains($seen,$key) then push($out,$item);push($seen,$key) end
+    if len($out)>=$limit then break end
+  end
+  return $out
+end
+fn token($text)
+  $start=0;$quoted=false;$angle=false;$escaped=false;$at=0
+  for $ch in split($text,"")
+    if $escaped then $escaped=false
+    elif $quoted and $ch=="\\" then $escaped=true
+    elif $ch=="\"" and not $angle then $quoted=not $quoted
+    elif not $quoted and $ch=="<" then $angle=true
+    elif not $quoted and $ch==">" then $angle=false
+    elif not $quoted and not $angle and contains([",",";"],$ch) then $start=$at+1 end
+    $at=$at+1
+  end
+  $tail=slice($text,$start);$trimmed=ltrim($tail)
+  return {head:slice($text,0,$start),query:trim($tail),prefix:rtrim(slice($text,0,$start))}
+end

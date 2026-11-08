@@ -1,0 +1,38 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Validate in gold's observable order before allocating asynchronous work.
+$arg=require("arguments.mix");$addresses=require("addresses.mix");$pim=require("pim.mix")
+fn check_request($command,$a)
+  if contains(["email.account.remove","email.account.connect"],$command) then $arg.required($a,"id")
+  elif $command=="email.account.password.set" then
+    if $arg.text($a,"password")==nil then raise("INVALID_ARGUMENT","password is required") end
+    $arg.required($a,"id")
+  elif contains(["email.get","email.open","email.attachments","email.attachment.save","email.event.get","email.contact.get","email.event.delete","email.contact.delete"],$command) then
+    $arg.required($a,"id")
+    if $command=="email.attachment.save" then $arg.required($a,"part");$arg.text($a,"dir") end
+  elif $command=="email.mark" then
+    $read=$arg.flag($a,"read");$flagged=$arg.flag($a,"flagged")
+    if $read==nil and $flagged==nil then raise("INVALID_ARGUMENT","read or flagged is required") end
+    need_ids($a)
+  elif $command=="email.junk" then
+    if $arg.flag($a,"junk")==nil then raise("INVALID_ARGUMENT","junk must be true or false") end
+    need_ids($a)
+  elif $command=="email.move" then need_ids($a);$arg.required($a,"mailbox")
+  elif $command=="email.delete" then need_ids($a);$arg.flag($a,"destroy")
+  elif $command=="email.send" and $a.document==nil then
+    if len($addresses.field($a,"to"))==0 then raise("INVALID_ARGUMENT","to is required") end
+  elif $command=="email.event.create" then
+    $arg.required($a,"calendar");$start=$arg.required($a,"start")
+    $end=$arg.text($a,"end");$duration=$arg.text($a,"duration")
+    if $end==nil and $duration==nil then raise("INVALID_ARGUMENT","end or duration is required") end
+    if $end==nil then $arg.end_after($start,$duration) end
+    $arg.required($a,"title")
+  elif $command=="email.event.update" or $command=="email.contact.update" then
+    $patch=if $command=="email.event.update" then $pim.event_patch($a,false) else $pim.contact_patch($a,false) end
+    if len(keys($patch))==0 then raise("INVALID_ARGUMENT","nothing to change") end
+    $arg.required($a,"id")
+  end
+end
+fn need_ids($a)
+  $ids=$arg.list($a,"ids")
+  if $ids==nil or len($ids)==0 then raise("INVALID_ARGUMENT","ids is required") end
+end

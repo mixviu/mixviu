@@ -8,15 +8,22 @@ use std::sync::{
 };
 
 /// Pure resolution through the shared native application-root contract.
-pub(crate) fn app_dirs() -> mix::evaluator::ExtFn {
-    mix::sync_ext(|args| {
+pub(crate) fn app_dirs(application_roots: Option<std::path::PathBuf>) -> mix::evaluator::ExtFn {
+    mix::sync_ext(move |args| {
         let [Value::String(component)] = args.as_slice() else {
             return Err(MixError::RuntimeError {
                 msg: "viu_app_dirs expects an application slug".into(),
                 span: None,
             });
         };
-        crate::runtime::from_json(match config::AppDirs::resolve(component) {
+        let dirs = if let Some(root) = &application_roots {
+            config::AppDirs::resolve_with(component, |key| {
+                (key == "MIX_APPS_HOME").then(|| root.clone())
+            })
+        } else {
+            config::AppDirs::resolve(component)
+        };
+        crate::runtime::from_json(match dirs {
             Some(d) => {
                 serde_json::json!({"root":d.root(),"config":d.config(),"state":d.state(),"cache":d.cache()})
             }
@@ -82,13 +89,38 @@ pub(crate) fn mail_document() -> mix::evaluator::ExtFn {
 pub(crate) fn digest() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
         let fail = || MixError::RuntimeError {
-            msg: "viu_digest expects blake3/sha256 and text".into(),
+            msg: "viu_digest expects a supported digest and text".into(),
             span: None,
         };
         let [Value::String(algorithm), Value::String(text)] = args.as_slice() else {
             return Err(fail());
         };
         let hash = match algorithm.as_str() {
+            "std64" => {
+                use std::hash::{Hash, Hasher};
+                let mut hash = std::hash::DefaultHasher::new();
+                text.hash(&mut hash);
+                format!("{:016x}", hash.finish())
+            }
+            "fnv1a64" => {
+                let mut hash = 0xcbf29ce484222325_u64;
+                for byte in text.as_bytes() {
+                    hash ^= u64::from(*byte);
+                    hash = hash.wrapping_mul(0x100000001b3);
+                }
+                format!("{hash:016x}")
+            }
+            "blake3-hex" => {
+                if text.len() > 16 * 1024 * 1024 || text.len() % 2 != 0 || !text.is_ascii() {
+                    return Err(fail());
+                }
+                let bytes = (0..text.len())
+                    .step_by(2)
+                    .map(|i| u8::from_str_radix(&text[i..i + 2], 16))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| fail())?;
+                blake3::hash(&bytes).to_hex().to_string()
+            }
             "blake3" => blake3::hash(text.as_bytes()).to_hex().to_string(),
             "sha256" => {
                 use sha2::Digest;
@@ -97,6 +129,95 @@ pub(crate) fn digest() -> mix::evaluator::ExtFn {
             _ => return Err(fail()),
         };
         Ok(Value::String(hash))
+    })
+}
+
+pub(crate) fn markdown_html() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let [Value::String(text)] = args.as_slice() else {
+            return Err(MixError::RuntimeError {
+                msg: "viu_markdown_html expects text".into(),
+                span: None,
+            });
+        };
+        if text.len() > 8 * 1024 * 1024 {
+            return Err(MixError::RuntimeError {
+                msg: "Markdown export exceeds 8 MiB".into(),
+                span: None,
+            });
+        }
+        Ok(Value::String(toolkit::markdown::export_html(text)))
+    })
+}
+pub(crate) fn palette() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let fail = || MixError::RuntimeError {
+            msg: "viu_palette expects a scheme and mode".into(),
+            span: None,
+        };
+        let [Value::String(scheme), Value::String(mode)] = args.as_slice() else {
+            return Err(fail());
+        };
+        let theme = toolkit::Theme::for_context(design::DesignContext {
+            scheme: design::Scheme::from_name(scheme).ok_or_else(fail)?,
+            mode: design::Mode::from_name(mode).ok_or_else(fail)?,
+            ..Default::default()
+        });
+        let v = toolkit::style::visuals(&theme);
+        let hex = |c: egui::Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
+        crate::runtime::from_json(
+            serde_json::json!({"text":hex(v.text_color()),"weak":hex(v.weak_text_color()),"panel":hex(v.panel_fill),"link":hex(v.hyperlink_color),"code":hex(v.code_bg_color),"rule":hex(v.widgets.noninteractive.bg_stroke.color)}),
+        )
+    })
+}
+
+/// The native Markdown detector, shared by document and message readers.
+pub(crate) fn markdown_detect() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let [Value::String(text)] = args.as_slice() else {
+            return Err(MixError::RuntimeError {
+                msg: "viu_markdown_detect expects text".into(),
+                span: None,
+            });
+        };
+        Ok(Value::Bool(toolkit::markdown::looks_like_markdown(text)))
+    })
+}
+
+/// Bulk RFC 3339 decoding into local calendar coordinates. Formatting and
+/// relative-date policy remain in the Mix row expression.
+pub(crate) fn instants() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        use chrono::Datelike;
+        let fail = || MixError::RuntimeError {
+            msg: "viu_instants expects at most 65536 timestamp strings".into(),
+            span: None,
+        };
+        let [Value::List(values)] = args.as_slice() else {
+            return Err(fail());
+        };
+        if values.len() > 65536 {
+            return Err(fail());
+        }
+        let coordinates = |date: chrono::DateTime<chrono::Local>| serde_json::json!({"unix":date.timestamp_millis() as f64 / 1000.0,"day":date.date_naive().num_days_from_ce(),"year":date.year()});
+        let mut parsed = serde_json::Map::new();
+        for value in values.iter() {
+            let Value::String(value) = value else {
+                return Err(fail());
+            };
+            if value.len() > 256 {
+                return Err(fail());
+            }
+            parsed.entry(value.clone()).or_insert_with(|| {
+                chrono::DateTime::parse_from_rfc3339(value)
+                    .ok()
+                    .map(|date| coordinates(date.with_timezone(&chrono::Local)))
+                    .unwrap_or(serde_json::Value::Null)
+            });
+        }
+        crate::runtime::from_json(
+            serde_json::json!({"now":coordinates(chrono::Local::now()),"values":parsed}),
+        )
     })
 }
 
@@ -391,6 +512,25 @@ pub(crate) fn store() -> mix::evaluator::ExtFn {
     })
 }
 
+/// Descriptor-relative private directory creation, refusing linked ancestors.
+pub(crate) fn private_directory() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let [Value::String(path)] = args.as_slice() else {
+            return Err(MixError::RuntimeError {
+                msg: "viu_private_directory expects an absolute path".into(),
+                span: None,
+            });
+        };
+        config::atomic::create_directory(std::path::Path::new(path)).map_err(|e| {
+            MixError::RuntimeError {
+                msg: format!("Private directory: {e}"),
+                span: None,
+            }
+        })?;
+        Ok(Value::Nil)
+    })
+}
+
 /// Bounded, nonblocking optional text read through the existing held-directory
 /// primitive. Only NotFound means absent; unreadable/linked/special files fail.
 pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
@@ -401,7 +541,15 @@ pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
                 "viu_read_optional expects absolute path and optional tail_lines bound".into(),
             ));
         };
-        let tail = if options.is_empty() {
+        let budget = options.first().map(crate::runtime::to_json).transpose()?;
+        let limit = if let Some(value) = budget.as_ref().filter(|v| v.is_number()) {
+            crate::widgets::whole(value)
+                .filter(|n| *n > 0 && *n <= 32 * 1024 * 1024)
+                .ok_or_else(|| fail("read limit must be 1..32 MiB".into()))? as usize
+        } else {
+            1024 * 1024
+        };
+        let tail = if options.is_empty() || budget.as_ref().is_some_and(|v| v.is_number()) {
             None
         } else if options.len() == 1 {
             let option = crate::runtime::to_json(&options[0])?;
@@ -438,7 +586,7 @@ pub(crate) fn read_optional() -> mix::evaluator::ExtFn {
                     &parent,
                     path.file_name()
                         .ok_or_else(|| std::io::Error::other("missing name"))?,
-                    1024 * 1024,
+                    limit,
                 )
             }
         };

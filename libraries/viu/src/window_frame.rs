@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Shared native window controls. The compositor retains movement, resize,
 //! focus and presentation authority; this sends the usual viewport commands.
-use egui::emath::GuiRounding;
 use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -77,6 +76,14 @@ impl WindowFrame {
         self.show_with_chrome(ui, title, settings, true, true);
         ui.spacing_mut().item_spacing.y = gap;
     }
+    /// Match a viewport created with decorations disabled, without issuing a
+    /// redundant native decoration transition on its first frame.
+    pub fn undecorated() -> Self {
+        Self {
+            server: Some(false),
+            ..Default::default()
+        }
+    }
     /// Describe the controls actually drawn by this adapter. Requested hosted
     /// actions remain in the application row until native hosting is wired.
     pub fn form(&self, settings: &Value, service: Option<&str>) -> Value {
@@ -144,6 +151,8 @@ impl WindowFrame {
             return;
         }
         let metrics = Metrics::of(ui.ctx());
+        use egui::emath::GuiRounding;
+
         let height = metrics.height.round_ui();
         let gap = ui.spacing().item_spacing.y;
         ui.spacing_mut().item_spacing.y = 0.0;

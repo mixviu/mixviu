@@ -1,20 +1,28 @@
-# Workshop parity — implementation in progress
+Current integrated acceptance: **ACCEPTED** at runtime `e1bbea99071c2fa8793a7e0e52aed381707d536f` on `lab/gold-parity`. All eight apps passed exact-release revalidation; see [eight-app integration acceptance](eight-app-integration-acceptance.md) for the complete gate, native/Bus/live-Prefs/deadline results, all 405 raw comparisons and matched supplements, performance and the four-engine hashes. Historical records below retain their original sources and results.
 
-The current parity job uses pinned gold
-`8779f33284b7d3f1178c3d57a699efb9b0867b22`. Gold wins where the earlier inventory
-disagrees. The bounded specimen described below is historical, not the current
-behaviour or an acceptance claim.
+The current strict release editor witness uses **generic Viu for both sibling Ced and Dopus**: one open after native readiness, verified text/directory/window effects, true source/build stamps and thirteen owned PIDs stopped. The original BUSY/Full defect is fixed by bounded admission, with this witness running concurrently; no refused request is retried. The installed-native dependency and open Dopus migration mentioned in historical checkpoints below are superseded.
 
-| Gold capability | Current parity work |
+## Historical six-app acceptance
+
+# Workshop parity — integrated acceptance
+
+**ACCEPTED**, 2026-11-08, integrated runtime
+`0124e5c58c889f1d93c730b92993e2e74b707464`, pinned gold
+`8779f33284b7d3f1178c3d57a699efb9b0867b22`. The
+[six-app acceptance record](six-app-integration-acceptance.md) carries exact
+release hashes, full CBC, native effects, live Prefs, every remaining region
+difference and the handoff. Earlier attempts below are historical.
+
+| Gold capability | Integrated disposition |
 | --- | --- |
-| Shared frame, action registry, menus, keymaps, About/Shortcuts and per-window themes | Wired; native and visual matrix pending |
+| Shared frame, action registry, menus, keymaps, About/Shortcuts and per-window themes | Native/visual matrices pass; shortcut grid retained; matched Help caret phase exact |
 | Nodes, identities, remote routes, description fallback and progress | Implemented with separate local/remote read lanes, 64 descriptions per node, queued/phase deadlines, stale generation checks and last-good retention |
 | Command body, Format, Clear, Call and reply | Gold 65,536-byte body bound, 30-second raw native call, deferred outcome, no retry, return code/error/body preservation and 1,000,000-byte UTF-8 reply bound |
-| Traffic observation and dock | Bounded/redacted ring, correlation, loss, pause/filter, Auto/Bottom/Right and native table/card presentation implemented; native matrix pending |
-| Macro manager | Storage, running-app routing, groups, creation, source/drafts, save-before-run, run/stop/copy/move/delete confirmation, target/destination and Ced/Dopus effects implemented; shared editor integration and native matrix pending |
-| Mesh | Bounded totals, time windows, probes and observer replacement/stale fencing implemented; radial canvas and inspector composed with reusable Viu controls; native matrix pending |
-| Agents | Node/session lifecycle, trusted MCP refusal, transcript catch-up/follow, configuration, forms/composer and permission-card policy implemented; native matrix pending |
-| Saved arrangement, complete Bus equivalence, single-instance launch and live Prefs | Completion and acceptance work active |
+| Traffic observation and dock | Native checks pass; expanded static/header/controls/status exact, populated readings S2; both empty docks every-region exact |
+| Macro manager | 25/25 replies; shared editor/New/title/Unicode/undo/redo/Save, generic Ced and installed Dopus effects pass; native Tab/Cancel focus exact |
+| Mesh | Totals/windows/probes/stale fencing pass; static details exact, live scrollbar S2 |
+| Agents | Native node/session lifecycle, MCP refusal, transcript/configuration/forms/composer and permission-card checks pass |
+| Saved arrangement, complete Bus equivalence, single-instance launch and live Prefs | 99/99 replies; restart selection/raw70 strict assertions and matched captures pass; authority-loss chrome exact |
 | Macro recording/generated forms, SSH/WireGuard pages | Earlier roadmap inventory, absent from pinned gold; not a parity requirement |
 
 W1: Format pretty-prints JSON exactly as gold; reply display is bounded at
@@ -22,11 +30,13 @@ W1: Format pretty-prints JSON exactly as gold; reply display is bounded at
 in process. Application policy is Mix; native changes are reusable facilities
 and widgets, with no application reducers in Rust.
 
-CBC `20261107-080757-7c328b78-a1` passed at `b4b4488581258996f484d97e3926acd1b6f0d56d`,
-including embedded Workshop policy tests, launch tests, native bridge tests and
-72 scene tests. The full log was read and its formatting patch applied. The
-debug artefact is exploratory. Exact release, full native, live Prefs and visual
-receipts remain pending. Overall **NOT ACCEPTED**.
+Final CBC `gold-six-full-20261107-r8-a1` and same-worker performance
+`gold-six-perf-0124e5c58c88-a1` pass. All 66 raw comparison sets are accounted
+for: 39 exact; remaining matched differences are chevron/header raster or S2
+data, with startup/scroll/blink diagnostics retained separately. No arbitrary
+score threshold or scroll waiver. Source-5bd remains NOT_ACCEPTED: its extra
+native Tab witness found the reusable focus bug repaired here. The 22
+inherited import-hash mismatches remain open before production.
 
 ## Historical bounded specimen (2026-11-06)
 
@@ -277,6 +287,6 @@ pending; the missing integrated capability is not labelled accepted.
 
 ## Integrated shared editor checkpoint
 
-Merged into the desk4 integration branch after four-app runtime 1804bb9. The macro-source editor uses the accepted shared native_document editor. New macro uses the reusable gold dialog title field presentation, leaving Ced path dialogs unchanged. The generic host now bridges native numeric deferrals through the existing Calls receipts rather than replacing the accepted apps' deadline/cancellation path. Workshop declares its job and reply-envelope limits in Mix bundle configuration. Integrated release-byte acceptance remains pending.
+Merged into the desk4 integration branch after four-app runtime 1804bb9. The macro-source editor uses the accepted shared native_document editor; New macro uses the reusable gold dialog title field. Native numeric deferrals use the existing Calls receipts and accepted deadline/cancellation paths. Job/reply limits are declared in Mix configuration. Integrated release-byte acceptance is complete at 0124e5c5; the current record supersedes earlier open attempts. Ced opens through generic viu; installed native Dopus is the explicit dependency used by gold, not evidence that the separate generic Dopus migration is complete.
 
-The integrated native editor witness now passes New macro, Unicode edit, undo/redo and Save. The Ced effect uses the accepted editor bundle and its native ced.open Bus contract; the file is opened once after read-only readiness probes. The Dopus effect resolves the installed application through the active prefix, matching gold. Dopus generic-host migration remains a separate open port, not part of Workshop acceptance. Full release-byte repetition is still pending.
+The final release editor witness passes New macro, Unicode edit, undo/redo, Save and explicit Tab/Cancel focus. Ced uses the accepted generic bundle and native ced.open contract; the file opens once after read-only readiness probes. Dopus resolves the installed application through the explicit active prefix, matching gold. All release-byte repetition is complete in the linked integrated acceptance. Generic Dopus migration remains a separate open port.

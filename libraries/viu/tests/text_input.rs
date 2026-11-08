@@ -34,6 +34,80 @@ fn key(key: Key) -> Vec<Event> {
         .collect()
 }
 #[test]
+fn gold_dialog_tab_keeps_button_focus_and_enter_cancels() {
+    for field_style in ["title", "path"] {
+        let source = format!(
+            "---\nscene: 1\nname: modal\ncitizen: modal\n---\n```mix\n{}\n```\n",
+            json!({"root":{"widget":"control","on_intent":"input","definition":{
+                "id":"root","kind":"dialog-form","label":"",
+                "properties":{"style":"gold"},
+                "initial":{"open":true,"instance":1,"title":"New item","body":"Name",
+                    "field":"","field_style":field_style,"placeholder":"Title",
+                    "choices":[{"id":"create","label":"Create","enabled":false,"default":true},
+                        {"id":"cancel","label":"Cancel","enabled":true,"cancel":true}]}
+            }}})
+        );
+        let mut view = SceneView::new(&source).unwrap();
+        let ctx = Context::default();
+        viu::appearance::install(&ctx);
+        for _ in 0..3 {
+            draw(&ctx, &mut view, vec![]);
+        }
+        let field = ctx.memory(|m| m.focused()).expect("initial field focus");
+        draw(&ctx, &mut view, key(Key::Tab));
+        for _ in 0..3 {
+            draw(&ctx, &mut view, vec![]);
+        }
+        let button = ctx.memory(|m| m.focused()).expect("Cancel focus");
+        assert_ne!(field, button, "{field_style}: field reclaimed Tab focus");
+        let events = draw(&ctx, &mut view, key(Key::Enter));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.body["action"] == "answer" && e.body["value"]["choice"] == "cancel"),
+            "{field_style}: {events:?}"
+        );
+    }
+}
+#[test]
+fn field_submits_latest_native_text_before_the_mix_model_echo() {
+    let source = format!(
+        "---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{}\n```\n",
+        json!({"root":{"widget":"control","on_intent":"input","definition":{"id":"root","kind":"field","label":"Path","initial":"old"}}})
+    );
+    let mut view = SceneView::with_model(&source, json!({"values":{"root":"old"}})).unwrap();
+    let ctx = Context::default();
+    viu::appearance::install(&ctx);
+    draw(&ctx, &mut view, vec![]);
+    view.request_focus_value(&json!({"id":"root","selection":[0,3]}))
+        .unwrap();
+    draw(&ctx, &mut view, vec![]);
+    let changed = draw(&ctx, &mut view, vec![Event::Text("new/path".into())]);
+    assert!(
+        changed.iter().any(|e| e.body["value"] == "new/path"),
+        "{changed:?}"
+    );
+    let submitted = draw(&ctx, &mut view, key(Key::Enter));
+    assert!(
+        submitted
+            .iter()
+            .any(|e| e.body["action"] == "submit" && e.body["value"] == "new/path"),
+        "{submitted:?}"
+    );
+    assert!(view.text_input_active(), "Enter still belongs to the field");
+    view.apply_model(json!({"values":{"root":"external/path"}}))
+        .unwrap();
+    draw(&ctx, &mut view, vec![]);
+    view.request_focus_value(&json!({"id":"root","selection":[0,13]}))
+        .unwrap();
+    draw(&ctx, &mut view, vec![]);
+    let changed = draw(&ctx, &mut view, vec![Event::Text("replacement".into())]);
+    assert!(
+        changed.iter().any(|e| e.body["value"] == "replacement"),
+        "{changed:?}"
+    );
+}
+#[test]
 fn native_document_preserves_unicode_selection_and_undo_across_model_echo() {
     let source = format!(
         "---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{}\n```\n",
@@ -255,5 +329,33 @@ fn rejected_modal_submission_keeps_the_field_editable_without_an_extra_click() {
             .iter()
             .any(|e| e.body["action"] == "edit" && e.body["value"] == "repaired"),
         "{edited:?}"
+    );
+}
+
+#[test]
+fn modal_tab_keeps_keyboard_focus_on_the_chosen_button() {
+    let source = format!(
+        "---\nscene: 1\nname: modal\ncitizen: modal\n---\n```mix\n{}\n```\n",
+        json!({"root":{"widget":"control","on_intent":"input","definition":{"id":"root","kind":"dialog-form","label":"","properties":{"style":"gold"},"initial":{"open":true,"title":"Name","body":"","field":"example","instance":1,"choices":[{"id":"ok","label":"OK","enabled":true,"default":true},{"id":"cancel","label":"Cancel","enabled":true,"cancel":true}]}}}})
+    );
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = Context::default();
+    viu::appearance::install(&ctx);
+    for _ in 0..3 {
+        draw(&ctx, &mut view, vec![]);
+    }
+    let field = ctx.memory(|m| m.focused()).expect("field focus");
+    draw(&ctx, &mut view, key(Key::Tab));
+    for _ in 0..3 {
+        draw(&ctx, &mut view, vec![]);
+    }
+    let button = ctx.memory(|m| m.focused()).expect("button focus");
+    assert_ne!(field, button);
+    let submitted = draw(&ctx, &mut view, key(Key::Enter));
+    assert!(
+        submitted
+            .iter()
+            .any(|e| e.body["action"] == "answer" && e.body["value"]["choice"] == "ok"),
+        "{submitted:?}"
     );
 }

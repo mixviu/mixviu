@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixViu wallpaper for session %i
+# Wants, not Requires: Requires= would stop or restart this unit whenever
+# viud@ restarts and take the wallpaper down with it. Ordering stays; restart
+# is handled below. Never wants a broker: the session target chooses it.
+Wants=viud@%i.service
+After=viud@%i.service noded@%i.service noded.service
+PartOf=session@%i.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=mix
+EnvironmentFile=@{etc}/session/%i.env
+ExecStart=@{prefix}/bin/viu run @{share}/mixviu/apps/backdrop
+# Any exit (including the Wayland socket going away when viud restarts)
+# brings it back; while viud is down, connects fail and retry every RestartSec.
+Restart=always
+RestartSec=2

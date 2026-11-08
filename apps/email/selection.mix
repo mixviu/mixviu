@@ -1,0 +1,60 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- lint: globals active total mail_selection message box mail_sort wire_generations wire_data
+-- Folder-wide selection resolves IDs before asking or writing. A ticket,
+-- connection generation and mailbox fence every page; Escape drops the ticket.
+$mail_everything=false;$bulk_fetches={};$bulk_serial=0
+fn grouped($n)
+  $s=to_string($n);$out=""
+  while len($s)>3 $out=","..substr($s,len($s)-3)..$out;$s=substr($s,0,len($s)-3) end
+  return $s..$out
+end
+fn selection_count()
+  return if $mail_everything then max($total,len($mail_selection)) else len($mail_selection) end
+end
+fn selection_cancel($account,$notice=false)
+  global $bulk_fetches,$status
+  if $bulk_fetches[$account]!=nil then
+    $bulk_fetches=delete($bulk_fetches,$account)
+    if $notice then $status="Cancelled: nothing was changed." end
+  end
+end
+fn selection_act($action)
+  global $bulk_fetches,$bulk_serial,$status
+  if $bulk_fetches[$active]!=nil then return {rc:0,body:{}} end
+  if not $mail_everything then return selection_apply($active,if len($mail_selection)>0 then $mail_selection elif $message!=nil then [$message.id] else [] end,$action) end
+  $count=selection_count()
+  if $count>5000 then $status=grouped($count).." emails is more than 5,000 at once; nothing was changed.";return {rc:0,body:{}} end
+  $bulk_serial=$bulk_serial+1
+  $f={ticket:$bulk_serial,account:$active,mailbox:$box,generation:$wire_generations[$active] ?? 0,sort:if $mail_sort.column=="date" then "receivedAt" else $mail_sort.column end,ascending:$mail_sort.order=="ascending",expected:$count,ids:[],action:$action}
+  $bulk_fetches[$active]=$f
+  return selection_page($f)
+end
+fn selection_page($f)
+  return wire_start("email.ids",{account:$f.account,mailbox:$f.mailbox,sort:$f.sort,ascending:$f.ascending,offset:len($f.ids),ticket:$f.ticket},nil,"bulk-ids")
+end
+fn selection_completed($job,$answer)
+  global $bulk_fetches,$status
+  $f=$bulk_fetches[$job.account]
+  if $f==nil or $f.ticket!=$job.args.ticket or $f.generation!=($wire_generations[$job.account] ?? 0) or ($wire_data[$job.account] ?? {}).box!=$f.mailbox then return end
+  if $answer.rc!=0 then
+    selection_cancel($job.account);$status="Could not list the folder's emails: "..$answer.body.message;return
+  end
+  $p=$answer.body;$f.expected=$p.total;$f.ids=unique(concat($f.ids,$p.ids))
+  if max($p.total,len($f.ids))>5000 then
+    selection_cancel($job.account);$status=grouped(max($p.total,len($f.ids))).." emails is more than 5,000 at once; nothing was changed.";return
+  end
+  if len($p.ids)>0 and len($f.ids)<$p.total then $bulk_fetches[$job.account]=$f;selection_page($f);return end
+  selection_cancel($job.account)
+  selection_apply($job.account,$f.ids,$f.action)
+end
+fn selection_apply($account,$ids,$action)
+  if len($ids)==0 then return {rc:0,body:{}} end
+  if contains(["delete","move"],$action) then return form_open($action,$ids,$account) end
+  $a={account:$account,ids:$ids}
+  if contains(["junk","not_junk"],$action) then $a.junk=$action=="junk";return wire_start("email.junk",$a,nil,"mutation") end
+  $flag=$action=="flag";$keyword=if $flag then "$flagged" else "$seen" end
+  $items=filter(($wire_data[$account] ?? {}).emails ?? [],fn($m)=contains($ids,$m.id))
+  if len($items)==0 and ($wire_data[$account] ?? {}).message!=nil then $items=[$wire_data[$account].message] end
+  $a[if $flag then "flagged" else "read" end]=not (len($items)>0 and all($items,fn($m)=($m.keywords ?? {})[$keyword]==true))
+  return wire_start("email.mark",$a,nil,"mutation")
+end
