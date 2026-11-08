@@ -19,18 +19,30 @@ fn inherited_fd(value: &str) -> Option<RawFd> {
 /// Run before any threads or child spawns. Term might itself be launched by a
 /// native parent; its inherited handoff must never leak into a pane's exec.
 pub fn quarantine_inherited() {
+    quarantine(true);
+}
+
+/// Early bootstrap may run argv before selecting its CLI mode. Fence valid
+/// inherited handles without changing version/help's diagnostic output. The
+/// normal configuration boundary still reports invalid/unavailable markers.
+pub(crate) fn quarantine_inherited_quiet() {
+    quarantine(false);
+}
+
+fn quarantine(report: bool) {
     if let Ok(value) = std::env::var(MARKER) {
         match inherited_fd(&value) {
             Some(fd) => {
                 // SAFETY: fcntl changes flags only; ownership is not assumed.
-                if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+                if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 && report {
                     eprintln!(
                         "term inherited session descriptor unavailable: {}",
                         io::Error::last_os_error()
                     );
                 }
             }
-            _ => eprintln!("term inherited session descriptor marker is invalid"),
+            _ if report => eprintln!("term inherited session descriptor marker is invalid"),
+            _ => {},
         }
     }
 }
@@ -254,7 +266,15 @@ mod tests {
                 unsafe { libc::fcntl(fds[0], libc::F_GETFD) } & libc::FD_CLOEXEC,
                 0
             );
-            // This process models Term itself inheriting a bootstrap fd.
+            // Run the actual authored early-version bootstrap while carrying
+            // an inheritable sealed descriptor. No config operation is called:
+            // the generic evaluator must fence it before its own worker and
+            // any authored argv, while leaving the descriptor owned here.
+            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+            let bundle = crate::bundle::Bundle::load(&root, &["--version".into()]).unwrap();
+            let choice = crate::startup::evaluate(bundle.startup.as_ref().unwrap()).unwrap();
+            assert!(matches!(choice, crate::startup::Choice::Exit {code:0,..}));
+            assert_ne!(unsafe {libc::fcntl(fds[0],libc::F_GETFD)} & libc::FD_CLOEXEC,0);
             // Its first child must not inherit it, even without Mix support.
             quarantine_inherited();
             assert_ne!(

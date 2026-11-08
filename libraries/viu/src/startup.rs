@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Authored early launch decisions. No Bus, window, PTY or runtime worker is
-//! created here. A bounded one-shot evaluator keeps inherited descriptors
-//! untouched until an authored native configuration operation quarantines
-//! them before its first child process.
+//! created here. Before its one-shot evaluator can start a child, inherited
+//! session handles are quietly fenced without consuming or closing them.
 use crate::{bundle::Bundle, runtime::Program};
 use serde::Deserialize;
 use serde_json::Value;
@@ -33,6 +32,7 @@ fn exit_code<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u8, D:
         .ok_or_else(|| serde::de::Error::custom("exit code must be a whole number in 0..255"))
 }
 pub(crate) fn evaluate(program: &Program) -> Result<Choice, String> {
+    crate::terminal::session_fd::quarantine_inherited_quiet();
     // Match the existing evaluator's stack budget in debug as well as release.
     // The caller joins this finite owner before any application owners start.
     std::thread::scope(|scope| {
