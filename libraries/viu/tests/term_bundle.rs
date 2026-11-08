@@ -264,8 +264,15 @@ fn term_bundle_child() {
         json!({"id":"tabs","action":"select","value":"2"}),
     );
     assert_eq!(selected.reply.unwrap().rc, 0);
-    let tabs = invoke(&mut runtime, &rx, "term.tabs", json!({})).reply.unwrap();
-    assert!(tabs.body.as_str().unwrap().contains("id=2 active=true title=Pinned"));
+    let tabs = invoke(&mut runtime, &rx, "term.tabs", json!({}))
+        .reply
+        .unwrap();
+    assert!(
+        tabs.body
+            .as_str()
+            .unwrap()
+            .contains("id=2 active=true title=Pinned")
+    );
     let closed = invoke(
         &mut runtime,
         &rx,
@@ -273,10 +280,20 @@ fn term_bundle_child() {
         json!({"id":"tabs","action":"close","value":"3"}),
     );
     assert_eq!(closed.reply.unwrap().rc, 0);
-    let tabs = invoke(&mut runtime, &rx, "term.tabs", json!({})).reply.unwrap();
+    let tabs = invoke(&mut runtime, &rx, "term.tabs", json!({}))
+        .reply
+        .unwrap();
     assert_eq!(tabs.body.as_str().unwrap().lines().count(), 1);
-    assert!(tabs.body.as_str().unwrap().contains("id=2 active=true title=Pinned"));
-    assert!(sessions.call("state", "vt-4", json!({})).is_err(), "UI close must release its owned PTY");
+    assert!(
+        tabs.body
+            .as_str()
+            .unwrap()
+            .contains("id=2 active=true title=Pinned")
+    );
+    assert!(
+        sessions.call("state", "vt-4", json!({})).is_err(),
+        "UI close must release its owned PTY"
+    );
     let about = invoke(&mut runtime, &rx, "term.dialog", json!({"open":"about"}));
     assert_eq!(about.reply.unwrap().rc, 0);
     let model = about.model.unwrap();
