@@ -286,8 +286,7 @@ on term.intent
 end
 on term.execute
   if type($event.args)!="map" or type($event.args.id)!="string" then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"term.execute needs {\"id\": <command id>}"}));return end
-  $params={}
-  for $key in ["tab","pane"] if $wire.whole_id($event.args[$key]) then $params[$key]=$event.args[$key] end end
+  $params=$wire.action_targets($event.args,viu_json_numbers($event.body))
   $out=act($state,$event.args.id,$params,"bus");$state=$out.state;reply($out.rc,json_encode($out.body))
 end
 on term.actions

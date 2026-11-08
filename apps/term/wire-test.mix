@@ -40,6 +40,10 @@ check($wire.field_arguments("term.type",{pane:nil,text:3},{})=="text must be a s
 check($wire.field_arguments("term.type",{pane:nil,text:""},{})=="invalid-argument: pane must be a non-negative integer (u64)","null target is present and mistyped, not missing")
 $float={kind:"float",text:"1.0",safe:false,signed:false}
 $huge={kind:"u64",text:"18446744073709551615",safe:false,signed:false}
+check(deep_eq($wire.action_targets({tab:1,pane:2},{tab:{kind:"u64",text:"1",safe:true},pane:{kind:"u64",text:"2",safe:true}}),{tab:1,pane:2}),"valid action selectors retain their exact targets")
+check(deep_eq($wire.action_targets({tab:json_parse($huge.text)},{tab:$huge}),{tab:$huge.text}),"large unsigned action target must not become active-tab fallback")
+check(deep_eq($wire.action_targets({tab:1},{tab:$float}),{}),"Gold ignores floating action selectors")
+check(deep_eq($wire.action_targets({tab:"2",pane:-1},{pane:{kind:"i64",text:"-1",safe:true}}),{}),"Gold ignores string and negative action selectors")
 check($wire.field_arguments("term.tab.select",{id:1},{id:$float})=="id must be a non-negative integer (u64)","JSON floating integer stays a float")
 check($wire.field_arguments("term.tab.select",{id:json_parse($huge.text)},{id:$huge})==nil,"unsigned maximum is valid before state lookup")
 check($wire.field_arguments("term.tab.move",{id:1,index:json_parse($huge.text)},{index:$huge})==nil,"gold index accepts unsigned maximum")

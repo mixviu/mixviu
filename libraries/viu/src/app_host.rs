@@ -226,6 +226,18 @@ impl Host {
                 .retain(|d| d.load(std::sync::atomic::Ordering::Acquire) == 0);
             self.deliveries.push(r.delivery.clone());
             if !self.commands.contains(&r.command) {
+                if let Some(handler) = self.unknown_handler.clone() {
+                    if !self.ready {
+                        let _ = r.reply.send((10, json!({"error_code":"NOT_READY"})));
+                        return;
+                    }
+                    // Preserve authored admission policy without running any
+                    // window facility for an undeclared headless command.
+                    r.headers.insert("viu-unknown-command".into(), r.command);
+                    let raw = self.preserve_request_body.then_some(r.body);
+                    self.dispatch_body(handler, r.args, raw, r.headers, Some(r.reply));
+                    return;
+                }
                 let _ = r.reply.send((
                     10,
                     self.unknown_reply

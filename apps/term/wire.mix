@@ -3,6 +3,18 @@
 fn whole_id($v)
   return type($v)=="number" and $v>=0 and $v<=9007199254740991 and floor($v)==$v
 end
+-- Gold action selectors use serde as_u64: mistyped/negative/float values are
+-- absent, while a valid large unsigned value must never fall back to active.
+fn action_targets($args,$numbers)
+  $out={}
+  for $key in ["tab","pane"]
+    $number=$numbers[$key]
+    if $number!=nil and $number.kind=="u64" then
+      $out[$key]=if $number.safe then $args[$key] else $number.text end
+    end
+  end
+  return $out
+end
 fn signed_whole($v)
   return type($v)=="number" and abs($v)<=9007199254740991 and floor($v)==$v
 end
