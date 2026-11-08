@@ -13,22 +13,9 @@ yanked = "warn"
 # shrinks: each fix PR removes its lines. A NEW advisory fails CI.
 ignore = [
   { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 Marvin timing (no fixed release); inherited debt" },
-  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained; inherited debt" },
-  { id = "RUSTSEC-2026-0118", reason = "hickory-proto NSEC3 loop (dnsd, Tier 2); inherited debt" },
-  { id = "RUSTSEC-2026-0119", reason = "hickory-proto name compression CPU (dnsd, Tier 2); inherited debt" },
-  { id = "RUSTSEC-2026-0194", reason = "quick-xml duplicate-attribute quadratic; inherited debt" },
-  { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader allocation; inherited debt" },
-  { id = "RUSTSEC-2026-0346", reason = "rustls Debug exposes secrets; inherited debt" },
-  { id = "RUSTSEC-2026-0347", reason = "rustls ECH buffered data; inherited debt" },
-  { id = "RUSTSEC-2026-0348", reason = "rustls brotli cert decompression; inherited debt" },
-  { id = "RUSTSEC-2026-0349", reason = "rustls ServerHello downgrade; inherited debt" },
   { id = "RUSTSEC-2026-0367", reason = "zip SUID preservation on extract; inherited debt" },
   { id = "RUSTSEC-2026-0368", reason = "zip symlink escape on extract; inherited debt" },
   { id = "RUSTSEC-2026-0369", reason = "zip permissions through symlinks; inherited debt" },
-  { id = "RUSTSEC-2026-0381", reason = "webpki-roots distrusted emSign; inherited debt" },
-  { id = "RUSTSEC-2026-0382", reason = "rustls-webpki distrusted intermediates; inherited debt" },
-  { id = "RUSTSEC-2026-0385", reason = "ctutils non-constant-time mask; inherited debt" },
-  { id = "RUSTSEC-2026-0386", reason = "tokio AsyncFd I/O safety; inherited debt" },
   { id = "RUSTSEC-2026-0429", reason = "zip symlink large size abort; inherited debt" },
 ]
 

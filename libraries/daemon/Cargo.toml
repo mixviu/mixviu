@@ -26,7 +26,7 @@ default = []
 tls = [
     "dep:rustls",
     "dep:tokio-rustls",
-    "dep:rustls-pemfile",
+    "dep:rustls-pki-types",
     "dep:config",
     "dep:sha2",
     "dep:rustls-webpki",
@@ -70,7 +70,7 @@ config = { workspace = true, features = ["tls"], optional = true }
 # TLS (optional)
 rustls = { workspace = true, optional = true }
 tokio-rustls = { workspace = true, optional = true }
-rustls-pemfile = { version = "2", optional = true }
+rustls-pki-types = { workspace = true, optional = true }
 
 # LE chain validator (`tls::le_validator`) — same feature gate, no
 # extra Cargo feature so a `tls` consumer gets the validator without

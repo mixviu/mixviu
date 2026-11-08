@@ -216,10 +216,10 @@ mod tests {
     /// Any cache miss would be a test failure; no resolver traffic is needed.
     struct PublishedKey(mail_auth::Txt);
 
-    impl mail_auth::ResolverCache<String, mail_auth::Txt> for PublishedKey {
+    impl mail_auth::ResolverCache<Box<str>, mail_auth::Txt> for PublishedKey {
         fn get<Q>(&self, _: &Q) -> Option<mail_auth::Txt>
         where
-            String: std::borrow::Borrow<Q>,
+            Box<str>: std::borrow::Borrow<Q>,
             Q: std::hash::Hash + Eq + ?Sized,
         {
             Some(self.0.clone())
@@ -227,13 +227,13 @@ mod tests {
 
         fn remove<Q>(&self, _: &Q) -> Option<mail_auth::Txt>
         where
-            String: std::borrow::Borrow<Q>,
+            Box<str>: std::borrow::Borrow<Q>,
             Q: std::hash::Hash + Eq + ?Sized,
         {
             None
         }
 
-        fn insert(&self, _: String, _: mail_auth::Txt, _: std::time::Instant) {
+        fn insert(&self, _: Box<str>, _: mail_auth::Txt, _: std::time::Instant) {
             panic!("published record must satisfy the DNS lookup");
         }
     }

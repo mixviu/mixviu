@@ -1,3 +1,21 @@
+# Security Hickory split — gates green, awaiting review
+
+Mark split this work from fix/security-advisories. Original branch history remains unchanged. All previously uncommitted adapters were committed first at 2dfcb234. The branch intentionally retains the full original history so no work is lost. The smaller non-Hickory PR is fix/security-tls.
+
+2026-11-08: merged origin/main (b94c725a; apps/dopus deletion accepted, this file kept both sides). Finished the migration:
+
+* mail-auth stays exactly =0.11.0 (0.11.3 is yanked); Cargo.lock now records 0.11.0, so --locked resolves. A brief =0.11.2 detour (16a83504) was reverted in a8a51330.
+* Test-only TXT caches use Box<str> keys and Error::Dns(DnsError::InvalidRecordType).
+* Hickory 0.26: maild envelope uses proto::rr::Name; mix DNS test sets Message.metadata.id directly.
+* rustfmt output applied from CBC; logging caps system_configuration(_sys), pulled in by Hickory 0.26 (macOS).
+* .gitleaksignore copied verbatim from PR #7: gitleaks scans every fetched ref, and fix/mix-hygiene's terminal help line is a false positive that failed main and this PR.
+
+**DKIM behaviour (decided by Fable, 2026-11-08):** mail-auth 0.11 rejects a DKIM-Signature missing d/s/b/bh/h as MissingParameters at parse, and verify_dkim surfaces only Error::Dkim parse errors, so such a header would add no dkim= result. Verdict: report it as `neutral` (RFC 8601 §2.7.1, "signed, but the signature contained syntax errors"; matches 0.7), not permerror. `mapping::surface_dkim_parse_errors` adds a neutral DkimOutput for every other DKIM-Signature parse error right after verify_dkim, under the existing signature cap. Tests pin the upstream behaviour, maild's neutral result and no double reporting.
+
+Next: fresh independent reviews (3-round budget), code-owner approval, undraft. No production installation or deployment.
+
+Branch fix/security-hickory; head/source 76857d20 (this status commit follows); gate: CBC tools/ci.mix fmt/env/viud/mix-lint/clippy/test green at fa52b33e except the logging cap fixed in 76857d20 (job 20261108-173323-19ccf584-a1), logging --lib green at 76857d20 (job 20261108-180037-1f154069-a1); GitHub security workflow green.
+
 # Email desk4 launch repair — ready for hot-apply
 
 Branch `fix/email-desk4-tree-table`, based on `origin/cutover/four-engines`
