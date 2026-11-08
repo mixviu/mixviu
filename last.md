@@ -448,4 +448,6 @@ Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa
 
 # PR 8 TLS refresh
 
-Merging main; CBC dependency resolution and gates pending.
+Merged main 60cb1270 without rebase or force-push. Retained main’s Mix-first Dopus, four-engine layout and environment registry. Cargo.lock and the strictly shrinking lint baseline were generated on CBC. All five affected-crate light jobs and the full cargo-deny/CI all-stage gate passed on Rust source a6434f41. No Rust/lock changes followed; the Gitleaks exception at c171e033 passed GitHub security-ok and two independent-family delta reviews. The final documentation commit is checked by GitHub before handoff. PR.md and PR #8 contain the updated evidence and undo instructions.
+
+Branch fix/security-tls; head is this status commit (source c171e033e9ab53582a4a56f81c93e5641a3b41c5, Rust gate a6434f41468e9e6a6137cebceaceca4b27404b66); gate PASS: cargo deny, CI all, five affected-crate light jobs; CBC 20261108-153157-b139388e-a1, 20261108-153359-f8acf742-a1, 20261108-153400-7256afc2-a1, 20261108-153401-4b361290-a1, 20261108-153403-980add31-a1, 20261108-153404-dc557563-a1, 20261108-153405-e638aa26-a1; PR #8.

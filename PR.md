@@ -1,6 +1,6 @@
 ## Summary
 
-Clear 11 of the 18 inherited advisory ignores without changing Hickory or mail-auth versions or their APIs. Base: `395aab71` on `infra/pr-ci`.
+Clear 11 of the 18 inherited advisory ignores without changing Hickory or mail-auth versions or their APIs. Updated onto `main` at `60cb1270` by merge commit `1862f9d7`; no rebase or force-push. CBC resolution `a6434f41` starts from main’s lock graph and reapplies the advisory versions.
 
 | Advisory | Resolution |
 | --- | --- |
@@ -24,37 +24,25 @@ Deferred debt remains in `deny.toml`:
 
 ## Risk tier
 
-Tier 2: TLS/trust, network services, runtime dependencies and advisory policy. The code owner must approve. No deployment or data migration.
+Tier 2: TLS/trust, network services, runtime dependencies, advisory policy and a narrowly scoped scanner false-positive exception. The code owner must approve. No deployment or data migration.
 
 ## How tested
 
-- Run: all five affected-crate jobs passed with `--light` at `43a7c7b8`; the final JWT tests passed at `dc699500`; final REPORT tests, security, formatting and environment checks passed at `b664878c`. The final full CI test stage passed at `b664878c`: 10,525 Rust tests passed, 0 failed, 90 ignored, followed by all five Mix policy checks. Clippy and the viud dependency gate passed. Mix lint fails identically at the base and this branch; no baseline was weakened.
+Merged-tree validation (2026-11-08):
 
-| CBC job | Check | Result |
-| --- | --- | --- |
-| `20261107-215710-64ee1d7a-a1` | Resolve dependency removal and format adapters | Pass |
-| `20261107-220026-acacbff6-a1` | maild + webd tests | Pass |
-| `20261107-220026-e6a5c094-a1` | config + daemon tests, TLS enabled | Pass |
-| `20261107-220026-6d4dae71-a1` | lib-mix tests, DKIM enabled | Pass |
-| `20261107-220026-62cd04d9-a1` | bus + props tests | Pass |
-| `20261107-220026-3d85fbf6-a1` | lib-viu tests | Pass |
-| `20261107-221648-810111e3-a1` | Final JWT tests, including both PEM compatibility regressions | 9 passed |
-| `20261107-221713-6e136c4d-a1` | cargo deny check; CI fmt + env stages | Pass; env registry 196 names, 0 problems |
-| `20261107-221945-3122f461-a1` | Earlier full CI test attempt | Cancelled (143) after final XML fix; superseded |
-| `20261107-222839-4c5d81a1-a1` | Final REPORT tests, including split invalid UTF-8 regression | 26 passed |
-| `20261107-222839-b8cd5ee7-a1` | Final cargo deny check; CI fmt + env stages | Pass |
-| `20261107-223327-64e473bf-a1` | Final full CI test stage, `--worker any` | Pass; BUILD_RC=0 |
-| `20261107-223349-8cb1d811-a1` | CI clippy and viud dependency gate | Pass; subsequent Mix lint fails on eight inherited regression entries |
-| `20261107-223537-fa2ce977-a1` | Base `395aab71` Mix lint comparison | Same eight regression entries, same counts |
+- CBC `20261108-153157-b139388e-a1`: targeted Cargo updates, build the merged tree’s own Mix, regenerate the lint baseline; PASS. Applied the generated diff locally. The baseline only shrinks against main; no counts increased.
+- Affected-crate light jobs at `a6434f41`: maild/webd (`20261108-153359-f8acf742-a1`), TLS config/daemon (`20261108-153400-7256afc2-a1`), lib-mix DKIM (`20261108-153401-4b361290-a1`) and bus/props (`20261108-153403-980add31-a1`) PASS. Viu (`20261108-153404-dc557563-a1`) PASS. These five saved logs contain 4,873 passing tests and zero failures.
+- Full CBC security + CI all-stage gate (`20261108-153405-e638aa26-a1`, worker any) PASS, BUILD_RC=0. Rust tests: 10566 passed, 0 failed, 90 ignored; all Mix policy checks and the final lint ratchet passed. The Rust source and lockfile are unchanged after `a6434f41`; later commits change only Gitleaks policy.
+- GitHub security-ok PASS at `c171e033`: cargo-deny, Gitleaks and workflow checks. Final-head checks run after the documentation commit; the PR check results are required acceptance evidence before handoff.
+- Observed: seven deferred advisory ignores retained; Hickory/mail-auth versions and DNS APIs unchanged. Main’s Mix-first Dopus removal, four-engine layout and environment registry retained. No tests weakened.
+- Not tested: production deployment, public mail traffic, or a newer Candle stack. Deferred vulnerabilities are not claimed fixed.
 
-- Observed: no Hickory/mail-auth version changes or DNS adapter changes in the split diff. The security command reports all four checks OK, alongside permitted policy warnings and cargo-deny workspace-span diagnostic messages. Existing ignored tests remain ignored. Deprecated Tokio AsyncFd calls still warn; the Mix calls move owned cloned sockets into AsyncFd, and noded passes an OwnedFd; these types retain their descriptor lifetimes.
-- Inherited gate failure: Mix lint reports seven Backdrop/Workshop MIX-E1102 entries and one Backdrop MIX-W2401 entry. The base comparison reproduces all eight with identical counts. These files, the linter and its baseline are unchanged here; the full `all` recipe is therefore not claimed green.
-- Not tested: production deployment, public mail traffic, or a newer Candle stack. Known deferred vulnerabilities are not claimed fixed.
+Gitleaks initially flagged historical terminal keyboard-shortcut help and audit notes quoting it. The added exception requires both an exact path (the historical help file, PR notes or Gitleaks audit notes) and the captured value equal to the public shortcut literal. It does not exempt arbitrary values or change the workflow. A pinned Gitleaks 8.30.1 full-history scan passes locally; GitHub confirms the result.
 
 ## How to undo
 
-Revert this branch's dependency, parser-adapter and deny-policy commits together. No data change is expected. Existing keys, certificates, messages, configuration and model files keep their formats.
+After landing, revert this PR’s squash commit. While it is a branch, revert its dependency, parser-adapter, baseline and policy commits together; retain main’s cut-over merge. No data change is expected. Existing keys, certificates, messages, configuration and model files keep their formats.
 
 ## Authorship and review
 
-GPT-6.1 Sol via the mixviu-agent bot. Mark requested this split after the combined branch exceeded the review diff-growth limit. The original `fix/security-advisories` history is unchanged. Round 1 reviewed the final source `b664878c`: Gemini 3.1 Pro Preview and DeepSeek V4 Pro both returned no blocking findings. DeepSeek’s non-blocking malformed-ECHCONFIG nit is closed as pre-existing: the base already locks rustls-pki-types 1.15.1, and rustls-pemfile 2.2.0 calls `pem::from_buf(rd)?` before filtering section kinds, so malformed recognised sections already fail decoding. No source change followed the reviews. Code-owner approval remains required. No PR opened before cut-over.
+GPT-6.1 Sol via the mixviu-agent bot. Mark requested this split after the combined branch exceeded the review diff-growth limit. The original `fix/security-advisories` history is unchanged. Original round 1 reviewed the pre-cut-over source `b664878c`: Gemini 3.1 Pro Preview and DeepSeek V4 Pro both returned no blocking findings. DeepSeek’s non-blocking malformed-ECHCONFIG nit is closed as pre-existing: the base already locks rustls-pki-types 1.15.1, and rustls-pemfile 2.2.0 calls `pem::from_buf(rd)?` before filtering section kinds, so malformed recognised sections already fail decoding. The main refresh retains those adapters. Gemini and DeepSeek reviewed the new Gitleaks exception and its corrected delta in two rounds with no blocking findings; non-blocking future-path housekeeping is deferred. Existing broader help exceptions are unchanged. PR #8 is open; current-head code-owner approval remains required.
