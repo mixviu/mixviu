@@ -154,12 +154,12 @@ async fn malformed_folded_mixed_case_signature_still_produces_output() {
     );
 }
 
-// Behaviour change pinned on the 0.7 -> 0.11 upgrade: a signature missing
-// required tags is a MissingParameters parse error, which verify_dkim does
-// not surface (it reports only Error::Dkim parse errors as neutral). Such a
-// header therefore adds no dkim= result to Authentication-Results.
+// mail-auth 0.11 turns a signature missing required tags into a
+// MissingParameters parse error and verify_dkim reports nothing for it (it
+// surfaces only Error::Dkim parse errors). Pin that upstream behaviour, then
+// check maild restores the RFC 8601 `dkim=neutral` result 0.7 produced.
 #[tokio::test]
-async fn signature_missing_required_tags_yields_no_dkim_output() {
+async fn signature_missing_required_tags_is_reported_neutral() {
     let raw = b"DKIM-Signature: v=1; d=example.org; s=mail\r\n\
         From: sender@example.org\r\n\r\nbody\r\n";
     let parsed = AuthenticatedMessage::parse(raw).unwrap();
@@ -172,10 +172,36 @@ async fn signature_missing_required_tags_yields_no_dkim_output() {
             .any(|h| matches!(h.header, mail_auth::Error::MissingParameters))
     );
     let auth = MessageAuthenticator::new_cloudflare().unwrap();
-    let outputs = auth
+    let mut outputs = auth
         .verify_dkim(Parameters::new(&parsed).with_txt_cache(&OfflineTxt))
         .await;
-    assert!(outputs.is_empty());
+    assert!(outputs.is_empty(), "upstream behaviour changed; revisit");
+
+    maild_auth::mapping::surface_dkim_parse_errors(&parsed, &mut outputs);
+    assert_eq!(outputs.len(), 1);
+    assert!(matches!(outputs[0].result(), DkimResult::Neutral(_)));
+    assert!(
+        AuthenticationResults::new("maild.example.org")
+            .with_dkim_results(&outputs, parsed.from())
+            .to_string()
+            .contains("dkim=neutral")
+    );
+}
+
+// A signature mail-auth already reports (an Error::Dkim parse error) must not
+// be reported twice.
+#[tokio::test]
+async fn dkim_parse_errors_are_not_reported_twice() {
+    let raw = b"DKIM-Signature: v=2; d=example.org; s=mail\r\n\
+        From: sender@example.org\r\n\r\nbody\r\n";
+    let parsed = AuthenticatedMessage::parse(raw).unwrap();
+    let auth = MessageAuthenticator::new_cloudflare().unwrap();
+    let mut outputs = auth
+        .verify_dkim(Parameters::new(&parsed).with_txt_cache(&OfflineTxt))
+        .await;
+    assert_eq!(outputs.len(), 1);
+    maild_auth::mapping::surface_dkim_parse_errors(&parsed, &mut outputs);
+    assert_eq!(outputs.len(), 1);
 }
 
 #[tokio::test]

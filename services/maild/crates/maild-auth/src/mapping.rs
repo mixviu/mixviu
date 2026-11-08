@@ -18,8 +18,9 @@ use crate::types::{
     DmarcResult as OurDmarcResult, IprevOutcome, IprevResult as OurIprevResult, SpfResult,
 };
 use mail_auth::{
-    ArcOutput, DkimOutput, DkimResult, DmarcOutput, DmarcResult as MaDmarcResult, IprevOutput,
-    IprevResult as MaIprevResult, SpfResult as MaSpfResult, dmarc::Policy as MaPolicy,
+    ArcOutput, AuthenticatedMessage, DkimOutput, DkimResult, DmarcOutput,
+    DmarcResult as MaDmarcResult, Error as MaError, IprevOutput, IprevResult as MaIprevResult,
+    SpfResult as MaSpfResult, dmarc::Policy as MaPolicy,
 };
 use std::net::IpAddr;
 
@@ -64,6 +65,27 @@ pub(crate) fn map_iprev(out: &IprevOutput, peer_ip: IpAddr) -> OurIprevResult {
 }
 
 // ---- DKIM ---------------------------------------------------------
+
+/// Report every unparseable DKIM-Signature header as `neutral`.
+///
+/// mail-auth 0.11 `verify_dkim` surfaces only `Error::Dkim(_)` parse
+/// errors; others (`MissingParameters`, `Base64`, ...) yield no output,
+/// so a broken signature would look unsigned. RFC 8601 §2.7.1 defines
+/// `neutral` as "signed, but the signature contained syntax errors", which
+/// is also what mail-auth 0.7 reported. Call right after `verify_dkim`,
+/// before `map_dkim` applies the signature cap.
+pub fn surface_dkim_parse_errors<'x>(
+    parsed: &AuthenticatedMessage<'x>,
+    outputs: &mut Vec<DkimOutput<'x>>,
+) {
+    for header in &parsed.errors {
+        if header.name.eq_ignore_ascii_case(b"DKIM-Signature")
+            && !matches!(header.header, MaError::Dkim(_))
+        {
+            outputs.push(DkimOutput::neutral(header.header.clone()));
+        }
+    }
+}
 
 pub(crate) fn map_dkim_signature(out: &DkimOutput<'_>) -> DkimSignatureResult {
     let (d, s) = match out.signature() {

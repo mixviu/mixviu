@@ -10,7 +10,7 @@ Mark split this work from fix/security-advisories. Original branch history remai
 * rustfmt output applied from CBC; logging caps system_configuration(_sys), pulled in by Hickory 0.26 (macOS).
 * .gitleaksignore copied verbatim from PR #7: gitleaks scans every fetched ref, and fix/mix-hygiene's terminal help line is a false positive that failed main and this PR.
 
-**Review item (behaviour change):** mail-auth 0.11 rejects a DKIM-Signature missing d/s/b/bh/h as MissingParameters at parse, and verify_dkim surfaces only Error::Dkim parse errors, so such a header now adds no dkim= result to Authentication-Results (0.7 reported dkim=neutral). The dkim_gap_repro fixtures now carry every tag with a bogus hash, and `signature_missing_required_tags_yields_no_dkim_output` pins the new behaviour. Decide whether maild should report permerror for it.
+**DKIM behaviour (decided by Fable, 2026-11-08):** mail-auth 0.11 rejects a DKIM-Signature missing d/s/b/bh/h as MissingParameters at parse, and verify_dkim surfaces only Error::Dkim parse errors, so such a header would add no dkim= result. Verdict: report it as `neutral` (RFC 8601 §2.7.1, "signed, but the signature contained syntax errors"; matches 0.7), not permerror. `mapping::surface_dkim_parse_errors` adds a neutral DkimOutput for every other DKIM-Signature parse error right after verify_dkim, under the existing signature cap. Tests pin the upstream behaviour, maild's neutral result and no double reporting.
 
 Next: fresh independent reviews (3-round budget), code-owner approval, undraft. No production installation or deployment.
 

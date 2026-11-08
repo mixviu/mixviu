@@ -21,7 +21,10 @@
 
 use crate::ar_trim::trim_forged_authentication_results;
 use crate::error::{Error, Result};
-use crate::mapping::{map_arc, map_dkim, map_dmarc, map_iprev, map_spf_result, naive_org_domain};
+use crate::mapping::{
+    map_arc, map_dkim, map_dmarc, map_iprev, map_spf_result, naive_org_domain,
+    surface_dkim_parse_errors,
+};
 use crate::resolver::DnsResolver;
 use crate::types::*;
 use mail_auth::{
@@ -198,11 +201,12 @@ impl Verifier for MailAuthVerifier {
             .ok_or_else(|| Error::Internal("AuthenticatedMessage::parse failed".into()))?;
 
         // 4. DKIM
-        let dkim_outputs =
+        let mut dkim_outputs =
             match timeout(self.config.dkim_timeout, self.auth().verify_dkim(&parsed)).await {
                 Ok(out) => out,
                 Err(_) => return Err(Error::DnsTimeout("dkim".into())),
             };
+        surface_dkim_parse_errors(&parsed, &mut dkim_outputs);
         let dkim_mapped = map_dkim(&dkim_outputs, self.config.max_dkim_signatures);
 
         // 5. SPF
