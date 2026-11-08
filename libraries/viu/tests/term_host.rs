@@ -211,6 +211,18 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
                 .0,
             0
         );
+        let start = Instant::now();
+        loop {
+            if let Some(status) = default.0.try_wait().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(15),
+                "default host did not exit"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         caller.client().close().await;
     });
 }

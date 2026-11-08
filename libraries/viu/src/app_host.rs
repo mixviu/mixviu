@@ -2310,12 +2310,14 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             use raw_window_handle::HasDisplayHandle;
             // SAFETY: eframe keeps its display alive until after Host drops,
             // matching the pinned gold window/selection-worker ownership.
-            host.selection = unsafe {
-                crate::terminal::clipboard::Clipboard::new(
-                    cc.display_handle().ok().map(|display| display.as_raw()),
-                    wake,
-                )
-            };
+            if host.native_selection {
+                host.selection = unsafe {
+                    crate::terminal::clipboard::Clipboard::new(
+                        cc.display_handle().ok().map(|display| display.as_raw()),
+                        wake,
+                    )
+                };
+            }
             Ok(Box::new(host))
         }),
     )

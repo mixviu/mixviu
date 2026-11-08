@@ -35,7 +35,7 @@ previous destination files and their receipts before copying anything.
 | `apps/term/` (complete directory) | `/opt/mix/share/apps/term/` | directories 0755, files 0644 |
 | `libraries/viu/mix/` (complete directory) | `/opt/mix/share/libraries/viu/mix/` | directories 0755, files 0644 |
 | `apps/term/term-mix.mix` | `/opt/mix/bin/term-mix` | 0755 |
-| `apps/term/term-mix.desktop` | `/opt/mix/share/applications/term-mix.desktop` | 0644 |
+| `apps/term/mixviu.term-mix.desktop` | `/opt/mix/share/applications/mixviu.term-mix.desktop` | 0644 |
 
 The relative `../../libraries/viu/mix` imports require that share-directory
 layout. The host embeds the native terminal, shaders and fallback fonts;
