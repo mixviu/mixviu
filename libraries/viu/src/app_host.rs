@@ -2271,19 +2271,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     let service = bundle.manifest.app().to_owned();
     let live_service =
         std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone());
-    let app_id = bundle
-        .manifest
-        .app_id
-        .clone()
-        .or_else(|| {
-            bundle
-                .manifest
-                .bus_surface
-                .as_ref()
-                .and_then(|s| s["app_id"].as_str())
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| format!("mixviu.{service}"));
+    let app_id = crate::launch::app_id(&bundle);
     let mut viewport = egui::ViewportBuilder::default()
         .with_transparent(bundle.manifest.frame.is_some())
         .with_decorations(bundle.manifest.frame.is_none())

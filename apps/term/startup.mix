@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- lint: globals app_args
+-- lint: globals app_args viu_context viu_terminal
 -- App policy runs before the generic host creates any native owner.
 $ctx=viu_context();$cli=require("startup-policy.mix")
 $version="term "..$ctx.version.." ("..$ctx.git_sha..", built "..$ctx.build_time..")"

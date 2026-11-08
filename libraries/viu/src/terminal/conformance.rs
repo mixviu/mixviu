@@ -360,7 +360,7 @@ fn real_mix_login_input_resize_exit_and_reap() {
     let mut t = Terminal::start_session_e2e(
         settings,
         &Unbound,
-        "/opt/mixos/bin/mix",
+        &std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into()),
         home.path().to_str().unwrap().into(),
         vec![
             ("HOME".into(), home.path().to_str().unwrap().into()),

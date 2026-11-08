@@ -847,6 +847,12 @@ mod tests {
             let account = unsafe { std::ffi::CStr::from_ptr(entry.pw_name) }
                 .to_str()
                 .unwrap();
+            let prefix = home.path().join("prefix");
+            std::fs::create_dir_all(prefix.join("bin")).unwrap();
+            let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+            std::os::unix::fs::symlink(&mix, prefix.join("bin/mix")).unwrap();
+            let mixd = std::path::Path::new(&mix).parent().unwrap().join("mixd");
+            std::os::unix::fs::symlink(mixd, prefix.join("bin/mixd")).unwrap();
             let config = home.path().join("node.conf.mix");
             std::fs::write(
                 &config,
@@ -875,9 +881,9 @@ mod tests {
                 .env(CHILD, mode)
                 .env_remove(super::super::session_fd::MARKER)
                 .env("HOME", home.path())
-                .env("MIXOS", home.path())
+                .env("MIX_ROOT", home.path())
                 .env("MIX_SRC", home.path())
-                .env("MIX_PREFIX", "/opt/mixos")
+                .env("MIX_PREFIX", &prefix)
                 .env("MIX_NODE_CONFIG", &config)
                 .env("MIX_BROKER_ACCOUNT", account)
                 .env("MIX_BUS_SOCKET", &broker.endpoint)

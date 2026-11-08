@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
--- lint: globals app_args app_launch app_startup
+-- lint: globals app_args app_launch app_startup viu_context viu_terminal viu_timer viu_json_numbers viu_platform viu_action_event viu_reply
 $lifecycle=require("lifecycle.mix")
 $ctx=viu_context();$core=require("core.mix");$wire=require("wire.mix");$model=require("model.mix");$bus=require("bus.mix")
 $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
