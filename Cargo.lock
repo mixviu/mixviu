@@ -10260,6 +10260,7 @@ dependencies = [
  "unicode-segmentation",
  "wayland-backend",
  "wayland-client",
+ "wayland-protocols-misc",
  "wgpu",
  "xkbcommon 0.7.0",
  "zeroize",
