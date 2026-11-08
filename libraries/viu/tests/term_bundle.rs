@@ -317,23 +317,44 @@ fn term_bundle_child() {
         let split = invoke(&mut runtime, &rx, "term.pane.split", json!({"dir":"v"}));
         let reply = split.reply.unwrap();
         assert_eq!(reply.rc, 0, "pane {id}: {}", reply.body);
-        assert!(reply.body.as_str().unwrap().starts_with(&format!("split id={id} ")));
+        assert!(
+            reply
+                .body
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("split id={id} "))
+        );
         if id == 35 {
             viu::gold_frame::mount(&scene, split.model.unwrap())
                 .expect("32-pane published frame validates at native depth");
         }
     }
-    let panes = invoke(&mut runtime, &rx, "term.panes", json!({})).reply.unwrap();
+    let panes = invoke(&mut runtime, &rx, "term.panes", json!({}))
+        .reply
+        .unwrap();
     assert_eq!(panes.body.as_str().unwrap().lines().count(), 32);
     let overflow = invoke(&mut runtime, &rx, "term.pane.split", json!({"dir":"v"}))
-        .reply.unwrap();
+        .reply
+        .unwrap();
     assert_eq!(overflow.rc, 10);
     assert_eq!(overflow.body, json!("tab limit (32) reached"));
-    let deepest = invoke(&mut runtime, &rx, "term.pane.close", json!({"id":35}));
-    assert_eq!(deepest.reply.unwrap().rc, 0);
-    let first = invoke(&mut runtime, &rx, "term.pane.close", json!({"id":3}));
-    assert_eq!(first.reply.unwrap().rc, 0);
-    let panes = invoke(&mut runtime, &rx, "term.panes", json!({})).reply.unwrap();
+    let deepest = invoke(&mut runtime, &rx, "term.pane.close", json!({}))
+        .reply
+        .unwrap();
+    assert_eq!(deepest.rc, 0, "{}", deepest.body);
+    assert!(deepest.body.as_str().unwrap().starts_with("closed id=35 "));
+    let selected = invoke(&mut runtime, &rx, "term.pane.select", json!({"id":3}))
+        .reply
+        .unwrap();
+    assert_eq!(selected.rc, 0, "{}", selected.body);
+    let first = invoke(&mut runtime, &rx, "term.pane.close", json!({}))
+        .reply
+        .unwrap();
+    assert_eq!(first.rc, 0, "{}", first.body);
+    assert!(first.body.as_str().unwrap().starts_with("closed id=3 "));
+    let panes = invoke(&mut runtime, &rx, "term.panes", json!({}))
+        .reply
+        .unwrap();
     assert_eq!(panes.body.as_str().unwrap().lines().count(), 30);
     let quit = invoke(&mut runtime, &rx, "app.quit", json!({}));
     assert_eq!(quit.reply.unwrap().rc, 0);
