@@ -1,3 +1,70 @@
+# Email desk4 launch repair — ready for hot-apply
+
+Branch `fix/email-desk4-tree-table`, based on `origin/cutover/four-engines`
+`b601bf828c13e9d9a82bff59c7bedd2409be7687`. Tested implementation commit:
+`1e38766b9a8dfcc260a8f377162aaaa3c37ec19d`; later receipt commits change only this document.
+
+Root cause: `mail.accounts()` accepted the legacy accounts.json catalogue and
+returned `label` but no `name`. `navigation_rows()` uses `entry.name`, so the
+first account-tree row was `{key:"local",cells:[nil]}` for its one column.
+The native validator correctly rejected that row before drawing any chrome.
+This happens before the email table receives messages; neither pim-list nor
+maild's string `from` caused the startup failure. The existing protocol already
+normalises string senders into address lists.
+
+The lab's connected UI suites created accounts with `email.account.set` through
+settingsd, or supplied both name and label in runtime tests. They exercised real
+maild but missed the positional legacy accounts-file startup path. The new
+regression loads that actual file shape, validates/mounts the initial navigation,
+then feeds both supplied messages through the existing JMAP normaliser and
+validates all three tables. It also covers oversized multi-byte subjects/sender
+names without altering the full server message or weakening native validation.
+
+## Files for Opus
+
+| Changed repository file | Installed destination / use |
+| --- | --- |
+| `apps/email/mail.mix` | `/opt/mix/share/mixviu/apps/email/mail.mix` — add canonical name from the validated legacy label; fixes the reported startup failure |
+| `apps/email/surface.mix` | `/opt/mix/share/mixviu/apps/email/surface.mix` — bounded string display cells and sender rendering; preserve full server values, bulk row projection and the native 4096-byte cell bound |
+| `libraries/viu/tests/email_frame.rs` | Regression test source only; no installed Email file |
+| `last.md` | This handoff only; no installed Email file |
+
+Apply the two Mix files from the tested commit together. No engine or validator
+change is needed. Nothing was applied to desk4; main and infra/pr-ci were not
+changed. This branch is for Opus hot-apply and PR/CI landing.
+
+## Checks
+
+* `email-desk4-scope-r4-a1`, cbc3, **BUILD_RC=0**: `cargo fmt --all` produced an
+  empty patch; `cargo test --locked -p lib-viu --test email_frame --test email_wire`
+  passed **17/17** tests, including the desk4 regression and 2,000-row projection.
+  Complete saved log read: `20261108-124907-cbc3-1e38766b9a8d-email-desk4-scope-r4-a1-fd116d2f.log`.
+* `email-desk4-native-r5`, native-only CBC light override, **BUILD_RC=0**: same
+  previously verified release Viu, old b601 bundle versus fixed Mix bundle,
+  isolated Bus and headless compositor with a real release maild process.
+  The supplied accounts.json fields, HTTP origin 127.0.0.1:4310 and schema-2 UI
+  config were reproduced. Maild submit seeded Inbox(1)/Sent(1); its own private
+  store was given the supplied receivedAt instant. Raw HTTP Email/get confirms
+  string from, empty keywords, Welcome subject and `2026-11-06T14:26:33.705Z`.
+  Old bundle: ready=false, revision=0, exact cell/column mismatch. Fixed bundle:
+  ready=true, account-tree label and three email cells valid, chrome/list captured
+  and inspected. All five owned PIDs stopped. No fake HTTP/JMAP service was used.
+  Complete saved log read: `20261108-125021-cachyos-1e38766b9a8d-email-desk4-native-r5-132b0730.log`.
+
+Earlier attempts are retained privately: missing worker script and renamed Cargo
+package invocation were harness preparation errors; the first display helper
+inside rows_project was rejected and repaired with a native jq preparation pass.
+The regression's protocol module path was corrected. Native harness checks were
+corrected to read viu.state on the deliberately broken old app, accept its
+documented empty error string on success, and preserve the supplied millisecond
+instant when seeding the private real store. No application assertion or native
+validator was loosened and no refused input request was retried.
+SHA256 `apps/email/mail.mix`: `deb91fa76ae98a6e5da067035dff1cf97a67fd129a3d6e386fdfe072a4f1b0de`.
+
+SHA256 `apps/email/surface.mix`: `2e1be2b720b0bae3da39212bfd7658f2216b08cc1661177635c2adb90880c54b`.
+
+## Earlier integration record (historical)
+
 # Four engines, compd -> viud, mixos -> mix: cut-over branch
 
 Branch `cutover/four-engines`, from `lab/gold-parity` 4755e9e, with
@@ -376,3 +443,5 @@ Light checks on cachyos at 34a8d52 (one or two crates per job):
 Final lab merge (2026-11-08): origin/lab/gold-parity at 01912877 (eight accepted apps; Email 70ea474, Dopus c66fe3c; runtime e1bbea9). Conflicts took the lab side of libraries/viu (launch, app_host, chooser_host, Cargo.toml) with lib-viu/lib-mix put back, the Dopus Rust crates deleted as the lab retired them, and the lab Cargo.lock with the four-engine renames reapplied. Renames applied to the merged files: package names in the new Dopus/Email gate scripts, MIXOS_INSTANCE -> MIX_INSTANCE, MIXOS_COMP_SERVICE -> MIX_COMP_SERVICE, VIU_SERVICE -> MIX_VIU_SERVICE, /opt/mix, Dopus home ~/.local/state/mix/dopus, MixViu prose in the Dopus and Backdrop contracts. No new registry names. Kept as wire/data: theme value mixos and its MixOS label, the email token label mixos-email. apps.tar at 7bde4c0: 428 entries (share/mixviu 262), 46,138,946 bytes; fonts upstream, wallpapers from the release, none from gold (cachyos 20261108-105441-54343276). Light checks: fmt clean; cargo tree --locked -p viud ok; lib-viu --tests 263 passed, 3 failed (the known cachyos filesystem cases); dopus_contract, dopus_bundle, backdrop, app_ports pass at db16141.
 
 Branch cutover/four-engines; head is this last.md commit (source db16141); full gate: the coordinator runs it on infra/pr-ci; CBC light 20261108-105611-7534e7c2, 20261108-104904-e4317f0f, 20261108-104841-c85e2532, 20261108-105441-54343276.
+
+Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa3c37ec19d; Email legacy account-tree startup FIXED; hot-apply apps/email/mail.mix + apps/email/surface.mix to /opt/mix/share/mixviu/apps/email/; CBC email-desk4-scope-r4-a1 rc0 (17/17), email-desk4-native-r5 rc0 (real maild before/after); no desk4/main/infra/pr-ci changes.
