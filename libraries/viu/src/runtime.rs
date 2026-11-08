@@ -163,8 +163,16 @@ impl RunFailure {
 
 enum Request {
     Load(u64, Program),
-    Event(u64,u64,String,String,bool,BTreeMap<String,String>,Option<NativeContext>),
-    Forget(u64,u64),
+    Event(
+        u64,
+        u64,
+        String,
+        String,
+        bool,
+        BTreeMap<String, String>,
+        Option<NativeContext>,
+    ),
+    Forget(u64, u64),
 }
 
 #[derive(Debug, PartialEq, Eq)]

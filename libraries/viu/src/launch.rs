@@ -185,7 +185,10 @@ pub fn parse(args: &[String]) -> Result<Options, String> {
             out.args.extend(args.cloned());
             break;
         }
-        if matches!(arg.as_str(), "--service" | "--comp" | "--noded-url" | "--title" | "--app-id") {
+        if matches!(
+            arg.as_str(),
+            "--service" | "--comp" | "--noded-url" | "--title" | "--app-id"
+        ) {
             let value = args
                 .next()
                 .filter(|v| !v.is_empty())
@@ -226,7 +229,11 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     let options = parse(args)?;
     let mut bundle = Bundle::load(root, &options.args)?;
     if !bundle.manifest.allow_native_overrides
-        && (options.service.is_some() || options.comp.is_some() || options.url.is_some() || options.title.is_some() || options.app_id.is_some())
+        && (options.service.is_some()
+            || options.comp.is_some()
+            || options.url.is_some()
+            || options.title.is_some()
+            || options.app_id.is_some())
     {
         return Err("this launch variant runs alone, without native service overrides".into());
     }

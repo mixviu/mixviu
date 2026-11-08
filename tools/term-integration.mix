@@ -1,10 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- CBC preparation: return the worker's lockfile/format patch, then restore it.+$result = 0
+-- CBC preparation: return the worker's lockfile/format patch, then restore it.+$prepare_rc = 0
 try
   for $cmd in [["cargo", "update", "--workspace"], ["cargo", "fmt", "--all"]]
     $r = run_argv($cmd, {timeout: 1800, stdout: "inherit", stderr: "inherit"})
     if $r.exit_code != 0 then
-      $result = $r.exit_code
+      $prepare_rc = $r.exit_code
       break
     end
   end
@@ -14,4 +14,4 @@ try
 finally
   print(run_argv(["git", "checkout", "-q", "--", "."]))
 end
-exit($result)
+exit($prepare_rc)

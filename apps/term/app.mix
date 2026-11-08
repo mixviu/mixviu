@@ -5,7 +5,7 @@ $lifecycle=require("lifecycle.mix")
 $ctx=viu_context();$core=require("core.mix");$wire=require("wire.mix");$model=require("model.mix");$bus=require("bus.mix")
 $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
-$state.window_title=$app_launch.title ?? "Terminal"
+$state.window_title=$ctx.options.title ?? "Terminal"
 $state.headless=$app_startup.headless ?? false
 $state.startup=$app_startup.settings ?? {font_px:14.667,scrollback:1000,cursor:"underline",TERM:"xterm-256color"}
 $state.font_current=$state.startup.font_px;$state.font_profile=$state.startup.font_px;$state.font_base=$state.startup.font_px

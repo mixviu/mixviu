@@ -45,8 +45,22 @@ impl Input {
         let mut now = vec![egui::Event::ModifiersChanged(modifiers)];
         match command {
             "drop" => {
-                let paths = a["paths"].as_array().filter(|p| !p.is_empty() && p.len() <= 1024).ok_or("expected 1..1024 paths")?;
-                self.dropped = paths.iter().map(|p| p.as_str().filter(|s| s.len() <= 4096 && std::path::Path::new(s).is_absolute()).map(|s| std::sync::Arc::new(DroppedPath(s.into())) as egui::DroppedFileHandle).ok_or("expected absolute file paths")).collect::<Result<Vec<_>, _>>()?;
+                let paths = a["paths"]
+                    .as_array()
+                    .filter(|p| !p.is_empty() && p.len() <= 1024)
+                    .ok_or("expected 1..1024 paths")?;
+                self.dropped = paths
+                    .iter()
+                    .map(|p| {
+                        p.as_str()
+                            .filter(|s| s.len() <= 4096 && std::path::Path::new(s).is_absolute())
+                            .map(|s| {
+                                std::sync::Arc::new(DroppedPath(s.into()))
+                                    as egui::DroppedFileHandle
+                            })
+                            .ok_or("expected absolute file paths")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
             }
             "clipboard" => {
                 let event = match a["kind"].as_str() {

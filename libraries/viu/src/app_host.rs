@@ -498,15 +498,17 @@ impl Host {
                     headers.insert("viu-request-caller".into(), r.from);
                     let before = self.runtime.sequence();
                     headers.insert("viu-call".into(), token);
-                    let raw=self.preserve_request_body.then_some(r.body);
+                    let raw = self.preserve_request_body.then_some(r.body);
                     self.dispatch_body(r.command, r.args, raw, headers, None);
                     let after = self.runtime.sequence();
                     if after != before {
                         self.retained.insert(after, r.deferred);
                     }
                 }
-                Err(reply) => { let _=reply.send((10,json!({"error_code":"BUSY"}))); }
-            }
+                Err(reply) => {
+                    let _ = reply.send((10, json!({"error_code":"BUSY"})));
+                }
+            },
         }
     }
 }
@@ -927,98 +929,107 @@ impl Host {
             }
             if self.error.is_empty() {
                 if let Some(model) = done.model {
-                    if self.headless { self.ready=true; self.model=model; } else {
-                    self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];
-                    let projected = self.projection(&model, ctx);
-                    let source = model["native_root"]["scene"]
-                        .as_str()
-                        .unwrap_or(&self.scene_source)
-                        .to_owned();
-                    let appearance = if self.framed
-                        && self.session_appearance.is_none()
-                        && (!self.loaded || self.model["appearance"] != model["appearance"])
-                    {
-                        crate::appearance::resolve(&model["appearance"]).map(Some)
+                    if self.headless {
+                        self.ready = true;
+                        self.model = model;
                     } else {
-                        Ok(None)
-                    };
-                    let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
-                        crate::appearance::theme_choice(&model["theme_choice"])?;
-                        validate_overlays(&projected)?;
-                        if model["native_root"].is_object() {
-                            self.windows.validate(
-                                &json!({"native_windows":[model["native_root"].clone()]}),
-                            )?;
-                        }
-                        self.windows.validate(&model)?;
-                        if self.loaded && self.active_scene == source {
-                            self.view.apply_model(projected)
+                        self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];
+                        let projected = self.projection(&model, ctx);
+                        let source = model["native_root"]["scene"]
+                            .as_str()
+                            .unwrap_or(&self.scene_source)
+                            .to_owned();
+                        let appearance = if self.framed
+                            && self.session_appearance.is_none()
+                            && (!self.loaded || self.model["appearance"] != model["appearance"])
+                        {
+                            crate::appearance::resolve(&model["appearance"]).map(Some)
                         } else {
-                            (if self.framed {
-                                crate::gold_frame::mount(&source, projected)
+                            Ok(None)
+                        };
+                        let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
+                            crate::appearance::theme_choice(&model["theme_choice"])?;
+                            validate_overlays(&projected)?;
+                            if model["native_root"].is_object() {
+                                self.windows.validate(
+                                    &json!({"native_windows":[model["native_root"].clone()]}),
+                                )?;
+                            }
+                            self.windows.validate(&model)?;
+                            if self.loaded && self.active_scene == source {
+                                self.view.apply_model(projected)
                             } else {
-                                SceneView::with_model(&source, projected)
-                            })
-                            .map(|view| {
-                                self.view = view;
-                                self.view.set_documents(self.documents.clone());
-                                self.view.set_rasters(self.rasters.clone());
-                                self.view.set_terminals(self.terminals.clone());
-                                self.view.set_native_menus(self.native_drive);
-                                self.loaded = true;
-                                self.active_scene = source;
-                            })
-                        }
-                    });
-                    match result {
-                        Ok(()) => {
-                            if self.model["theme_choice"] != model["theme_choice"] {
-                                self.session_dirty = true;
+                                (if self.framed {
+                                    crate::gold_frame::mount(&source, projected)
+                                } else {
+                                    SceneView::with_model(&source, projected)
+                                })
+                                .map(|view| {
+                                    self.view = view;
+                                    self.view.set_documents(self.documents.clone());
+                                    self.view.set_rasters(self.rasters.clone());
+                                    self.view.set_terminals(self.terminals.clone());
+                                    self.view.set_native_menus(self.native_drive);
+                                    self.loaded = true;
+                                    self.active_scene = source;
+                                })
                             }
-                            if let Some(style) = appearance.expect("validated appearance") {
-                                crate::appearance::install_style(ctx, &model["appearance"], style);
-                            }
-                            self.ready = true;
-                            self.windows.sync(
-                                ctx,
-                                &self.app,
-                                &model,
-                                &self.documents,
-                                self.native_drive,
-                            );
-                            if let Some(root) = model.get("native_root").filter(|v| v.is_object()) {
-                                let key = root["key"].as_str().unwrap();
-                                toolkit::drive::register_viewport(
+                        });
+                        match result {
+                            Ok(()) => {
+                                if self.model["theme_choice"] != model["theme_choice"] {
+                                    self.session_dirty = true;
+                                }
+                                if let Some(style) = appearance.expect("validated appearance") {
+                                    crate::appearance::install_style(
+                                        ctx,
+                                        &model["appearance"],
+                                        style,
+                                    );
+                                }
+                                self.ready = true;
+                                self.windows.sync(
                                     ctx,
-                                    egui::ViewportId::ROOT,
-                                    key,
-                                    egui::ViewportId::ROOT,
+                                    &self.app,
+                                    &model,
+                                    &self.documents,
+                                    self.native_drive,
                                 );
-                                let title = root["title"].as_str().unwrap();
-                                if self.title != title {
-                                    self.title = title.into();
-                                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-                                        title.into(),
-                                    ));
-                                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(
-                                        egui::vec2(
-                                            root["size"][0].as_f64().unwrap() as f32,
-                                            root["size"][1].as_f64().unwrap() as f32,
-                                        ),
-                                    ));
+                                if let Some(root) =
+                                    model.get("native_root").filter(|v| v.is_object())
+                                {
+                                    let key = root["key"].as_str().unwrap();
+                                    toolkit::drive::register_viewport(
+                                        ctx,
+                                        egui::ViewportId::ROOT,
+                                        key,
+                                        egui::ViewportId::ROOT,
+                                    );
+                                    let title = root["title"].as_str().unwrap();
+                                    if self.title != title {
+                                        self.title = title.into();
+                                        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                                            title.into(),
+                                        ));
+                                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(
+                                            egui::vec2(
+                                                root["size"][0].as_f64().unwrap() as f32,
+                                                root["size"][1].as_f64().unwrap() as f32,
+                                            ),
+                                        ));
+                                    }
+                                    self.model = self.projection(&model, ctx);
+                                } else {
+                                    self.model = model;
                                 }
-                                self.model = self.projection(&model, ctx);
-                            } else {
-                                self.model = model;
-                            }
-                            ctx.request_repaint();
-                            if let Some(saved) = &mut self.saved {
-                                if saved.announced {
-                                    saved.apply(&self.model);
+                                ctx.request_repaint();
+                                if let Some(saved) = &mut self.saved {
+                                    if saved.announced {
+                                        saved.apply(&self.model);
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => self.error=e,
+                            Err(e) => self.error = e,
                         }
                     }
                 }
@@ -1697,26 +1708,28 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{app}.{suffix}")));
     commands.extend(macros::commands::SUFFIXES.map(|suffix| format!("{app}.macros.{suffix}")));
     commands.extend(["debug", "debug.set", "debug.recent"].map(|suffix| format!("{app}.{suffix}")));
-    if !headless { commands.extend(
-        [
-            "viu.state",
-            "viu.ui.tree",
-            "viu.ui.click",
-            "viu.ui.focus",
-            "viu.ui.text",
-            "viu.ui.key",
-            "viu.ui.ime",
-            "viu.ui.hover",
-            "viu.ui.scroll",
-            "viu.ui.drag",
-            "viu.ui.drop",
-            "viu.ui.clipboard",
-            "viu.capture",
-            "viu.quit",
-            "viu.clipboard.image",
-        ]
-        .map(String::from),
-    ); }
+    if !headless {
+        commands.extend(
+            [
+                "viu.state",
+                "viu.ui.tree",
+                "viu.ui.click",
+                "viu.ui.focus",
+                "viu.ui.text",
+                "viu.ui.key",
+                "viu.ui.ime",
+                "viu.ui.hover",
+                "viu.ui.scroll",
+                "viu.ui.drag",
+                "viu.ui.drop",
+                "viu.ui.clipboard",
+                "viu.capture",
+                "viu.quit",
+                "viu.clipboard.image",
+            ]
+            .map(String::from),
+        );
+    }
     let mut command_names = BTreeSet::new();
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
@@ -1773,10 +1786,19 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             "viu.quit".into(),
             wake.clone(),
             crate::native_bus::RequestPolicy {
-                help: facilities.surface.as_ref().map(|s| s["commands"].clone()).or_else(|| bundle.manifest.authored_discovery.then(||json!([]))),
+                help: facilities
+                    .surface
+                    .as_ref()
+                    .map(|s| s["commands"].clone())
+                    .or_else(|| bundle.manifest.authored_discovery.then(|| json!([]))),
                 owner_help: bundle.manifest.owner_help,
                 timeout: Duration::from_secs(bundle.manifest.reply_timeout_secs),
-                transport: crate::native_bus::Policy { pid_fallback: bundle.manifest.registration_pid_fallback, namespace: bundle.manifest.command_namespace.clone(), text_replies: bundle.manifest.text_replies, unknown_reply: bundle.manifest.unknown_reply.clone() },
+                transport: crate::native_bus::Policy {
+                    pid_fallback: bundle.manifest.registration_pid_fallback,
+                    namespace: bundle.manifest.command_namespace.clone(),
+                    text_replies: bundle.manifest.text_replies,
+                    unknown_reply: bundle.manifest.unknown_reply.clone(),
+                },
             },
         )
     };
@@ -1804,7 +1826,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
         clipboard: Some(clipboard),
-        options: json!({"headless":bundle.manifest.surface=="headless" || bundle.launch["headless"]==true}),
+        options: json!({"title":bundle.manifest.title,"headless":bundle.manifest.surface=="headless" || bundle.launch["headless"]==true}),
         max_string_bytes: bundle.manifest.max_string_bytes,
         platform: Some(platform.clone()),
         ui_state: Some(ui_state.clone()),
@@ -2014,10 +2036,11 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         eprintln!("viu logging: {e}");
         std::process::exit(2)
     });
-    if preview.manifest.startup.is_none() && logging_args
-        .iter()
-        .skip(3)
-        .any(|a| matches!(a.as_str(), "--help" | "-h"))
+    if preview.manifest.startup.is_none()
+        && logging_args
+            .iter()
+            .skip(3)
+            .any(|a| matches!(a.as_str(), "--help" | "-h"))
     {
         if let Some(help) = &preview.manifest.help {
             print!("{help}");
@@ -2078,7 +2101,8 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         return run_headless(bundle);
     }
     if bundle.manifest.surface == "headless" && bundle.startup.is_some() {
-        return run_terminal_headless(bundle).map_err(|e|eframe::Error::AppCreation(Box::new(std::io::Error::other(e))));
+        return run_terminal_headless(bundle)
+            .map_err(|e| eframe::Error::AppCreation(Box::new(std::io::Error::other(e))));
     }
     if bundle.manifest.surface == "headless" {
         let ctx = egui::Context::default();
@@ -2346,7 +2370,10 @@ fn run_terminal_headless(bundle: Bundle) -> Result<(), String> {
         }
         host.deliveries
             .retain(|d| d.load(std::sync::atomic::Ordering::Acquire) == 0);
-        if host.bus.close_requested.load(std::sync::atomic::Ordering::Acquire)
+        if host
+            .bus
+            .close_requested
+            .load(std::sync::atomic::Ordering::Acquire)
             || (host.model["window_close"] == true
                 && host.pending.is_empty()
                 && host.inflight.is_empty()

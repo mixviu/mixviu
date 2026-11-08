@@ -54,9 +54,9 @@ fn isolated_term_bundle_load() {
         .env("HOME", root.path())
         .env("XDG_RUNTIME_DIR", root.path())
         .env("XDG_CONFIG_HOME", root.path())
-        .env("MIXOS_RUN", root.path())
-        .env("MIXOS_BUS_SOCKET", root.path().join("absent.sock"))
-        .env_remove("MIXOS_SESSION_FD")
+        .env("MIX_RUN", root.path())
+        .env("MIX_BUS_SOCKET", root.path().join("absent.sock"))
+        .env_remove("MIX_SESSION_FD")
         .output()
         .unwrap();
     assert!(

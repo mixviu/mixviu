@@ -958,8 +958,11 @@ pub struct Widgets {
     terminal_views: crate::terminal::view::Views,
 }
 impl Widgets {
-    pub fn set_terminals(&mut self, terminals: crate::terminal::sessions::Sessions) { self.terminals = terminals; }
-    pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) { self.rasters = Some(rasters);
+    pub fn set_terminals(&mut self, terminals: crate::terminal::sessions::Sessions) {
+        self.terminals = terminals;
+    }
+    pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
+        self.rasters = Some(rasters);
     }
     pub fn set_native_menus(&mut self, enabled: bool) {
         self.gold_menus = enabled;

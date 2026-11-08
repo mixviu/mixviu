@@ -243,8 +243,27 @@ impl Endpoint {
             },
         )
     }
-    pub fn start_described_policy(name: String, url: String, commands: Vec<CommandDescriptor>, quit: String, wake: Arc<dyn Fn() + Send + Sync>, help: Option<Value>, transport: Policy) -> Self {
-        Self::start_policy(name,url,commands,quit,wake,RequestPolicy {help,transport,..Default::default()})
+    pub fn start_described_policy(
+        name: String,
+        url: String,
+        commands: Vec<CommandDescriptor>,
+        quit: String,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        help: Option<Value>,
+        transport: Policy,
+    ) -> Self {
+        Self::start_policy(
+            name,
+            url,
+            commands,
+            quit,
+            wake,
+            RequestPolicy {
+                help,
+                transport,
+                ..Default::default()
+            },
+        )
     }
     pub fn start_policy(
         name: String,

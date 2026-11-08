@@ -46,13 +46,28 @@ impl Calls {
     pub fn begin(&self, reply: Reply, close: Arc<AtomicBool>) -> Result<String, Reply> {
         self.begin_with_retention(reply, close, Arc::new(AtomicBool::new(false)))
     }
-    pub fn begin_with_success_body(&self, reply: Reply, close: Arc<AtomicBool>, success_body: Option<Value>) -> Result<String, Reply> {
+    pub fn begin_with_success_body(
+        &self,
+        reply: Reply,
+        close: Arc<AtomicBool>,
+        success_body: Option<Value>,
+    ) -> Result<String, Reply> {
         self.begin_full(reply, close, Arc::new(AtomicBool::new(false)), success_body)
     }
-    pub fn begin_with_retention(&self, reply: Reply, close: Arc<AtomicBool>, deferred: Arc<AtomicBool>) -> Result<String, Reply> {
+    pub fn begin_with_retention(
+        &self,
+        reply: Reply,
+        close: Arc<AtomicBool>,
+        deferred: Arc<AtomicBool>,
+    ) -> Result<String, Reply> {
         self.begin_full(reply, close, deferred, None)
     }
-    pub fn begin_full(&self, reply: Reply, close: Arc<AtomicBool>, deferred: Arc<AtomicBool>, success_body: Option<Value>
+    pub fn begin_full(
+        &self,
+        reply: Reply,
+        close: Arc<AtomicBool>,
+        deferred: Arc<AtomicBool>,
+        success_body: Option<Value>,
     ) -> Result<String, Reply> {
         let mut state = self.0.lock().unwrap();
         state.entries.retain(|_, e| !e.reply.is_closed());
