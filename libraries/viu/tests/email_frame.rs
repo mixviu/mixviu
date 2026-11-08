@@ -59,16 +59,24 @@ end
     let (_home, mut runtime, rx) = isolated_runtime();
     runtime.load(program).unwrap();
     let initial = complete(&runtime, &rx).model.unwrap();
-    assert_eq!(initial["navigation"]["initial"]["rows"][0]["cells"], json!(["Desk4 local mail"]));
+    assert_eq!(
+        initial["navigation"]["initial"]["rows"][0]["cells"],
+        json!(["Desk4 local mail"])
+    );
     viu::tree_table::validate(&initial["navigation"]["initial"]).unwrap();
     viu::gold_frame::mount(&bundle.scene, initial).unwrap();
-    let mut messages = vec![json!({"id":"inbox-1","from":"mixos@example.test","keywords":{},"receivedAt":"2026-11-06T14:26:33.705Z","subject":"Welcome to MixViu on desk4"}), json!({"id":"sent-1","from":"mixos@example.test","keywords":{},"receivedAt":"2026-11-06T14:26:33.705Z","subject":"Welcome to MixViu on desk4"})];
+    let mut messages = vec![
+        json!({"id":"inbox-1","from":"mixos@example.test","keywords":{},"receivedAt":"2026-11-06T14:26:33.705Z","subject":"Welcome to MixViu on desk4"}),
+        json!({"id":"sent-1","from":"mixos@example.test","keywords":{},"receivedAt":"2026-11-06T14:26:33.705Z","subject":"Welcome to MixViu on desk4"}),
+    ];
     for oversized in [false, true] {
         if oversized {
             messages[0]["subject"] = json!("😀".repeat(5000));
             messages[0]["from"] = json!([{"name":"λ".repeat(5000),"email":"mixos@example.test"}]);
         }
-        runtime.event("test.desk4".into(), json!({"messages":messages})).unwrap();
+        runtime
+            .event("test.desk4".into(), json!({"messages":messages}))
+            .unwrap();
         let done = complete(&runtime, &rx);
         let model = done.model.unwrap();
         for table in ["navigation", "native_table", "pim_table"] {
@@ -83,7 +91,10 @@ end
             assert!(cells[0].as_str().unwrap().ends_with('…'));
             assert!(cells[0].as_str().unwrap().len() <= 4096);
             assert!(cells[1].as_str().unwrap().len() <= 4096);
-            assert_eq!(done.reply.unwrap().body["emails"][0]["subject"], messages[0]["subject"]);
+            assert_eq!(
+                done.reply.unwrap().body["emails"][0]["subject"],
+                messages[0]["subject"]
+            );
         }
         viu::gold_frame::mount(&bundle.scene, model).unwrap();
     }
