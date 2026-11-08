@@ -157,6 +157,7 @@ const WORKSPACE_TARGETS: &[&str] = &[
 const PREFIX_DEPENDENCIES: &[&str] = &[
     "strict_num",
     "system_configuration",
+    "system_configuration_sys",
     "system_deps",
     "termcolor",
 ];
