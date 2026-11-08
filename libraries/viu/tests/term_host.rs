@@ -4,6 +4,11 @@ use bus::native_client::{NodedClient, UnixConnectOutcome};
 use serde_json::json;
 use std::{process::{Child, Command, Stdio}, time::{Duration, Instant}};
 
+async fn call(client: &NodedClient, service: &str, command: &str, body: serde_json::Value) -> Result<(u8, serde_json::Value), String> {
+    let (rc, body, _) = client.call_with_headers_raw_within(service, command, &Default::default(), &body.to_string(), Duration::from_secs(2)).await.map_err(|e| e.to_string())?;
+    Ok((rc, serde_json::from_str(&body).unwrap_or(json!(body))))
+}
+
 struct Owned(Child);
 impl Drop for Owned {
     fn drop(&mut self) { let _ = self.0.kill(); let _ = self.0.wait(); }
@@ -49,19 +54,19 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
         for service in ["term-mix", "term"] {
             let start = Instant::now();
             let help = loop {
-                if let Ok((0, value)) = caller.client().call(service, "HELP", json!({})).await { break value; }
+                if let Ok((0, value)) = call(caller.client(), service, "HELP", json!({})).await { break value; }
                 assert!(start.elapsed() < Duration::from_secs(30), "{service} never answered HELP");
                 tokio::time::sleep(Duration::from_millis(50)).await;
             };
             assert!(help.as_array().unwrap().iter().any(|v| v["name"] == format!("{service}.tabs")), "{help}");
-            let (rc, tabs) = caller.client().call(service, &format!("{service}.tabs"), json!({})).await.unwrap();
+            let (rc, tabs) = call(caller.client(), service, &format!("{service}.tabs"), json!({})).await.unwrap();
             assert_eq!(rc, 0);
             assert!(tabs.as_str().unwrap().contains("child_pid="), "{tabs}");
-            let (rc, _) = caller.client().call(service, &format!("{service}.type"), json!({"pane":1,"text":"print(731942)\n"})).await.unwrap();
+            let (rc, _) = call(caller.client(), service, &format!("{service}.type"), json!({"pane":1,"text":"print(731942)\n"})).await.unwrap();
             assert_eq!(rc, 0);
             let start = Instant::now();
             loop {
-                let (rc, value) = caller.client().call(service, &format!("{service}.snapshot"), json!({"pane":1})).await.unwrap();
+                let (rc, value) = call(caller.client(), service, &format!("{service}.snapshot"), json!({"pane":1})).await.unwrap();
                 assert_eq!(rc, 0);
                 // Two occurrences prove output, rather than just PTY echo.
                 if value.to_string().matches("731942").count() >= 2 { break; }
@@ -69,7 +74,7 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         }
-        let (rc, _) = caller.client().call("term-mix", "term-mix.tab.close", json!({"id":1})).await.unwrap();
+        let (rc, _) = call(caller.client(), "term-mix", "term-mix.tab.close", json!({"id":1})).await.unwrap();
         assert_eq!(rc, 0, "last-tab reply must cross transport before exit");
         let start = Instant::now();
         loop {
@@ -78,7 +83,7 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert!(default.0.try_wait().unwrap().is_none(), "default instance was disturbed");
-        assert_eq!(caller.client().call("term", "term.tab.close", json!({"id":1})).await.unwrap().0, 0);
+        assert_eq!(call(caller.client(), "term", "term.tab.close", json!({"id":1})).await.unwrap().0, 0);
         caller.client().close().await;
     });
 }

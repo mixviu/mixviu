@@ -45,6 +45,7 @@ struct Host {
     quit_reply_closes: bool,
     windows: crate::child_windows::Windows,
 
+    no_window: bool,
     deliveries: Vec<Arc<std::sync::atomic::AtomicU8>>,
     platform: crate::platform::Platform,
     native_selection: bool,
@@ -291,7 +292,7 @@ impl Host {
         }
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
-        if self.headless {
+        if self.no_window {
             self.deliveries
                 .retain(|d| d.load(std::sync::atomic::Ordering::Acquire) == 0);
             self.deliveries.push(r.delivery.clone());
@@ -322,7 +323,7 @@ impl Host {
         r.headers.insert("from".into(), r.from.clone());
         let mut close_reply = None;
 
-        if self.native_drive {
+        if self.native_drive && self.commands.contains(&format!("{}.quit", self.app)) {
             if r.command == format!("{}.window", self.app) && r.args["action"] == "close" {
                 close_reply =
                     toolkit::drive::request(ctx, 0, "window.state", &json!({})).map(|answer| {
@@ -376,7 +377,7 @@ impl Host {
                     self.unknown_reply.clone().unwrap_or_else(|| {
                         self.unknown_command.as_ref().map_or_else(
                             || json!({"error_code":"UNKNOWN_COMMAND","command":r.command}),
-                            |message| json!({"error_code":"UNKNOWN_COMMAND","message":message}),
+                            |message| if message.contains("{command}") { json!({"error_code":"UNKNOWN_COMMAND","message":message.replace("{command}",&r.command),"command":r.command}) } else { json!({"error_code":"UNKNOWN_COMMAND","message":message}) },
                         )
                     }),
                 ));
@@ -391,7 +392,7 @@ impl Host {
         let prefix = format!("{}.", self.app);
         if let Some(suffix) = r.command.strip_prefix(&prefix) {
             if toolkit::drive::COMMANDS.contains(&suffix) {
-                if self.headless {
+                if self.no_window {
                     let _=r.reply.send((10,json!({"error_code":"HEADLESS","message":"a headless instance has no window"})));
                     return;
                 }
@@ -951,7 +952,7 @@ impl Host {
             }
             if self.error.is_empty() {
                 if let Some(model) = done.model {
-                    if self.headless {
+                    if self.no_window {
                         self.ready = true;
                         self.model = model;
                     } else {
@@ -1685,7 +1686,7 @@ impl Drop for Host {
 }
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
-    let headless = bundle.manifest.surface == "headless";
+    let headless = bundle.manifest.surface == "headless" && bundle.startup.is_some();
     let service = bundle.manifest.service.clone();
     let saved = bundle.manifest.saved_version.map(|v| {
         let mut saved = crate::saved_state::Saved::load(
@@ -1881,7 +1882,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         quit_reply_closes: bundle.manifest.quit_reply_closes,
         windows: Default::default(),
 
-        deliveries: Vec::new(),
+        no_window: bool,
+    deliveries: Vec::new(),
         native_selection: bundle.manifest.native_selection,
         paste_waits: Default::default(),
         paste_deadline: None,
