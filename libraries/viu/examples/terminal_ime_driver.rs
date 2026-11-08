@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Native input-method fixture for isolated terminal conformance captures.
-//! Connect only to an owned compositor. Args: preedit, commit, hold milliseconds.
+//! Connect only to an owned compositor. Args: preedit, commit, hold milliseconds,
+//! optionally `late` to deliver the original activation's serial after cancellation.
 //! Emits JSON witnesses; never injects an application-side IME event.
 use std::{
     io::ErrorKind,
@@ -25,6 +26,8 @@ struct Driver {
     sent: bool,
     due: Option<Instant>,
     hold: Duration,
+    late: bool,
+    original_serial: Option<u32>,
 }
 impl Dispatch<wl_registry::WlRegistry, ()> for Driver {
     fn event(
@@ -69,11 +72,17 @@ impl Dispatch<ZwpInputMethodV2, ()> for Driver {
             }
             zwp_input_method_v2::Event::Deactivate => {
                 s.active = false;
-                s.due = None;
+                if !s.late {
+                    s.due = None;
+                }
                 println!("{}", serde_json::json!({"event":"deactivate"}));
             }
             zwp_input_method_v2::Event::Done => {
                 s.serial = s.serial.wrapping_add(1);
+                println!(
+                    "{}",
+                    serde_json::json!({"event":"done","serial":s.serial,"active":s.active})
+                );
                 if s.active && !s.sent {
                     method.set_preedit_string(
                         s.preedit.clone(),
@@ -82,6 +91,7 @@ impl Dispatch<ZwpInputMethodV2, ()> for Driver {
                     );
                     method.commit(s.serial);
                     s.sent = true;
+                    s.original_serial = Some(s.serial);
                     s.due = Some(Instant::now() + s.hold);
                     println!(
                         "{}",
@@ -99,8 +109,11 @@ impl Dispatch<ZwpInputMethodV2, ()> for Driver {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() != 3 || args[0].len() > 4000 || args[1].len() > 4000 {
-        return Err("expected preedit, commit and hold milliseconds; text <=4000 bytes".into());
+    if !(args.len() == 3 || (args.len() == 4 && args[3] == "late"))
+        || args[0].len() > 4000
+        || args[1].len() > 4000
+    {
+        return Err("expected preedit, commit, hold milliseconds and optional late; text <=4000 bytes".into());
     }
     let hold: u64 = args[2].parse()?;
     if hold > 20_000 {
@@ -118,6 +131,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sent: false,
         due: None,
         hold: Duration::from_millis(hold),
+        late: args.len() == 4,
+        original_serial: None,
     };
     let _registry = connection.display().get_registry(&qh, ());
     queue.roundtrip(&mut state)?;
@@ -131,15 +146,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let until = Instant::now() + Duration::from_secs(30);
     while Instant::now() < until {
         queue.dispatch_pending(&mut state)?;
-        if state.active && state.due.is_some_and(|due| Instant::now() >= due) {
+        if (state.active || state.late) && state.due.is_some_and(|due| Instant::now() >= due) {
             method.set_preedit_string(String::new(), 0, 0);
             method.commit_string(args[1].clone());
-            let serial = state.serial;
+            let serial = if state.late {
+                state
+                    .original_serial
+                    .ok_or("late commit without original activation")?
+            } else {
+                state.serial
+            };
+            let active = state.active;
+            let current_serial = state.serial;
             method.commit(serial);
             queue.roundtrip(&mut state)?;
             println!(
                 "{}",
-                serde_json::json!({"event":"commit","serial":serial,"text":args[1]})
+                serde_json::json!({"event":"commit","serial":serial,"current_serial":current_serial,"active":active,"late":state.late,"text":args[1]})
             );
             return Ok(());
         }
