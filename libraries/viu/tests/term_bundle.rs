@@ -310,6 +310,35 @@ fn term_bundle_child() {
     );
     assert!(body.ends_with("Settings source: settingsd not connected"));
     invoke(&mut runtime, &rx, "term.dialog", json!({"answer":"done"}));
+    // Exercise the actual embedded evaluator: a first profile arrives before
+    // any font job has established a fence. Later stale usable hints must be
+    // ignored, while authority loss at an older revision must still apply.
+    for (revision, lost, size, expected) in [
+        ("2", false, 18.5, 18.5),
+        ("1", false, 6.0, 18.5),
+        ("1", true, 6.0, 18.5),
+        ("3", false, 16.0, 16.0),
+    ] {
+        let changed = invoke(&mut runtime, &rx, "viu.session", json!({
+            "appearance":{"scheme":"studio","mode":"dark"},
+            "state":{"binding":{"instance":"example","profile":"default"},
+                "incarnation":"profile-fixture","revision":revision,
+                "lost":lost,"error":null,"values":{"terminal.font.size":size}}
+        }));
+        if let Some(model) = changed.model {
+            assert_eq!(model["terminal"]["properties"]["font_size"], json!(expected));
+        } else {
+            assert_eq!(revision, "1", "a new profile must publish its model");
+            assert!(!lost, "authority loss must publish its retained profile");
+        }
+        if lost {
+            let about = invoke(&mut runtime, &rx, "term.dialog", json!({"open":"about"}));
+            assert!(about.model.unwrap()["native_overlays"].as_array().unwrap().iter()
+                .any(|overlay| overlay["definition"]["initial"]["body"].as_str()
+                    .is_some_and(|body| body.ends_with("Settings source: settingsd not connected"))));
+            invoke(&mut runtime, &rx, "term.dialog", json!({"answer":"done"}));
+        }
+    }
     // Standalone Mix tests use a different evaluator budget. Drive the real
     // persistent app through the deepest supported layout, including its
     // metadata, publication, focus and removal paths.
