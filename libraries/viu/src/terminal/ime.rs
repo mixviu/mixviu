@@ -21,6 +21,8 @@ pub struct Composition {
     stale: bool,
     /// Ask the platform to interrupt the composition (one frame's output).
     interrupt: bool,
+    /// An empty reset may precede a commit in the same platform batch.
+    reset_pending: bool,
 }
 
 impl Composition {
@@ -45,9 +47,10 @@ impl Composition {
             return false;
         }
         if text.is_empty() {
-            // The platform's reset acknowledgement, or the end of a
-            // composition (a commit usually follows).
-            self.stale = false;
+            // Winit emits an empty preedit immediately before every commit.
+            // A cancelled composition must survive that synthetic reset until
+            // the entire input batch has been processed.
+            self.reset_pending = self.stale;
             self.composing = false;
             return false;
         }
@@ -63,6 +66,7 @@ impl Composition {
 
     /// A commit while `active` has the keyboard: whether to send it.
     pub fn commit(&mut self, active: Option<u64>) -> bool {
+        self.reset_pending = false;
         if self.focus(active) {
             // The composition was another pane's: this is its commit.
             self.stale = false;
@@ -94,12 +98,21 @@ impl Composition {
     /// Abandon any composition in progress: the platform is asked to
     /// interrupt it, and its late events cannot attach to another pane.
     pub fn cancel(&mut self) {
+        self.reset_pending = false;
         if self.composing || self.owner.is_some() {
             self.stale = true;
             self.interrupt = true;
         }
         self.composing = false;
         self.owner = None;
+    }
+
+    /// Accept a standalone reset acknowledgement only after its atomic input
+    /// batch, so a following stale commit in that batch is still dropped.
+    pub fn finish_batch(&mut self) {
+        if std::mem::take(&mut self.reset_pending) {
+            self.stale = false;
+        }
     }
 }
 
@@ -146,6 +159,7 @@ mod tests {
         ime.cancel();
         assert!(ime.stale() && ime.take_interrupt());
         assert!(!ime.preedit("", Some(2)));
+        ime.finish_batch();
         assert!(!ime.stale());
         assert!(ime.preedit("b", Some(2)));
         // The end of a composition: an empty preedit, then the commit.
@@ -163,5 +177,22 @@ mod tests {
         assert!(!ime.commit(Some(2)));
         assert!(!ime.stale(), "that commit was the cancelled one");
         assert!(ime.commit(Some(2)), "a direct commit without preedit");
+    }
+
+    #[test]
+    fn platform_empty_preedit_before_commit_cannot_acknowledge_a_cancelled_owner() {
+        for next in [Some(2), None, Some(1)] {
+            let mut ime = Composition::default();
+            assert!(ime.preedit("old", Some(1)));
+            ime.cancel();
+            // Actual Wayland/winit delivery: reset and commit are one batch.
+            assert!(!ime.preedit("", next));
+            assert!(ime.stale());
+            assert!(!ime.commit(next));
+            ime.finish_batch();
+            assert!(!ime.stale());
+            assert!(ime.preedit("fresh", Some(2)));
+            assert!(ime.commit(Some(2)));
+        }
     }
 }

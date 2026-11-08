@@ -1018,6 +1018,7 @@ impl Views {
                 self.keyboard(widget, &handle, event, sessions, events);
             }
         }
+        self.composition.finish_batch();
         if !raw.is_empty() {
             ui.ctx().request_repaint();
         }
