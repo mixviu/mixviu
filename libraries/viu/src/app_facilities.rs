@@ -190,7 +190,8 @@ impl Facilities {
             self.context = Some(ctx.clone());
         }
         if self.ui {
-            toolkit::drive::set_service(ctx, bus.client().as_ref().map(|_| bus.service()));
+            let client = bus.client();
+            toolkit::drive::set_service(ctx, client.as_ref().map(|client| client.service_name()));
         }
         while let Ok((reply, answer)) = self.completed.try_recv() {
             let _ = reply.send(macro_answer(answer));
