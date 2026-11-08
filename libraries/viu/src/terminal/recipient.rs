@@ -171,7 +171,7 @@ impl Recipient {
         let Some(pane) = (self.pane)(target.pane_id.0) else {
             return Reply::error("FORBIDDEN");
         };
-        let pane = pane.lock().unwrap();
+        let pane = pane.lock().unwrap_or_else(|error| error.into_inner());
         if !permit.valid() {
             return Reply::error("FORBIDDEN");
         }

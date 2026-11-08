@@ -1464,11 +1464,11 @@ impl Actor {
                                     own: own.clone(),
                                     event,
                                 };
-                                if let Err(tokio::sync::mpsc::error::TrySendError::Full(job)) = dispatch_tx.try_send(job) {
-                                    // Term's own queue is full. Same shape as the
-                                    // lane's refusal above and written the same
-                                    // way, so there is one refusal mechanism
-                                    // rather than two that could drift apart.
+                                if let Err(error) = dispatch_tx.try_send(job) {
+                                    let job = error.into_inner();
+                                    // Full or closed: answer through the same
+                                    // refusal path as the lane above. A stopped
+                                    // server must not silently discard requests.
                                     self.refuse(job.event, "RESOURCE_LIMIT");
                                 }
                             } else {

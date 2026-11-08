@@ -34,7 +34,7 @@ impl Recipient {
                 continue;
             };
             let (cols, rows, pid) = {
-                let pane = pane.lock().unwrap();
+                let pane = pane.lock().unwrap_or_else(|error| error.into_inner());
                 let (cols, rows) = pane.dimensions();
                 (cols, rows, pane.pid)
             };

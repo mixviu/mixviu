@@ -65,4 +65,28 @@ fn failed($op,$handle,$args)
 end
 $out=$p.apply($s,{operation:"term.pane.split",pane:1,dir:"v",target:$target},fn($op,$handle,$args)=failed($op,$handle,$args))
 check($out.rc==10 and $out.body.error_code=="RESOURCE_LIMIT" and $out.state.layout.active==0 and $out.state.layout.tabs[0].active_pane==1 and len(keys($out.state.layout.panes))==4,"spawn failure retains gold focus change without inventing a child")
-print("term protected layout: affected authority sets, explicit targets, denial, mutation and spawn failure checked")
+
+fn startup_native($op,$handle,$args)
+  if $op=="create" then
+    check($args.term=="startup-term" and $args.scrollback==4321 and $args.cwd==nil,"protected creation retains startup defaults and ignores request cwd")
+    return session(5)
+  end
+  return native($op,$handle,$args)
+end
+fn profile_native($op,$handle,$args)
+  if $op=="create" then
+    check($args.term=="profile-term" and $args.scrollback==8765 and $args.cwd==nil,"accepted profile overrides startup defaults")
+    return session(5)
+  end
+  return native($op,$handle,$args)
+end
+$s=layout();$s.startup={TERM:"startup-term",scrollback:4321}
+for $operation in ["term.tab.new","term.pane.split"]
+  $request={operation:$operation,pane:1,dir:"v",target:$target,cwd:"/ignored"}
+  $out=$p.apply($s,$request,fn($op,$handle,$args)=startup_native($op,$handle,$args))
+  check($out.rc==0,"protected startup defaults apply to both creation operations")
+  $profile=$s;$profile.look.values={"terminal.env.term":"profile-term","terminal.scrollback.lines":8765}
+  $out=$p.apply($profile,$request,fn($op,$handle,$args)=profile_native($op,$handle,$args))
+  check($out.rc==0,"protected accepted profile keeps precedence")
+end
+print("term protected layout: authority sets, targets, denial, mutation, spawn failure and startup/profile precedence checked")

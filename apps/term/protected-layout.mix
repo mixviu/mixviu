@@ -21,7 +21,8 @@ fn apply($s,$request,$native)
       end
       $model.ensure_slot($s.layout)
       -- Protected gold open/split use the profile defaults, not request cwd.
-      $session=$native("create","",{pane_id:$s.layout.next_pane,scrollback:$s.look.values["terminal.scrollback.lines"] ?? 1000,term:$s.look.values["terminal.env.term"] ?? "xterm-256color"})
+      $startup=$s.startup ?? {}
+      $session=$native("create","",{pane_id:$s.layout.next_pane,scrollback:$s.look.values["terminal.scrollback.lines"] ?? $startup.scrollback ?? 1000,term:$s.look.values["terminal.env.term"] ?? $startup.TERM ?? "xterm-256color"})
       if $operation=="term.tab.new" then
         $s.layout=$lifecycle.open_tab($s.layout,$session,nil,$native)
         return {state:$s,rc:0,body:{tab_id:$s.layout.tabs[$s.layout.active].id}}

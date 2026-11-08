@@ -1006,6 +1006,15 @@ mod tests {
                 let (rc,body,_)=tokio::time::timeout(std::time::Duration::from_secs(6),caller.client().call_with_headers_raw(&parent.name,command,&Default::default(),&body.to_string())).await.unwrap().unwrap();
                 (rc,serde_json::from_str::<Value>(&body).unwrap())
             };
+            // Keep the poison flag through actual verified readback. Both the
+            // target lock and the metadata walk must preserve the serial lane.
+            let poisoned=sessions.get("vt-1").unwrap();
+            let poison=poisoned.clone();
+            assert!(std::thread::spawn(move || {
+                let _pane=poison.lock().unwrap();
+                panic!("controlled protected-readback poison fixture");
+            }).join().is_err());
+            assert!(poisoned.is_poisoned());
             let (rc,session)=invoke("term.session",json!({"target":target})).await;
             assert_eq!(rc,0,"{session}");
             assert_eq!(session["request_high_water"],"0");
@@ -1024,6 +1033,8 @@ mod tests {
             assert_eq!(renamed["panes"][0]["child_pid"],session["panes"][0]["child_pid"]);
             let (rc,snapshot)=invoke("term.snapshot",json!({"target":target})).await;
             assert_eq!(rc,0,"{snapshot}");
+            assert!(poisoned.is_poisoned(),"readback must not require clearing poison");
+            poisoned.clear_poison();
             let generation=snapshot["foreground_generation"].as_u64().unwrap().to_string();
             let text="print(\"PROTECTED_\" .. \"OWNER\")\n";
             let request=json!({"target":target,"request_id":"1","foreground_generation":generation,"text":text});
