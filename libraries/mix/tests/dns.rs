@@ -107,9 +107,7 @@ fn fixture() -> u16 {
             let req = Message::from_vec(&buf[..n]).unwrap();
             // Noise first: a reply with the wrong id must be ignored.
             let mut stray = answer(&req, false);
-            let mut header = *stray.header();
-            header.metadata.id = req.metadata.id.wrapping_add(1);
-            stray.set_header(header);
+            stray.metadata.id = req.metadata.id.wrapping_add(1);
             let _ = udp.send_to(&stray.to_vec().unwrap(), from);
             let _ = udp.send_to(&answer(&req, false).to_vec().unwrap(), from);
         }

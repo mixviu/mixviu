@@ -23,7 +23,9 @@ impl ResolverCache<Box<str>, Txt> for OfflineTxt {
         Box<str>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        Some(Txt::Error(mail_auth::Error::Dns(mail_auth::DnsError::InvalidRecordType)))
+        Some(Txt::Error(mail_auth::Error::Dns(
+            mail_auth::DnsError::InvalidRecordType,
+        )))
     }
 
     fn remove<Q>(&self, _: &Q) -> Option<Txt>
