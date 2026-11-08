@@ -223,7 +223,16 @@ pub fn app_id(bundle: &Bundle) -> String {
         .as_ref()
         .and_then(|s| s["app_id"].as_str())
         .map(str::to_owned)
-        .unwrap_or_else(|| format!("mixviu.{}", bundle.manifest.service))
+        .unwrap_or_else(|| {
+            format!(
+                "mixviu.{}",
+                if bundle.manifest.command_namespace.is_some() {
+                    &bundle.manifest.service
+                } else {
+                    bundle.manifest.app()
+                }
+            )
+        })
 }
 pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     let options = parse(args)?;
@@ -412,6 +421,9 @@ mod tests {
         assert!(bundle.program.source.contains("dev.mixos.monitor"));
         assert!(bundle.program.source.contains("peer"));
         assert!(!bundle.program.source.contains("\\\"--service\\\""));
+        let mut plain = bundle;
+        plain.manifest.bus_surface = None;
+        assert_eq!(super::app_id(&plain), "mixviu.monitor");
     }
     #[test]
     fn explicit_window_app_id_survives_service_override() {
