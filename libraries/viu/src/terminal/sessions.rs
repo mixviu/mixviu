@@ -297,7 +297,8 @@ impl Sessions {
             let text = serde_json::to_string(&Settings {
                 config: Config::default(),
                 term: super::config::selected_term().into(),
-            }).map_err(|e| e.to_string())?;
+            })
+            .map_err(|e| e.to_string())?;
             // Serialize the f32 directly before crossing JSON/Mix's f64
             // boundary; Value::from(f32) would expose its widened binary tail.
             return serde_json::from_str(&text).map_err(|e| e.to_string());
@@ -306,7 +307,10 @@ impl Sessions {
             let text = a["text"].as_str().ok_or("font text required")?;
             return match super::config::parse_font(text) {
                 None => Ok(Value::Null),
-                Some(px) => serde_json::from_str(&serde_json::to_string(&px).map_err(|e| e.to_string())?).map_err(|e| e.to_string()),
+                Some(px) => {
+                    serde_json::from_str(&serde_json::to_string(&px).map_err(|e| e.to_string())?)
+                        .map_err(|e| e.to_string())
+                }
             };
         }
         if op == "clipboard.configure" {
@@ -601,15 +605,37 @@ mod tests {
     fn startup_config_and_font_parse_never_open_a_session_or_start_the_native_owner() {
         let sessions = Sessions::with_native(Arc::new(|| {}));
         let config = sessions.call("config", "", json!({})).unwrap();
-        assert_eq!(config["font_px"].to_string(), serde_json::to_string(&Config::default().font_px).unwrap());
+        assert_eq!(
+            config["font_px"].to_string(),
+            serde_json::to_string(&Config::default().font_px).unwrap()
+        );
         assert_eq!(config["scrollback"], 1000);
         assert_eq!(config["cursor"], "underline");
-        assert!(matches!(config["TERM"].as_str(), Some("xterm-rio" | "xterm-256color")));
-        assert_eq!(sessions.call("font.parse","",json!({"text":"5.9999999"})).unwrap(),json!(6.0));
-        assert_eq!(sessions.call("font.parse","",json!({"text":" 18.5"})).unwrap(),Value::Null);
-        assert_eq!(sessions.call("font.parse","",json!({"text":"14.667"})).unwrap().to_string(), "14.667");
+        assert!(matches!(
+            config["TERM"].as_str(),
+            Some("xterm-rio" | "xterm-256color")
+        ));
+        assert_eq!(
+            sessions
+                .call("font.parse", "", json!({"text":"5.9999999"}))
+                .unwrap(),
+            json!(6.0)
+        );
+        assert_eq!(
+            sessions
+                .call("font.parse", "", json!({"text":" 18.5"}))
+                .unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            sessions
+                .call("font.parse", "", json!({"text":"14.667"}))
+                .unwrap()
+                .to_string(),
+            "14.667"
+        );
         assert!(sessions.state.lock().unwrap().sessions.is_empty());
-        assert_eq!(sessions.state.lock().unwrap().next,0);
+        assert_eq!(sessions.state.lock().unwrap().next, 0);
         assert!(!sessions.native.lock().unwrap().attempted);
         assert!(sessions.native.lock().unwrap().supervisor.is_none());
     }

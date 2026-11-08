@@ -11,6 +11,27 @@ Arguments arrive as `$app_args`. Behaviour paths stay within the bundle.
 Mix publishes through the existing `viu-local scenes.model` protocol.
 Callbacks, model publication and Bus replies use the existing bounded worker.
 
+Optional `host.startup` names a bundle-relative Mix script evaluated before
+native Bus, PTY, window and persistent runtime owners start. It receives the
+same `$app_args` and truthful `viu_context()` build metadata. Return
+`{mode:"exit",code:0,stdout:"...",stderr:"..."}` for an early CLI result, or
+`{mode:"window",context:{...}}` to continue. The context becomes
+`$app_startup` in the main behaviour (an empty map without a bootstrap).
+Paths cannot escape the bundle. Evaluation has a five-second deadline and
+bounded values; embedded process-global mutation remains refused. The
+terminal configuration binding permits only `config` and `font.parse` during
+bootstrap, without opening a PTY or native session owner.
+
+`{mode:"headless",context:{...},commands:[...]}` selects the same native
+application owner without a window, scene mounting, renderer or settings
+window session. Commands must be a subset of the declared application
+surface. Window/UI facilities and generic UI endpoints are excluded; macros
+and debug remain available when enabled. Existing Bus ingress, evaluator,
+jobs, terminal changes and one-shot timers drive the owner. Idle waits block
+on native completions or the next timer; final close waits for admitted reply
+delivery. The Term startup/headless derivation is awaiting CBC and matched
+native acceptance; these contracts are not an acceptance claim.
+
 The shared host owns native Bus ingress, SceneView, typed native input,
 application GPU readback and timer delivery (`viu.tick`). It contains no
 gallery command catalogue, layout, reset or state reducer. Those stay in Mix.

@@ -1,11 +1,14 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
--- lint: globals app_args app_launch
+-- lint: globals app_args app_launch app_startup
 $lifecycle=require("lifecycle.mix")
 $ctx=viu_context();$core=require("core.mix");$wire=require("wire.mix");$model=require("model.mix");$bus=require("bus.mix")
 $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
-$state.layout=$model.open_tab($model.initial(),$native("create","",{pane_id:1}),nil)
+$state.headless=$app_startup.headless ?? false
+$state.startup=$app_startup.settings ?? {font_px:14.667,scrollback:1000,cursor:"underline",TERM:"xterm-256color"}
+$state.font_current=$state.startup.font_px;$state.font_profile=$state.startup.font_px;$state.font_base=$state.startup.font_px
+$state.layout=$model.open_tab($model.initial(),$native("create","",{pane_id:1,term:$state.startup.TERM,scrollback:$state.startup.scrollback}),nil)
 $state.identity=$native("identity","",{})
 $actions=require("actions.mix");$controls=require("controls.mix")
 $protected_layout=require("protected-layout.mix")
@@ -132,13 +135,13 @@ on term.unknown.request
   reply(10,$wire.unknown($event.headers["viu-unknown-command"] ?? "",$event.body))
 end
 on HELP
-  reply(0,json_encode($discovery.help_entries($state.service ?? "term",true)))
+  reply(0,json_encode($discovery.help_entries($state.service ?? "term",not $state.headless)))
 end
 on help
   reply(0,json_encode($discovery.help_entries($state.service ?? "term",false)))
 end
 on app.describe
-  reply(0,json_encode($discovery.describe($state.service ?? "term")))
+  reply(0,json_encode(if $state.headless then $discovery.help_entries($state.service ?? "term",false) else $discovery.describe($state.service ?? "term") end))
 end
 on INFO
   $state=command($state,"term.info",$event.args)
@@ -157,15 +160,17 @@ on viu.session
   $configured=$native("clipboard.configure","",{read_allowed:$state.look.values["terminal.clipboard.osc52_read"]==true})
   $state.font_binding=$event.args.state.binding
   if $state.settings_connected then $state.font_fence={binding:$state.font_binding,incarnation:$event.args.state.incarnation,revision:$event.args.state.revision} end
-  $state.font_profile=$state.look.values["terminal.font.size"] ?? 14.667
+  $state.font_profile=$state.look.values["terminal.font.size"] ?? $state.startup.font_px
   if $state.font.pending==nil then $state.font_current=$state.font_profile;$state.font_base=$state.font_profile;$state.zoom_steps=0;$state.zoom=0 end
   $state=font_event($state,{kind:"read-requested"})
   $state=publish_term($state)
 end
 on bus.connected
   $state.service=$event.args.service ?? "term"
-  subscribe("settingsd.desktop.keys.default.terminal")
-  $state=font_event($state,{kind:"read-requested"})
+  if not $state.headless then
+    subscribe("settingsd.desktop.keys.default.terminal")
+    $state=font_event($state,{kind:"read-requested"})
+  end
 end
 on settingsd.desktop.keys.default.terminal
   $state=font_event($state,{kind:"read-requested"})

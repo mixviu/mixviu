@@ -129,13 +129,22 @@ mod tests {
     #[test]
     fn font_text_is_parsed_at_native_precision_before_range_validation() {
         for (text, expected) in [
-            ("6",Some(6.0)), ("48",Some(48.0)), ("18.5",Some(18.5)),
-            ("1e1",Some(10.0)), ("18.5000001",Some(18.5)),
-            ("5.9999999",Some(6.0)), ("48.0000001",Some(48.0)),
-            ("",None), ("5.9",None), ("48.1",None), ("NaN",None),
-            ("inf",None), ("eighteen",None), (" 18.5",None),
+            ("6", Some(6.0)),
+            ("48", Some(48.0)),
+            ("18.5", Some(18.5)),
+            ("1e1", Some(10.0)),
+            ("18.5000001", Some(18.5)),
+            ("5.9999999", Some(6.0)),
+            ("48.0000001", Some(48.0)),
+            ("", None),
+            ("5.9", None),
+            ("48.1", None),
+            ("NaN", None),
+            ("inf", None),
+            ("eighteen", None),
+            (" 18.5", None),
         ] {
-            assert_eq!(parse_font(text),expected,"font text: {text:?}");
+            assert_eq!(parse_font(text), expected, "font text: {text:?}");
         }
     }
 

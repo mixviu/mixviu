@@ -10,6 +10,9 @@ use std::{
 #[derive(Clone, Default)]
 pub struct Timers(Arc<Mutex<BTreeMap<String, (Instant, Value)>>>);
 impl Timers {
+    pub(crate) fn deadline(&self)->Option<Instant> {
+        self.0.lock().unwrap_or_else(|e|e.into_inner()).values().map(|(at,_)|*at).min()
+    }
     pub fn arm(&self, id: &str, delay: Option<f64>, value: Value) -> Result<(), String> {
         if id.is_empty()
             || id.len() > 128

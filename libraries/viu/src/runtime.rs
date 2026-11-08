@@ -40,7 +40,7 @@ pub struct Services {
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
 // frames in debug can overflow the Rust default before Mix's depth guard runs.
 const EVALUATOR_STACK: usize = 64 * 1024 * 1024;
-struct WorkerPolicy;
+pub(crate) struct WorkerPolicy;
 impl mix::evaluator::CapabilityPolicy for WorkerPolicy {
     fn check_builtin(&self, name: &str) -> Result<(), String> {
         if ["chdir", "exit"].contains(&name) {
@@ -96,6 +96,12 @@ pub struct Program {
     pub source: String,
     pub scene: String,
     pub citizen: String,
+}
+pub(crate) fn context(program: &Program,generation:u64)->Json {
+    json!({"name":program.scene,"generation":generation,"citizen":program.citizen,
+        "version":env!("CARGO_PKG_VERSION"),"git_sha":buildinfo::build_info!().git_sha,"build_time":buildinfo::build_info!().build_time,
+        "build_line":buildinfo::build_info!().line(),"git_sha_full":buildinfo::build_info!().git_sha_full,
+        "pid":std::process::id(),"loader":"viu-local","host":"viu-local"})
 }
 
 #[derive(Debug)]
@@ -239,13 +245,8 @@ impl Runtime {
                         if let Some(calls)=services.calls.clone(){eval.register("viu_reply",calls.binding());}
                         if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());}
                         if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
-                        eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
-                            "name": program.scene, "generation": generation, "citizen": program.citizen,
-                            "version":env!("CARGO_PKG_VERSION"),"git_sha":buildinfo::build_info!().git_sha,"build_time":buildinfo::build_info!().build_time,
-                            "build_line":buildinfo::build_info!().line(),"git_sha_full":buildinfo::build_info!().git_sha_full,
-                            "pid":std::process::id(),
-                            "loader": "viu-local", "host": "viu-local"
-                        }))));
+                        let context=context(&program,generation);
+                        eval.register("viu_context", mix::sync_ext(move |_| from_json(context.clone())));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))

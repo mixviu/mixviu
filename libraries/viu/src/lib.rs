@@ -33,6 +33,7 @@ pub mod rich;
 pub mod runtime;
 pub mod session;
 mod shortcuts;
+mod startup;
 pub mod templates;
 pub mod terminal;
 pub mod thumbnail;

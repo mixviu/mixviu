@@ -73,4 +73,19 @@ for $command in ["term.tab.new","term.pane.split"]
   $out=$b.dispatch($profile,$command,if $command=="term.tab.new" then {cwd:"/tmp"} else {dir:"v"} end,$profile_native)
   check($out.rc==0 and $out.state.layout.panes["1"].handle=="vt-1","profile updates configure only newly created sessions")
 end
+fn startup_native($op,$handle,$a)
+  if $op=="create" then
+    check($a.term=="vt220" and $a.scrollback==23,"new sessions retain startup config until a live profile supplies a value")
+    return {handle:"vt-startup",pid:45}
+  end
+  return native($op,$handle,$a)
+end
+$seeded=$s;$seeded.startup={TERM:"vt220",scrollback:23}
+for $command in ["term.tab.new","term.pane.split"]
+  $out=$b.dispatch($seeded,$command,if $command=="term.pane.split" then {dir:"h"} else {} end,fn($op,$handle,$a)=startup_native($op,$handle,$a))
+  check($out.rc==0,"startup config creates a later tab and split")
+end
+$profile.startup=$seeded.startup
+$out=$b.dispatch($profile,"term.tab.new",{},$profile_native)
+check($out.rc==0,"live profile takes precedence over startup defaults")
 print("term dispatch: live targets, replay, native metadata and validation checks passed")

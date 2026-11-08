@@ -60,6 +60,7 @@
     "term.window.state"
   ],
   "host": {
+    "startup": "startup.mix",
     "authored_discovery": true,
     "command_descriptors": [
       {

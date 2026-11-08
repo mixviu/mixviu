@@ -94,7 +94,8 @@ fn dispatch_fields($s,$command,$a,$native,$numbers)
       $body=join($lines,"\n")
     elif $command=="term.tab.new" or $command=="term.pane.split" then
       $model.ensure_slot($s.layout)
-      $session=$native("create","",{pane_id:$s.layout.next_pane,cwd:$a.cwd,scrollback:$s.look.values["terminal.scrollback.lines"] ?? 1000,term:$s.look.values["terminal.env.term"] ?? "xterm-256color"})
+      $startup=$s.startup ?? {}
+      $session=$native("create","",{pane_id:$s.layout.next_pane,cwd:$a.cwd,scrollback:$s.look.values["terminal.scrollback.lines"] ?? $startup.scrollback ?? 1000,term:$s.look.values["terminal.env.term"] ?? $startup.TERM ?? "xterm-256color"})
       if $command=="term.tab.new" then
         $s.layout=$lifecycle.open_tab($s.layout,$session,$a.title,$native);$t=active($s)
         $body="opened id="..to_string($t.tab).." "..identity($s,$t).." binding="..($session.binding ?? "unavailable")
