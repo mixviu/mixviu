@@ -855,7 +855,7 @@ mod tests {
             // The embedded broker runs as this test's user, unlike the installed
             // noded account. Isolate its configuration in a subprocess; neither
             // the test runner nor the real PTY launcher changes global env.
-            for mode in ["close", "exit"] {
+            for mode in ["close", "exit", "burst"] {
                 let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
@@ -921,6 +921,9 @@ mod tests {
         };
         sessions.call("metadata","",json!({"tabs":[{"id":17,"title":"Mix metadata","active":true,"selected":1,"panes":[1]}]})).unwrap();
         assert_native_controls(&sessions, &bound);
+        if std::env::var(CHILD).unwrap() == "burst" {
+            assert_native_read_burst(&sessions, &bound);
+        }
         assert!(sessions.native.lock().unwrap().attempted);
         let natural_exit = std::env::var(CHILD).unwrap() == "exit";
         if natural_exit {
@@ -986,6 +989,82 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+    }
+
+    fn assert_native_read_burst(sessions: &Sessions, child: &bus::native_session::SessionRecord) {
+        use bus::native_client::{NodedClient, UnixConnectOutcome};
+        use bus::native_session::Role;
+        let (options, url) = bus::client_helpers::BrokerEnvironment::capture()
+            .resolve()
+            .unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let pane = sessions.get("vt-1").unwrap();
+        let (entered, held) = std::sync::mpsc::channel();
+        let (release, resumed) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let _pane = pane.lock().unwrap();
+            entered.send(()).unwrap();
+            resumed.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+        });
+        held.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+        runtime.block_on(async {
+            let UnixConnectOutcome::VerifiedUnix(caller) =
+                NodedClient::connect_unix("", &url, &options, None).await.unwrap()
+            else { panic!("verified burst caller required") };
+            let parent = caller.session_list().await.unwrap().records.into_iter()
+                .find(|r| r.role == Role::Term && Some(r.instance_id) == child.parent_instance)
+                .unwrap();
+            let body = json!({"target":{"instance_id":parent.instance_id,
+                "incarnation":parent.incarnation,"pane_id":child.pane_id.unwrap(),
+                "pane_generation":child.pane_generation.unwrap()}}).to_string();
+            // Use the actual verified transport and bounded recipient queue.
+            // A fresh isolated owner keeps this pressure test independent of
+            // the ordinary input/replay/expiry proof's connection lifecycle.
+            let barrier = Arc::new(tokio::sync::Barrier::new(129));
+            let caller = Arc::new(caller);
+            let mut calls = tokio::task::JoinSet::new();
+            for _ in 0..128 {
+                let caller = caller.clone();
+                let destination = parent.name.clone();
+                let body = body.clone();
+                let barrier = barrier.clone();
+                calls.spawn(async move {
+                    barrier.wait().await;
+                    tokio::time::timeout(std::time::Duration::from_secs(10),
+                        caller.client().call_with_headers_raw(&destination,"term.session",
+                            &Default::default(),&body)).await
+                        .expect("burst request must receive a bounded reply")
+                        .expect("burst transport must retain its caller")
+                });
+            }
+            barrier.wait().await;
+            // A controlled pane read stall lets the burst reach the actual
+            // native transport/recipient bounds before the first reply.
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            release.send(()).unwrap();
+            let mut accepted = 0;
+            let mut refused = 0;
+            while let Some(result) = calls.join_next().await {
+                let (rc, body, _) = result.unwrap();
+                let body: Value = serde_json::from_str(&body).unwrap();
+                if rc == 0 {
+                    assert!(body["panes"].as_array().is_some_and(|p| !p.is_empty()));
+                    accepted += 1;
+                } else {
+                    assert_eq!(rc,10,"{body}");
+                    assert!(matches!(body["error_code"].as_str(),
+                        Some("RESOURCE_LIMIT" | "FORBIDDEN")),"{body}");
+                    refused += 1;
+                }
+            }
+            assert_eq!(accepted + refused,128);
+            assert!(refused > 0,"the burst must exercise bounded refusal");
+            println!("NATIVE_READ_BURST accepted={accepted} refused={refused} completed=128");
+        });
+        holder.join().unwrap();
     }
 
     fn assert_native_controls(sessions: &Sessions, child: &bus::native_session::SessionRecord) {
