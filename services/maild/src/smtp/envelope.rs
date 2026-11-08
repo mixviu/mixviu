@@ -109,7 +109,7 @@ pub fn dns_domain(domain: &str) -> Option<String> {
     if domain.starts_with('.') || domain.ends_with('.') {
         return None;
     }
-    let name = hickory_resolver::Name::from_utf8(domain)
+    let name = hickory_resolver::proto::rr::Name::from_utf8(domain)
         .ok()?
         .to_ascii()
         .to_ascii_lowercase();
@@ -134,7 +134,7 @@ pub fn mailbox_addresses(addr: &str) -> Vec<String> {
     if let Some((local, domain)) = addr.rsplit_once('@')
         && let Some(ascii) = dns_domain(domain)
     {
-        let unicode = hickory_resolver::Name::from_ascii(&ascii)
+        let unicode = hickory_resolver::proto::rr::Name::from_ascii(&ascii)
             .map(|name| name.to_utf8())
             .unwrap_or_else(|_| ascii.clone());
         for domain in [ascii, unicode] {

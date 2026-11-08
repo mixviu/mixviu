@@ -22,7 +22,7 @@ mod_module_files = "deny"
 
 [features]
 default = []
-tls = ["dep:rustls", "dep:rustls-pemfile", "dep:tokio-rustls"]
+tls = ["dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls"]
 
 [dependencies]
 paths = { path = "../../libraries/paths" }
@@ -36,7 +36,7 @@ thiserror.workspace = true
 libc = "=0.2.189"
 strict = { path = "../strict" }
 rustls = { workspace = true, optional = true }
-rustls-pemfile = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
 tokio-rustls = { workspace = true, optional = true }
 
 [dev-dependencies]

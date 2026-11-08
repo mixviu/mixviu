@@ -7,6 +7,8 @@ use crate::numeric::{
     InputPolicy, as_count, as_duration, as_exact_integer, as_exit_code, as_finite_number,
     as_loop_step, extract_number,
 };
+#[cfg(feature = "http")]
+use rustls_pki_types::pem::PemObject as _;
 // The timestamp domain exists only where the date/time builtins do.
 #[cfg(feature = "datetime")]
 use crate::numeric::as_timestamp;
@@ -21900,7 +21902,7 @@ fn ca_http_agent(name: &str, pem: &[u8]) -> MixResult<std::sync::Arc<ureq::rustl
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let mut added = 0usize;
-    for cert in rustls_pemfile::certs(&mut &pem[..]) {
+    for cert in rustls_pki_types::CertificateDer::pem_reader_iter(&mut &pem[..]) {
         let cert = cert.map_err(|e| http_tls_err(name, format!("invalid PEM: {e}")))?;
         roots
             .add(cert)
