@@ -22,9 +22,11 @@ paths = [
 [[allowlists]]
 description = "Terminal help text: 'Keys: Ctrl+Shift+T/W ...' is a keybinding list, not an API key"
 targetRules = ["generic-api-key"]
+condition = "AND"
 regexTarget = "line"
 regexes = ['''^Keys: Ctrl\+Shift\+T/W new/close tab''']
 paths = [
+  '''^apps/term/help\.txt$''',
   '''^apps/term/src/main\.rs$''',
   '''^provenance/compd-oracle/apps/term/src/main\.rs$''',
 ]
