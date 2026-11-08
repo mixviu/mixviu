@@ -177,6 +177,7 @@ pub struct Endpoint {
     thread: Option<JoinHandle<()>>,
 }
 /// Bundle-authored compatibility for native HELP and ordinary reply deadlines.
+#[derive(Clone)]
 pub struct RequestPolicy {
     pub help: Option<Value>,
     pub owner_help: bool,

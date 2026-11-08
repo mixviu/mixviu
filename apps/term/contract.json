@@ -550,6 +550,7 @@
     "frame": "gold",
     "macros": true,
     "native_drive": true,
+    "native_selection": true,
     "native_macros": true,
     "registration_pid_fallback": true,
     "service": "term",

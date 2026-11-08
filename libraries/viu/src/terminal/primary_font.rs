@@ -38,7 +38,7 @@ pub(super) struct Primary {
 // newer set during this process cannot combine fonts from two asset releases.
 fn installed_assets() -> Result<Option<&'static assets::AssetSet>, &'static str> {
     static INSTALLED: OnceLock<Result<Option<assets::AssetSet>, String>> = OnceLock::new();
-    match INSTALLED.get_or_init(|| assets::mixos::discover().map_err(|error| error.to_string())) {
+    match INSTALLED.get_or_init(|| assets::mix::discover().map_err(|error| error.to_string())) {
         Ok(set) => Ok(set.as_ref()),
         Err(error) => {
             static REPORTED: OnceLock<()> = OnceLock::new();
@@ -93,7 +93,7 @@ pub(super) fn discover_face(
 }
 
 fn bundled(weight: u16) -> Result<Primary, String> {
-    let (name, bytes) = assets::mixos::mono_face(weight);
+    let (name, bytes) = assets::mix::mono_face(weight);
     let font = FontRef::from_index(bytes, 0)
         .filter(|font| usable(*font))
         .ok_or_else(|| format!("bundled font {name} cannot be drawn"))?;
@@ -432,7 +432,7 @@ mod tests {
     #[test]
     #[ignore = "requires a bootstrapped static asset set"]
     fn bundled_regular_is_primary_and_installed_emoji_is_coverage() {
-        let set = assets::mixos::discover().unwrap().expect("installed set");
+        let set = assets::mix::discover().unwrap().expect("installed set");
         assert_eq!(
             discover(None).unwrap().path,
             Path::new("bundled/JetBrainsMono-Regular.ttf")

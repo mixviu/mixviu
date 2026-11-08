@@ -47,6 +47,9 @@ struct Host {
 
     deliveries: Vec<Arc<std::sync::atomic::AtomicU8>>,
     platform: crate::platform::Platform,
+    native_selection: bool,
+    paste_waits: std::collections::VecDeque<String>,
+    paste_deadline: Option<Instant>,
     selection: crate::terminal::clipboard::Clipboard,
     selection_sequence: u64,
     selection_waits: BTreeMap<u64, SelectionWait>,
@@ -671,6 +674,11 @@ impl Host {
         }
         self.facilities.prepare(ctx, &self.bus);
         for request in self.platform.take() {
+            if !self.native_selection {
+                if request["kind"] == "copy" { ctx.copy_text(request["body"]["text"].as_str().unwrap_or("").into()); }
+                else { self.paste_waits.push_back(request["id"].as_str().unwrap_or("").into()); }
+                continue;
+            }
             if request["kind"] == "copy" {
                 self.selection.write(
                     ctx,
@@ -689,6 +697,20 @@ impl Host {
                 self.selection
                     .read(self.selection_sequence, request["body"]["primary"] == true);
             }
+        }
+        if self.paste_deadline.is_some_and(|at| at <= Instant::now()) {
+            self.paste_deadline = None;
+            if let Some(id) = self.paste_waits.pop_front() {
+                self.platform_results
+                    .push_back(json!({"id":id,"text":"","reason":"timeout"}));
+            }
+        }
+        if self.paste_deadline.is_none() && !self.paste_waits.is_empty() {
+            self.paste_deadline = Some(Instant::now() + Duration::from_secs(2));
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+        }
+        if let Some(at) = self.paste_deadline {
+            ctx.request_repaint_after(at.saturating_duration_since(Instant::now()));
         }
         for request in self.terminals.take_clipboard_requests() {
             use crate::terminal::sessions::WindowClipboardRequest;
