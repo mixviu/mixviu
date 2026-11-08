@@ -252,6 +252,31 @@ fn term_bundle_child() {
         late.body, typed.body,
         "successful retry retains its original outcome after close"
     );
+    // The real document-tabs widget emits term.intent, not a Bus command
+    // envelope. Its translated id must reach the reducer; strict wire parsing
+    // of the original UI body rejects action/value and silently loses clicks.
+    let new_tab = invoke(&mut runtime, &rx, "term.tab.new", json!({"title":"UI tab"}));
+    assert_eq!(new_tab.reply.unwrap().rc, 0);
+    let selected = invoke(
+        &mut runtime,
+        &rx,
+        "term.intent",
+        json!({"id":"tabs","action":"select","value":"2"}),
+    );
+    assert_eq!(selected.reply.unwrap().rc, 0);
+    let tabs = invoke(&mut runtime, &rx, "term.tabs", json!({})).reply.unwrap();
+    assert!(tabs.body.as_str().unwrap().contains("id=2 active=true title=Pinned"));
+    let closed = invoke(
+        &mut runtime,
+        &rx,
+        "term.intent",
+        json!({"id":"tabs","action":"close","value":"3"}),
+    );
+    assert_eq!(closed.reply.unwrap().rc, 0);
+    let tabs = invoke(&mut runtime, &rx, "term.tabs", json!({})).reply.unwrap();
+    assert_eq!(tabs.body.as_str().unwrap().lines().count(), 1);
+    assert!(tabs.body.as_str().unwrap().contains("id=2 active=true title=Pinned"));
+    assert!(sessions.call("state", "vt-4", json!({})).is_err(), "UI close must release its owned PTY");
     let about = invoke(&mut runtime, &rx, "term.dialog", json!({"open":"about"}));
     assert_eq!(about.reply.unwrap().rc, 0);
     let model = about.model.unwrap();

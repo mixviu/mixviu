@@ -224,7 +224,8 @@ on term.intent
   $a=$event.args
   if $a.id=="tabs" then
     $name=if $a.action=="close" then "term.tab.close" else "term.tab.select" end
-    $state=command($state,$name,{id:to_number($a.value)})
+    $out=$bus.dispatch($state,$name,{id:to_number($a.value)},$native)
+    $state=pump_events($out.state);$state=publish_term($state);reply($out.rc,$out.body)
   elif $a.id=="terminal" and $a.action=="focus" then
     for $p in values($state.layout.panes)
       if $p.handle==$a.value and $state.layout.tabs[$state.layout.active].active_pane!=$p.id then $state.layout=$lifecycle.select_pane($state.layout,$p.id,$native);$state=pump_events($state);$state=publish_term($state) end
