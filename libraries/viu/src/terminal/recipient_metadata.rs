@@ -37,7 +37,9 @@ impl Recipient {
                 let pane = match pane.try_lock() {
                     Ok(pane) => pane,
                     Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
-                    Err(std::sync::TryLockError::WouldBlock) => return Reply::error("RESOURCE_LIMIT"),
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        return Reply::error("RESOURCE_LIMIT");
+                    }
                 };
                 let (cols, rows) = pane.dimensions();
                 (cols, rows, pane.pid)

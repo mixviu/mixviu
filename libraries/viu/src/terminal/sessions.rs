@@ -1049,7 +1049,10 @@ mod tests {
             .expect("a busy pane must not park the native actor")
             .unwrap();
             assert_eq!(busy.0, 10);
-            assert_eq!(serde_json::from_str::<Value>(&busy.1).unwrap()["error_code"], "RESOURCE_LIMIT");
+            assert_eq!(
+                serde_json::from_str::<Value>(&busy.1).unwrap()["error_code"],
+                "RESOURCE_LIMIT"
+            );
             // Use the actual verified transport and bounded recipient queue.
             // A fresh isolated owner keeps this pressure test independent of
             // the ordinary input/replay/expiry proof's connection lifecycle.
