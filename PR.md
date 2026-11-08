@@ -96,7 +96,7 @@ isolation and preserving Dopus's cut-over behaviour are the main runtime risks.
 - Not tested: interactive desktop/VT acceptance, production installation or
   app windows. Existing GPU/installed-icon test ignores remain unchanged.
 
-CBC refresh receipts so far:
+CBC refresh receipts:
 
 - `20261108-153502-b6ad5325-a1` at `adffa80b`: focused Dopus startup and
   migrated contract tests, plus the 30-script native harness; rc 0. Submitted
@@ -108,7 +108,14 @@ CBC refresh receipts so far:
   formatting/baseline patch was printed, worker changes cleared in that job,
   and the patch applied locally.
 
-Full focused and workspace gates are pending on the refreshed commit.
+- `20261108-153408-bb620337-a1` at `adffa80b`: the original heavy-worker
+  regeneration also completed, rc 0, and produced the identical patch.
+- Complete merge gate `20261108-154812-28b71f73-a1` at `d2d046e1` on cbc3:
+  `mix tools/lint-viu-check.mix`, then `mix tools/ci.mix test`, submitted with
+  `--worker any`. The subsequent receipt commit changes documentation only.
+
+The final gate result and final head are recorded in the local `last.md`
+receipt; GitHub runs both required checks on the final pushed head.
 
 ## How to undo
 
