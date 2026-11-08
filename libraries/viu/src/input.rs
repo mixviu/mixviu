@@ -4,10 +4,21 @@
 use crate::view::SceneView;
 use serde_json::Value;
 use std::collections::VecDeque;
+#[derive(Debug)]
+struct DroppedPath(std::path::PathBuf);
+impl egui::DroppedFile for DroppedPath {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        thumbs::cache::read_regular(&self.0, 64 * 1024 * 1024).map_err(|e| e.to_string())
+    }
+}
 #[derive(Default)]
 pub struct Input {
     pub now: Vec<egui::Event>,
     pub later: VecDeque<Vec<egui::Event>>,
+    pub dropped: Vec<egui::DroppedFileHandle>,
     menu_path: VecDeque<String>,
     menu_wait_frames: u8,
     menu_depth: usize,
@@ -33,6 +44,25 @@ impl Input {
         };
         let mut now = vec![egui::Event::ModifiersChanged(modifiers)];
         match command {
+            "drop" => {
+                let paths = a["paths"]
+                    .as_array()
+                    .filter(|p| !p.is_empty() && p.len() <= 1024)
+                    .ok_or("expected 1..1024 paths")?;
+                let files = paths
+                    .iter()
+                    .map(|p| {
+                        p.as_str()
+                            .filter(|s| s.len() <= 4096 && std::path::Path::new(s).is_absolute())
+                            .map(|s| {
+                                std::sync::Arc::new(DroppedPath(s.into()))
+                                    as egui::DroppedFileHandle
+                            })
+                            .ok_or("expected absolute file paths")
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.dropped = files;
+            }
             "ime" => {
                 let text = a["text"].as_str().unwrap_or("");
                 if text.len() > 65536 {

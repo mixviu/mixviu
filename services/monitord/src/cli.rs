@@ -36,7 +36,7 @@ pub enum Command {
         #[arg(long, default_value_t = 1000, value_parser = clap::value_parser!(u64).range(100..=60_000))]
         interval_ms: u64,
         /// The history database. Default: $STATE_DIRECTORY/history.db,
-        /// else /var/lib/monitord/history.db.
+        /// else /var/lib/mix/monitord/history.db.
         #[arg(long, conflicts_with = "no_db")]
         db: Option<PathBuf>,
         /// Keep history in memory only.
@@ -119,7 +119,7 @@ pub fn default_db() -> PathBuf {
                 .and_then(|d| d.split(':').next())
                 .map(PathBuf::from)
         })
-        .unwrap_or_else(|| PathBuf::from("/var/lib/monitord"))
+        .unwrap_or_else(|| PathBuf::from("/var/lib/mix/monitord"))
         .join("history.db")
 }
 

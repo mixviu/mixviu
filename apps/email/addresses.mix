@@ -1,0 +1,51 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold's recipient tokenizer. No transport, rendering or account ownership.
+fn decode($text)
+  $entries=[];$current="";$quoted=false;$escaped=false;$angle=false
+  for $char in chars($text)
+    if $escaped then $escaped=false
+    elif $quoted and $char=="\\" then $escaped=true
+    elif $char=="\"" and not $angle then $quoted=not $quoted
+    elif not $quoted and $char=="<" then
+      if $angle then raise("INVALID_ARGUMENT","nested '<' in "..json_encode($text)) end
+      $angle=true
+    elif not $quoted and $char==">" then $angle=false
+    elif not $quoted and not $angle and contains([",",";"],$char) then push($entries,$current);$current="";continue end
+    $current=$current..$char
+  end
+  if $quoted or $angle then raise("INVALID_ARGUMENT","unterminated quote or '<' in "..json_encode(trim($current))) end
+  push($entries,$current);$out=[]
+  for $entry in $entries
+    $entry=trim($entry)
+    if $entry=="" then continue end
+    $name=nil;$email=$entry
+    if contains($entry,"<") then
+      $bits=split($entry,"<");$email=$bits[len($bits)-1]
+      if not ends_with($email,">") then raise("INVALID_ARGUMENT","not an email address: "..json_encode($entry)) end
+      $email=trim(substr($email,0,len($email)-1));$name=trim(join(slice($bits,0,len($bits)-1),"<"))
+      if starts_with($name,"\"") and ends_with($name,"\"") then
+        $inner=substr($name,1,len($name)-2);$name="";$escaped=false
+        for $c in chars($inner)
+          if $escaped then $name=$name..$c;$escaped=false
+          elif $c=="\\" then $escaped=true else $name=$name..$c end
+        end
+      elif contains($name,"\"") then raise("INVALID_ARGUMENT","not an email address: "..json_encode($entry)) end
+      if $name=="" then $name=nil end
+    end
+    if not re_match($email,"^[^@\\s\\p{Cc}<>()\\[\\],;:\"\\\\]+@[^@\\s\\p{Cc}<>()\\[\\],;:\"\\\\]+$") then raise("INVALID_ARGUMENT","not an email address: "..json_encode($entry)) end
+    push($out,{name:$name,email:$email})
+  end
+  return $out
+end
+fn format($address)
+  $name=$address.name ?? ""
+  if $name=="" then return $address.email end
+  if re_match($name,'[()<>\[\]:;@\\,.\"]') then $name='"'..replace(replace($name,"\\","\\\\"),'"','\"')..'"' end
+  return $name.." <"..$address.email..">"
+end
+fn field($args,$key)
+  $values=$args[$key] ?? []
+  if type($values)=="string" then $values=[$values] end
+  if type($values)!="list" or not all($values,fn($v)=type($v)=="string") then raise("INVALID_ARGUMENT",$key.." must be a string or a list of strings") end
+  try return decode(join($values,", ")) catch $message raise("INVALID_ARGUMENT",$key..": "..$message) end
+end

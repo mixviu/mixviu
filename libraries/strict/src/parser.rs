@@ -54,12 +54,10 @@ impl Parser {
             .map_or((0, 0), |t| (t.line, t.column))
     }
 
-    fn advance(&mut self) -> Token {
-        let token = self.peek().clone();
+    fn advance(&mut self) {
         if self.pos < self.tokens.len() {
             self.pos += 1;
         }
-        token
     }
 
     fn eat(&mut self, token: &Token) -> bool {

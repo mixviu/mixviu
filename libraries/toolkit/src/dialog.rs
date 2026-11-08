@@ -89,6 +89,8 @@ pub struct DialogResponse<R> {
     pub dismissed: bool,
     /// The dialog's frame.
     pub rect: egui::Rect,
+    /// Native button rectangles, keyed by the supplied choice index.
+    pub buttons: Vec<(usize, egui::Rect)>,
 }
 
 /// Where a dialog sits: unplaced until it has been shown centred once.
@@ -196,6 +198,7 @@ impl Dialog {
         // focused and the key would run the default button too.
         let focused_before = ctx.memory(|m| m.focused()).is_some();
         let mut chosen = None;
+        let mut buttons = Vec::new();
         let mut title_drag = Vec2::ZERO;
         let modal = Modal::new(id)
             .area(area)
@@ -280,7 +283,7 @@ impl Dialog {
                 };
                 if !choices.is_empty() {
                     ui.add_space(crate::chrome::Chrome::of(ctx).style.dialog_above_buttons as f32);
-                    chosen = button_row(ui, &choices, os);
+                    chosen = button_row(ui, &choices, os, &mut buttons);
                 }
                 inner
             });
@@ -312,12 +315,18 @@ impl Dialog {
             chosen,
             dismissed,
             rect,
+            buttons,
         }
     }
 }
 
 /// The button row, right-aligned and laid out left to right.
-fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem) -> Option<usize> {
+fn button_row(
+    ui: &mut Ui,
+    choices: &[Choice],
+    os: OperatingSystem,
+    buttons: &mut Vec<(usize, egui::Rect)>,
+) -> Option<usize> {
     let font = crate::fonts::bound(
         ui.ctx(),
         crate::fonts::medium(crate::button::push_size_of(ui.ctx())),
@@ -350,6 +359,7 @@ fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem) -> Option<us
             Role::Cancel | Role::Other => PushButton::secondary(&choice.label),
         };
         let rect = egui::Rect::from_min_size(egui::pos2(x, row.top()), egui::vec2(*width, height));
+        buttons.push((index, rect));
         let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         if !choice.enabled {
             cell.disable();

@@ -44,24 +44,18 @@ on job.run
       $target=$doc.path
       if $suffix=="dopus" then $target=dirname($target) end
       $root=dirname(dirname(script_path()))
-      if $suffix=="ced" then
-        $child=spawn([viu_context().executable,"run",path_join($root,"ced")],{detach:true})
-        -- Reach the accepted editor through its native inter-process contract.
-        -- Read-only readiness probes may repeat; the Open command is sent once.
-        $until=monotonic()+25
-        loop
-          send "ced" "ced.ping" body={} timeout=1
-          if $rc==0 then break end
-          if not process_alive($child) or monotonic()>$until then raise("UNAVAILABLE","Ced did not become ready") end
-          sleep(0.1)
-        end
-        send "ced" "ced.open" body={paths:[$target]} timeout=30
-        if $rc!=0 then reply($rc,json_encode($reply));return end
-      else
-        $dopus=mix_path("prefix","bin/dopus")
-        if not is_file($dopus) then raise("UNAVAILABLE","Dopus is not installed") end
-        $child=spawn([$dopus,$target],{detach:true})
+      $child=spawn([viu_context().executable,"run",path_join($root,$suffix)],{detach:true})
+      -- Both accepted bundles use the current generic host. Read-only
+      -- readiness probes may repeat; each Open command is sent once.
+      $ping=$suffix..".ping";$open=$suffix..".open";$until=monotonic()+25
+      loop
+        send $suffix $ping body={} timeout=1
+        if $rc==0 then break end
+        if not process_alive($child) or monotonic()>$until then raise("UNAVAILABLE",$suffix.." did not become ready") end
+        sleep(0.1)
       end
+      send $suffix $open body={paths:[$target]} timeout=30
+      if $rc!=0 then reply($rc,json_encode($reply));return end
       reply(0,json_encode({opened:true}));return
     end
     if contains(["open","new"],$suffix) then

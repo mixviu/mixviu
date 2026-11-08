@@ -4,11 +4,15 @@
 -- lint: globals app_args
 $c=require("core.mix");$mail=require("mail.mix");$ctx=viu_context()
 $fixture=len($app_args)>0 and $app_args[0]=="--fixture"
+$compose_only=len($app_args)>0 and $app_args[0]=="--compose";$compose_launch_pending=$compose_only;$compose_launch_document=if $compose_only then $app_args[1] else nil end
 $rows=[];$selected=nil;$revision=0;$account="No account connected";$mailbox="No mailbox";$reader="No message open";$draft={to:"",subject:"",text:""}
 $entries=[];$active="";$session=nil;$boxes=[];$box="";$offset=0;$total=0;$message=nil;$connected=false;$busy=false;$serial=0;$pending=nil;$status="Choose an account and Connect"
 $submission=nil;$receipt=nil;$last_receipt=nil
 $view="Mail"
-if not $fixture and len($app_args)>0 then
+if not $fixture then $status="" end
+$frame=require("frame.mix");$actions=require("actions.mix")
+$chrome={bindings:{},theme_choice:{scheme:nil,mode:nil,style:nil,decorations:nil,caption_side:nil},theme_effective:{scheme:"studio",mode:"dark"},dialog:nil,macros_open:false,window_close:false}
+if not $fixture and not $compose_only and len($app_args)>0 then
   $entries=$mail.accounts($app_args[0])
   if len($entries)>0 then $active=$entries[0].id end
 end
@@ -17,13 +21,33 @@ fn entry()
   raise("ACCOUNT","No configured account selected")
 end
 fn publish_email()
-  $m=$c.model($rows,$selected,$revision,$account,$mailbox,$reader,$draft)
+  composer_launch()
+  if not $fixture then previews_sync() end
+  if not $fixture then config_schedule() end
+  $m=$c.model(if $fixture then $rows else [] end,if $fixture then $selected else nil end,$revision,$account,$mailbox,$reader,$draft)
+  $m.fixture=$fixture
   $m.status=if $fixture then $m.status else $status.." · "..to_string(len($rows)).." / "..to_string($total).." messages · offset "..to_string($offset) end
   $m.accounts={id:"accounts",kind:"combo",label:"Account",initial:if $active!="" then $active else "No account" end,properties:{choices:if len($entries)>0 then map($entries,fn($e)=$e.id) else ["No account"] end}}
   $chosen=filter($boxes,fn($b)=$b.id==$box)
-  $m.mailboxes={id:"mailboxes",kind:"combo",label:"Mailbox",initial:if len($chosen)>0 then $chosen[0].choice else "Select mailbox" end,properties:{choices:concat(["Select mailbox"],map($boxes,fn($b)=$b.choice))}}
+  $m.mailboxes={id:"mailboxes",kind:"combo",label:"Mailbox",initial:if len($chosen)>0 then $chosen[0].choice ?? $chosen[0].name else "Select mailbox" end,properties:{choices:concat(["Select mailbox"],map($boxes,fn($b)=$b.choice ?? $b.name))}}
   $m.values.view=$view;$m.mail_hidden=$view!="Mail";$m.compose_hidden=$view!="Compose"
-  $m.values["reader-body"]=if $message!=nil then $message.text else "" end
+  $m.values["reader-body"]=if $message!=nil then $message.text ?? $message.html ?? "" else "" end
+  if not $fixture then $m=surface_model($m) end
+  if $fixture then $m=reader_files_model($m) end
+  $look=merge(action_context(),{fixture:$fixture,accounts:len($entries),connected:$connected,status:$status})
+  if not $fixture then
+    $current=wire_entry($active);$state=$wire_views[$active] ?? {}
+    $look.status=if $current==nil then "" else $current.name.." — "..(if $state.state=="ready" then "Connected" elif $state.state=="connecting" then "Connecting…" else "Not connected" end) end
+    if $status!="" then $look.status=$look.status.." — "..$status end
+    if $mail_settings.source=="missing" then $look.status=$look.status.." — Settings service not running: showing the saved accounts, read-only" end
+  end
+  $m=$frame.apply($m,$look)
+  if $chrome.search==true then
+    $choices=map($actions.registry(action_context()),fn($a)={id:$a.id,label:$a.label,enabled:$a.enabled and $a.id!="view.search"})
+    push($choices,{id:"cancel",label:"Cancel",enabled:true,cancel:true})
+    $m.native_overlays=push($m.native_overlays,{command:"email.search.intent",definition:{id:"email-search",kind:"dialog-form",label:"",initial:{open:true,instance:$chrome.search_serial,title:"Search menus",body:"",choices:$choices},properties:{style:"command-search"}}})
+  end
+  if not $fixture then $m=composer_restore_model(form_model(composer_models($m))) end
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$m}
 end
 fn begin_mail($op,$data)
@@ -35,7 +59,7 @@ fn begin_mail($op,$data)
   if $rc!=0 then raise("JOB","Mail worker unavailable") end
 end
 fn reader_text($m)
-  return "Subject: "..substr($m.subject,0,120).."\nFrom: "..substr(json_encode($m.from),0,120)
+  return "Subject: "..substr($m.subject ?? "",0,120).."\nFrom: "..substr(json_encode($m.from),0,120)
 end
 fn send_request()
   if $fixture or not $connected then raise("CONNECT","Connect a real configured account first") end
@@ -53,11 +77,28 @@ fn send_request()
   if re_match($draft.subject,"[\\r\\n\\x00]") or re_match($draft.text,"\\x00") then raise("HEADER","Newlines in subject and NUL in mail are refused") end
   return {operation_id:"email-"..fmt("%.0f",random(0,1000000000000)).."-"..fmt("%.0f",random(0,1000000000000)),account:$e.user,to:$recipients,subject:$draft.subject,text:$draft.text}
 end
+include "wire.mix"
+include "surface.mix"
+include "navigation.mix"
+include "selection.mix"
+include "reader-files.mix"
+include "previews.mix"
+include "drops.mix"
+include "composer.mix"
+include "compose-identities.mix"
+include "forms.mix"
+include "dialog.mix"
+include "persistence.mix"
+if not $fixture then config_load() end
+if not $fixture then composer_load_drafts() end
 publish_email()
 on email.ping
-  reply(0,"{}")
+  reply(0,json_encode({pong:true,schema:"email.v1",version:$ctx.version,pid:$ctx.pid}))
 end
 on email.info
+  $target=composer_target($event.args)
+  if $target.rc!=0 then reply($target.rc,json_encode($target.body));return end
+  if not $fixture then reply(0,json_encode(composer_snapshot(surface_info(),$event.args.window)));return end
   reply(0,json_encode({fixture:$fixture,connected:$connected,busy:$busy,status:$status,accounts:map($entries,fn($e)={id:$e.id,label:$e.label,user:$e.user}),active:$active,server_accounts:if $session!=nil then $session.accounts else [] end,mailboxes:$boxes,mailbox:$box,rows:len($rows),total:$total,offset:$offset,selected:$selected,revision:$revision,draft:$draft,operation_id:if $submission!=nil then $submission.operation_id else nil end,receipt:$last_receipt}))
 end
 on email.message
@@ -83,10 +124,15 @@ on email.read
   begin_mail("read",{id:$event.args.id});$serial=$serial+1;$busy=true;$pending={op:"read"};$status="Reading message";publish_email();reply(0,"{}")
 end
 on email.send
+  if not $fixture then $r=wire_start("email.send",$event.args,$event);reply($r.rc,json_encode($r.body));return end
   $request=send_request();begin_mail("send",{request:$request});$submission=$request;$serial=$serial+1;$busy=true;$pending={op:"send"};$status="Submitting · awaiting receipt";publish_email();reply(0,json_encode({accepted:true,operation_id:$submission.operation_id}))
 end
 on email.fixture
   if not $fixture then raise("FIXTURE","Explicit --fixture launch required; this is not maild data") end
+  if $event.args.modern==true then
+    $began=monotonic();$projected=gold_rows($event.args.messages)
+    reply(0,json_encode({rows:len($projected),first:$projected[0],milliseconds:(monotonic()-$began)*1000}));return
+  end
   $candidate=$c.rows($event.args.messages,$event.args.bulk ?? true)
   $rows=$candidate;$selected=nil;$revision=$revision+1
   $account="Synthetic account · user@example.test";$mailbox="Synthetic Inbox"
@@ -94,7 +140,12 @@ on email.fixture
 end
 on email.intent
   $a=$event.args
-  if $a.id=="view" then
+  if not $fixture then
+    $r=surface_intent($a);publish_email();reply($r.rc,json_encode($r.body));return
+  end
+  if $a.id=="open-settings" then
+    $out=execute_email("file.accounts","ui");reply($out.rc,json_encode($out.body));return
+  elif $a.id=="view" then
     if not contains(["Mail","Compose"],$a.value) then raise("VIEW","Unknown view") end
     $view=$a.value
   elif $a.id=="send" then
@@ -133,8 +184,204 @@ on email.intent
   else raise("DEFERRED","Unknown or deferred mail action") end
   publish_email();reply(0,"{}")
 end
+
+fn execute_email($id,$origin)
+  $r=apply_email($id,$origin)
+  if $r.rc==0 then
+    send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+    publish_email();$r.body={executed:$id}
+  end
+  return $r
+end
+fn apply_email($id,$origin)
+  global $chrome,$view,$serial,$busy,$pending,$status,$reader_markdown,$reader_auto,$attachments_inline,$attachments_expanded
+  $s=action_context()
+  $found=filter($actions.registry($s),fn($a)=$a.id==$id)
+  if len($found)==0 then return {rc:10,body:{error_code:"UNKNOWN_ACTION",message:"No such command"}} end
+  if not $found[0].enabled then return {rc:10,body:{error_code:"DISABLED",message:"That command cannot run now"}} end
+  if $id=="file.quit" or $id=="compose.close" then return composer_quit()
+  elif $id=="file.accounts" then
+    $path=path_join(dirname(script_path()),"prefs-job.mix")
+    send "viu-local" "jobs.start" id="prefs-"..$compose_ids.mint() owner={prefs:true} path=$path source=read_file($path) command="job.run" args={}
+  elif $id=="help.about" then $chrome.dialog="about"
+  elif $id=="help.shortcuts" then $chrome.dialog="shortcuts"
+  elif $id=="help.macros" then $chrome.macros_open=not $chrome.macros_open
+  elif $id=="view.search" then
+    $chrome.search=true;$chrome.search_serial=($chrome.search_serial ?? 0)+1
+  elif $id=="mail.compose" or $id=="compose.new" then
+    if not $fixture then $opened=composer_open({});publish_email();return $opened else $view="Compose" end
+  elif $id=="calendar.new_event" then $out=form_open("event");publish_email();return $out
+  elif $id=="contacts.new_contact" then $out=form_open("contact");publish_email();return $out
+  elif $id=="mail.print" then return wire_start("email.print",{},nil,"print")
+  elif $id=="mail.delete" then $out=selection_act("delete");publish_email();return $out
+  elif $id=="mail.move" then $out=selection_act("move");publish_email();return $out
+  elif contains(["mail.junk","mail.not_junk"],$id) then
+    return selection_act(if $id=="mail.junk" then "junk" else "not_junk" end)
+  elif $id=="file.refresh" then
+    if not $fixture then
+      wire_start("email.mailboxes",{},nil,"boxes")
+      if $box!="" then wire_start("email.list",{mailbox:$box,offset:$offset},nil,"refresh-list") end
+      wire_start("email.calendars",{},nil,"parents");wire_start("email.books",{},nil,"parents")
+    elif len($entries)>0 then begin_mail("connect",{});$serial=$serial+1;$busy=true;$pending={op:"connect"};$status="Connecting" end
+  elif contains(["view.mail","view.calendar","view.contacts"],$id) then surface_mode(split($id,".")[1])
+  elif contains(["mail.flag","mail.mark_unread"],$id) then selection_act(if $id=="mail.flag" then "flag" else "read" end)
+  elif starts_with($id,"mail.reply") or $id=="mail.forward" then
+    $args={id:$message.id,all:contains($id,"reply_all")}
+    if ends_with($id,"_unquoted") then $args.quote=false elif ends_with($id,"_quoted") then $args.quote=true end
+    wire_start(if $id=="mail.forward" then "email.forward" else "email.reply" end,$args,nil,"compose-open")
+  elif $id=="view.reader.markdown" then $reader_markdown=not $reader_markdown;$reader_auto=false
+  elif $id=="mail.attachments" then $attachments_expanded=not $attachments_expanded
+  elif $id=="mail.save_attachments" then reader_files_intent({action:"save-all"})
+  elif $id=="mail.send_as_new" then
+    $a={account:$active,to:map($message.to ?? [],fn($a)=$compose_addresses.format($a)),cc:map($message.cc ?? [],fn($a)=$compose_addresses.format($a)),subject:$message.subject ?? "",body:$message.text ?? ""}
+    $from=($message.from ?? [])[0].email
+    if any($compose_sending.senders(wire_entry($active)),fn($s)=lower($s.address)==lower($from ?? "")) then $a.from=$from end
+    return composer_open($a)
+  elif $id=="view.attachments_inline" then $attachments_inline=not $attachments_inline
+  elif contains(["view.next_account","view.previous_account"],$id) then
+    $at=index_of(map($entries,fn($e)=$e.id),$active);$at=($at+len($entries)+(if $id=="view.next_account" then 1 else -1 end))%len($entries);surface_account($entries[$at].id)
+  elif starts_with($id,"view.theme.") or starts_with($id,"view.mode") or starts_with($id,"view.style.") or starts_with($id,"view.decorations.") or starts_with($id,"view.captions.") then
+    $axis=if starts_with($id,"view.theme.") then "scheme" elif starts_with($id,"view.style.") then "style" elif starts_with($id,"view.decorations.") then "decorations" elif starts_with($id,"view.captions.") then "caption_side" else "mode" end
+    $parts=split($id,".");$value=$parts[len($parts)-1]
+    if $id=="view.mode" then
+      send "viu-local" "native.theme" body=$chrome.theme_choice
+      if $rc!=0 then return {rc:$rc,body:$reply} end
+      $value=if $reply.mode=="dark" then "light" else "dark" end
+    end
+    $edit={};$edit[$axis]=if $value=="session" then nil else $value end
+    $out=theme_email($edit)
+    if $out.rc!=0 then return $out end
+  else return {rc:10,body:{error_code:"DISABLED",message:"That command cannot run now"}} end
+  publish_email()
+  return {rc:0,body:{executed:$id}}
+end
+fn theme_email($args)
+  global $chrome
+  $edit=$actions.theme_edit($chrome.theme_choice,$args)
+  if not $edit.ok then return {rc:10,body:{error_code:"ARGUMENT",message:$edit.message}} end
+  send "viu-local" "native.theme" body=$edit.choice
+  if $rc!=0 then return {rc:$rc,body:$reply} end
+  $chrome.theme_choice=$edit.choice;$chrome.theme_effective=$reply
+  $body=$edit.choice;$body.effective=$reply
+  return {rc:0,body:$body}
+end
+on email.actions
+  reply(0,json_encode({actions:$actions.registry(action_context())}))
+end
+on email.execute
+  if $event.args.id!=nil and type($event.args.id)!="string" then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"id must be a string"}));return end
+  if type($event.args.id)!="string" or trim($event.args.id)=="" then reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"id is required"}));return end
+  if $event.args.id!="compose.new" then
+    $target=composer_target($event.args)
+    if $target.rc!=0 then reply($target.rc,json_encode($target.body));return end
+  end
+  if $event.args.id!="compose.new" and ($event.args.window!=nil or (starts_with($event.args.id ?? "","compose.") and $composers[$compose_focused]!=nil) or ($event.args.id=="mail.send" and $composers[$compose_focused]!=nil)) then
+    $window=$event.args.window ?? $compose_focused
+    if $composers[$window]==nil then reply(10,json_encode({error_code:"NOT_FOUND",message:"No compose is open"}));return end
+    $out=composer_run($window,$event.args.id,"bus");publish_email();reply($out.rc,json_encode($out.body));return
+  end
+  $out=execute_email($event.args.id,"bus");reply($out.rc,json_encode($out.body))
+end
+on email.theme
+  $out=theme_email($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on viu.theme.changed
+  $chrome.theme_effective=$event.args;publish_email()
+end
+on viu.macros.changed
+  $chrome.macros_open=$event.args.open;publish_email()
+end
+on viu.keymap.changed
+  send "viu-local" "native.bindings" body={defaults:$actions.binding_defaults(),overrides:$event.args}
+  if $rc==0 then $chrome.bindings=$reply.bindings;publish_email() end
+end
+on viu.frame.intent
+  if $event.args.window!=nil then $out=composer_run($event.args.window,$event.args.value.command,$event.args.value.origin ?? "menu");publish_email();reply($out.rc,json_encode($out.body));return end
+  $out=execute_email($event.args.value.command,$event.args.value.origin ?? "menu")
+  reply($out.rc,json_encode($out.body))
+end
+on email.compose
+  $a=$event.args
+  if type($a)=="map" and not contains(keys($a),"account") then $a.account=$active end
+  $out=composer_open($a);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.reply
+  $out=composer_begin("email.reply",$event.args,$event);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.forward
+  $out=composer_begin("email.forward",$event.args,$event);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.compose.intent
+  $out=composer_intent($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.form.intent
+  $out=form_intent($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.restore.intent
+  $out=composer_restore_answer($event.args.value.choice);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.search.intent
+  $chrome.search=false
+  if $event.args.value.choice!="cancel" then $out=execute_email($event.args.value.choice,"palette") end
+  publish_email();reply(0,"{}")
+end
+on viu.timer
+  $a=$event.args.value
+  if $a.kind=="config" then
+    try config_save() catch $failed $status="Window settings not saved: "..$failed end
+    return
+  end
+  if $a.kind=="suggest" then
+    $c=$composers[$a.window]
+    if $c!=nil and $c.account==$a.account and $c.suggest.text==$a.text then wire_start("email.contacts.suggest",{account:$a.account,window:$a.window,field:$a.field,typed:$a.text,text:$a.query,limit:50},nil,"compose-suggest") end
+    return
+  end
+  if $a.kind=="draft" and $composers[$a.window]!=nil then
+    try composer_save($a.window) catch $failed $composers[$a.window].error="Draft not saved: "..$failed end
+    publish_email()
+  end
+end
+on email.compose.attachment.add
+  $out=composer_attachments("email.compose.attachment.add",$event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.compose.attachment.remove
+  $out=composer_attachments("email.compose.attachment.remove",$event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on viu.window.focused
+  if $event.args.window!=nil then composer_focus($event.args.window) end
+end
+on viu.files.dropped
+  mail_drop($event.args);publish_email()
+end
+on viu.window.close
+  composer_close($event.args.window);publish_email()
+end
+on viu.frame.close
+  if $event.args.window!=nil then composer_close($event.args.window) else composer_owner_close() end
+  publish_email()
+end
+on email.quit
+  send "viu-local" "native.executed" body={id:"file.quit",origin:"bus",params:nil,result:nil}
+  $out=composer_quit();publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.dialog
+  $out=dialog_command($event.args);publish_email();reply($out.rc,json_encode($out.body))
+end
+on email.dialog.intent
+  if $event.args.window!=nil and $composers[$event.args.window]!=nil then $composers[$event.args.window].dialog=nil else $chrome.dialog=nil end
+  publish_email();reply(0,"{}")
+end
 on viu.job.completed
   $d=$event.args
+  if $d.tag.owner.drop!=nil then mail_drop_completed($d.tag.owner.drop,$d.rc,$d.body);publish_email();return end
+  if $d.tag.owner.prefs==true then
+    if $d.rc!=0 then $status=$d.body.message;publish_email() end
+    return
+  end
+  if $d.tag.owner.composer_document!=nil then composer_document_completed($d.tag.owner.composer_document,$d.rc,$d.body);publish_email();return end
+  if $d.tag.owner.desktop!=nil then viu_reply("finish",$d.tag.owner.desktop,{rc:$d.rc,body:$d.body});return end
+  if $d.tag.owner.id!=nil then wire_completed($d);publish_email();return end
+  wire_pump()
   if $busy and $d.tag.owner==$serial then
     $busy=false
     if $d.rc==0 then
@@ -157,4 +404,157 @@ on viu.job.completed
     end
     publish_email()
   end
+end
+
+on viu.session
+  wire_session($event.args);publish_email()
+end
+on email.accounts
+  reply(0,json_encode({accounts:wire_accounts()}))
+end
+on email.account.set
+  $r=wire_start("email.account.set",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.account.remove
+  $r=wire_start("email.account.remove",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.account.default
+  $r=wire_start("email.account.default",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.account.password.set
+  $r=wire_start("email.account.password.set",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.account.connect
+  $r=wire_start("email.account.connect",$event.args,nil,"connect");reply($r.rc,json_encode(if $r.rc==0 then {id:$event.args.id} else $r.body end))
+end
+on email.account.select
+  $r=surface_account($event.args.id);publish_email();reply($r.rc,json_encode($r.body))
+end
+on email.mailbox.select
+  $r=surface_mailbox($event.args.account ?? $active,$event.args.id);publish_email();reply($r.rc,json_encode($r.body))
+end
+on email.panel.action
+  $r=execute_email($event.args.id,"panel");reply($r.rc,json_encode($r.body))
+end
+on email.mailboxes
+  $r=wire_start("email.mailboxes",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.list
+  $r=wire_start("email.list",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.search
+  $r=wire_start("email.search",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.refresh
+  $id=$argument_policy.text($event.args,"account") ?? $active
+  if wire_entry($id)==nil then reply(10,json_encode({error_code:"UNKNOWN_ACCOUNT",message:"No account "..to_string($id)}));return end
+  wire_start("email.mailboxes",{account:$id},nil,"boxes")
+  if $id==$active and $box!="" then wire_start("email.list",{account:$id,mailbox:$box,offset:$offset},nil,"refresh-list") end
+  wire_start("email.calendars",{account:$id},nil,"parents");wire_start("email.books",{account:$id},nil,"parents")
+  publish_email();reply(0,json_encode({account:$id}))
+end
+on email.show
+  $token=$event.headers["viu-call"]
+  if not viu_reply("hold",$token,{}) then reply(10,json_encode({error_code:"BUSY",message:"Request receipt unavailable"}));return end
+  $path=path_join(dirname(script_path()),"desktop-job.mix")
+  send "viu-local" "jobs.start" id="show-"..$compose_ids.mint() owner={desktop:$token} path=$path source=read_file($path) command="job.run" args={comp:env("MIX_COMP_SERVICE","viud"),app_id:"dev.mixos.email",pid:$ctx.pid}
+  if $rc!=0 then viu_reply("finish",$token,{rc:10,body:{error_code:"SERVER",message:"Desktop worker unavailable"}}) end
+  reply(0,"{}")
+end
+on email.get
+  $r=wire_start("email.get",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.attachments
+  $r=wire_start("email.attachments",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.mode
+  $r=surface_mode($event.args.name);publish_email();reply($r.rc,json_encode($r.body))
+end
+on email.calendar.select
+  $r=surface_parent($event.args.account ?? $active,$event.args.id,true);publish_email();reply($r.rc,json_encode($r.body))
+end
+on email.book.select
+  $r=surface_parent($event.args.account ?? $active,$event.args.id,false);publish_email();reply($r.rc,json_encode($r.body))
+end
+on email.attachment.save
+  $r=wire_start("email.attachment.save",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.open
+  $r=wire_start("email.open",$event.args,$event,"open");reply($r.rc,json_encode($r.body))
+end
+on email.mark
+  $r=wire_start("email.mark",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.move
+  $r=wire_start("email.move",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.junk
+  $r=wire_start("email.junk",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.delete
+  $r=wire_start("email.delete",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.mailbox.create
+  $r=wire_start("email.mailbox.create",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.mailbox.rename
+  $r=wire_start("email.mailbox.rename",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.mailbox.delete
+  $r=wire_start("email.mailbox.delete",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.calendars
+  $r=wire_start("email.calendars",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.events
+  $r=wire_start("email.events",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.event.get
+  $r=wire_start("email.event.get",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.event.create
+  $r=wire_start("email.event.create",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.event.update
+  $r=wire_start("email.event.update",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.event.delete
+  $r=wire_start("email.event.delete",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.books
+  $r=wire_start("email.books",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.contacts
+  $r=wire_start("email.contacts",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.contact.get
+  $r=wire_start("email.contact.get",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.contact.create
+  $r=wire_start("email.contact.create",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.contact.update
+  $r=wire_start("email.contact.update",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.contact.delete
+  $r=wire_start("email.contact.delete",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+
+on email.contacts.suggest
+  $r=wire_start("email.contacts.suggest",$event.args,$event);reply($r.rc,json_encode($r.body))
+end
+on email.print
+  $r=wire_start("email.print",$event.args,$event);reply($r.rc,json_encode($r.body))
 end

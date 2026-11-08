@@ -1,0 +1,223 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- apps.tar: everything MixViu installs under /opt/mix besides the four engines.
+--
+--   mix tools/apps_bundle.mix OUT.tar --mix MIX --assets DIR
+--
+-- Run from the repository root at a committed revision. MIX is this tree's
+-- mix (target/release/mix in the gate): the icon and brand installers use
+-- its builtins. DIR is the asset store (created if absent): the pinned font
+-- set at assets/sets/<set_id>/ and the wallpapers at wallpapers/<path>. The
+-- store is rebuilt from the pins whenever something is missing:
+-- - fonts: share/assets/install.mix --root DIR/assets downloads each pinned
+--   upstream URL at its revision and checks BLAKE3 and SHA-256 before storing;
+-- - wallpapers: downloaded from the pinned GitHub release named in
+--   share/wallpapers/manifest.conf.mix (asset name = path with / as --),
+--   following at most 3 redirects, and stored only when size and SHA-256 match
+--   the pin; the gold install (/opt/mixos/share/wallpapers, read only) is the
+--   last resort. They are not rebuilt from Commons: the photos are 3840x2160
+--   crops re-encoded at JPEG quality 92 and the generated ones plasma fields
+--   with unrecorded seeds.
+-- Gold /opt/mixos/share/assets is the last resort for fonts too. Every byte is
+-- checked against share/assets/core.conf.mix and share/wallpapers/
+-- manifest.conf.mix before it is stored and again before it is packed.
+--
+-- Layout inside the tar, as installed under /opt/mix:
+--   share/mixviu/apps/<app>/          every Mix app (runtime files only)
+--   share/mixviu/libraries/viu/mix/   the Viu Mix library the apps require
+--   share/mixviu/units/               unit templates (@{prefix} placeholders)
+--   share/mixviu/{LICENSE-*,NOTICE}, share/mixviu/BUNDLE.conf.mix (manifest)
+--   share/scenes/, share/viud/scripts/
+--   lib/{clipd,notifyd,exportd,dlnad}/   the Mix services
+--   share/icons/, share/assets/, share/wallpapers/, share/layout/, share/daylight/
+$g = getopt(args(), {mix: {arg: true}, assets: {arg: true}})
+if len($g.errors) != 0 or len($g.rest) != 1 or $g.opts.mix == nil or $g.opts.assets == nil then
+  raise("USAGE", "apps_bundle.mix OUT.tar --mix MIX --assets DIR")
+end
+$out = $g.rest[0]
+$mix = realpath($g.opts.mix) ?? raise("USAGE", "no such mix: " .. $g.opts.mix)
+mkdir($g.opts.assets, {parents: true})
+$store = realpath($g.opts.assets) ?? raise("ASSETS", "cannot create the asset store at " .. $g.opts.assets)
+$gold = "/opt/mixos/share"
+if trim(run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"])) != "" then
+  raise("DIRTY", "apps.tar is built from a committed tree")
+end
+$sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+$when = trim(run_argv_must(["git", "show", "-s", "--format=%ct", "HEAD"]))
+$stage = "/tmp/apps-bundle-" .. $sha .. "-" .. to_string(pid())
+remove_dir($stage)
+mkdir($stage, {parents: true})
+
+fn tracked($dir)
+  return filter(lines(trim(run_argv_must(["git", "ls-files", $dir]))), fn($f) = $f != "")
+end
+fn place($stage, $src, $dst)
+  mkdir(dirname($stage .. "/" .. $dst), {parents: true})
+  copy($src, $stage .. "/" .. $dst)
+end
+-- Runtime files of a Mix app: no Rust, no tests, no gate or build drivers.
+fn runtime_file($f)
+  $base = basename($f)
+  if ends_with($f, ".rs") or $base == "Cargo.toml" or contains($f, "/src/") or contains($f, "/rust-core/") then return false end
+  if contains($f, "/units/") then return false end
+  if contains($f, "/tests/") or ends_with($base, "-test.mix") or ends_with($base, "_test.mix") then return false end
+  if $base == "gate.mix" or $base == "capture-build.mix" then return false end
+  return true
+end
+
+-- Apps (gallery-reference is a Rust reference build, not a Mix app).
+$apps = []
+for $f in tracked("apps")
+  $app = split($f, "/")[1]
+  if $app != "gallery-reference" and runtime_file($f) then
+    place($stage, $f, "share/mixviu/" .. $f)
+    if not contains($apps, $app) then push($apps, $app) end
+  end
+end
+for $f in tracked("libraries/viu/mix") place($stage, $f, "share/mixviu/" .. $f) end
+for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/mixviu/" .. $f) end
+for $f in tracked("share/scenes") place($stage, $f, $f) end
+for $f in tracked("engines/viud/scripts") place($stage, $f, "share/viud/scripts/" .. substr($f, len("engines/viud/scripts/"))) end
+-- Mix services: their scripts install at <prefix>/lib/<service>/.
+for $svc in ["clipd", "notifyd", "exportd", "dlnad"]
+  $base = "services/" .. $svc .. "/scripts/"
+  for $f in tracked($base) place($stage, $f, "lib/" .. $svc .. "/" .. substr($f, len($base))) end
+end
+-- Every unit template the engines, their personalities, the Mix services and
+-- the apps carry (desk-specific drop-ins and session targets are the desk image's).
+-- sysusers/tmpfiles snippets are prefixed with their owner when not already.
+for $f in tracked(".")
+  $unit = re_match($f, "\\.(service|socket|target|slice|timer|path)$")
+  $snippet = contains($f, "/units/") and ends_with($f, ".conf")
+  if ($unit or $snippet) and (starts_with($f, "engines/") or starts_with($f, "services/") or starts_with($f, "apps/")) and not contains($f, "/tests/") then
+    $owner = split($f, "/")[1]
+    $name = basename($f)
+    if $snippet and not starts_with($name, $owner .. ".") then $name = $owner .. "." .. $name end
+    place($stage, $f, "share/mixviu/units/" .. $name)
+  end
+end
+for $dir in ["share/layout", "share/daylight"]
+  for $f in tracked($dir) place($stage, $f, $f) end
+end
+
+-- Icons and brand marks, through their own offline installers.
+for $installer in ["share/icons/install.mix", "share/brand/install.mix"]
+  run_argv_must([$mix, $installer, "--root", $stage .. "/share"], {timeout: 300})
+end
+
+-- The pinned font and symbol set.
+$core_text = read_file("share/assets/core.conf.mix")
+$core = json_parse($core_text)
+$set = $store .. "/assets/sets/" .. $core.set_id
+fn font_ok($dir, $file)
+  $path = $dir .. "/" .. $file.path
+  return is_file($path) and stat($path).size == $file.bytes and hash_file($path, "sha256") == $file.sha256 and hash_file($path, "blake3") == $file.blake3
+end
+if not is_dir($set) then
+  -- Rebuild from the pins: the installer downloads and verifies each file.
+  $fetch = run_argv([$mix, "share/assets/install.mix", "--root", $store .. "/assets"], {timeout: 1800, max_output: 8000000})
+  print({asset_fetch: $fetch.exit_code, output: $fetch.stdout .. $fetch.stderr})
+  if not $fetch.ok then
+    -- Last resort: the gold install, read only, file by file against the pins.
+    $gset = $gold .. "/assets/sets/" .. $core.set_id
+    if not is_dir($gset) then raise("ASSETS", "set " .. $core.set_id .. " could not be downloaded and gold has none") end
+    remove_dir($set)
+    for $file in $core.files
+      if not font_ok($gset, $file) then raise("ASSET_HASH", "gold copy differs from core.conf.mix: " .. $file.path) end
+      mkdir(dirname($set .. "/" .. $file.path), {parents: true})
+      copy($gset .. "/" .. $file.path, $set .. "/" .. $file.path)
+    end
+    write_file($set .. "/manifest.conf.mix", $core_text)
+    write_file($set .. "/fonts.css", $core.web_css)
+    print({asset_source: "gold", set: $core.set_id})
+  end
+end
+place($stage, "share/assets/core.conf.mix", "share/assets/core.conf.mix")
+place($stage, "share/assets/install.mix", "share/assets/install.mix")
+$dest = "share/assets/sets/" .. $core.set_id
+for $file in $core.files
+  $src = $set .. "/" .. $file.path
+  if not is_file($src) or stat($src).size != $file.bytes or hash_file($src, "sha256") != $file.sha256 or hash_file($src, "blake3") != $file.blake3 then
+    raise("ASSET_HASH", "asset store copy differs from core.conf.mix: " .. $file.path)
+  end
+  place($stage, $src, $dest .. "/" .. $file.path)
+end
+for $generated in ["manifest.conf.mix", "fonts.css"]
+  place($stage, $set .. "/" .. $generated, $dest .. "/" .. $generated)
+end
+symlink("sets/" .. $core.set_id, $stage .. "/share/assets/current")
+
+-- Wallpapers, pinned by hash.
+$walls = load_data("share/wallpapers/manifest.conf.mix")
+fn wall_ok($path, $file)
+  return is_file($path) and stat($path).size == $file.bytes and hash_file($path, "sha256") == $file.sha256
+end
+-- One pinned wallpaper from the release: at most 3 redirects, then size and
+-- SHA-256 against the pin; the URL is never trusted. Returns "release" or nil.
+fn fetch_wallpaper($release, $file, $dest)
+  if $release == nil then return nil end
+  $url = $release.base_url .. "/" .. replace($file.path, "/", "--")
+  $tmp = $dest .. ".fetch-" .. to_string(pid())
+  $hops = 0
+  while $hops <= 3
+    remove($tmp)
+    $r = http_get_file($url, $tmp, {max_bytes: $file.bytes, deadline: 180})
+    if contains([301, 302, 303, 307, 308], $r.status) and $r.headers.location != nil then
+      $url = $r.headers.location[0]
+      $hops = $hops + 1
+    elif $r.status == 200 and wall_ok($tmp, $file) then
+      rename($tmp, $dest)
+      return "release"
+    else
+      remove($tmp)
+      print({wallpaper_fetch_refused: $file.path, status: $r.status})
+      return nil
+    end
+  end
+  remove($tmp)
+  return nil
+end
+for $file in $walls.files
+  $src = $store .. "/wallpapers/" .. $file.path
+  if not wall_ok($src, $file) then
+    mkdir(dirname($src), {parents: true})
+    $via = fetch_wallpaper($walls.release, $file, $src)
+    if $via == nil then
+      $gpath = $gold .. "/wallpapers/" .. $file.path
+      if not wall_ok($gpath, $file) then raise("WALLPAPER_HASH", "neither the release, the store nor gold has the pinned " .. $file.path) end
+      copy($gpath, $src)
+      $via = "gold"
+    end
+    print({wallpaper_source: $via, path: $file.path})
+  end
+  if not is_file($src) or stat($src).size != $file.bytes or hash_file($src, "sha256") != $file.sha256 then
+    raise("WALLPAPER_HASH", "asset store copy differs from the manifest: " .. $file.path)
+  end
+  place($stage, $src, "share/wallpapers/" .. $file.path)
+end
+for $f in tracked("share/wallpapers") place($stage, $f, $f) end
+
+-- Manifest of everything packed, then the tar (owner 0, commit time, sorted).
+$files = sort_by(filter(walk($stage), fn($p) = true), fn($p) = $p)
+$rows = []
+$bytes = 0
+for $p in $files
+  $rel = substr($p, len($stage) + 1)
+  $info = stat($p, {follow_symlinks: false})
+  if $info.is_symlink then
+    push($rows, {path: $rel, link: read_link($p)})
+  else
+    push($rows, {path: $rel, bytes: $info.size, sha256: hash_file($p, "sha256")})
+    $bytes = $bytes + $info.size
+  end
+end
+write_file($stage .. "/share/mixviu/BUNDLE.conf.mix", data_encode({schema: 1, source: $sha, prefix: "/opt/mix", apps: $apps, files: $rows}, true) .. "\n")
+mkdir(dirname($out), {parents: true})
+run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "--mtime=@" .. $when, "-C", $stage, "-cf", $out, "share", "lib"], {timeout: 600})
+$tops = {}
+for $r in $rows
+  $parts = split($r.path, "/")
+  $top = if $parts[0] == "share" and len($parts) > 2 then $parts[0] .. "/" .. $parts[1] else $parts[0] .. "/" .. ($parts[1] ?? "") end
+  $tops[$top] = ($tops[$top] ?? 0) + 1
+end
+remove_dir($stage)
+print("APPS_BUNDLE " .. json_encode({out: $out, source: $sha, files: len($rows) + 1, bytes: $bytes, tar_bytes: stat($out).size, sha256: hash_file($out, "sha256"), apps: $apps, top: $tops}))

@@ -120,3 +120,15 @@ Author: OpenAI Codex, committed and pushed through the mixviu-agent bot.
 GLM-5.3 and DeepSeek approved with nits. This follow-up addresses their seven
 items; re-review of the new diff and human approval remain pending. No PR has
 been opened, as required by the pre-cut-over brief.
+
+## Main cut-over refresh (2026-11-08)
+
+Merged origin/main without rewriting the open PR branch. Main retires the
+Dopus Rust host; its updated Mix controller remains inline in app.mix.
+Production launchers, including Workshop, now use the generic viu bundle
+and native readiness/Open contract. The startup regression covers that real
+launch plan plus explicit embedded initialisation. Retired Rust sources and
+their helper stay removed; main's migrated raw-name/chooser tests remain.
+The lockfile and lint baseline will be re-resolved on CBC before final gates.
+
+PR: #6. Current merge validation is in progress.

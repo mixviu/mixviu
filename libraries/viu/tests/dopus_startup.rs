@@ -5,13 +5,7 @@ use std::{
     sync::{Arc, mpsc},
     time::Duration,
 };
-use viu::{
-    bundle::Bundle,
-    runtime::{Completion, Runtime},
-};
-
-#[path = "../../../apps/dopus/src/mix_start.rs"]
-mod mix_start;
+use viu::runtime::{Completion, Program, Runtime};
 
 fn completion(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
     rx.recv_timeout(Duration::from_secs(10)).unwrap();
@@ -25,7 +19,7 @@ fn bundle_autostarts_and_embedded_host_initialises_before_first_command() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus");
     for embedded in [false, true] {
         let profile = tempfile::tempdir().unwrap();
-        std::fs::write(profile.path().join("config.conf.mix"), json!({"left":{"path":profile.path(),"previews":false},"right":{"path":profile.path(),"previews":false}}).to_string()).unwrap();
+        std::fs::write(profile.path().join("config.conf.mix"), json!({"schema_version":2,"left":{"path":profile.path(),"previews":false},"right":{"path":profile.path(),"previews":false}}).to_string()).unwrap();
         let (tx, rx) = mpsc::channel();
         let mut runtime = Runtime::new(
             8,
@@ -35,11 +29,19 @@ fn bundle_autostarts_and_embedded_host_initialises_before_first_command() {
             None,
         );
         if embedded {
-            mix_start::initialise(&mut runtime, &root, profile.path()).unwrap();
+            // The legacy Rust host was retired at cut-over. Retain the
+            // explicit embedded contract alongside the production bundle.
+            runtime.load(Program {
+                source: "$app_args=nil\n".to_owned() + &std::fs::read_to_string(root.join("app.mix")).unwrap(),
+                path: root.join("app.mix"),
+                scene: "dopus".into(),
+                citizen: "dopus".into(),
+            }).unwrap();
+            runtime.event("dopus.initialise".into(), json!({"app_dir":root,"profile":profile.path()})).unwrap();
         } else {
             runtime
                 .load(
-                    Bundle::load(&root, &[profile.path().to_string_lossy().into_owned()])
+                    viu::launch::load(&root, &["--profile".into(), profile.path().to_string_lossy().into_owned()])
                         .unwrap()
                         .program,
                 )
@@ -51,8 +53,7 @@ fn bundle_autostarts_and_embedded_host_initialises_before_first_command() {
                 loaded.model.is_none(),
                 "explicit host profile must win over defaults"
             );
-            // Consume the initialise event sent by the production helper,
-            // rather than reproducing a sender that might be removed there.
+            // Embedded callers must send initialise before their first command.
             let initialised = completion(&runtime, &rx);
             assert_eq!(initialised.reply.unwrap().body["ready"], true);
             assert!(initialised.model.is_some());

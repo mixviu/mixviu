@@ -6,11 +6,7 @@ use std::{
     sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
-use viu::{
-    bundle::Bundle,
-    runtime::{Completion, Runtime},
-    view::SceneView,
-};
+use viu::runtime::{Completion, Runtime};
 fn done(r: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
     rx.recv_timeout(Duration::from_secs(30)).unwrap();
     let c = r.try_completion().unwrap();
@@ -38,7 +34,14 @@ fn dopus_2000_sort_refresh_stage_profile() {
     let config = json!({"schema_version":2,"left":{"path":folder,"previews":false},"right":{"path":empty,"previews":false}});
     std::fs::write(tmp.path().join("config.conf.mix"), config.to_string()).unwrap();
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/dopus");
-    let bundle = Bundle::load(&path, &[tmp.path().to_string_lossy().into_owned()]).unwrap();
+    let bundle = viu::launch::load(
+        &path,
+        &[
+            "--profile".into(),
+            tmp.path().to_string_lossy().into_owned(),
+        ],
+    )
+    .unwrap();
     let (tx, rx) = mpsc::channel();
     let mut r = Runtime::new(
         8,
@@ -80,9 +83,10 @@ fn dopus_2000_sort_refresh_stage_profile() {
             let publish_ms = t.elapsed().as_secs_f64() * 1000.;
             assert_eq!(json_copy, model);
             let t = Instant::now();
-            let mut view = SceneView::with_model(&bundle.scene, model).unwrap();
+            let mut view = viu::gold_frame::mount(&bundle.scene, model).unwrap();
             let adapter_ms = t.elapsed().as_secs_f64() * 1000.;
             let ctx = egui::Context::default();
+            viu::appearance::install(&ctx);
             let t = Instant::now();
             ctx.run_ui(
                 egui::RawInput {
