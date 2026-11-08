@@ -430,6 +430,33 @@ impl Bridge {
         args: &MixValue,
     ) -> MixResult<(i32, MixValue, MixValue)> {
         let native = self.native()?;
+        // A local, send-only request on the existing supervised connection.
+        // Unlike emit this retains request framing, and unlike RPC it never
+        // waits for a recipient response. The application owns payload policy.
+        if target == "viu-local" && command == "native.send" {
+            let spec = crate::runtime::to_json(args)?;
+            let target = spec["target"].as_str().filter(|s| !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)))
+                .ok_or_else(|| failure("native.send requires a bounded target"))?;
+            let command = spec["command"].as_str().filter(|s| !s.is_empty() && s.len() <= 256 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)))
+                .ok_or_else(|| failure("native.send requires a bounded command"))?;
+            let timeout = match spec.get("timeout") {
+                None => 2.0,
+                Some(value) => value.as_f64().ok_or_else(|| failure("native.send timeout must be numeric"))?,
+            };
+            if !timeout.is_finite() || !(0.1..=180.0).contains(&timeout) {
+                return Err(failure("native.send timeout must be 0.1..180 seconds"));
+            }
+            let body = spec["body"].to_string();
+            if body.len() > 1_048_576 {
+                return Err(failure("native.send body exceeds budget"));
+            }
+            tokio::time::timeout(Duration::from_secs_f64(timeout),
+                native.send_with_headers(target, command, &BTreeMap::new(), &body))
+                .await.map_err(|_| failure("native.send transport timeout"))?
+                .map_err(failure)?;
+            let sent = crate::runtime::from_json(json!({"dispatched":true}))?;
+            return Ok((0, sent.clone(), sent));
+        }
         let timeout = crate::runtime::to_json(args)?["timeout"]
             .as_f64()
             .unwrap_or(10.0);
@@ -575,6 +602,44 @@ fn reply_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn send_only_keeps_request_framing_without_waiting_for_a_recipient_reply() {
+        let broker = test_broker::Broker::start();
+        let sender = Endpoint::start("send-source".into(), broker.url.clone(), Vec::new(), "app.quit".into(), Arc::new(|| {}));
+        let receiver = Endpoint::start("send-target".into(), broker.url.clone(), Vec::new(), "app.quit".into(), Arc::new(|| {}));
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while sender.client().is_none() || receiver.client().is_none() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }).await.unwrap();
+            let bridge = (sender.backend())();
+            let spec = crate::runtime::from_json(json!({"target":"send-target","command":"sample.completed","body":{"text":"中","pid":42},"timeout":2})).unwrap();
+            // The receiver deliberately holds its reply until after this
+            // completes: an accidental RPC must time out this outer bound.
+            let (rc, result) = tokio::time::timeout(Duration::from_secs(1), bridge.send("viu-local", "native.send", &spec)).await.unwrap().unwrap();
+            assert_eq!(rc, 0);
+            assert_eq!(crate::runtime::to_json(&result).unwrap(), json!({"dispatched":true}));
+            let request = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if let Ok(request) = receiver.requests.try_recv() { break request; }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }).await.unwrap();
+            assert_eq!(request.command, "sample.completed");
+            assert_eq!(request.from, "send-source");
+            assert_eq!(request.headers.get("type").map(String::as_str), Some("request"));
+            assert!(request.headers.get("id").is_some_and(|v| !v.is_empty()));
+            assert_eq!(serde_json::from_str::<Value>(&request.body).unwrap(), json!({"text":"中","pid":42}));
+            request.reply.send((0, json!({}))).unwrap();
+            for invalid in [json!({"target":"send-target","command":"sample.completed","timeout":0}), json!({"target":"send-target","command":"sample.completed","timeout":"2"}), json!({"target":"send-target\nforged","command":"sample.completed"})] {
+                let invalid = crate::runtime::from_json(invalid).unwrap();
+                assert!(bridge.send("viu-local", "native.send", &invalid).await.is_err());
+            }
+            assert!(receiver.requests.try_recv().is_err());
+        });
+    }
     #[test]
     fn native_transport_preserves_original_envelopes_and_plain_text_reply_bytes() {
         use ::bus::native_client::{NodedClient, UnixConnectOutcome};
