@@ -5,12 +5,12 @@
 title = "mixviu gitleaks"
 
 [[allowlists]]
-description = "Historical extracted terminal help: exact keyboard-shortcut line, not a credential"
+description = "Historical terminal help and its audit notes: exact public shortcut literal, not a credential"
 condition = "AND"
 targetRules = ["generic-api-key"]
-paths = ['''^apps/term/help\.txt$''']
-regexTarget = "line"
-regexes = ['''^Keys: Ctrl\+Shift\+T/W new/close tab, Ctrl\+PageUp/PageDown change tab,$''']
+paths = ['''^apps/term/help\.txt$''', '''^PR\.md$''', '''^\.gitleaksignore$''']
+regexTarget = "secret"
+regexes = ['''^Ctrl\+Shift\+T/W$''']
 
 [extend]
 useDefault = true
