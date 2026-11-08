@@ -1882,6 +1882,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         windows: Default::default(),
 
         deliveries: Vec::new(),
+        native_selection: bundle.manifest.native_selection,
+        paste_waits: Default::default(),
+        paste_deadline: None,
         platform,
         selection: crate::terminal::clipboard::Clipboard::none(),
         selection_sequence: 0,

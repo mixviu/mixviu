@@ -309,6 +309,17 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn term_comparison_identity_keeps_the_canonical_bundle_namespace() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+        let bundle = super::load(&root, &["--service", "term-mix", "--app-id", "mixviu.term-mix", "--title", "Term (Mix)", "--headless"].map(String::from)).unwrap();
+        assert_eq!(bundle.manifest.service, "term-mix");
+        assert_eq!(bundle.manifest.app(), "term");
+        assert_eq!(super::app_id(&bundle), "mixviu.term-mix");
+        assert_eq!(bundle.manifest.title, "Term (Mix)");
+        assert!(bundle.program.source.contains("mixviu.term-mix"));
+        assert!(!bundle.startup.unwrap().source.contains("--service"));
+    }
+    #[test]
     fn workshop_launch_policy_is_mix_owned_and_forwards_macro_before_activation() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
         let bundle = super::load(
