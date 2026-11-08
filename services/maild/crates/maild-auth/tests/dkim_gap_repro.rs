@@ -120,15 +120,19 @@ async fn attached_signature_does_not_authenticate_bounce() {
         From: Mail Delivery System <postmaster@example.org>\r\n\
         Content-Type: multipart/report; boundary=bounce\r\n\r\n\
         --bounce\r\nContent-Type: message/rfc822\r\n\r\n\
-        DKIM-Signature: v=1; d=example.org; s=mail\r\n\
+        DKIM-Signature: v=1; a=rsa-sha256; d=example.org; s=mail; h=from; bh=AAAA; b=AAAA\r\n\
         From: sender@example.org\r\n\r\nbody\r\n--bounce--\r\n";
     check_outer("synthetic bounce", stored).await;
 }
 
+// mail-auth 0.11 requires d, s, b, bh and h before a signature reaches
+// dkim_headers, so this fixture carries every tag with a bogus hash: the
+// folded, mixed-case header is still recognised and fails as neutral.
 #[tokio::test]
 async fn malformed_folded_mixed_case_signature_still_produces_output() {
-    let raw = b"dKiM-sIgNaTuRe: v=1;\r\n\
-        \td=example.org; s=mail\r\nFrom: sender@example.org\r\n\r\nbody\r\n";
+    let raw = b"dKiM-sIgNaTuRe: v=1; a=rsa-sha256;\r\n\
+        \td=example.org; s=mail; h=from; bh=AAAA; b=AAAA\r\n\
+        From: sender@example.org\r\n\r\nbody\r\n";
     let parsed = AuthenticatedMessage::parse(raw).unwrap();
     assert_eq!(parsed.dkim_headers.len(), 1);
     let auth = MessageAuthenticator::new_cloudflare().unwrap();
@@ -148,6 +152,30 @@ async fn malformed_folded_mixed_case_signature_still_produces_output() {
             .to_string()
             .contains("dkim=neutral")
     );
+}
+
+// Behaviour change pinned on the 0.7 -> 0.11 upgrade: a signature missing
+// required tags is a MissingParameters parse error, which verify_dkim does
+// not surface (it reports only Error::Dkim parse errors as neutral). Such a
+// header therefore adds no dkim= result to Authentication-Results.
+#[tokio::test]
+async fn signature_missing_required_tags_yields_no_dkim_output() {
+    let raw = b"DKIM-Signature: v=1; d=example.org; s=mail\r\n\
+        From: sender@example.org\r\n\r\nbody\r\n";
+    let parsed = AuthenticatedMessage::parse(raw).unwrap();
+    assert!(parsed.dkim_headers.is_empty());
+    assert!(parsed.has_dkim_errors);
+    assert!(
+        parsed
+            .errors
+            .iter()
+            .any(|h| matches!(h.header, mail_auth::Error::MissingParameters))
+    );
+    let auth = MessageAuthenticator::new_cloudflare().unwrap();
+    let outputs = auth
+        .verify_dkim(Parameters::new(&parsed).with_txt_cache(&OfflineTxt))
+        .await;
+    assert!(outputs.is_empty());
 }
 
 #[tokio::test]
