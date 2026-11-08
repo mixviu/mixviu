@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::{self, Seek, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::{Path, PathBuf};
+use std::sync::{OnceLock, atomic::{AtomicBool, Ordering}};
 use zeroize::Zeroizing;
 
 pub const MARKER: &str = "MIXOS_SESSION_FD";
@@ -30,20 +31,25 @@ pub(crate) fn quarantine_inherited_quiet() {
 }
 
 fn quarantine(report: bool) {
-    if let Ok(value) = std::env::var(MARKER) {
-        match inherited_fd(&value) {
-            Some(fd) => {
-                // SAFETY: fcntl changes flags only; ownership is not assumed.
-                if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 && report {
-                    eprintln!(
-                        "term inherited session descriptor unavailable: {}",
-                        io::Error::last_os_error()
-                    );
-                }
-            }
-            _ if report => eprintln!("term inherited session descriptor marker is invalid"),
-            _ => {}
+    // Keep the first probe: a closed descriptor number might be reused before
+    // the app elects to report diagnostics. Report at most once across the
+    // authored startup, config and native lifetime boundaries.
+    static PROBE: OnceLock<Option<String>> = OnceLock::new();
+    static REPORTED: AtomicBool = AtomicBool::new(false);
+    let diagnostic = PROBE.get_or_init(|| {
+        let value = std::env::var(MARKER).ok()?;
+        let Some(fd) = inherited_fd(&value) else {
+            return Some("term inherited session descriptor marker is invalid".into());
+        };
+        // SAFETY: fcntl changes flags only; ownership is not assumed.
+        if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+            Some(format!("term inherited session descriptor unavailable: {}", io::Error::last_os_error()))
+        } else {
+            None
         }
+    });
+    if report && !REPORTED.swap(true, Ordering::AcqRel) && let Some(message) = diagnostic {
+        eprintln!("{message}");
     }
 }
 
@@ -177,6 +183,44 @@ mod tests {
     use super::*;
     use std::io::Read;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn startup_diagnostic_child() {
+        if std::env::var_os("VIU_STARTUP_DIAGNOSTIC_CHILD").is_none() {
+            return;
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+        let version = crate::bundle::Bundle::load(&root, &["--version".into()]).unwrap();
+        assert!(matches!(crate::startup::evaluate(version.startup.as_ref().unwrap()).unwrap(), crate::startup::Choice::Exit { code: 0, .. }));
+        if std::env::var(MARKER).unwrap() == "64" {
+            // Reuse an initially closed descriptor after the quiet fence. The
+            // later report must retain the original unavailable diagnosis.
+            let replacement = File::open("/dev/null").unwrap();
+            assert_eq!(unsafe { libc::dup2(replacement.as_raw_fd(), 64) }, 64);
+        }
+        let help = crate::bundle::Bundle::load(&root, &["--help".into()]).unwrap();
+        assert!(matches!(crate::startup::evaluate(help.startup.as_ref().unwrap()).unwrap(), crate::startup::Choice::Exit { code: 0, .. }));
+        quarantine_inherited();
+        quarantine_inherited();
+    }
+
+    #[test]
+    fn startup_reports_the_original_descriptor_fault_once_after_silent_version() {
+        for marker in ["invalid", "2147483647", "64"] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "terminal::session_fd::tests::startup_diagnostic_child", "--nocapture"])
+                .env("VIU_STARTUP_DIAGNOSTIC_CHILD", "1")
+                .env(MARKER, marker)
+                .output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            let expected = if marker == "invalid" {
+                "term inherited session descriptor marker is invalid\n"
+            } else {
+                "term inherited session descriptor unavailable: Bad file descriptor (os error 9)\n"
+            };
+            assert_eq!(String::from_utf8_lossy(&output.stderr), expected);
+        }
+    }
 
     fn descriptor(key: &SigningKey) -> GrantResult {
         serde_json::from_value(serde_json::json!({

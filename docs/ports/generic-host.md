@@ -17,9 +17,12 @@ same `$app_args` and truthful `viu_context()` build metadata. Return
 `{mode:"exit",code:0,stdout:"...",stderr:"..."}` for an early CLI result, or
 `{mode:"window",context:{...}}` to continue. The context becomes
 `$app_startup` in the main behaviour (an empty map without a bootstrap).
-Paths cannot escape the bundle. Evaluation has a five-second deadline and
-bounded values; embedded process-global mutation remains refused. The
-terminal configuration binding permits only `config` and `font.parse` during
+Paths cannot escape the bundle. Evaluation has a five-second cooperative
+budget and bounded values. Startup permits pure operations, filesystem reads
+and environment reads; process, network, Bus, database and write work belongs
+in the persistent runtime. Embedded process-global mutation remains refused. The
+terminal configuration binding permits only `config`, `font.parse` and the
+diagnostic-only `session.quarantine` during
 bootstrap, without opening a PTY or native session owner.
 
 `{mode:"headless",context:{...},commands:[...]}` selects the same native

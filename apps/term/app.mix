@@ -86,7 +86,7 @@ fn font_received($s,$done)
       $older=$s.font_fence.incarnation==$body.incarnation and $s.font_fence.revision!=nil and $settings.session_older($body.revision,$s.font_fence.revision)
       if not $older then
         $s.font_fence={binding:$body.binding,incarnation:$body.incarnation,revision:$body.revision}
-        $s.font_binding=$body.binding;$s.font_profile=$body.values["terminal.font.size"] ?? 14.667
+        $s.font_binding=$body.binding;$s.font_profile=$body.values["terminal.font.size"] ?? $s.startup.font_px
       end
       if $s.font.pending==nil then $s.font_current=$s.font_profile;$s.font_base=$s.font_profile;$s.zoom_steps=0;$s.zoom=0 end
     end
@@ -153,6 +153,7 @@ on term.info
   $state=command($state,"term.info",$event.args)
 end
 on viu.session
+  if $state.font_fence.incarnation==$event.args.state.incarnation and $state.font_fence.revision!=nil and $event.args.state.revision!=nil and $settings.session_older($event.args.state.revision,$state.font_fence.revision) then return end
   $state.look.appearance=$event.args.appearance
   $state.settings_lost=$event.args.state.lost
   $state.settings_connected=not $event.args.state.lost and $event.args.state.incarnation!=nil and $event.args.state.error==nil
@@ -272,11 +273,13 @@ on term.intent
       $kind=$a.value.kind
       if $kind=="read" then
         $state=request_paste($state,$a.value.handle,$a.value.primary==true)
-      elif $kind!="cut" or $bus.target_handle($state,$bus.active($state))==$a.value.handle then
+      else
+        $action=$clipboard.intent_action($kind,$bus.target_handle($state,$bus.active($state))==$a.value.handle)
+        if $action==nil then return end
         $params={clipboard_handle:$a.value.handle}
         $params.primary=$a.value.primary==true
         if $kind=="paste" then $params.paste_text=$a.value.text end
-        $out=act($state,if $kind=="copy" then "edit.copy" elif $kind=="paste" or $kind=="read" then "edit.paste" else "pane.close" end,$params,"shortcut");$state=$out.state
+        $out=act($state,$action,$params,"shortcut");$state=$out.state
       end
     end
   end

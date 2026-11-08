@@ -1,5 +1,11 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Gold shell.rs clipboard completion policy; window work stays native.
+fn intent_action($kind,$active)
+  if $kind=="copy" then return "edit.copy" end
+  if $kind=="paste" then return "edit.paste" end
+  if $kind=="cut" and $active then return "pane.close" end
+  return nil
+end
 fn notice($reason)
   if $reason=="Empty" then return nil end
   if $reason=="TooLarge" then return "Paste exceeds 16 MiB limit" end

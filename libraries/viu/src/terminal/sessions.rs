@@ -290,6 +290,10 @@ impl Sessions {
     }
 
     pub fn call(&self, op: &str, handle: &str, a: Value) -> Result<Value, String> {
+        if op == "session.quarantine" {
+            super::session_fd::quarantine_inherited();
+            return Ok(Value::Null);
+        }
         if op == "config" {
             // The terminal's defaults and bounded terminfo probe do not open
             // a PTY or start native session ownership.

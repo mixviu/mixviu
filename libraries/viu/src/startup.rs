@@ -31,6 +31,22 @@ fn exit_code<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u8, D:
         .map(|n| n as u8)
         .ok_or_else(|| serde::de::Error::custom("exit code must be a whole number in 0..255"))
 }
+struct StartupPolicy;
+impl mix::evaluator::CapabilityPolicy for StartupPolicy {
+    fn check_builtin(&self, name: &str) -> Result<(), String> {
+        use mix::evaluator::CapabilityPolicy;
+        crate::runtime::WorkerPolicy.check_builtin(name)?;
+        self.check_class(mix::builtins::capability_category(name))
+    }
+    fn check_class(&self, class: mix::builtins::CapabilityClass) -> Result<(), String> {
+        use mix::builtins::CapabilityClass;
+        if matches!(class, CapabilityClass::Pure | CapabilityClass::FsRead | CapabilityClass::Env) {
+            Ok(())
+        } else {
+            Err("startup is configuration only; run process, network, Bus, database and write work in the persistent runtime".into())
+        }
+    }
+}
 pub(crate) fn evaluate(program: &Program) -> Result<Choice, String> {
     crate::terminal::session_fd::quarantine_inherited_quiet();
     // Match the existing evaluator's stack budget in debug as well as release.
@@ -55,7 +71,7 @@ fn evaluate_inner(program: &Program) -> Result<Choice, String> {
         Box::new(std::io::sink()),
         Box::new(std::io::sink()),
     );
-    eval.set_capability_policy(Rc::new(crate::runtime::WorkerPolicy));
+    eval.set_capability_policy(Rc::new(StartupPolicy));
     eval.set_entry_script(&program.path.to_string_lossy());
     eval.set_file(program.path.to_string_lossy().to_string());
     eval.set_limits(mix::EvalLimits {
@@ -85,7 +101,7 @@ fn evaluate_inner(program: &Program) -> Result<Choice, String> {
                     span: None,
                 });
             };
-            if !["config", "font.parse"].contains(&op.as_str()) || !handle.is_empty() {
+            if !["config", "font.parse", "session.quarantine"].contains(&op.as_str()) || !handle.is_empty() {
                 return Err(mix::MixError::RuntimeError {
                     msg: "startup terminal operation is not configuration".into(),
                     span: None,
@@ -138,6 +154,7 @@ pub(crate) fn prepare(
         Choice::Headless { context, commands } => {
             if commands.is_empty()
                 || commands.len() > 256
+                || commands.iter().collect::<std::collections::HashSet<_>>().len() != commands.len()
                 || commands
                     .iter()
                     .any(|c| !bundle.manifest.commands.contains(c))
@@ -191,6 +208,9 @@ mod tests {
             "return {mode:\"headless\",context:{},commands:[],extra:true}",
             "return viu_terminal(\"create\",\"\",{})",
             "exit(0)",
+            // Refused before a child can run, including a disabled argv deadline.
+            "return run_argv([\"sleep\",\"30\"],{timeout:0})",
+            "return spawn([\"sleep\",\"30\"])",
         ] {
             assert!(
                 evaluate(&program(path.clone(), source)).is_err(),
@@ -234,6 +254,8 @@ mod tests {
     #[test]
     fn headless_choice_retains_macros_and_debug_but_excludes_window_commands() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+        let plain = Bundle::load(&root, &[]).unwrap();
+        assert!(matches!(evaluate(plain.startup.as_ref().unwrap()).unwrap(), Choice::Window { .. }));
         let mut bundle = Bundle::load(&root, &["--headless".into()]).unwrap();
         let choice = evaluate(bundle.startup.as_ref().unwrap()).unwrap();
         assert!(prepare(&mut bundle, choice).unwrap().is_none());
@@ -257,5 +279,10 @@ mod tests {
             commands: vec!["undeclared.command".into()],
         };
         assert!(prepare(&mut bundle, bad).is_err());
+        let repeated = Choice::Headless {
+            context: serde_json::json!({}),
+            commands: vec!["HELP".into(), "HELP".into()],
+        };
+        assert!(prepare(&mut bundle, repeated).is_err());
     }
 }

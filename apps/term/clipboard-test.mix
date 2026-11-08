@@ -1,6 +1,11 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $clipboard=require("clipboard.mix")
 fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+for $kind in ["select","",nil,"unknown"]
+  check($clipboard.intent_action($kind,true)==nil and $clipboard.intent_action($kind,false)==nil,"unknown clipboard intent cannot close a pane")
+end
+check($clipboard.intent_action("cut",false)==nil and $clipboard.intent_action("cut",true)=="pane.close","cut requires its active pane")
+check($clipboard.intent_action("copy",false)=="edit.copy" and $clipboard.intent_action("paste",false)=="edit.paste","copy and supplied paste retain captured target")
 fn forbidden($op,$handle,$args) raise("TEST","failed or stale read reached native paste") end
 fn paste_ok($op,$handle,$args)
   check($op=="paste" and $handle=="vt-original" and $args.text=="wide: 中\n","completion retains its native owner and exact text")
