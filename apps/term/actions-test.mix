@@ -23,6 +23,22 @@ $out=$a.invoke($s,"view.zoom_in",{},$n);$s=$out.state
 check(abs($s.zoom-2/3)<0.000001,"gold half-point zoom step")
 $out=$a.invoke($s,"view.zoom_out",{},$n)
 check($out.state.zoom==0,"zoom roundtrip exact")
+fn edge_native($op,$handle,$args)
+  if $op=="font-size" then
+    if $args.base==47.3333337 then return if $args.steps<=0 then 47.33333206176758 else 48 end end
+    if $args.base==6.6666665 then return if $args.steps>=0 then 6.666666507720947 else 6 end end
+  end
+  return native($op,$handle,$args)
+end
+for $case in [{base:47.3333337,bound:48,direction:"in",reverse:"out",step:1},{base:6.6666665,bound:6,direction:"out",reverse:"in",step:-1}]
+  $edge=$s;$edge.font_base=$case.base;$edge.font_profile=$case.base;$edge.zoom_steps=0
+  $first=$a.invoke($edge,"view.zoom_"..$case.direction,{},fn($op,$handle,$args)=edge_native($op,$handle,$args))
+  check($first.state.font_current==$case.bound and $first.state.zoom_steps==$case.step,"native-rounded boundary step is accepted")
+  $again=$a.invoke($first.state,"view.zoom_"..$case.direction,{},fn($op,$handle,$args)=edge_native($op,$handle,$args))
+  check($again.state.zoom_steps==$case.step and len($again.effects)==0,"refused boundary step cannot drift the logical zoom count")
+  $back=$a.invoke($again.state,"view.zoom_"..$case.reverse,{},fn($op,$handle,$args)=edge_native($op,$handle,$args))
+  check($back.state.zoom_steps==0 and $back.state.zoom==0,"reverse after a clamped step returns to its original base")
+end
 $out=$a.invoke($s,"view.theme.ocean",{},$n)
 check($out.state.choice.scheme=="ocean" and $out.effects[0].kind=="theme","local theme effect")
 check($a.invoke($s,"absent",{},$n).body.error_code=="UNKNOWN_ACTION","unknown action refuses")

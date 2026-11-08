@@ -115,9 +115,14 @@ fn invoke($s,$id,$args,$native)
       $s.font_base=$profile;$s.zoom_steps=0;$s.zoom=0;$s.font_current=$native("font-size","",{base:$profile,steps:0})
       push($effects,{kind:"font",size:$s.font_current,reset:true})
     else
-      $steps=($s.zoom_steps ?? 0)+(if $id=="view.zoom_in" then 1 else -1 end)
-      if $base+$steps*2/3>=6 and $base+$steps*2/3<=48 then
-        $s.font_base=$base;$s.zoom_steps=$steps;$s.zoom=$steps*2/3;$s.font_current=$native("font-size","",{base:$base,steps:$steps})
+      $previous=$s.zoom_steps ?? 0
+      $steps=$previous+(if $id=="view.zoom_in" then 1 else -1 end)
+      -- Native FontSize owns f32 rounding and stops at the accepted bound.
+      -- A second f64 range check can reject a step Gold rounds to6 or48.
+      $current=$native("font-size","",{base:$base,steps:$previous})
+      $next=$native("font-size","",{base:$base,steps:$steps})
+      if $next!=$current then
+        $s.font_base=$base;$s.zoom_steps=$steps;$s.zoom=$steps*2/3;$s.font_current=$next
         push($effects,{kind:"font",size:$s.font_current,reset:false})
       end
     end
