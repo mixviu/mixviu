@@ -1,3 +1,70 @@
+# Email desk4 launch repair — ready for hot-apply
+
+Branch `fix/email-desk4-tree-table`, based on `origin/cutover/four-engines`
+`b601bf828c13e9d9a82bff59c7bedd2409be7687`. Tested implementation commit:
+`1e38766b9a8dfcc260a8f377162aaaa3c37ec19d`; later receipt commits change only this document.
+
+Root cause: `mail.accounts()` accepted the legacy accounts.json catalogue and
+returned `label` but no `name`. `navigation_rows()` uses `entry.name`, so the
+first account-tree row was `{key:"local",cells:[nil]}` for its one column.
+The native validator correctly rejected that row before drawing any chrome.
+This happens before the email table receives messages; neither pim-list nor
+maild's string `from` caused the startup failure. The existing protocol already
+normalises string senders into address lists.
+
+The lab's connected UI suites created accounts with `email.account.set` through
+settingsd, or supplied both name and label in runtime tests. They exercised real
+maild but missed the positional legacy accounts-file startup path. The new
+regression loads that actual file shape, validates/mounts the initial navigation,
+then feeds both supplied messages through the existing JMAP normaliser and
+validates all three tables. It also covers oversized multi-byte subjects/sender
+names without altering the full server message or weakening native validation.
+
+## Files for Opus
+
+| Changed repository file | Installed destination / use |
+| --- | --- |
+| `apps/email/mail.mix` | `/opt/mix/share/mixviu/apps/email/mail.mix` — add canonical name from the validated legacy label; fixes the reported startup failure |
+| `apps/email/surface.mix` | `/opt/mix/share/mixviu/apps/email/surface.mix` — bounded string display cells and sender rendering; preserve full server values, bulk row projection and the native 4096-byte cell bound |
+| `libraries/viu/tests/email_frame.rs` | Regression test source only; no installed Email file |
+| `last.md` | This handoff only; no installed Email file |
+
+Apply the two Mix files from the tested commit together. No engine or validator
+change is needed. Nothing was applied to desk4; main and infra/pr-ci were not
+changed. This branch is for Opus hot-apply and PR/CI landing.
+
+## Checks
+
+* `email-desk4-scope-r4-a1`, cbc3, **BUILD_RC=0**: `cargo fmt --all` produced an
+  empty patch; `cargo test --locked -p lib-viu --test email_frame --test email_wire`
+  passed **17/17** tests, including the desk4 regression and 2,000-row projection.
+  Complete saved log read: `20261108-124907-cbc3-1e38766b9a8d-email-desk4-scope-r4-a1-fd116d2f.log`.
+* `email-desk4-native-r5`, native-only CBC light override, **BUILD_RC=0**: same
+  previously verified release Viu, old b601 bundle versus fixed Mix bundle,
+  isolated Bus and headless compositor with a real release maild process.
+  The supplied accounts.json fields, HTTP origin 127.0.0.1:4310 and schema-2 UI
+  config were reproduced. Maild submit seeded Inbox(1)/Sent(1); its own private
+  store was given the supplied receivedAt instant. Raw HTTP Email/get confirms
+  string from, empty keywords, Welcome subject and `2026-11-06T14:26:33.705Z`.
+  Old bundle: ready=false, revision=0, exact cell/column mismatch. Fixed bundle:
+  ready=true, account-tree label and three email cells valid, chrome/list captured
+  and inspected. All five owned PIDs stopped. No fake HTTP/JMAP service was used.
+  Complete saved log read: `20261108-125021-cachyos-1e38766b9a8d-email-desk4-native-r5-132b0730.log`.
+
+Earlier attempts are retained privately: missing worker script and renamed Cargo
+package invocation were harness preparation errors; the first display helper
+inside rows_project was rejected and repaired with a native jq preparation pass.
+The regression's protocol module path was corrected. Native harness checks were
+corrected to read viu.state on the deliberately broken old app, accept its
+documented empty error string on success, and preserve the supplied millisecond
+instant when seeding the private real store. No application assertion or native
+validator was loosened and no refused input request was retried.
+SHA256 `apps/email/mail.mix`: `deb91fa76ae98a6e5da067035dff1cf97a67fd129a3d6e386fdfe072a4f1b0de`.
+
+SHA256 `apps/email/surface.mix`: `2e1be2b720b0bae3da39212bfd7658f2216b08cc1661177635c2adb90880c54b`.
+
+## Earlier integration record (historical)
+
 # Four engines, compd -> viud, mixos -> mix: cut-over branch
 
 Branch `cutover/four-engines`, from `lab/gold-parity` 4755e9e, with
@@ -73,7 +140,7 @@ test-only ones the test word first (MIX_TEST_VIUD_RENDER_NODE), and likewise
 viu (MIX_VIU_SERVICE, VIU_BIN -> MIX_VIU_EXE), noded (MIX_NODED_SERVICE),
 dlnad, hostd, indexd and maild. Labels and error codes that only share a
 spelling (VIUD_READY, VIUD_PRESENTATION_PROBE) are not variables and stay.
-`etc/env.conf.mix`: 180 names, loads with load_data, matches every
+`etc/env.conf.mix`: 200 names, loads with load_data, matches every
 `MIX_[A-Z0-9_]+` token outside vendor/, provenance/ and Cargo.lock (a few
 entries are Rust constants or a file name sharing the spelling; said so).
 
@@ -226,6 +293,133 @@ Other decisions for Mark:
   oracle; lab scripts pass the old `COMPD_NATIVE_TEST_BINARY`, now
   `VIUD_NATIVE_TEST_BINARY` in the test.
 
+## Release set and apps.tar
+
+The full cut-over gate (`tools/cutover_gate.mix gate`) ends by writing
+`/build/cutover-artifacts/<sha>/{mix,mixd,viu,viud,apps.tar,SHA256SUMS}`:
+the four release engines, then `tools/apps_bundle.mix` run with the release
+mix, then SHA256SUMS over all five. `cutover_gate.mix bundle` is the light
+check of the same step.
+
+apps.tar is laid out as installed under `/opt/mix` (root 0:0, commit mtime,
+sorted), with `share/mixviu/BUNDLE.conf.mix` listing every file's size and
+SHA-256:
+
+| Path | What |
+|---|---|
+| `share/mixviu/apps/<app>/` | the Mix apps backdrop, ced, dopus, email, gallery, monitor, prefs, quoin, screenshot, workshop (runtime files: no Rust, tests or gate drivers; gallery-reference is a Rust build and is left out) |
+| `share/mixviu/libraries/viu/mix/` | the Viu Mix library the apps require (`../../libraries/...`) |
+| `share/mixviu/units/` | unit templates with `@{prefix}`/`@{etc}`/`@{share}` placeholders: viud@, viud-headless@, apps@, scenes@, mix-headless.slice, clipd, clipd@, notifyd@, exportd-*, dlnad |
+| `share/mixviu/{LICENSE-APACHE,LICENSE-MIT,NOTICE}` | licences |
+| `share/scenes/`, `share/viud/scripts/` | scenes and the viud Mix scripts (apps@, scenes@) |
+| `lib/{clipd,notifyd,exportd,dlnad}/` | the Mix services, where their units start them |
+| `share/icons/`, `share/assets/`, `share/wallpapers/`, `share/layout/`, `share/daylight/` | icon theme (built by its offline installer), brand marks, the pinned font set `2026-10-14-core-5` with `current`, 12 wallpapers, layout and daylight data |
+
+Light run (cachyos, fa950b2, debug mix): 360 entries, 45,785,739 bytes of
+files, tar 46,161,920 bytes; top: share/mixviu 194, share/icons 49,
+share/scenes 45, share/assets 22, share/wallpapers 15, lib/exportd 10,
+share/viud 7, lib/dlnad 5, lib/clipd 4, share/layout 4, lib/notifyd 2,
+share/daylight 2. Retired lab hosts (viu-client, viu-dopus,
+viu-dopus-client) are not in it.
+
+The migration's `extract_bundle` still expects the old repo-relative layout
+(`apps/`, `libraries/viu/mix`, `share/scenes`, `engines/viud/scripts` at the
+tar root): it needs to unpack this tar at `/opt/mix` instead, and it can drop
+its `copy_tree` of gold `icons`, `wallpapers`, `brand` and `assets`.
+
+Asset store: `tools/apps_bundle.mix` rebuilds it from the pins. Fonts are
+downloaded by `share/assets/install.mix` from each pinned upstream URL at its
+revision, checked by BLAKE3 and SHA-256. Wallpapers download from the pinned
+GitHub release `assets-wallpapers-2026-10-14` (recorded in
+`share/wallpapers/manifest.conf.mix`; asset name = path with `/` as `--`),
+following at most three redirects and stored only when size and SHA-256 match
+the pin; the URL is never trusted. The gold install, read only, is the last
+resort for both. Proof at aa1ee08, empty scratch store (cachyos
+20261107-213836-eb7e5600): 17 fonts downloaded, 12 wallpapers from the
+release, none from gold.
+
+Current apps.tar at aa1ee08: 387 entries, 45,809,153 bytes of files, tar
+46,213,120 bytes; share/mixviu 221 (apps, Viu Mix library, 39 unit templates
+and snippets, licences, manifest), share/icons 49, share/scenes 45,
+share/assets 22, share/wallpapers 15, lib/exportd 10, share/viud 7,
+lib/dlnad 5, lib/clipd 4, share/layout 4, lib/notifyd 2, share/daylight 2.
+
+Unit templates: apps.tar carries every unit under engines/ and services/
+(viud@, viud-headless@, viu-host@, apps@, scenes@, mix-headless.slice, noded,
+noded@, settingsd@, editd@, monitord, dnsd, blobd, hostd + socket, mixtrayd,
+maild + sockets, webd, indexd, dlnad, clipd, clipd@, notifyd@, exportd-*) and
+the sysusers/tmpfiles snippets, owner-prefixed. Desk-specific drop-ins and
+session@/seatd@/session-dbus@ (written by the desk image) are not in it,
+nor pipewire@/wireplumber@ (desk audio). Added since: monitord@ (per-session
+history in mix/monitord/%i), backdrop@ and viu-gallery@ (the gallery app
+ships in apps.tar); app unit templates come from apps/*/units. At 37e7f3b:
+390 entries, share/mixviu 224, 45,810,831 bytes (cachyos
+20261107-221523-0bbe5b3a; fonts upstream, wallpapers from the release).
+
+Directories per owner (37e7f3b): maild@ is one instance per session broker,
+so each keeps its own state: StateDirectory/RuntimeDirectory mix/maild/%i,
+MIX_VAR/HOME/WorkingDirectory %S/mix/maild/%i. maild.service RuntimeDirectory
+mix/maild; maild sysusers home @{var}/maild. hostd StateDirectory mix/hostd and
+code default /var/lib/mix/hostd. monitord StateDirectory mix/monitord, code
+default /var/lib/mix/monitord, sysusers home @{var}/monitord. dnsd tmpfiles
+creates @{etc}/dnsd (was @{prefix}/etc/dnsd). All other Directory= and
+sysusers homes were already mix/<owner>; noded@ and viud keep their
+session-scoped mix/session/%i/... runtime dirs; mixos-tls stays.
+viud@ and viud-headless@ no longer pass `--scene-service shell`: viud parses
+the flag (name check only) and its scene stub ignores it, because the shell
+furniture now runs in viu-host@ (`viu --host`), a new template in
+engines/viu/units.
+
+quoin: `apps/quoin` is not an app bundle: the runnable app is
+`apps/quoin/volume` (contract.json with behaviour viu.mix, scene.mix). It
+needs no launch arguments or host initialise. The migration's generated
+launcher `viu run /opt/mix/share/mixviu/apps/quoin` must become
+`viu run /opt/mix/share/mixviu/apps/quoin/volume`.
+
+exportd and real homes: GTK/Qt already refused to write when XDG_CONFIG_HOME
+is (or defaults to) the home's own .config unless MIX_EXPORTD_GTKQT_HOME=1.
+COSMIC and KDE wrote there by default; now they run dry and report
+`home_guard` unless MIX_EXPORTD_COSMIC_HOME=1 / MIX_EXPORTD_KDE_HOME=1 (an
+explicit MIX_EXPORTD_COSMIC_ROOT or XDG_CONFIG_HOME elsewhere is allowed). KDE
+state moved to ~/.local/state/mix/exportd/kde. Lint with this tree's mix: 0
+errors (cachyos 20261107-213810-b6eb81ec); unit tests pass
+(20261107-213742-29994673). Registry: 200 names.
+
+## Ported Mix services
+
+clipd, notifyd and exportd come from mixos 8779f33 (verbatim import, then
+renames; provenance `provenance/gold-mix-services.md`). New variables are
+registered: MIX_CLIPD_CONFIG, MIX_CLIPD_MODE, MIX_CLIPD_SESSION,
+MIX_CLIPD_TARGET, MIX_CLIPD_WATCH_TOKEN, MIX_EXPORTD_STATE,
+MIX_EXPORTD_COSMIC_ROOT, MIX_EXPORTD_GTKQT_HOME, MIX_EXPORTD_DRY_RUN,
+MIX_EXPORTD_KDE_STATE, MIX_EXPORTD_KDE_DRY, MIX_EXPORTD_KDE_RECONFIGURE,
+MIX_EXPORTD_KDE_KWRITECONFIG, MIX_EXPORTD_KDE_BUSCTL, MIX_NOTIFYD_STATE, MIX_SETTINGS_SERVICE, MIX_TEST_BLOBD_EXE,
+MIX_TEST_EXPORTD_REAL_KDE. clipd's config moves to
+`<etc>/clipd/clipboard.conf.mix`; units run as `User=mix`. Exported KDE/Qt
+names (MixOS-Dark/Light, MixOSDark/Light, the `[MixOS]` kdeglobals stamp) stay:
+they name files gold exportd already wrote. notifyd's default app name is
+MixViu. tests/cbc_checks.mix (a MixOS crate check) is not imported.
+
+Lint with this tree's mix (`cutover_gate.mix lint`, cachyos
+20261107-211822-f6329f7d): 34 files, 0 errors, 0 warnings (kde_test 2 notes).
+Unit tests with this tree's mix (`cutover_gate.mix mixtest`, cachyos
+20261107-212515-4a70d7c5): clipboard_test, notify_test, gtkqt_test,
+cosmic_test, busctl_test pass; kde_test passes its unit checks and then
+needs a built noded for its Bus part (not run). The gold mix cannot lint or
+run them (no `mix_path`).
+
+## Shared assets
+
+`provenance/shared-assets.md`: the 87 share files imported from mixos 8779f33
+(icons: Lucide ISC plus MIT OR Apache-2.0 caption glyphs; brand: MIT OR
+Apache-2.0; assets installer and pin manifest; layout; daylight from tzdb,
+public domain), the 17 pinned files of font set 2026-10-14-core-5 (all OFL-1.1:
+Inter, JetBrains Mono, Noto Sans, Noto Serif, Quicksand, Noto Color Emoji,
+with their licence texts; each with upstream URL, revision and hashes) and the 12 wallpapers: 6 Wikimedia Commons photos
+(CC0, CC BY 4.0 x2, CC BY-SA 4.0 x3) and 6 generated (MIT OR Apache-2.0).
+The JPEGs and fonts are not committed. The photos' CREDITS still asks for the
+Nunivak author to be named before a public release.
+
 ## Gate status
 
 No full gate on cbc2/cbc3 for this round (Mark: light worker only until the
@@ -277,3 +471,10 @@ that carries it. Full test gate 20261107-210937-ccb133a8-a1 (cbc3) BUILD_RC=0,
 PR.md contains the review draft; no PR opened under the binding brief.
 
 Branch fix/mix-hygiene; head SHA: this evidence commit (tested source 53357d480966881475a04647498bdf8723b724ce); gate: full test GREEN, release-mix GREEN (earlier fmt/env/mix-hygiene GREEN at 805db4c); CBC jobs 20261107-210937-ccb133a8-a1, 20261107-214025-5234a7b5-a1, 20261107-204950-4537e2c4; Mark: wire release-mix into the gold/release recipe, independent review and human approval before merge.
+
+## Main cut-over record
+Final lab merge (2026-11-08): origin/lab/gold-parity at 01912877 (eight accepted apps; Email 70ea474, Dopus c66fe3c; runtime e1bbea9). Conflicts took the lab side of libraries/viu (launch, app_host, chooser_host, Cargo.toml) with lib-viu/lib-mix put back, the Dopus Rust crates deleted as the lab retired them, and the lab Cargo.lock with the four-engine renames reapplied. Renames applied to the merged files: package names in the new Dopus/Email gate scripts, MIXOS_INSTANCE -> MIX_INSTANCE, MIXOS_COMP_SERVICE -> MIX_COMP_SERVICE, VIU_SERVICE -> MIX_VIU_SERVICE, /opt/mix, Dopus home ~/.local/state/mix/dopus, MixViu prose in the Dopus and Backdrop contracts. No new registry names. Kept as wire/data: theme value mixos and its MixOS label, the email token label mixos-email. apps.tar at 7bde4c0: 428 entries (share/mixviu 262), 46,138,946 bytes; fonts upstream, wallpapers from the release, none from gold (cachyos 20261108-105441-54343276). Light checks: fmt clean; cargo tree --locked -p viud ok; lib-viu --tests 263 passed, 3 failed (the known cachyos filesystem cases); dopus_contract, dopus_bundle, backdrop, app_ports pass at db16141.
+
+Branch cutover/four-engines; head is this last.md commit (source db16141); full gate: the coordinator runs it on infra/pr-ci; CBC light 20261108-105611-7534e7c2, 20261108-104904-e4317f0f, 20261108-104841-c85e2532, 20261108-105441-54343276.
+
+Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa3c37ec19d; Email legacy account-tree startup FIXED; hot-apply apps/email/mail.mix + apps/email/surface.mix to /opt/mix/share/mixviu/apps/email/; CBC email-desk4-scope-r4-a1 rc0 (17/17), email-desk4-native-r5 rc0 (real maild before/after); no desk4/main/infra/pr-ci changes.

@@ -34,11 +34,13 @@
 //! this frame.
 
 mod detect;
+mod html;
 mod parse;
 mod preview;
 mod view;
 
 pub use detect::looks_like_markdown;
+pub use html::export as export_html;
 pub use preview::Preview;
 pub use view::{first_heading_baseline, show};
 

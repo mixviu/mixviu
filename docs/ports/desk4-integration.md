@@ -1,4 +1,38 @@
+Current integrated acceptance: **ACCEPTED** at runtime `e1bbea99071c2fa8793a7e0e52aed381707d536f` on `lab/gold-parity`. All eight apps passed exact-release revalidation; see [eight-app integration acceptance](eight-app-integration-acceptance.md) for the complete gate, native/Bus/live-Prefs/deadline results, all 405 raw comparisons and matched supplements, performance and the four-engine hashes. Historical records below retain their original sources and results.
+
+The current four-engine set is on **cbc2** at `/build/es-artifacts/e1bbea99071c2fa8793a7e0e52aed381707d536f/`, with SHA256SUMS `d108f8cc91af9fe650017265bd349c8324f468d673e562c3bd3921e4e698e545`. All four engine hashes and the inspected region register are in the linked record. Full CBC, P2 furniture, Track A, all 42 native groups, 510 same-worker correctness samples and the release callback profile pass. Historical ACK timings are materially slower and are explicitly reported. The 22 inherited import-hash mismatches remain provenance debt before production derivation.
+
+PR/CI `cutover/four-engines` owns renamed executables and `apps.tar` after merging this tree. Gold term is retained outside this port tree. This handoff performs no install or desk restart.
+
+## Historical six-app handoff
+
 # Desk4 integration receipts
+
+## Current six-app handoff — accepted 2026-11-08
+
+Use the single four-engine set for tested runtime
+`0124e5c58c889f1d93c730b92993e2e74b707464` on `lab/gold-parity`, together
+on cbc2 at `/build/es-artifacts/0124e5c58c889f1d93c730b92993e2e74b707464/`.
+Monitor, Ced, Prefs, Screenshot, Backdrop and Workshop release revalidation
+is **ACCEPTED**. Exact hashes, whole/region figures, native/deferred/live-Prefs
+results, same-worker 2,000-row measurements and all remaining differences are
+in [six-app-integration-acceptance.md](six-app-integration-acceptance.md).
+
+SHA256SUMS SHA256:
+`c3d7694fce426855334dc622c97958f9cdaa2790ba84159280ce7b8dad0e6e9a`.
+Accepted HANDOFF.json/MD are beside all four engines. Full CBC
+`gold-six-full-20261107-r8-a1`, furniture, Track A and native performance
+`gold-six-perf-0124e5c58c88-a1` pass. All sixteen native groups and 293 raw
+comparison sets are accounted for. Source-5bd remains NOT_ACCEPTED because
+its additional native Tab witness exposed the shared focus defect repaired
+and revalidated in this set.
+
+No installation is part of this handoff. The
+[22 import-hash mismatches](import-hash-debt.md) remain open before production
+derivation. Workshop's installed native Dopus interop matches gold; generic
+Dopus migration remains separate.
+
+## Earlier integration receipts
 
 ## Bulk and Monitor integration
 

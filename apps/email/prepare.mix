@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC only: format and test the reusable Email frame additions.
+$rc=0
+try
+  for $a in [["cargo","fmt","-p","lib-viu","-p","toolkit"],["cargo","test","--locked","-p","toolkit","--lib","markdown::html"],["cargo","test","--locked","-p","lib-viu","--lib","file_data::tests"],["cargo","test","--locked","-p","lib-viu","--lib","media_preview::tests"],["cargo","test","--locked","-p","lib-viu","--test","email_frame","--","--nocapture"],["cargo","test","--locked","-p","lib-viu","--test","email_wire","--test","ports_round5"],["cargo","build","--locked","-p","viu","--bin","viu"]]
+    $r=run_argv($a,{timeout:1800,max_output:16000000,env:{CARGO_BUILD_JOBS:"6",TMPDIR:"/dev/shm"}});print($r)
+    if not $r.ok then $rc=$r.exit_code ?? 124;break end
+  end
+  if $rc==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $out=path_join(args()[0] ?? "/build/email-frame-artifacts",$sha);mkdir($out,{parents:true})
+    copy("target/debug/viu",$out.."/viu")
+    print({artifact:$out,profile:"debug",sha256:hash_file($out.."/viu","sha256")})
+  end
+finally
+  print("EMAIL_FRAME_PATCH_BEGIN")
+  print(run_argv_must(["git","diff","--binary"]))
+  print("EMAIL_FRAME_PATCH_END")
+  run_argv_must(["git","checkout","-q","--","."])
+end
+exit($rc)

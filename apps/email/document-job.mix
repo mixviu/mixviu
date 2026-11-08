@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+on job.run
+  try
+    $a=$event.args
+    if $a.operation=="read" then
+      $doc=viu_maildoc("parse",viu_files("read-text",{path:$a.path,limit:8388608}))
+      reply(0,json_encode({document:$doc,path:$a.path}));return
+    end
+    $source=viu_maildoc("write",$a.document)
+    if $a.replace then viu_atomic_replace($a.path,$source,8388608)
+    else viu_files("write-segments",{path:$a.path,segments:[{text:$source}],limit:8388608}) end
+    reply(0,json_encode({path:$a.path}))
+  catch $message reply(10,json_encode({error_code:"DOCUMENT",message:$message})) end
+end

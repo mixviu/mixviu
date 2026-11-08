@@ -1,0 +1,55 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- The pinned dialog Bus shape, shared by mailbox and compose windows.
+fn dialog_view($window=nil)
+  $key=$window ?? $compose_focused;$c=$composers[$key]
+  $kind=if $c!=nil then $c.dialog else $chrome.dialog end
+  $confirm=$c!=nil and $c.confirm
+  $restore=$c==nil and $mail_form==nil and len($compose_restore)>0
+  $v={kind:$kind,title:"",buttons:[],status:if $c!=nil then $c.notice ?? "" else $status end}
+  if $confirm then
+    $v.kind=if $compose_quitting then "quit" else "close_compose" end
+    $v.title=if $compose_quitting then "Quit with an unsent message?" else "Close this message?" end
+    $v.body="Your draft is kept on this computer and offered again when Email starts. Discard deletes it."
+    $v.buttons=[{id:"keep",label:"Keep Draft",role:"default"},{id:"discard",label:"Discard",role:"other"},{id:"cancel",label:if $compose_quitting then "Cancel" else "Keep Editing" end,role:"cancel"}]
+  elif $restore then
+    $v.kind="draft_restore";$v.title="Restore a draft?";$v.body="A message you were writing was kept:";$v.draft=$compose_restore[0]
+    $v.buttons=[{id:"restore",label:"Restore",role:"default"},{id:"discard",label:"Discard",role:"other"},{id:"later",label:"Later",role:"cancel"}]
+  elif $kind!=nil then
+    $v.title=if $kind=="about" then "About Email" else "Keyboard shortcuts" end
+    $v.buttons=[{id:"done",label:"Done",role:"default"}]
+    if $kind=="about" then $v.body="A pure JMAP client: mail, calendar and contacts over HTTPS to any RFC 8620/8621-shaped server. Mail is read, composed and sent; calendars and contacts are listed and shown." end
+  else return nil end
+  return $v
+end
+fn dialog_command($args)
+  global $chrome,$composers
+  $target=composer_target($args)
+  if $target.rc!=0 then return $target end
+  $window=$target.body.window;$fields=delete($args,"window")
+  if len(keys($fields))>1 or any(keys($fields),fn($k)=not contains(["open","answer"],$k)) then return wire_refuse("ARGUMENT","expected open or answer") end
+  $dialog=dialog_view($window);$choice=nil
+  if contains(keys($fields),"open") then
+    if $fields.open==nil then $choice="cancel"
+    else
+      if not contains(["about","shortcuts"],$fields.open) then return wire_refuse("ARGUMENT","open must be about, shortcuts or null") end
+      if $dialog!=nil then return wire_refuse("DIALOG_OPEN","close the open dialog first") end
+      if $composers[$window]!=nil then $composers[$window].dialog=$fields.open else $chrome.dialog=$fields.open end
+    end
+  elif contains(keys($fields),"answer") then
+    if $dialog==nil then return wire_refuse("NO_DIALOG","no dialog is open") end
+    if type($fields.answer)!="string" then return wire_refuse("ARGUMENT","answer must be a button id") end
+    if not any($dialog.buttons,fn($b)=$b.id==$fields.answer) then return wire_refuse("ARGUMENT","unknown button id") end
+    $choice=$fields.answer
+  end
+  if $choice!=nil then
+    if $dialog!=nil and contains(["close_compose","quit"],$dialog.kind) then
+      $r=composer_close($window,if contains(["keep","discard"],$choice) then $choice else "cancel" end)
+      if $r.rc!=0 then return $r end
+    elif $dialog!=nil and $dialog.kind=="draft_restore" then
+      $r=composer_restore_answer(if contains(["restore","discard"],$choice) then $choice else "later" end)
+      if $r.rc!=0 then return $r end
+    elif $composers[$window]!=nil then $composers[$window].dialog=nil
+    else $chrome.dialog=nil end
+  end
+  return {rc:0,body:{dialog:dialog_view($window)}}
+end

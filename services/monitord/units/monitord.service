@@ -13,8 +13,8 @@ ExecStart=@{prefix}/bin/monitord serve
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10
-# The history database (/var/lib/monitord/history.db). It is a cache.
-StateDirectory=monitord
+# The history database (/var/lib/mix/monitord/history.db). It is a cache.
+StateDirectory=mix/monitord
 StateDirectoryMode=0750
 # Sandbox. monitord reads /proc and /sys and measures each filesystem with
 # statvfs, so /home stays visible (read-only) and /proc is not hidden.

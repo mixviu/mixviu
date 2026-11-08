@@ -39,6 +39,22 @@ fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>) -> Completion {
 const INIT: &str = "$ctx = viu_context(); $n = 0; on bump; $n = $n + 1; send \"viu-local\" \"scenes.model\" body=json_encode({generation: $ctx.generation, value: {n:$n}}); reply(0, \"{}\"); end";
 
 #[test]
+fn flat_build_fields_preserve_the_shared_provenance_record() {
+    let (mut runtime, wakes) = runtime(4);
+    runtime
+        .load(program(
+            "$ctx=viu_context();send \"viu-local\" \"scenes.model\" body={generation:$ctx.generation,value:$ctx}",
+        ))
+        .unwrap();
+    let done = next(&runtime, &wakes);
+    assert!(done.error.is_none(), "{:?}", done.error);
+    let context = done.model.unwrap();
+    assert_ne!(context["build"]["git_sha"], "unknown");
+    assert_eq!(context["git_sha"], context["build"]["git_sha"]);
+    assert_eq!(context["build_time"], context["build"]["build_time"]);
+}
+
+#[test]
 fn embedded_workers_refuse_global_environment_and_directory_mutation_but_keep_argv() {
     let (mut runtime, wakes) = runtime(4);
     runtime.load(program(r#"
@@ -288,12 +304,20 @@ fn delayed_async_callback_bounds_mailbox_and_stale_generation() {
     runtime.load(program(INIT)).unwrap();
     assert_eq!(runtime.event("bump".into(), json!({})), Err(Refusal::Full));
     assert!(
+        !runtime.has_capacity(),
+        "do not dequeue native requests into a full mailbox"
+    );
+    assert!(
         t.elapsed() < Duration::from_millis(40),
         "enqueue must not wait for behaviour"
     );
     let old = next(&runtime, &wakes);
     assert!(!runtime.accepts(&old));
     assert!(runtime.accepts(&next(&runtime, &wakes)));
+    assert!(
+        runtime.has_capacity(),
+        "worker receive restores admission credit"
+    );
 }
 
 #[test]

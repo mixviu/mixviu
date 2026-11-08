@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     mpsc,
 };
 use std::thread::JoinHandle;
@@ -23,6 +23,9 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    /// A caller-owned applications parent, chiefly for isolated embedded runs.
+    /// None uses the native environment contract; it never mutates the process.
+    pub application_roots: Option<std::path::PathBuf>,
     pub max_string_bytes: Option<usize>,
     pub platform: Option<crate::platform::Platform>,
     pub ui_state: Option<crate::ui_state::UiState>,
@@ -161,6 +164,8 @@ pub enum Refusal {
 /// One bounded, ordered mailbox of semantic operations. No operation is coalesced.
 /// `Full` means the caller must keep/retry that operation or show a refusal.
 pub struct Runtime {
+    queued: Arc<AtomicUsize>,
+    capacity: usize,
     tx: Option<mpsc::SyncSender<Request>>,
     rx: Option<mpsc::Receiver<Completion>>,
     thread: Option<JoinHandle<()>>,
@@ -194,6 +199,8 @@ impl Runtime {
     ) -> Self {
         assert!(capacity > 0);
         let (tx, commands) = mpsc::sync_channel(capacity);
+        let queued = Arc::new(AtomicUsize::new(0));
+        let worker_queued = queued.clone();
         // At most capacity queued requests, one in flight and one initial load.
         let (results, rx) = mpsc::sync_channel(capacity + 2);
         let interrupt = Arc::new(AtomicBool::new(false));
@@ -207,6 +214,7 @@ impl Runtime {
             let backend = backend.map(|make| make());
             let mut current: Option<(u64, Evaluator, Rc<Local>, SharedBuf, SharedBuf)> = None;
             while let Ok(request) = commands.recv() {
+                worker_queued.fetch_sub(1, Ordering::AcqRel);
                 worker_interrupt.store(false, Ordering::Release);
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let start = Instant::now();
@@ -230,10 +238,17 @@ impl Runtime {
                         eval.register("viu_atomic_replace",crate::native_primitives::atomic_replace());
                         eval.register("viu_store",crate::native_primitives::store());
                         eval.register("viu_read_optional",crate::native_primitives::read_optional());
+                        eval.register("viu_private_directory",crate::native_primitives::private_directory());
+                        eval.register("viu_markdown_detect",crate::native_primitives::markdown_detect());
+                        eval.register("viu_markdown_html",crate::native_primitives::markdown_html());
+                        eval.register("viu_palette",crate::native_primitives::palette());
+                        eval.register("viu_instants",crate::native_primitives::instants());
+
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
                         eval.register("viu_image",crate::native_primitives::image_file());
+                        eval.register("viu_preview",crate::media_preview::binding());
                         eval.register("viu_http",crate::http::binding());
                         let raster=services.annotations.clone().binding();
                         let text=services.documents.clone().map(|d|d.binding()).unwrap_or_else(||mix::sync_ext(|_|Err(failure("text document facility unavailable"))));
@@ -262,18 +277,25 @@ impl Runtime {
                         if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());eval.register("viu_exit",state.exit_binding());}
                         if let Some(rasters)=services.rasters.clone(){eval.register("viu_raster",rasters.binding());}
                         if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
-                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs());
+                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs(services.application_roots.clone()));
                         eval.register("viu_maildoc",crate::native_primitives::mail_document());
                         eval.register("viu_digest",crate::native_primitives::digest());
                         eval.register("viu_editor_write",crate::native_primitives::editor_write());
                         eval.register("viu_action_event",crate::native_primitives::action_event());
                         let options=services.options.clone();
+                        let native_backend=backend.is_some();
+                        let native_facilities=services.calls.is_some();
+
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
                             "name": program.scene, "generation": generation, "citizen": program.citizen,
-                            "git_sha":option_env!("GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
+                            "git_sha":option_env!("MIX_GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("MIX_BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
                             "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
                             "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
                             "executable":std::env::current_exe().ok(),
+                            "cwd":std::env::current_dir().ok().map(|p|p.to_string_lossy().into_owned()),
+
+                            "native_backend":native_backend, "native_facilities":native_facilities,
+
                         }))));
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
@@ -339,6 +361,8 @@ impl Runtime {
             if let Some((_, mut eval, ..)) = current { eval.close_native_events(); }
         }).expect("start Mix worker");
         Self {
+            queued,
+            capacity,
             tx: Some(tx),
             rx: Some(rx),
             thread: Some(thread),
@@ -408,15 +432,23 @@ impl Runtime {
         Ok(sequence)
     }
 
+    /// The host is the sole producer. Check before removing an operation from
+    /// its bounded native input queue; the worker can only free more space.
+    pub fn has_capacity(&self) -> bool {
+        self.tx.is_some() && self.queued.load(Ordering::Acquire) < self.capacity
+    }
+
     fn enqueue(&self, request: Request) -> Result<(), Refusal> {
-        self.tx
-            .as_ref()
-            .ok_or(Refusal::Closed)?
-            .try_send(request)
-            .map_err(|e| match e {
+        let tx = self.tx.as_ref().ok_or(Refusal::Closed)?;
+        // Reserve before sending: the worker may receive immediately.
+        self.queued.fetch_add(1, Ordering::AcqRel);
+        tx.try_send(request).map_err(|e| {
+            self.queued.fetch_sub(1, Ordering::AcqRel);
+            match e {
                 mpsc::TrySendError::Full(_) => Refusal::Full,
                 mpsc::TrySendError::Disconnected(_) => Refusal::Closed,
-            })
+            }
+        })
     }
 
     pub fn generation(&self) -> u64 {

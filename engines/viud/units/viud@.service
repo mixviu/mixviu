@@ -25,7 +25,7 @@ RuntimeDirectoryMode=0700
 # the directory when viud stops. Dangling until the session bus starts.
 # Non-fatal (-): a missing link must never keep the compositor down.
 ExecStartPre=-/usr/bin/ln -sfn @{run}/session/%i/dbus/bus @{run}/session/%i/desktop/bus
-ExecStart=@{prefix}/bin/viud kms-live --socket ${WAYLAND_DISPLAY} --scale ${MIX_VIUD_OUTPUT_SCALE} --config-file ${MIX_VIUD_CONFIG} --bus-service comp --scene-service shell
+ExecStart=@{prefix}/bin/viud kms-live --socket ${WAYLAND_DISPLAY} --scale ${MIX_VIUD_OUTPUT_SCALE} --config-file ${MIX_VIUD_CONFIG} --bus-service comp
 TTYPath=/dev/tty%i
 StandardInput=tty
 StandardOutput=journal
