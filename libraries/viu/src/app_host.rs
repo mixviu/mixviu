@@ -676,8 +676,12 @@ impl Host {
         self.facilities.prepare(ctx, &self.bus);
         for request in self.platform.take() {
             if !self.native_selection {
-                if request["kind"] == "copy" { ctx.copy_text(request["body"]["text"].as_str().unwrap_or("").into()); }
-                else { self.paste_waits.push_back(request["id"].as_str().unwrap_or("").into()); }
+                if request["kind"] == "copy" {
+                    ctx.copy_text(request["body"]["text"].as_str().unwrap_or("").into());
+                } else {
+                    self.paste_waits
+                        .push_back(request["id"].as_str().unwrap_or("").into());
+                }
                 continue;
             }
             if request["kind"] == "copy" {
@@ -1728,7 +1732,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         );
     }
     let app = bundle.manifest.app();
-    if !headless { commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{app}.{suffix}"))); }
+    if !headless {
+        commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{app}.{suffix}")));
+    }
     commands.extend(macros::commands::SUFFIXES.map(|suffix| format!("{app}.macros.{suffix}")));
     commands.extend(["debug", "debug.set", "debug.recent"].map(|suffix| format!("{app}.{suffix}")));
     if !headless {
@@ -1809,10 +1815,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
             "viu.quit".into(),
             wake.clone(),
             crate::native_bus::RequestPolicy {
-                help: facilities
-                    .surface
-                    .as_ref()
-                    .map(|s| s["commands"].clone()),
+                help: facilities.surface.as_ref().map(|s| s["commands"].clone()),
                 owner_help: bundle.manifest.owner_help || bundle.manifest.authored_discovery,
                 timeout: Duration::from_secs(bundle.manifest.reply_timeout_secs),
                 transport: crate::native_bus::Policy {
@@ -1882,7 +1885,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         windows: Default::default(),
 
         no_window: headless,
-    deliveries: Vec::new(),
+        deliveries: Vec::new(),
         native_selection: bundle.manifest.native_selection,
         paste_waits: Default::default(),
         paste_deadline: None,

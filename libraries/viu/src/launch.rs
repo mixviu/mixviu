@@ -311,7 +311,20 @@ mod tests {
     #[test]
     fn term_comparison_identity_keeps_the_canonical_bundle_namespace() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
-        let bundle = super::load(&root, &["--service", "term-mix", "--app-id", "mixviu.term-mix", "--title", "Term (Mix)", "--headless"].map(String::from)).unwrap();
+        let bundle = super::load(
+            &root,
+            &[
+                "--service",
+                "term-mix",
+                "--app-id",
+                "mixviu.term-mix",
+                "--title",
+                "Term (Mix)",
+                "--headless",
+            ]
+            .map(String::from),
+        )
+        .unwrap();
         assert_eq!(bundle.manifest.service, "term-mix");
         assert_eq!(bundle.manifest.app(), "term");
         assert_eq!(super::app_id(&bundle), "mixviu.term-mix");

@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- CBC preparation: return the worker's lockfile/format patch, then restore it.+$prepare_rc = 0
+-- CBC preparation: return the worker's lockfile/format patch, then restore it.
+$prepare_rc = 0
 try
   for $cmd in [["cargo", "update", "--workspace"], ["cargo", "fmt", "--all"]]
     $r = run_argv($cmd, {timeout: 1800, stdout: "inherit", stderr: "inherit"})

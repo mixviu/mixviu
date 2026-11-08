@@ -904,12 +904,17 @@ impl Terminal {
             validate_cwd(cwd)?;
         }
         let explicit_cwd = cwd.is_some();
+        let program = ::paths::bin("mix");
+        #[cfg(test)]
+        let program = std::env::var_os("MIX_TEST_MIX_EXE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or(program);
         Self::start_session_with_launch(
             settings,
             native,
             pane_id,
             LaunchSettings {
-                program: &::paths::bin("mix").to_string_lossy(),
+                program: &program.to_string_lossy(),
                 // Explicit cwd must never silently fall back to HOME, even
                 // when a directory disappears between validation and chdir.
                 home: if explicit_cwd {

@@ -670,7 +670,9 @@ pub(crate) fn draw(
     if widget.kind == "dialog-form"
         && widget.properties["style"] == "gold"
         && widget.properties["presentation"] != "form"
-        && !value["grid"].is_array()
+        && (!value["grid"].is_array()
+            || value["grid_striped"] == true
+            || value["grid_monospace"] == true)
     {
         return gold_dialog(ui, widget, value, geometry, events);
     }

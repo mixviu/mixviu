@@ -48,6 +48,11 @@ fn isolated_term_bundle_load() {
         return;
     }
     let root = tempfile::tempdir().unwrap();
+    let prefix = root.path().join("prefix");
+    std::fs::create_dir_all(prefix.join("bin")).unwrap();
+    let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+    std::os::unix::fs::symlink(&mix, prefix.join("bin/mix")).unwrap();
+    std::os::unix::fs::symlink(std::path::Path::new(&mix).parent().unwrap().join("mixd"), prefix.join("bin/mixd")).unwrap();
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "term_bundle_child", "--nocapture"])
         .env("VIU_TERM_BUNDLE_CHILD", "1")
@@ -55,6 +60,7 @@ fn isolated_term_bundle_load() {
         .env("XDG_RUNTIME_DIR", root.path())
         .env("XDG_CONFIG_HOME", root.path())
         .env("MIX_RUN", root.path())
+        .env("MIX_PREFIX", prefix)
         .env("MIX_BUS_SOCKET", root.path().join("absent.sock"))
         .env_remove("MIX_SESSION_FD")
         .output()
