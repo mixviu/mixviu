@@ -849,7 +849,8 @@ mod tests {
                 .unwrap();
             let prefix = home.path().join("prefix");
             std::fs::create_dir_all(prefix.join("bin")).unwrap();
-            let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+            let mix =
+                std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
             std::os::unix::fs::symlink(&mix, prefix.join("bin/mix")).unwrap();
             let mixd = std::path::Path::new(&mix).parent().unwrap().join("mixd");
             std::os::unix::fs::symlink(mixd, prefix.join("bin/mixd")).unwrap();

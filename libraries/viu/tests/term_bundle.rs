@@ -52,7 +52,11 @@ fn isolated_term_bundle_load() {
     std::fs::create_dir_all(prefix.join("bin")).unwrap();
     let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
     std::os::unix::fs::symlink(&mix, prefix.join("bin/mix")).unwrap();
-    std::os::unix::fs::symlink(std::path::Path::new(&mix).parent().unwrap().join("mixd"), prefix.join("bin/mixd")).unwrap();
+    std::os::unix::fs::symlink(
+        std::path::Path::new(&mix).parent().unwrap().join("mixd"),
+        prefix.join("bin/mixd"),
+    )
+    .unwrap();
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "term_bundle_child", "--nocapture"])
         .env("VIU_TERM_BUNDLE_CHILD", "1")
