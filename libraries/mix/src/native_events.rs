@@ -1148,8 +1148,10 @@ impl NativeEvents {
         handle: &str,
         source: crate::desktop_events::AudioSource,
     ) {
-        self.desktop
-            .insert(handle.to_owned(), crate::desktop_events::Source::Audio(source));
+        self.desktop.insert(
+            handle.to_owned(),
+            crate::desktop_events::Source::Audio(source),
+        );
     }
 
     fn remove_source_pending(&self, h: &str) {

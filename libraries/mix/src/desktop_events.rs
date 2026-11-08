@@ -1965,7 +1965,10 @@ mod tests {
         // and exercise real unwatch, which retires its slot before cancellation.
         q.source(
             "audio:1",
-            vec![("sink#6".into(), serde_json::json!({"facility":"sink", "index":6}))],
+            vec![(
+                "sink#6".into(),
+                serde_json::json!({"facility":"sink", "index":6}),
+            )],
             false,
         );
         assert!(q.source_ready_for_test("audio:1"));
