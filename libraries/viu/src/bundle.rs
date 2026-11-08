@@ -180,19 +180,39 @@ impl Bundle {
                 .unwrap()
                 .replace("${", "\\${"),
         );
-        let source = format!("{args_source}$app_startup = json_parse(\"{{}}\")\n{}", std::fs::read_to_string(&path).map_err(|e| e.to_string())?);
-        let startup = manifest.startup.as_ref().map(|name| {
-            let relative = Path::new(name);
-            if relative.components().any(|c| !matches!(c, Component::Normal(_))) {
-                return Err("startup must be bundle-relative".to_owned());
-            }
-            let path = root.join(relative).canonicalize().map_err(|e| e.to_string())?;
-            if !path.starts_with(&root) { return Err("startup escapes bundle".into()); }
-            Ok(crate::runtime::Program {
-                source: format!("{args_source}{}",std::fs::read_to_string(&path).map_err(|e| e.to_string())?),
-                path,scene:manifest.service.clone(),citizen:manifest.service.clone(),
+        let source = format!(
+            "{args_source}$app_startup = json_parse(\"{{}}\")\n{}",
+            std::fs::read_to_string(&path).map_err(|e| e.to_string())?
+        );
+        let startup = manifest
+            .startup
+            .as_ref()
+            .map(|name| {
+                let relative = Path::new(name);
+                if relative
+                    .components()
+                    .any(|c| !matches!(c, Component::Normal(_)))
+                {
+                    return Err("startup must be bundle-relative".to_owned());
+                }
+                let path = root
+                    .join(relative)
+                    .canonicalize()
+                    .map_err(|e| e.to_string())?;
+                if !path.starts_with(&root) {
+                    return Err("startup escapes bundle".into());
+                }
+                Ok(crate::runtime::Program {
+                    source: format!(
+                        "{args_source}{}",
+                        std::fs::read_to_string(&path).map_err(|e| e.to_string())?
+                    ),
+                    path,
+                    scene: manifest.service.clone(),
+                    citizen: manifest.service.clone(),
+                })
             })
-        }).transpose()?;
+            .transpose()?;
         let scene = std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
         let program = crate::runtime::Program {
             path,
@@ -211,7 +231,12 @@ impl Bundle {
     pub(crate) fn startup_context(&mut self, value: &serde_json::Value) {
         self.program.source = self.program.source.replacen(
             "$app_startup = json_parse(\"{}\")",
-            &format!("$app_startup = json_parse({})", serde_json::to_string(&value.to_string()).unwrap().replace("${", "\\${")),
+            &format!(
+                "$app_startup = json_parse({})",
+                serde_json::to_string(&value.to_string())
+                    .unwrap()
+                    .replace("${", "\\${")
+            ),
             1,
         );
     }

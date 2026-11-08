@@ -213,10 +213,16 @@ impl Host {
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if self.headless {
-            self.deliveries.retain(|d|d.load(std::sync::atomic::Ordering::Acquire)==0);
+            self.deliveries
+                .retain(|d| d.load(std::sync::atomic::Ordering::Acquire) == 0);
             self.deliveries.push(r.delivery.clone());
             if !self.commands.contains(&r.command) {
-                let _=r.reply.send((10,self.unknown_reply.clone().unwrap_or_else(||json!({"error_code":"UNKNOWN_COMMAND"}))));
+                let _ = r.reply.send((
+                    10,
+                    self.unknown_reply
+                        .clone()
+                        .unwrap_or_else(|| json!({"error_code":"UNKNOWN_COMMAND"})),
+                ));
                 return;
             }
         }
@@ -555,47 +561,51 @@ impl Host {
             if self.error.is_empty() {
                 if let Some(model) = done.model {
                     if self.headless {
-                        self.ready=true;
-                        self.model=model;
+                        self.ready = true;
+                        self.model = model;
                     } else {
-                    let projected = self.projection(&model, ctx);
-                    let appearance = if self.framed
-                        && self.session_appearance.is_none()
-                        && (!self.loaded || self.model["appearance"] != model["appearance"])
-                    {
-                        crate::appearance::resolve(&model["appearance"]).map(Some)
-                    } else {
-                        Ok(None)
-                    };
-                    let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
-                        validate_overlays(&projected)?;
-                        if self.loaded {
-                            self.view.apply_model(projected)
+                        let projected = self.projection(&model, ctx);
+                        let appearance = if self.framed
+                            && self.session_appearance.is_none()
+                            && (!self.loaded || self.model["appearance"] != model["appearance"])
+                        {
+                            crate::appearance::resolve(&model["appearance"]).map(Some)
                         } else {
-                            (if self.framed {
-                                crate::gold_frame::mount(&self.scene_source, projected)
+                            Ok(None)
+                        };
+                        let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
+                            validate_overlays(&projected)?;
+                            if self.loaded {
+                                self.view.apply_model(projected)
                             } else {
-                                SceneView::with_model(&self.scene_source, projected)
-                            })
-                            .map(|view| {
-                                self.view = view;
-                                self.view.set_documents(self.documents.clone());
-                                self.view.set_terminals(self.terminals.clone());
-                                self.view.set_native_menus(self.native_drive);
-                                self.loaded = true;
-                            })
-                        }
-                    });
-                    match result {
-                        Ok(()) => {
-                            if let Some(style) = appearance.expect("validated appearance") {
-                                crate::appearance::install_style(ctx, &model["appearance"], style);
+                                (if self.framed {
+                                    crate::gold_frame::mount(&self.scene_source, projected)
+                                } else {
+                                    SceneView::with_model(&self.scene_source, projected)
+                                })
+                                .map(|view| {
+                                    self.view = view;
+                                    self.view.set_documents(self.documents.clone());
+                                    self.view.set_terminals(self.terminals.clone());
+                                    self.view.set_native_menus(self.native_drive);
+                                    self.loaded = true;
+                                })
                             }
-                            self.ready = true;
-                            self.model = model;
+                        });
+                        match result {
+                            Ok(()) => {
+                                if let Some(style) = appearance.expect("validated appearance") {
+                                    crate::appearance::install_style(
+                                        ctx,
+                                        &model["appearance"],
+                                        style,
+                                    );
+                                }
+                                self.ready = true;
+                                self.model = model;
+                            }
+                            Err(e) => self.error = e,
                         }
-                        Err(e) => self.error = e,
-                    }
                     }
                 }
             }
@@ -969,7 +979,7 @@ impl Host {
 }
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
-    let headless=bundle.manifest.surface=="headless";
+    let headless = bundle.manifest.surface == "headless";
     let service = bundle.manifest.service.clone();
     let facilities = crate::app_facilities::Facilities::new(&bundle.manifest, wake.clone());
     let mut commands = bundle.manifest.commands.clone();
@@ -991,25 +1001,27 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         commands.push(format!("{service}.debug"));
         commands.extend(["set", "recent"].map(|suffix| format!("{service}.debug.{suffix}")));
     }
-    if !headless { commands.extend(
-        [
-            "viu.state",
-            "viu.ui.tree",
-            "viu.ui.click",
-            "viu.ui.focus",
-            "viu.ui.text",
-            "viu.ui.key",
-            "viu.ui.clipboard",
-            "viu.ui.ime",
-            "viu.ui.hover",
-            "viu.ui.scroll",
-            "viu.ui.drag",
-            "viu.capture",
-            "viu.quit",
-            "viu.clipboard.image",
-        ]
-        .map(String::from),
-    ); }
+    if !headless {
+        commands.extend(
+            [
+                "viu.state",
+                "viu.ui.tree",
+                "viu.ui.click",
+                "viu.ui.focus",
+                "viu.ui.text",
+                "viu.ui.key",
+                "viu.ui.clipboard",
+                "viu.ui.ime",
+                "viu.ui.hover",
+                "viu.ui.scroll",
+                "viu.ui.drag",
+                "viu.capture",
+                "viu.quit",
+                "viu.clipboard.image",
+            ]
+            .map(String::from),
+        );
+    }
     let mut command_names = BTreeSet::new();
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
@@ -1097,7 +1109,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .join("viu-captures");
     Host {
         headless,
-        deliveries:Vec::new(),
+        deliveries: Vec::new(),
         platform,
         selection: crate::terminal::clipboard::Clipboard::none(),
         selection_sequence: 0,
@@ -1190,17 +1202,21 @@ pub fn run(args: Vec<String>) -> eframe::Result {
             eprintln!("viu logging: {e}");
             std::process::exit(2)
         });
-    if preview.manifest.startup.is_none() && matches!(
-        logging_args.get(3).map(String::as_str),
-        Some("--help" | "-h")
-    ) {
+    if preview.manifest.startup.is_none()
+        && matches!(
+            logging_args.get(3).map(String::as_str),
+            Some("--help" | "-h")
+        )
+    {
         println!(
             "Usage: viu run APP_DIR [--service NAME] [--comp NAME] [--noded-url URL] [APP_ARGS]"
         );
         println!("{}", toolkit::debug::HELP);
         return Ok(());
     }
-    if preview.manifest.startup.is_none() && logging_args.get(3).map(String::as_str) == Some("--version") {
+    if preview.manifest.startup.is_none()
+        && logging_args.get(3).map(String::as_str) == Some("--version")
+    {
         println!(
             "{} {} (generic viu)",
             preview.manifest.app(),
@@ -1212,20 +1228,35 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         eprintln!("viu: {e}");
         std::process::exit(2)
     });
-    if let Some(program)=&bundle.startup {
-        let choice=crate::startup::evaluate(program).unwrap_or_else(|e|{eprintln!("viu startup: {e}");std::process::exit(2)});
-        if let Some((code,stdout,stderr))=crate::startup::prepare(&mut bundle,choice).unwrap_or_else(|e|{eprintln!("viu startup: {e}");std::process::exit(2)}) {
+    if let Some(program) = &bundle.startup {
+        let choice = crate::startup::evaluate(program).unwrap_or_else(|e| {
+            eprintln!("viu startup: {e}");
+            std::process::exit(2)
+        });
+        if let Some((code, stdout, stderr)) = crate::startup::prepare(&mut bundle, choice)
+            .unwrap_or_else(|e| {
+                eprintln!("viu startup: {e}");
+                std::process::exit(2)
+            })
+        {
             use std::io::Write;
-            let out=std::io::stdout().write_all(stdout.as_bytes());
-            let err=std::io::stderr().write_all(stderr.as_bytes());
-            std::process::exit(if out.is_err()||err.is_err(){1}else{code.into()});
+            let out = std::io::stdout().write_all(stdout.as_bytes());
+            let err = std::io::stderr().write_all(stderr.as_bytes());
+            std::process::exit(if out.is_err() || err.is_err() {
+                1
+            } else {
+                code.into()
+            });
         }
     }
     // Authored early exits precede this native lifetime boundary. A descriptor
     // remains available to its intended owner but cannot leak to new children.
     crate::terminal::session_fd::quarantine_inherited();
-    if bundle.manifest.surface=="headless" {
-        if let Err(error)=run_headless(bundle) {eprintln!("viu headless: {error}");std::process::exit(1);}
+    if bundle.manifest.surface == "headless" {
+        if let Err(error) = run_headless(bundle) {
+            eprintln!("viu headless: {error}");
+            std::process::exit(1);
+        }
         return Ok(());
     }
     if bundle.manifest.surface == "background" {
@@ -1296,23 +1327,46 @@ pub fn run(args: Vec<String>) -> eframe::Result {
         }),
     )
 }
-fn run_headless(bundle:Bundle)->Result<(),String> {
-    let (tx,rx)=std::sync::mpsc::sync_channel(1);
-    let wake:crate::runtime::Wake=Arc::new(move ||{let _=tx.try_send(());});
-    let mut host=create(bundle,wake);
-    let ctx=egui::Context::default();
+fn run_headless(bundle: Bundle) -> Result<(), String> {
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let wake: crate::runtime::Wake = Arc::new(move || {
+        let _ = tx.try_send(());
+    });
+    let mut host = create(bundle, wake);
+    let ctx = egui::Context::default();
     loop {
         host.pump(&ctx);
-        if !host.error.is_empty() {return Err(host.error.clone());}
-        host.deliveries.retain(|d|d.load(std::sync::atomic::Ordering::Acquire)==0);
-        if host.bus.close_requested.load(std::sync::atomic::Ordering::Acquire)
-            || (host.model["window_close"]==true && host.pending.is_empty() && host.inflight.is_empty() && host.deliveries.is_empty()) {
+        if !host.error.is_empty() {
+            return Err(host.error.clone());
+        }
+        host.deliveries
+            .retain(|d| d.load(std::sync::atomic::Ordering::Acquire) == 0);
+        if host
+            .bus
+            .close_requested
+            .load(std::sync::atomic::Ordering::Acquire)
+            || (host.model["window_close"] == true
+                && host.pending.is_empty()
+                && host.inflight.is_empty()
+                && host.deliveries.is_empty())
+        {
             return Ok(());
         }
-        let deadline=host.timers.deadline().into_iter().chain(host.tick.filter(|_|host.ready && host.inflight.is_empty()).map(|_|host.next_tick)).min();
+        let deadline = host
+            .timers
+            .deadline()
+            .into_iter()
+            .chain(
+                host.tick
+                    .filter(|_| host.ready && host.inflight.is_empty())
+                    .map(|_| host.next_tick),
+            )
+            .min();
         match deadline {
-            Some(at)=>{let _=rx.recv_timeout(at.saturating_duration_since(Instant::now()));},
-            None=>rx.recv().map_err(|e|e.to_string())?,
+            Some(at) => {
+                let _ = rx.recv_timeout(at.saturating_duration_since(Instant::now()));
+            }
+            None => rx.recv().map_err(|e| e.to_string())?,
         }
     }
 }

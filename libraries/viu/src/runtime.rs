@@ -97,7 +97,7 @@ pub struct Program {
     pub scene: String,
     pub citizen: String,
 }
-pub(crate) fn context(program: &Program,generation:u64)->Json {
+pub(crate) fn context(program: &Program, generation: u64) -> Json {
     json!({"name":program.scene,"generation":generation,"citizen":program.citizen,
         "version":env!("CARGO_PKG_VERSION"),"git_sha":buildinfo::build_info!().git_sha,"build_time":buildinfo::build_info!().build_time,
         "build_line":buildinfo::build_info!().line(),"git_sha_full":buildinfo::build_info!().git_sha_full,

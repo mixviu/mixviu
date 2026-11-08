@@ -80,9 +80,9 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     );
     bundle.program.scene = bundle.manifest.service.clone();
     bundle.program.citizen = bundle.manifest.service.clone();
-    if let Some(startup)=&mut bundle.startup {
-        startup.scene=bundle.manifest.service.clone();
-        startup.citizen=bundle.manifest.service.clone();
+    if let Some(startup) = &mut bundle.startup {
+        startup.scene = bundle.manifest.service.clone();
+        startup.citizen = bundle.manifest.service.clone();
     }
     Ok(bundle)
 }
