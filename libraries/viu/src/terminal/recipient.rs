@@ -171,7 +171,13 @@ impl Recipient {
         let Some(pane) = (self.pane)(target.pane_id.0) else {
             return Reply::error("FORBIDDEN");
         };
-        let pane = pane.lock().unwrap_or_else(|error| error.into_inner());
+        // Cleanup can hold this mutex while awaiting this actor's revoke ACK.
+        // Refuse contention instead of parking the current-thread runtime.
+        let pane = match pane.try_lock() {
+            Ok(pane) => pane,
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return Reply::error("RESOURCE_LIMIT"),
+        };
         if !permit.valid() {
             return Reply::error("FORBIDDEN");
         }

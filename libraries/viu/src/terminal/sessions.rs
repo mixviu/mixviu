@@ -1033,6 +1033,23 @@ mod tests {
                 "incarnation":parent.incarnation,"pane_id":child.pane_id.unwrap(),
                 "pane_generation":child.pane_generation.unwrap()}})
             .to_string();
+            // Keep the lock held until the reply: the native actor must remain
+            // schedulable for cleanup acknowledgements and lease maintenance.
+            // The old blocking lock waits for the holder's three-second guard.
+            let busy = tokio::time::timeout(
+                std::time::Duration::from_millis(400),
+                caller.client().call_with_headers_raw(
+                    &parent.name,
+                    "term.session",
+                    &Default::default(),
+                    &body,
+                ),
+            )
+            .await
+            .expect("a busy pane must not park the native actor")
+            .unwrap();
+            assert_eq!(busy.0, 10);
+            assert_eq!(serde_json::from_str::<Value>(&busy.1).unwrap()["error_code"], "RESOURCE_LIMIT");
             // Use the actual verified transport and bounded recipient queue.
             // A fresh isolated owner keeps this pressure test independent of
             // the ordinary input/replay/expiry proof's connection lifecycle.
@@ -1310,6 +1327,23 @@ end
             };
             let second=ready_pane(2).await;
             let second_pid=sessions.call("state","vt-2",json!({})).unwrap()["pid"].as_u64().unwrap();
+            if std::env::var("VIU_TERM_OWNER_CHILD").unwrap()=="burst" {
+                // Metadata reads of pane1 must also refuse promptly when a
+                // different enumerated pane is held by cleanup or rendering.
+                let pane=sessions.get("vt-2").unwrap();
+                let (entered,held)=std::sync::mpsc::channel();
+                let (release,resumed)=std::sync::mpsc::channel();
+                let holder=std::thread::spawn(move || {
+                    let _pane=pane.lock().unwrap();
+                    entered.send(()).unwrap();
+                    resumed.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+                });
+                held.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+                let busy=tokio::time::timeout(std::time::Duration::from_millis(400),invoke("term.session",json!({"target":target}))).await;
+                release.send(()).unwrap();holder.join().unwrap();
+                let busy=busy.expect("metadata enumeration must not park the native actor");
+                assert_eq!(busy.0,10);assert_eq!(busy.1["error_code"],"RESOURCE_LIMIT");
+            }
             let new_tab=json!({"target":target,"affected":[second],"request_id":"9","request_epoch":epoch});
             assert_eq!(invoke("term.tab.new",new_tab.clone()).await,(0,json!({"tab_id":2,"operation_id":"9"})));
             assert_eq!(invoke("term.tab.new",new_tab).await,(0,json!({"tab_id":2,"operation_id":"9"})));
