@@ -1,4 +1,10 @@
-Latest six-app admission checkpoint: runtime `e2c3541a498011f549f7c4d60e3d2811851d50c2` ACCEPTED with concurrent strict Workshop/Ced witness, all release suites and inspected figures. See [six-app admission revalidation](six-app-integration-acceptance.md#admission-repair-revalidation--2026-11-08-accepted). Subsequent Email/Dopus integration remains pending; this is not the final cut-over tree.
+Current integrated acceptance: **ACCEPTED** at runtime `e1bbea99071c2fa8793a7e0e52aed381707d536f` on `lab/gold-parity`. All eight apps passed exact-release revalidation; see [eight-app integration acceptance](eight-app-integration-acceptance.md) for the complete gate, native/Bus/live-Prefs/deadline results, all 405 raw comparisons and matched supplements, performance and the four-engine hashes. Historical records below retain their original sources and results.
+
+The current four-engine set is on **cbc2** at `/build/es-artifacts/e1bbea99071c2fa8793a7e0e52aed381707d536f/`, with SHA256SUMS `d108f8cc91af9fe650017265bd349c8324f468d673e562c3bd3921e4e698e545`. All four engine hashes and the inspected region register are in the linked record. Full CBC, P2 furniture, Track A, all 42 native groups, 510 same-worker correctness samples and the release callback profile pass. Historical ACK timings are materially slower and are explicitly reported. The 22 inherited import-hash mismatches remain provenance debt before production derivation.
+
+PR/CI `cutover/four-engines` owns renamed executables and `apps.tar` after merging this tree. Gold term is retained outside this port tree. This handoff performs no install or desk restart.
+
+## Historical six-app handoff
 
 # Desk4 integration receipts
 

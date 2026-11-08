@@ -1,4 +1,8 @@
-Latest six-app admission checkpoint: runtime `e2c3541a498011f549f7c4d60e3d2811851d50c2` ACCEPTED with concurrent strict Workshop/Ced witness, all release suites and inspected figures. See [six-app admission revalidation](six-app-integration-acceptance.md#admission-repair-revalidation--2026-11-08-accepted). Subsequent Email/Dopus integration remains pending; this is not the final cut-over tree.
+Current integrated acceptance: **ACCEPTED** at runtime `e1bbea99071c2fa8793a7e0e52aed381707d536f` on `lab/gold-parity`. All eight apps passed exact-release revalidation; see [eight-app integration acceptance](eight-app-integration-acceptance.md) for the complete gate, native/Bus/live-Prefs/deadline results, all 405 raw comparisons and matched supplements, performance and the four-engine hashes. Historical records below retain their original sources and results.
+
+The current strict release editor witness uses **generic Viu for both sibling Ced and Dopus**: one open after native readiness, verified text/directory/window effects, true source/build stamps and thirteen owned PIDs stopped. The original BUSY/Full defect is fixed by bounded admission, with this witness running concurrently; no refused request is retried. The installed-native dependency and open Dopus migration mentioned in historical checkpoints below are superseded.
+
+## Historical six-app acceptance
 
 # Workshop parity — integrated acceptance
 

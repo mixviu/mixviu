@@ -1,3 +1,5 @@
+Current integrated acceptance: **ACCEPTED** at runtime `e1bbea99071c2fa8793a7e0e52aed381707d536f` on `lab/gold-parity`. All eight apps passed exact-release revalidation; see [eight-app integration acceptance](eight-app-integration-acceptance.md) for the complete gate, native/Bus/live-Prefs/deadline results, all 405 raw comparisons and matched supplements, performance and the four-engine hashes. Historical records below retain their original sources and results.
+
 # Email gold parity
 
 ## Round 6 acceptance record, 2026-11-07: ACCEPTED

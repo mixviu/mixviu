@@ -75,3 +75,61 @@ They are recorded upstream changes, rather than unexplained local edits.
 ## Before production derivation
 
 Reconcile the two inventories against their pinned source trees; retain both original hashes and the adaptation history. Review A2/A3 shell/service profiles, A5 host declarations and lint, A7 handoff safety, bulk indexed projection/evaluation and the 9c5264cd filesystem creation-time repair. Then update the authoritative current hashes with those reviewed reasons and make verify_runtime pass. Do not merely replace the expected values with today's hashes: that would erase the import/adaptation distinction. The lab's behavioural and visual gates do not discharge this provenance debt.
+
+## Stale vendor retention flags found at final eight-app audit
+
+The final source `e1bbea99071c2fa8793a7e0e52aed381707d536f` still has exactly the 22 hash mismatches above. A complete manifest audit also finds **49 entries marked `retained: false` whose tracked files are present**. These are separate stale absence declarations, not 49 additional hash mismatches: all 49 match their `imported_sha256` byte for byte. `verify_runtime.mix` would reject their presence after the earlier Mix mismatch is reconciled. Do not call the whole provenance inventory clean.
+
+The two imported inventories were already inconsistent when the runtime manifest entered at `fc4d90ee` (2026-11-06). `vendor/calloop` was restored in that commit; `vendor/dirs-sys` came from Track A A1 `715c3931` (2026-11-06). Neither set has later content changes. The manifest's earlier client-only unused-import removal claims were copied without reconciling the four-engine closure. Before production derivation, assess the actual dependency/licence closure and reconcile retention/adaptation evidence; do not blindly delete required vendored sources or mark them retained without review. This integration changes none of these bytes or flags.
+
+| Tracked file declared removed | Actual/imported SHA256 (equal) |
+| --- | --- |
+| vendor/calloop/.cargo_vcs_info.json | `8354fa2dd5ead67f6d148e87557c6b01c1cf55d84c1f3bba7c7978319920baab` |
+| vendor/calloop/.cirrus.yml | `010e9963e1a6a826eced127070baf4ec3f40f1c08dcc4962e31e468262cb9bb3` |
+| vendor/calloop/.github/dependabot.yml | `db76b8360b5460ae333e00659f7ff11dd62359cb6edf1b8bb493e21103e5f459` |
+| vendor/calloop/.github/workflows/ci.yml | `d74c50b612d13ebcc115a3e8d5992bda493253d01ee2978a84fcf096d6a6ce60` |
+| vendor/calloop/.gitignore | `5a49caaacf3fbf482c35d53f8085d71f0d6cfb6b824156fa3945346a84dcbca1` |
+| vendor/calloop/CHANGELOG.md | `798a2909020e18e895197ae29cc25390cbc1d1b5f5478eb97562fb49744de3be` |
+| vendor/calloop/Cargo.toml | `5b4b2bf814683166cdb306eed86871a64dba40d55bf7181b94a7c1d96ef6773e` |
+| vendor/calloop/Cargo.toml.orig | `e09c5f7020f3556e364f397285add88b65da07aff3f6576f3afdc195b4399378` |
+| vendor/calloop/LICENSE.txt | `4b71658d3410d813b6fc6ceb654ce2aa8c2d3094c944dc59c2041da6227810e3` |
+| vendor/calloop/PATCHES.md | `f8be6eafd49452a9d36311d5370b92cc98499b11e8f3b999751533df7592dd73` |
+| vendor/calloop/README.md | `9e1acb153bcfe11bb9e0eb4f00c3df14e81812333a10b134c23ad66bf9c94266` |
+| vendor/calloop/README.tpl | `521393c5b72ea749489781d3f752a1797044f0c0b0707ec7a208299c3f3ee9db` |
+| vendor/calloop/benches/timer.rs | `cebc54f18673676f3b65dff74a47740c03785742b69f140c22ecd2635350f384` |
+| vendor/calloop/examples/high_precision.rs | `376ea8d83518e5c7b72b4037ea2967c145fc95af97d285c3f4c3d3020c6ec911` |
+| vendor/calloop/examples/timer.rs | `20e4bd48f1ded3b0bec9cc850914f40a40e0bff2e5e051f1946b385355f2ad9e` |
+| vendor/calloop/src/error.rs | `4eb81e064ed32954ac7216e27d174cbc1abd4b23b7bea7389ac88fd50a7962f7` |
+| vendor/calloop/src/io.rs | `0003c1ea61b897d1dbf9d09b691fb49448006d3a3eb211b4c6b6fcf60c615401` |
+| vendor/calloop/src/lib.rs | `8cd3484d19072ad493893ccfc89134d8a0d84a4f1e64ac36231bf374d07accae` |
+| vendor/calloop/src/list.rs | `0a7d9f36224f221ac4a4c2abbcf1d6d16a8458dfa3a56ac0065b5cdf06d2c712` |
+| vendor/calloop/src/loop_logic.rs | `2e4b995c8698412813b3364778263b387c02d92986980d67515e39e75ac07a1b` |
+| vendor/calloop/src/macros.rs | `16635ffae0bccd8f24c232566407044aa0644648ec129c2d81c4fc70a5dc10a2` |
+| vendor/calloop/src/sources/channel.rs | `5b43eef8febb7fd794a9692f9ea660753aae90a6bb72ac3483fa3579a469e9a4` |
+| vendor/calloop/src/sources/futures.rs | `d5f1906c58110ba76d7e8a970a90c59e9e629e1ae55d2992d86ebf12689454f3` |
+| vendor/calloop/src/sources/generic.rs | `6e2c5318272237dbc354c5f91a8dab1b60a0abed22bb28e7d03d236c9c4fe58b` |
+| vendor/calloop/src/sources/mod.rs | `02786fc3ebbe8eada06859a77fdd0ba48d315f54b31cd381aad7f0b5422cf5ef` |
+| vendor/calloop/src/sources/ping.rs | `794a811f0d4bcc316f0e3cf96596c0704e43d6e0a3c831ec2e60c47cb18ce76f` |
+| vendor/calloop/src/sources/ping/eventfd.rs | `21e0b19837aab472d23d09a95d490f4e094be70123b7276a10c9279af945b3c9` |
+| vendor/calloop/src/sources/ping/iocp.rs | `de47071d66265eed2de37821d4329a3f3467c0007a745121c82c074e4c112a36` |
+| vendor/calloop/src/sources/ping/pipe.rs | `679454675dd1912957e28e5cdd56c22a8f397a48f6f293cd7990f168fcf1af34` |
+| vendor/calloop/src/sources/signals.rs | `5fbfb89772410a9e52681dce4e4e7828378c5833a05656a30dee79b151d995ed` |
+| vendor/calloop/src/sources/stream.rs | `7e4e0bcf95d6d5b115ad8dd72ec823397b8a5fd512d1d4f2de7aa5b8af5fb137` |
+| vendor/calloop/src/sources/timer.rs | `1e106bf0e7daa67b3d386576a476d9d2f05831b53ec707bea135ce593b6d9b76` |
+| vendor/calloop/src/sources/transient.rs | `65b71142308d9d8dbff0fe5c7380e943d1ba0ca1877a2773038ca13880efb3fd` |
+| vendor/calloop/src/sys.rs | `8a34e0110eb35fc763bb4f54a0612d9b187a06c16a350f6ec018bbd43c57634d` |
+| vendor/calloop/src/token.rs | `aab917dbe4eee5c8b4e6ba53388b446d7f2bda4d94e0504a2a55de57d53ee48c` |
+| vendor/calloop/tests/signals.rs | `51adb8b33f39d65abe6dc691d3334f0bd7996ab63a2fd86d23dc038e05a9196e` |
+| vendor/dirs-sys/.cargo-ok | `afbf9d0f3560b0fd7795e81c42a0a79ee6b6fc67e064f77826aee642cad28d91` |
+| vendor/dirs-sys/.cargo_vcs_info.json | `5e6863143ff981280627f680b6720b7649422480faed6a05c3e491d9594a32c2` |
+| vendor/dirs-sys/.github/workflows/ci.yml | `905b81ce1ca8866fce44604c526d4356eb4390d2095051ef024194094bed8e0c` |
+| vendor/dirs-sys/.gitignore | `e01ee9f9fd6d4ead8f4b718b127eca56023b4d771b6b48ca68ead2abe8f6f0ac` |
+| vendor/dirs-sys/CONTRIBUTING.md | `f2492580980fa01e2e13b404950b3d70346c774d8e88723cb49b0c9824c64805` |
+| vendor/dirs-sys/Cargo.toml | `7cd82d0d0b8d0cdb5bc4f412339c313de99095510a84406f8f3d519c0fb9b0dc` |
+| vendor/dirs-sys/Cargo.toml.orig | `4b51207fe73535bf0727b972a75dc84767e9dc4bb49002df398821335a1c7817` |
+| vendor/dirs-sys/LICENSE-APACHE | `d3174ad63e721d4c9dccb8ad4320848992d314369bc46319720b5802c9153fe9` |
+| vendor/dirs-sys/LICENSE-MIT | `6a2e0ade09a7d5f816f11566fee2b151b32235a7fad52b41d49cce96f833c1a9` |
+| vendor/dirs-sys/PATCHES.md | `9ca5f28089dd6c08e4608c687094a321ab9974459259cb00cd73e59db265ad20` |
+| vendor/dirs-sys/README.md | `0b15d135ff8743513430d0861954a271c38c0ac3e3e025eb25b59cc7d0437278` |
+| vendor/dirs-sys/src/lib.rs | `a35ed53af4bae60254e0c688978a7d4d79a019f80f4c50e3a86c50104c88423e` |
+| vendor/dirs-sys/src/xdg_user_dirs.rs | `7a4da3467fb15dd1ce49bcecfc2b27898e915b824954e067a8d05f2c75c93fa4` |
