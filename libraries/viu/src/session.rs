@@ -143,6 +143,9 @@ impl Session {
             || topic == "theme.changed"
             || topic == "settingsd.desktop.look.default"
             || topic == "settingsd.desktop.keys.default.keymaps"
+            || topic == "settingsd.desktop.keys.default.email"
+            || topic == "settingsd.desktop.keys.default.ced"
+            || topic == "settingsd.desktop.keys.default.terminal"
             || (topic == "noded.props.changed"
                 && (body["path"].is_null() || body["path"] == "services.registered"))
         {

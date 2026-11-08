@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold self-contained print page. Application content and desktop launch
+-- policy stay in Mix; Markdown parsing and palette lookup are shared leaves.
+$addresses=require("addresses.mix");$quoting=require("quoting.mix")
+fn escape($text)
+  for $p in [["&","&amp;"],["<","&lt;"],[">","&gt;"],["\"","&quot;"],["'","&#39;"]] $text=replace($text,$p[0],$p[1]) end
+  return $text
+end
+fn page($email,$markdown)
+  $subject=$email.subject ?? "";$date=""
+  try $date=date_format(date_parse($email.date ?? $email.receivedAt),"%a %-d %b %Y, %H:%M") catch $bad nil end
+  $rows=""
+  for $pair in [["From",join(map($email.from ?? [],fn($a)=$addresses.format($a)),", ")],["To",join(map($email.to ?? [],fn($a)=$addresses.format($a)),", ")],["Cc",join(map($email.cc ?? [],fn($a)=$addresses.format($a)),", ")],["Date",$date],["Subject",$subject]]
+    if $pair[1]!="" then $rows=$rows.."<tr><th>"..escape($pair[0]).."</th><td>"..escape($pair[1]).."</td></tr>\n" end
+  end
+  $body=$email.text ?? $quoting.html_text($email.html ?? "")
+  if starts_with(lower(trim(($email.textBody ?? [])[0].type ?? "")),"text/html") then $body=$quoting.html_text($body) end
+  $body=if $markdown then "<main class=\"markdown\">"..viu_markdown_html($body).."</main>" else "<main><pre class=\"plain\">"..escape($body).."</pre></main>" end
+  $p=viu_palette("mono","light")
+  return "<!doctype html>\n<html><head><meta charset=\"utf-8\">\n<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'\">\n<meta name=\"referrer\" content=\"no-referrer\">\n<title>"..escape($subject).."</title>\n<style>\n"..
+    "@page { margin: 18mm 16mm; }\nhtml { background: "..$p.panel.."; color: "..$p.text.."; }\nbody { margin: 0; font: 15pt/1.45 Georgia, \"Noto Serif\", \"DejaVu Serif\", serif; }\n"..
+    "table.headers { border-collapse: collapse; margin-bottom: 0.8em; font-size: 0.9em; }\ntable.headers th { text-align: left; padding: 0.1em 1em 0.1em 0; color: "..$p.weak.."; font-weight: normal; vertical-align: top; }\ntable.headers td { padding: 0.1em 0; }\nhr { border: 0; border-top: 1px solid "..$p.rule.."; margin: 0 0 1em; }\n"..
+    "pre, code { font-family: \"JetBrains Mono\", \"DejaVu Sans Mono\", monospace; font-size: 0.9em; }\npre { white-space: pre-wrap; overflow-wrap: anywhere; }\npre.plain { font-family: inherit; font-size: 1em; }\nmain.markdown pre { background: "..$p.code.."; padding: 0.6em 0.8em; border-radius: 4px; }\nmain.markdown code { background: "..$p.code.."; padding: 0 0.2em; border-radius: 3px; }\nmain.markdown pre code { background: none; padding: 0; }\n"..
+    "main.markdown blockquote { margin: 0 0 0 0.2em; padding-left: 0.9em; border-left: 3px solid "..$p.rule.."; color: "..$p.weak.."; }\nmain.markdown table { border-collapse: collapse; }\nmain.markdown th, main.markdown td { border: 1px solid "..$p.rule.."; padding: 0.2em 0.6em; }\na { color: "..$p.link.."; }\n</style></head>\n<body>\n<table class=\"headers\">\n"..$rows.."</table>\n<hr>\n"..$body.."\n<script>window.addEventListener('load',()=>window.print())</script>\n</body></html>\n"
+end
+fn execute($email,$markdown)
+  $runtime=env("XDG_RUNTIME_DIR")
+  if $runtime==nil or $runtime=="" then raise("SERVER","No runtime directory for the print page") end
+  $dir=path_join($runtime,"email-print");viu_private_directory($dir)
+  for $path in glob(path_join($dir,"*.html"))
+    try if time()-viu_files("stat",{path:$path}).mtime>86400 then viu_files("remove",{path:$path}) end catch $ignored nil end
+  end
+  $path=path_join($dir,viu_digest("std64",($email.messageId ?? [])[0] ?? $email.id)..".html")
+  viu_atomic_replace($path,page($email,$markdown),16777216)
+  send "apps" "apps.launch" body={id:"firefox",uris:["file://"..$path]}
+  return {path:$path,opened:$rc==0}
+end

@@ -37,8 +37,15 @@ pub struct Manifest {
     pub retain_appearance_on_loss: bool,
     /// App-authored compatibility surface; native facilities append descriptors.
     pub bus_surface: Option<serde_json::Value>,
+    pub log_filter: Option<String>,
+    /// Compatibility refusals for application commands with non-object arguments.
+    pub argument_error: Option<String>,
+    pub argument_error_overrides: std::collections::BTreeMap<String, String>,
     pub native_ui: bool,
     pub native_macros: bool,
+    /// Draw the shared macro popup even when the scene owns native input.
+    /// Leave false when the scene supplies its own macro-window/menu control.
+    pub host_macro_popup: bool,
     /// Let the bundle implement its declared macro workflows.
     pub macro_workflow: bool,
     pub native_debug: bool,
@@ -57,6 +64,9 @@ pub struct Manifest {
     pub allow_native_overrides: bool,
     pub launch_variants: std::collections::BTreeMap<String, String>,
     pub saved_version: Option<u32>,
+    pub launch_model: bool,
+    /// Close after a successful native quit reply when the bundle opts in.
+    pub quit_reply_closes: bool,
 }
 impl Default for Manifest {
     fn default() -> Self {
@@ -86,8 +96,12 @@ impl Default for Manifest {
             retain_window_on_loss: true,
             retain_appearance_on_loss: false,
             bus_surface: None,
+            log_filter: None,
+            argument_error: None,
+            argument_error_overrides: Default::default(),
             native_ui: false,
             native_macros: false,
+            host_macro_popup: false,
             macro_workflow: false,
             native_debug: false,
             native_debug_after_ui: false,
@@ -104,6 +118,8 @@ impl Default for Manifest {
             allow_native_overrides: true,
             launch_variants: Default::default(),
             saved_version: None,
+            launch_model: false,
+            quit_reply_closes: false,
         }
     }
 }
@@ -127,6 +143,7 @@ pub struct Bundle {
     pub scene: String,
     pub program: crate::runtime::Program,
     pub launch: serde_json::Value,
+    pub launch_plan: serde_json::Value,
 }
 impl Bundle {
     pub fn load(root: &Path, args: &[String]) -> Result<Self, String> {
@@ -195,6 +212,22 @@ impl Bundle {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || manifest.commands.len() > 256
+            || manifest
+                .log_filter
+                .as_ref()
+                .is_some_and(|filter| filter.len() > 4096)
+            || manifest.argument_error_overrides.len() > 256
+            || manifest
+                .argument_error
+                .iter()
+                .chain(manifest.argument_error_overrides.values())
+                .any(|code| {
+                    code.is_empty()
+                        || code.len() > 64
+                        || !code
+                            .bytes()
+                            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+                })
             || manifest.command_descriptors.len() > 256
             || manifest.command_descriptors.iter().any(|d| {
                 !manifest.commands.contains(&d.name)
@@ -287,6 +320,7 @@ impl Bundle {
             scene,
             program,
             launch: serde_json::json!({}),
+            launch_plan: serde_json::json!({}),
         })
     }
 }

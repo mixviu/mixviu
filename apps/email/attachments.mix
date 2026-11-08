@@ -1,0 +1,82 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Attachment names and open policy from gold; byte transport stays generic.
+$protocol=require("protocol.mix");$arguments=require("arguments.mix");$ids=require("identity.mix")
+fn extension($mime)
+  $mime=lower(trim(split($mime ?? "",";")[0]))
+  $extensions={"application/pdf":"pdf","image/png":"png","image/jpeg":"jpg","image/gif":"gif","image/webp":"webp","image/svg+xml":"svg","text/plain":"txt","text/html":"html","text/markdown":"md","text/csv":"csv","text/calendar":"ics","text/vcard":"vcf","text/x-vcard":"vcf","message/rfc822":"eml","application/zip":"zip","application/gzip":"gz","application/x-tar":"tar","application/json":"json","audio/mpeg":"mp3","audio/ogg":"ogg","video/mp4":"mp4","application/vnd.oasis.opendocument.text":"odt","application/vnd.oasis.opendocument.spreadsheet":"ods","application/vnd.openxmlformats-officedocument.wordprocessingml.document":"docx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":"xlsx"}
+  return $extensions[$mime] ?? "bin"
+end
+fn cap($value,$bytes)
+  $length=min(len($value),$bytes)
+  $value=substr($value,0,$length)
+  while byte_length($value)>$bytes $length=$length-1;$value=substr($value,0,$length) end
+  return $value
+end
+fn file_name($name,$index,$mime)
+  $parts=split(replace($name ?? "","\\","/"),"/");$last=$parts[len($parts)-1]
+  $clean=trim(ltrim(trim(replace(re_replace($last,"\\p{Cc}",""),"..","")),"."))
+  if $clean=="" then return "attachment-"..to_string($index).."."..extension($mime) end
+  if byte_length($clean)<=200 then return $clean end
+  $parts=split($clean,".")
+  if len($parts)>1 and byte_length($parts[len($parts)-1])<=16 then
+    $ext=$parts[len($parts)-1];$stem=join(slice($parts,0,len($parts)-1),".")
+    if $stem!="" then return rtrim(cap($stem,199-byte_length($ext)).."."..$ext) end
+  end
+  return rtrim(cap($clean,200))
+end
+fn refuses_open($name,$mime)
+  $mime=lower(trim(split($mime ?? "",";")[0]));$parts=split(lower($name),".");$ext=if len($parts)>1 then $parts[len($parts)-1] else "" end
+  return contains(["application/x-executable","application/x-sharedlib","application/x-pie-executable","application/x-msdownload","application/x-ms-dos-executable","application/x-msi","application/x-sh","application/x-shellscript","application/x-csh","application/x-perl","application/x-python","text/x-python","text/x-shellscript","application/x-ruby","application/x-desktop","application/java-archive","application/x-java-archive","application/vnd.debian.binary-package","application/x-rpm","application/x-appimage","application/javascript","text/javascript"],$mime) or contains(["sh","bash","zsh","csh","fish","mix","py","pl","rb","php","js","mjs","jar","exe","com","bat","cmd","msi","ps1","vbs","scr","desktop","run","appimage","bin","so","dll","deb","rpm","elf","out"],$ext)
+end
+fn metadata($email)
+  $out=[];$index=0
+  for $part in $email.attachments ?? []
+    $index=$index+1;$name=file_name($part.name,$index,$part.type)
+    push($out,{part:$part.partId,name:$name,type:$part.type,size:$part.size,undecodable:$part.undecodable or $part.blobId==nil or $part.blobId=="",save_only:refuses_open($name,$part.type),transfer:nil})
+  end
+  return $out
+end
+fn save($e,$s,$a)
+  $email=$protocol.get($e,$s,$arguments.required($a,"id"));$part=$arguments.required($a,"part")
+  $parts=filter($email.attachments ?? [],fn($p)=$p.partId==$part)
+  if len($parts)==0 then raise("NOT_FOUND","No such attachment") end
+  $p=$parts[0]
+  if $p.undecodable or $p.blobId==nil or $p.blobId=="" then raise("REFUSED","This attachment could not be decoded") end
+  $index=index_of(map($email.attachments,fn($p)=$p.partId),$part)+1;$name=file_name($p.name,$index,$p.type)
+  $dir=$arguments.text($a,"dir")
+  if $a._open==true then
+    if refuses_open($name,$p.type) then raise("REFUSED","Programs and scripts are never opened from mail: save it and check it first") end
+    $runtime=env("XDG_RUNTIME_DIR")
+    if $runtime==nil or $runtime=="" then raise("UNAVAILABLE","No runtime directory for the attachment") end
+    $dir=path_join($runtime,"email-attach");viu_private_directory($dir)
+  end
+  if $dir!=nil and not starts_with($dir,"/") then raise("INVALID_ARGUMENT","The directory must be an absolute path") end
+  if $dir==nil then
+    $dir=viu_files("user-directory",{key:"XDG_DOWNLOAD_DIR"}) ?? path_join(env("HOME"),"Downloads")
+    mkdir($dir,{parents:true})
+  end
+  if not viu_files("stat",{path:$dir}).is_dir then raise("UNAVAILABLE",$dir.." is not a directory") end
+  $partial=path_join($dir,".email-"..$ids.mint()..".partial")
+  try
+    $url=replace($s.raw.downloadUrl,"{blobId}",$p.blobId)
+    $request=$protocol.request($e,$url,"GET","",$s.token);$request.response_file=$partial;$request.max_response=67108864
+    $r=viu_http($request)
+    if $r.status!=200 then raise("UNAVAILABLE","Download HTTP "..to_string($r.status)) end
+    for $n=0 to 999
+      $candidate=$name
+      if $n>0 then
+        $bits=split($name,".")
+        if len($bits)>1 then $candidate=join(slice($bits,0,len($bits)-1),".").." ("..to_string($n)..")."..$bits[len($bits)-1]
+        else $candidate=$name.." ("..to_string($n)..")" end
+      end
+      $path=path_join($dir,$candidate)
+      if viu_files("link-new",{source:$partial,target:$path}) then
+        if $a._open==true then $pid=spawn(["xdg-open",$path],{detach:true}) end
+        return {path:$path}
+      end
+    end
+    raise("UNAVAILABLE","No unused attachment name")
+  finally
+    if exists($partial) then viu_files("remove",{path:$partial}) end
+  end
+end

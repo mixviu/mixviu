@@ -12,6 +12,67 @@ fn text<'a>(v: &'a Value, key: &str) -> &'a str {
 fn number(v: &Value, key: &str, default: f32) -> f32 {
     v[key].as_f64().unwrap_or(default as f64) as f32
 }
+fn sample_width(ui: &Ui, column: &Value) -> Option<f32> {
+    let samples = column["samples"].as_array()?;
+    let size = TextStyle::Body.resolve(ui.style()).size;
+    let font = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(size));
+    let width = std::iter::once(text(column, "label"))
+        .chain(samples.iter().filter_map(Value::as_str))
+        .map(|text| {
+            ui.painter()
+                .layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color())
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    Some(width + ui.spacing().item_spacing.x + 2.0)
+}
+fn native_table_state(value: &Value) -> Result<toolkit::datatable::TableState, String> {
+    if value.is_null() {
+        return Ok(Default::default());
+    }
+    if !value.is_object() {
+        return Err("table state must be an object".into());
+    }
+    let mut value = value.clone();
+    for key in ["page", "page_size", "focus"] {
+        if let Some(number) = value.get(key).filter(|n| !n.is_null()) {
+            let number = crate::widgets::whole(number)
+                .ok_or_else(|| format!("table {key} must be a whole number"))?;
+            if key == "page_size" && (number == 0 || number > u32::MAX as u64) {
+                return Err("invalid table page size".into());
+            }
+            value[key] = json!(number);
+        }
+    }
+    serde_json::from_value(value).map_err(|e| format!("invalid table state: {e}"))
+}
+
+#[cfg(test)]
+mod numeric_state_tests {
+    use super::*;
+
+    #[test]
+    fn scene_numbers_preserve_selection_page_and_focus() {
+        let state = native_table_state(&json!({
+            "page": 2.0, "page_size": 100.0, "focus": 3.0,
+            "selection": ["message-4"], "sort": {"column":"date", "order":"descending"}
+        }))
+        .unwrap();
+        assert_eq!(state.page, 2);
+        assert_eq!(state.page_size, 100);
+        assert_eq!(state.focus, Some(3));
+        assert_eq!(state.selection, ["message-4"]);
+        assert!(state.sort.is_some());
+        for invalid in [
+            json!({"page":1.5}),
+            json!({"page_size":0.0}),
+            json!({"focus":-1.0}),
+        ] {
+            assert!(native_table_state(&invalid).is_err());
+        }
+    }
+}
 fn emit(events: &mut Vec<Intent>, id: &str, action: &str, value: Value) {
     events.push(Intent {
         id: id.into(),
@@ -30,8 +91,22 @@ pub fn validate(value: &Value) -> Result<(), String> {
         .filter(|c| !c.is_empty() && c.len() <= 16)
         .ok_or("tree-table requires 1..16 columns")?;
     let mut keys = BTreeSet::new();
+    native_table_state(&value["state"])?;
+    if !value["total"].is_null() && crate::widgets::whole(&value["total"]).is_none() {
+        return Err("table total must be a whole number".into());
+    }
     let mut column_keys = BTreeSet::new();
     for column in columns {
+        if let Some(samples) = column.get("samples") {
+            if samples.as_array().is_none_or(|samples| {
+                samples.len() > 64
+                    || samples
+                        .iter()
+                        .any(|s| s.as_str().is_none_or(|s| s.len() > 4096))
+            }) {
+                return Err("invalid column measurement samples".into());
+            }
+        }
         if !column["fraction"].is_null()
             && column["fraction"]
                 .as_f64()
@@ -144,6 +219,11 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
             .ok_or("unknown row")
     };
     match action {
+        "table" => {
+            if !payload.is_object() || !payload["event"].is_string() {
+                return Err("invalid native table event".into());
+            }
+        }
         "select" | "activate" | "context" => {
             row()?;
         }
@@ -264,7 +344,7 @@ fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
                 );
             }
         }
-        widths.push(width.max(number(column, "min_width", 40.0)));
+        widths.push(((width - 12.0).ceil() + 12.0).max(number(column, "min_width", 40.0)));
     }
     ui.data_mut(|d| {
         d.insert_temp(
@@ -344,9 +424,74 @@ pub(crate) fn draw(
     geometry: &mut BTreeMap<String, Rect>,
     events: &mut Vec<Intent>,
 ) -> egui::Response {
-    if widget.properties["style"] == "outline" {
+    if widget.properties["style"] == "outline" && widget.properties["row_layout"] != "sides" {
         return draw_outline(ui, widget, value, geometry, events);
     }
+    if widget.properties["style"] == "gold" {
+        return draw_gold(ui, widget, value, events);
+    }
+    if widget.properties["style"] == "outline" {
+        return draw_counted_outline(ui, widget, value, geometry, events);
+    }
+    if widget.properties["style"] == "sides" {
+        return ui
+            .scope(|ui| {
+                if value["busy"] == true {
+                    ui.weak(value["loading"].as_str().unwrap_or("Loading…"));
+                }
+                egui::ScrollArea::vertical()
+                    .id_salt((&widget.id, "sides"))
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        let rows = value["rows"].as_array().expect("validated rows");
+                        if rows.is_empty() && value["busy"] != true {
+                            ui.weak(value["empty"].as_str().unwrap_or("No items"));
+                        }
+                        for row in rows {
+                            egui::Sides::new().show(
+                                ui,
+                                |ui| {
+                                    if let Some(icon) =
+                                        crate::icons::Icon::from_name(text(row, "icon"))
+                                    {
+                                        ui.add(crate::icons::image_of(
+                                            ui.ctx(),
+                                            icon,
+                                            12.0,
+                                            ui.visuals().weak_text_color(),
+                                        ));
+                                    }
+                                    let chosen = selected(value, row);
+                                    let mut label = egui::RichText::new(
+                                        row["cells"][0].as_str().unwrap_or_default(),
+                                    );
+                                    if chosen {
+                                        label = label.strong();
+                                    }
+                                    let response = toolkit::selectable(ui, chosen, label);
+                                    geometry.insert(
+                                        format!("{}.key.{}", widget.id, text(row, "key")),
+                                        response.rect,
+                                    );
+                                    if response.clicked() {
+                                        emit(
+                                            events,
+                                            &widget.id,
+                                            "select",
+                                            json!({"key":text(row,"key")}),
+                                        );
+                                    }
+                                },
+                                |ui| {
+                                    ui.weak(row["cells"][1].as_str().unwrap_or_default());
+                                },
+                            );
+                        }
+                    });
+            })
+            .response;
+    }
+
     if widget.properties["style"] == "grid" {
         return draw_grid(ui, widget, value, geometry, events);
     }
@@ -362,7 +507,20 @@ pub(crate) fn draw(
         visible -= 1;
     }
     measured[0] = (available - measured[1..visible].iter().sum::<f32>()).max(20.0);
-    let height = number(&widget.properties, "height", ui.available_height()).max(32.0);
+    let compact =
+        ui.ctx().content_rect().height() < number(&widget.properties, "compact_below_height", 0.0);
+    let reserve = if !compact && widget.properties["reserve_bottom_style"] == "small" {
+        ui.text_style_height(&TextStyle::Small)
+            + number(&widget.properties, "reserve_bottom_padding", 0.0)
+    } else {
+        0.0
+    };
+    let height = number(
+        &widget.properties,
+        "height",
+        ui.available_height() - reserve,
+    )
+    .max(32.0);
     let row_h = number(
         &widget.properties,
         "row_height",
@@ -370,7 +528,8 @@ pub(crate) fn draw(
     );
     let result=ui.allocate_ui(vec2(available,height),|ui| {
         ui.set_min_size(vec2(available,height));
-        let header_h=ui.text_style_height(&TextStyle::Small)+8.0;
+        let header_h=if compact {0.0} else {ui.text_style_height(&TextStyle::Small)+8.0};
+        if !compact {
         let (header,_)=ui.allocate_exact_size(vec2(available,header_h),Sense::hover());
         let mut x=header.left();
         for i in 0..visible {
@@ -386,7 +545,8 @@ pub(crate) fn draw(
             if response.clicked(){emit(events,id,"sort",json!({"column":column["id"]}));}
         }
         ui.painter().hline(header.x_range(),header.bottom(),ui.visuals().widgets.noninteractive.bg_stroke);
-        let list_h=(height-header_h-ui.spacing().item_spacing.y).max(row_h);
+        }
+        let list_h=(height-header_h-if compact {0.0}else{ui.spacing().item_spacing.y}).max(row_h);
         let body=Rect::from_min_size(ui.cursor().min,vec2(available,list_h));
         let background=ui.interact(body,Id::unique((ui.ctx().viewport_id(),id,"background")),Sense::click());
         geometry.insert(format!("{id}.background"),body);
@@ -396,7 +556,7 @@ pub(crate) fn draw(
             for index in range {
                 let row=&rows[index];
                 let key=text(row,"key");
-                let (rect,response)=ui.allocate_exact_size(vec2(available,row_h),Sense::click_and_drag());
+                let (rect,response)=ui.allocate_exact_size(vec2(ui.available_width(),row_h),Sense::click_and_drag());
                 geometry.insert(format!("{id}.row.{index}"),rect);
                 geometry.insert(format!("{id}.key.{key}"),rect);
                 response.widget_info(||egui::WidgetInfo::selected(egui::Role::Button,true,selected(value,row),row["cells"][0].as_str().unwrap_or("")));
@@ -404,23 +564,29 @@ pub(crate) fn draw(
                 let colour=if is_selected{ui.visuals().selection.stroke.color}else{ui.visuals().text_color()};
                 let painter=ui.painter_at(rect);
                 if is_selected||response.hovered(){painter.rect_filled(rect,2.0,if is_selected{ui.visuals().selection.bg_fill}else{ui.visuals().widgets.hovered.weak_bg_fill});}
+                if row["branch"]==true && response.dnd_hover_payload::<DragRows>().is_some_and(|drag|drag.source!=*id) {
+                    painter.rect_stroke(rect.shrink(1.0),2.0,egui::Stroke::new(1.5,ui.visuals().selection.stroke.color),egui::StrokeKind::Inside);
+                }
                 if focused(value,row)&&value["active"]==true{painter.rect_stroke(rect.shrink(0.5),2.0,egui::Stroke::new(1.0,ui.visuals().selection.stroke.color.gamma_multiply(0.6)),egui::StrokeKind::Inside);}
                 let mut tx=rect.left()+4.0+number(row,"depth",0.0)*14.0;
                 let chevron=Rect::from_center_size(pos2(tx+8.0,rect.center().y),vec2(16.0,16.0));
                 let mut toggled=false;
                 if row["branch"]==true {
                     let toggle=ui.interact(chevron,Id::unique((ui.ctx().viewport_id(),id,key,"expand")),Sense::click());
+                    toggle.widget_info(||egui::WidgetInfo::labeled(egui::Role::Button,true,format!("{} {}",if row["expanded"]==true{"Collapse"}else{"Expand"},row["cells"][0].as_str().unwrap_or(""))));
                     geometry.insert(format!("{id}.expand.{index}"),chevron);
-                    icon(ui,if row["expanded"]==true{"chevron-down"}else{"chevron-right"},chevron.shrink(2.0),ui.visuals().weak_text_color());
+                    if let Some(icon) = crate::icons::Icon::from_name(if row["expanded"]==true{"chevron-down"}else{"chevron-right"}) { crate::icons::image_of(ui.ctx(),icon,12.8,ui.visuals().weak_text_color()).paint_at(ui,chevron.shrink(1.0)); }
                     if toggle.clicked(){emit(events,id,"expand",json!({"key":key}));toggled=true;}
                 }
                 tx+=18.0;
                 let icon_rect=Rect::from_center_size(pos2(tx+8.0,rect.center().y),vec2(16.0,16.0));
                 icon(ui,text(row,"icon"),icon_rect,if is_selected{colour}else if row["branch"]==true{ui.visuals().hyperlink_color}else{ui.visuals().weak_text_color()});
                 tx+=22.0;
-                let mut cx=rect.left();
                 for i in 0..visible {
-                    let right=cx+measured[i];
+                    // The scroll area's row may snap its available width.
+                    // Anchor metadata to that final rect, as native panels do.
+                    let right=rect.right()-measured[i+1..visible].iter().sum::<f32>();
+                    let cx=if i==0 {rect.left()} else {right-measured[i]};
                     let cell=Rect::from_min_max(pos2(cx,rect.top()),pos2(right,rect.bottom()));
                     let mut font=TextStyle::Body.resolve(ui.style());
                     if i>0 {font.size*=metadata_scale;}
@@ -433,7 +599,6 @@ pub(crate) fn draw(
                         let right_align=text_value(&columns[i],"align")=="right";
                         painter.with_clip_rect(cell.intersect(ui.clip_rect())).text(pos2(if right_align{right-6.0}else{cx+6.0},rect.center().y),if right_align{Align2::RIGHT_CENTER}else{Align2::LEFT_CENTER},text,font,if is_selected{colour}else{ui.visuals().weak_text_color()});
                     }
-                    cx=right;
                 }
                 let modifiers=ui.input(|i|i.modifiers);
                 if !toggled&&response.clicked(){response.request_focus();emit(events,id,"select",json!({"key":key,"ctrl":modifiers.ctrl||modifiers.command,"shift":modifiers.shift}));}
@@ -486,6 +651,10 @@ fn draw_grid(
         let room = (ui.available_width()
             - ui.spacing().item_spacing.x * (columns.len().saturating_sub(1) as f32))
             .max(1.0);
+        let measured = columns
+            .iter()
+            .map(|column| sample_width(ui, column))
+            .collect::<Vec<_>>();
         let mut table = TableBuilder::new(ui)
             .id_salt(id)
             .auto_shrink([widget.properties["auto_shrink"] == true; 2])
@@ -498,8 +667,10 @@ fn draw_grid(
                 Sense::click()
             })
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
-        for column in columns {
-            let width = if column["remainder"] == true {
+        for (column, measured) in columns.iter().zip(measured) {
+            let width = if let Some(width) = measured {
+                Column::exact(width)
+            } else if column["remainder"] == true {
                 Column::remainder()
             } else if let Some(fraction) = column["fraction"].as_f64() {
                 Column::exact(room * fraction as f32)
@@ -588,6 +759,161 @@ fn draw_grid(
 fn text_value<'a>(v: &'a Value, key: &str) -> &'a str {
     text(v, key)
 }
+
+// Fixed internal column keys keep toolkit's static catalogue contract without
+// interning or leaking application-authored strings. Mix sees its original ids.
+const COLUMN_KEYS: [&str; 16] = [
+    "c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c14",
+    "c15",
+];
+fn draw_gold(
+    ui: &mut Ui,
+    widget: &Widget,
+    value: &Value,
+    events: &mut Vec<Intent>,
+) -> egui::Response {
+    use toolkit::datatable::{
+        Align, Cell, Column, DataTable, Everything, Order, Pick, RowStyle, Rows, SelectionMode,
+        TableEvent, TableState, Total, Width,
+    };
+    struct Model<'a> {
+        rows: &'a [Value],
+    }
+    impl Rows for Model<'_> {
+        fn len(&self) -> usize {
+            self.rows.len()
+        }
+        fn key(&self, row: usize) -> String {
+            text(&self.rows[row], "key").into()
+        }
+        fn cell(&self, row: usize, column: &str) -> Cell {
+            let index = COLUMN_KEYS.iter().position(|key| *key == column).unwrap();
+            let data = &self.rows[row];
+            let mut cell = Cell::new(data["cells"][index].as_str().unwrap_or(""))
+                .weak(data["weak_cells"][index] == true);
+            for marker in data["markers"][index].as_array().into_iter().flatten() {
+                if let Some(icon) = marker.as_str().and_then(crate::icons::Icon::from_name) {
+                    cell = cell.icon(icon);
+                }
+            }
+            cell
+        }
+        fn style(&self, row: usize) -> RowStyle {
+            RowStyle {
+                strong: self.rows[row]["strong"] == true,
+                weak: self.rows[row]["weak"] == true,
+            }
+        }
+    }
+    let authored = value["columns"].as_array().unwrap();
+    let mut catalogue = String::new();
+    let columns = authored
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            // Labels are plain text, never application-supplied Fluent source.
+            let label = text(column, "label").replace(['\r', '\n', '{', '}'], " ");
+            catalogue.push_str(&format!("{} = {}\n", COLUMN_KEYS[index], label));
+            let min = number(column, "min_width", 40.0);
+            let width = if let Some(width) = sample_width(ui, column) {
+                Width::Fixed(width)
+            } else if column["remainder"] == true {
+                Width::Remainder { min }
+            } else if let Some(share) = column["fraction"].as_f64() {
+                Width::Share {
+                    share: share as f32,
+                    min,
+                }
+            } else if column["resizable"] == true {
+                Width::Resizable {
+                    initial: number(column, "width", 90.0),
+                    min,
+                }
+            } else {
+                Width::Fixed(number(column, "width", 90.0))
+            };
+            let mut result = Column::new(COLUMN_KEYS[index], COLUMN_KEYS[index])
+                .width(width)
+                .align(if column["align"] == "right" {
+                    Align::End
+                } else {
+                    Align::Start
+                });
+            if column["sortable"] != false {
+                result = result.sortable(Order::Ascending);
+            }
+            result
+        })
+        .collect::<Vec<_>>();
+    let mut state: TableState = native_table_state(&value["state"]).expect("validated table state");
+    let external = |key: &str| {
+        authored
+            .iter()
+            .position(|c| text(c, "id") == key)
+            .map(|i| COLUMN_KEYS[i].to_owned())
+    };
+    if let Some(sort) = &mut state.sort {
+        if let Some(key) = external(&sort.column) {
+            sort.column = key;
+        } else {
+            state.sort = None;
+        }
+    }
+    state.widths = state
+        .widths
+        .into_iter()
+        .filter_map(|(k, v)| external(&k).map(|k| (k, v)))
+        .collect();
+    state.hidden = state
+        .hidden
+        .into_iter()
+        .filter_map(|k| external(&k))
+        .collect();
+    let original = |key: &str| {
+        COLUMN_KEYS
+            .iter()
+            .position(|k| *k == key)
+            .map(|i| text(&authored[i], "id").to_owned())
+            .unwrap_or_default()
+    };
+    let rows = Model {
+        rows: value["rows"].as_array().unwrap(),
+    };
+    let strings = toolkit::Strings::new(&catalogue);
+    ui.scope(|ui| {
+        if value["cancel_pending"] == true
+            && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            emit(events, &widget.id, "table", json!({"event":"cancel"}));
+        }
+        let mut table=DataTable::new(&widget.id,&columns,&state).strings(&strings).keeps_tab(true)
+            .selection(if widget.properties["multi"]==false{SelectionMode::Single}else{SelectionMode::Multi})
+            .total(Total::Known(crate::widgets::whole(&value["total"]).unwrap_or(rows.len() as u64)))
+            .pager(widget.properties["pager"]!=false).empty_text(value["empty"].as_str().unwrap_or("No items"));
+        if let Some(link)=value["select_everything"].as_str(){ table=table.select_everything(Everything{link:link.into(),done:value["everything_done"].as_str().map(Into::into)}); }
+        if let Some(count) = crate::widgets::whole(&value["selected_count"]) { table = table.selected_count(Some(count)); }
+        for event in table.show(ui,&rows) {
+            let payload=match event {
+                TableEvent::SortChanged(sort)=>json!({"event":"sort","sort":sort.map(|s|json!({"column":original(&s.column),"order":s.order}))}),
+                TableEvent::PageChanged(page)=>json!({"event":"page","page":page}),
+                TableEvent::PageSizeChanged(size)=>json!({"event":"page_size","size":size}),
+                TableEvent::Selected{key,pick,..}=>json!({"event":"select","key":key,"toggle":pick==Pick::Toggle}),
+                TableEvent::Activated{key,..}=>json!({"event":"activate","key":key}),
+                TableEvent::ColumnResized{column,width}=>json!({"event":"width","column":original(&column),"width":width}),
+                TableEvent::ColumnShown{column,visible}=>json!({"event":"visible","column":original(&column),"visible":visible}),
+                TableEvent::DensityChanged(density)=>json!({"event":"density","density":density}),
+                TableEvent::ContextMenu{key,..}=>json!({"event":"context","key":key}),
+                TableEvent::DragStarted{keys}=>json!({"event":"drag","keys":keys}),
+                TableEvent::SelectionChanged{keys,focus}=>json!({"event":"selection","keys":keys,"focus":focus}),
+                TableEvent::SelectEverything=>json!({"event":"everything"}),
+            };
+            emit(events,&widget.id,"table",payload);
+        }
+    }).response
+}
+
+/// A theme-native navigation outline. The caller owns hierarchy, expansion,
+/// cursor and selection; this draws only the rows the caller supplies.
 
 fn draw_outline(
     ui: &mut Ui,
@@ -761,4 +1087,148 @@ fn outline_rows(
             });
         }
     }
+}
+
+fn draw_counted_outline(
+    ui: &mut Ui,
+    widget: &Widget,
+    value: &Value,
+    geometry: &mut BTreeMap<String, Rect>,
+    events: &mut Vec<Intent>,
+) -> egui::Response {
+    let id = &widget.id;
+    let rows = value["rows"].as_array().unwrap();
+    let keyboard = widget.properties["keyboard"] == true;
+    let focus_id = Id::unique(id);
+    if keyboard {
+        let area = ui.available_rect_before_wrap();
+        let back = ui.interact(area, focus_id, Sense::focusable_noninteractive());
+        if ui.input(|i| i.pointer.primary_pressed()) && ui.rect_contains_pointer(area) {
+            back.request_focus();
+        }
+        if ui.memory(|m| m.has_focus(focus_id)) {
+            ui.memory_mut(|m| {
+                m.set_focus_lock_filter(
+                    focus_id,
+                    egui::EventFilter {
+                        tab: true,
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        ..Default::default()
+                    },
+                )
+            });
+            for key in [
+                egui::Key::ArrowUp,
+                egui::Key::ArrowDown,
+                egui::Key::ArrowLeft,
+                egui::Key::ArrowRight,
+            ] {
+                if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key)) {
+                    emit(events, id, "navigate", json!({"key":format!("{key:?}")}));
+                }
+            }
+            if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
+                if let Some(row) = rows
+                    .iter()
+                    .find(|r| focused(value, r))
+                    .or_else(|| rows.iter().find(|r| selected(value, r)))
+                    .or(rows.first())
+                {
+                    emit(events, id, "select", json!({"key":row["key"]}));
+                }
+            }
+        }
+    }
+    ui.scope(|ui| {
+        egui::ScrollArea::vertical()
+            .id_salt((id, "outline"))
+            .auto_shrink(false)
+            .show(ui, |ui| {
+                for row in rows {
+                    let key = text(row, "key");
+                    let shown = ui.scope(|ui| {
+                        egui::Sides::new().show(
+                            ui,
+                            |ui| {
+                                ui.add_space(ui.spacing().indent * number(row, "depth", 0.0));
+                                if row["branch"] == true {
+                                    let icon = if row["expanded"] == true {
+                                        crate::icons::Icon::ChevronDown
+                                    } else {
+                                        crate::icons::Icon::ChevronRight
+                                    };
+                                    let mut r = ui.add(
+                                        crate::icons::image_of(
+                                            ui.ctx(),
+                                            icon,
+                                            12.0,
+                                            ui.visuals().weak_text_color(),
+                                        )
+                                        .sense(Sense::click()),
+                                    );
+                                    if let Some(label) = row["disclosure_label"].as_str() {
+                                        r = r.accessible_name(label);
+                                    }
+                                    geometry.insert(format!("{id}.expand.{key}"), r.rect);
+                                    if r.clicked() {
+                                        if keyboard {
+                                            ui.memory_mut(|m| m.request_focus(focus_id));
+                                        }
+                                        emit(events, id, "expand", json!({"key":key}));
+                                    }
+                                } else {
+                                    ui.add_space(12.0 + ui.spacing().item_spacing.x);
+                                }
+                                if let Some(icon) = crate::icons::Icon::from_name(text(row, "icon"))
+                                {
+                                    ui.add(crate::icons::image_of(
+                                        ui.ctx(),
+                                        icon,
+                                        12.0,
+                                        if row["error"] == true {
+                                            ui.visuals().error_fg_color
+                                        } else {
+                                            ui.visuals().weak_text_color()
+                                        },
+                                    ));
+                                }
+                                let mut label =
+                                    egui::RichText::new(row["cells"][0].as_str().unwrap_or(""));
+                                if row["strong"] == true || selected(value, row) {
+                                    label = label.strong();
+                                }
+                                if row["weak"] == true {
+                                    label = label.weak();
+                                }
+                                let r = toolkit::selectable(ui, selected(value, row), label);
+                                geometry.insert(format!("{id}.key.{key}"), r.rect);
+                                if r.clicked() {
+                                    if keyboard {
+                                        ui.memory_mut(|m| m.request_focus(focus_id));
+                                    }
+                                    emit(events, id, "select", json!({"key":key}));
+                                }
+                            },
+                            |ui| {
+                                if let Some(n) =
+                                    crate::widgets::whole(&row["count"]).filter(|n| *n > 0)
+                                {
+                                    ui.label(egui::RichText::new(n.to_string()).strong());
+                                }
+                            },
+                        );
+                    });
+                    if focused(value, row) && (!keyboard || ui.memory(|m| m.has_focus(focus_id))) {
+                        ui.painter().rect_stroke(
+                            shown.response.rect,
+                            ui.visuals().widgets.inactive.corner_radius,
+                            ui.visuals().selection.stroke,
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                }
+            });
+    })
+    .response
 }

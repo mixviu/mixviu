@@ -16,12 +16,18 @@ impl NativeMenu {
         value: &Value,
         events: &mut Vec<crate::widgets::Intent>,
     ) -> egui::Response {
-        let response = draw(ui, value, false, widget.properties["header_icon"].as_str());
+        let compact = toolkit::menu::form(ui.ctx())["effective"] != "bar";
+        let response = draw(
+            ui,
+            value,
+            compact,
+            widget.properties["header_icon"].as_str(),
+        );
         if let Some(command) = picked(ui.ctx()) {
             events.push(crate::widgets::Intent {
                 id: widget.id.clone(),
                 action: "command".into(),
-                value: serde_json::json!({"command":command}),
+                value: command,
             });
         }
         response
@@ -39,6 +45,17 @@ fn slots() -> &'static [&'static str] {
 }
 pub fn command_slot(index: usize) -> Option<&'static str> {
     slots().get(index).copied()
+}
+pub fn label_slot(index: usize) -> Option<&'static str> {
+    static LABELS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    LABELS
+        .get_or_init(|| {
+            (0..CAPACITY)
+                .map(|n| &*Box::leak(format!("viu-label-{n:03}").into_boxed_str()))
+                .collect()
+        })
+        .get(index)
+        .copied()
 }
 #[derive(Clone, Default)]
 struct Model {

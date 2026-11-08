@@ -10,6 +10,182 @@ fn scene(nodes: serde_json::Value) -> String {
 }
 
 #[test]
+fn bottom_panel_reserves_space_before_the_fill_sibling() {
+    let source = scene(json!({
+        "root":{"widget":"dock","children":["footer","body"],"placements":{
+            "footer":{"edge":"bottom","panel":true,"size":140,"resizable":true,"max_fraction":0.3},
+            "body":{"edge":"fill"}
+        }},
+        "footer":{"widget":"column","children":["footer-label"]},
+        "footer-label":{"widget":"control","definition":{"id":"footer-label","kind":"label","label":"","initial":"No problems."}},
+        "body":{"widget":"control","definition":{"id":"body","kind":"label","label":"","initial":"Document body"}}
+    }));
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    toolkit::install(&ctx, &toolkit::Theme::embedded());
+    for _ in 0..3 {
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1000.0, 720.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        )
+        .drop_without_applying_deltas();
+    }
+    let footer = view.geometry["footer-label"];
+    let body = view.geometry["body"];
+    assert!(
+        footer.top() > 500.0,
+        "footer painted over the body: {footer:?}"
+    );
+    assert!(
+        body.bottom() <= footer.top(),
+        "fill overlaps footer: {body:?} {footer:?}"
+    );
+    assert!(footer.bottom() <= 720.0);
+}
+
+#[test]
+fn scrolling_column_keeps_its_authored_padding() {
+    let ctx = egui::Context::default();
+    toolkit::install(&ctx, &toolkit::Theme::embedded());
+    let mut positions = Vec::new();
+    for scroll in [false, true] {
+        let source = scene(json!({
+            "root":{"widget":"column","native_spacing":true,"padding":8,"scroll":scroll,"children":["label"]},
+            "label":{"widget":"control","definition":{"id":"label","kind":"label","label":"","initial":"Content"}}
+        }));
+        let mut view = SceneView::new(&source).unwrap();
+        for _ in 0..3 {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 700.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+        positions.push(view.geometry["label"].min);
+    }
+    assert_eq!(
+        positions[0], positions[1],
+        "scrolling must not discard the container frame"
+    );
+}
+
+#[test]
+fn scrolling_form_fits_inside_a_short_bottom_panel() {
+    let mut positions = Vec::new();
+    for scroll in [false, true] {
+        let source = scene(json!({
+            "root":{"widget":"dock","children":["buttons","controls","body"],"placements":{
+                "buttons":{"edge":"bottom","panel":true,"size":"content","frame":"native","max_fraction":1},
+                "controls":{"edge":"bottom","panel":true,"size":42,"exact":true,"frame":"native","max_fraction":1},
+                "body":{"edge":"fill","panel":true,"frame":"native"}
+            }},
+            "buttons":{"widget":"column","padding":0,"children":["accept"]},
+            "accept":{"widget":"control","definition":{"id":"accept","kind":"command-bar","label":"","initial":[{"id":"save","label":"Save","enabled":true}]}},
+            "controls":{"widget":"column","padding":0,"children":["scroll"]},
+            "scroll":{"widget":"column","padding":0,"scroll":scroll,"children":["name"]},
+            "name":{"widget":"control","definition":{"id":"name","kind":"field","label":"File name","initial":"draft.txt"}},
+            "body":{"widget":"dock","children":["listing"],"placements":{"listing":{"edge":"fill"}}},
+            "listing":{"widget":"control","definition":{"id":"listing","kind":"label","label":"","initial":"Files"}}
+        }));
+        let mut view = SceneView::new(&source).unwrap();
+        let ctx = egui::Context::default();
+        toolkit::install(&ctx, &toolkit::Theme::embedded());
+        for _ in 0..3 {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(820., 600.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+        let field = view.geometry["name"];
+        let button = view.geometry["accept"];
+        let body = view.geometry["body"];
+        assert!(
+            body.bottom() <= field.top(),
+            "fill paints over the short form: {body:?} {field:?}"
+        );
+        assert!(
+            field.bottom() <= button.top(),
+            "field clipped behind footer: {field:?} {button:?}"
+        );
+        assert!(
+            field.top() >= button.top() - 52.,
+            "field left its short panel: {field:?} {button:?}"
+        );
+        positions.push(field);
+    }
+    assert_eq!(
+        positions[0], positions[1],
+        "scrolling must preserve the short form's geometry"
+    );
+}
+
+#[test]
+fn an_empty_dialog_error_does_not_reserve_an_invisible_row() {
+    let mut heights = Vec::new();
+    for error in [None, Some(""), Some("Name refused")] {
+        let mut value = json!({
+            "open":true,"title":"New Folder","body":"","field":"New Folder",
+            "field_fill":true,"instance":1,
+            "choices":[{"id":"ok","label":"OK","enabled":true,"default":true},
+                {"id":"cancel","label":"Cancel","enabled":true,"cancel":true}]
+        });
+        if let Some(error) = error {
+            value["error"] = json!(error);
+        }
+        let source = scene(json!({"root":{"widget":"control","definition":{
+            "id":"root","kind":"dialog-form","label":"",
+            "properties":{"style":"gold"},"initial":value
+        }}}));
+        let mut view = SceneView::new(&source).unwrap();
+        let ctx = egui::Context::default();
+        viu::appearance::install(&ctx);
+        for _ in 0..3 {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1040.0, 680.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+        heights.push(view.geometry["root"].height());
+    }
+    assert_eq!(heights[0], heights[1]);
+    assert!(heights[2] > heights[1], "a real error must remain visible");
+}
+
+#[test]
 fn hosted_menu_popup_survives_a_hidden_client_band_and_returns_to_the_row() {
     let source = scene(
         json!({"root":{"widget":"column","children":["band"]},"band":{"widget":"column","hidden":"= $model.hidden","children":["menu"]},"menu":{"widget":"control","definition":{"id":"menu","kind":"menubar","label":"","initial":[]},"on_intent":"menu.intent"}}),

@@ -104,8 +104,23 @@ impl Editors {
             if serial > doc.command_serial && !view.read_only {
                 doc.command_serial = serial;
                 let name = widget.properties["command"]["name"].as_str().unwrap_or("");
+                if name == "paste" {
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                } else if matches!(name, "cut" | "copy") {
+                    let selection = doc.local.selection();
+                    let text = doc.local.contents();
+                    let range =
+                        selection.anchor.min(selection.head)..selection.anchor.max(selection.head);
+                    if let Some(text) = text.get(range).filter(|s| !s.is_empty()) {
+                        ui.ctx().copy_text(text.to_owned());
+                    }
+                }
                 if !view.read_only {
                     let command = match name {
+                        "cut" if doc.local.selection().anchor != doc.local.selection().head => {
+                            Some(editor::EditCommand::Delete)
+                        }
                         "select-all" => Some(editor::EditCommand::SelectAll),
                         "duplicate-line" => Some(editor::EditCommand::DuplicateLine),
                         "delete-line" => Some(editor::EditCommand::DeleteLine),
@@ -213,7 +228,13 @@ pub(crate) fn native_view(ui: &Ui, widget: &Widget) -> editor::View {
             widget.properties["font_size"]
                 .as_f64()
                 .map(|v| v as f32)
-                .unwrap_or_else(|| TextStyle::Monospace.resolve(ui.style()).size),
+                .unwrap_or_else(|| {
+                    if widget.properties["prose"] == true {
+                        TextStyle::Body.resolve(ui.style()).size
+                    } else {
+                        TextStyle::Monospace.resolve(ui.style()).size
+                    }
+                }),
         ),
         wrap: if widget.properties["soft_wrap"] == true {
             editor::Wrap::Words
@@ -224,6 +245,7 @@ pub(crate) fn native_view(ui: &Ui, widget: &Widget) -> editor::View {
         whitespace: widget.properties["whitespace"] == true,
         remote_carets: widget.properties["remote_carets"] != false,
         read_only: widget.properties["read_only"] == true,
+        current_line: widget.properties["prose"] != true,
         label: Some(widget.label.clone()),
         ..Default::default()
     };
