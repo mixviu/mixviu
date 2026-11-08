@@ -3413,3 +3413,12 @@ New32-pane native cleanup stress exposes another real mismatch: Gold opens32 att
 All13 Mix suites pass after the repair. The actual persistent bundle regression now builds the deepest32-pane layout, checks its published native frame, cap refusal and deep/outer removal before final quit; Rust validation awaits CBC. Next term-deep-layout-6d6c6f80 runs the scoped gate, then worker formatting/exact artifact/native repeats and full release/native proof. Remaining survey disposition, authority race/stress and final acceptance audit stay open. Overall NOT ACCEPTED; no install, desk/VT or merge.
 
 branch: lab/parity-term; head SHA:6d6c6f80ed91db67e2503d11257903e4885eabe7 (iterative deep layout repair; receipt HEAD contains checkpoint); NOT ACCEPTED — exact new-source CBC/native/release and final acceptance audit remain; CBC job ids:term-deep-layout-6d6c6f80 (next scoped gate), term-cleanup-completion-b3fd820e-a1 (green230 terminal, empty patch).
+
+
+### Deep layout runtime reached32; close fixture contract corrected
+
+CBC term-deep-layout-6d6c6f80-a1 passes all13 Mix suites and3 startup tests. Its actual persistent bundle opens all32 panes, validates the published native frame and checks the33rd refusal, then fails the new removal fixture: it supplied an unsupported id field to term.pane.close. That Gold-compatible command takes no target and closes the selected pane. The complete saved log was read and retained; its returned formatting-only patch was applied. No full scoped gate or artifact pass is claimed.
+
+Source715f5518263438095fb5c024e06139f0c76b65f7 corrects the fixture to close the deepest selected pane with an empty body, explicitly select the outer pane then close it, asserting both removed IDs before retaining30-survivor and final-quit checks. Production code and evaluator budgets are unchanged in this correction. Next term-deep-removal-715f5518 repeats the scoped gate, followed by exact artifact/native and full release proof. Overall NOT ACCEPTED; no installation, desk/VT or merge.
+
+branch: lab/parity-term; head SHA:715f5518263438095fb5c024e06139f0c76b65f7 (deep removal fixture contract; receipt HEAD contains checkpoint); NOT ACCEPTED — exact CBC/native/release validation and final audit remain; CBC job ids:term-deep-removal-715f5518 (next scoped gate), term-deep-layout-6d6c6f80-a1 (32-pane runtime reached, fixture contract failure).
