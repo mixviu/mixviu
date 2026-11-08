@@ -855,7 +855,7 @@ mod tests {
             // The embedded broker runs as this test's user, unlike the installed
             // noded account. Isolate its configuration in a subprocess; neither
             // the test runner nor the real PTY launcher changes global env.
-            for mode in ["close", "exit", "burst"] {
+            for mode in ["close", "exit", "burst", "delay"] {
                 let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
@@ -1237,20 +1237,24 @@ mod tests {
             // only the pump; layout policy is loaded from the real app module.
             let stopped=Arc::new(std::sync::atomic::AtomicBool::new(false));
             let stop=stopped.clone();let owned=sessions.clone();
+            let delayed = std::env::var("VIU_TERM_OWNER_CHILD").unwrap() == "delay";
             let pump=std::thread::spawn(move || {
                 let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
                 let source=r#"$m=require(MODEL)
 $policy=require(POLICY)
 $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $s={layout:$m.open_tab($m.initial(),{handle:"vt-1",pid:1},nil),look:{values:{}},closed:false}
+$slow=DELAY_FIRST
 on viu.terminal.control
   $request=$native("control.inspect","",{})
+  if $slow then $slow=false;sleep(3) end
   $out=$policy.apply($s,$request,$native);$s=$out.state
   $published=$native("metadata","",$m.metadata($s.layout))
   $finished=$native("control.finish","",{rc:$out.rc,body:$out.body})
 end
 "#.replace("MODEL",&serde_json::to_string(&root.join("model.mix")).unwrap())
-    .replace("POLICY",&serde_json::to_string(&root.join("protected-layout.mix")).unwrap());
+    .replace("POLICY",&serde_json::to_string(&root.join("protected-layout.mix")).unwrap())
+    .replace("DELAY_FIRST", if delayed {"true"} else {"false"});
                 let bridge=owned.layout_bridge();
                 let mut app=crate::runtime::Runtime::with_services(8,Arc::new(||{}),None,crate::runtime::Services {terminals:Some(owned),..Default::default()});
                 app.load(crate::runtime::Program {path:root.join("protected-test.mix"),source,scene:"test".into(),citizen:"term".into()}).unwrap();
@@ -1262,6 +1266,17 @@ end
             });
             let before_layout=invoke("term.snapshot",json!({"target":target})).await.1["foreground_generation"].as_u64().unwrap();
             let selection=json!({"target":target,"request_id":"6","request_epoch":epoch});
+            if delayed {
+                let before=invoke("term.session",json!({"target":target})).await.1;
+                let refused=invoke("term.tab.select",selection.clone()).await;
+                assert_eq!(refused.0,10,"{refused:?}");
+                assert_eq!(refused.1["error_code"],"FORBIDDEN");
+                let after=invoke("term.session",json!({"target":target})).await.1;
+                assert_eq!(after["request_high_water"],before["request_high_water"],"expired callback must not reserve its request id");
+                assert_eq!(after["foreground_generation"],before["foreground_generation"],"expired callback must not mutate layout");
+                let owners=|state:&Value| state["panes"].as_array().unwrap().iter().map(|pane|json!({"target":pane["target"],"pid":pane["child_pid"],"cols":pane["cols"],"rows":pane["rows"]})).collect::<Vec<_>>();
+                assert_eq!(owners(&after),owners(&before),"expired callback must retain pane owners and geometry");
+            }
             let selected=invoke("term.tab.select",selection.clone()).await;
             assert_eq!(selected,(0,json!({"selected":target,"operation_id":"6"})));
             assert_eq!(invoke("term.tab.select",selection).await,selected);
