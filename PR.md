@@ -66,7 +66,7 @@ Only last.md conflicted; both intent/evidence records were kept. CBC job
 regenerated the baseline using the merged tree mix: no lint count increased
 against main. Full test/release gate at 7cb24b0b is running on CBC.
 
-Gitleaks found the historical help line `Keys: Ctrl+Shift+T/W new/close tab`
-in commit 1bbcf96c, before the squash cut-over. The exact one-finding
-fingerprint is ignored; the main gitleaks policy is unchanged. A full
+Gitleaks found a historical terminal shortcut help line in commit 1bbcf96c,
+before the squash cut-over. Exact fingerprints cover that false positive
+and two historical notes quoting it; the main gitleaks policy is unchanged. A full
 redacted history scan with the pinned gitleaks 8.30.1 now passes.
