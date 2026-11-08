@@ -1,0 +1,98 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$a=require("actions.mix");$m=require("model.mix")
+$controls=require("controls.mix")
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+fn native($op,$handle,$args)
+  if $op=="font-size" then return $args.base+$args.steps*2/3 end
+  if $op=="create" then return {handle:"vt-2",pid:12} end
+  if $op=="state" then return {title:"",pid:11,cols:80,rows:24,geometry:{x:0,y:0,w:0,h:0}} end
+  return nil
+end
+$n=fn($op,$handle,$args)=native($op,$handle,$args)
+$s={layout:$m.open_tab($m.initial(),{handle:"vt-1",pid:11},nil),closed:false,look:{values:{},appearance:{mode:"dark"}},choice:{},bindings:{},effective:{},zoom:0,replies:[]}
+check(len($a.registry($s))==61,"complete pinned registry")
+check(not any($a.terminal_shortcuts($s),fn($key)=$key.key=="Tab" and not $key.ctrl and not $key.alt),"single-pane Tab stays with the shell")
+check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="tab.new" and $key.ctrl and $key.shift and $key.key=="T"),"terminal widget receives default command chords")
+check(deep_eq(map($a.menus($s),fn($v)=$v.label),["File","Edit","View","Pane","Tabs","Help"]),"gold menu order")
+check($a.invoke($s,"pane.next",{},$n).body.error_code=="DISABLED","pane cycling requires a split")
+$out=$a.invoke($s,"pane.split_right",{},$n);$s=$out.state
+check(len($m.leaves($s.layout.tabs[0].tree))==2,"action follows real pane split path")
+$out=$a.invoke($s,"pane.focus_left",{},$n);$s=$out.state
+check($s.layout.tabs[0].active_pane==1,"directional focus before first layout uses tree geometry")
+$out=$a.invoke($s,"view.zoom_in",{},$n);$s=$out.state
+check(abs($s.zoom-2/3)<0.000001,"gold half-point zoom step")
+$out=$a.invoke($s,"view.zoom_out",{},$n)
+check($out.state.zoom==0,"zoom roundtrip exact")
+fn edge_native($op,$handle,$args)
+  if $op=="font-size" then
+    if $args.base==47.3333337 then return if $args.steps<=0 then 47.33333206176758 else 48 end end
+    if $args.base==6.6666665 then return if $args.steps>=0 then 6.666666507720947 else 6 end end
+  end
+  return native($op,$handle,$args)
+end
+for $case in [{base:47.3333337,bound:48,direction:"in",reverse:"out",step:1},{base:6.6666665,bound:6,direction:"out",reverse:"in",step:-1}]
+  $edge=$s;$edge.font_base=$case.base;$edge.font_profile=$case.base;$edge.zoom_steps=0
+  $first=$a.invoke($edge,"view.zoom_"..$case.direction,{},fn($op,$handle,$args)=edge_native($op,$handle,$args))
+  check($first.state.font_current==$case.bound and $first.state.zoom_steps==$case.step,"native-rounded boundary step is accepted")
+  $again=$a.invoke($first.state,"view.zoom_"..$case.direction,{},fn($op,$handle,$args)=edge_native($op,$handle,$args))
+  check($again.state.zoom_steps==$case.step and len($again.effects)==0,"refused boundary step cannot drift the logical zoom count")
+  $back=$a.invoke($again.state,"view.zoom_"..$case.reverse,{},fn($op,$handle,$args)=edge_native($op,$handle,$args))
+  check($back.state.zoom_steps==0 and $back.state.zoom==0,"reverse after a clamped step returns to its original base")
+end
+$out=$a.invoke($s,"view.theme.ocean",{},$n)
+check($out.state.choice.scheme=="ocean" and $out.effects[0].kind=="theme","local theme effect")
+check($a.invoke($s,"absent",{},$n).body.error_code=="UNKNOWN_ACTION","unknown action refuses")
+for $args in [{id:"tab.select",tab:99},{id:"pane.focus",pane:99},{id:"tab.select"}]
+  $before=$s;$before.notice="retained clipboard notice"
+  $out=$a.invoke($before,$args.id,$args,$n)
+  check($out.rc==0 and $out.body.executed==$args.id and $out.state.notice==$before.notice,"Gold accepted stale/no-target action does not overwrite clipboard notice")
+end
+check($a.toolbar($s)[0].id=="help.macros" and len($a.toolbar($s))==4,"gold standard action tail")
+$light=$s;$light.effective.mode="light"
+check(not filter($a.registry($light),fn($v)=$v.id=="view.mode")[0].checked,"Gold mode toggle remains unchecked in the light action registry")
+check(not $a.toolbar($light)[3].checked and $a.toolbar($light)[3].icon=="moon","gold light toolbar mode button is untoggled with moon icon")
+check(not $a.toolbar($s)[3].checked and $a.toolbar($s)[3].icon=="sun","gold dark toolbar mode button is untoggled with sun icon")
+for $mode in ["dark","light"]
+  $chosen=$s;$chosen.effective.mode=$mode;$chosen.choice.mode=$mode
+  $registry=$a.registry($chosen)
+  check(not filter($registry,fn($v)=$v.id=="view.mode")[0].checked,"mode toggle checked readback is independent of explicit mode")
+  check(filter($registry,fn($v)=$v.id=="view.mode."..$mode)[0].checked,"explicit mode radio remains selected")
+  check(not filter($registry,fn($v)=$v.id=="view.mode.session")[0].checked,"explicit mode disables session radio")
+end
+$following=$light;$following.choice.mode=nil
+$registry=$a.registry($following)
+check(not filter($registry,fn($v)=$v.id=="view.mode")[0].checked,"session-resolved light also leaves toggle unchecked")
+check(filter($registry,fn($v)=$v.id=="view.mode.session")[0].checked,"session mode radio remains selected")
+$paste=$a.invoke($s,"edit.paste",{clipboard_handle:"vt-1",paste_text:"wide: 中\n"},$n)
+check($paste.effects[0].handle=="vt-1" and $paste.effects[0].supplied and $paste.effects[0].text=="wide: 中\n","platform paste carries already-read text and captured native owner")
+$paste=$a.invoke($s,"edit.paste",{},$n)
+check(not $paste.effects[0].supplied,"menu paste still requests native clipboard read")
+$paste=$a.invoke($s,"edit.paste",{clipboard_handle:"vt-1",primary:true},$n)
+check($paste.effects[0].primary and $paste.effects[0].handle=="vt-1" and not $paste.effects[0].supplied,"primary read carries its captured pane without supplying or retargeting text")
+$rebound=$s;$rebound.bindings={"tab.new":{shortcut:"F2",keys:["F2","Ctrl+N"]},"edit.copy":{shortcut:nil,keys:[]}}
+check(deep_eq(filter($a.terminal_shortcuts($rebound),fn($key)=$key.command=="tab.new"),[{command:"tab.new",key:"F2",ctrl:false,shift:false,alt:false,enabled:true,repeat:false,normal_screen_only:false},{command:"tab.new",key:"N",ctrl:true,shift:false,alt:false,enabled:true,repeat:false,normal_screen_only:false}]),"all resolved live key bindings reach terminal input")
+check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="view.zoom_reset" and $key.repeat),"gold font actions repeat")
+check(any($a.terminal_shortcuts($s),fn($key)=starts_with($key.command,"scroll.") and $key.repeat and $key.normal_screen_only),"scrollback chords belong to normal screen")
+check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="pane.next" and $key.key=="Tab" and not $key.ctrl and not $key.repeat),"plain Tab cycles a split without autorepeat")
+check(len(filter($a.terminal_shortcuts($rebound),fn($key)=$key.command=="edit.copy"))==0,"unbound command has no stale terminal chord")
+$s.layout.panes["1"]=merge($s.layout.panes["1"],{cols:49,rows:23,geometry:{x:0,y:70,w:450,h:490},cell:[9,20],font_px:14.667,scale:1.25})
+$s.layout.panes["2"]=merge($s.layout.panes["2"],{cols:49,rows:23,geometry:{x:450,y:70,w:450,h:490},cell:[9,20],font_px:14.667,scale:1.25})
+$observed=$a.observed_state($s)
+check(deep_eq($observed.cell,[9,20]) and $observed.scale==1.25 and $observed.font_px==14.667,"action readback carries measured raster metrics")
+check(deep_eq($observed.panes,[{id:1,focused:true,grid:[49,23],rect:[0,70,450,490]},{id:2,focused:false,grid:[49,23],rect:[450,70,450,490]}]),"action pane readback preserves native geometry and tree order")
+$s.layout.panes["1"].window_geometry={x:0,y:110,w:450,h:490}
+$s.layout.panes["1"].geometry={x:0,y:0,w:450,h:490}
+$observed=$a.observed_state($s)
+check(deep_eq($observed.panes[0].rect,[0,110,450,490]),"action state uses window coordinates while pane geometry remains widget local")
+check($s.layout.panes["1"].geometry.y==0,"action projection preserves local directional-focus geometry")
+$out=$controls.dialog($s,{open:"keys"});check($out.rc==0 and $out.body.dialog.kind=="keys","Bus opens keyboard dialog")
+$overlays=$controls.overlays($out.state,"test")
+check(len($overlays[len($overlays)-1].definition.initial.grid)>0,"keyboard dialog includes the bound command rows")
+check($controls.dialog($out.state,{open:"about"}).body.error_code=="DIALOG_OPEN","second dialog refuses")
+$out=$controls.dialog($out.state,{answer:"done"});check($out.state.dialog==nil,"dialog answer closes")
+check($controls.dialog($out.state,{answer:"done"}).body.error_code=="NO_DIALOG","closed dialog refuses late answer")
+$about=$s;$about.build_line="viu 0.1.2 (example-sha, built example-time)";$about.settings_connected=true
+check($controls.about_text($about,"fallback")=="Terminal\nviu 0.1.2 (example-sha, built example-time)\nThe MixOS terminal.\nMIT OR Apache-2.0\nSettings source: settingsd connected","About preserves own build provenance and gold line order")
+$about.settings_connected=false
+check(ends_with($controls.about_text($about,"fallback"),"settingsd not connected"),"About follows settings source loss")
+print("term actions: catalogue, menus, targets, directional focus, theme and zoom checked")

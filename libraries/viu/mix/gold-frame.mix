@@ -7,6 +7,7 @@ fn apply($model,$options)
   $model.frame.padding_top=$options.padding_top ?? 4
   $model.frame.padding_bottom=$options.padding_bottom ?? 4
   $model.frame.status_hidden=$options.status_hidden ?? false
+  $model.frame.status_visible=$options.status_visible ?? true
   $values["gold-icon"]=$options.icon
   $values["gold-title"]=$options.title
   $values["gold-menu"]=$options.menus

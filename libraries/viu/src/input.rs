@@ -45,23 +45,38 @@ impl Input {
         let mut now = vec![egui::Event::ModifiersChanged(modifiers)];
         match command {
             "drop" => {
-                let paths = a["paths"]
-                    .as_array()
-                    .filter(|p| !p.is_empty() && p.len() <= 1024)
-                    .ok_or("expected 1..1024 paths")?;
-                let files = paths
-                    .iter()
-                    .map(|p| {
-                        p.as_str()
-                            .filter(|s| s.len() <= 4096 && std::path::Path::new(s).is_absolute())
-                            .map(|s| {
-                                std::sync::Arc::new(DroppedPath(s.into()))
-                                    as egui::DroppedFileHandle
-                            })
-                            .ok_or("expected absolute file paths")
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.dropped = files;
+                let paths = a["paths"].as_array().filter(|p| !p.is_empty() && p.len() <= 1024).ok_or("expected 1..1024 paths")?;
+                self.dropped = paths.iter().map(|p| p.as_str().filter(|s| s.len() <= 4096 && std::path::Path::new(s).is_absolute()).map(|s| std::sync::Arc::new(DroppedPath(s.into())) as egui::DroppedFileHandle).ok_or("expected absolute file paths")).collect::<Result<Vec<_>, _>>()?;
+            }
+            "clipboard" => {
+                let event = match a["kind"].as_str() {
+                    Some("copy") => egui::Event::Copy,
+                    Some("cut") => egui::Event::Cut,
+                    Some("paste") => egui::Event::Paste(
+                        a["text"]
+                            .as_str()
+                            .filter(|s| s.len() <= 65_536)
+                            .ok_or("Clipboard text limit is 65536 bytes")?
+                            .into(),
+                    ),
+                    _ => return Err("Clipboard kind must be copy, cut or paste".into()),
+                };
+                now.push(event);
+                let key = match a["kind"].as_str() {
+                    Some("copy") => egui::Key::C,
+                    Some("cut") => egui::Key::X,
+                    _ => egui::Key::V,
+                };
+                self.later.push_back(vec![
+                    egui::Event::Key {
+                        key,
+                        physical_key: None,
+                        pressed: false,
+                        repeat: false,
+                        modifiers,
+                    },
+                    egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+                ]);
             }
             "ime" => {
                 let text = a["text"].as_str().unwrap_or("");
@@ -315,6 +330,30 @@ mod tests {
         for key in egui::Key::ALL {
             assert_eq!(egui::Key::from_name(key_name(*key)), Some(*key));
         }
+    }
+    #[test]
+    fn clipboard_driver_queues_platform_events_and_releases_modifiers() {
+        let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
+        let mut input = Input::default();
+        for args in [
+            json!({"kind":"unknown"}),
+            json!({"kind":"paste","text":"x".repeat(65537)}),
+        ] {
+            assert!(input.queue("clipboard", &args, &mut view).is_err());
+            assert!(input.now.is_empty() && input.later.is_empty());
+        }
+        input
+            .queue(
+                "clipboard",
+                &json!({"kind":"paste","text":"中\n","ctrl":true,"shift":true}),
+                &mut view,
+            )
+            .unwrap();
+        assert!(matches!(&input.now[0],egui::Event::ModifiersChanged(m) if m.ctrl && m.shift));
+        assert!(matches!(&input.now[1],egui::Event::Paste(text) if text=="中\n"));
+        assert!(
+            matches!(&input.later[0][1],egui::Event::ModifiersChanged(m) if *m==egui::Modifiers::NONE)
+        );
     }
 }
 /// Application-authored shortcuts use native key consumption before widgets.

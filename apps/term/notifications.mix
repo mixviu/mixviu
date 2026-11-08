@@ -1,0 +1,43 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold natural-exit notification policy, independent of transport and layout
+-- mutation. Capture every note before removing any exited pane from its tab.
+$model=require("model.mix")
+fn initial($setting)
+  return {enabled:$setting!="0",queue:[],running:false,sequence:0,expired:false,closing_started:false}
+end
+fn collect($s,$layout)
+  if not $s.enabled or $s.expired then return $s end
+  for $tab in $layout.tabs
+    for $id in $model.leaves($tab.tree)
+      $pane=$layout.panes[to_string($id)]
+      if $pane.exited then
+        $s.queue=push($s.queue,{summary:"Terminal shell exited — "..$tab.title,body:"pane "..to_string($id).." (pid "..to_string($pane.pid)..") finished",urgency:"normal",category:"transfer.complete",icon:{lucide:"terminal"},dedupe_key:"term-pane-"..to_string($id)})
+      end
+    end
+  end
+  return $s
+end
+fn pending($s)
+  return $s!=nil and not ($s.expired ?? false) and (($s.running ?? false) or len($s.queue ?? [])>0)
+end
+fn drain_ms($s)
+  -- Each queued batch needs its own complete transport allowance, even when
+  -- an earlier batch was already in flight when the last pane exited.
+  $batches=ceil(len($s.queue)/32)+(if $s.running then 1 else 0 end)
+  return max(1,$batches)*2500
+end
+fn messages($s)
+  return map(slice($s.queue,0,32),fn($body)={target:"interact",command:"interact.notify",body:$body,timeout:2})
+end
+fn started($s)
+  $s.sequence=$s.sequence+1;$s.running=true;$s.queue=slice($s.queue,32)
+  return $s
+end
+fn finished($s)
+  $s.running=false
+  return $s
+end
+fn expire($s)
+  $s.queue=[];$s.running=false;$s.expired=true
+  return $s
+end

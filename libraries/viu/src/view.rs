@@ -45,6 +45,10 @@ pub struct SceneView {
 }
 
 impl SceneView {
+    pub fn set_terminals(&mut self, terminals: crate::terminal::sessions::Sessions) {
+        self.widgets.set_terminals(terminals.clone());
+        if let Some(frame) = self.frame.as_mut() { frame.set_terminals(terminals); }
+    }
     pub fn raster_states(&self) -> Value {
         self.widgets.raster_states()
     }

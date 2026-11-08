@@ -21,6 +21,7 @@ pub struct Request {
     pub from: String,
     pub command: String,
     pub args: Value,
+    pub body: String,
     pub headers: BTreeMap<String, String>,
     pub reply: oneshot::Sender<(u8, Value)>,
     /// An application can request close for this reply. The owner acts only
@@ -43,6 +44,30 @@ struct Hint {
     probe: Option<String>,
 }
 type HintFuture = std::pin::Pin<Box<dyn std::future::Future<Output = (String, bool, bool)> + Send>>;
+#[derive(Clone, Default)]
+pub struct Policy {
+    pub pid_fallback: bool,
+    pub namespace: Option<String>,
+    pub text_replies: bool,
+    pub unknown_reply: Option<Value>,
+}
+fn wire_body(value: &Value, text_replies: bool) -> String {
+    if text_replies && let Some(text) = value.as_str() {
+        return text.to_owned();
+    }
+    value.to_string()
+}
+fn canonical_wire(command: &str, registered: &str, namespace: &str) -> Option<String> {
+    if matches!(command, "app.describe" | "app.quit") || command.starts_with("viu.") {
+        return Some(command.into());
+    }
+    if command.starts_with(&format!("{registered}.")) {
+        return Some(crate::native_registration::rename(
+            command, registered, namespace,
+        ));
+    }
+    (!command.contains('.')).then(|| command.to_owned())
+}
 /// Launch-time activation uses the existing native SDK and compositor path.
 pub fn activate_existing(service: &str, command: &str, url: &str) -> Result<bool, String> {
     activate_existing_plan(service, &[json!({"command":command,"body":{}})], url)
@@ -156,6 +181,7 @@ pub struct RequestPolicy {
     pub help: Option<Value>,
     pub owner_help: bool,
     pub timeout: Duration,
+    pub transport: Policy,
 }
 impl Default for RequestPolicy {
     fn default() -> Self {
@@ -163,6 +189,7 @@ impl Default for RequestPolicy {
             help: None,
             owner_help: false,
             timeout: Duration::from_secs(180),
+            transport: Policy::default(),
         }
     }
 }
@@ -216,6 +243,9 @@ impl Endpoint {
             },
         )
     }
+    pub fn start_described_policy(name: String, url: String, commands: Vec<CommandDescriptor>, quit: String, wake: Arc<dyn Fn() + Send + Sync>, help: Option<Value>, transport: Policy) -> Self {
+        Self::start_policy(name,url,commands,quit,wake,RequestPolicy {help,transport,..Default::default()})
+    }
     pub fn start_policy(
         name: String,
         url: String,
@@ -228,7 +258,8 @@ impl Endpoint {
             help,
             owner_help,
             timeout,
-        } = policy;
+            ..
+        } = policy.clone();
         let (tx, requests) = mpsc::sync_channel(32);
         let (notice_tx, notices) = mpsc::sync_channel(32);
         let close_requested = Arc::new(AtomicBool::new(false));
@@ -248,15 +279,22 @@ impl Endpoint {
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
+                let text_replies=policy.transport.text_replies;
+                let pid_fallback=policy.transport.pid_fallback;
+                let (registered,native)=if pid_fallback {
+                    tokio::select!{_=&mut stopped=>return,c=crate::native_registration::connect(&name,&url,&commands,help.is_none() && !owner_help,true)=>match c{Ok((registered,c))=>(registered,Arc::new(c)),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(true,Ordering::Release);wake();return;}}}
+                } else {
                 let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
                 let options=if help.is_none() && !owner_help{options.with_commands(commands)}else{options};
                 let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(e.registration_rejection_typed().is_some(),Ordering::Release);wake();return;}}};
 
+                    (name.clone(),native)
+                };
                 let Some(mut incoming)=native.incoming_bounded()else{return;};
                 *shared.lock().unwrap_or_else(|e|e.into_inner())=Some(native.clone());
                 let mut state=native.subscribe_state();
                 let post=|notice:Notice|{if notice_tx.try_send(notice).is_err(){dropped.fetch_add(1,Ordering::Relaxed);}wake();};
-                post(Notice{command:"bus.connected".into(),args:json!({}),headers:BTreeMap::new()});
+                post(Notice{command:"bus.connected".into(),args:json!({"service":registered}),headers:BTreeMap::new()});
                 let mut responses=tokio::task::JoinSet::new();
                 let mut publishing:Option<HintFuture>=None;
                 loop{
@@ -265,7 +303,7 @@ impl Endpoint {
                         _=responses.join_next(),if !responses.is_empty()=>continue,
                         hint=hint_rx.recv(),if publishing.is_none()=>{if let Some(hint)=hint {publishing=Some(Box::pin(send_hint(native.clone(),hint)));}continue;},
                         (topic,ok,probe_ok)=async{publishing.as_mut().expect("guarded hint future").await},if publishing.is_some()=>{publishing=None;post(Notice{command:"bus.hint.completed".into(),args:json!({"topic":topic,"ok":ok,"probe_ok":probe_ok}),headers:BTreeMap::new()});continue;},
-                        changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();if !connected {responses.abort_all();}post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation()}),headers:BTreeMap::new()});continue;},
+                        changed=state.changed()=>{if changed.is_err(){break;}let connected=native.is_connected();if !connected {responses.abort_all();}post(Notice{command:if connected{"bus.connected"}else{"bus.disconnected"}.into(),args:json!({"generation":native.connection_generation(),"service":registered}),headers:BTreeMap::new()});continue;},
                         event=incoming.recv()=>match event{Some(event)=>event,None=>break}
                     };
                     let command=match event{
@@ -277,11 +315,17 @@ impl Endpoint {
                     if command.command=="HELP" && command.args.is_object() {if let Some(help)=&help {let _=native.respond(&command,0,&help.to_string()).await;continue;}}
                     if close.load(Ordering::Acquire){let _=native.respond(&command,10,&json!({"error_code":"CLOSING"}).to_string()).await;continue;}
                     if responses.len()>=32{let _=native.respond(&command,10,&json!({"error_code":"BUSY"}).to_string()).await;continue;}
+                    let routed=if let Some(namespace)=&policy.transport.namespace {
+                        match canonical_wire(&command.command,&registered,namespace) {
+                            Some(command)=>command,
+                            None=>{let body=policy.transport.unknown_reply.clone().unwrap_or_else(||json!({"error_code":"UNKNOWN_COMMAND"}));let _=native.respond(&command,10,&wire_body(&body,text_replies)).await;continue;}
+                        }
+                    } else {crate::native_registration::rename(&command.command,&registered,&name)};
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
                     let deferred=Arc::new(AtomicBool::new(false));
-                    let request=Request{from:command.from.clone(),command:command.command.clone(),args:if command.body.is_empty(){json!({})}else{command.args.clone()},headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone(),deferred:deferred.clone()};
+                    let request=Request{from:command.from.clone(),command:routed,args:if command.body.is_empty(){json!({})}else{command.args.clone()},body:command.body.clone(),headers:command.headers.clone(),reply,close_after_reply:close_after_reply.clone(),delivery:delivery.clone(),deferred:deferred.clone()};
                     let admitted=tx.try_send(request).is_ok();
                     if admitted{wake();}
                     let native=native.clone();let wake=wake.clone();let close=close.clone();let quit=command.command==quit_command;let service=name.clone();
@@ -291,7 +335,7 @@ impl Endpoint {
                         let answer=if admitted{match tokio::time::timeout(timeout,&mut response).await{Ok(Ok(value))=>value,Err(_) if deferred.load(Ordering::Acquire)=>response.await.unwrap_or((20,json!({"error_code":"OWNER_CLOSED"}))),_=>(20,json!({"error_code":"OWNER_TIMEOUT"}))}}else{(10,json!({"error_code":"BUSY"}))};
                         toolkit::debug::answered(&service,&command.command,answer.0);
 
-                        let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&answer.1.to_string())).await,Ok(Ok(())));
+                        let sent=matches!(tokio::time::timeout(Duration::from_secs(2),native.respond(&command,answer.0,&wire_body(&answer.1,text_replies))).await,Ok(Ok(())));
                         ack.state.store(if sent{1}else{2},Ordering::Release);wake();
                         if (quit||close_after_reply.load(Ordering::Acquire))&&answer.0==0&&sent{close.store(true,Ordering::Release);wake();}
                     });
@@ -401,6 +445,56 @@ fn failure(error: impl ToString) -> MixError {
         span: None,
     }
 }
+struct SendOnly {
+    target: String,
+    command: String,
+    body: String,
+    timeout: Duration,
+}
+impl SendOnly {
+    fn decode(spec: &Value) -> MixResult<Self> {
+        let name = |key: &str, limit: usize| -> MixResult<String> {
+            spec[key]
+                .as_str()
+                .filter(|s| {
+                    !s.is_empty()
+                        && s.len() <= limit
+                        && s.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+                })
+                .map(str::to_owned)
+                .ok_or_else(|| failure(format!("native.send requires a bounded {key}")))
+        };
+        let timeout = match spec.get("timeout") {
+            None => 2.0,
+            Some(v) => v
+                .as_f64()
+                .ok_or_else(|| failure("native.send timeout must be numeric"))?,
+        };
+        if !timeout.is_finite() || !(0.1..=180.0).contains(&timeout) {
+            return Err(failure("native.send timeout must be 0.1..180 seconds"));
+        }
+        let body = spec["body"].to_string();
+        if body.len() > 1_048_576 {
+            return Err(failure("native.send body exceeds budget"));
+        }
+        Ok(Self {
+            target: name("target", 64)?,
+            command: name("command", 256)?,
+            body,
+            timeout: Duration::from_secs_f64(timeout),
+        })
+    }
+    async fn dispatch(self, native: Arc<SupervisedClient>) -> Result<(), String> {
+        tokio::time::timeout(
+            self.timeout,
+            native.send_with_headers(&self.target, &self.command, &BTreeMap::new(), &self.body),
+        )
+        .await
+        .map_err(|_| "native.send transport timeout".to_owned())?
+        .map_err(|e| e.to_string())
+    }
+}
 pub struct Bridge {
     client: SharedClient,
 }
@@ -481,6 +575,44 @@ impl Bridge {
             Err(error) if raw => return raw_transport_parts(error.to_string(), false),
             Err(error) => return Err(error),
         };
+        // A local, send-only request on the existing supervised connection.
+        // Unlike emit this retains request framing, and unlike RPC it never
+        // waits for a recipient response. The application owns payload policy.
+        if target == "viu-local" && command == "native.send.batch" {
+            let spec = crate::runtime::to_json(args)?;
+            let messages = spec["messages"]
+                .as_array()
+                .filter(|m| !m.is_empty() && m.len() <= 32)
+                .ok_or_else(|| failure("native.send.batch requires 1..32 messages"))?;
+            // Preflight the whole batch before any message crosses the Bus.
+            let messages = messages
+                .iter()
+                .map(SendOnly::decode)
+                .collect::<MixResult<Vec<_>>>()?;
+            let mut running = tokio::task::JoinSet::new();
+            let mut results = vec![Value::Null; messages.len()];
+            for (index, message) in messages.into_iter().enumerate() {
+                let native = native.clone();
+                running.spawn(async move { (index, message.dispatch(native).await) });
+            }
+            while let Some(result) = running.join_next().await {
+                let (index, result) = result.map_err(failure)?;
+                results[index] = match result {
+                    Ok(()) => json!({"dispatched":true}),
+                    Err(error) => json!({"dispatched":false,"error":error}),
+                };
+            }
+            let result = crate::runtime::from_json(json!({"results":results}))?;
+            return Ok((0, result.clone(), result));
+        }
+        if target == "viu-local" && command == "native.send" {
+            SendOnly::decode(&crate::runtime::to_json(args)?)?
+                .dispatch(native)
+                .await
+                .map_err(failure)?;
+            let sent = crate::runtime::from_json(json!({"dispatched":true}))?;
+            return Ok((0, sent.clone(), sent));
+        }
         let timeout = crate::runtime::to_json(args)?["timeout"]
             .as_f64()
             .unwrap_or(10.0);
@@ -687,6 +819,226 @@ mod tests {
         assert_eq!(body, "{}");
         assert!(!headers.contains_key("reply_mode"));
         assert!(!headers.contains_key("timeout"));
+    }
+    #[test]
+    fn send_only_keeps_request_framing_without_waiting_for_a_recipient_reply() {
+        let broker = test_broker::Broker::start();
+        let sender = Endpoint::start(
+            "send-source".into(),
+            broker.url.clone(),
+            Vec::new(),
+            "app.quit".into(),
+            Arc::new(|| {}),
+        );
+        let receiver = Endpoint::start(
+            "send-target".into(),
+            broker.url.clone(),
+            Vec::new(),
+            "app.quit".into(),
+            Arc::new(|| {}),
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while sender.client().is_none() || receiver.client().is_none() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }).await.unwrap();
+            let local = crate::local_ui::LocalUi::new(Arc::new(|| {}));
+            let bridge = (local.backend(sender.backend()))();
+            let spec = crate::runtime::from_json(json!({"target":"send-target","command":"sample.completed","body":{"text":"中","pid":42},"timeout":2})).unwrap();
+            // The receiver deliberately holds its reply until after this
+            // completes: an accidental RPC must time out this outer bound.
+            let (rc, result) = tokio::time::timeout(Duration::from_secs(1), bridge.send("viu-local", "native.send", &spec)).await.unwrap().unwrap();
+            assert_eq!(rc, 0);
+            assert_eq!(crate::runtime::to_json(&result).unwrap(), json!({"dispatched":true}));
+            let request = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if let Ok(request) = receiver.requests.try_recv() { break request; }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }).await.unwrap();
+            assert_eq!(request.command, "sample.completed");
+            assert_eq!(request.from, "send-source");
+            assert_eq!(request.headers.get("type").map(String::as_str), Some("request"));
+            assert!(request.headers.get("id").is_some_and(|v| !v.is_empty()));
+            assert_eq!(serde_json::from_str::<Value>(&request.body).unwrap(), json!({"text":"中","pid":42}));
+            request.reply.send((0, json!({}))).unwrap();
+            for invalid in [json!({"target":"send-target","command":"sample.completed","timeout":0}), json!({"target":"send-target","command":"sample.completed","timeout":"2"}), json!({"target":"send-target\nforged","command":"sample.completed"})] {
+                let invalid = crate::runtime::from_json(invalid).unwrap();
+                assert!(bridge.send("viu-local", "native.send", &invalid).await.is_err());
+            }
+            assert!(receiver.requests.try_recv().is_err());
+            let batch = crate::runtime::from_json(json!({"messages":[
+                {"target":"send-target","command":"sample.completed","body":{"pane":1},"timeout":2},
+                {"target":"send-target","command":"sample.completed","body":{"pane":2},"timeout":2}
+            ]})).unwrap();
+            let (rc, result) = tokio::time::timeout(Duration::from_secs(1), bridge.send("viu-local", "native.send.batch", &batch)).await.unwrap().unwrap();
+            assert_eq!(rc, 0);
+            assert_eq!(crate::runtime::to_json(&result).unwrap(), json!({"results":[{"dispatched":true},{"dispatched":true}]}));
+            let mut panes = Vec::new();
+            for _ in 0..2 {
+                let request = tokio::time::timeout(Duration::from_secs(2), async {
+                    loop {
+                        if let Ok(request) = receiver.requests.try_recv() { break request; }
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                }).await.unwrap();
+                assert_eq!(request.headers.get("type").map(String::as_str), Some("request"));
+                panes.push(serde_json::from_str::<Value>(&request.body).unwrap()["pane"].as_u64().unwrap());
+                request.reply.send((0,json!({}))).unwrap();
+            }
+            panes.sort();
+            assert_eq!(panes, [1,2]);
+            let invalid = crate::runtime::from_json(json!({"messages":[
+                {"target":"send-target","command":"sample.completed","body":{"pane":3}},
+                {"target":"send-target","command":"sample.completed","timeout":"bad"}
+            ]})).unwrap();
+            assert!(bridge.send("viu-local","native.send.batch",&invalid).await.is_err());
+            assert!(receiver.requests.try_recv().is_err(), "batch preflight must precede every send");
+        });
+    }
+    #[test]
+    fn native_transport_preserves_original_envelopes_and_plain_text_reply_bytes() {
+        use ::bus::native_client::{NodedClient, UnixConnectOutcome};
+        let broker = test_broker::Broker::start();
+        let endpoint = Endpoint::start_described_policy(
+            "wire-example".into(),
+            broker.url.clone(),
+            Vec::new(),
+            "app.quit".into(),
+            Arc::new(|| {}),
+            Some(json!([])),
+            Policy {
+                namespace: Some("example".into()),
+                text_replies: true,
+                unknown_reply: Some(json!("unknown command; use HELP")),
+                ..Default::default()
+            },
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let UnixConnectOutcome::VerifiedUnix(caller) =
+                NodedClient::connect_unix("", &broker.url, &broker.options(), None)
+                    .await
+                    .unwrap()
+            else {
+                panic!("native observer required")
+            };
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while endpoint.client().is_none() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            let headers = BTreeMap::new();
+            for (original, answer, expected) in [
+                (
+                    " \n{\"x\":99,\"x\":1,\"text\":\"中\"}",
+                    json!("line one\nquote: \"中\""),
+                    "line one\nquote: \"中\"".to_owned(),
+                ),
+                (
+                    "{\"x\":}",
+                    json!({"error_code":"INVALID_ARGUMENT"}),
+                    json!({"error_code":"INVALID_ARGUMENT"}).to_string(),
+                ),
+            ] {
+                let call = caller.client().call_with_headers_raw_within(
+                    "wire-example",
+                    "wire-example.inspect",
+                    &headers,
+                    original,
+                    Duration::from_secs(5),
+                );
+                let respond = async {
+                    let request = loop {
+                        match endpoint.requests.try_recv() {
+                            Ok(request) => break request,
+                            Err(mpsc::TryRecvError::Empty) => {
+                                tokio::time::sleep(Duration::from_millis(5)).await
+                            }
+                            Err(error) => panic!("native owner closed: {error}"),
+                        }
+                    };
+                    assert_eq!(request.command, "example.inspect");
+                    assert_eq!(request.body, original);
+                    request.reply.send((10, answer)).unwrap();
+                };
+                let (result, ()) = tokio::time::timeout(Duration::from_secs(6), async {
+                    tokio::join!(call, respond)
+                })
+                .await
+                .unwrap();
+                let (rc, body, _) = result.unwrap();
+                assert_eq!(rc, 10);
+                assert_eq!(body.as_bytes(), expected.as_bytes());
+            }
+            let (rc, body, _) = caller
+                .client()
+                .call_with_headers_raw_within(
+                    "wire-example",
+                    "example.inspect",
+                    &headers,
+                    "{}",
+                    Duration::from_secs(5),
+                )
+                .await
+                .unwrap();
+            assert_eq!((rc, body), (10, "unknown command; use HELP".into()));
+            assert!(
+                endpoint.requests.try_recv().is_err(),
+                "foreign namespace reached reducer"
+            );
+            caller.client().close().await;
+        });
+    }
+    #[test]
+    fn selected_namespace_refuses_other_instances_but_keeps_host_controls() {
+        assert_eq!(
+            canonical_wire("term-42.tabs", "term-42", "term"),
+            Some("term.tabs".into())
+        );
+        assert_eq!(
+            canonical_wire("term.other.ui.capture", "term.other", "term"),
+            Some("term.ui.capture".into())
+        );
+        for command in ["term.tabs", "term-420.tabs", "other.tabs"] {
+            assert_eq!(canonical_wire(command, "term-42", "term"), None);
+        }
+        for command in [
+            "HELP",
+            "INFO",
+            "help",
+            "app.describe",
+            "app.quit",
+            "viu.capture",
+        ] {
+            assert_eq!(
+                canonical_wire(command, "term-42", "term"),
+                Some(command.into())
+            );
+        }
+    }
+    #[test]
+    fn text_reply_policy_preserves_raw_bytes_and_structured_json() {
+        let text = json!("line one\nquote: \"unicode 中\"\n");
+        assert_eq!(wire_body(&text, true), "line one\nquote: \"unicode 中\"\n");
+        assert_eq!(wire_body(&text, false), text.to_string());
+        for value in [
+            json!({"shown":true,"target":{"id":7}}),
+            json!([{"name":"HELP"}]),
+            json!(null),
+        ] {
+            assert_eq!(wire_body(&value, true), value.to_string());
+        }
     }
     #[test]
     fn native_reply_routes_preserve_structured_refusals_and_scalar_bodies() {

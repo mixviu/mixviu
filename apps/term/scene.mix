@@ -1,0 +1,8 @@
+---
+scene: 1
+name: term
+citizen: term
+---
+```mix
+{root:{widget:"dock",children:["tabs-band","paste-notice","font-notice","terminal-find","terminal-find-status","terminal"],placements:{"tabs-band":{edge:"top",size:"content"},"paste-notice":{edge:"top",size:"content"},"font-notice":{edge:"top",size:"content"},"terminal-find":{edge:"top",size:"content"},"terminal-find-status":{edge:"top",size:"content"},terminal:{edge:"fill"}}},"tabs-band":{widget:"column",hidden:"= $model.layout_hidden",background:"design.canvas",padding:0,gap:0,children:["tabs"]},tabs:{widget:"control",hidden:"= $model.layout_hidden",definition:"= $model.tabs",on_intent:"term.intent"},"paste-notice":{widget:"column",hidden:"= !$model.show_paste_notice",background:"design.card",padding_left:8,padding_right:8,padding_top:3,padding_bottom:3,gap:0,children:["paste-notice-text"]},"paste-notice-text":{widget:"control",definition:"= $model.paste_notice"},"font-notice":{widget:"column",hidden:"= !$model.show_font_notice",background:"design.card",padding_left:8,padding_right:8,padding_top:3,padding_bottom:3,gap:0,children:["font-notice-text"]},"font-notice-text":{widget:"control",definition:"= $model.font_notice"},"terminal-find":{widget:"control",hidden:"= !$model.find_open",definition:"= $model.find_bar",on_intent:"term.intent"},"terminal-find-status":{widget:"control",hidden:"= !$model.find_open",definition:"= $model.find_status"},terminal:{widget:"control",hidden:"= $model.layout_hidden",definition:"= $model.terminal",on_intent:"term.intent"}}
+```

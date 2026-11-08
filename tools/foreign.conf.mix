@@ -1,0 +1,76 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- foreign.conf.mix — policy for crates that compile or bind foreign (C, C++,
+-- assembly) code. Read by tools/foreign_gate.mix. Rule: AGENTS.md "Foreign
+-- code has a high bar" (2026-10-28).
+--
+-- allow:  accepted foreign code, each with a reason and an exit path. Adding
+--         one is the project lead's call.
+-- debt:   foreign code present today. The gate fails on any foreign crate in
+--         neither list, so this list only shrinks. `kind`: "vendored" compiles
+--         bundled C/C++ (cc); "system" binds a host library (pkg-config).
+-- strict: crates whose closure may reach `allow` entries only (the `mix`
+--         shell is every server's login shell).
+foreign: {
+  allow: {
+    "libsqlite3-sys": {reason: "SQLite; no pure-Rust equivalent yet",
+      exit: "the planned Rust SQLite rewrite"},
+    "ring": {reason: "TLS crypto primitives (rustls); audited C and assembly",
+      exit: "a pure-Rust rustls crypto provider when one is mature"}
+  },
+  debt: {
+    -- vendored C/C++
+    "libmimalloc-sys": {kind: "vendored", via: "mimalloc (dnsd, maild, monitord, noded, webd)",
+      exit: "measure against the system allocator; drop where it does not pay"},
+    "sqlite-vec": {kind: "vendored", via: "indexd",
+      exit: "vector search in Rust (or with the SQLite rewrite)"},
+    "onig_sys": {kind: "vendored", via: "tokenizers (indexd embeddings)",
+      exit: "tokenizers with the fancy-regex/pure-Rust regex backend"},
+    "simdutf": {kind: "vendored", via: "rio-vt (Viu terminal widget); Fable D6: Viu is not strict",
+      exit: "pure-Rust UTF-8 validation (std or simdutf8)"},
+    "zstd-sys": {kind: "vendored", via: "zip",
+      exit: "zip without zstd, or a pure-Rust zstd (ruzstd)"},
+    "wayland-backend": {kind: "vendored", via: "wayland-client/server (smithay, winit, toolkit)",
+      exit: "the pure-Rust Wayland backend (no client_system/server_system)"},
+    -- system library bindings (desktop and compositor only)
+    "wayland-sys": {kind: "system", via: "wayland-backend system features",
+      exit: "with wayland-backend's pure-Rust mode"},
+    "smithay": {kind: "system", via: "compd (gbm, udev, seat)", exit: "none planned: OS interface"},
+    "smithay-client-toolkit": {kind: "system", via: "winit, toolkit", exit: "with wayland-sys"},
+    "udev": {kind: "system", via: "smithay, inputd", exit: "none planned: OS interface"},
+    "libudev-sys": {kind: "system", via: "udev", exit: "none planned: OS interface"},
+    "libseat-sys": {kind: "system", via: "smithay session", exit: "none planned: OS interface"},
+    "khronos-egl": {kind: "system", via: "wgpu-hal GLES", exit: "none planned: GPU driver interface"},
+    "x11-dl": {kind: "system", via: "winit X11 backend", exit: "disable winit's x11 feature"},
+    "libpulse-sys": {kind: "system", via: "drivers (audio)", exit: "PipeWire only"},
+    "libspa": {kind: "system", via: "pipewire (portald)", exit: "none planned: OS interface"},
+    "libspa-sys": {kind: "system", via: "pipewire (portald)", exit: "none planned: OS interface"},
+    "pipewire-sys": {kind: "system", via: "portald screen capture", exit: "none planned: OS interface"}
+  },
+  -- Crates that always declare a native helper but compile no foreign code
+  -- when this feature is on (their build script skips it).
+  pure_when: {"blake3": "pure"},
+  -- `system` builds the shipped `mix` binary (the multi-call shell with the
+  -- maild, noded, webd, dnsd and monitord personalities).
+  strict: ["mix", "mix-shell", "system", "mixd"],
+  -- Foreign code a strict crate reaches today pending a decision (Mark):
+  --   libmimalloc-sys: the multi-call binary global allocator (daemon speed);
+  --     exit: measure the system allocator, or mimalloc only in daemon builds.
+  --   zstd-sys: zip archives in libs/mix; exit: a pure-Rust zstd (ruzstd).
+  -- Fable D2/D3 admits mixd's existing vendored static C; its admission
+  -- boundary is no new DT_NEEDED library. These four are the pinned service
+  -- personalities' existing closure, not permission for Viu/Rio in mixd.
+  -- The strict_forbid package check and --elf check still apply to mixd.
+  strict_exceptions: {
+    "system": ["libmimalloc-sys", "zstd-sys"],
+    "mixd": ["libmimalloc-sys", "onig_sys", "sqlite-vec", "zstd-sys"]
+  },
+  -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
+  -- A trailing * matches a prefix.
+  strict_forbid: ["viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
+    "glow", "glutin*", "smithay*", "wayland-*", "x11*", "xkbcommon*", "calloop-wayland-source",
+    "iced*", "bevy*", "vello*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
+  -- Shared libraries a built strict binary must not need (DT_NEEDED prefix).
+  strict_forbid_so: ["libwayland", "libX", "libxcb", "libxkbcommon", "libEGL", "libGL",
+    "libvulkan", "libgbm", "libdrm", "libinput", "libudev", "libseat", "libpipewire",
+    "libpulse", "libasound", "libfontconfig", "libfreetype", "libdbus"]
+}

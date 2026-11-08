@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$clipboard=require("clipboard.mix")
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+for $kind in ["select","",nil,"unknown"]
+  check($clipboard.intent_action($kind,true)==nil and $clipboard.intent_action($kind,false)==nil,"unknown clipboard intent cannot close a pane")
+end
+check($clipboard.intent_action("cut",false)==nil and $clipboard.intent_action("cut",true)=="pane.close","cut requires its active pane")
+check($clipboard.intent_action("copy",false)=="edit.copy" and $clipboard.intent_action("paste",false)=="edit.paste","copy and supplied paste retain captured target")
+fn forbidden($op,$handle,$args) raise("TEST","failed or stale read reached native paste") end
+fn paste_ok($op,$handle,$args)
+  check($op=="paste" and $handle=="vt-original" and $args.text=="wide: 中\n","completion retains its native owner and exact text")
+  return nil
+end
+$no=fn($op,$handle,$args)=forbidden($op,$handle,$args)
+$yes=fn($op,$handle,$args)=paste_ok($op,$handle,$args)
+$s={layout:{panes:{"1":{handle:"vt-original"},"2":{handle:"vt-focused"}}},pastes:{first:"vt-original",second:"vt-focused"},notice:"previous"}
+for $case in [{reason:"Empty",expected:"previous"},{reason:"TooLarge",expected:"Paste exceeds 16 MiB limit"},{reason:"TimedOut",expected:"The clipboard did not answer in time"},{reason:"Busy",expected:"A paste is still being read"},{reason:"NoFocus",expected:"Not copied: click in the terminal first, then copy again"},{reason:'Failed("private diagnostic")',expected:"The clipboard could not be read"}]
+  $out=$clipboard.completed($s,{id:"first",text:"",reason:$case.reason},$no)
+  check($out.notice==$case.expected,"gold completion notice for "..$case.reason)
+  check($out.pastes.first==nil and $out.pastes.second=="vt-focused","only the answered read retires")
+end
+$out=$clipboard.completed($s,{kind:"copy",reason:"NoFocus"},$no)
+check($out.notice=="Not copied: click in the terminal first, then copy again" and deep_eq($out.pastes,$s.pastes),"copy refusal shows notice without ending a pending read")
+$out=$clipboard.completed($s,{id:"absent",reason:"Busy"},$no)
+check(deep_eq($out,$s),"stale completion does not replace notice or retire another read")
+$out=$clipboard.completed($s,{id:"first",text:"wide: 中\n"},$yes)
+check($out.notice==nil and $out.pastes.first==nil and $out.pastes.second=="vt-focused","successful paste clears notice and owns its captured handle")
+$out=$clipboard.completed($out,{id:"first",text:"duplicate"},$no)
+check($out.notice==nil,"duplicate successful completion is ignored")
+$closed=$s;$closed.layout.panes=delete($closed.layout.panes,"1")
+$out=$clipboard.completed($closed,{id:"first",text:"wide: 中\n"},$no)
+check($out.notice=="previous" and $out.pastes.first==nil,"closed read owner never retargets the active sibling")
+$out=$clipboard.apply_text($s,"vt-original","wide: 中\n",$yes)
+check($out.notice==nil,"supplied platform text uses the same success policy")
+$out=$clipboard.apply_text($s,"vt-original","wide: 中\n",$no)
+check($out.notice=="failed or stale read reached native paste","native refusal becomes a visible notice")
+print("term clipboard: notices, read ownership, copy refusal, empty, stale and successful paste checked")

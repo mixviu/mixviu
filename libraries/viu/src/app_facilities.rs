@@ -296,6 +296,7 @@ impl Facilities {
                 .and_then(|id| crate::native_menu::application_id(ctx, id))
             {
                 r.args["id"] = json!(id);
+                r.body = r.args.to_string();
             }
         }
         if (r.command == "app.describe" && !self.mix_describe) || r.command == "HELP" {

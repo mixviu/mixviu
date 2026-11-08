@@ -30,6 +30,9 @@ impl Platform {
                 return Err(fail("invalid native clipboard request"));
             }
             let body = crate::runtime::to_json(body)?;
+            if !body.is_object() || (!body["primary"].is_null() && !body["primary"].is_boolean()) {
+                return Err(fail("clipboard body requires an optional primary boolean"));
+            }
             if kind == "copy"
                 && body["text"]
                     .as_str()

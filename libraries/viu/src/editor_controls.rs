@@ -4,8 +4,60 @@ use crate::widgets::Intent;
 use egui::{Id, Ui};
 use serde_json::{Value, json};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn command_search_refuses_disabled_forged_and_closed_commands() {
+        let open = json!({"open":true,"items":[{"id":"copy","label":"Copy","enabled":true},{"id":"close","label":"Close","enabled":false}]});
+        assert!(validate("command-search", &open).is_ok());
+        assert!(
+            admit(
+                "command-search",
+                &open,
+                "command",
+                &json!({"command":"copy"})
+            )
+            .is_ok()
+        );
+        for command in ["close", "forged"] {
+            assert!(
+                admit(
+                    "command-search",
+                    &open,
+                    "command",
+                    &json!({"command":command})
+                )
+                .is_err()
+            );
+        }
+        let mut closed = open;
+        closed["open"] = json!(false);
+        assert!(
+            admit(
+                "command-search",
+                &closed,
+                "command",
+                &json!({"command":"copy"})
+            )
+            .is_err()
+        );
+    }
+}
+
 pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     let valid = match kind {
+        "command-search" => {
+            v["open"].is_boolean()
+                && v["items"].as_array().is_some_and(|items| {
+                    items.len() <= 256
+                        && items.iter().all(|i| {
+                            i["id"].is_string()
+                                && i["label"].is_string()
+                                && i["enabled"].is_boolean()
+                        })
+                })
+        }
         "notice-bar" => v.as_array().is_some_and(|rows| {
             rows.len() <= 128
                 && rows.iter().all(|row| {
@@ -88,6 +140,21 @@ pub fn validate(kind: &str, v: &Value) -> Result<(), String> {
     }
 }
 pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Result<(), String> {
+    if kind == "command-search" {
+        return if current["open"] == true
+            && ((action == "close" && payload.is_null())
+                || (action == "command"
+                    && current["items"].as_array().is_some_and(|items| {
+                        items
+                            .iter()
+                            .any(|i| i["id"] == payload["command"] && i["enabled"] == true)
+                    })))
+        {
+            Ok(())
+        } else {
+            Err("invalid search command".into())
+        };
+    }
     if kind == "notice-bar" {
         return if action == "command"
             && current.as_array().is_some_and(|rows| {
@@ -177,6 +244,47 @@ pub fn draw(
             value,
         })
     };
+    if kind == "command-search" {
+        let key = Id::unique((ui.ctx().viewport_id(), id, "query"));
+        if value["open"] != true {
+            ui.ctx().data_mut(|d| d.remove::<String>(key));
+            return ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover());
+        }
+        let previous = ui.ctx().data(|d| d.get_temp::<String>(key));
+        let first = previous.is_none();
+        let mut query = previous.unwrap_or_default();
+        let mut chosen = None;
+        let response = toolkit::dialog::Dialog::new(key, "Search menus").show(ui.ctx(), |ui| {
+            let field =
+                toolkit::field::search(ui, &mut query, "Search menus", ui.available_width());
+            if first {
+                field.request_focus();
+            }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for item in value["items"].as_array().unwrap() {
+                    let label = item["label"].as_str().unwrap();
+                    if item["enabled"] == true
+                        && item["id"] != "view.search"
+                        && label.to_lowercase().contains(&query.to_lowercase())
+                        && ui.button(label).clicked()
+                    {
+                        chosen = Some(item["id"].clone());
+                    }
+                }
+            });
+        });
+        ui.ctx().data_mut(|d| d.insert_temp(key, query));
+        if let Some(command) = chosen {
+            emit(
+                events,
+                "command",
+                json!({"command":command,"origin":"palette"}),
+            );
+        } else if response.dismissed {
+            emit(events, "close", Value::Null);
+        }
+        return ui.interact(response.rect, key.with("receipt"), egui::Sense::hover());
+    }
     if kind == "notice-bar" {
         return toolkit::bars::options(ui, |ui| {
             ui.vertical(|ui| {
@@ -390,16 +498,24 @@ pub fn draw(
         }
         let tabs = items
             .iter()
-            .map(|i| toolkit::tabs::DocTab {
-                name: i["name"].as_str().unwrap().into(),
-                title: i["title"]
-                    .as_str()
-                    .unwrap_or(i["name"].as_str().unwrap())
-                    .into(),
-                meta: i["meta"].as_str().unwrap().into(),
-                dirty: i["dirty"] == true,
-                progress: (i["opening"] == true).then_some(0.0),
-                marker: None,
+            .map(|i| {
+                let name = i["name"].as_str().unwrap();
+                let (marker, name) = if value["split_markers"] == true {
+                    toolkit::tabs::split_marker(name)
+                } else {
+                    (None, name)
+                };
+                toolkit::tabs::DocTab {
+                    name: name.into(),
+                    title: i["title"]
+                        .as_str()
+                        .unwrap_or(i["name"].as_str().unwrap())
+                        .into(),
+                    meta: i["meta"].as_str().unwrap().into(),
+                    dirty: i["dirty"] == true,
+                    progress: (i["opening"] == true).then_some(0.0),
+                    marker,
+                }
             })
             .collect::<Vec<_>>();
         let selected = items
@@ -414,7 +530,9 @@ pub fn draw(
                     &tabs,
                     selected,
                     None,
-                    if value["light"] == true {
+                    if value["body"] == "canvas" {
+                        toolkit::chrome::Chrome::of(ui.ctx()).palette.canvas
+                    } else if value["light"] == true {
                         editor::Palette::from_theme(toolkit::content::light_theme()).background
                     } else {
                         ui.ctx()

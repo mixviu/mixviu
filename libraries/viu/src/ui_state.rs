@@ -13,6 +13,7 @@ pub struct UiState(
     Arc<Mutex<Option<(u8, String)>>>,
 );
 impl UiState {
+    pub(crate) fn stats(&self) -> Value { self.0.lock().unwrap()["stats"].clone() }
     pub fn take_exit(&self) -> Option<(u8, String)> {
         self.2.lock().unwrap().take()
     }

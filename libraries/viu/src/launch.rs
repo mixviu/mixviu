@@ -203,6 +203,18 @@ pub fn parse(args: &[String]) -> Result<Options, String> {
     }
     Ok(out)
 }
+pub fn app_id(bundle: &Bundle) -> String {
+    if let Some(app_id) = &bundle.manifest.window_app_id {
+        return app_id.clone();
+    }
+    bundle
+        .manifest
+        .bus_surface
+        .as_ref()
+        .and_then(|s| s["app_id"].as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("mixviu.{}", bundle.manifest.service))
+}
 pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     let options = parse(args)?;
     let mut bundle = Bundle::load(root, &options.args)?;
@@ -266,6 +278,10 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     );
     bundle.program.scene = bundle.manifest.service.clone();
     bundle.program.citizen = bundle.manifest.service.clone();
+    if let Some(startup) = &mut bundle.startup {
+        startup.scene = bundle.manifest.service.clone();
+        startup.citizen = bundle.manifest.service.clone();
+    }
     Ok(bundle)
 }
 #[cfg(test)]
@@ -346,7 +362,22 @@ mod tests {
         assert_eq!(bundle.manifest.app(), "monitor");
         assert_eq!(bundle.manifest.service, "monitor.test");
         assert!(bundle.program.source.contains("comp-test"));
+        assert_eq!(super::app_id(&bundle), "dev.mixos.monitor");
+        assert!(bundle.program.source.contains("dev.mixos.monitor"));
         assert!(bundle.program.source.contains("peer"));
         assert!(!bundle.program.source.contains("\\\"--service\\\""));
+    }
+    #[test]
+    fn explicit_window_app_id_survives_service_override() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+        let mut bundle = super::load(&root, &["--service".into(), "term.other".into()]).unwrap();
+        assert_eq!(super::app_id(&bundle), "dev.mixos.term");
+        assert!(bundle.program.source.contains("dev.mixos.term"));
+        bundle.manifest.window_app_id = None;
+        assert_eq!(super::app_id(&bundle), "mixviu.term.other");
+        bundle.manifest.bus_surface = Some(serde_json::json!({"app_id":"example.terminal"}));
+        assert_eq!(super::app_id(&bundle), "example.terminal");
+        bundle.manifest.service = "term.third".into();
+        assert_eq!(super::app_id(&bundle), "example.terminal");
     }
 }

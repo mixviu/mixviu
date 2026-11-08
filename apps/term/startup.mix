@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+-- App policy runs before the generic host creates any native owner.
+$ctx=viu_context();$cli=require("startup-policy.mix")
+$version="term "..$ctx.version.." ("..$ctx.git_sha..", built "..$ctx.build_time..")"
+-- Gold reports inherited-handoff faults before help/refusal, but version is
+-- silent. The generic host has already fenced the FD before this evaluator.
+if $app_args[0]!="--version" then viu_terminal("session.quarantine","",{}) end
+$help=""
+if $app_args[0]!="--version" and (contains($app_args,"--help") or contains($app_args,"-h")) then $help=read_file(path_join(dirname(script_path()),"help.txt")) end
+$choice=$cli.decide($app_args,$version,$help)
+if $choice.mode=="exit" then return $choice end
+$settings=$cli.config(env("TERM_FONT_PX"),fn($op,$handle,$args)=viu_terminal($op,$handle,$args))
+if $choice.print_config then return {mode:"exit",code:0,stdout:$cli.print_config($settings),stderr:""} end
+$out={mode:$choice.mode,context:{settings:$settings,headless:$choice.mode=="headless"}}
+if $choice.mode=="headless" then $out.commands=map(require("bus-contract.mix").catalogue.core_help,fn($c)=$c.name) end
+return $out

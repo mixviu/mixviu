@@ -12,8 +12,18 @@ name = "viu"
 [features]
 default = ["shell-profile"]
 shell-profile = ["mix/json", "mix/regex", "mix/toml", "mix/datetime", "mix/url", "mix/crypto", "mix/http", "mix/sqlite", "mix/ws", "mix/archive"]
+test-support = []
 
 [dependencies]
+buildinfo = { path = "../buildinfo" }
+rio-vt = { git = "https://github.com/raphamorim/rio", rev = "932c1a7d9e07b4db5924f7a0dd689e823c3a1442", default-features = false, features = ["pty"] }
+paths = { path = "../paths" }
+fontdb = "=0.23.0"
+swash = "0.2.10"
+assets.workspace = true
+ed25519-dalek = { workspace = true, features = ["zeroize"] }
+zeroize = "1"
+teletypewriter = { git = "https://github.com/raphamorim/rio", rev = "932c1a7d9e07b4db5924f7a0dd689e823c3a1442", default-features = false }
 settings = { path = "../settings", default-features = false }
 editor = { workspace = true, features = ["mix"] }
 editor-model.workspace = true
@@ -67,6 +77,9 @@ tokio = { version = "=1.53.1", features = ["rt", "time", "macros", "sync"] }
 egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
 
 [dev-dependencies]
+wayland-protocols-misc = { version = "=0.3.12", features = ["client"] }
+test-broker = { path = "../test-broker" }
+egui_kittest.workspace = true
 editor-model = { workspace = true, features = ["fake"] }
 tempfile.workspace = true
 
