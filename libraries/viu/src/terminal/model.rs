@@ -1582,17 +1582,26 @@ impl Terminal {
         self.stats.lock().unwrap().vt_updated = Some(Instant::now());
         self.listener.dirty();
     }
+    /// Invalidate borrowed input owners before a removed pane leaves the
+    /// behaviour lane. Remote acknowledgement and PTY reaping happen later.
+    pub(crate) fn retire(&self) {
+        self.listener.revoke_control();
+        self.listener.quit.store(true, Ordering::Release);
+        if let Some(session) = &self.session {
+            session.revoke();
+        }
+    }
     pub fn shutdown(&mut self) {
         if let Some(session) = self.session.take() {
             session.revoke_before_cleanup();
         }
-        let Some(thread) = self.thread.take() else {
-            return;
-        };
         #[cfg(test)]
         if let Some(mut probe) = self.before_pty_cleanup.take() {
             probe();
         }
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
         self.listener.quit.store(true, Ordering::Release);
         if let Some(sender) = self.listener.writes.lock().unwrap().sender.take() {
             let _ = sender.send(Msg::Shutdown);

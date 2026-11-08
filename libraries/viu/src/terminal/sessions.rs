@@ -8,7 +8,7 @@ use super::{
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Mutex, atomic::Ordering},
+    sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}, mpsc},
 };
 #[path = "clipboard_requests.rs"]
 mod clipboard_requests;
@@ -65,6 +65,44 @@ struct Placement {
     font_px: f32,
 }
 
+// Gold's Removed/Cleanup lifecycle: retired terminals keep their admission
+// slot until acknowledgement and bounded PTY cleanup finish off the callback.
+// The owner is lazy so startup config/version cannot create a cleanup thread.
+#[derive(Default)]
+struct Cleanup {
+    sender: Option<mpsc::SyncSender<Arc<Mutex<Terminal>>>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    pending: Arc<AtomicUsize>,
+}
+impl Cleanup {
+    fn start(&mut self) -> Result<(), String> {
+        if self.sender.is_some() { return Ok(()); }
+        let (sender, receiver) = mpsc::sync_channel::<Arc<Mutex<Terminal>>>(32);
+        let pending = self.pending.clone();
+        let worker = std::thread::Builder::new().name("viu-terminal-cleanup".into()).spawn(move || {
+            for terminal in receiver {
+                terminal.lock().unwrap_or_else(|e| e.into_inner()).shutdown();
+                pending.fetch_sub(1, Ordering::AcqRel);
+            }
+        }).map_err(|e| format!("terminal cleanup worker: {e}"))?;
+        self.sender = Some(sender);
+        self.worker = Some(worker);
+        Ok(())
+    }
+    fn reserve(&self) { self.pending.fetch_add(1, Ordering::AcqRel); }
+    fn submit(&self, terminal: Arc<Mutex<Terminal>>) {
+        // Active + pending panes never exceeds 32; this queue cannot fill
+        // with nonempty removals, including while the worker is stalled.
+        self.sender.as_ref().expect("cleanup started before removal").send(terminal).expect("terminal cleanup owner alive");
+    }
+}
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        self.sender.take();
+        if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+    }
+}
+
 struct State {
     next: u64,
     sessions: BTreeMap<String, Arc<Mutex<Terminal>>>,
@@ -72,6 +110,20 @@ struct State {
     pane_ids: BTreeMap<String, u64>,
     metadata: super::metadata::Metadata,
     clipboard_cursor: usize,
+    cleanup: Cleanup,
+}
+impl Drop for State {
+    fn drop(&mut self) {
+        if self.sessions.is_empty() { return; }
+        if self.cleanup.start().is_err() { return; } // Terminal Drop still owns fallback cleanup.
+        for (_, terminal) in std::mem::take(&mut self.sessions) {
+            terminal.lock().unwrap_or_else(|e| e.into_inner()).retire();
+            self.cleanup.reserve();
+            self.cleanup.submit(terminal);
+        }
+        // Cleanup's field destructor drains before Sessions drops its native
+        // actor; no detached cleanup or unacknowledged owner is abandoned.
+    }
 }
 
 #[derive(Default)]
@@ -127,6 +179,7 @@ impl Sessions {
                 pane_ids: BTreeMap::new(),
                 metadata: super::metadata::Metadata::default(),
                 clipboard_cursor: 0,
+                cleanup: Cleanup::default(),
             })),
             layout: super::layout_control::Bridge::new(wake.clone()),
             osc52_read: Arc::default(),
@@ -392,6 +445,10 @@ impl Sessions {
             };
             let (id, pane_id) = {
                 let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
+                if state.sessions.len().max(state.pane_ids.len()) + state.cleanup.pending.load(Ordering::Acquire) >= 32 {
+                    return Err("terminal limit (32 active or closing panes) reached".into());
+                }
+                state.cleanup.start()?;
                 let id = state
                     .next
                     .checked_add(1)
@@ -463,20 +520,20 @@ impl Sessions {
         if op == "close" {
             let t = {
                 let mut state = self.state.lock().map_err(|_| "terminal owner poisoned")?;
+                state.cleanup.start()?;
                 let t = state
                     .sessions
                     .remove(handle)
                     .ok_or("stale terminal handle")?;
                 state.placements.remove(handle);
                 state.pane_ids.remove(handle);
+                state.cleanup.reserve();
                 t
             };
             // Serialize with native input before any teardown. Removal makes
             // this handle permanently stale; new panes receive a new handle.
-            let mut t = t.lock().map_err(|_| "terminal poisoned")?;
-            t.listener.revoke_control();
-            t.listener.quit.store(true, Ordering::Release);
-            t.shutdown();
+            t.lock().map_err(|_| "terminal poisoned")?.retire();
+            self.state.lock().map_err(|_| "terminal owner poisoned")?.cleanup.submit(t);
             return Ok(json!({"closed":true}));
         }
         let t = self.get(handle)?;
@@ -1197,6 +1254,37 @@ end
         ] {
             assert!(sessions.call("font-size", "", args).is_err());
         }
+    }
+
+    #[test]
+    fn slow_cleanup_keeps_its_slot_without_blocking_close_or_borrowed_input_revocation() {
+        let sessions = Sessions::fixture();
+        for id in 2..=32 {
+            sessions.fixture_pane(&format!("vt-{id}"), b"owned cleanup fixture");
+        }
+        let borrowed = sessions.get("vt-1").unwrap();
+        let (release, blocked) = mpsc::sync_channel(1);
+        borrowed.lock().unwrap().before_pty_cleanup = Some(Box::new(move || {
+            blocked.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        }));
+        let pending = sessions.state.lock().unwrap().cleanup.pending.clone();
+        let start = std::time::Instant::now();
+        sessions.call("close", "vt-1", json!({})).unwrap();
+        let elapsed = start.elapsed();
+        // Do not lock the Terminal here: the cleanup worker deliberately owns
+        // its mutex while stalled. The borrowed Listener remains invalidated.
+        let admission = sessions.call("create", "", json!({"pane_id":33}));
+        assert!(admission.unwrap_err().contains("32 active or closing"));
+        assert!(sessions.get("vt-1").is_err());
+        assert!(!sessions.native.lock().unwrap().attempted);
+        assert_eq!(pending.load(Ordering::Acquire), 1);
+        release.send(()).unwrap();
+        assert!(elapsed < std::time::Duration::from_secs(1), "close waited for cleanup: {elapsed:?}");
+        assert!(borrowed.lock().unwrap().listener.type_text("late").is_err());
+        // Owner teardown drains queued cleanup, while the native actor is
+        // still retained. No detached job survives the final Sessions owner.
+        drop(sessions);
+        assert_eq!(pending.load(Ordering::Acquire), 0);
     }
 
     #[test]
