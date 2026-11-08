@@ -78,7 +78,7 @@ fn observed_state($s)
   $ids=if $tab==nil then [] else $layout.leaves($tab.tree) end
   $panes=[]
   for $id in $ids
-    $p=$s.layout.panes[to_string($id)];$g=$p.geometry
+    $p=$s.layout.panes[to_string($id)];$g=$p.window_geometry??$p.geometry
     push($panes,{id:$id,focused:$id==$tab.active_pane,grid:if $p.cell==nil then nil else [$p.cols,$p.rows] end,rect:[$g.x,$g.y,$g.w,$g.h]})
   end
   $active=if $tab==nil then {} else $s.layout.panes[to_string($tab.active_pane)] end

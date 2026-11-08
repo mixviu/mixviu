@@ -64,6 +64,7 @@ fn exact_scroll_bridge_keeps_i64_limits_and_refuses_noncanonical_text() {
 #[derive(Clone, Copy, PartialEq)]
 struct Placement {
     rect: [f32; 4],
+    window_rect: [f32; 4],
     cell: [f32; 2],
     scale: f32,
     font_px: f32,
@@ -359,12 +360,19 @@ impl Sessions {
         &self,
         handle: &str,
         rect: egui::Rect,
+        window_rect: egui::Rect,
         cell: (u32, u32),
         scale: f32,
         font_px: f32,
     ) {
         let placement = Placement {
             rect: [rect.min.x, rect.min.y, rect.width(), rect.height()],
+            window_rect: [
+                window_rect.min.x,
+                window_rect.min.y,
+                window_rect.width(),
+                window_rect.height(),
+            ],
             cell: [cell.0 as f32 / scale, cell.1 as f32 / scale],
             scale,
             font_px,
@@ -645,9 +653,11 @@ impl Sessions {
                             }
                         });
                 let g = placement.map_or([0.0; 4], |p| p.rect);
+                let w = placement.map_or([0.0; 4], |p| p.window_rect);
                 Ok(
                     json!({"pid":t.pid,"title":t.listener.title(),"cols":cols,"rows":rows,
                     "geometry":{"x":g[0],"y":g[1],"w":g[2],"h":g[3]},
+                    "window_geometry":{"x":w[0],"y":w[1],"w":w[2],"h":w[3]},
                     "cell":placement.map(|p|p.cell),"scale":placement.map(|p|p.scale),"font_px":placement.map(|p|p.font_px),
                     "exited":t.listener.quit.load(Ordering::Acquire),"display_offset":t.display_offset(),"alternate":t.alternate_screen(),"binding":binding,"native_id":pane_id}),
                 )

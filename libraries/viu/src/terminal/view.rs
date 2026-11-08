@@ -420,6 +420,15 @@ mod tests {
                     state["geometry"],
                     json!({"x":rect[0],"y":rect[1],"w":rect[2],"h":rect[3]})
                 );
+                let window_origin = if handle == "vt-4" {
+                    egui::pos2(740.0, 65.0)
+                } else {
+                    origin
+                };
+                assert_eq!(
+                    state["window_geometry"],
+                    json!({"x":window_origin.x+rect[0],"y":window_origin.y+rect[1],"w":rect[2],"h":rect[3]})
+                );
             }
         }
     }
@@ -1217,6 +1226,7 @@ impl Views {
         sessions.placed(
             handle,
             area.translate(-self.layout_origin.to_vec2()),
+            area,
             cell,
             scale,
             font_px,
