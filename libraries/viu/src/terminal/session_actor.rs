@@ -1653,6 +1653,8 @@ pub(crate) mod tests {
     use super::*;
     use test_broker::Broker;
 
+    include!("session_actor_tests.rs");
+
     #[test]
     fn issued_descriptor_and_lease_use_the_native_terminal_seam() {
         let broker = Broker::start();

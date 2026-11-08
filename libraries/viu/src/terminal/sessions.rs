@@ -1028,6 +1028,64 @@ end
                 assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists(),"protected cleanup left child {pid}");
             }
             stopped.store(true,Ordering::Release);pump.join().unwrap();
+            // Keep the real broker, enrolled shell and final PTY write path.
+            // Blocking only the writer seam makes expiry observable before a
+            // human key could revoke the same permit and hide a broken timer.
+            let terminal=sessions.state.lock().unwrap().sessions["vt-1"].clone();
+            let listener=terminal.lock().unwrap().listener.clone();
+            let input_written=|| terminal.lock().unwrap().stats.lock().unwrap().input_written;
+            let before=input_written();
+            listener.block_control_writes(true);
+            let expiry=json!({"target":target,"request_id":"15","request_epoch":epoch,"foreground_generation":listener.foreground_generation().to_string(),"text":"EXPIRED_INPUT_MUST_NOT_WRITE"});
+            let expiry_started=std::time::Instant::now();
+            let (rc,accepted_expiry)=invoke("term.type",expiry.clone()).await;
+            assert_eq!(rc,0,"{accepted_expiry}");
+            let expired=tokio::time::timeout(std::time::Duration::from_secs(10),async {
+                loop {
+                    let (rc,outcome)=invoke("term.operation",json!({"target":target,"operation_id":accepted_expiry["operation_id"]})).await;
+                    assert_eq!(rc,0,"{outcome}");
+                    if outcome["reason"]=="input_lease_ended" {break outcome;}
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+            }).await.expect("queued permit must expire without human revocation");
+            assert!(expiry_started.elapsed()>=std::time::Duration::from_secs(2),"the permit must age out on its own two-second deadline");
+            assert_eq!(expired["status"],"unknown");
+            assert_eq!(expired["boundary"],"pty_write");
+            assert_eq!(expired["delivered_bytes_lower_bound"],0);
+            assert_eq!(input_written(),before,"expiry must be proved before any human key");
+            assert_eq!(invoke("term.type",expiry).await,(0,accepted_expiry));
+
+            let revoked=json!({"target":target,"request_id":"16","request_epoch":epoch,"foreground_generation":listener.foreground_generation().to_string(),"text":"REVOKED_INPUT_MUST_NOT_WRITE"});
+            assert_eq!(invoke("term.type",revoked.clone()).await.0,0);
+            listener.key(super::super::Key::Char(' '),std::time::Instant::now()).unwrap();
+            listener.block_control_writes(false);
+            listener.key(super::super::Key::Interrupt,std::time::Instant::now()).unwrap();
+            let notice=tokio::time::timeout(std::time::Duration::from_secs(5),async {
+                loop {
+                    let event=caller.recv_shared().await.expect("verified caller remains live");
+                    if event.command().command!="term.input.revoked" {continue;}
+                    let body:Value=serde_json::from_str(&event.command().body).unwrap();
+                    if body["request_id"]=="16" {break (event,body);}
+                }
+            }).await.expect("private revocation must reach the original verified caller");
+            assert_eq!(notice.0.trusted_context().unwrap().session.as_ref().unwrap().record_id,parent.record_id);
+            assert_eq!(notice.1["target"],target);
+            assert_eq!(notice.1["outcome"],"partial_or_unknown");
+            assert_eq!(notice.1["delivered_bytes_lower_bound"],0);
+            tokio::time::timeout(std::time::Duration::from_secs(5),async {
+                while input_written()-before<2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            }).await.expect("human keys must reach the real PTY after the writer unblocks");
+            assert_eq!(input_written()-before,2,"only the human space and interrupt reach the PTY");
+            let (rc,screen)=invoke("term.snapshot",json!({"target":target,"contents":true})).await;
+            assert_eq!(rc,0,"{screen}");
+            for marker in ["EXPIRED_INPUT_MUST_NOT_WRITE","REVOKED_INPUT_MUST_NOT_WRITE"] {
+                assert!(!screen["text"].as_str().unwrap().contains(marker));
+            }
+            let fresh=json!({"target":target,"request_id":"17","request_epoch":epoch,"foreground_generation":listener.foreground_generation().to_string(),"text":""});
+            assert_eq!(invoke("term.type",fresh).await.0,0,"fresh admission survives expired and revoked writers");
+            assert_eq!(invoke("term.type",revoked).await.0,0,"retained revoked acceptance survives human invalidation");
             caller.client().close().await;
         });
     }
