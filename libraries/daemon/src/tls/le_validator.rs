@@ -55,9 +55,9 @@
 //! per-vhost manual-PEM path) keep their `(chain, names, now)`
 //! signature.
 
-use rustls_pki_types::pem::PemObject as _;
 use anyhow::{Context, Result, anyhow};
 use rustls::pki_types::{CertificateDer, DnsName, ServerName, TrustAnchor, UnixTime};
+use rustls_pki_types::pem::PemObject as _;
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use webpki::{EndEntityCert, KeyUsage};

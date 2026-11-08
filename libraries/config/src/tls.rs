@@ -22,7 +22,9 @@ pub fn load_tls_config(
     let certs: Vec<_> = rustls_pki_types::CertificateDer::pem_reader_iter(&mut &cert_data[..])
         .filter_map(|r| r.ok())
         .collect();
-    let key = rustls_pki_types::PrivateKeyDer::pem_reader_iter(&key_data[..]).next().transpose()
+    let key = rustls_pki_types::PrivateKeyDer::pem_reader_iter(&key_data[..])
+        .next()
+        .transpose()
         .ok()
         .flatten()
         .ok_or_else(|| anyhow::anyhow!("no private key found in {key_path}"))?;

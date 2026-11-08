@@ -228,7 +228,15 @@ impl MxResolver {
             Ok(Err(e)) => return Err(classify(&e)),
             Ok(Ok(mx)) => mx,
         };
-        let records: Vec<(u16, String)> = mx.answers().iter().filter_map(|record| match &record.data { hickory_resolver::proto::rr::RData::MX(mx) => Some((mx.preference, mx.exchange.to_ascii())), _ => None })
+        let records: Vec<(u16, String)> = mx
+            .answers()
+            .iter()
+            .filter_map(|record| match &record.data {
+                hickory_resolver::proto::rr::RData::MX(mx) => {
+                    Some((mx.preference, mx.exchange.to_ascii()))
+                }
+                _ => None,
+            })
             .collect();
         // Empty RRset or all targets malformed → definitive 404.
         select_mx(&records).ok_or(MxError::NoMx)
@@ -550,7 +558,10 @@ mod tests {
             // hickory wraps *every* error response code in the single
             // NoRecordsFound variant; only the inner response_code
             // distinguishes them.
-            let pe = DnsError::NoRecordsFound(NoRecords::new(hickory_resolver::proto::op::Query::default(), rc));
+            let pe = DnsError::NoRecordsFound(NoRecords::new(
+                hickory_resolver::proto::op::Query::default(),
+                rc,
+            ));
             let re: hickory_resolver::net::NetError = pe.into();
             classify(&re)
         };

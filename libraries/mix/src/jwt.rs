@@ -7,7 +7,10 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::rand::SystemRandom;
 use ring::signature::{RSA_PKCS1_SHA256, RsaKeyPair};
-use rustls_pki_types::{PrivateKeyDer as Item, pem::{PemObject, from_buf}};
+use rustls_pki_types::{
+    PrivateKeyDer as Item,
+    pem::{PemObject, from_buf},
+};
 use serde_json::{Map, Value};
 use std::io::Cursor;
 
@@ -180,7 +183,7 @@ mod tests {
         let mut cursor = Cursor::new(pem.as_bytes());
         let item = from_buf(&mut cursor).unwrap().unwrap();
         let item = Item::from_pem(item.0, item.1);
-    let key_pair = match item {
+        let key_pair = match item {
             Some(Item::Pkcs8(k)) => RsaKeyPair::from_pkcs8(k.secret_pkcs8_der()).unwrap(),
             Some(Item::Pkcs1(k)) => RsaKeyPair::from_der(k.secret_pkcs1_der()).unwrap(),
             _ => panic!("Unexpected key type"),
@@ -221,7 +224,7 @@ mod tests {
         let mut cursor = Cursor::new(pem.as_bytes());
         let item = from_buf(&mut cursor).unwrap().unwrap();
         let item = Item::from_pem(item.0, item.1);
-    let key_pair = match item {
+        let key_pair = match item {
             Some(Item::Pkcs8(k)) => RsaKeyPair::from_pkcs8(k.secret_pkcs8_der()).unwrap(),
             Some(Item::Pkcs1(k)) => RsaKeyPair::from_der(k.secret_pkcs1_der()).unwrap(),
             _ => panic!("Unexpected key type"),

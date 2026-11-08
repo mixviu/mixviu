@@ -142,7 +142,13 @@ async fn check_published(
     pem: &[u8],
 ) -> Result<()> {
     let records = resolver.txt_lookup(name).await?;
-    let records: Vec<String> = records.answers().iter().filter_map(|record| match &record.data { hickory_resolver::proto::rr::RData::TXT(txt) => Some(txt), _ => None })
+    let records: Vec<String> = records
+        .answers()
+        .iter()
+        .filter_map(|record| match &record.data {
+            hickory_resolver::proto::rr::RData::TXT(txt) => Some(txt),
+            _ => None,
+        })
         .map(|txt| {
             String::from_utf8(
                 txt.txt_data
@@ -709,7 +715,11 @@ mod tests {
                 query.queries.as_slice()[0].name().to_utf8(),
                 "s2026a._domainkey.example.com."
             );
-            let mut answer = Message::new(0, hickory_resolver::proto::op::MessageType::Query, hickory_resolver::proto::op::OpCode::Query);
+            let mut answer = Message::new(
+                0,
+                hickory_resolver::proto::op::MessageType::Query,
+                hickory_resolver::proto::op::OpCode::Query,
+            );
             answer.metadata.id = query.metadata.id;
             answer.metadata.message_type = MessageType::Response;
             answer.metadata.recursion_available = true;
@@ -732,13 +742,18 @@ mod tests {
         let config = ResolverConfig::from_parts(
             None,
             vec![],
-            vec![{ let mut server = NameServerConfig::udp(addr.ip()); server.connections[0].port = addr.port(); server }],
+            vec![{
+                let mut server = NameServerConfig::udp(addr.ip());
+                server.connections[0].port = addr.port();
+                server
+            }],
         );
         let resolver = hickory_resolver::TokioResolver::builder_with_config(
             config,
             TokioRuntimeProvider::default(),
         )
-        .build().unwrap();
+        .build()
+        .unwrap();
         check_published(
             &resolver,
             "s2026a._domainkey.example.com.",

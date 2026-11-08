@@ -47,7 +47,11 @@ pub(crate) fn map_iprev(out: &IprevOutput, peer_ip: IpAddr) -> OurIprevResult {
         MaIprevResult::PermError(_) => IprevOutcome::PermError,
         MaIprevResult::None => IprevOutcome::PermError,
     };
-    let ptr = out.ptr.as_deref().and_then(|ptrs| ptrs.first()).map(|ptr| ptr.to_string());
+    let ptr = out
+        .ptr
+        .as_deref()
+        .and_then(|ptrs| ptrs.first())
+        .map(|ptr| ptr.to_string());
     let matched_forward = match result {
         IprevOutcome::Pass => Some(peer_ip),
         _ => None,

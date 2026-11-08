@@ -293,7 +293,11 @@ mod tests {
         use hickory_proto::op::{Message, MessageType, OpCode, Query};
         use hickory_proto::rr::{Name, RecordType};
         use hickory_proto::serialize::binary::BinEncodable;
-        let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
+        let mut m = Message::new(
+            0,
+            hickory_proto::op::MessageType::Query,
+            hickory_proto::op::OpCode::Query,
+        );
         m.metadata.id = 0x1234;
         m.metadata.message_type = MessageType::Query;
         m.metadata.op_code = OpCode::Query;

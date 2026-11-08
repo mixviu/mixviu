@@ -107,7 +107,11 @@ mod tests {
     use hickory_proto::op::Message;
 
     fn resp(rc: ResponseCode) -> Message {
-        let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
+        let mut m = Message::new(
+            0,
+            hickory_proto::op::MessageType::Query,
+            hickory_proto::op::OpCode::Query,
+        );
         m.metadata.response_code = rc;
         m
     }

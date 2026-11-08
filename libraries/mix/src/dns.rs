@@ -435,11 +435,20 @@ pub fn builtin_dns_query(args: Vec<Value>) -> MixResult<Option<Value>> {
         Value::String(rcode_name(u16::from(reply.metadata.response_code))),
     );
     map.insert("aa".to_string(), Value::Bool(reply.metadata.authoritative));
-    map.insert("ra".to_string(), Value::Bool(reply.metadata.recursion_available));
+    map.insert(
+        "ra".to_string(),
+        Value::Bool(reply.metadata.recursion_available),
+    );
     map.insert("tc".to_string(), Value::Bool(reply.metadata.truncation));
     map.insert("answers".to_string(), records(reply.answers.as_slice()));
-    map.insert("authority".to_string(), records(reply.authorities.as_slice()));
-    map.insert("additional".to_string(), records(reply.additionals.as_slice()));
+    map.insert(
+        "authority".to_string(),
+        records(reply.authorities.as_slice()),
+    );
+    map.insert(
+        "additional".to_string(),
+        records(reply.additionals.as_slice()),
+    );
     map.insert("server".to_string(), Value::String(server_shown));
     map.insert("port".to_string(), Value::Number(f64::from(addr.port())));
     map.insert(

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-#[cfg(feature = "http")]
-use rustls_pki_types::pem::PemObject as _;
 use crate::builtin_table;
 use crate::contract;
 use crate::error::{MixError, MixResult};
@@ -9,6 +7,8 @@ use crate::numeric::{
     InputPolicy, as_count, as_duration, as_exact_integer, as_exit_code, as_finite_number,
     as_loop_step, extract_number,
 };
+#[cfg(feature = "http")]
+use rustls_pki_types::pem::PemObject as _;
 // The timestamp domain exists only where the date/time builtins do.
 #[cfg(feature = "datetime")]
 use crate::numeric::as_timestamp;

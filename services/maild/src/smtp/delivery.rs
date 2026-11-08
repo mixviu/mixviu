@@ -781,7 +781,15 @@ async fn deliver_to_domain(
 async fn resolve_mx(resolver: &TokioResolver, domain: &str) -> Result<Vec<String>> {
     match resolver.mx_lookup(domain).await {
         Ok(mx) => {
-            let mut hosts: Vec<(u16, String)> = mx.answers().iter().filter_map(|record| match &record.data { hickory_resolver::proto::rr::RData::MX(mx) => Some((mx.preference, mx.exchange.to_ascii())), _ => None })
+            let mut hosts: Vec<(u16, String)> = mx
+                .answers()
+                .iter()
+                .filter_map(|record| match &record.data {
+                    hickory_resolver::proto::rr::RData::MX(mx) => {
+                        Some((mx.preference, mx.exchange.to_ascii()))
+                    }
+                    _ => None,
+                })
                 .collect();
             hosts.sort_by_key(|h| h.0);
             Ok(hosts

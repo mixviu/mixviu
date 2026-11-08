@@ -39,7 +39,11 @@ fn one_of_each() -> Vec<RData> {
 }
 
 fn response_with(records: &[RData]) -> Message {
-    let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
+    let mut m = Message::new(
+        0,
+        hickory_proto::op::MessageType::Query,
+        hickory_proto::op::OpCode::Query,
+    );
     m.metadata.id = 0x2a2a;
     m.metadata.message_type = MessageType::Response;
     for (i, rd) in records.iter().enumerate() {
@@ -63,7 +67,12 @@ fn tcp_round_trip_preserves_every_record_type_and_prefix() {
     assert_eq!(prefix, body.len(), "TCP length prefix == body length");
 
     let back = decode(body).expect("decode");
-    let got: Vec<HRecordType> = back.answers.as_slice().iter().map(|r| r.record_type()).collect();
+    let got: Vec<HRecordType> = back
+        .answers
+        .as_slice()
+        .iter()
+        .map(|r| r.record_type())
+        .collect();
     assert_eq!(
         got,
         vec![
@@ -98,7 +107,11 @@ fn long_txt_chunks_into_255_byte_strings_and_reassembles() {
     let long = format!("v=DKIM1; k=rsa; p={}", "A".repeat(370));
     assert!(long.len() > 255 && long.len() < 512);
 
-    let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
+    let mut m = Message::new(
+        0,
+        hickory_proto::op::MessageType::Query,
+        hickory_proto::op::OpCode::Query,
+    );
     m.metadata.id = 0x2a2a;
     m.metadata.message_type = MessageType::Response;
     m.add_answer(RData::Txt(vec![long.clone()]).to_hickory_record(&n("dkim.bus"), 300, 0));
@@ -140,8 +153,14 @@ fn oversized_without_opt_sets_tc_and_drops_answers() {
     let bytes = encode_udp(&big, 512); // bare-DNS 512, no OPT
     let back = decode(&bytes).expect("decode");
     assert!(back.metadata.truncation, "TC=1 when it cannot fit");
-    assert!(back.answers.as_slice().is_empty(), "ANSWER dropped under truncation");
-    assert_eq!(back.metadata.id, 0x2a2a, "header stays well-formed (id preserved)");
+    assert!(
+        back.answers.as_slice().is_empty(),
+        "ANSWER dropped under truncation"
+    );
+    assert_eq!(
+        back.metadata.id, 0x2a2a,
+        "header stays well-formed (id preserved)"
+    );
 }
 
 #[test]
@@ -160,10 +179,7 @@ fn with_opt_the_opt_is_echoed_and_negotiated_size_honoured() {
     // survives the codec.
     let back = decode(&encode_udp(&resp, 1232)).expect("decode");
     assert!(!back.metadata.truncation);
-    assert!(
-        back.edns.is_some(),
-        "OPT preserved through encode_udp"
-    );
+    assert!(back.edns.is_some(), "OPT preserved through encode_udp");
     assert!(!back.answers.as_slice().is_empty());
 }
 
@@ -173,7 +189,11 @@ fn tcp_never_truncates_even_when_huge() {
     let out = encode_tcp(&big);
     let back = decode(&out[2..]).expect("decode");
     assert!(!back.metadata.truncation, "TCP path never sets TC");
-    assert_eq!(back.answers.as_slice().len(), 10, "all records survive on TCP");
+    assert_eq!(
+        back.answers.as_slice().len(),
+        10,
+        "all records survive on TCP"
+    );
 }
 
 #[test]
@@ -197,8 +217,7 @@ fn tcp_frame_prefix_always_matches_payload_even_for_a_huge_message() {
     assert_eq!(prefix, out.len() - 2, "TCP prefix == actual body length");
     let back = decode(&out[2..]).expect("framed body decodes cleanly");
     assert_eq!(
-        back.metadata.id,
-        0x2a2a,
+        back.metadata.id, 0x2a2a,
         "id preserved so the client can correlate"
     );
     assert_ne!(
@@ -224,15 +243,20 @@ fn any_response_carries_no_synthetic_rr_through_the_codec() {
             back.answers.as_slice().is_empty(),
             "ANY: no answer survives the codec"
         );
-        assert!(back.authorities.as_slice().is_empty(), "ANY: no synthetic SOA");
         assert!(
-            back.additionals.as_slice()
+            back.authorities.as_slice().is_empty(),
+            "ANY: no synthetic SOA"
+        );
+        assert!(
+            back.additionals
+                .as_slice()
                 .iter()
                 .all(|r| r.record_type() == HRecordType::OPT),
             "ANY: no synthetic RR (incl. no HINFO) at the codec edge"
         );
         let all_recs = back
-            .answers.as_slice()
+            .answers
+            .as_slice()
             .iter()
             .chain(back.authorities.as_slice())
             .chain(back.additionals.as_slice());

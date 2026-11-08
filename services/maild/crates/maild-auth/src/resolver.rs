@@ -14,9 +14,7 @@
 
 use crate::error::{Error, Result};
 use mail_auth::MessageAuthenticator;
-use mail_auth::hickory_resolver::config::{
-    NameServerConfig, ResolverConfig, ResolverOpts,
-};
+use mail_auth::hickory_resolver::config::{NameServerConfig, ResolverConfig, ResolverOpts};
 use std::net::IpAddr;
 
 #[derive(Debug, Clone, Default)]

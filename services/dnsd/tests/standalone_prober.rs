@@ -218,7 +218,11 @@ fn wait_ready(d: &mut Daemon, load: load_guard::LoadSample) -> bool {
 fn query(name: HName, qtype: HRT, class: DNSClass, edns: bool) -> Message {
     let mut q = Query::query(name, qtype);
     q.set_query_class(class);
-    let mut m = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
+    let mut m = Message::new(
+        0,
+        hickory_proto::op::MessageType::Query,
+        hickory_proto::op::OpCode::Query,
+    );
     m.metadata.id = 0x2a2a;
     m.metadata.message_type = MessageType::Query;
     m.metadata.op_code = OpCode::Query;
@@ -275,7 +279,8 @@ fn tcp(port: u16, m: &Message) -> Message {
 }
 
 fn a_of(m: &Message) -> Vec<Ipv4Addr> {
-    m.answers.as_slice()
+    m.answers
+        .as_slice()
         .iter()
         .filter_map(|r| match (&r.data) {
             HRData::A(a) => Some(a.0),
@@ -311,7 +316,11 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
         ("beta.bus", Ipv4Addr::new(192, 0, 2, 1)),
     ] {
         let r = udp(p, &q(name, HRT::A));
-        assert_eq!(r.metadata.response_code, ResponseCode::NoError, "{name} A NOERROR");
+        assert_eq!(
+            r.metadata.response_code,
+            ResponseCode::NoError,
+            "{name} A NOERROR"
+        );
         assert!(r.metadata.authoritative, "{name} A AA=1");
         assert_eq!(a_of(&r), vec![ip], "{name} A == {ip}");
         assert_eq!(r.metadata.id, 0x2a2a, "{name} id echoed");
@@ -321,7 +330,8 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     let r = udp(p, &q("alpha.bus", HRT::MX));
     assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     let mx = r
-        .answers.as_slice()
+        .answers
+        .as_slice()
         .iter()
         .find_map(|r| match (&r.data) {
             HRData::MX(mx) => Some((mx.preference, mx.exchange.to_ascii())),
@@ -342,7 +352,8 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     let r = udp(p, &q("_imaps._tcp.alpha.bus", HRT::SRV));
     assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     let srv = r
-        .answers.as_slice()
+        .answers
+        .as_slice()
         .iter()
         .find_map(|r| match (&r.data) {
             HRData::SRV(s) => Some((s.priority, s.weight, s.port, s.target.to_ascii())),
@@ -414,7 +425,8 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
             "{rev} PTR NOERROR"
         );
         let got = r
-            .answers.as_slice()
+            .answers
+            .as_slice()
             .iter()
             .find_map(|x| match (&x.data) {
                 HRData::PTR(n) => Some(n.0.to_ascii()),
@@ -452,7 +464,8 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
         assert!(has_soa(r.answers.as_slice()), "{zone} apex SOA in ANSWER");
         let r = udp(p, &q(zone, HRT::NS));
         assert!(
-            r.answers.as_slice()
+            r.answers
+                .as_slice()
                 .iter()
                 .any(|x| matches!((&x.data), HRData::NS(_))),
             "{zone} apex NS in ANSWER"
@@ -468,12 +481,19 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     );
     assert!(r.metadata.authoritative, "NXDOMAIN AA=1");
     assert!(r.answers.as_slice().is_empty(), "NXDOMAIN no answer");
-    assert!(has_soa(r.authorities.as_slice()), "NXDOMAIN SOA in AUTHORITY");
+    assert!(
+        has_soa(r.authorities.as_slice()),
+        "NXDOMAIN SOA in AUTHORITY"
+    );
 
     // 7. NODATA — existing name, absent type (no TXT in sample) →
     //    NOERROR, empty ANSWER, SOA in AUTHORITY, AA=1.
     let r = udp(p, &q("alpha.bus", HRT::TXT));
-    assert_eq!(r.metadata.response_code, ResponseCode::NoError, "NODATA NOERROR");
+    assert_eq!(
+        r.metadata.response_code,
+        ResponseCode::NoError,
+        "NODATA NOERROR"
+    );
     assert!(r.metadata.authoritative, "NODATA AA=1");
     assert!(r.answers.as_slice().is_empty(), "NODATA empty ANSWER");
     assert!(has_soa(r.authorities.as_slice()), "NODATA SOA in AUTHORITY");
@@ -494,12 +514,20 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     // 9. QTYPE=ANY — the single mandatory minimal outcome: NOERROR,
     //    AA=1, empty ANSWER, no synthetic RR, no SOA-as-answer.
     let r = udp(p, &q("alpha.bus", HRT::ANY));
-    assert_eq!(r.metadata.response_code, ResponseCode::NoError, "ANY NOERROR");
+    assert_eq!(
+        r.metadata.response_code,
+        ResponseCode::NoError,
+        "ANY NOERROR"
+    );
     assert!(r.metadata.authoritative, "ANY AA=1");
-    assert!(r.answers.as_slice().is_empty(), "ANY ANCOUNT=0 (no expansion)");
+    assert!(
+        r.answers.as_slice().is_empty(),
+        "ANY ANCOUNT=0 (no expansion)"
+    );
     assert!(!has_soa(r.answers.as_slice()), "ANY no SOA-as-answer");
     assert!(
-        r.answers.as_slice()
+        r.answers
+            .as_slice()
             .iter()
             .chain(r.authorities.as_slice())
             .chain(r.additionals.as_slice())
@@ -509,7 +537,11 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
 
     // 10. TCP path — same answer, length-framed, never truncated.
     let r = tcp(p, &q("alpha.bus", HRT::A));
-    assert_eq!(r.metadata.response_code, ResponseCode::NoError, "TCP A NOERROR");
+    assert_eq!(
+        r.metadata.response_code,
+        ResponseCode::NoError,
+        "TCP A NOERROR"
+    );
     assert!(!r.metadata.truncation, "TCP never TC=1");
     assert_eq!(a_of(&r), vec![Ipv4Addr::new(192, 0, 2, 5)], "TCP A rdata");
     let r = tcp(p, &q("bus", HRT::SOA));
@@ -526,7 +558,10 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
             true,
         ),
     );
-    assert!(r.edns.as_ref().is_some(), "OPT echoed when client sends OPT");
+    assert!(
+        r.edns.as_ref().is_some(),
+        "OPT echoed when client sends OPT"
+    );
     assert_eq!(
         a_of(&r),
         vec![Ipv4Addr::new(192, 0, 2, 5)],

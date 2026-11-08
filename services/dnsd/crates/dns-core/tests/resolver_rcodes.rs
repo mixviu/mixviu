@@ -71,7 +71,9 @@ fn wildcard_synthesizes_for_absent_name_with_owner_qname() {
     assert_eq!(r.answers.as_slice().len(), 1, "one synthesized A");
     // Owner is the QUERIED name, never the `*` owner (RFC 4592 §3.3.1).
     assert_eq!(r.answers.as_slice()[0].name.to_string(), "foo.wild.bus.");
-    assert!(matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.99"));
+    assert!(
+        matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.99")
+    );
 }
 
 #[test]
@@ -90,7 +92,10 @@ fn wildcard_does_not_cover_an_existing_node_other_type_is_nodata() {
         "no synthesized answer for an existing node"
     );
     assert!(r.metadata.authoritative, "AA=1");
-    assert_eq!(soa_serial(r.authorities.as_slice()), Some(emitted(&snap, "bus")));
+    assert_eq!(
+        soa_serial(r.authorities.as_slice()),
+        Some(emitted(&snap, "bus"))
+    );
 }
 
 #[test]
@@ -108,7 +113,10 @@ fn wildcard_match_without_qtype_is_nodata_not_nxdomain() {
     );
     assert!(r.answers.as_slice().is_empty());
     assert!(r.metadata.authoritative, "AA=1");
-    assert_eq!(soa_serial(r.authorities.as_slice()), Some(emitted(&snap, "bus")));
+    assert_eq!(
+        soa_serial(r.authorities.as_slice()),
+        Some(emitted(&snap, "bus"))
+    );
 }
 
 #[test]
@@ -137,8 +145,15 @@ fn empty_non_terminal_exists_and_blocks_the_wildcard() {
     // It EXISTS → NODATA for an absent type, and crucially it is NOT
     // synthesized from `*.wild.bus` (an ENT is closer than the wildcard).
     let r = resolve(&snap, &query_msg("sub.wild.bus", HRecordType::A, None));
-    assert_eq!(r.metadata.response_code, ResponseCode::NoError, "ENT is NODATA");
-    assert!(r.answers.as_slice().is_empty(), "ENT not wildcard-synthesized");
+    assert_eq!(
+        r.metadata.response_code,
+        ResponseCode::NoError,
+        "ENT is NODATA"
+    );
+    assert!(
+        r.answers.as_slice().is_empty(),
+        "ENT not wildcard-synthesized"
+    );
     assert!(r.metadata.authoritative, "AA=1");
 }
 
@@ -153,7 +168,9 @@ fn wildcard_synthesizes_for_a_multi_label_absent_name() {
     assert!(r.metadata.authoritative, "AA=1");
     assert_eq!(r.answers.as_slice().len(), 1);
     assert_eq!(r.answers.as_slice()[0].name.to_string(), "a.b.wild.bus.");
-    assert!(matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.99"));
+    assert!(
+        matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.99")
+    );
 }
 
 #[test]
@@ -199,7 +216,10 @@ fn out_of_vocab_qtype_on_wildcard_covered_name_is_nodata() {
     );
     assert!(r.answers.as_slice().is_empty());
     assert!(r.metadata.authoritative, "AA=1");
-    assert_eq!(soa_serial(r.authorities.as_slice()), Some(emitted(&snap, "bus")));
+    assert_eq!(
+        soa_serial(r.authorities.as_slice()),
+        Some(emitted(&snap, "bus"))
+    );
 }
 
 // ── positive answers + multi-RDATA single RRset ──────────────────────
@@ -211,10 +231,14 @@ fn positive_a_aaaa_txt() {
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::A, None));
     assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     assert!(r.metadata.authoritative);
-    assert!(matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.5"));
+    assert!(
+        matches!((&r.answers.as_slice()[0].data), HRData::A(a) if a.0.to_string() == "192.0.2.5")
+    );
 
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::AAAA, None));
-    assert!(matches!((&r.answers.as_slice()[0].data), HRData::AAAA(a) if a.0.to_string() == "fd00::5"));
+    assert!(
+        matches!((&r.answers.as_slice()[0].data), HRData::AAAA(a) if a.0.to_string() == "fd00::5")
+    );
 
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::TXT, None));
     let HRData::TXT(txt) = (&r.answers.as_slice()[0].data) else {
@@ -229,7 +253,8 @@ fn multi_mx_same_name_is_one_rrset_two_rdata() {
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::MX, None));
     assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     let mut prefs: Vec<u16> = r
-        .answers.as_slice()
+        .answers
+        .as_slice()
         .iter()
         .filter_map(|rec| match (&rec.data) {
             HRData::MX(mx) => Some(mx.preference),
@@ -280,7 +305,11 @@ fn positive_apex_soa_and_ns_for_every_zone() {
         let want = emitted(&snap, zone);
 
         let r = resolve(&snap, &query_msg(zone, HRecordType::SOA, None));
-        assert_eq!(r.metadata.response_code, ResponseCode::NoError, "{zone} SOA");
+        assert_eq!(
+            r.metadata.response_code,
+            ResponseCode::NoError,
+            "{zone} SOA"
+        );
         assert!(r.metadata.authoritative, "{zone} SOA AA=1");
         assert_eq!(
             soa_serial(r.answers.as_slice()),
@@ -321,7 +350,10 @@ fn non_apex_soa_or_ns_is_ordinary_nodata_or_nxdomain() {
         r.answers.as_slice().is_empty(),
         "non-apex SOA is NODATA, not an answer"
     );
-    assert!(soa_serial(r.authorities.as_slice()).is_some(), "SOA in AUTHORITY");
+    assert!(
+        soa_serial(r.authorities.as_slice()).is_some(),
+        "SOA in AUTHORITY"
+    );
 
     // Absent non-apex name, NS type → NXDOMAIN.
     let r = resolve(&snap, &query_msg("nope.bus", HRecordType::NS, None));
@@ -390,7 +422,8 @@ fn in_zone_mx_glue_present_out_of_zone_absent() {
     // zone → A/AAAA glue in ADDITIONAL.
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::MX, None));
     let glue_names: Vec<String> = r
-        .additionals.as_slice()
+        .additionals
+        .as_slice()
         .iter()
         .map(|rec| rec.name.to_ascii())
         .collect();
@@ -400,7 +433,10 @@ fn in_zone_mx_glue_present_out_of_zone_absent() {
     // ext.bus MX 10 mail.example.net: target out of zone → no glue.
     let r = resolve(&snap, &query_msg("ext.bus", HRecordType::MX, None));
     assert_eq!(r.metadata.response_code, ResponseCode::NoError);
-    assert!(r.additionals.as_slice().is_empty(), "out-of-zone target → no glue");
+    assert!(
+        r.additionals.as_slice().is_empty(),
+        "out-of-zone target → no glue"
+    );
 }
 
 // ── 0x20: QUESTION echoed verbatim, answer canonical ─────────────────
@@ -438,29 +474,45 @@ fn opcode_not_query_is_notimp() {
     let (snap, _p) = fresh_snapshot(ZONES_SRC);
     let mut req = query_msg("alpha.bus", HRecordType::A, None);
     req.metadata.op_code = OpCode::Status;
-    assert_eq!(resolve(&snap, &req).metadata.response_code, ResponseCode::NotImp);
+    assert_eq!(
+        resolve(&snap, &req).metadata.response_code,
+        ResponseCode::NotImp
+    );
 }
 
 #[test]
 fn qdcount_not_one_is_formerr() {
     let (snap, _p) = fresh_snapshot(ZONES_SRC);
-    let mut zero = Message::new(0, hickory_proto::op::MessageType::Query, hickory_proto::op::OpCode::Query);
+    let mut zero = Message::new(
+        0,
+        hickory_proto::op::MessageType::Query,
+        hickory_proto::op::OpCode::Query,
+    );
     zero.metadata.message_type = hickory_proto::op::MessageType::Query;
-    assert_eq!(resolve(&snap, &zero).metadata.response_code, ResponseCode::FormErr);
+    assert_eq!(
+        resolve(&snap, &zero).metadata.response_code,
+        ResponseCode::FormErr
+    );
 
     let mut two = query_msg("alpha.bus", HRecordType::A, None);
     two.add_query(hickory_proto::op::Query::query(
         hickory_proto::rr::Name::from_ascii("gamma.bus.").unwrap(),
         HRecordType::A,
     ));
-    assert_eq!(resolve(&snap, &two).metadata.response_code, ResponseCode::FormErr);
+    assert_eq!(
+        resolve(&snap, &two).metadata.response_code,
+        ResponseCode::FormErr
+    );
 }
 
 #[test]
 fn bad_class_is_refused() {
     let (snap, _p) = fresh_snapshot(ZONES_SRC);
     let req = query_msg_class("alpha.bus", HRecordType::A, DNSClass::CH, None);
-    assert_eq!(resolve(&snap, &req).metadata.response_code, ResponseCode::Refused);
+    assert_eq!(
+        resolve(&snap, &req).metadata.response_code,
+        ResponseCode::Refused
+    );
 }
 
 #[test]
@@ -473,13 +525,17 @@ fn any_is_the_single_mandatory_minimal_outcome() {
     let r = resolve(&snap, &query_msg("alpha.bus", HRecordType::ANY, None));
     assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     assert!(r.metadata.authoritative, "AA=1");
-    assert!(r.answers.as_slice().is_empty(), "ANCOUNT=0 — no RRset enumeration");
+    assert!(
+        r.answers.as_slice().is_empty(),
+        "ANCOUNT=0 — no RRset enumeration"
+    );
     assert!(
         r.authorities.as_slice().is_empty(),
         "no SOA-as-answer/authority for existing-name ANY"
     );
     assert!(
-        r.additionals.as_slice()
+        r.additionals
+            .as_slice()
             .iter()
             .all(|rec| rec.record_type() == HRecordType::OPT),
         "no synthetic RR for ANY"
@@ -496,7 +552,11 @@ fn hinfo_is_never_emitted_for_any_query_type() {
     let (snap, _p) = fresh_snapshot(ZONES_SRC);
     for qt in [HRecordType::HINFO, HRecordType::ANY, HRecordType::A] {
         let r = resolve(&snap, &query_msg("alpha.bus", qt, None));
-        for sec in [r.answers.as_slice(), r.authorities.as_slice(), r.additionals.as_slice()] {
+        for sec in [
+            r.answers.as_slice(),
+            r.authorities.as_slice(),
+            r.additionals.as_slice(),
+        ] {
             assert!(
                 sec.iter()
                     .all(|rec| rec.record_type() != HRecordType::HINFO),

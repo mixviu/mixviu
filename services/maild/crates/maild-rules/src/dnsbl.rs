@@ -383,7 +383,10 @@ impl HickoryResolver {
     pub fn from_system() -> crate::error::Result<Self> {
         let inner = hickory_resolver::Resolver::builder_tokio()
             .map_err(|e| crate::error::Error::Internal(format!("DNSBL resolver init failed: {e}")))?
-            .build().map_err(|e| crate::error::Error::Internal(format!("DNSBL resolver init failed: {e}")))?;
+            .build()
+            .map_err(|e| {
+                crate::error::Error::Internal(format!("DNSBL resolver init failed: {e}"))
+            })?;
         Ok(Self { inner })
     }
 
@@ -398,9 +401,10 @@ impl HickoryResolver {
     /// Each upstream uses UDP with TCP fallback on the same configured port.
     pub fn with_resolvers(addrs: &[std::net::SocketAddr]) -> crate::error::Result<Self> {
         use hickory_resolver::config::{NameServerConfig, ResolverConfig};
-        if addrs.iter().any(|addr| {
-            matches!(addr, std::net::SocketAddr::V6(addr) if addr.scope_id() != 0)
-        }) {
+        if addrs
+            .iter()
+            .any(|addr| matches!(addr, std::net::SocketAddr::V6(addr) if addr.scope_id() != 0))
+        {
             return Err(crate::error::Error::Internal(
                 "Hickory 0.26 cannot represent scoped IPv6 DNS resolver addresses".into(),
             ));
@@ -411,7 +415,9 @@ impl HickoryResolver {
         let mut servers: Vec<NameServerConfig> = Vec::with_capacity(addrs.len());
         for addr in addrs {
             let mut server = NameServerConfig::udp_and_tcp(addr.ip());
-            for connection in &mut server.connections { connection.port = addr.port(); }
+            for connection in &mut server.connections {
+                connection.port = addr.port();
+            }
             servers.push(server);
         }
         let config = ResolverConfig::from_parts(None, vec![], servers);
@@ -419,7 +425,8 @@ impl HickoryResolver {
             config,
             hickory_resolver::net::runtime::TokioRuntimeProvider::default(),
         )
-        .build().map_err(|e| crate::error::Error::Internal(format!("DNSBL resolver init failed: {e}")))?;
+        .build()
+        .map_err(|e| crate::error::Error::Internal(format!("DNSBL resolver init failed: {e}")))?;
         Ok(Self { inner })
     }
 }
@@ -437,7 +444,13 @@ impl AsyncDnsResolver for HickoryResolver {
 
     async fn lookup_txt(&self, qname: &str) -> Option<String> {
         let lookup = self.inner.txt_lookup(qname).await.ok()?;
-        lookup.answers().iter().find_map(|record| match &record.data { hickory_resolver::proto::rr::RData::TXT(txt) => Some(txt.to_string()), _ => None })
+        lookup
+            .answers()
+            .iter()
+            .find_map(|record| match &record.data {
+                hickory_resolver::proto::rr::RData::TXT(txt) => Some(txt.to_string()),
+                _ => None,
+            })
     }
 }
 
