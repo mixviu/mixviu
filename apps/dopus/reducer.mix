@@ -1,0 +1,342 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- All Mix Dopus application policy lives here and in the other .mix modules.
+$dp=require("core.mix")
+$view=require("presentation.mix")
+$ops=require("operations.mix")
+$configuration=require("config.mix")
+fn dp_drop_allowed($sources,$destination,$busy)
+  if $busy or len($sources)==0 then return false end
+  $destination=$dp.dp_realpath($destination)
+  if $destination==nil then return false end
+  for $source in $sources
+    $st=$dp.dp_lstat($source)
+    if $st==nil then return false end
+    if $st.is_dir and not $st.is_symlink then
+      $source=$dp.dp_realpath($source)
+      if $source==nil or $dp.dp_parent($source)==$destination or $ops.dp_inside($destination,$source) then return false end
+    elif $dp.dp_realpath($dp.dp_parent($source))==$destination then return false end
+  end
+  return true
+end
+fn dp_closed_form()
+  return {open:false,title:"",body:"",field:nil,choices:[],instance:0}
+end
+fn dp_initialise($a)
+  $config_path=path_join($a.profile,"config.conf.mix")
+  $loaded=$configuration.dp_load_config($config_path)
+  $config=$loaded.value;$save=$loaded.save_allowed;$warning=$loaded.warning
+  $original_paths=[$config.left.path,$config.right.path]
+  for $i=0 to min(1,len($a.paths ?? [])-1)
+    $path=$dp.dp_path($a.paths[$i])
+    $config[if $i==0 then "left" else "right" end].path=if $dp.dp_is_file($path) then $dp.dp_parent($path) else $path end
+  end
+  $panes=[$dp.dp_pane($config.left),$dp.dp_pane($config.right)]
+  for $i=0 to min(1,len($a.paths ?? [])-1)
+    if $panes[$i].path!=$dp.dp_path($original_paths[$i]) then $panes[$i].back=[$dp.dp_path($original_paths[$i])] end
+  end
+  $places=$configuration.dp_places($config)
+  return {panes:$panes,locations:[$panes[0].path,$panes[1].path],active:if $config.active_pane=="right" then 1 else 0 end,split:clamp($config.split_ratio ?? 0.5,0.2,0.8),places_open:$config.places.open ?? true,properties_open:$config.properties.open ?? true,places_width:clamp($config.places.width ?? 0.15,0.1,0.3),properties_width:clamp($config.properties.width ?? 0.22,0.1,0.3),places:$places,bookmarks:$config.bookmarks ?? [],remote_previews:$config.remote_previews ?? false,appearance:{mode:"dark",scheme:"studio",style:"default"},window_choice:{},appearance_choice:{},appearance_session:{mode:"dark",scheme:"studio",style:"default"},busy:false,job:nil,effect_jobs:{},form_queue:[],form:dp_closed_form(),reservation:nil,next_token:0,serial:0,info:if $warning!="" then $warning else "Select a file or folder" end,focus:nil,config_path:$config_path,save_allowed:$save,app_dir:$a.app_dir,reply:{ok:true}}
+end
+fn dp_update_previews($s)
+  if $s.preview_slots==nil then $s.preview_slots=[{key:nil,job:nil,value:{phase:"none"}},{key:nil,job:nil,value:{phase:"none"}}] end
+  for $i=0 to 1
+    $p=$s.panes[$i]
+    $row=filter($p.entries,fn($r)=$r.path==$p.selected and not $r.dir)[0]
+    $key=if $p.previews and $row!=nil then {path:$row.path,generation:$p.generation} else nil end
+    if not deep_eq($key,$s.preview_slots[$i].key) then
+      if $s.preview_slots[$i].job!=nil then send "viu-local" "jobs.cancel" id=$s.preview_slots[$i].job end
+      $s.preview_slots[$i]={key:$key,job:nil,value:{phase:"none"}}
+      if $key!=nil then
+        $s.next_token=$s.next_token+1
+        $id="preview-"..to_string($s.next_token)
+        $path=$s.app_dir.."/preview-job.mix"
+        send "viu-local" "jobs.start" id=$id owner=$s.owner path=$path source=read_file($path) command="job.run" args={path:$key.path,remote:$s.remote_previews}
+        if $rc==0 then $s.preview_slots[$i].job=$id;$s.preview_slots[$i].value={phase:"pending"}
+        else $s.preview_slots[$i].key=nil end
+      end
+    end
+  end
+  return $s
+end
+fn dp_config($s)
+  $panes=[]
+  for $p in $s.panes push($panes,{path:$p.path,show_hidden:$p.show_hidden,sort:$p.sort,ascending:$p.ascending,previews:$p.previews}) end
+  return {schema_version:2,left:$panes[0],right:$panes[1],active_pane:if $s.active==0 then "left" else "right" end,split_ratio:$s.split,places:{open:$s.places_open,width:$s.places_width},properties:{open:$s.properties_open,width:$s.properties_width},bookmarks:$s.bookmarks,remote_previews:$s.remote_previews}
+end
+fn dp_persist($s)
+  if $s.save_allowed then
+    mkdir(dirname($s.config_path))
+    viu_atomic_replace($s.config_path,data_encode(dp_config($s),true))
+  end
+  return $s
+end
+fn dp_go($s,$index,$path,$activate=true)
+  if $activate then $s.active=$index end
+  $s.panes[$index]=$dp.dp_navigate($s.panes[$index],$path);$s.locations[$index]=$s.panes[$index].path
+  return $s
+end
+fn dp_start_operation($s,$operation)
+  if $s.busy then raise("BUSY","Another file operation is still running") end
+  $s.next_token=$s.next_token+1
+  $id="file-"..to_string($s.next_token)
+  $path=$s.app_dir.."/operation-job.mix"
+  send "viu-local" "jobs.start" id=$id owner=$s.owner path=$path source=read_file($path) command="job.run" args=$operation
+  if $rc!=0 then raise("BUSY",to_string($result)) end
+  $s.busy=true;$s.job=$id;$s.info="Working…";$s.reply={accepted:true,id:$id}
+  return $s
+end
+fn dp_start_effect($s,$effect)
+  if $effect.kind=="mail" then $effect.native_bus=$s.bus_connected end
+  $s.next_token=$s.next_token+1
+  $id="effect-"..to_string($s.next_token)
+  $path=$s.app_dir.."/effect-job.mix"
+  send "viu-local" "jobs.start" id=$id owner=$s.owner path=$path source=read_file($path) command="job.run" args=$effect
+  if $rc!=0 then raise("BUSY",to_string($result)) end
+  if $s.effect_jobs==nil then $s.effect_jobs={} end
+  $context=$s.effect_context ?? {}
+  $s.effect_jobs[$id]={kind:$effect.kind,token:if $effect.kind=="mail" then $context.token else nil end}
+  $s.reply={accepted:true,id:$id}
+  return $s
+end
+fn dp_form($s,$kind,$title,$body,$field,$operation)
+  if $s.form_queue==nil then $s.form_queue=[] end
+  if len($s.form_queue)>=16 then raise("BUSY","Dialog queue is full") end
+  if contains(["mkdir","rename"],$kind) and (($s.reservation!=nil and contains(["mkdir","rename"],$s.reservation.kind)) or any($s.form_queue,fn($q)=contains(["mkdir","rename"],$q.reservation.kind))) then raise("BUSY","A name edit is already pending") end
+  $s.next_token=$s.next_token+1
+  $form={open:true,title:$title,body:$body,field:$field,instance:$s.next_token,error:"",choices:[{id:"ok",label:if $kind=="delete" then "Yes" elif $kind=="message" then "Done" else "OK" end,enabled:true,default:true}]}
+  if $kind!="message" then $form.choices=push($form.choices,{id:"cancel",label:if $kind=="delete" then "No" else "Cancel" end,enabled:true,cancel:true}) end
+  $reservation={kind:$kind,operation:$operation}
+  if $s.form.open then $s.form_queue=push($s.form_queue,{form:$form,reservation:$reservation})
+  else $s.form=$form;$s.reservation=$reservation end
+  return $s
+end
+fn dp_next_form($s)
+  if len($s.form_queue ?? [])>0 then
+    $next=$s.form_queue[0];$s.form_queue=slice($s.form_queue,1)
+    $s.form=$next.form;$s.reservation=$next.reservation
+  else $s.form=dp_closed_form();$s.reservation=nil end
+  return $s
+end
+fn dp_answer($s,$choice)
+  if not $s.form.open then raise("NOT_FOUND","No dialog is open") end
+  if $choice=="cancel" then return dp_next_form($s) end
+  if $s.reservation.kind=="drop" and contains(["copy","move"],$choice) then
+    $operation=$s.reservation.operation;$operation.kind=$choice
+    if $s.busy then
+      $s.info="Another file operation is still running";$s.reply={error_code:"BUSY",message:$s.info}
+      return dp_next_form($s)
+    end
+    $s=dp_start_operation($s,$operation);return dp_next_form($s)
+  end
+  if $choice!="ok" then raise("INVALID_ARGUMENT","Unknown dialog choice") end
+  $op=$s.reservation.operation
+  if $s.reservation.kind=="mkdir" or $s.reservation.kind=="rename" then
+    try $op.name=$dp.dp_filename($s.form.field)
+    catch $message $s.form.error=$message;$s.reply={error_code:"INVALID_ARGUMENT",message:$message};return $s end
+  end
+  if $s.reservation.kind=="message" then return dp_next_form($s) end
+  if $s.busy then
+    $s.info="Another file operation is still running";$s.reply={error_code:"BUSY",message:$s.info}
+    return dp_next_form($s)
+  end
+  $s=dp_start_operation($s,$op)
+  return dp_next_form($s)
+end
+fn dp_search_choices($s,$contract)
+  $query=lower($s.form.field)
+  $choices=[]
+  for $action in $contract.actions
+    if $action.id!="view.search" and (contains(lower($action.label),$query) or contains($action.id,$query)) then
+      $choice=$view.dp_command($s,$contract,$action.id)
+      $choice.default=len($choices)==0
+      push($choices,$choice)
+    end
+  end
+  push($choices,{id:"cancel",label:"Cancel",enabled:true,cancel:true})
+  return $choices
+end
+fn dp_handle_answer($s,$contract,$choice)
+  if $s.reservation.kind=="search" and $choice!="cancel" then
+    if not any($s.form.choices,fn($c)=$c.id==$choice and $c.enabled) then raise("INVALID_ARGUMENT","Command is not available") end
+    $s=dp_next_form($s)
+    return dp_action($s,$contract,$choice,{})
+  end
+  return dp_answer($s,$choice)
+end
+-- Retain the original command's open/answer forms alongside the explicitly
+-- generation-fenced Viu dialog endpoint. This policy belongs to the app.
+fn dp_legacy_dialog($s,$contract,$a)
+  if type($a)!="map" or any(keys($a),fn($k)=not contains(["open","answer","name"],$k)) or (has_key($a,"open") and len(keys($a))!=1) or (has_key($a,"name") and not has_key($a,"answer")) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
+  if has_key($a,"open") then
+    if $a.open==nil then
+      if $s.form.open then return dp_handle_answer($s,$contract,"cancel") end
+      return $s
+    end
+    if not contains(["about","shortcuts"],$a.open) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
+    if $s.form.open then raise("DIALOG_OPEN","answer or close the open dialog first") end
+    return dp_action($s,$contract,"help."..$a.open,{})
+  elif has_key($a,"answer") then
+    if not $s.form.open then raise("NO_DIALOG","no dialog is open") end
+    $choice=$a.answer
+    if type($choice)!="string" then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
+    if $s.reservation.kind=="delete" then
+      if not contains(["yes","no"],$choice) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
+      $choice=if $choice=="yes" then "ok" else "cancel" end
+    elif $s.reservation.kind=="message" then
+      if $choice!="done" then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
+      $choice="ok"
+    elif not any($s.form.choices,fn($c)=$c.id==$choice and $c.enabled) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
+    if has_key($a,"name") then
+      if type($a.name)!="string" or not contains(["mkdir","rename"],$s.reservation.kind) then raise("ARGUMENT","expected {}, {open: kind or null}, or {answer: button id, name?: string}") end
+      $s.form.field=$a.name
+    end
+    if $choice=="ok" and contains(["mkdir","rename"],$s.reservation.kind) then
+      try $dp.dp_filename($s.form.field)
+      catch $message $s.reply={error_code:"ARGUMENT",message:$message};return $s end
+    end
+    return dp_handle_answer($s,$contract,$choice)
+  end
+  return $s
+end
+fn dp_action($s,$contract,$id,$params)
+  if type($params)!="map" then raise("INVALID_ARGUMENT","Action params must be a map") end
+  for $key in keys($params)
+    if not contains(["pane","ctrl","shift","path"],$key) or ($key=="path" and $id!="place.open") then raise("INVALID_ARGUMENT","Unknown action parameter") end
+  end
+  for $key in ["ctrl","shift"] if $params[$key]!=nil and type($params[$key])!="bool" then raise("INVALID_ARGUMENT","Selection modifier must be bool") end end
+  $i=$s.active
+  if $params.pane!=nil then
+    if not contains(["left","right","active",0,1],$params.pane) then raise("INVALID_ARGUMENT","Unknown pane") end
+    $i=if $params.pane=="left" or $params.pane==0 then 0 elif $params.pane=="right" or $params.pane==1 then 1 else $s.active end
+  end
+  if $id=="place.open" then return dp_go($s,$i,$params.path) end
+  if not any($contract.actions,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",to_string($id)) end
+  $id=$contract.action_aliases[$id] ?? $id
+  if $s.dialog_status!=nil and (starts_with($id,"nav.") or starts_with($id,"selection.") or contains(["view.refresh","view.toggle-hidden"],$id)) then $s.dialog_status=nil;$s.info="Select a file or folder" end
+  $p=$s.panes[$i]
+  $n=len($p.selected_paths)
+  if $id=="file.mail" then
+    if $n==0 or not all(filter($p.entries,fn($r)=contains($p.selected_paths,$r.path)),fn($r)=$r.file) then raise("UNAVAILABLE","Select one or more regular files to mail") end
+  elif contains(["file.open","file.rename","file.copy-other-pane","file.move-other-pane","file.delete"],$id) and $n==0 then raise("UNAVAILABLE","Nothing is selected")
+  end
+  if $id=="file.rename" and $n!=1 then raise("UNAVAILABLE","Select one item to rename") end
+  if contains(["file.new-folder","file.rename","file.copy-other-pane","file.move-other-pane","file.delete"],$id) and $s.busy then raise("UNAVAILABLE","A file operation is still running") end
+  if contains(["file.new-folder","file.rename"],$id) and $s.form.open and contains(["mkdir","rename"],$s.reservation.kind) then raise("UNAVAILABLE","A name edit is already pending") end
+  if contains(["view.toggle-places","view.toggle-properties","location.focus"],$id) and (($s.headless ?? false) or $s.form.open) then
+    raise(if $s.headless ?? false then "HEADLESS" else "WINDOW_BUSY" end,if $id=="location.focus" then "location focus needs an available window editor" else "sidebar toggles need an available window" end)
+  end
+  if ($s.headless ?? false) and starts_with($id,"theme.") then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
+  if $id=="nav.switch-pane" then $s.active=1-$s.active
+  elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
+  elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path),false)
+  elif $id=="nav.home" then return dp_go($s,$i,env("HOME","/"),false)
+  elif $id=="location.focus" then $s.focus={id:if $i==0 then "left-location" else "right-location" end,selection:[0,len($s.locations[$i])]}
+  elif $id=="view.toggle-places" then $s.places_open=not $s.places_open
+  elif $id=="view.toggle-properties" then $s.properties_open=not $s.properties_open
+  elif $id=="view.refresh" then $s.panes[$i]=$dp.dp_relist($p)
+  elif $id=="view.toggle-hidden" then $p.show_hidden=not $p.show_hidden;$s.panes[$i]=$dp.dp_relist($p)
+  elif $id=="view.toggle-previews" then $s.panes[$i].previews=not $p.previews
+  elif starts_with($id,"view.sort-") then
+    $key=slice($id,len("view.sort-"));$p.ascending=if $p.sort==$key then not $p.ascending else true end;$p.sort=$key;$s.panes[$i]=$dp.dp_refresh($p)
+  elif starts_with($id,"selection.") then
+    $keys={next:"ArrowDown",previous:"ArrowUp",first:"Home",last:"End"}
+    $s.panes[$i]=$dp.dp_select_key($p,$keys[slice($id,10)],$params.ctrl ?? false,$params.shift ?? false)
+  elif $id=="file.new-folder" then return dp_form($s,"mkdir","New Folder","", "New Folder",{kind:"mkdir",destination:$p.path})
+  elif $id=="file.rename" then return dp_form($s,"rename","Rename","",$dp.dp_leaf_text($p.selected),{kind:"rename",source:$p.selected})
+  elif $id=="file.delete" then
+    $sources=$dp.dp_sources($p)
+    return dp_form($s,"delete","Confirm","Permanently delete "..if len($sources)==1 then "this item" else "these "..to_string(len($sources)).." items" end.."?\n\n"..join(map($sources,fn($path)=$dp.dp_display($path)),"\n").."\n\nThis cannot be undone.",nil,{kind:"delete",sources:$sources})
+  elif $id=="file.copy-other-pane" or $id=="file.move-other-pane" then return dp_start_operation($s,{kind:if $id=="file.copy-other-pane" then "copy" else "move" end,sources:$dp.dp_sources($p),destination:$s.panes[1-$i].path})
+  elif $id=="file.open" then
+    $entry=filter($p.entries,fn($r)=$r.path==$p.selected)[0]
+    if $entry.dir then return dp_go($s,$i,$entry.path,false) end
+    if $s.headless ?? false then return $s end
+    return dp_start_effect($s,{kind:"open",path:$entry.path})
+  elif $id=="file.mail" then
+    return dp_start_effect($s,{kind:"mail",paths:$dp.dp_sources($p)})
+  elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then
+    $key=replace(slice($id,len("theme.")),"-session","")
+    $s.appearance_choice=delete($s.appearance_choice,$key)
+    $s.appearance[$key]=$s.appearance_session[$key]
+    $s.appearance_reset=$key
+  elif starts_with($id,"theme.decorations-") then $s.window_choice["window.decorations"]=slice($id,len("theme.decorations-"))
+  elif starts_with($id,"theme.captions-") then $s.window_choice["window.caption_side"]=slice($id,len("theme.captions-"))
+  elif $id=="theme.mode-toggle" then $s.appearance.mode=if $s.appearance.mode=="dark" then "light" else "dark" end
+  elif starts_with($id,"theme.mode-") then $s.appearance.mode=slice($id,len("theme.mode-"))
+  elif starts_with($id,"theme.style-") then $s.appearance.style=slice($id,len("theme.style-"))
+  elif starts_with($id,"theme.scheme-") then $s.appearance.scheme=slice($id,len("theme.scheme-"))
+  elif $id=="help.macros" then $s.reply={panel:"macros"}
+  elif $id=="help.shortcuts" then return dp_form($s,"message","Keyboard Shortcuts","",nil,{legacy_kind:"shortcuts"})
+  elif $id=="help.about" then return dp_form($s,"message","About DOpus","DOpus, the MixViu twin-pane file manager.",nil,{legacy_kind:"about"})
+  elif $id=="view.search" then
+    if $s.form.open then raise("BUSY","Answer the current dialog first") end
+    $s=dp_form($s,"search","Search commands","","",{})
+    $s.form.choice_layout="list";$s.form.choices=dp_search_choices($s,$contract)
+  elif $id=="app.quit" then $s=dp_persist($s)
+  else raise("UNKNOWN_ACTION",$id) end
+  return $s
+end
+fn dp_intent($s,$contract,$a)
+  $id=$a.id;$value=$a.value;$action=$a.action
+  if $id=="menu" or $id=="toolbar" then return dp_action($s,$contract,$value.command,{})
+  elif $id=="form" then
+    if $action=="edit" then
+      $s.form.field=$value
+      if $s.reservation.kind=="search" then $s.form.choices=dp_search_choices($s,$contract) end
+      return $s
+    elif $action=="answer" then return dp_handle_answer($s,$contract,if $value.choice=="close" then "cancel" else $value.choice end) end
+  elif $id=="panes" then $s.split=clamp($value,0.2,0.8);return $s
+  elif $id=="root" then
+    if $value.child=="places-pane" then $s.places_width=clamp($value.fraction,0.1,0.3)
+    elif $value.child=="properties-pane" then $s.properties_width=clamp($value.fraction,0.1,0.3)
+    else raise("INVALID_ARGUMENT","Unknown resizable sidebar") end
+    return $s
+  elif $id=="places" then
+    if $action=="activate-pane" then return $s end
+    for $i=0 to len($s.places)-1
+      if $value.key=="place."..to_string($i) then return dp_go($s,$s.active,$s.places[$i].path) end
+    end
+    raise("NOT_FOUND","Unknown place")
+  end
+  $i=if starts_with($id,"left-") then 0 elif starts_with($id,"right-") then 1 else -1 end
+  if $i<0 then raise("NOT_FOUND","Unknown widget") end
+  if $action!="drop" then $s.active=$i end
+  if ends_with($id,"-location") then
+    if contains(["cancel","blur"],$action) then $s.locations[$i]=$s.panes[$i].path;return $s end
+    if type($value)!="string" or len($value)>4096 then raise("INVALID_ARGUMENT","Location must be text") end
+    if $action=="set" then $s.locations[$i]=$value;return $s
+    elif $action=="submit" then return dp_go($s,$i,$value) end
+  elif ends_with($id,"-tree") then
+    if $action=="select" then $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,$value.ctrl ?? false,$value.shift ?? false)
+    elif $action=="expand" then $s.panes[$i]=$dp.dp_expand($s.panes[$i],$value.key)
+    elif $action=="activate" then
+      $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,false,false)
+      $row=filter($s.panes[$i].entries,fn($row)=$row.path==$value.key)[0]
+      if $row!=nil and $row.dir then $s.panes[$i]=$dp.dp_expand($s.panes[$i],$value.key)
+      else return dp_action($s,$contract,"file.open",{}) end
+    elif $action=="sort" then
+      $p=$s.panes[$i];$p.ascending=if $p.sort==$value.column then not $p.ascending else true end;$p.sort=$value.column;$s.panes[$i]=$dp.dp_refresh($p)
+    elif $action=="command" then
+      if $value.key!=nil and not contains($s.panes[$i].selected_paths,$value.key) then $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,false,false) end
+      return dp_action($s,$contract,$value.command,{})
+    elif $action=="context" then
+      if not contains($s.panes[$i].selected_paths,$value.key) then $s.panes[$i]=$dp.dp_pick($s.panes[$i],$value.key,false,false) end
+    elif $action=="navigate" then
+      if $value.key=="ArrowRight" or $value.key=="ArrowLeft" then
+        $p=$s.panes[$i];$expanded=$p.expanded[$p.selected] ?? false
+        $row=filter($p.entries,fn($r)=$r.path==$p.selected and $r.dir)[0]
+        if $row!=nil and (($value.key=="ArrowRight" and not $expanded) or ($value.key=="ArrowLeft" and $expanded)) then $s.panes[$i]=$dp.dp_expand($p,$p.selected) end
+      else $s.panes[$i]=$dp.dp_select_key($s.panes[$i],$value.key,$value.ctrl ?? false,$value.shift ?? false) end
+    elif $action=="drop" then
+      $sources=filter($value.keys,fn($path)=not any($value.keys,fn($parent)=$parent!=$path and $dp.dp_contains_path($path,$parent)))
+      if not dp_drop_allowed($sources,$value.destination,$s.busy) then raise("UNAVAILABLE","This destination cannot receive the dragged items") end
+      if ($value.ctrl ?? false) or ($value.shift ?? false) then return dp_start_operation($s,{kind:if $value.ctrl ?? false then "copy" else "move" end,sources:$sources,destination:$value.destination}) end
+      if $s.form.open then raise("BUSY","Answer the current dialog first") end
+      $s=dp_form($s,"drop",$dp.dp_leaf_text($value.destination),"Move or copy "..to_string(len($sources)).." item(s) here?",nil,{sources:$sources,destination:$value.destination})
+      $s.form.choices=[{id:"move",label:"Move Here",enabled:true,default:true},{id:"copy",label:"Copy Here",enabled:true},{id:"cancel",label:"Cancel",enabled:true,cancel:true}]
+    elif $action!="activate-pane" then raise("INVALID_ARGUMENT","Unknown tree action") end
+    return $s
+  end
+  raise("INVALID_ARGUMENT","Unknown widget action")
+end

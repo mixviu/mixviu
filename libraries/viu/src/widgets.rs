@@ -1,0 +1,2293 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Shared native widgets. Applications supply their own definitions and model;
+//! this module draws and reports intents, never executes application policy.
+use egui::{Color32, Id, Rect, Sense, Vec2};
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet};
+
+pub const KINDS: &[&str] = &[
+    "mark",
+    "macro-menu",
+    "notice-bar",
+    "diagnostic-list",
+    "document-tabs",
+    "search-bar",
+    "form-fields",
+    "header-form",
+    "file-tiles",
+    "file-previews",
+    "status-line",
+    "block-list",
+    "label-run",
+    "form-grid",
+    "cell-grid",
+    "history-lines",
+    "network-map",
+    "navigation-list",
+    "command-palette",
+    "widget-row",
+    "divider",
+    "time-series",
+    "dashboard",
+    "label",
+    "button",
+    "field",
+    "multiline",
+    "editor",
+    "markdown",
+    "checkbox",
+    "toggle",
+    "radio",
+    "slider",
+    "number",
+    "progress",
+    "combo",
+    "list",
+    "table",
+    "tree",
+    "collapse",
+    "tabs",
+    "menu",
+    "dialog",
+    "split",
+    "colour",
+    "canvas",
+    "link",
+    "tooltip",
+    "separator",
+    "icon",
+    "toolbar",
+    "tree-table",
+    "menubar",
+    "command-bar",
+    "property-grid",
+    "dialog-form",
+    "image-view",
+    "image-fill",
+    "image-canvas",
+    "macro-window",
+    "swatches",
+    "composition",
+    "window-controls",
+    "settings-browser",
+];
+
+#[derive(Clone, Debug)]
+pub struct Widget {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    pub initial: Value,
+    pub properties: Value,
+}
+fn native_numbers(value: &Value) -> Value {
+    match value {
+        Value::Number(n) if n.is_f64() => {
+            let n = n.as_f64().unwrap();
+            if n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0 {
+                if n >= 0.0 {
+                    json!(n as u64)
+                } else {
+                    json!(n as i64)
+                }
+            } else {
+                value.clone()
+            }
+        }
+        Value::Array(a) => Value::Array(a.iter().map(native_numbers).collect()),
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .map(|(k, v)| (k.clone(), native_numbers(v)))
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
+impl Widget {
+    pub fn new(id: &str, kind: &str, label: &str, initial: Value) -> Self {
+        Self {
+            id: id.into(),
+            kind: kind.into(),
+            label: label.into(),
+            initial,
+            properties: json!({}),
+        }
+    }
+    pub fn decode(value: &Value) -> Result<Self, String> {
+        // Scene numbers deliberately resolve as f64. Typed native payloads
+        // (RGBA bytes, IDs and pixel extents) still require integral JSON.
+        let value = native_numbers(value);
+        let field = |name| {
+            value[name]
+                .as_str()
+                .ok_or_else(|| format!("widget missing {name}"))
+        };
+        let mut widget = Self::new(
+            field("id")?,
+            field("kind")?,
+            field("label")?,
+            value["initial"].clone(),
+        );
+        widget.properties = value
+            .get("properties")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        if widget.id.is_empty() || !widget.properties.is_object() {
+            return Err("widget requires a non-empty ID and object properties".into());
+        }
+        if !KINDS.contains(&widget.kind.as_str()) {
+            return Err(format!("unsupported kind {}", widget.kind));
+        }
+        widget.validate(&widget.initial)?;
+        Ok(widget)
+    }
+    pub fn encode(&self) -> Value {
+        json!({"id":self.id,"kind":self.kind,"label":self.label,"initial":self.initial,"properties":self.properties})
+    }
+    pub fn with_properties(mut self, properties: Value) -> Self {
+        self.properties = properties;
+        self
+    }
+    fn combo_width(&self, ui: &egui::Ui) -> f32 {
+        let minimum = self.properties["width"].as_f64().unwrap_or(96.0) as f32;
+        if self.properties["measure_choices"] != true {
+            return minimum;
+        }
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        let longest = self
+            .choices()
+            .iter()
+            .map(|id| {
+                let label = self.properties["choice_labels"][*id].as_str().unwrap_or(id);
+                ui.painter()
+                    .layout_no_wrap(label.into(), font.clone(), egui::Color32::PLACEHOLDER)
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max);
+        minimum.max(longest + ui.spacing().icon_spacing + ui.spacing().icon_width)
+    }
+    /// Untruncated native label width, using exactly the same typography as
+    /// drawing. Containers choose whether and how this preferred size shrinks.
+    pub fn intrinsic_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind == "swatches" {
+            return Ok(self.properties["items"]
+                .as_array()
+                .ok_or("swatches required")?
+                .len() as f32
+                * (18.0 + ui.spacing().item_spacing.x)
+                + 6.0
+                - ui.spacing().item_spacing.x);
+        }
+        if self.kind == "combo" && self.properties["native"] == true {
+            return Ok(self.combo_width(ui) + 2.0 * ui.spacing().button_padding.x);
+        }
+        if self.kind == "menubar" && self.properties["style"] == "gold" {
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            let form = toolkit::menu::form(ui.ctx());
+            if form["hosted"] == true {
+                return Ok(0.0);
+            }
+            let width = if form["effective"] == "bar" {
+                self.value(model)
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|menu| {
+                        ui.painter()
+                            .layout_no_wrap(
+                                menu["label"].as_str().unwrap_or("").into(),
+                                toolkit::chrome::Chrome::menu_font(ui.style()),
+                                c.palette.text,
+                            )
+                            .size()
+                            .x
+                            + 2.0 * c.metrics.menu_title_padding.x
+                    })
+                    .sum()
+            } else {
+                c.style.icon_button as f32
+            };
+            let mark = if crate::window_frame::client_of(ui.ctx())
+                && self.properties["header_icon"].is_string()
+            {
+                c.metrics.mark + c.metrics.mark_gap
+            } else {
+                0.0
+            };
+            return Ok(width
+                + mark
+                + if c.menu_side != design::MenuSide::Center {
+                    c.metrics.title_bar_margin
+                } else {
+                    0.0
+                });
+        }
+        if self.kind == "command-bar" && self.properties["style"] == "gold" {
+            if self.properties["hostable"] == false {
+                let items = self.value(model);
+                let items = items.as_array().ok_or("command bar list required")?;
+                let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                let font = toolkit::fonts::bound(
+                    ui.ctx(),
+                    toolkit::fonts::medium(chrome.style.push_label_size as f32),
+                );
+                return Ok(items
+                    .iter()
+                    .map(|item| {
+                        if item["separator"] == true {
+                            9.0
+                        } else if item["icon"].is_string() && item["primary"] != true {
+                            chrome.style.icon_button as f32
+                        } else {
+                            ui.painter()
+                                .layout_no_wrap(
+                                    item["label"].as_str().unwrap_or("").into(),
+                                    font.clone(),
+                                    egui::Color32::PLACEHOLDER,
+                                )
+                                .size()
+                                .x
+                                + chrome.style.button_push_padding as f32
+                        }
+                    })
+                    .sum::<f32>()
+                    + ui.spacing().item_spacing.x * items.len().saturating_sub(1) as f32);
+            }
+            if toolkit::titlebar::hosting::hosted(ui.ctx()) {
+                return Ok(0.0);
+            }
+            let n = model["values"]
+                .get(&self.id)
+                .unwrap_or(&self.initial)
+                .as_array()
+                .ok_or("command bar list required")?
+                .len() as f32;
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            return Ok(
+                n * (c.style.icon_button as f32 + c.style.title_control_spacing as f32)
+                    + if c.band.actions.alignment() == design::title_band::Alignment::Center {
+                        0.0
+                    } else if crate::window_frame::client_of(ui.ctx())
+                        && c.band.actions.alignment()
+                            == c.captions.alignment(design::title_band::Alignment::Right)
+                    {
+                        c.metrics.caption_gap
+                    } else {
+                        c.metrics.title_bar_margin
+                    },
+            );
+        }
+        self.validate_model(model)?;
+        if self.kind == "navigation-list" {
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            return Ok(self.value(model)["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    ui.painter()
+                        .layout_no_wrap(
+                            row["cells"][0].as_str().unwrap().into(),
+                            font.clone(),
+                            ui.visuals().text_color(),
+                        )
+                        .size()
+                        .x
+                })
+                .fold(0.0_f32, f32::max)
+                + 2.0 * ui.ctx().global_style().spacing.interact_size.x
+                + 2.0 * ui.ctx().global_style().spacing.item_spacing.x);
+        }
+        if self.kind == "menubar" && self.properties["style"] == "gold" {
+            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+            if toolkit::menu::effective(ui.ctx()) != design::MenuStyle::Bar {
+                return Ok(chrome.style.icon_button as f32);
+            }
+            return Ok(self
+                .value(model)
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|menu| {
+                    ui.painter()
+                        .layout_no_wrap(
+                            menu["label"].as_str().unwrap().into(),
+                            toolkit::chrome::Chrome::menu_font(ui.style()),
+                            chrome.palette.text,
+                        )
+                        .size()
+                        .x
+                        + 2.0 * chrome.metrics.menu_title_padding.x
+                })
+                .sum());
+        }
+        if self.kind == "command-bar" && self.properties["style"] == "gold" {
+            let n = self.value(model).as_array().unwrap().len();
+            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+            return Ok(n as f32 * chrome.style.icon_button as f32
+                + n.saturating_sub(1) as f32 * chrome.style.title_control_spacing as f32);
+        }
+        if self.kind == "button" && ["primary", "secondary"].contains(&self.text("style")) {
+            let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+            let font = toolkit::fonts::bound(
+                ui.ctx(),
+                toolkit::fonts::medium(chrome.style.push_label_size as f32),
+            );
+            return Ok(ui
+                .painter()
+                .layout_no_wrap(self.text("text").into(), font, Color32::PLACEHOLDER)
+                .size()
+                .x
+                + chrome.style.button_push_padding as f32);
+        }
+        if self.kind != "label" {
+            return Err("intrinsic text width requires a label".into());
+        }
+        let extra = if self.properties["role"] == "title" {
+            let c = toolkit::chrome::Chrome::of(ui.ctx());
+            2.0 * c.metrics.title_gap
+                + if c.band.title == design::TitleAlign::Auto {
+                    c.metrics.title_bar_margin
+                } else {
+                    0.0
+                }
+        } else {
+            0.0
+        };
+        Ok(extra
+            + egui::WidgetText::from(label_text(ui, self, self.value(model)))
+                .into_galley(
+                    ui,
+                    Some(egui::TextWrapMode::Extend),
+                    f32::INFINITY,
+                    egui::TextStyle::Body,
+                )
+                .size()
+                .x
+            + if self.properties["role"] == "status"
+                && self.value(model).as_str().is_some_and(|s| !s.is_empty())
+            {
+                2.0 * toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as f32
+            } else {
+                0.0
+            })
+    }
+
+    /// The native header keeps its standard tail while optional actions give
+    /// up room. Measure that tail with the current theme, just like its icons.
+    pub fn minimum_width(&self, ui: &egui::Ui, model: &Value) -> Result<f32, String> {
+        if self.kind == "command-bar"
+            && self.properties["style"] == "gold"
+            && self.properties["hostable"] != false
+        {
+            let mut tail = model.clone();
+            let items = self
+                .value(model)
+                .as_array()
+                .ok_or("command bar list required")?
+                .iter()
+                .filter(|item| {
+                    let id = item["id"].as_str().unwrap_or("");
+                    icons::standard(if matches!(id, "view.mode.light" | "view.mode.dark") {
+                        "view.mode"
+                    } else {
+                        id
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            tail["values"][&self.id] = serde_json::json!(items);
+            return self.intrinsic_width(ui, &tail);
+        }
+        self.intrinsic_width(ui, model)
+    }
+    fn choices(&self) -> Vec<&str> {
+        self.properties["choices"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect()
+    }
+    fn text(&self, key: &str) -> &str {
+        self.properties[key].as_str().unwrap_or("")
+    }
+    pub fn validate(&self, value: &Value) -> Result<(), String> {
+        if self.kind == "network-map" {
+            return crate::network_map::validate(value);
+        }
+        if crate::data_panels::KINDS.contains(&self.kind.as_str()) {
+            return crate::data_panels::validate(&self.kind, value);
+        }
+        if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            if self.kind == "property-grid" && !self.properties["preview"].is_null() {
+                crate::image_view::validate(&self.properties["preview"])?;
+            }
+            if self.kind == "menubar" && self.properties["style"] == "gold" {
+                crate::native_menu::validate(value)?;
+            }
+            return crate::rich::validate(&self.kind, value);
+        }
+        if [
+            "document-tabs",
+            "search-bar",
+            "form-fields",
+            "header-form",
+            "macro-menu",
+            "notice-bar",
+            "diagnostic-list",
+        ]
+        .contains(&self.kind.as_str())
+        {
+            return crate::editor_controls::validate(&self.kind, value);
+        }
+        let valid = match self.kind.as_str() {
+            "swatches" => {
+                value.as_array().is_some_and(|v| {
+                    v.len() == 4 && v.iter().all(|v| v.as_u64().is_some_and(|n| n <= 255))
+                }) && self.properties["items"].as_array().is_some_and(|items| {
+                    items.len() <= 32
+                        && items.iter().all(|item| {
+                            item["id"].is_string()
+                                && item["label"].is_string()
+                                && item["colour"].as_array().is_some_and(|v| {
+                                    v.len() == 4
+                                        && v.iter().all(|v| v.as_u64().is_some_and(|n| n <= 255))
+                                })
+                        })
+                })
+            }
+            "macro-window" => {
+                value.is_boolean()
+                    && self.properties["app"].as_str().is_some_and(|app| {
+                        !app.is_empty()
+                            && app.len() <= 64
+                            && app
+                                .bytes()
+                                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                    })
+            }
+            "widget-row" => {
+                for side in ["left", "right"] {
+                    for item in value[side]
+                        .as_array()
+                        .filter(|a| a.len() <= 64)
+                        .ok_or("row requires bounded left/right widgets")?
+                    {
+                        let child = Widget::decode(item)?;
+                        if child.kind == "widget-row" {
+                            return Err("nested widget rows are not supported".into());
+                        }
+                        child.validate(&child.initial)?;
+                    }
+                }
+                true
+            }
+            "divider" => value.is_null(),
+            "dashboard" => return crate::dashboard::validate(value),
+            "time-series" => return crate::time_series::validate(value),
+            "navigation-list" => return crate::navigation_list::validate(value),
+            "command-palette" => return crate::command_palette::validate(value),
+            "status-line" => {
+                value["left"].is_string()
+                    && value["right"]
+                        .as_array()
+                        .is_some_and(|a| a.len() <= 16 && a.iter().all(Value::is_string))
+                    && (value["icon"].is_null()
+                        || value["icon"]
+                            .as_str()
+                            .and_then(crate::icons::Icon::from_name)
+                            .is_some())
+            }
+            "mark" => value
+                .as_str()
+                .and_then(crate::icons::Icon::from_name)
+                .is_some(),
+
+            "window-controls" => {
+                value["side"]
+                    .as_str()
+                    .is_some_and(|v| ["left", "center", "right"].contains(&v))
+                    && value["enabled"].is_boolean()
+            }
+            "image-view" => return crate::image_view::validate(value),
+            "file-tiles" => return crate::file_tiles::validate(value),
+            "file-previews" => return crate::file_previews::validate(value),
+            "image-fill" => return crate::image_view::validate_fill(value),
+            "image-canvas" => return crate::image_view::validate_canvas(value),
+            "composition" => return crate::composition::validate(value),
+            "tree-table" => return crate::tree_table::validate(value),
+            "icon" => {
+                value["name"]
+                    .as_str()
+                    .and_then(crate::icons::Icon::from_name)
+                    .is_some()
+                    && whole(&value["size"]).is_some_and(|s| (8..=64).contains(&s))
+                    && value["colour"].as_array().is_some_and(|c| {
+                        c.len() == 3 && c.iter().all(|v| whole(v).is_some_and(|n| n <= 255))
+                    })
+                    && value["enabled"].is_boolean()
+                    && value["selected"].is_boolean()
+            }
+            "toolbar" => value.as_str().is_some_and(|v| {
+                self.properties["items"]
+                    .as_array()
+                    .is_some_and(|items| items.iter().any(|i| i["id"] == v && i["enabled"] == true))
+            }),
+            "checkbox" | "toggle" | "collapse" | "dialog" => value.is_boolean(),
+            "slider" | "number" | "progress" | "split" => value
+                .as_f64()
+                .is_some_and(|v| v.is_finite() && (0.0..=100.0).contains(&v)),
+            "radio" | "combo" | "tabs" | "menu" => {
+                value.as_str().is_some_and(|v| self.choices().contains(&v))
+            }
+            "list" | "table" | "tree" => {
+                whole(value).is_some_and(|v| v < whole(&self.properties["row_count"]).unwrap_or(0))
+            }
+            "colour" => value.as_array().is_some_and(|v| {
+                v.len() == 3 && v.iter().all(|c| whole(c).is_some_and(|c| c <= 255))
+            }),
+            "editor" | "markdown" => {
+                let handle = self.properties["native_document"] == true
+                    && value["document"]
+                        .as_str()
+                        .is_some_and(|s| !s.is_empty() && s.len() <= 128);
+                if self.properties.get("font_size").is_some_and(|v| {
+                    v.as_f64()
+                        .is_none_or(|n| !n.is_finite() || !(3.0..=144.0).contains(&n))
+                }) {
+                    return Err("editor font size must be 3..144".into());
+                }
+                if self.properties.get("padding").is_some_and(|v| {
+                    v.as_f64()
+                        .is_none_or(|n| !n.is_finite() || !(0.0..=127.0).contains(&n))
+                }) {
+                    return Err("editor padding must be 0..127".into());
+                }
+                if self
+                    .properties
+                    .get("light")
+                    .is_some_and(|v| !v.is_boolean())
+                {
+                    return Err("editor light must be bool".into());
+                }
+                for key in [
+                    "native_document",
+                    "soft_wrap",
+                    "line_numbers",
+                    "find_bar",
+                    "prose",
+                ] {
+                    if self.properties.get(key).is_some_and(|v| !v.is_boolean()) {
+                        return Err(format!("editor {key} requires bool"));
+                    }
+                }
+                if let Some(command) = self.properties.get("command") {
+                    if !command.is_object()
+                        || whole(&command["serial"]).is_none()
+                        || !command["name"].as_str().is_some_and(|v| {
+                            [
+                                "",
+                                "undo",
+                                "redo",
+                                "cut",
+                                "copy",
+                                "paste",
+                                "select-all",
+                                "duplicate-line",
+                                "delete-line",
+                                "move-line-up",
+                                "move-line-down",
+                                "toggle-comment",
+                                "indent",
+                                "outdent",
+                            ]
+                            .contains(&v)
+                        })
+                    {
+                        return Err("invalid editor command".into());
+                    }
+                }
+                (handle
+                    || value.as_str().is_some_and(|v| {
+                        v.len()
+                            <= if self.properties["native_document"] == true {
+                                64 * 1024 * 1024
+                            } else if self.properties["read_only"] == true {
+                                whole(&self.properties["max_bytes"])
+                                    .unwrap_or(65536)
+                                    .min(8_388_608) as usize
+                            } else {
+                                65536
+                            }
+                    }))
+                    && (self.properties["rows"].is_null()
+                        || whole(&self.properties["rows"]).is_some_and(|v| (1..=100).contains(&v)))
+                    && (self.properties["read_only"].is_null()
+                        || self.properties["read_only"].is_boolean())
+                    && (self.properties["max_bytes"].is_null()
+                        || whole(&self.properties["max_bytes"])
+                            .is_some_and(|n| (1..=8_388_608).contains(&n)))
+            }
+            "label" => {
+                value.as_str().is_some_and(|v| {
+                    v.len()
+                        <= whole(&self.properties["max_bytes"])
+                            .unwrap_or(4096)
+                            .min(8_388_608) as usize
+                }) && (self.properties["max_bytes"].is_null()
+                    || whole(&self.properties["max_bytes"])
+                        .is_some_and(|n| (1..=8_388_608).contains(&n)))
+            }
+            _ => value.as_str().is_some_and(|v| v.len() <= 4096),
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(format!("invalid value for {} ({})", self.id, self.kind))
+        }
+    }
+    pub fn actions(&self) -> Vec<&'static str> {
+        if self.kind == "file-tiles" || self.kind == "file-previews" {
+            return vec!["toggle", "open", "save", "open-all", "save-all"];
+        }
+        if self.kind == "macro-menu" {
+            return vec!["close"];
+        }
+        if self.kind == "notice-bar" {
+            return vec!["command"];
+        }
+        if self.kind == "diagnostic-list" {
+            return vec!["goto"];
+        }
+        if self.kind == "document-tabs" {
+            return vec!["select", "close"];
+        }
+        if self.kind == "header-form" {
+            return vec![
+                "edit", "commit", "command", "remove", "picked", "save", "cancel",
+            ];
+        }
+        if self.kind == "form-fields" {
+            return vec!["edit"];
+        }
+        if self.kind == "search-bar" {
+            return vec!["edit", "next", "prev", "replace", "replace-all", "close"];
+        }
+        if self.kind == "mark" || self.kind == "status-line" {
+            return vec![];
+        }
+        if self.kind == "swatches" {
+            return vec!["select"];
+        }
+        if self.kind == "macro-window" {
+            return vec!["close"];
+        }
+        if self.kind == "image-canvas" {
+            return vec!["pan", "zoom", "pick", "gesture", "viewport"];
+        }
+        if self.kind == "network-map" {
+            return vec!["set", "node", "edge", "inspect"];
+        }
+        if self.kind == "block-list" {
+            return vec!["set", "choose"];
+        }
+        if self.kind == "form-grid" {
+            return vec!["set", "edit"];
+        }
+        if self.properties["read_only"] == true && self.kind == "tree-table" {
+            return vec![];
+        }
+        if self.kind == "dashboard" {
+            return vec!["choose"];
+        }
+        if self.kind == "mark" || self.kind == "status-line" || self.kind == "time-series" {
+            return vec![];
+        }
+        if self.kind == "editor" && self.properties["read_only"] == true {
+            return vec![];
+        }
+        if self.kind == "window-controls" {
+            return vec!["close", "minimize", "toggle-maximize"];
+        }
+        if crate::rich::KINDS.contains(&self.kind.as_str()) {
+            return crate::rich::actions(&self.kind);
+        }
+        if self.kind == "tree-table" {
+            return vec![
+                "set",
+                "select",
+                "activate",
+                "expand",
+                "sort",
+                "context",
+                "drop",
+                "command",
+                "navigate",
+                "activate-pane",
+            ];
+        }
+        let mut actions = vec!["set"];
+        if [
+            "button", "list", "table", "tree", "canvas", "link", "icon", "toolbar",
+        ]
+        .contains(&self.kind.as_str())
+        {
+            actions.push("activate");
+        }
+        if ["field", "multiline", "editor"].contains(&self.kind.as_str()) {
+            actions.push("submit");
+            if self.properties["cancel_on_escape"] == true {
+                actions.push("cancel");
+            }
+            if self.properties["notify_blur"] == true {
+                actions.push("blur");
+            }
+        }
+        if self.kind == "dialog" {
+            actions.extend(["accept", "cancel"]);
+        }
+        if self.kind == "tree" {
+            actions.push("expand");
+        }
+        if self.kind == "table" {
+            actions.push("sort");
+        }
+        actions
+    }
+    pub fn validate_action(&self, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind == "swatches" {
+            if action != "select"
+                || !self.properties["items"]
+                    .as_array()
+                    .is_some_and(|items| items.iter().any(|item| item["id"] == *value))
+            {
+                return Err("invalid swatch choice".into());
+            }
+            return Ok(());
+        }
+        if !self.actions().contains(&action) {
+            return Err("unsupported widget action".into());
+        }
+        if matches!(self.kind.as_str(), "field" | "multiline" | "editor")
+            && action == "cancel"
+            && !value.is_null()
+        {
+            return Err("text-field cancel takes no value".into());
+        }
+        if ["set", "submit", "blur"].contains(&action)
+            || (action == "activate"
+                && ["list", "table", "tree", "toolbar"].contains(&self.kind.as_str()))
+        {
+            self.validate(value)?;
+        }
+        if self.kind != "tree-table" && ["expand", "sort"].contains(&action) && !value.is_boolean()
+        {
+            return Err("expand/sort requires bool".into());
+        }
+        if action == "activate"
+            && self.kind == "icon"
+            && value
+                .as_str()
+                .and_then(crate::icons::Icon::from_name)
+                .is_none()
+        {
+            return Err("activation requires an icon name".into());
+        }
+        Ok(())
+    }
+    pub fn admit(&self, model: &Value, action: &str, value: &Value) -> Result<(), String> {
+        if self.kind == "file-tiles" || self.kind == "file-previews" {
+            return if crate::file_tiles::intent(self.value(model), action, value) {
+                Ok(())
+            } else {
+                Err("invalid file tile action".into())
+            };
+        }
+        if self.properties["enabled"] == false
+            || (self.kind == "swatches" && self.properties["read_only"] == true)
+        {
+            return Err("DISABLED".into());
+        }
+        if [
+            "document-tabs",
+            "search-bar",
+            "form-fields",
+            "header-form",
+            "macro-menu",
+            "notice-bar",
+            "diagnostic-list",
+        ]
+        .contains(&self.kind.as_str())
+        {
+            return crate::editor_controls::admit(&self.kind, self.value(model), action, value);
+        }
+        if self.properties["enabled"] == false {
+            return Err("DISABLED".into());
+        }
+        if self.kind == "image-canvas" {
+            return crate::image_view::admit_canvas(self.value(model), action, value);
+        }
+        if self.kind == "dashboard" {
+            return crate::dashboard::admit(self.value(model), action, value);
+        }
+        self.validate_action(action, value)?;
+        if self.kind == "network-map" {
+            return crate::network_map::admit(self.value(model), action, value);
+        }
+        if crate::data_panels::KINDS.contains(&self.kind.as_str()) {
+            return crate::data_panels::admit(&self.kind, self.value(model), action, value);
+        }
+        if self.kind == "window-controls" && self.value(model)["enabled"] != true {
+            return Err("DISABLED".into());
+        }
+        if crate::rich::KINDS.contains(&self.kind.as_str()) && action != "set" {
+            return crate::rich::admit(&self.kind, self.value(model), action, value);
+        }
+        if self.kind == "tree-table" && action != "set" {
+            return crate::tree_table::admit(self.value(model), action, value);
+        }
+        if action == "activate" && self.kind == "icon" && self.value(model)["enabled"] != true {
+            return Err("DISABLED".into());
+        }
+        Ok(())
+    }
+    pub fn value<'a>(&'a self, model: &'a Value) -> &'a Value {
+        model["values"].get(&self.id).unwrap_or(&self.initial)
+    }
+    pub fn validate_model(&self, model: &Value) -> Result<(), String> {
+        if self
+            .properties
+            .get("enabled")
+            .is_some_and(|v| !v.is_boolean())
+        {
+            return Err("widget enabled must be bool".into());
+        }
+        if !KINDS.contains(&self.kind.as_str()) || !self.properties.is_object() {
+            return Err("invalid widget definition".into());
+        }
+        self.validate(self.value(model))?;
+        if ["field", "multiline", "editor"].contains(&self.kind.as_str())
+            && ["cancel_on_escape", "notify_blur"]
+                .iter()
+                .any(|key| self.properties.get(*key).is_some_and(|v| !v.is_boolean()))
+        {
+            return Err("text-field event options must be bool".into());
+        }
+        if self.kind == "tree-table" {
+            crate::tree_table::validate_properties(&self.properties)?;
+        }
+        if ["list", "table", "tree"].contains(&self.kind.as_str()) {
+            let rows = model["datasets"][self.text("dataset")]
+                .as_array()
+                .ok_or("missing dataset")?;
+            if Some(rows.len() as u64) != whole(&self.properties["row_count"]) {
+                return Err("dataset length differs from row_count".into());
+            }
+            let columns = if self.kind == "table" { 2 } else { 1 };
+            if rows.iter().any(|r| {
+                r.as_array().is_none_or(|cells| {
+                    cells.len() < columns || cells.iter().any(|c| !c.is_string())
+                })
+            }) {
+                return Err("dataset requires string cells".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn whole(v: &Value) -> Option<u64> {
+    v.as_u64().or_else(|| {
+        v.as_f64()
+            .filter(|n| {
+                n.is_finite() && *n >= 0.0 && *n <= 9_007_199_254_740_991.0 && n.fract() == 0.0
+            })
+            .map(|n| n as u64)
+    })
+}
+
+#[derive(Clone, Debug)]
+pub struct Intent {
+    pub id: String,
+    pub action: String,
+    pub value: Value,
+}
+impl Intent {
+    pub fn set(id: &str, value: Value) -> Self {
+        Self {
+            id: id.into(),
+            action: "set".into(),
+            value,
+        }
+    }
+    pub fn encode(&self) -> Value {
+        json!({"id":self.id,"action":self.action,"value":self.value})
+    }
+}
+
+#[derive(Default)]
+pub struct Widgets {
+    edits: BTreeMap<String, (String, std::collections::VecDeque<String>)>,
+    native_menu: crate::native_menu::NativeMenu,
+    gold_menus: bool,
+    pub geometry: BTreeMap<String, Rect>,
+    pub focus: Option<String>,
+    pub text_input_active: bool,
+    focus_selection: Option<[usize; 2]>,
+    focus_error: Option<String>,
+    images: crate::image_view::Images,
+    surfaces: Option<crate::image_view::Images>,
+    media: Option<crate::image_view::Images>,
+    editors: crate::editor::Editors,
+    documents: crate::documents::Documents,
+    canvases: Option<crate::image_view::Images>,
+    rasters: Option<crate::raster::Rasters>,
+    compositions: BTreeMap<String, crate::composition::Composition>,
+    visible_compositions: BTreeSet<String>,
+}
+impl Widgets {
+    pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
+        self.rasters = Some(rasters);
+    }
+    pub fn set_native_menus(&mut self, enabled: bool) {
+        self.gold_menus = enabled;
+    }
+    pub fn set_documents(&mut self, documents: crate::documents::Documents) {
+        self.documents = documents;
+    }
+    pub fn request_focus(&mut self, id: &str, selection: Option<[usize; 2]>) -> Result<(), String> {
+        if selection.is_some_and(|[start, end]| start > end || end > 1_048_576) {
+            return Err("invalid selection range".into());
+        }
+        self.focus = Some(id.into());
+        self.focus_selection = selection;
+        Ok(())
+    }
+    pub fn image_states(&self) -> Value {
+        self.images.states()
+    }
+    pub fn raster_states(&self) -> Value {
+        self.surfaces
+            .as_ref()
+            .map_or(Value::Null, |images| images.states())
+    }
+    /// Begin exactly once before drawing an application frame. Geometry is
+    /// retained after finish_frame for automation until the next begin_frame.
+    pub fn begin_frame(&mut self) {
+        self.visible_compositions.clear();
+        self.geometry.clear();
+        self.text_input_active = false;
+        self.focus_error = None;
+        self.images.begin();
+        if let Some(images) = &mut self.canvases {
+            images.begin();
+        }
+        if let Some(images) = &mut self.surfaces {
+            images.begin();
+        }
+        if let Some(images) = &mut self.media {
+            images.begin();
+        }
+    }
+    /// Draw one shared widget within an application-owned layout. Both Rust
+    /// and Mix adapters can use this entry point without the catalogue grid.
+    pub fn widget(&mut self, ui: &mut egui::Ui, definition: &Widget, model: &Value) -> Vec<Intent> {
+        let mut intents = Vec::new();
+        if let Err(error) = definition.validate_model(model) {
+            ui.colored_label(Color32::RED, error);
+            return intents;
+        }
+        let value = model["values"]
+            .get(&definition.id)
+            .unwrap_or(&definition.initial);
+        ui.push_id(&definition.id, |ui| {
+            ui.add_enabled_ui(definition.properties["enabled"] != false, |ui| {
+                if definition.properties["frame"] == "dock" {
+                    toolkit::bars::dock_frame(ui.ctx()).show(ui, |ui| {
+                        self.draw(ui, definition, value, model, &mut intents);
+                    });
+                } else {
+                    self.draw(ui, definition, value, model, &mut intents);
+                }
+            });
+        });
+        intents
+    }
+    /// Draw directly in the parent's native wrapping flow. A child Ui scope
+    /// wraps its contents independently and can split a button or field at
+    /// the remaining line width instead of moving it to the next line.
+    pub(crate) fn widget_inline(
+        &mut self,
+        ui: &mut egui::Ui,
+        definition: &Widget,
+        model: &Value,
+    ) -> Vec<Intent> {
+        if definition.properties["frame"] == "dock" {
+            return self.widget(ui, definition, model);
+        }
+        let mut intents = Vec::new();
+        if let Err(error) = definition.validate_model(model) {
+            ui.colored_label(Color32::RED, error);
+            return intents;
+        }
+        let value = model["values"]
+            .get(&definition.id)
+            .unwrap_or(&definition.initial);
+        ui.add_enabled(
+            definition.properties["enabled"] != false,
+            |ui: &mut egui::Ui| {
+                self.draw(ui, definition, value, model, &mut intents);
+                let rect = self
+                    .geometry
+                    .get(&definition.id)
+                    .copied()
+                    .unwrap_or(egui::Rect::NOTHING);
+                ui.interact(
+                    rect,
+                    egui::Id::unique(("inline-control", &definition.id)),
+                    egui::Sense::hover(),
+                )
+            },
+        );
+        intents
+    }
+    /// Call once after drawing an application frame (including individual
+    /// `widget` calls). A disappeared target must not latch future replies.
+    pub fn finish_frame(&mut self) -> Result<(), String> {
+        self.compositions
+            .retain(|id, _| self.visible_compositions.contains(id));
+        self.images.finish();
+        if let Some(images) = &mut self.canvases {
+            images.finish();
+        }
+        if let Some(images) = &mut self.surfaces {
+            images.finish();
+        }
+        if let Some(images) = &mut self.media {
+            images.finish();
+        }
+        if let Some(id) = self.focus.take() {
+            self.focus_selection = None;
+            Err(format!("focus target not drawn: {id}"))
+        } else {
+            self.focus_error.take().map_or(Ok(()), Err)
+        }
+    }
+    fn remember(&mut self, ui: &egui::Ui, id: &str, response: &egui::Response) {
+        self.geometry.insert(id.into(), response.rect);
+        if self.focus.as_deref() == Some(id) {
+            response.request_focus();
+            if let Some([start, end]) = self.focus_selection.take() {
+                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                    state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::two(
+                            egui::text::CCursor::new(start),
+                            egui::text::CCursor::new(end),
+                        )));
+                    state.store(ui.ctx(), response.id);
+                } else {
+                    self.focus_error = Some("focus selection requires a text edit".into());
+                }
+            }
+            self.focus = None;
+        }
+        if response.has_focus() {
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(Id::unique("viu-focused-widget"), id.to_owned()));
+        }
+    }
+    fn draw(
+        &mut self,
+        ui: &mut egui::Ui,
+        widget: &Widget,
+        value: &Value,
+        model: &Value,
+        events: &mut Vec<Intent>,
+    ) {
+        let id = &widget.id;
+        if widget.kind == "dialog-form" && value["open"] != true {
+            return;
+        }
+        let mut changed = None;
+        let response = match widget.kind.as_str() {
+            "document-tabs" | "search-bar" | "form-fields" | "header-form" | "macro-menu"
+            | "diagnostic-list" | "notice-bar" => {
+                crate::editor_controls::draw(ui, id, &widget.kind, value, events)
+            }
+            "widget-row" => {
+                let mut row = |ui: &mut egui::Ui| {
+                    for item in value["left"].as_array().unwrap() {
+                        let child = Widget::decode(item).expect("validated row child");
+                        if child.kind == "tabs" {
+                            let selected = model["values"].get(&child.id).unwrap_or(&child.initial);
+                            for option in child.choices() {
+                                let response = toolkit::selectable(ui, selected == option, option);
+                                self.remember(ui, &format!("{}.{}", child.id, option), &response);
+                                if response.clicked() {
+                                    events.push(Intent::set(&child.id, json!(option)));
+                                }
+                            }
+                            continue;
+                        }
+                        events.extend(self.widget(ui, &child, model));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        for item in value["right"].as_array().unwrap() {
+                            let child = Widget::decode(item).expect("validated row child");
+                            events.extend(self.widget(ui, &child, model));
+                        }
+                    });
+                };
+                if widget.properties["chrome"] == "options" {
+                    toolkit::bars::options(ui, |ui| {
+                        if let Some(threshold) = widget.properties["scroll_below"]
+                            .as_f64()
+                            .filter(|n| ui.available_width() < *n as f32)
+                        {
+                            let width = widget.properties["scroll_width"]
+                                .as_f64()
+                                .unwrap_or(threshold)
+                                .clamp(64.0, 8192.0) as f32;
+                            egui::ScrollArea::horizontal()
+                                .min_scrolled_width(0.0)
+                                .auto_shrink(false)
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.set_width(width);
+                                        row(ui);
+                                    });
+                                });
+                        } else {
+                            row(ui);
+                        }
+                    })
+                    .response
+                } else {
+                    ui.horizontal(row).response
+                }
+            }
+            "divider" => {
+                if widget.properties["style"] == "native" {
+                    let r = ui.separator();
+                    return self.remember(ui, id, &r);
+                }
+                if widget.properties["axis"] == "horizontal" {
+                    let rect = toolkit::bars::hairline(ui);
+                    let r = ui.interact(rect, ui.make_persistent_id(id), Sense::hover());
+                    return self.remember(ui, id, &r);
+                }
+                toolkit::bars::divider(ui, ui.available_height().min(18.0));
+                ui.response()
+            }
+            "dashboard" => crate::dashboard::draw(ui, id, value, events),
+            "navigation-list" => crate::navigation_list::draw(ui, id, &widget.label, value, events),
+            "command-palette" => crate::command_palette::draw(ui, id, value, events),
+            "time-series" => crate::time_series::draw(ui, id, value),
+            "status-line" => {
+                ui.spacing_mut().item_spacing.x = ui.ctx().global_style().spacing.item_spacing.x;
+                toolkit::bars::status(ui, |ui| {
+                    let colour = if value["error"] == true {
+                        ui.visuals().error_fg_color
+                    } else {
+                        ui.visuals().weak_text_color()
+                    };
+                    if let Some(icon) = value["icon"]
+                        .as_str()
+                        .and_then(crate::icons::Icon::from_name)
+                    {
+                        ui.add(crate::icons::image_of(ui.ctx(), icon, 14.0, colour));
+                    }
+                    ui.small(value["left"].as_str().unwrap());
+                    if let Some(error) = value["message"].as_str() {
+                        ui.small(egui::RichText::new(error).color(ui.visuals().error_fg_color));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        for item in value["right"].as_array().unwrap() {
+                            ui.small(item.as_str().unwrap());
+                        }
+                    });
+                })
+                .response
+            }
+            "mark" => {
+                let size = widget.properties["size"]
+                    .as_f64()
+                    .unwrap_or(toolkit::chrome::Chrome::of(ui.ctx()).metrics.mark as f64)
+                    as f32;
+                let image = crate::icons::image_of(
+                    ui.ctx(),
+                    crate::icons::Icon::from_name(value.as_str().expect("validated mark"))
+                        .expect("validated mark"),
+                    size,
+                    if widget.properties["header_mark"] == true {
+                        toolkit::chrome::Chrome::of(ui.ctx()).palette.icon
+                    } else if widget.properties["weak"] == true {
+                        ui.visuals().weak_text_color()
+                    } else {
+                        ui.visuals().text_color()
+                    },
+                );
+                if widget.properties["fill_height"] == true {
+                    let inset = if widget.properties["header_mark"] == true {
+                        toolkit::chrome::Chrome::of(ui.ctx())
+                            .metrics
+                            .title_bar_margin
+                    } else {
+                        0.0
+                    };
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(size + inset, ui.available_height()),
+                        Sense::hover(),
+                    );
+                    image.paint_at(
+                        ui,
+                        egui::Rect::from_center_size(
+                            rect.center() + egui::vec2(inset / 2.0, 0.0),
+                            egui::vec2(size, size),
+                        ),
+                    );
+                    response
+                } else {
+                    ui.add(image)
+                }
+            }
+
+            "window-controls" => {
+                let metrics = crate::window_frame::Metrics::of(ui.ctx());
+                let (area, response) = ui.allocate_exact_size(
+                    egui::vec2(
+                        metrics.caption_width * 3.0,
+                        ui.available_height().min(metrics.height),
+                    ),
+                    Sense::hover(),
+                );
+                let shown = ui.add_enabled_ui(value["enabled"] == true, |ui| {
+                    crate::window_frame::caption_controls(
+                        ui,
+                        area,
+                        value["side"] == "left",
+                        &widget.id,
+                    )
+                });
+                self.geometry.extend(shown.inner.1);
+                if shown.inner.0 {
+                    events.push(Intent {
+                        id: widget.id.clone(),
+                        action: "close".into(),
+                        value: Value::Null,
+                    });
+                }
+                response
+            }
+            "macro-window" => {
+                if value == true
+                    && toolkit::macros::show_app(
+                        ui.ctx(),
+                        widget.properties["app"].as_str().unwrap(),
+                        true,
+                    )
+                {
+                    events.push(Intent {
+                        id: id.into(),
+                        action: "close".into(),
+                        value: Value::Null,
+                    });
+                }
+                ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
+            }
+            "image-view" => self.images.draw(ui, id, value),
+            "image-canvas" => self
+                .canvases
+                .get_or_insert_with(crate::image_view::Images::document)
+                .draw_canvas(ui, id, value, events),
+            "composition" => {
+                self.visible_compositions.insert(id.into());
+                let rasters = self.rasters.clone().unwrap_or_default();
+                self.compositions
+                    .entry(id.into())
+                    .or_default()
+                    .draw(ui, value, &rasters)
+            }
+            "image-fill" => {
+                let images = self
+                    .surfaces
+                    .get_or_insert_with(crate::image_view::Images::surface);
+                images.set_rasters(self.rasters.clone());
+                images.draw_fill(ui, id, value)
+            }
+            "network-map" => {
+                crate::network_map::draw(ui, widget, value, &mut self.geometry, events)
+            }
+            "block-list" | "form-grid" | "cell-grid" | "history-lines" | "label-run" => {
+                crate::data_panels::draw(ui, widget, value, &mut self.geometry, events)
+            }
+            "file-tiles" => crate::file_tiles::draw(ui, id, value, events),
+            "file-previews" => crate::file_previews::draw(
+                ui,
+                id,
+                value,
+                self.media
+                    .get_or_insert_with(crate::image_view::Images::media),
+                events,
+            ),
+
+            "tree-table" => crate::tree_table::draw(ui, widget, value, &mut self.geometry, events),
+            "menubar" if self.gold_menus => self.native_menu.draw(ui, widget, value, events),
+            "menubar" | "command-bar" | "property-grid" | "dialog-form" | "settings-browser" => {
+                crate::rich::draw(
+                    ui,
+                    widget,
+                    value,
+                    &mut self.geometry,
+                    events,
+                    &mut self.images,
+                )
+            }
+            "label" => {
+                if widget.properties["role"] == "section" {
+                    let r = toolkit::panel::section_label(ui, value.as_str().unwrap_or(""));
+                    return self.remember(ui, id, &r);
+                }
+                if let Some(lines) = widget.properties["scroll_lines"].as_f64() {
+                    let height =
+                        ui.text_style_height(&egui::TextStyle::Body) * lines.clamp(1., 100.) as f32;
+                    let r = egui::ScrollArea::vertical()
+                        .id_salt((id, "text-scroll"))
+                        .max_height(height)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.add(egui::Label::new(label_text(ui, widget, value)).wrap())
+                        })
+                        .inner;
+                    return self.remember(ui, id, &r);
+                }
+                if matches!(
+                    widget.properties["role"].as_str(),
+                    Some("warning" | "error")
+                ) {
+                    let colour = if widget.properties["role"] == "warning" {
+                        ui.visuals().warn_fg_color
+                    } else {
+                        ui.visuals().error_fg_color
+                    };
+                    let response = ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(value.as_str().unwrap_or_default()).color(colour),
+                        )
+                        .wrap(),
+                    );
+                    return self.remember(ui, id, &response);
+                }
+                if widget.properties["role"] == "panel-header" {
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), chrome.style.panel_header as f32),
+                        Sense::hover(),
+                    );
+                    let font = toolkit::fonts::bound(
+                        ui.ctx(),
+                        toolkit::fonts::medium(chrome.style.panel_pill_size as f32),
+                    );
+                    let galley = ui.painter().layout_no_wrap(
+                        value.as_str().unwrap_or_default().into(),
+                        font,
+                        chrome.palette.text,
+                    );
+                    ui.painter().galley(
+                        egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        chrome.palette.text,
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Label,
+                            ui.is_enabled(),
+                            value.as_str().unwrap_or_default(),
+                        )
+                    });
+
+                    return self.remember(ui, id, &response);
+                }
+                let text = label_text(ui, widget, value);
+                if widget.properties["role"] == "title" {
+                    let (rect, response) =
+                        ui.allocate_exact_size(ui.available_size_before_wrap(), Sense::hover());
+                    let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                    toolkit::titlebar::window_title(
+                        ui,
+                        &chrome,
+                        value.as_str().unwrap_or(""),
+                        rect,
+                        rect.left() + chrome.metrics.title_gap,
+                        rect.right() - chrome.metrics.title_gap,
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Label,
+                            ui.is_enabled(),
+                            value.as_str().unwrap_or(""),
+                        )
+                    });
+                    return self.remember(ui, id, &response);
+                }
+                let mut label = egui::Label::new(text);
+                if widget.properties["truncate"] == true {
+                    label = label.truncate();
+                } else if widget.properties["wrap"] == true {
+                    label = label.wrap();
+                }
+                if widget.properties["align"] == "center" {
+                    label = label.halign(egui::Align::Center);
+                } else if widget.properties["align"] == "right" {
+                    label = label.halign(egui::Align::Max);
+                }
+                if widget.properties["centered_justified"] == true {
+                    ui.centered_and_justified(|ui| ui.add(label)).response
+                } else if matches!(
+                    widget.properties["role"].as_str(),
+                    Some("title" | "status" | "status-band")
+                ) {
+                    ui.allocate_ui_with_layout(
+                        ui.available_size_before_wrap(),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            if widget.properties["role"] == "status" {
+                                ui.add_space(
+                                    toolkit::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset
+                                        as f32,
+                                );
+                            }
+                            ui.add(label);
+                        },
+                    )
+                    .response
+                } else {
+                    ui.add(label)
+                }
+            }
+            "button" => {
+                let r = if widget.properties["style"] == "icon" {
+                    ui.add(
+                        toolkit::button::IconButton::new(
+                            crate::icons::Icon::from_name(widget.text("icon"))
+                                .expect("validated icon"),
+                        )
+                        .tooltip(&widget.label),
+                    )
+                } else if widget.properties["style"] == "primary" {
+                    ui.add(toolkit::button::PushButton::primary(widget.text("text")))
+                } else if widget.properties["style"] == "secondary" {
+                    ui.add(toolkit::button::PushButton::secondary(widget.text("text")))
+                } else {
+                    icon_button(ui, widget.text("icon"), widget.text("text"), false)
+                };
+                let r = if let Some(tip) = widget.properties["tooltip"].as_str() {
+                    let shortcut = widget.properties["shortcut"]
+                        .as_str()
+                        .and_then(toolkit::keymap::parse_chord)
+                        .map(|key| ui.ctx().format_shortcut(&key));
+                    let tip = toolkit::tooltip::text(tip, shortcut.as_deref());
+                    r.on_hover_text(tip.clone()).on_disabled_hover_text(tip)
+                } else {
+                    r
+                };
+                if r.clicked() {
+                    events.push(Intent {
+                        id: id.clone(),
+                        action: "activate".into(),
+                        value: Value::Null,
+                    });
+                }
+                r
+            }
+            "markdown" => self.documents.show_preview(ui, widget, value),
+            "editor" if widget.properties["native_document"] == true => {
+                let selection = if self.focus.as_deref() == Some(id) {
+                    self.focus_selection.take()
+                } else {
+                    None
+                };
+                let response = if value.is_object() {
+                    self.documents.draw(ui, widget, value, selection, events)
+                } else {
+                    self.editors.draw(ui, widget, value, selection, events)
+                };
+                self.text_input_active |= response.has_focus();
+                response
+            }
+            "editor" if widget.properties["read_only"] == true => {
+                // An immutable native text buffer permits selection/copy but
+                // cannot generate edits, even through keyboard/paste input.
+                let mut text = value.as_str().unwrap_or_default();
+                let rows = whole(&widget.properties["rows"]).unwrap_or(24) as f32;
+                let height = if widget.properties["fill_height"] == true {
+                    ui.available_height()
+                } else {
+                    rows * ui.text_style_height(&egui::TextStyle::Monospace) + 8.0
+                };
+                let output = egui::ScrollArea::vertical()
+                    .id_salt((id, "read-only"))
+                    .max_height(height)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut text)
+                                .code_editor()
+                                .desired_rows(rows as usize)
+                                .desired_width(ui.available_width())
+                                .id_salt(id),
+                        )
+                    });
+                let mut response = output.inner;
+                response.rect = response.rect.intersect(output.inner_rect);
+                self.text_input_active |= response.has_focus();
+                response
+            }
+            "field" | "multiline" | "editor" => {
+                let owner = value.as_str().unwrap_or_default().to_owned();
+                if let Some((base, pending)) = self.edits.get_mut(id) {
+                    if let Some(at) = pending.iter().position(|text| text == &owner) {
+                        pending.drain(..=at);
+                        *base = owner.clone();
+                    } else if *base != owner {
+                        pending.clear();
+                    }
+                    if pending.is_empty() {
+                        self.edits.remove(id);
+                    }
+                }
+                let mut text = self
+                    .edits
+                    .get(id)
+                    .and_then(|(_, pending)| pending.back())
+                    .cloned()
+                    .unwrap_or_else(|| owner.clone());
+                if self.focus.as_deref() == Some(id) {
+                    if let Some(range) = &mut self.focus_selection {
+                        let len = text.chars().count();
+                        range[0] = range[0].min(len);
+                        range[1] = range[1].min(len);
+                    }
+                }
+                let rows = whole(&widget.properties["rows"]).unwrap_or(24) as usize;
+                let r = if widget.kind == "field" && widget.properties["search"] == true {
+                    let width = widget.properties["width"]
+                        .as_f64()
+                        .unwrap_or(ui.available_width() as f64)
+                        as f32;
+                    toolkit::field::search(ui, &mut text, widget.text("placeholder"), width)
+                } else if widget.kind == "field" && widget.properties["native"] == true {
+                    let width = ui.available_width();
+                    toolkit::field::text(ui, &mut text, widget.text("placeholder"), width)
+                } else {
+                    let edit = if widget.kind == "field" {
+                        let edit = egui::TextEdit::singleline(&mut text);
+                        if widget.properties["weak"] == true {
+                            edit.text_color(ui.visuals().weak_text_color())
+                        } else {
+                            edit
+                        }
+                    } else if widget.kind == "editor" {
+                        let edit = egui::TextEdit::multiline(&mut text)
+                            .desired_rows(rows)
+                            .char_limit(65536);
+                        if widget.properties["plain"] == true {
+                            edit
+                        } else {
+                            edit.code_editor()
+                        }
+                    } else {
+                        egui::TextEdit::multiline(&mut text).desired_rows(1)
+                    };
+                    ui.add(
+                        edit.desired_width(
+                            widget.properties["width"]
+                                .as_f64()
+                                .map_or(ui.available_width(), |w| w as f32),
+                        )
+                        .hint_text(widget.text("placeholder"))
+                        .interactive(widget.properties["interactive"] != false)
+                        .password(widget.properties["password"] == true)
+                        .id_salt(id),
+                    )
+                };
+                // The key which ends editing belongs to the field this frame.
+                let r = if let Some(name) = widget.properties["accessible_name"].as_str() {
+                    r.accessible_name(name)
+                } else {
+                    r
+                };
+                self.text_input_active |= r.has_focus()
+                    || (r.lost_focus()
+                        && ui.input(|i| {
+                            i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)
+                        }));
+                if r.changed() {
+                    let (_, pending) = self
+                        .edits
+                        .entry(id.clone())
+                        .or_insert_with(|| (owner, Default::default()));
+                    pending.push_back(text.clone());
+                    if pending.len() > 256 {
+                        pending.pop_front();
+                    }
+                    // Preserve native edit-before-submit/cancel ordering when
+                    // a single input pass contains both text and a key.
+                    events.push(Intent::set(id, json!(text)));
+                }
+                if widget.properties["cancel_on_escape"] == true
+                    && (r.has_focus() || r.lost_focus())
+                    && ui.input(|i| i.key_pressed(egui::Key::Escape))
+                {
+                    r.surrender_focus();
+                    events.push(Intent {
+                        id: id.clone(),
+                        action: "cancel".into(),
+                        value: Value::Null,
+                    });
+                } else if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                    || (r.has_focus()
+                        && widget.properties["submit_chord"] == "Ctrl+Enter"
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command))
+                {
+                    events.push(Intent {
+                        id: id.clone(),
+                        action: "submit".into(),
+                        value: json!(text),
+                    });
+                } else if r.lost_focus() && widget.properties["notify_blur"] == true {
+                    events.push(Intent {
+                        id: id.clone(),
+                        action: "blur".into(),
+                        value: json!(text),
+                    });
+                }
+                r
+            }
+            "checkbox" | "toggle" => {
+                let mut checked = value.as_bool().unwrap_or(false);
+                let r = if widget.kind == "checkbox" {
+                    ui.checkbox(&mut checked, widget.text("text"))
+                } else {
+                    if widget.properties["style"] == "gold" {
+                        ui.add_enabled(
+                            widget.properties["enabled"] != false,
+                            toolkit::toggle::Toggle::new(&mut checked, widget.text("text")),
+                        )
+                    } else if widget.properties["style"] == "selectable" {
+                        let response = toolkit::selectable(ui, checked, widget.text("text"));
+                        if response.clicked() {
+                            checked = !checked;
+                        }
+                        response
+                    } else {
+                        ui.toggle_value(&mut checked, widget.text("text"))
+                    }
+                };
+                if r.changed() || r.clicked() {
+                    changed = Some(json!(checked));
+                }
+                r
+            }
+            "radio" | "tabs" => {
+                let response = ui
+                    .horizontal(|ui| {
+                        for option in widget.choices() {
+                            let r = if widget.kind == "radio" {
+                                ui.radio(value == option, option)
+                            } else {
+                                ui.selectable_label(
+                                    value == option,
+                                    widget.properties["labels"][option]
+                                        .as_str()
+                                        .unwrap_or(option),
+                                )
+                            };
+                            self.remember(ui, &format!("{id}.{option}"), &r);
+                            if r.clicked() {
+                                changed = Some(json!(option));
+                            }
+                        }
+                    })
+                    .response;
+                if widget.kind == "tabs" && widget.properties["pages"].is_object() {
+                    if let Some(page) = widget.properties["pages"][value.as_str().unwrap_or("")]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                    {
+                        ui.small(page);
+                    }
+                }
+                response
+            }
+            "slider" | "number" | "split" => {
+                let mut number = value.as_f64().unwrap_or(50.0);
+                let r = if widget.kind == "number" {
+                    ui.add(
+                        egui::DragValue::new(&mut number)
+                            .range(0.0..=100.0)
+                            .speed(1.0),
+                    )
+                } else if widget.kind == "split" {
+                    let (rect, r) = ui
+                        .allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::drag());
+                    if r.dragged() {
+                        if let Some(pos) = r.interact_pointer_pos() {
+                            number = ((pos.x - rect.left()) / rect.width() * 100.0)
+                                .clamp(0.0, 100.0) as f64;
+                        }
+                    }
+                    let x = rect.left() + rect.width() * number as f32 / 100.0;
+                    ui.painter()
+                        .rect_filled(rect, 2.0, Color32::from_rgb(35, 56, 78));
+                    ui.painter().rect_filled(
+                        Rect::from_min_max(egui::pos2(x, rect.top()), rect.max),
+                        2.0,
+                        Color32::from_rgb(66, 46, 70),
+                    );
+                    ui.painter()
+                        .vline(x, rect.y_range(), (3.0, Color32::LIGHT_BLUE));
+                    r
+                } else {
+                    ui.add(egui::Slider::new(&mut number, 0.0..=100.0).suffix(" %"))
+                };
+                if r.changed() || r.dragged() {
+                    changed = Some(json!(number));
+                }
+                r
+            }
+            "progress" => ui.add(
+                egui::ProgressBar::new(value.as_f64().unwrap_or(50.0) as f32 / 100.0)
+                    .show_percentage()
+                    .desired_width(ui.available_width()),
+            ),
+            "combo" if widget.properties["native"] == true => {
+                let ids = widget.choices();
+                let labels = ids
+                    .iter()
+                    .map(|id| {
+                        widget.properties["choice_labels"][*id]
+                            .as_str()
+                            .unwrap_or(id)
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>();
+                let mut at = ids
+                    .iter()
+                    .position(|id| *id == value.as_str().unwrap_or(""))
+                    .unwrap_or(0);
+                let response =
+                    toolkit::combo::show(ui, id, &mut at, &labels, Some(widget.combo_width(ui)))
+                        .accessible_name(&widget.label);
+                if response.changed() {
+                    changed = Some(json!(ids[at]));
+                }
+                response
+            }
+            "swatches" => {
+                ui.horizontal(|ui| {
+                    use egui::emath::GuiRounding;
+                    // Native allocations round each item. Round this nested
+                    // row's spacing too, including its trailing inset.
+                    ui.spacing_mut().item_spacing = ui.spacing().item_spacing.round_ui();
+                    for item in widget.properties["items"].as_array().unwrap() {
+                        let selected = item["colour"] == *value;
+                        let (rect, response) =
+                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+                        let name = item["label"].as_str().unwrap();
+                        response.widget_info(|| {
+                            egui::WidgetInfo::selected(
+                                egui::Role::Button,
+                                ui.is_enabled() && widget.properties["read_only"] != true,
+                                selected,
+                                name,
+                            )
+                        });
+                        let c = item["colour"].as_array().unwrap();
+                        ui.painter().rect_filled(
+                            rect.shrink(2.0),
+                            2.0,
+                            egui::Color32::from_rgba_unmultiplied(
+                                c[0].as_u64().unwrap() as u8,
+                                c[1].as_u64().unwrap() as u8,
+                                c[2].as_u64().unwrap() as u8,
+                                c[3].as_u64().unwrap() as u8,
+                            ),
+                        );
+                        let outline = if selected {
+                            egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)
+                        } else {
+                            ui.visuals().widgets.inactive.bg_stroke
+                        };
+                        ui.painter()
+                            .rect_stroke(rect, 3.0, outline, egui::StrokeKind::Inside);
+                        self.geometry
+                            .insert(format!("{id}.{}", item["id"].as_str().unwrap()), rect);
+                        if response.on_hover_text(name).clicked()
+                            && widget.properties["read_only"] != true
+                        {
+                            events.push(Intent {
+                                id: id.into(),
+                                action: "select".into(),
+                                value: item["id"].clone(),
+                            });
+                        }
+                    }
+                    // The enclosing native control contributes the final
+                    // item gap; retain the six-point trailing ink inset once.
+                    ui.add_space(6.0 - ui.spacing().item_spacing.x);
+                })
+                .response
+            }
+            "combo" => {
+                let choices = widget.choices();
+                let mut selected = choices
+                    .iter()
+                    .position(|option| value == *option)
+                    .unwrap_or(0);
+                let width = widget.properties["width"].as_f64().map(|v| v as f32);
+                let r = toolkit::combo::show(ui, id, &mut selected, &choices, width);
+                if r.changed() {
+                    changed = choices.get(selected).map(|v| json!(v));
+                }
+                r
+            }
+            "list" | "table" | "tree" => {
+                let source = widget.text("dataset");
+                let data = model["datasets"][source]
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if widget.kind == "table" {
+                    let reversed = model["sorted"][id].as_bool().unwrap_or(false);
+                    let header = ui.button(format!(
+                        "{} {}                         {}",
+                        widget.properties["columns"][0].as_str().unwrap_or(""),
+                        if reversed { "v" } else { "^" },
+                        widget.properties["columns"][1].as_str().unwrap_or("")
+                    ));
+                    self.remember(ui, &format!("{id}.sort"), &header);
+                    if header.clicked() {
+                        events.push(Intent {
+                            id: id.clone(),
+                            action: "sort".into(),
+                            value: json!(!reversed),
+                        });
+                    }
+                }
+                let expanded = model["expanded"][id].as_bool().unwrap_or(true);
+                if widget.kind == "tree" {
+                    let caption = format!(
+                        "{} {}",
+                        if expanded { "v" } else { ">" },
+                        widget.text("parent")
+                    );
+                    let header = icon_button(ui, widget.text("parent_icon"), &caption, false);
+                    self.remember(ui, &format!("{id}.expand"), &header);
+                    if header.clicked() {
+                        events.push(Intent {
+                            id: id.clone(),
+                            action: "expand".into(),
+                            value: json!(!expanded),
+                        });
+                    }
+                }
+                let area = egui::ScrollArea::vertical()
+                    .id_salt(id)
+                    .max_height(54.0)
+                    .auto_shrink([false, false])
+                    .show_rows(
+                        ui,
+                        ui.spacing().interact_size.y,
+                        if widget.kind == "tree" && !expanded {
+                            0
+                        } else {
+                            data.len()
+                        },
+                        |ui, range| {
+                            for row in range {
+                                let row = if widget.kind == "table" && model["sorted"][id] == true {
+                                    data.len() - 1 - row
+                                } else {
+                                    row
+                                };
+                                let cells = &data[row];
+                                let name = cells[0].as_str().unwrap_or("");
+                                let r = if widget.kind == "table" {
+                                    let (rect, response) = ui.allocate_exact_size(
+                                        Vec2::new(
+                                            ui.available_width(),
+                                            ui.spacing().interact_size.y,
+                                        ),
+                                        Sense::click(),
+                                    );
+                                    let selected = whole(value) == Some(row as u64);
+                                    let visuals =
+                                        ui.style().interact_selectable(&response, selected);
+                                    ui.painter().rect_filled(rect, 2.0, visuals.bg_fill);
+                                    let font = egui::FontId::proportional(13.0);
+                                    if let Some(icon) =
+                                        crate::icons::Icon::from_name(widget.text("row_icon"))
+                                    {
+                                        crate::icons::image_of(
+                                            ui.ctx(),
+                                            icon,
+                                            16.0,
+                                            visuals.text_color(),
+                                        )
+                                        .paint_at(
+                                            ui,
+                                            Rect::from_center_size(
+                                                rect.left_center() + Vec2::new(12.0, 0.0),
+                                                Vec2::splat(16.0),
+                                            ),
+                                        );
+                                    }
+                                    ui.painter().text(
+                                        rect.left_center()
+                                            + Vec2::new(
+                                                if widget.text("row_icon").is_empty() {
+                                                    6.0
+                                                } else {
+                                                    24.0
+                                                },
+                                                0.0,
+                                            ),
+                                        egui::Align2::LEFT_CENTER,
+                                        name,
+                                        font.clone(),
+                                        visuals.text_color(),
+                                    );
+                                    ui.painter().text(
+                                        rect.right_center() - Vec2::new(6.0, 0.0),
+                                        egui::Align2::RIGHT_CENTER,
+                                        cells[1].as_str().unwrap_or(""),
+                                        font,
+                                        visuals.text_color(),
+                                    );
+                                    response
+                                } else {
+                                    icon_button(
+                                        ui,
+                                        widget.text("row_icon"),
+                                        &if widget.kind == "tree" {
+                                            format!("    · {name}")
+                                        } else {
+                                            name.to_owned()
+                                        },
+                                        whole(value) == Some(row as u64),
+                                    )
+                                };
+                                self.remember(ui, &format!("{id}.{row}"), &r);
+                                if r.clicked() {
+                                    changed = Some(json!(row));
+                                }
+                                if r.double_clicked() {
+                                    events.push(Intent {
+                                        id: id.clone(),
+                                        action: "activate".into(),
+                                        value: json!(row),
+                                    });
+                                }
+                                r.context_menu(|ui| {
+                                    let choice = icon_button(
+                                        ui,
+                                        widget.text("context_icon"),
+                                        widget.text("context_action"),
+                                        false,
+                                    );
+                                    self.remember(ui, &format!("{id}.{row}.choose"), &choice);
+                                    if choice.clicked() {
+                                        changed = Some(json!(row));
+                                        ui.close();
+                                    }
+                                });
+                            }
+                        },
+                    );
+                ui.interact(area.inner_rect, ui.scope_id().with(id), Sense::hover())
+            }
+            "collapse" => {
+                let mut open = value.as_bool().unwrap_or(false);
+                let r = ui.selectable_label(
+                    open,
+                    format!("{} {}", if open { "v" } else { ">" }, widget.text("text")),
+                );
+                if open {
+                    ui.small(widget.text("body"));
+                }
+                if r.clicked() {
+                    open = !open;
+                    changed = Some(json!(open));
+                }
+                r
+            }
+            "menu" => {
+                ui.menu_button(
+                    format!("{} · {}", widget.text("text"), value.as_str().unwrap_or("")),
+                    |ui| {
+                        for option in widget.choices() {
+                            let r = icon_button(
+                                ui,
+                                widget.properties["choice_icons"][option]
+                                    .as_str()
+                                    .unwrap_or(""),
+                                option,
+                                false,
+                            );
+                            self.remember(ui, &format!("{id}.{option}"), &r);
+                            if r.clicked() {
+                                changed = Some(json!(option));
+                                ui.close();
+                            }
+                        }
+                    },
+                )
+                .response
+            }
+            "dialog" => {
+                let r = ui.button(widget.text("text"));
+                if r.clicked() {
+                    changed = Some(json!(true));
+                }
+                if value.as_bool() == Some(true) {
+                    egui::Window::new(widget.text("title"))
+                        .id(Id::unique(id))
+                        .collapsible(false)
+                        .resizable(false)
+                        .show(ui.ctx(), |ui| {
+                            ui.label(widget.text("body"));
+                            for choice in ["Accept", "Cancel"] {
+                                let r = ui.button(choice);
+                                self.remember(ui, &format!("{id}.{choice}"), &r);
+                                if r.clicked() {
+                                    events.push(Intent {
+                                        id: id.clone(),
+                                        action: choice.to_lowercase(),
+                                        value: Value::Null,
+                                    });
+                                }
+                            }
+                        });
+                }
+                r
+            }
+            "colour" => {
+                let mut rgb = [0u8; 3];
+                for (i, c) in rgb.iter_mut().enumerate() {
+                    *c = whole(&value[i]).unwrap_or(0) as u8;
+                }
+                let r = ui.color_edit_button_srgb(&mut rgb);
+                if r.changed() {
+                    changed = Some(json!(rgb));
+                }
+                r
+            }
+            "canvas" => {
+                let (rect, r) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), 24.0),
+                    Sense::click_and_drag(),
+                );
+                ui.painter()
+                    .rect_filled(rect, 3.0, Color32::from_rgb(32, 48, 64));
+                for shape in widget.properties["shapes"].as_array().into_iter().flatten() {
+                    let point = |v: &Value| {
+                        rect.min
+                            + Vec2::new(
+                                v[0].as_f64().unwrap_or(0.0) as f32 * rect.width(),
+                                v[1].as_f64().unwrap_or(0.0) as f32 * rect.height(),
+                            )
+                    };
+                    if shape["kind"] == "line" {
+                        ui.painter().line_segment(
+                            [point(&shape["from"]), point(&shape["to"])],
+                            (2.0, Color32::LIGHT_BLUE),
+                        );
+                    }
+                    if shape["kind"] == "circle" {
+                        ui.painter().circle_filled(
+                            point(&shape["at"]),
+                            shape["radius"].as_f64().unwrap_or(1.0) as f32,
+                            Color32::GOLD,
+                        );
+                    }
+                }
+                if r.clicked() {
+                    events.push(Intent {
+                        id: id.clone(),
+                        action: "activate".into(),
+                        value: Value::Null,
+                    });
+                }
+                r
+            }
+            "link" => {
+                let r = ui.link(widget.text("text"));
+                if r.clicked() {
+                    events.push(Intent {
+                        id: id.clone(),
+                        action: "activate".into(),
+                        value: Value::Null,
+                    });
+                }
+                r
+            }
+            "tooltip" => ui
+                .label(value.as_str().unwrap_or("Hover for help"))
+                .on_hover_text(widget.text("body")),
+            "separator" => {
+                let r = if widget.properties["style"] == "hairline" {
+                    let rect = toolkit::bars::hairline(ui);
+                    ui.interact(rect, ui.scope_id().with(id), Sense::hover())
+                } else {
+                    ui.separator()
+                };
+                if let Some(text) = value.as_str().filter(|s| !s.is_empty()) {
+                    ui.small(text);
+                }
+                r
+            }
+            "icon" => {
+                let icon = crate::icons::Icon::from_name(value["name"].as_str().unwrap_or(""));
+                if let Some(icon) = icon {
+                    let rgb = &value["colour"];
+                    let tint = Color32::from_rgb(
+                        whole(&rgb[0]).unwrap_or(0) as u8,
+                        whole(&rgb[1]).unwrap_or(0) as u8,
+                        whole(&rgb[2]).unwrap_or(0) as u8,
+                    );
+                    let r = crate::icons::button(
+                        ui,
+                        icon,
+                        widget.text("text"),
+                        whole(&value["size"]).unwrap_or(24) as f32,
+                        Some(tint),
+                        value["enabled"] == true,
+                        value["selected"] == true,
+                    );
+                    if r.clicked() {
+                        events.push(Intent {
+                            id: id.clone(),
+                            action: "activate".into(),
+                            value: value["name"].clone(),
+                        });
+                    }
+                    r.on_hover_text(value["name"].as_str().unwrap_or(""))
+                } else {
+                    ui.colored_label(Color32::RED, "Unknown icon")
+                }
+            }
+            "toolbar" => {
+                ui.horizontal(|ui| {
+                    for item in widget.properties["items"].as_array().into_iter().flatten() {
+                        if let Some(icon) = item["icon"]
+                            .as_str()
+                            .and_then(crate::icons::Icon::from_name)
+                        {
+                            let r = crate::icons::button(
+                                ui,
+                                icon,
+                                item["text"].as_str().unwrap_or(""),
+                                16.0,
+                                None,
+                                item["enabled"] == true,
+                                value == &item["id"],
+                            );
+                            self.remember(
+                                ui,
+                                &format!("{id}.{}", item["id"].as_str().unwrap_or("")),
+                                &r,
+                            );
+                            if r.clicked() {
+                                events.push(Intent {
+                                    id: id.clone(),
+                                    action: "activate".into(),
+                                    value: item["id"].clone(),
+                                });
+                            }
+                        }
+                    }
+                })
+                .response
+            }
+            _ => ui.colored_label(Color32::RED, "Unsupported widget"),
+        };
+        self.remember(ui, id, &response);
+        if let Some(value) = changed {
+            events.push(Intent::set(id, value));
+        }
+    }
+}
+
+fn icon_button(ui: &mut egui::Ui, name: &str, text: &str, selected: bool) -> egui::Response {
+    if let Some(icon) = crate::icons::Icon::from_name(name) {
+        crate::icons::button(ui, icon, text, 16.0, None, true, selected)
+    } else {
+        ui.add(egui::Button::new(text).selected(selected))
+    }
+}
+
+fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
+    let mut text = egui::RichText::new(value.as_str().unwrap_or_default());
+    if widget.properties["role"] == "heading" {
+        text = text.heading();
+    }
+    if widget.properties["role"] == "status" || widget.properties["small"] == true {
+        text = text.small();
+    }
+    if widget.properties["small"] == true {
+        text = text.small();
+    }
+    if widget.properties["role"] == "heading" {
+        text = text.text_style(egui::TextStyle::Heading);
+    }
+    if widget.properties["role"] == "title" {
+        text = text.font(crate::fonts::emphasis(
+            ui.ctx(),
+            egui::FontId::proportional(crate::window_frame::Metrics::of(ui.ctx()).title_size),
+        ));
+    }
+    if let Some(size) = widget.properties["size"].as_f64() {
+        text = text.size(size as f32);
+    }
+    if widget.properties["bold"] == true {
+        text = text.strong();
+    }
+    if widget.properties["emphasis"] == true {
+        let font = egui::TextStyle::Body.resolve(ui.style());
+        text = text.font(crate::fonts::emphasis(ui.ctx(), font));
+    }
+    if widget.properties["weak"] == true {
+        text = text.weak();
+    }
+    if widget.properties["tone"] == "warning" {
+        text = text.color(ui.visuals().warn_fg_color);
+    }
+    let palette = toolkit::chrome::Chrome::of(ui.ctx()).palette;
+    match widget.properties["tone"].as_str() {
+        Some("accent") => text = text.color(palette.accent),
+        Some("danger") => text = text.color(palette.danger),
+        Some("dim") => text = text.color(palette.text_dim),
+        _ => {}
+    }
+    if widget.properties["error"] == true {
+        text = text.color(ui.visuals().error_fg_color);
+    }
+    if widget.properties["mono"] == true {
+        text = text.monospace();
+    }
+    if let Some(colour) = widget.properties["colour"]
+        .as_array()
+        .filter(|c| c.len() == 4)
+    {
+        text = text.color(Color32::from_rgba_unmultiplied(
+            whole(&colour[0]).unwrap_or(255) as u8,
+            whole(&colour[1]).unwrap_or(255) as u8,
+            whole(&colour[2]).unwrap_or(255) as u8,
+            whole(&colour[3]).unwrap_or(255) as u8,
+        ));
+    }
+    text
+}

@@ -1,0 +1,148 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+$op=require("operations.mix");$states=require("state.mix");$registry=require("registry.mix");$store=require("storage.mix")
+$journal=require("journal.mix")
+$macros=require("macros.mix")
+fn completed($s,$d,$service)
+  if $d.tag.id=="screenshot-raise" then return $s end
+  if starts_with($d.tag.id,"screenshot-macro-") then return $macros.completed($s,$d) end
+  if $d.tag.id=="screenshot-events" then return $journal.completed($s,$d) end
+  if $d.tag.id=="screenshot-preview" then
+    if not ($s.rendering ?? false) or $d.tag.owner!=$s.render_revision then return $s end
+    $s.rendering=false
+    if $d.rc==0 and $d.body.rc==0 then
+      if $s.handle==$s.render_handle and $s.revision==$s.render_revision then
+        if $s.preview!=nil then try remove($s.preview) catch $m end end
+        $s.preview=$d.body.path
+      else try remove($d.body.path) catch $m end end
+    end
+    if $s.handle!=nil and $s.revision!=$s.render_revision then $s=$op.render($s) end
+    return $s
+  end
+  if not $s.busy or $d.tag.owner!=$s.serial then return $s end
+  $out=$d.body;$held=$s.pending_reply;$pending=$s.pending
+  $s.busy=false;$s.job=nil;$s.pending=nil;$s.pending_reply=nil
+  $rc=if $d.rc==0 then $out.rc else 10 end
+  if $rc==0 then
+    if contains(["capture","open"],$out.op) then
+      $s=$states.replace_document($s,$out.handle,$out.document,$out.path,if $out.op=="capture" then $out.metadata else nil end,if $out.op=="capture" then $out.path else nil end,$out.preview)
+      $s.revision=($s.revision ?? 0)+1
+      $s.status=if $out.op=="capture" then "Screenshot ready" else "Ready" end
+    elif $out.op=="export" then
+      $doc=viu_document("saved",{handle:$s.handle});$s.document=$doc.document
+      $saved={path:$out.path,width:$out.document.width,height:$out.document.height,annotated:$out.document.annotated,saved_at:date_format(time(),"%Y-%m-%dT%H:%M:%S%:z")}
+      $s.saved=$saved;$s.status="Saved to "..shown_path($out.path)
+      $store.forget_capture($s.raw,$s.capture_file);$s.capture_file=nil
+      try $store.append_saved($s.state_dir,$saved) catch $message eprint("Screenshot recent history: "..$message) end
+      publish($service..".saved",json_encode(merge($saved,{dropped:0})))
+    elif $out.op=="copy" then $s.status="Image copied"
+    end
+    $body=if $out.op=="show" then $out.result else $states.info($s) end
+  else
+    $code=if $out.cancelled ?? false then "CANCELLED" else $out.error_code ?? "FAILED" end
+    $message=$out.message ?? json_encode($out)
+    $s.status=if $code=="CANCELLED" then "Screenshot cancelled" elif contains($message,"selection timeout") then "Nothing was selected" elif contains($message,"selection cancelled") then "Screenshot cancelled" else "Error: "..$message end
+    $body={error_code:$code,message:$message}
+    if $pending.op=="export" then $s.after=nil end
+  end
+  if $pending.op=="copy" then try remove($pending.path) catch $m end end
+  if $out.restore_failed ?? false then
+    $s.status="The window could not be brought back. Press Print or use the taskbar.";$body.restore_failed=true
+  end
+  if $held!=nil then viu_reply("send",$held,$rc,$body) end
+  if $pending.op=="capture" then $s=$op.refresh($s) end
+  if $s.ui.dialog==nil and $s.after!=nil then
+    $after=$s.after;$s.after=nil;$s=$op.request($s,$after)
+  end
+  return $s
+end
+fn shown_path($path)
+  $home=env("HOME","")
+  return if $home!="" and starts_with($path,$home.."/") then "~/"..slice($path,len($home)+1) else $path end
+end
+fn canvas($s,$a)
+  if $a.action=="viewport" then $s.view_scale=$a.value.scale;return $s end
+  if $s.busy or $s.ui.dialog!=nil or $s.document==nil then return $s end
+  $v=$a.value
+  if $a.action=="pan" then $s.ui.pan.x=$s.ui.pan.x+$v.x;$s.ui.pan.y=$s.ui.pan.y+$v.y;return $s end
+  if $a.action=="zoom" then $s.ui.zoom=clamp($s.ui.zoom*$v.factor,0.1,8);return $s end
+  $s.view_scale=$v.scale
+  $points=if $a.action=="pick" then [$v.point,$v.point] else $v.points end
+  $first=$points[0];$last=$points[len($points)-1];$tool=$s.ui.tool
+  if $tool=="select" then
+    $hit=viu_document("hit",{handle:$s.handle,point:$first,tolerance:6/$v.scale});$s.ui.selected=$hit.id
+    if $a.action=="gesture" and $hit.id!=nil then
+      $r=$op.edited($s,"move",{id:$hit.id,dx:$last.x-$first.x,dy:$last.y-$first.y});$s=$r.state
+    end
+    return $s
+  end
+  if $tool=="crop" then
+    if $a.action=="gesture" then
+      $x=clamp(floor(min($first.x,$last.x)),0,$s.document.original_width);$y=clamp(floor(min($first.y,$last.y)),0,$s.document.original_height)
+      $right=clamp(ceil(max($first.x,$last.x)),0,$s.document.original_width);$bottom=clamp(ceil(max($first.y,$last.y)),0,$s.document.original_height)
+      if $right>$x and $bottom>$y then $r=$op.edited($s,"crop",{crop:{x:$x,y:$y,width:$right-$x,height:$bottom-$y}});$s=$r.state end
+    end
+    return $s
+  end
+  $size=clamp($s.ui.text_size/$v.scale,8,1024)
+  if $a.action=="pick" then
+    if $tool=="number" then
+      $half=$size*0.8;$points=[{x:$first.x-$half,y:$first.y-$half},{x:$first.x+$half,y:$first.y+$half}]
+    elif $tool=="text" then
+      $lines=split($s.ui.text,"\n");$longest=1
+      for $line in $lines $longest=max($longest,len($line)) end
+      $width=max($longest*$size*0.62+$size,$size*2);$height=max(len($lines),1)*$size*1.25+$size*0.25
+      $points=[$first,{x:$first.x+$width,y:$first.y+$height}]
+    else return $s end
+  elif not contains(["pen","highlighter"],$tool) then $points=[$first,$last] end
+  if $tool=="text" and trim($s.ui.text)=="" then $s.status="Type the text in the options bar first";return $s end
+  $shape={kind:$tool,points:$points,colour:$s.ui.colour,width:clamp($s.ui.width/$v.scale,0.5,512)}
+  if contains(["text","number"],$tool) then $shape.size=$size end
+  if $tool=="text" then $shape.text=$s.ui.text end
+  if $tool=="number" then
+    $hit=viu_document("hit",{handle:$s.handle,point:$first,tolerance:0})
+    if $hit.next_number==nil then $s.status="Numbered markers stop at 9999";return $s end
+    $shape.number=$hit.next_number
+  end
+  $r=$op.edited($s,"annotate",$shape);$s=$r.state;$s.ui.selected=$r.result.id;return $s
+end
+fn intent($s,$a)
+  $s.origin=if $a.id=="gold-menu" then $a.value.origin ?? "menu" else "ui" end
+  try
+    if $a.action=="command" then $r=$op.execute($s,$a.value.command,nil,false);$s=$r.state
+    elif $a.id=="preview" then $s=canvas($s,$a)
+    elif $a.id=="macros" then $s.ui.macros_open=false
+    elif $a.id=="dialog" then
+      if $a.action=="edit" then $s.ui.path=$a.value
+      elif $a.action=="answer" and $a.value.instance==($s.dialog_serial ?? 0) then
+        $arg={answer:$a.value.choice}
+        if $a.value.field!=nil then $arg.path=$a.value.field end
+        $s=$op.answer($s,$arg)
+      end
+    elif $a.id=="window" then
+      if not $s.busy and $a.value!="none" then $parts=split($a.value,":");$s.ui.window={id:to_number($parts[0]),generation:to_number($parts[1])} end
+    elif $a.id=="output" then if not $s.busy then $s.ui.output=if $a.value=="pointer" then nil else $a.value end end
+    elif $a.id=="inks" then $r=$op.execute($s,"annotate.colour."..$a.value,nil,false);$s=$r.state
+    elif $a.id=="width" then $r=$op.execute($s,"annotate.width."..$a.value,nil,false);$s=$r.state
+    elif $a.id=="text_size" then $r=$op.execute($s,"annotate.size."..$a.value,nil,false);$s=$r.state
+    elif $a.id=="text" then $s.ui.text=$a.value
+    end
+  catch $message
+    $s.status=$message
+  end
+  return $s
+end
+fn key($s,$a)
+  $s.origin="shortcut"
+  $key=$a.key
+  if $a.typing and not $a.ctrl then return $s end
+  $names={Minus:"-",Plus:"Plus",Equals:"Plus",Slash:"/",Num0:"0"}
+  $chord=if $a.ctrl then "Ctrl+" else "" end..if $a.alt then "Alt+" else "" end..if $a.shift then "Shift+" else "" end..($names[$key] ?? $key)
+  if $key=="Escape" and $s.ui.dialog!=nil then $s.ui.dialog=nil;$s.after=nil;return $s end
+  for $r in $registry.describe($s)
+    if $r.enabled and ($r.shortcut==$chord or contains($r.more ?? [],$chord)) then
+      try $out=$op.execute($s,$r.id,nil,false);return $out.state catch $message $s.status=$message;return $s end
+    end
+  end
+  return $s
+end

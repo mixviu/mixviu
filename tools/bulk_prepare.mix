@@ -1,0 +1,16 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
+-- CBC only: return formatting changes from this job, then restore its checkout.
+$rc=0
+try
+  $r=run_argv(["cargo","fmt","-p","lib-mix","-p","lib-viu","-p","viu"],{timeout:300,max_output:8000000})
+  print($r.stdout);print($r.stderr);$rc=$r.exit_code ?? 124
+finally
+  print("BULK_PATCH_BEGIN")
+  print(run_argv_must(["git","diff","--binary"]))
+  print("BULK_PATCH_END")
+  run_argv_must(["git","checkout","-q","--","."])
+end
+exit($rc)

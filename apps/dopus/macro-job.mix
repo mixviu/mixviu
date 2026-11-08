@@ -1,0 +1,7 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Common native macro facility, called on the existing owned job evaluator.
+on job.run
+  $answer=viu_macros($event.args.command,$event.args.body)
+  reply($answer.rc,json_encode($answer.body))
+end

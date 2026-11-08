@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$t=require("traffic.mix");$m=require("model.mix");$s=$m.initial()
+fn check($v,$message) if not $v then raise("TRAFFIC_TEST",$message) end end
+for $from in ["a","b"]
+  $s=$t.observed($s,{message_type:"request",correlation_id:"1",from:$from,to:"ced",command:"ced.execute",ts:"2026-10-24T23:59:59.997Z",payload:{headers:{"macro-origin":"macro:ced:proof"}}})
+end
+$s=$t.observed($s,{message_type:"response",correlation_id:"1",from:"ced",to:"a",rc:10,ts:"2026-10-25T00:00:00.005Z",payload:{body:{token:"hidden"}}})
+check(len($s.traffic)==2,"correlate by caller")
+check($s.traffic[0].from=="b" and $s.traffic[0].pending,"other caller retained")
+check($s.traffic[1].ms==8 and $s.traffic[1].rc==10,"midnight latency and refusal")
+check($s.traffic[1].response.payload.body.token=="[redacted]","redaction before retention")
+for $i=1 to 1030 $s=$t.retain($s,{seq:$i}) end
+check(len($s.traffic)==1024 and $s.dropped==8,"bounded ring with drop count")
+$s.traffic_paused=true;$s=$t.retain($s,{seq:9999});check($s.traffic[1023].seq==1030,"pause")
+print("Workshop traffic contracts PASS")

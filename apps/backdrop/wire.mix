@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Bus JSON decoding diagnostics precede document semantic validation, as gold.
+fn column($text,$token)
+  return to_string(index_of($text,$token)+byte_length($token))
+end
+fn check($body)
+  $text=json_encode($body)
+  if type($body)!="map" then return end
+  for $key in keys($body)
+    if not contains(["schema","default","outputs"],$key) then raise("ARGUMENT","body: unknown field `"..$key.."`, expected one of `schema`, `default`, `outputs` at line 1 column "..column($text,json_encode($key))) end
+  end
+  if not contains(keys($body),"schema") then raise("ARGUMENT","body: missing field `schema` at line 1 column "..to_string(byte_length($text))) end
+  if type($body.schema)=="string" then raise("ARGUMENT","body: invalid type: string "..json_encode($body.schema)..", expected u32 at line 1 column "..column($text,json_encode($body.schema))) end
+  if type($body.schema)=="number" and $body.schema!=1 then raise("ARGUMENT","schema: must be 1, found "..to_string($body.schema)) end
+  $fills={default:$body.default}
+  if type($body.outputs)=="map" then for $name in keys($body.outputs) $fills["outputs."..$name]=$body.outputs[$name] end end
+  for $field in keys($fills)
+    $fill=$fills[$field]
+    if type($fill)!="map" then continue end
+    if type($fill.fit)=="string" and not contains(["fill","fit","centre","tile","stretch"],$fill.fit) then raise("ARGUMENT","body: unknown variant `"..$fill.fit.."`, expected one of `fill`, `fit`, `centre`, `tile`, `stretch` at line 1 column "..column($text,json_encode($fill.fit))) end
+  end
+end

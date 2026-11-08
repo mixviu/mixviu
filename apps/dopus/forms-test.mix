@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$app=require("reducer.mix")
+fn forms_test_check($ok,$message)
+  if not $ok then raise("CHECK_FAILED",$message) end
+end
+$state={next_token:0,form:$app.dp_closed_form(),reservation:nil,busy:false,reply:{}}
+$state=$app.dp_form($state,"delete","First","first pinned path",nil,{kind:"delete",sources:["/first"]})
+$first=$state.form.instance
+$state=$app.dp_form($state,"delete","Second","second pinned path",nil,{kind:"delete",sources:["/second"]})
+forms_test_check($state.form.title=="First" and len($state.form_queue)==1,"second confirmation queues")
+$state=$app.dp_answer($state,"cancel")
+forms_test_check($state.form.title=="Second" and $state.form.instance!=$first,"queued form has a fresh render identity")
+forms_test_check($state.reservation.operation.sources[0]=="/second","queued selection stays pinned")
+$state.busy=true
+$state=$app.dp_answer($state,"ok")
+forms_test_check(not $state.form.open and $state.reply.error_code=="BUSY","busy acceptance consumes its reservation exactly once")
+$refused=false
+try $app.dp_answer($state,"ok") catch $message $refused=true end
+forms_test_check($refused,"second acceptance cannot execute")
+$state.busy=false
+$state=$app.dp_form($state,"rename","Rename","","original",{kind:"rename",source:"/original"})
+$state.form.field="../bad"
+$state=$app.dp_answer($state,"ok")
+forms_test_check($state.form.open and $state.form.error!="" and $state.reservation.operation.source=="/original","bad name retains the pinned reservation")
+$refused=false
+try $app.dp_form($state,"mkdir","Another","","new",{}) catch $message $refused=true end
+forms_test_check($refused,"only one name edit can be pending")
+$view=require("presentation.mix")
+$legacy=$view.dp_legacy_view($state)
+forms_test_check($legacy.kind=="name" and $legacy.name=="../bad","legacy name envelope retains the actual prompt text")
+$state=$app.dp_answer($state,"cancel")
+forms_test_check($view.dp_legacy_view($state)==nil,"closed legacy envelope is nil")
+$state=$app.dp_form($state,"message","About Dopus","About body",nil,{legacy_kind:"about"})
+$legacy=$view.dp_legacy_view($state)
+forms_test_check($legacy.kind=="about" and $legacy.body=="About body" and $legacy.buttons[0].id=="done","legacy message envelope has a typed Done button")
+print(json_encode({checks:10,result:"passed"}))

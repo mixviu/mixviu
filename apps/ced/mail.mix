@@ -1,0 +1,140 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Mail documents remain inert until an explicit Send action. Body mirrors
+-- belong to editd; header, save, session and send policy belongs to this Mix.
+fn canonical_body($text)
+  return re_replace($text,"\\s+$","")
+end
+fn document_text($key,$limit)
+  $state=viu_document("state",$key,{})
+  if $state.bytes>$limit then raise("RESOURCE_LIMIT","Document exceeds operation byte limit") end
+  $text="";$start=0
+  while true
+    $page=viu_document("read",$key,{start:$start,max_bytes:1048576,view_gen:$state.view_gen})
+    $text=$text..$page.text
+    if $page.next==nil then break end
+    $start=$page.next
+  end
+  return $text
+end
+fn headers_of($d)
+  return {from:$d.from ?? "",to:join($d.to,", "),cc:join($d.cc,", "),bcc:join($d.bcc,", "),reply_to:$d.reply_to ?? "",subject:$d.subject,in_reply_to:$d.in_reply_to,references:$d.references,attachments:$d.attachments}
+end
+fn header_document($h,$body)
+  $split=fn($s)=filter(map(split($s,","),fn($p)=trim($p)),fn($p)=$p!="")
+  return {from:if $h.from=="" then nil else $h.from end,to:$split($h.to),cc:$split($h.cc),bcc:$split($h.bcc),reply_to:if $h.reply_to=="" then nil else $h.reply_to end,subject:$h.subject,in_reply_to:$h.in_reply_to,references:$h.references,attachments:$h.attachments,body:canonical_body($body)}
+end
+fn classify_document($key)
+  $state=viu_document("state",$key,{})
+  if $state.bytes>8388608 then return {kind:"text"} end
+  $text=document_text($key,8388608)
+  $source=if starts_with($text,"\u{feff}") then slice($text,1) else $text end
+  if not starts_with($source,"---\n") and not starts_with($source,"---\r\n") then return {kind:"text"} end
+  $lines=split($source,"\n");$candidate=false
+  for $i=1 to len($lines)-1
+    if trim($lines[$i])=="---" then break end
+    if starts_with($lines[$i],"mail-") and contains($lines[$i],":") then $candidate=true end
+  end
+  if not $candidate then return {kind:"text"} end
+  if $source!=$text or $state.bom then return {kind:"text",notice:"mail documents with a UTF-8 BOM open as text; remove the BOM to open the mail header form"} end
+  try
+    $d=viu_maildoc("parse",$text);$headers=headers_of($d)
+    return {kind:"mail",disk:$text,headers:$headers,saved_headers:$headers,saved_body_hash:viu_digest("blake3",$d.body),body_hash:viu_digest("blake3",$d.body),path:$state.path,body:$d.body,saving:false,sending:false,parked:false,notice:nil,undo:[],redo:[]}
+  catch $message
+    return {kind:"text",notice:$message}
+  end
+end
+fn mail_headers($s,$key,$headers)
+  $m=$s.mail[$key]
+  if $m==nil then raise("INVALID_ARGUMENT","Not a mail document") end
+  if $m.saving or $m.sending then raise("CONFLICT","Wait for the mail operation to finish") end
+  $headers=merge({from:"",to:"",cc:"",bcc:"",reply_to:"",subject:"",in_reply_to:nil,references:[],attachments:[]},$headers)
+  if not deep_eq($headers.references,$m.headers.references) or $headers.in_reply_to!=$m.headers.in_reply_to then raise("INVALID_ARGUMENT","Thread headers are read-only") end
+  $validated=viu_maildoc("write",header_document($headers,""))
+  if not deep_eq($headers,$m.headers) then
+    $m.undo=concat($m.undo,[$m.headers]);$m.undo=slice($m.undo,max(0,len($m.undo)-256));$m.redo=[];$m.headers=$headers
+  end
+  $s.mail[$key]=$m;return $s
+end
+fn mail_preview($s,$key,$changes)
+  $m=$s.mail[$key]
+  if $m.saving or $m.sending then return $s end
+  if $m.preview_before==nil then $m.preview_before=$m.headers end
+  $m.headers=merge($m.headers,$changes);$s.mail[$key]=$m;return $s
+end
+fn mail_commit($s,$key)
+  $m=$s.mail[$key]
+  if $m!=nil and $m.preview_before!=nil then
+    $headers=$m.headers;$s.mail[$key].headers=$m.preview_before;$s.mail[$key].preview_before=nil
+    $s=mail_headers($s,$key,$headers)
+  end
+  return $s
+end
+fn mail_pump($s)
+  for $tab in $s.tabs
+    $key=$tab.document;$m=$s.mail[$key]
+    if $m!=nil and $m.parked and $tab.idle and $tab.phase=="live" then
+      $s.mail[$key].parked=false
+      $s=queue_job($s,"mail-save",{document:$key,headers:$m.headers,expected:$m.disk,original_path:$m.path,path:$m.save.path,send:$m.save.send,action:$m.save.action,call:$m.save.call,close_after:$m.save.close_after})
+    end
+  end
+  return $s
+end
+fn mail_completed($s,$job,$reply)
+  $key=$job.payload.document;$body=$reply.body
+  if $job.kind=="classify" and $reply.rc==0 then
+    if $body.kind=="mail" then
+      $t=viu_document("state",$key,{})
+      $s.mail[$key]=delete($body,"body")
+      $s=queue_job($s,"mail-seed",{document:$key,body:$body.body,buffer:$t.buffer})
+    elif $body.notice!=nil then $s.notices[$key]=$body.notice end
+  elif $job.kind=="mail-hash" then
+    if $s.mail[$key]!=nil then
+      $s.mail[$key].hash_wanted=nil
+      if $reply.rc==0 then $s.mail[$key].body_hash=$body.hash;$s.mail[$key].hash_gen=$body.view_gen end
+    end
+  elif $job.kind=="mail-save" or $job.kind=="mail-send" then
+    $m=$s.mail[$key]
+    if $m!=nil then
+      if $job.kind=="mail-save" and $reply.rc==0 then
+        $m.disk=$body.text;$m.path=$job.payload.path;$m.saved_headers=$job.payload.headers;$m.saved_body_hash=$body.hash
+      end
+      if $job.kind=="mail-save" and $reply.rc==0 and $job.payload.send then
+        $m.saving=false;$m.sending=true
+        $s=queue_job($s,"mail-send",{document:$key,path:$job.payload.path,call:$job.payload.call,action:$job.payload.action})
+      else
+        $m.saving=false;$m.sending=false;$m.parked=false
+        $m.notice=if $reply.rc==0 then $body.message ?? "Saved" else $body.message end
+        if $job.payload.call!=nil then
+          $s=finish_call($s,$job.payload.call,$reply.rc,if $reply.rc==0 then {id:$job.payload.action,ok:true,result:{message:$m.notice}} else $body end)
+        end
+        if $reply.rc==0 and $job.payload.close_after then $s=queue_job($s,"close",{document:$key,buffer:viu_document("state",$key,{}).buffer,force:true}) end
+      end
+      $s.mail[$key]=$m
+    end
+  end
+  return $s
+end
+fn restore_mail($s,$key,$tab)
+  if $tab.mail==nil then return $s end
+  try
+    $d=viu_maildoc("parse",$tab.mail.disk)
+    $s.mail[$key]={kind:"mail",disk:$tab.mail.disk,headers:$tab.mail.headers,saved_headers:headers_of($d),saved_body_hash:viu_digest("blake3",$d.body),body_hash:viu_digest("blake3",$d.body),path:$tab.path,saving:false,sending:false,parked:false,notice:nil,undo:[],redo:[],hash_gen:nil}
+    $s.classified[$key]=true
+  catch $message
+    $s.notices[$key]=$message
+  end
+  return $s
+end
+fn mail_action($s,$id,$a,$key,$call=nil)
+  $m=$s.mail[$key]
+  if $id=="mail.headers" then
+    if $a.headers==nil then $s.header_dialog=$key;$s.mail[$key].focus="to";$s.mail[$key].focus_instance=($s.mail[$key].focus_instance ?? 0)+1 else $s=mail_headers($s,$key,$a.headers) end
+    return {state:pump($s),result:nil,op_id:nil,kind:nil}
+  end
+  if $m.saving or $m.sending then raise("CONFLICT","A mail save or Send is already in flight") end
+  $path=$a.path ?? $m.path
+  if $path==nil then $s.save_dialog=true;return {state:pump($s),result:nil,op_id:nil,kind:nil} end
+  $s.mail[$key].saving=true;$s.mail[$key].sending=$id=="file.send";$s.mail[$key].parked=true
+  $s.mail[$key].save={path:$path,action:$id,call:$call,send:$id=="file.send",close_after:$id=="file.close"}
+  return {state:pump($s),result:nil,op_id:nil,kind:"mail"}
+end

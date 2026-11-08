@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+$xkb=require("catalogue.mix")
+fn optional_text($path)
+  try return read_file($path) catch $message return "" end
+end
+on job.run
+  $rules=path_join(env("XKB_CONFIG_ROOT","/usr/share/X11/xkb"),"rules")
+  $options={"xkb.layouts":$xkb.options($xkb.parse_lst(optional_text(path_join($rules,"evdev.lst")))),"xkb.layouts.extended":$xkb.options($xkb.parse_xml(optional_text(path_join($rules,"evdev.extras.xml"))))}
+  $fonts=viu_fonts()
+  $options.fonts=map($fonts.all,fn($name)={value:$name,label:$name})
+  $options.mono_fonts=map($fonts.mono,fn($name)={value:$name,label:$name})
+  $themes=[]
+  $roots=map(filter(split(env("XDG_DATA_DIRS","/usr/local/share:/usr/share"),":"),fn($p)=$p!=""),fn($p)=path_join($p,"icons"))
+  push($roots,path_join(env("HOME"),".local/share/icons"))
+  for $root in $roots
+    try $entries=viu_files("entries",{path:$root,limit:10000}).entries catch $message continue end
+    for $entry in $entries
+      $text=optional_text(path_join($entry.path,"index.theme"))
+      if $text!="" and not any(split($text,"\n"),fn($line)=trim($line)=="Hidden=true") and not contains($themes,$entry.name) then push($themes,$entry.name) end
+    end
+  end
+  $options.icon_themes=map(sort($themes),fn($name)={value:$name,label:$name})
+  $locales=[]
+  for $line in split(optional_text("/usr/share/i18n/SUPPORTED"),"\n")
+    if starts_with($line,"#") then continue end
+    $matches=re_find(trim($line),"^\\S+")
+    if len($matches)>0 then $name=$matches[0].match;if not contains($locales,$name) then push($locales,$name) end end
+  end
+  $options.locales=map(sort($locales),fn($name)={value:$name,label:$name})
+  reply(0,json_encode({options:$options}))
+end

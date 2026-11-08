@@ -1,0 +1,88 @@
+-- LAB EVIDENCE ONLY: a pre-cut-over parity or engine-split driver, kept as
+-- the record of those gates (tools/cutover_gate.mix is the four-engine gate).
+-- Any compd or compd-oracle step needs gold compd from mixos 8779f33: the
+-- compd package no longer exists here (viud is its successor).
+-- Track A smoke: the shell-profile mix refuses a service builtin and names
+-- mixd; mixd runs the same script; doctor reports each profile.
+-- usage: mix tools/engine_split_smoke.mix <mix binary> <mixd binary>
+$a = args()
+$mix = realpath($a[0])
+$mixd = realpath($a[1])
+$dir = trim(run_argv_must(["mktemp", "-d"]))
+$script = path_join($dir, "svc.mix")
+write_file($script, "print(markdown(\"# hi\"))\n")
+$fails = 0
+fn check($label, $ok, $detail)
+  $tag = if $ok then "PASS " else "FAIL " end
+  print $tag .. $label .. " :: " .. $detail
+  return if $ok then 0 else 1 end
+end
+
+$r = run_argv([$mix, $script], {timeout: 30})
+$fails = $fails + check("mix refuses markdown and names mixd", not $r.ok and contains($r.stderr, "mixd run"), trim($r.stderr))
+$r = run_argv([$mixd, "run", $script], {timeout: 30})
+$fails = $fails + check("mixd run renders markdown", $r.ok and contains($r.stdout, "<h1>hi</h1>"), trim($r.stdout))
+$r = run_argv([$mixd, $script], {timeout: 30})
+$fails = $fails + check("mixd FILE equals mixd run FILE", $r.ok and contains($r.stdout, "<h1>hi</h1>"), trim($r.stdout))
+$r = run_argv([$mix, "-c", "print(1 + 1)"], {timeout: 30})
+$fails = $fails + check("mix -c still works", $r.ok and trim($r.stdout) == "2", trim($r.stdout))
+$r = run_argv([$mixd, "-c", "print(udp_send != nil)"], {timeout: 30})
+$fails = $fails + check("mixd -c works", $r.ok, trim($r.stdout .. $r.stderr))
+$r = run_argv([$mixd, "--personalities"], {timeout: 30})
+$fails = $fails + check("mixd --personalities", $r.ok and starts_with($r.stdout, "mixd "), trim($r.stdout))
+$r = run_argv([$mixd, "run"], {timeout: 30})
+$fails = $fails + check("mixd run without FILE is usage error", $r.exit_code == 2, trim($r.stderr))
+-- handoff: a `host: mixd` script given to mix runs under mixd (mixd beside mix)
+$declared = path_join($dir, "declared.mix")
+write_file($declared, "-- host: mixd\nprint(markdown(\"# hand\"))\n")
+$r = run_argv([$mix, $declared], {timeout: 30})
+$fails = $fails + check("mix hands a host: mixd script to mixd", $r.ok and contains($r.stdout, "<h1>hand</h1>"), trim($r.stdout .. $r.stderr))
+-- review regressions: a script named run/serve is the script, not a subcommand
+$rundir = path_join($dir, "named")
+mkdir($rundir)
+write_file(path_join($rundir, "run"), "-- host: mixd\nprint(\"I am run\")\n")
+write_file(path_join($rundir, "other.mix"), "print(\"I am other\")\n")
+$r = run_argv([$mix, "run", "other.mix"], {timeout: 30, cwd: $rundir})
+$fails = $fails + check("handoff keeps a script named run", $r.ok and contains($r.stdout, "I am run") and not contains($r.stdout, "I am other"), trim($r.stdout .. $r.stderr))
+-- a shell-profile binary installed as mixd refuses instead of looping
+$fake = path_join($dir, "fakebin")
+mkdir($fake)
+run_argv_must(["cp", $mix, path_join($fake, "mix")])
+run_argv_must(["cp", $mix, path_join($fake, "mixd")])
+$r = run_argv([path_join($fake, "mix"), $declared], {timeout: 20})
+$fails = $fails + check("shell build as mixd refuses, no loop", not $r.ok and not $r.timed_out and contains($r.stderr, "not the service engine"), trim($r.stderr))
+-- personalities: a `noded` link to mixd runs the broker's own --version
+$pers = path_join($dir, "pers")
+mkdir($pers)
+$listed = run_argv([$mixd, "--personalities"], {timeout: 30})
+for $p in ["noded", "settingsd", "editd", "monitord", "dnsd", "blobd", "hostd", "mixtrayd", "maild", "webd", "indexd"]
+  run_argv_must(["ln", "-s", $mixd, path_join($pers, $p)])
+  $r = run_argv([path_join($pers, $p), "--version"], {timeout: 30})
+  $fails = $fails + check($p .. " personality answers --version", $r.ok and contains($r.stdout, $p), trim($r.stdout .. $r.stderr))
+  $fails = $fails + check("mixd lists " .. $p, $listed.ok and contains($listed.stdout, $p .. " "), "")
+end
+-- has_builtin answers for the binary it runs in
+$r = run_argv([$mix, "-c", "print(has_builtin(\"markdown\"))"], {timeout: 30})
+$fails = $fails + check("shell mix: has_builtin(markdown) is false", $r.ok and trim($r.stdout) == "false", trim($r.stdout .. $r.stderr))
+$r = run_argv([$mixd, "-c", "print(has_builtin(\"markdown\"))"], {timeout: 30})
+$fails = $fails + check("mixd: has_builtin(markdown) is true", $r.ok and trim($r.stdout) == "true", trim($r.stdout .. $r.stderr))
+-- lint codes: D3025 no header, D3026 host mix, D3027 unknown host
+$r = run_argv([$mix, "lint", $script], {timeout: 30})
+$fails = $fails + check("lint D3025 for undeclared service builtin", contains($r.stdout .. $r.stderr, "MIX-D3025"), "")
+$wrong = path_join($dir, "wrong.mix")
+write_file($wrong, "-- host: mix\nprint(markdown(\"x\"))\n")
+$r = run_argv([$mix, "lint", $wrong], {timeout: 30})
+$fails = $fails + check("lint D3026 for host: mix with service builtin", contains($r.stdout .. $r.stderr, "MIX-D3026"), "")
+$typo = path_join($dir, "typo.mix")
+write_file($typo, "-- host: mixdd\nprint(1)\n")
+$r = run_argv([$mix, "lint", $typo], {timeout: 30})
+$fails = $fails + check("lint D3027 for unknown host", contains($r.stdout .. $r.stderr, "MIX-D3027"), "")
+$r = run_argv([$mix, "lint", $declared], {timeout: 30})
+$fails = $fails + check("lint quiet on host: mixd", not contains($r.stdout .. $r.stderr, "MIX-D302"), "")
+for $pair in [[$mix, "shell (mix)"], [$mixd, "service (mixd)"]]
+  $r = run_argv([$pair[0], "doctor"], {timeout: 60, env: {MIX_DOCTOR_SKIP_BUS: "1"}})
+  $fails = $fails + check("doctor profile " .. $pair[1], contains($r.stdout, "profile    " .. $pair[1]), trim(join(filter(lines($r.stdout), fn($l) = contains($l, "profile")), " | ")))
+end
+remove_dir($dir)
+print "SMOKE_FAILS=" .. to_string($fails)
+exit(if $fails == 0 then 0 else 1 end)

@@ -1,0 +1,710 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+use serde_json::json;
+use settings::*;
+use settingsd::{authority::Authority, store::Store};
+use std::collections::BTreeMap;
+
+fn binding() -> Binding {
+    Binding {
+        instance: "fixture".into(),
+        profile: "default".into(),
+    }
+}
+fn authority(dir: &std::path::Path) -> Authority {
+    let (store, data) = Store::create(dir, binding(), studio()).unwrap();
+    Authority::new(store, data).unwrap()
+}
+/// A profile on today's default scheme, as every migrated profile names it.
+fn studio() -> registry::Values {
+    registry::Values::from([("appearance.scheme".into(), json!("studio"))])
+}
+fn effective(values: &registry::Values, path: &str) -> serde_json::Value {
+    registry::effective(values, path).unwrap_or_default()
+}
+fn described<'a>(described: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    described["keys"]
+        .as_array()?
+        .iter()
+        .find(|entry| entry["path"] == path)
+}
+fn request(authority: &Authority, id: &str, mode: &str) -> ApplyRequest {
+    ApplyRequest {
+        binding: binding(),
+        expected_incarnation: authority.accepted.incarnation.clone(),
+        expected_revision: authority.accepted.revision,
+        operation_id: id.into(),
+        changes: BTreeMap::from([("appearance.mode".into(), json!(mode))]),
+        reset: vec![],
+        request_digest: None,
+    }
+}
+
+#[test]
+fn values_read_session_scale_density_and_motion_on_the_same_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let mut edit = request(&state, "ui-settings", "dark");
+    edit.changes = BTreeMap::from([
+        ("accessibility.text_scale".into(), json!(1.25)),
+        ("appearance.density".into(), json!("compact")),
+        ("accessibility.reduced_motion".into(), json!(true)),
+    ]);
+    state.apply(edit).unwrap();
+    let body = settingsd::service::dispatch(
+        &mut state,
+        "settings.get",
+        &json!({"binding":binding(),"view":"values"}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(body["revision"], json!(state.accepted.revision));
+    let values = &body["values"];
+    assert_eq!(values["accessibility.text_scale"], 1.25);
+    assert_eq!(values["appearance.density"], "compact");
+    assert_eq!(values["accessibility.reduced_motion"], true);
+}
+
+#[test]
+fn round2_old_composer_family_loads_and_allows_later_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(authority(dir.path()));
+    // Reproduce an intact format-4 record authored before the monospace
+    // restriction; it migrates on open.
+    let mut old = settingsd::format4::Record::initial(binding(), Desktop::default()).unwrap();
+    old.desktop.email.composer.font.family = Some("Inter".into());
+    old.seal().unwrap();
+    let bytes = strict::to_string_pretty(&old).unwrap();
+    std::fs::write(dir.path().join("desktop.conf.mix"), &bytes).unwrap();
+    std::fs::write(dir.path().join("desktop.previous.conf.mix"), &bytes).unwrap();
+    let (store, data) = Store::open(dir.path(), &binding()).unwrap();
+    assert!(!store.restored);
+    assert!(store.migrated);
+    assert!(!data.values.contains_key("email.composer.font.family"));
+    data.check(&binding()).unwrap();
+    let mut state = Authority::new(store, data).unwrap();
+    state
+        .apply(request(&state, "after-font-reset", "light"))
+        .unwrap();
+    for (id, path, value) in [
+        ("bad-font", "email.composer.font.family", json!("Inter")),
+        (
+            "bad-surface",
+            "email.composer",
+            json!({"font":{"family":"Inter"}}),
+        ),
+        (
+            "bad-group",
+            "email",
+            json!({"composer":{"font":{"family":"Inter"}}}),
+        ),
+    ] {
+        let mut edit = request(&state, id, "dark");
+        edit.changes = BTreeMap::from([(path.into(), value)]);
+        assert_eq!(
+            state.apply(edit).unwrap_err()["status"],
+            "validation_failed"
+        );
+    }
+    drop(state);
+    let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
+    assert!(!reopened.values.contains_key("email.composer.font.family"));
+    assert_eq!(reopened.values["appearance.mode"], "light");
+}
+
+#[test]
+fn validate_reports_its_base_and_rejects_stale_editors_without_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let candidate = request(&state, "candidate", "light");
+    assert_eq!(state.validate(&candidate).unwrap()["revision"], "1");
+    assert!(state.accepted.receipts.is_empty());
+    state.apply(request(&state, "winner", "light")).unwrap();
+    assert_eq!(
+        state.validate(&candidate).unwrap_err()["status"],
+        "conflict"
+    );
+    assert_eq!(state.accepted.receipts.len(), 1);
+}
+#[test]
+fn pinned_source_and_snapshot_survive_restart_and_valid_tampering_fails_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = authority(dir.path());
+    assert_eq!(
+        state.snapshot.source_digest,
+        source_digest(&state.accepted.embedded_source)
+    );
+    let before = state.snapshot.clone();
+    drop(state);
+    let (store, data) = Store::open(dir.path(), &binding()).unwrap();
+    let state = Authority::new(store, data).unwrap();
+    assert_eq!(state.snapshot, before);
+    drop(state);
+    let path = dir.path().join("desktop.conf.mix");
+    let mut value: serde_json::Value =
+        strict::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    value["values"]["appearance.mode"] = json!("light");
+    let tampered = strict::to_string_pretty(&value).unwrap();
+    std::fs::write(&path, &tampered).unwrap();
+    assert!(Store::open(dir.path(), &binding()).is_err());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), tampered);
+}
+#[test]
+fn missing_primary_with_backup_requires_visible_recovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    state.apply(request(&state, "change", "light")).unwrap();
+    drop(state);
+    let path = dir.path().join("desktop.conf.mix");
+    std::fs::remove_file(&path).unwrap();
+    assert!(Store::open(dir.path(), &binding()).is_err());
+    assert!(!path.exists());
+    assert!(dir.path().join("desktop.previous.conf.mix").exists());
+}
+#[test]
+fn session_seed_is_idempotent_and_never_recreates_lost_or_foreign_state() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("profile");
+    assert!(Store::seed(&root, binding(), false).is_err());
+    assert!(
+        !root.exists(),
+        "automatic startup cannot create a missing profile"
+    );
+    let (store, accepted) = Store::seed(&root, binding(), true).unwrap();
+    let initial = std::fs::read(root.join("desktop.conf.mix")).unwrap();
+    assert!(
+        Store::seed(&root, binding(), false).is_err(),
+        "active writer must exclude seed"
+    );
+    drop(store);
+    let (store, again) = Store::seed(&root, binding(), false).unwrap();
+    assert_eq!(again.incarnation, accepted.incarnation);
+    assert_eq!(
+        std::fs::read(root.join("desktop.conf.mix")).unwrap(),
+        initial
+    );
+    drop(store);
+    let foreign = Binding {
+        instance: "other".into(),
+        ..binding()
+    };
+    assert!(Store::seed(&root, foreign, false).is_err());
+    assert_eq!(
+        std::fs::read(root.join("desktop.conf.mix")).unwrap(),
+        initial
+    );
+    std::fs::remove_file(root.join("desktop.conf.mix")).unwrap();
+    assert!(Store::seed(&root, binding(), false).is_err());
+    assert!(
+        Store::seed(&root, binding(), true).is_err(),
+        "a retained lock forbids recreating an established missing primary even with the creation flag"
+    );
+    assert!(!root.join("desktop.conf.mix").exists());
+    std::fs::rename(&root, parent.path().join("detached")).unwrap();
+    assert!(Store::seed(&root, binding(), false).is_err());
+    assert!(
+        !root.exists(),
+        "a whole missing directory must remain visibly missing"
+    );
+}
+#[test]
+fn directory_or_lock_replacement_fences_the_existing_writer() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("profile");
+    let mut state = authority(&root);
+    let req = request(&state, "detached", "light");
+    std::fs::rename(&root, parent.path().join("detached")).unwrap();
+    std::fs::create_dir(&root).unwrap();
+    assert_eq!(state.apply(req).unwrap_err()["status"], "outcome_unknown");
+    assert!(!root.join("desktop.conf.mix").exists());
+    assert_eq!(state.accepted.revision, Revision(1));
+    let other = parent.path().join("other");
+    let mut state = authority(&other);
+    std::fs::remove_file(other.join("writer.lock")).unwrap();
+    std::fs::write(other.join("writer.lock"), "").unwrap();
+    let req = request(&state, "replaced-lock", "light");
+    assert_eq!(state.apply(req).unwrap_err()["status"], "outcome_unknown");
+    assert_eq!(state.accepted.revision, Revision(1));
+}
+#[test]
+fn canonical_request_digest_ignores_object_key_order_but_binds_fences() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = authority(dir.path());
+    let mut first = request(&state, "canonical", "light");
+    first.changes.insert(
+        "apps.term".into(),
+        serde_json::from_str(r#"{"mode":"light","contrast":"normal"}"#).unwrap(),
+    );
+    let mut second = first.clone();
+    second.changes.insert(
+        "apps.term".into(),
+        serde_json::from_str(r#"{"contrast":"normal","mode":"light"}"#).unwrap(),
+    );
+    assert_eq!(first.digest().unwrap(), second.digest().unwrap());
+    second.expected_revision = Revision(2);
+    assert_ne!(first.digest().unwrap(), second.digest().unwrap());
+}
+#[test]
+fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
+    // The public spec's batches (docs/docs/spec/settings/authority.spec.mix)
+    // in contract 1.0.0's key names.
+    let fixture = json!({
+        "binding": {"instance": "example", "profile": "default"},
+        "batches": [
+            {"name":"appearance_layout","changes":{"appearance.mode":"light","accessibility.text_scale":1.1,"shell.panels.bottom.thickness":56}},
+            {"name":"unknown_field","changes":{"appearance.typo":"dark"},"expected":"validation_failed"},
+            {"name":"invalid_layout","changes":{"appearance.mode":"light","shell.panels.bottom.thickness":999},"expected":"validation_failed"},
+            {"name":"keymap","changes":{"keymaps.dopus.nav.parent":["Ctrl+U"],"keymaps.dopus.file.delete":[]}},
+            {"name":"invalid_chord","changes":{"keymaps.dopus.nav.back":["Hyper+X"]},"expected":"validation_failed"},
+            {"name":"terminal","changes":{"terminal.padding":8.0,"terminal.focus.ring":"neutral","terminal.env.term":"xterm-kitty"}},
+            {"name":"invalid_padding","changes":{"terminal.padding":3},"expected":"validation_failed"},
+            {"name":"email","changes":{"email.accounts":[{"id":"acct-1","name":"Home","url":"https://mail.example.org","email":"me@example.org"}],"email.default_account":"acct-1","email.mail.page_size":50.0}},
+            {"name":"email_password","changes":{"email.accounts":[{"id":"acct-1","name":"Home","url":"https://mail.example.org","email":"me@example.org","password":"never"}]},"expected":"validation_failed"},
+            {"name":"invalid_default_account","changes":{"email.default_account":"acct-missing"},"expected":"validation_failed"},
+            {"name":"reset_app","changes":{},"reset":["apps.term.*"]}
+        ]
+    });
+    let binding: Binding = serde_json::from_value(fixture["binding"].clone()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let (store, accepted) = Store::create(dir.path(), binding.clone(), studio()).unwrap();
+    let mut state = Authority::new(store, accepted).unwrap();
+    assert_eq!(
+        settingsd::service::dispatch(&mut state, "settings.describe", "").unwrap()["version"],
+        CONTRACT_VERSION
+    );
+    for batch in fixture["batches"].as_array().unwrap() {
+        let req = json!({"binding":binding,"expected_incarnation":state.accepted.incarnation,"expected_revision":state.accepted.revision,
+            "operation_id":batch["name"],"changes":batch["changes"],"reset":batch.get("reset").cloned().unwrap_or(json!([]))});
+        let body = serde_json::to_string(&req).unwrap();
+        let before = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
+        let validation = settingsd::service::dispatch(&mut state, "settings.validate", &body);
+        let result = settingsd::service::dispatch(
+            &mut state,
+            if batch["name"] == "reset_app" {
+                "settings.reset"
+            } else {
+                "settings.apply"
+            },
+            &body,
+        );
+        if let Some(expected) = batch.get("expected") {
+            assert_eq!(validation.unwrap_err()["status"], *expected);
+            assert_eq!(result.unwrap_err()["status"], *expected);
+            assert_eq!(
+                std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+                before
+            );
+        } else {
+            assert_eq!(validation.unwrap()["status"], "valid");
+            let receipt = result.unwrap()["receipt"].clone();
+            let status = settingsd::service::dispatch(
+                &mut state,
+                "settings.status",
+                &json!({"binding":binding,"operation_id":batch["name"]}).to_string(),
+            )
+            .unwrap();
+            assert_eq!(status["receipt"], receipt);
+        }
+    }
+    // The format-4 projection the authority holds of the values.
+    let snapshot = serde_json::to_value(&state.snapshot).unwrap();
+    assert_eq!(snapshot["desktop"]["ui"]["text_scale"], 1.1);
+    assert_eq!(
+        snapshot["desktop"]["terminal"],
+        json!({"focus":{"ring":"neutral"},"env":{"term":"xterm-kitty"}})
+    );
+    assert_eq!(snapshot["desktop"]["email"]["default_account"], "acct-1");
+    assert_eq!(
+        snapshot["desktop"]["email"]["mail"],
+        json!({"page_size":50})
+    );
+    drop(state);
+    let (store, accepted) = Store::open(dir.path(), &binding).unwrap();
+    let restored = Authority::new(store, accepted).unwrap();
+    assert_eq!(serde_json::to_value(restored.snapshot).unwrap(), snapshot);
+}
+#[test]
+fn describe_lists_every_terminal_field_and_the_values_carry_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let catalogue = settingsd::service::dispatch(&mut state, "settings.describe", "").unwrap();
+    for path in [
+        "terminal.font.family",
+        "terminal.font.size",
+        "terminal.font.weight",
+        "terminal.padding",
+        "terminal.scrollback.lines",
+        "terminal.scroll.speed",
+        "terminal.border.width",
+        "terminal.cursor.shape",
+        "terminal.cursor.blink",
+        "terminal.focus.ring",
+        "terminal.focus.strength",
+        "terminal.mouse.copy_on_select",
+        "terminal.clipboard.osc52_read",
+        "terminal.env.term",
+    ] {
+        assert!(described(&catalogue, path).is_some(), "{path}");
+    }
+    assert_eq!(
+        described(&catalogue, "terminal.padding").unwrap()["domain"]["enum"],
+        json!([1, 2, 4, 8, 16])
+    );
+    let mut apply = ApplyRequest {
+        binding: binding(),
+        expected_incarnation: state.accepted.incarnation.clone(),
+        expected_revision: state.accepted.revision,
+        operation_id: "terminal".into(),
+        changes: BTreeMap::from([
+            ("terminal.padding".into(), json!(4)),
+            ("terminal.cursor.blink".into(), json!(true)),
+        ]),
+        reset: vec![],
+        request_digest: None,
+    };
+    state.apply(apply.clone()).unwrap();
+    let read = settingsd::service::dispatch(
+        &mut state,
+        "settings.get",
+        &json!({"binding":binding(),"prefix":"terminal"}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(read["values"]["terminal.padding"], 4);
+    assert_eq!(read["values"]["terminal.cursor.blink"], true);
+    // A reset of the group returns the profile to the default bytes.
+    apply.operation_id = "terminal-reset".into();
+    apply.expected_revision = state.accepted.revision;
+    apply.changes.clear();
+    apply.reset = vec!["terminal.*".into()];
+    state.apply(apply).unwrap();
+    assert!(state.snapshot.desktop.terminal.is_default());
+    assert!(
+        !state
+            .accepted
+            .values
+            .keys()
+            .any(|k| k.starts_with("terminal."))
+    );
+}
+#[test]
+fn email_accounts_apply_reach_the_values_and_never_take_a_password() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let catalogue = settingsd::service::dispatch(&mut state, "settings.describe", "").unwrap();
+    for path in [
+        "email.accounts",
+        "email.default_account",
+        "email.mail.page_size",
+        "email.mail.mark_read_on_open",
+        "email.mail.confirm_delete",
+    ] {
+        assert!(described(&catalogue, path).is_some(), "{path}");
+    }
+    let account = json!({"id":"acct-1","name":"Home","url":"https://mail.example.org",
+        "email":"me@example.org"});
+    let request = |state: &Authority, id: &str, changes: serde_json::Value| {
+        json!({"binding":binding(),"expected_incarnation":state.accepted.incarnation,
+            "expected_revision":state.accepted.revision,"operation_id":id,"changes":changes})
+        .to_string()
+    };
+    // An account carrying a password is refused, nothing is written, and the
+    // published snapshot never sees it.
+    let mut leaky = account.clone();
+    leaky["password"] = json!("hunter2");
+    let before = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
+    let body = request(&state, "leak", json!({"email.accounts":[leaky]}));
+    for command in ["settings.validate", "settings.apply"] {
+        let refused = settingsd::service::dispatch(&mut state, command, &body).unwrap_err();
+        assert_eq!(refused["status"], "validation_failed", "{command}");
+    }
+    assert_eq!(
+        std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+        before
+    );
+    assert!(state.snapshot.desktop.email.is_default());
+    // So is one with a password in its URL's userinfo, and the refusal does
+    // not repeat it.
+    let mut userinfo = account.clone();
+    userinfo["url"] = json!("https://me:hunter2@mail.example.org");
+    let body = request(&state, "userinfo", json!({"email.accounts":[userinfo]}));
+    for command in ["settings.validate", "settings.apply"] {
+        let refused = settingsd::service::dispatch(&mut state, command, &body).unwrap_err();
+        assert_eq!(refused["status"], "validation_failed", "{command}");
+        assert!(!refused.to_string().contains("hunter2"), "{refused}");
+    }
+    assert_eq!(
+        std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+        before
+    );
+    let body = request(
+        &state,
+        "email",
+        json!({"email.accounts":[account],"email.default_account":"acct-1",
+            "email.mail.page_size":50.0}),
+    );
+    settingsd::service::dispatch(&mut state, "settings.apply", &body).unwrap();
+    let read = settingsd::service::dispatch(
+        &mut state,
+        "settings.get",
+        &json!({"binding":binding(),"prefix":"email"}).to_string(),
+    )
+    .unwrap();
+    let accounts = &read["values"]["email.accounts"];
+    assert_eq!(accounts.as_array().unwrap().len(), 1);
+    assert_eq!(accounts[0]["id"], "acct-1");
+    assert_eq!(accounts[0]["url"], "https://mail.example.org");
+    assert_eq!(read["values"]["email.default_account"], "acct-1");
+    assert_eq!(read["values"]["email.mail.page_size"], 50);
+    let text = std::fs::read_to_string(dir.path().join("desktop.conf.mix")).unwrap();
+    assert!(!text.contains("hunter2") && !text.contains("password"));
+    // It survives a restart, and a reset of the group returns the defaults.
+    drop(state);
+    let (store, accepted) = Store::open(dir.path(), &binding()).unwrap();
+    let mut state = Authority::new(store, accepted).unwrap();
+    assert_eq!(
+        settings::email::from_snapshot(&state.snapshot).accounts[0].id,
+        "acct-1"
+    );
+    let body = json!({"binding":binding(),"expected_incarnation":state.accepted.incarnation,
+        "expected_revision":state.accepted.revision,"operation_id":"email-reset",
+        "changes":{},"reset":["email.*"]})
+    .to_string();
+    settingsd::service::dispatch(&mut state, "settings.reset", &body).unwrap();
+    assert!(state.snapshot.desktop.email.is_default());
+}
+#[test]
+fn the_values_view_is_the_default_and_the_0_8_views_are_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let mut read = |body: serde_json::Value| {
+        settingsd::service::dispatch(&mut state, "settings.get", &body.to_string())
+    };
+    let omitted = read(json!({"binding":binding()})).unwrap();
+    let explicit = read(json!({"binding":binding(),"view":"values"})).unwrap();
+    assert_eq!(omitted, explicit, "values is the default view");
+    for key in ["incarnation", "revision", "binding", "values", "resolved"] {
+        assert!(omitted.get(key).is_some(), "{key}");
+    }
+    assert_eq!(omitted["values"]["appearance.scheme"], "studio");
+    // Contract 1.0.0 has no `full` or `summary` view and no snapshot schema
+    // field; an unknown view is refused, as any unknown field is.
+    for body in [
+        json!({"binding":binding(),"view":"full"}),
+        json!({"binding":binding(),"view":"summary"}),
+        json!({"binding":binding(),"view":"deltas"}),
+        json!({"binding":binding(),"schema":2}),
+    ] {
+        assert!(read(body.clone()).is_err(), "{body}");
+    }
+}
+#[test]
+fn the_snapshot_view_is_schema_3_and_expands_to_the_accepted_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let read = settingsd::service::dispatch(
+        &mut state,
+        "settings.get",
+        &json!({"binding":binding(),"view":"snapshot"}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(read["snapshot"]["schema"], 3);
+    assert_eq!(
+        read["snapshot"]["designs"].as_object().unwrap().len(),
+        1,
+        "the default contexts share one design"
+    );
+    let expanded = settings::compact::decode(read["snapshot"].clone()).unwrap();
+    assert_eq!(expanded.values, studio());
+    assert_eq!(expanded.effective, state.snapshot.effective);
+    assert_eq!(expanded.revision, state.snapshot.revision);
+}
+#[test]
+fn lost_reply_and_later_edit_return_original_receipt_before_revision_conflict() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut authority = authority(dir.path());
+    let first = request(&authority, "first", "light");
+    assert_eq!(
+        authority.apply(first.clone()).unwrap()["receipt"]["revision"],
+        "2"
+    );
+    let second = request(&authority, "second", "dark");
+    authority.apply(second).unwrap();
+    let retry = authority.apply(first.clone()).unwrap();
+    assert_eq!(retry["receipt"]["revision"], "2");
+    assert_eq!(retry["replayed"], true);
+    assert_eq!(authority.accepted.revision, Revision(3));
+    let mut reused = first;
+    reused
+        .changes
+        .insert("appearance.mode".into(), json!("dark"));
+    assert_eq!(
+        authority.apply(reused).unwrap_err()["status"],
+        "operation_id_reused"
+    );
+}
+#[test]
+fn no_op_is_durable_without_a_revision_or_snapshot_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let before = state.snapshot.clone();
+    let req = request(&state, "noop", "dark");
+    assert_eq!(state.apply(req.clone()).unwrap()["status"], "unchanged");
+    assert_eq!(state.snapshot, before);
+    drop(state);
+    let (store, data) = Store::open(dir.path(), &binding()).unwrap();
+    let mut restored = Authority::new(store, data).unwrap();
+    assert_eq!(restored.apply(req).unwrap()["replayed"], true);
+    assert_eq!(restored.accepted.revision, Revision(1));
+    assert_eq!(
+        restored.status(&binding(), Some("never-seen")).unwrap()["status"],
+        "unknown_operation"
+    );
+}
+#[test]
+fn invalid_batch_conflicting_editor_and_wrong_target_preserve_accepted_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let before = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
+    let mut bad = request(&state, "bad", "light");
+    bad.changes
+        .insert("shell.panels.bottom.thickness".into(), json!(999));
+    assert_eq!(state.apply(bad).unwrap_err()["status"], "validation_failed");
+    assert_eq!(
+        std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+        before
+    );
+    let winner = request(&state, "winner", "light");
+    let loser = request(&state, "loser", "light");
+    state.apply(winner).unwrap();
+    assert_eq!(state.apply(loser).unwrap_err()["status"], "conflict");
+    let mut wrong = request(&state, "wrong", "dark");
+    wrong.binding.instance = "other".into();
+    assert_eq!(state.apply(wrong).unwrap_err()["status"], "wrong_target");
+    assert_eq!(state.accepted.revision, Revision(2));
+}
+#[test]
+fn bad_request_digest_and_reset_conflict_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let mut wrong = request(&state, "digest", "light");
+    wrong.request_digest = Some("forged".into());
+    assert!(state.apply(wrong).is_err());
+    let mut wrong = request(&state, "overlap", "light");
+    wrong.reset.push("appearance.mode".into());
+    assert!(state.apply(wrong).is_err());
+    assert_eq!(state.accepted.receipts.len(), 0);
+}
+#[test]
+fn receipt_eviction_is_unknown_not_invented_expiry_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    for n in 0..=MAX_RECEIPTS {
+        let req = request(&state, &format!("noop-{n}"), "dark");
+        state.apply(req).unwrap();
+    }
+    assert_eq!(state.accepted.receipts.len(), MAX_RECEIPTS);
+    assert_eq!(state.accepted.revision, Revision(1));
+    assert_eq!(
+        state.status(&binding(), Some("noop-0")).unwrap()["status"],
+        "unknown_operation"
+    );
+    drop(state);
+    let (_, data) = Store::open(dir.path(), &binding()).unwrap();
+    assert_eq!(data.receipts.len(), MAX_RECEIPTS);
+}
+#[test]
+fn corrupt_primary_is_preserved_and_backup_restore_fences_old_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let old_incarnation = state.accepted.incarnation.clone();
+    let change = request(&state, "change", "light");
+    state.apply(change).unwrap();
+    drop(state);
+    std::fs::write(dir.path().join("desktop.conf.mix"), "{ incomplete").unwrap();
+    let (store, data) = Store::open(dir.path(), &binding()).unwrap();
+    assert!(store.restored);
+    assert_ne!(data.incarnation, old_incarnation);
+    assert_eq!(effective(&data.values, "appearance.mode"), "dark");
+    assert!(data.receipts.is_empty());
+    assert!(std::fs::read_dir(dir.path()).unwrap().any(|f| {
+        f.unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("corrupt-")
+    }));
+}
+#[test]
+fn newer_schema_never_falls_back_over_user_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let change = request(&state, "change", "light");
+    state.apply(change).unwrap();
+    drop(state);
+    let path = dir.path().join("desktop.conf.mix");
+    let mut value: serde_json::Value =
+        strict::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    value["schema"] = json!(2);
+    value["future_field"] = json!({"new":"keep"});
+    let future = strict::to_string_pretty(&value).unwrap();
+    std::fs::write(&path, &future).unwrap();
+    assert!(Store::open(dir.path(), &binding()).is_err());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), future);
+}
+#[test]
+fn intact_shape_or_compiler_changes_fail_without_automatic_backup_regression() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    state.apply(request(&state, "change", "light")).unwrap();
+    let mut accepted = state.accepted.clone();
+    drop(state);
+    let path = dir.path().join("desktop.conf.mix");
+    let mut value: serde_json::Value =
+        strict::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    value["future_field"] = json!("requires-migration");
+    let future = strict::to_string_pretty(&value).unwrap();
+    std::fs::write(&path, &future).unwrap();
+    assert!(Store::open(dir.path(), &binding()).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), future);
+    // Valid integrity but unavailable/changed compiler interpretation is also
+    // a migration error, not evidence that an old backup should replace it.
+    accepted.embedded_source = "{ requires_new_compiler: true }".into();
+    accepted.seal().unwrap();
+    let sealed = strict::to_string_pretty(&accepted).unwrap();
+    std::fs::write(&path, &sealed).unwrap();
+    assert!(Store::open(dir.path(), &binding()).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), sealed);
+    accepted.embedded_source = EMBEDDED_DEFAULT_SOURCE.into();
+    accepted.effective_digest = "0".repeat(64);
+    accepted.seal().unwrap();
+    let drift = strict::to_string_pretty(&accepted).unwrap();
+    std::fs::write(&path, &drift).unwrap();
+    assert!(Store::open(dir.path(), &binding()).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), drift);
+}
+/// The design revision advances for a key whose registry domains include
+/// paint, text or layout (§2.2): format 4's `appearance` and `apps`, and now
+/// density and the text scale; not for the shell, motion or export gates.
+#[test]
+fn the_design_revision_follows_the_registry_domains() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    for (n, (path, value, design)) in [
+        ("appearance.mode", json!("light"), true),
+        ("window.style", json!("win11"), true),
+        ("apps.term.scheme", json!("ocean"), true),
+        ("appearance.density", json!("compact"), true),
+        ("accessibility.text_scale", json!(1.25), true),
+        ("shell.panels.bottom.thickness", json!(56), false),
+        ("accessibility.reduced_motion", json!(true), false),
+        ("appearance.export_desktop", json!(false), false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let before = state.accepted.design_revision;
+        let mut edit = request(&state, &format!("design-{n}"), "dark");
+        edit.changes = BTreeMap::from([(path.into(), value)]);
+        assert_eq!(state.apply(edit).unwrap()["status"], "changed", "{path}");
+        let advanced = state.accepted.design_revision != before;
+        assert_eq!(advanced, design, "{path}");
+    }
+}

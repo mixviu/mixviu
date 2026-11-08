@@ -1,0 +1,8 @@
+---
+scene: 1
+name: backdrop
+citizen: backdrop
+---
+```mix
+{root:{widget:"control",definition:"= $model.root"}}
+```

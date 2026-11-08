@@ -1,0 +1,42 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+$t=require("train.mix");$r=require("reader.mix");$v=require("views.mix")
+fn check($value,$message)
+  if not $value then raise("TRAIN_TEST",$message) end
+end
+$s=$t.fresh()
+check(len($t.history($s).landings)==0,"unavailable history has no fabricated samples")
+$s.now=14400;$s.hours=1
+$s.history={landed:[{updated:10900},{updated:11000},{updated:14400},{updated:1}],batches:[{started:10900,ended:11020,gate_reused:0},{started:12000,ended:12600,gate_reused:1},{started:13000,ended:nil}]}
+$history=$t.history($s)
+check(deep_eq($history.landings,[[-1,2],[0,1]]) and len($history.gates)==2 and $history.gates[0][1]==2 and $history.gates[1][1]==0,"owner epoch buckets and batch minutes")
+$s.history={landed:[],batches:[]};$s.hours=168;$s.now=1000
+for $i=0 to 999 $s.history.batches=push($s.history.batches,{started:$i,ended:$i+1}) end
+$history=$t.history($s)
+check(len($history.gates)==600 and len($history.landings)==169 and $history.gates[0][0]==-1000/3600 and $history.gates[599][0]==-1/3600,"seven-day sampling bounds and both endpoints")
+$s.queue={queued:[{branch:"work/a"}],batched:[{branch:"work/b"}],batches:[{batch:"new",state:"gating"}],recent:[{branch:"work/c",state:"rejected",updated:4},{branch:"work/d",state:"landed",updated:1}]}
+$s.gate={batch:"old",stage:1,stages:2}
+check($t.progress($s)==nil,"stale gate cannot move current batch")
+$s.gate={batch:"new",stage:9,stages:3,last:"lint",failing:true}
+$blocks=$t.scene($s)
+check(any($blocks,fn($b)=$b.label=="work/b" and $b.position[0]==1 and $b.tone==3),"current gate clamps progress and marks failure")
+check(any($blocks,fn($b)=$b.label=="work/c" and $b.position[2]==2),"rejections use siding")
+$s=$t.alert($s,"pipeline.alert",{check:"gate",text:"current",at:2})
+$s=$t.alert($s,"pipeline.alert",{check:"gate",text:"stale",at:1})
+check($s.alerts.gate.text=="current","stale alerts ignored")
+$s=$t.alert($s,"pipeline.clear",{check:"gate",at:3});check(len(keys($s.alerts))==0,"clear by check")
+$s=$t.alert($s,"pipeline.alerts",{alerts:[{check:"gold",text:"behind"}],at:4});check($s.alerts.gold.text=="behind","retained replay")
+$reader=$r.fresh();$live=$v.fresh()
+$plan=$r.plan($reader,$live,$s,false,true,0);$reader=$plan.reader
+check(len($plan.requests)==3,"hidden queue/worker/history reads, no expensive gate read")
+$plan=$r.plan($reader,$live,$s,true,true,1)
+check(len($plan.requests)==1 and $plan.requests[0].command=="train.gate","gate has its own deadline")
+$reader=$plan.reader
+check(len($r.plan($reader,$live,$s,true,true,1.9).requests)==0,"topic storms obey two-second floor")
+$plan=$r.plan($reader,$live,$s,true,true,2);check(len($plan.requests)==2,"topic queue refresh after two seconds")
+$plan=$r.plan($reader,$live,$s,true,false,15.9);check(not any($plan.requests,fn($q)=$q.command=="train.gate"),"gate floor never bypassed")
+$plan=$r.plan($reader,$live,$s,true,false,16);check(any($plan.requests,fn($q)=$q.command=="train.gate" and $q.timeout==8),"gate timeout stays below its interval")
+$custom=$v.choose_view($live,{view:"train",args:{train_service:"train.example.bus",buildd_service:"buildd.example.bus",zoom:"7d",renderer:"2d"}})
+$reset=$v.choose_view($custom,{view:"wallpaper"})
+check($reset.train_service=="train" and $reset.buildd_service=="buildd" and $reset.hours==168 and $reset.renderer=="2d","view set resets service names but preserves zoom and renderer")
+print("train: bounded scenes/history, stale gate fence, retained alerts, strict view state and independent read deadlines pass")

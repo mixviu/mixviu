@@ -1,0 +1,52 @@
+[package]
+name = "mix"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "The mix engine: the Mix shell profile"
+
+# The service profile and the headless daemons are the mixd engine.
+[package.metadata.mixviu]
+component = "mix"
+kind = "cli"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[[bin]]
+name = "mix"
+path = "src/main.rs"
+
+[dependencies]
+mix-shell = { path = "../../libraries/mix-shell" }
+mimalloc.workspace = true
+
+# The shell's process-level tests (tests/), which run `mix` as built here.
+# Versions match libraries/mix-shell's, so the lock gains no second copy.
+[dev-dependencies]
+# serde: tests/lint_functions.rs hydrates fixtures with mix::from_value. Test
+# builds only; the shipped shell profile carries no serde.
+mix = { workspace = true, features = ["serde"] }
+bus = { workspace = true, features = ["native"] }
+buildinfo.workspace = true
+test-broker = { path = "../../libraries/test-broker" }
+libc = "0.2"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "net", "io-util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+proptest = "1"
+tungstenite = "0.26"
+sha2 = "0.10"
+ed25519-dalek = { version = "2", features = ["zeroize"] }
+# tests/owned_editor_pty.rs compiles the shell's editor and session-state
+# modules from source (#[path]), with their unit tests.
+rustyline = "15"
+signal-hook = "0.3"
+unicode-segmentation = "1"
+unicode-width = "0.2"

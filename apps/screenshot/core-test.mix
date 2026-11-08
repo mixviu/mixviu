@@ -1,0 +1,11 @@
+-- version: 0.1.0
+$c=require("core.mix")
+for $r in [{mode:"screen"},{mode:"window",window:{id:2,generation:3}},{mode:"region",region:{x:0,y:1,width:2,height:3}},{mode:"region",delay:10,cursor:true}]
+  $c.request($r)
+end
+for $r in [{mode:"unknown"},{mode:"window"},{mode:"screen",window:{id:1,generation:1}},{mode:"window",window:{id:1}},{mode:"screen",delay:11},{mode:"screen",cursor:1},{mode:"region",region:{x:0,y:0,width:0,height:10}},{mode:"region",region:{x:2147483647,y:0,width:1,height:1}},{mode:"screen",extra:true}]
+  $refused=false
+  try $c.request($r) catch $message $refused=true end
+  if not $refused then raise("REFUSAL",json_encode($r)) end
+end
+print("screenshot: four valid capture shapes and nine refusals pass")

@@ -1,0 +1,210 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+$n=require("navigation.mix")
+$fields=["name","url","email","ca_path","signature","enabled"]
+fn initial()
+  return {form:nil,dirty:false,service:"unknown",passwords:{},task:nil,outcome:nil,serial:0,accounts_owner:nil,added:nil,identities:nil}
+end
+fn accounts($s)
+  return $s.values["email.accounts"] ?? []
+end
+fn account($s,$id)
+  return filter(accounts($s),fn($a)=$a.id==$id)[0]
+end
+fn redact_url($url)
+  $url=re_replace($url,"(://)[^/?#]*@","$1[redacted]@")
+  return re_replace($url,"(?i)([?&][^=&]*(?:pass|pwd|secret|token|key|auth|credential)[^=&]*=)[^&#]*","$1[redacted]")
+end
+fn blank_form()
+  return {id:nil,name:"",url:"",email:"",ca_path:"",signature:"",errors:{}}
+end
+fn form_of($a)
+  if $a==nil then return nil end
+  return {id:$a.id,name:$a.name,url:$a.url,email:$a.email,ca_path:$a.ca_path ?? "",signature:$a.signature ?? "",errors:{}}
+end
+fn field_errors($account)
+  $errors={};$labels={name:"email-name-refused",url:"email-url-refused",email:"email-address-refused",ca_path:"email-ca-refused",signature:"email-signature-refused"}
+  for $field in viu_settings("email-fields",$account) $errors[$field]=$labels[$field] end
+  return $errors
+end
+fn field_message($errors)
+  $out=[]
+  for $field in ["name","url","email","ca_path","signature"] if $errors[$field]!=nil then push($out,$field..": "..$n.text_for($errors[$field])) end end
+  return join($out,"; ")
+end
+fn normal_identities($identities)
+  $out=[]
+  for $identity in $identities
+    $row={id:$identity.id,name:$identity.name ?? "",address:$identity.address,signature:$identity.signature ?? ""}
+    if $identity.reply_to!=nil then $row.reply_to=$identity.reply_to end
+    push($out,$row)
+  end
+  return $out
+end
+fn removal($s,$id)
+  return {id:$id,name:(account($s,$id) ?? {}).name ?? $id}
+end
+fn action_text($key,$name,$message)
+  return replace(replace($n.text_for($key),"{ $account }",$name),"{ $message }",$message)
+end
+fn refusal($answer)
+  if type($answer.message)=="string" then return redact_url($answer.message) end
+  if type($answer.diagnostics)=="list" and len($answer.diagnostics)>0 then return redact_url(join(map($answer.diagnostics,fn($d)=($d.path ?? "")..": "..($d.message ?? "")),"; ")) end
+  return redact_url($answer.status ?? json_encode($answer))
+end
+fn unknown_command($answer)
+  return $answer.error_code=="UNKNOWN_COMMAND" or contains(lower($answer.message ?? ""),"unknown command")
+end
+fn completed($task,$name,$may_launch,$code,$answer,$absent)
+  if $task.action=="remove" and ($absent or unknown_command($answer)) then return {fallback:true} end
+  $failed=$code!=0;$error=nil;$body=nil;$text=""
+  if $task.action=="forget" and not $may_launch and $failed then
+    if $answer.error_code=="UNKNOWN_ACCOUNT" then $failed=false;$text=action_text("email-password-forgotten",$name,"")
+    else
+      $message=if $absent then $n.text_for("email-not-running") elif unknown_command($answer) then $n.text_for("email-unsupported") else refusal($answer) end
+      $error="NOT_FORGOTTEN";$text=action_text("email-forget-after-remove-failed",$name,$message)
+    end
+  elif not $failed then
+    $key={password:"email-password-set",forget:"email-password-forgotten",remove:"email-removed",connect:"email-connect-asked"}[$task.action]
+    $text=action_text($key,$name,"")
+    if $task.action=="remove" then $body={removed:$task.account,via:"email"}
+    else
+      $detail=$answer.message ?? $answer.status ?? ""
+      if $detail!="" then $text=$text.." ("..$detail..")" end
+      $body={done:true,account:$task.account}
+    end
+  elif $absent then $error="NOT_RUNNING";$text=$n.text_for("email-not-running")
+  elif unknown_command($answer) then $error="UNSUPPORTED";$text=$n.text_for("email-unsupported")
+  elif $answer.error_code=="OUTCOME_UNKNOWN" then $error="OUTCOME_UNKNOWN";$text=action_text("email-action-lost",$name,refusal($answer))
+  else
+    $error="REFUSED";$message=refusal($answer)
+    if $task.action=="remove" then
+      if type($answer.error_code)=="string" and type($answer.message)=="string" then $message=redact_url($answer.error_code..": "..$answer.message) end
+      $body={error_code:$answer.error_code ?? "REFUSED",message:$message}
+    end
+    $text=action_text("email-action-failed",$name,$message)
+  end
+  if $failed and $body==nil then $body={error_code:$error,message:$text} end
+  return {fallback:false,code:if $failed then 10 else 0 end,body:$body,outcome:{text:$text,failed:$failed}}
+end
+fn select_account($s,$id)
+  $a=account($s,$id)
+  if $a==nil then raise("ARGUMENT",$n.text_for("email-unknown-account")) end
+  $s.ui.email_account=$id;$s.email.form=form_of($a);$s.email.dirty=false;$s.email.identities=nil;$s.email.password="";$s.email.secret_epoch=($s.email.secret_epoch ?? 0)+1
+  return $s
+end
+fn identity_draft($s)
+  $a=account($s,$s.ui.email_account)
+  if $s.email.identities!=nil and $s.email.identities.account==$s.ui.email_account then return $s.email.identities end
+  $rows=if $a==nil then [] else $a.identities ?? [{id:"default",name:$a.name,address:$a.email,signature:$a.signature ?? "",reply_to:nil}] end
+  return {account:$s.ui.email_account,rows:$rows,selected:0,error:nil}
+end
+fn identity_action($s,$action,$value)
+  if $s.ui.email_account==nil or not view($s).can_edit then raise("BUSY",$n.text_for("busy")) end
+  if $action=="revert" then $s.email.identities=nil;return $s end
+  $d=identity_draft($s)
+  if $action=="select" then
+    if type($value)!="number" or $value<0 or $value>=len($d.rows) then raise("ARGUMENT","Unknown identity") end
+    $d.selected=$value
+  elif $action=="add" then
+    $num=len($d.rows)+1
+    while any($d.rows,fn($r)=$r.id=="identity-"..to_string($num)) $num=$num+1 end
+    $d.rows=concat($d.rows,[{id:"identity-"..to_string($num),name:"",address:"",signature:"",reply_to:nil}]);$d.selected=len($d.rows)-1
+  elif $action=="remove" then
+    $next=[]
+    for $i=0 to len($d.rows)-1 if $i!=$d.selected then push($next,$d.rows[$i]) end end
+    $d.rows=$next;$d.selected=max(0,min($d.selected,len($next)-1))
+  elif contains(["name","address","signature","reply_to"],$action) and $d.selected<len($d.rows) then
+    $d.rows[$d.selected][$action]=if $action=="reply_to" and $value=="" then nil else $value end
+  else raise("ARGUMENT","Unknown identity operation") end
+  $d.error=nil;$s.email.identities=$d
+  return $s
+end
+fn observed($s)
+  if $s.email.added!=nil and account($s,$s.email.added)!=nil then $s=select_account($s,$s.email.added);$s.email.added=nil end
+  if $s.ui.email_account!=nil then
+    $a=account($s,$s.ui.email_account)
+    if $a==nil then $s.ui.email_account=nil;$s.email.form=nil;$s.email.dirty=false
+    elif not $s.email.dirty then $s.email.form=form_of($a) end
+  end
+  return $s
+end
+fn value_or($s,$path,$fallback)
+  return $s.values[$path] ?? $fallback
+end
+fn view($s)
+  $form=$s.email.form
+  if $form!=nil then $form.url=redact_url($form.url) end
+  $rows=[]
+  for $a in accounts($s)
+    $a.url=redact_url($a.url);$a.has_password=$s.email.passwords[$a.id];$a.default=$a.id==$s.values["email.default_account"]
+    if $a.identities!=nil then $a.identities=normal_identities($a.identities) end
+    push($rows,$a)
+  end
+  return {settings:$s.look.settings,revision:$s.revision,read:$s.revision!=nil,accounts:$rows,default_account:$s.values["email.default_account"],mail:if $s.revision==nil then nil else {page_size:value_or($s,"email.mail.page_size",100),mark_read_on_open:value_or($s,"email.mail.mark_read_on_open",true),confirm_delete:value_or($s,"email.mail.confirm_delete",true),quote_on_reply:value_or($s,"email.mail.quote_on_reply",true),reply_position:value_or($s,"email.mail.reply_position","above")} end,email_service:$s.email.service,selected:$s.ui.email_account,form:$form,password_typed:($s.email.password ?? "")!="",task:$s.email.task,outcome:$s.email.outcome,can_edit:$s.revision!=nil and $s.connected and not $s.busy and not $s.quitting and $s.ui.dialog==nil}
+end
+fn patch_account($base,$args)
+  for $key in keys($args)
+    if not contains(concat($fields,["op","id"]),$key) then raise("ARGUMENT","unknown account key "..json_encode($key)) end
+  end
+  for $key in $fields
+    if not contains(keys($args),$key) then continue end
+    $v=$args[$key]
+    if $key=="enabled" then
+      if type($v)!="bool" then raise("ARGUMENT","enabled must be true or false") end
+    elif $key=="ca_path" then
+      if $v!=nil and type($v)!="string" then raise("ARGUMENT","ca_path must be a path or null") end
+      if $v!=nil then $v=trim($v);if $v=="" then $v=nil end end
+    else
+      if type($v)!="string" then raise("ARGUMENT",$key.." must be a string") end
+      if $key!="signature" then $v=trim($v) end
+    end
+    $base[$key]=$v
+  end
+  return $base
+end
+fn plan($s,$args)
+  $changes={};$added=nil;$list=accounts($s)
+  if contains(keys($args),"path") then
+    if not contains(["email.mail.page_size","email.mail.mark_read_on_open","email.mail.confirm_delete","email.mail.quote_on_reply","email.mail.reply_position"],$args.path) or not contains(keys($args),"value") then raise("ARGUMENT","path must be an email mail option with value") end
+    $changes[$args.path]=$args.value
+  else
+    $op=$args.op;$id=$args.id
+    if not contains(["add","update","remove","move","default","enable","identities"],$op) then raise("ARGUMENT","op must be add, update, remove, move, default, enable or identities (or give path and value)") end
+    $at=-1
+    for $i=0 to len($list)-1 if $list[$i].id==$id then $at=$i end end
+    if $op!="add" and not ($op=="default" and $id==nil) and $at<0 then raise("ARGUMENT",$n.text_for("email-unknown-account")) end
+    if $op=="add" then
+      if not all(["name","url","email"],fn($key)=contains(keys($args),$key)) then raise("ARGUMENT","add needs name, url and email") end
+      $added="acct-"..substr(replace(viu_token(),"-",""),0,12)
+      $a=patch_account({id:$added,name:"",url:"",email:"",ca_path:nil,enabled:true,signature:""},$args)
+      $errors=field_errors($a);if len(keys($errors))>0 then raise("ARGUMENT",field_message($errors)) end
+      push($list,$a);$changes["email.accounts"]=$list
+    elif $op=="update" then
+      $list[$at]=patch_account($list[$at],$args)
+      $errors=field_errors($list[$at]);if len(keys($errors))>0 then raise("ARGUMENT",field_message($errors)) end
+      $changes["email.accounts"]=$list
+    elif $op=="remove" then
+      $list=filter($list,fn($a)=$a.id!=$id);$changes["email.accounts"]=$list
+      if $s.values["email.default_account"]==$id then $changes["email.default_account"]=nil end
+    elif $op=="default" then $changes["email.default_account"]=$id
+    elif $op=="enable" then
+      if type($args.enabled)!="bool" then raise("ARGUMENT","enabled must be true or false") end
+      $list[$at].enabled=$args.enabled;$changes["email.accounts"]=$list
+    elif $op=="identities" then
+      if type($args.identities)!="list" then raise("ARGUMENT","identities must be a list") end
+      $list[$at].identities=normal_identities($args.identities);$changes["email.accounts"]=$list
+    elif $op=="move" then
+      if not contains(["up","down"],$args.direction) then raise("ARGUMENT","direction must be up or down") end
+      $to=if $args.direction=="up" then $at-1 else $at+1 end
+      if $to>=0 and $to<len($list) then $a=$list[$at];$list[$at]=$list[$to];$list[$to]=$a;$changes["email.accounts"]=$list end
+    end
+  end
+  $checked=viu_settings("admit",$s.values,$changes,[])
+  if not $checked.ok then raise("ARGUMENT",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
+  $different={}
+  for $key in keys($changes)
+    if not deep_eq($s.values[$key] ?? viu_settings("default",$key),$changes[$key]) then $different[$key]=$changes[$key] end
+  end
+  return {changes:$different,added:$added}
+end

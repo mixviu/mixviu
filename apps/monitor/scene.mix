@@ -1,0 +1,15 @@
+---
+scene: 1
+name: monitor
+citizen: monitor
+---
+```mix
+{
+root:{widget:"dock",children:["options","content"],placements:{options:{edge:"top",size:"design.options_height"},content:{edge:"fill"}}},
+options:{widget:"control",definition:"= $model.options_row",on_intent:"monitor.intent"},
+content:{widget:"column",padding:0,children:["no-readings","processes","performance"]},
+"no-readings":{widget:"control",hidden:"= $model.readings_hidden",definition:{id:"no-readings",kind:"label",label:"",initial:"Waiting for the first reading…",properties:{weak:true,centered_justified:true,frame:"dock"}}},
+performance:{widget:"control",hidden:"= $model.performance_hidden",definition:"= $model.performance_view",on_intent:"monitor.intent"},
+processes:{widget:"control",hidden:"= $model.processes_hidden",definition:"= $model.table",on_intent:"monitor.intent"}
+}
+```

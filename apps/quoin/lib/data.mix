@@ -108,7 +108,7 @@ fn short_title($title, $limit)
 end
 
 -- "Pinned" is not a freedesktop category: it is the launcher's default view,
--- the MixOS apps plus $PINNED_APPS (pinned() below), and never reaches apps.list.
+-- the MixViu apps plus $PINNED_APPS (pinned() below), and never reaches apps.list.
 $CATEGORY_LABELS = {"": "All", Pinned: "Pinned", Network: "Internet", Office: "Office",
   Development: "Development", Graphics: "Graphics", AudioVideo: "Media", Game: "Games",
   System: "System", Utility: "Utilities", Settings: "Settings"}

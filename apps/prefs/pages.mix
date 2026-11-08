@@ -1,0 +1,266 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+$n=require("navigation.mix")
+$custom=require("custom.mix")
+$gallery=require("gallery.mix")
+fn check_params($params,$allowed,$required)
+  if type($params)!="map" then raise("ARGUMENT","parameters must be an object") end
+  for $key in keys($params)
+    if not contains($allowed,$key) then
+      $names=map($allowed,fn($name)="`"..$name.."`")
+      $expected=if len($names)==2 then $names[0].." or "..$names[1] elif len($names)==1 then $names[0] else "one of "..join($names,", ") end
+      raise("ARGUMENT","unknown field `"..$key.."`, expected "..$expected)
+    end
+  end
+  for $key in $required if not contains(keys($params),$key) then raise("ARGUMENT","missing field `"..$key.."`") end end
+end
+fn action_result($s,$id,$params)
+  if $id=="page.open" then return {page:$s.nav.page,row:$params.row,drawer:$s.nav.drawer} end
+  if $id=="set" then return {key:$params.key,value:stored($s,$params.key),writing:store_view($s).writing} end
+  if $id=="item" then return {source:$params.source,id:$params.id,action:$params.action} end
+  return nil
+end
+fn item_action($s,$params)
+  check_params($params,["source","id","action"],["source","id","action"])
+  if not all(["source","id","action"],fn($key)=type($params[$key])=="string") then raise("ARGUMENT","source, id and action must be strings") end
+  for $p in $n.pages
+    for $sec in $p.sections
+      if $sec.source==$params.source then
+        if $p.backend!=nil then raise("FAILED",backend_reason($p.backend)) end
+        raise("FAILED",replace($n.text_for("item-unknown"),"{ $item }",$params.id))
+      end
+    end
+  end
+  raise("FAILED",replace($n.text_for("item-unknown"),"{ $item }",$params.source))
+end
+fn stored($s,$key)
+  if contains(keys($s.queue_changes ?? {}),$key) then return $s.queue_changes[$key] ?? viu_settings("default",$key) end
+  if contains(keys($s.inflight_changes ?? {}),$key) then return $s.inflight_changes[$key] ?? viu_settings("default",$key) end
+  if contains(keys($s.values),$key) and $s.values[$key]!=nil then return $s.values[$key] end
+  $found=filter($s.catalog,fn($k)=$k.path==$key)
+  return if len($found)==1 then $found[0].default else nil end
+end
+fn store_blocked($s)
+  if $s.uncertain then return "authority_unreachable" end
+  if $s.role=="mirror" and $s.stale then return "stale" end
+  if $s.revision==nil or not contains(["authority","mirror"],$s.role) then return "unread" end
+  return nil
+end
+fn store_view($s)
+  $waiting=keys(merge($s.inflight_changes ?? {},$s.queue_changes ?? {}))
+  return {role:$s.role,stale:$s.stale,unreachable:$s.uncertain,blocked:store_blocked($s),described:len($s.catalog)>0,revision:$s.revision,writing:len($waiting)>0,waiting:$waiting,error:$s.store_error ?? nil}
+end
+fn row_blocked($s,$p,$r)
+  if $p.backend!=nil then return backend_reason($p.backend) end
+  if $r.backend!=nil then return $r.backend end
+  if $p.id=="appearance" then
+    if contains(["mode","auto"],$r.id) and stored($s,"appearance.source")!=nil then return $n.text_for("row-appearance-mode-pinned") end
+    if $r.id=="auto" and stored($s,"state.appearance.daylight")==nil then return $n.text_for("row-appearance-auto-no-daylight") end
+  end
+  $blocked=store_blocked($s)
+  if $blocked!=nil and ($r.key!=nil or $r.control.control=="reset") then return $n.text_for("store-"..if $blocked=="authority_unreachable" then "unreachable" else $blocked end) end
+  return nil
+end
+fn backend_reason($backend)
+  return replace($n.text_for("backend-missing"),"{ $backend }",$n.text_for($backend))
+end
+fn row_view($s,$p,$r)
+  $view={id:$r.id,title:$r.title,control:$r.control,key:$r.key,value:if $r.key!=nil then stored($s,$r.key) else nil end,shown:$n.shown($s,$p,$r),blocked:row_blocked($s,$p,$r)}
+  if $r.control.control=="ordered" then
+    $options=[]
+    for $source in $r.control.sources $options=concat($options,$s.live.options[$source] ?? []) end
+    $view.entries=map($view.value ?? [],fn($value)={value:$value,label:(filter($options,fn($o)=deep_eq($o.value,$value))[0] ?? {}).label ?? json_encode($value)})
+  elif $r.control.control=="gallery" then $view.gallery=$gallery.view($s)
+  elif $p.id=="date_time" and $r.id=="now" then $view.readout=nil end
+  return $view
+end
+fn section_shown($s,$p,$sec)
+  if $p.id=="power" and $sec.id=="battery" then return (($s.live ?? {}).facts ?? {}).battery ?? false end
+  return true
+end
+fn sections_view($s,$p,$sections)
+  $out=[]
+  for $sec in $sections
+    push($out,{id:$sec.id,title:$sec.title,shown:section_shown($s,$p,$sec),rows:map($sec.rows,fn($r)=row_view($s,$p,$r)),items:if $sec.source==nil then nil else {source:$sec.source,items:[]} end})
+  end
+  return $out
+end
+fn page_view($s,$name)
+  $p=$n.page($name ?? $s.nav.page)
+  return {page:$p.id,title:$p.title,parent:$p.parent,kind:$p.kind,backend:if $p.backend!=nil then $n.text_for($p.backend) else nil end,children:map(filter($n.pages,fn($x)=$x.parent==$p.id),fn($x)=$x.id),sections:sections_view($s,$p,$p.sections),drawers:map($p.drawers,fn($d)={id:$d.id,sections:sections_view($s,$p,$d.sections)}),open:$s.nav.page==$p.id,drawer:$s.nav.drawer,store:store_view($s)}
+end
+fn pages_view($s)
+  return {pages:map($n.pages,fn($p)={id:$p.id,title:$p.title,parent:$p.parent,icon:$p.icon,kind:$p.kind,backend:$p.backend}),open:$s.nav.page}
+end
+fn open_page($s,$name,$row)
+  try $p=$n.page($name) catch $message raise("FAILED",$message) end
+  $found=[]
+  if $row!=nil then
+    for $sec in $n.row_sections($p) $found=concat($found,filter($sec.rows,fn($r)=$r.id==$row)) end
+    if len($found)!=1 then raise("FAILED",$p.id..": no row "..to_string($row)) end
+  end
+  if $s.ui.dialog!=nil or $s.quitting then raise("BUSY",$n.text_for("command-disabled")) end
+  $custom={term:"apps_term",email:"apps_email",ced:"apps_ced",software:"software"}
+  if contains(keys($custom),$p.id) then $s=$n.set_section($s,{name:$custom[$p.id]}) end
+  $s.nav.page=$p.id;$s.nav.drawer=nil;$s.nav.focus=nil
+  if $row!=nil then
+    for $d in $p.drawers
+      if any($d.sections,fn($sec)=any($sec.rows,fn($r)=$r.id==$row)) then $s.nav.drawer=$d.id end
+    end
+    if $n.shown($s,$p,$found[0]) then $s.nav.focus=[$p.id,$row] end
+  end
+  $s.query_epoch=($s.query_epoch ?? 0)+1
+  $s.nav.query="";$s.nav.searching=false;$s.nav.sidebar=false
+  return $s
+end
+fn row_for($p,$id)
+  for $sec in $n.row_sections($p)
+    for $r in $sec.rows if $r.id==$id then return $r end end
+  end
+  raise("ARGUMENT","Unknown page row")
+end
+fn control_for($s,$key)
+  for $p in $n.pages
+    for $sec in $n.row_sections($p)
+      for $r in $sec.rows
+        if $r.key==$key or ($r.control.control=="gallery" and $r.control.colour==$key) then
+          $why=row_blocked($s,$p,$r)
+          if $why!=nil then raise("FAILED",$why) end
+          return {page:$p,row:$r}
+        end
+      end
+    end
+  end
+  raise("FAILED",replace($n.text_for("set-no-control"),"{ $key }",to_string($key)))
+end
+fn browser_row($s,$p,$r)
+  $v=row_view($s,$p,$r);$c=$r.control;$kind=$c.control
+  $v.description=$n.translated("row-"..$p.id.."-"..$r.id.."-desc")
+  $v.reason=if $p.backend!=nil then nil else $v.blocked end
+  $v.kind="info";$v.choices=nil
+  $v.resolved_dark=(stored($s,"appearance.mode") ?? "dark")=="dark" or (stored($s,"appearance.mode")=="auto" and (stored($s,"state.appearance.mode") ?? "dark")=="dark")
+  if contains(["toggle","flag","auto_mode","hint_accent","live"],$kind) then
+    $v.kind="toggle"
+    if $kind=="flag" then $v.value=deep_eq($v.value,$c.on)
+    elif $kind=="auto_mode" then $v.value=$v.value=="auto"
+    elif $kind=="hint_accent" then $v.value=$v.value=="accent" end
+  elif $kind=="mode" then
+    $v.kind="previews";$v.choices=[{value:"dark",label:"Dark",colour:"#262626"},{value:"light",label:"Light",colour:"#dddddd"}]
+  elif $kind=="choice" then
+    $v.kind="choice";$v.presentation=$c.style;$v.choices=map(filter($c.options,fn($o)=$o.listed),fn($o)={value:$o.value,label:$n.text_for($o.label),description:if $o.description!=nil then $n.text_for($o.description) else nil end})
+  elif $kind=="scheme" then
+    $v.kind="choice";$v.presentation="schemes";$v.choices=map(["mixos","ocean","crimson","stone","forest","sunset","mono","pro","studio","classic","breeze","adwaita"],fn($x)={value:$x,label:$n.text_for("scheme-"..$x)})
+  elif $kind=="accent" then
+    $v.kind="swatches";$v.custom_label=$n.text_for("accent-custom");$v.choices=map(["blue","indigo","purple","pink","red","orange","yellow","green","warm_grey"],fn($x)={value:$x,label:$n.text_for("accent-"..replace($x,"_","-")),palette:$x})
+    if $v.value=="auto" then $v.value="blue" end
+  elif $kind=="colour" then
+    $v.kind="colour";$v.auto_link=$c.auto_link;$v.auto_label=$n.text_for("colour-auto")
+    $v.colour_role={"appearance.window_bg":"window","appearance.container_bg":"card","appearance.text_tint":"text","appearance.control_tint":"control"}[$r.key] ?? "accent"
+  elif $kind=="pick" then
+    $v.kind="pick";$v.choices=$s.live.options[$c.list] ?? []
+    $v.display_value=$v.value ?? $n.text_for("pick-default")
+    if contains(["fonts","mono_fonts"],$c.list) then $v.choices=concat([{value:nil,label:$n.text_for(if $c.list=="fonts" then "fonts-family-design" else "fonts-mono-family-design" end)}],$v.choices) end
+  elif $kind=="text" then $v.kind="text";$v.value=$v.value ?? ""
+  elif contains(["slider","spin"],$kind) then
+    $v.kind=if $kind=="slider" then "slider" else "number" end
+    $v.min=$c.min;$v.max=$c.max;$v.step=$c.step;$v.scale=$c.scale ?? 1;$v.show_value=$c.show_value ?? false
+    $v.start=if $c.start!=nil then $n.text_for($c.start) else nil end;$v.end=if $c.end!=nil then $n.text_for($c.end) else nil end
+  elif $kind=="steps" then
+    $v.kind="steps";$v.steps=$c.steps;$v.start=$n.text_for($c.start);$v.end=$n.text_for($c.end)
+  elif $kind=="ordered" then
+    $v.kind="ordered";$v.items=map($v.value ?? [],fn($value)={value:$value,label:(filter(concat($s.live.options["xkb.layouts"] ?? [],$s.live.options["xkb.layouts.extended"] ?? []),fn($option)=deep_eq($option.value,$value))[0] ?? {}).label ?? json_encode($value)})
+    $v.min_items=1;$v.max_items=8
+    $v.move_up=$n.text_for("list-move-up");$v.move_down=$n.text_for("list-move-down");$v.remove_label=$n.text_for("list-remove")
+    if $c.add!=nil then $v.add_label=$n.text_for("drawer-"..$p.id.."-"..$c.add) end
+  elif $kind=="append" then
+    $v.kind="append-list";$v.choices=concat($s.live.options[$c.source] ?? [],$s.live.options[$c.more] ?? [])
+    $v.primary_count=len($s.live.options[$c.source] ?? []);$v.extended=$c.more!=nil;$v.max_items=8
+    $v.more_label=$n.text_for("row-"..$p.id.."-"..$r.id.."-more");$v.search_hint=$n.text_for("search-hint")
+    $v.add_label=$n.text_for("list-add");$v.added_label=$n.text_for("list-added");$v.empty_label=$n.text_for("list-empty")
+  elif contains(["drawer","link","page"],$kind) then $v.kind="link"
+  elif $kind=="reset" then $v.kind="button" end
+  if $kind=="preview" then $v.kind="media-preview";$v.path=$gallery.shown_image($s);$v.colour=stored($s,$c.colour);$v.fit=stored($s,$c.fit) ?? "fill" end
+  if $kind=="outputs" then
+    $v.kind="display-picker";$v.inline=true;$v.title="";$v.value=$gallery.output($s)
+    $v.all=stored($s,$c.all) ?? true;$v.all_label=$n.text_for("opt-all-displays")
+    $v.choices=map($s.live.outputs ?? [],fn($o)={value:$o,label:$o})
+  end
+  return $v
+end
+fn browser_sections($s,$p,$sections)
+  $out=[]
+  for $sec in $sections
+    $rows=map($sec.rows,fn($r)=browser_row($s,$p,$r))
+    if $p.id=="wifi" and contains(["known","visible"],$sec.id) then
+      $rows=[{id:$sec.id.."_none",title:$n.text_for("row-wifi-"..$sec.id.."_none"),kind:"plain-row",shown:true,blocked:nil,value:nil}]
+    end
+    push($out,{id:$sec.id,title:$sec.title,standalone:len($sec.rows)==1 and $sec.rows[0].control.control=="reset",plain:len($rows)==1 and $rows[0].kind=="append-list",shown:section_shown($s,$p,$sec),notice:if $p.id=="power" and $sec.id=="devices" then backend_reason("backend-hostd-upower") else nil end,rows:$rows})
+  end
+  return $out
+end
+fn wallpaper_sections($s,$sections)
+  $g=$gallery.view($s);$category=$g.category
+  $sections[0].native_plain=true
+  $choices=[{value:{kind:"wallpapers"},label:$n.text_for("gallery-wallpapers")},{value:{kind:"colours"},label:$n.text_for("gallery-colours")}]
+  $choices=concat($choices,map($g.recent,fn($folder)={value:{kind:"folder",folder:$folder},label:basename($folder)}))
+  $picker={id:"gallery.images",title:$n.text_for("gallery-add-image"),kind:"file-pick",blocked:nil,shown:$category.kind=="wallpapers",request:{mode:"open",multiple:true,title:$n.text_for("gallery-add-image"),accept_label:$n.text_for("gallery-choose-add"),current_folder:$g.folder ?? env("HOME"),filters:[{name:$n.text_for("gallery-images"),patterns:["*.png","*.jpg","*.jpeg","*.webp"],mime_types:["image/png","image/jpeg","image/webp"]}]}}
+  $tiles=if $category.kind=="colours" then map($g.colours,fn($v)={value:$v,label:$v,colour:$v,removable:contains($g.custom_colours,$v)}) else map($g.images,fn($v)={value:$v,label:basename($v),path:$v,removable:contains($g.custom_images,$v)}) end
+  $tilesrow={id:"gallery.pick",title:"",kind:"tiles",embedded:true,shown:true,blocked:nil,choices:$tiles,value:if $category.kind=="colours" then stored($s,"wallpaper.color") else $gallery.shown_image($s) end,remove_label:$n.text_for("remove")}
+  $chooser={id:"gallery.choose",title:"",kind:"media-chooser",shown:true,blocked:nil,value:$category,categories:$choices,tiles:$tilesrow,
+    display_value:if $category.kind=="folder" then basename($category.folder) else $n.text_for(if $category.kind=="colours" then "gallery-colours" else "gallery-wallpapers" end) end,
+    category_label:$n.text_for("gallery-category"),recent_label:$n.text_for("gallery-recent"),folder_label:$n.text_for("gallery-open-folder"),
+    add_label:if $category.kind=="folder" then "" else $n.text_for(if $category.kind=="colours" then "gallery-add-colour" else "gallery-add-image" end) end,
+    add_request:if $category.kind=="wallpapers" then $picker.request else nil end,
+    folder_request:{mode:"open",directory:true,title:$n.text_for("gallery-open-folder"),accept_label:$n.text_for("gallery-choose-open"),current_folder:$g.folder ?? env("HOME")},
+    empty_label:$n.text_for(if $g.error!=nil then "gallery-unreadable" elif $g.reading then "gallery-reading" else "gallery-empty" end)}
+  $sections[2]={id:"choose",title:nil,native_plain:true,shown:true,rows:[$chooser,$tilesrow]}
+  return $sections
+end
+fn search_groups($s)
+  $hits=$n.search_view($s,$s.nav.query).hits;$out=[]
+  for $p in $n.pages
+    $matches=filter($hits,fn($h)=$h.page==$p.id)
+    if len($matches)==0 then continue end
+    $sections=[]
+    for $section in $n.row_sections($p)
+      $section.rows=filter($section.rows,fn($r)=any($matches,fn($h)=$h.row==$r.id))
+      if len($section.rows)>0 then push($sections,$section) end
+    end
+    push($out,{page:$p.id,row:$matches[0].row,title:$p.title,parent_title:if $p.parent==nil then nil else $n.page($p.parent).title end,sections:browser_sections($s,$p,$sections)})
+  end
+  return $out
+end
+fn browser($s)
+  $p=$n.page($s.nav.page);$root=$p
+  while $root.parent!=nil $root=$n.page($root.parent) end
+  $drawer=nil
+  if $p.id=="wallpaper" and $s.nav.drawer=="gallery.colour" then
+    $drawer={title:$n.text_for("drawer-wallpaper-gallery"),scroll:false,sections:[{id:"add-colour",plain:true,shown:true,rows:[{id:"gallery.colour",title:"",kind:"colour-editor",shown:true,blocked:nil,submit_label:$n.text_for("gallery-add-colour"),hex_label:$n.text_for("colour-hex")}]}]}
+  elif $s.nav.drawer!=nil then
+    $ds=filter($p.drawers,fn($d)=$d.id==$s.nav.drawer)
+    if len($ds)==1 then $drawer={title:$n.text_for("drawer-"..$p.id.."-"..$ds[0].id),sections:browser_sections($s,$p,$ds[0].sections)} end
+    if $drawer==nil then
+      $r=row_for($p,$s.nav.drawer)
+      if $r.control.control=="pick" then
+        $pick=browser_row($s,$p,$r);$pick.id="pick:"..$r.id;$pick.kind="pick-list";$pick.search_hint=$n.text_for("search-hint")
+        $meta=filter($s.catalog,fn($k)=$k.path==$r.key)[0] ?? {}
+        $pick.choices=filter($pick.choices,fn($o)=$o.value!=nil)
+        if $meta.default==nil then $pick.choices=concat([{value:nil,label:$n.text_for("pick-default")}],$pick.choices) end
+        $drawer={title:$r.title,scroll:false,sections:[{id:"pick",plain:true,shown:true,rows:[$pick]}]}
+      elif contains(["colour","accent"],$r.control.control) then
+        $colour=browser_row($s,$p,$r);$colour.id="pick:"..$r.id;$colour.kind="colour-editor";$colour.choices=nil
+        $colour.hex_label=$n.text_for("colour-hex");$colour.invalid_label=$n.text_for("colour-hex-invalid")
+        $colour.auto_value=if $r.key=="window.hint_colour" then "accent" else "auto" end
+        $colour.reset_label=$n.text_for(if $colour.auto_value=="accent" then "colour-reset-accent" else "colour-reset-auto" end)
+        $drawer={title:$r.title,scroll:false,sections:[{id:"colour",plain:true,shown:true,rows:[$colour]}]}
+      end
+    end
+  end
+  $notice=if $p.backend!=nil then backend_reason($p.backend) else "" end
+  $visual={}
+  for $key in keys($s.values) if starts_with($key,"appearance.") or starts_with($key,"window.") then $visual[$key]=stored($s,$key) end end
+  $sections=$custom.sections($s,$p.id) ?? browser_sections($s,$p,$p.sections)
+  if $p.id=="wallpaper" then $sections=wallpaper_sections($s,$sections) end
+  $extras=if $p.id=="appearance" then [{label:$n.text_for("extra-appearance-import"),enabled:false},{label:$n.text_for("extra-appearance-export"),enabled:false}] elif $p.id=="wifi" then [{label:$n.text_for("extra-wifi-add_network"),enabled:false,link:true}] else [] end
+  return {search_groups:if $s.nav.searching then search_groups($s) else [] end,search_empty:$n.text_for("search-none"),search_clear:$n.text_for("search-clear"),notices:if ($s.store_error ?? nil)==nil then [] else [$s.store_error] end,focus_row:if $s.nav.focus!=nil then $s.nav.focus[1] else nil end,end_space:$p.kind!="custom",scroll_content:$p.id!="software",look_refresh_key:[$s.revision!=nil,stored($s,"appearance.density"),stored($s,"appearance.roundness")],title:$p.title,page:$p.id,root:$root.id,parent:$p.parent,parent_title:if $p.parent!=nil then $n.page($p.parent).title else "" end,query:$s.nav.query,query_epoch:$s.query_epoch ?? 0,search_hint:$n.text_for("search-hint"),searching:$s.nav.searching,search_focus:$s.ui.search_focus,sidebar_open:$s.nav.sidebar,results_title:$n.text_for("search-results"),hits:$n.search_view($s,$s.nav.query).hits,pages:map($n.pages,fn($p)={id:$p.id,title:$p.title,parent:$p.parent,icon:$p.icon}),sections:$sections,children:if $p.kind=="list" then map(filter($n.pages,fn($x)=$x.parent==$p.id),fn($x)={id:$x.id,title:$x.title,icon:$x.icon,description:$n.translated("page-"..$x.id.."-desc")}) else [] end,drawer:$drawer,drawer_close:$n.text_for("drawer-close"),notice:$notice,settings:$visual,extras:$extras,pending:if $p.kind=="pending" then {title:$n.text_for("page-pending"),description:$n.text_for("page-pending-desc")} else nil end}
+end

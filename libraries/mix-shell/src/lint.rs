@@ -1,0 +1,845 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! `mix lint` — the CLI over the semantic analyzer (0.29.0, decision
+//! record D3).
+//!
+//! ```text
+//! mix lint [--json | --data] [--deny-warnings] [--require-version] [--fix]
+//!          [--allow-global NAME]... [--allow-function NAME]...
+//!          FILE...
+//! ```
+//!
+//! Exit codes: 0 = no errors (warnings allowed unless --deny-warnings);
+//! 1 = error diagnostics, or warnings under --deny-warnings; 2 =
+//! invalid usage, unreadable input, or internal analyzer failure.
+//! Diagnostics go to stdout; CLI/internal errors go to stderr.
+//! `-` reads stdin (at most once).
+
+use std::io::Read;
+
+use mix::analyzer::{
+    self, Analysis, AnalyzerConfig, Diagnostic, Fix, FunctionDeclaration, HandlerDeclaration,
+    Severity,
+};
+use mix::error::MixError;
+use mix::token::Token;
+
+const USAGE: &str = "Usage: mix lint [--json | --data] [--deny-warnings] [--agent] \
+[--require-version] [--fix] [--allow-global NAME]... [--allow-function NAME]... FILE...";
+
+/// Line/column pair lifted from a lexer/parser span.
+struct SpanLite {
+    line: usize,
+    column: usize,
+}
+
+enum Format {
+    Human,
+    Json,
+    Data,
+}
+
+enum LintOutcome {
+    Script(Analysis),
+    StrictData,
+}
+
+struct LintSummary {
+    errors: usize,
+    warnings: usize,
+    /// `Severity::Note` findings (0.63.0, schema_version 2) — advisory
+    /// only: NEVER counted as warnings, never denied.
+    notes: usize,
+    denied_warnings: bool,
+}
+
+pub fn run_lint(args: &[String], version: &str) -> i32 {
+    let mut format = Format::Human;
+    let mut format_set = false;
+    let mut deny_warnings = false;
+    let mut agent = matches!(
+        std::env::var("MIX_LINT").as_deref(),
+        Ok("agent") | Ok("error")
+    );
+    let mut require_version = false;
+    let mut fix = false;
+    let mut cfg = AnalyzerConfig::default();
+    let mut files: Vec<String> = Vec::new();
+    let mut stdin_used = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" | "--data" => {
+                if format_set {
+                    eprintln!("mix lint: --json and --data are mutually exclusive");
+                    return 2;
+                }
+                format = if args[i] == "--json" {
+                    Format::Json
+                } else {
+                    Format::Data
+                };
+                format_set = true;
+            }
+            "--deny-warnings" => deny_warnings = true,
+            "--agent" => agent = true,
+            "--require-version" => require_version = true,
+            "--fix" => fix = true,
+            "--allow-global" | "--allow-function" => {
+                let Some(name) = args.get(i + 1) else {
+                    eprintln!("mix lint: {} requires a NAME", args[i]);
+                    return 2;
+                };
+                if args[i] == "--allow-global" {
+                    cfg.allow_globals.push(name.clone());
+                } else {
+                    cfg.allow_functions.push(name.clone());
+                }
+                i += 1;
+            }
+            "-" => {
+                if stdin_used {
+                    eprintln!("mix lint: '-' (stdin) may appear only once");
+                    return 2;
+                }
+                stdin_used = true;
+                files.push("-".to_string());
+            }
+            flag if flag.starts_with('-') => {
+                eprintln!("mix lint: unknown flag '{flag}'");
+                eprintln!("{USAGE}");
+                return 2;
+            }
+            file => files.push(file.to_string()),
+        }
+        i += 1;
+    }
+    if files.is_empty() {
+        eprintln!("{USAGE}");
+        return 2;
+    }
+
+    cfg.agent = agent;
+    // This binary registers these in every mode, so a script linted here
+    // may call them, and a function named after one is shadowed.
+    cfg.extensions = analyzer::MIX_SHELL_EXTENSIONS
+        .iter()
+        .map(|name| name.to_string())
+        .collect();
+
+    let mut all_diags: Vec<Diagnostic> = Vec::new();
+    let mut capabilities: Vec<&'static str> = Vec::new();
+    let mut handlers: Vec<HandlerDeclaration> = Vec::new();
+    let mut functions: Vec<FunctionDeclaration> = Vec::new();
+    let mut strict_data_files: Vec<String> = Vec::new();
+    for file in &files {
+        let source = if file == "-" {
+            let mut buf = String::new();
+            if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+                eprintln!("mix lint: reading stdin: {e}");
+                return 2;
+            }
+            buf
+        } else {
+            match std::fs::read_to_string(file) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("mix lint: {file}: {e}");
+                    return 2;
+                }
+            }
+        };
+        // Stdin lints against the current directory for relative
+        // require() resolution (D3): give it a synthetic ./- name.
+        let file_label: Option<&str> = if file == "-" { Some("-") } else { Some(file) };
+        let mut source = source;
+        let mut outcome = lint_one(&source, file_label, &cfg);
+        // `--fix` applies each finding's quick fix to the file, then lints the
+        // result again, so the report shows what is left. Stdin has nowhere
+        // to write back, so its fixes are only reported.
+        if fix
+            && file != "-"
+            && let Ok(LintOutcome::Script(analysis)) = &outcome
+        {
+            let fixes: Vec<&Fix> = analysis
+                .diagnostics
+                .iter()
+                .filter_map(|d| d.fix.as_ref())
+                .collect();
+            if let Some((fixed, applied)) = apply_fixes(&source, &fixes) {
+                if let Err(e) = std::fs::write(file, &fixed) {
+                    eprintln!("mix lint: {file}: writing fixes: {e}");
+                    return 2;
+                }
+                eprintln!("mix lint: {file}: applied {applied} fix(es)");
+                source = fixed;
+                outcome = lint_one(&source, file_label, &cfg);
+            }
+        }
+        match outcome {
+            Ok(LintOutcome::Script(analysis)) => {
+                all_diags.extend(analysis.diagnostics);
+                if let Some(diag) = version_header_diag(&source, file, require_version) {
+                    all_diags.push(diag);
+                }
+                all_diags.extend(host_header_diag(&source, file, &analysis.service_builtins));
+                for cap in analysis.capabilities {
+                    if !capabilities.contains(&cap) {
+                        capabilities.push(cap);
+                    }
+                }
+                handlers.extend(analysis.handlers);
+                functions.extend(analysis.functions);
+            }
+            Ok(LintOutcome::StrictData) => strict_data_files.push(file.clone()),
+            Err(diag) => all_diags.push(*diag),
+        }
+    }
+    capabilities.sort_unstable();
+
+    // Errors first, then warnings, then notes; within a class, by
+    // file+line.
+    all_diags.sort_by(|a, b| {
+        let sev = |d: &Diagnostic| match d.severity {
+            Severity::Error => 0u8,
+            Severity::Warning => 1,
+            Severity::Note => 2,
+        };
+        sev(a)
+            .cmp(&sev(b))
+            .then_with(|| a.file.cmp(&b.file))
+            .then_with(|| a.line.unwrap_or(0).cmp(&b.line.unwrap_or(0)))
+    });
+
+    let errors = all_diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    // Explicit match, NOT "everything that isn't an error": notes must
+    // never count as warnings, or `--deny-warnings` (a live fleet deploy
+    // gate — deploy_shared.mix) would deny on advisories.
+    let warnings = all_diags
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .count();
+    let notes = all_diags
+        .iter()
+        .filter(|d| d.severity == Severity::Note)
+        .count();
+    let denied = deny_warnings && warnings > 0;
+    let summary = LintSummary {
+        errors,
+        warnings,
+        notes,
+        denied_warnings: denied,
+    };
+
+    match format {
+        Format::Human => {
+            for file in &strict_data_files {
+                println!("{file}: validated as strict data (not as a script)");
+            }
+            for d in &all_diags {
+                let loc = match (&d.file, d.line) {
+                    (Some(f), Some(l)) => format!("{f}:{l}"),
+                    (Some(f), None) => f.clone(),
+                    (None, Some(l)) => format!("line {l}"),
+                    (None, None) => "<input>".to_string(),
+                };
+                println!(
+                    "{loc}: {} {}: {}",
+                    d.code,
+                    d.severity.wire_name(),
+                    d.message
+                );
+                if let Some(hint) = &d.hint {
+                    println!("  hint: {hint}");
+                }
+                if let Some(fix) = &d.fix {
+                    println!(
+                        "  fix: replace `{}` with `{}` at {}:{} (mix lint --fix applies it)",
+                        fix.replace, fix.with, fix.line, fix.column
+                    );
+                }
+            }
+            println!(
+                "{} error(s), {} warning(s), {} note(s){}",
+                errors,
+                warnings,
+                notes,
+                if denied { " [denied]" } else { "" }
+            );
+            // One trailer when anything was reported: an agent that hit a code
+            // it has never seen gets the whole rationale offline in one call.
+            if !all_diags.is_empty() {
+                println!("explain any code with: mix explain MIX-XXXX");
+            }
+        }
+        Format::Json | Format::Data => {
+            let report = report_json(
+                version,
+                &files,
+                &strict_data_files,
+                &all_diags,
+                &capabilities,
+                &handlers,
+                &functions,
+                &summary,
+            );
+            match format {
+                Format::Json => match serde_json::to_string_pretty(&report) {
+                    Ok(s) => println!("{s}"),
+                    Err(e) => {
+                        eprintln!("mix lint: encoding report: {e}");
+                        return 2;
+                    }
+                },
+                Format::Data => {
+                    let value = crate::meta::json_to_mix_value(&report);
+                    match value.to_mix_data_string_pretty() {
+                        Ok(s) => println!("{s}"),
+                        Err(e) => {
+                            eprintln!("mix lint: encoding report: {e}");
+                            return 2;
+                        }
+                    }
+                }
+                Format::Human => unreachable!(),
+            }
+        }
+    }
+
+    if errors > 0 || denied { 1 } else { 0 }
+}
+
+/// Is `file` run as a script (so it owes a `-- version:` header), rather than
+/// a module loaded by `require`/`include`? A deliberately simple heuristic,
+/// documented in lint.md, decided in this order over the path AS GIVEN:
+/// 1. a `#!` shebang on line 1 — a script;
+/// 2. a `lib`, `_lib`, `tests` or `test` directory component — never
+///    reported: a library is loaded, not run, and a test script must NOT
+///    carry a header (it would become the entry script whose record
+///    `script_version()` returns, masking the code under test's own);
+/// 3. a `bin`, `_bin`, `scripts` or `build` directory component — a script;
+/// 4. a serve citizen: a top-level `on <command>` handler (column 0), or a
+///    `--serve` mention in the leading comment region — a script.
+///
+/// Stdin (`-`) has no path, so only rules 1 and 4 apply. Known false
+/// positive, Wontfix: a library under an absolute `/…/bin/…` path with no
+/// `lib` component is reported; lint it by a relative path. The mirror also
+/// holds: ANY `lib`/`tests` ancestor in an absolute path (`/…/lib/…`)
+/// exempts a script beneath it.
+fn runs_as_script(source: &str, file: &str) -> bool {
+    if source.starts_with("#!") {
+        return true;
+    }
+    if file != "-" {
+        let dirs: Vec<String> = std::path::Path::new(file)
+            .parent()
+            .map(|dir| {
+                dir.components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if dirs
+            .iter()
+            .any(|d| matches!(d.as_str(), "lib" | "_lib" | "tests" | "test"))
+        {
+            return false;
+        }
+        if dirs
+            .iter()
+            .any(|d| matches!(d.as_str(), "bin" | "_bin" | "scripts" | "build"))
+        {
+            return true;
+        }
+    }
+    declares_serve(source)
+}
+
+/// A serve citizen: a top-level `on <command>` handler, or a `--serve` mention
+/// in the leading comment region ("Run with mix --serve x.mix").
+fn declares_serve(source: &str) -> bool {
+    let top_level_handler = source.lines().any(|line| {
+        line.strip_prefix("on ")
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_'))
+    });
+    top_level_handler
+        || mix::script_version::leading_comment_lines(source)
+            .iter()
+            .any(|(_, line)| line.trim_start()[2..].contains("--serve"))
+}
+
+/// MIX-D3016: a script with no well-formed `-- version: X.Y.Z` header in its
+/// first lines, so `mix SCRIPT --version` can only say `unversioned`. A note
+/// by default; `--require-version` makes it a warning (same code — D3xxx is
+/// the promotable namespace).
+fn version_header_diag(source: &str, file: &str, require: bool) -> Option<Diagnostic> {
+    use mix::VersionHeader;
+    if !runs_as_script(source, file) {
+        return None;
+    }
+    let scan = mix::script_version::HEADER_SCAN_LINES;
+    let (line, message) = match mix::parse_version_header(source) {
+        VersionHeader::Declared { .. } => return None,
+        VersionHeader::Malformed { raw, line } => (
+            Some(line),
+            format!(
+                "`-- version:` header value `{raw}` is not X.Y.Z, so `mix SCRIPT --version` reports this script as unversioned"
+            ),
+        ),
+        VersionHeader::Absent => (
+            None,
+            format!(
+                "script declares no `-- version: X.Y.Z` header in its first {scan} lines, so `mix SCRIPT --version` reports it as unversioned"
+            ),
+        ),
+    };
+    Some(Diagnostic {
+        code: "MIX-D3016",
+        severity: if require {
+            Severity::Warning
+        } else {
+            Severity::Note
+        },
+        file: Some(file.to_string()),
+        line,
+        column: None,
+        message,
+        hint: Some(format!(
+            "add a `-- version: 0.1.0` comment near the top (the first {scan} lines are searched)"
+        )),
+        fix: None,
+    })
+}
+
+/// The engine a script needs, checked against its `-- host:` header
+/// (engine-split decision). MIX-D3025: service-profile builtins with no
+/// header (note). MIX-D3026: `host: mix` but service-profile builtins are
+/// called (warning). MIX-D3027: a host value that names no engine (warning).
+fn host_header_diag(source: &str, file: &str, service: &[&'static str]) -> Option<Diagnostic> {
+    use mix::HostHeader;
+    let used = service.join("(), ");
+    let (code, severity, line, message, hint) = match mix::parse_host_header(source) {
+        HostHeader::Unknown { raw, line } => (
+            "MIX-D3027",
+            Severity::Warning,
+            Some(line),
+            format!(
+                "`-- host:` value `{raw}` names no engine (one of: {})",
+                mix::script_version::HOSTS.join(", ")
+            ),
+            "write `-- host: mix`, `-- host: mixd` or `-- host: viu`".to_string(),
+        ),
+        HostHeader::Declared { host, line } if host == "mix" && !service.is_empty() => (
+            "MIX-D3026",
+            Severity::Warning,
+            Some(line),
+            format!(
+                "declares `host: mix` but calls service-profile builtins ({used}()), which the mix engine does not carry"
+            ),
+            "declare `-- host: mixd` and run it with `mixd run FILE`".to_string(),
+        ),
+        HostHeader::Absent if !service.is_empty() => (
+            "MIX-D3025",
+            Severity::Note,
+            None,
+            format!(
+                "calls service-profile builtins ({used}()) with no `-- host:` header; the shell-profile mix refuses them"
+            ),
+            "add `-- host: mixd` near the top and run it with `mixd run FILE`".to_string(),
+        ),
+        _ => return None,
+    };
+    Some(Diagnostic {
+        code,
+        severity,
+        file: Some(file.to_string()),
+        line,
+        column: None,
+        message,
+        hint: Some(hint),
+        fix: None,
+    })
+}
+
+/// Lex+parse+analyze one file. If script parsing fails but the same
+/// source is valid strict data, report that validation mode instead.
+/// D1 (TODO-mix 2026-09-24): the `-c`/stdin pre-execution gate. Lint the
+/// source; a diagnostic in the hard-safe allowlist (E1201, E1202, E1303,
+/// E1501, E1502, E1203) is a refusal — the source is not run. Returns
+/// `(hard, soft)` diagnostics so the caller prints the hard set before
+/// exit 2 and the soft set only under `--agent`/`MIX_LINT=warn`.
+pub(crate) fn lint_source_for_execution(source: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
+    let mut hard = Vec::new();
+    let mut soft = Vec::new();
+    // The program runs under this binary, so its extensions are defined.
+    let cfg = AnalyzerConfig {
+        extensions: analyzer::MIX_SHELL_EXTENSIONS
+            .iter()
+            .map(|name| name.to_string())
+            .collect(),
+        ..AnalyzerConfig::default()
+    };
+    let outcome = lint_one(source, None, &cfg);
+    let mut push = |d: Box<Diagnostic>| {
+        if HARD_SAFE_EXEC_CODES.contains(&d.code) {
+            hard.push(*d);
+        } else {
+            soft.push(*d);
+        }
+    };
+    match outcome {
+        Ok(LintOutcome::Script(analysis)) => {
+            for d in analysis.diagnostics {
+                push(Box::new(d));
+            }
+        }
+        // A parse failure is the evaluator's own job to report — the
+        // gate only adjudicates analyzer diagnostics.
+        Ok(LintOutcome::StrictData) | Err(_) => {}
+    }
+    (hard, soft)
+}
+
+/// D1: the hard-safe allowlist — analyzer codes that REFUSE execution for
+/// `-c`/stdin. These are the statically-provable wrong-target side
+/// effects (arity, dead mutation, push-assign-back, literal-type) — the
+/// same family the runtime gates now raise, caught before any line runs.
+pub(crate) const HARD_SAFE_EXEC_CODES: &[&str] = &[
+    "MIX-E1201",
+    "MIX-E1202",
+    "MIX-E1303",
+    "MIX-E1501",
+    "MIX-E1502",
+    "MIX-E1203",
+];
+
+fn lint_one(
+    source: &str,
+    file: Option<&str>,
+    cfg: &AnalyzerConfig,
+) -> Result<LintOutcome, Box<Diagnostic>> {
+    let to_diag = |code: &'static str, msg: String, span: Option<SpanLite>| {
+        Box::new(Diagnostic {
+            code,
+            severity: Severity::Error,
+            file: file.map(str::to_string),
+            line: span.as_ref().map(|s| s.line),
+            column: span
+                .as_ref()
+                .and_then(|s| (s.column > 0).then_some(s.column)),
+            message: msg,
+            hint: None,
+            fix: None,
+        })
+    };
+    // AMP scene envelope (2026-09-26 entry): a `---` front-matter header
+    // (YAML scene metadata, opaque to Mix) followed by a ```mix-fenced
+    // map. The script lexer has no backtick token, so it E1003s on the
+    // fence; the fenced map is Mix strict data, so lint validates it as
+    // data instead of failing every scene file.
+    if let Some(body) = amp_strict_data(source) {
+        return match mix::parse_data(&body) {
+            Ok(_) => Ok(LintOutcome::StrictData),
+            Err(e) => Err(Box::new(strict_data_diagnostic(e, file))),
+        };
+    }
+    let tokens = match mix::lexer::Lexer::new(source).tokenize() {
+        Ok(t) => t,
+        Err(MixError::LexerError { msg, span }) => {
+            let diag = to_diag(
+                "MIX-E1001",
+                msg,
+                Some(SpanLite {
+                    line: span.line,
+                    column: span.column,
+                }),
+            );
+            return strict_data_fallback(source, file, diag);
+        }
+        Err(e) => {
+            return strict_data_fallback(source, file, to_diag("MIX-E1001", e.to_string(), None));
+        }
+    };
+    // SPECULATIVE parse: the D1 pre-execution gate must be silent about
+    // parser deprecations (done/next) — the executed parse is the one
+    // allowed to emit them, exactly once. The classifier's probe
+    // invariant (semicolon_process.rs) depends on this.
+    let stmts = match mix::parser::Parser::new_speculative(tokens, source).parse_program() {
+        Ok(s) => s,
+        Err(MixError::ParseError { msg, span }) | Err(MixError::IncompleteInput { msg, span }) => {
+            let diag = to_diag(
+                "MIX-E1002",
+                msg,
+                Some(SpanLite {
+                    line: span.line,
+                    column: span.column,
+                }),
+            );
+            return strict_data_fallback(source, file, diag);
+        }
+        Err(MixError::AssignmentChainParseError { operator, span }) => {
+            let diag = to_diag(
+                "MIX-E1002",
+                mix::error::assignment_chain_parse_message(&operator),
+                Some(SpanLite {
+                    line: span.line,
+                    column: span.column,
+                }),
+            );
+            return strict_data_fallback(source, file, diag);
+        }
+        Err(e) => {
+            return strict_data_fallback(source, file, to_diag("MIX-E1002", e.to_string(), None));
+        }
+    };
+    // Hand the analyzer this file's source so the two spelling rules
+    // (MIX-D3015 bare `$name`, MIX-W2405 unknown escape) can run — they
+    // ask how a double-quoted literal was WRITTEN, which the token stream
+    // deliberately forgets. Per-file, never the accumulated flags.
+    let mut cfg = cfg.clone();
+    cfg.source = Some(source.to_string());
+    Ok(LintOutcome::Script(analyzer::analyze(&stmts, file, &cfg)))
+}
+
+/// Apply quick fixes to `source`. Each edit is checked against the text at
+/// its position first; one that does not match is skipped, never forced.
+/// `None` when nothing was applied.
+fn apply_fixes(source: &str, fixes: &[&Fix]) -> Option<(String, usize)> {
+    let mut lines: Vec<String> = source.split('\n').map(str::to_string).collect();
+    let mut ordered = fixes.to_vec();
+    // Right to left within a line, so an edit never moves a later one's column.
+    ordered.sort_by_key(|fix| std::cmp::Reverse((fix.line, fix.column)));
+    ordered.dedup_by(|a, b| a.line == b.line && a.column == b.column);
+    let mut applied = 0;
+    for fix in ordered {
+        let Some(text) = fix.line.checked_sub(1).and_then(|i| lines.get_mut(i)) else {
+            continue;
+        };
+        let Some(start) = fix
+            .column
+            .checked_sub(1)
+            .and_then(|col| text.char_indices().nth(col))
+            .map(|(byte, _)| byte)
+        else {
+            continue;
+        };
+        if !text[start..].starts_with(&fix.replace) {
+            continue;
+        }
+        text.replace_range(start..start + fix.replace.len(), &fix.with);
+        applied += 1;
+    }
+    (applied > 0).then(|| (lines.join("\n"), applied))
+}
+
+fn strict_data_fallback(
+    source: &str,
+    file: Option<&str>,
+    script_diag: Box<Diagnostic>,
+) -> Result<LintOutcome, Box<Diagnostic>> {
+    match mix::parse_data(source) {
+        Ok(_) => Ok(LintOutcome::StrictData),
+        Err(data_error) if looks_like_strict_data(source, file) => {
+            Err(Box::new(strict_data_diagnostic(data_error, file)))
+        }
+        Err(_) => Err(script_diag),
+    }
+}
+
+/// Extract the strict-data body of an AMP scene envelope, or `None` when
+/// the source is not one. An envelope is a `---` front-matter header
+/// (YAML scene metadata, opaque to Mix) followed by a ````mix-fenced map;
+/// only the fenced map is Mix strict data, so lint validates that alone.
+fn amp_strict_data(source: &str) -> Option<String> {
+    let fence = "```mix";
+    let fence_at = source.find(fence)?;
+    // Fenced body: after the fence line's newline, up to the closing
+    // ``` line.
+    let rest = &source[fence_at + fence.len()..];
+    let body_start = rest.find('\n').map(|i| i + 1).unwrap_or(0);
+    let close_at = rest[body_start..].find("\n```")?;
+    let body = rest[body_start..body_start + close_at].trim();
+    if body.is_empty() {
+        return None;
+    }
+    Some(body.to_string())
+}
+
+/// A successful strict-data parse is decisive. When both grammars fail,
+/// choose the data diagnostic only for an explicit top-level `key:` shape
+/// or a conventional strict-data suffix; otherwise preserve the original
+/// script diagnostic. This keeps malformed scripts from being excused by
+/// the fallback while still giving damaged data files the useful error.
+fn looks_like_strict_data(source: &str, file: Option<&str>) -> bool {
+    let conventional_suffix = file.is_some_and(|name| {
+        [
+            ".conf.mix",
+            ".spec.mix",
+            ".state.mix",
+            ".journal.mix",
+            ".verdict.mix",
+            ".call.mix",
+        ]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+    });
+    let tokenised_top_level_pair = mix::lexer::Lexer::new(source)
+        .tokenize()
+        .ok()
+        .map(|tokens| {
+            let mut significant = tokens
+                .iter()
+                .map(|t| &t.token)
+                .filter(|t| !matches!(t, Token::Newline | Token::Semicolon));
+            matches!(significant.next(), Some(Token::String(_)))
+                && matches!(significant.next(), Some(Token::Colon))
+        })
+        .unwrap_or(false);
+    tokenised_top_level_pair || first_line_is_data_pair(source) || conventional_suffix
+}
+
+fn first_line_is_data_pair(source: &str) -> bool {
+    let Some(line) = source
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#') && !line.starts_with("--"))
+    else {
+        return false;
+    };
+    let Some(colon) = line.find(':') else {
+        return false;
+    };
+    let key = line[..colon].trim();
+    (!key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        || (key.len() >= 2 && key.starts_with('"') && key.ends_with('"'))
+}
+
+fn strict_data_diagnostic(error: MixError, file: Option<&str>) -> Diagnostic {
+    let (message, line, column, hint) = match error {
+        MixError::LexerError { msg, span } | MixError::ParseError { msg, span } => (
+            msg,
+            Some(span.line),
+            (span.column > 0).then_some(span.column),
+            None,
+        ),
+        // No `AssignmentChainParseError` arm: this function only ever receives
+        // the error from `parse_data()`, which parses strict data and never
+        // reaches statement parsing, so that variant cannot occur here. An arm
+        // for it would be unreachable code implying otherwise — and no test
+        // could pin it. The script path's arm (above) is the live one.
+        MixError::StrictDataViolation {
+            construct,
+            line,
+            hint,
+        } => (construct, Some(line), None, Some(hint)),
+        other => (other.to_string(), None, None, None),
+    };
+    Diagnostic {
+        code: "MIX-E1003",
+        severity: Severity::Error,
+        file: file.map(str::to_string),
+        line,
+        column,
+        message: format!("strict-data parse error: {message}"),
+        hint,
+        fix: None,
+    }
+}
+
+// Each slice is a distinct field of the lint wire report; keep its schema
+// inputs explicit rather than coupling the analyser's collections.
+#[allow(clippy::too_many_arguments)]
+fn report_json(
+    version: &str,
+    files: &[String],
+    strict_data_files: &[String],
+    diags: &[Diagnostic],
+    capabilities: &[&'static str],
+    handlers: &[HandlerDeclaration],
+    functions: &[FunctionDeclaration],
+    summary: &LintSummary,
+) -> serde_json::Value {
+    serde_json::json!({
+        // 2 (0.63.0): severity domain gains "note"; summary gains
+        // `notes`. `handlers` is an additive field under the same version:
+        // always present, empty when a file declares no `on` handler. Its
+        // in-tree consumer is the --source check in tools/command_registry.mix
+        // (tools/lib/command_registry_source.mix), which checks every field it
+        // relies on. Existing fields are unchanged.
+        // 3: parsed function declarations for embedding-context consumers.
+        // Every existing field keeps its schema-2 meaning.
+        "schema_version": 3,
+        "tool": "mix lint",
+        "mix_version": version,
+        "files": files,
+        "strict_data_files": strict_data_files,
+        "diagnostics": diags.iter().map(|d| serde_json::json!({
+            "code": d.code,
+            "severity": d.severity.wire_name(),
+            "file": d.file,
+            "line": d.line,
+            "column": d.column,
+            "message": d.message,
+            "hint": d.hint,
+            // Additive under schema 3: present (null) on every diagnostic.
+            "fix": d.fix.as_ref().map(|f| serde_json::json!({
+                "line": f.line,
+                "column": f.column,
+                "replace": f.replace,
+                "with": f.with,
+            })),
+        })).collect::<Vec<_>>(),
+        "capabilities": capabilities,
+        "handlers": handlers.iter().map(|h| serde_json::json!({
+            "command": h.command,
+            "file": h.file,
+            "line": h.line,
+        })).collect::<Vec<_>>(),
+        "functions": functions.iter().map(|f| serde_json::json!({
+            "name": f.name,
+            "file": f.file,
+            "line": f.line,
+        })).collect::<Vec<_>>(),
+        "summary": {
+            "errors": summary.errors,
+            "warnings": summary.warnings,
+            "notes": summary.notes,
+            "denied_warnings": summary.denied_warnings,
+        },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pre-run lint knows the extensions the program will run with, as
+    /// `mix lint` does: a call to one is no undefined-function finding.
+    #[test]
+    fn the_execution_lint_knows_the_shell_extensions() {
+        let (hard, soft) = lint_source_for_execution("print(context())\nprint(ai(\"q\"))\n");
+        assert!(hard.is_empty(), "{hard:?}");
+        assert!(!soft.iter().any(|d| d.code == "MIX-E1102"), "{soft:?}");
+    }
+
+    #[test]
+    fn fixes_apply_only_where_the_text_matches() {
+        let fix = |line, column, replace: &str| Fix {
+            line,
+            column,
+            replace: replace.to_string(),
+            with: "nil".to_string(),
+        };
+        let a = fix(1, 6, "null");
+        let b = fix(1, 12, "null");
+        let stale = fix(2, 1, "null");
+        let (out, applied) = apply_fixes("$x = null; null\nprint(1)", &[&a, &b, &stale]).unwrap();
+        assert_eq!(out, "$x = nil; nil\nprint(1)");
+        assert_eq!(applied, 2);
+        assert!(apply_fixes("print(1)", &[&stale]).is_none());
+    }
+}

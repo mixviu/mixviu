@@ -1,0 +1,26 @@
+---
+scene: 1
+name: screenshot
+citizen: screenshot
+---
+```mix
+{
+root:{widget:"dock",children:["options-row","tool-rail","preview-stack"],placements:{"options-row":{edge:"top",size:"design.options_height"},"tool-rail":{edge:"left",size:"design.tools_width"},"preview-stack":{edge:"fill"}}},
+"preview-stack":{widget:"column",children:["preview","dialog","macros"]},
+dialog:{widget:"control",definition:{id:"dialog",kind:"dialog-form",label:"",properties:{style:"gold",presentation:"form"},initial:{open:false,title:"",body:"",field:nil,choices:[]}},on_intent:"screenshot.intent"},
+macros:{widget:"control",definition:{id:"macros",kind:"macro-window",label:"",initial:false,properties:{app:"screenshot"}},on_intent:"screenshot.intent"},
+"options-row":{widget:"column",bar:"options",children:["options-band"]},
+"options-band":{widget:"row",packing:"toolbar",end:"file_actions",fit:["inks","width","text_size"],flex:"text",children:["options","window","output","inks","width","text_size","text","file_actions"]},
+options:{widget:"control",definition:{id:"options",kind:"command-bar",label:"Capture",initial:[],properties:{hostable:false,style:"gold"}},on_intent:"screenshot.intent"},
+window:{widget:"control",hidden:"= $model.hide_window",definition:"= $model.window_control",on_intent:"screenshot.intent"},
+output:{widget:"control",hidden:"= $model.hide_output",definition:"= $model.output_control",on_intent:"screenshot.intent"},
+inks:{widget:"control",hidden:"= $model.hide_ink",definition:"= $model.inks_control",on_intent:"screenshot.intent"},
+width:{widget:"control",hidden:"= $model.hide_ink",definition:"= $model.width_control",on_intent:"screenshot.intent"},
+text_size:{widget:"control",hidden:"= $model.hide_size",definition:"= $model.size_control",on_intent:"screenshot.intent"},
+text:{widget:"control",hidden:"= $model.hide_text",definition:"= $model.text_control",on_intent:"screenshot.intent"},
+file_actions:{widget:"control",hidden:"= $model.hide_file",definition:{id:"file_actions",kind:"command-bar",label:"File",initial:[],properties:{hostable:false,style:"gold",reverse:true}},on_intent:"screenshot.intent"},
+"tool-rail":{widget:"column",bar:"tools",children:["tools"]},
+tools:{widget:"control",definition:{id:"tools",kind:"command-bar",label:"Annotate",initial:[],properties:{vertical:true,hostable:false,style:"gold"}},on_intent:"screenshot.intent"},
+preview:{widget:"control",definition:{id:"preview",kind:"image-canvas",label:"Picture",initial:{canvas:true,phase:"none",colour:"design.canvas",fit:"fit",enabled:false,zoom:1,pan:{x:0,y:0},empty_text:"Take a screenshot (Ctrl+N) or open an image (Ctrl+O)."}},on_intent:"screenshot.intent"}
+}
+```

@@ -1,0 +1,11 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+on job.run
+  $a=$event.args
+  try
+    $out=publish($a.topic,json_encode($a.event))
+    reply(0,json_encode({rc:$out,dropped:$a.event.dropped}))
+  catch $message
+    reply(0,json_encode({rc:10,dropped:$a.event.dropped}))
+  end
+end

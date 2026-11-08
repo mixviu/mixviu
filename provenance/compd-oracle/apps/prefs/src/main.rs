@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+use preferences::model::APP_ID;
+use prefs::{label, shell::Shell};
+
+/// The app name: its worker thread, closing refusal and activation commands.
+const APP: &str = "prefs";
+
+#[derive(Debug, Clone)]
+struct Settings {
+    service: String,
+    comp: String,
+    url: String,
+    /// The page to open and the row to land on (`prefs appearance`,
+    /// `prefs appearance/density`).
+    page: Option<(String, Option<String>)>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            service: APP.into(),
+            comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
+            url: citizen::noded_url(),
+            page: None,
+        }
+    }
+}
+
+fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
+    let mut settings = Settings::default();
+    let mut args = args;
+    while let Some(arg) = args.next() {
+        if !arg.starts_with("--") && settings.page.is_none() {
+            let (page, row) = match arg.split_once('/') {
+                Some((page, row)) => (page.to_owned(), Some(row.to_owned())),
+                None => (arg.clone(), None),
+            };
+            if preferences::nav::page_id(&page).is_none() {
+                return Err(format!("no such page: {page}"));
+            }
+            settings.page = Some((page, row));
+            continue;
+        }
+        let value = args
+            .next()
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| format!("{arg} needs a value"))?;
+        match arg.as_str() {
+            "--noded-url" => settings.url = value,
+            "--service" => settings.service = value,
+            "--comp" => settings.comp = value,
+            _ => return Err(format!("unknown option: {arg}")),
+        }
+    }
+    for name in [&settings.service, &settings.comp] {
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        {
+            return Err("invalid service name".into());
+        }
+    }
+    Ok(settings)
+}
+
+fn run(settings: &Settings) -> Result<(), String> {
+    // The desktop profile's change hints wake the Appearance panel.
+    let mut topics = preferences::appearance::topics();
+    // The pages read again on every prefix they write.
+    for topic in preferences::store::topics() {
+        if !topics.contains(&topic) {
+            topics.push(topic);
+        }
+    }
+    let (handle, deliveries) =
+        citizen::start_with_macros(APP, &settings.service, &settings.url, &topics)?;
+    let theme = toolkit::Theme::load();
+    let options = eframe::NativeOptions {
+        // Client-side decorations: the toolkit title bar is the window frame.
+        viewport: toolkit::titlebar::viewport(APP_ID, &label("title"))
+            .with_inner_size([980.0, 680.0]),
+        ..eframe::NativeOptions::default()
+    };
+    let comp = settings.comp.clone();
+    let page = settings.page.clone();
+    let shell_bus = handle.clone();
+    let result = eframe::run_native(
+        APP_ID,
+        options,
+        Box::new(move |cc| {
+            toolkit::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
+            toolkit::install(&cc.egui_ctx, &theme);
+            let mut shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?;
+            if let Some((page, row)) = &page {
+                let _ = shell.engine_mut().open_page(page, row.as_deref());
+            }
+            Ok(Box::new(shell))
+        }),
+    )
+    .map_err(|e| e.to_string());
+    handle.quit();
+    result.and(handle.wait_done())
+}
+
+fn main() {
+    let mut cli_args: Vec<String> = std::env::args().collect();
+    let _logging = toolkit::debug::init("prefs", "warn", &mut cli_args).unwrap_or_else(|error| {
+        toolkit::debug::failure("prefs", &error);
+        std::process::exit(2);
+    });
+    buildinfo::exit_on_version!(leading);
+    if matches!(cli_args.get(1).map(String::as_str), Some("--help" | "-h")) {
+        println!(
+            "prefs — MixOS Preferences\nUsage: prefs [PAGE] [--noded-url URL] [--service NAME] [--comp NAME]\nPAGE is a page id from prefs.pages (appearance, panel, window-management, …), optionally /ROW to land on a row (appearance/density)"
+        );
+        println!("{}", toolkit::debug::HELP);
+        return;
+    }
+    let result = parse(cli_args.into_iter().skip(1)).and_then(|settings| {
+        // One window per session: a second launch raises the first.
+        if citizen::probe(&settings.url, &settings.service, APP) {
+            // A deep link switches the running window to its page.
+            if let Some((page, row)) = &settings.page {
+                citizen::request(
+                    &settings.url,
+                    &settings.service,
+                    "prefs.page.open",
+                    serde_json::json!({ "page": page, "row": row }),
+                )?;
+            }
+            match citizen::forward(&settings.url, &settings.service, APP) {
+                Ok(()) => return Ok(()),
+                Err(error) if citizen::probe(&settings.url, &settings.service, APP) => {
+                    return Err(error);
+                }
+                Err(_) => {} // The previous instance exited between probe and activation.
+            }
+        }
+        match run(&settings) {
+            Err(_) if citizen::probe(&settings.url, &settings.service, APP) => {
+                citizen::forward(&settings.url, &settings.service, APP)
+            }
+            result => result,
+        }
+    });
+    if let Err(error) = result {
+        toolkit::debug::failure("prefs", &error);
+        std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unknown_missing_and_unsafe_options() {
+        for args in [
+            vec!["--noded-url"],
+            vec!["--bogus", "x"],
+            vec!["--service", "bad name"],
+        ] {
+            assert!(parse(args.into_iter().map(str::to_owned)).is_err());
+        }
+        let settings = parse(["--service", "prefs.test"].into_iter().map(str::to_owned)).unwrap();
+        assert_eq!(settings.service, "prefs.test");
+    }
+}

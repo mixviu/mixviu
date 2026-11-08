@@ -1,0 +1,43 @@
+-- Lift a daemon's src/main.rs into its library as `pub fn main`, so mixd can
+-- run it as an argv[0] personality. The standalone binary keeps working as a
+-- one-line wrapper. A crate with a lib.rs gets the body as src/daemon.rs; a
+-- crate without one gets it as src/lib.rs (its `mod` declarations move along).
+-- Handles `fn main() -> anyhow::Result<()>` and the `#[tokio::main] async fn`
+-- form. usage: mix tools/lift_daemon_main.mix CRATE_DIR CRATE_NAME
+$a = args()
+$dir = $a[0]
+$name = $a[1]
+$main_path = path_join($dir, "src/main.rs")
+$lib_path = path_join($dir, "src/lib.rs")
+$has_lib = is_file($lib_path)
+$target = if $has_lib then path_join($dir, "src/daemon.rs") else $lib_path end
+if $has_lib and is_file($target) then
+  raise("EXISTS", "already lifted: " .. $target)
+end
+$main = read_file($main_path)
+$forms = [
+  ["\nfn main() -> anyhow::Result<()> {", "\npub fn main() -> anyhow::Result<()> {"],
+  ["\nasync fn main() -> anyhow::Result<()> {", "\npub async fn main() -> anyhow::Result<()> {"],
+  ["\nfn main() -> Result<()> {", "\npub fn main() -> Result<()> {"],
+]
+$lifted = nil
+for $f in $forms
+  if len(split($main, $f[0])) == 2 then
+    $lifted = replace($main, $f[0], $f[1])
+  end
+end
+if $lifted == nil then
+  raise("ANCHOR", "no single supported `main` signature in " .. $main_path)
+end
+$lifted = replace($lifted, $name .. "::", "crate::")
+$banner = "// Lifted from src/main.rs so the mixd engine can run " .. $name .. " as an argv[0]\n// personality (mixviu engine-split lab). src/main.rs is now a wrapper.\n"
+$version = "\n/// Component version, listed by the mixd engine's `--personalities`.\npub const COMPONENT_VERSION: &str = env!(\"CARGO_PKG_VERSION\");\n"
+if $has_lib then
+  write_file($target, $banner .. $lifted)
+  write_file($lib_path, read_file($lib_path) .. "\nmod daemon;\npub use daemon::main;\n" .. $version)
+else
+  write_file($target, $banner .. $lifted .. $version)
+end
+$header = filter(lines($main), fn($l) = starts_with($l, "// SPDX") or starts_with($l, "// Copyright"))
+write_file($main_path, join($header, "\n") .. "\n//! Standalone " .. $name .. " binary; the program is the library's `main`.\n\nfn main() -> anyhow::Result<()> {\n    " .. $name .. "::main()\n}\n")
+print "lifted " .. $name .. (if $has_lib then " (daemon.rs)" else " (new lib.rs)" end)

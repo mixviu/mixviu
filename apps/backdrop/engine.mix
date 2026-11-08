@@ -1,0 +1,115 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- Pure controller. Native pixels, storage, request receipts and clocks are inputs.
+$doc=require("document.mix");$schedule=require("schedule.mix")
+fn fresh()
+  return {requested:0,active:0,config:{schema:1},display:{schema:1},images:{},schedules:{},pending:nil,error:nil,previous:nil,fade:nil,view:"wallpaper"}
+end
+fn fills($document)
+  $fills={"":$document.default}
+  for $key in keys($document.outputs ?? {}) $fills[$key]=$document.outputs[$key] end
+  return $fills
+end
+fn resolved($document,$schedules)
+  $out={schema:1};$fills=fills($document)
+  for $key in keys($fills)
+    $fill=$fills[$key]
+    if $fill!=nil then
+      if $fill.slideshow!=nil then
+        $fill=delete($fill,"slideshow");$fill.image=$schedule.current($schedules[$key])
+      end
+      if $key=="" then $out.default=$fill
+      else
+        if $out.outputs==nil then $out.outputs={} end
+        $out.outputs[$key]=$fill
+      end
+    end
+  end
+  return $out
+end
+fn paths($document)
+  $paths=[];$fills=fills($document)
+  for $key in keys($fills)
+    $fill=$fills[$key]
+    if $fill!=nil and $fill.image!=nil and not contains($paths,$fill.image) then push($paths,$fill.image) end
+  end
+  return sort($paths)
+end
+fn stage($state,$document,$owed)
+  $document=$doc.document($document)
+  $state.requested=$state.requested+1
+  $jobs=[]
+  for $path in paths($document) push($jobs,{kind:"load",path:$path}) end
+  $fills=fills($document)
+  for $key in keys($fills)
+    if $fills[$key]!=nil and $fills[$key].slideshow!=nil then push($jobs,{kind:"resolve",key:$key,fill:$fills[$key]}) end
+  end
+  $state.previous=nil;$state.fade=nil
+  $state.pending={revision:$state.requested,config:$document,images:{},schedules:{},advancing:[],jobs:$jobs,owed:$owed}
+  return $state
+end
+fn advance($state,$keys,$owed,$now)
+  if $state.pending!=nil then raise("BUSY","a set or advance is pending") end
+  if len(keys($state.schedules))==0 then raise("NON_SLIDESHOW","the applied backdrop has no slideshow") end
+  $state.previous=nil;$state.fade=nil
+  $schedules=$state.schedules;$refresh=[]
+  for $key in $keys
+    $schedules[$key]=$schedule.advance($schedules[$key],$now)
+    $path=$schedule.current($schedules[$key]);if not contains($refresh,$path) then push($refresh,$path) end
+  end
+  $display=resolved($state.config,$schedules);$images={};$jobs=[]
+  for $path in paths($display)
+    if $state.images[$path]!=nil and not contains($refresh,$path) then $images[$path]=$state.images[$path]
+    else push($jobs,{kind:"load",path:$path}) end
+  end
+  $state.requested=$state.requested+1
+  $state.pending={revision:$state.requested,config:$state.config,images:$images,schedules:$schedules,advancing:$keys,jobs:$jobs,owed:$owed}
+  return $state
+end
+fn received($state,$revision,$answer)
+  if $state.pending==nil or $state.pending.revision!=$revision then return $state end
+  $state.pending.images[$answer.path]=$answer.image
+  if $answer.kind=="resolve" then $state.pending.schedules[$answer.key]=$answer.schedule end
+  return $state
+end
+fn refuse($state,$message,$path,$now)
+  $pending=$state.pending
+  if $pending==nil then return $state end
+  for $key in keys($state.schedules)
+    if len($pending.advancing)==0 or contains($pending.advancing,$key) then
+      if $path!=nil and contains($pending.advancing,$key) and $schedule.current($pending.schedules[$key])==$path then
+        $state.schedules[$key]=$schedule.skip_failed($state.schedules[$key],$pending.schedules[$key],$now)
+      else $state.schedules[$key]=$schedule.defer($state.schedules[$key],$now) end
+    end
+  end
+  $state.pending=nil;$state.error=$message
+  return $state
+end
+fn apply($state,$now)
+  $p=$state.pending
+  if $p==nil or len($p.jobs)!=0 then raise("NOT_READY","candidate is not ready") end
+  for $key in keys($p.schedules)
+    if len($p.advancing)==0 or contains($p.advancing,$key) then $p.schedules[$key]=$schedule.defer($p.schedules[$key],$now) end
+  end
+  $display=resolved($p.config,$p.schedules)
+  if len($p.advancing)>0 and not deep_eq($display,$state.display) then
+    $state.previous={display:$state.display,images:$state.images};$state.fade=$now
+  end
+  $state.config=$p.config;$state.display=$display;$state.schedules=$p.schedules;$state.images=$p.images
+  $state.active=$p.revision;$state.error=nil;$state.pending=nil
+  if $p.owed.op=="set" then $state.view="wallpaper" end
+  return $state
+end
+fn fit($fill)
+  if $fill!=nil and ($fill.image!=nil or $fill.slideshow!=nil) then return $fill.fit ?? "fill" end
+  return nil
+end
+fn state($s,$service,$store,$outputs)
+  $slides=[]
+  for $key in keys($s.schedules)
+    $timer=$s.schedules[$key];$fading=false
+    if $s.previous!=nil then $old=fills($s.previous.display);$new=fills($s.display);$fading=not deep_eq($old[$key] ?? $old[""],$new[$key] ?? $new[""]) end
+    push($slides,{output:if $key=="" then nil else $key end,current_path:$schedule.current($timer),index:$timer.index,count:len($timer.files),interval_s:$timer.interval_s,shuffle:$timer.shuffle,pending:$s.pending!=nil,fading:$fading})
+  end
+  return {schema:"backdrop.v1",service:$service,requested:$s.requested,active:$s.active,pending:if $s.pending!=nil then $s.pending.revision else nil end,error:$s.error,config:$s.config,config_file:$store,outputs:$outputs,fit:fit($s.display.default),slideshows:$slides,view:$s.view}
+end

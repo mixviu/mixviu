@@ -1,0 +1,123 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Action registry and execution policy, shared by menus, keys and ced.execute.
+fn action_rows($s)
+  $rows=$s.actions
+  $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
+  $live=$has and $t.phase=="live"
+  $modal=$s.open_dialog or $s.save_dialog or $s.goto_dialog or $s.close_dialog!=nil or $s.disk_dialog!=nil or contains(["keys","about"],$s.help) or ($s.recovery_open ?? false)
+  for $i=0 to len($rows)-1
+    $id=$rows[$i].id
+    $rows[$i].enabled=$live
+    if contains(["file.new","file.open","file.exit","file.save_all","help.keys","help.macros","help.about","view.zoom_in","view.zoom_out","view.zoom_reset","view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output","view.reload_settings"],$id) then $rows[$i].enabled=true end
+    if contains(["file.close","view.clear_markers","edit.copy","edit.select_all"],$id) then $rows[$i].enabled=$has end
+    if starts_with($rows[$i].id,"view.markdown.") then $rows[$i].enabled=len($s.tabs)>0 and current($s).language=="markdown" end
+    if $id=="edit.undo_other" then $rows[$i].enabled=$live and ($t.has_remote ?? false) end
+    if $id=="file.send" or $id=="mail.headers" then $m=if $has then $s.mail[$t.document] else nil end;$rows[$i].enabled=$m!=nil and not $m.saving and not $m.sending end
+    if contains(["tabs.next","tabs.prev"],$id) then $rows[$i].enabled=len($s.tabs)>1 end
+    if starts_with($rows[$i].id,"tabs.goto.") then $rows[$i].enabled=to_number(split($rows[$i].id,".")[2])<=len($s.tabs) end
+    if $modal then $rows[$i].enabled=false end
+    if $s.keys[$rows[$i].id]!=nil then $rows[$i].keys=$s.keys[$rows[$i].id] end
+  end
+  return $rows
+end
+fn do_action($s,$id,$a,$who=nil,$index=nil,$call=nil,$origin="ui",$event_params=nil)
+  $result=nil;$op_id=nil;$kind=nil
+  $original_active=$s.active
+  if $index!=nil and $index>=0 then $s.active=$index end
+  $has=len($s.tabs)>0;$t=if $has then current($s) else nil end
+  if $has and $s.mail[$t.document]!=nil then
+    $s=mail_commit($s,$t.document)
+    $m=$s.mail[$t.document]
+    if $id=="file.reload" then raise("CONFLICT","Close and reopen this mail document to reload it") end
+    if contains(["edit.undo","edit.redo"],$id) then
+      if $m.saving or $m.sending then raise("CONFLICT","Wait for the mail operation to finish") end
+      $stack=if $id=="edit.undo" then "undo" else "redo" end;$other=if $stack=="undo" then "redo" else "undo" end
+      if len($m[$stack])>0 then
+        $old=$m.headers;$m.headers=$m[$stack][len($m[$stack])-1];$m[$stack]=slice($m[$stack],0,len($m[$stack])-1);$m[$other]=concat($m[$other],[$old]);$s.mail[$t.document]=$m
+        if $index!=nil and $index>=0 then $s.active=$original_active end
+        $s=queue_job($s,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,$event_params,nil)})
+        return {state:pump($s),result:nil,op_id:nil,kind:nil}
+      end
+    end
+  end
+  if contains(["file.send","mail.headers"],$id) and (not $has or $s.mail[$t.document]==nil) then raise("INVALID_ARGUMENT","Not a mail document") end
+  if $has and $s.mail[$t.document]!=nil and (contains(["file.save","file.save_as","file.send","mail.headers"],$id) or ($id=="file.close" and ($a.save ?? false))) then
+    $out=mail_action($s,$id,$a,$t.document,$call)
+    $out.state=pump(queue_job($out.state,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,$event_params,nil)}))
+    if $index!=nil and $index>=0 then $out.state.active=$original_active end
+    return $out
+  end
+  if $id=="file.new" then $s=operation($s,"new",{})
+  elif $id=="file.open" then
+    if $a.paths==nil then $s.path=dialog_directory($s);$s.open_dialog=true;$kind="dialog"
+    else for $path in $a.paths $s=operation($s,"open",{path:$path}) end end
+  elif $id=="file.exit" then $s.exit_after_save=true;$s=save_session(session_changed($s))
+  elif $id=="file.save_all" then
+    for $tab in $s.tabs
+      if $s.mail[$tab.document]!=nil then $out=mail_action($s,"file.save",{},$tab.document);$s=$out.state
+      else $v=viu_document("command",$tab.document,{name:"save",caller:$who}) end
+    end
+  elif contains(["file.save","file.save_as","file.reload","file.close","edit.undo","edit.redo","edit.undo_any","edit.undo_other"],$id) then
+    if not $has then raise("NOT_FOUND","No tab is open") end
+    if $id=="file.close" and not ($a.save ?? false) then
+      $a.prompt=$who==nil;$s=operation($s,"close",$a);$kind="close"
+    elif $a.path==nil and ($id=="file.save_as" or ($t.path==nil and contains(["file.save","file.close"],$id))) then $s.save_path=$t.path ?? dialog_directory($s);$s.save_dialog=true;$s.save_action=$id;$s.save_document=$t.document;$kind="dialog"
+    else
+      $name=if starts_with($id,"file.save") or $id=="file.close" then "save" elif $id=="file.reload" then "reload" elif $id=="edit.redo" then "redo" else "undo" end
+      $remote=viu_document("inspect",$t.document,{}).last_remote
+      $lane=if $id=="edit.undo_any" then "any" elif $id=="edit.undo_other" and $remote!=nil then $remote.lane else nil end
+      if $id=="edit.undo_other" and $lane==nil then raise("CONFLICT","No other origin has edited this tab") end
+      $v=viu_document("command",$t.document,{name:$name,path:$a.path,force:$a.force ?? false,lane:$lane,caller:$who})
+      $op_id=$v.op_id
+      if $name=="save" and $op_id!=nil then $s.save_prompts[$op_id]=$who==nil end
+      if $id=="file.close" and $who==nil and $op_id!=nil then $s.close_after=merge($s.close_after ?? {},{});$s.close_after[$op_id]=$t.document end
+    end
+  elif starts_with($id,"tabs.") then
+    if not $has then raise("NOT_FOUND","No tab is open") end
+    if $id=="tabs.next" then $s.active=($s.active+1)%len($s.tabs)
+    elif $id=="tabs.prev" then $s.active=($s.active+len($s.tabs)-1)%len($s.tabs)
+    else $i=to_number(split($id,".")[2])-1;if $i<0 or $i>=len($s.tabs) then raise("NOT_FOUND","No such tab") end;$s.active=$i end
+    $result={tab:to_number(current($s).document)}
+  elif starts_with($id,"edit.") then
+    if not $has then raise("NOT_FOUND","No tab is open") end
+    if contains(["edit.copy","edit.cut"],$id) then
+      $result=viu_document("selected",$t.document,{}).text
+      if $result!=nil then
+        viu_platform("copy","ced-copy",{text:$result})
+        if $id=="edit.cut" then $v=viu_document("command",$t.document,{name:"delete",caller:$who}) end
+      end
+    elif $id=="edit.paste" then
+      $s.serial=$s.serial+1;$key="paste-"..to_string($s.serial)
+      $s.pastes[$key]={document:$t.document,caller:$who};viu_platform("paste",$key,{})
+    elif $id=="edit.overwrite" then $v=viu_document("overwrite",$t.document,{});$result=$v.overwrite
+    else $v=viu_document("command",$t.document,{name:replace(replace($id,"edit.",""),"_","-"),caller:$who}) end
+  elif starts_with($id,"search.") then
+    if not $has then raise("NOT_FOUND","No tab is open") end
+    if $id=="search.goto_line" then
+      if $a.line==nil then $s.goto_text="";$s.goto_dialog=true;$s.goto_document=$t.document;$kind="dialog"
+      else $p={line:$a.line,col:$a.col ?? 1};$v=viu_document("select",$t.document,{anchor:$p,head:$p}) end
+    elif $a.pattern==nil then
+      $s.find.open=true;$s.find_instance=($s.find_instance ?? 0)+1;$s.find.replace=contains(["search.replace","search.replace_all"],$id)
+    else
+      $kind=if $id=="search.find_prev" then "prev" elif $id=="search.replace_all" then "replace-all" elif $id=="search.replace" then "replace" else "next" end
+      $s=queue_job($s,"find",{document:$t.document,query:merge($a,{kind:$kind,caller:$who})})
+      $kind=nil
+    end
+  elif $id=="view.clear_markers" then if $has then $v=viu_document("clear-markers",$t.document,{}) end
+  elif $id=="view.zoom_reset" then $s.zoom=0
+  elif $id=="view.zoom_in" then $s.zoom=min(30,$s.zoom+1)
+  elif $id=="view.zoom_out" then $s.zoom=max(-7,$s.zoom-1)
+  elif contains(["view.whitespace","view.line_numbers","view.remote_carets","view.problems","view.output"],$id) then $key=split($id,".")[1];$s[$key]=not $s[$key]
+  elif $id=="view.reload_settings" then $s.settings_reload=($s.settings_reload ?? 0)+1
+  elif starts_with($id,"view.markdown.") then $s.previews[$t.document]=split($id,".")[2]
+  elif $id=="view.search" then $s.find.open=true;$s.find_instance=($s.find_instance ?? 0)+1
+  elif $id=="view.mode" then $s.look.appearance.mode=if $s.look.appearance.mode=="dark" then "light" else "dark" end;$s.local_theme.mode=$s.look.appearance.mode
+  elif any(["view.theme.","view.mode.","view.style.","view.decorations.","view.captions."],fn($prefix)=starts_with($id,$prefix)) then
+    $parts=split($id,".");$s.local_theme[$parts[1]]=if $parts[2]=="session" then nil else $parts[2] end
+  elif $id=="help.macros" then $s.macros_open=true
+  elif starts_with($id,"help.") then $s.help=split($id,".")[1]
+  else raise("UNKNOWN_ACTION","Unknown action "..$id) end
+  if $index!=nil and $index>=0 and not starts_with($id,"tabs.") and not contains(["file.open","file.new"],$id) then $s.active=$original_active end
+  $s=queue_job($s,"action-publish",{body:viu_action_event($id,if $who!=nil then "bus" else $origin end,$event_params,$result)})
+  return {state:pump($s),result:$result,op_id:$op_id,kind:$kind}
+end

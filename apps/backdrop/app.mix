@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- lint: globals app_args
+$startup_code=2
+try
+  include "runtime.mix"
+catch $message
+  viu_exit($startup_code,$message)
+end

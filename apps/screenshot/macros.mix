@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+fn request_macro($s,$suffix,$body)
+  $s.macro_sequence=($s.macro_sequence ?? 0)+1
+  $request={id:"screenshot-macro-"..to_string($s.macro_sequence),owner:$s.macro_sequence,command:$suffix,body:$body,reply:viu_reply("keep")}
+  $s.macro_queue=push($s.macro_queue ?? [],$request)
+  return $s
+end
+fn flush($s)
+  while len($s.macro_queue ?? [])>0
+    $request=$s.macro_queue[0];$path=path_join(dirname(script_path()),"macro-job.mix")
+    send "viu-local" "jobs.start" body={id:$request.id,owner:$request.owner,path:$path,source:read_file($path),command:"job.run",args:{command:$request.command,body:$request.body},timeout:3600}
+    if $rc!=0 then break end
+    $active=$s.macro_active ?? {};$active[$request.id]=$request.reply;$s.macro_active=$active
+    $s.macro_queue=slice($s.macro_queue,1)
+  end
+  return $s
+end
+fn completed($s,$d)
+  $active=$s.macro_active ?? {};$handle=$active[$d.tag.id]
+  if $handle==nil then return $s end
+  try
+    viu_reply("send",$handle,if $d.rc==0 then $d.body.rc else 10 end,if $d.rc==0 then $d.body.body else {error_code:"INTERNAL",message:$d.body.message ?? "Macro worker failed"} end)
+  catch $message end
+  $s.macro_active=delete($active,$d.tag.id)
+  return $s
+end

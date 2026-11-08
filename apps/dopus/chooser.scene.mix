@@ -1,0 +1,31 @@
+---
+scene: 1
+name: chooser
+citizen: files
+---
+```mix
+{
+ root:{widget:"dock",children:["form","identity-pane","buttons-pane","controls-pane","places-pane","pane"],placements:"= {form:{edge:\"top\",size:0},\"identity-pane\":{edge:\"top\",size:\"content\",panel:true,frame:\"native\",max_fraction:1},\"buttons-pane\":{edge:\"bottom\",size:\"content\",panel:true,frame:\"native\",max_fraction:1},\"controls-pane\":{edge:\"bottom\",size:if $model.form_rows*(($model.__viu_metrics.field_height ?? 28)+($model.__viu_metrics.item_spacing_y ?? 8))+2*($model.__viu_metrics.item_spacing_y ?? 8)<(if ($model.__viu_metrics.height ?? 600)<320 then ($model.__viu_metrics.field_height ?? 28)+3*($model.__viu_metrics.item_spacing_y ?? 8) else ($model.__viu_metrics.height ?? 600)*($model.__viu_metrics.dialog_resize_max_share ?? 0.8)/2 end) then $model.form_rows*(($model.__viu_metrics.field_height ?? 28)+($model.__viu_metrics.item_spacing_y ?? 8))+2*($model.__viu_metrics.item_spacing_y ?? 8) else (if ($model.__viu_metrics.height ?? 600)<320 then ($model.__viu_metrics.field_height ?? 28)+3*($model.__viu_metrics.item_spacing_y ?? 8) else ($model.__viu_metrics.height ?? 600)*($model.__viu_metrics.dialog_resize_max_share ?? 0.8)/2 end) end,exact:true,panel:true,frame:\"native\",max_fraction:1},\"places-pane\":{edge:\"left\",size:170,measure:\"places\",panel:true,frame:\"native\",max_fraction:0.35},pane:{edge:\"fill\",panel:true,frame:\"native\"}}"},
+ form:{widget:"control",on_intent:"chooser.intent",definition:{id:"form",kind:"dialog-form",label:"",initial:{open:false,title:"",body:"",field:null,choices:[]},properties:{style:"gold"}}},
+ "identity-pane":{widget:"column",children:["identity","claim"],gap:"= $model.__viu_metrics.item_spacing_y ?? 8",padding:0},
+ identity:{widget:"control",hidden:"= $model.identity_hidden",definition:{id:"identity",kind:"label",label:"",initial:""}},
+ claim:{widget:"control",hidden:"= $model.claim_hidden",definition:{id:"claim",kind:"label",label:"",initial:"",properties:{weak:true}}},
+ "buttons-pane":{enabled:"= $model.values.form.open != true",widget:"column",children:["footer"],padding:0},
+ footer:{widget:"control",on_intent:"chooser.intent",definition:{id:"footer",kind:"command-bar",label:"",initial:[]}},
+ "controls-pane":{enabled:"= $model.values.form.open != true",widget:"column",hidden:"= $model.form_rows == 0",children:["controls-scroll"],padding:0},
+ "controls-scroll":{widget:"column",children:["name-row","options"],scroll:true,gap:"= $model.__viu_metrics.item_spacing_y ?? 8",padding:0},
+ "name-row":{widget:"row",hidden:"= $model.save_hidden",children:["name-label","name"],gap:"= $model.__viu_metrics.item_spacing_x ?? 8",padding:0},
+ "name-label":{widget:"control",definition:{id:"name-label",kind:"label",label:"",initial:"File name"}},
+ name:{widget:"control",on_intent:"chooser.intent",definition:{id:"name",kind:"field",label:"",initial:"",properties:{accessible_name:"File name",fill:true,cancel_on_escape:true}}},
+ options:{widget:"control",on_intent:"chooser.intent",hidden:"= $model.options_hidden",definition:{id:"options",kind:"form-fields",label:"",initial:[]}},
+ "places-pane":{widget:"column",children:["places"],padding:0},
+ places:{widget:"control",on_intent:"chooser.intent",definition:{id:"places",kind:"navigation-list",label:"Places",initial:{rows:[]}}},
+ pane:{enabled:"= $model.values.form.open != true",clip:false,widget:"dock",children:["pane-flow"],outline:"design.selection.background",outline_width:1,placements:{"pane-flow":{edge:"fill"}}},
+ "pane-flow":{clip:false,widget:"column",children:["location-row","files","summary-row"],gap:"= $model.__viu_metrics.item_spacing_y ?? 8",padding:0,padding_top:2},
+ "location-row":{widget:"row",children:["location"],height:"= $model.__viu_metrics.control_row_height ?? 28",gap:"= $model.__viu_metrics.item_spacing_x ?? 8",padding_left:4,padding_right:4},
+ location:{widget:"control",on_intent:"chooser.intent",definition:{id:"location",kind:"field",label:"",initial:"",properties:{accessible_name:"Path",fill:true,cancel_on_escape:true,notify_blur:true}}},
+ files:{widget:"control",on_intent:"chooser.intent",definition:{id:"files",kind:"tree-table",label:"",initial:{key:"files",columns:[{id:"name",label:"Name",min_width:140},{id:"size",label:"Size",align:"right",min_width:0},{id:"modified",label:"Modified",align:"right",min_width:0}],rows:[]},properties:{compact_below_height:320,metadata_scale:0.92,reserve_bottom_padding:6,reserve_bottom_style:"small"}}},
+ "summary-row":{hidden:"= ($model.__viu_metrics.height ?? 600) < 320",widget:"row",children:["summary"],padding_left:6,gap:"= $model.__viu_metrics.item_spacing_x ?? 8",clip:false},
+ summary:{widget:"control",definition:{id:"summary",kind:"label",label:"",initial:"",properties:{small:true}}}
+}
+```

@@ -1,0 +1,286 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable
+-- version: 0.1.0
+-- Application-owned file-manager state. No Rust Dopus controller is called.
+fn dp_display($text)
+  if type($text)=="string" and starts_with($text,"file://") then $text=viu_files("display-path",{path:$text}) end
+  return re_replace(to_string($text), "\\p{Cc}", "�")
+end
+fn dp_parent($path)
+  return if starts_with($path,"file://") then viu_files("parent-token",{path:$path}) else dirname($path) end
+end
+fn dp_leaf($path)
+  return if starts_with($path,"file://") then viu_files("leaf",{path:$path}) else basename($path) end
+end
+fn dp_leaf_text($path)
+  return if starts_with($path,"file://") then viu_files("display-leaf",{path:$path}) else dp_display(basename($path)) end
+end
+fn dp_join($folder,$name)
+  return if starts_with($folder,"file://") or type($name)=="map" then viu_files("join-token",{folder:$folder,name:$name}) else path_join($folder,$name) end
+end
+fn dp_realpath($path)
+  return viu_files("canonical",{path:$path})
+end
+fn dp_stat($path,$follow)
+  return if starts_with($path,"file://") then viu_files("stat",{path:$path,follow:$follow}) else stat($path,{follow_symlinks:$follow}) end
+end
+fn dp_is_file($path)
+  try return dp_stat($path,true).is_file catch $error return false end
+end
+fn dp_is_dir($path)
+  try return dp_stat($path,true).is_dir catch $error return false end
+end
+fn dp_names($path,$limit=100000)
+  try return viu_files("names",{path:$path,limit:$limit})
+  catch $message,$error
+    if $error.code=="ENUMERATION_BUDGET" then raise("SCAN_BUDGET",$message) end
+    raise($error.code,$message)
+  end
+end
+fn dp_contains_path($path,$parent)
+  if starts_with($path,"file://") or starts_with($parent,"file://") then
+    $path=viu_files("uri",{path:$path});$parent=viu_files("uri",{path:$parent})
+  end
+  return $path==$parent or starts_with($path,if ends_with($parent,"/") then $parent else $parent.."/" end)
+end
+fn dp_extension($path)
+  $parts=split(dp_leaf_text($path),".")
+  return if len($parts)>1 then lower($parts[len($parts)-1]) else "" end
+end
+fn dp_size($bytes)
+  if $bytes==nil then return "—" end
+  if $bytes<1024 then return fmt("%d B",$bytes)
+  elif $bytes<1048576 then return fmt("%.1f KiB",$bytes/1024)
+  elif $bytes<1073741824 then return fmt("%.1f MiB",$bytes/1048576)
+  else return fmt("%.1f GiB",$bytes/1073741824) end
+end
+fn dp_date($timestamp)
+  if $timestamp==nil then return "—" end
+  try return date_format($timestamp,"%d/%m/%y %H:%M") catch $error return "—" end
+end
+fn dp_count($count)
+  if $count==nil then return "" end
+  return to_string($count)..if $count==1 then " item" else " items" end
+end
+fn dp_filename($name)
+  if type($name)!="string" then raise("INVALID_ARGUMENT","Name must be text") end
+  $name=trim($name)
+  if $name=="" or contains([".",".."],$name) or contains($name,"/") or contains($name,"\\") or contains($name,"\u0000") then raise("INVALID_ARGUMENT","Enter a single valid file name") end
+  return $name
+end
+fn dp_path($path)
+  if type($path)!="string" or $path=="" then raise("INVALID_ARGUMENT","Path must be non-empty text") end
+  if starts_with($path,"file://") then return viu_files("token",{path:$path}) end
+  if $path=='~' then $path=env("HOME","/")
+  elif starts_with($path,'~/') then $path=path_join(env("HOME","/"),slice($path,2)) end
+  if not starts_with($path,"/") then $path=path_join(cwd(),$path) end
+  return $path
+end
+fn dp_lstat($path)
+  try return dp_stat($path,false) catch $message return nil end
+end
+fn dp_present($path)
+  return dp_lstat($path)!=nil
+end
+fn dp_summary($entries)
+  $folders=len(filter($entries,fn($e)=$e.dir))
+  $files=len($entries)-$folders
+  $bytes=0
+  for $entry in $entries if not $entry.dir then $bytes=$bytes+($entry.size ?? 0) end end
+  return fmt("%d %s, %d %s (%s)",$folders,if $folders==1 then "folder" else "folders" end,$files,if $files==1 then "file" else "files" end,dp_size($bytes))
+end
+fn dp_sort($rows,$key,$ascending)
+  -- Stable passes preserve the original's ascending raw-name tie break.
+  $rows=sort_by($rows,fn($r)=$r.name)
+  if $key=="name" then
+    if $ascending then $rows=sort_by($rows,fn($r)=lower($r.name))
+    else $rows=reverse(sort_by(reverse($rows),fn($r)=lower($r.name))) end
+  else
+    $known=[]
+    $unknown=[]
+    for $row in $rows
+      $metric=if $key=="size" then (if $row.dir then $row.child_count else $row.size end) else $row.modified end
+      if $metric==nil then push($unknown,$row)
+      else $row.sort_metric=$metric;push($known,$row) end
+    end
+    $known=sort_by($known,fn($r)=if $ascending then $r.sort_metric else -$r.sort_metric end)
+    $rows=concat($known,$unknown)
+  end
+  return concat(filter($rows,fn($r)=$r.dir),filter($rows,fn($r)=not $r.dir))
+end
+fn dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$remaining,$max_depth)
+  if $depth>$max_depth then raise("SCAN_BUDGET","Pane scan depth budget exceeded") end
+  $profile=env("MIX_VIU_BULK_PROFILE","")=="1";$t=monotonic()
+  $rows=[]
+  $names=dp_names($path,$remaining)
+  if len($names)>$remaining then raise("SCAN_BUDGET","Pane scan total enumeration budget exceeded") end
+  $remaining=$remaining-len($names)
+  $native=all($names,fn($n)=not starts_with($n.path,"file://"))
+  $stats=if $native then stat_many(map($names,fn($n)=$n.path),{follow_symlinks:false}) else [] end
+  if $native then
+    -- The app owns row shape/display policy; the engine projects the expression
+    -- and joins aligned stat results by the optional row index.
+    $raw=rows_project($names,fn($entry,$index)=$stats[$index]==nil or ($hidden ? false : starts_with($entry.name,".")) ? nil : {path:$entry.path,name:re_replace(to_string($entry.name),"\\p{Cc}","�"),dir:$stats[$index].is_dir,file:$stats[$index].is_file,symlink:$stats[$index].is_symlink,size:$stats[$index].is_dir ? nil : $stats[$index].size,modified:$stats[$index].mtime,child_count:nil,depth:$depth})
+    $rows=filter($raw,fn($r)=$r!=nil)
+    -- Only directories need the app-owned child enumeration/count policy.
+    for $index in filter(range(0,len($rows)-1),fn($i)=$rows[$i].dir)
+      try
+        $children=dp_names($rows[$index].path,$remaining)
+        if len($children)>$remaining then raise("SCAN_BUDGET","Pane scan child-count work budget exceeded") end
+        $remaining=$remaining-len($children)
+        $rows[$index].child_count=len(filter($children,fn($n)=$hidden or not starts_with($n.name,".")))
+      catch $message,$error
+        if $error.code=="SCAN_BUDGET" then raise("SCAN_BUDGET",$message) end
+      end
+    end
+  else
+  for $index=0 to len($names)-1
+    $entry=$names[$index]
+    $name=$entry.name
+    if $hidden or not starts_with($name,".") then
+      $full=$entry.path
+      $st=if $native then $stats[$index] else dp_lstat($full) end
+      if $st!=nil then
+        $count=nil
+        if $st.is_dir then
+          try
+            $children=dp_names($full,$remaining)
+            if len($children)>$remaining then raise("SCAN_BUDGET","Pane scan child-count work budget exceeded") end
+            $remaining=$remaining-len($children)
+            $count=len(filter($children,fn($n)=$hidden or not starts_with($n.name,".")))
+          catch $message,$error
+            if $error.code=="SCAN_BUDGET" then raise("SCAN_BUDGET",$message) end
+            $count=nil
+          end
+        end
+        push($rows,{path:$full,name:dp_display($name),dir:$st.is_dir,file:$st.is_file,symlink:$st.is_symlink,size:if $st.is_dir then nil else $st.size end,modified:$st.mtime,child_count:$count,depth:$depth})
+      end
+    end
+  end
+  end
+  $listed=monotonic()
+  $ordered=dp_sort($rows,$key,$ascending)
+  $sorted=monotonic()
+  $out=[]
+  for $row in $ordered
+    push($out,$row)
+    if $row.dir and ($expanded[$row.path] ?? false) then
+      $child=dp_scan_walk($row.path,$hidden,$expanded,$key,$ascending,$depth+1,$remaining,$max_depth)
+      $remaining=$child.remaining;$out=concat($out,$child.rows)
+    end
+  end
+  if $profile then print(json_encode({profile:"dopus",phase:"scan",depth:$depth,rows:len($rows),list_stat_reduce_ms:($listed-$t)*1000,sort_ms:($sorted-$listed)*1000,flatten_ms:(monotonic()-$sorted)*1000})) end
+  return {rows:$out,remaining:$remaining}
+end
+fn dp_scan($path,$hidden,$expanded,$key,$ascending,$depth,$budget={rows:65536,depth:64})
+  validate($budget,{rows:{type:"integer",min:1,max:65536},depth:{type:"integer",min:0,max:64}})
+  return dp_scan_walk($path,$hidden,$expanded,$key,$ascending,$depth,$budget.rows,$budget.depth).rows
+end
+fn dp_refresh($pane)
+  $budget=$pane.scan_budget ?? {rows:65536,depth:64}
+  validate($budget,{rows:{type:"integer",min:1,max:65536},depth:{type:"integer",min:0,max:64}})
+  try
+    $pane.entries=dp_scan($pane.path,$pane.show_hidden,$pane.expanded,$pane.sort,$pane.ascending,0,$pane.scan_budget ?? {rows:65536,depth:64})
+    $pane.root_entries=filter($pane.entries,fn($r)=$r.depth==0)
+    $pane.summary=dp_summary($pane.root_entries)
+    $pane.error=nil
+  catch $message,$error
+    if $error.code=="SCAN_BUDGET" then raise("SCAN_BUDGET",$message) end
+    $pane.entries=[];$pane.root_entries=[];$pane.summary="Cannot read folder";$pane.error=dp_display($message)
+  end
+  $paths=map($pane.entries,fn($r)=$r.path)
+  $pane.selected_paths=filter($pane.selected_paths,fn($p)=contains($paths,$p))
+  if not contains($paths,$pane.selected) then $pane.selected=nil end
+  $pane.revision=$pane.revision+1
+  return $pane
+end
+fn dp_pane($config)
+  return dp_refresh({path:dp_path($config.path),show_hidden:$config.show_hidden ?? false,previews:$config.previews ?? true,sort:$config.sort ?? "name",ascending:$config.ascending ?? true,selected:nil,selected_paths:[],anchor:nil,expanded:{},back:[],forward:[],entries:[],root_entries:[],revision:0,generation:1,summary:"",error:nil})
+end
+-- A root relisting starts a new generation and clears selection/expansion,
+-- matching the original controller. Sorting/expansion use dp_refresh instead.
+fn dp_relist($pane)
+  $pane.selected=nil;$pane.selected_paths=[];$pane.anchor=nil;$pane.expanded={}
+  $pane.generation=$pane.generation+1
+  return dp_refresh($pane)
+end
+fn dp_navigate($pane,$path)
+  $path=dp_path($path)
+  if dp_is_file($path) then $path=dp_parent($path) end
+  if $path!=$pane.path then $pane.back=push($pane.back,$pane.path);$pane.forward=[] end
+  if len($pane.back)>128 then $pane.back=slice($pane.back,len($pane.back)-128) end
+  $pane.path=$path;$pane.selected=nil;$pane.selected_paths=[];$pane.anchor=nil;$pane.expanded={};$pane.generation=$pane.generation+1
+  return dp_refresh($pane)
+end
+fn dp_history($pane,$back)
+  $from=if $back then $pane.back else $pane.forward end
+  if len($from)==0 then return $pane end
+  $path=$from[len($from)-1]
+  $from=slice($from,0,len($from)-1)
+  if $back then $pane.back=$from;$pane.forward=push($pane.forward,$pane.path)
+  else $pane.forward=$from;$pane.back=push($pane.back,$pane.path) end
+  $pane.path=$path;$pane.selected=nil;$pane.selected_paths=[];$pane.anchor=nil;$pane.expanded={};$pane.generation=$pane.generation+1
+  return dp_refresh($pane)
+end
+fn dp_pick($pane,$path,$ctrl,$shift)
+  $paths=map($pane.entries,fn($r)=$r.path)
+  $index=index_of($paths,$path)
+  if $index<0 then raise("NOT_FOUND","Row is not in the current tree") end
+  if $shift then
+    $anchor=index_of($paths,$pane.anchor)
+    if $anchor<0 then $anchor=$index end
+    $range=slice($paths,min($anchor,$index),max($anchor,$index)+1)
+    $pane.selected_paths=if $ctrl then unique(concat($pane.selected_paths,$range)) else $range end
+    if $pane.anchor==nil then $pane.anchor=$path end
+  elif $ctrl then
+    if contains($pane.selected_paths,$path) then $pane.selected_paths=filter($pane.selected_paths,fn($p)=$p!=$path)
+    else $pane.selected_paths=push($pane.selected_paths,$path) end
+    $pane.anchor=$path
+    $pane.selected=if contains($pane.selected_paths,$path) then $path else (filter($paths,fn($p)=contains($pane.selected_paths,$p))[0] ?? nil) end
+    return $pane
+  else $pane.selected_paths=[$path];$pane.anchor=$path end
+  $pane.selected=$path
+  return $pane
+end
+fn dp_select_key($pane,$key,$ctrl,$shift)
+  if len($pane.entries)==0 then return $pane end
+  $paths=map($pane.entries,fn($r)=$r.path)
+  $index=index_of($paths,$pane.selected)
+  if $key=="ArrowDown" then $index=min(len($paths)-1,$index+1)
+  elif $key=="ArrowUp" then $index=max(0,$index-1)
+  elif $key=="Home" then $index=0
+  elif $key=="End" then $index=len($paths)-1
+  else raise("INVALID_ARGUMENT","Not a selection key") end
+  return dp_pick($pane,$paths[$index],$ctrl,$shift)
+end
+fn dp_expand($pane,$path)
+  $row=filter($pane.entries,fn($r)=$r.path==$path and $r.dir)
+  if len($row)!=1 then raise("NOT_FOUND","Folder row is not in the current tree") end
+  $pane.expanded[$path]=not ($pane.expanded[$path] ?? false)
+  return dp_refresh($pane)
+end
+fn dp_sources($pane)
+  $ordered=filter(map($pane.entries,fn($r)=$r.path),fn($p)=contains($pane.selected_paths,$p))
+  return filter($ordered,fn($p)=not any($ordered,fn($parent)=$parent!=$p and dp_contains_path($p,$parent)))
+end
+fn dp_permissions($mode)
+  $chars=[]
+  $bits=[256,128,64,32,16,8,4,2,1]
+  $letters=["r","w","x","r","w","x","r","w","x"]
+  for $i=0 to 8 push($chars,if floor($mode/$bits[$i])%2==1 then $letters[$i] else "-" end) end
+  for $s in [{bit:2048,index:2,lower:"s",upper:"S"},{bit:1024,index:5,lower:"s",upper:"S"},{bit:512,index:8,lower:"t",upper:"T"}]
+    if floor($mode/$s.bit)%2==1 then $chars[$s.index]=if $chars[$s.index]=="x" then $s.lower else $s.upper end end
+  end
+  return join($chars,"").." ("..sprintf("%04o",$mode%4096)..")"
+end
+fn dp_identity($file,$id,$column)
+  try
+    for $line in split(read_file($file),"\n")
+      $fields=split($line,":")
+      if len($fields)>$column and $fields[$column]==to_string($id) then return dp_display($fields[0]) end
+    end
+  catch $message
+    return to_string($id)
+  end
+  return to_string($id)
+end

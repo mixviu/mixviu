@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$macros=require("macro.mix")
+fn button($id,$label) return {id:$id,kind:"button",label:$label,initial:"",properties:{text:$label}} end
+fn project($s)
+  $selected=$s.macro_selected;$app=if $selected!=nil then $selected[0] else "global" end;$id=if $selected!=nil then $selected[1] else "" end
+  $doc=$s.document ?? {};$cat=$s.catalogues[$app] ?? {};$found=filter($cat.macros ?? [],fn($m)=$m.id==$id);$entry=if len($found)>0 then $found[0] else {} end
+  $text=$s.macro_draft ?? $doc.text ?? "";$saved=$s.macro_saved_text ?? $doc.text ?? ""
+  $targets=if $entry.targets=="any" then filter(sort(keys($s.catalogues)),fn($a)=$a!="global" and $s.catalogues[$a].running==true) elif type($entry.targets)=="list" then $entry.targets else [] end
+  $target_choices=if contains($targets,$s.macro_target) then $targets else concat(["Target app"],$targets) end
+  $destinations=filter(sort(keys($s.catalogues)),fn($a)=$a!="global");$dest_choices=if contains($destinations,$s.macro_destination) then $destinations else concat(["Move to app"],$destinations) end
+  $meta=($doc.tier ?? "").." · "..($doc.path ?? "")
+  for $tier in $entry.shadows ?? [] $meta=$meta.."\n"..$tier.." shadowed by "..($doc.tier ?? "") end
+  return {macro_title:$entry.title ?? $id,macro_meta:$meta,macro_editor:{id:"macro-source",kind:"editor",label:"Macro source",initial:$text,properties:{native_document:true,document:$app..":"..$id,language:"mix",max_bytes:262144,rows:20}},macro_dirty:$text!=$saved,macro_target_visible:$app=="global" and $entry.targets!=nil,macro_destination_visible:$app=="global",macro_target:{id:"macro-target",kind:"combo",label:"Target app",initial:if $s.macro_target=="" then "Target app" else $s.macro_target end,properties:{choices:$target_choices}},macro_destination:{id:"macro-destination",kind:"combo",label:"Move to app",initial:if $s.macro_destination=="" then "Move to app" else $s.macro_destination end,properties:{choices:$dest_choices}},macro_confirm:$s.macro_confirm_delete,macro_new:{id:"macro-new",kind:"button",label:"New macro…",initial:"",properties:{text:"New macro…",enabled:$macros.can_new($s)}},macro_new_visible:$selected==nil and $macros.app($s)!=nil,macro_editor_height:max(100,($s.window_height-100)*(if $s.dock_open and $s.dock_side!="right" then 1-$s.dock_height else 1 end)-200),macro_message:$s.macro_message}
+end

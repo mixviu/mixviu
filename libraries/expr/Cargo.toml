@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[package.metadata.mixos]
+[package.metadata.mixviu]
 component = "expr"
 kind = "lib"
 layer = "core"

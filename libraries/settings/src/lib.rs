@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Shared headless settings contract and consumer. No renderer or owned transport.
+pub mod appearance;
+#[cfg(feature = "cache")]
+pub mod cache;
+pub mod compact;
+pub mod consumer;
+pub mod content;
+pub mod domains;
+pub mod email;
+pub mod fallback;
+pub mod follow;
+pub mod keymap;
+pub mod migrate;
+pub mod model;
+#[cfg(feature = "native")]
+pub mod native;
+pub mod reducer;
+pub mod registry;
+pub mod resolve;
+pub mod session;
+pub mod terminal;
+pub mod topics;
+pub mod v1;
+pub mod view;
+pub use design::EMBEDDED_DEFAULT_SOURCE;
+pub use model::*;
+pub use resolve::Accents;
+
+pub const CONTRACT_VERSION: &str = "1.0.0";
+pub const SCHEMA: u32 = 1;
+pub const MAX_SOURCE_BYTES: usize = 256 * 1024;
+pub const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024 - 64 * 1024;
+pub const MAX_RECEIPTS: usize = 128;
+
+pub fn digest<T: serde::Serialize>(value: &T) -> Result<String, serde_json::Error> {
+    Ok(blake3::hash(&serde_json::to_vec(value)?)
+        .to_hex()
+        .to_string())
+}
+pub fn source_digest(source: &str) -> String {
+    blake3::hash(source.as_bytes()).to_hex().to_string()
+}

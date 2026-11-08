@@ -1,0 +1,37 @@
+# gitleaks policy for mixviu (security.yml scans full history).
+# Default rules, plus narrow exceptions: each names its rule and exact paths,
+# with the reason. Add an exception only for a test fixture or a false
+# positive, never for a real credential. Changes here are Tier 2.
+title = "mixviu gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test-only private keys: PEM fixtures and inline keys inside #[cfg(test)] modules (DKIM, JWT and TLS tests)"
+targetRules = ["private-key"]
+paths = [
+  '''^libraries/mix/tests/fixtures/(jwt-rsa-test|socket-test-key)\.pem$''',
+  '''^libraries/mix/src/builtins\.rs$''',
+  '''^services/maild/crates/maild-auth/src/(keygen|signer)\.rs$''',
+  '''^services/maild/src/config\.rs$''',
+  '''^services/maild/src/smtp/delivery\.rs$''',
+  '''^services/maild/tests/multi_vhost_outbound_e2e\.rs$''',
+]
+
+[[allowlists]]
+description = "Terminal help text: 'Keys: Ctrl+Shift+T/W ...' is a keybinding list, not an API key"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = ['''^Keys: Ctrl\+Shift\+T/W new/close tab''']
+paths = [
+  '''^apps/term/src/main\.rs$''',
+  '''^provenance/compd-oracle/apps/term/src/main\.rs$''',
+]
+
+[[allowlists]]
+description = "Vendor patch records: SHA-256 hashes of upstream source and patch hunks, not keys"
+targetRules = ["generic-api-key"]
+paths = [
+  '''^vendor/[^/]+/patch-record\.json$''',
+]

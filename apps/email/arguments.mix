@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- email.v1 argument rules from the pinned command contract.
+fn text($a,$key)
+  $v=$a[$key]
+  if $v==nil or type($v)=="string" then return $v end
+  raise("INVALID_ARGUMENT",$key.." must be a string")
+end
+fn required($a,$key)
+  $v=text($a,$key)
+  if $v==nil or trim($v)=="" then raise("INVALID_ARGUMENT",$key.." is required") end
+  return $v
+end
+fn flag($a,$key)
+  $v=$a[$key]
+  if $v==nil or type($v)=="bool" then return $v end
+  raise("INVALID_ARGUMENT",$key.." must be true or false")
+end
+fn number($a,$key)
+  $v=$a[$key]
+  if $v==nil then return nil end
+  if type($v)!="number" then raise("INVALID_ARGUMENT",$key.." must be a number") end
+  if $v<0 or floor($v)!=$v then raise("INVALID_ARGUMENT",$key.." must be a whole number") end
+  return $v
+end
+fn list($a,$key)
+  $v=$a[$key]
+  if $v==nil then return nil end
+  if type($v)=="string" then return [$v] end
+  if type($v)!="list" then raise("INVALID_ARGUMENT",$key.." must be a string or a list of strings") end
+  if not all($v,fn($v)=type($v)=="string") then raise("INVALID_ARGUMENT",$key.." must hold strings") end
+  return $v
+end
+fn instant($text)
+  if type($text)!="string" or not re_match($text,"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$") then raise("SERVER","Not an RFC 3339 instant with an offset") end
+  return date_format(date_parse($text),"%Y-%m-%dT%H:%M:%SZ",{utc:true})
+end
+fn end_after($start,$duration)
+  $parts=split($duration,"T")
+  if not starts_with($duration,"P") or len($parts)>2 then raise("INVALID_ARGUMENT","duration is not an ISO 8601 duration") end
+  $date=substr($parts[0],1);$clock=if len($parts)==2 then $parts[1] else "" end
+  if not re_match($date,"^([0-9]+[WD])*$") or not re_match($clock,"^([0-9]+[HMS])*$") or ($date=="" and $clock=="") or (len($parts)==2 and $clock=="") then raise("INVALID_ARGUMENT","duration is not an ISO 8601 duration") end
+  $secs=0
+  for $match in re_find($date..$clock,"([0-9]+)([WDHMS])")
+    $units={W:604800,D:86400,H:3600,M:60,S:1};$secs=$secs+to_number($match.groups[0])*$units[$match.groups[1]]
+  end
+  return date_format(date_parse(instant($start))+$secs,"%Y-%m-%dT%H:%M:%SZ",{utc:true})
+end

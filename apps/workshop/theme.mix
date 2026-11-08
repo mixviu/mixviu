@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Adapted from the shared gold action catalogue.
+fn theme_edit($choice,$args)
+  $allowed={scheme:["ocean","crimson","stone","forest","sunset","mono","pro","studio","classic","breeze","adwaita","mixos"],mode:["light","dark"],style:["own","plain","pro","studio","classic","breeze","adwaita"],decorations:["auto","csd","ssd"],caption_side:["auto","left","center","right"]}
+  for $key in ["scheme","style","mode","decorations","caption_side"]
+    if contains(keys($args),$key) then
+      $v=$args[$key]
+      if $v!=nil and type($v)!="string" then return {ok:false,message:$key.." must be a name or null"} end
+      if $v!=nil and not contains($allowed[$key],$v) then return {ok:false,message:"unknown "..$key.." "..json_encode($v)} end
+    end
+  end
+  for $key in ["scheme","style","mode","decorations","caption_side"] if contains(keys($args),$key) then $choice[$key]=$args[$key] end end
+  return {ok:true,choice:$choice}
+end

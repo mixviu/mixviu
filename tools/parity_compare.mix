@@ -1,0 +1,44 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Compare captures without rescaling. Metrics are evidence, never acceptance.
+$args=args()
+if len($args)<3 or len($args)>4 then raise("USAGE","parity_compare.mix GOLD.png MIX.png OUTPUT_DIR [REGIONS.json]") end
+$gold=realpath($args[0]);$candidate=realpath($args[1]);$output=$args[2]
+if $gold==nil or $candidate==nil then raise("CAPTURE","Both captures must exist") end
+fn dimensions($path)
+  $parts=split(trim(run_argv_must(["magick","identify","-format","%w %h",$path]))," ")
+  if len($parts)!=2 then raise("DIMENSIONS",$path) end
+  return map($parts,fn($part)=to_number($part))
+end
+$size=dimensions($gold)
+if not deep_eq($size,dimensions($candidate)) then raise("SIZE_MISMATCH","Captures must have equal dimensions; do not rescale") end
+if exists($output) then raise("OUTPUT_EXISTS","Use a new evidence directory") end
+mkdir($output,{parents:true})
+$regions=if len($args)==4 then json_parse(read_file($args[3])) else {} end
+if type($regions)!="map" then raise("REGIONS","Expected a region-name map of [x,y,width,height]") end
+$regions.full=[0,0,$size[0],$size[1]]
+$records=[]
+for $name in keys($regions)
+  if not re_match($name,"^[a-zA-Z0-9_-]{1,64}$") then raise("REGION_NAME",$name) end
+  $rect=$regions[$name]
+  if type($rect)!="list" or len($rect)!=4 or any($rect,fn($n)=type($n)!="number" or $n<0 or floor($n)!=$n) then raise("REGION_RECT",$name) end
+  if $rect[2]==0 or $rect[3]==0 or $rect[0]+$rect[2]>$size[0] or $rect[1]+$rect[3]>$size[1] then raise("REGION_BOUNDS",$name) end
+  $crop=fmt("%dx%d+%d+%d",$rect[2],$rect[3],$rect[0],$rect[1])
+  $left=$output.."/"..$name.."-gold.png";$right=$output.."/"..$name.."-mix.png"
+  run_argv_must(["magick",$gold,"-crop",$crop,"+repage",$left])
+  run_argv_must(["magick",$candidate,"-crop",$crop,"+repage",$right])
+  run_argv_must(["magick",$left,$right,"+append",$output.."/"..$name.."-side-by-side.png"])
+  $metrics={}
+  for $metric in ["SSIM","RMSE"]
+    $target=if $metric=="SSIM" then $output.."/"..$name.."-diff.png" else "null:" end
+    $result=run_argv(["magick","compare","-metric",$metric,$left,$right,$target])
+    if not contains([0,1],$result.exit_code) then raise("COMPARE_FAILED",json_encode($result)) end
+    $raw=trim($result.stderr..$result.stdout)
+    $parts=split($raw,"(")
+    $value=to_number(trim(if len($parts)>1 then replace($parts[len($parts)-1],")","") else $raw end))
+    $metrics[$metric]={raw:$raw,normalised_distortion:$value,exit_code:$result.exit_code}
+  end
+  push($records,{region:$name,rect:$rect,metrics:$metrics})
+end
+$receipt={verdict:"inspection-required",gold:{path:$gold,sha256:hash_file($gold,"sha256")},candidate:{path:$candidate,sha256:hash_file($candidate,"sha256")},size:$size,tool:run_argv_must(["magick","--version"]),regions:$records}
+write_file($output.."/comparison.json",json_encode($receipt))
+print($receipt)

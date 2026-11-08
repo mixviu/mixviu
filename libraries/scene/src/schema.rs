@@ -106,7 +106,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("h", false, None),
         p("chrome", "bool", false, Some("true")),
     ];
-    static BOX: [Port; 5] = [
+    static BOX: [Port; 9] = [
         p("children", "list", true, None),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
@@ -114,9 +114,50 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         // A column stretched its children before `align` existed; the
         // default keeps every v0 document laying out exactly as it did.
         pe("align", "\"stretch\"", ALIGN),
+        pn("height", false, None),
+        pn("radius", false, None),
+        p("background", "string", false, None),
+        p("scroll", "bool", false, Some("false")),
     ];
-    static ROW: [Port; 11] = [
+    static SECTION: [Port; 7] = [
         p("children", "list", true, None),
+        p("titles", "list", true, None),
+        pe("frame", "\"plain\"", &["plain", "dock"]),
+        p("on_change", "string", false, None),
+        p("actions", "list", false, None),
+        p("on_action", "string", false, None),
+        p("focused", "bool", false, None),
+    ];
+    static CONTENT: [Port; 5] = [
+        p("children", "list", true, None),
+        p("settings", "object", false, Some("{}")),
+        p("scroll", "bool", false, Some("true")),
+        pe("surface", "\"panel\"", &["panel", "editor"]),
+        p("keyboard_scroll", "object", false, None),
+    ];
+    static PANES: [Port; 14] = [
+        p("children", "list", true, None),
+        pnd("left_fraction", "0.18", None),
+        pnd("right_fraction", "0.42", None),
+        p("right_visible", "bool", false, Some("true")),
+        p("clip", "bool", false, Some("true")),
+        pe("focus", "\"center\"", &["left", "center", "right"]),
+        p("on_change", "string", false, None),
+        pn("compact_below", false, None),
+        pn("narrow_below", false, None),
+        p("narrow_left_range", "list", false, None),
+        p("narrow_right_range", "list", false, None),
+        p("keyboard", "bool", false, Some("false")),
+        p("focus_targets", "object", false, None),
+        p("pane_labels", "object", false, None),
+    ];
+    static SIDES: [Port; 2] = [
+        p("children", "list", true, None),
+        p("wrap", "bool", false, Some("false")),
+    ];
+    static ROW: [Port; 12] = [
+        p("children", "list", true, None),
+        p("wrap", "bool", false, Some("false")),
         pnd("gap", "0", None),
         pnd("padding", "0", None),
         p("fill", "bool", false, Some("false")),
@@ -200,9 +241,48 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("h", false, Some(0.0)),
     ];
     static SPACER: [Port; 1] = [pn("size", false, None)];
+    static CONTROL: [Port; 2] = [
+        p("definition", "object", true, None),
+        p("on_intent", "string", false, None),
+    ];
+    static GRID: [Port; 6] = [
+        p("children", "list", true, None),
+        pn("columns", true, Some(1.0)),
+        p("identity", "string", false, None),
+        pnd("column_gap", "12", None),
+        pnd("row_gap", "3", None),
+        pnd("min_column_width", "0", None),
+    ];
+    static DOCK: [Port; 8] = [
+        p("children", "list", true, None),
+        p("placements", "object", true, None),
+        p("clip", "bool", false, None),
+        p("on_change", "string", false, None),
+        p("outline", "string", false, None),
+        pn("outline_width", false, Some(0.0)),
+        p("passthrough_single", "bool", false, Some("false")),
+        p("focus_target", "string", false, None),
+    ];
+    static BAND: [Port; 2] = [
+        p("children", "list", true, None),
+        p("groups", "object", true, None),
+    ];
+    static SPLIT: [Port; 7] = [
+        p("children", "list", true, None),
+        pnd("ratio", "0.5", None),
+        pe("axis", "\"horizontal\"", &["horizontal", "vertical"]),
+        pnd("divider", "6", Some(1.0)),
+        pnd("minimum", "0.1", None),
+        pnd("maximum", "0.9", None),
+        p("on_change", "string", false, None),
+    ];
     let family: &[Port] = match f {
         "window" => &WINDOW,
         "column" => &BOX,
+        "section" => &SECTION,
+        "content" => &CONTENT,
+        "panes" => &PANES,
+        "sides" => &SIDES,
         "row" => &ROW,
         "text" => &TEXT,
         "field" => &FIELD,
@@ -211,9 +291,29 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "list" => &LIST,
         "image" => &IMAGE,
         "spacer" => &SPACER,
+        "control" => &CONTROL,
+        "grid" => &GRID,
+        "dock" => &DOCK,
+        "band" => &BAND,
+        "split" => &SPLIT,
         _ => return None,
     };
     let mut ports = family.to_vec();
+    if f == "row" {
+        ports.extend([
+            Port {
+                name: "packing",
+                ty: "string",
+                required: false,
+                default: None,
+                enum_values: &["normal", "toolbar"],
+                min: None,
+            },
+            p("end", "string", false, None),
+            p("fit", "list", false, None),
+            p("flex", "string", false, None),
+        ]);
+    }
     if f == "list" {
         ports
             .iter_mut()
@@ -230,9 +330,16 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     // and canonical resolved documents. A window is edge metadata, not a
     // flex child.
     if f != "window" {
+        // Optional Viu host geometry slots. No defaults: existing resolved
+        // scenes retain their canonical form and ordinary dock placement.
+        ports.push(p("window_slot", "string", false, None));
+        ports.push(p("slot_only", "string", false, None));
         if f != "text" {
             ports.push(p("hidden", "bool", false, None));
         }
+        ports.push(p("clip", "bool", false, None));
+        ports.push(p("enabled", "bool", false, None));
+        ports.push(pn("clip_below", false, None));
         ports.extend([
             p("align_self", "string", false, None),
             pn("grow", false, None),
@@ -242,6 +349,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             pn("max_width", false, None),
             pn("min_height", false, None),
             pn("max_height", false, None),
+            pn("reserve_height", false, None),
         ]);
         ports
             .iter_mut()
@@ -256,10 +364,23 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("tooltip", "object", false, None));
     }
     if matches!(f, "row" | "column") {
+        ports.push(p("scroll", "bool", false, None));
         let mut justify = p("justify", "string", false, None);
         justify.enum_values = &["start", "center", "end", "between", "around", "evenly"];
         ports.extend([
             justify,
+            p("bar", "string", false, None),
+            p("padding_x", "length", false, None),
+            p("padding_y", "length", false, None),
+            p("native_spacing", "bool", false, None),
+            p("native_frame", "bool", false, None),
+            p("group_frame", "bool", false, None),
+            p("group_title", "string", false, None),
+            p("scroll", "bool", false, None),
+            p("group_key", "string", false, None),
+            p("scroll_key", "string", false, None),
+            p("scroll_ready", "bool", false, None),
+            p("reserve_panel_after", "bool", false, None),
             pn("row_gap", false, None),
             pn("column_gap", false, None),
             pn("padding_top", false, None),
@@ -307,6 +428,20 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if ["ratio", "minimum", "maximum"].contains(&k) && v.as_f64().is_some_and(|n| n > 1.0) {
+        out.push(Diagnostic::error(
+            "port-max",
+            line,
+            format!("port {k} on {id} must be at most 1"),
+        ));
+    }
+    if k == "columns" && v.as_f64().is_some_and(|n| n.fract() != 0.0 || n > 16.0) {
+        out.push(Diagnostic::error(
+            "port-type",
+            line,
+            format!("port columns on {id} must be an integer from 1 to 16"),
+        ));
+    }
     if k == "max_lines" && v.as_f64().is_some_and(|n| n.fract() != 0.0 || n > 1024.0) {
         out.push(Diagnostic::error(
             "port-type",
@@ -371,6 +506,15 @@ fn type_matches(v: &JsonValue, t: &str) -> bool {
     match t {
         "string" => v.is_string(),
         "number" => v.is_number(),
+        "length" => {
+            v.as_f64().is_some_and(|n| n.is_finite() && n >= 0.0)
+                || v.as_str().is_some_and(|s| {
+                    matches!(
+                        s,
+                        "design.bar_inset" | "design.bar_padding_y" | "design.tool_margin"
+                    )
+                })
+        }
         "bool" => v.is_boolean(),
         "list" => v.is_array(),
         "object" => v.is_object(),

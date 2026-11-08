@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$core=require("core.mix")
+on job.run
+  $a=$event.args;$p=$a.payload
+  if $a.op=="discover" then
+    send "noded" "noded.list" body={} timeout=3
+    if $rc!=0 then raise("DISCOVERY",json_encode($result)) end
+    reply(0,json_encode($core.membership($reply)))
+  elif $a.op=="describe" then
+    $commands=nil
+    try
+      send $p.service "HELP" body="" timeout=3
+      if $rc!=0 then raise("HELP",json_encode($result)) end
+      $commands=$core.catalogue($reply)
+    catch $message
+      send $p.service "app.describe" body={} timeout=3
+      if $rc!=0 then raise("DESCRIBE",$message.." / "..json_encode($result)) end
+      $commands=$core.catalogue($reply)
+    end
+    reply(0,json_encode($commands))
+  elif $a.op=="call" then
+    send $p.service $p.command body=$p.body timeout=30 reply_mode="raw"
+    reply(0,json_encode($reply))
+  else raise("OP","Unknown Workshop operation") end
+end

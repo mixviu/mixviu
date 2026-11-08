@@ -1,0 +1,114 @@
+-- CBC-only native Bus ACK/applied-model comparison, following the original
+-- Dopus pilot: warm caches, Latin order, a new-file refresh witness, 30 rounds.
+$root=dirname(dirname(script_path()))
+$n=require($root.."/../mixos/tests/desktop/nested_host_lib.mix")
+$sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+$bin="/build/es-artifacts/"..$sha
+$before_sha="99abdb75cc62"
+$before_full=trim(run_argv_must(["git","rev-parse",$before_sha]))
+$before="/build/es-artifacts/"..$before_full.."/viu"
+export MIXOS_TEST_MIX=$bin.."/mix"
+$run=$n.new_run("/build/es-artifacts/bulk-native-"..$sha)
+$children=[];$samples=[];$artifacts=[]
+for $p in [$bin.."/mix",$bin.."/mixd",$bin.."/viud",$bin.."/viu",$before,"/build/mixos/target/release/dopus"]
+  if not is_file($p) then raise("MISSING_ARTIFACT",$p) end
+  push($artifacts,{path:$p,sha256:hash_file($p,"sha256")})
+end
+$original=json_parse(trim(run_argv_must(["/build/mixos/target/release/dopus","--version","--json"])))
+if $original.git_sha_full!="8779f33284b7d3f1178c3d57a699efb9b0867b22" or $original.git_dirty then raise("ORACLE_SOURCE","Original Dopus must be clean 8779f33") end
+run_argv_must(["ln","-s",$bin.."/mixd",$run.path.."/noded"])
+$bus=$n.private_bus({dir:$run.path.."/broker",name:"bulk-native",noded:$run.path.."/noded"})
+export MIXOS_NODED_URL=$bus.url
+export MIXOS_NODE_CONFIG=$bus.conf
+export MIXOS_RUN=$bus.dir.."/run"
+export MIXOS_BROKER_ACCOUNT=$bus.account
+$runtime=$run.path.."/wayland";mkdir($runtime);chmod($runtime,0o700)
+$stress=$run.path.."/stress";$empty=$run.path.."/empty";mkdir($stress);mkdir($empty)
+for $i=0 to 1999 write_file($stress.."/file-"..fmt("%04d",$i)..".txt",to_string($i)) end
+copy($root.."/../mixos/tests/desktop/smoke-settings.json",$run.path.."/settings.json")
+write_file($run.path.."/preferences.json",json_encode({scene_host:false}))
+$env={HOME:$run.path.."/home",XDG_RUNTIME_DIR:$runtime,XDG_CONFIG_HOME:$run.path.."/config",XDG_DATA_HOME:$run.path.."/data",XDG_STATE_HOME:$run.path.."/state",XDG_CACHE_HOME:$run.path.."/cache",MIXOS_ETC:$run.path.."/etc",MIXOS_VAR:$run.path.."/var",MIXOS_RUN:$bus.dir.."/run",MIXOS_NODE_CONFIG:$bus.conf,MIXOS_NODED_URL:$bus.url,DISPLAY:nil,DBUS_SESSION_BUS_ADDRESS:nil,MIXOS_VT:nil,NOTIFY_SOCKET:nil,TZ:"UTC",VIU_COMP_SERVICE:"comp-bulk",MIXOS_COMP_SERVICE:"comp-bulk"}
+mkdir($env.HOME,{parents:true})
+fn checked($service,$command,$body)
+  send $service $command body=json_encode($body) timeout=10
+  if $rc!=0 then raise("BENCH_REFUSAL",json_encode({service:$service,command:$command,rc:$rc,reply:$reply,result:$result})) end
+  $v=$reply ?? $result
+  return if type($v)=="string" then json_parse($v) else $v end
+end
+fn observe($v)
+  $s=if $v=="original" then checked("dopus-original","dopus.state",{compact:true}) else checked("dopus-"..$v,"viu.state",{}) end
+  return if $v=="original" then {panes:$s.panes,ready:true} else {panes:$s.model.panes,serial:$s.model.serial,ready:$s.ready,error:$s.error} end
+end
+fn wait_rows($v,$count)
+  $until=monotonic()+20
+  $s={};$last=""
+  while monotonic()<$until
+    try
+      $s=observe($v)
+      if $s.ready and type($s.panes)=="list" and $s.panes[0].path==$stress and $s.panes[0].rows==$count then return $s end
+    catch $m $last=$m end
+    sleep(0.005)
+  end
+  raise("MODEL_WITNESS",json_encode({version:$v,state:$s,last_error:$last}))
+end
+fn launch($argv,$name,$extra)
+  return spawn($argv,{env:merge($env,$extra),stdout:{file:$run.path.."/"..$name..".log"},stderr:"stdout",detach:true})
+end
+try
+  $comp=launch([$bin.."/viud","--headless","--size","3060x1000","--socket","bulk","--bus-service","comp-bulk","--config-file",$run.path.."/settings.json"],"viud",{})
+  push($children,$comp)
+  $until=monotonic()+20
+  while monotonic()<$until
+    try checked("comp-bulk","comp.ping",{});break catch $m sleep(0.05) end
+  end
+  $env.WAYLAND_DISPLAY="bulk"
+  for $v in ["before","after"]
+    $src=if $v=="before" then $before_full else $sha end
+    $tree=$run.path.."/"..$v;mkdir($tree)
+    run_argv_must(["git","archive","--format=tar","--output="..$tree.."/source.tar",$src,"apps/dopus","libraries/viu/mix"])
+    run_argv_must(["tar","-xf",$tree.."/source.tar","-C",$tree])
+    $p=$tree.."/apps/dopus/contract.json";$contract=json_parse(read_file($p));$contract.host.service="dopus-"..$v;write_file($p,json_encode($contract))
+    $profile=$tree.."/profile";mkdir($profile)
+    write_file($profile.."/config.conf.mix",json_encode({schema_version:2,left:{path:$stress,previews:false},right:{path:$empty,previews:false}}))
+    push($children,launch([if $v=="before" then $before else $bin.."/viu" end,"run",$tree.."/apps/dopus",$profile],$v,{}))
+  end
+  push($children,launch(["/build/mixos/target/release/dopus","--service","dopus-original","--noded-url",$bus.url,$stress,$empty],"original",{MIXOS_APP_HOME:$run.path.."/original-home"}))
+  for $v in ["original","before","after"] wait_rows($v,2000) end
+  $windows=checked("comp-bulk","comp.windows.list",{}).windows
+  for $i=1 to 3
+    $w=filter($windows,fn($w)=$w.pid==$children[$i])[0]
+    if $w==nil then raise("WINDOW","Expected app window is missing") end
+    checked("comp-bulk","comp.window.place",{id:$w.id,generation:$w.generation,x:20+($i-1)*1020,y:40,width:980,height:760})
+  end
+  for $round=1 to 30
+    $order=if $round%3==1 then ["original","before","after"] elif $round%3==2 then ["before","after","original"] else ["after","original","before"] end
+    for $action in ["view.sort-size","view.sort-name","view.refresh"]
+      for $v in $order
+        $prior=wait_rows($v,2000)
+        $witness=$stress.."/__refresh_witness__"
+        if $action=="view.refresh" then write_file($witness,"New row proves refresh") end
+        $start=monotonic()
+        checked("dopus-"..$v,"dopus.execute",{id:$action})
+        $ack=monotonic()
+        $state=wait_rows($v,if $action=="view.refresh" then 2001 else 2000 end)
+        if $action=="view.sort-size" and $state.panes[0].sort!="size" then raise("SORT","Size sort not applied") end
+        if $action=="view.sort-name" and $state.panes[0].sort!="name" then raise("SORT","Name sort not applied") end
+        if $v!="original" and $state.serial<=$prior.serial then raise("SERIAL","Applied model did not advance") end
+        push($samples,{round:$round,version:$v,action:$action,ack_ms:($ack-$start)*1000,verified_ms:(monotonic()-$start)*1000,rows:$state.panes[0].rows,sort:$state.panes[0].sort,ascending:$state.panes[0].ascending})
+        if $action=="view.refresh" then
+          run_argv_must(["rm","--",$witness]);checked("dopus-"..$v,"dopus.execute",{id:$action});wait_rows($v,2000)
+        end
+      end
+    end
+    write_file($run.path.."/progress.json",json_encode({samples:$samples,artifacts:$artifacts}))
+  end
+  checked("comp-bulk","comp.capture.frame",{path:$run.path.."/comparison.png",cursor:false})
+  write_file($run.path.."/results.json",json_encode({result:"pass",source:$sha,before_source:$before_full,original:$original,artifacts:$artifacts,samples:$samples,method:"Original performance-pilot endpoints: direct native Bus execute ACK, then applied pane predicates; warm 2000 files, 30 Latin-rotated rounds. Refresh adds a real witness row. Original state uses compact:true; generic hosts return full viu.state, so verified readback cost differs. No physical/frame-visible claim. Private bundle adaptation changes only service names."}))
+  print({result:"pass",run:$run.path,samples:len($samples)})
+finally
+  for $p in reverse($children) if process_alive($p) then kill($p,15) end end
+  sleep(1)
+  for $p in $children if process_alive($p) then kill($p,9) end end
+  $n.stop_bus($bus)
+  write_file($run.path.."/closure.json",json_encode(map(concat($children,[$bus.pid]),fn($p)={pid:$p,alive:process_alive($p)})))
+end

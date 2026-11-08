@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$wire=require("wire.mix")
+for $case in [
+  [{},"body: missing field `schema` at line 1 column 2"],
+  [{schema:2},"schema: must be 1, found 2"],
+  [{schema:"x"},"body: invalid type: string \"x\", expected u32 at line 1 column 13"],
+  [{schema:1,bad:1},"body: unknown field `bad`, expected one of `schema`, `default`, `outputs` at line 1 column 6"],
+  [{schema:1,default:{image:"/missing.png",fit:"bad"}},"body: unknown variant `bad`, expected one of `fill`, `fit`, `centre`, `tile`, `stretch` at line 1 column 23"]
+]
+  $error=nil
+  try $wire.check($case[0]) catch $message $error=$message end
+  if $error!=$case[1] then raise("WIRE_TEST",json_encode({expected:$case[1],actual:$error})) end
+end
+print("gold native Bus JSON diagnostics match the retained refusal fixtures")

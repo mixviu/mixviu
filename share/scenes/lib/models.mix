@@ -1,0 +1,850 @@
+-- Model construction only. Layout lives in the strict-data scene files.
+$p = require("data.mix")
+$t = require("taskbar.mix")
+$hd = require("hostd.mix")
+$C = {
+  fg: "#fcfcfc", dim: "#a1a9b1", faint: "#6e7680", hover: "#ffffff1a",
+  accent: "#3daee9", accent_bg: "#3daee940", task_bg: "#ffffff0f", card: "#2a2e32",
+  today_fg: "#ffffff", weekend: "#c9cfd6", ok: "#27ae60"
+}
+$MAX_TASKS = 50
+
+-- Every themed (dark variant) icon name the panel can show. The behaviour
+-- resolves these once through the apps citizen and caches hits.
+$PANEL_THEMED_ICONS = ["start-here-kde", "start-here", "notification-active",
+  "notification-inactive", "notifications", "audio-volume-muted", "audio-volume-high",
+  "audio-volume-medium", "audio-volume-low", "audio-card",
+  "network-wireless-signal-excellent", "network-wired-activated", "network-offline",
+  "network-wired", "user-desktop", "desktop"]
+
+-- The launcher mark both bars show, in preference order: each themed key and
+-- the names the behaviour asks apps.icon for, first hit wins. dev.mixos is the
+-- full-colour brand icon (share/brand), else the symbolic M; then the
+-- start-here fallbacks (start-here-kde is external artwork, the bare
+-- start-here the Lucide glyph catalogued as start-here-symbolic).
+$LAUNCHER_ICONS = [{key: "dev.mixos", names: ["dev.mixos", "dev.mixos-symbolic"]},
+  {key: "start-here-kde", names: ["start-here-kde"]},
+  {key: "start-here", names: ["start-here-symbolic"]}]
+$LAUNCHER_ICON_SIZE = 48
+
+fn launcher($apps, $query, $category, $icons)
+  $rows = []
+  for each $a in $apps
+    if length($rows) >= 500 then break end
+    $sub = $a.generic_name ?? ""
+    if $sub == "" then $sub = $a.comment ?? "" end
+    push($rows, {id: $a.id, cells: [$p.short_title($a.name ?? $a.id, 80), $p.short_title($sub, 120), $icons[$a.icon ?? ""] ?? ""]})
+  end
+  $chips = {}
+  for each $cat, $label in $p.CATEGORY_LABELS
+    $id = "cat_" .. ($cat == "" ? "all" : lower($cat))
+    $on = $cat == $category
+    $chips[$id] = {background: $on ? $C.accent : $C.task_bg, bold: $on, color: $on ? "#0b1f2b" : $C.fg}
+  end
+  return {query: $query, category: $category, count: to_string(length($apps)) .. (length($apps) == 1 ? " application" : " applications"), rows: $rows, chips: $chips}
+end
+
+fn calendar($now, $offset)
+  $today = $p.ymd($now)
+  $shown = $p.shift_month($today.year, $today.month, $offset)
+  $grid = $p.month_grid($shown.year, $shown.month, $today)
+  $cells = {}
+  for $w = 0 to 5
+    for $c = 0 to 6
+      $cell = $grid[$w][$c]
+      $fg = $cell.in_month ? ($cell.weekend ? $C.weekend : $C.fg) : $C.faint
+      if $cell.today then $fg = $C.today_fg end
+      $cells["d_" .. to_string($w) .. "_" .. to_string($c)] = {
+        text: to_string($cell.day), bold: $cell.today, color: $fg,
+        background: $cell.today ? $C.accent : nil
+      }
+    end
+  end
+  return {day: date_format($now, "%A"), full: date_format($now, "%-d ") .. $p.month_title($today.year, $today.month) .. "  ·  " .. $p.clock_text($now), title: $p.month_title($shown.year, $shown.month), year: $shown.year, month: $shown.month, cells: $cells}
+end
+
+-- Input is the service's oldest-first snapshot, as in the legacy builder.
+fn notes($notes)
+  $rows = []
+  for each $n in reverse($notes)
+    if length($rows) >= 50 then break end
+    $app = $n.app ?? ""
+    if $app == "" then $app = "Notification" end
+    push($rows, {id: to_string($n.id), cells: [$p.short_title($app, 60), $p.short_title($n.summary ?? "", 120), $p.short_title($n.body ?? "", 240)]})
+  end
+  return {rows: $rows, count: length($notes), empty: length($rows) == 0}
+end
+
+-- A path from a name -> path map, trying one fallback name; "" when neither
+-- resolved (the template then shows its text stand-in).
+fn icon_choice($paths, $name, $fallback)
+  $path = $paths[$name] ?? ""
+  if $path == "" and $fallback != nil then $path = $paths[$fallback] ?? "" end
+  return {icon: $path, has_icon: $path != ""}
+end
+
+-- The launcher icon from a themed name -> path map: the first $LAUNCHER_ICONS
+-- key that resolved, else none (the bars then show their text stand-in).
+fn launcher_icon($themed)
+  for each $l in $LAUNCHER_ICONS
+    $choice = icon_choice($themed, $l.key, nil)
+    if $choice.has_icon then return $choice end
+  end
+  return {icon: "", has_icon: false}
+end
+
+-- The top bar's apps button: the panel's launcher mark, keeping its label.
+fn topbar_apps($themed)
+  $apps = launcher_icon($themed)
+  return {label: "Apps", icon: $apps.icon, has_icon: $apps.has_icon, background: nil, tip: {title: "Applications"}}
+end
+
+-- A top bar power button. $p: {label, icon (a path or ""), desk, vt, left
+-- (whole seconds left to confirm; 0 when not armed), sent (hostd took it),
+-- notice (hostd's refusal, or "")}. At rest the button is its icon. Armed,
+-- sent or refused, it also shows text on the bar itself, so the countdown
+-- and a refusal never hide in the tip.
+fn topbar_power($p)
+  $what = $p.label .. " " .. $p.desk .. " (VT" .. $p.vt .. ")"
+  $m = {label: $p.label, icon: $p.icon, has_icon: $p.icon != "", show_label: $p.icon == "",
+    background: nil, tip: {title: $what}}
+  if $p.left > 0 then
+    $m.label = "Click again to " .. lower($p.label) .. " (" .. to_string($p.left) .. ")"
+    $m.show_label = true
+    $m.background = "#c0392b"
+    $m.tip = {title: $what, subtitle: "Click again within " .. to_string($p.left) .. " s to confirm"}
+  elif $p.sent then
+    $m.label = $p.label == "Restart" ? "Restarting…" : "Shutting down…"
+    $m.show_label = true
+    $m.tip = {title: $what, subtitle: "Sent to hostd"}
+  elif ($p.notice ?? "") != "" then
+    $m.label = $p.label .. " failed: " .. $p.notice
+    $m.show_label = true
+    $m.background = "#9a6700"
+    $m.tip = {title: $what, subtitle: "hostd refused: " .. $p.notice}
+  end
+  return $m
+end
+
+-- ── hover tips (scene `tooltip` ports: {title, subtitle?, lines?}) ──────
+-- The host draws each on a card beside the panel after a short hover, as
+-- Plasma's panel tips do; the buttons themselves stay icon- or number-only.
+
+-- The most window titles a workspace tip lists before "N more".
+$TIP_WINDOWS = 6
+
+-- Every string the tips show, in one place: the English source. Mix has
+-- no Fluent loader yet; until it has, scene strings live in tables like this
+-- (docs/docs/decisions/2026-10-12-scene-strings.md), and then this table becomes
+-- the en catalogue and text() its lookup.
+-- "{name}" placeholders are filled from the vars map.
+$TEXT = {
+  launcher_title: "Application Launcher", launcher_subtitle: "Search for and launch applications",
+  workspace: "Workspace {n}", windows_none: "No windows", windows_one: "1 window", windows_many: "{n} windows",
+  current: "current", more: "{n} more", window: "Window", minimised: "Minimised", on_workspace: "On workspace {n}",
+  status_item: "Status item",
+  notes_title: "Notifications", notes_none: "No new notifications", notes_one: "1 notification", notes_many: "{n} notifications",
+  volume_title: "Volume", muted: "Muted", level: "{n}%", volume_hint: "Click for audio controls",
+  vol_output: "Output", vol_input: "Input", vol_apps: "Applications", vol_default: "Default",
+  vol_mute: "Mute", vol_unmute: "Unmute", vol_down: "−", vol_up: "+",
+  vol_no_device: "No audio device", vol_unavailable: "Audio service unavailable",
+  vol_no_default_out: "Default output not found", vol_no_default_in: "Default input not found",
+  vol_failed: "Change failed: {why}",
+  network_title: "Network", wireless: "Connected (wireless)", wired: "Connected (wired)", offline: "Offline",
+  network_hint: "Click for network details",
+  net_connected: "Connected via {name} ({kind})", net_no_route: "Connected, no default route",
+  net_interfaces_one: "1 interface", net_interfaces_many: "{n} interfaces", net_interfaces_none: "No interfaces",
+  net_route: "Default route", net_dns: "DNS", net_via: "{gateway} on {name}", net_direct: "on {name}",
+  net_up: "up", net_down: "down", net_no_addresses: "No addresses", net_default: "default route",
+  net_kernel_only: "systemd-networkd is not running: showing kernel state only.",
+  net_managed: "networkd: {state}", net_unmanaged: "not managed by networkd",
+  kind_ether: "Wired", kind_wlan: "Wireless", kind_bridge: "Bridge", kind_bond: "Bond",
+  kind_wireguard: "WireGuard", kind_vlan: "VLAN", kind_virtual: "Virtual", kind_unknown: "Interface",
+  net_tunnel_configure: "Configure tunnel", net_wifi_networks: "Wi-Fi networks",
+  net_tunnel_title: "Tunnel {link}", net_wifi_title: "Wi-Fi on {link}", net_new_tunnel: "New tunnel: {name}",
+  net_wg_port: "Listen port", net_wg_pubkey: "This tunnel's public key (give it to the peer)", net_wg_peer: "Peer",
+  net_wg_peer_key: "Peer public key", net_wg_peer_key_hint: "leave empty for no peer yet",
+  net_wg_endpoint: "Peer endpoint", net_wg_endpoint_hint: "host:port, optional",
+  net_wg_allowed: "Peer allowed IPs", net_wg_keepalive: "Keepalive (s)",
+  net_wg_handshake_on: "Keep only if the peer answers: on", net_wg_handshake_off: "Keep only if the peer answers: off",
+  net_bad_port: "The listen port must be a number from 1 to 65535.",
+  net_need_allowed: "A peer needs at least one allowed IP range.",
+  net_bad_keepalive: "Keepalive must be a whole number of seconds from 1 to 3600.",
+  net_wg_replace_confirm: "Applying replaces {link}'s whole setup, peers included, and this panel does not know its current one. Fill in the peer, or press Apply again to replace it as shown.",
+  net_task_failed: "The change could not be started. Try again.",
+  net_wifi_pick_again: "Pick the network again to type its passphrase.",
+  net_tunnel_applied: "Applied: {link} is up and hostd kept it.",
+  net_scan: "Scan", net_scanning: "Scanning…", net_wifi_none: "No networks found.",
+  net_wifi_open: "open", net_wifi_signal: "{dbm} dBm", net_wifi_known: "saved",
+  net_wifi_pass: "Passphrase", net_wifi_pass_hint: "type it and press Enter to connect",
+  net_wifi_pick: "Pick a network first.", net_wifi_need_pass: "Type the passphrase and press Enter.",
+  net_connect: "Connect", net_connecting_short: "Connecting…",
+  net_connecting: "Connecting to {ssid}… hostd keeps it only if {link} connects within {n} s.",
+  net_wifi_connected: "Connected: hostd kept the change.",
+  net_scan_failed: "Scan failed: {why}",
+  hostd_no_iwd: "iwd is not running, so there is no Wi-Fi to manage here.",
+  hostd_no_such_station: "{link} is not a Wi-Fi station iwd knows.",
+  hostd_unsupported: "That network needs 802.1X, which hostd does not support yet.",
+  net_configure: "Configure", net_edit_title: "Configure {link}", net_dhcp: "DHCP", net_static: "Static",
+  net_addresses: "Addresses", net_addresses_hint: "192.0.2.10/24, …", net_gateway: "Gateway",
+  net_dns_servers: "DNS servers", net_optional: "optional", net_apply: "Apply", net_applying_short: "Applying…",
+  net_undo: "Undo last change", net_close: "Close",
+  net_applying: "Applying… hostd keeps it only if {link} comes up within {n} s.",
+  net_applied: "Applied: {link} came up and hostd kept the change.",
+  net_undone: "Undone: {link} has its previous configuration again.",
+  net_need_address: "Static needs at least one address.",
+  net_need_prefix: "Each address needs a prefix length, such as /24.", net_bad_mode: "Choose DHCP or Static.",
+  net_hostd_frozen: "hostd is frozen: changes are off until a local caller thaws it.",
+  hostd_foreign_config: "Another networkd file configures {link}, so hostd will not change it.",
+  hostd_unmanaged_configured: "{link} has addresses networkd did not set, so hostd will not take it over.",
+  hostd_no_such_link: "{link} no longer exists.",
+  hostd_rolled_back: "{link} did not come up, so hostd put the old configuration back",
+  hostd_abandoned: "{link} did not come up, and its file changed meanwhile, so hostd left it as it found it",
+  net_no_answer: "hostd did not answer in time. The change to {link} may still finish; reopen the popup to see the link as it is.",
+  hostd_frozen: "hostd is frozen: changes are off until a local caller thaws it.",
+  hostd_recovery_pending: "hostd is finishing an earlier change. Try again shortly.",
+  hostd_busy: "hostd is busy with another change. Try again.",
+  hostd_timeout: "hostd did not finish in time. Try again.",
+  hostd_rate_limited: "Too many changes in a short time. Wait a few minutes.",
+  hostd_superseded: "Undo refused: {link} has changed since that change.",
+  hostd_not_applied: "Nothing to undo: that change is no longer in force.",
+  hostd_unavailable: "hostd is not reachable.",
+  hostd_bad_request: "hostd refused the request: {message}", hostd_refused: "hostd refused the change ({status}).",
+  zone: "UTC{offset}", calendar_hint: "Click for the calendar",
+  rename_prompt: "Name for workspace {n}", rename_hint: "Workspace {n}",
+  rename_note: "Enter saves. An empty name shows the number again.",
+  rename_cancel: "Cancel", rename_save: "Save", rename_menu: "Right-click to rename",
+  rename_refused: "That name was not accepted (at most 64 characters, no control characters)."
+}
+
+fn text($key, $vars = nil)
+  $out = $TEXT[$key] ?? $key
+  for each $k, $v in $vars ?? {}
+    $out = replace($out, "{" .. $k .. "}", to_string($v))
+  end
+  return $out
+end
+
+-- A count in words: none / one / many.
+fn counted($n, $none, $one, $many)
+  return $n == 0 ? text($none) : ($n == 1 ? text($one) : text($many, {n: $n}))
+end
+
+fn tip($title, $subtitle, $lines)
+  $out = {title: $title}
+  if $subtitle != nil and $subtitle != "" then $out.subtitle = $subtitle end
+  if type($lines) == "list" and length($lines) > 0 then $out.lines = $lines end
+  return $out
+end
+
+-- A workspace's name (comp.workspace.rename), or nil.
+fn workspace_name($names, $index)
+  $name = $index <= len($names) ? $names[$index - 1] : nil
+  if type($name) != "string" or trim($name) == "" then return nil end
+  return $name
+end
+
+-- The rename dialog's model for workspace $index, whose name is $name (""
+-- when unnamed).
+fn rename_dialog($index, $name)
+  return {index: $index, name: $name ?? "", prompt: text("rename_prompt", {n: $index}),
+    hint: text("rename_hint", {n: $index}), note: text("rename_note"),
+    cancel: text("rename_cancel"), save: text("rename_save")}
+end
+
+-- A pager button's tip: its name (else "Workspace N"), whether it is the
+-- current one, and the windows on it.
+fn workspace_tip($names, $index, $current, $windows)
+  $name = workspace_name($names, $index)
+  $on = []
+  for each $w in $windows
+    -- The taskbar's rule: a window with no workspace (or comp's 0 before
+    -- its first map) is on the current one.
+    $ws = $w.workspace ?? 0
+    if $ws == $index or ($ws == 0 and $current) then push($on, $w) end
+  end
+  $where = text("workspace", {n: $index})
+  $count = counted(length($on), "windows_none", "windows_one", "windows_many")
+  $subtitle = ($name != nil ? $where .. " · " : "") .. $count .. ($current ? " · " .. text("current") : "")
+  $lines = []
+  for each $w in slice($on, 0, $TIP_WINDOWS)
+    push($lines, $p.short_title(($w.title ?? "") != "" ? $w.title : to_string($w.app_id ?? text("window")), 60))
+  end
+  if length($on) > $TIP_WINDOWS then push($lines, text("more", {n: length($on) - $TIP_WINDOWS})) end
+  push($lines, text("rename_menu"))
+  return tip($name ?? $where, $subtitle, $lines)
+end
+
+-- A task button's tip: the application's name, the window's title, and
+-- where the window is when it is not plainly on screen.
+fn task_tip($w, $name, $ws_current)
+  $app = ($name != nil and $name != "") ? $name : to_string($w.app_id ?? text("window"))
+  $title = $p.short_title($w.title ?? "", 80)
+  $lines = []
+  if $w.minimized then push($lines, text("minimised")) end
+  if $t.elsewhere($w, $ws_current) then push($lines, text("on_workspace", {n: $w.workspace})) end
+  $out = tip($app, $title != $app ? $title : "", $lines)
+  -- A live preview of the window (drawn by viud over the card).
+  if type($w.width) == "number" and type($w.height) == "number" and $w.width > 0 and $w.height > 0 then
+    -- decorated: viud draws the frame around it, so the box takes the
+    -- frame's aspect (the content plus the server-side chrome).
+    $out.thumbnail = {id: $w.id, generation: $w.generation, w: $w.width, h: $w.height,
+      decorated: $w.decoration == "server" and not ($w.fullscreen ?? false)}
+  end
+  return $out
+end
+
+-- A tray item's tip: its title, and its own status or tooltip text when
+-- the adapter supplies one.
+fn tray_tip($item)
+  $title = to_string($item.title ?? "")
+  $detail = ""
+  for each $key in ["tooltip_title", "tooltip", "tooltip_text", "status"]
+    $v = $item[$key]
+    if $detail == "" and type($v) == "string" and trim($v) != "" and $v != $title then $detail = $v end
+  end
+  return tip($title != "" ? $title : text("status_item"), $detail, [])
+end
+
+-- The bottom panel's complete runtime model (the legacy builder's, plus a
+-- hover tip per widget since 2026-10-12).
+-- $snap: {windows (normal band, id order), ws_count, ws_current,
+--         ws_names (one per workspace, nil unnamed; shown in the tips),
+--         tasks_scope ("all" | "current"; absent = "current", what a
+--         behaviour copy older than the setting draws), tray,
+--         notes_count, net:{up,wireless}, vol:{ok,level,muted},
+--         open:{launcher,calendar,notes,network,volume}}
+-- $icons: {themed:{name:path} (dark status theme), plain:{name:path}
+--          (tray icons), windows:{app_id:path}, names:{app_id:name}
+--          (desktop-entry names)} -- cache hits only.
+fn panel($snap, $icons, $now)
+  $themed = $icons.themed ?? {}
+  $plain = $icons.plain ?? {}
+  $window_icons = $icons.windows ?? {}
+  $app_names = $icons.names ?? {}
+  $open = $snap.open ?? {}
+  $ws_current = $snap.ws_current ?? 1
+
+  $launcher = launcher_icon($themed)
+  $launcher.background = ($open.launcher ?? false) ? $C.accent_bg : nil
+  $launcher.tip = tip(text("launcher_title"), text("launcher_subtitle"), [])
+
+  $workspaces = []
+  for $i = 1 to $snap.ws_count ?? 1
+    $current = $i == $ws_current
+    push($workspaces, {id: "ws_" .. to_string($i), cells: [], index: $i, label: to_string($i),
+      current: $current, background: $current ? $C.accent : $C.task_bg, color: $current ? "#0b1f2b" : $C.dim,
+      tip: workspace_tip($snap.ws_names ?? [], $i, $current, $snap.windows ?? [])})
+  end
+
+  -- A window on another workspace (tasks_scope "all") has no button
+  -- background and dimmed text, like a minimised one reads fainter still.
+  $tasks = []
+  for each $w in $t.panel_tasks($snap.windows ?? [], $ws_current, $snap.tasks_scope ?? "current", $MAX_TASKS)
+    $away = $t.elsewhere($w, $ws_current)
+    $background = nil
+    if $w.focused and not $w.minimized and not $away then
+      $background = $C.accent_bg
+    elif not $w.minimized and not $away then
+      $background = $C.task_bg
+    end
+    $color = $C.fg
+    if $w.minimized then
+      $color = $C.faint
+    elif $away then
+      $color = $C.dim
+    end
+    $icon = $window_icons[to_string($w.app_id)] ?? ""
+    push($tasks, {id: "t_" .. to_string($w.id), cells: [], window: $w.id, generation: $w.generation,
+      title: $p.short_title($w.title, 40), icon: $icon, has_icon: $icon != "",
+      initial: upper(slice(to_string($app_names[to_string($w.app_id)] ?? $w.app_id ?? "?"), 0, 1)),
+      background: $background, color: $color, tip: task_tip($w, $app_names[to_string($w.app_id)], $ws_current)})
+  end
+
+  -- Row ids carry the adapter's store key, so a click resolves to the exact
+  -- item even if the tray changed after this model was published.
+  $tray = []
+  for each $item in $snap.tray ?? []
+    $icon = $plain[$item.icon_name ?? ""] ?? ""
+    push($tray, {id: "tr_" .. lower(to_string($item.key)), cells: [], key: to_string($item.key),
+      icon: $icon, has_icon: $icon != "", initial: slice(to_string($item.title ?? "?"), 0, 1), tip: tray_tip($item)})
+  end
+
+  $count = $snap.notes_count ?? 0
+  $notes = icon_choice($themed, $count > 0 ? "notification-active" : "notification-inactive", "notifications")
+  $notes.count = $count > 0 ? to_string($count) : ""
+  $notes.has_count = $count > 0
+  $notes.background = ($open.notes ?? false) ? $C.accent_bg : nil
+  $notes.tip = tip(text("notes_title"), counted($count, "notes_none", "notes_one", "notes_many"), [])
+
+  $vol = $snap.vol ?? {ok: false, level: 0, muted: false}
+  $vol_icon = "audio-volume-muted"
+  if not $vol.muted then
+    $vol_icon = $vol.level >= 67 ? "audio-volume-high" : ($vol.level >= 34 ? "audio-volume-medium" : ($vol.level > 0 ? "audio-volume-low" : "audio-volume-muted"))
+  end
+  $volume = icon_choice($themed, $vol_icon, "audio-card")
+  $volume.shown = $vol.ok
+  $volume.background = ($open.volume ?? false) ? $C.accent_bg : nil
+  $volume.tip = tip(text("volume_title"), $vol.muted ? text("muted") : text("level", {n: $vol.level}), [text("volume_hint")])
+
+  $net = $snap.net ?? {up: false, wireless: false}
+  $network = icon_choice($themed, $net.up ? ($net.wireless ? "network-wireless-signal-excellent" : "network-wired-activated") : "network-offline", "network-wired")
+  $network.background = ($open.network ?? false) ? $C.accent_bg : nil
+  $network.tip = tip(text("network_title"), text($net.up ? ($net.wireless ? "wireless" : "wired") : "offline"), [text("network_hint")])
+
+  return {launcher: $launcher, workspaces: $workspaces, tasks: $tasks, tray: $tray,
+    tray_empty: length($tray) == 0, notes: $notes, volume: $volume, network: $network,
+    clock: {time: $p.clock_text($now), date: $p.date_text($now), background: ($open.calendar ?? false) ? $C.accent_bg : nil,
+      tip: tip(date_format($now, "%A %-d %B %Y"), text("zone", {offset: date_format($now, "%:z")}), [text("calendar_hint")])}}
+end
+
+-- ── the network popup (share/scenes/network) ────────────────────────────
+-- $snap: lib/network.mix snapshot(), or nil before the first one. Loopback
+-- links and link-local IPv6 addresses are left out. The default-route link
+-- sorts first, then links that are up, then by name.
+-- $ui (optional): {access: lib/hostd.mix access_state(), edit: the open editor or
+-- nil}. With a live hostd, each link offers Configure; the editor applies
+-- through hostd (net.link.apply) and can undo its last change.
+$MAX_LINKS = 32
+-- Card geometry. Every card is one shared height (the scene's list and rows
+-- take it from the model's row_height): CARD_H, plus ADDR_LINE_H for each
+-- address line beyond the first, for the link with the most address lines.
+-- The cards are equal-height on purpose; they are not auto-sized one by one.
+$CARD_H = 84
+$ADDR_LINE_H = 16
+
+-- A link kind (sysfs DEVTYPE or networkd Kind) in words.
+fn kind_text($kind)
+  $key = "kind_" .. to_string($kind ?? "unknown")
+  return $TEXT[$key] != nil ? text($key) : text("kind_unknown")
+end
+
+fn network($snap, $ui = nil)
+  $known = $snap != nil
+  $ui = $ui ?? {}
+  $access = $ui.access ?? {available: false, frozen: false}
+  $edit = $ui.edit
+  $snap = $snap ?? {}
+  $kinds = $snap.kinds ?? {}
+  $nd = $snap.networkd
+  $routes = $snap.routes ?? []
+  $route = length($routes) > 0 ? $routes[0] : nil
+  $default_dev = $route != nil ? $route.dev : ""
+
+  -- Per link: IPv4 addresses, then IPv6 (each in snapshot order). Link-local
+  -- IPv6 is left out; nothing is capped.
+  $v4 = {}
+  $v6 = {}
+  for each $a in $snap.addresses ?? []
+    if $a.family == "inet6" and starts_with(lower($a.address), "fe80:") then continue end
+    $text = $a.address .. "/" .. to_string($a.prefix)
+    if $a.family == "inet6" then
+      $list = $v6[$a.ifname] ?? []
+      push($list, $text)
+      $v6[$a.ifname] = $list
+    else
+      $list = $v4[$a.ifname] ?? []
+      push($list, $text)
+      $v4[$a.ifname] = $list
+    end
+  end
+  $link_dns = $snap.resolved != nil ? $snap.resolved.links : {}
+
+  $sorted = []
+  $by_name = {}
+  for each $l in $snap.links ?? []
+    if $l.loopback == true then continue end
+    $by_name[$l.ifname] = $l
+    push($sorted, {link: $l, key: [$l.ifname == $default_dev ? 0 : 1, $l.up == true ? 0 : 1, $l.ifname]})
+  end
+  $sorted = sort_by($sorted, function ($e) = $e.key)
+
+  $rows = []
+  -- The most address lines any displayed link has (at least one): sets the
+  -- shared card height below.
+  $max_lines = 1
+  for each $e in $sorted
+    if length($rows) >= $MAX_LINKS then break end
+    $l = $e.link
+    $managed = $nd != nil ? $nd[$l.ifname] : nil
+    $kind = kind_text($kinds[$l.ifname] ?? ($managed != nil ? $managed.kind : nil))
+    $sub = [$kind, text($l.up == true ? "net_up" : "net_down")]
+    if $managed != nil and $managed.ssid != "" then push($sub, $managed.ssid) end
+    $detail = []
+    if $l.ifname == $default_dev then push($detail, text("net_default")) end
+    if $managed != nil then
+      push($detail, $managed.admin == "unmanaged" ? text("net_unmanaged") : text("net_managed", {state: $managed.admin}))
+    end
+    if $link_dns[$l.ifname] != nil then push($detail, text("net_dns") .. " " .. join($link_dns[$l.ifname], ", ")) end
+    $shown = concat($v4[$l.ifname] ?? [], $v6[$l.ifname] ?? [])
+    $lines = max(length($shown), 1)
+    if $lines > $max_lines then $max_lines = $lines end
+    $action = row_action($access, $kinds[$l.ifname] ?? ($managed != nil ? $managed.kind : nil), $l.ifname)
+    push($rows, {id: "if_" .. $l.ifname, cells: [], name: $l.ifname, sub: join($sub, " · "),
+      addresses: length($shown) > 0 ? join($shown, "\n") : text("net_no_addresses"),
+      address_height: $ADDR_LINE_H * $lines,
+      detail: join($detail, " · "), has_detail: length($detail) > 0,
+      dot: $l.up == true ? $C.ok : $C.faint,
+      action: $action, editable: $action != "", cta: $action != "" ? text($ACTION_CTA[$action]) : "",
+      background: ($edit != nil and $edit.link == $l.ifname) ? $C.accent_bg : $C.card})
+  end
+
+  $summary = text("offline")
+  $default_link = $by_name[$default_dev]
+  if $default_link != nil and $default_link.up == true then
+    $summary = text("net_connected", {name: $default_dev, kind: kind_text($kinds[$default_dev])})
+  else
+    for each $e in $sorted
+      if $e.link.up == true then
+        $summary = text("net_no_route")
+        break
+      end
+    end
+  end
+
+  $gateway = ""
+  if $route != nil then
+    $gateway = $route.gateway != "" ? text("net_via", {gateway: $route.gateway, name: $route.dev}) : text("net_direct", {name: $route.dev})
+  end
+  $servers = []
+  if $snap.resolved != nil then $servers = $link_dns[$default_dev] ?? $snap.resolved.global end
+  $note = ($known and $nd == nil) ? text("net_kernel_only") : ""
+  -- Offer the first unused conventional tunnel name; Bus callers may name any.
+  $new_tunnels = []
+  if $hd.writable($access) then
+    for $i = 0 to 255
+      $name = "wg" .. to_string($i)
+      if $by_name[$name] == nil then
+        push($new_tunnels, {id: "wg_" .. $name, cells: [], label: text("net_new_tunnel", {name: $name})})
+        break
+      end
+    end
+  end
+
+  return {title: text("network_title"), summary: $summary,
+    count: counted(length($sorted), "net_interfaces_none", "net_interfaces_one", "net_interfaces_many"),
+    rows: $rows, row_height: $CARD_H + $ADDR_LINE_H * ($max_lines - 1),
+    empty: length($rows) == 0, empty_text: text("net_interfaces_none"),
+    route_label: text("net_route"), gateway: $gateway, has_gateway: $gateway != "",
+    dns_label: text("net_dns"), dns: join($servers, ", "), has_dns: length($servers) > 0,
+    note: $note, has_note: $note != "",
+    hostd_note: hostd_note($access), has_hostd_note: hostd_note($access) != "",
+    new_tunnels: $new_tunnels, has_new_tunnels: length($new_tunnels) > 0,
+    edit: editor($edit)}
+end
+
+-- The editor follows the link kind while hostd is live and unfrozen.
+fn row_action($access, $kind, $link)
+  if not $hd.writable($access) then return "" end
+  if $kind == "wlan" then return "wifi" end
+  if $kind == "wireguard" then return "wg" end
+  return "link"
+end
+
+$ACTION_CTA = {link: "net_configure", wg: "net_tunnel_configure", wifi: "net_wifi_networks"}
+
+-- One line about hostd under the summary: why the popup is read only, or
+-- nothing when it may change links (or hostd is not on this host at all).
+fn hostd_note($access)
+  if not $access.available then return "" end
+  if $access.frozen then return text("net_hostd_frozen") end
+  return ""
+end
+
+-- A toggle-style button's colours.
+fn chip($on)
+  return {bg: $on ? $C.accent : $C.task_bg, color: $on ? "#0b1f2b" : $C.fg}
+end
+
+-- The editor's model; every key is always present so the scene's default
+-- model declares them all. $edit (nil when closed) has kind "link" (mode,
+-- addresses, gateway, dns), "wg" (wg_addresses, wg_port, wg_pubkey,
+-- peer_key, peer_endpoint, peer_allowed, peer_keepalive, handshake) or
+-- "wifi" (networks, selected, scanned, scanning), plus link, note, busy and
+-- receipt. A Wi-Fi passphrase is never part of it.
+fn editor($edit)
+  $on = $edit != nil
+  $e = $edit ?? {}
+  $kind = $e.kind ?? "link"
+  $static = ($e.mode ?? "dhcp") == "static"
+  $busy = $e.busy == true
+  $note = to_string($e.note ?? "")
+  $dhcp = chip(not $static)
+  $stat = chip($static)
+  $hs = $e.handshake != false
+  $hs_chip = chip($hs)
+  $title_key = $kind == "wg" ? "net_tunnel_title" : ($kind == "wifi" ? "net_wifi_title" : "net_edit_title")
+
+  $networks = []
+  $i = 0
+  for each $n in $e.networks ?? []
+    $info = [$n.security == "open" ? text("net_wifi_open") : to_string($n.security)]
+    if $n.signal_dbm != nil then push($info, text("net_wifi_signal", {dbm: $n.signal_dbm})) end
+    if $n.known == true then push($info, text("net_wifi_known")) end
+    push($networks, {id: "ssid_" .. to_string($i), cells: [], ssid: to_string($n.ssid), info: join($info, " · "),
+      background: $e.selected == $i ? $C.accent_bg : $C.task_bg})
+    $i = $i + 1
+  end
+  $picked = ($e.selected != nil and $e.selected < length($e.networks ?? [])) ? $e.networks[$e.selected] : nil
+  $needs_pass = $picked != nil and $picked.security != "open" and $picked.known != true
+
+  $apply = $kind == "wifi" ? "net_connect" : "net_apply"
+  $applying = $kind == "wifi" ? "net_connecting_short" : "net_applying_short"
+  return {shown: $on, kind: $kind, is_link: $on and $kind == "link", is_wg: $on and $kind == "wg", is_wifi: $on and $kind == "wifi",
+    title: $on ? text($title_key, {link: $e.link}) : "",
+    dhcp_label: text("net_dhcp"), static_label: text("net_static"),
+    dhcp_bg: $dhcp.bg, static_bg: $stat.bg, dhcp_color: $dhcp.color, static_color: $stat.color,
+    is_static: $static,
+    addresses_label: text("net_addresses"), addresses_hint: text("net_addresses_hint"), addresses: to_string($e.addresses ?? ""),
+    gateway_label: text("net_gateway"), gateway_hint: text("net_optional"), gateway: to_string($e.gateway ?? ""),
+    dns_label: text("net_dns_servers"), dns_hint: text("net_optional"), dns: to_string($e.dns ?? ""),
+    wg_addresses_label: text("net_addresses"), wg_addresses: to_string($e.wg_addresses ?? ""),
+    wg_port_label: text("net_wg_port"), wg_port_hint: text("net_optional"), wg_port: to_string($e.wg_port ?? ""),
+    wg_pubkey_label: text("net_wg_pubkey"), wg_pubkey: to_string($e.wg_pubkey ?? ""), has_pubkey: to_string($e.wg_pubkey ?? "") != "",
+    peer_label: text("net_wg_peer"),
+    peer_key_label: text("net_wg_peer_key"), peer_key_hint: text("net_wg_peer_key_hint"), peer_key: to_string($e.peer_key ?? ""),
+    peer_endpoint_label: text("net_wg_endpoint"), peer_endpoint_hint: text("net_wg_endpoint_hint"), peer_endpoint: to_string($e.peer_endpoint ?? ""),
+    peer_allowed_label: text("net_wg_allowed"), peer_allowed_hint: text("net_addresses_hint"), peer_allowed: to_string($e.peer_allowed ?? ""),
+    peer_keepalive_label: text("net_wg_keepalive"), peer_keepalive_hint: text("net_optional"), peer_keepalive: to_string($e.peer_keepalive ?? ""),
+    handshake_label: text($hs ? "net_wg_handshake_on" : "net_wg_handshake_off"), handshake_bg: $hs_chip.bg, handshake_color: $hs_chip.color,
+    scan_label: text($e.scanning == true ? "net_scanning" : "net_scan"),
+    networks: $networks, has_networks: length($networks) > 0,
+    no_networks: ($e.scanned == true and length($networks) == 0) ? text("net_wifi_none") : "",
+    has_no_networks: $e.scanned == true and length($networks) == 0,
+    needs_pass: $needs_pass, pass_label: text("net_wifi_pass"), pass_hint: text("net_wifi_pass_hint"),
+    -- The scene host keeps typed text until the field's bound value
+    -- changes. The value is "" only while the field is shown; while it is
+    -- hidden (no secured pick, editor closed, or held for a moment after a
+    -- submit or a new pick) it is a per-generation placeholder. So every
+    -- time the field comes back its value changes and it starts empty: a
+    -- passphrase never carries over to another network or another try.
+    show_pass: $needs_pass and $e.pass_hold != true,
+    pass_value: ($needs_pass and $e.pass_hold != true) ? "" : "held-" .. to_string($e.pass_gen ?? 0),
+    apply_label: $busy ? text($applying) : text($apply), busy: $busy,
+    undo_label: text("net_undo"), has_undo: $on and $e.receipt != nil and not $busy,
+    close_label: text("net_close"), note: $note, has_note: $note != ""}
+end
+
+-- A tunnel editor's starting values: the link's own addresses from the
+-- snapshot (none for a new tunnel). Port and peer are typed: hostd does
+-- not hand them back, and applying replaces the tunnel's whole setup.
+fn wg_prefill($snap, $name, $last = nil)
+  if $last != nil then
+    return merge($last, {kind: "wg", link: $name, wg_pubkey: "", note: "", busy: false, receipt: nil, confirmed: false})
+  end
+  $addrs = []
+  for each $a in ($snap ?? {}).addresses ?? []
+    if $a.ifname != $name then continue end
+    if $a.family == "inet6" and starts_with(lower($a.address), "fe80:") then continue end
+    push($addrs, $a.address .. "/" .. to_string($a.prefix))
+  end
+  return {kind: "wg", link: $name, wg_addresses: join($addrs, ", "), wg_port: "", wg_pubkey: "",
+    peer_key: "", peer_endpoint: "", peer_allowed: "", peer_keepalive: "", handshake: true,
+    note: "", busy: false, receipt: nil, confirmed: false}
+end
+
+-- The tunnel form fields worth remembering after an apply (no secrets: the
+-- private key stays in hostd).
+fn wg_form($edit)
+  return {wg_addresses: $edit.wg_addresses ?? "", wg_port: $edit.wg_port ?? "", peer_key: $edit.peer_key ?? "",
+    peer_endpoint: $edit.peer_endpoint ?? "", peer_allowed: $edit.peer_allowed ?? "",
+    peer_keepalive: $edit.peer_keepalive ?? "", handshake: $edit.handshake != false}
+end
+
+fn wifi_prefill($device)
+  return {kind: "wifi", link: $device, networks: [], selected: nil, scanned: false, scanning: false,
+    note: "", busy: false, receipt: nil}
+end
+
+-- The editor's starting values for a link, from the snapshot: its own
+-- addresses (link-local left out), its IPv4 gateway and its DNS servers.
+-- Static when it has an address, else DHCP; the user switches either way.
+fn edit_prefill($snap, $link)
+  $snap = $snap ?? {}
+  $addrs = []
+  for each $a in $snap.addresses ?? []
+    if $a.ifname != $link then continue end
+    if $a.family == "inet6" and starts_with(lower($a.address), "fe80:") then continue end
+    push($addrs, $a.address .. "/" .. to_string($a.prefix))
+  end
+  $gateway = ""
+  for each $r in $snap.routes ?? []
+    if $gateway == "" and $r.dev == $link and $r.gateway != "" and not contains($r.gateway, ":") then $gateway = $r.gateway end
+  end
+  $dns = []
+  if $snap.resolved != nil then $dns = $snap.resolved.links[$link] ?? [] end
+  return {link: $link, mode: length($addrs) > 0 ? "static" : "dhcp", addresses: join($addrs, ", "),
+    gateway: $gateway, dns: join($dns, ", "), note: "", busy: false, receipt: nil}
+end
+
+-- A hostd refusal in words, for the editor's note. $body is hostd's reply
+-- body (rolled_back carries detail.reason, bad_request a message).
+fn net_refusal($status, $link, $body)
+  $body = type($body) == "map" ? $body : {}
+  $key = "hostd_" .. to_string($status)
+  if $status == "rolled_back" then
+    $why = type($body.detail) == "map" ? to_string($body.detail.reason ?? "") : ""
+    -- abandoned: the file changed under hostd during the window, so it left
+    -- the file as found rather than restore over someone else's change.
+    if type($body.detail) == "map" and $body.detail.outcome == "abandoned" then
+      return text("hostd_abandoned", {link: $link}) .. ($why != "" ? " (" .. $why .. ")" : "")
+    end
+    return text("hostd_rolled_back", {link: $link}) .. ($why != "" ? " (" .. $why .. ")" : "")
+  end
+  if $status == "bad_request" then return text("hostd_bad_request", {message: to_string($body.message ?? "")}) end
+  if $TEXT[$key] != nil then return text($key, {link: $link}) end
+  return text("hostd_refused", {status: to_string($status)})
+end
+
+-- ── the volume popup (share/scenes/volume) ──────────────────────────────
+-- $snap: lib/audio.mix snapshot() ({ok:false, reason} when pactl did not
+-- answer), or nil before the first one. $ui (optional): {selected: the
+-- chosen stream's index, note: the last write's error line}. The output and
+-- input cards control the default sink and source; their lists pick the
+-- default. Streams are listed; the chosen one (the first by default) gets
+-- the controls under the list. Every key is always present.
+$VOL_STEP = 5
+
+-- A level bar: one clickable segment per 5 %, to 100 %, or to 150 % while
+-- PipeWire reports the level above 100 %. Segment widths fill a 344 px card.
+fn vol_bar($level, $muted)
+  $top = $level > 100 ? 150 : 100
+  $n = $top / $VOL_STEP
+  $w = $n == 20 ? 15 : 9
+  $bar = []
+  for $i = 1 to $n
+    $pct = $i * $VOL_STEP
+    $on = $pct <= $level
+    push($bar, {id: "v" .. to_string($pct), cells: [], pct: $pct, w: $w,
+      background: $on ? ($muted ? $C.faint : $C.accent) : $C.task_bg})
+  end
+  return $bar
+end
+
+-- One control card: a device or a stream ($d nil: an empty, hidden card).
+fn vol_control($d, $name)
+  if $d == nil then
+    return {shown: false, name: "", level_text: "", mute_label: text("vol_mute"), mute_bg: $C.task_bg, mute_color: $C.fg, bar: []}
+  end
+  $chip = chip($d.muted)
+  return {shown: true, name: $name, level_text: $d.muted ? text("muted") : text("level", {n: $d.level}),
+    mute_label: text($d.muted ? "vol_unmute" : "vol_mute"), mute_bg: $chip.bg, mute_color: $chip.color,
+    bar: vol_bar($d.level, $d.muted)}
+end
+
+-- The default device of a list, or nil when none is marked: the controls
+-- never stand another device in for a default the read did not find.
+fn vol_default($devices)
+  for each $d in $devices
+    if $d.default then return $d end
+  end
+  return nil
+end
+
+fn vol_rows($devices, $prefix)
+  $rows = []
+  for each $d in $devices
+    push($rows, {id: $prefix .. to_string($d.index), cells: [], name: $d.description,
+      mark: $d.default ? "●" : "○", sub: $d.default ? text("vol_default") : "",
+      background: $d.default ? $C.accent_bg : $C.card})
+  end
+  return $rows
+end
+
+-- The chosen stream: $selected if it still plays, else the first.
+fn vol_stream($streams, $selected)
+  for each $s in $streams
+    if $s.index == $selected then return $s end
+  end
+  return length($streams) > 0 ? $streams[0] : nil
+end
+
+-- The volume popup's one write guard: true only when pactl's raw read (see
+-- audio.from_pactl) has the default sink and, when it lists any source,
+-- the default source. Anything else fails closed: no snapshot, a failed or
+-- unparseable read, a field missing or of the wrong type. Every write
+-- handler in volume/behaviour.mix checks it before building a pactl argv,
+-- and the model shows no control card while it is false.
+fn vol_writes_allowed($snap)
+  if type($snap) != "map" or $snap.ok != true then return false end
+  if $snap.default_sink_found != true or type($snap.raw_sources) != "number" then return false end
+  return $snap.raw_sources == 0 or $snap.default_source_found == true
+end
+
+-- The stream the controls act on: nil while writes are not allowed.
+fn vol_stream_target($snap, $selected)
+  if not vol_writes_allowed($snap) then return nil end
+  return vol_stream($snap.streams ?? [], $selected)
+end
+
+fn volume($snap, $ui = nil)
+  $ui = $ui ?? {}
+  $ok = $snap != nil and $snap.ok == true
+  $sinks = $ok ? $snap.sinks ?? [] : []
+  $sources = $ok ? $snap.sources ?? [] : []
+  $streams = $ok ? $snap.streams ?? [] : []
+  -- No control card while the write guard is false: nothing to click.
+  $allowed = vol_writes_allowed($snap)
+  $sink = $allowed ? vol_default($sinks) : nil
+  $source = $allowed ? vol_default($sources) : nil
+  $stream = vol_stream_target($snap, $ui.selected)
+  $status = ""
+  if $snap != nil and not $ok then
+    $status = text("vol_unavailable")
+  elif $ok and length($sinks) == 0 then
+    $status = text("vol_no_device")
+  elif $ok and $snap.default_sink_found != true then
+    $status = text("vol_no_default_out")
+  elif $ok then
+    $status = vol_default($sinks) != nil ? vol_default($sinks).description : ""
+  end
+  if $ok and not (($snap.raw_sources ?? -1) == 0 or $snap.default_source_found == true) then $status = $status .. " · " .. text("vol_no_default_in") end
+  $rows = []
+  for each $s in $streams
+    push($rows, {id: "si_" .. to_string($s.index), cells: [], name: $s.name, sub: $s.media,
+      level_text: $s.muted ? text("muted") : text("level", {n: $s.level}),
+      background: ($stream != nil and $s.index == $stream.index) ? $C.accent_bg : $C.card})
+  end
+  $note = to_string($ui.note ?? "")
+  return {title: text("volume_title"), status: $status, note: $note, has_note: $note != "",
+    down_label: text("vol_down"), up_label: text("vol_up"),
+    out_label: text("vol_output"), has_out: $sink != nil,
+    out: vol_control($sink, $sink != nil ? $sink.description : ""),
+    outputs: vol_rows($sinks, "sink_"), has_outputs: length($sinks) > 1,
+    in_label: text("vol_input"), has_in: $source != nil,
+    inp: vol_control($source, $source != nil ? $source.description : ""),
+    inputs: vol_rows($sources, "source_"), has_inputs: length($sources) > 1,
+    apps_label: text("vol_apps"), has_streams: length($rows) > 0, streams: $rows,
+    stream: vol_control($stream, $stream != nil ? $stream.name : "")}
+end
+
+-- Settings/Appearance from Quoin's shell.settings.get snapshot (or the
+-- shell.settings.changed notice carrying the same fields). Marks mirror the
+-- configured motion, fade included, exactly as Quoin's built-in fallback.
+fn settings_valid($snap)
+  if type($snap) != "map" or type($snap.scheme) != "string" or type($snap.schemes) != "list" then return false end
+  if type($snap.motion) != "string" or type($snap.fade_reason) != "string" or type($snap.sizes) != "map" then return false end
+  for each $s in $snap.schemes
+    if type($s) != "map" or type($s.name) != "string" or type($s.accent) != "string" then return false end
+  end
+  for each $edge in ["top", "bottom", "left", "right"]
+    if type($snap.sizes[$edge]) != "number" then return false end
+  end
+  return true
+end
+
+fn settings($snap)
+  $schemes = {}
+  for each $s in $snap.schemes
+    $on = $s.name == $snap.scheme
+    $schemes[$s.name] = {accent: $s.accent, background: $on ? "#2a2e32" : "#00000000", mark: $on ? "●" : "○"}
+  end
+  $sizes = {}
+  for each $edge in ["top", "bottom", "left", "right"]
+    $sizes[$edge] = to_string(round($snap.sizes[$edge])) .. " px"
+  end
+  return {schemes: $schemes, sizes: $sizes, fade_reason: $snap.fade_reason, motion: {
+    slide: ($snap.motion == "slide" ? "● " : "○ ") .. "Slide",
+    fade: ($snap.motion == "fade" ? "● " : "○ ") .. "Fade (unavailable)"
+  }}
+end

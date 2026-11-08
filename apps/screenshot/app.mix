@@ -1,0 +1,208 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- lint: globals app_args
+$states=require("state.mix");$op=require("operations.mix");$events=require("events.mix");$model=require("model.mix")
+$journal=require("journal.mix")
+$macros=require("macros.mix")
+$ctx=viu_context()
+$launch={}
+if $app_args[1]=="--launch" then $launch=json_parse($app_args[2]) end
+$state=$states.initial($app_args[0] ?? env("MIX_COMP_SERVICE","comp"),if $app_args[1]=="--launch" then nil else $app_args[1] end,if $app_args[1]=="--launch" then nil else $app_args[2] end)
+$options=$ctx.options ?? {}
+$state.headless=$options.headless ?? false
+$state.build=$ctx.build
+$state=$op.refresh($state)
+fn publish_model($s)
+  $s=$macros.flush($s)
+  $s=$journal.flush($s,$ctx.citizen)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model.render($s)}
+  return $s
+end
+fn command($s,$name,$args)
+  $result=$op.dispatch($s,$name,$args)
+  $result.state=publish_model($result.state)
+  if not $result.deferred then reply($result.rc,json_encode($result.body)) end
+  return $result.state
+end
+if $launch.path!=nil then $state=$op.work($state,{op:"open",path:$launch.path},false)
+elif $launch.capture!=nil then
+  $request=$op.capture_request($state,$launch.capture)
+  if $launch.window!=nil then $request.window=$launch.window end
+  $state=$op.capture($state,$request,false,true)
+end
+$state=publish_model($state)
+on viu.job.completed
+  $state=$events.completed($state,$event.args,$ctx.citizen);$state=publish_model($state)
+end
+on screenshot.intent
+  $state=$events.intent($state,$event.args);$state=publish_model($state)
+end
+on viu.frame.intent
+  $state=$events.intent($state,$event.args);$state=publish_model($state)
+end
+on viu.frame.close
+  $state=$op.request($state,{op:"quit"});$state=publish_model($state)
+end
+on viu.key
+  $state=$events.key($state,$event.args);$state=publish_model($state)
+end
+on viu.session.changed
+  $state.effective=$event.args.appearance;$state.keymap=$event.args.keymap;$state=publish_model($state)
+end
+on bus.connected
+  $state.connected=true;$state=$op.refresh($state);$state=publish_model($state)
+end
+on bus.disconnected
+  $state.connected=false;$state.status="The Bus is disconnected";$state=publish_model($state)
+end
+
+on HELP
+  $state=command($state,"HELP",$event.args)
+end
+
+on app.describe
+  $state=command($state,"app.describe",$event.args)
+end
+
+on screenshot.ping
+  $state=command($state,"screenshot.ping",$event.args)
+end
+
+on screenshot.info
+  $state=command($state,"screenshot.info",$event.args)
+end
+
+on screenshot.capture
+  $state=command($state,"screenshot.capture",$event.args)
+end
+
+on screenshot.take
+  $state=command($state,"screenshot.take",$event.args)
+end
+
+on screenshot.cancel
+  $state=command($state,"screenshot.cancel",$event.args)
+end
+
+on screenshot.open
+  $state=command($state,"screenshot.open",$event.args)
+end
+
+on screenshot.annotate
+  $state=command($state,"screenshot.annotate",$event.args)
+end
+
+on screenshot.move
+  $state=command($state,"screenshot.move",$event.args)
+end
+
+on screenshot.delete
+  $state=command($state,"screenshot.delete",$event.args)
+end
+
+on screenshot.crop
+  $state=command($state,"screenshot.crop",$event.args)
+end
+
+on screenshot.undo
+  $state=command($state,"screenshot.undo",$event.args)
+end
+
+on screenshot.redo
+  $state=command($state,"screenshot.redo",$event.args)
+end
+
+on screenshot.export
+  $state=command($state,"screenshot.export",$event.args)
+end
+
+on screenshot.save
+  $state=command($state,"screenshot.save",$event.args)
+end
+
+on screenshot.recent
+  $state=command($state,"screenshot.recent",$event.args)
+end
+
+on screenshot.select
+  $state=command($state,"screenshot.select",$event.args)
+end
+
+on screenshot.actions
+  $state=command($state,"screenshot.actions",$event.args)
+end
+
+on screenshot.execute
+  $state=command($state,"screenshot.execute",$event.args)
+end
+
+on screenshot.show
+  $state=command($state,"screenshot.show",$event.args)
+end
+
+on screenshot.quit
+  $state=command($state,"screenshot.quit",$event.args)
+end
+
+on screenshot.theme
+  $state=command($state,"screenshot.theme",$event.args)
+end
+
+on screenshot.dialog
+  $state=command($state,"screenshot.dialog",$event.args)
+end
+
+on screenshot.macros.list
+  $state=$macros.request_macro($state,"list",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.reload
+  $state=$macros.request_macro($state,"reload",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.run
+  $state=$macros.request_macro($state,"run",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.status
+  $state=$macros.request_macro($state,"status",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.output
+  $state=$macros.request_macro($state,"output",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.stop
+  $state=$macros.request_macro($state,"stop",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.new
+  $state=$macros.request_macro($state,"new",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.get
+  $state=$macros.request_macro($state,"get",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.put
+  $state=$macros.request_macro($state,"put",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.remove
+  $state=$macros.request_macro($state,"remove",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.move
+  $state=$macros.request_macro($state,"move",$event.args);$state=publish_model($state)
+end
+
+on screenshot.macros.copy
+  $state=$macros.request_macro($state,"copy",$event.args);$state=publish_model($state)
+end
+
+on viu.macros.closed
+  $state.ui.macros_open=false;$state=publish_model($state)
+end
+on viu.macros.changed
+  $state.ui.macros_open=$event.args.open;$state=publish_model($state)
+end

@@ -1,0 +1,137 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold email.* authority and private, poison-pill-protected secrets.
+$identity=require("identity.mix")
+fn secrets_path()
+  $dirs=viu_app_dirs("email")
+  if $dirs==nil then raise("SECRETS","No application config directory") end
+  return path_join($dirs.config,"secrets.conf.mix")
+end
+fn secrets_read()
+  try
+    $file=viu_read_optional(secrets_path())
+    if not $file.found then return {schema_version:1,passwords:{}} end
+    $v=data_parse($file.text)
+    if $v.schema_version!=1 or type($v.passwords)!="map" or any(keys($v),fn($k)=not contains(["schema_version","passwords"],$k)) or not all(values($v.passwords),fn($p)=type($p)=="string") then raise("SECRETS","Unsupported secrets file") end
+    return $v
+  catch $message
+    -- Parser diagnostics may quote secret data: never propagate them.
+    raise("SECRETS","The secrets file is unreadable and was left untouched")
+  end
+end
+fn password($id)
+  return secrets_read().passwords[$id] ?? ""
+end
+fn save_password($id,$password)
+  $v=secrets_read();$old=$v.passwords[$id]
+  if $password=="" then $v.passwords=delete($v.passwords,$id) else $v.passwords[$id]=$password end
+  if $old!=$v.passwords[$id] then viu_private_directory(dirname(secrets_path()));viu_atomic_replace(secrets_path(),data_encode($v)) end
+  return $old!=nil
+end
+fn settings_call($command,$body)
+  send "settingsd" $command body=$body timeout=10
+  if $rc!=0 then raise(if $reply.status=="conflict" then "CONFLICT" elif $reply.status=="outcome_unknown" then "OUTCOME_UNKNOWN" else "SETTINGS" end,$reply.message ?? json_encode($reply)) end
+  return $reply
+end
+fn update($command,$a,$binding)
+  $new_id=if $command=="email.account.set" and $a.id==nil then "acct-"..substr(replace($identity.mint(),"-",""),0,16) else nil end
+  for $attempt=0 to 3
+    try return update_once($command,$a,$binding,$new_id)
+    catch $message,$error
+      if $error.code!="CONFLICT" or $attempt==3 then raise($error.code,$message) end
+    end
+  end
+end
+fn update_once($command,$a,$binding,$new_id)
+  if type($a)!="map" then raise("INVALID_ARGUMENT","arguments must be an object") end
+  if contains(keys($a),"password") and type($a.password)!="string" then raise("INVALID_ARGUMENT","password must be a string") end
+  if $command=="email.account.password.set" then
+    if type($a.id)!="string" or type($a.password)!="string" then raise("INVALID_ARGUMENT","id and password must be strings") end
+    if not re_match($a.id,"^[a-z0-9-]{1,64}$") then raise("INVALID_ARGUMENT","id is not an account id") end
+    if $a.password=="" then return {forgotten:save_password($a.id,"")} end
+    $view=settings_call("settings.get",{binding:$binding,view:"values"})
+    if not any($view.values["email.accounts"] ?? [],fn($e)=$e.id==$a.id) then raise("UNKNOWN_ACCOUNT","No account "..$a.id) end
+    save_password($a.id,$a.password);return {id:$a.id}
+  end
+  $view=settings_call("settings.get",{binding:$binding,view:"values"})
+  $entries=$view.values["email.accounts"] ?? [];$default=$view.values["email.default_account"]
+  if $command=="email.account.migrate" then
+    $legacy=$a.entry;validate_entry($legacy)
+    $matched=filter($entries,fn($e)=$e.url==$legacy.url and lower($e.email)==lower($legacy.email))
+    $id=($matched[0] ?? $legacy).id;$changes={}
+    if len($matched)==0 then
+      if any($entries,fn($e)=$e.id==$legacy.id) then raise("REFUSED","The migration identity is already used by another account") end
+      push($entries,$legacy);$changes["email.accounts"]=$entries
+    end
+    if $default==nil then $changes["email.default_account"]=$id end
+    if len(keys($changes))>0 then settings_call("settings.apply",{binding:$binding,expected_incarnation:$view.incarnation,expected_revision:$view.revision,operation_id:$identity.mint(),changes:$changes}) end
+    $fresh=settings_call("settings.get",{binding:$binding,view:"values"})
+    $held=filter($fresh.values["email.accounts"] ?? [],fn($e)=$e.id==$id)[0]
+    if $held==nil or $held.url!=$legacy.url or lower($held.email)!=lower($legacy.email) then raise("CONFLICT","The migration account changed; try again") end
+    if $id!=$legacy.id and password($id)=="" then save_password($id,password($legacy.id)) end
+    return {id:$id}
+  end
+  $id=$a.id;$changes={};$removed=false
+  if $command=="email.account.set" then
+    if $a.id==nil and len($entries)>=64 then raise("INVALID_ARGUMENT","At most 64 accounts are allowed") end
+    if $id==nil then $id=$new_id end
+    $found=filter($entries,fn($e)=$e.id==$id)
+    if $a.id!=nil and len($found)==0 then raise("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
+    $entry=if len($found)>0 then $found[0] else {id:$id,name:"",url:"",email:"",ca_path:nil,enabled:true,signature:"",identities:[]} end
+    for $key in ["name","url","email","ca_path","enabled","signature","identities"]
+      if contains(keys($a),$key) then $entry[$key]=$a[$key] end
+    end
+    for $key in ["name","url","email"]
+      if type($entry[$key])!="string" then raise("INVALID_ARGUMENT",$key.." must be a string") end
+      $entry[$key]=trim($entry[$key])
+      if $entry[$key]=="" then raise("INVALID_ARGUMENT",$key.." is required") end
+    end
+    $entry.url=rtrim($entry.url,"/")
+    validate_entry($entry)
+    if $entry.ca_path!=nil then
+      if type($entry.ca_path)!="string" then raise("INVALID_ARGUMENT","ca_path must be a string or null") end
+      $entry.ca_path=if trim($entry.ca_path)=="" then nil else trim($entry.ca_path) end
+    end
+    if len($found)==0 then push($entries,$entry) else $entries=map($entries,fn($e)=if $e.id==$id then $entry else $e end) end
+    $changes["email.accounts"]=$entries
+  elif $command=="email.account.remove" then
+    if not any($entries,fn($e)=$e.id==$id) then raise("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
+    $changes["email.accounts"]=filter($entries,fn($e)=$e.id!=$id);$removed=true
+    if $default==$id then $changes["email.default_account"]=nil end
+  elif $command=="email.account.default" then
+    if $id!=nil and not any($entries,fn($e)=$e.id==$id) then raise("UNKNOWN_ACCOUNT","No account "..to_string($id)) end
+    $changes["email.default_account"]=$id
+  else raise("UNKNOWN_COMMAND","Unknown account change") end
+  $accepted=settings_call("settings.apply",{binding:$binding,expected_incarnation:$view.incarnation,expected_revision:$view.revision,operation_id:$identity.mint(),changes:$changes})
+  if $command=="email.account.set" and contains(keys($a),"password") and $a.password!="" then
+    save_password($id,$a.password)
+  elif $removed then save_password($id,"") end
+  return {id:$id}
+end
+fn validate_entry($entry)
+  if byte_length($entry.name)>128 or byte_length($entry.url)>2048 or byte_length($entry.email)>254 then raise("INVALID_ARGUMENT","Account text exceeds its size limit") end
+  if type($entry.enabled)!="bool" then raise("INVALID_ARGUMENT","enabled must be true or false") end
+  if trim($entry.name)!=$entry.name or $entry.name=="" or re_match($entry.name,"[\\x00-\\x1f\\x7f-\\x9f]") then raise("INVALID_ARGUMENT","Invalid account name") end
+  if not valid_address($entry.email) then raise("INVALID_ARGUMENT","Expected one address with one @") end
+  if type($entry.signature)!="string" or len($entry.signature)>4096 then raise("INVALID_ARGUMENT","signature exceeds its limit") end
+  try $url=url_parse($entry.url) catch $bad raise("INVALID_ARGUMENT","url must be an HTTPS URL") end
+  $authority=re_split(split($entry.url,"://")[1] ?? "","[/?#]")[0]
+  if $url.scheme!="https" or $url.host==nil or $url.host=="" or contains($authority,"@") or $url.fragment!=nil then raise("INVALID_ARGUMENT","url must be HTTPS without credentials or fragment") end
+  if $entry.ca_path!=nil and (type($entry.ca_path)!="string" or byte_length($entry.ca_path)>4096 or (trim($entry.ca_path)!="" and not starts_with(trim($entry.ca_path),"/"))) then raise("INVALID_ARGUMENT","ca_path must be an absolute path or null") end
+  if type($entry.identities)!="list" or len($entry.identities)>16 then raise("INVALID_ARGUMENT","identities must hold at most 16 identities") end
+  $seen=[]
+  for $id in $entry.identities
+    if type($id)!="map" or type($id.id)!="string" or not re_match($id.id,"^[a-z0-9-]{1,64}$") or contains($seen,$id.id) then raise("INVALID_ARGUMENT","Invalid or duplicate identity id") end
+    push($seen,$id.id)
+    if any(keys($id),fn($key)=not contains(["id","name","address","signature","reply_to"],$key)) then raise("INVALID_ARGUMENT","Unknown identity field") end
+    if type($id.name)!="string" or byte_length($id.name)>128 or type($id.address)!="string" or byte_length($id.address)>254 or type($id.signature ?? "")!="string" or len($id.signature ?? "")>4096 then raise("INVALID_ARGUMENT","Invalid identity text") end
+    if trim($id.name)!=$id.name or $id.name=="" or re_match($id.name,"[\\x00-\\x1f\\x7f-\\x9f]") then raise("INVALID_ARGUMENT","Invalid identity name") end
+    if not valid_address($id.address) or ($id.reply_to!=nil and not valid_address($id.reply_to)) then raise("INVALID_ARGUMENT","Expected one address with one @") end
+  end
+end
+fn valid_address($address)
+  return type($address)=="string" and byte_length($address)<=254 and re_match($address,"^[^@\\s\\x00-\\x1f\\x7f-\\x9f]+@[^@\\s\\x00-\\x1f\\x7f-\\x9f]+$")
+end
+fn entry($value)
+  -- The compatibility fields keep the measured list and legacy wire tests.
+  return merge($value,{user:$value.email,label:$value.name,ca_file:$value.ca_path,secrets_id:$value.id})
+end

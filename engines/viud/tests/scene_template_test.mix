@@ -1,0 +1,1025 @@
+-- Deterministic extraction gate. --record refreshes the public captures.
+-- Set the process timezone before any date conversion or module loading.
+export TZ = "UTC"
+$root = dirname(dirname(dirname(dirname(realpath($0)))))
+$fixtures = dirname(realpath($0)) .. "/fixtures/scenes"
+$old = require("fixtures/scenes/old_builders.mix")
+$models = require($root .. "/share/scenes/lib/models.mix")
+$runtime = require($root .. "/share/scenes/lib/runtime.mix")
+$record = contains(args(), "--record")
+fn check($ok, $message)
+  if not $ok then raise("SCENE_TEMPLATE_TEST", $message) end
+end
+check(date_format(0, "%z") == "+0000", "UTC timezone was not applied")
+for each $name in ["launcher", "calendar", "notes", "network", "volume"]
+  $directory = $root .. "/share/scenes/" .. $name
+  $metadata = data_parse(read_file($directory .. "/template.conf.mix"))
+  check($metadata.name == $name and $metadata.behaviour == "behaviour.mix", "strict metadata: " .. $name)
+  $source = read_file($directory .. "/scene.mix")
+  $nodes = data_parse(before(after($source, "```mix\n"), "\n```"))
+  check($nodes.root.widget == "column", "strict static document: " .. $name)
+  if $name == "calendar" then
+    $cells = 0
+    for each $id in keys($nodes)
+      if re_match($id, "^d_[0-5]_[0-6]$") then $cells = $cells + 1 end
+    end
+    check($cells == 42, "six-by-seven grid is authored directly")
+  end
+end
+
+-- The captured builder bodies must still be the actual unchanged builders.
+$original = read_file($root .. "/engines/viud/tests/fixtures/scenes/legacy_panel.mix")
+$copied = read_file($fixtures .. "/old_builders.mix")
+for each $name in ["launcher", "calendar", "notes"]
+  $body = before(after($original, "fn " .. $name .. "_doc()\n"), "\n-- ──")
+  $signature = $name == "calendar" ? "($state, $fixed_time)" : "($state)"
+  $copy = after($copied, "fn " .. $name .. "_doc" .. $signature .. "\n")
+  $copy = before($copy, "\nfn ") ?? $copy
+  $body = replace($body, "$now = time()", "$now = $fixed_time")
+  check(trim($body) == trim($copy), "legacy builder body drift: " .. $name)
+end
+-- The panel builder and its status-icon helper, likewise.
+$body = replace(before(after($original, "fn panel_doc()\n"), "\n-- ──"), "$now = time()", "$now = $fixed_time")
+$copy = before(after($copied, "fn panel_doc($state, $fixed_time)\n"), "\nfn ") ?? after($copied, "fn panel_doc($state, $fixed_time)\n")
+check(trim($body) == trim($copy), "legacy builder body drift: panel")
+$body = before(after($original, "fn status_icon($name, $fallback)\n"), "\nend\n")
+$copy = before(after($copied, "fn status_icon($name, $fallback)\n"), "\nend\n")
+check(trim($body) == trim($copy), "legacy builder body drift: status_icon")
+
+$base = {apps: [], query: "", category: "", notes: [], cal_offset: 0}
+$fixed = date_parse("2024-02-29T12:05:07Z")
+$icons = {"example-icon": "/usr/share/icons/example.svg"}
+$cases = [
+  {id: "launcher-empty", name: "launcher", input: $base, at: $fixed},
+  {id: "notes-empty", name: "notes", input: $base, at: $fixed},
+  {id: "calendar-leap", name: "calendar", input: $base, at: $fixed}
+]
+$filtered = $base
+$filtered.query = "edit"
+$filtered.category = "Development"
+$filtered.apps = [
+  {id: "example-editor.desktop", name: "Example Editor", generic_name: "Text editor", icon: "example-icon"},
+  {id: "fallback.desktop", name: "Fallback", comment: "No icon", icon: "missing"}
+]
+push($cases, {id: "launcher-filtered", name: "launcher", input: $filtered, at: $fixed})
+$many = $base
+$apps = []
+for $i = 0 to 504
+  push($apps, {id: "app-" .. to_string($i), name: "Application " .. to_string($i), icon: ""})
+end
+$many.apps = $apps
+push($cases, {id: "launcher-cap", name: "launcher", input: $many, at: $fixed})
+$many = $base
+$notes = []
+for $i = 1 to 55
+  push($notes, {id: to_string($i), app: $i == 55 ? "" : "Example", summary: "Notice " .. to_string($i), body: "Public fixture", created_at: to_string($i)})
+end
+$many.notes = $notes
+push($cases, {id: "notes-full", name: "notes", input: $many, at: $fixed})
+$year = $base
+$year.cal_offset = 1
+push($cases, {id: "calendar-year", name: "calendar", input: $year, at: date_parse("2026-12-31T23:59:00Z")})
+$century = $base
+push($cases, {id: "calendar-century", name: "calendar", input: $century, at: date_parse("2100-02-28T00:00:00Z")})
+
+$manifest = []
+for each $case in $cases
+  $input = $case.input
+  $doc = $old.capture($case.name, $input, $case.at, $icons)
+  if $case.name == "launcher" then
+    $model = $models.launcher($input.apps, $input.query, $input.category, $icons)
+  elif $case.name == "calendar" then
+    $model = $models.calendar($case.at, $input.cal_offset)
+  else
+    $model = $models.notes($input.notes)
+  end
+  if $record then
+    write_file($fixtures .. "/" .. replace($case.id, "-", "_") .. ".scene.mix", $doc)
+    write_file($fixtures .. "/" .. $case.id .. ".model.json", json_encode($model) .. "\n")
+  else
+    check(read_file($fixtures .. "/" .. replace($case.id, "-", "_") .. ".scene.mix") == $doc, "exact old document: " .. $case.id)
+    check(deep_eq(json_parse(read_file($fixtures .. "/" .. $case.id .. ".model.json")), $model), "model capture: " .. $case.id)
+  end
+  push($manifest, {id: $case.id, name: $case.name})
+end
+if $record then write_file($fixtures .. "/cases.json", json_encode($manifest) .. "\n") end
+check(length($models.launcher($apps, "", "", {}).rows) == 500, "launcher cap")
+$data = require($root .. "/share/scenes/lib/data.mix")
+$kept = $data.pinned([{id: "dev.mixos.email"}, {id: "firefox"}, {id: "org.mozilla.Thunderbird"}, {id: "xterm"}, {id: "dev.mixosx"}, {}])
+check(deep_eq(map($kept, fn($a) = $a.id), ["dev.mixos.email", "firefox", "org.mozilla.Thunderbird"]), "pinned keeps MixViu apps, Firefox and Thunderbird only")
+check($data.category_from_node("cat_pinned") == "Pinned", "pinned chip node")
+check($models.launcher([], "", "Pinned", {}).chips.cat_pinned.bold, "pinned chip lights")
+$note_model = $models.notes($notes)
+check(length($note_model.rows) == 50 and $note_model.rows[0].id == "55" and $note_model.rows[49].id == "6", "newest-first 50-row cap")
+check($note_model.rows[0].cells[0] == "Notification", "empty application fallback")
+check($models.notes([]).empty, "notification empty state")
+check($runtime.item_id({args: {item: {id: "app@with:punctuation"}}}) == "app@with:punctuation", "item payload is not parsed from a generated node")
+check($runtime.item_id({item: {id: "wrong"}, args: {node: "fake@id"}}) == nil, "only event.args.item is accepted")
+check(not $runtime.template_capable([]), "older host refused")
+check($runtime.template_capable([{path: "flow", enum: ["vertical", "horizontal"]}, {path: "hidden", type: "bool"}]), "capability check uses schema")
+check($runtime.failure("example", "Example").value.error_code == "example", "unified refusal")
+
+-- ── panel: the static template + model against the exact legacy builder ──
+-- Panel cases live in their own manifest: the Rust renderer gate reads
+-- cases.json and compares node IDs, while the panel's repeated buttons move
+-- from generated static nodes into horizontal-flow list instances. This gate
+-- instantiates the template itself (bindings evaluated by the real Mix
+-- interpreter against $model/$item) and compares the visible trees by shape.
+$taskbar = require($root .. "/share/scenes/lib/taskbar.mix")
+$panel_source = read_file($root .. "/share/scenes/panel/scene.mix")
+$panel_meta = data_parse(read_file($root .. "/share/scenes/panel/template.conf.mix"))
+check($panel_meta.name == "panel" and $panel_meta.behaviour == "behaviour.mix", "strict metadata: panel")
+$MIX = realpath("/proc/self/exe")
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-panel-template.XXXXXXXX"]))
+
+fn fence($source)
+  return data_parse(before(after($source, "```mix\n"), "\n```"))
+end
+fn header($source, $key)
+  for each $line in split(before(after($source, "---\n"), "\n---"), "\n")
+    if starts_with($line, $key .. ": ") then return after($line, $key .. ": ") end
+  end
+  return nil
+end
+fn bound($value)
+  return type($value) == "string" and starts_with($value, "= ")
+end
+-- Every node reachable from a list's row template (instantiated per item).
+fn template_ids($nodes)
+  $queue = []
+  for each $id, $node in $nodes
+    if $node.widget == "list" then push($queue, $node.row) end
+  end
+  return subtree($nodes, $queue)
+end
+fn subtree($nodes, $queue)
+  $out = []
+  while length($queue) > 0
+    $id = $queue[0]
+    $queue = slice($queue, 1)
+    if not contains($out, $id) then
+      push($out, $id)
+      for each $child in $nodes[$id].children ?? []
+        push($queue, $child)
+      end
+    end
+  end
+  return $out
+end
+-- One interpreter run per pass: [key, item index or -1, expression] rows.
+fn evaluate($dir, $model, $items, $jobs)
+  write_file($dir .. "/data.json", json_encode({model: $model, items: $items}))
+  $src = "$d = json_parse(read_file(" .. json_encode($dir .. "/data.json") .. "))\n$model = $d.model\n$item = nil\n$out = {}\n"
+  for each $job in $jobs
+    $src = $src .. "$item = " .. ($job[1] < 0 ? "nil" : "$d.items[" .. to_string($job[1]) .. "]") .. "\n"
+    $src = $src .. "$out[" .. json_encode($job[0]) .. "] = (" .. after($job[2], "= ") .. ")\n"
+  end
+  write_file($dir .. "/eval.mix", $src .. "print(json_encode($out))\n")
+  $run = run_argv([$MIX, $dir .. "/eval.mix"], {timeout: 60})
+  check($run.ok, "binding evaluation failed: " .. $run.stderr)
+  return json_parse(trim($run.stdout))
+end
+fn resolve_template($source, $model, $dir)
+  $nodes = fence($source)
+  $templated = template_ids($nodes)
+  $jobs = []
+  for each $id, $node in $nodes
+    if not contains($templated, $id) then
+      for each $port, $value in $node
+        if bound($value) then push($jobs, [$id .. "." .. $port, -1, $value]) end
+      end
+    end
+  end
+  $values = evaluate($dir, $model, [], $jobs)
+  $items = []
+  $jobs = []
+  for each $id, $node in $nodes
+    if $node.widget == "list" then
+      $rows = bound($node.rows) ? $values[$id .. ".rows"] : $node.rows
+      $k = 0
+      for each $row in $rows ?? []
+        push($items, $row)
+        for each $tid in subtree($nodes, [$node.row])
+          for each $port, $value in $nodes[$tid]
+            if bound($value) then push($jobs, [$id .. "#" .. to_string($k) .. "." .. $tid .. "." .. $port, length($items) - 1, $value]) end
+          end
+        end
+        $k = $k + 1
+      end
+    end
+  end
+  for each $key, $value in evaluate($dir, $model, $items, $jobs)
+    $values[$key] = $value
+  end
+  return {nodes: $nodes, values: $values}
+end
+-- The visible tree by shape: family, literal/evaluated ports and visible
+-- children. Hidden nodes vanish (Display::None). A horizontal-flow list is a
+-- row of its instances; the owning list's click handler applies to each
+-- instance root, exactly as the renderer routes repeated-row clicks.
+fn visible($id, $nodes, $values, $prefix, $click)
+  $node = $nodes[$id]
+  $ports = {}
+  for each $port, $value in $node
+    if $port == "widget" or $port == "children" then continue end
+    if bound($value) then $value = $values[$prefix .. $id .. "." .. $port] end
+    if $value != nil then $ports[$port] = $value end
+  end
+  if $ports.hidden == true then return nil end
+  $ports = delete($ports, "hidden")
+  if $click != nil then $ports.on_click = $click end
+  $family = $node.widget
+  $children = []
+  if $family == "list" and $ports.flow == "horizontal" then
+    $family = "row"
+    $k = 0
+    for each $row in $ports.rows
+      push($children, visible($ports.row, $nodes, $values, $id .. "#" .. to_string($k) .. ".", $ports.on_click))
+      $k = $k + 1
+    end
+    $ports = {gap: $ports.gap, align: $ports.align}
+  else
+    for each $child in $node.children ?? []
+      $shape = visible($child, $nodes, $values, $prefix, nil)
+      if $shape != nil then push($children, $shape) end
+    end
+  end
+  return {family: $family, ports: $ports, children: $children}
+end
+fn first_difference($a, $b, $path)
+  if deep_eq($a, $b) then return nil end
+  if type($a) != "map" or type($b) != "map" then return $path .. ": " .. json_encode($a) .. " != " .. json_encode($b) end
+  if not deep_eq($a.ports, $b.ports) or $a.family != $b.family or length($a.children) != length($b.children) then
+    return $path .. ": " .. json_encode({family: $a.family, ports: $a.ports, children: length($a.children)}) .. " != " .. json_encode({family: $b.family, ports: $b.ports, children: length($b.children)})
+  end
+  for $i = 0 to length($a.children) - 1
+    $d = first_difference($a.children[$i], $b.children[$i], $path .. "/" .. to_string($i))
+    if $d != nil then return $d end
+  end
+  return nil
+end
+
+-- Sanitised public fixtures: example icon paths, invented windows/tray.
+fn themed_all()
+  $out = {}
+  for each $name in $models.PANEL_THEMED_ICONS
+    $out[$name] = "/usr/share/icons/example-dark/" .. $name .. ".svg"
+  end
+  return $out
+end
+fn window_row($id, $generation, $ws, $title, $app, $focused, $minimized)
+  $w = {id: $id, generation: $generation, band: "normal", title: $title, app_id: $app, focused: $focused, minimized: $minimized}
+  if $ws != nil then $w.workspace = $ws end
+  return $w
+end
+fn notes_of($n)
+  $out = []
+  for $i = 1 to $n
+    push($out, {id: to_string($i), app: "Example", summary: "Notice", body: "", created_at: to_string($i)})
+  end
+  return $out
+end
+$raw_busy = [
+  window_row(12, 3, 2, "Example Editor — notes.txt", "example.editor", true, false),
+  window_row(4, 1, 2, "Terminal", "example-term", false, false),
+  window_row(9, 7, 2, "A minimised window with a deliberately long title that the panel shortens", "Example.Viewer", false, true),
+  window_row(20, 1, 1, "Other workspace", "example.editor", false, false),
+  window_row(30, 2, nil, "No workspace field", nil, false, false),
+  {id: 40, generation: 1, band: "overlay", title: "Overlay", app_id: "example.overlay", focused: false, minimized: false}
+]
+$icons_busy = {themed: themed_all(), plain: {"example-tray": "/usr/share/icons/example/tray.svg"},
+  windows: {"example.editor": "/usr/share/icons/example/editor.svg", "Example.Viewer": "/usr/share/icons/example/viewer.svg"}}
+$tray_busy = [{key: "i1", icon_name: "example-tray", title: "Example tray"}, {key: "i2", icon_name: "missing-tray", title: "Updates"}]
+$partial = {themed: {"notifications": "/usr/share/icons/example-dark/notifications.svg", "audio-card": "/usr/share/icons/example-dark/audio-card.svg", "start-here": "/usr/share/icons/example-dark/start-here.svg"}, plain: {}, windows: {}}
+$many = []
+for $i = 1 to 55
+  push($many, window_row($i, 1, 1, "Window " .. to_string($i), "example.app", $i == 3, $i % 7 == 0))
+end
+$panel_cases = [
+  {id: "panel-empty", at: "2024-02-29T00:00:00Z", raw: [], ws_count: 1, ws_current: 1, tray: [], notes: 0,
+    vol: {ok: false, level: 0, muted: false}, net: {up: false, wireless: false}, open: {},
+    icons: {themed: {}, plain: {}, windows: {}}},
+  {id: "panel-busy", at: "2024-02-29T21:05:07Z", raw: $raw_busy, ws_count: 3, ws_current: 2, tray: $tray_busy, notes: 3,
+    vol: {ok: true, level: 50, muted: false}, net: {up: true, wireless: false}, open: {launcher: true},
+    icons: $icons_busy},
+  {id: "panel-tray-change", at: "2024-02-29T21:06:00Z", raw: $raw_busy, ws_count: 3, ws_current: 2,
+    tray: [$tray_busy[1], {key: "i3", icon_name: "example-tray", title: "Example sync"}], notes: 12,
+    vol: {ok: true, level: 0, muted: true}, net: {up: true, wireless: true}, open: {calendar: true},
+    icons: $partial},
+  {id: "panel-cap", at: "2026-12-31T23:59:00Z", raw: $many, ws_count: 1, ws_current: 1, tray: [], notes: 0,
+    vol: {ok: true, level: 80, muted: false}, net: {up: false, wireless: false}, open: {notes: true},
+    icons: $icons_busy}
+]
+$panel_manifest = []
+$panel_models = {}
+for each $case in $panel_cases
+  $at = date_parse($case.at)
+  $windows = $taskbar.normal_windows($case.raw)
+  $legacy = {windows: $windows, ws_count: $case.ws_count, ws_current: $case.ws_current, tray: $case.tray,
+    notes: notes_of($case.notes), vol: $case.vol, net: $case.net,
+    launcher_open: $case.open.launcher ?? false, calendar_open: $case.open.calendar ?? false,
+    notes_open: $case.open.notes ?? false}
+  -- The legacy builder drew the current workspace only: parity pins "current".
+  $snap = {windows: $windows, ws_count: $case.ws_count, ws_current: $case.ws_current, tasks_scope: "current", tray: $case.tray,
+    notes_count: $case.notes, vol: $case.vol, net: $case.net, open: $case.open}
+  $doc = $old.capture("panel", $legacy, $at, $case.icons)
+  $model = $models.panel($snap, $case.icons, $at)
+  $panel_models[$case.id] = $model
+  if $record then
+    write_file($fixtures .. "/" .. replace($case.id, "-", "_") .. ".scene.mix", $doc)
+    write_file($fixtures .. "/" .. $case.id .. ".model.json", json_encode($model) .. "\n")
+  else
+    check(read_file($fixtures .. "/" .. replace($case.id, "-", "_") .. ".scene.mix") == $doc, "exact old document: " .. $case.id)
+    check(deep_eq(json_parse(read_file($fixtures .. "/" .. $case.id .. ".model.json")), $model), "model capture: " .. $case.id)
+  end
+  -- Same mount, same page, and the same visible tree by shape.
+  check(header($panel_source, "window") != nil and deep_eq(json_parse(header($panel_source, "window")), json_parse(header($doc, "window"))), "panel mount unchanged: " .. $case.id)
+  check(header($panel_source, "name") == "panel" and header($panel_source, "citizen") == "scene-panel", "panel page id scene-panel and behaviour routing")
+  -- The visible tree: pinned to its own capture. Until 2026-10-12 it was
+  -- compared with the legacy builder's document by shape; the panel left that
+  -- parity on purpose (icon-only tasks, hover tips), and the old document
+  -- stays checked above as provenance.
+  $new = resolve_template($panel_source, $model, $tmp)
+  $new_tree = visible("root", $new.nodes, $new.values, "", nil)
+  $shape_file = $fixtures .. "/" .. $case.id .. ".visible.json"
+  if $record then
+    write_file($shape_file, json_encode($new_tree) .. "\n")
+  else
+    check(is_file($shape_file), "visible capture missing: " .. $case.id .. " (run with --record)")
+    $diff = first_difference(json_parse(read_file($shape_file)), $new_tree, "root")
+    check($diff == nil, "visible panel tree differs (" .. $case.id .. "): " .. to_string($diff))
+  end
+  push($panel_manifest, {id: $case.id, name: "panel"})
+end
+if $record then write_file($fixtures .. "/panel-cases.json", json_encode($panel_manifest) .. "\n") end
+
+-- The template's default model evaluates every binding (no nil access) and
+-- renders an empty, clockless panel until the behaviour's first model.
+$default = resolve_template($panel_source, json_parse(header($panel_source, "model")), $tmp)
+$empty = visible("root", $default.nodes, $default.values, "", nil)
+check(length($empty.children) == 8 and length($empty.children[2].children) == 0 and length($empty.children[4].children) == 0, "default model: no pager/task instances and no tray")
+check(deep_eq(sort(keys(json_parse(header($panel_source, "model")))), sort(keys($panel_models["panel-busy"]))), "default model declares every published key")
+
+-- Caps, fallbacks and stable IDs.
+$busy = $panel_models["panel-busy"]
+check(length($panel_models["panel-cap"].tasks) == 50, "task cap")
+check(deep_eq(map($busy.tasks, fn($x) = $x.id), ["t_4", "t_9", "t_12", "t_30"]), "current-workspace tasks in id order; overlay and other workspaces excluded")
+check(not $busy.tasks[3].has_icon and $busy.tasks[0].has_icon == false and $busy.tasks[2].has_icon, "window icon fallback to the spacer")
+check($busy.tray[1].initial == "U" and not $busy.tray[1].has_icon, "tray initial fallback")
+$changed = $panel_models["panel-tray-change"]
+check($changed.tray[0].id == $busy.tray[1].id and $changed.tray[1].id == "tr_i3", "tray change keeps surviving item ids")
+check($changed.notes.icon == $partial.themed.notifications and $changed.volume.icon == $partial.themed["audio-card"] and not $changed.network.has_icon, "status icon fallback name, then text stand-in")
+check($changed.launcher.icon == $partial.themed["start-here"], "launcher icon fallback name")
+
+-- The launcher mark on both bars: the brand dev.mixos when resolved, else the
+-- start-here fallbacks; the top bar's apps button takes it from the same map.
+$brand = "/usr/share/icons/example/dev.mixos.svg"
+$with_brand = themed_all()
+$with_brand["dev.mixos"] = $brand
+$brand_snap = {windows: [], ws_count: 1, ws_current: 1, tray: [], notes_count: 0, net: {up: false, wireless: false}, vol: {ok: false, level: 0, muted: false}, open: {}}
+$brand_panel = $models.panel($brand_snap, {themed: $with_brand, plain: {}, windows: {}}, 0)
+check($brand_panel.launcher.icon == $brand and $brand_panel.launcher.has_icon, "panel launcher prefers dev.mixos over start-here")
+$brand_top = $models.topbar_apps($with_brand)
+check($brand_top.icon == $brand and $brand_top.has_icon and $brand_top.label == "Apps", "top bar apps button shows dev.mixos and keeps its label")
+$no_brand = themed_all()
+$no_brand["dev.mixos"] = ""
+check($models.panel($brand_snap, {themed: $no_brand, plain: {}, windows: {}}, 0).launcher.icon == $no_brand["start-here-kde"], "panel launcher falls back to start-here-kde")
+check($models.topbar_apps($no_brand).icon == $no_brand["start-here-kde"], "top bar apps button falls back like the panel")
+check($models.topbar_apps({"start-here": $partial.themed["start-here"]}).icon == $partial.themed["start-here"], "top bar apps button falls back to start-here")
+$bare = $models.topbar_apps({})
+check(not $bare.has_icon and $bare.icon == "" and $bare.label == "Apps", "top bar apps button without any icon shows its label")
+check(deep_eq(sort(keys($bare)), sort(keys(json_parse(header(read_file($root .. "/share/scenes/topbar/scene.mix"), "model")).apps))), "top bar apps model has the keys its scene declares")
+
+-- Top bar power: the countdown and a refusal show on the bar, not only in the tip.
+$pw = {label: "Restart", icon: "/icons/restart.svg", desk: "desk32", vt: "3", left: 0, sent: false, notice: ""}
+$rest = $models.topbar_power($pw)
+check($rest.has_icon and not $rest.show_label and $rest.background == nil and $rest.tip.title == "Restart desk32 (VT3)", "power button at rest is its icon")
+$pw.left = 4
+$armed = $models.topbar_power($pw)
+check($armed.show_label and $armed.label == "Click again to restart (4)" and $armed.background == "#c0392b", "armed power button counts down on the bar")
+$pw.left = 0
+$pw.notice = "unavailable"
+$failed = $models.topbar_power($pw)
+check($failed.show_label and $failed.label == "Restart failed: unavailable" and $failed.background != nil, "refused power button says so on the bar")
+$pw.notice = ""
+$pw.sent = true
+check($models.topbar_power($pw).label == "Restarting…", "sent restart says so")
+$off = $models.topbar_power({label: "Shutdown", icon: "", desk: "desk32", vt: "3", left: 0, sent: false, notice: ""})
+check($off.show_label and $off.label == "Shutdown", "power button without an icon shows its label")
+$topbar_model = json_parse(header(read_file($root .. "/share/scenes/topbar/scene.mix"), "model"))
+for each $k in ["restart", "poweroff"]
+  check(deep_eq(sort(keys($off)), sort(keys($topbar_model[$k]))), "top bar " .. $k .. " model has the keys its scene declares")
+end
+check($panel_models["panel-empty"].clock.time == "12:00 am" and $busy.clock.time == "9:05 pm" and $busy.clock.date == "Thu 29 Feb", "displayed time from the fixed clock")
+
+-- Real click payloads: the renderer sends the owning list's node and the
+-- complete published row as item (template_tests.rs pins that shape).
+fn click($list, $item)
+  return {args: {scene: "panel", node: $list, kind: "click", item: $item}}
+end
+$fresh = $taskbar.normal_windows($raw_busy)
+$focus = $taskbar.task_action_at($fresh, $runtime.event_args(click("tasks", $busy.tasks[0])).item, 2)
+check($focus.ok and $focus.command == "comp.window.focus" and deep_eq($focus.args, {id: 4, generation: 1}), "unfocused task focuses with its generation")
+$restore = $taskbar.task_action_at($fresh, $runtime.event_args(click("tasks", $busy.tasks[1])).item, 2)
+check($restore.command == "comp.window.restore" and $restore.args.generation == 7, "minimised task restores")
+$minimize = $taskbar.task_action_at($fresh, $runtime.event_args(click("tasks", $busy.tasks[2])).item, 2)
+check($minimize.command == "comp.window.minimize" and $minimize.args.id == 12, "focused task minimises")
+$reused = $taskbar.normal_windows([window_row(12, 4, 2, "Recycled id", "example.editor", true, false)])
+check($taskbar.task_action_at($reused, $busy.tasks[2], 2).error_code == "stale_window", "a recycled window id with a new generation is refused")
+check($taskbar.task_action_at([], $busy.tasks[2], 2).error_code == "stale_window", "a closed window is refused")
+check($taskbar.task_action_at($fresh, {id: "t_4"}, 2).error_code == "invalid_args", "a row without window/generation is refused")
+
+-- tasks_scope "all" (the behaviour's default, Plasma's): every workspace's
+-- windows in id order; another workspace's task is dimmed, has no button
+-- background, and a click focuses/restores it (comp shows its workspace).
+-- A snapshot without tasks_scope (a behaviour copy older than the setting)
+-- keeps drawing the current workspace only.
+$all_snap = {windows: $fresh, ws_count: 3, ws_current: 2, tray: [], notes_count: 0, vol: {ok: false, level: 0, muted: false},
+  net: {up: false, wireless: false}, open: {}}
+check(deep_eq(map($models.panel($all_snap, $icons_busy, date_parse("2024-02-29T21:05:07Z")).tasks, fn($x) = $x.id), ["t_4", "t_9", "t_12", "t_30"]), "a snapshot without tasks_scope draws the current workspace (old behaviour copies)")
+$all_snap.tasks_scope = "all"
+$all = $models.panel($all_snap, $icons_busy, date_parse("2024-02-29T21:05:07Z"))
+check(deep_eq(map($all.tasks, fn($x) = $x.id), ["t_4", "t_9", "t_12", "t_20", "t_30"]), "scope all: other workspaces included, overlay still excluded, id order")
+$away = $all.tasks[3]
+check($away.color == "#a1a9b1" and $away.background == nil, "another workspace's task is dimmed with no button background")
+check($all.tasks[0].background != nil and $all.tasks[0].color == "#fcfcfc", "current workspace tasks keep their look")
+check($all.tasks[4].background != nil, "a window without a workspace belongs to the current one")
+$all_snap.tasks_scope = "current"
+check(deep_eq(map($models.panel($all_snap, $icons_busy, date_parse("2024-02-29T21:05:07Z")).tasks, fn($x) = $x.id), ["t_4", "t_9", "t_12", "t_30"]), "scope current shows this workspace only")
+$go = $taskbar.task_action_at($fresh, $runtime.event_args(click("tasks", $away)).item, 2)
+check($go.ok and $go.command == "comp.window.focus" and deep_eq($go.args, {id: 20, generation: 1}) and not has_key($go, "workspace"), "another workspace's task focuses (comp switches, never the panel)")
+$hidden_away = $taskbar.normal_windows([window_row(20, 1, 1, "Other workspace", "example.editor", false, true)])
+$go2 = $taskbar.task_action_at($hidden_away, {window: 20, generation: 1}, 2)
+check($go2.command == "comp.window.restore", "a minimised window elsewhere restores")
+$focused_away = $taskbar.normal_windows([window_row(20, 1, 1, "Other workspace", "example.editor", true, false)])
+check($taskbar.task_action_at($focused_away, {window: 20, generation: 1}, 2).command == "comp.window.focus", "a window elsewhere is never minimised from the panel")
+check($taskbar.task_action($focused_away, {window: 20, generation: 1}).command == "comp.window.minimize" and $taskbar.task_action($fresh, $busy.tasks[0]).workspace == nil, "the two-argument task_action user copies call is unchanged")
+-- Bring here: the lost terminal case (other workspace, off screen).
+$usable = {x: 0, y: 36, width: 1536, height: 776}
+$lost = window_row(79, 110, 2, "Terminal", "dev.mixos.term", false, false)
+$lost.output = "o_x"
+$lost.window_x = -286
+$lost.window_y = 825
+$lost.window_width = 900
+$lost.window_height = 560
+$here = $taskbar.bring_here_at($taskbar.normal_windows([$lost]), {window: 79, generation: 110}, 1, $usable, nil)
+check($here.ok and deep_eq(map($here.steps, fn($s) = $s.command), ["comp.window.send_to_workspace", "comp.window.place", "comp.window.focus"]), "bring here sends, places, then focuses")
+check(deep_eq($here.steps[0].args, {id: 79, generation: 110, index: 1}), "bring here sends to the current workspace")
+check(deep_eq($here.steps[1].args, {id: 79, generation: 110, output: "o_x", x: 318, y: 144}), "bring here centres in the work area at its own size")
+$big = $lost
+$big.window_width = 2000
+$big.window_height = 1000
+$big.minimized = true
+$fit = $taskbar.bring_here_at([$big], {window: 79, generation: 110}, 2, $usable, nil)
+check($fit.steps[0].command == "comp.window.restore" and length($fit.steps) == 3, "a minimised window here restores, no workspace move")
+check(deep_eq($fit.steps[1].args, {id: 79, generation: 110, output: "o_x", x: 0, y: 36, width: 1536, height: 776}), "a window larger than the work area shrinks to fit")
+$max = $lost
+$max.maximized = true
+check(deep_eq(map($taskbar.bring_here_at([$max], {window: 79, generation: 110}, 1, $usable, nil).steps, fn($s) = $s.command), ["comp.window.send_to_workspace", "comp.window.focus"]), "a maximised window is not placed")
+check(length($taskbar.bring_here_at([$lost], {window: 79, generation: 110}, 2, nil, nil).steps) == 1, "no work area: focus only when already here")
+$gone = $lost
+$gone.output = nil
+check($taskbar.bring_here_at([$gone], {window: 79, generation: 110}, 1, $usable, "o_default").steps[1].args.output == "o_default", "a window on no output is placed on the given one")
+check($taskbar.bring_here_at([$lost], {window: 79, generation: 9}, 1, $usable, nil).error_code == "stale_window", "bring here refuses a stale generation")
+check($taskbar.bring_here_at([$lost], {id: "t_79"}, 1, $usable, nil).error_code == "invalid_args", "bring here needs window and generation")
+$many_all = []
+for $i = 1 to 60
+  push($many_all, window_row($i, 1, ($i % 3) + 1, "Window " .. to_string($i), "example.app", false, false))
+end
+check(length($taskbar.panel_tasks($many_all, 1, "all", 50)) == 50, "scope all keeps the task cap")
+-- 50 windows elsewhere with low ids, then two on the current workspace: the
+-- cap keeps both current ones and the result stays in id order.
+$crowd = []
+for $i = 1 to 50
+  push($crowd, window_row($i, 1, 2, "Elsewhere " .. to_string($i), "example.app", false, false))
+end
+push($crowd, window_row(90, 1, 1, "Here A", "example.app", true, false))
+push($crowd, window_row(91, 1, 1, "Here B", "example.app", false, false))
+$capped = $taskbar.panel_tasks($crowd, 1, "all", 50)
+$capped_ids = map($capped, fn($w) = $w.id)
+check(length($capped) == 50 and contains($capped_ids, 90) and contains($capped_ids, 91), "the cap never drops a current-workspace window")
+check(deep_eq($capped_ids, sort($capped_ids)), "capped tasks stay in id order")
+check(not $taskbar.elsewhere({workspace: 0}, 2) and not $taskbar.elsewhere({}, 2) and $taskbar.elsewhere({workspace: 3}, 2), "workspace 0 (unmapped) and none count as current")
+check($taskbar.valid_scope("all") == "all" and $taskbar.valid_scope("current") == "current" and $taskbar.valid_scope("ALL") == nil and $taskbar.valid_scope(nil) == nil and $taskbar.valid_scope(1) == nil, "scope validation")
+check($taskbar.workspace_index($runtime.event_args(click("pager", $busy.workspaces[2])).item) == 3, "workspace click index")
+check($taskbar.workspace_index({index: 0}) == nil and $taskbar.workspace_index({index: 1.5}) == nil, "bad workspace index refused")
+check($taskbar.tray_key($runtime.event_args(click("tray", $changed.tray[1])).item) == "i3", "tray click resolves the adapter key")
+check($taskbar.tray_key({key: ""}) == nil, "empty tray key refused")
+remove_dir($tmp)
+-- Stage B settings.appearance. The snapshot/model fixtures are shared with
+-- Quoin's Rust test (settings.rs), which checks shell.settings.get and the
+-- built-in fallback model against the same two files, so this Mix model
+-- builder and the fallback cannot drift apart.
+$directory = $root .. "/share/scenes/settings"
+$metadata = data_parse(read_file($directory .. "/template.conf.mix"))
+check($metadata.name == "quoin-settings" and $metadata.behaviour == "behaviour.mix", "strict metadata: settings")
+$source = read_file($directory .. "/scene.mix")
+$header = before(after($source, "---\n"), "\n---\n")
+check(contains($header, "\nname: quoin-settings\n") and contains($header, "\ncitizen: scene-quoin-settings\n"), "settings keeps scene name and behaviour routing")
+$window = json_parse(before(after($header, "\nwindow: "), "\n"))
+check($window.panel == "settings.appearance" and $window.edge == "right", "settings keeps its declared page")
+$default_model = json_parse(after($header, "\nmodel: "))
+$nodes = data_parse(before(after($source, "```mix\n"), "\n```"))
+check($nodes.root.widget == "column" and length(keys($nodes)) == 64, "strict static settings document")
+$snapshot = json_parse(read_file($fixtures .. "/settings-forest-fade.snapshot.json"))
+$expected = json_parse(read_file($fixtures .. "/settings-forest-fade.model.json"))
+check($models.settings_valid($snapshot), "fixture snapshot is valid")
+$model = $models.settings($snapshot)
+check(deep_eq($model, $expected), "settings model capture: " .. json_encode($model))
+-- Every model path a node binds exists in both the template default and the live model.
+for each $id, $node in $nodes
+  for each $port, $value in $node
+    if type($value) == "string" and starts_with($value, '= $model.') then
+      $path = split(after($value, '= $model.'), ".")
+      $live = $model
+      $fallback = $default_model
+      for each $key in $path
+        check(type($live) == "map" and has_key($live, $key), "live model binds " .. $id .. "." .. $port)
+        check(type($fallback) == "map" and has_key($fallback, $key), "default model binds " .. $id .. "." .. $port)
+        $live = $live[$key]
+        $fallback = $fallback[$key]
+      end
+    end
+  end
+end
+-- The fallback's click routing is the template's: every control names a settings command.
+for each $id in ["scheme_ocean", "scheme_mono", "motion_slide", "size_top_minus", "size_right_plus"]
+  check(starts_with($nodes[$id].on_click, "shell.settings."), "control routes to a settings command: " .. $id)
+end
+check($nodes.motion_fade.on_click == nil, "fade stays unselectable")
+$bad = $snapshot
+$bad.sizes = {top: 1}
+check(not $models.settings_valid($bad), "partial sizes refused")
+check(not $models.settings_valid(nil) and not $models.settings_valid({scheme: "ocean"}), "malformed snapshot refused")
+-- Hover tips (the `tooltip` port). The pager shows numbers; a workspace's
+-- name, its windows and whether it is current are in its tip.
+$wins = [window_row(1, 1, 2, "Inbox - Mail", "example.mail", false, false),
+  window_row(2, 1, 2, "", "example.term", false, true),
+  window_row(3, 1, 1, "Notes", "example.editor", true, false)]
+$named = $models.panel({windows: $wins, ws_count: 3, ws_current: 2, ws_names: [nil, "Mail", "  "], tray: [{key: "i1", icon_name: "x", title: "Updates", status: "3 pending"}],
+  notes_count: 2, net: {up: true, wireless: true}, vol: {ok: true, level: 40, muted: false}, open: {}},
+  {themed: {}, plain: {}, windows: {}, names: {"example.mail": "Example Mail"}}, 0)
+check(deep_eq(map($named.workspaces, fn($w) = $w.label), ["1", "2", "3"]), "the pager shows numbers only")
+check(deep_eq($named.workspaces[1].tip, {title: "Mail", subtitle: "Workspace 2 · 2 windows · current", lines: ["Inbox - Mail", "example.term", "Right-click to rename"]}), "a named workspace tip: name, where, windows, the rename hint")
+check(deep_eq($named.workspaces[0].tip, {title: "Workspace 1", subtitle: "1 window", lines: ["Notes", "Right-click to rename"]}), "an unnamed workspace tip")
+check(deep_eq($named.workspaces[2].tip, {title: "Workspace 3", subtitle: "No windows", lines: ["Right-click to rename"]}), "a blank name reads as unnamed; only the hint")
+$many = []
+for $i = 1 to 9
+  push($many, window_row($i, 1, 1, "W" .. to_string($i), "example.app", false, false))
+end
+-- The rename dialog (right-click a pager button): a hidden dialog
+-- template whose field autofocuses, submits and edits through its own
+-- citizen; every string comes from the models table.
+$rename_dir = $root .. "/share/scenes/workspace-rename"
+$rename_meta = data_parse(read_file($rename_dir .. "/template.conf.mix"))
+check($rename_meta.name == "workspace-rename" and $rename_meta.hidden == true and $rename_meta.behaviour == "behaviour.mix", "rename dialog metadata: hidden, with a behaviour")
+$rename_src = read_file($rename_dir .. "/scene.mix")
+$rename_window = json_parse(header($rename_src, "window"))
+check($rename_window.kind == "dialog" and $rename_window.autofocus == "name", "rename is a dialog that focuses its field")
+check($rename_window.w >= 240 and $rename_window.w <= 2048 and $rename_window.h >= 240 and $rename_window.h <= 2048, "dialog size inside the host's 240..=2048")
+check(header($rename_src, "citizen") == "scene-workspace-rename", "rename dialog citizen")
+$rename_nodes = fence($rename_src)
+check($rename_nodes.name.widget == "field" and $rename_nodes.name.on_submit == "rename.save" and $rename_nodes.name.on_change == "rename.edit", "the field saves on Enter and reports edits")
+check($rename_nodes.save.on_click == "rename.save" and $rename_nodes.cancel.on_click == "rename.cancel", "Save and Cancel")
+$dialog = $models.rename_dialog(3, "Mail")
+check(deep_eq($dialog, {index: 3, name: "Mail", prompt: "Name for workspace 3", hint: "Workspace 3",
+  note: "Enter saves. An empty name shows the number again.", cancel: "Cancel", save: "Save"}), "the rename dialog model")
+check(deep_eq(sort(keys(json_parse(header($rename_src, "model")))), sort(keys($dialog))), "the dialog's default model declares every key")
+check($models.rename_dialog(1, nil).name == "", "an unnamed workspace opens empty")
+for each $id, $node in $rename_nodes
+  for each $port, $value in $node
+    check(not ($port == "text" or $port == "label") or bound($value), "dialog text is model-bound (the strings table): " .. $id)
+  end
+end
+check(fence($panel_source).pager.on_context == "ws_rename", "a right click on the pager opens the rename")
+-- The taskbar's membership rule: no workspace (or 0) is the current one.
+$loose = [{id: 7, title: "Loose", app_id: "x", workspace: 0}, {id: 8, title: "Unset", app_id: "x"}]
+check($models.workspace_tip([], 2, true, $loose).subtitle == "2 windows · current", "windows without a workspace count on the current one")
+check($models.workspace_tip([], 3, false, $loose).subtitle == "No windows", "and on no other")
+check($models.text("on_workspace", {n: 3}) == "On workspace 3" and $models.text("unknown_key") == "unknown_key", "the string table")
+check($models.counted(0, "notes_none", "notes_one", "notes_many") == "No new notifications" and $models.counted(5, "notes_none", "notes_one", "notes_many") == "5 notifications", "counted plurals")
+check(deep_eq($models.workspace_tip([], 1, false, $many).lines, ["W1", "W2", "W3", "W4", "W5", "W6", "3 more", "Right-click to rename"]), "a busy workspace tip lists 6 and counts the rest")
+check(deep_eq($named.tasks[0].tip, {title: "Example Mail", subtitle: "Inbox - Mail"}), "a task tip: desktop name, then the window title")
+check(deep_eq($named.tasks[1].tip, {title: "example.term", lines: ["Minimised"]}), "no desktop name: the app id; an untitled window has no subtitle")
+check($named.tasks[0].initial == "E" and $named.tasks[1].initial == "E", "an icon-less task shows its initial")
+check(deep_eq($models.task_tip(window_row(5, 1, 3, "Doc", "example.editor", false, false), "Editor", 2), {title: "Editor", subtitle: "Doc", lines: ["On workspace 3"]}), "a task elsewhere says where")
+-- A window with a size gets a live thumbnail in its tip (viud draws it).
+$sized = window_row(6, 4, 2, "Inbox", "example.mail", false, false)
+$sized.width = 1600
+$sized.height = 900
+check(deep_eq($models.task_tip($sized, "Mail", 2).thumbnail, {id: 6, generation: 4, w: 1600, h: 900, decorated: false}), "a sized window's tip carries its thumbnail fence and size")
+$sized.decoration = "server"
+check($models.task_tip($sized, "Mail", 2).thumbnail.decorated, "a server-decorated window's thumbnail is framed")
+$sized.fullscreen = true
+check(not $models.task_tip($sized, "Mail", 2).thumbnail.decorated, "a fullscreen window has no frame")
+$flat = window_row(7, 1, 2, "Zero", "example.mail", false, false)
+$flat.width = 0
+$flat.height = 900
+check($models.task_tip($flat, "Mail", 2).thumbnail == nil, "no thumbnail for a window with no size")
+check(deep_eq($named.tray[0].tip, {title: "Updates", subtitle: "3 pending"}), "a tray tip: title and the adapter's status")
+check(deep_eq($models.tray_tip({key: "i9"}), {title: "Status item"}), "an untitled tray item still has a tip")
+check($named.notes.tip.subtitle == "2 notifications" and $named.volume.tip.subtitle == "40%" and $named.network.tip.subtitle == "Connected (wireless)", "status tips")
+check($named.launcher.tip.title == "Application Launcher", "launcher tip")
+check($named.clock.tip.title == "Thursday 1 January 1970" and $named.clock.tip.subtitle == "UTC+00:00", "the clock tip: the long date and the zone")
+-- Every tipped node in the template binds its tip, and the default model
+-- (no tips yet) evaluates them to nothing.
+$tipped = 0
+for each $id, $node in fence($panel_source)
+  if $node.tooltip != nil then
+    check(bound($node.tooltip), "a tooltip is model-bound: " .. $id)
+    $tipped = $tipped + 1
+  end
+end
+check($tipped == 8, "launcher, pager, tasks, tray, notes, volume, network and clock have tips (" .. to_string($tipped) .. ")")
+
+-- ── the network popup: read-only links, addresses, route and DNS ─────────
+$net_lib = require($root .. "/share/scenes/lib/network.mix")
+$net_dir = $root .. "/share/scenes/network"
+$net_meta = data_parse(read_file($net_dir .. "/template.conf.mix"))
+check($net_meta.name == "network" and $net_meta.behaviour == "behaviour.mix" and $net_meta.hidden == nil, "network metadata: listed, with a behaviour")
+$net_src = read_file($net_dir .. "/scene.mix")
+check(header($net_src, "citizen") == "scene-network" and json_parse(header($net_src, "window")).kind == "edge", "network is an edge popup with its own citizen")
+$net_nodes = fence($net_src)
+check($net_nodes.root.widget == "column", "network root is a column")
+for each $id, $node in $net_nodes
+  check($node.text == nil or $node.text == "●" or bound($node.text), "network text is model-bound (the strings table): " .. $id)
+end
+check(deep_eq(sort(keys(json_parse(header($net_src, "model")))), sort(keys($models.network(nil)))), "the network default model declares every key")
+check(fence($panel_source).st_net.on_click == "network", "the panel's network button opens the popup")
+check($models.panel({open: {network: true}}, {}, 0).network.background != nil and $models.panel({}, {}, 0).network.background == nil, "the network button tints while its popup is open")
+
+-- The tools' JSON, as systemd 262 and iproute2 print it (trimmed).
+$nd = $net_lib.parse_networkd({Interfaces: [
+  {Index: 1, Name: "lo", Type: "loopback", AdministrativeState: "unmanaged", OperationalState: "carrier"},
+  {Index: 2, Name: "eth0", Type: "ether", Kind: "veth", AdministrativeState: "configured", OperationalState: "routable"},
+  {Index: 3, Name: "wlan0", Type: "wlan", AdministrativeState: "configured", OperationalState: "routable", SSID: "Example Net"},
+  {Index: 4, Type: "ether"}]})
+check(deep_eq($nd.eth0, {admin: "configured", oper: "routable", kind: "veth", ssid: ""}) and $nd.wlan0.ssid == "Example Net" and length(keys($nd)) == 3, "networkd: per-link state, a nameless entry skipped")
+check($net_lib.parse_networkd(nil) == nil and $net_lib.parse_networkd({}) == nil, "networkd absent is nil")
+$rd = $net_lib.parse_resolved([
+  {servers: [{addressString: "127.0.0.1", ifindex: 1}]},
+  {ifname: "wlan0", ifindex: 3, servers: [{addressString: "192.0.2.1"}, {address: [1]}]},
+  {ifname: "eth0", ifindex: 2}])
+check(deep_eq($rd, {global: ["127.0.0.1"], links: {wlan0: ["192.0.2.1"]}}), "resolved: global and per-link servers")
+check($net_lib.parse_resolved("nope") == nil, "resolved absent is nil")
+$rt = $net_lib.parse_routes([{dst: "default", gateway: "198.51.100.1", dev: "eth0", metric: 600}, {dst: "default", gateway: "192.0.2.254", dev: "wlan0", metric: 100}, {dst: "default"}])
+check(deep_eq($rt, [{gateway: "192.0.2.254", dev: "wlan0", metric: 100}, {gateway: "198.51.100.1", dev: "eth0", metric: 600}]), "routes: lowest metric first, a dev-less entry skipped")
+$ecmp = $net_lib.parse_routes([{dst: "default", metric: 50, flags: [], nexthops: [
+  {gateway: "192.0.2.1", dev: "eth0", weight: 1, flags: []}, {gateway: "198.51.100.1", dev: "eth1", weight: 1, flags: []}]}])
+check(deep_eq($ecmp, [{gateway: "192.0.2.1", dev: "eth0", metric: 50}, {gateway: "198.51.100.1", dev: "eth1", metric: 50}]), "routes: a multipath route is one route per nexthop")
+check($net_lib.sys_kind("no-such-link", "/nonexistent") == nil, "sysfs kind: a missing link is nil")
+-- Opening the popup re-reads (route and DNS changes raise no net_watch event).
+check($net_lib.popup_open({scenes: [{name: "calendar", open: true}, {name: "network", open: false}]}, "network") == false, "another popup open: not ours")
+check($net_lib.popup_open({scenes: [{name: "network", open: true}]}, "network") == true, "our popup open")
+check($net_lib.popup_open({}, "network") == nil and $net_lib.popup_open("x", "network") == nil, "an unreadable inventory is nil (treated as closed)")
+$net_behaviour = read_file($net_dir .. "/behaviour.mix")
+check(contains($net_behaviour, "subscribe(\"scenes.changed\")") and contains($net_behaviour, "$n.popup_open("), "the behaviour re-reads on open")
+
+
+$net_snap = {
+  links: [{ifname: "lo", index: 1, loopback: true, up: true, wireless: false},
+    {ifname: "eth0", index: 2, loopback: false, up: true, wireless: false},
+    {ifname: "wlan0", index: 3, loopback: false, up: true, wireless: true},
+    {ifname: "wg0", index: 4, loopback: false, up: false, wireless: false}],
+  addresses: [{ifname: "wlan0", family: "inet", address: "192.0.2.10", prefix: 24},
+    {ifname: "wlan0", family: "inet6", address: "fe80::1", prefix: 64},
+    {ifname: "wlan0", family: "inet6", address: "2001:db8::10", prefix: 64},
+    {ifname: "eth0", family: "inet", address: "198.51.100.7", prefix: 24}],
+  kinds: {lo: "virtual", eth0: "ether", wlan0: "wlan", wg0: "wireguard"},
+  routes: $rt, networkd: $nd, resolved: $rd}
+$net = $models.network($net_snap)
+check($net.summary == "Connected via wlan0 (Wireless)" and $net.count == "3 interfaces", "summary: the default-route link and the non-loopback count")
+check(deep_eq(map($net.rows, function ($row) = $row.name), ["wlan0", "eth0", "wg0"]), "default route first, then up, then down; loopback left out")
+check(deep_eq($net.rows[0], {id: "if_wlan0", cells: [], name: "wlan0", sub: "Wireless · up · Example Net",
+  addresses: "192.0.2.10/24\n2001:db8::10/64", address_height: 32, detail: "default route · networkd: configured · DNS 192.0.2.1", has_detail: true, dot: "#27ae60",
+  action: "", editable: false, cta: "", background: "#2a2e32"}), "a full row: kind, SSID, link-local dropped, networkd and DNS, one line per address")
+check($net.rows[2].sub == "WireGuard · down" and $net.rows[2].addresses == "No addresses" and $net.rows[2].dot == "#6e7680", "a down link")
+check($net.gateway == "192.0.2.254 on wlan0" and $net.dns == "192.0.2.1" and not $net.has_note, "route and the default link's DNS")
+check($net.rows[2].addresses == "No addresses" and $net.rows[2].address_height == 16, "a link with no address: one line of text")
+check($net.row_height == 100, "shared card height: wlan0 has two address lines, so 84 plus 16")
+-- Addresses: IPv4 first, then IPv6, one line each, link-local IPv6 out, no cap.
+$addr_snap = {links: [{ifname: "eth0", index: 2, loopback: false, up: true, wireless: false}],
+  addresses: [{ifname: "eth0", family: "inet6", address: "2001:db8::1", prefix: 64},
+    {ifname: "eth0", family: "inet", address: "192.0.2.101", prefix: 24},
+    {ifname: "eth0", family: "inet6", address: "fe80::1", prefix: 64},
+    {ifname: "eth0", family: "inet", address: "192.0.2.102", prefix: 24},
+    {ifname: "eth0", family: "inet6", address: "2001:db8::2", prefix: 64}],
+  kinds: {eth0: "ether"}, routes: []}
+$mixed = $models.network($addr_snap)
+check($mixed.rows[0].addresses == "192.0.2.101/24\n192.0.2.102/24\n2001:db8::1/64\n2001:db8::2/64" and $mixed.rows[0].address_height == 64, "interleaved families: IPv4 first, IPv6 second, one line each")
+check($mixed.row_height == 84 + 16 * 3, "four address lines: 84 plus 16 per extra line")
+$many_addrs = []
+for $i = 1 to 6
+  push($many_addrs, {ifname: "eth0", family: "inet", address: "198.51.100." .. to_string($i), prefix: 24})
+end
+$many = $models.network(merge($addr_snap, {addresses: $many_addrs}))
+check(length(split($many.rows[0].addresses, "\n")) == 6 and $many.rows[0].address_height == 96, "no cap: every IPv4 address is shown")
+check($many.row_height == 84 + 16 * 5, "six address lines: the shared card is taller")
+$one = $models.network(merge($addr_snap, {addresses: [{ifname: "eth0", family: "inet", address: "192.0.2.101", prefix: 24}]}))
+check($one.row_height == 84 and $one.rows[0].address_height == 16, "one address: the 84 minimum")
+$none = $models.network(merge($addr_snap, {addresses: []}))
+check($none.rows[0].addresses == "No addresses" and $none.rows[0].address_height == 16 and $none.row_height == 84, "no addresses: one line of text, the minimum card")
+check($many.row_height > $one.row_height, "a larger address count yields taller cards")
+check($models.network(nil).row_height == 84, "the default model's row height is the minimum")
+$bare = $net_snap
+$bare.networkd = nil
+$bare.resolved = nil
+$bare.routes = []
+$bare_model = $models.network($bare)
+check($bare_model.summary == "Connected, no default route" and $bare_model.has_note and not $bare_model.has_dns and not $bare_model.has_gateway, "kernel-only: no route, no DNS, and it says why")
+check($bare_model.rows[0].detail == "" and not $bare_model.rows[0].has_detail, "kernel-only rows carry no networkd detail")
+$down = $bare
+$down.links = [$net_snap.links[0], {ifname: "eth0", index: 2, loopback: false, up: false, wireless: false}]
+check($models.network($down).summary == "Offline", "nothing up is offline")
+$fresh = $models.network(nil)
+check($fresh.empty and not $fresh.has_note and $fresh.summary == "Offline", "before the first snapshot: empty, no networkd note")
+-- ── the network popup's write path (hostd) ──────────────────────────────
+$hostd = require($root .. "/share/scenes/lib/hostd.mix")
+check(deep_eq($hostd.items(" 192.0.2.10/24,198.51.100.2/24  2001:db8::1/64 ,"), ["192.0.2.10/24", "198.51.100.2/24", "2001:db8::1/64"]), "typed lists split on commas and spaces")
+check(deep_eq($hostd.link_request("hd0", {mode: "dhcp", dns: ""}).request, {link: "hd0", config: {mode: "dhcp"}, window_s: 20}), "DHCP: mode only, no empty dns")
+check(deep_eq($hostd.link_request("hd0", {mode: "static", addresses: "192.0.2.10/24", gateway: " 192.0.2.1 ", dns: "192.0.2.53"}, 30).request,
+  {link: "hd0", config: {mode: "static", addresses: ["192.0.2.10/24"], gateway: "192.0.2.1", dns: ["192.0.2.53"]}, window_s: 30}), "static: addresses, gateway trimmed, dns, window")
+check($hostd.link_request("hd0", {mode: "static", addresses: "  "}).error == "net_need_address", "static with no address is caught before hostd")
+check($hostd.link_request("hd0", {mode: "static", addresses: "192.0.2.10"}).error == "net_need_prefix", "an address without a prefix is caught")
+check($hostd.link_request("hd0", {mode: "bridge"}).error == "net_bad_mode", "only dhcp or static")
+check($hostd.link_request("hd0", {mode: "static", addresses: "192.0.2.10/24", gateway: ""}).request.config.gateway == nil, "no gateway key when none is typed")
+
+-- Every local caller can write while hostd is available and unfrozen.
+$acc = {available: true, frozen: false}
+$wifi_acc = $acc
+check($hostd.writable($acc), "hostd needs no standing grant")
+check(not $hostd.writable(merge($acc, {frozen: true})) and not $hostd.writable(merge($acc, {available: false})), "freeze and availability still apply")
+check($hostd.uncertain({ok: false, status: "timeout"}) and $hostd.uncertain({ok: false, status: "unavailable", sent: true}), "hostd's timeout and an unanswered sent request are unknown outcomes")
+check(not $hostd.uncertain({ok: false, status: "unavailable", sent: false}) and not $hostd.uncertain({ok: false, status: "rolled_back"}) and not $hostd.uncertain({ok: true}), "a failed connect, a rollback and a success are known")
+check($hostd.call("hostd.status", {}, 1).sent == false or $hostd.call("hostd.status", {}, 1).ok, "no hostd socket here: a failed connect reports nothing sent")
+-- Rows offer their editor with a live, unfrozen hostd.
+$active = {access: $acc, edit: nil}
+$wr = $models.network($net_snap, $active)
+check($wr.rows[0].editable and not $wr.has_hostd_note and not $wr.edit.shown, "every row is configurable without a grant")
+check(deep_eq(map($wr.rows, function ($row) = [$row.name, $row.action, $row.cta]), [["wlan0", "wifi", "Wi-Fi networks"], ["eth0", "link", "Configure"], ["wg0", "wg", "Configure tunnel"]]), "each link kind opens its editor")
+$frozen_ui = {access: {available: true, frozen: true}}
+check(not $models.network($net_snap, $frozen_ui).rows[0].editable and $models.network($net_snap, $frozen_ui).hostd_note == "hostd is frozen: changes are off until a local caller thaws it.", "frozen: read only")
+check(not $models.network($net_snap).rows[0].editable and not $models.network($net_snap).has_hostd_note, "no hostd: read only")
+
+-- The editor: prefill from the snapshot, then its model.
+$pre = $models.edit_prefill($net_snap, "wlan0")
+check(deep_eq($pre, {link: "wlan0", mode: "static", addresses: "192.0.2.10/24, 2001:db8::10/64", gateway: "192.0.2.254", dns: "192.0.2.1", note: "", busy: false, receipt: nil}), "prefill: own addresses (no link-local), IPv4 gateway, DNS")
+check($models.edit_prefill($net_snap, "wg0").mode == "dhcp" and $models.edit_prefill($net_snap, "wg0").addresses == "", "a link with no address starts as DHCP")
+$active.edit = $pre
+$ed = $models.network($net_snap, $active)
+check($ed.edit.shown and $ed.edit.title == "Configure wlan0" and $ed.edit.is_static and $ed.edit.addresses == "192.0.2.10/24, 2001:db8::10/64", "the editor shows the prefill")
+check($ed.rows[0].background != $ed.rows[1].background, "the edited link's row is highlighted")
+check(not $ed.edit.has_undo, "no undo before a change")
+$pre.receipt = "r-1"
+$pre.busy = true
+$active.edit = $pre
+check(not $models.network($net_snap, $active).edit.has_undo and $models.network($net_snap, $active).edit.apply_label == "Applying…", "busy: no undo, Apply says Applying")
+$pre.busy = false
+$active.edit = $pre
+check($models.network($net_snap, $active).edit.has_undo, "an applied change can be undone")
+check(deep_eq(sort(keys($models.editor(nil))), sort(keys($models.editor($pre)))), "the closed editor declares every key the open one has")
+
+-- Refusals in words.
+check($models.net_refusal("foreign_config", "host0", {status: "foreign_config"}) == "Another networkd file configures host0, so hostd will not change it.", "foreign_config")
+check($models.net_refusal("rolled_back", "hd0", {status: "rolled_back", detail: {reason: "not routable"}}) == "hd0 did not come up, so hostd put the old configuration back (not routable)", "rolled_back carries the reason")
+check($models.net_refusal("rolled_back", "hd0", {status: "rolled_back", detail: {outcome: "abandoned", reason: "file changed"}}) == "hd0 did not come up, and its file changed meanwhile, so hostd left it as it found it (file changed)", "an abandoned rollback does not claim restoration")
+check($models.net_refusal("bad_request", "hd0", {message: "bad address"}) == "hostd refused the request: bad address", "bad_request carries hostd's message")
+check($models.net_refusal("something_new", "hd0", nil) == "hostd refused the change (something_new).", "an unknown status still reads")
+
+-- The scene wires its editor to handlers shared with every Bus caller.
+check($net_nodes.n_list.on_click == "net_row" and $net_nodes.e_apply.on_click == "net_apply" and $net_nodes.e_undo.on_click == "net_undo", "row, Apply and Undo are wired")
+check($net_nodes.e_addr.widget == "field" and $net_nodes.e_addr.on_change == "net_edit_addr" and $net_nodes.e_gw.on_change == "net_edit_gw" and $net_nodes.e_dns.on_change == "net_edit_dns", "fields report edits")
+for each $command in ["net_row", "net_mode_dhcp", "net_mode_static", "net_close", "net_apply", "net_undo"]
+  $body = before(after($net_behaviour, "on " .. $command), "\nend\n")
+  check(not contains($body, "$event.headers"), "the handler accepts ordinary Bus events: " .. $command)
+end
+check(not contains($net_behaviour, "fn from_ui("), "network handlers share one caller-independent path")
+$apply_body = before(after($net_behaviour, "on net_apply\n"), "\nend\n")
+$task_body = before(after($net_behaviour, "on net.write async\n"), "\nend\n")
+check(not contains($apply_body, "$h.call(") and contains($apply_body, "start_write("), "a click is answered at once; hostd runs in the task")
+check(contains($task_body, "$state.writing") and contains($task_body, "$state.inflight != $link"), "write tasks serialise concurrent work")
+check(contains($task_body, "$state.inflight != $link") and contains($task_body, "contains($WRITE_COMMANDS, $command)"), "the task only runs the write its click started, and only listed write commands")
+check(contains($net_behaviour, "$WRITE_COMMANDS = [\"net.link.apply\", \"net.wg.apply\", \"net.wifi.connect\", \"hostd.undo\"]"), "the write commands: link, tunnel, Wi-Fi connect, undo")
+check(contains($net_behaviour, "$state.receipts[$link] = $out.body.receipt") and contains($net_behaviour, "$edit.receipt = $state.receipts[$edit.link]"), "the newest receipt is kept per link, outside the editor")
+-- ── tunnels and Wi-Fi through hostd ─────────────────────────────────────
+-- Tunnel requests: one peer at most, handshake off only when asked.
+$wg_first = $hostd.wg_request("wgtest", {wg_addresses: "10.77.0.1/32", wg_port: "51830", peer_key: "", handshake: false}).request
+check(deep_eq($wg_first, {name: "wgtest", addresses: ["10.77.0.1/32"], window_s: 25, listen_port: 51830, peers: [], require_handshake: false}), "the first side of a pair: no peer, no handshake wait")
+$wg_pair = $hostd.wg_request("wgtest", {wg_addresses: "10.77.0.1/32", wg_port: "", peer_key: "PEERKEY=", peer_endpoint: "127.0.0.1:51831", peer_allowed: "10.77.0.2/32", peer_keepalive: "5", handshake: true}, 30).request
+check(deep_eq($wg_pair, {name: "wgtest", addresses: ["10.77.0.1/32"], window_s: 30, peers: [{public_key: "PEERKEY=", allowed_ips: ["10.77.0.2/32"], endpoint: "127.0.0.1:51831", keepalive_s: 5}]}), "a peer with endpoint and keepalive; handshake left to hostd's default")
+check($hostd.wg_request("w", {wg_addresses: ""}).error == "net_need_address" and $hostd.wg_request("w", {wg_addresses: "192.0.2.101"}).error == "net_need_prefix", "tunnel addresses need a prefix")
+check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", wg_port: "70000"}).error == "net_bad_port" and $hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", wg_port: "51.5"}).error == "net_bad_port", "a bad listen port is caught")
+check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", peer_allowed: ""}).error == "net_need_allowed", "a peer needs allowed IPs")
+check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", peer_allowed: "192.0.2.102/32", peer_keepalive: "x"}).error == "net_bad_keepalive", "keepalive is whole seconds")
+check(deep_eq($hostd.wifi_request("wlan0", "home", "secret").request, {device: "wlan0", ssid: "home", window_s: 30, passphrase: "secret"}) and $hostd.wifi_request("wlan0", "cafe", nil).request.passphrase == nil, "Wi-Fi connect carries a passphrase only when given")
+
+-- New tunnels offer the first unused name; every link remains configurable.
+$wg_ui = {access: $acc}
+$wgm = $models.network($net_snap, $wg_ui)
+check(deep_eq($wgm.new_tunnels, [{id: "wg_wg1", cells: [], label: "New tunnel: wg1"}]) and $wgm.has_new_tunnels, "an existing tunnel is not offered as new")
+check(deep_eq(map($wgm.rows, function ($row) = $row.action), ["wifi", "link", "wg"]), "all link kinds are configurable")
+
+-- The tunnel editor.
+$wpre = $models.wg_prefill($net_snap, "wg0")
+check($wpre.kind == "wg" and $wpre.wg_addresses == "" and $wpre.handshake == true and $models.wg_prefill(nil, "wgtest").link == "wgtest", "tunnel prefill: own addresses, handshake on")
+$wpre.wg_pubkey = "OWNKEY="
+$wpre.handshake = false
+$wed = $models.network($net_snap, {access: $wg_ui.access, edit: $wpre}).edit
+check($wed.is_wg and not $wed.is_link and not $wed.is_wifi and $wed.title == "Tunnel wg0", "the tunnel editor shows only its block")
+check($wed.has_pubkey and $wed.wg_pubkey == "OWNKEY=" and $wed.handshake_label == "Keep only if the peer answers: off", "own public key shown; handshake toggle reads its state")
+
+-- The Wi-Fi editor: networks, a pick, the passphrase field only when needed.
+$fpre = $models.wifi_prefill("wlan0")
+$fpre.networks = [{ssid: "home", security: "psk", signal_dbm: -48, known: false}, {ssid: "cafe", security: "open", signal_dbm: -70, known: false},
+  {ssid: "saved", security: "psk", signal_dbm: -60, known: true}]
+$fpre.scanned = true
+$fed = $models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit
+check($fed.is_wifi and $fed.title == "Wi-Fi on wlan0" and $fed.apply_label == "Connect" and length($fed.networks) == 3, "the Wi-Fi editor lists the scan")
+check($fed.networks[0].info == "psk · -48 dBm" and $fed.networks[1].info == "open · -70 dBm" and $fed.networks[2].info == "psk · -60 dBm · saved", "security, signal and saved, in words")
+check(not $fed.needs_pass, "no pick: no passphrase field")
+$fpre.selected = 0
+check($models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit.needs_pass, "a secured, unsaved network asks for a passphrase")
+$fpre.selected = 1
+check(not $models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit.needs_pass, "an open network does not")
+$fpre.selected = 2
+check(not $models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit.needs_pass, "a saved network does not")
+$fpre.networks = []
+check($models.network($net_snap, {access: $wifi_acc, edit: $fpre}).edit.has_no_networks, "an empty scan says so")
+check(deep_eq(sort(keys($models.editor(nil))), sort(keys($models.editor($wpre)))) and deep_eq(sort(keys($models.editor(nil))), sort(keys($models.editor($fpre)))), "every editor kind declares the same keys as the closed editor")
+check($models.net_refusal("no_iwd", "wlan0", {}) == "iwd is not running, so there is no Wi-Fi to manage here.", "no_iwd in words")
+
+-- The passphrase: masked, sent once on Enter, never kept.
+check($net_nodes.f_pass.password == true and $net_nodes.f_pass.on_change == nil and $net_nodes.f_pass.on_submit == "net_wifi_connect", "the passphrase field is masked and reports no keystrokes")
+check(not contains($net_behaviour, "edit.passphrase") and not contains($net_behaviour, "$state.passphrase"), "a passphrase is never kept in state")
+for each $command in ["net_wg_new", "net_wg_handshake", "net_wifi_scan", "net_wifi_pick", "net_wifi_connect"]
+  $body = before(after($net_behaviour, "on " .. $command .. "\n"), "\nend\n")
+  check(not contains($body, "$event.headers"), "the handler accepts ordinary Bus events: " .. $command)
+end
+check(contains(before(after($net_behaviour, "on net.scan async\n"), "\nend\n"), "$state.edit.scan_gen != $gen"), "scan tasks check generation")
+check(contains(before(after($net_behaviour, "fn typed($event, $field)\n"), "\nend\n"), "$state.edit[$TYPED[$field]] = $v"), "typed text is stored from every caller")
+check($net_nodes.n_newwg.on_click == "net_wg_new" and $net_nodes.f_list.on_click == "net_wifi_pick" and $net_nodes.f_scan.on_click == "net_wifi_scan" and $net_nodes.w_hs.on_click == "net_wg_handshake", "tunnel and Wi-Fi controls are wired")
+-- Review round 1 (sol): the fixes, pinned.
+check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", peer_allowed: "192.0.2.102/32", peer_keepalive: "3601"}).error == "net_bad_keepalive" and $hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", peer_allowed: "192.0.2.102/32", peer_keepalive: "3600"}).request != nil, "keepalive is 1 to 3600, as hostd takes it")
+$last = $models.wg_form({wg_addresses: "10.77.0.1/32", wg_port: "51820", peer_key: "P=", peer_endpoint: "127.0.0.1:51821", peer_allowed: "10.77.1.1/32", peer_keepalive: "", handshake: true})
+$again = $models.wg_prefill($net_snap, "wgtest", $last)
+check($again.wg_port == "51820" and $again.peer_key == "P=" and $again.kind == "wg" and $again.confirmed == false and $again.wg_pubkey == "", "a tunnel this panel set up reopens with its last form")
+check(not contains(json_encode($last), "private"), "the remembered form holds no key material")
+$fpre2 = $models.wifi_prefill("wlan0")
+$fpre2.networks = [{ssid: "home", security: "psk", known: false}]
+$fpre2.selected = 0
+$fpre2.pass_gen = 7
+$shown = $models.editor($fpre2)
+check($shown.show_pass and $shown.pass_value == "", "a secured pick shows an empty passphrase field")
+$fpre2.pass_hold = true
+$held = $models.editor($fpre2)
+check(not $held.show_pass and $held.pass_value == "held-7", "held: hidden, under a placeholder value")
+check($models.editor(nil).pass_value != "" and $models.editor($models.wifi_prefill("wlan0")).pass_value != "", "closed or unpicked: never the empty value, so the next showing resets the field")
+check($net_nodes.f_pass.value == "= $model.edit.pass_value" and $net_nodes.f_pass.hidden == "= not $model.edit.show_pass", "the field is bound to the reset value")
+for each $hold in ["on net_wifi_pick\n", "on net_wifi_connect\n"]
+  check(contains(before(after($net_behaviour, $hold), "\nend\n"), "hold_pass()"), "the passphrase field is held and reset: " .. trim($hold))
+end
+check(contains(before(after($net_behaviour, "on net.pass.release async\n"), "\nend\n"), "$state.edit.hold_gen != $gen"), "passphrase release checks generation")
+check(contains($net_behaviour, "$state.edit.scan_gen == $gen"), "only the newest scan lands in the editor")
+for each $fname in ["fn start_write(", "fn start_scan("]
+  $fbody = before(after($net_behaviour, $fname), "\nend\n")
+  check(contains($fbody, "net_task_failed") and not contains($fbody, "to_string($message)"), "a failed task start never shows its message (it could carry the body): " .. $fname)
+end
+check(contains($net_behaviour, "net_wg_replace_confirm") and contains($net_behaviour, "$state.edit.confirmed = true"), "replacing an unknown tunnel without peers needs a second Apply")
+$release = before(after($net_behaviour, "on net.pass.release async\n"), "\n-- Enter in the passphrase field")
+check(contains($release, "shell.scene.watch") and contains($release, "applied_revision") and contains($release, "for $try = 1 to 50") and not contains($release, "sleep(0.3)"), "the passphrase field returns only after its reset revision is applied, in a bounded wait")
+$write_task = before(after($net_behaviour, "on net.write async\n"), "\nend\n\n")
+check(contains($write_task, "$state.wg_last = delete($state.wg_last, $link)") and length(split($write_task, "$state.wg_last = delete($state.wg_last, $link)")) == 3, "undo and an unknown outcome both forget the tunnel form")
+$wg_apply = before(after($net_behaviour, "  elif $e.kind == \"wg\" then\n"), "\n  else\n    $req = $h.link_request(")
+check(index_of($wg_apply, "$state.edit.confirmed = false") >= 0 and index_of($wg_apply, "$state.edit.confirmed = false") < index_of($wg_apply, "start_write("), "a replacement confirmation is consumed when it starts")
+
+-- ── the volume popup: PipeWire devices and streams through pactl ────────
+$audio = require($root .. "/share/scenes/lib/audio.mix")
+$vol_dir = $root .. "/share/scenes/volume"
+$vol_meta = data_parse(read_file($vol_dir .. "/template.conf.mix"))
+check($vol_meta.name == "volume" and $vol_meta.behaviour == "behaviour.mix" and $vol_meta.recommended == true and $vol_meta.hidden == nil, "volume metadata: listed, recommended, with a behaviour")
+$vol_src = read_file($vol_dir .. "/scene.mix")
+check(header($vol_src, "citizen") == "scene-volume" and json_parse(header($vol_src, "window")).kind == "edge" and json_parse(header($vol_src, "window")).edge == "right", "volume is a right-edge popup with its own citizen")
+$vol_nodes = fence($vol_src)
+check($vol_nodes.root.widget == "column", "volume root is a column")
+for each $id, $node in $vol_nodes
+  check($node.text == nil or bound($node.text), "volume text is model-bound (the strings table): " .. $id)
+  check($node.label == nil or bound($node.label), "volume labels are model-bound: " .. $id)
+end
+check(deep_eq(sort(keys(json_parse(header($vol_src, "model")))), sort(keys($models.volume(nil)))), "the volume default model declares every key")
+check(deep_eq(json_parse(header($vol_src, "model")), $models.volume(nil)), "the volume default model is the model before the first snapshot")
+check(fence($panel_source).st_vol.on_click == "volume", "the panel's volume button opens the popup")
+check($models.panel({open: {volume: true}}, {}, 0).volume.background != nil and $models.panel({}, {}, 0).volume.background == nil, "the volume button tints while its popup is open")
+$panel_behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+check(not contains($panel_behaviour, "on vol_mute") and not contains($panel_behaviour, "wpctl\", \"set-mute"), "the panel's mute-only handler is gone: the popup owns mute")
+check(contains($panel_behaviour, "volume: env(\"PANEL_VOLUME_SCENE\", \"volume\")") and contains($panel_behaviour, "toggle_popup(\"volume\")"), "the panel toggles the volume popup through the loader")
+
+-- pactl -f json, trimmed: two sinks (one muted above 100 %), a monitor and
+-- two inputs, two streams (one named only by node.name).
+$pj = json_parse(read_file($fixtures .. "/volume-pactl.json"))
+$vs = $audio.from_pactl($pj.info, $pj.sinks, $pj.sources, $pj.sink_inputs)
+check($vs.ok and length($vs.sinks) == 2 and length($vs.sources) == 2 and length($vs.streams) == 2, "pactl JSON: sinks, sources without the monitor, streams")
+check(deep_eq($vs.sinks[0], {index: 56, name: "alsa_output.usb-Example_Interface-00.pro-output-0", description: "Example Interface Pro", level: 70, muted: false, default: true}), "a sink: the loudest channel's level, the default marked")
+check($vs.sinks[1].level == 125 and $vs.sinks[1].muted and not $vs.sinks[1].default, "a muted sink above 100 %")
+check($vs.sources[0].index == 59 and $vs.sources[0].default and not $vs.sources[1].default and $vs.sources[1].level == 50, "sources: the default input marked, the monitor left out")
+check(deep_eq($vs.streams[0], {index: 4514, name: "Example Browser", media: "Example video", level: 70, muted: false, sink: 56}) and $vs.streams[1].name == "example-player" and $vs.streams[1].muted, "streams: application name, else node name")
+check($audio.level_of(nil) == 0 and $audio.level_of({x: "y"}) == 0, "an unreadable volume is 0")
+check($audio.percent(104, 100) == "100%" and $audio.percent(-5, 100) == "0%" and $audio.percent(130, 125) == "125%" and $audio.percent(62.4, 100) == "62%", "levels clamp to 0..max as pactl percentages")
+
+$vm = $models.volume($vs)
+check($vm.status == "Example Interface Pro" and $vm.has_out and $vm.has_in and $vm.has_streams and not $vm.has_note, "a full snapshot: the default sink names the popup")
+check($vm.out.name == "Example Interface Pro" and $vm.out.level_text == "70%" and $vm.out.mute_label == "Mute", "the output card is the default sink")
+check(length($vm.out.bar) == 20 and $vm.out.bar[13].id == "v70" and $vm.out.bar[13].background == "#3daee9" and $vm.out.bar[14].background == "#ffffff0f" and $vm.out.bar[0].w == 15, "the output bar: 5 % segments to 100 %, filled to the level")
+check(deep_eq(map($vm.outputs, function ($r) = [$r.id, $r.mark, $r.sub]), [["sink_56", "●", "Default"], ["sink_58", "○", ""]]) and $vm.has_outputs, "the output list marks the default device")
+check($vm.inp.name == "Example Interface Pro" and $vm.inp.level_text == "100%" and $vm.inputs[0].id == "source_59" and $vm.has_inputs, "the input card is the default source")
+check($vm.stream.name == "Example Browser" and $vm.streams[0].background == "#3daee940" and $vm.streams[1].background == "#2a2e32", "with no stream chosen, the first gets the controls")
+$vm2 = $models.volume($vs, {selected: 4600, note: "Change failed: example"})
+check($vm2.stream.name == "example-player" and $vm2.stream.level_text == "Muted" and $vm2.stream.mute_label == "Unmute" and $vm2.stream.bar[9].background == "#6e7680", "the chosen stream: muted, a dimmed bar")
+check($vm2.has_note and $vm2.note == "Change failed: example", "a failed write shows one plain line")
+check($models.volume($vs, {selected: 999}).stream.name == "Example Browser", "a chosen stream that stopped falls back to the first")
+$loud = $models.vol_control($vs.sinks[1], "x")
+check(length($loud.bar) == 30 and $loud.bar[29].id == "v150" and $loud.bar[0].w == 9 and $loud.bar[24].background == "#6e7680" and $loud.bar[25].background == "#ffffff0f", "above 100 %: the bar runs to 150 %")
+-- No default in the read: no device stands in. The cards are hidden and
+-- the status says so.
+$vs_nodef = $audio.from_pactl({}, $pj.sinks, $pj.sources, [])
+$vm_nodef = $models.volume($vs_nodef)
+check($models.vol_default($vs_nodef.sinks) == nil and not $vm_nodef.has_out and not $vm_nodef.has_in and not $vm_nodef.has_streams, "no default sink or source: no control card")
+check($vm_nodef.status == "Default output not found · Default input not found", "no default: the status says so: " .. $vm_nodef.status)
+check(not $models.volume($audio.from_pactl({}, [$pj.sinks[0]], [], [])).out.shown, "one sink, not the default: no card")
+-- More devices than the cap, the default past the cut: the default is kept
+-- and is the control target.
+$many_sinks = []
+for $i = 1 to 20
+  push($many_sinks, merge($pj.sinks[0], {index: 100 + $i, name: "output_" .. to_string($i), description: "Output " .. to_string($i)}))
+end
+$many_sources = [$pj.sources[0]]
+for $i = 1 to 20
+  push($many_sources, merge($pj.sources[1], {index: 200 + $i, name: "input_" .. to_string($i), description: "Input " .. to_string($i)}))
+end
+$vs_many = $audio.from_pactl({default_sink_name: "output_18", default_source_name: "input_20"}, $many_sinks, $many_sources, [])
+check(length($vs_many.sinks) == 17 and $vs_many.sinks[16].name == "output_18" and $vs_many.sinks[16].default and $vs_many.sinks[15].name == "output_16", "the default past the cap is kept after 16 others: " .. json_encode(map($vs_many.sinks, function ($d) = $d.name)))
+check($models.vol_default($vs_many.sinks).name == "output_18" and $models.vol_default($vs_many.sources).name == "input_20", "the control target is the default, not the first device")
+check($models.volume($vs_many).out.name == "Output 18" and $models.volume($vs_many).inp.name == "Input 20", "the cards show the defaults past the cut")
+check(deep_eq(map($audio.from_pactl({default_sink_name: "output_3"}, $many_sinks, [], []).sinks, function ($d) = $d.name), map(slice($many_sinks, 0, 17), function ($d) = $d.name)), "the cap counts the other devices: a default inside it, 16 others beside it")
+check(length($audio.from_pactl({}, $many_sinks, [], []).sinks) == 16 and $models.vol_default($audio.from_pactl({default_sink_name: "gone"}, $many_sinks, [], []).sinks) == nil, "no default in the read: 16 rows, no control target")
+-- The one write guard, from the raw read: either default missing locks
+-- every control (no card, no target); a filter cannot hide a missing one.
+check($models.vol_writes_allowed($vs) and $models.vol_stream_target($vs, 4600).index == 4600, "both defaults present: writes allowed, the chosen stream is the target")
+$vs_nodef_streams = $audio.from_pactl({}, $pj.sinks, $pj.sources, $pj.sink_inputs)
+check(not $models.vol_writes_allowed($vs_nodef_streams) and not $models.volume($vs_nodef_streams).stream.shown and $models.vol_stream_target($vs_nodef_streams, nil) == nil and $models.volume($vs_nodef_streams).has_streams, "no defaults: the streams are listed, none gets controls")
+$vs_nosink = $audio.from_pactl({default_sink_name: "gone", default_source_name: $pj.info.default_source_name}, $pj.sinks, $pj.sources, $pj.sink_inputs)
+$vm_nosink = $models.volume($vs_nosink)
+check(not $models.vol_writes_allowed($vs_nosink) and not $vm_nosink.has_out and not $vm_nosink.has_in and not $vm_nosink.stream.shown and $vm_nosink.status == "Default output not found", "only the default sink missing: every card hidden: " .. $vm_nosink.status)
+$vs_nosrc = $audio.from_pactl({default_sink_name: $pj.info.default_sink_name, default_source_name: "gone"}, $pj.sinks, $pj.sources, $pj.sink_inputs)
+$vm_nosrc = $models.volume($vs_nosrc)
+check(not $models.vol_writes_allowed($vs_nosrc) and not $vm_nosrc.has_out and not $vm_nosrc.has_in and not $vm_nosrc.stream.shown and $vm_nosrc.status == "Example Interface Pro · Default input not found", "only the default source missing: every card hidden: " .. $vm_nosrc.status)
+-- The default source names an absent device and the only sources left are
+-- monitors: the filtered list is empty, but the raw read still locks writes.
+$vs_monly = $audio.from_pactl({default_sink_name: $pj.info.default_sink_name, default_source_name: "gone"}, $pj.sinks, [$pj.sources[0]], $pj.sink_inputs)
+check(length($vs_monly.sources) == 0 and $vs_monly.raw_sources == 1 and not $models.vol_writes_allowed($vs_monly) and $models.vol_stream_target($vs_monly, 4514) == nil and not $models.volume($vs_monly).has_out, "a missing default behind filtered monitors still locks writes")
+-- No sources at all: the sink alone allows writes.
+check($models.vol_writes_allowed($audio.from_pactl({default_sink_name: $pj.info.default_sink_name}, $pj.sinks, [], [])), "no sources: the default sink alone allows writes")
+-- Fail closed: no snapshot, a failed read, an unparseable list, a hand-built
+-- snapshot without the raw fields.
+check(not $models.vol_writes_allowed(nil) and not $models.vol_writes_allowed({ok: false}) and not $models.vol_writes_allowed($audio.from_pactl($pj.info, $pj.sinks, "x", [])) and not $models.vol_writes_allowed($audio.from_pactl($pj.info, "x", [], [])) and not $models.vol_writes_allowed({ok: true, sinks: $vs.sinks, sources: [], streams: []}), "the guard fails closed")
+-- A monitor as the default source is kept and gets the input card.
+$vs_mon = $audio.from_pactl({default_sink_name: $pj.info.default_sink_name, default_source_name: $pj.sources[0].name}, $pj.sinks, $pj.sources, [])
+check(length($vs_mon.sources) == 3 and $vs_mon.sources[0].name == $pj.sources[0].name and $vs_mon.sources[0].default, "a default monitor source keeps its row: " .. json_encode(map($vs_mon.sources, function ($d) = $d.name)))
+check($models.volume($vs_mon).has_in and $models.volume($vs_mon).inp.name == "Monitor of Example Interface Pro", "a default monitor source gets the input card")
+check(length($audio.from_pactl($pj.info, $pj.sinks, $pj.sources, []).sources) == 2, "a monitor that is not the default stays out")
+check($audio.percent(195, 200) == "150%" and $audio.percent(205, 200) == "150%" and $audio.percent(200, 1000) == "150%", "no write is ever above 150 %")
+-- One sink: no device list to choose from.
+check(not $models.volume($audio.from_pactl($pj.info, [$pj.sinks[0]], [], [])).has_outputs, "a single output shows no device list")
+-- Empty sinks: PipeWire answers but has no device.
+$none = $models.volume($audio.from_pactl($pj.info, [], [], []))
+check($none.status == "No audio device" and not $none.has_out and not $none.has_in and not $none.has_streams, "no sinks: No audio device, every card hidden")
+-- No PipeWire: pactl missing or not answering.
+$down = $models.volume({ok: false, reason: "Connection failure: Connection refused"})
+check($down.status == "Audio service unavailable" and not $down.has_out and not $down.has_streams, "pactl not answering: Audio service unavailable")
+check($audio.from_pactl(nil, "x", nil, 7).ok and length($audio.from_pactl(nil, "x", nil, 7).sinks) == 0, "malformed pactl output is empty, not an error")
+$fresh_vol = $models.volume(nil)
+check($fresh_vol.status == "" and not $fresh_vol.has_out, "before the first snapshot: nothing shown")
+
+-- Every write handler accepts the same event shape from every caller.
+$vol_behaviour = read_file($vol_dir .. "/behaviour.mix")
+for each $fname in ["fn bar_click(", "fn ui_step(", "fn ui_mute(", "fn pick_default(", "on vol_stream_pick\n"]
+  check(not contains(before(after($vol_behaviour, $fname), "\nend\n"), "$event.headers"), "a volume write accepts every caller: " .. $fname)
+end
+$on_names = []
+for each $line in split($vol_behaviour, "\n")
+  if starts_with($line, "on ") then push($on_names, split(after($line, "on "), " ")[0]) end
+end
+for each $h in $on_names
+  if starts_with($h, "vol_") then
+    $body = before(after($vol_behaviour, "on " .. $h), "\nend\n")
+    check(contains($body, "bar_click($event") or contains($body, "ui_step($event") or contains($body, "ui_mute($event") or contains($body, "pick_default($event") or contains($body, "$state.selected ="), "handler reaches the shared write path: " .. $h)
+  end
+end
+check(contains($vol_behaviour, "$state.snap = $a.snapshot($PW_RUNTIME)") and contains(before(after($vol_behaviour, "fn apply($argv)"), "\nend\n"), "$a.snapshot("), "every write is read back")
+check(contains($vol_behaviour, "\"sink-input\"") and contains($vol_behaviour, "audio_watch({facilities: $FACILITIES"), "stream events are watched too")
+-- Every click handler the scene names exists in the behaviour.
+for each $id, $node in $vol_nodes
+  for each $port in ["on_click", "on_change", "on_submit"]
+    if $node[$port] != nil then check(contains($on_names, $node[$port]), "the behaviour handles " .. $node[$port] .. " (" .. $id .. ")") end
+  end
+end
+print("scene-template-test: exact captures, models, caps, payloads and capabilities OK")

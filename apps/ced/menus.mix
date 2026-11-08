@@ -1,0 +1,30 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold registry groups and window-local Theme choices. App policy stays Mix.
+fn theme_rows($s)
+  $rows=[]
+  for $group in [
+    ["theme",[["ocean","Ocean"],["crimson","Crimson"],["stone","Stone"],["forest","Forest"],["sunset","Sunset"],["mono","Mono"]]],
+    ["theme",[["pro","Pro"],["studio","Studio"],["classic","Classic"],["breeze","Breeze"],["adwaita","Adwaita"],["mixos","MixOS"]]],
+    ["theme",[["session","Session theme"]]],
+    ["mode",[["light","Light"],["dark","Dark"],["session","Session mode"]]],
+    ["style",[["own","Scheme's own style"],["plain","Plain style"],["pro","Pro style"],["studio","Studio style"],["classic","Classic style"],["breeze","Breeze style"],["adwaita","Adwaita style"],["session","Session style"]]],
+    ["decorations",[["auto","Automatic title bar"],["csd","App title bar (CSD)"],["ssd","System title bar (SSD)"]]],
+    ["captions",[["auto","Style default captions"],["left","Captions left"],["center","Captions centre"],["right","Captions right"]]]]
+    if len($rows)>0 and $group[0]!="captions" then push($rows,{separator:true}) end
+    $axis=$group[0];$value=$s.local_theme[$axis] ?? if contains(["decorations","captions"],$axis) then "auto" else "session" end
+    for $row in $group[1] push($rows,{id:"view."..$axis.."."..$row[0],label:$row[1],enabled:true,checked:$value==$row[0]}) end
+  end
+  return $rows
+end
+fn menu_group($id)
+  if $id=="help.macros" then return 17 end
+  if starts_with($id,"tabs.goto.") then return 1 end
+  $groups=[
+    ["file.new","file.open"],["file.send","file.save","file.save_as","file.save_all"],["file.reload"],["file.close"],["file.exit"],
+    ["edit.undo","edit.redo","edit.undo_other","edit.undo_any"],["edit.cut","edit.copy","edit.paste","edit.select_all"],["edit.duplicate_line","edit.delete_line","edit.move_line_up","edit.move_line_down","edit.toggle_comment","edit.indent","edit.outdent"],["edit.delete_word_left","edit.delete_word_right","edit.overwrite"],
+    ["search.find","search.find_next","search.find_prev"],["search.replace","search.replace_all"],["search.goto_line"],
+    ["view.zoom_in","view.zoom_out","view.zoom_reset"],["view.whitespace","view.line_numbers","view.remote_carets"],["view.problems","view.output"],["view.clear_markers","view.reload_settings"],
+    ["tabs.next","tabs.prev"],["help.keys"],["help.about"]]
+  for $i=0 to len($groups)-1 if contains($groups[$i],$id) then return $i end end
+  return 99
+end

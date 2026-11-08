@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$config=require("config.mix")
+fn config_test_check($ok,$message)
+  if not $ok then raise("CHECK_FAILED",$message) end
+end
+$defaults=$config.dp_parse_config({})
+config_test_check($defaults.schema_version==2,"missing schema defaults to current")
+$partial=$config.dp_parse_config({left:{show_hidden:true},properties:{open:false},places:{width:2}})
+config_test_check($partial.left.show_hidden and $partial.left.path==$defaults.left.path,"partial pane keeps defaults")
+config_test_check(not $partial.properties.open and $partial.properties.width==0.22,"properties-specific width default")
+config_test_check($partial.places.width==0.3,"sidebar clamp matches native config")
+$migrated=$config.dp_parse_config({schema_version:1,places:{open:false,width:0.3},properties:{open:false,width:0.1}})
+config_test_check(deep_eq($migrated.places,$defaults.places) and deep_eq($migrated.properties,$defaults.properties),"schema-one sidebar migration")
+$refusals=0
+for $bad in [nil,[],{schema_version:0},{schema_version:3},{left:nil},{left:{path:nil}},{left:{sort:"unknown"}},{left:{previews:1}},{right:{ascending:"yes"}},{places:{open:"yes"}},{properties:{width:"0.2"}},{remote_previews:1},{split_ratio:"half"},{active_pane:1},{bookmarks:{}},{bookmarks:[{}]},{bookmarks:[{name:"bad",path:1}]}]
+  $refused=false
+  try $config.dp_parse_config($bad) catch $message $refused=true end
+  config_test_check($refused,"malformed config must refuse")
+  $refusals=$refusals+1
+end
+print(json_encode({checks:6,refusals:$refusals,result:"passed"}))

@@ -1,0 +1,147 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+$n=require("navigation.mix")
+$email=require("email.mix")
+$registry=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+$menu_template=json_parse(read_file(path_join(dirname(script_path()),"menus.json")))
+fn theme_choice($s)
+  return {scheme:$s.ui.theme_scheme,mode:$s.ui.theme_mode,style:$s.ui.theme_style,decorations:$s.ui.theme_decorations,caption_side:$s.ui.theme_captions}
+end
+fn choose_theme($s,$args)
+  $allowed={scheme:["mixos","ocean","crimson","stone","forest","sunset","mono","pro","studio","classic","breeze","adwaita"],mode:["light","dark"],style:["own","plain","pro","studio","classic","breeze","adwaita"],decorations:["auto","csd","ssd"],caption_side:["auto","left","center","right"]}
+  for $axis in keys($allowed)
+    if contains(keys($args),$axis) and $args[$axis]!=nil and not contains($allowed[$axis],$args[$axis]) then raise("ARGUMENT","unknown "..$axis.." "..json_encode($args[$axis])) end
+  end
+  for $axis in keys($allowed)
+    if contains(keys($args),$axis) then $s.ui[if $axis=="caption_side" then "theme_captions" else "theme_"..$axis end]=$args[$axis] end
+  end
+  return $s
+end
+fn theme_view($s)
+  $choice=theme_choice($s)
+  $decorations=$choice.decorations ?? $s.values["window.decorations"] ?? "auto"
+  return merge($choice,{effective:{scheme:$choice.scheme ?? $s.values["appearance.scheme"] ?? "mixos",mode:$choice.mode ?? $s.values["appearance.mode"] ?? "dark",decorations:if $decorations=="auto" then "csd" else $decorations end,decorations_reason:if $decorations=="auto" then "no_server_protocol" else "choice" end}})
+end
+fn selected($s)
+  return filter($n.apps_view($s).visible,fn($r)=$r.app==$s.ui.selected)[0]
+end
+fn enabled($s,$id)
+  $free=$s.ui.dialog==nil and not $s.quitting
+  $look=$s.look ?? {}
+  if $id=="help.macros" then return $s.ui.macros_open or $free end
+  if starts_with($id,"apps.") then
+    $ready=$s.ui.section=="software" and $free and not $s.release_busy and $s.connected and $s.releases!="missing" and len($s.apps)>0 and ($s.release_uncertain ?? nil)==nil
+    if not $ready then return false end
+    $r=selected($s)
+    if $id=="apps.check" then return true end
+    if $id=="apps.update_all" then return any($n.apps_view($s).visible,fn($r)=$r.status=="update") end
+    if $r==nil then return false end
+    if $id=="apps.install" then return contains(["update","not installed"],$r.status) or ($r.installed==nil and $r.status=="unchecked") end
+    return $r.installed!=nil
+  end
+  if $id=="page.back" then return $free and $n.page($s.nav.page).parent!=nil end
+  if starts_with($id,"appearance.") then
+    if not $free then return false end
+    if $id=="appearance.revert" then return len(keys($look.edited ?? {}))>0 or ($look.hold ?? false) end
+    if $id=="appearance.keep" then return len($look.conflicts ?? [])>0 end
+    if $id=="appearance.recheck" then return ($look.uncertain ?? nil)!=nil end
+    return len(keys($look.edited ?? {}))>0 and $look.job==nil and not $look.syncing and len($look.conflicts ?? [])==0
+  end
+  if starts_with($id,"email.") then
+    $e=$s.email ?? {}
+    if not $free then return false end
+    if $id=="email.account.add" then return $s.revision!=nil end
+    if $id=="email.account.revert" then return $e.form!=nil and ($e.dirty ?? false) end
+    if contains(["email.password.set","email.password.forget","email.account.connect"],$id) then return $s.ui.email_account!=nil and $s.connected and $e.task==nil and ($id!="email.password.set" or ($e.password ?? "")!="") end
+    if not $email.view($s).can_edit then return false end
+    if $id=="email.reset" then return true end
+    if $id=="email.account.save" then return $e.form!=nil and (($e.dirty ?? false) or $e.form.id==nil) end
+    if $s.ui.email_account==nil then return false end
+    $list=$email.accounts($s);$at=index_of(map($list,fn($a)=$a.id),$s.ui.email_account)
+    if $id=="email.account.up" then return $at>0 end
+    if $id=="email.account.down" then return $at>=0 and $at+1<len($list) end
+    if $id=="email.account.default" then return $s.values["email.default_account"]!=$s.ui.email_account end
+    return $id!="email.account.remove" or $e.task==nil
+  end
+  if $id=="view.refresh" or $id=="terminal.reset" then return $free and $s.connected and not $s.busy end
+  return $free
+end
+fn action_list($s)
+  $out=[]
+  for $a in $registry
+    if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end
+    $keys=($s.bindings[$a.id] ?? {}).keys ?? []
+    if len($keys)>1 then $a.more=slice($keys,1) end
+    $a.enabled=enabled($s,$a.id);$a.reason=if $a.enabled then nil else "disabled" end;$a.checked=nil
+    $parts=split($a.id,".")
+    if len($parts)==3 and $parts[0]=="view" then
+      $field={theme:"theme_scheme",style:"theme_style",mode:"theme_mode",decorations:"theme_decorations",captions:"theme_captions"}[$parts[1]]
+      if $field!=nil then
+        $value=$s.ui[$field]
+        if $value==nil and contains(["decorations","captions"],$parts[1]) then $value="auto" end
+        $a.checked=if $parts[2]=="session" then $value==nil else $value==$parts[2] end
+      end
+    elif $a.id=="view.mode" then $a.checked=($s.ui.theme_mode ?? $s.values["appearance.mode"] ?? "dark")=="light" end
+    push($out,$a)
+  end
+  return {actions:$out}
+end
+fn binding_defaults() return $registry end
+fn shortcuts($s)
+  $out=[]
+  for $a in action_list($s).actions
+    $bound=$s.bindings[$a.id] ?? {}
+    $keys=$bound.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+    for $key in $keys $entry=$a;$entry.shortcut=$key;push($out,$entry) end
+  end
+  return $out
+end
+fn menus($s)
+  $all=action_list($s).actions;$out=[]
+  for $menu in $menu_template.menus
+    push($out,{id:lower($menu.title),label:$menu.title,enabled:true,children:menu_rows($menu.rows,$all,$s.bindings)})
+  end
+  return $out
+end
+fn menu_rows($rows,$all,$bindings)
+  $out=[]
+  for $row in $rows
+    if $row.separator ?? false then push($out,{separator:true});continue end
+    $item={id:$row.id ?? lower($row.label),label:$row.label,enabled:$row.enabled,shortcut:$row.shortcut}
+    if $row.submenu!=nil then $item.children=menu_rows($row.submenu,$all,$bindings)
+    else
+      $a=filter($all,fn($a)=$a.id==$row.id)[0]
+      if $a!=nil then
+        $item.enabled=$a.enabled;$item.checked=$a.checked
+        if $bindings[$a.id]!=nil then $item.shortcut_binding=$a.shortcut end
+      end
+    end
+    push($out,$item)
+  end
+  return $out
+end
+fn dialog_form($s)
+  $d=$s.ui.dialog
+  if $d==nil then return {open:false,title:"",body:"",choices:[]} end
+  $choices=[{id:"cancel",label:$n.text_for("done"),enabled:true,default:true}]
+  if $d=="about" then return {open:true,title:$n.text_for("about"),body:$n.text_for("about-body"),choices:$choices} end
+  if $d=="shortcuts" then
+    $rows=[]
+    for $a in action_list($s).actions
+      $keys=($s.bindings[$a.id] ?? {}).keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+      if len($keys)>0 then push($rows,{label:$a.label,shortcut:$a.shortcut,keys:$keys}) end
+    end
+    return {open:true,title:$n.text_for("shortcuts"),body:"",grid:$rows,choices:$choices}
+  end
+  $prefix="remove";$arg="{ $app }";$name=if type($d)=="map" then $d.remove else nil end
+  if $d=="reset_email" then $prefix="email-reset";$name="";$arg=""
+  elif type($d)=="map" and ($d.remove_account!=nil or $d.forget_password!=nil) then
+    $prefix=if $d.remove_account!=nil then "email-remove" else "email-forget" end
+    $arg="{ $account }";$id=$d.remove_account ?? $d.forget_password
+    $account=filter($email.accounts($s),fn($a)=$a.id==$id)[0]
+    $name=if $account!=nil then $account.name else $id end
+  end
+  $title=$n.text_for($prefix.."-title");$body=$n.text_for($prefix.."-body")
+  if $arg!="" then $title=replace($title,$arg,$name);$body=replace($body,$arg,$name) end
+  return {open:true,title:$title,body:$body,choices:[{id:"confirm",label:$n.text_for(if $prefix=="email-remove" then "remove-confirm" else $prefix.."-confirm" end),enabled:true},{id:"cancel",label:$n.text_for("cancel"),enabled:true,default:true}]}
+end

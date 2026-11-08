@@ -1,0 +1,26 @@
+-- version: 0.1.0
+-- host: mixd
+-- Safe CBC fixture only; never connects to an audio server.
+$snap={ok:true,default_sink_found:true,default_source_found:true,raw_sources:1,sinks:[{index:1,name:"example.output",description:"Example output (safe fixture)",level:50,muted:false,default:true}],sources:[{index:2,name:"example.input",description:"Example input (safe fixture)",level:75,muted:false,default:true}],streams:[{index:3,name:"Example player",media:"Fixture",level:40,muted:false,sink:1}]}
+on snapshot
+  reply(0,json_encode($snap))
+end
+on write
+  $a=$event.args.argv
+  $accepted=false
+  if type($a)=="list" and len($a)==3 then
+    $collection=if contains($a[0],"sink-input") then "streams" elif contains($a[0],"source") then "sources" else "sinks" end
+    for $i=0 to len($snap[$collection])-1
+      $d=$snap[$collection][$i]
+      if $d.name==$a[1] or to_string($d.index)==$a[1] then
+        if ends_with($a[0],"-volume") and ends_with($a[2],"%") then
+          $level=to_number(replace($a[2],"%",""))
+          if $level>=0 and $level<=150 then $snap[$collection][$i].level=$level;$accepted=true end
+        elif ends_with($a[0],"-mute") and $a[2]=="toggle" then
+          $snap[$collection][$i].muted=not $d.muted;$accepted=true
+        end
+      end
+    end
+  end
+  reply(0,json_encode({ok:$accepted,message:if $accepted then "" else "fixture refused" end}))
+end

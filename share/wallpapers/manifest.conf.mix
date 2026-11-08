@@ -1,0 +1,108 @@
+-- Pinned wallpapers, published as the GitHub release below (asset name = path
+-- with / as --). The bundle step downloads them and refuses any byte that does
+-- not match. Credits beside them in */CREDITS.md.
+{
+  "schema": 1,
+  "release": {
+    "tag": "assets-wallpapers-2026-10-14",
+    "base_url": "https://github.com/mixviu/mixviu/releases/download/assets-wallpapers-2026-10-14"
+  },
+  "files": [
+    {
+      "path": "photos/etang-de-thau.jpg",
+      "bytes": 1470760,
+      "sha256": "c285675e7a2337a3ed7d27b426dbd5466458eba82e55cdfca1056c963915467a",
+      "licence": "CC-BY-4.0",
+      "author": "Christian Ferrer",
+      "source": "https://commons.wikimedia.org/wiki/File:Étang_de_Thau_and_Sète.jpg"
+    },
+    {
+      "path": "photos/ijen-banyuwangi.jpg",
+      "bytes": 1007118,
+      "sha256": "43118bcf7f19584a2b396478c8a5e16878c00873861c7c51af99818b7f87c6c1",
+      "licence": "CC-BY-SA-4.0",
+      "author": "Gardian Novel",
+      "source": "https://commons.wikimedia.org/wiki/File:Ijen_Banyuwangi.jpg"
+    },
+    {
+      "path": "photos/nepal-chola-lake.jpg",
+      "bytes": 2797605,
+      "sha256": "c3ae66371ac48b9fe568187b2aa3623ca11b8e2b5523a20cd7d055f7c9d4e33a",
+      "licence": "CC-BY-4.0",
+      "author": "Vyacheslav Argenberg",
+      "source": "https://commons.wikimedia.org/wiki/File:Mountains_in_snow,_Mountain_lake,_Chola_Valley,_Nepal,_Himalayas.jpg"
+    },
+    {
+      "path": "photos/nunivak-dunes.jpg",
+      "bytes": 1337475,
+      "sha256": "3fed44639d705a9c1d6e4b2178854c4f984d0fd33105d8367dc70b47dded5716",
+      "licence": "CC0-1.0",
+      "author": "Wikimedia Commons contributor (author on the source page)",
+      "source": "https://commons.wikimedia.org/wiki/File:Sand_Dunes_on_the_Northern_Coast_of_Nunivak_Island.jpg"
+    },
+    {
+      "path": "photos/yosemite-mirror-lake.jpg",
+      "bytes": 3935344,
+      "sha256": "0032c4e7e907c0cb9d84c0462528b4686065db654d91cffc0cecd1760dfed036",
+      "licence": "CC-BY-SA-4.0",
+      "author": "Dietmar Rabich",
+      "source": "https://commons.wikimedia.org/wiki/File:Yosemite_National_Park_(CA,_USA),_Yosemite_Valley,_Mirror_Lake_--_2022_--_2814.jpg"
+    },
+    {
+      "path": "photos/zanskar-shila-tsarap.jpg",
+      "bytes": 4661329,
+      "sha256": "041db9a9fb893a348a51942db9dfa8aa9097d47283da225e64e51d68b1a17e05",
+      "licence": "CC-BY-SA-4.0",
+      "author": "Timothy A. Gonsalves",
+      "source": "https://commons.wikimedia.org/wiki/File:Shila_Tsarap_Mountains_Zanskar_Oct22_A7C_04113.jpg"
+    },
+    {
+      "path": "generated/gen-01-deep-ocean.jpg",
+      "bytes": 364987,
+      "sha256": "a5622d46df43be3f985d2315a36500648f1ca802ea0ff36b9cd350a87f707396",
+      "licence": "MIT OR Apache-2.0",
+      "author": "Mark Constable (procedural, ImageMagick plasma)",
+      "source": "generated 2026-10-13"
+    },
+    {
+      "path": "generated/gen-02-blush.jpg",
+      "bytes": 365855,
+      "sha256": "9ee5428f3f38e54cf627901b57c656d09fa54e991ea7835111127e42c6e2aff4",
+      "licence": "MIT OR Apache-2.0",
+      "author": "Mark Constable (procedural, ImageMagick plasma)",
+      "source": "generated 2026-10-13"
+    },
+    {
+      "path": "generated/gen-03-nebula.jpg",
+      "bytes": 387374,
+      "sha256": "1ee51829c162f857e4e505d45fdbc40d9efb6afb8d8131fd9453d8e537550118",
+      "licence": "MIT OR Apache-2.0",
+      "author": "Mark Constable (procedural, ImageMagick plasma)",
+      "source": "generated 2026-10-13"
+    },
+    {
+      "path": "generated/gen-04-sunset.jpg",
+      "bytes": 371943,
+      "sha256": "1fcbd01fc403104b7ed7b29f1ae40b84f25f7669c25cdc33c0485e29c7c477e3",
+      "licence": "MIT OR Apache-2.0",
+      "author": "Mark Constable (procedural, ImageMagick plasma)",
+      "source": "generated 2026-10-13"
+    },
+    {
+      "path": "generated/gen-05-aqua.jpg",
+      "bytes": 359369,
+      "sha256": "44eea17696ba68f5a3482f5a1e68c0a5b90479833237507104891e9cb0b7e3d3",
+      "licence": "MIT OR Apache-2.0",
+      "author": "Mark Constable (procedural, ImageMagick plasma)",
+      "source": "generated 2026-10-13"
+    },
+    {
+      "path": "generated/gen-06-meadow.jpg",
+      "bytes": 354505,
+      "sha256": "2ef32c03ffbb2ccba9e8a1cd91072e2bc87a9a7c070b9693421a0a546c3dbebe",
+      "licence": "MIT OR Apache-2.0",
+      "author": "Mark Constable (procedural, ImageMagick plasma)",
+      "source": "generated 2026-10-13"
+    }
+  ]
+}

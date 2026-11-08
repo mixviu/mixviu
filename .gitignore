@@ -11,6 +11,8 @@
 .env.*
 *.key
 *.pem
+# Public test fixtures (self-signed, test-only) stay tracked.
+!libraries/*/tests/fixtures/*.pem
 *.p12
 *.pfx
 id_*

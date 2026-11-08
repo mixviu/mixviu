@@ -1,0 +1,176 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- Gold snapshot -> bounded scene and native composition. No IO or service reads.
+fn field($value,$key,$fallback=nil)
+  return if type($value)=="map" then $value[$key] ?? $fallback else $fallback end
+end
+fn rows($value,$key)
+  $rows=field($value,$key,[])
+  return if type($rows)=="list" then $rows else [] end
+end
+fn decoded($value)
+  if type($value)=="string" then try return json_parse($value) catch $message return $value end end
+  return $value
+end
+fn ellipsis($value,$limit)
+  return if len($value)<=$limit then $value else substr($value,0,max(0,$limit-1)).."…" end
+end
+fn fresh($hours=24)
+  return {now:0,queue:nil,workers:nil,history:nil,gate:nil,hours:$hours,error:nil,alerts:{}}
+end
+fn gating($s)
+  for $batch in rows($s.queue,"batches") if $batch.state=="gating" then return $batch.batch end end
+  return nil
+end
+fn current_gate($s)
+  $batch=gating($s)
+  return if $batch!=nil and field($s.gate,"batch")==$batch then $s.gate else nil end
+end
+fn progress($s)
+  $gate=current_gate($s);$stages=field($gate,"stages");$stage=field($gate,"stage")
+  if type($stages)!="number" or $stages<=0 or type($stage)!="number" then return nil end
+  return clamp(max(0,$stage)/$stages,0,1)
+end
+fn rejected($s)
+  return reverse(sort_by(filter(rows($s.queue,"recent"),fn($r)=$r.state=="rejected"),fn($r)=$r.updated ?? 0))
+end
+fn reason($row)
+  $text=$row.reason ?? "?"
+  if contains($text,"conflict") then return "conflict"
+  elif contains($text,"75") then return "infra rc 75"
+  elif starts_with($text,"red:") then return ellipsis($text,40)
+  elif contains($text,"red") then return "red: release gate" end
+  return ellipsis($text,40)
+end
+fn block($position,$size,$tone,$label="",$glow=0,$motion=[0,0,0],$label_visible=false)
+  return {position:$position,size:$size,tone:$tone,label:$label,glow:$glow,motion:$motion,label_visible:$label_visible}
+end
+fn scene($s)
+  $out=[];$gate=current_gate($s);$failing=field($gate,"failing")==true
+  for $pair in [[-5,0],[0,1],[5,2]]
+    push($out,block([$pair[0],0,0],[4.8,0.12,0.6],if $pair[0]==0 and $failing then 3 else $pair[1] end,if $pair[0]==0 then field($gate,"last","") else "" end))
+  end
+  push($out,block([4,0,2],[5,0.12,0.6],3))
+  for $lane in [["queued",-7,0],["batched",-2,1],["recent",3,2]]
+    $items=rows($s.queue,$lane[0])
+    if $lane[0]=="recent" then $items=filter($items,fn($r)=$r.state=="landed") end
+    $i=0
+    for $row in slice($items,0,12)
+      $rejected=$row.state=="rejected";$gating=$lane[0]=="batched"
+      push($out,block([$lane[1]+$i*0.55+if $gating then (progress($s) ?? 0)*3 else 0 end,0.35,if $rejected then 2 else 0 end],[0.48,0.6,0.75],if $rejected or ($gating and $failing) then 3 else $lane[2] end,$row.branch ?? "?",0,[-0.4,0,0]))
+      $i=$i+1
+    end
+  end
+  $i=0
+  for $row in slice(rejected($s),0,3)
+    push($out,block([4+$i,0.35,2],[0.48,0.6,0.75],3,$row.branch ?? "?",0,[-0.4,0,0]));$i=$i+1
+  end
+  $seen=[]
+  for $slot in rows($s.workers,"slots")
+    $name=$slot.worker ?? "?"
+    if contains($seen,$name) then continue end
+    push($seen,$name);$i=len($seen)-1
+    if $i>=3 then break end
+    $jobs=filter(rows($s.workers,"running"),fn($j)=$j.worker==$slot.worker)
+    $busy=len($jobs)>0;$label=if $slot.light==1 then "light" else $name end
+    for $job in $jobs
+      $spec=decoded($job.spec)
+      $label=$label.."\n"..ellipsis(field($spec,"label","?"),28).." · "..to_string(round(max(0,$s.now-($job.started ?? $s.now))/60)).." min"
+    end
+    $load=field(decoded($slot.snapshot),"load1",0)
+    push($out,block([-4+$i*4,0.6,-3],[2,1.2,1.2],if $busy then 1 else 0 end,$label,clamp($load/16+if $busy then 0.5 else 0 end,0,1),[0,0,0],true))
+  end
+  return $out
+end
+fn history($s)
+  $h=$s.history
+  if type(field($h,"landed"))!="list" or type(field($h,"batches"))!="list" then return {landings:[],gates:[],available:false} end
+  $since=$s.now-$s.hours*3600;$first=floor($since/3600);$last=floor($s.now/3600);$counts=[]
+  for $i=$first to $last push($counts,0) end
+  for $row in $h.landed
+    $t=$row.updated
+    if type($t)=="number" and $t>=$since and $t<=$s.now then $i=floor($t/3600)-$first;$counts[$i]=$counts[$i]+1 end
+  end
+  $landings=[];$i=0
+  for $n in $counts push($landings,[(max(($first+$i)*3600,$since)-$s.now)/3600,$n]);$i=$i+1 end
+  $minutes=[]
+  for $row in $h.batches
+    $start=$row.started;$end=$row.ended
+    if type($start)!="number" or type($end)!="number" or $start<$since or $start>$s.now or $end<$start or $end>$s.now then continue end
+    push($minutes,[($start-$s.now)/3600,if $row.gate_reused==1 or $row.gate_reused==true then 0 else ($end-$start)/60 end])
+  end
+  $minutes=sort_by($minutes,fn($p)=$p[0]);$gates=$minutes
+  if len($minutes)>600 then
+    $gates=[]
+    for $i=0 to 599 push($gates,$minutes[floor($i*(len($minutes)-1)/599)]) end
+  end
+  return {landings:$landings,gates:$gates,available:true}
+end
+fn text_node($text,$colour=nil)
+  $node={kind:"label",text:$text}
+  if $colour!=nil then $node.colour=$colour end
+  return $node
+end
+fn model($s,$renderer,$generation)
+  $blocks=scene($s);$nodes=[{kind:"clear"},{kind:"world",id:"world",blocks:$blocks,disabled:$renderer=="2d"}]
+  $header=[]
+  for $key in keys($s.alerts) push($header,{kind:"frame",style:"alert",children:[{kind:"label",text:$s.alerts[$key].text ?? "?",strong:true}]}) end
+  push($header,{kind:"heading",text:"Merge train"})
+  $state=if $s.queue==nil then "unavailable" elif field($s.queue,"paused")==nil then "running" else "paused" end
+  push($header,text_node("main "..field($s.queue,"main","?").." · "..$state))
+  push($header,text_node("Queue → Gate → Main · Rejections on the siding"))
+  $gold=field($s.queue,"gold")
+  push($header,text_node(if type(field($gold,"commit"))=="string" then "Gold "..ellipsis($gold.commit,13).." · installed "..to_string($gold.age_minutes ?? "?").." min ago · "..to_string($gold.unlanded ?? "?").." landings awaiting gold" else "Gold status unavailable" end,"warning"))
+  $gate=current_gate($s)
+  if $gate!=nil then
+    $colour=if $gate.failing==true then "error" else "accent" end
+    $progress=progress($s)
+    if $progress!=nil then push($header,{kind:"progress",value:$progress,colour:$colour}) end
+    push($header,text_node("Stage "..to_string($gate.stage).." / "..to_string($gate.stages).." · "..($gate.last ?? "?"),if $gate.failing==true then "error" else nil end))
+  elif gating($s)!=nil then push($header,text_node("Waiting for the gate stage read")) end
+  if $s.error!=nil then push($header,text_node($s.error)) end
+  push($nodes,{kind:"frame",style:"popup",children:$header})
+  $columns=[]
+  for $lane in [["queued","Queue"],["batched","Gating"],["recent","Landed on main"]]
+    $children=[];$items=rows($s.queue,$lane[0]);if $lane[0]=="recent" then $items=filter($items,fn($r)=$r.state=="landed") end
+    for $row in slice($items,0,12) push($children,{kind:"label",text:$row.branch ?? "?",truncate:true}) end
+    push($columns,[{kind:"strong",text:$lane[1]},{kind:"scroll",id:$lane[0],max_height:100,children:$children}])
+  end
+  $rejects=rejected($s);$children=[{kind:"strong",text:"Newest rejections"}]
+  for $row in slice($rejects,0,3) push($children,{kind:"label",text:ellipsis($row.branch ?? "?",28).." · "..reason($row),truncate:true}) end
+  if len($rejects)>3 then push($children,text_node("+"..to_string(len($rejects)-3).." older rejections")) end
+  push($columns,$children);push($nodes,{kind:"columns",columns:$columns})
+  $series=[]
+  for $b in $blocks
+    if $b.label!="" then
+      $point={kind:"points",name:$b.label,points:[[$b.position[0],$b.position[2]]],radius:6,colour:["accent","warning","link","error"][$b.tone]}
+      if $b.size[1]>=1 then $point.label=$b.label;$point.label_at=[$b.position[0],$b.position[2]+0.3] end
+      push($series,$point)
+    end
+  end
+  $fallback=text_node("2D train view (3D disabled or texture budget unavailable)");$fallback.when="world-fallback";push($nodes,$fallback)
+  push($nodes,{kind:"plot",when:"world-fallback",id:"train-2d",height_available_minus:210,include_x:[-8,8],include_y:[-4,3],series:$series})
+  push($nodes,{kind:"space",bottom:190})
+  $history=history($s);$children=[text_node("Train history · last "..to_string($s.hours).." hours")]
+  if not $history.available then push($children,text_node("Waiting for train history")) end
+  push($children,{kind:"plot",id:"train-history-"..to_string($s.hours),height:140,x_axis:"Time (hours before now)",y_axis:"Minutes / landings",legend:true,include_x:[-$s.hours,0],series:[{kind:"vline",name:"Now",x:0},{kind:"line",name:"Landings / hour",points:$history.landings},{kind:"points",name:"Gate minutes / completed batch",points:$history.gates,radius:3}]})
+  push($nodes,{kind:"frame",style:"popup",children:$children})
+  return {nodes:$nodes,transition:{id:$generation,duration_ms:600,frame_ms:100}}
+end
+fn alert($s,$topic,$body)
+  if $topic=="pipeline.alerts" then
+    if type($body.alerts)=="list" then
+      $s.alerts={}
+      for $a in $body.alerts
+        if type($a)=="map" then $a.at=$body.at;$s=alert($s,"pipeline.alert",$a) end
+      end
+    end
+    return $s
+  end
+  if type($body.check)!="string" or $body.check=="" or not contains(["number","string"],type($body.at)) then return $s end
+  $old=$s.alerts[$body.check]
+  if $old!=nil and type($old.at)=="number" and type($body.at)=="number" and $old.at>$body.at then return $s end
+  if $topic=="pipeline.clear" then $s.alerts=delete($s.alerts,$body.check)
+  elif type($body.text)=="string" then $s.alerts[$body.check]=$body end
+  return $s
+end
