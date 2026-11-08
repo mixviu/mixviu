@@ -290,7 +290,7 @@ on term.execute
   $out=act($state,$event.args.id,$params,"bus");$state=$out.state;reply($out.rc,json_encode($out.body))
 end
 on term.actions
-  $state=$bus.refresh($state,$native)
+  $state=pump_events($bus.refresh($state,$native));$state=publish_term($state)
   reply(0,json_encode({actions:$actions.registry($state),state:$actions.observed_state($state)}))
 end
 on term.dialog
