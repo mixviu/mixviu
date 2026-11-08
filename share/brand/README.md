@@ -21,7 +21,7 @@ to Mark Constable's instructions.
 | `logos/alien-cyclops-512.webp` | `alien-cyclops.svg` rendered at 512 × 512, lossless WebP with alpha (smallest encoding of the set, about 13 KB): for web pages and READMEs |
 | `favicons/black-on-white/` | opaque square set: black mark on white |
 | `favicons/white-on-black/` | opaque square set: white mark on black |
-| `logos/alien-cyclops-favicon.svg` | the favicon form of the mascot: the same geometry, scaled to fill the icon, with a thin black outline under the white ring so the C reads on light browser chrome. Transparent. The website's `favicon.svg` is a copy of it |
+| `logos/alien-cyclops-favicon.svg` | the favicon form of the mascot: the same geometry, scaled to fill the icon, with a black outline (heavier than the mascot's, to survive 16 px) under the white ring and the `#FF0000` eye, so the C reads on light browser chrome. Transparent. The website's `favicon.svg` is a copy of it |
 | `favicons/cyclops/` | favicon set for the mascot: transparent PNGs and ICO from `logos/alien-cyclops-favicon.svg`; the apple-touch icon is on white, since iOS draws transparent icons black |
 | `preview.png` | both treatments side by side |
 
