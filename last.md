@@ -608,3 +608,30 @@ Final lab merge (2026-11-08): origin/lab/gold-parity at 01912877 (eight accepted
 Branch cutover/four-engines; head is this last.md commit (source db16141); full gate: the coordinator runs it on infra/pr-ci; CBC light 20261108-105611-7534e7c2, 20261108-104904-e4317f0f, 20261108-104841-c85e2532, 20261108-105441-54343276.
 
 Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa3c37ec19d; Email legacy account-tree startup FIXED; hot-apply apps/email/mail.mix + apps/email/surface.mix to /opt/mix/share/mixviu/apps/email/; CBC email-desk4-scope-r4-a1 rc0 (17/17), email-desk4-native-r5 rc0 (real maild before/after); no desk4/main/infra/pr-ci changes.
+
+## P1 rebase onto merged P0 — 2026-11-09
+
+This receipt supersedes the original P0 dependency/base above.
+
+- New base: `cd85e2a3024f27bd997f8787e50d59d349b3ab67` (`origin/main`, P0 squash PR #41).
+- Old P1 head: `5cb266763fd5b4ea811c10b9284e0b494dfcfbca`; retained locally as `backup/quoin-p1-before-main-20261109`.
+- Replayed only `0780b2ea..feat/quoin-p1-dev-loop` onto main. All eight commits rebased automatically, with no conflict stops. Reviewed the resulting main diff: only P1 files and this session's harness/receipt changes remain.
+- P0's name-limit/header-only panel text, registry draft statuses, backdrop.view.list contract and viu registry test owner filter are preserved. Neither document required manual conflict resolution; the auto-merge retained P0's reviewed text plus the P1 additions.
+- New rebased source head tested and pushed: `75255585405b5ab511f59032dbda47b48f88e45b`. The subsequent receipt commit changes only last.md; its hash is the final branch head returned in the session hand-off.
+- Bot push used `gh_agent.mix git -C WORKTREE push --force-with-lease origin feat/quoin-p1-dev-loop`, on this branch only. No PR opened or reopened; Opus handles the bot PR.
+
+Harness work:
+
+- Separate commit `75255585`: scenes_io_test.mix now uses `mixos_path("prefix")` instead of obsolete `mix_path("prefix")`. Local syntax/lint pass. The default integration invocation now gets past that builtin and reaches the already-known private broker readiness failure; it still does not pass end to end with the installed noded.
+- Registry source helper deferred as larger than a small fix. The original MixOS checker is 390 lines and requires another omitted 173-line command_registry_embed.mix. It traverses the old apps/services/cli/libs layout; MixViu needs engines/libraries ownership coverage, embedding-context/provenance assessment and fixture tests. Merely copying the missing file would leave another missing require and incomplete source coverage. The gate remains blocked at its missing require, with no bypass or stub added.
+
+CBC, exact source `75255585405b5ab511f59032dbda47b48f88e45b`, cbc2:
+
+| Job | BUILD_RC | Outcome |
+|---|---|---|
+| 20261109-174228-83fb5387-a1 | 1 | 400 loader assertions and three P1 script lint checks passed; stopped at the worker's older linter not knowing mixos_path in the harness |
+| 20261109-174321-7bf300df-a1 | 0 | 400 loader assertions; P1 script lint; harness lint with --allow-function mixos_path for the older worker binary; cargo fmt -p viu -- --check; cargo test -p viu --lib (101 passed, 5 ignored); cargo check -p viu --bin viu --locked |
+
+Final saved log was read in full: `20261109-174321-cbc2-75255585405b-20261109-174321-7bf300df-a1-ef6cb226.log` under the maintainer's CBC cache. Harness lint has one existing literal-$tmp note, zero errors/warnings. Other P1 lint checks have zero errors/warnings/notes. Existing dependency warnings remain in the Rust log.
+
+No desk4, VT or /opt changes. No additional runtime.rs hunks beyond those listed in the original P1 hand-off.
