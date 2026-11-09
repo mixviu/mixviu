@@ -18,6 +18,13 @@ fn rss($child)
   end
   raise("P3_RSS", "no VmRSS")
 end
+fn sample_body($outputs, $shape, $i)
+  $key = keys($outputs)[$i]
+  if $shape == "instance" then
+    $one = {}; $one[$key] = $outputs[$key]; $outputs = $one
+  end
+  return {outputs:$outputs, settings:{"headless-1":"hidden"}, key:$key}
+end
 try
   for $trial = 1 to 3
     for $count = 1 to 3
@@ -35,7 +42,7 @@ try
         end
         $wire_bytes = 0; $calls = 0; $merged = {}
         for $i = 0 to $processes - 1
-          $body = {outputs:$outputs, settings:{"headless-1":"hidden"}, key:keys($outputs)[$i]}
+          $body = sample_body($outputs, $shape, $i)
           $deadline = monotonic() + 10; $answer = nil
           while monotonic() < $deadline
             try
@@ -52,7 +59,7 @@ try
         -- Fixed 20 ticks: equivalent complete output snapshot each tick.
         for $tick = 1 to 20
           for $i = 0 to $processes - 1
-            $body = {outputs:$outputs, settings:{"headless-1":"hidden"}, key:keys($outputs)[$i]}
+            $body = sample_body($outputs, $shape, $i)
             $answer = $io.rpc($names[$i], "sample", $body)
             $calls = $calls + 1
             $wire_bytes = $wire_bytes + byte_length(json_encode($body)) + byte_length(json_encode($answer))

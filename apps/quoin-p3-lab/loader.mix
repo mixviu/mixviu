@@ -21,6 +21,9 @@ fn sample($name, $snapshot, $key)
     $children[$name] = spawn(["/opt/mixos/bin/mix", "--serve", dirname(script_path()) .. "/" .. $file, "--name", $name], {die_with_parent:true})
     sleep(0.3)
   end
+  if $key != nil then
+    $one = {}; $one[$key] = $snapshot[$key]; $snapshot = $one
+  end
   return $io.rpc($name, "sample", {outputs:$snapshot, settings:$settings, key:$key})
 end
 

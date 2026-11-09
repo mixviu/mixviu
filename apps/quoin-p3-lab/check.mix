@@ -32,6 +32,7 @@ ensure($calls[0].body.scene != $state.a.id and $calls[0].body.scene != $state.c.
 $nodes = {root:{repeat:{over:'= $src.comp.workspaces', as:"ws", key:"id", max:2}, child:"leaf"}, leaf:{widget:"text",text:'= $ws.label'}}
 $lowered = $p3.lower_repeat($nodes, {src:$src})
 ensure($lowered.root.rows[0].id == "one" and $lowered.leaf.text == '= $item.label', "keyed rows and alias")
+ensure($p3.rewrite_binding('= "$ws.label" .. $ws.label', {'$ws':'$item'}) == '= "$ws.label" .. $item.label', "quoted binding text stays literal")
 for $case in ["cap", "duplicate", "nested"]
   $bad = $nodes; $ctx = {src:$src}; $refused = false
   if $case == "cap" then $bad.root.repeat.max = 1 end

@@ -35,6 +35,22 @@ fn collection($expr, $context)
   return $value
 end
 
+-- Rewrite only variable tokens, preserving quoted strings and whitespace.
+fn rewrite_binding($value, $roots)
+  if type($value) != "string" or not starts_with($value, "= ") then return $value end
+  $expr = substr($value, 2)
+  $lines = split($expr, "\n")
+  $cursor = 0; $out = ""
+  for $token in mix_tokens($expr)
+    if $token.kind != "variable" or not has_key($roots, $token.text) then continue end
+    $at = $token.col - 1
+    for $i = 0 to $token.line - 2 $at = $at + len($lines[$i]) + 1 end
+    $out = $out .. slice($expr, $cursor, $at) .. $roots[$token.text]
+    $cursor = $at + len($token.text)
+  end
+  return "= " .. $out .. slice($expr, $cursor)
+end
+
 fn alias_ports($nodes, $id, $alias, $seen)
   if contains($seen, $id) then raise("P3_REPEAT_TEMPLATE", "cycle/shared child in repeat") end
   push($seen, $id)
@@ -43,7 +59,8 @@ fn alias_ports($nodes, $id, $alias, $seen)
   for $port in keys($node)
     $v = $node[$port]
     if type($v) == "string" and starts_with($v, "= ") then
-      $nodes[$id][$port] = replace($v, "$" .. $alias .. ".", '$item.')
+      $roots = {}; $roots["$" .. $alias] = '$item'
+      $nodes[$id][$port] = rewrite_binding($v, $roots)
     end
   end
   for $child in $node.children ?? []
@@ -93,10 +110,13 @@ fn render($source, $name, $output, $model, $src, $citizen)
   $model.__src = $src
   $body = between($doc.body, "```mix\n", "```")
   $nodes = lower_repeat(data_parse($body), {model:$model, src:$src})
-  $body = data_encode($nodes)
   -- P0 has no read-only roots: lab lowering, never execute this text.
-  $body = replace($body, '$instance.', '$model.__instance.')
-  $body = replace($body, '$src.', '$model.__src.')
+  for $node in keys($nodes)
+    for $port in keys($nodes[$node])
+      $nodes[$node][$port] = rewrite_binding($nodes[$node][$port], {'$instance':'$model.__instance', '$src':'$model.__src'})
+    end
+  end
+  $body = data_encode($nodes)
   $window = $doc.window
   $window.panel = $name .. "@" .. $output
   return {id:$id, page:$window.panel, output:$output, source:"---\nscene: 1\nname: " .. $id .. "\ncitizen: " .. $citizen .. "\nwindow: " .. json_encode($window) .. "\nmodel: " .. json_encode($model) .. "\n---\n```mix\n" .. $body .. "\n```\n"}
