@@ -18,7 +18,10 @@ pub(crate) fn is_svg(path: &Path) -> bool {
 pub(crate) fn with_resolver<T>(f: impl FnOnce(&Resolver, u64) -> T) -> T {
     static STATE: OnceLock<Mutex<(Lookup, Resolver, u64, u64)>> = OnceLock::new();
     let lookup = Lookup::from_xdg();
-    let mut state = STATE.get_or_init(|| Mutex::new((lookup.clone(), Resolver::new(lookup.clone()), 0, 0))).lock().unwrap();
+    let mut state = STATE
+        .get_or_init(|| Mutex::new((lookup.clone(), Resolver::new(lookup.clone()), 0, 0)))
+        .lock()
+        .unwrap();
     refresh(&mut state, lookup);
     f(&state.1, state.3)
 }
@@ -52,7 +55,10 @@ mod tests {
         let path = root.path().join("icons/Second/32x32/apps/new-icon.svg");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, "svg").unwrap();
-        refresh(&mut state, Lookup::in_data_dirs("Second", [root.path().into()]));
+        refresh(
+            &mut state,
+            Lookup::in_data_dirs("Second", [root.path().into()]),
+        );
         assert!(state.3 > generation);
         assert_eq!(state.1.resolve("new-icon", 20, None), Some(path));
     }

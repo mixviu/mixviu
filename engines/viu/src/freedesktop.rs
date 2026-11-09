@@ -458,11 +458,16 @@ fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
 
 fn inventory(path: &Path, depth: usize, stamps: &mut Stamps) {
     stamps.insert(path.into(), stamp(path));
-    if depth > 16 { return; }
+    if depth > 16 {
+        return;
+    }
     for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
         if entry.path().is_dir() {
             inventory(&entry.path(), depth + 1, stamps);
-        } else if entry.file_type().is_ok_and(|kind| kind.is_symlink()) || entry.file_name() == "index.theme" || entry.path().extension().is_some_and(|ext| ext == "desktop") {
+        } else if entry.file_type().is_ok_and(|kind| kind.is_symlink())
+            || entry.file_name() == "index.theme"
+            || entry.path().extension().is_some_and(|ext| ext == "desktop")
+        {
             stamps.insert(entry.path(), stamp(&entry.path()));
         }
     }
@@ -484,7 +489,12 @@ const CACHE_LIMIT: usize = 512;
 impl Resolver {
     pub fn new(lookup: Lookup) -> Self {
         let mut stamps = Stamps::new();
-        for root in lookup.roots.iter().chain(&lookup.pixmaps).chain(&lookup.applications) {
+        for root in lookup
+            .roots
+            .iter()
+            .chain(&lookup.pixmaps)
+            .chain(&lookup.applications)
+        {
             inventory(root, 0, &mut stamps);
         }
         Self {
@@ -507,10 +517,17 @@ impl Resolver {
         if stamps.iter().any(|(path, old)| stamp(path) != *old) {
             self.cache.lock().unwrap().clear();
             stamps.clear();
-            for root in self.lookup.roots.iter().chain(&self.lookup.pixmaps).chain(&self.lookup.applications) {
+            for root in self
+                .lookup
+                .roots
+                .iter()
+                .chain(&self.lookup.pixmaps)
+                .chain(&self.lookup.applications)
+            {
                 inventory(root, 0, &mut stamps);
             }
-            self.generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.generation
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         self.generation.load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -523,25 +540,36 @@ impl Resolver {
     }
 
     /// Batch callers validate generation once, then use this for each image.
-    pub fn resolve_in_generation(&self, source: &str, size: u32, scale: u32, app: Option<&str>) -> Option<PathBuf> {
+    pub fn resolve_in_generation(
+        &self,
+        source: &str,
+        size: u32,
+        scale: u32,
+        app: Option<&str>,
+    ) -> Option<PathBuf> {
         let source = source.trim();
         let source = source.strip_prefix("file://").unwrap_or(source);
         let path = Path::new(source);
         if path.is_absolute() && is_image_file(path) {
             return Some(path.into());
         }
-        let key = (source.to_owned(), size, scale, self.lookup.theme.clone(), app.map(str::to_owned));
-        if let Some(path) = self
-            .cache
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(&key).filter(|path| path.as_ref().is_none_or(|path| is_image_file(path))).cloned())
-        {
+        let key = (
+            source.to_owned(),
+            size,
+            scale,
+            self.lookup.theme.clone(),
+            app.map(str::to_owned),
+        );
+        if let Some(path) = self.cache.lock().ok().and_then(|cache| {
+            cache
+                .get(&key)
+                .filter(|path| path.as_ref().is_none_or(|path| is_image_file(path)))
+                .cloned()
+        }) {
             return path;
         }
         let path = self.lookup.resolve(source, size.saturating_mul(scale), app);
-        if let Ok(mut cache) = self.cache.lock()
-        {
+        if let Ok(mut cache) = self.cache.lock() {
             if cache.len() >= CACHE_LIMIT {
                 cache.clear();
             }
@@ -583,7 +611,10 @@ mod tests {
         assert!(resolver.cache.lock().unwrap().values().all(Option::is_none));
         scratch.write("icons/Fixture/32x32/status/later.svg", "svg");
         assert!(resolver.generation() > generation);
-        assert_eq!(resolver.resolve("later", 20, None), Some(scratch.0.join("icons/Fixture/32x32/status/later.svg")));
+        assert_eq!(
+            resolver.resolve("later", 20, None),
+            Some(scratch.0.join("icons/Fixture/32x32/status/later.svg"))
+        );
         for i in 0..CACHE_LIMIT + 5 {
             resolver.resolve_in_generation(&format!("missing-{i}"), 20, 1, None);
         }

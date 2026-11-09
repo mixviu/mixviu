@@ -128,16 +128,33 @@ pub(crate) fn prepare(
     // Keep the shell's fixed glyphs off the search-path validation path too.
     let templates = crate::templates::template_ids(tree);
     let embedded = |id: &str, node: &scene::Node, row: bool| {
-        if node.family != "image" || crate::view::flag(node, "hidden") { return true; }
+        if node.family != "image" || crate::view::flag(node, "hidden") {
+            return true;
+        }
         let source = crate::templates::text(node, "src");
-        source.starts_with("icon:") || (!row && source.is_empty()
-            && (tree.name != "panel" || panel_fallback(id).is_none_or(|source| source.starts_with("icon:"))))
+        source.starts_with("icon:")
+            || (!row
+                && source.is_empty()
+                && (tree.name != "panel"
+                    || panel_fallback(id).is_none_or(|source| source.starts_with("icon:"))))
     };
-    if tree.nodes.iter().all(|(id, node)| templates.contains(id) || embedded(id, node, false))
-        && lists.values().all(|data| data.instances.values().all(|nodes| nodes.iter().all(|(id, node)| embedded(id, node, true))))
+    if tree
+        .nodes
+        .iter()
+        .all(|(id, node)| templates.contains(id) || embedded(id, node, false))
+        && lists.values().all(|data| {
+            data.instances
+                .values()
+                .all(|nodes| nodes.iter().all(|(id, node)| embedded(id, node, true)))
+        })
     {
         static EMBEDDED: OnceLock<Mutex<AssetCache>> = OnceLock::new();
-        return prepare_with(tree, lists, EMBEDDED.get_or_init(Mutex::default), |_, _, _| None);
+        return prepare_with(
+            tree,
+            lists,
+            EMBEDDED.get_or_init(Mutex::default),
+            |_, _, _| None,
+        );
     }
     // Only the fixed production resolver shares this cache. Injected resolvers
     // must use their own cache so they cannot consume or replace its assets.
@@ -168,7 +185,13 @@ fn prepare_with(
 ) -> Prepared {
     let mut prepared = Prepared::new();
     let mut insert = |key, id: &str, node: &scene::Node, app: Option<&str>| {
-        if node.family != "image" || node.ports.get("hidden").and_then(serde_json::Value::as_bool) == Some(true) {
+        if node.family != "image"
+            || node
+                .ports
+                .get("hidden")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true)
+        {
             return;
         }
         let source = crate::templates::text(node, "src");
@@ -190,18 +213,31 @@ fn prepare_with(
         });
         let size = size[0].max(size[1]).ceil() as u32;
         let cache_key = (source.to_owned(), size, app.map(str::to_owned));
-        if let Some(asset) = cache
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(&cache_key).filter(|(_, file)| file.as_ref().is_none_or(|(path, stamp)| file_stamp(path) == Some(*stamp))).map(|(asset, _)| asset.clone()))
-        {
+        if let Some(asset) = cache.lock().ok().and_then(|cache| {
+            cache
+                .get(&cache_key)
+                .filter(|(_, file)| {
+                    file.as_ref()
+                        .is_none_or(|(path, stamp)| file_stamp(path) == Some(*stamp))
+                })
+                .map(|(asset, _)| asset.clone())
+        }) {
             prepared.insert(key, asset);
             return;
         }
-        if let Some(icon) = source.strip_prefix("icon:").and_then(viu::icons::Icon::from_name) {
-            let asset = Asset::Svg(Svg { id: next_id(), bytes: viu::icons::source(icon).into_bytes().into(), symbolic: true });
+        if let Some(icon) = source
+            .strip_prefix("icon:")
+            .and_then(viu::icons::Icon::from_name)
+        {
+            let asset = Asset::Svg(Svg {
+                id: next_id(),
+                bytes: viu::icons::source(icon).into_bytes().into(),
+                symbolic: true,
+            });
             let mut cache = cache.lock().unwrap();
-            if cache.len() >= 512 { cache.clear(); }
+            if cache.len() >= 512 {
+                cache.clear();
+            }
             cache.insert(cache_key, (asset.clone(), None));
             prepared.insert(key, asset);
         } else if let Some(path) = resolve(source, size, app) {
@@ -221,16 +257,38 @@ fn prepare_with(
                 if let Ok(mut cache) = cache.lock()
                     && cache.len() < 512
                 {
-                    cache.insert(cache_key, (asset.clone(), file_stamp(&path).map(|stamp| (path.clone(), stamp))));
+                    cache.insert(
+                        cache_key,
+                        (
+                            asset.clone(),
+                            file_stamp(&path).map(|stamp| (path.clone(), stamp)),
+                        ),
+                    );
                 }
                 prepared.insert(key, asset);
             }
         }
     };
-    fn visible<'a>(get: &impl Fn(&str) -> Option<&'a scene::Node>, id: &str, out: &mut BTreeSet<String>) {
-        let Some(node) = get(id) else { return; };
-        if node.ports.get("hidden").and_then(serde_json::Value::as_bool) == Some(true) || !out.insert(id.into()) { return; }
-        for child in crate::templates::children(node) { visible(get, child, out); }
+    fn visible<'a>(
+        get: &impl Fn(&str) -> Option<&'a scene::Node>,
+        id: &str,
+        out: &mut BTreeSet<String>,
+    ) {
+        let Some(node) = get(id) else {
+            return;
+        };
+        if node
+            .ports
+            .get("hidden")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+            || !out.insert(id.into())
+        {
+            return;
+        }
+        for child in crate::templates::children(node) {
+            visible(get, child, out);
+        }
     }
     let mut drawn = BTreeSet::new();
     visible(&|id| tree.nodes.get(id), "root", &mut drawn);
@@ -241,10 +299,16 @@ fn prepare_with(
         }
     }
     for (list, data) in lists {
-        if !drawn.contains(list) { continue; }
+        if !drawn.contains(list) {
+            continue;
+        }
         for (item, nodes) in &data.instances {
             let mut drawn = BTreeSet::new();
-            visible(&|id| nodes.get(id), crate::templates::text(&tree.nodes[list], "row"), &mut drawn);
+            visible(
+                &|id| nodes.get(id),
+                crate::templates::text(&tree.nodes[list], "row"),
+                &mut drawn,
+            );
             let app = tree
                 .nodes
                 .get(list)
@@ -320,7 +384,9 @@ mod tests {
 
     #[test]
     fn hidden_subtrees_and_rows_never_resolve_and_visible_assets_reuse_handles() {
-        let tree = scene::resolve(&scene::parse(r#"---
+        let tree = scene::resolve(
+            &scene::parse(
+                r#"---
 scene: 1
 name: hidden
 citizen: test
@@ -334,7 +400,11 @@ row: {widget: "column", hidden: true, children: ["row_icon"]}
 row_icon: {widget: "image", src: "hidden-row"}
 shown: {widget: "image", src: "visible", w: 20, h: 20}
 ```
-"#).unwrap()).unwrap();
+"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
         let lists = crate::templates::validate_templates(&tree).unwrap();
         let cache = Mutex::new(AssetCache::new());
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/embedded-icon.svg");
@@ -343,9 +413,15 @@ shown: {widget: "image", src: "visible", w: 20, h: 20}
             Some(path.clone())
         });
         assert_eq!(first.len(), 1);
-        let second = prepare_with(&tree, &lists, &cache, |_, _, _| panic!("unchanged inputs must reuse the asset"));
-        let Some(Asset::Svg(a)) = first.get(&key("shown", None)) else { panic!("SVG"); };
-        let Some(Asset::Svg(b)) = second.get(&key("shown", None)) else { panic!("SVG"); };
+        let second = prepare_with(&tree, &lists, &cache, |_, _, _| {
+            panic!("unchanged inputs must reuse the asset")
+        });
+        let Some(Asset::Svg(a)) = first.get(&key("shown", None)) else {
+            panic!("SVG");
+        };
+        let Some(Asset::Svg(b)) = second.get(&key("shown", None)) else {
+            panic!("SVG");
+        };
         assert_eq!(a.id, b.id);
     }
 
@@ -409,19 +485,13 @@ icon: {widget: "image", src: "", w: 31, h: 31}
             "---\nscene: 1\nname: panel\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"launcher_icon\"]}\nlauncher_icon: {widget: \"image\", src: \"\", w: 28, h: 28}\n```\n",
         ).unwrap()).unwrap();
         let lists = crate::templates::validate_templates(&tree).unwrap();
-        let images = prepare_with(
-            &tree,
-            &lists,
-            &Mutex::new(AssetCache::new()),
-            |_, _, _| panic!("catalogue icons never search the filesystem"),
-        );
+        let images = prepare_with(&tree, &lists, &Mutex::new(AssetCache::new()), |_, _, _| {
+            panic!("catalogue icons never search the filesystem")
+        });
         assert!(
             matches!(
                 images.get(&key("launcher_icon", None)),
-                Some(Asset::Svg(Svg {
-                    symbolic: true,
-                    ..
-                }))
+                Some(Asset::Svg(Svg { symbolic: true, .. }))
             ),
             "the catalogue icon takes the panel ink"
         );
