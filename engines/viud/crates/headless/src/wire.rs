@@ -234,18 +234,21 @@ pub fn wire(
         formats.absent(Role::Plane, "headless: no KMS plane");
         model::stats::registry::base::set_compositor_prefers_dmabuf(false);
         frames::scene::gpu::prewarm(state, &mut *contract.renderer.borrow_mut());
-        let targets = [
+        let targets = {
+        let mut gpu = contract.renderer.borrow_mut();
+        [
             Offscreen::<GlesTexture>::create_buffer(
-                &mut *contract.renderer.borrow_mut(),
+                &mut *gpu,
                 Fourcc::Abgr8888,
                 (options.size.w, options.size.h).into(),
             )?,
             Offscreen::<GlesTexture>::create_buffer(
-                &mut *contract.renderer.borrow_mut(),
+                &mut *gpu,
                 Fourcc::Abgr8888,
                 (options.size.w, options.size.h).into(),
             )?,
-        ];
+        ]
+        };
         decor::window::install(decor::ChromeTheme::load(
             decor::ChromeStyle::from_name(&state.inner.preference.chrome_style).unwrap_or_default(),
         ));
