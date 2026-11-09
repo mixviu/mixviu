@@ -52,7 +52,7 @@ fn prepare_reload($s)
   end
   if is_dir($s.root) then
     for each $n in ls($s.root)
-      if valid_name($n) and is_dir($s.root .. "/" .. $n) and not contains($names, $n) then push($names, $n) end
+      if $n != "lib" and valid_name($n) and is_dir($s.root .. "/" .. $n) and not contains($names, $n) then push($names, $n) end
     end
   end
   for each $n in $names
@@ -190,7 +190,7 @@ fn initial($root, $templates, $host, $me, $io)
       fail("SCENES_GENERATION", "invalid generation counter", {})
     end
   end
-  return {root:$root, root_handle:dir_open($root), templates:$templates, host:$host, me:$me, io:$io,
+  $s = {root:$root, root_handle:dir_open($root), templates:$templates, host:$host, me:$me, io:$io,
     desired:{schema_version:1, enabled:[], origins:{}, recovery:{}}, state_digest:"",
     state_ok:true, state_error:nil,
     scenes:{editor:editor_entry($templates)}, retiring:{}, panels:{}, panel_revision:0, panel_generation:nil, open:nil,
@@ -198,6 +198,8 @@ fn initial($root, $templates, $host, $me, $io)
     recovery_attempted:{}, recovery_diagnostics:{}, faults:[],
     host_live:false, sync_needed:true, services:nil, legacy:"quoin-panel", connection:nil, revision:0, published:"",
     sequence:$sequence, diagnostic:nil, response:{}, rc:0}
+  $s.library_seen = library_signature($s)
+  return $s
 end
 
 fn scene_dir($s, $name)
@@ -334,7 +336,7 @@ fn inventory($s)
     $fork = ($s.desired.forks ?? {})[$name]
     push($rows, {name:$name, installed:$e.installed, enabled:$e.enabled, mounted:$e.mounted,
       revision:$e.revision, generation:$e.generation, behaviour:$e.status, ready:$e.ready,
-      template:$s.desired.origins[$name], diagnostic:$diagnostic, diagnostics:$diagnostics, exit:$e.exit,
+      template:$s.desired.origins[$name], diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
       attempted_digest:$e.attempted, accepted_digest:$e.digest,
       journal:"journalctl -u mix-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
       title:$shown.title ?? $name, edge:$e.edge ?? $shown.edge, page:$e.page ?? $shown.page,
@@ -690,6 +692,7 @@ fn check_mode($s, $name, $dir)
 end
 
 fn reconcile_one($s, $name, $force)
+  if contains($s.reload_blocked ?? [], $name) and (contains($s.desired.enabled, $name) or ($s.scenes[$name] ?? {}).summoned == true) and regular(scene_dir($s, $name) .. "/scene.mix") then return $s end
   if not has_key($s.scenes, $name) then
     if $name == "editor" then fail("SCENES_RESERVED", "the editor entry is created only at loader start", {name:$name}) end
     $s.scenes[$name] = entry($name)
@@ -820,7 +823,7 @@ fn rescan($s, $force)
   end
   if is_dir($s.root) then
     for each $n in ls($s.root)
-      if valid_name($n) and is_dir($s.root .. "/" .. $n) and not contains($names, $n) then push($names, $n) end
+      if $n != "lib" and valid_name($n) and is_dir($s.root .. "/" .. $n) and not contains($names, $n) then push($names, $n) end
     end
   end
   if len($names) > 129 then fail("SCENES_LIMIT", "at most 128 installed scenes", {}) end
@@ -989,6 +992,31 @@ fn legacy_handover($s)
 end
 
 fn filesystem($s, $batch)
+  $maybe_lib = $batch.overflow == true or len($s.reload_blocked ?? []) > 0
+  for each $change in $batch.changes
+    for each $path in [$change.path, $change.old_path]
+      if type($path) != "string" then continue end
+      for each $lib in library_roots($s)
+        if $path == $lib or starts_with($path, $lib .. "/") or starts_with($lib, $path .. "/") then $maybe_lib = true end
+      end
+    end
+  end
+  $group_rc = 0
+  $group_response = {}
+  if $maybe_lib and (library_signature($s) != $s.library_seen or len($s.reload_blocked ?? []) > 0) then
+    $s = reload_group($s, "lib", nil)
+    $group_rc = $s.rc
+    $group_response = $s.response
+  end
+  $s = filesystem_scenes($s, $batch)
+  if $group_rc != 0 then
+    $s.rc = $group_rc
+    $s.response = $group_response
+  end
+  return $s
+end
+
+fn filesystem_scenes($s, $batch)
   if $batch.overflow then return rescan($s, false) end
   $names = []
   $editor = false
@@ -1002,7 +1030,7 @@ fn filesystem($s, $batch)
         $editor = true
         continue
       end
-      if valid_name($parts[0]) and (len($parts) == 1 or (len($parts) == 2 and contains(["scene.mix", "behaviour.mix", "template.conf.mix"], $parts[1]))) then
+      if $parts[0] != "lib" and valid_name($parts[0]) and (len($parts) == 1 or (len($parts) == 2 and contains(["scene.mix", "behaviour.mix", "template.conf.mix"], $parts[1]))) then
         if not contains($names, $parts[0]) then push($names, $parts[0]) end
       end
     end
@@ -1021,6 +1049,153 @@ fn filesystem($s, $batch)
       $s.scenes.editor.user_dirty = true
     end
   end
+  return $s
+end
+
+-- require() accepts computed paths. Until imports are declarative, all
+-- behaviour scenes are a conservative dependency set, including transitive
+-- and conditional imports. Never execute a helper during preflight.
+fn library_roots($s)
+  return unique([$s.templates .. "/lib", $s.root .. "/lib", env("SCENES_LIB", $s.templates .. "/lib")])
+end
+
+fn watch_anchor($path)
+  $dir = dirname($path)
+  while not is_dir($dir) and dirname($dir) != $dir
+    $dir = dirname($dir)
+  end
+  return $dir
+end
+
+fn library_files($dir, $files)
+  if exists($dir, {follow_symlinks:false}) and stat($dir, {follow_symlinks:false}).is_symlink then
+    $files[$dir] = "symlink-refused"
+    return $files
+  end
+  if not is_dir($dir) then return $files end
+  for each $file in sort(ls($dir))
+    $path = $dir .. "/" .. $file
+    if stat($path, {follow_symlinks:false}).is_symlink then
+      $files[$path] = "symlink-refused"
+    elif is_dir($path) then
+      $files = library_files($path, $files)
+    elif ends_with($file, ".mix") then
+      -- Match check_library's complete bounded read, including oversized files.
+      $files[$path] = stat($path).size > 262144 ? "oversized" : hash_sha256(bounded_read($path, 262144))
+    end
+  end
+  return $files
+end
+
+fn library_signature($s)
+  $files = {}
+  for each $dir in library_roots($s) $files = library_files($dir, $files) end
+  return hash_sha256(json_encode($files))
+end
+
+fn check_library($s, $dir)
+  if exists($dir, {follow_symlinks:false}) and stat($dir, {follow_symlinks:false}).is_symlink then fail("SCENES_FILES", "library helpers must not be symlinks", {file:$dir}) end
+  if not is_dir($dir) then return $s end
+  for each $file in ls($dir)
+    $path = $dir .. "/" .. $file
+    if stat($path, {follow_symlinks:false}).is_symlink then fail("SCENES_FILES", "library helpers must not be symlinks", {file:$path}) end
+    if is_dir($path) then
+      $s = check_library($s, $path)
+    elif ends_with($file, ".mix") then
+      $digest = hash_sha256(bounded_read($path, 262144))
+      if ($s.library_checked ?? {})[$path] != $digest then
+        $s.io.check($path, {lint:"report"})
+        $s.library_checked[$path] = $digest
+      end
+    end
+  end
+  return $s
+end
+
+fn reload_group($s, $scope, $name)
+  $s.library_retry = false
+  if $scope == "scene" then
+    if len($s.reload_blocked ?? []) > 0 then
+      $s = reload_group($s, "lib", nil)
+      if $s.rc != 0 then return $s end
+    end
+    return reload_group_once($s, $scope, $name, $s.library_seen)
+  end
+  -- Bound continuous writes without ever acknowledging an unvalidated signature.
+  for $attempt = 1 to 4
+    $validated = library_signature($s)
+    $s = reload_group_once($s, $scope, $name, $validated)
+    if ($s.rc != 0 and $s.response.revisions == nil) or library_signature($s) == $validated then return $s end
+  end
+  $s.rc = 10
+  $s.library_retry = true
+  $s.response.accepted = false
+  $s.response.diagnostics = push($s.response.diagnostics, {error_code:"SCENES_BUSY", message:"library is still changing; a further reload is pending"})
+  return $s
+end
+
+fn reload_group_once($s, $scope, $name, $validated)
+  $names = []
+  for each $n in sort(keys($s.scenes))
+    $e = $s.scenes[$n]
+    if $e.enabled and ($scope == "all" or ($scope == "scene" and $n == $name) or ($scope == "lib" and regular(scene_dir($s, $n) .. "/behaviour.mix"))) then push($names, $n) end
+  end
+  $diagnostics = []
+  $candidates = {}
+  $sources = []
+  try
+    if not $s.host_live then fail("SCENES_TRANSPORT", "scene host is unavailable", {}) end
+    if $scope != "scene" then
+      if $s.library_checked == nil then $s.library_checked = {} end
+      for each $dir in library_roots($s) $s = check_library($s, $dir) end
+    end
+    for each $n in $names
+      $dir = scene_dir($s, $n)
+      $c = candidate($s, $n, $dir)
+      if $c.behaviour_digest != "" and $c.behaviour_digest != $s.scenes[$n].behaviour_digest then $s.io.check($dir .. "/behaviour.mix", {lint:check_mode($s, $n, $dir)}) end
+      $s.io.rpc($s.host, "shell.scene.validate", with_model($c.source, $s.scenes[$n].model ?? $c.model))
+      $candidates[$n] = $c
+      push($sources, {source:with_model($c.source, $s.scenes[$n].model ?? $c.model), model_generation:$s.scenes[$n].generation})
+    end
+    $receipt = $s.io.rpc($s.host, "shell.scene.load", {sources:$sources})
+    if type($receipt.revisions) != "map" then fail("SCENES_SNAPSHOT", "missing batch receipt; update the scene host", {}) end
+  catch $message, $error
+    $d = {error_code:$error.code, message:$message, context:$error.details}
+    push($diagnostics, $d)
+    for each $n in $names $s.scenes[$n].load_diagnostic = $d end
+    if $scope != "scene" then $s.reload_blocked = $names end
+    $s.rc = 10
+    $s.response = {accepted:false, diagnostics:$diagnostics}
+    return $s
+  end
+  $revisions = {}
+  if $scope != "scene" then $s.library_seen = $validated end
+  if $scope != "scene" then $s.reload_blocked = [] end
+  for each $n in $names
+    $c = $candidates[$n]
+    $s.scenes[$n].source = $c.source
+    $s.scenes[$n].model = $s.scenes[$n].model ?? $c.model
+    $s.scenes[$n].digest = $c.digest
+    $s.scenes[$n].behaviour_digest = $c.behaviour_digest
+    $s.scenes[$n].meta_digest = $c.meta_digest
+    $s.scenes[$n].revision = $receipt.revisions[$n]
+    $s.scenes[$n].mounted = true
+    $s.scenes[$n].page = $c.page
+    $s.scenes[$n].edge = $c.edge
+    $s.scenes[$n].kind = $c.kind
+    $s.scenes[$n].load_diagnostic = nil
+    $s.scenes[$n].diagnostic = nil
+    $s = invalidate($s, $n)
+    try
+      $s = start($s, $n)
+    catch $message, $error
+      $s.scenes[$n].diagnostic = {error_code:$error.code, message:$message, context:$error.details}
+    end
+    if failure($s.scenes[$n]) != nil then push($diagnostics, failure($s.scenes[$n])) end
+    $revisions[$n] = $s.scenes[$n].revision
+  end
+  $s.rc = len($diagnostics) == 0 ? 0 : 10
+  $s.response = {accepted:$s.rc == 0, revisions:$revisions, diagnostics:$diagnostics}
   return $s
 end
 
@@ -1132,6 +1307,8 @@ fn stage_from($s, $src, $name, $panel)
     copy_tree($src, $dst)
     write_atomic($dst .. "/scene.mix", rewrite_install(bounded_read($dst .. "/scene.mix", 262144), $name, $panel))
     $c = candidate($s, $name, $dst)
+    if $s.library_checked == nil then $s.library_checked = {} end
+    for $lib in library_roots($s) $s = check_library($s, $lib) end
     $validation = $s.io.rpc($s.host, "shell.scene.validate", $c.source)
     if type($validation) != "map" then fail("SCENES_SNAPSHOT", "missing scene validation receipt", {}) end
     if $c.behaviour_digest != "" then $s.io.check($dst .. "/behaviour.mix", {lint:"deny"}) end
@@ -2086,6 +2263,16 @@ fn request($s, $command, $args)
   $s.response = {}
   try
     if type($args) != "map" then fail("SCENES_ARGUMENT", "arguments must be a map", {}) end
+    if $command == "quoin.reload" then
+      if not contains(["scene", "lib", "all"], $args.scope) then fail("SCENES_ARGUMENT", "scope must be scene, lib or all", {}) end
+      if $args.scope == "scene" then
+        if type($args.name) != "string" then fail("SCENES_ARGUMENT", "scene scope requires a string name", {}) end
+        known($s, $args.name)
+      elif has_key($args, "name") then
+        fail("SCENES_ARGUMENT", "name is only valid for scene scope", {})
+      end
+      return reload_group($s, $args.scope, $args.name)
+    end
     if $command == "list" then
       $s.response = inventory($s)
       return $s
@@ -2231,7 +2418,7 @@ fn request($s, $command, $args)
   catch $message, $error
     $s.rc = 10
     $s.response = {error_code:$error.code, message:$message, context:$error.details}
-    if type($args) == "map" and has_key($s.scenes, $args.name ?? "") and contains(["SCENES_UPSTREAM", "SCENES_TRANSPORT"], $error.code) then
+    if type($args) == "map" and type($args.name) == "string" and has_key($s.scenes, $args.name) and contains(["SCENES_UPSTREAM", "SCENES_TRANSPORT"], $error.code) then
       $s.scenes[$args.name].diagnostic = $s.response
     end
     -- Failed persistence must not leave an uncommitted desire in memory.

@@ -42,6 +42,7 @@ pub struct Mounted {
     pub revision: u64,
 }
 
+#[derive(Clone)]
 pub struct SceneEntry {
     pub(crate) document: SceneDocument,
     pub(crate) bindings: scene::bindings::BindingSet,
@@ -140,6 +141,9 @@ pub(crate) struct SceneOwner {
 
 /// Host-supplied identity and seat, independent of authored scene metadata.
 /// The caller derives `owner` from broker-attested request provenance.
+/// Input only: all page/dialog/toast mount effects live in SceneStore, so
+/// a batch stages them in its cloned store without mutating the caller.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SceneMount<'a> {
     pub output: &'a str,
     pub owner: &'a str,
@@ -155,7 +159,7 @@ pub struct Dispatched {
     pub publish: Vec<String>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SceneStore {
     pub(crate) scenes: BTreeMap<String, SceneEntry>,
     pub(crate) removed: Vec<Mounted>,
@@ -485,7 +489,7 @@ impl SceneStore {
         kind: SceneCommand,
         body: &str,
         args: &Value,
-        mount: Option<&mut SceneMount<'_>>,
+        mount: Option<&SceneMount<'_>>,
     ) -> Result<(Value, Option<Value>), Value> {
         let name = args["scene"].as_str().unwrap_or_default();
         match kind {
@@ -501,6 +505,32 @@ impl SceneStore {
                 ))
             }
             SceneCommand::Load => {
+                if let Some(sources) = args.get("sources") {
+                    let sources = sources.as_array().filter(|s| s.len() <= 128).ok_or_else(
+                        || json!({"error":"sources must be a list of at most 128 load envelopes"}),
+                    )?;
+                    let mut staged = self.clone();
+                    let mut revisions = serde_json::Map::new();
+                    for source in sources {
+                        if source.get("sources").is_some() {
+                            return Err(json!({"error":"nested load batch"}));
+                        }
+                        let text = source["source"]
+                            .as_str()
+                            .ok_or_else(|| json!({"error":"missing source"}))?;
+                        let (receipt, summary) =
+                            staged.request_mounted(SceneCommand::Load, text, source, mount)?;
+                        let name = receipt["scene"]
+                            .as_str()
+                            .ok_or_else(|| json!({"error":"missing scene receipt"}))?;
+                        revisions.insert(name.into(), receipt["revision"].clone());
+                        if let Some(summary) = summary {
+                            staged.notices.push(summary);
+                        }
+                    }
+                    *self = staged;
+                    return Ok((json!({"accepted":true,"revisions":revisions}), None));
+                }
                 let managed_generation = if args.get("model_generation").is_some() {
                     Some(args["model_generation"].as_u64().filter(|g| *g <= 9_007_199_254_740_990).ok_or_else(
                         || json!({"error_code":"SCENE_MODEL_GENERATION", "message":"model_generation must be an exact nonnegative integer"}),
@@ -765,7 +795,7 @@ impl SceneStore {
     fn accept(
         &mut self,
         document: SceneDocument,
-        mount: Option<&mut SceneMount<'_>>,
+        mount: Option<&SceneMount<'_>>,
         loading: bool,
         preempt: bool,
     ) -> Result<(Value, Option<Value>), Value> {

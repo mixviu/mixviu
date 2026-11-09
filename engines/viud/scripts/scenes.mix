@@ -97,15 +97,35 @@ fn refresh_services($s, $reconnect)
   return schedule_editor_activation($s)
 end
 
+fn schedule_library_retry($s)
+  if $s.library_retry != true or $s.library_retry_armed == true then return $s end
+  $s.library_retry_armed = true
+  task_start("scenes.library.retry", "{}")
+  return $s
+end
+
+on scenes.library.retry async
+  if len(keys($event.headers)) != 0 then return end
+  sleep(0.1)
+end
+
+on scenes.library.retry
+  if len(keys($event.headers)) != 0 then return end
+  $state.library_retry_armed = false
+  $state = $loader.request($state, "quoin.reload", {scope:"lib"})
+  $state = schedule_library_retry($loader.changed($state))
+end
+
 on fs.changed
   if len(keys($event.headers)) != 0 then return end
-  if $event.args.watch == $WATCH or $event.args.watch == $PARENT_WATCH then
+  if contains([$WATCH, $PARENT_WATCH, $LIB_WATCH, $EXTRA_LIB_WATCH], $event.args.watch) then
     try
       $state = $loader.filesystem($state, $event.args)
     catch $message, $error
       $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
     end
     $state = $loader.changed($state)
+    $state = schedule_library_retry($state)
     $state = schedule_editor_diagnostics($state)
   end
 end
@@ -298,6 +318,13 @@ on scenes.reload desc "Retry files and behaviour {name}; preserve accepted runti
   $state = $loader.changed($state)
 end
 
+on quoin.reload desc "Reload {scope:scene|lib|all,name?}; preflight the group before applying"
+  $state = $loader.request($state, "quoin.reload", $event.args ?? {})
+  reply($state.rc, json_encode($state.response))
+  $state = $loader.changed($state)
+  $state = schedule_library_retry($state)
+end
+
 on scenes.reset desc "Restore recorded template defaults {name}; retain recovery copy"
   $state = $loader.request($state, "reset", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
@@ -391,8 +418,13 @@ end
 -- stay active), and a committed swap inherits the candidate's. They are
 -- established on both paths so a committed generation always has them; the
 -- reconcile below is the only boot work the candidate defers to the commit.
-$PARENT_WATCH = fs_watch(dirname($ROOT), {recursive:false, events:["created", "modified", "deleted", "moved"]})
+$PARENT_WATCH = fs_watch(dirname($ROOT), {recursive:true, events:["created", "modified", "deleted", "moved"]})
 $WATCH = fs_watch($ROOT, {recursive:true, events:["created", "modified", "deleted", "moved"]})
+$LIB_WATCH = fs_watch($loader.watch_anchor($TEMPLATES), {recursive:true, events:["created", "modified", "deleted", "moved"]})
+$EXTRA_LIB_WATCH = nil
+if env("SCENES_LIB") != $TEMPLATES .. "/lib" then
+  $EXTRA_LIB_WATCH = fs_watch($loader.watch_anchor(env("SCENES_LIB")), {recursive:true, events:["created", "modified", "deleted", "moved"]})
+end
 subscribe("noded.props.changed")
 subscribe($HOST .. ".panel.changed")
 subscribe($HOST .. ".scene.changed")
