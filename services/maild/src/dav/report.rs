@@ -163,6 +163,8 @@ fn parse(body: &[u8]) -> Parsed {
                     } else if in_token {
                         tok.push_str(&s);
                     }
+                } else {
+                    malformed = true;
                 }
             }
             Ok(Event::GeneralRef(reference)) => {
@@ -849,6 +851,12 @@ mod tests {
     #[test]
     fn unknown_report_entity_is_malformed() {
         let parsed = parse(br#"<D:calendar-multiget xmlns:D="DAV:"><D:href>/a&unknown;</D:href></D:calendar-multiget>"#);
+        assert!(parsed.malformed);
+    }
+
+    #[test]
+    fn invalid_utf8_between_entity_events_is_malformed() {
+        let parsed = parse(b"<D:calendar-multiget xmlns:D=\"DAV:\"><D:href>/a&amp;\xff&amp;b</D:href></D:calendar-multiget>");
         assert!(parsed.malformed);
     }
 
