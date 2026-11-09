@@ -7,6 +7,7 @@ use super::*;
 fn panel_icon_frames() {
     let root = tempfile::tempdir().unwrap();
     let installed = std::env::var("ICON_BENCH_INSTALLED").as_deref() == Ok("1");
+    let inventory = std::env::var("ICON_BENCH_TREE").unwrap_or_else(|_| "small".into());
     // A realistic directory fanout, with no dependency on worker packages.
     for theme in ["Fixture", "hicolor", "Adwaita", "AdwaitaLegacy"] {
         for size in [16, 22, 24, 32, 48, 64, 96, 128, 256, 512] {
@@ -23,6 +24,23 @@ fn panel_icon_frames() {
                         .join(format!("icons/{theme}/{size}x{size}/{context}")),
                 )
                 .unwrap();
+            }
+        }
+    }
+    if inventory != "small" {
+        let dir = root.path().join("icons/Fixture/32x32/apps");
+        // Papirus-scale regular-file count, beyond the old work limit. Hard
+        // links keep fixture setup small without changing directory entries.
+        let seed = dir.join("seed.svg");
+        std::fs::write(&seed, "svg").unwrap();
+        for i in 0..70_000 {
+            std::fs::hard_link(&seed, dir.join(format!("fixture-{i}.svg"))).unwrap();
+        }
+        if inventory == "overflow" {
+            // Also exceed the tracked-directory bound without making themed
+            // lookup itself enumerate these unrelated directories.
+            for i in 0..4200 {
+                std::fs::create_dir_all(root.path().join(format!("icons/overflow/{i}"))).unwrap();
             }
         }
     }
@@ -104,7 +122,7 @@ fn panel_icon_frames() {
         }
         samples.sort_by(f64::total_cmp);
         println!(
-            "ICON_PANEL installed={installed} external={external} n={} median_ms={:.4} p95_ms={:.4}",
+            "ICON_PANEL tree={inventory} installed={installed} external={external} n={} median_ms={:.4} p95_ms={:.4}",
             samples.len(),
             samples[50],
             samples[95]

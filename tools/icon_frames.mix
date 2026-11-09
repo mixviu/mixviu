@@ -1,10 +1,12 @@
 -- CBC only: release frame measurements with isolated XDG fixture themes.
 -- Two release jobs fits both heavy workers' release_jobs caps.
+for $tree in ["small", "files", "overflow"]
 for $installed in ["0", "1"]
-  $r = run_argv(["env", "CARGO_BUILD_JOBS=2", "ICON_BENCH_INSTALLED=" .. $installed,
+  $r = run_argv(["env", "CARGO_BUILD_JOBS=2", "ICON_BENCH_TREE=" .. $tree, "ICON_BENCH_INSTALLED=" .. $installed,
     "cargo", "test", "--release", "--locked", "-p", "viu", "--lib", "panel_icon_frames",
     "--", "--ignored", "--nocapture", "--test-threads=1"], {timeout:3600})
   print($r.stdout)
   print($r.stderr)
   if not $r.ok then exit($r.exit_code ?? 1) end
+end
 end
