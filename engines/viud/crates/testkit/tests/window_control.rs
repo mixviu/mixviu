@@ -66,6 +66,10 @@ fn hiding_a_surface_revokes_its_retained_tablet_focus_only() {
         assert!(state.tool_has_focus(tool));
     }
     state.stroke = dispatcher::wire::tablet::Stroke::Tablet;
+    state.stroke_owner = Some(b.clone());
+    state.tool_tip_down(&b, SERIAL_COUNTER.next_serial(), 1);
+    state.tool_cursor = true;
+    state.last_pen_screen = Some((12.0, 34.0).into());
     state.clear_surface_focus(|s| s == &surfaces[0], SERIAL_COUNTER.next_serial(), 2);
     assert!(!state.tool_has_focus(&a));
     assert!(
@@ -74,8 +78,13 @@ fn hiding_a_surface_revokes_its_retained_tablet_focus_only() {
     );
     assert!(matches!(
         state.stroke,
-        dispatcher::wire::tablet::Stroke::None
+        dispatcher::wire::tablet::Stroke::Tablet
     ));
+    assert_eq!(state.stroke_owner, Some(b));
+    assert!(state.tool_cursor);
+    assert_eq!(state.last_pen_screen, Some((12.0, 34.0).into()));
+    state.clear_surface_focus(|s| s == &surfaces[1], SERIAL_COUNTER.next_serial(), 3);
+    assert_eq!(state.stroke, dispatcher::wire::tablet::Stroke::None);
 }
 
 fn id_of(h: &Harness, surface: &wayland_client::protocol::wl_surface::WlSurface) -> SurfaceId {

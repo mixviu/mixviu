@@ -11,3 +11,5 @@ is added.
 the host can cancel a touch sequence if any slot targets a newly hidden
 window. Checking only the grab's first slot would miss a second contact on
 another window.
+
+Review round 2: local Smithay desktop Space membership revision accessor increments on membership insertion/removal, allowing O(1) idle stacking reconciliation. No dependency changes.

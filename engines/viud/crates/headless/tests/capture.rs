@@ -327,6 +327,11 @@ fn review_hidden_remap_does_not_focus_and_show_with_geometry_is_atomic() {
     pump_patterns(&mut [&mut p]);
     let row = bus.window_for("hide-remap");
     assert_eq!(row["requested_visible"], false);
+    bus.call("comp.window.place", place_args(&row, json!({"x":120,"y":160})));
+    assert_eq!(bus.window_for("hide-remap")["window_x"], 120.0);
+    assert_eq!(bus.window_for("hide-remap")["requested_visible"], false);
+    bus.call("comp.window.send_to_workspace", place_args(&row, json!({"index":2})));
+    bus.call("comp.window.send_to_workspace", place_args(&row, json!({"index":1})));
     assert_eq!(
         p.state.keyboard_enters, enters,
         "hidden remap must not take keyboard focus"
@@ -369,6 +374,31 @@ impl Drop for Bus {
         );
         let _ = fs::remove_dir_all(&self.root);
     }
+}
+
+#[test]
+#[ignore = "needs a render node and built viud/noded/Mix"]
+fn moved_window_clip_is_local_to_surface_origin() {
+    let bus = Bus::start("moved-clip");
+    let mut process = process::spawn(1, None, "moved-clip", Some(&bus.url));
+    let mut p = Pattern::named(connect(&mut process), "moved-clip", false);
+    p.wait_callback(0);
+    bus.ready();
+    let row = bus.window_for("moved-clip");
+    bus.call("comp.window.place", place_args(&row, json!({"x":200,"y":200})));
+    let (w, _, original) = ppm(&bus, &process, "origin", None);
+    let red = original.chunks_exact(3).enumerate()
+        .filter(|(_, rgb)| *rgb == crate::rgb(COLOURS[0]))
+        .map(|(i, _)| (i % w, i / w)).collect::<Vec<_>>();
+    let left = red.iter().map(|p| p.0).min().unwrap();
+    let top = red.iter().map(|p| p.1).min().unwrap();
+    bus.call("comp.window.place", place_args(&row,
+        json!({"clip":{"x":20,"y":20,"width":40,"height":40}})));
+    let (w, _, clipped) = ppm(&bus, &process, "local-clip", None);
+    let at = |x:usize,y:usize| &clipped[(y*w+x)*3..(y*w+x)*3+3];
+    assert_eq!(at(left+30,top+30), crate::rgb(COLOURS[0]));
+    assert_eq!(at(left+10,top+30), [18,20,25]);
+    assert_eq!(at(left+70,top+30), [18,20,25]);
 }
 fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output {
     let mut command = Command::new(

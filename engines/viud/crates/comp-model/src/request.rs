@@ -267,7 +267,7 @@ fn clip_value(value: &Value) -> Option<ClipRect> {
         rect.y + rect.height,
     ]
     .iter()
-    .all(|v| v.is_finite() && v.abs() <= i32::MAX as f64)
+    .all(|v| v.is_finite() && *v >= i32::MIN as f64 && *v <= i32::MAX as f64)
     .then_some(rect)
     .filter(|r| r.width >= 0.0 && r.height >= 0.0)
 }

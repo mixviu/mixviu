@@ -30,3 +30,5 @@ transform contract and are outside this command's current scope.
 Hidden windows can still be raised; the order applies when they are shown.
 Unregistered same-layer drawables are stacking barriers too. `z` requires a
 JSON integer token (`1.0` is refused).
+
+Hiding a window cancels the whole touch sequence across all active slots when any slot targets that window (Smithay touch-grab semantics).

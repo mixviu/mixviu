@@ -263,7 +263,7 @@ where
             // shader uniforms: move them with the thumbnail too.
             let mut element = element;
             if let crate::window::draw::element::RawElement::WindowFitClipped(clipped) =
-                element.element_mut()
+                element.raw_mut()
             {
                 clipped.set_rescale(s, at);
             }

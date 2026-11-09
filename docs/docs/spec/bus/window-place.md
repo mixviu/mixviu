@@ -35,3 +35,5 @@ A hidden window may still be raised; its new order takes effect when shown.
 Unregistered same-layer drawables also act as stacking barriers. Clip corners
 are clamped to the framebuffer after adding the window origin and projecting,
 so an extreme origin, clip or zoom cannot overflow a physical rectangle.
+
+Touch cancellation on hide applies to all active slots if any slot targets the hidden surface tree, following Smithay grab semantics. Clip coordinates and endpoints use the inclusive i32 range (-2147483648 to 2147483647); sizes remain non-negative.

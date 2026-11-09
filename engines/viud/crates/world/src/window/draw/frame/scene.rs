@@ -981,14 +981,16 @@ where
 {
     let visual = visual_of(window);
     let crop = visual.clip.map(|c| project_clip(ctx, loc, c, size));
-    let rect = crop.unwrap_or(Rectangle::from_size(size));
     let elements = if !visual.visible {
         Vec::new()
-    } else {
+    } else if let Some(rect) = crop {
         elements
             .into_iter()
             .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect))
+            .map(crate::window::draw::element::Element::Cropped)
             .collect()
+    } else {
+        elements.into_iter().map(crate::window::draw::element::Element::Plain).collect()
     };
     (elements, crop)
 }

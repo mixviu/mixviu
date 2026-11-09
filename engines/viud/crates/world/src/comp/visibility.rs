@@ -24,13 +24,18 @@ use crate::state::Loop;
 
 thread_local! {
     /// The CompState revision the last stamp ran at.
-    static STAMPED: Cell<Option<u64>> = const { Cell::new(None) };
+    static STAMPED: Cell<Option<(u64, u64)>> = const { Cell::new(None) };
 }
 
 /// One loop pass: stamp every world window with the policy's hidden decision,
 /// when CompState moved since the last stamp. Returns whether any stamp
 /// changed.
 pub fn sync_hidden(lp: &mut Loop) -> bool {
+    let revision = (lp.inner.comp.revision(), smithay::desktop::space::membership_revision());
+    if STAMPED.with(Cell::get) == Some(revision) {
+        return false;
+    }
+    STAMPED.with(|stamped| stamped.set(Some(revision)));
     // Space ownership may change without a visibility revision. Reconcile the
     // persistent request in the owning world's order before draw or hit testing.
     let updates: Vec<_> = lp
@@ -55,11 +60,6 @@ pub fn sync_hidden(lp: &mut Loop) -> bool {
             .get_mut(&crate::order::track::base::DRAW_ORDER_MUT)
             .set_z(crate::order::track::base::ComponentId(uuid), z);
     }
-    let revision = lp.inner.comp.revision();
-    if STAMPED.with(Cell::get) == Some(revision) {
-        return false;
-    }
-    STAMPED.with(|stamped| stamped.set(Some(revision)));
     let comp = &lp.inner.comp;
     let mut changed = false;
     for space in lp.inner.all_world_spaces() {

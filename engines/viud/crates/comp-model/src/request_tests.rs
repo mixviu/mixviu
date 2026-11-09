@@ -1875,6 +1875,12 @@ fn placement_visual_validation_and_resets() {
             .extend(extra.as_object().unwrap().clone());
         parse_window_command("comp.window.place", &args)
     };
+    for x in [i32::MIN as f64, i32::MAX as f64] {
+        assert!(parse(json!({"clip":{"x":x,"y":0,"width":0,"height":0}})).is_ok());
+    }
+    for x in [i32::MIN as f64 - 1.0, i32::MAX as f64 + 1.0] {
+        assert!(parse(json!({"clip":{"x":x,"y":0,"width":0,"height":0}})).is_err());
+    }
     for args in [
         json!({"opacity":-0.01}),
         json!({"opacity":1.01}),

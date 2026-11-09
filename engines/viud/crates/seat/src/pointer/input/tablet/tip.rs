@@ -34,6 +34,7 @@ pub fn start_draw(
     world: Point<f64, Logical>,
     time: u32,
 ) {
+    _loop.state.tablet.stroke_owner = Some(tool.clone());
     if client::tablet_focus(_loop, world).is_some() {
         client::apply_focus(_loop, world);
         let serial = SERIAL_COUNTER.next_serial();
@@ -52,12 +53,16 @@ pub fn start_draw(
 
 /// End the latched stroke (no-op when none / a pan is active — the pan just stops).
 pub fn end_draw(_loop: &mut Loop, tool: &TabletToolDescriptor, time: u32) {
+    if _loop.state.tablet.stroke_owner.as_ref() != Some(tool) {
+        return;
+    }
     match _loop.state.tablet.stroke {
         Stroke::Tablet => _loop.state.tablet.tool_tip_up(tool, time),
         Stroke::Pointer => crate::pointer::input::touch::emulate::release(_loop, time),
         Stroke::Pan | Stroke::None => {}
     }
     _loop.state.tablet.stroke = Stroke::None;
+    _loop.state.tablet.stroke_owner = None;
 }
 
 /// Clear the transient Select grab on lift, mirroring `touch/session.rs::disarm_select`.
@@ -76,6 +81,7 @@ pub fn tip<I: InputBackend>(event: &I::TabletToolTipEvent, _loop: &mut Loop) {
     let (screen, world) = coords::world::<I, _>(event, _loop);
     match event.tip_state() {
         TabletToolTipState::Down => {
+            _loop.state.tablet.stroke_owner = Some(tool.clone());
             _loop.state.tablet.last_pen_screen = Some(screen);
             if hand_active(_loop) {
                 // Hand tool: the tip-drag pans (axis.rs); no draw, no click.

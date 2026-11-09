@@ -74,6 +74,8 @@ pub struct TabletState {
     pads: HashMap<String, Pad>,
     /// Current stroke role (latched at tip-down; see [`Stroke`]).
     pub stroke: Stroke,
+    /// Tool owning the latched stroke and its shared cursor/emulation state.
+    pub stroke_owner: Option<TabletToolDescriptor>,
     /// True while a tool client's `set_cursor` owns the pointer image. Reset on
     /// proximity-out so a stale client cursor surface isn't left as the cursor.
     pub tool_cursor: bool,
@@ -414,11 +416,11 @@ impl TabletState {
         time: u32,
     ) {
         let mut cleared = false;
-        for tool in self.tools.values_mut() {
+        for (desc, tool) in &mut self.tools {
             if tool.focus.as_ref().is_some_and(&matches) {
                 tool.proximity_out(time);
                 tool.is_down = false;
-                cleared = true;
+                cleared |= self.stroke_owner.as_ref() == Some(desc);
             }
         }
         for pad in self.pads.values_mut() {
@@ -428,6 +430,7 @@ impl TabletState {
         }
         if cleared {
             self.stroke = Stroke::None;
+            self.stroke_owner = None;
             self.tool_cursor = false;
             self.last_pen_screen = None;
             self.emulated_buttons.clear();

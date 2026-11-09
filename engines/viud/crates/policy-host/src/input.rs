@@ -1575,7 +1575,7 @@ pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
             continue;
         };
         let keyboard_here = delivery_target(lp, seat, true)
-            .is_some_and(|(target, _)| target == id.0)
+            .is_some_and(|(target, _)| root_of(lp, SurfaceId(target)) == id)
             || handle
                 .get_keyboard()
                 .and_then(|k| k.grab_start_data())
@@ -1583,7 +1583,7 @@ pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
                 .and_then(|s| record_of(lp, &s))
                 .is_some_and(|target| root_of(lp, target) == id);
         let pointer_here = delivery_target(lp, seat, false)
-            .is_some_and(|(target, _)| target == id.0)
+            .is_some_and(|(target, _)| root_of(lp, SurfaceId(target)) == id)
             || handle
                 .get_pointer()
                 .and_then(|p| p.grab_start_data())
