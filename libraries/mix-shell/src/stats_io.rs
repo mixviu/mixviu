@@ -2056,7 +2056,6 @@ fn query_db(sql: &str) -> Result<(), String> {
     let columns = statement.column_count();
     let names: Vec<String> = statement
         .column_names()
-        .iter()
         .map(|s| s.to_string())
         .collect();
     println!("{}", names.join("\t"));
