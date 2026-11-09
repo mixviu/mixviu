@@ -38,7 +38,9 @@ pub fn start_draw(
     if _loop.state.tablet.stroke_owner.is_some() {
         return;
     }
-    if client::tablet_focus(_loop, world).is_some() {
+    if let Some(focus) = client::tablet_focus(_loop, world) {
+        if !_loop.state.tablet.focus_stroke(tool, world, focus, SERIAL_COUNTER.next_serial(), time) { return; }
+        super::revoke::flush(_loop, time);
         client::apply_focus(_loop, world);
         let serial = SERIAL_COUNTER.next_serial();
         if _loop.state.tablet.begin_stroke(tool, Stroke::Tablet) {
@@ -72,7 +74,7 @@ pub fn end_draw(_loop: &mut Loop, tool: &TabletToolDescriptor, time: u32) {
 }
 
 /// Clear the transient Select grab on lift, mirroring `touch/session.rs::disarm_select`.
-fn disarm_select(_loop: &mut Loop) {
+pub(super) fn disarm_select(_loop: &mut Loop) {
     if matches!(
         _loop.inner.canvas().grab,
         CanvasGrab::Target(TargetOption::Select { .. })

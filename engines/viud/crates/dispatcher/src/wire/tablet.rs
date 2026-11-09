@@ -307,6 +307,7 @@ impl TabletState {
     /// Acquire the single seat stroke only when routing has taken a real stroke.
     pub fn begin_stroke(&mut self, tool: &TabletToolDescriptor, stroke: Stroke) -> bool {
         if stroke == Stroke::None || self.stroke_owner.is_some() || !self.tools.contains_key(tool) { return false; }
+        if stroke == Stroke::Tablet && !self.tool_has_focus(tool) { return false; }
         self.stroke_owner = Some(tool.clone());
         self.stroke_surface = self.tools.get(tool).and_then(|t| t.focus.clone());
         self.stroke = stroke;
@@ -449,6 +450,14 @@ impl TabletState {
 
     pub fn tool_is_down(&self, tool: &TabletToolDescriptor) -> bool {
         self.tools.get(tool).is_some_and(|t| t.is_down)
+    }
+
+    pub fn focus_stroke(&mut self, tool: &TabletToolDescriptor,
+        location: Point<f64, Logical>, focus: (WlSurface, Point<f64, Logical>),
+        serial: Serial, time: u32) -> bool {
+        let Some(tablet) = self.tools.get(tool).and_then(|t| t.tablet.clone()) else { return false; };
+        self.tool_motion(tool, &tablet, location, Some(focus), serial, time);
+        self.tool_has_focus(tool)
     }
 
     /// Record a barrel button now emulating a pointer button (see `emulated_buttons`).

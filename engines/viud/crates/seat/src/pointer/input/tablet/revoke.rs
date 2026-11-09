@@ -4,6 +4,7 @@ pub fn flush(lp: &mut world::state::Loop, time: u32) {
     for button in lp.state.tablet.take_revoked_buttons() {
         if button == 0x110 {
             crate::pointer::input::touch::emulate::release(lp, time);
+            super::tip::disarm_select(lp);
         } else {
             crate::pointer::input::touch::emulate::button(lp, button, false, time);
         }

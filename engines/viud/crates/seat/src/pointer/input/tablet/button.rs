@@ -51,10 +51,14 @@ pub fn button<I: InputBackend>(event: &I::TabletToolButtonEvent, _loop: &mut Loo
     let pen = &_loop.inner.preference.pen;
     if pen.below_threshold_cursor {
         if pen.below_left == Some(raw) {
+            if pressed { _loop.state.tablet.push_emulated_button(&tool, raw, BTN_LEFT); }
+            else { _loop.state.tablet.take_emulated_button(&tool, raw); }
             crate::pointer::input::touch::emulate::button(_loop, BTN_LEFT, pressed, time);
             return;
         }
         if pen.below_right == Some(raw) {
+            if pressed { _loop.state.tablet.push_emulated_button(&tool, raw, BTN_RIGHT); }
+            else { _loop.state.tablet.take_emulated_button(&tool, raw); }
             crate::pointer::input::touch::emulate::button(_loop, BTN_RIGHT, pressed, time);
             return;
         }
