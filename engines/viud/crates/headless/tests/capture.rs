@@ -427,19 +427,26 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
     let window = bus.window();
     let place = |extra: Value| {
         let mut args = json!({"id":window["id"],"generation":window["generation"]});
-        args.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        args.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
         bus.call("comp.window.place", args)
     };
     let capture = |label: &str| {
         let path = process.root.join(format!("{label}.ppm"));
-        bus.call("comp.capture.frame", json!({"output":"headless-0","path":path,"format":"ppm","cursor":false}));
+        bus.call(
+            "comp.capture.frame",
+            json!({"output":"headless-0","path":path,"format":"ppm","cursor":false}),
+        );
         let ppm = fs::read(path).unwrap();
         let header = b"P6\n1280 720\n255\n";
         assert!(ppm.starts_with(header));
         ppm[header.len()..].to_vec()
     };
-    let at = |bytes: &[u8], x: usize, y: usize| -> [u8;3] {
-        bytes[(y*1280+x)*3..(y*1280+x)*3+3].try_into().unwrap()
+    let at = |bytes: &[u8], x: usize, y: usize| -> [u8; 3] {
+        bytes[(y * 1280 + x) * 3..(y * 1280 + x) * 3 + 3]
+            .try_into()
+            .unwrap()
     };
     let original = capture("original");
     assert_eq!(at(&original, 320, 180), rgb(COLOURS[0]));
@@ -449,41 +456,80 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
     assert_eq!(row["z"], 5);
     assert_eq!(row["clip"]["width"], 640.0);
     let blended = capture("blend-clip");
-    for (actual, (fg, bg)) in at(&blended,320,180).into_iter().zip(rgb(COLOURS[0]).into_iter().zip([18,20,25])) {
-        assert!((i32::from(actual) - ((i32::from(fg)+bg)/2)).abs() <= 3, "alpha blend: {actual}, foreground {fg}, background {bg}");
+    for (actual, (fg, bg)) in at(&blended, 320, 180)
+        .into_iter()
+        .zip(rgb(COLOURS[0]).into_iter().zip([18, 20, 25]))
+    {
+        assert!(
+            (i32::from(actual) - ((i32::from(fg) + bg) / 2)).abs() <= 3,
+            "alpha blend: {actual}, foreground {fg}, background {bg}"
+        );
     }
-    assert_eq!(at(&blended,960,540),[18,20,25], "outside local clip");
+    assert_eq!(at(&blended, 960, 540), [18, 20, 25], "outside local clip");
     let click = || {
-        bus.call("comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":320,"y":180}));
-        bus.call("comp.input.pointer.button", json!({"seat":"agent","button":"left","action":"click"}));
+        bus.call(
+            "comp.input.pointer.move",
+            json!({"seat":"agent","output":"headless-0","x":320,"y":180}),
+        );
+        bus.call(
+            "comp.input.pointer.button",
+            json!({"seat":"agent","button":"left","action":"click"}),
+        );
     };
     click();
-    for _ in 0..30 { pattern.pump(); thread::sleep(Duration::from_millis(5)); }
-    assert!(pattern.state.pointer_buttons >= 2, "opacity retains pointer input");
+    for _ in 0..30 {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        pattern.state.pointer_buttons >= 2,
+        "opacity retains pointer input"
+    );
     place(json!({"visible":false}));
     let hidden = bus.window();
-    assert_eq!(hidden["requested_visible"],false);
-    assert_eq!(hidden["visible"],false);
-    let focused = bus.call("comp.window.focus", json!({"id":window["id"],"generation":window["generation"]}));
-    assert_eq!(focused["focused"],false,"hidden windows cannot reacquire keyboard focus");
-    assert_eq!(hidden["opacity"],0.5, "omitted attributes persist across list");
-    assert_eq!(hidden["window_width"],window["window_width"]);
-    assert_eq!(hidden["window_height"],window["window_height"]);
-    for _ in 0..20 { pattern.pump(); thread::sleep(Duration::from_millis(5)); }
+    assert_eq!(hidden["requested_visible"], false);
+    assert_eq!(hidden["visible"], false);
+    let focused = bus.call(
+        "comp.window.focus",
+        json!({"id":window["id"],"generation":window["generation"]}),
+    );
+    assert_eq!(
+        focused["focused"], false,
+        "hidden windows cannot reacquire keyboard focus"
+    );
+    assert_eq!(
+        hidden["opacity"], 0.5,
+        "omitted attributes persist across list"
+    );
+    assert_eq!(hidden["window_width"], window["window_width"]);
+    assert_eq!(hidden["window_height"], window["window_height"]);
+    for _ in 0..20 {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(5));
+    }
     let buttons = pattern.state.pointer_buttons;
     let callbacks = pattern.state.callbacks;
     click();
     pattern.commit(true);
     let blank = capture("hidden");
-    assert_eq!(at(&blank,320,180),[18,20,25]);
-    for _ in 0..60 { pattern.pump(); thread::sleep(Duration::from_millis(5)); }
-    assert_eq!(pattern.state.pointer_buttons,buttons,"hidden window receives no pointer buttons");
-    assert_eq!(pattern.state.callbacks,callbacks,"hidden callbacks are withheld");
+    assert_eq!(at(&blank, 320, 180), [18, 20, 25]);
+    for _ in 0..60 {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        pattern.state.pointer_buttons, buttons,
+        "hidden window receives no pointer buttons"
+    );
+    assert_eq!(
+        pattern.state.callbacks, callbacks,
+        "hidden callbacks are withheld"
+    );
     place(json!({"opacity":null,"z":null,"visible":null,"clip":null}));
     let reset = bus.window();
-    assert_eq!(reset["opacity"],1.0);
-    assert_eq!(reset["z"],0);
-    assert_eq!(reset["requested_visible"],true);
+    assert_eq!(reset["opacity"], 1.0);
+    assert_eq!(reset["z"], 0);
+    assert_eq!(reset["requested_visible"], true);
     assert!(reset["clip"].is_null());
-    assert_eq!(at(&capture("reset"),960,540),rgb(COLOURS[3]));
+    assert_eq!(at(&capture("reset"), 960, 540), rgb(COLOURS[3]));
 }

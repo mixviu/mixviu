@@ -629,7 +629,9 @@ fn raise(lp: &mut Loop, id: u64, generation: u64) -> ControlReply {
 
 /// Give the primary seat's keyboard to a window.
 fn focus_keyboard(lp: &mut Loop, id: SurfaceId) {
-    if !lp.inner.comp.visual(id).visible { return; }
+    if !lp.inner.comp.visual(id).visible {
+        return;
+    }
     let Some(window) = window_of(lp, id) else {
         return;
     };
@@ -761,10 +763,16 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
         Ok(record) => record.id(),
         Err(error) => return ControlReply::WindowTarget { id: spec.id, error },
     };
-    let visual_only = spec.output.is_none() && spec.x.is_none() && spec.y.is_none() && spec.width.is_none() && spec.height.is_none();
+    let visual_only = spec.output.is_none()
+        && spec.x.is_none()
+        && spec.y.is_none()
+        && spec.width.is_none()
+        && spec.height.is_none();
     if visual_only {
         apply_visual(lp, id, spec);
-        return ControlReply::Body(serde_json::json!({"id": spec.id, "generation": spec.generation}));
+        return ControlReply::Body(
+            serde_json::json!({"id": spec.id, "generation": spec.generation}),
+        );
     }
     let facts = window_facts(lp, id);
     let (outputs, _, _) = crate::project::project_outputs(lp);
@@ -817,14 +825,26 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
     let old = lp.inner.comp.visual(id);
     let mut visual = old;
     visual.update(spec);
-    if old == visual { return; }
+    if old == visual {
+        return;
+    }
     lp.inner.comp.visuals.insert(id, (spec.generation, visual));
     if let Some(window) = window_of(lp, id) {
-        *window.user_data().get_or_insert(|| std::sync::Mutex::new(comp_model::request::VisualAttributes::default())).lock().unwrap() = visual;
+        *window
+            .user_data()
+            .get_or_insert(|| {
+                std::sync::Mutex::new(comp_model::request::VisualAttributes::default())
+            })
+            .lock()
+            .unwrap() = visual;
         if spec.z.is_some() {
             if let Some(owner) = lp.inner.world_of_window(&window) {
                 if let Some(uuid) = lp.inner.comp.registry.uuid_for(id) {
-                    lp.inner.worlds.get_mut(owner).storage_mut().get_mut(&world::order::track::base::DRAW_ORDER_MUT)
+                    lp.inner
+                        .worlds
+                        .get_mut(owner)
+                        .storage_mut()
+                        .get_mut(&world::order::track::base::DRAW_ORDER_MUT)
                         .set_z(world::order::track::base::ComponentId(uuid), visual.z);
                 }
             }
