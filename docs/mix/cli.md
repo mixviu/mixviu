@@ -491,7 +491,7 @@ mix stats trend NAME / since DATE / query SQL            SQLite history
 and at the Mix prompt alike. Like `mix lint` and `mix edit` it owns its exit
 code: 0 done, 1 refused or failed, 2 a turn waiting on a human, 64 usage,
 124 `--wait` timed out. The commands and their meaning are in
-[agentd](../agentd/README.md#command-line). A CWD script named `agent` is
+agentd (manual not included in this source tree). A CWD script named `agent` is
 shadowed; run it as `mix ./agent`.
 
 ```text
@@ -507,7 +507,7 @@ $ mix agent send 4f1c2a9e0b "run the tests and fix the first failure" --wait
 `<prefix>/lib/peersd/peers_cli.mix`) the same way: agent sessions on any
 desk list each other, message each other and share notices. Exit codes: 0
 done, 1 refused or unreachable, 64 usage. The commands are in
-[peersd](../peersd/README.md#command-line). A CWD script named `peers` is
+peersd (manual not included in this source tree). A CWD script named `peers` is
 shadowed; run it as `mix ./peers`.
 
 ```text

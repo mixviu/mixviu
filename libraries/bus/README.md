@@ -2,4 +2,4 @@
 
 The Bus wire format and the broker client.
 
-Documentation: <https://mixos.dev/bus/> — source [`docs/bus/README.md`](../../docs/bus/README.md).
+Documentation: <https://mixos.dev/bus/> — source the component manual (not included in this source tree).

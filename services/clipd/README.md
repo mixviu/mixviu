@@ -1,7 +1,7 @@
 # clipd
 
 Clipboard Bus service written in Mix. Run with `mix --serve scripts/clipd.mix
---name clipd`. The [manual](../../docs/clipd/README.md) describes the API,
+--name clipd`. The manual (manual not included in this source tree) describes the API,
 configuration, external tools and current Wayland limitations.
 
 From the checkout root:

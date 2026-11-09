@@ -1,3 +1,10 @@
+-- Dynamic shell/loader contracts below are documentation, not runtime validation.
+-- schema:none means no Rust request deserialiser; it does not mean no params.
+-- Rust-backed terminal shell entries name their actual deserialisers.
+-- Contract notation: ? optional, | union, [] list; JSON is arbitrary JSON.
+-- All host requests also accept optional output:string and edge:string (default bottom);
+-- dispatch validates the edge even for queries. Failures generally rc10, error_code or error,
+-- and/or diagnostics; successful acceptance does not prove surface presentation.
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- Accepted Bus command registry, schema 5. Each component registers its commands
@@ -72,13 +79,13 @@
     {name:"exportd.cosmic.reconcile", owner:"exportd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"exportd.cosmic.undo", owner:"exportd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"exportd.cosmic.owned", owner:"exportd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
-    {name:"shell.status", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.execute", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.execute.result", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.execute.cancel", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.task.submit", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.task.result", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.task.cancel", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"shell.status", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"mix_shell::session_status::Request"},
+    {name:"shell.execute", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"mix_shell::session_execute::Submit"},
+    {name:"shell.execute.result", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"mix_shell::session_execute::Operation"},
+    {name:"shell.execute.cancel", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"mix_shell::session_execute::Operation"},
+    {name:"shell.task.submit", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"mix_shell::session_execute::TaskSubmit"},
+    {name:"shell.task.result", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"mix_shell::session_execute::Operation"},
+    {name:"shell.task.cancel", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"mix_shell::session_execute::Operation"},
     {name:"blob.put", owner:"blobd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"blob.stat", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"blob.path", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
@@ -280,13 +287,13 @@
     {name:"monitor.debug", owner:"monitor", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"monitor.debug.recent", owner:"monitor", version:"0.1.0", status:"accepted", class:"query", schema:"logging::debug::RecentRequest"},
     {name:"monitor.debug.set", owner:"monitor", version:"0.1.0", status:"accepted", class:"intent", schema:"logging::debug::SetRequest"},
-    {name:"backdrop.ping", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
-    {name:"backdrop.state", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
-    {name:"backdrop.set", owner:"backdrop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
-    {name:"backdrop.next", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"backdrop.view.set", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"backdrop.ping", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query", schema:"none"},
+    {name:"backdrop.state", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query", schema:"none"},
+    {name:"backdrop.set", owner:"backdrop", version:"0.1.1", status:"accepted", class:"intent", schema:"none"},
+    {name:"backdrop.next", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"backdrop.view.set", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"backdrop.view.list", owner:"backdrop", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
-    {name:"backdrop.view.cycle", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"backdrop.view.cycle", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"backdrop.debug", owner:"backdrop", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"backdrop.debug.recent", owner:"backdrop", version:"0.1.0", status:"accepted", class:"query", schema:"logging::debug::RecentRequest"},
     {name:"backdrop.debug.set", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"logging::debug::SetRequest"},
@@ -618,6 +625,7 @@
     {name:"screenshot.debug.recent", owner:"screenshot", version:"0.1.0", status:"accepted", class:"query", schema:"logging::debug::RecentRequest"},
     {name:"screenshot.debug.set", owner:"screenshot", version:"0.1.0", status:"accepted", class:"intent", schema:"logging::debug::SetRequest"},
     {name:"comp.capture.frame", owner:"viud", version:"0.1.3", status:"accepted", class:"query", schema:"pending"},
+    {name:"comp.callers", owner:"viud", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"comp.ping", owner:"viud", version:"0.1.11", status:"accepted", class:"query", schema:"pending"},
     {name:"comp.debug", owner:"viud", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"comp.debug.recent", owner:"viud", version:"0.1.0", status:"accepted", class:"query", schema:"logging::debug::RecentRequest"},
@@ -665,42 +673,62 @@
     {name:"comp.input.key", owner:"viud", version:"0.1.11", status:"accepted", class:"input", schema:"pending"},
     {name:"comp.input.release_all", owner:"viud", version:"0.1.11", status:"accepted", class:"input", schema:"pending"},
     {name:"viud.truth", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.scene.load", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.scene.validate", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.scene.patch", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.scene.frame", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.scene.get", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.scene.describe", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.scene.unload", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.scene.watch", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.scene.layout", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.scenes.list", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.dialog.show", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.dialog.hide", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.toast.show", owner:"viud", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
-    {name:"shell.toast.hide", owner:"viud", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
-    {name:"shell.ping", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.info", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.props.get", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.panel.state", owner:"viud", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"shell.panel.mode", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.page.set", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.order", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.resize", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.show", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.hide", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.toggle", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.pin", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.unpin", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.panel.dock", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.corner.show", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.corner.hide", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.corner.toggle", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.corner.pin", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.corner.unpin", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.corner.menu.open", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.corner.menu.choose", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"shell.corner.menu.close", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"scenes.close", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.disable", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.editor.action", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.editor.close", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.editor.open", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.editor.snapshot", owner:"viud", version:"0.2.5", status:"accepted", class:"query", schema:"none"},
+    {name:"scenes.enable", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.fork", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.install", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.list", owner:"viud", version:"0.2.5", status:"accepted", class:"query", schema:"none"},
+    {name:"scenes.model", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.move", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.open", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.promote", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.ready", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.reload", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.remove", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.reset", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.templates", owner:"viud", version:"0.2.5", status:"accepted", class:"query", schema:"none"},
+    {name:"scenes.toggle", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.scene.load", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.scene.validate", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.scene.patch", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.scene.frame", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.scene.get", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.scene.describe", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.scene.unload", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.scene.watch", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.scene.layout", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.scenes.list", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.dialog.show", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.dialog.hide", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.toast.show", owner:"viu", version:"0.1.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.toast.hide", owner:"viu", version:"0.1.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.ping", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.info", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.props.get", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.panel.state", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.panel.mode", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.page.set", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.order", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.panel.resize", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.show", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.hide", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.toggle", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.pin", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.unpin", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.dock", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.corner.show", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.corner.hide", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.corner.toggle", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.corner.pin", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.corner.unpin", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.corner.menu.open", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.corner.menu.choose", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.corner.menu.close", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
     {name:"host.info", owner:"hostd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"net.state", owner:"hostd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"hostd.status", owner:"hostd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
@@ -819,4 +847,558 @@
     {pattern:"<app>.screenshot", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {pattern:"<app>.status", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query", schema:"pending"}
   ]
+,
+  contracts: {
+  "shell.scene.load": {
+    "params": {
+      "source?": "string (otherwise raw body is the scene document)",
+      "model_generation?": "integer 0..9007199254740990",
+      "preempt_dialog?": "bool",
+      "output?": "string"
+    },
+    "reply": "{scene:string,revision:number,digest:string}",
+    "source": "engines/viu/src/store.rs:483"
+  },
+  "shell.scene.validate": {
+    "params": {
+      "body": "raw scene document"
+    },
+    "reply": "{scene:string,valid:true,diagnostics:Diagnostic[]}",
+    "source": "engines/viu/src/store.rs:483"
+  },
+  "shell.scene.patch": {
+    "params": {
+      "scene": "string",
+      "path": "string (model[.key...] or node.port)",
+      "value": "JSON",
+      "generation?": "integer",
+      "output?": "string"
+    },
+    "reply": "{scene:string,revision:number,digest:string}",
+    "source": "engines/viu/src/store.rs:483"
+  },
+  "shell.scene.frame": {
+    "params": {
+      "scene": "string"
+    },
+    "reply": "{armed:true}",
+    "source": "engines/viu/src/runtime.rs:993"
+  },
+  "shell.scene.get": {
+    "params": {
+      "scene": "string",
+      "format?": "string (source selects authored source)",
+      "path?": "string (node.port)",
+      "output?": "string"
+    },
+    "reply": "ResolvedScene | JSON port value | {scene:string,revision:number,source:string}",
+    "source": "engines/viu/src/store.rs:483"
+  },
+  "shell.scene.describe": {
+    "params": {
+      "family?": "string",
+      "output?": "string"
+    },
+    "reply": "PortDescribe[] | map<family,PortDescribe[]>",
+    "source": "engines/viu/src/store.rs:483"
+  },
+  "shell.scene.unload": {
+    "params": {
+      "scene": "string",
+      "output?": "string"
+    },
+    "reply": "{scene:string,unloaded:true}",
+    "source": "engines/viu/src/store.rs:483"
+  },
+  "shell.scene.watch": {
+    "params": {
+      "scene": "string",
+      "output?": "string"
+    },
+    "reply": "{scene:string,revision:number,digest:string,applied_revision:number,diagnostics:Diagnostic[]}",
+    "source": "engines/viu/src/store.rs:483"
+  },
+  "shell.scene.layout": {
+    "params": {
+      "scene?": "string"
+    },
+    "reply": "rc10 {error_code:SCENE_NOT_RENDERED,message:string}; no successful reply today",
+    "source": "engines/viu/src/runtime.rs:1000"
+  },
+  "shell.scenes.list": {
+    "params": {
+      "output?": "string"
+    },
+    "reply": "{name:string,kind?:dialog|toast,page:string|null,edge:string|null,citizen:string,owner:string|null,revision:number,applied_revision:number,diagnostics:object[],model_generation:number|null,digest:string,registered:bool}[]",
+    "source": "engines/viu/src/store.rs:371"
+  },
+  "shell.ping": {
+    "params": {},
+    "reply": "{service:string,status:ok,engine:viu}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.info": {
+    "params": {},
+    "reply": "{service:string,engine:viu,commands:string[],pending:string[],window_previews:false}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.props.get": {
+    "params": {},
+    "reply": "{panels:{output:string,edge:string,mode:string,mapped:bool,settings_owner:string|null}[],corner_events:JSON,corner_phases:JSON,window_previews:false}; path is ignored",
+    "source": "engines/viu/src/runtime.rs:933"
+  },
+  "shell.panel.state": {
+    "params": {
+      "edge?": "left|right|top|bottom (default bottom)",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string,mapped:bool,fraction:number}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.mode": {
+    "params": {
+      "mode": "hidden|pinned|docked",
+      "edge?": "left|right|top|bottom (default bottom)",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.page.set": {
+    "params": {
+      "id": "string",
+      "edge?": "left|right|top|bottom",
+      "output?": "string"
+    },
+    "reply": "{accepted:true,applied:true,page:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.resize": {
+    "params": {
+      "thickness_px": "finite number",
+      "edge?": "left|right|top|bottom",
+      "output?": "string"
+    },
+    "reply": "{accepted:true,applied:true}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.show": {
+    "params": {
+      "edge?": "left|right|top|bottom (default bottom)",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.hide": {
+    "params": {
+      "edge?": "left|right|top|bottom (default bottom)",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.toggle": {
+    "params": {
+      "edge?": "left|right|top|bottom (default bottom)",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.pin": {
+    "params": {
+      "edge?": "left|right|top|bottom (default bottom)",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.unpin": {
+    "params": {
+      "edge?": "left|right|top|bottom (default bottom)",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.panel.dock": {
+    "params": {
+      "edge?": "left|right|top|bottom (default bottom)",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.corner.show": {
+    "params": {
+      "corner": "tl|bl|br|tr",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.corner.hide": {
+    "params": {
+      "corner": "tl|bl|br|tr",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.corner.toggle": {
+    "params": {
+      "corner": "tl|bl|br|tr",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.corner.pin": {
+    "params": {
+      "corner": "tl|bl|br|tr",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.corner.unpin": {
+    "params": {
+      "corner": "tl|bl|br|tr",
+      "output?": "string"
+    },
+    "reply": "{edge:string,mode:string}",
+    "source": "engines/viu/src/runtime.rs:878"
+  },
+  "shell.toast.show": {
+    "params": {
+      "scene": "string",
+      "h?": "finite number|string parsed as number (show only; clamp 60..2048)",
+      "output?": "string"
+    },
+    "reply": "{scene:string,visible:bool,applied:true}",
+    "source": "engines/viu/src/runtime.rs:1006"
+  },
+  "shell.dialog.show": {
+    "params": {},
+    "reply": "rc10 {error_code:NOT_IMPLEMENTED,message:string}; no params consumed by this host",
+    "source": "engines/viu/src/runtime.rs:1062"
+  },
+  "shell.toast.hide": {
+    "params": {
+      "scene": "string",
+      "h?": "finite number|string parsed as number (show only; clamp 60..2048)",
+      "output?": "string"
+    },
+    "reply": "{scene:string,visible:bool,applied:true}",
+    "source": "engines/viu/src/runtime.rs:1006"
+  },
+  "shell.dialog.hide": {
+    "params": {},
+    "reply": "rc10 {error_code:NOT_IMPLEMENTED,message:string}; no params consumed by this host",
+    "source": "engines/viu/src/runtime.rs:1062"
+  },
+  "shell.panel.order": {
+    "params": {},
+    "reply": "rc10 {error_code:NOT_IMPLEMENTED,message:string}; no params consumed by this host",
+    "source": "engines/viu/src/runtime.rs:1062"
+  },
+  "shell.corner.menu.open": {
+    "params": {},
+    "reply": "rc10 {error_code:NOT_IMPLEMENTED,message:string}; no params consumed by this host",
+    "source": "engines/viu/src/runtime.rs:1062"
+  },
+  "shell.corner.menu.choose": {
+    "params": {},
+    "reply": "rc10 {error_code:NOT_IMPLEMENTED,message:string}; no params consumed by this host",
+    "source": "engines/viu/src/runtime.rs:1062"
+  },
+  "shell.corner.menu.close": {
+    "params": {},
+    "reply": "rc10 {error_code:NOT_IMPLEMENTED,message:string}; no params consumed by this host",
+    "source": "engines/viu/src/runtime.rs:1062"
+  },
+  "scenes.list": {
+    "params": {},
+    "reply": "{needs_setup:bool,root:string,templates_root:string,state_ok:bool,editor:object,scenes:SceneRecord[],diagnostic:object|null}; SceneRecord fields at source",
+    "source": "engines/viud/scripts/lib/scenes.mix:310"
+  },
+  "scenes.templates": {
+    "params": {},
+    "reply": "{root:string,templates:{template:string,name:string,title:string,description:string,edge:string|null,kind:string,behaviour:bool,recommended:bool,order:number,requires:string[],installed_as:string[],diagnostic?:object}[]}",
+    "source": "engines/viud/scripts/lib/scenes.mix:1565"
+  },
+  "scenes.install": {
+    "params": {
+      "template": "string",
+      "name?": "string",
+      "enable?": "bool=false"
+    },
+    "reply": "{name:string,installed:true,enabled:bool}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.enable": {
+    "params": {
+      "name": "string"
+    },
+    "reply": "{name:string,accepted:true,revision:number}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.disable": {
+    "params": {
+      "name": "string"
+    },
+    "reply": "{name:string,accepted:true,revision:number}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.reload": {
+    "params": {
+      "name": "string"
+    },
+    "reply": "{name:string,accepted:true,revision:number}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.remove": {
+    "params": {
+      "name": "string"
+    },
+    "reply": "{name:string,recovery?:string}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.reset": {
+    "params": {
+      "name": "string"
+    },
+    "reply": "{name:string,recovery?:string}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.open": {
+    "params": {
+      "name": "string"
+    },
+    "reply": "{name:string,open:bool,pending:bool}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.close": {
+    "params": {
+      "name": "string"
+    },
+    "reply": "{name:string,open:bool,pending:bool}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.toggle": {
+    "params": {
+      "name": "string"
+    },
+    "reply": "{name:string,open:bool,pending:bool}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.ready": {
+    "params": {
+      "name": "string",
+      "generation": "positive integer"
+    },
+    "reply": "{name:string,generation:number,publish_model:true}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.model": {
+    "params": {
+      "name": "string",
+      "generation": "positive integer",
+      "value": "object (complete model; <=262144 encoded bytes)"
+    },
+    "reply": "{name:string,accepted:true,revision:number}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.fork": {
+    "params": {
+      "name": "string",
+      "as?": "string",
+      "enable?": "bool=true"
+    },
+    "reply": "{name:string,installed:true,enabled:bool,forked_from:string}",
+    "source": "engines/viud/scripts/lib/scenes.mix:1908"
+  },
+  "scenes.promote": {
+    "params": {
+      "from": "string"
+    },
+    "reply": "{name:string,recovery:string,removed:string}",
+    "source": "engines/viud/scripts/lib/scenes.mix:1957"
+  },
+  "scenes.move": {
+    "params": {
+      "name": "string",
+      "edge": "left|right|top|bottom"
+    },
+    "reply": "{name:string,edge:string,revision:number}",
+    "source": "engines/viud/scripts/lib/scenes.mix:2009"
+  },
+  "scenes.editor.open": {
+    "params": {
+      "safe?": "bool",
+      "view?": "string",
+      "scene?": "string",
+      "first_run?": "bool"
+    },
+    "reply": "object (application activation receipt by default; legacy {name,source,safe,visible,pending,fallback,request_seq,...})",
+    "source": "engines/viud/scripts/lib/editor_app.mix:185"
+  },
+  "scenes.editor.close": {
+    "params": {
+      "unload?": "bool (legacy frontend)"
+    },
+    "reply": "object (application quit receipt or legacy {name:string,visible:false,mounted:bool})",
+    "source": "engines/viud/scripts/lib/editor_app.mix:228"
+  },
+  "scenes.editor.snapshot": {
+    "params": {
+      "selection?": "object"
+    },
+    "reply": "EditorSnapshot",
+    "source": "engines/viud/scripts/lib/editor_app.mix:78"
+  },
+  "scenes.editor.action": {
+    "params": {
+      "action": "install|install-enable|recommended|toggle|reload|reset|remove|fork|promote|edit-scene|edit-behaviour|move|mode|size|order",
+      "state_token": "string",
+      "selection?": "object",
+      "confirmed?": "bool",
+      "edge?": "left|right|top|bottom",
+      "mode?": "hidden|pinned|docked",
+      "direction?": "minus|plus|up|down"
+    },
+    "reply": "EditorSnapshot | {error_code:string,message:string,context:object|null}",
+    "source": "engines/viud/scripts/lib/editor_app.mix:78"
+  },
+  "shell.status": {
+    "params": {
+      "version": "1",
+      "target": "Source"
+    },
+    "reply": "{version:1,status:View,capabilities:map<string,string>,freshness:string}",
+    "source": "libraries/mix-shell/src/session_status.rs:53"
+  },
+  "shell.execute": {
+    "params": {
+      "version": "1",
+      "target": "Source",
+      "request_id": "decimal u64 string",
+      "prompt_generation": "decimal u64 string",
+      "source": "string",
+      "on_behalf_of?": "string"
+    },
+    "reply": "{version:1,operation_id:decimal-string,state:string,status:string,prompt_generation:decimal-string}",
+    "source": "libraries/mix-shell/src/session_execute.rs:123"
+  },
+  "shell.task.submit": {
+    "params": {
+      "version": "1",
+      "target": "Source",
+      "request_id": "decimal u64 string",
+      "source?": "string (exactly one of source/argv)",
+      "argv?": "string[]",
+      "cwd": "absolute string",
+      "env?": "[string,string][]",
+      "timeout_ms?": "decimal u64 string"
+    },
+    "reply": "{version:1,operation_id:decimal-string,state:string,status:string}",
+    "source": "libraries/mix-shell/src/session_execute.rs:930"
+  },
+  "shell.execute.result": {
+    "params": {
+      "version": "1",
+      "target": "Source",
+      "operation_id": "decimal u64 string"
+    },
+    "reply": "{version:1,operation_id:decimal-string,state:string,result?:Completion}",
+    "source": "libraries/mix-shell/src/session_execute.rs:152"
+  },
+  "shell.execute.cancel": {
+    "params": {
+      "version": "1",
+      "target": "Source",
+      "operation_id": "decimal u64 string"
+    },
+    "reply": "{version:1,operation_id:decimal-string,outcome:string,delivery:string,signalled_pgid?:integer|null}",
+    "source": "libraries/mix-shell/src/session_execute.rs:152"
+  },
+  "shell.task.result": {
+    "params": {
+      "version": "1",
+      "target": "Source",
+      "operation_id": "decimal u64 string"
+    },
+    "reply": "{version:1,operation_id:decimal-string,state:string,elapsed_ms?:decimal-string,report?:TaskReport}",
+    "source": "libraries/mix-shell/src/session_execute.rs:152"
+  },
+  "shell.task.cancel": {
+    "params": {
+      "version": "1",
+      "target": "Source",
+      "operation_id": "decimal u64 string"
+    },
+    "reply": "{version:1,operation_id:decimal-string,outcome:already_settled|requested,delivery:string}",
+    "source": "libraries/mix-shell/src/session_execute.rs:1250"
+  },
+  "backdrop.ping": {
+    "params": {},
+    "reply": "{schema:backdrop.v1,service:string}",
+    "source": "apps/backdrop/runtime.mix:156"
+  },
+  "backdrop.state": {
+    "params": {},
+    "reply": "{schema:backdrop.v1,service:string,requested:number,active:number,pending:number|null,error:JSON,config:BackdropDocument,config_file:string,outputs:object[],fit:string,slideshows:object[],view:string}",
+    "source": "apps/backdrop/engine.mix:107"
+  },
+  "backdrop.set": {
+    "params": {
+      "schema": "1",
+      "default?": "BackdropFill",
+      "outputs?": "map<output-name,BackdropFill> (max64)"
+    },
+    "reply": "{requested:number,active:number,config_file:string}",
+    "source": "apps/backdrop/runtime.mix:162"
+  },
+  "backdrop.next": {
+    "params": {},
+    "reply": "{}; rc10 when no slideshow or busy",
+    "source": "apps/backdrop/runtime.mix:172"
+  },
+  "backdrop.view.set": {
+    "params": {
+      "view": "wallpaper|train",
+      "args?": "{zoom?:1h|24h|7d,renderer?:2d|3d,train_service?:string,buildd_service?:string}"
+    },
+    "reply": "{view:wallpaper|train}",
+    "source": "apps/backdrop/views.mix:7"
+  },
+  "backdrop.view.cycle": {
+    "params": {
+      "dir": "next|prev"
+    },
+    "reply": "{view:wallpaper|train}",
+    "source": "apps/backdrop/views.mix:34"
+  },
+  "backdrop.view.list": {
+    "params": {},
+    "reply": "{views:[wallpaper,train],selected:wallpaper|train}; non-empty args refused rc10 {error_code:ARGUMENT,message:string}",
+    "source": "apps/backdrop/runtime.mix:183"
+  }
+},
+  contract_types: {
+  "Diagnostic": "{severity:Error|Warning,code:string,line:number,message:string}; libraries/scene/src/lib.rs:87",
+  "PortDescribe": "{path:string,type:string,mutable:bool,sensitive:bool,description:string,enum?:string[],default?:JSON,min?:number,max?:number}; libraries/scene/src/schema.rs:12",
+  "ResolvedScene": "{name:string,citizen:string,window:JSON,subscribe:JSON,nodes:map<string,Node>,templates:string[],model?:object,bindings?:map<string,string>}; libraries/scene/src/lib.rs:179",
+  "Node": "{family:string,ports:map<string,JSON>,line:number,is_template:bool}; libraries/scene/src/lib.rs:170",
+  "Source": "{broker_epoch:hex16,record:RecordRef,instance_id:hex16,pane_id:decimal-string|null,pane_generation:decimal-string|null}; libraries/mix-shell/src/session_state.rs:17; RecordRef from libraries/bus/src/native_session",
+  "View": "{snapshot:Snapshot,sampled_ms:decimal-string,transition_age_ms:decimal-string,cwd_age_ms:decimal-string}; libraries/mix-shell/src/session_state.rs:112; Snapshot fields at :95",
+  "Completion": "{outcome:string,status?:integer,value?:{type:string,version:1,bytes:decimal-string,truncated:bool,text:string},error?:string,duration_ms:decimal-string,cancellation:{requested:bool,source?:string,delivered:string}}; libraries/mix-shell/src/session_execute.rs:163",
+  "TaskReport": "{version:number,outcome:object,stdout:Stream,stderr:Stream,result:{kind:not_applicable|value|result_missing|result_torn|result_abandoned,data?:string},duration_ms:decimal-string}; Stream={bytes:decimal-string,truncated:bool,writer_survived:bool,text:string}; libraries/mix-shell/src/session_task.rs:373",
+  "EditorSnapshot": "{schema:scene-editor.snapshot.v1,state_token:string,selection:EditorSelection,model:object,inventory:object,templates:object,panels:object|array,host_problem:object|null,failure?:object|null,warnings?:array}; engines/viud/scripts/lib/editor_app.mix:39",
+  "EditorSelection": "{view?:gallery|installed|arrange,template?:string,scene?:string,page?:{edge:left|right|top|bottom,page:string}}; engines/viud/scripts/lib/editor_app.mix:6",
+  "SceneRecord": "all inventory fields including files/digests/problems; engines/viud/scripts/lib/scenes.mix:335",
+  "BackdropDocument": "{schema:1,default?:BackdropFill,outputs?:map<string,BackdropFill>}; apps/backdrop/document.mix:64",
+  "BackdropFill": "exactly one of colour:#RRGGBB, image:absolute-path, slideshow:{folder?:absolute-path,images?:absolute-path[],interval_s?:integer>=5,shuffle?:bool}; image/slideshow allow fallback:#RRGGBB and fit:fill|fit|centre|tile|stretch; apps/backdrop/document.mix:24"
+}
 }

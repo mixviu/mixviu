@@ -21,8 +21,8 @@ automatically. Installed under their own names these reuse the legacy panel
 citizen's page IDs, so the loader keeps them unmounted while `quoin-panel` is
 registered and mounts them when it stops. Install under a distinct name (for
 example `{template:"launcher",name:"preview-launcher"}`) to try one beside the
-running panel. See [the loader manual](../../docs/cos/scenes-loader.md) and
-[quoin-panel](../../docs/cos/quoin-panel.md).
+running panel. See [the loader manual](../../docs/scene-documents.md) and
+[quoin-panel](panel/).
 
 The panel's buttons are icon-only; names and details are in their tooltips
 (`lib/models.mix`). A task's tooltip also shows a live thumbnail of its
@@ -40,7 +40,7 @@ node block here and nowhere else. The template mounts on the right edge; edit
 ## Gallery metadata
 
 `template.conf.mix` may carry these optional keys, which the
-[Scene Editor](../../docs/scene-editor.md) gallery reads through
+[Scene Editor](editor/) gallery reads through
 `scenes.templates`:
 
 | Key | Type | Meaning |
@@ -59,9 +59,9 @@ requires `comp` and `apps`), `panel` (order 10, requires `comp` and `apps`),
 talks to PipeWire through `pactl`, and says so in the popup when that does
 not answer.
 
-The top bar's power buttons send `power.suspend`, `power.reboot` and
-`power.poweroff` to hostd. Every local caller can use them. A refusal is shown in the
-button's tooltip, and nothing runs. Shutdown is not a hostd command yet.
+The top bar's Restart and Shutdown buttons send `desk.restart` and
+`desk.stop` to hostd for the identified desk. Every local caller can use them. A refusal is shown in the
+button's tooltip, and nothing runs. These stop or restart the desk, not the physical host.
 
 `network` shows links and addresses from rtnetlink, plus systemd-networkd,
 systemd-resolved and the default routes when their tools answer
@@ -69,7 +69,7 @@ systemd-resolved and the default routes when their tools answer
 kernel's view. Where hostd runs,
 a link can be configured (DHCP or static) through hostd's `net.link.apply`,
 which keeps a change only if the link comes up, and the last change undone
-(`lib/hostd.mix`, `docs/hostd/README.md`). Those handlers accept every Bus caller as well as panel clicks.
+(`lib/hostd.mix`, the component manual (not included in this source tree)). Those handlers accept every Bus caller as well as panel clicks.
 
 `volume` is the bottom panel's audio popup. It shows the default output and
 input with a level bar (one segment per 5 %, to 150 % only while PipeWire
@@ -82,7 +82,7 @@ for every Bus caller as well as panel clicks.
 
 ## The editor helpers and legacy template
 
-The normal Scene Editor is the Wayland app in `apps/scene-editor`. Its menus
+The standalone Scene Editor app is absent from this tree. The loader retains its application activation adapter; the legacy scene frontend is in `share/scenes/editor`. Its menus
 use the loader's `scenes.editor.snapshot/action` commands, which reuse the pure
 model and action planner in `editor/lib.mix`.
 
