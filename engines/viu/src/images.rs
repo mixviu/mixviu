@@ -227,13 +227,13 @@ fn prepare_with(
             }
         }
     };
-    fn visible(nodes: &BTreeMap<String, scene::Node>, id: &str, out: &mut BTreeSet<String>) {
-        let Some(node) = nodes.get(id) else { return; };
+    fn visible<'a>(get: &impl Fn(&str) -> Option<&'a scene::Node>, id: &str, out: &mut BTreeSet<String>) {
+        let Some(node) = get(id) else { return; };
         if node.ports.get("hidden").and_then(serde_json::Value::as_bool) == Some(true) || !out.insert(id.into()) { return; }
-        for child in crate::templates::children(node) { visible(nodes, child, out); }
+        for child in crate::templates::children(node) { visible(get, child, out); }
     }
     let mut drawn = BTreeSet::new();
-    visible(&tree.nodes, "root", &mut drawn);
+    visible(&|id| tree.nodes.get(id), "root", &mut drawn);
     let templates = crate::templates::template_ids(tree);
     for (id, node) in &tree.nodes {
         if drawn.contains(id) && !templates.contains(id) {
@@ -244,7 +244,7 @@ fn prepare_with(
         if !drawn.contains(list) { continue; }
         for (item, nodes) in &data.instances {
             let mut drawn = BTreeSet::new();
-            visible(nodes, crate::templates::text(&tree.nodes[list], "row"), &mut drawn);
+            visible(&|id| nodes.get(id), crate::templates::text(&tree.nodes[list], "row"), &mut drawn);
             let app = tree
                 .nodes
                 .get(list)
