@@ -220,7 +220,7 @@ fn fixture_process() {
         "identity-drain" => {
             // libtest prints before entering fixture_process and after it
             // returns. Keep the reader alive until the upstream harness exits,
-            // or SIGPIPE can kill it before it publishes its identity report.
+            // or BrokenPipe can abort it before it publishes its identity report.
             std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).unwrap();
         }
         "exit" | "identity" => {}
