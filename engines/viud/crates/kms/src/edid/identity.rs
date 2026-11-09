@@ -24,6 +24,10 @@ impl MonitorIdentity {
     }
 
     /// The stable key preferences are matched against.
+    pub fn preference_key(&self, connector: &str) -> String {
+        model::environment::preference::identity::key(&self.key(), connector)
+    }
+
     pub fn key(&self) -> String {
         format!("{} {} {}", self.make, self.model, self.serial)
     }
@@ -55,4 +59,24 @@ pub fn identity(parsed: Option<&ParsedEdid>, fallback: &str) -> MonitorIdentity 
             },
         },
     }
+}
+
+/// Shared by enumeration, startup and hotplug. Keep the legacy Debug spelling
+/// of serial-less connector identities (DisplayPort-1), while runtime names and
+/// the new qualifier use the canonical kernel spelling (DP-1).
+pub fn for_connector(
+    parsed: Option<&ParsedEdid>,
+    info: &impl crate::connector::select::ConnectorInfo,
+) -> MonitorIdentity {
+    identity(
+        parsed,
+        &format!("{:?}-{}", info.interface(), info.interface_id()),
+    )
+}
+
+pub fn connector_key(
+    parsed: Option<&ParsedEdid>,
+    info: &impl crate::connector::select::ConnectorInfo,
+) -> String {
+    for_connector(parsed, info).preference_key(&crate::connector::select::connector_name(info))
 }

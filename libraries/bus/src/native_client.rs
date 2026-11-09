@@ -8,7 +8,7 @@ pub(crate) mod bounded;
 mod native;
 pub mod session;
 mod types;
-mod unix;
+pub(crate) mod unix;
 
 pub use crate::PortReply;
 pub use crate::client::{

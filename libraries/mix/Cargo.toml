@@ -33,8 +33,8 @@ url = ["dep:url"]
 # stores the field verbatim; only the CLI hashed before this existed).
 # `sha-crypt` joined 0.102.6 for the $6$/$5$ schemes every NS passdb
 # (Dovecot {SHA512-CRYPT}) uses — same feature, same client-side story.
-crypto = ["dep:blake3", "dep:sha2", "dep:sha1", "dep:md-5", "dep:base64", "dep:uuid", "dep:bcrypt", "dep:sha-crypt", "dep:ring", "dep:rustls-pemfile"]
-http = ["dep:ureq", "dep:reqwest", "dep:webpki-roots", "dep:rustls-pemfile", "dep:blake3"]
+crypto = ["dep:blake3", "dep:sha2", "dep:sha1", "dep:md-5", "dep:base64", "dep:uuid", "dep:bcrypt", "dep:sha-crypt", "dep:ring", "dep:rustls-pki-types"]
+http = ["dep:ureq", "dep:reqwest", "dep:webpki-roots", "dep:rustls-pki-types", "dep:blake3"]
 sqlite = ["dep:rusqlite"]
 # `tokio-sleep` is an alias-only feature kept for backwards
 # compatibility with consumers that still list
@@ -180,7 +180,7 @@ reqwest = { workspace = true, optional = true, features = ["gzip"] }
 # webpki roots. Version lines match ureq 2's own transitive deps so cargo
 # unifies them (no second rustls/root-store in the tree).
 webpki-roots = { version = "0.26", optional = true }
-rustls-pemfile = { version = "2", optional = true }
+rustls-pki-types = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
 # `archive` feature only — see the feature comment above.
 tar = { version = "0.4.46", optional = true }
@@ -188,13 +188,13 @@ structured-zstd = { version = "0.0.58", optional = true }
 flate2 = { version = "1.1", default-features = true, optional = true }
 url = { version = "2", optional = true }
 uuid = { version = "1", features = ["v4"], optional = true }
-# `dkim` feature only — keygen path. Pinned to the same 0.7 line as
+# `dkim` feature only — keygen path. Pinned to the same 0.11 line as
 # maild-auth so the workspace builds one mail-auth version.
-mail-auth = { version = "0.7", optional = true, default-features = false, features = ["ring", "generate"] }
+mail-auth = { version = "=0.11.0", optional = true, default-features = false, features = ["ring", "generate", "arc"] }
 quick-xml = { version = "0.41.0", optional = true }
 mimedb = { workspace = true, optional = true }
 # `dns` feature only — see the feature comment above.
-hickory-proto = { version = "0.26.0-alpha.1", optional = true, default-features = false, features = ["std"] }
+hickory-proto = { version = "0.26.1", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 # `derive` lives here, not on the `serde` feature: the crate's own

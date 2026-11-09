@@ -1,177 +1,468 @@
-# Email desk4 launch repair — ready for hot-apply
+# CI flakes 2 — 2026-11-10
 
-Branch `fix/email-desk4-tree-table`, based on `origin/cutover/four-engines`
-`b601bf828c13e9d9a82bff59c7bedd2409be7687`. Tested implementation commit:
-`1e38766b9a8dfcc260a8f377162aaaa3c37ec19d`; later receipt commits change only this document.
+Branch: `fix/ci-flakes-2`, based on `origin/main` at
+`aaedc99d03a3c6c286fda4c3e292988c688c52f6`.
+Tested code head: `e055f84615df0bf63c17f24980d4714440768db0`.
+The receipt commit changes only last.md; the PR exposes its current head SHA.
 
-Root cause: `mail.accounts()` accepted the legacy accounts.json catalogue and
-returned `label` but no `name`. `navigation_rows()` uses `entry.name`, so the
-first account-tree row was `{key:"local",cells:[nil]}` for its one column.
-The native validator correctly rejected that row before drawing any chrome.
-This happens before the email table receives messages; neither pim-list nor
-maild's string `from` caused the startup failure. The existing protocol already
-normalises string senders into address lists.
+## Audio: queued change mistaken for terminal exit
 
-The lab's connected UI suites created accounts with `email.account.set` through
-settingsd, or supplied both name and label in runtime tests. They exercised real
-maild but missed the positional legacy accounts-file startup path. The new
-regression loads that actual file shape, validates/mounts the initial navigation,
-then feeds both supplied messages through the existing JMAP normaliser and
-validates all three tables. It also covers oversized multi-byte subjects/sender
-names without altering the full server message or weakening native validation.
+The source publishes per read, not per printf. The fixture repeats sink #5.
+If the reader publishes one sink change, the test consumes it, and another
+read publishes the duplicate, the queue is ready after Drop for an ordinary
+change. The old assertion required an empty queue and did not inspect
+`closed`. Drop sets cancelled before killing the group, then joins the reader;
+it is not an early check for worker completion.
 
-## Files for Opus
+The replacement drains the now-stable queue after Drop, checks each remaining
+batch contains the expected sink change and rejects any closed marker.
+The original filtering, coalescing and child-reaping assertions remain.
 
-| Changed repository file | Installed destination / use |
+Controlled proof: a FIFO-fed real cat child emits one sink line, the test
+consumes its batch, then emits the duplicate and waits until that second read
+has queued a batch before dropping the source. Restoring the old empty-queue
+assertion fails (cargo rc 101); the corrected assertion passes (rc 0).
+
+A natural EOF can pass the worker's cancelled check before a concurrent Drop
+records cancellation; that is an already-observed stream exit. This is not
+the cause with the still-live fixture. The public source_unwatch path removes
+the pending slot BEFORE dropping the source, so even such a late terminal
+callback is discarded. No product change is required.
+
+## Lifecycle: boot trace corrupted by formatted fixture writes
+
+The failing wait was for one boot record, before RELOAD, not a heartbeat or
+commit. CI run [42581336097](https://github.com/mixviu/mixviu/actions/runs/42581336097)
+contains:
+
+```text
+legacy-ready|{"pid":boot|{"legacy":11230,"managed":11231}|t=407.542488794
+11230}|t=0
+```
+
+The helper's writeln!(File, format, pid) performs several writes. The citizen's
+append landed between them, so parse_trace could never find a valid boot
+record. Waiting longer cannot repair those bytes. The helper now formats the
+whole readiness record before write_all, giving the regular append file one
+complete short record per write.
+
+Controlled proof: a Write adapter inserts a valid boot record after each
+write. Restoring the old writeln! makes the parser regression fail (rc 101);
+the complete-record helper passes (rc 0). This forces the CI interleaving.
+
+The grace assertion still requires at least 1.5 seconds between candidate-done
+and commit and verifies the old child is reaped. The heartbeat lives until the
+citizen is stopped, rather than expiring after five wall-clock seconds.
+At least one stamp must lie strictly inside the grace window: that proves
+reactor progress; the previous minimum of five also imposed scheduler
+throughput. A runner starved for the entire window can still fail this
+wall-clock responsiveness test; deadlines were not lengthened.
+
+## CBC evidence
+
+All Rust commands ran on CBC. Saved logs were read. Two yes processes and
+each cargo test process (including descendants) were pinned to the same
+allowed CPU with taskset. Each original named test was invoked separately
+50 times before and 50 times after; counters include every invocation.
+Load processes were stopped in finally.
+
+| Run | Audio pass/fail | Lifecycle pass/fail |
+| --- | --- | --- |
+| Before | 50 / 0 | 50 / 0 |
+| After | 50 / 0 | 50 / 0 |
+
+Both baseline loops passed: repetition alone did not expose the races.
+Each controlled regression failed once with the old code and passed once
+with the fix. The final module/binary run repeats both passing regressions.
+
+| CBC job | Revision | BUILD_RC | Evidence |
+| --- | --- | --- | --- |
+| 20261110-002554-b937890f-a1 | aaedc99d | 1 | Load harness setup refused a stdout path string; no test ran. Corrected to native stdout null and requeued. |
+| 20261110-002703-51923577-a1 | aaedc99d | 0 | Before: 50/50 each under load. |
+| 20261110-003109-73e78118 | 78417d67 | 0 | CBC rustfmt diff, fixed regressions rc 0 each, old-code mutations rc 101 each. Own worker edits restored in finally. |
+| 20261110-003329-79ce459c | e055f846 | 0 | Final checks and after loops: 50/50 each. |
+| 20261110-002809-00858da7 | 3d39ac37 | 143 | Superseded queued probe, cancelled before running. |
+| 20261110-003024-e567df98 | 78417d67 | 143 | Superseded queued probe, cancelled before running. |
+
+Final checks: cargo fmt --all -- --check; cargo clippy --locked -p lib-mix
+--all-targets; separately cargo clippy --locked -p mix --all-targets;
+cargo test --locked -p lib-mix --lib desktop_events:: (17 passed);
+cargo test --locked -p mix --test serve_reload_lifecycle (8 passed,
+1 ignored subprocess helper); tools/ci.mix env (196 names, zero problems).
+Existing unrelated deprecation/dead-code/clippy warnings remain.
+
+Saved logs (under the maintainer's CBC log directory):
+
+- `20261110-002703-cbc3-aaedc99d03a3-20261110-002703-51923577-a1-59246340.log`
+- `20261110-003109-cbc3-78417d6752f8-20261110-003109-73e78118-aa20931d.log`
+- `20261110-003329-cbc3-e055f84615df-20261110-003329-79ce459c-6326d611.log`
+
+PR: https://github.com/mixviu/mixviu/pull/50
+Pushed and opened through gh_agent as mixviu-agent.
+No product changes, timeout increases, new environment variables, deployments,
+desktop/VT interaction or installed-prefix writes.
+
+---
+
+# Quoin P1 hand-off — 2026-11-09
+
+Implemented P1 items 1, 2, 4 and 5. Item 3 remains the later lab.
+Author: Codex (Sol).
+
+- Branch: `feat/quoin-p1-dev-loop`
+- Base: `0780b2ea` from `origin/docs/quoin-p0` at job start. P0 has since advanced; no other session's branch was merged.
+- P1 PR: https://github.com/mixviu/mixviu/pull/38 (draft, base main)
+- P0 dependency: https://github.com/mixviu/mixviu/pull/36
+- P1 implementation head before this receipt: `90dad687e2c40dfc794573f7065e4eb1b62f5f02`
+- Final code tested: `3835467abdcf6556f850bf37e833e54b6cdaa6af`; subsequent commit changes only the Bus registry documentation.
+
+## Files
+
+- `engines/viud/scripts/scenes.mix`: shared/custom library watches and quoin.reload handler. User lib is covered by the installed-root watch.
+- `engines/viud/scripts/lib/scenes.mix`: conservative dependency fan-out, cached helper checks, library fingerprints/overflow recovery, group preflight and atomic host submission. Both discovery paths exclude the reserved lib directory.
+- `engines/viud/scripts/scene_preview.mix`: passive use of real loader candidate, behaviour checks and recorded JSON model.
+- `engines/viu/src/store.rs`: clone/stage/commit load envelopes with sources; refuses the entire batch on a bad candidate or seat collision.
+- `engines/viu/src/store_tests.rs`: batch failure retains revisions/seats; successful fan-out publishes both notices.
+- `engines/viu/src/dev_loop.rs`: first-diagnostic extraction and foreground error strip.
+- `engines/viu/src/preview.rs`: plain watched specimen window, authored/recorded model, passive actions, last-good retention; discovers validator from current checkout or VIU_PREVIEW_VALIDATOR.
+- `engines/viu/src/main.rs`, `lib.rs`: preview CLI/module wiring.
+- `engines/viu/src/runtime/toast.rs`: toast refusal strip.
+- `engines/viud/tests/scenes_test.mix`: helper failure/recovery, fan-out, quoin scopes and native inotify timing.
+- `docs/scene-documents.md`, `docs/docs/spec/bus/commands.conf.mix`: P1 contracts and registered command/batch shapes.
+
+## runtime.rs hunks for P2 coordination
+
+Only State.errors and its initialisation; Program::show's diagnostic strip; worker's scenes.changed subscription/initial scenes.list; and its authenticated scenes topic receipt branch. No bindings, sources, comp subscriptions, output polling or structural rendering changes.
+
+## Validation
+
+- Mix loader: 400 assertions pass. A real fs_watch/fs_wait helper edit plus two-dependent headless loader fan-out is asserted below one second. Host/process adapters are fake in this transition test; real host atomicity is covered by the Rust store test.
+- Mix lint: scenes.mix, lib/scenes.mix and scene_preview.mix pass with zero errors/warnings.
+- Registry strict-data load and unique quoin.reload entry verified. Full source registry gate cannot start: pre-existing missing tools/lib/command_registry_source.mix.
+- Existing scenes_io integration test: default invocation hits obsolete mix_path builtin; explicit MIX_TEST_NODED_EXE=/opt/mixos/bin/noded bypasses it but installed broker cannot establish owned private-bus readiness. No production configuration changed.
+- git diff --check passes.
+- No desk4, VT, /opt writes, production installs, behaviour state hand-off or visual acceptance performed. Opus's eye checks remain pending. Security is expected red until #21.
+
+## CBC receipts
+
+All Rust work was on CBC. Saved final log read in full.
+
+| Job | Commit | Result |
+|---|---|---|
+| 20261109-153955-8005b781-a1 | 64588834 | BUILD_RC=101, initial egui App API mismatch, fixed before later passes |
+| 20261109-154304-d021212d-a1 | 18be0c32 | BUILD_RC=0; 99 passed, 5 ignored |
+| 20261109-154543-fa958fbe-a1 | d7442ba2 | BUILD_RC=0; 101 passed, 5 ignored |
+| 20261109-154901-329f6c89 | d7442ba2 | BUILD_RC=0; CBC formatting diff applied locally; own worker changes restored in same job |
+| 20261109-154948-87cffd24-a1 | 8438f7b0 | BUILD_RC=0; 101 passed, 5 ignored |
+| 20261109-155106-f61e0c72 | 369309d4 | BUILD_RC=75; worker lock busy, command did not run; requeued |
+| 20261109-155215-02577fd0 | 369309d4 | BUILD_RC=75; other worker lock busy, command did not run; requeued |
+| 20261109-155336-3c23428c-a1 | 3835467a | BUILD_RC=0 on cbc3; fmt --check, 101 host tests (5 ignored), cargo check --locked -p viu --bin viu |
+
+Final log: `/home/user/.cache/mixos/cbc-build/20261109-155421-cbc3-3835467abdcf-20261109-155336-3c23428c-a1-93002c98.log`.
+Queued formatter 20261109-154541-e5d7aa8a was superseded/cancelled; it was not a validation pass.
+
+## Trade-offs
+
+Computed require paths mean library dependency selection conservatively covers all enabled behaviour scenes, including transitive imports. Helpers are checked without executing them. Document acceptance is atomic; behaviour runtime faults after acceptance retain the existing restart/diagnostic semantics. Reload still kills/spawns behaviours; no state hand-off is claimed.
+
+Preview has headless load/recorded-model/refusal/repair coverage and binary compilation coverage. Its live window and overlay pointer behaviour still need Opus's visual check. This receipt is prepended to the existing tracked hand-off history. The current PR head includes the receipt commit.
+
+---
+
+# viud output identity — 2026-11-09
+
+---
+
+# SQLite security fix — 2026-11-09
+
+PR: https://github.com/mixviu/mixviu/pull/49 (`fix/security-sqlite` -> `main`),
+opened and pushed through mixviu-agent. Validated head SHA:
+`23809a9d26fa97553ef9460dd614417baf4d4cc4`; this receipt-only commit follows it.
+The PR exposes the current head SHA. Based on origin/main `95382ad1`.
+
+- rusqlite: 0.38.0 -> 0.41.1; crates.io confirms its libsqlite3-sys ^0.39.0 requirement.
+- libsqlite3-sys: 0.36.0 -> 0.39.1; linked bundled SQLite: **3.54.1**.
+  The new files/sqlite_version test prints rusqlite::version(), asserts at least
+  3.54.0, and checks SELECT sqlite_version() agrees.
+- Targeted cargo update reused hashlink 0.12.2 and removed 0.11.1; no other
+  registry versions changed. SQLite remains bundled; no new C crate or deny ignore.
+- The old spamlite 0.9.6 pin also required rusqlite ^0.38. New pin
+  `e4cda94713f696414550f414feaea4e8d6c4355e` is exactly one manifest change
+  from `98f91a9d8142f92ae89ba4f070a165ce86fa5e8d`, on spamlite's retained
+  fix/security-sqlite branch. No unrelated spamlite changes were imported.
+- API adapters: consume column_names() directly as an iterator in shell stats;
+  webd AuthGuard borrows the locked connection mutably for authorizer install
+  and Drop cleanup. Queries use that guard's connection; policy, binding and
+  schema isolation remain unchanged. Existing webd authorizer tests pass.
+- Open PR overlap checked: #8 and #25 both touch Cargo.toml/Cargo.lock but
+  neither upgrades SQLite. #25 references old hashlink 0.11.1; lockfiles may
+  need regeneration after merge. Neither PR was edited.
+
+CBC jobs (all worker any, CARGO_BUILD_JOBS=2; saved logs inspected):
+
+- `20261109-203931-86119cbe-a1`: rc=101; found the pinned spamlite constraint.
+- `20261109-210051-72e1ea03-a1`: rc=0; targeted dependency resolution;
+  exact generated lock diff applied locally.
+- `20261109-210123-3cce10fa-a1`: rc=1; fmt output applied, version test and
+  cargo-deny passed; temporary foreign-gate binary-name adaptation corrected.
+- `20261109-210242-a4c52dd8-a1`: rc=1; found webd's mutable authorizer API;
+  version test, cargo-deny and adapted foreign gate passed.
+- `20261109-210420-33f8ce8f-a1`: **BUILD_RC=0**, validated source above.
+  Full `mix tools/ci.mix all`, explicit SQLite version test, `cargo deny check`
+  and foreign gate each returned 0. Across 605 Rust test summaries: 10,614
+  passed, zero failed, 100 ignored (includes the explicit version test).
+  Mix policy checks and lint ratchet passed, zero regressions.
+
+MixViu main lacks tools/foreign_gate.mix and tools/foreign.conf.mix. CBC used
+temporary copies of MixOS's existing gate/policy with repository root adapted,
+strict crates mix/mix-shell/lib-mix, and the inherited system allocator exception
+mapped to the renamed mix binary. Result: 15 foreign crates, all listed;
+strict closure and ELF checks clean. No committed policy change or new exception.
+
+GitHub security-ok passed on the validated source. Code-owner approval and
+cross-family review remain merge requirements. No deployment, VT interaction
+or /opt writes.
+
+---
+
+# Quoin P0 — 2026-11-09
+
+Production fix derived from origin/main on `fix/viud-output-identity`.
+PR: https://github.com/mixviu/mixviu/pull/47 (opened and pushed as mixviu-agent).
+Implementation head: `c6d7aba223d4bb3ee4951533cb2d15ef1e49f684`.
+The final report commit changes only this receipt; the PR records its head SHA.
+
+## Identity contract
+
+`world::state::output_key()` now returns the backend connector/protocol name.
+EDID fields are never runtime equality. `output_preference_key()` and
+`MonitorIdentity::preference_key()` return `make model serial @connector:NAME`.
+The connector qualifier is always present, avoiding identity changes when the
+connected set changes. Two identical serial-42 panels remain separate, and
+unplugging/replugging one cannot rename or consume the survivor's view state.
+This deliberately binds new preferences to ports; physically indistinguishable
+units cannot follow swapped cables. `MonitorIdentity::key()` retains the legacy
+EDID format for compatibility and physical properties retain the actual EDID.
+
+## Consumer audit
+
+All paths below are relative to `engines/viud/crates`. Direct consumers and
+transitive `current_output_key()` / `active_output_key()` consumers were checked.
+
+| Consumers | Identity and reason |
 | --- | --- |
-| `apps/email/mail.mix` | `/opt/mix/share/mixviu/apps/email/mail.mix` — add canonical name from the validated legacy label; fixes the reported startup failure |
-| `apps/email/surface.mix` | `/opt/mix/share/mixviu/apps/email/surface.mix` — bounded string display cells and sender rendering; preserve full server values, bulk row projection and the native 4096-byte cell bound |
-| `libraries/viu/tests/email_frame.rs` | Regression test source only; no installed Email file |
-| `last.md` | This handoff only; no installed Email file |
+| `world/src/state.rs`, `state/wire.rs`, `camera/pin.rs`, `canvas/draw/scene.rs`, `surface/interface/hit.rs`, `surface/interface/core/hit.rs` | Runtime: current/render/cursor output, independent view trees, camera, geometry and hit testing. |
+| `world/src/comp/corners.rs`, `comp/session_lock.rs`, `comp/region.rs`, `comp/presentation.rs` | Runtime: select the exact output for corners, lock, region and frame source. |
+| `frames/src/draw/present/{parked,callbacks,cursor}.rs`, `frames/src/scene.rs`, `scene/{hooks,layershell}.rs`, `hook/window/interface.rs` | Runtime: callbacks, cursor, fractional scale, render pass, layers and per-output surfaces. |
+| `native/src/render/execute.rs`, `native/src/wire/{frame,session}.rs`, `native/src/context/display/apply.rs` | Runtime: redraw registration/release, render scheduling, capture, frame liveness and teardown. |
+| `native/src/context/display/reconcile.rs` | Runtime for redraw, retire, live-set and cursor routing; preference for preferred/default/active/mode selection. Compare full preference identity when deciding whether immutable Output properties must be rebuilt on fail-over. |
+| `native/src/context/display/mode.rs` | Preference for picker request/watchdog pipe resolution and snapshot updates; runtime for redraw release. |
+| `native/src/wire/input/map.rs` | Preference for saved touch claims, converted to runtime before routing. Automatic matching and returned keys stay runtime. |
+| `nested/src/scene/compose.rs`, `headless/src/frame.rs` | Runtime: render/capture/redraw routes. |
+| `seat/src/pointer/{restore.rs,input/motion.rs}` | Runtime: pointer target, saved live cursor output and teleport destination. |
+| `policy-host/src/{project,control,region,input,capture,chrome}.rs` | World identity calls stay runtime: select output for props, geometry, input and capture. |
+| `recorder/src/interface.rs`, `graphics/src/capture/registry/source.rs`, `effects/src/host.rs`, `model/src/stats/registry/counter.rs` | Runtime: capture sources, effect state and per-output presentation counters. |
+| `comp-model/src/{snapshot,diff,snapshot_tests}.rs`, `policy-host/src/{truth,edges}.rs`, `world/src/comp.rs`, `world/src/comp/geometry.rs` | Separate public `comp_model::snapshot::output_key(name)` slug, not the EDID function. Retained; public comp keys already derive from connector names. Mixed policy-host files retain these public-slug calls too. |
+| `kms/src/connector/select.rs`, `native/src/assemble/display.rs`, `native/src/context/display/enumerate.rs`, `native/src/wire/entry.rs` | Preference: startup selection, per-panel modes, settings picker and snapshots. |
+| `drivers/src/output/base.rs::build_teleport` | Preference for placement lookup/active flag; converts to connector runtime keys in the live layout. |
 
-Apply the two Mix files from the tested commit together. No engine or validator
-change is needed. Nothing was applied to desk4; main and infra/pr-ci were not
-changed. This branch is for Opus hot-apply and PR/CI landing.
+Current main has no persisted per-output scale, workspace assignment or scene
+profile in OutputProfile (mode/active/touch only); KMS scale is explicitly global.
+Viewport trees/cameras and scene/render worker buffers are live runtime state.
+No new persistence subsystem was added for those future settings.
 
-## Checks
+## Compatible migration
 
-* `email-desk4-scope-r4-a1`, cbc3, **BUILD_RC=0**: `cargo fmt --all` produced an
-  empty patch; `cargo test --locked -p lib-viu --test email_frame --test email_wire`
-  passed **17/17** tests, including the desk4 regression and 2,000-row projection.
-  Complete saved log read: `20261108-124907-cbc3-1e38766b9a8d-email-desk4-scope-r4-a1-fd116d2f.log`.
-* `email-desk4-native-r5`, native-only CBC light override, **BUILD_RC=0**: same
-  previously verified release Viu, old b601 bundle versus fixed Mix bundle,
-  isolated Bus and headless compositor with a real release maild process.
-  The supplied accounts.json fields, HTTP origin 127.0.0.1:4310 and schema-2 UI
-  config were reproduced. Maild submit seeded Inbox(1)/Sent(1); its own private
-  store was given the supplied receivedAt instant. Raw HTTP Email/get confirms
-  string from, empty keywords, Welcome subject and `2026-11-06T14:26:33.705Z`.
-  Old bundle: ready=false, revision=0, exact cell/column mismatch. Fixed bundle:
-  ready=true, account-tree label and three email cells valid, chrome/list captured
-  and inspected. All five owned PIDs stopped. No fake HTTP/JMAP service was used.
-  Complete saved log read: `20261108-125021-cachyos-1e38766b9a8d-email-desk4-native-r5-132b0730.log`.
+The preference identity helper tries exact qualified keys first, then the legacy
+EDID-only key, independent of profile order. Existing mode/active/touch fields
+are copied in full before a qualified profile is edited. The legacy entry stays
+available for other ports and old versions; reads do not rewrite the document.
+Mode/default/active startup and reconcile paths use compatible lookup.
 
-Earlier attempts are retained privately: missing worker script and renamed Cargo
-package invocation were harness preparation errors; the first display helper
-inside rows_project was rejected and repaired with a native jq preparation pass.
-The regression's protocol module path was corrected. Native harness checks were
-corrected to read viu.state on the deliberately broken old app, accept its
-documented empty error string on success, and preserve the supplied millisecond
-instant when seeding the private real store. No application assertion or native
-validator was loosened and no refused input request was retried.
-SHA256 `apps/email/mail.mix`: `deb91fa76ae98a6e5da067035dff1cf97a67fd129a3d6e386fdfe072a4f1b0de`.
+Legacy teleport placements resolve to one deterministic matching connector,
+preserving zone ids rather than copying a zone onto two runtime outputs.
+Explicit qualified placements supersede legacy placements for that connector.
+Persisted layouts keep preference identities; live placements use runtime keys.
 
-SHA256 `apps/email/surface.mix`: `2e1be2b720b0bae3da39212bfd7658f2216b08cc1661177635c2adb90880c54b`.
+Main currently creates one headless output. Its constructor now accepts an
+index and assigns matching name/serial `headless-N`, rather than `Unknown`.
+The real constructor is tested with indices 0 and 1; no multi-output CLI or
+runtime topology feature is introduced.
 
-## Earlier integration record (historical)
+## Tests and CBC receipts
 
-# Four engines, compd -> viud, mixos -> mix: cut-over branch
+- `world/tests/output_identity.rs`: duplicate nonzero serial 42, distinct runtime
+  and preference keys, independent view state, real Smithay Space unmap/remap,
+  survivor identity and reconnect stability; serialless/virtual identity cases.
+- `kms/tests/module_paths.rs`: actual EDID serial-42 parse, unchanged stable
+  EDID identity and distinct connector-qualified preference keys; retains zero
+  serial and unreadable EDID coverage.
+- `model/tests/output_identity.rs`: legacy JSON profile read, whole-profile
+  inheritance, exact-over-legacy priority, mode/touch preservation and JSON
+  round-trip with independent active flags for the pair.
+- `drivers/tests/output_identity.rs`: preference-to-runtime layout conversion,
+  unplug survivor, reconnect restoration, legacy layout and explicit override.
+- `headless/src/wire.rs`: real synthetic constructor yields stable distinct
+  `headless-0` / `headless-1` serials and both identity kinds.
 
-Branch `cutover/four-engines`, from `lab/gold-parity` 4755e9e, with
-origin/lab/gold-parity merged in four times (through 9bcfeee, not yet f1c5b71; merges only, no
-rebase or force push). Move commits are separate from edit commits (7404a61,
-eaf228c, 2fdb84c). Full package/path mapping and file renames:
-`provenance/four-engine-layout.md`. Variable registry: `etc/env.conf.mix`.
+CBC jobs (saved logs read; no local Rust execution):
 
-## 1. Four engines (first checkpoint)
+1. `20261109-174328-ab93993b-a1`, cbc2, RC 0: initial formatting capture at
+   `0993cbb0`. Superseded by the next complete specimen.
+2. `20261109-174530-e7aba0b6-a1`, cbc2, RC 0 at `bf3825c4`:
+   `cargo fmt --all`, print diff, restore this job's changes; then
+   `cargo test --locked -p model -p world -p drivers -p kms -p headless --lib --tests`
+   and `cargo check --locked -p viud --all-targets`. All ran successfully.
+   Formatting diff applied locally; final source is c6d7aba2 (format/comments).
+3. `20261109-174718-0ef39d70-a1`, cbc2, RC 0 at
+   `c6d7aba223d4bb3ee4951533cb2d15ef1e49f684`: `cargo fmt --all --check`,
+   `cargo test --locked -p world -p drivers -p model --test output_identity`
+   (5 passed), and `cargo check --locked -p viud --all-targets`.
 
-| Old | New |
-|---|---|
-| package `system` (bins `mix`, `mix-standalone`), `engines/mix` | package `mix`, bin `mix`, shell profile only |
-| package `mix` (interpreter lib), `libraries/mix` | package `lib-mix`, lib name `mix` |
-| package `viu` (Viu runtime lib), `libraries/viu` | package `lib-viu`, lib name `viu` |
-| package `viu-engine` (`viu-client` in older scripts), `engines/viu` | package `viu`, bin `viu`, lib `furniture` |
-| package `compd`, bin `compd`, `engines/compd` | removed; package/bin `viud` owns the sources in `engines/viud` |
-| packages `scene-host`, `overlays` (in-process egui UI) | removed |
-| `engines/mix-shell`, `engines/compd/crates/ui` | `libraries/mix-shell`, `libraries/ui` |
+All new CPU regressions passed. Existing GPU/headless acceptance tests retained
+their explicit ignores. No real-glass/GPU rendering acceptance, VT, desk or
+installation changes were performed. This is a PR for production main, not a
+lab promotion or deployment.
 
-Scripts: `-p system` -> `-p mix`, `-p mix` -> `-p lib-mix`, `-p viu` ->
-`-p lib-viu`, `-p viu-engine`/`viu-client` -> `-p viu`. Lab-only drivers carry
-a LAB EVIDENCE ONLY note (any compd/oracle step needs gold compd from mixos
-8779f33): p2_gate, p2_rehearsal, p2_prepare, p2_furniture_debug,
-gate_furniture, gate_comp_split, engine_split_smoke,
-engine_split_size_ablation, check_comp_profiles, check_native_chrome,
-gold_parity_gate, integrated_gate, integrated_prepare, app_ports_gate/prepare,
-email_list_gate, email_wire_prepare, bulk_prepare, backdrop_accept_gate,
-backdrop_parity_gate, docs/ports/parity-method.md. `tools/cutover_gate.mix`
-is the four-engine gate (modes gate, fmt, lock, builtins).
+## PR 47 review round 1 — 2026-11-09
 
-Checkpoint gate (cutover-gate-5d1ec61, cbc2): PASS, 10,484 passed / 0 failed /
-90 ignored vs base 10,735 / 0 / 100 (integrated_gate 20261107-111516-437fd7b1).
-The 251 + 10 difference is exactly the removed code (counted at base,
-cutover-removed-4755e9e): scene-host 232 + 10 ignored and 3 registry,
-overlays 1, compd bin unit tests 13 (duplicates; viud still runs them),
-bus_wake 1 (inproc-ui only), mix personality_name 1.
-Release sizes (bytes) base -> 5d1ec61: mix 20,521,752 -> 20,518,872;
-mixd 65,896,480 -> 65,896,416; viu 55,726,024 -> 55,722,568;
-viud 32,489,704 -> 32,489,144. viud tree: 0 egui/toolkit lines.
+All ten requested items addressed on the same branch. PR remains
+https://github.com/mixviu/mixviu/pull/47.
+New tested implementation head: `5549936b1585d11e403566a4b19c2ac39b8e9f43`.
+The following receipt-only commit appends this section; its SHA is the PR head.
 
-## 2. compd -> viud (Mark, 2026-11-07)
+1. **Headless migration:** `identity::find` and `matches` accept legacy
+   `MixOS Headless Unknown` only for qualified headless-0. Exact new keys win;
+   headless-1 cannot inherit it. Test:
+   `model/tests/output_identity.rs::headless_legacy_maps_to_zero_only_and_exact_wins`.
+2. **Inactive teleport target:** active filtering now precedes minimum-key
+   selection. Test: `drivers/tests/output_identity.rs::legacy_placement_uses_smallest_active_matching_connector`
+   disables DP-1 and proves the legacy zone survives on DP-2.
+3. **Startup shadowing:** shared `identity::preferred_index` tries exact matches
+   across every profile before any legacy match, retaining priority within each
+   pass. KMS startup, hotplug target selection and all-inactive recovery share
+   this rule. Test: `qualified_selection_beats_earlier_legacy_but_keeps_priority_within_pass`.
+4. **Legacy touch claims:** `touch_index` retains an exact qualified claim first;
+   for legacy duplicates it prefers the associated libinput output when it is a
+   matching driven output. Otherwise the existing first-match order is preserved.
+   Test: `legacy_touch_uses_association_only_within_matching_outputs` covers a
+   matching association, absent/unmatched association, and explicit priority.
+   This fallback is documented in code and the Bus contract.
+5. **Port moves:** profile mutation APIs (`upsert_output`, `set_active`,
+   `set_touch_device`, `set_default`) now require the complete connected
+   preference-key list, including inactive panels, and call `sync_legacy_output`.
+   A sole matching panel refreshes/creates the legacy fallback from the complete
+   qualified profile; duplicates or unknown topology cannot refresh it. This
+   allows a move to a new port to inherit the latest mode/active/touch fields.
+   Test: `single_panel_writes_refresh_legacy_for_moves_but_duplicates_do_not`
+   exercises all four APIs, checks a move, then duplicate and unknown-topology
+   writes. No in-tree production Rust caller currently invokes these legacy
+   profile mutation APIs (the repository search found only definitions/tests);
+   future callers must supply live topology rather than infer it from saved
+   profiles. Raw JSON file edits remain the editor's responsibility.
+6. **Public format:** corrected the snapshot comment in `native/src/wire/entry.rs`.
+   `docs/docs/spec/bus/commands.conf.mix` now describes the qualified `edid_key`,
+   opaque echo-back requirement, legacy/headless migration and touch fallback.
+   `rg` audit of `apps/` and `share/` found no `edid_key`, `@connector:` or
+   `MixOS Headless` references; no app parser/constructor needs migration.
+7. **Last separator:** `identity::stable` explains why it splits on the last
+   qualifier. Test: `stable_splits_only_the_last_connector_suffix` uses an EDID
+   model containing the separator text.
+8. **Teleport caller proof:** `kms::edid::identity::connector_key` is now the
+   shared function used by reconcile's `identity_key` and enumeration. Test
+   `kms/tests/output_identity.rs::reconcile_connector_key_preserves_edid_placement`
+   supplies a serial-42 EDID, constructs the Output, compares preference keys,
+   and feeds that connector key through `build_teleport`, retaining the DP-2 zone.
+9. **Connector name agreement:** `physical::create` now calls `connector_name`
+   directly. A narrow `ConnectorInfo` trait exposes the same three getters on
+   real DRM Info and CPU fixtures, allowing the actual constructor to be tested
+   without a DRM device or unsafe fabricated struct. Test:
+   `physical_output_and_connector_selection_share_names` checks DP, HDMI-A and
+   eDP fixtures with `physical::create(...).name() == connector_name(...)`.
+10. **EDID-less spelling:** shared `for_connector` deliberately preserves the
+    historical Debug spelling in fallback serials (`DisplayPort-1`), while the
+    qualifier and runtime name use canonical `DP-1`. Test:
+    `enumeration_key_matches_output_even_with_debug_spelled_fallback_serial`
+    proves enumeration's saved key equals the real Output preference key.
 
-Everything compd became viud: units `viud@`/`viud-headless@` running
-`bin/viud`, `COMPD_*` -> `VIUD_*`, user-facing `viud:` messages and log
-targets, `libviud_wlcs.so` (lib `viud_wlcs`), `viud.ftl`, the settings and
-Bus-registry owner `viud`, the `viud.truth` control, comments. No fallbacks.
-The Bus service `comp` and its `comp.*` commands keep their names.
-Gate after the rename (cutover-gate-43de632, cbc3): every test step green,
-10,484 / 0 / 90; one rustfmt line, fixed in e32beb4.
+Round 1 CBC receipts (BUILD_RC and saved logs read):
 
-## 3. mixos -> mix (Mark and Fable, 2026-11-07)
+- `20261109-181155-54b6c08d-a1`, cbc3, **RC 0**, source `e81180f4`:
+  `cargo fmt --all`; affected model/drivers/kms/world/headless `--lib --tests`;
+  `cargo check --locked -p viud --all-targets`. Captured formatting and the two
+  test-only workspace lock dependencies, printed diff and restored this job's
+  worker changes in the same job. Applied the captured diff locally.
+- `20261109-181328-b0746f10-a1`, cbc2, **RC 0**, exact implementation head
+  `5549936b1585d11e403566a4b19c2ac39b8e9f43`: `cargo fmt --all --check`;
+  `cargo test --locked -p model -p drivers -p kms -p world --test output_identity`
+  (**14 passed**); `cargo check --locked -p viud --all-targets`.
 
-Prefix `/opt/mix`; `MIXOS_*` -> `MIX_*` by the Fable rules (test-only names
-`MIX_TEST_*`, engine second word, `*_BIN` directory / `*_EXE` file); root
-variable `MIXOS` -> `MIX_ROOT`; directories `/etc/mix`, `/var/lib/mix`,
-`/run/mix`, `/var/cache/mix`, `~/.config/mix`, `~/.local/{share,state,log}/mix`,
-`~/.cache/mix`, `$XDG_RUNTIME_DIR/mix`; systemd `*Directory=mix/<svc>`,
-`User=mix`; `mix-headless.slice`; `[package.metadata.mixviu]`; the `mix:`
-logical path scheme, `mix_path` builtin, `mix` cargo features (assets, dnsd);
-prose MixOS -> MixViu. Nothing installs, writes or links under `/opt/mixos`.
+No local Rust commands, deployment, desk, VT or installed-prefix changes.
+Existing GPU acceptance tests retain their explicit ignores.
 
-No collisions with existing `MIX_*` names: `MIX_BIN` was only a placeholder
-word in a lab usage line (reworded). Existing test names moved to
-`MIX_TEST_*`; `MIX_UNDER_TEST` -> `MIX_TEST_ACTIVE`; `MIX_REMOTE_BIN` ->
-`MIX_REMOTE_EXE` (a file). Four `MIX_TEST_*` delays/fault hooks
-(`ADMIT_DELAY_MS`, `CLAIM_DELAY_MS`, `RESERVE_HOLD_MS`, `RESULT_TORN`) are
-still read by runtime code without a test gate: the process tests drive the
-built binary, so a cfg(test) gate would remove them; needs a decision.
-Engine settings are all MIX_<ENGINE> names (Mark, Fable rule 5): the
-former VIUD settings take the viud engine word (MIX_VIUD_XWAYLAND), their
-test-only ones the test word first (MIX_TEST_VIUD_RENDER_NODE), and likewise
-viu (MIX_VIU_SERVICE, VIU_BIN -> MIX_VIU_EXE), noded (MIX_NODED_SERVICE),
-dlnad, hostd, indexd and maild. Labels and error codes that only share a
-spelling (VIUD_READY, VIUD_PRESENTATION_PROBE) are not variables and stay.
-`etc/env.conf.mix`: 200 names, loads with load_data, matches every
-`MIX_[A-Z0-9_]+` token outside vendor/, provenance/ and Cargo.lock (a few
-entries are Rust constants or a file name sharing the spelling; said so).
+## PR 47 review round 2 — 2026-11-09
 
-Owner subdirectories (Mark): every daemon, app and the viu runtime keeps its
-files in `<dir>/mix/<owner>/` (one commit per owner; table below). The Mix
-shell's own files stay at the top of the user tree (`~/.local/state/mix`:
-history, stats). The top of the system tree holds only shared system
-configuration (`node.conf.mix`, `theme.conf.mix`, `mesh.conf.mix`,
-`session/<vt>.env`, `desk.env`, `/run/mix/mode`, `/run/mix/session/<vt>/`)
-and the Bus socket, which already sits in noded's own `/run/mix/noded/`.
-Logs: `~/.local/log/mix/<owner>/`, system tier `/var/log/mix/<owner>/`.
+All four requested items addressed on `fix/viud-output-identity`.
+PR: https://github.com/mixviu/mixviu/pull/47.
+New implementation head: `ce38baa18c38fbc5265735f98d8d7ddd497de90c`.
+The receipt-only commit appending this section follows that implementation.
 
-`tools/command_registry.mix` cannot run on this branch or on the base: it
-requires `tools/lib/command_registry_source.mix`, which was never imported.
-The registry file itself only changed owner `compd` -> `viud`.
+1. **Qualified touch override:** replaced the first-claim lookup and identity-only
+   `touch_index` with `resolve_touch_claim`, which inspects the effective profile
+   for each driven output. Any exact qualified profile decides its own claim,
+   including None or a different device. Only outputs without an exact profile
+   can inherit the legacy claim; association chooses among those candidates.
+   Qualified positive claims take priority over inherited ones. When a saved
+   claim exists but all matching live outputs override it, the native caller
+   returns unmapped instead of reintroducing it through automatic association,
+   size or EDID heuristics. With no saved claim, normal automatic routing remains.
+   The Bus spec documents this boundary.
 
-## Desk migration
+   Tests in `model/tests/output_identity.rs`:
+   - `cleared_qualified_touch_does_not_inherit_legacy_on_duplicate_panels` uses
+     the real setter to clear DP-2 with both panels connected, asserts legacy L
+     still claims touch and DP-2's exact profile is None, then verifies association
+     with DP-2 routes to eligible DP-1. It also covers association absent, only
+     the overridden panel driven, all candidates overridden and another exact
+     device claim.
+   - `legacy_touch_single_panel_and_unqualified_duplicates_keep_their_routes`
+     covers a single panel, duplicate panels without qualified profiles, associated
+     and unassociated selection, an unclaimed device, and clearing the sole panel
+     (which refreshes legacy and restores automatic mapping).
+2. **Teleport cleanup:** removed the redundant `!output_active(...)` disjunct
+   after the earlier active filter. The legacy placement, active-connector and
+   unplug/replug tests continue to pass unchanged in behaviour.
+3. **Complete topology API:** all four profile mutation APIs and
+   `sync_legacy_output` now take the private-field `ConnectedOutputs` wrapper.
+   Construction is explicitly named `from_complete_snapshot`; its API requires
+   all connected preference keys, including inactive panels, never just the
+   driven set or saved profiles. Debug assertions reject unqualified keys and
+   repeated runtime connector names. The API explicitly states that shape checks
+   cannot discover hardware omitted by the caller. Empty/unknown topology still
+   cannot authorise shared legacy writes. Existing duplicate/unknown-topology
+   mutation tests use the wrapper; two new debug-build panic tests prove the
+   malformed-snapshot guards.
+4. **Display flags verified:** `DisplayInfo.active` marks the primary connector,
+   so its handle comparison is intentional and independent of saved preference
+   identity. The saved active flag is exposed as `DisplayInfo.enabled`, already
+   resolved through `profile::active` and `identity::find`. Kept those meanings
+   intact and clarified the enumeration comment. Extracted `profile::active_in`
+   as the exact lookup called by `active`; the new KMS regression
+   `display_enabled_lookup_accepts_migrated_legacy_profile_and_exact_override`
+   verifies a migrated qualified key inherits a disabled legacy profile and that
+   a later explicit qualified enabled profile wins over it.
 
-Units and binaries (no gold binary reads these):
+CBC receipts (BUILD_RC checked and saved logs read):
 
-| Old | New |
-|---|---|
-| `compd@.service`, `compd-headless@.service` (`bin/compd`) | `viud@.service`, `viud-headless@.service` (`bin/viud`) |
-| `mixos-headless.slice` | `mix-headless.slice` |
-| `/opt/mixos/bin/{mix,mixd,viu,...}` for MixViu | `/opt/mix/bin/...` (gold stays in `/opt/mixos`) |
-| `User=mixos` in viud@, viud-headless@, apps@, scenes@, editd@, settingsd@, noded@ | `User=mix` (account must exist) |
-| `StateDirectory/RuntimeDirectory/ConfigurationDirectory=mixos/<svc>`, `%S/mixos/...` | `mix/<svc>` |
-| `RuntimeDirectory=mixos/session/%i/desktop` | `mix/session/%i/desktop` |
-| Bus control `compd.truth` | `viud.truth` |
-| unit hint `mixos-desk-scenes.service` | `mix-desk-scenes.service` |
-| Not in this repo, must follow on desk4: `session@.target` Wants/Upholds/After, `viu-host@` Requires/After, `backdrop@`, `dopus-*`, `viu-gallery`, `seatd@` if it names compd | name `viud@` / `/opt/mix` |
+- `20261109-183151-fca1937b-a1`, cbc2, **RC 0**, source `8315126e`:
+  `cargo fmt --all`, then the same round 1 suites:
+  `cargo test --locked -p model -p drivers -p kms -p world -p headless --lib --tests`
+  and `cargo check --locked -p viud --all-targets`. Worker formatting diff was
+  printed and restored in that same job, then applied locally.
+- `20261109-183303-d0250a55-a1`, cbc2, **RC 0**, exact implementation
+  `ce38baa18c38fbc5265735f98d8d7ddd497de90c`: `cargo fmt --all --check`;
+  `cargo test --locked -p model -p drivers -p kms -p world --test output_identity`
+  (**18 passed**); `cargo check --locked -p viud --all-targets`.
 
 Variables (gold column: read by gold term / portald / inputd at mixos 8779f33,
 directly or through libs bus, paths, config, settings, design, toolkit,
@@ -370,11 +661,11 @@ the flag (name check only) and its scene stub ignores it, because the shell
 furniture now runs in viu-host@ (`viu --host`), a new template in
 engines/viu/units.
 
-quoin: `apps/quoin` is not an app bundle: the runnable app is
-`apps/quoin/volume` (contract.json with behaviour viu.mix, scene.mix). It
+quoin: `apps/volume-lab` is not an app bundle: the runnable app is
+`apps/volume-lab/volume` (contract.json with behaviour viu.mix, scene.mix). It
 needs no launch arguments or host initialise. The migration's generated
-launcher `viu run /opt/mix/share/mixviu/apps/quoin` must become
-`viu run /opt/mix/share/mixviu/apps/quoin/volume`.
+launcher `viu run /opt/mix/share/mixviu/apps/volume-lab` must become
+`viu run /opt/mix/share/mixviu/apps/volume-lab/volume`.
 
 exportd and real homes: GTK/Qt already refused to write when XDG_CONFIG_HOME
 is (or defaults to) the home's own .config unless MIX_EXPORTD_GTKQT_HOME=1.
@@ -445,3 +736,64 @@ Final lab merge (2026-11-08): origin/lab/gold-parity at 01912877 (eight accepted
 Branch cutover/four-engines; head is this last.md commit (source db16141); full gate: the coordinator runs it on infra/pr-ci; CBC light 20261108-105611-7534e7c2, 20261108-104904-e4317f0f, 20261108-104841-c85e2532, 20261108-105441-54343276.
 
 Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa3c37ec19d; Email legacy account-tree startup FIXED; hot-apply apps/email/mail.mix + apps/email/surface.mix to /opt/mix/share/mixviu/apps/email/; CBC email-desk4-scope-r4-a1 rc0 (17/17), email-desk4-native-r5 rc0 (real maild before/after); no desk4/main/infra/pr-ci changes.
+
+## P1 rebase onto merged P0 — 2026-11-09
+
+This receipt supersedes the original P0 dependency/base above.
+
+- New base: `cd85e2a3024f27bd997f8787e50d59d349b3ab67` (`origin/main`, P0 squash PR #41).
+- Old P1 head: `5cb266763fd5b4ea811c10b9284e0b494dfcfbca`; retained locally as `backup/quoin-p1-before-main-20261109`.
+- Replayed only `0780b2ea..feat/quoin-p1-dev-loop` onto main. All eight commits rebased automatically, with no conflict stops. Reviewed the resulting main diff: only P1 files and this session's harness/receipt changes remain.
+- P0's name-limit/header-only panel text, registry draft statuses, backdrop.view.list contract and viu registry test owner filter are preserved. Neither document required manual conflict resolution; the auto-merge retained P0's reviewed text plus the P1 additions.
+- New rebased source head tested and pushed: `75255585405b5ab511f59032dbda47b48f88e45b`. The subsequent receipt commit changes only last.md; its hash is the final branch head returned in the session hand-off.
+- Bot push used `gh_agent.mix git -C WORKTREE push --force-with-lease origin feat/quoin-p1-dev-loop`, on this branch only. No PR opened or reopened; Opus handles the bot PR.
+
+Harness work:
+
+- Separate commit `75255585`: scenes_io_test.mix now uses `mixos_path("prefix")` instead of obsolete `mix_path("prefix")`. Local syntax/lint pass. The default integration invocation now gets past that builtin and reaches the already-known private broker readiness failure; it still does not pass end to end with the installed noded.
+- Registry source helper deferred as larger than a small fix. The original MixOS checker is 390 lines and requires another omitted 173-line command_registry_embed.mix. It traverses the old apps/services/cli/libs layout; MixViu needs engines/libraries ownership coverage, embedding-context/provenance assessment and fixture tests. Merely copying the missing file would leave another missing require and incomplete source coverage. The gate remains blocked at its missing require, with no bypass or stub added.
+
+CBC, exact source `75255585405b5ab511f59032dbda47b48f88e45b`, cbc2:
+
+| Job | BUILD_RC | Outcome |
+|---|---|---|
+| 20261109-174228-83fb5387-a1 | 1 | 400 loader assertions and three P1 script lint checks passed; stopped at the worker's older linter not knowing mixos_path in the harness |
+| 20261109-174321-7bf300df-a1 | 0 | 400 loader assertions; P1 script lint; harness lint with --allow-function mixos_path for the older worker binary; cargo fmt -p viu -- --check; cargo test -p viu --lib (101 passed, 5 ignored); cargo check -p viu --bin viu --locked |
+
+Final saved log was read in full: `20261109-174321-cbc2-75255585405b-20261109-174321-7bf300df-a1-ef6cb226.log` under the maintainer's CBC cache. Harness lint has one existing literal-$tmp note, zero errors/warnings. Other P1 lint checks have zero errors/warnings/notes. Existing dependency warnings remain in the Rust log.
+
+No desk4, VT or /opt changes. No additional runtime.rs hunks beyond those listed in the original P1 hand-off.
+
+## PR #46 review round 1 — 2026-11-09
+
+Addressed GLM-5.3/DeepSeek v4-pro items on the existing branch. Source head tested: `44a81cfbe5a6d1f2f13c8386634b17500a84bce2`. The following receipt/development-staging clarification commit changes only documentation; the bot push's final head is reported in the session hand-off.
+
+1. Preview trust: removed cwd ancestor search and production CARGO_MANIFEST_DIR fallback. Only the explicit VIU_PREVIEW_VALIDATOR override or `<running-binary-prefix>/share/viud/scripts/scene_preview.mix` is selected. Mix comes from that prefix's bin/mix, with its share directory supplied for catalogue discovery. Confirmed packaging in tools/apps_bundle.mix. The planted-ancestor regression executes from a downloaded-scene cwd and proves only the trusted validator runs; the planted marker is absent. Build-machine paths/native test interpreter references remain in cfg(test) fixtures only.
+2. In-flight edits: retain the signature captured before preflight, never a new post-commit signature. Compare after commit and repeat on a difference, for filesystem and explicit library/all reloads. Four immediate passes bound continuous writes; a coalesced local task defers further retries. Tests inject a helper write in the batch host call after preflight, proving a second full commit on both entry paths. Singleton reload does not acknowledge a library signature.
+3. Mixed batches/overflow: group refusal retains a fence for its dependants while filesystem processing continues for unrelated scenes and overflow rescans. The refusal response survives reconciliation. Post-commit spawn errors also leave the rest of the batch eligible. Tests cover all three; a singleton cannot bypass the standing shared-library refusal. Disable/removal still reaches normal reconciliation.
+4. Strip diagnostic: inventory now explicitly publishes load_diagnostic (diagnostic already uses failure(), which prefers that field). errors() prefers that refusal and its nested upstream/helper diagnostic; an unrelated lint problem cannot override it. The integration regression drives the real Mix loader transitions through its notify adapter, reads the refused-lib publication, draws last-good plus the strip with egui and asserts the refusal text is painted without advancing the view revision. Host/process RPCs are fixture adapters, not a live desk.
+5. Mount rollback: SceneMount is an immutable input receipt inside acceptance, not a mutable external mount object. Page/dialog/toast effects reside in SceneStore, including in a batch's cloned store. Internal APIs now take shared references, preventing receipt mutation. A two-scene batch with a newly mounted page first and a refused second scene proves pages, caller receipt, removals and notices stay unchanged.
+6. Watch lifecycle: templates and custom libraries are watched recursively from an existing parent; custom lib watching is established even when the lib directory does not yet exist. The root parent watch is recursive too. Native tests replace the catalogue, edit its new inode again, create a late lib, then edit it again; each remains observable.
+7. Cost/coalescing: path-prefix/ancestor/overflow checks precede library hashing. Pure scene edits do not hash helpers unless retrying a standing library refusal. Native filesystem batching plus unchanged-signature suppression coalesce duplicate saves.
+8. Digests: accepted helpers use the same complete bounded SHA-256 read for signatures and check-cache entries. bounded_read already refuses cap+1 bytes; no oversized prefix is accepted. Fingerprints mark oversize for refusal, and the test includes a >256 KiB tail.
+9. Symlinks: both passes use no-follow checks, including library roots. Fingerprinting marks a refused link and preflight rejects it; neither silently follows or skips it as valid. Regression covers link refusal.
+10. Replies: docs/scene-documents.md and the registry document all three results, including rc10 with new revisions for post-commit behaviour faults. A spawn-failure regression asserts both revisions and the runtime diagnostic.
+11. Strip routing/text: edge and toast clicks use the configured SCENES_SERVICE. The passive preview/error parser has no editor-action hint. Strip text and tooltip shorten absolute path tokens to basenames; covered by the surface regression.
+12. Preview validation/transport: preview and install staging call the real check_library. Checker/lint output remains captured inside scenes_io.check; only the final scene source is printed by the validator. Preview regression uses a helper containing print (never executed or leaked), then a broken helper and asserts last-good remains.
+13. Reload arguments/authority: scene scope requires a string name; lib/all reject name even if nil. Tests cover missing, numeric and inapplicable names; the request error path also guards its name lookup against non-string input. PR and scene docs explicitly defer caller authority to the comp-identity work's later steps.
+14. Fan-out scope: scene documents use strict-data fence parsing and cannot call require (libraries/strict/src/lib.rs and libraries/scene/src/envelope.rs). Behaviour-only dependency selection is therefore valid; computed/transitive behaviour imports still use the conservative all-enabled-behaviour set. Documented in the scene spec.
+
+CBC receipts (Rust only on CBC; formatting diff restored in its own worker job and applied locally):
+
+| Job | Source | BUILD_RC | Result |
+|---|---|---|---|
+| 20261109-180656-91382df9-a1 | e6d913e6 | 101 | New surface test dropped egui texture deltas; test harness cleanup corrected. Other Rust tests passed. |
+| 20261109-180846-e9c19d39-a1 | 8003928c | 0 | 419 loader assertions, lint, 104 host tests (5 ignored), binary check; CBC formatting diff applied locally. |
+| 20261109-181135-b1281ec5-a1 | 44a81cfb | 0 | 420 loader assertions; scenes.mix/lib/scenes.mix/scene_preview.mix lint: zero errors/warnings/notes; cargo fmt -p viu -- --check; cargo test -p viu --lib: 104 passed, 5 ignored; cargo check -p viu --bin viu --locked. |
+
+Final saved log read in full: `20261109-181135-cbc2-44a81cfbe5a6-20261109-181135-b1281ec5-a1-b546e3ff.log`. Existing dependency warnings remain; no new source warning was reported. git diff --check passes. No desk4, VT, /opt or production changes. No added runtime.rs work beyond the diagnostic service routing/hint hunks; P2 comp subscription/binding work remains untouched. Bot pushes use the existing feat/quoin-p1-dev-loop branch; no new PR.
+
+---
+
+Existing GPU acceptance targets remain explicitly ignored. No local Rust,
+deployment, desk/VT or installed-prefix changes. All pushes used the bot.

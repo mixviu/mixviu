@@ -101,7 +101,7 @@ pub struct FloatingDrag {
 }
 
 /// Per-MONITOR view state: one independent [`Viewports`] per physical output, keyed
-/// by the output's EDID key. Each monitor is its OWN viewport — its own camera
+/// by the live connector/protocol key. Each monitor is its OWN viewport — its own camera
 /// (pan/zoom) and its own split/float panes — NOT extended and NOT mirrored. Always
 /// holds the bootstrap entry under `String::new()` (the sole / not-yet-identified
 /// output) so single-output behavior is byte-identical: the sole output uses that

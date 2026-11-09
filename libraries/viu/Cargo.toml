@@ -63,7 +63,7 @@ reqwest.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "env-filter", "fmt", "registry", "tracing-log"] }
-tokio = { version = "=1.53.1", features = ["rt", "time", "macros", "sync"] }
+tokio = { version = "=1.53.3", features = ["rt", "time", "macros", "sync"] }
 egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
 
 [dev-dependencies]

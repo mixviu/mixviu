@@ -181,6 +181,7 @@ pub fn new_dispatch(
         committed: vec![],
         surface_events: vec![],
         deferred: vec![],
+        pending_info_done: vec![],
         pending_dmabuf: vec![],
         dmabuf_ledger: Default::default(),
         session_lock: crate::wayland::sessionlock::SessionLock::new(display_handle),
@@ -457,6 +458,13 @@ impl<A: WireTrait + 'static> Wire<A> {
         // Consumed, not merely read: whoever drains satisfies the marker, so the loop's
         // end-of-iteration drain skips an iteration the syncobj flush already emptied.
         self.state.protocol_pending = false;
+        // Image-description info objects: their destructor `done`, owed since the
+        // request that created them (see `Dispatch::pending_info_done`).
+        for info in std::mem::take(&mut self.state.pending_info_done) {
+            if smithay::reexports::wayland_server::Resource::is_alive(&info) {
+                info.done();
+            }
+        }
         // Registry events the world-free handlers queued, FIRST: they happened during
         // dispatch, before anything below, so a role is known before the arms that
         // bind its uuid or place it.

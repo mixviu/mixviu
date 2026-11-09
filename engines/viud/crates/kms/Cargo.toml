@@ -32,3 +32,7 @@ render-gles = { workspace = true }
 drm-ffi = { workspace = true, optional = true }
 libc = { workspace = true }
 smithay = { workspace = true }
+
+[dev-dependencies]
+world.workspace = true
+drivers.workspace = true

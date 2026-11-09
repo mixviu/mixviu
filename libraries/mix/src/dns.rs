@@ -147,13 +147,13 @@ fn rcode_name(code: u16) -> String {
 
 fn record_value(r: &Record) -> Value {
     let mut map = IndexMap::new();
-    map.insert("name".to_string(), Value::String(r.name().to_string()));
+    map.insert("name".to_string(), Value::String(r.name.to_string()));
     map.insert(
         "type".to_string(),
         Value::String(r.record_type().to_string()),
     );
-    map.insert("ttl".to_string(), Value::Number(f64::from(r.ttl())));
-    map.insert("data".to_string(), Value::String(r.data().to_string()));
+    map.insert("ttl".to_string(), Value::Number(f64::from(r.ttl)));
+    map.insert("data".to_string(), Value::String((&r.data).to_string()));
     Value::map(map)
 }
 
@@ -191,7 +191,7 @@ fn remaining(deadline: Instant) -> Result<Duration, Failure> {
 /// A reply is ours when it is a response with our id. Anything else on the
 /// socket (a late reply to an earlier query, noise) is ignored.
 fn ours(reply: &Message, id: u16) -> bool {
-    reply.id() == id && reply.message_type() == MessageType::Response
+    reply.metadata.id == id && reply.metadata.message_type == MessageType::Response
 }
 
 fn via_udp(addr: SocketAddr, wire: &[u8], id: u16, deadline: Instant) -> Result<Message, Failure> {
@@ -381,13 +381,12 @@ pub fn builtin_dns_query(args: Vec<Value>) -> MixResult<Option<Value>> {
     };
 
     let mut query = Message::query();
-    query
-        .add_query(Query::query(qname, rtype))
-        .set_recursion_desired(opts.recurse);
+    query.add_query(Query::query(qname, rtype));
+    query.metadata.recursion_desired = opts.recurse;
     let mut edns = Edns::new();
     edns.set_max_payload(EDNS_PAYLOAD);
     query.set_edns(edns);
-    let id = query.id();
+    let id = query.metadata.id;
     let wire = query
         .to_vec()
         .map_err(|e| opt_invalid(CALLER, format!("cannot encode the query: {e}")))?;
@@ -399,7 +398,7 @@ pub fn builtin_dns_query(args: Vec<Value>) -> MixResult<Option<Value>> {
         via_udp(addr, &wire, id, deadline)
     };
     // A truncated UDP answer is retried over TCP for the whole answer.
-    if matches!(&result, Ok(reply) if reply.truncated()) && !opts.tcp {
+    if matches!(&result, Ok(reply) if reply.metadata.truncation) && !opts.tcp {
         transport = "tcp";
         result = via_tcp(addr, &wire, id, deadline);
     }
@@ -433,14 +432,23 @@ pub fn builtin_dns_query(args: Vec<Value>) -> MixResult<Option<Value>> {
     map.insert("ok".to_string(), Value::Bool(true));
     map.insert(
         "rcode".to_string(),
-        Value::String(rcode_name(u16::from(reply.response_code()))),
+        Value::String(rcode_name(u16::from(reply.metadata.response_code))),
     );
-    map.insert("aa".to_string(), Value::Bool(reply.authoritative()));
-    map.insert("ra".to_string(), Value::Bool(reply.recursion_available()));
-    map.insert("tc".to_string(), Value::Bool(reply.truncated()));
-    map.insert("answers".to_string(), records(reply.answers()));
-    map.insert("authority".to_string(), records(reply.name_servers()));
-    map.insert("additional".to_string(), records(reply.additionals()));
+    map.insert("aa".to_string(), Value::Bool(reply.metadata.authoritative));
+    map.insert(
+        "ra".to_string(),
+        Value::Bool(reply.metadata.recursion_available),
+    );
+    map.insert("tc".to_string(), Value::Bool(reply.metadata.truncation));
+    map.insert("answers".to_string(), records(reply.answers.as_slice()));
+    map.insert(
+        "authority".to_string(),
+        records(reply.authorities.as_slice()),
+    );
+    map.insert(
+        "additional".to_string(),
+        records(reply.additionals.as_slice()),
+    );
     map.insert("server".to_string(), Value::String(server_shown));
     map.insert("port".to_string(), Value::Number(f64::from(addr.port())));
     map.insert(

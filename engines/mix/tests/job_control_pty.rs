@@ -19,6 +19,15 @@ use std::time::{Duration, Instant};
 
 const PROMPT: &str = "P0J> ";
 const LIMIT: Duration = Duration::from_secs(10);
+fn fixture_limit() -> Duration {
+    std::env::var("MIX_PTY_TIMEOUT_SECS").map_or(LIMIT, |value| {
+        let seconds: u64 = value
+            .parse()
+            .expect("MIX_PTY_TIMEOUT_SECS must be an integer");
+        assert!(seconds > 0, "MIX_PTY_TIMEOUT_SECS must be positive");
+        Duration::from_secs(seconds)
+    })
+}
 static FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn fixture_guard() -> std::sync::MutexGuard<'static, ()> {
     FIXTURE_LOCK
@@ -30,10 +39,19 @@ extern "C" fn resized(_: i32) {
     RESIZED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-fn wait_for(mut f: impl FnMut() -> bool) {
-    let end = Instant::now() + LIMIT;
+#[track_caller]
+fn wait_for(f: impl FnMut() -> bool) {
+    wait_for_event("fixture condition", f);
+}
+#[track_caller]
+fn wait_for_event(event: &str, mut f: impl FnMut() -> bool) {
+    let limit = fixture_limit();
+    let end = Instant::now() + limit;
     while !f() {
-        assert!(Instant::now() < end, "fixture deadline");
+        assert!(
+            Instant::now() < end,
+            "waiting for {event} exceeded {limit:?}"
+        );
         std::thread::sleep(Duration::from_millis(2));
     }
 }
@@ -199,6 +217,12 @@ fn fixture_process() {
             }
             fs::write(report.with_extension("signals"), "yes").unwrap();
         }
+        "identity-drain" => {
+            // libtest prints before entering fixture_process and after it
+            // returns. Keep the reader alive until the upstream harness exits,
+            // or BrokenPipe can abort it before it publishes its identity report.
+            std::io::copy(&mut std::io::stdin(), &mut std::io::sink()).unwrap();
+        }
         "exit" | "identity" => {}
         _ => panic!("unknown fixture mode"),
     }
@@ -363,7 +387,7 @@ impl Pty {
         self.read_until(marker)
     }
     fn read_until(&mut self, marker: &str) -> String {
-        let end = Instant::now() + LIMIT;
+        let end = Instant::now() + fixture_limit();
         loop {
             if let Some(i) = self.pending.find(marker) {
                 return self.pending.drain(..i + marker.len()).collect();
@@ -407,7 +431,10 @@ impl Pty {
     }
     fn report(&mut self, name: &str) -> Vec<i32> {
         let path = self.home.path().join(name);
-        wait_for(|| fs::read_to_string(&path).is_ok_and(|v| v.split_whitespace().count() == 4));
+        wait_for_event(
+            &format!("four-field identity report {}", path.display()),
+            || fs::read_to_string(&path).is_ok_and(|v| v.split_whitespace().count() == 4),
+        );
         fs::read_to_string(path)
             .unwrap()
             .split_whitespace()
@@ -480,7 +507,7 @@ fn foreground_barrier_and_fast_exit_pipeline() {
         let cmd = format!(
             "{} | {}",
             p.fixture("identity", &a),
-            p.fixture("identity", &b)
+            p.fixture("identity-drain", &b)
         );
         p.command(&cmd);
         let x = p.report(&a);

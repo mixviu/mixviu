@@ -26,6 +26,7 @@ pub mod inject;
 pub mod mode;
 pub mod pad;
 pub mod proximity;
+pub mod revoke;
 pub mod tip;
 
 pub use mode::{dial_zoom_active, hand_active, select_active};

@@ -132,16 +132,7 @@ pub fn wire(
         size: options.size,
         refresh: refresh * 1000,
     };
-    let output = Output::new(
-        "headless-0".into(),
-        PhysicalProperties {
-            size: (0, 0).into(),
-            subpixel: Subpixel::Unknown,
-            make: "MixOS".into(),
-            model: "Headless".into(),
-            serial_number: "Unknown".into(),
-        },
-    );
+    let output = virtual_output(0);
     output.change_current_state(
         Some(mode),
         Some(Transform::Normal),
@@ -238,4 +229,35 @@ pub fn wire(
         mode.size.w, mode.size.h, options.scale
     );
     Ok(())
+}
+
+/// Synthetic identities are deterministic per virtual connector.
+fn virtual_output(index: usize) -> Output {
+    let name = format!("headless-{index}");
+    Output::new(
+        name.clone(),
+        PhysicalProperties {
+            size: (0, 0).into(),
+            subpixel: Subpixel::Unknown,
+            make: "MixOS".into(),
+            model: "Headless".into(),
+            serial_number: name,
+        },
+    )
+}
+
+#[cfg(test)]
+mod identity_tests {
+    #[test]
+    fn virtual_outputs_have_distinct_stable_serials() {
+        let a = super::virtual_output(0);
+        let b = super::virtual_output(1);
+        assert_eq!(a.physical_properties().serial_number, "headless-0");
+        assert_eq!(b.physical_properties().serial_number, "headless-1");
+        assert_ne!(world::state::output_key(&a), world::state::output_key(&b));
+        assert_ne!(
+            world::state::output_preference_key(&a),
+            world::state::output_preference_key(&b)
+        );
+    }
 }

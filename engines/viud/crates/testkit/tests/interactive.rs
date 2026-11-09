@@ -676,6 +676,55 @@ fn begin_move(h: &mut Harness, window: &Window) {
 }
 
 #[test]
+fn hiding_cancels_client_and_chrome_move_and_resize_grabs() {
+    for chrome in [false, true] {
+        for edges in [0, 10] {
+            let mut h = Harness::new();
+            let (surface, _, top) = h.mapped_toplevel(640, 480);
+            let (id, window) = window(&h, &surface);
+            let handle = h.handle_of(&surface);
+            let serial = press_at(&mut h, &window, (300.0, 200.0), chrome);
+            if chrome {
+                assert!(dispatcher::wayland::grab::interactive::start_chrome(
+                    &mut h.wire.state,
+                    &window,
+                    edges,
+                ));
+            } else if edges == 0 {
+                top._move(h.client.seat(PRIMARY), serial);
+            } else {
+                top.resize(h.client.seat(PRIMARY), serial, ResizeEdge::BottomRight);
+            }
+            h.roundtrip();
+            assert_eq!(h.comp().interactive.unwrap().edges, edges);
+            motion(&mut h, (340.0, 240.0));
+            apply(&mut h, &window);
+
+            // The hide path finishes policy geometry, then revokes the native
+            // grab by its window handle, even when chrome had no client focus.
+            assert!(geometry::finish_interactive(&mut h.wire.inner.comp, id));
+            apply(&mut h, &window);
+            assert!(dispatcher::wayland::grab::interactive::cancel_for(
+                &mut h.wire.state,
+                &handle,
+                0,
+            ));
+            h.roundtrip();
+            let pointer = h.wire.state.seat.seat.get_pointer().unwrap();
+            assert!(!pointer.is_grabbed());
+            assert!(h.comp().interactive.is_none());
+            let location = h.wire.inner.space.state.element_location(&window);
+            let size = window.geometry().size;
+            motion(&mut h, (500.0, 400.0));
+            let_go(&mut h);
+            assert!(h.comp().interactive.is_none());
+            assert_eq!(h.wire.inner.space.state.element_location(&window), location);
+            assert_eq!(window.geometry().size, size);
+        }
+    }
+}
+
+#[test]
 fn client_move_released_before_first_host_pass_commits_and_saves_start_frame() {
     let mut h = Harness::new();
     let (surface, _, top) = h.mapped_toplevel(640, 480);
@@ -751,6 +800,10 @@ fn policy_place_during_an_armed_drag_keeps_the_placed_floating_frame() {
                 y: Some(300.0),
                 width: None,
                 height: None,
+                opacity: None,
+                z: None,
+                visible: None,
+                clip: None,
             },
             &WindowFacts {
                 interactive: true,
