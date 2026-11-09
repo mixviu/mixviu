@@ -824,9 +824,12 @@ pub fn execute(
                                 o.colorspace, o.metadata
                             );
                         }
-                        Err(e) => warn!(
-                            "HDR fallback: SDR connector reset failed ({e}); the connector pass retries it"
-                        ),
+                        Err(e) => {
+                            warn!(
+                                "HDR fallback: SDR connector reset rejected ({e}); holding SDR frames until it succeeds"
+                            );
+                            ctx_ref.outputs[output_idx].sdr_reset_pending = 1;
+                        }
                     }
                     // The scanout's per-element history predates HDR: start it over
                     // so no PQ-encoded region survives as "undamaged" SDR.
@@ -837,6 +840,49 @@ pub fn execute(
                         .state
                         .redraw
                         .request_gated(protocols::redraw::schedule::RedrawReason::Rearm);
+                }
+                // A rejected SDR reset holds SDR frames back (the previous frame stays
+                // on screen) and retries every frame, bounded: past SDR_RESET_TRIES
+                // the frame is presented anyway rather than freezing the output.
+                if ctx_ref.outputs[output_idx].sdr_reset_pending > 0 {
+                    const SDR_RESET_TRIES: u32 = 30;
+                    let depth = model::environment::config::base::get().depth;
+                    let want_bpc: u64 = if depth == 10 { 10 } else { 8 };
+                    let pipe = &ctx_ref.outputs[output_idx];
+                    let retry = crate::render::execute::hdr::apply_connector_props(
+                        &ctx_ref.drm_fd,
+                        pipe.connector,
+                        pipe.crtc,
+                        &pipe.hdr_caps,
+                        false,
+                        want_bpc,
+                    );
+                    let tries = ctx_ref.outputs[output_idx].sdr_reset_pending;
+                    match retry {
+                        Ok(_) => {
+                            info!("HDR fallback: SDR connector reset succeeded after {tries} held frame(s)");
+                            ctx_ref.outputs[output_idx].sdr_reset_pending = 0;
+                            ctx_ref.outputs[output_idx].props_applied = true;
+                        }
+                        Err(e) if tries < SDR_RESET_TRIES => {
+                            ctx_ref.outputs[output_idx].sdr_reset_pending = tries + 1;
+                            ctx_ref.outputs[output_idx].late_latch.abandon();
+                            ctx_ref.outputs[output_idx].render_start = None;
+                            state
+                                .state
+                                .redraw
+                                .request_gated(protocols::redraw::schedule::RedrawReason::Rearm);
+                            trace!("HDR fallback: SDR reset retry {tries} rejected ({e}); frame held");
+                            continue;
+                        }
+                        Err(e) => {
+                            error!(
+                                "HDR fallback: SDR connector reset still rejected after {tries} frames ({e}); presenting SDR anyway"
+                            );
+                            ctx_ref.outputs[output_idx].sdr_reset_pending = 0;
+                            ctx_ref.outputs[output_idx].props_applied = false;
+                        }
+                    }
                 }
                 let hdr_copy = hdr_frame.as_ref().and_then(|_| {
                     ctx_ref.outputs[output_idx]

@@ -381,6 +381,7 @@ fn add_output(
         hdr_caps: built.hdr,
         hdr_active,
         hdr_pass: None,
+        sdr_reset_pending: 0,
         props_applied: false,
         render_failures: 0,
         connector: built.connector,

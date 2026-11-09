@@ -45,6 +45,11 @@ pub struct OutputPipe {
     /// The HDR composite (FP16 intermediate + PQ encode), made on the first HDR
     /// frame and remade when the output's size or scale changes. `None` on SDR.
     pub hdr_pass: Option<render_gles::color::hdr::pass::HdrPass>,
+    /// HDR fell back to SDR but resetting the connector to SDR was rejected:
+    /// the number of frames held back since. While non-zero no SDR frame is
+    /// presented (it would show under PQ signalling); each frame retries the
+    /// reset, and after `SDR_RESET_TRIES` the frame is presented anyway.
+    pub sdr_reset_pending: u32,
     /// Whether this pipe's one-time raw-DRM CONNECTOR PROPERTY pass has run
     /// (colorimetry + bit depth). Named for HDR historically, but it now gates
     /// the SDR case too — an SDR pipe must actively reset `Colorspace` to
