@@ -124,6 +124,21 @@ pub(crate) fn prepare(
     tree: &scene::ResolvedScene,
     lists: &crate::templates::PreparedLists,
 ) -> Prepared {
+    // Embedded catalogue sources do not depend on XDG or the filesystem.
+    // Keep the shell's fixed glyphs off the search-path validation path too.
+    let templates = crate::templates::template_ids(tree);
+    let embedded = |id: &str, node: &scene::Node, row: bool| {
+        if node.family != "image" || crate::view::flag(node, "hidden") { return true; }
+        let source = crate::templates::text(node, "src");
+        source.starts_with("icon:") || (!row && source.is_empty()
+            && (tree.name != "panel" || panel_fallback(id).is_none_or(|source| source.starts_with("icon:"))))
+    };
+    if tree.nodes.iter().all(|(id, node)| templates.contains(id) || embedded(id, node, false))
+        && lists.values().all(|data| data.instances.values().all(|nodes| nodes.iter().all(|(id, node)| embedded(id, node, true))))
+    {
+        static EMBEDDED: OnceLock<Mutex<AssetCache>> = OnceLock::new();
+        return prepare_with(tree, lists, EMBEDDED.get_or_init(Mutex::default), |_, _, _| None);
+    }
     // Only the fixed production resolver shares this cache. Injected resolvers
     // must use their own cache so they cannot consume or replace its assets.
     static CACHE: OnceLock<Mutex<(u64, AssetCache)>> = OnceLock::new();

@@ -288,28 +288,15 @@ end
 
 fn resolve_icons()
   if length(keys($state.icons.windows)) + length(keys($state.icons.plain)) >= 512 then $state.icons = empty_icons() end
-  -- The launcher mark, shared with the top bar: apps.icon matches the exact
-  -- name (no suffix rule), so every spelling is asked for in turn.
-  for each $l in $m.LAUNCHER_ICONS
-    if not has_key($state.icons.themed, $l.key) then
-      $path = ""
-      for each $name in $l.names
-        if $path == "" then $path = apps_icon($name, $m.LAUNCHER_ICON_SIZE, $ICON_THEME) end
-      end
-      $state.icons.themed[$l.key] = $path
-    end
-  end
-  for each $name in $m.PANEL_THEMED_ICONS
-    if not has_key($state.icons.themed, $name) then
-      $size = starts_with($name, "start-here") ? 48 : 22
-      -- start-here-kde is external artwork, asked for as it is. The bare
-      -- start-here is the Lucide mark, catalogued as start-here-symbolic.
-      $symbolic = $name == "start-here-kde" ? $name : $name .. "-symbolic"
-      $path = apps_icon($symbolic, $size, $ICON_THEME)
-      if $path == "" and not starts_with($name, "start-here") then $path = apps_icon($name, $size, $ICON_THEME) end
-      $state.icons.themed[$name] = $path
-    end
-  end
+  -- Model keys retain the shared panel contract; values are embedded
+  -- libraries/icons catalogue sources, never installed theme names.
+  $state.icons.themed = {"start-here": "icon:layout-grid",
+    "notification-active": "icon:message-square", "notification-inactive": "icon:message-square",
+    "notifications": "icon:message-square", "audio-volume-muted": "icon:volume-x",
+    "audio-volume-high": "icon:volume-2", "audio-volume-medium": "icon:volume-2",
+    "audio-volume-low": "icon:volume-2", "audio-card": "icon:speaker",
+    "network-wireless-signal-excellent": "icon:wifi", "network-wired-activated": "icon:ethernet-port",
+    "network-offline": "icon:unplug", "network-wired": "icon:ethernet-port"}
   for each $w in $t.panel_tasks($state.windows, $state.ws_current, $state.tasks_scope, $m.MAX_TASKS)
     $key = to_string($w.app_id)
     if not has_key($state.icons.windows, $key) then
