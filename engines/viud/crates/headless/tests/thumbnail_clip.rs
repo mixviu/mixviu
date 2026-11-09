@@ -16,7 +16,7 @@ fn clipped_window_thumbnail_scales_the_visual_crop() {
         800,
         wayland_client::protocol::wl_shm::Format::Argb8888,
     );
-    file.write_all(&[0, 0, 255, 255].repeat(200 * 160)).unwrap();
+    h.client.write_buffer(file, &[0, 0, 255, 255].repeat(200 * 160));
     surface.attach(Some(&buffer), 0, 0);
     surface.damage_buffer(0, 0, 200, 160);
     surface.commit();
