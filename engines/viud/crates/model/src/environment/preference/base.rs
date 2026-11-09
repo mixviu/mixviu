@@ -1005,7 +1005,11 @@ pub fn set_layout(prefs: &mut Preference, placements: Vec<LayoutPlacement>) {
 /// Reuses an existing profile (preserving its mode) or creates an identity-only one,
 /// then moves it to the front. Shared by the settings window and the settings editor.
 /// `connected` must describe all connected panels, including inactive ones.
-pub fn set_default(outputs: &mut Vec<OutputProfile>, edid_key: &str, connected: ConnectedOutputs<'_>) {
+pub fn set_default(
+    outputs: &mut Vec<OutputProfile>,
+    edid_key: &str,
+    connected: ConnectedOutputs<'_>,
+) {
     inherit_output(outputs, edid_key);
     let profile = match outputs
         .iter()
@@ -1038,7 +1042,11 @@ fn inherit_output(outputs: &mut Vec<OutputProfile>, key: &str) {
 /// Keep the portable legacy fallback current only when live topology proves the
 /// panel is unambiguous. Callers must supply all connected outputs, including
 /// inactive ones; an empty/unknown topology never permits a shared write.
-pub fn sync_legacy_output(outputs: &mut Vec<OutputProfile>, key: &str, connected: ConnectedOutputs<'_>) {
+pub fn sync_legacy_output(
+    outputs: &mut Vec<OutputProfile>,
+    key: &str,
+    connected: ConnectedOutputs<'_>,
+) {
     use super::identity;
     let connected = connected.0;
     if identity::connector(key).is_none()
@@ -1082,10 +1090,16 @@ impl<'a> ConnectedOutputs<'a> {
     /// never authorise a legacy refresh. Shape assertions cannot prove that a
     /// caller did not omit hardware; the completeness contract remains explicit.
     pub fn from_complete_snapshot(keys: &'a [String]) -> Self {
-        debug_assert!(keys.iter().all(|k| super::identity::connector(k).is_some()),
-            "connected snapshot must contain qualified preference keys");
-        debug_assert!(keys.iter().enumerate().all(|(i, k)| !keys[..i].iter().any(|p| super::identity::connector(p) == super::identity::connector(k))),
-            "connected snapshot must not contain duplicate runtime connectors");
+        debug_assert!(
+            keys.iter().all(|k| super::identity::connector(k).is_some()),
+            "connected snapshot must contain qualified preference keys"
+        );
+        debug_assert!(
+            keys.iter().enumerate().all(|(i, k)| !keys[..i]
+                .iter()
+                .any(|p| super::identity::connector(p) == super::identity::connector(k))),
+            "connected snapshot must not contain duplicate runtime connectors"
+        );
         Self(keys)
     }
 }
@@ -1102,7 +1116,12 @@ pub enum TouchClaim {
 /// Qualified profiles decide their own claim, including None. A legacy claim
 /// can only apply where no exact profile exists. Resolve all candidates before
 /// consulting the association, so it cannot reintroduce an overridden claim.
-pub fn resolve_touch_claim(outputs: &[OutputProfile], keys: &[String], device: &str, associated: Option<&str>) -> TouchClaim {
+pub fn resolve_touch_claim(
+    outputs: &[OutputProfile],
+    keys: &[String],
+    device: &str,
+    associated: Option<&str>,
+) -> TouchClaim {
     use super::identity;
     let mut legacy = Vec::new();
     for (index, key) in keys.iter().enumerate() {
@@ -1114,12 +1133,23 @@ pub fn resolve_touch_claim(outputs: &[OutputProfile], keys: &[String], device: &
             legacy.push(index);
         }
     }
-    if let Some(index) = associated.and_then(|name| legacy.iter().copied().find(|i| identity::connector(&keys[*i]) == Some(name)))
-        .or_else(|| legacy.first().copied()) {
+    if let Some(index) = associated
+        .and_then(|name| {
+            legacy
+                .iter()
+                .copied()
+                .find(|i| identity::connector(&keys[*i]) == Some(name))
+        })
+        .or_else(|| legacy.first().copied())
+    {
         return TouchClaim::Target(index);
     }
-    if outputs.iter().any(|p| p.touch_device.as_deref() == Some(device)
-        && p.identity.as_deref().is_some_and(|saved| keys.iter().any(|k| identity::matches(saved, k)))) {
+    if outputs.iter().any(|p| {
+        p.touch_device.as_deref() == Some(device)
+            && p.identity
+                .as_deref()
+                .is_some_and(|saved| keys.iter().any(|k| identity::matches(saved, k)))
+    }) {
         TouchClaim::Unmapped
     } else {
         TouchClaim::Auto

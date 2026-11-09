@@ -59,4 +59,3 @@ pub fn preferred_index(keys: &[String], saved: &[&str]) -> Option<usize> {
                 .find_map(|s| keys.iter().position(|k| matches(s, k)))
         })
 }
-

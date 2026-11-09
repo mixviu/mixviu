@@ -61,13 +61,21 @@ pub fn touch_output(state: &Loop, device: &Device) -> Option<String> {
     // as long as the claimed monitor is currently driven.
     let id = touch_device_id(device);
     let outputs = space.state.outputs().collect::<Vec<_>>();
-    let keys = outputs.iter().map(|o| world::state::output_preference_key(o)).collect::<Vec<_>>();
+    let keys = outputs
+        .iter()
+        .map(|o| world::state::output_preference_key(o))
+        .collect::<Vec<_>>();
     let associated = device.output_name();
-    use model::environment::preference::base::{resolve_touch_claim, TouchClaim};
-    match resolve_touch_claim(&state.inner.preference.outputs, &keys, &id, associated.as_deref()) {
+    use model::environment::preference::base::{TouchClaim, resolve_touch_claim};
+    match resolve_touch_claim(
+        &state.inner.preference.outputs,
+        &keys,
+        &id,
+        associated.as_deref(),
+    ) {
         TouchClaim::Target(index) => return Some(output_key(outputs[index])),
         TouchClaim::Unmapped => return None,
-        TouchClaim::Auto => {},
+        TouchClaim::Auto => {}
     }
 
     // 1. Explicit libinput output association.

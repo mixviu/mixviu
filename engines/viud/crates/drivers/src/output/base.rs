@@ -368,9 +368,7 @@ pub fn build_teleport(
                     .min()?;
                 // A legacy placement belongs to one connector only. Explicit
                 // placements replace it rather than duplicating its zone id.
-                if p.identity != *key
-                    && prefs.outputs_layout.iter().any(|q| q.identity == *key)
-                {
+                if p.identity != *key && prefs.outputs_layout.iter().any(|q| q.identity == *key) {
                     return None;
                 }
                 Some(Placement {
