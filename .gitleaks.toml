@@ -26,6 +26,7 @@ regexTarget = "line"
 regexes = ['''^Keys: Ctrl\+Shift\+T/W new/close tab''']
 paths = [
   '''^apps/term/src/main\.rs$''',
+  '''^apps/term/help\.txt$''',
   '''^provenance/compd-oracle/apps/term/src/main\.rs$''',
 ]
 
