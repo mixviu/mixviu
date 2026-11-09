@@ -462,7 +462,7 @@ fn inventory(path: &Path, depth: usize, stamps: &mut Stamps) {
     for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
         if entry.path().is_dir() {
             inventory(&entry.path(), depth + 1, stamps);
-        } else if entry.file_name() == "index.theme" || entry.path().extension().is_some_and(|ext| ext == "desktop") {
+        } else if entry.file_type().is_ok_and(|kind| kind.is_symlink()) || entry.file_name() == "index.theme" || entry.path().extension().is_some_and(|ext| ext == "desktop") {
             stamps.insert(entry.path(), stamp(&entry.path()));
         }
     }
@@ -554,6 +554,22 @@ impl Resolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_broken_icon_symlink_is_invalidated_when_its_target_appears() {
+        let scratch = Scratch::new();
+        scratch.write("icons/Fixture/32x32/apps/existing.svg", "svg");
+        let target = scratch.0.join("external.svg");
+        let link = scratch.0.join("icons/Fixture/32x32/apps/linked.svg");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let resolver = Resolver::new(scratch.lookup("Fixture"));
+        assert!(resolver.resolve("linked", 32, None).is_none());
+        let generation = resolver.generation();
+        std::fs::write(target, "svg").unwrap();
+        assert!(resolver.generation() > generation);
+        assert_eq!(resolver.resolve("linked", 32, None), Some(link));
+    }
 
     #[test]
     fn misses_are_bounded_and_new_files_invalidate_them() {
