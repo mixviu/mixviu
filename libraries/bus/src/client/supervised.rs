@@ -1097,14 +1097,13 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<Connecti
                 }
                 maybe = receiver.recv() => {
                     match maybe {
-                        Some((mut command, principal)) => {
+                        Some((mut command, principal, protected_recipient)) => {
                             if let BoundedIncomingEvent::Command(incoming) = &mut command {
                                 incoming.generation = ctx.connection_generation.load(Ordering::SeqCst);
                             }
                             let refuse_rpc = ctx.connection_options.refuse_overflowed_requests;
                             if let SupervisorOutgoing::Contextual(sender) = &ctx.out_tx {
                                 let BoundedIncomingEvent::Command(command) = command else { unreachable!("contextual lane is unbounded") };
-                                let protected_recipient = ctx.inner.read().await.as_ref().is_some_and(|c| c.protected_recipient());
                                 if sender.send(SupervisedDelivery { command, principal, protected_recipient }).is_err() { return; }
                                 continue;
                             }

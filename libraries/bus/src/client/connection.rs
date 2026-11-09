@@ -28,13 +28,13 @@ pub(crate) enum ConnectionIncoming {
 }
 
 impl ConnectionIncoming {
-    pub(crate) async fn recv(&mut self) -> Option<(crate::native_client::BoundedIncomingEvent, Option<crate::native_session::BrokerPrincipal>)> {
+    pub(crate) async fn recv(&mut self) -> Option<(crate::native_client::BoundedIncomingEvent, Option<crate::native_session::BrokerPrincipal>, bool)> {
         match self {
-            Self::Legacy(receiver) => receiver.recv().await.map(|event| (event, None)),
+            Self::Legacy(receiver) => receiver.recv().await.map(|event| (event, None, false)),
             #[cfg(unix)]
             Self::Unix(receiver) => receiver.recv().await.map(|delivery| {
                 let (command, principal) = delivery.into_parts();
-                (crate::native_client::BoundedIncomingEvent::Command(command), principal)
+                (crate::native_client::BoundedIncomingEvent::Command(command), principal, true)
             }),
         }
     }

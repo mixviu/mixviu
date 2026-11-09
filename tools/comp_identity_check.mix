@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run only through cbc-build --repo mixviu --commit SHA.
+-- --prepare prints worker-generated formatting/lock changes, then restores
+-- this job's checkout. Default checks the exact committed source.
+fn identity_check($command)
+    print("CHECK " .. join($command, " "))
+    $result = run_argv($command, {timeout: 600})
+    print($result.stdout)
+    print($result.stderr)
+    if not $result.ok then raise("CHECK_FAILED", to_string($result.exit_code)) end
+end
+
+if contains(args(), "--prepare") then
+    try
+        identity_check(["cargo", "check", "--offline", "-p", "comp-service"])
+        identity_check(["cargo", "fmt", "-p", "bus", "-p", "comp-model", "-p", "comp-service"])
+        print("PATCH_BEGIN")
+        print(run_argv_must(["git", "diff"]))
+        print("PATCH_END")
+    finally
+        print(run_argv_must(["git", "checkout", "-q", "--", "."]))
+    end
+else
+    identity_check(["cargo", "fmt", "-p", "bus", "-p", "comp-model", "-p", "comp-service", "--", "--check"])
+    identity_check(["cargo", "clippy", "--locked", "-p", "bus", "--features", "client", "-p", "comp-model", "-p", "comp-service", "--all-targets", "--", "-D", "warnings"])
+    identity_check(["cargo", "test", "--locked", "-p", "bus", "--features", "client", "-p", "comp-model", "-p", "comp-service"])
+end
