@@ -1571,14 +1571,22 @@ pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
         let Some(handle) = seat_of(lp, seat) else {
             continue;
         };
-        let keyboard_here =
-            delivery_target(lp, seat, true).is_some_and(|(target, _)| target == id.0)
-            || handle.get_keyboard().and_then(|k| k.grab_start_data()).and_then(|s|s.focus)
-                .and_then(|s|record_of(lp,&s)).is_some_and(|target|root_of(lp,target)==id);
-        let pointer_here =
-            delivery_target(lp, seat, false).is_some_and(|(target, _)| target == id.0)
-            || handle.get_pointer().and_then(|p|p.grab_start_data()).and_then(|s|s.focus)
-                .and_then(|(s,_)|record_of(lp,&s)).is_some_and(|target|root_of(lp,target)==id);
+        let keyboard_here = delivery_target(lp, seat, true)
+            .is_some_and(|(target, _)| target == id.0)
+            || handle
+                .get_keyboard()
+                .and_then(|k| k.grab_start_data())
+                .and_then(|s| s.focus)
+                .and_then(|s| record_of(lp, &s))
+                .is_some_and(|target| root_of(lp, target) == id);
+        let pointer_here = delivery_target(lp, seat, false)
+            .is_some_and(|(target, _)| target == id.0)
+            || handle
+                .get_pointer()
+                .and_then(|p| p.grab_start_data())
+                .and_then(|s| s.focus)
+                .and_then(|(s, _)| record_of(lp, &s))
+                .is_some_and(|target| root_of(lp, target) == id);
         if keyboard_here {
             if let Some(keyboard) = handle.get_keyboard() {
                 keyboard.unset_grab(&mut lp.state);
@@ -1614,12 +1622,21 @@ pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
             }
         }
     }
-    let targets: std::collections::HashSet<_> = lp.inner.comp.registry.surface_rows()
+    let targets: std::collections::HashSet<_> = lp
+        .inner
+        .comp
+        .registry
+        .surface_rows()
         .filter_map(|record| {
             let target = root_of(lp, record.id());
             (target == id).then(|| record.handle().clone())
-        }).collect();
-    lp.state.tablet.clear_surface_focus(|surface| targets.contains(&SurfaceHandle::resolve(surface)), SERIAL_COUNTER.next_serial(), time);
+        })
+        .collect();
+    lp.state.tablet.clear_surface_focus(
+        |surface| targets.contains(&SurfaceHandle::resolve(surface)),
+        SERIAL_COUNTER.next_serial(),
+        time,
+    );
 }
 
 /// Return whether routing ran so deferred scene work survives a parked seat.

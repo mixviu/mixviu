@@ -995,8 +995,12 @@ where
 
 /// Bound projected corners to the framebuffer before subtracting them. Local
 /// coordinates plus a moved window origin can span more than i32::MAX pixels.
-fn project_clip(ctx: XformCtx, loc: Point<i32, Logical>, clip: comp_model::request::ClipRect,
-    size: Size<i32, Physical>) -> Rectangle<i32, Physical> {
+fn project_clip(
+    ctx: XformCtx,
+    loc: Point<i32, Logical>,
+    clip: comp_model::request::ClipRect,
+    size: Size<i32, Physical>,
+) -> Rectangle<i32, Physical> {
     let x = loc.x as f64 + clip.x;
     let y = loc.y as f64 + clip.y;
     let a = project_point(ctx, x, y);
@@ -1005,7 +1009,7 @@ fn project_clip(ctx: XformCtx, loc: Point<i32, Logical>, clip: comp_model::reque
     let top = a.y.clamp(0, size.h.max(0));
     let right = b.x.clamp(left, size.w.max(left));
     let bottom = b.y.clamp(top, size.h.max(top));
-    Rectangle::new((left, top).into(), (right-left, bottom-top).into())
+    Rectangle::new((left, top).into(), (right - left, bottom - top).into())
 }
 
 #[cfg(test)]
@@ -1013,15 +1017,33 @@ mod clip_tests {
     use super::*;
     #[test]
     fn clip_origin_and_zoom_cannot_overflow_physical_rectangles() {
-        let size = Size::from((1280,720));
+        let size = Size::from((1280, 720));
         for zoom in [1.0, 1e20] {
-            let ctx = XformCtx::new((0.0,0.0),zoom,(1280.0,720.0),1.0);
+            let ctx = XformCtx::new((0.0, 0.0), zoom, (1280.0, 720.0), 1.0);
             for origin in [i32::MIN, i32::MAX] {
-                let r = project_clip(ctx, (origin,origin).into(), comp_model::request::ClipRect {
-                    x: i32::MAX as f64, y: i32::MAX as f64, width: i32::MAX as f64, height: i32::MAX as f64,
-                }, size);
-                assert!(r.loc.x.checked_add(r.size.w).is_some_and(|end| end <= size.w));
-                assert!(r.loc.y.checked_add(r.size.h).is_some_and(|end| end <= size.h));
+                let r = project_clip(
+                    ctx,
+                    (origin, origin).into(),
+                    comp_model::request::ClipRect {
+                        x: i32::MAX as f64,
+                        y: i32::MAX as f64,
+                        width: i32::MAX as f64,
+                        height: i32::MAX as f64,
+                    },
+                    size,
+                );
+                assert!(
+                    r.loc
+                        .x
+                        .checked_add(r.size.w)
+                        .is_some_and(|end| end <= size.w)
+                );
+                assert!(
+                    r.loc
+                        .y
+                        .checked_add(r.size.h)
+                        .is_some_and(|end| end <= size.h)
+                );
             }
         }
     }

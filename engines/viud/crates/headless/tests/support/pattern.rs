@@ -26,7 +26,10 @@ use wayland_client::{
     },
 };
 use wayland_protocols::{
-    ext::session_lock::v1::client::{ext_session_lock_manager_v1::ExtSessionLockManagerV1, ext_session_lock_v1::{self,ExtSessionLockV1}},
+    ext::session_lock::v1::client::{
+        ext_session_lock_manager_v1::ExtSessionLockManagerV1,
+        ext_session_lock_v1::{self, ExtSessionLockV1},
+    },
     wp::presentation_time::client::{
         wp_presentation::{self, WpPresentation},
         wp_presentation_feedback::{self, WpPresentationFeedback},
@@ -52,7 +55,7 @@ pub struct State {
     pub pointer_buttons: u64,
     pub keys: u64,
     pub keyboard_enters: u64,
-    last_press: Option<(u32,WlSeat)>,
+    last_press: Option<(u32, WlSeat)>,
     popup_configured: bool,
     pub locked: bool,
     pub presented: u64,
@@ -78,7 +81,7 @@ pub struct Pattern {
 
 impl Pattern {
     pub fn new(stream: UnixStream) -> Self {
-        Self::named(stream,"headless-pattern",true)
+        Self::named(stream, "headless-pattern", true)
     }
 
     pub fn named(stream: UnixStream, name: &str, fullscreen: bool) -> Self {
@@ -109,8 +112,12 @@ impl Pattern {
         let xdg = shell.get_xdg_surface(&surface, &qh, ());
         let top = xdg.get_toplevel(&qh, ());
         top.set_app_id(name.into());
-        if fullscreen { top.set_fullscreen(None); }
-        else { top.set_min_size(200,160); top.set_max_size(200,160); }
+        if fullscreen {
+            top.set_fullscreen(None);
+        } else {
+            top.set_min_size(200, 160);
+            top.set_max_size(200, 160);
+        }
         for (n, _, v) in state.globals.iter().filter(|(_, i, _)| i == "wl_seat") {
             let _: WlSeat = registry.bind(*n, (*v).min(7), &qh, ());
         }
@@ -124,7 +131,7 @@ impl Pattern {
         // xdg-shell may initially offer 0x0 (the client's choice), before
         // viud places the first buffer and sends its decided size.
         if state.size == (0, 0) {
-            state.size = if fullscreen {(1280,720)} else {(200,160)};
+            state.size = if fullscreen { (1280, 720) } else { (200, 160) };
         }
         let (w, h) = state.size;
         let buffer = buffer(&shm, &qh, w, h, |x, y| {
@@ -138,7 +145,11 @@ impl Pattern {
             shm,
             presentation,
             buffer,
-            registry, compositor, shell, xdg, top,
+            registry,
+            compositor,
+            shell,
+            xdg,
+            top,
         };
         client.commit(true);
         client
@@ -186,55 +197,69 @@ impl Pattern {
     }
 
     pub fn remap(&mut self) {
-        self.surface.attach(None,0,0);
+        self.surface.attach(None, 0, 0);
         self.surface.commit();
         self.queue.roundtrip(&mut self.state).unwrap();
         self.state.configured = false;
         self.surface.commit();
-        while !self.state.configured { self.queue.roundtrip(&mut self.state).unwrap(); }
+        while !self.state.configured {
+            self.queue.roundtrip(&mut self.state).unwrap();
+        }
         self.commit(true);
         self.queue.roundtrip(&mut self.state).unwrap();
     }
 
     pub fn interactive_move(&mut self) {
-        let (serial,seat) = self.state.last_press.clone().expect("pressed pointer");
-        self.top._move(&seat,serial);
+        let (serial, seat) = self.state.last_press.clone().expect("pressed pointer");
+        self.top._move(&seat, serial);
         self.conn.flush().unwrap();
     }
 
-    pub fn popup(&mut self, grab: bool) -> (WlSurface,XdgPopup) {
+    pub fn popup(&mut self, grab: bool) -> (WlSurface, XdgPopup) {
         let qh = self.queue.handle();
-        let surface = self.compositor.create_surface(&qh,());
-        let positioner = self.shell.create_positioner(&qh,());
-        positioner.set_size(80,60);
-        positioner.set_anchor_rect(0,0,1,1);
+        let surface = self.compositor.create_surface(&qh, ());
+        let positioner = self.shell.create_positioner(&qh, ());
+        positioner.set_size(80, 60);
+        positioner.set_anchor_rect(0, 0, 1, 1);
         positioner.set_anchor(Anchor::TopLeft);
         positioner.set_gravity(Gravity::BottomRight);
-        positioner.set_offset(180,40);
-        let xdg = self.shell.get_xdg_surface(&surface,&qh,());
-        let popup = xdg.get_popup(Some(&self.xdg),&positioner,&qh,());
-        if grab { let (serial,seat) = self.state.last_press.clone().expect("pressed pointer"); popup.grab(&seat,serial); }
+        positioner.set_offset(180, 40);
+        let xdg = self.shell.get_xdg_surface(&surface, &qh, ());
+        let popup = xdg.get_popup(Some(&self.xdg), &positioner, &qh, ());
+        if grab {
+            let (serial, seat) = self.state.last_press.clone().expect("pressed pointer");
+            popup.grab(&seat, serial);
+        }
         self.state.popup_configured = false;
         surface.commit();
-        let deadline = Instant::now()+Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(5);
         while !self.state.popup_configured {
             self.queue.roundtrip(&mut self.state).unwrap();
-            assert!(Instant::now()<deadline,"popup configure timed out");
+            assert!(Instant::now() < deadline, "popup configure timed out");
         }
-        let buffer = buffer(&self.shm,&qh,80,60,|_,_|0xffff00ff);
-        surface.attach(Some(&buffer),0,0);
-        surface.damage_buffer(0,0,80,60);
+        let buffer = buffer(&self.shm, &qh, 80, 60, |_, _| 0xffff00ff);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, 80, 60);
         surface.commit();
         self.queue.roundtrip(&mut self.state).unwrap();
-        (surface,popup)
+        (surface, popup)
     }
 
     pub fn lock_session(&mut self) -> ExtSessionLockV1 {
-        let (n,_,v) = self.state.globals.iter().find(|(_,name,_)|name=="ext_session_lock_manager_v1").unwrap();
-        let manager:ExtSessionLockManagerV1 = self.registry.bind(*n,*v,&self.queue.handle(),());
-        let lock = manager.lock(&self.queue.handle(),());
-        let deadline = Instant::now()+Duration::from_secs(5);
-        while !self.state.locked { self.pump(); assert!(Instant::now()<deadline,"session lock not accepted"); thread::sleep(Duration::from_millis(5)); }
+        let (n, _, v) = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, name, _)| name == "ext_session_lock_manager_v1")
+            .unwrap();
+        let manager: ExtSessionLockManagerV1 = self.registry.bind(*n, *v, &self.queue.handle(), ());
+        let lock = manager.lock(&self.queue.handle(), ());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !self.state.locked {
+            self.pump();
+            assert!(Instant::now() < deadline, "session lock not accepted");
+            thread::sleep(Duration::from_millis(5));
+        }
         lock
     }
 }
@@ -349,8 +374,12 @@ impl Dispatch<WlSeat, ()> for State {
             capabilities: WEnum::Value(caps),
         } = event
         {
-            if caps.contains(wl_seat::Capability::Pointer) { state.pointers.push(seat.get_pointer(qh, seat.clone())); }
-            if caps.contains(wl_seat::Capability::Keyboard) { let _: WlKeyboard = seat.get_keyboard(qh,()); }
+            if caps.contains(wl_seat::Capability::Pointer) {
+                state.pointers.push(seat.get_pointer(qh, seat.clone()));
+            }
+            if caps.contains(wl_seat::Capability::Keyboard) {
+                let _: WlKeyboard = seat.get_keyboard(qh, ());
+            }
         }
     }
 }
@@ -414,27 +443,63 @@ impl Dispatch<WlPointer, WlSeat> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_pointer::Event::Button {serial,state:button_state,..} = event {
+        if let wl_pointer::Event::Button {
+            serial,
+            state: button_state,
+            ..
+        } = event
+        {
             state.pointer_buttons += 1;
-            if button_state == WEnum::Value(wl_pointer::ButtonState::Pressed) { state.last_press = Some((serial,seat.clone())); }
+            if button_state == WEnum::Value(wl_pointer::ButtonState::Pressed) {
+                state.last_press = Some((serial, seat.clone()));
+            }
         }
     }
 }
 
 impl Dispatch<WlKeyboard, ()> for State {
-    fn event(state:&mut Self,_:&WlKeyboard,event:wl_keyboard::Event,_:&(),_:&Connection,_:&QueueHandle<Self>) {
-        match event { wl_keyboard::Event::Key{..} => state.keys+=1, wl_keyboard::Event::Enter{..} => state.keyboard_enters+=1, _=>{} }
+    fn event(
+        state: &mut Self,
+        _: &WlKeyboard,
+        event: wl_keyboard::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_keyboard::Event::Key { .. } => state.keys += 1,
+            wl_keyboard::Event::Enter { .. } => state.keyboard_enters += 1,
+            _ => {}
+        }
     }
 }
 impl Dispatch<XdgPopup, ()> for State {
-    fn event(state:&mut Self,_:&XdgPopup,event:xdg_popup::Event,_:&(),_:&Connection,_:&QueueHandle<Self>) {
-        if matches!(event,xdg_popup::Event::Configure{..}) {state.popup_configured = true;}
+    fn event(
+        state: &mut Self,
+        _: &XdgPopup,
+        event: xdg_popup::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if matches!(event, xdg_popup::Event::Configure { .. }) {
+            state.popup_configured = true;
+        }
     }
 }
 delegate_noop!(State: ignore XdgPositioner);
 delegate_noop!(State: ignore ExtSessionLockManagerV1);
 impl Dispatch<ExtSessionLockV1, ()> for State {
-    fn event(state:&mut Self,_:&ExtSessionLockV1,event:ext_session_lock_v1::Event,_:&(),_:&Connection,_:&QueueHandle<Self>) {
-        if matches!(event,ext_session_lock_v1::Event::Locked) {state.locked=true;}
+    fn event(
+        state: &mut Self,
+        _: &ExtSessionLockV1,
+        event: ext_session_lock_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if matches!(event, ext_session_lock_v1::Event::Locked) {
+            state.locked = true;
+        }
     }
 }

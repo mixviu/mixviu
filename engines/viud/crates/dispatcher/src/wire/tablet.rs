@@ -407,7 +407,12 @@ impl TabletState {
     }
 
     /// Revoke tool and pad focus for a hidden surface, including an active stroke.
-    pub fn clear_surface_focus(&mut self, matches: impl Fn(&WlSurface) -> bool, serial: Serial, time: u32) {
+    pub fn clear_surface_focus(
+        &mut self,
+        matches: impl Fn(&WlSurface) -> bool,
+        serial: Serial,
+        time: u32,
+    ) {
         let mut cleared = false;
         for tool in self.tools.values_mut() {
             if tool.focus.as_ref().is_some_and(&matches) {

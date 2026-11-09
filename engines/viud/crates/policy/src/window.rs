@@ -696,11 +696,21 @@ pub fn place<H: Clone + Eq + Hash>(
     snap: impl Fn((f32, f32)) -> (f32, f32),
 ) -> Result<Placement, ControlReply> {
     let record = resolve(registry, spec.id, spec.generation)?;
-    if !matches!(record.role(), SurfaceRole::Toplevel | SurfaceRole::X11 { .. }) {
-        return Err(ControlReply::refused("unsupported_state", json!({"id": spec.id})));
+    if !matches!(
+        record.role(),
+        SurfaceRole::Toplevel | SurfaceRole::X11 { .. }
+    ) {
+        return Err(ControlReply::refused(
+            "unsupported_state",
+            json!({"id": spec.id}),
+        ));
     }
-    let visual_only = spec.output.is_none() && spec.x.is_none() && spec.y.is_none()
-        && spec.width.is_none() && spec.height.is_none();
+    let visual_only = spec.output.is_none()
+        && spec.x.is_none()
+        && spec.y.is_none()
+        && spec.width.is_none()
+        && spec.height.is_none()
+        && (spec.opacity.is_some() || spec.z.is_some() || spec.visible.is_some() || spec.clip.is_some());
     let sid = record.id();
     let maximized = facts.requested_maximized;
     let fullscreen = facts.committed_fullscreen || facts.requested_fullscreen;
@@ -756,7 +766,12 @@ pub fn place<H: Clone + Eq + Hash>(
     }
     let mut effects = Vec::new();
     if visual_only {
-        return Ok(Placement { effects, output: key.clone(), output_origin: (row.x,row.y), requested: None });
+        return Ok(Placement {
+            effects,
+            output: key.clone(),
+            output_origin: (row.x, row.y),
+            requested: None,
+        });
     }
     // A client move/resize in progress would steer the window straight back.
     if facts.interactive {

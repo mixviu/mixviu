@@ -23,6 +23,31 @@ fn harness() -> Harness {
     h
 }
 
+#[test]
+fn hiding_a_surface_revokes_its_retained_tablet_focus_only() {
+    use smithay::backend::input::{TabletToolDescriptor,TabletToolType,TabletToolCapabilities};
+    use smithay::input::tablet::TabletDescriptor;
+    use smithay::utils::SERIAL_COUNTER;
+    let mut h=harness();
+    h.mapped_toplevel(64,48); h.mapped_toplevel(64,48);
+    let surfaces=h.wire.inner.space.state.elements().filter_map(protocols::window::ident::surface).collect::<Vec<_>>();
+    let tool=|n| TabletToolDescriptor {tool_type:TabletToolType::Pen,hardware_serial:n,hardware_id_wacom:n,capabilities:TabletToolCapabilities::empty()};
+    let (a,b)=(tool(1),tool(2));
+    let tablet=TabletDescriptor {name:"test".into(),usb_id:None,syspath:None};
+    let dh=h.wire.state.output.display_handle.clone();
+    let state=&mut h.wire.state.tablet;
+    for (tool,surface) in [(&a,&surfaces[0]),(&b,&surfaces[1])] {
+        state.add_tool::<dispatcher::state::Dispatch>(&dh,tool);
+        state.tool_proximity_in(tool,&tablet,(1.0,1.0).into(),(surface.clone(),(0.0,0.0).into()),SERIAL_COUNTER.next_serial(),1);
+        assert!(state.tool_has_focus(tool));
+    }
+    state.stroke=dispatcher::wire::tablet::Stroke::Tablet;
+    state.clear_surface_focus(|s|s==&surfaces[0],SERIAL_COUNTER.next_serial(),2);
+    assert!(!state.tool_has_focus(&a));
+    assert!(state.tool_has_focus(&b),"another surface's focus is preserved");
+    assert!(matches!(state.stroke,dispatcher::wire::tablet::Stroke::None));
+}
+
 fn id_of(h: &Harness, surface: &wayland_client::protocol::wl_surface::WlSurface) -> SurfaceId {
     let handle = h.handle_of(surface);
     h.comp().registry.id_for_handle(&handle).expect("a record")
