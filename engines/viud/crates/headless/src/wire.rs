@@ -285,7 +285,9 @@ pub fn wire(
                     .redraw
                     .remove(&world::state::output_key(&output));
                 state.inner.unmap_output_everywhere(&output);
-                retiring.borrow_mut().retain(|context| !context.borrow().is_output(&output));
+                retiring
+                    .borrow_mut()
+                    .retain(|context| !context.borrow().is_output(&output));
                 state
                     .state
                     .output
@@ -321,12 +323,21 @@ mod tests {
 
     #[test]
     fn virtual_monitor_identity_is_distinct_and_stable() {
-        let mode = Mode { size: (64, 48).into(), refresh: 60_000 };
+        let mode = Mode {
+            size: (64, 48).into(),
+            refresh: 60_000,
+        };
         let first = virtual_output(0, mode, 1.0);
         let second = virtual_output(1, mode, 1.0);
         let again = virtual_output(0, mode, 2.0);
-        assert_ne!(world::state::output_key(&first), world::state::output_key(&second));
-        assert_eq!(world::state::output_key(&first), world::state::output_key(&again));
+        assert_ne!(
+            world::state::output_key(&first),
+            world::state::output_key(&second)
+        );
+        assert_eq!(
+            world::state::output_key(&first),
+            world::state::output_key(&again)
+        );
         assert_eq!(first.name(), "headless-0");
         assert_eq!(second.name(), "headless-1");
     }

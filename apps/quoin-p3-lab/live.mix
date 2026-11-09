@@ -61,6 +61,13 @@ try
   sleep(2)
   for $key in keys($mounted.instances)
     $scene = $mounted.instances[$key]
+    $deadline = monotonic() + 12
+    while monotonic() < $deadline
+      $watch = $io.rpc("shell","shell.scene.watch",{scene:$scene.id,output:$key})
+      if ($watch.applied_revision ?? 0) > 0 then break end
+      sleep(0.1)
+    end
+    if ($watch.applied_revision ?? 0) == 0 then raise("P3_LIVE","scene never presented") end
     push($records, $io.rpc("shell", "shell.scene.get", {scene:$scene.id, output:$key}))
     push($records, $io.rpc("comp-p3", "comp.capture.frame", {output:$outputs[$key].name, path:$dir .. "/" .. $key .. ".png", cursor:false}))
     $colour = if env("P3_CAPTURE_PATTERN") == "1" then (if ends_with($key,"0") then "990000" else "009900" end) else (if ends_with($key,"0") then "243640" else "403024" end) end

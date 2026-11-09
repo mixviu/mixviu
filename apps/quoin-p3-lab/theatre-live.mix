@@ -1,0 +1,115 @@
+-- version: 0.1.0
+-- Usage: mix live.mix HARNESS CBC-BIN-DIR PRIVATE-RUN-DIR
+$h = require(args()[0])
+$bin = args()[1]; $dir = args()[2]
+$root = dirname(script_path())
+$probe = $bin .. "/testkit-panel-pixels"
+if not is_file($probe) then raise("P3_LIVE", "supply the CBC snapshot including testkit-panel-pixels") end
+mkdir($dir, {parents:true})
+$bus = $h.private_bus({dir:$dir .. "/broker", name:"p3-live"})
+export MIXOS_NODE_CONFIG = $bus.conf
+export MIXOS_NODED_URL = $bus.url
+export MIXOS_RUN = $bus.dir .. "/run"
+export MIXOS_BROKER_ACCOUNT = $bus.account
+$io = require("../../engines/viud/scripts/lib/scenes_io.mix")
+$runtime = $dir .. "/wayland"
+mkdir($runtime); chmod($runtime, 0o700)
+copy(dirname(args()[0]) .. "/smoke-settings.json", $dir .. "/settings.json")
+write_file($dir .. "/preferences.json", json_encode({scene_host:false}))
+$env = {HOME:$dir .. "/home", XDG_RUNTIME_DIR:$runtime, XDG_CONFIG_HOME:$dir .. "/config", XDG_DATA_HOME:$dir .. "/data", XDG_STATE_HOME:$dir .. "/state", XDG_CACHE_HOME:$dir .. "/cache", MIXOS_ETC:$dir .. "/etc", MIXOS_VAR:$dir .. "/var", MIXOS_RUN:$bus.dir .. "/run", MIXOS_NODE_CONFIG:$bus.conf, MIXOS_NODED_URL:$bus.url, VIU_COMP_SERVICE:"comp-p3", WAYLAND_DISPLAY:"p3", DISPLAY:nil, DBUS_SESSION_BUS_ADDRESS:nil, MIXOS_VT:nil, NOTIFY_SOCKET:nil, MESA_VK_WSI_PRESENT_MODE:"mailbox", P3_SETTINGS:$dir .. "/panel-settings.conf.mix"}
+mkdir($env.HOME, {parents:true})
+-- The frozen operational harness uses MIXOS_; the P0 engines use MIX_.
+-- Pin both generations to the same private broker and private state.
+for $suffix in ["ETC", "VAR", "RUN", "NODE_CONFIG", "NODED_URL"]
+  $env["MIX_" .. $suffix] = $env["MIXOS_" .. $suffix]
+end
+$env.MIX_BROKER_ACCOUNT = $bus.account
+$env.MIX_BUS_SOCKET = $bus.endpoint
+$env.MIX_SESSION_FD = nil
+$env.MIX_VIU_COMP_SERVICE = "comp-p3"
+$env.MIX_VIUD_LAB_CAPTURE_PATTERN = env("P3_CAPTURE_PATTERN", "")
+$children = []; $records = []
+fn launch($argv, $name, $extra)
+  return spawn($argv, {env:merge($env, $extra), die_with_parent:true, stdout:{file:$dir .. "/" .. $name .. ".log"}, stderr:"stdout"})
+end
+fn wait_call($svc, $command, $body)
+  $until = monotonic() + 20
+  while monotonic() < $until
+    try
+      return $io.rpc($svc, $command, $body)
+    catch $message
+      sleep(0.1)
+    end
+  end
+  raise("P3_LIVE", "service timeout: " .. $svc .. " " .. $command)
+end
+try
+  push($children,launch([$bin .. "/viud","--headless","--size","1280x720","--socket","p3","--bus-service","comp-p3","--config-file",$dir .. "/settings.json"],"viud",{MIX_VIUD_LAB_OUTPUTS:"2",MIX_VIUD_LAB_UNPLUG_SECS:"40"}))
+  wait_call("comp-p3","comp.ping",{})
+  $outputs = $io.rpc("comp-p3","comp.props.get",{path:"outputs"})
+  push($children,launch([$bin .. "/viu","--host"],"viu",{}))
+  wait_call("shell","shell.ping",{})
+  push($children,launch(["/opt/mixos/bin/mix","--serve",$root .. "/theatre-loader.mix","--name","lab"],"theatre",{P3_STATE_DIR:$dir .. "/theatre-state"}))
+  $before = wait_call("lab","stages",{})
+  if len(keys($before.stages)) != 5 or len(keys($before.mounted)) != 3 then raise("P3_STAGE_LIVE","initial cast inventory") end
+  $hash = hash_file($root .. "/network.mix","sha256")
+  $cast = $io.rpc("lab","cast",{stage:"right@headless-0",scene:"network",if_revision:$before.revision})
+  if $cast.stage.scene_address != "lab/right@headless-0/network" then raise("P3_STAGE_LIVE","agent address mismatch") end
+  $snapshot = $io.rpc("lab","stages",{})
+  $io.rpc("lab","mode",{stage:"bottom@headless-0",mode:"pinned"})
+  sleep(2)
+  for $key in keys($outputs)
+    $stage_id = "bottom@" .. $outputs[$key].name
+    $deadline = monotonic() + 12
+    while monotonic() < $deadline
+      $watch = $io.rpc("shell","shell.scene.watch",{scene:$snapshot.mounted[$stage_id].id,output:$key})
+      if ($watch.applied_revision ?? 0) > 0 then break end
+      sleep(0.1)
+    end
+    if ($watch.applied_revision ?? 0) == 0 then raise("P3_STAGE_LIVE","stage never presented") end
+    $path = $dir .. "/" .. $key .. ".png"
+    $io.rpc("comp-p3","comp.capture.frame",{output:$outputs[$key].name,path:$path,cursor:false})
+    $colour = if ends_with($key,"0") then "243640" else "403024" end
+    push($records,json_parse(run_argv_must([$probe,$path,$colour,"10000"])))
+  end
+  if args()[3] == nil or args()[4] == nil then raise("P3_STAGE_LIVE","supply P1 preview binary and validator") end
+  $preview = $snapshot.mounted.preview.preview
+  push($children,launch([args()[3],"--preview",$preview],"preview",{VIU_PREVIEW_VALIDATOR:args()[4]}))
+  $until = monotonic() + 15; $window = nil
+  while monotonic() < $until
+    $windows = $io.rpc("comp-p3","comp.windows.list",{}).windows
+    $found = filter($windows,fn($w) = $w.title == "Scene Preview")
+    if len($found) == 1 then $window = $found[0]; break end
+    sleep(0.1)
+  end
+  if $window == nil then raise("P3_STAGE_LIVE","P1 preview did not map") end
+  push($records,$io.rpc("lab","attach_preview",{stage:"preview",id:$window.id,generation:$window.generation}))
+  sleep(1)
+  push($records,$io.rpc("comp-p3","comp.capture.frame",{window:{id:$window.id,generation:$window.generation},path:$dir .. "/preview.png",cursor:false}))
+  if hash_file($root .. "/network.mix","sha256") != $hash then raise("P3_STAGE_LIVE","scene was edited for placement") end
+  $until = monotonic() + 45; $after = $snapshot
+  while monotonic() < $until
+    $after = $io.rpc("lab","stages",{})
+    if len(keys($after.stages)) == 3 then break end
+    sleep(0.2)
+  end
+  if len(keys($after.stages)) != 3 or $after.stages["bottom@headless-1"] != nil then raise("P3_STAGE_LIVE","hotplug stages not removed") end
+  if $after.mounted["bottom@headless-0"].id != $snapshot.mounted["bottom@headless-0"].id then raise("P3_STAGE_LIVE","surviving cast identity changed") end
+  $io.rpc("lab","uncast",{stage:"right@headless-0",if_revision:$after.revision})
+  $uncast = $io.rpc("lab","stages",{})
+  if $uncast.stages["right@headless-0"].cast != nil or $uncast.mounted["right@headless-0"] != nil then raise("P3_STAGE_LIVE","uncast retained scene") end
+  if load_data($dir .. "/theatre-state/modes.conf.mix")["headless-0"].bottom != "pinned" then raise("P3_STAGE_LIVE","mode not keyed by output name and edge") end
+  write_file($dir .. "/result.json",json_encode({result:"pass",visual:true,before:$before,cast:$cast,after:$after,uncast:$uncast,scene_hash:$hash,records:$records}))
+  print("P3_STAGE_LIVE=pass visual=true preview=true")
+catch $message,$error
+  eprint(json_encode({message:$message,error:$error}))
+  try
+    write_file($dir .. "/failure-state.json",json_encode({stages:$io.rpc("lab","stages",{}),panels:$io.rpc("shell","shell.props.get",{})}))
+  catch $ignored
+  end
+  raise($error.code,$message,$error.details)
+finally
+  write_file($dir .. "/progress.json",json_encode($records))
+  for $child in reverse($children) $stopped = kill($child,9) end
+  $h.stop_bus($bus)
+end

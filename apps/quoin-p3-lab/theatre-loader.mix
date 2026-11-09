@@ -13,6 +13,7 @@ $private = env("P3_STATE_DIR")
 if $private == "" then raise("P3_STATE", "set a private P3_STATE_DIR") end
 mkdir($private, {parents:true})
 $assignments = {}; $modes = {}; $applied_modes = {}; $stages = {}; $mounted = {}; $revision = 0
+$published_revision = -1
 if is_file($private .. "/casts.conf.mix") then $assignments = load_data($private .. "/casts.conf.mix") end
 if is_file($private .. "/modes.conf.mix") then $modes = load_data($private .. "/modes.conf.mix") end
 $comp = env("VIU_COMP_SERVICE", "comp-headless")
@@ -20,9 +21,15 @@ $host = env("SCENE_HOST", "shell")
 $feed = nil
 
 fn refresh()
-  global $feed, $stages, $mounted, $revision, $applied_modes
+  global $feed, $stages, $mounted, $revision, $applied_modes, $published_revision
   if $feed == nil then $feed = $p3.outputs($io, $comp) end
   $next = $t.expand($cfg, $feed, $assignments)
+  for $id in keys($next)
+    $stage = $next[$id]
+    if $stage.backend == "host" and $stage.placement.kind == "edge" then
+      $next[$id].mode = (($modes[$stage.output_name] ?? {})[$stage.placement.edge]) ?? "pinned"
+    end
+  end
   if not deep_eq($next, $stages) then $revision = $revision + 1 end
   $stages = $next
   $ws = $io.rpc($comp, "comp.props.get", {path:"workspaces"})
@@ -48,6 +55,9 @@ fn refresh()
       $io.rpc($host, "shell.panel.mode", {output:$stage.output,edge:$stage.placement.edge,mode:$mode})
       $applied_modes[$id] = $mode
     end
+  end
+  if $published_revision != $revision then
+    if publish($cfg.theatre .. ".stages.changed",json_encode({theatre:$cfg.theatre,revision:$revision,stages:$stages}),{command:"stages.changed"}) == 0 then $published_revision = $revision end
   end
 end
 
@@ -91,6 +101,19 @@ on mode
   reply(0, "ok")
 end
 
+-- Backend-only handshake for P1's passive --preview window. Production would
+-- register the host's own window directly instead of exposing native ids.
+on attach_preview
+  $stage = $stages[$event.args.stage]
+  if $stage == nil or $stage.backend != "preview" or $stage.cast == nil then reply(10,"invalid preview stage"); return end
+  $body = {id:$event.args.id,generation:$event.args.generation}
+  if $stage.placement.w != nil then $body.width = $stage.placement.w end
+  if $stage.placement.h != nil then $body.height = $stage.placement.h end
+  if $stage.output != nil then $body.output = $stage.output end
+  $r = $io.rpc($comp,"comp.window.place",$body)
+  reply(0,json_encode({stage:$stage.address,placement:$stage.placement,result:$r}))
+end
+
 on workspace
   $ids = filter(keys($mounted), fn($id) = $mounted[$id].id == $event.args.scene)
   if len($ids) != 1 then reply(10, "stale cast"); return end
@@ -112,9 +135,10 @@ on props.changed
 end
 
 on bus.connected
-  global $feed
+  global $feed, $published_revision
   if len(keys($event.headers)) != 0 then return end
   $feed = nil
+  $published_revision = -1
   $p3.watch_outputs($io, $comp)
   refresh()
 end

@@ -174,7 +174,12 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
 }
 
 fn connected(state: &Loop, output: &Output) -> bool {
-    state.inner.space_state().state.outputs().any(|candidate| candidate == output)
+    state
+        .inner
+        .space_state()
+        .state
+        .outputs()
+        .any(|candidate| candidate == output)
 }
 
 fn compose(
