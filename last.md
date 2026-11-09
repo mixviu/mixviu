@@ -874,3 +874,51 @@ Final saved log read in full: `20261109-181135-cbc2-44a81cfbe5a6-20261109-181135
 
 Existing GPU acceptance targets remain explicitly ignored. No local Rust,
 deployment, desk/VT or installed-prefix changes. All pushes used the bot.
+
+
+## PR #7 current-main settlement (2026-11-10)
+
+Validated head/source SHA: `9ad45200302f610533b701fd8ac9762e932cc88f`.
+Merged `origin/main` at `d17f7caab647954da3d2b05a7aa552e4e02fc461`
+into the shared `fix/mix-hygiene` branch; no rebase or force push.
+The final evidence commit changes only PR.md and last.md after that source.
+
+Conflicts and resolutions:
+
+- `PR.md`: retained the hygiene description, then refreshed its current evidence;
+  the main version described a different security PR.
+- `last.md`: retained both historical evidence records.
+- `engines/mix/tests/serve_reload_lifecycle.rs`: retained the main helper and
+  regression test. They already implement the complete-record append fix.
+- `tools/ci/mix-lint-baseline.json`: retained the main baseline unchanged.
+  The merged gate reports zero regressions; no baseline regeneration needed.
+
+Cargo.lock matches main exactly, including rusqlite 0.41.1 and
+libsqlite3-sys 0.39.1. CBC `cargo update -w` and `cargo fmt --all` produced
+no patch; the worker printed the diff and restored its checkout in the same job.
+
+CBC receipts at the validated source:
+
+- `20261110-065002-54b96c63-a1`, cbc2, **BUILD_RC=0**: lockfile resolution
+  and rustfmt. Saved log read; no diff to apply.
+- `20261110-065037-808eaae5-a1`, cbc2, **BUILD_RC=0**:
+  `/opt/mixos/bin/mix tools/ci.mix all`. The complete 1,099,182-byte saved
+  log was read and audited: 619 summaries, 10,681 passed, zero failed,
+  100 ignored; 197 environment names, zero registry problems; 153 lint
+  files, zero regressions. Clippy and the viud dependency check passed.
+  The release-feature build failed at the intended profile guard, as required.
+  The hook marker was present in the opt-in debug binary and absent in the
+  ordinary debug binary. Screencopy client errors were passing refusal tests.
+- `20261110-065038-039c7d15`, **BUILD_RC=75**: release check did not run;
+  the queue wait expired. Saved log read. Requeued as a check with a longer wait.
+
+- `20261110-072134-e547727e-a1`, cbc3, **BUILD_RC=1**: the wrapper
+  hit the Mix default 30-second process timeout during Cargo compilation.
+  No scan ran. Saved log read; corrected the wrapper with an explicit
+  14,400-second timeout and inherited compiler output.
+
+Release artefact verification: pending corrected CBC job
+`20261110-073834-988e97f8`.
+
+No desktop access, installation, production deployment or PR merge performed.
+Opus retains independent review and the protected merge gate.
