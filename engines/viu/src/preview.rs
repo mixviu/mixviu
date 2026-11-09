@@ -180,7 +180,7 @@ mod tests {
             "print(\"trusted\")",
         )
         .unwrap();
-        std::os::unix::fs::symlink("/opt/mixos/bin/mix", prefix.join("bin/mix")).unwrap();
+        std::os::unix::fs::symlink(crate::dev_loop::tests::test_mix(), prefix.join("bin/mix")).unwrap();
         let tools = Tools::for_binary(&prefix.join("bin/viu"), None).unwrap();
         let output = std::process::Command::new(tools.mix)
             .arg(tools.validator)
@@ -219,7 +219,7 @@ mod tests {
         std::fs::write(&model, r#"{"text":"recorded"}"#).unwrap();
         let mut preview = Preview {
             tools: Tools {
-                mix: PathBuf::from("/opt/mixos/bin/mix"),
+                mix: crate::dev_loop::tests::test_mix(),
                 validator: PathBuf::from(concat!(
                     env!("CARGO_MANIFEST_DIR"),
                     "/../viud/scripts/scene_preview.mix"

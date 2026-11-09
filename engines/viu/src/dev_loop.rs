@@ -81,9 +81,25 @@ pub fn error_strip(ui: &mut egui::Ui, message: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The Mix binary under test: `MIX_TEST_MIX_EXE` (tools/ci.mix sets it to
+    /// the build's own mix), else the first `mix` on PATH.
+    pub(crate) fn test_mix() -> std::path::PathBuf {
+        if let Some(exe) = std::env::var_os("MIX_TEST_MIX_EXE") {
+            return exe.into();
+        }
+        std::env::var_os("PATH")
+            .and_then(|paths| {
+                std::env::split_paths(&paths)
+                    .map(|dir| dir.join("mix"))
+                    .find(|candidate| candidate.is_file())
+            })
+            .expect("set MIX_TEST_MIX_EXE or put mix on PATH")
+    }
+
     #[test]
     fn refusal_uses_first_problem_and_a_successful_snapshot_clears_it() {
         let errors = errors(
@@ -97,7 +113,7 @@ mod tests {
     fn refused_lib_publication_draws_strip_over_last_good_surface() {
         let temp = tempfile::tempdir().unwrap();
         let notice = temp.path().join("notice.json");
-        let output = std::process::Command::new("/opt/mixos/bin/mix")
+        let output = std::process::Command::new(test_mix())
             .arg(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/../viud/tests/scenes_test.mix"
