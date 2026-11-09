@@ -388,11 +388,11 @@ the flag (name check only) and its scene stub ignores it, because the shell
 furniture now runs in viu-host@ (`viu --host`), a new template in
 engines/viu/units.
 
-quoin: `apps/quoin` is not an app bundle: the runnable app is
-`apps/quoin/volume` (contract.json with behaviour viu.mix, scene.mix). It
+quoin: `apps/volume-lab` is not an app bundle: the runnable app is
+`apps/volume-lab/volume` (contract.json with behaviour viu.mix, scene.mix). It
 needs no launch arguments or host initialise. The migration's generated
-launcher `viu run /opt/mix/share/mixviu/apps/quoin` must become
-`viu run /opt/mix/share/mixviu/apps/quoin/volume`.
+launcher `viu run /opt/mix/share/mixviu/apps/volume-lab` must become
+`viu run /opt/mix/share/mixviu/apps/volume-lab/volume`.
 
 exportd and real homes: GTK/Qt already refused to write when XDG_CONFIG_HOME
 is (or defaults to) the home's own .config unless MIX_EXPORTD_GTKQT_HOME=1.

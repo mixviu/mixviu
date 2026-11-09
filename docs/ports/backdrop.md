@@ -1,7 +1,7 @@
 # Backdrop port inventory
 
 Oracle: MixOS `8779f3328`, `apps/backdrop/{src,crates/wallpaper}`, its README
-and `docs/backdrop/README.md`. The latest acceptance record is at the end of
+and the component manual (not included in this source tree). The latest acceptance record is at the end of
 this file; earlier checkpoints are retained as historical evidence.
 
 | Original capability | Round 1 status |
@@ -33,7 +33,7 @@ No installation or production acceptance follows.
 
 Contract source: `8779f33284b7d3f1178c3d57a699efb9b0867b22`, inspected
 `apps/backdrop/src/{main,control,program,views}.rs`, the wallpaper schema,
-and the app README and `docs/backdrop/README.md` at that revision.
+and the app README and the component manual (not included in this source tree) at that revision.
 
 Backdrop has **no chooser or settings window** at this revision. `main` starts
 only `LayerOptions::background`, or the standalone `--probe` layer program.

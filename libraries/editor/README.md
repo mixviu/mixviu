@@ -2,4 +2,4 @@
 
 The shared plain-text editor for MixViu egui applications.
 
-Documentation: <https://mixos.dev/editor/> — source [`docs/editor/README.md`](../../docs/editor/README.md).
+Documentation: <https://mixos.dev/editor/> — source the component manual (not included in this source tree).

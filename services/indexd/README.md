@@ -2,7 +2,7 @@
 # indexd
 
 Local nomic-bert embeddings, SQLite vector storage and semantic retrieval.
-See the [manual](../../docs/indexd/README.md).
+See the manual (manual not included in this source tree).
 
 The transport-independent `Engine` exposes JSON methods for all eleven commands.
 `indexd check-config` validates settings; `indexd serve` opens the store and

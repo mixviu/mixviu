@@ -1,7 +1,7 @@
 # Reusable Viu editor
 
-Gold reference: MixOS 8779f3328, `libs/editor`, `libs/editor-model`, `libs/edit`
-and `libs/syntax`. Ced composes these facilities from Mix; there is no Ced
+Gold reference: MixOS 8779f3328, `libraries/editor`, `libraries/editor-model`, `libraries/edit`
+and `libraries/syntax`. Ced composes these facilities from Mix; there is no Ced
 Rust controller or editd connection inside the widget.
 
 `editor` with `properties.native_document: true` accepts a model value
