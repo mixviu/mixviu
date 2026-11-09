@@ -69,6 +69,7 @@ fn hiding_a_surface_revokes_its_retained_tablet_focus_only() {
     state.stroke_owner = Some(b.clone());
     state.tool_tip_down(&b, SERIAL_COUNTER.next_serial(), 1);
     state.tool_cursor = true;
+    state.cursor_owner = Some(a.clone());
     state.last_pen_screen = Some((12.0, 34.0).into());
     state.clear_surface_focus(|s| s == &surfaces[0], SERIAL_COUNTER.next_serial(), 2);
     assert!(!state.tool_has_focus(&a));
@@ -81,7 +82,8 @@ fn hiding_a_surface_revokes_its_retained_tablet_focus_only() {
         dispatcher::wire::tablet::Stroke::Tablet
     ));
     assert_eq!(state.stroke_owner, Some(b));
-    assert!(state.tool_cursor);
+    assert!(!state.tool_cursor, "the revoked hovering tool owned the cursor");
+    assert!(state.cursor_owner.is_none());
     assert_eq!(state.last_pen_screen, Some((12.0, 34.0).into()));
     state.clear_surface_focus(|s| s == &surfaces[1], SERIAL_COUNTER.next_serial(), 3);
     assert_eq!(state.stroke, dispatcher::wire::tablet::Stroke::None);

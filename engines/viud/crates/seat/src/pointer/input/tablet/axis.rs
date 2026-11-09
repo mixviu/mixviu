@@ -25,6 +25,8 @@ pub fn axis<I: InputBackend>(event: &I::TabletToolAxisEvent, _loop: &mut Loop) {
     let device = event.device();
     let tablet = TabletDescriptor::from(&device);
     let time = event.time_msec();
+    super::revoke::flush(_loop, time);
+    if _loop.state.tablet.stroke_owner.as_ref().is_some_and(|owner| owner != &tool) { return; }
     let (screen, world) = coords::world::<I, _>(event, _loop);
 
     // Hand / Select tools: the pen navigates the canvas via the pointer bus, not
@@ -95,4 +97,5 @@ pub fn axis<I: InputBackend>(event: &I::TabletToolAxisEvent, _loop: &mut Loop) {
         .state
         .tablet
         .tool_motion(&tool, &tablet, world, focus, serial, time);
+    super::revoke::flush(_loop, time);
 }

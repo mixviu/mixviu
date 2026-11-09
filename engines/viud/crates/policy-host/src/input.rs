@@ -1640,6 +1640,7 @@ pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
         SERIAL_COUNTER.next_serial(),
         time,
     );
+    seat::pointer::input::tablet::revoke::flush(lp, time);
 }
 
 /// Return whether routing ran so deferred scene work survives a parked seat.
