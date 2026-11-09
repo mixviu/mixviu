@@ -118,7 +118,7 @@ rand = "0.8"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
 rustc-hash = "2"
 # indexd's embedding stack (_plan/2026-10-20-indexd-port.md D3–D5): crates.io
 # candle, not git. 0.10.2's nomic_bert.rs is byte-identical to the predecessor's pin
