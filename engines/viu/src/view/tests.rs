@@ -13,7 +13,7 @@ use ui::input::{Input, key};
 use super::*;
 use crate::templates::PreparedLists;
 
-fn content(source: &str, frame: Option<Frame>, dialog: bool) -> Arc<Content> {
+pub(super) fn content(source: &str, frame: Option<Frame>, dialog: bool) -> Arc<Content> {
     let tree = scene::resolve(&scene::parse(source).unwrap()).unwrap();
     let lists = crate::templates::validate_templates(&tree).unwrap();
     Arc::new(Content {
