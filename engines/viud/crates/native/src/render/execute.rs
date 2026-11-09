@@ -860,7 +860,9 @@ pub fn execute(
                     let tries = ctx_ref.outputs[output_idx].sdr_reset_pending;
                     match retry {
                         Ok(_) => {
-                            info!("HDR fallback: SDR connector reset succeeded after {tries} held frame(s)");
+                            info!(
+                                "HDR fallback: SDR connector reset succeeded after {tries} held frame(s)"
+                            );
                             ctx_ref.outputs[output_idx].sdr_reset_pending = 0;
                             ctx_ref.outputs[output_idx].props_applied = true;
                         }
@@ -872,7 +874,9 @@ pub fn execute(
                                 .state
                                 .redraw
                                 .request_gated(protocols::redraw::schedule::RedrawReason::Rearm);
-                            trace!("HDR fallback: SDR reset retry {tries} rejected ({e}); frame held");
+                            trace!(
+                                "HDR fallback: SDR reset retry {tries} rejected ({e}); frame held"
+                            );
                             continue;
                         }
                         Err(e) => {
