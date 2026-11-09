@@ -173,7 +173,7 @@ the old `mix.db`.
 | `MIX_NODE_CONFIG` | Overrides the node configuration file path. |
 | `MIX_SRC` | Overrides the MixViu source/documentation root used by project and manual commands. |
 | `MIX_ETC` | Overrides the MixViu configuration directory. |
-| `MIX_BIN` | Overrides the install directory used by `mix build`. |
+| `MIX_BIN` | Overrides the binary directory. |
 | `MIX_MAN_SOURCE` | Selects `auto` or `local` manual resolution. |
 | `MIX_MAN_URL` | Overrides the canonical manual base URL. |
 | `XDG_CACHE_HOME` | Sets the manual cache root; it must be absolute to be used as an XDG path. |

@@ -77,6 +77,11 @@ pub const COMPONENT_VERSION: &str = VERSION;
 pub const HAS_SERVICE_BUILTINS: bool = cfg!(feature = "service-builtins");
 pub const HAS_SERVE: bool = cfg!(feature = "serve");
 
+#[cfg(all(feature = "test-hooks", not(debug_assertions)))]
+compile_error!("test-hooks requires debug assertions and must never ship in release builds");
+
+mod test_hooks;
+
 #[derive(Clone, Copy)]
 enum CliStream {
     Stdout,

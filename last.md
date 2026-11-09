@@ -731,12 +731,89 @@ Light checks on cachyos at 34a8d52 (one or two crates per job):
 - At 7fddb05: rustfmt clean (20261107-185355-f8c3d8cd); logging + indexd
   green (20261107-185418-c5fe3256).
 
+Branch cutover/four-engines; head is this last.md commit (source 7fddb05); gate: full run held for parity, light checks green apart from cachyos filesystem cases; CBC last full cutover-gate-2d7e1c7, light 20261107-185355-f8c3d8cd, 20261107-185418-c5fe3256, earlier cutover-gate-5d1ec61, cutover-gate-43de632, cutover-removed-4755e9e, 20261107-111516-437fd7b1.
+
+
+## Mix hygiene pre-PR change (2026-11-07)
+
+The four local Cargo shortcuts now refuse before touching source or installed
+binaries. CLI help and the manual point to the CI recipe and CBC. All four
+native-session fault variables use the explicit debug-only test-hooks feature;
+release builds reject it. The native PTY target requires that feature and CI
+enables it. No dependencies or deployment changed.
+
+Source 805db4c61b62812999081e9bb7eb39ab677fd7ab passed fmt, env and
+mix-hygiene on CBC job 20261107-204950-4537e2c4: 29 tests passed, expected
+release-feature rejection, 176 env names and zero registry problems. Full
+worker log was read. An earlier base implementation also passed on cbc3, job
+20261107-204601-09d3a4fd-a1. Intermediate rustfmt and help-test findings were
+fixed. Full workspace all gate and independent review remain unrun.
+
+Round 2 (source 53357d4): the full test gate failed only because
+tests/owned_editor_pty.rs compiles editor/runtime.rs by #[path] and lacked the
+new crate::test_hooks module (E0433). The release-profile panic in that log was
+the intended negative check passing. Fix: the test includes test_hooks.rs. The
+hooks now link a marker; mix-hygiene checks the hook build carries it and the
+ordinary build does not, and the new release-mix stage refuses a release mix
+that carries it. Full test gate 20261107-210937-ccb133a8-a1 (cbc3) BUILD_RC=0,
+10,560 passed / 0 failed / 90 ignored; release-mix 20261107-214025-5234a7b5-a1
+(cbc3) BUILD_RC=0, marker absent.
+
+PR.md contains the review draft; no PR opened under the binding brief.
+
+Branch fix/mix-hygiene; head SHA: this evidence commit (tested source 53357d480966881475a04647498bdf8723b724ce); gate: full test GREEN, release-mix GREEN (earlier fmt/env/mix-hygiene GREEN at 805db4c); CBC jobs 20261107-210937-ccb133a8-a1, 20261107-214025-5234a7b5-a1, 20261107-204950-4537e2c4; Mark: wire release-mix into the gold/release recipe, independent review and human approval before merge.
+
+## Main cut-over record
 Final lab merge (2026-11-08): origin/lab/gold-parity at 01912877 (eight accepted apps; Email 70ea474, Dopus c66fe3c; runtime e1bbea9). Conflicts took the lab side of libraries/viu (launch, app_host, chooser_host, Cargo.toml) with lib-viu/lib-mix put back, the Dopus Rust crates deleted as the lab retired them, and the lab Cargo.lock with the four-engine renames reapplied. Renames applied to the merged files: package names in the new Dopus/Email gate scripts, MIXOS_INSTANCE -> MIX_INSTANCE, MIXOS_COMP_SERVICE -> MIX_COMP_SERVICE, VIU_SERVICE -> MIX_VIU_SERVICE, /opt/mix, Dopus home ~/.local/state/mix/dopus, MixViu prose in the Dopus and Backdrop contracts. No new registry names. Kept as wire/data: theme value mixos and its MixOS label, the email token label mixos-email. apps.tar at 7bde4c0: 428 entries (share/mixviu 262), 46,138,946 bytes; fonts upstream, wallpapers from the release, none from gold (cachyos 20261108-105441-54343276). Light checks: fmt clean; cargo tree --locked -p viud ok; lib-viu --tests 263 passed, 3 failed (the known cachyos filesystem cases); dopus_contract, dopus_bundle, backdrop, app_ports pass at db16141.
 
 Branch cutover/four-engines; head is this last.md commit (source db16141); full gate: the coordinator runs it on infra/pr-ci; CBC light 20261108-105611-7534e7c2, 20261108-104904-e4317f0f, 20261108-104841-c85e2532, 20261108-105441-54343276.
 
 Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa3c37ec19d; Email legacy account-tree startup FIXED; hot-apply apps/email/mail.mix + apps/email/surface.mix to /opt/mix/share/mixviu/apps/email/; CBC email-desk4-scope-r4-a1 rc0 (17/17), email-desk4-native-r5 rc0 (real maild before/after); no desk4/main/infra/pr-ci changes.
 
+
+## PR #7 main synchronisation (2026-11-08)
+
+Merged main 60cb127 into fix/mix-hygiene without rebasing or force-pushing.
+The only conflict was last.md; both evidence records were preserved. Main
+cut-over rules and the gated hooks coexist; the env registry has 194 names
+and zero problems.
+
+CBC 20261108-153105-ab2990de-a1 resolved Cargo.lock without changes and
+regenerated the lint baseline using the merged tree mix. Counts only shrink
+against main: 182 to 152 files and 1265 to 1211 diagnostics.
+
+CBC 20261108-153201-d97092aa-a1 at source
+7cb24b0b596befc40f05c55893e39124a5b463f7 passed fmt, env, mix-lint, full test
+and release-mix (BUILD_RC=0). All 611 test result summaries have zero failures.
+Both debug artefact checks and the release artefact check passed; the release
+feature guard refused fault injection. The full 904311-byte saved log was read.
+
+The historical scanner false positive and two notes quoting it have exact
+fingerprint exceptions. Main scanner rules are unchanged. Pinned gitleaks
+8.30.1 passes a full-history redacted scan. Only scanner exceptions and docs
+changed after the tested Rust tree. PR.md and PR #7 contain current evidence.
+Required GitHub checks are ci-ok/security-ok, verified separately on the final pushed head;
+independent review and human approval are separate requirements.
+
+Branch fix/mix-hygiene; head: this evidence commit (tested Rust tree 7cb24b0b596befc40f05c55893e39124a5b463f7); gate: fmt/env/mix-lint/test/release-mix GREEN; CBC jobs 20261108-153105-ab2990de-a1, 20261108-153201-d97092aa-a1; PR #7.
+
+
+## Final CI fixture repair (2026-11-08)
+
+GitHub run 42453072066 exposed a readiness/boot trace interleaving in the
+existing serve_reload_lifecycle grace fixture. Formatting directly into a
+File wrote fragments; the child now formats the whole readiness record
+before write_all. All assertions and timeouts remain unchanged.
+
+Source 2c80c0bf0ff115ce5d0bfa1985cdf062d3a8424b passed formatting and env
+checks. CBC 20261108-161926-f3889961 built a fresh sibling mixd and passed
+both lifecycle configurations (7 tests each; existing subprocess helper
+ignored), plus ten further runs of the affected grace case. The full saved
+log was read. The first focused CBC job 20261108-161651-31de42e8 did not
+preserve Cargo failure details; the corrected job retained full output.
+Production code is unchanged from the green full gate at 7cb24b0b.
+
+Branch fix/mix-hygiene; head: this evidence commit (full tested tree 7cb24b0b596befc40f05c55893e39124a5b463f7, tested fixture 2c80c0bf0ff115ce5d0bfa1985cdf062d3a8424b); gate: fmt/env/mix-lint/test/release-mix GREEN plus lifecycle repeat GREEN; CBC jobs 20261108-153105-ab2990de-a1, 20261108-153201-d97092aa-a1, 20261108-161926-f3889961; PR #7.
 ## P1 rebase onto merged P0 — 2026-11-09
 
 This receipt supersedes the original P0 dependency/base above.
@@ -797,3 +874,51 @@ Final saved log read in full: `20261109-181135-cbc2-44a81cfbe5a6-20261109-181135
 
 Existing GPU acceptance targets remain explicitly ignored. No local Rust,
 deployment, desk/VT or installed-prefix changes. All pushes used the bot.
+
+
+## PR #7 current-main settlement (2026-11-10)
+
+Validated head/source SHA: `9ad45200302f610533b701fd8ac9762e932cc88f`.
+Merged `origin/main` at `d17f7caab647954da3d2b05a7aa552e4e02fc461`
+into the shared `fix/mix-hygiene` branch; no rebase or force push.
+The final evidence commit changes only PR.md and last.md after that source.
+
+Conflicts and resolutions:
+
+- `PR.md`: retained the hygiene description, then refreshed its current evidence;
+  the main version described a different security PR.
+- `last.md`: retained both historical evidence records.
+- `engines/mix/tests/serve_reload_lifecycle.rs`: retained the main helper and
+  regression test. They already implement the complete-record append fix.
+- `tools/ci/mix-lint-baseline.json`: retained the main baseline unchanged.
+  The merged gate reports zero regressions; no baseline regeneration needed.
+
+Cargo.lock matches main exactly, including rusqlite 0.41.1 and
+libsqlite3-sys 0.39.1. CBC `cargo update -w` and `cargo fmt --all` produced
+no patch; the worker printed the diff and restored its checkout in the same job.
+
+CBC receipts at the validated source:
+
+- `20261110-065002-54b96c63-a1`, cbc2, **BUILD_RC=0**: lockfile resolution
+  and rustfmt. Saved log read; no diff to apply.
+- `20261110-065037-808eaae5-a1`, cbc2, **BUILD_RC=0**:
+  `/opt/mixos/bin/mix tools/ci.mix all`. The complete 1,099,182-byte saved
+  log was read and audited: 619 summaries, 10,681 passed, zero failed,
+  100 ignored; 197 environment names, zero registry problems; 153 lint
+  files, zero regressions. Clippy and the viud dependency check passed.
+  The release-feature build failed at the intended profile guard, as required.
+  The hook marker was present in the opt-in debug binary and absent in the
+  ordinary debug binary. Screencopy client errors were passing refusal tests.
+- `20261110-065038-039c7d15`, **BUILD_RC=75**: release check did not run;
+  the queue wait expired. Saved log read. Requeued as a check with a longer wait.
+
+- `20261110-072134-e547727e-a1`, cbc3, **BUILD_RC=1**: the wrapper
+  hit the Mix default 30-second process timeout during Cargo compilation.
+  No scan ran. Saved log read; corrected the wrapper with an explicit
+  14,400-second timeout and inherited compiler output.
+
+Release artefact verification: pending corrected CBC job
+`20261110-073834-988e97f8`.
+
+No desktop access, installation, production deployment or PR merge performed.
+Opus retains independent review and the protected merge gate.

@@ -3,6 +3,13 @@
 use std::path::{Path, PathBuf};
 
 fn main() {
+    if std::env::var_os("CARGO_FEATURE_TEST_HOOKS").is_some() {
+        assert_eq!(
+            std::env::var("PROFILE").as_deref(),
+            Ok("debug"),
+            "test-hooks is forbidden outside the debug test profile"
+        );
+    }
     buildinfo::emit();
     pack_manual();
 }

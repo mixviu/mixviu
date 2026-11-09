@@ -440,7 +440,7 @@ Run `mix builtins` for the full remit of all {count} built-in functions
 ## Subcommands
 - Reference    `help`  `builtins`  `what <name>`  `apropos <term>`  `man <topic>`  `keywords`  `syntax`  `operators`
 - Introspect   `vars`  `functions`  `aliases`  `all`  `type`  `config`  `status`
-- Build        `build`  `clean`  `update`  `test`
+- Disabled     `build`  `clean`  `update`  `test` — use `mix tools/ci.mix <stage>` on CBC/CI
 - Diagnostics  `doctor`  `stats`  `time`  `check`  `lint`  `trace`  `history`  `reload`
 - Files        `edit <file> <old> <new>`  exact-match one-line edit (refuses an ambiguous or absent needle)
 - Ecosystem    `mesh`  `ports`  `ping <svc>`
@@ -1459,124 +1459,33 @@ fn cmd_config(version: &str) {
     );
 }
 
-/// `mix build`: cargo build --release, strip, install to MIX_BIN, otherwise the derived prefix/bin/
-/// Returns Some(path) if the REPL should save history and exec into the new binary.
+/// Retired local Cargo shortcuts. Refuse before touching source or binaries.
+fn refuse_local_cargo(command: &str) {
+    eprintln!(
+        "mix {command}: refused: local Cargo operations are disabled. \
+         Run mix tools/ci.mix <stage> on CI or through CBC: \
+         mix ~/.mix/_bin/cbc-build.mix --repo mixviu --commit <sha> --worker any -- \
+         mix tools/ci.mix <stage> (stages: fmt, env, clippy, test, all)."
+    );
+    mark_missed();
+}
+
 fn cmd_build() -> Option<String> {
-    let mix_dir = mix_src_str();
-    let bin_dir = crate::paths::mix_path(crate::paths::Dir::Bin)
-        .to_string_lossy()
-        .into_owned();
-
-    // Ensure bin dir exists
-    let _ = std::fs::create_dir_all(&bin_dir);
-
-    println!("Building mix (release)...");
-    let status = std::process::Command::new("cargo")
-        .args(["build", "--release"])
-        .current_dir(&mix_dir)
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => {
-            eprintln!("cargo build failed with {}", s);
-            return None;
-        }
-        Err(e) => {
-            eprintln!("Failed to run cargo: {}", e);
-            return None;
-        }
-    }
-
-    // Install the binary.
-    // On Linux, a running executable can't be written to (ETXTBSY),
-    // but it CAN be unlinked/removed — the process keeps running from
-    // the old inode in memory. So: remove first, then copy, then strip.
-    let src = format!("{}/target/release/mix", mix_dir);
-    let dst = format!("{}/mix", bin_dir);
-
-    println!("Installing {} -> {}", src, dst);
-    // Direct fs calls — no `sh -c` string, so a MIX_BIN/MIX_SRC path
-    // containing spaces or shell metacharacters can't be re-interpreted.
-    // Remove-then-copy (never write in place) per the ETXTBSY note above;
-    // a missing destination is the normal first-install case, not an error.
-    if let Err(e) = std::fs::remove_file(&dst)
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
-        eprintln!("Failed to remove {}: {}", dst, e);
-        return None;
-    }
-    match std::fs::copy(&src, &dst) {
-        Ok(_) => {
-            println!("Installed. Restarting...");
-            // Return the path — the REPL will save history then exec()
-            Some(dst)
-        }
-        Err(e) => {
-            eprintln!("Failed to install binary: {}", e);
-            None
-        }
-    }
+    refuse_local_cargo("build");
+    None
 }
 
-/// `mix clean`: cargo clean to remove build artifacts ($MIX_SRC/src/target/)
 fn cmd_clean() {
-    let mix_dir = mix_src_str();
-
-    println!("Cleaning build artifacts...");
-    match std::process::Command::new("cargo")
-        .arg("clean")
-        .current_dir(&mix_dir)
-        .status()
-    {
-        Ok(s) if s.success() => {
-            // Show reclaimed space
-            println!("Removed {}/target/", mix_dir);
-        }
-        Ok(s) => eprintln!("cargo clean failed with {}", s),
-        Err(e) => eprintln!("Failed to run cargo: {}", e),
-    }
+    refuse_local_cargo("clean");
 }
 
-/// `mix update`: git pull then build
 fn cmd_update() -> Option<String> {
-    let mix_home = mix_src_str();
-
-    println!("Updating from git...");
-    let status = std::process::Command::new("git")
-        .args(["pull"])
-        .current_dir(&mix_home)
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => {
-            eprintln!("git pull failed with {}", s);
-            return None;
-        }
-        Err(e) => {
-            eprintln!("Failed to run git: {}", e);
-            return None;
-        }
-    }
-
-    cmd_build()
+    refuse_local_cargo("update");
+    None
 }
 
-/// `mix test`: run cargo test, streaming output
 fn cmd_test() {
-    let mix_dir = mix_src_str();
-
-    let status = std::process::Command::new("cargo")
-        .args(["test"])
-        .current_dir(&mix_dir)
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => eprintln!("cargo test failed with {}", s),
-        Err(e) => eprintln!("Failed to run cargo: {}", e),
-    }
+    refuse_local_cargo("test");
 }
 
 /// `mix self check`: syntax-check ~/.mixrc and std/prelude.mix.
@@ -1888,10 +1797,10 @@ fn cmd_help_overview() {
     println!("  mix check FILE   Syntax-check a .mix file without executing");
     println!("  mix trace on|off Toggle statement tracing (handled in REPL)");
     println!("  time LINE        Time a command, pipeline, or Mix code (also: mix time LINE)");
-    println!("  mix build        Build release binary, strip, install to ~/.local/bin/");
-    println!("  mix clean        Remove build artifacts (cargo clean)");
-    println!("  mix update       Git pull then build and install");
-    println!("  mix test         Run cargo test suite");
+    println!("  mix build        Disabled: use mix tools/ci.mix <stage> on CBC/CI");
+    println!("  mix clean        Disabled: use the CBC build service");
+    println!("  mix update       Disabled: use the CBC build service");
+    println!("  mix test         Disabled: use mix tools/ci.mix test on CBC/CI");
     println!("  mix self check   Syntax-check ~/.mixrc and std/prelude.mix");
     println!("  mix history [P]  Show history (optionally filtered by pattern P)");
     println!("  mix reload       Re-execute ~/.mixrc");
