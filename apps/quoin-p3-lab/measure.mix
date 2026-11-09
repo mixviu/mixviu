@@ -11,7 +11,7 @@ export MIXOS_NODED_URL = $bus.url
 export MIXOS_RUN = $bus.dir .. "/run"
 export MIXOS_BROKER_ACCOUNT = $bus.account
 $io = require("../../engines/viud/scripts/lib/scenes_io.mix")
-$results = []; $children = []
+$results = []; $children = []; $comp_child = nil
 fn rss($child)
   for $line in lines(read_file("/proc/" .. to_string($child) .. "/status"))
     if starts_with($line, "VmRSS:") then return to_number(word($line, 2)) end
@@ -31,6 +31,26 @@ try
       $outputs = {}
       for $i = 0 to $count - 1
         $outputs["o_headless_" .. to_string($i)] = {name:"headless-" .. to_string($i)}
+      end
+      if args()[2] != nil then
+        $runtime = $dir .. "/wayland-" .. to_string($trial) .. "-" .. to_string($count)
+        mkdir($runtime); chmod($runtime, 0o700)
+        $cfg = $runtime .. "/settings.json"
+        copy(args()[3], $cfg)
+        write_file($runtime .. "/preferences.json", json_encode({scene_host:false}))
+        $comp_env = {MIX_NODE_CONFIG:$bus.conf, MIX_NODED_URL:$bus.url, MIX_RUN:$bus.dir .. "/run", MIX_BUS_SOCKET:$bus.endpoint, MIX_BROKER_ACCOUNT:$bus.account, MIX_SESSION_FD:nil, MIX_ETC:$runtime .. "/etc", MIX_VAR:$runtime .. "/var", HOME:$runtime .. "/home", XDG_RUNTIME_DIR:$runtime, XDG_CONFIG_HOME:$runtime .. "/config", WAYLAND_DISPLAY:nil, DISPLAY:nil, DBUS_SESSION_BUS_ADDRESS:nil, MIX_VIUD_LAB_OUTPUTS:to_string($count), NOTIFY_SOCKET:nil}
+        $comp_child = spawn([args()[2] .. "/viud", "--headless", "--size", "1280x720", "--socket", "measure", "--bus-service", "comp-measure", "--config-file", $cfg], {env:$comp_env, die_with_parent:true, stdout:{file:$runtime .. "/viud.log"},stderr:"stdout"})
+        $until = monotonic() + 15; $ready = false
+        while monotonic() < $until
+          try
+            $outputs = $io.rpc("comp-measure", "comp.props.get", {path:"outputs"})
+            $ready = len(keys($outputs)) == $count
+            if $ready then break end
+          catch $message
+          end
+          sleep(0.1)
+        end
+        if not $ready then raise("P3_OUTPUTS", "viud output count not ready") end
       end
       for $shape in ["shared", "instance"]
         $children = []; $names = []; $start = monotonic()
@@ -75,11 +95,17 @@ try
         $children = []
         sleep(0.1)
       end
+      if $comp_child != nil then
+        if not kill($comp_child, 9) then raise("P3_STOP", "compositor stop failed") end
+        $comp_child = nil
+        sleep(0.2)
+      end
     end
   end
   write_file($dir .. "/results.json", json_encode($results))
   print(json_encode($results))
 finally
   for $child in $children $stopped = kill($child, 9) end
+  if $comp_child != nil then $stopped = kill($comp_child, 9) end
   $h.stop_bus($bus)
 end

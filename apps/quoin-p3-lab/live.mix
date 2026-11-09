@@ -24,6 +24,7 @@ end
 $env.MIX_BROKER_ACCOUNT = $bus.account
 $env.MIX_BUS_SOCKET = $bus.endpoint
 $env.MIX_SESSION_FD = nil
+$env.MIX_VIU_COMP_SERVICE = "comp-p3"
 $children = []; $records = []
 fn launch($argv, $name, $extra)
   return spawn($argv, {env:merge($env, $extra), die_with_parent:true, stdout:{file:$dir .. "/" .. $name .. ".log"}, stderr:"stdout"})
@@ -53,8 +54,8 @@ try
   $mounted = wait_call("p3-loader", "snapshot", {})
   if len(keys($mounted.instances)) != 2 then raise("P3_LIVE", "two panels not loaded") end
   $kept_key = sort(keys($mounted.instances))[0]
-  $io.rpc("p3-loader", "mode", {output:$kept_key, mode:"docked"})
-  sleep(1)
+  $io.rpc("p3-loader", "mode", {output:$kept_key, mode:"pinned"})
+  sleep(2)
   for $key in keys($mounted.instances)
     $scene = $mounted.instances[$key]
     push($records, $io.rpc("shell", "shell.scene.get", {scene:$scene.id, output:$key}))
@@ -70,8 +71,8 @@ try
   if len(keys($after.instances)) != 1 then raise("P3_LIVE", "unplug did not remove one instance") end
   $survivor = keys($after.instances)[0]
   if $after.instances[$survivor].id != $mounted.instances[$survivor].id then raise("P3_LIVE", "surviving identity changed") end
-  if $after.model.outputs[$survivor].mode != "docked" then raise("P3_LIVE", "survivor mode changed") end
-  if load_data($env.P3_SETTINGS)[$after.model.outputs[$survivor].name] != "docked" then raise("P3_LIVE", "mode not persisted by name") end
+  if $after.model.outputs[$survivor].mode != "pinned" then raise("P3_LIVE", "survivor mode changed") end
+  if load_data($env.P3_SETTINGS)[$after.model.outputs[$survivor].name] != "pinned" then raise("P3_LIVE", "mode not persisted by name") end
   push($records, $io.rpc("shell", "shell.scene.get", {scene:$after.instances[$survivor].id, output:$survivor}))
   write_file($dir .. "/result.json", json_encode({result:"pass", before:$mounted, after:$after, records:$records}))
   print("P3_LIVE=pass")

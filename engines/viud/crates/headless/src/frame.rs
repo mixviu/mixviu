@@ -111,6 +111,9 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     state.state.redraw.rendering(&key);
     state.state.redraw.begin_render();
     state.inner.render_output = Some(key.clone());
+    // Match native's per-monitor render context; otherwise a secondary uses
+    // the primary's fallback view and layer geometry.
+    state.inner.output_views_mut().ensure(&key);
     let mut visible = Vec::new();
     let result = compose(state, ctx, &mut visible);
     match result {
