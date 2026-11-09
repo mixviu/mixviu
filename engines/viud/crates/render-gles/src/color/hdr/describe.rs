@@ -380,7 +380,9 @@ mod tests {
         // Scale and system gamma from the display (400), not the content (1000).
         assert!(matches!(value(&us, "u_lum_max"), UniformValue::_1f(v) if v == 400.0));
         let want_gamma = (1.2 + 0.42 * (400.0f64 / 1000.0).log10()) as f32;
-        assert!(matches!(value(&us, "u_hlg_gamma"), UniformValue::_1f(v) if (v - want_gamma).abs() < 1e-6));
+        assert!(
+            matches!(value(&us, "u_hlg_gamma"), UniformValue::_1f(v) if (v - want_gamma).abs() < 1e-6)
+        );
         // Absolute display light: no further tone mapping.
         assert!(matches!(value(&us, "u_tm"), UniformValue::_3f(on, _, _) if on == 0.0));
     }
