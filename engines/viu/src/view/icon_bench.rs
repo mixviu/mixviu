@@ -30,7 +30,16 @@ fn panel_icon_frames() {
         std::env::set_var("XDG_ICON_THEME", "Fixture");
     }
     let source = include_str!("../../../../share/scenes/panel/scene.mix");
-    let content = super::tests::content(source, None, false);
+    for external in [false, true] {
+    let mut content = super::tests::content(source, None, false);
+    if external {
+        let tree = &mut Arc::get_mut(&mut content).unwrap().tree;
+        for (id, source) in [("launcher_icon", "dev.mixos"), ("st_notes_i", "preferences-system-notifications-symbolic"), ("st_vol_i", "audio-volume-high-symbolic"), ("st_net_i", "network-wired-symbolic")] {
+            tree.nodes.get_mut(id).unwrap().ports.insert("src".into(), serde_json::json!(source));
+            tree.nodes.get_mut(id).unwrap().ports.insert("hidden".into(), serde_json::json!(false));
+        }
+        tree.nodes.get_mut("st_vol").unwrap().ports.insert("hidden".into(), serde_json::json!(false));
+    }
     let mut view = SceneUi::new(content.clone());
     let ctx = egui::Context::default();
     view.setup(&ctx);
@@ -46,5 +55,6 @@ fn panel_icon_frames() {
         if frame >= 10 { samples.push(start.elapsed().as_secs_f64() * 1000.0); }
     }
     samples.sort_by(f64::total_cmp);
-    println!("ICON_PANEL installed={installed} n={} median_ms={:.4} p95_ms={:.4}", samples.len(), samples[50], samples[95]);
+    println!("ICON_PANEL installed={installed} external={external} n={} median_ms={:.4} p95_ms={:.4}", samples.len(), samples[50], samples[95]);
+    }
 }
