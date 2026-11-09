@@ -702,6 +702,7 @@
     {name:"scenes.promote", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
     {name:"scenes.ready", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
     {name:"scenes.reload", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"quoin.reload", owner:"viud", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"scenes.remove", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
     {name:"scenes.reset", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
     {name:"scenes.templates", owner:"viud", version:"0.2.5", status:"accepted", class:"query", schema:"none"},
@@ -865,11 +866,12 @@
   "shell.scene.load": {
     "params": {
       "source?": "string (otherwise raw body is the scene document)",
+      "sources?": "list of at most 128 {source:string,model_generation?:integer}; atomic batch, mutually exclusive with source",
       "model_generation?": "integer 0..9007199254740990",
       "preempt_dialog?": "bool",
       "output?": "string"
     },
-    "reply": "{scene:string,revision:number,digest:string}",
+    "reply": "{scene:string,revision:number,digest:string} or batch {accepted:true,revisions:{NAME:number}}",
     "source": "engines/viu/src/store.rs:483"
   },
   "shell.scene.validate": {
@@ -1170,6 +1172,11 @@
     },
     "reply": "{name:string,accepted:true,revision:number}",
     "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "quoin.reload": {
+    "params": {"scope":"scene|lib|all", "name?":"string"},
+    "reply": "rc0 {accepted:true,revisions:object,diagnostics:[]}; rc10 precommit {accepted:false,diagnostics:list}; rc10 postcommit {accepted:false,revisions:object,diagnostics:list}; SCENES_ARGUMENT for invalid scope/name (name string required for scene, forbidden for lib/all)",
+    "source": "engines/viud/scripts/lib/scenes.mix"
   },
   "scenes.remove": {
     "params": {
