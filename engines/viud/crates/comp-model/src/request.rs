@@ -965,7 +965,7 @@ pub fn parse_window_command(
                 return Err(invalid_argument(
                     "x",
                     "finite number",
-                    "place needs at least one of output, x, y, width, height",
+                    "place needs geometry or at least one visual attribute",
                 ));
             }
             Ok(WindowCommand::Op(WindowOp::Place(spec)))
