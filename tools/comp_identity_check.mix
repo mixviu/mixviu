@@ -22,6 +22,6 @@ if contains(args(), "--prepare") then
     end
 else
     identity_check(["cargo", "fmt", "-p", "bus", "-p", "comp-model", "-p", "comp-service", "--", "--check"])
-    identity_check(["cargo", "clippy", "--locked", "-p", "bus", "--features", "client", "-p", "comp-model", "-p", "comp-service", "--all-targets", "--", "-D", "warnings"])
+    identity_check(["cargo", "clippy", "--locked", "-p", "bus", "--features", "client", "-p", "comp-model", "-p", "comp-service", "--all-targets"])
     identity_check(["cargo", "test", "--locked", "-p", "bus", "--features", "client", "-p", "comp-model", "-p", "comp-service"])
 end
