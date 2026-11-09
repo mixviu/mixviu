@@ -73,13 +73,13 @@ impl WebdDbHandler {
 /// IMMEDIATE` via `db_exec` today; wedged-transaction protection belongs with
 /// the future `db_tx` primitive.
 struct AuthGuard<'c> {
-    conn: &'c Connection,
+    conn: &'c mut Connection,
 }
 
 impl<'c> AuthGuard<'c> {
     /// Fail-closed: if the authorizer can't be installed, the caller aborts the
     /// statement rather than run it unscoped.
-    fn install(conn: &'c Connection, allowed: Arc<BTreeSet<String>>) -> MixResult<Self> {
+    fn install(conn: &'c mut Connection, allowed: Arc<BTreeSet<String>>) -> MixResult<Self> {
         conn.authorizer(Some(move |ctx: AuthContext<'_>| {
             if matches!(
                 ctx.action,
@@ -122,17 +122,17 @@ impl Drop for AuthGuard<'_> {
 impl DbHandler for WebdDbHandler {
     fn query<'a>(&'a self, sql: &'a str, params: &'a [Value]) -> DbFuture<'a, MixResult<Value>> {
         Box::pin(async move {
-            let conn = self.conn.lock().await;
-            let _auth = AuthGuard::install(&conn, Arc::clone(&self.allowed_dbs))?;
-            run_query(&conn, sql, params)
+            let mut conn = self.conn.lock().await;
+            let auth = AuthGuard::install(&mut conn, Arc::clone(&self.allowed_dbs))?;
+            run_query(auth.conn, sql, params)
         })
     }
 
     fn exec<'a>(&'a self, sql: &'a str, params: &'a [Value]) -> DbFuture<'a, MixResult<Value>> {
         Box::pin(async move {
-            let conn = self.conn.lock().await;
-            let _auth = AuthGuard::install(&conn, Arc::clone(&self.allowed_dbs))?;
-            run_exec(&conn, sql, params)
+            let mut conn = self.conn.lock().await;
+            let auth = AuthGuard::install(&mut conn, Arc::clone(&self.allowed_dbs))?;
+            run_exec(auth.conn, sql, params)
         })
     }
 }
