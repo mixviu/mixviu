@@ -40,7 +40,7 @@ pub struct Options<'a> {
 struct Contract {
     output: Output,
     mode: Mode,
-    renderer: GlesRenderer,
+    renderer: Rc<RefCell<GlesRenderer>>,
 }
 
 impl DisplayBackend for Contract {
@@ -49,11 +49,11 @@ impl DisplayBackend for Contract {
     }
 
     fn bind_display(&mut self, handle: &DisplayHandle) -> FormatSet {
-        if let Err(error) = self.renderer.bind_wl_display(handle) {
+        if let Err(error) = self.renderer.borrow_mut().bind_wl_display(handle) {
             warn!("headless: legacy EGL client bridge unavailable: {error}");
             return FormatSet::default();
         }
-        self.renderer.dmabuf_formats()
+        self.renderer.borrow().dmabuf_formats()
     }
 }
 
@@ -65,10 +65,10 @@ impl RenderContract for Contract {
         DisplayBackend::bind_display(self, handle)
     }
     fn supported_formats(&mut self) -> FormatSet {
-        self.renderer.egl_context().dmabuf_texture_formats().clone()
+        self.renderer.borrow().egl_context().dmabuf_texture_formats().clone()
     }
     fn import_dmabuf(&mut self, buffer: &Dmabuf) -> bool {
-        self.renderer.import_dmabuf(buffer, None).is_ok()
+        self.renderer.borrow_mut().import_dmabuf(buffer, None).is_ok()
     }
     fn early_import(&mut self, _surface: &WlSurface) {}
     fn sync_capable(&self) -> bool {
@@ -123,8 +123,10 @@ pub fn wire(
     }
     let mut contexts = Vec::new();
     let mut globals = Vec::new();
+    // Native uses one renderer across its output pipes. The engine's shared
+    // graphics caches belong to that renderer, not one EGL context per output.
+    let renderer = Rc::new(RefCell::new(render_gles::context::egl::create(&display)?));
     for index in 0..count {
-        let renderer = render_gles::context::egl::create(&display)?;
         let refresh = match std::env::var("MIX_VIUD_HEADLESS_REFRESH_HZ") {
             Ok(value) => value
                 .parse::<i32>()
@@ -162,7 +164,7 @@ pub fn wire(
         let mut contract = Contract {
             output: output.clone(),
             mode,
-            renderer,
+            renderer: Rc::clone(&renderer),
         };
         let handle = state.state.output.display_handle.clone();
         let global = output.create_global::<dispatcher::state::Dispatch>(&handle);
@@ -170,7 +172,9 @@ pub fn wire(
             &output,
             smithay::utils::Point::from((index as i32 * options.size.w, 0)),
         );
-        scenegraph::display::output::bind_display(state, &mut contract);
+        if index == 0 {
+            scenegraph::display::output::bind_display(state, &mut contract);
+        }
         let damage_tracker =
             smithay::backend::renderer::damage::OutputDamageTracker::from_output(&output);
         globals.push((output.clone(), global));
@@ -215,22 +219,22 @@ pub fn wire(
         formats.register(
             Device::UNSPECIFIED,
             Role::Sample,
-            contract.renderer.dmabuf_formats(),
+            contract.renderer.borrow().dmabuf_formats(),
             "headless renderer",
         );
         formats.absent(Role::ScanoutEgl, "headless: no scanout device");
         formats.absent(Role::Render, "headless: no scanout render format");
         formats.absent(Role::Plane, "headless: no KMS plane");
         model::stats::registry::base::set_compositor_prefers_dmabuf(false);
-        frames::scene::gpu::prewarm(state, &mut contract.renderer);
+        frames::scene::gpu::prewarm(state, &mut *contract.renderer.borrow_mut());
         let targets = [
             Offscreen::<GlesTexture>::create_buffer(
-                &mut contract.renderer,
+                &mut *contract.renderer.borrow_mut(),
                 Fourcc::Abgr8888,
                 (options.size.w, options.size.h).into(),
             )?,
             Offscreen::<GlesTexture>::create_buffer(
-                &mut contract.renderer,
+                &mut *contract.renderer.borrow_mut(),
                 Fourcc::Abgr8888,
                 (options.size.w, options.size.h).into(),
             )?,

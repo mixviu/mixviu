@@ -41,7 +41,7 @@ impl Retry {
 
 pub(crate) struct Context {
     output: Output,
-    renderer: GlesRenderer,
+    renderer: Rc<RefCell<GlesRenderer>>,
     targets: [GlesTexture; 2],
     cursor: Option<GlesTexture>,
     next: usize,
@@ -55,7 +55,7 @@ pub(crate) struct Context {
 impl Context {
     pub(crate) fn new(
         output: Output,
-        renderer: GlesRenderer,
+        renderer: Rc<RefCell<GlesRenderer>>,
         targets: [GlesTexture; 2],
         tracker: OutputDamageTracker,
     ) -> Self {
@@ -115,7 +115,9 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     // the primary's fallback view and layer geometry.
     state.inner.output_views_mut().ensure(&key);
     let mut visible = Vec::new();
-    let result = compose(state, ctx, &mut visible);
+    let shared_renderer = Rc::clone(&ctx.renderer);
+    let mut renderer = shared_renderer.borrow_mut();
+    let result = compose(state, ctx, &mut renderer, &mut visible);
     match result {
         Ok(true) => {
             ctx.retry.delay = Duration::ZERO;
@@ -169,6 +171,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
 fn compose(
     state: &mut Loop,
     ctx: &mut Context,
+    renderer: &mut GlesRenderer,
     visible: &mut Vec<Window>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     use frames::draw::plan::frame::{FramePass, plan};
@@ -178,8 +181,8 @@ fn compose(
         return Ok(false);
     }
     let size = ctx.output.current_mode().expect("headless mode").size;
-    let prepared = frames::scene::prepare(state, &mut ctx.renderer, size);
-    let scene = frames::scene::scene(state, &mut ctx.renderer, size, prepared);
+    let prepared = frames::scene::prepare(state, renderer, size);
+    let scene = frames::scene::scene(state, renderer, size, prepared);
     *visible = scene.visible_window;
     // Track content changes independently of the alternating targets. This
     // age-1 query is only a scene diff; it never assumes preserved pixels in
@@ -199,7 +202,7 @@ fn compose(
     let scale = ctx.output.current_scale().fractional_scale();
     // Window jobs use the owning window's scene (including parked worlds),
     // just as nested does. They never consume the output framebuffer.
-    screencopy::offscreen::capture_windows(&mut ctx.renderer, &ctx.output, |renderer, target| {
+    screencopy::offscreen::capture_windows(renderer, &ctx.output, |renderer, target| {
         let window =
             world::window::draw::frame::scene::capture_window(state, target.id, target.generation)
                 .map_err(|error| screencopy::file::ControlReply::WindowTarget {
@@ -218,11 +221,11 @@ fn compose(
             .iter()
             .filter(|element| !element.is_cursor())
             .collect();
-        let mut target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
+        let mut target = renderer.bind(&mut ctx.targets[ctx.next])?;
         // No buffer-age assumptions: each target is repainted completely.
         OutputDamageTracker::from_output(&ctx.output)
             .render_output(
-                &mut ctx.renderer,
+                renderer,
                 &mut target,
                 0,
                 &elements,
@@ -243,18 +246,17 @@ fn compose(
             .is_none_or(|texture| texture.size() != texture_size)
         {
             ctx.cursor = Some(Offscreen::<GlesTexture>::create_buffer(
-                &mut ctx.renderer,
+                renderer,
                 smithay::backend::allocator::Fourcc::Abgr8888,
                 texture_size,
             )?);
         }
         {
-            let mut target = ctx
-                .renderer
+            let mut target = renderer
                 .bind(ctx.cursor.as_mut().expect("cursor texture"))?;
             OutputDamageTracker::from_output(&ctx.output)
                 .render_output(
-                    &mut ctx.renderer,
+                    renderer,
                     &mut target,
                     0,
                     &scene.elements,
@@ -268,9 +270,9 @@ fn compose(
         .cursor
         .as_mut()
         .filter(|_| cursor_needed)
-        .map(|texture| ctx.renderer.bind(texture))
+        .map(|texture| renderer.bind(texture))
         .transpose()?;
-    let target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
+    let target = renderer.bind(&mut ctx.targets[ctx.next])?;
     let readback = screencopy::Readback {
         size,
         origin_bottom_left: false,
@@ -278,7 +280,7 @@ fn compose(
     // All copies start only after completion of both passes. Missing sources
     // fail explicitly rather than borrowing another capture's cursor policy.
     let captures = screencopy::service_with_sources(
-        &mut ctx.renderer,
+        renderer,
         screencopy::Sources {
             cursor: cursor_target
                 .as_ref()
@@ -295,7 +297,7 @@ fn compose(
         damage.as_deref(),
     );
     screencopy::file::service(
-        &mut ctx.renderer,
+        renderer,
         screencopy::Source {
             framebuffer: &target,
             readback,
@@ -306,7 +308,7 @@ fn compose(
     );
     if let Some(framebuffer) = cursor_target.as_ref() {
         screencopy::file::service(
-            &mut ctx.renderer,
+            renderer,
             screencopy::Source {
                 framebuffer,
                 readback,
@@ -319,7 +321,7 @@ fn compose(
     // finish() and file::service above synchronously map their readbacks;
     // GLES map_texture blocks on each copy (including file::read_pixels).
     // All reads complete before targets rotate or the cached cursor is reused.
-    captures.finish(&mut ctx.renderer);
+    captures.finish(renderer);
     ctx.next ^= 1;
     // A capture of unchanged content is not a new presentation.
     Ok(damaged)
