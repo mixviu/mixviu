@@ -1,3 +1,68 @@
+# Quoin P1 hand-off — 2026-11-09
+
+Implemented P1 items 1, 2, 4 and 5. Item 3 remains the later lab.
+Author: Codex (Sol).
+
+- Branch: `feat/quoin-p1-dev-loop`
+- Base: `0780b2ea` from `origin/docs/quoin-p0` at job start. P0 has since advanced; no other session's branch was merged.
+- P1 PR: https://github.com/mixviu/mixviu/pull/38 (draft, base main)
+- P0 dependency: https://github.com/mixviu/mixviu/pull/36
+- P1 implementation head before this receipt: `90dad687e2c40dfc794573f7065e4eb1b62f5f02`
+- Final code tested: `3835467abdcf6556f850bf37e833e54b6cdaa6af`; subsequent commit changes only the Bus registry documentation.
+
+## Files
+
+- `engines/viud/scripts/scenes.mix`: shared/custom library watches and quoin.reload handler. User lib is covered by the installed-root watch.
+- `engines/viud/scripts/lib/scenes.mix`: conservative dependency fan-out, cached helper checks, library fingerprints/overflow recovery, group preflight and atomic host submission. Both discovery paths exclude the reserved lib directory.
+- `engines/viud/scripts/scene_preview.mix`: passive use of real loader candidate, behaviour checks and recorded JSON model.
+- `engines/viu/src/store.rs`: clone/stage/commit load envelopes with sources; refuses the entire batch on a bad candidate or seat collision.
+- `engines/viu/src/store_tests.rs`: batch failure retains revisions/seats; successful fan-out publishes both notices.
+- `engines/viu/src/dev_loop.rs`: first-diagnostic extraction and foreground error strip.
+- `engines/viu/src/preview.rs`: plain watched specimen window, authored/recorded model, passive actions, last-good retention; discovers validator from current checkout or VIU_PREVIEW_VALIDATOR.
+- `engines/viu/src/main.rs`, `lib.rs`: preview CLI/module wiring.
+- `engines/viu/src/runtime/toast.rs`: toast refusal strip.
+- `engines/viud/tests/scenes_test.mix`: helper failure/recovery, fan-out, quoin scopes and native inotify timing.
+- `docs/scene-documents.md`, `docs/docs/spec/bus/commands.conf.mix`: P1 contracts and registered command/batch shapes.
+
+## runtime.rs hunks for P2 coordination
+
+Only State.errors and its initialisation; Program::show's diagnostic strip; worker's scenes.changed subscription/initial scenes.list; and its authenticated scenes topic receipt branch. No bindings, sources, comp subscriptions, output polling or structural rendering changes.
+
+## Validation
+
+- Mix loader: 400 assertions pass. A real fs_watch/fs_wait helper edit plus two-dependent headless loader fan-out is asserted below one second. Host/process adapters are fake in this transition test; real host atomicity is covered by the Rust store test.
+- Mix lint: scenes.mix, lib/scenes.mix and scene_preview.mix pass with zero errors/warnings.
+- Registry strict-data load and unique quoin.reload entry verified. Full source registry gate cannot start: pre-existing missing tools/lib/command_registry_source.mix.
+- Existing scenes_io integration test: default invocation hits obsolete mix_path builtin; explicit MIX_TEST_NODED_EXE=/opt/mixos/bin/noded bypasses it but installed broker cannot establish owned private-bus readiness. No production configuration changed.
+- git diff --check passes.
+- No desk4, VT, /opt writes, production installs, behaviour state hand-off or visual acceptance performed. Opus's eye checks remain pending. Security is expected red until #21.
+
+## CBC receipts
+
+All Rust work was on CBC. Saved final log read in full.
+
+| Job | Commit | Result |
+|---|---|---|
+| 20261109-153955-8005b781-a1 | 64588834 | BUILD_RC=101, initial egui App API mismatch, fixed before later passes |
+| 20261109-154304-d021212d-a1 | 18be0c32 | BUILD_RC=0; 99 passed, 5 ignored |
+| 20261109-154543-fa958fbe-a1 | d7442ba2 | BUILD_RC=0; 101 passed, 5 ignored |
+| 20261109-154901-329f6c89 | d7442ba2 | BUILD_RC=0; CBC formatting diff applied locally; own worker changes restored in same job |
+| 20261109-154948-87cffd24-a1 | 8438f7b0 | BUILD_RC=0; 101 passed, 5 ignored |
+| 20261109-155106-f61e0c72 | 369309d4 | BUILD_RC=75; worker lock busy, command did not run; requeued |
+| 20261109-155215-02577fd0 | 369309d4 | BUILD_RC=75; other worker lock busy, command did not run; requeued |
+| 20261109-155336-3c23428c-a1 | 3835467a | BUILD_RC=0 on cbc3; fmt --check, 101 host tests (5 ignored), cargo check --locked -p viu --bin viu |
+
+Final log: `/home/user/.cache/mixos/cbc-build/20261109-155421-cbc3-3835467abdcf-20261109-155336-3c23428c-a1-93002c98.log`.
+Queued formatter 20261109-154541-e5d7aa8a was superseded/cancelled; it was not a validation pass.
+
+## Trade-offs
+
+Computed require paths mean library dependency selection conservatively covers all enabled behaviour scenes, including transitive imports. Helpers are checked without executing them. Document acceptance is atomic; behaviour runtime faults after acceptance retain the existing restart/diagnostic semantics. Reload still kills/spawns behaviours; no state hand-off is claimed.
+
+Preview has headless load/recorded-model/refusal/repair coverage and binary compilation coverage. Its live window and overlay pointer behaviour still need Opus's visual check. This receipt is prepended to the existing tracked hand-off history. The current PR head includes the receipt commit.
+
+---
+
 # Quoin P0 — 2026-11-09
 
 PR: https://github.com/mixviu/mixviu/pull/36 (`docs/quoin-p0` -> `main`).
