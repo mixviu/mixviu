@@ -1,0 +1,16 @@
+$paths = require("../scripts/lib/scene_paths.mix")
+fn check($ok, $why)
+  if not $ok then raise("P2_TEST", $why) end
+end
+$old = {clock:{time:"12:00", date:"today"}, tasks:[{id:"a"}], keep:true}
+$new = {clock:{time:"12:01", date:"today"}, tasks:[{id:"a"}], keep:true}
+$p = $paths.diff_paths($old, $new, "model")
+check(deep_eq($p, [{path:"model.clock.time",value:"12:01"}]), "narrow nested change")
+check(deep_eq($paths.patched($old, ["clock", "time"], "12:01"), $new), "apply path")
+check(len($paths.diff_paths($new,$new,"model")) == 0, "equal model suppressed")
+check(deep_eq($paths.diff_paths({a:1},{},"model"), [{path:"model.a",value:nil}]), "removed key")
+check(deep_eq($paths.diff_paths({a:1},{a:nil},"model"), [{path:"model",value:{a:nil}}]), "explicit nil replaces parent")
+check(deep_eq($paths.diff_paths({}, {"a.b":1}, "model"), [{path:"model", value:{"a.b":1}}]), "literal dotted key replaces parent")
+check(deep_eq($paths.diff_paths({rows:[1]}, {rows:[2]}, "model"), [{path:"model.rows",value:[2]}]), "lists atomic")
+check(deep_eq($paths.patched($old,["keep"],nil), {clock:$old.clock,tasks:$old.tasks}), "delete")
+print("PASS P2 path diff/apply: 8 assertions")

@@ -652,6 +652,9 @@ mod template_budget_tests {
         let doc = crate::parse(&source).unwrap();
         let tree = crate::resolve(&doc).unwrap();
         let set = compile(&doc).unwrap();
+        let initial: serde_json::Map<String, JsonValue> = (0..50)
+            .map(|i| (format!("v{i}"), json!("waiting"))).collect();
+        let tree = reevaluate(&tree, &set, "src.clock", &JsonValue::Object(initial)).unwrap().tree;
         let result = reevaluate(&tree, &set, "src.clock.v17", &json!("tick")).unwrap();
         assert_eq!(result.evaluated, ["n17.text"]);
         assert_eq!(result.changed.len(), 1);
