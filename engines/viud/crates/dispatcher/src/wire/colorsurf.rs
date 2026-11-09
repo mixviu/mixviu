@@ -53,7 +53,7 @@ where
     W: Dispatch<WpImageDescriptionCreatorParamsV1, Mutex<ParamsState>> + 'static,
     W: Dispatch<WpImageDescriptionV1, ImageDescData> + 'static,
 {
-    info!("color: manager request {:?}", req);
+    trace!("color: manager request {:?}", req);
     match req {
         MgrReq::Destroy => {}
         MgrReq::GetOutput { id, output } => {
@@ -95,7 +95,7 @@ pub fn dispatch_color_output<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
 ) {
     if let OutReq::GetImageDescription { image_description } = req {
         let d = output_description(output);
-        info!("color: output {output} description -> {:?}", d.transfer);
+        trace!("color: output {output} description -> {:?}", d.transfer);
         send_ready(&di.init(image_description, ImageDescData(Some(d))));
     }
 }
@@ -108,7 +108,7 @@ pub fn dispatch_color_surface(
     resource: &WpColorManagementSurfaceV1,
     surface: &WlSurface,
 ) {
-    info!("color: surface request {:?}", req);
+    trace!("color: surface request {:?}", req);
     match req {
         SurfReq::SetImageDescription {
             image_description, ..
@@ -135,7 +135,7 @@ pub fn dispatch_color_feedback<W: Dispatch<WpImageDescriptionV1, ImageDescData> 
     match req {
         FbReq::GetPreferred { image_description }
         | FbReq::GetPreferredParametric { image_description } => {
-            info!("color: preferred description -> {:?}", preferred().transfer);
+            trace!("color: preferred description -> {:?}", preferred().transfer);
             send_ready(&di.init(image_description, ImageDescData(Some(preferred()))));
         }
         _ => {}
@@ -147,7 +147,7 @@ pub fn dispatch_color_params<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
     data: &Mutex<ParamsState>,
     di: &mut DI<'_, W>,
 ) {
-    info!("color: params request {:?}", req);
+    trace!("color: params request {:?}", req);
     let mut p = data.lock().unwrap_or_else(|e| e.into_inner());
     match req {
         PrReq::SetTfNamed { tf } => match wenum(tf).and_then(transfer_from) {
@@ -235,7 +235,7 @@ pub fn dispatch_image_desc<W: Dispatch<WpImageDescriptionInfoV1, ()> + 'static>(
         if let Some(d) = &data.0 {
             send_info(&info, d);
         }
-        info!(
+        trace!(
             "color: get_information answered ({:?}); done deferred",
             data.0.map(|d| d.transfer)
         );
