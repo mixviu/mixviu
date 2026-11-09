@@ -291,7 +291,8 @@ mod tests {
     #[test]
     fn degenerate_white_points_are_refused() {
         let bad = Chromaticity {
-            w: (1.0e-9, 1.0e-9),
+            // y = 0 divides by zero: the matrix would be NaN/inf.
+            w: (0.3127, 0.0),
             ..BT709
         };
         assert!(rgb_to_rgb(&bad, &BT709).is_none());
