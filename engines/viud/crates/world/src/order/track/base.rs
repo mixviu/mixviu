@@ -34,6 +34,7 @@ impl DrawLayer {
 pub struct DrawOrder {
     entries: Vec<(ComponentId, DrawLayer, OrderKey)>,
     next: OrderKey,
+    z: std::collections::HashMap<ComponentId, i32>,
 }
 
 impl DrawOrder {
@@ -41,6 +42,7 @@ impl DrawOrder {
         Self {
             entries: Vec::new(),
             next: 1.0,
+            z: Default::default(),
         }
     }
 
@@ -57,6 +59,7 @@ impl DrawOrder {
 
     pub fn remove(&mut self, id: ComponentId) {
         self.entries.retain(|(c, _, _)| *c != id);
+        self.z.remove(&id);
     }
 
     /// Teardown after Space unmap must resolve ownership from every stack.
@@ -95,6 +98,11 @@ impl DrawOrder {
         }
     }
 
+    /// Stacking request within the existing workspace tier; never changes tier.
+    pub fn set_z(&mut self, id: ComponentId, z: i32) {
+        self.z.insert(id, z);
+    }
+
     pub fn key(&self, id: ComponentId) -> Option<OrderKey> {
         self.entries
             .iter()
@@ -107,9 +115,60 @@ impl DrawOrder {
     pub fn ordered(&self) -> Vec<(ComponentId, OrderKey)> {
         let mut v = self.entries.clone();
         v.sort_by(|a, b| a.1.cmp(&b.1).then(a.2.total_cmp(&b.2)));
+        // Only window slots move. Compositor-marked drawables keep their exact
+        // place and remain barriers; z cannot promote a client across one.
+        let mut start = 0;
+        while start < v.len() {
+            if !self.z.contains_key(&v[start].0) {
+                start += 1;
+                continue;
+            }
+            let mut end = start + 1;
+            while end < v.len() && v[end].1 == v[start].1 && self.z.contains_key(&v[end].0) {
+                end += 1;
+            }
+            v[start..end].sort_by(|a, b| self.z[&a.0].cmp(&self.z[&b.0]).then(a.2.total_cmp(&b.2)));
+            start = end;
+        }
         v.into_iter().map(|(c, _, k)| (c, k)).collect()
     }
 }
 
 pub static DRAW_ORDER: Token<DrawOrder> = Token::new();
 pub static DRAW_ORDER_MUT: TokenMut<DrawOrder> = TokenMut::new(&DRAW_ORDER);
+
+#[cfg(test)]
+mod visual_tests {
+    use super::*;
+
+    #[test]
+    fn z_reorders_windows_but_never_crosses_compositor_barriers_or_layers() {
+        let ids = (1..=5)
+            .map(|n| ComponentId(Uuid::from_u128(n)))
+            .collect::<Vec<_>>();
+        let mut order = DrawOrder::new();
+        for id in &ids {
+            order.insert_top(*id, DrawLayer::CONTENT);
+        }
+        // Third entry is compositor-marked: it is never registered as a window.
+        for (id, z) in [(ids[0], 9), (ids[1], -9), (ids[3], i32::MAX), (ids[4], 0)] {
+            order.set_z(id, z);
+        }
+        let ordered = || {
+            order
+                .ordered()
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ordered(), vec![ids[1], ids[0], ids[2], ids[4], ids[3]]);
+        order.insert_top(ids[0], DrawLayer(-50));
+        assert_eq!(
+            order.ordered()[0].0,
+            ids[0],
+            "z never promotes out of its layer"
+        );
+        order.remove(ids[0]);
+        assert!(!order.z.contains_key(&ids[0]));
+    }
+}

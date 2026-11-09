@@ -20,6 +20,8 @@ use wayland_client::protocol::{
     wl_seat::WlSeat, wl_shm, wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
+#[path = "tablet.rs"]
+pub mod tablet;
 use wayland_protocols::xdg::shell::client::{
     xdg_popup::XdgPopup, xdg_positioner::XdgPositioner, xdg_surface, xdg_surface::XdgSurface,
     xdg_toplevel::XdgToplevel, xdg_wm_base, xdg_wm_base::XdgWmBase,
@@ -40,6 +42,7 @@ use wayland_protocols_wlr::screencopy::v1::client::{
 /// What the client's event handlers record.
 #[derive(Default)]
 pub struct ClientState {
+    pub tablet: tablet::State,
     /// `(name, interface, version)` of every advertised global.
     pub globals: Vec<(u32, String, u32)>,
     /// `wl_display.sync` callbacks that have come back.
@@ -376,6 +379,14 @@ impl TestClient {
         file.read_exact_at(&mut bytes, 0)
             .expect("read the shm file");
         bytes
+    }
+
+    /// Fill a client shm buffer before committing it.
+    pub fn write_buffer(&self, index: usize, bytes: &[u8]) {
+        use std::os::unix::fs::FileExt;
+        self.files[index]
+            .write_all_at(bytes, 0)
+            .expect("write shm buffer");
     }
 
     /// `zwlr_screencopy_manager_v1.capture_output` (or `_region` with `region`

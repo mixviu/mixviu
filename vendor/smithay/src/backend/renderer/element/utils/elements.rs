@@ -146,6 +146,11 @@ impl<E: Element> CropRenderElement<E> {
         &self.element
     }
 
+    /// Mutate renderer-specific state without changing the element's geometry.
+    pub fn element_mut(&mut self) -> &mut E {
+        &mut self.element
+    }
+
     /// Create a cropping render element for an existing element
     ///
     /// The crop rect is expected to be relative to the same origin the element is relative to.
