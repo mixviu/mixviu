@@ -1563,6 +1563,86 @@ pub fn retarget_pointer(lp: &mut Loop) {
     try_retarget_pointer(lp);
 }
 
+/// Revoke established seat focus as well as future hit tests when a window is
+/// explicitly hidden. Popup focus resolves through the same root as injection.
+pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
+    let time = now_ms(lp);
+    if let Some(record) = lp.inner.comp.registry.get(id) {
+        dispatcher::wayland::grab::interactive::cancel_for(&mut lp.state, record.handle(), time);
+    }
+    for seat in [SeatKind::Human, SeatKind::Agent] {
+        let Some(handle) = seat_of(lp, seat) else {
+            continue;
+        };
+        let keyboard_here = delivery_target(lp, seat, true)
+            .is_some_and(|(target, _)| root_of(lp, SurfaceId(target)) == id)
+            || handle
+                .get_keyboard()
+                .and_then(|k| k.grab_start_data())
+                .and_then(|s| s.focus)
+                .and_then(|s| record_of(lp, &s))
+                .is_some_and(|target| root_of(lp, target) == id);
+        let pointer_here = delivery_target(lp, seat, false)
+            .is_some_and(|(target, _)| root_of(lp, SurfaceId(target)) == id)
+            || handle
+                .get_pointer()
+                .and_then(|p| p.grab_start_data())
+                .and_then(|s| s.focus)
+                .and_then(|(s, _)| record_of(lp, &s))
+                .is_some_and(|target| root_of(lp, target) == id);
+        if keyboard_here {
+            if let Some(keyboard) = handle.get_keyboard() {
+                keyboard.unset_grab(&mut lp.state);
+                keyboard.set_focus(&mut lp.state, None, SERIAL_COUNTER.next_serial());
+            }
+        }
+        if pointer_here {
+            if let Some(pointer) = handle.get_pointer() {
+                pointer.unset_grab_without_focus_restore(
+                    &mut lp.state,
+                    SERIAL_COUNTER.next_serial(),
+                    time,
+                );
+                pointer.motion(
+                    &mut lp.state,
+                    None,
+                    &smithay::input::pointer::MotionEvent {
+                        location: pointer.current_location(),
+                        serial: SERIAL_COUNTER.next_serial(),
+                        time,
+                    },
+                );
+                pointer.frame(&mut lp.state);
+            }
+        }
+        if let Some(touch) = handle.get_touch() {
+            let touch_here = touch.current_focuses().iter().any(|surface| {
+                record_of(lp, surface).is_some_and(|target| root_of(lp, target) == id)
+            });
+            if touch_here {
+                touch.cancel(&mut lp.state);
+                touch.unset_grab(&mut lp.state);
+            }
+        }
+    }
+    let targets: std::collections::HashSet<_> = lp
+        .inner
+        .comp
+        .registry
+        .surface_rows()
+        .filter_map(|record| {
+            let target = root_of(lp, record.id());
+            (target == id).then(|| record.handle().clone())
+        })
+        .collect();
+    lp.state.tablet.clear_surface_focus(
+        |surface| targets.contains(&SurfaceHandle::resolve(surface)),
+        SERIAL_COUNTER.next_serial(),
+        time,
+    );
+    seat::pointer::input::tablet::revoke::flush(lp, time);
+}
+
 /// Return whether routing ran so deferred scene work survives a parked seat.
 pub fn try_retarget_pointer(lp: &mut Loop) -> bool {
     seat::pointer::input::retarget_stationary(lp)
