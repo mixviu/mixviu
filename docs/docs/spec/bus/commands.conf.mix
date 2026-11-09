@@ -852,11 +852,12 @@
   "shell.scene.load": {
     "params": {
       "source?": "string (otherwise raw body is the scene document)",
+      "sources?": "list of at most 128 {source:string,model_generation?:integer}; atomic batch, mutually exclusive with source",
       "model_generation?": "integer 0..9007199254740990",
       "preempt_dialog?": "bool",
       "output?": "string"
     },
-    "reply": "{scene:string,revision:number,digest:string}",
+    "reply": "{scene:string,revision:number,digest:string} or batch {accepted:true,revisions:{NAME:number}}",
     "source": "engines/viu/src/store.rs:483"
   },
   "shell.scene.validate": {
