@@ -11,7 +11,7 @@
 The two upstream crates are kept **as their own path crates** so their
 sources compile unmodified: library names stay `lsh` and `stdext`, package
 names are `msedit-lsh` / `msedit-stdext` (`publish = false`).
-Only [`libs/syntax`](../../libs/syntax) depends on them.
+Only [`libraries/syntax`](../../libraries/syntax) depends on them.
 
 ## Files
 
@@ -19,10 +19,10 @@ Only [`libs/syntax`](../../libs/syntax) depends on them.
 |---|---|---|
 | `lsh/` | `crates/lsh/` (whole crate: `src/**`, `definitions/**`, `README.md`) | manifest rewritten (no msedit workspace inheritance); per-file provenance header |
 | `stdext/` | `crates/stdext/` (whole crate) | manifest rewritten (feature `single-threaded` gone); patches 1–2; per-file provenance header |
-| `buffer/`, `buffer.rs` | parts of `crates/edit/` and `crates/stdext/` | the text buffer behind `libs/edit`; its own patch log is [`buffer/README.md`](buffer/README.md) |
+| `buffer/`, `buffer.rs` | parts of `crates/edit/` and `crates/stdext/` | the text buffer behind `libraries/edit`; its own patch log is [`buffer/README.md`](buffer/README.md) |
 | `LICENSE` | `LICENSE` | verbatim |
 
-The upstream highlighter and cache that `libs/syntax` adapts are not kept
+The upstream highlighter and cache that `libraries/syntax` adapts are not kept
 here. Read them at the pinned commit:
 [`crates/edit/src/lsh/`](https://github.com/microsoft/edit/tree/826b4c097b6f14ba0a846dc56f2f0223a3aaf73a/crates/edit/src/lsh)
 (`mod.rs`, `highlighter.rs`, `cache.rs`, `definitions.rs`).
@@ -47,7 +47,7 @@ here. Read them at the pinned commit:
    bytecode changed from run to run. Harmless inside msedit's build script;
    fatal for a committed `defs.rs` with a freshness test.
 
-## Adapted, not vendored (`libs/syntax/src/`)
+## Adapted, not vendored (`libraries/syntax/src/`)
 
 `highlighter.rs` and `cache.rs` are rewritten from upstream's
 `crates/edit/src/lsh/{highlighter,cache}.rs` (linked above) rather than

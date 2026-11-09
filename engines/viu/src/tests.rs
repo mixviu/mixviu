@@ -62,7 +62,7 @@ fn click(ctx: &egui::Context, view: &mut SceneView, id: &str) -> Vec<Event> {
 
 #[test]
 fn native_widget_input_runs_existing_mix_callbacks_and_readback() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/quoin/volume");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/volume-lab/volume");
     let path = root.join("viu.mix").canonicalize().unwrap();
     let (tx, wakes) = mpsc::channel();
     let mut runtime = Runtime::new(

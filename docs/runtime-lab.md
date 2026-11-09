@@ -3,7 +3,7 @@
 This branch is a discovery specimen. Keep it isolated, survey the whole
 specimen and derive production source afterwards. No lab merge or gold install.
 
-`viu-client apps/quoin/volume` starts a native Wayland client. The first slice
+`viu-client apps/volume-lab/volume` starts a native Wayland client. The first slice
 uses a safe in-process audio fixture; it never changes the session's audio.
 The window says so. Existing `behaviour.mix` remains the unmodified reference;
 `viu.mix` adapts only host lifecycle/context and the named fixture boundary.

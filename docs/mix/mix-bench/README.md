@@ -14,8 +14,8 @@ The current regression suites live with the components they exercise:
 
 | Source | Coverage | Cargo package |
 | --- | --- | --- |
-| `libs/mix/src` and `libs/mix/tests` | Lexer, parser, evaluator, builtins, strict data and language regression scripts | `mix` |
-| `cli/mix-shell/src` and `cli/mix-shell/tests` | Shell library and lint coverage | `mix-shell` |
+| `libraries/mix/src` and `libraries/mix/tests` | Lexer, parser, evaluator, builtins, strict data and language regression scripts | `mix` |
+| `libraries/mix-shell/src` and `libraries/mix-shell/tests` | Shell library and lint coverage | `mix-shell` |
 | `engines/mix/tests` | Shipped executable, native sessions, processes, manuals and shell integration | `mix` |
 
 In the designated Rust build environment, run the relevant suites with:
@@ -28,5 +28,5 @@ These are correctness tests, not a replacement performance score. Check
 the current manifests and test sources when selecting a workload.
 
 See the [language library](../lib/README.md),
-[shell library](../../mix-shell/README.md) and
-[system executable](../../system/README.md).
+[shell library](../../../libraries/mix-shell/README.md) and
+system executable (manual not included in this source tree).

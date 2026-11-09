@@ -1,3 +1,83 @@
+# Quoin P0 — 2026-11-09
+
+PR: https://github.com/mixviu/mixviu/pull/36 (`docs/quoin-p0` -> `main`).
+Head before the final receipt commit: `741001b802781bce46e02e3246fff91ab00b5b49`.
+Rust rename-test source: `001c2a0b1907` (later changes are documentation and
+the matching CI baseline path key and rustfmt line wrap, without semantic Rust changes). The receipt commit is a descendant of
+those heads; the PR exposes its current head SHA.
+
+Spec outline (`docs/scene-documents.md`): directory/catalogue/metadata and
+behaviour lifecycle; envelope and strict-data grammar; all 19 widget families
+and common ports; pure expressions and escaping; dependency/model patch path;
+row templates and event routing; budgets, diagnostic catalogue and current
+reload/output limits. Claims cite source path:line at baseline `881e4051`.
+
+Registered 20 public loader commands: scenes.list, templates, install, remove,
+enable, disable, reload, reset, open, close, toggle, ready, model, fork,
+promote, move, editor.open, editor.close, editor.snapshot, editor.action.
+Resolved pending schemas for all 36 host commands (scene.*, scenes.list,
+dialog.*, toast.*, ping, info, props.get, panel.*, corner.*), 7 terminal
+commands (status, execute, execute.result, execute.cancel, task.submit,
+task.result, task.cancel), and 6 backdrop commands (ping, state, set, next,
+view.set, view.cycle). Registry `contracts` contains typed documented params
+and replies; `contract_types` supplies shared wire shapes. Dynamic handlers
+use schema:none; terminal handlers name the existing Rust deserialisers.
+These sections document actual code, not a new runtime schema validator.
+
+Drift fixed: topbar uses desk.restart/desk.stop for the desk; absent Scene
+Editor app distinguished from legacy share/scenes/editor; docs/cos links
+replaced; omitted component manuals are stated as absent; current Mix source
+paths and source links corrected; vendor README paths/licence links repaired.
+Historical MixOS oracle paths and installed licence destinations are labelled.
+The canonical "What MixViu is" text is unchanged; Quoin has its own section.
+
+Rename: all 15 apps/quoin files moved unchanged to apps/volume-lab. Active
+references updated in engines/viu/src/tests.rs,
+libraries/viu/tests/acceptance.rs, tools/p2_rehearsal.mix,
+tools/ci/mix-lint-baseline.json, runtime-lab docs, provenance README and this
+session history. tools/apps_bundle.mix enumerates tracked app directories,
+so no hard-coded install list changes. Bus identity quoin-volume is retained.
+Immutable provenance JSON retains original import paths/hashes as history.
+
+Code bugs found, deliberately not fixed:
+
+- Default command_registry lint lacks imported helper modules. Supplying them
+  reveals existing app lint failures and absent bridged family declarations.
+- Host props.get returns a panels array; loader popup paths require a map.
+- Advertised dialog/menu/panel.order operations return NOT_IMPLEMENTED;
+  scene.layout returns SCENE_NOT_RENDERED.
+- Family-less scene.describe enumerates ten families rather than nineteen;
+  shell furniture layout also skips nine families accepted by the grammar.
+- Binding coercion rejects length ports accepted by the literal schema.
+- port-max is emitted but missing from ALL_CODES.
+- Duplicate envelope headers are overwritten by the core but rejected by
+  the loader.
+
+Validation:
+
+- Registry data/canonical lint PASS: 790 commands, 6 families, schema 5.
+  Ran unchanged tools/command_registry.mix from a temporary directory, with
+  its two missing helper modules supplied from MixOS, explicit registry FILE
+  and no source scan. Default source-mode check is not claimed green.
+- mix lint on the modified registry and rehearsal: zero errors/warnings/notes.
+- Mix path audit: zero broken Markdown local links across README/docs source,
+  including vendor READMEs; code path references reviewed separately for
+  historical oracle paths, installed destinations and external source links.
+- All scene-reference path:line citations checked for file existence and line
+  bounds. git diff --check PASS.
+- CBC rename tests PASS: BUILD_RC=0, job `20261109-152512-58ecf1c3-a1`,
+  source `001c2a0b1907`, cargo test -p viu -p lib-viu --lib --tests.
+  371 passed, zero failed, 6 existing environment-dependent tests ignored.
+  Full 907-line saved log read, including existing dependency warnings.
+  Final CI fmt diff (longer include_str path) applied exactly.
+- 124 scene-reference citations checked for path/line bounds.
+- Observed PR security checks are green; the task's #21 caveat is retained
+  as context rather than reported as an observed failure.
+
+No desk4/VT interaction, production deployment or /opt writes. Author: Codex <codex@openai.com>.
+
+---
+
 # Security Hickory split — gates green, awaiting review
 
 Mark split this work from fix/security-advisories. Original branch history remains unchanged. All previously uncommitted adapters were committed first at 2dfcb234. The branch intentionally retains the full original history so no work is lost. The smaller non-Hickory PR is fix/security-tls.
@@ -388,11 +468,11 @@ the flag (name check only) and its scene stub ignores it, because the shell
 furniture now runs in viu-host@ (`viu --host`), a new template in
 engines/viu/units.
 
-quoin: `apps/quoin` is not an app bundle: the runnable app is
-`apps/quoin/volume` (contract.json with behaviour viu.mix, scene.mix). It
+quoin: `apps/volume-lab` is not an app bundle: the runnable app is
+`apps/volume-lab/volume` (contract.json with behaviour viu.mix, scene.mix). It
 needs no launch arguments or host initialise. The migration's generated
-launcher `viu run /opt/mix/share/mixviu/apps/quoin` must become
-`viu run /opt/mix/share/mixviu/apps/quoin/volume`.
+launcher `viu run /opt/mix/share/mixviu/apps/volume-lab` must become
+`viu run /opt/mix/share/mixviu/apps/volume-lab/volume`.
 
 exportd and real homes: GTK/Qt already refused to write when XDG_CONFIG_HOME
 is (or defaults to) the home's own .config unless MIX_EXPORTD_GTKQT_HOME=1.
