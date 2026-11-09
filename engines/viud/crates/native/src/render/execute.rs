@@ -731,13 +731,17 @@ pub fn execute(
             match crate::render::execute::hdr::apply_connector_props(
                 &ctx_ref.drm_fd,
                 conn,
+                ctx_ref.outputs[output_idx].crtc,
                 &ctx_ref.outputs[output_idx].hdr_caps,
                 hdr_active,
                 want_bpc,
             ) {
-                Ok(_o) => {
+                Ok(o) => {
                     ctx_ref.outputs[output_idx].props_applied = true;
-                    info!("connector properties applied (colorimetry + max bpc)");
+                    info!(
+                        "connector properties applied: colorspace {} | metadata {} | max bpc {} | crtc colour {}",
+                        o.colorspace, o.metadata, o.max_bpc, o.crtc_color
+                    );
                 }
                 Err(_e) => {
                     ctx_ref.outputs[output_idx].props_applied = true; // don't retry every frame
