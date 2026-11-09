@@ -297,27 +297,29 @@ for i in 1 2 3; do                 for each $i in [1, 2, 3]
 ...
 ```
 
-## Build — rebuild the interpreter from itself
+## Build and test through CBC or CI
 
-The build family wraps `cargo` against the Mix source tree (`$MIX_SRC`,
-default the discovered source checkout) so the REPL can rebuild and re-exec into a fresh binary —
-the self-reconstruction surface. Point `$MIX_SRC` at the directory holding
-the workspace `Cargo.toml` (in a clone of the public repo that is `mix/src`).
+The former local Cargo shortcuts refuse without changing the source tree or
+installed binary, including when passed `--help`.
 
 ```
-mix build       cargo build --release, then install target/release/mix → <prefix>/bin/mix
-mix clean       cargo clean (removes the target/ tree)
-mix update      git pull, then build + install
-mix test        cargo test, streaming output
+mix build       disabled; use the CBC build service
+mix clean       disabled; use the CBC build service
+mix update      disabled; use the CBC build service
+mix test        disabled; use mix tools/ci.mix test on CBC/CI
 mix self check  syntax-check ~/.mixrc and std/prelude.mix without executing them
 mix check FILE  syntax-check one .mix file (lex + parse, no execution)
 ```
 
-`mix build` removes the destination first (a running ELF can't be written in
-place — `ETXTBSY`), copies the new binary in, and — when run from the REPL —
-saves history then `exec()`s into it, so the new interpreter replaces the old
-process live. As a one-shot from the OS shell it installs and simply exits
-(there is no REPL to restart). `mix update` is `git pull` then the same build.
+Push the branch, then run `mix tools/ci.mix <stage>` on CI or through CBC:
+
+```text
+mix ~/.mix/_bin/cbc-build.mix --repo mixviu --commit <sha> --worker any -- mix tools/ci.mix <stage>
+```
+
+Stages include `fmt`, `env`, `clippy`, `test` and `all`. Process tests needing
+fault injection enable the debug-only `test-hooks` feature; ordinary builds
+ignore those test variables, and release builds refuse that feature.
 
 `mix check` is a fast parse-only gate — perfect for a pre-commit hook or
 validating a script before shipping it:

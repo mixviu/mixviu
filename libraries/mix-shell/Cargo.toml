@@ -82,6 +82,8 @@ structured-zstd = "0.0.58"
 
 [features]
 default = []
+# Fault injection for process tests only; build.rs refuses non-debug profiles.
+test-hooks = []
 # The service profile: builtins only `mixd` carries (engine-split decision).
 service-builtins = ["mix/dkim", "mix/serde", "mix/markdown", "mix/datastar", "mix/xml", "mix/yaml", "mix/mime", "mix/dns"]
 # Bus-citizen serving (`mixd serve`, legacy `--serve`). Without it, `mix
