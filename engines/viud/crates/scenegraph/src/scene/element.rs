@@ -25,6 +25,8 @@ smithay::render_elements! {
     Memory = smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement<R>,
     /// A live window thumbnail (a hover tip's preview), under its own ids.
     Thumbnail = world::window::draw::thumbnail::Thumb<R>,
+    /// The HDR composite's encode stage: an HDR output's whole frame.
+    HdrEncode = crate::scene::hdr::Encode,
 }
 
 impl<R> SceneElement<R>

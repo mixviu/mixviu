@@ -334,6 +334,11 @@ pub fn init_with(environment: Environment) -> &'static Environment {
     ENV.get_or_init(|| environment)
 }
 
+/// The parsed environment, or `None` before [`init`] (unit tests, tools).
+pub fn try_get() -> Option<&'static Environment> {
+    ENV.get()
+}
+
 /// The parsed environment. Panics if called before [`init`].
 pub fn get() -> &'static Environment {
     ENV.get()
