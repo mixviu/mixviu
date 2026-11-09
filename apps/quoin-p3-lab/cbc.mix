@@ -1,11 +1,12 @@
 -- version: 0.1.0
 -- Own CBC checkout only. Print the formatting/lock diff before restoring it.
-print(run_argv_must(["cargo", "fmt", "-p", "headless", "-p", "testkit"]))
-print(run_argv_must(["git", "diff", "--", "engines/viud/crates/headless/src", "engines/viud/crates/testkit"]))
-print(run_argv_must(["git", "checkout", "-q", "--", "engines/viud/crates/headless/src", "engines/viud/crates/testkit"]))
+print(run_argv_must(["cargo", "fmt", "-p", "headless", "-p", "testkit", "-p", "kms"]))
+print(run_argv_must(["git", "diff", "--", "engines/viud/crates/headless/src", "engines/viud/crates/testkit", "engines/viud/crates/kms"]))
+print(run_argv_must(["git", "checkout", "-q", "--", "engines/viud/crates/headless/src", "engines/viud/crates/testkit", "engines/viud/crates/kms"]))
 print(run_argv_must(["cargo", "build", "--locked", "-p", "viu", "-p", "viud", "--features", "viud/backend-headless"], {timeout:7200, stdout:"inherit", stderr:"inherit"}))
 print(run_argv_must(["cargo", "build", "--locked", "-p", "testkit", "--bin", "testkit-panel-pixels"], {timeout:7200, stdout:"inherit", stderr:"inherit"}))
 print(run_argv_must(["cargo", "test", "--locked", "-p", "headless", "--lib"], {timeout:7200, stdout:"inherit", stderr:"inherit"}))
+print(run_argv_must(["cargo", "test", "--locked", "-p", "kms", "--test", "output_identity_collision_lab", "--", "--nocapture"], {timeout:7200, stdout:"inherit", stderr:"inherit"}))
 print(run_argv_must(["git", "diff", "--", "Cargo.lock"]))
 print(run_argv_must(["git", "checkout", "-q", "--", "Cargo.lock"]))
 $sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
