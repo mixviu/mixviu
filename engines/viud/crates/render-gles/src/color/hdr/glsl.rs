@@ -252,7 +252,8 @@ mod tests {
         let plain = "#version 100\nvoid main() { gl_FragColor = c; }";
         assert!(inject_decode(plain).is_none());
         assert_eq!(sdr_variant(plain), plain);
-        let marked = "#version 100\nprecision highp float;\nvoid main() { gl_FragColor = VIU_OUT(c); }";
+        let marked =
+            "#version 100\nprecision highp float;\nvoid main() { gl_FragColor = VIU_OUT(c); }";
         let hdr = inject_decode(marked).unwrap();
         assert!(hdr.find("vec4 viu_decode").unwrap() < hdr.find("void main").unwrap());
         assert!(hdr.contains("#define VIU_OUT(x) viu_decode(x)"));

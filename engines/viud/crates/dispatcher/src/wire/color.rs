@@ -8,16 +8,16 @@
 use render_gles::color::hdr::describe::{self, Description, Transfer};
 use render_gles::color::hdr::math::{self, BT709, BT2020, Chromaticity, D65, DISPLAY_P3};
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
-    wp_color_manager_v1::{Feature, Primaries, RenderIntent, TransferFunction, WpColorManagerV1},
     wp_color_management_output_v1::WpColorManagementOutputV1,
     wp_color_management_surface_feedback_v1::WpColorManagementSurfaceFeedbackV1,
+    wp_color_manager_v1::{Feature, Primaries, RenderIntent, TransferFunction, WpColorManagerV1},
     wp_image_description_info_v1::WpImageDescriptionInfoV1,
     wp_image_description_v1::WpImageDescriptionV1,
 };
 use smithay::reexports::wayland_server::Weak;
-use std::sync::Mutex;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch, Resource};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 pub static IDENTITY: AtomicU32 = AtomicU32::new(1);
@@ -163,7 +163,16 @@ fn named_primaries_of(c: &Chromaticity) -> Option<Primaries> {
 
 /// Protocol chromaticity (×1 000 000 integers) to xy.
 #[allow(clippy::too_many_arguments)]
-pub fn chromaticity(rx: i32, ry: i32, gx: i32, gy: i32, bx: i32, by: i32, wx: i32, wy: i32) -> Option<Chromaticity> {
+pub fn chromaticity(
+    rx: i32,
+    ry: i32,
+    gx: i32,
+    gy: i32,
+    bx: i32,
+    by: i32,
+    wx: i32,
+    wy: i32,
+) -> Option<Chromaticity> {
     let f = |v: i32| v as f64 / 1_000_000.0;
     let c = Chromaticity {
         r: (f(rx), f(ry)),
@@ -223,8 +232,10 @@ fn describe_output(out: Option<describe::OutputColor>) -> Description {
 /// Live `wp_color_management_output_v1` objects (with their output's name) and
 /// surface feedback objects, so a change in an output's HDR state reaches the
 /// clients that asked.
-static OUTPUT_OBJECTS: Mutex<Vec<(String, Weak<WpColorManagementOutputV1>)>> = Mutex::new(Vec::new());
-static FEEDBACK_OBJECTS: Mutex<Vec<Weak<WpColorManagementSurfaceFeedbackV1>>> = Mutex::new(Vec::new());
+static OUTPUT_OBJECTS: Mutex<Vec<(String, Weak<WpColorManagementOutputV1>)>> =
+    Mutex::new(Vec::new());
+static FEEDBACK_OBJECTS: Mutex<Vec<Weak<WpColorManagementSurfaceFeedbackV1>>> =
+    Mutex::new(Vec::new());
 
 pub fn track_output(output: &str, obj: &WpColorManagementOutputV1) {
     let mut v = OUTPUT_OBJECTS.lock().unwrap();
@@ -242,7 +253,9 @@ pub fn track_feedback(obj: &WpColorManagementSurfaceFeedbackV1) {
 /// feedback object (their preferred description follows the HDR outputs).
 pub fn output_changed(output: &str) {
     for (name, w) in OUTPUT_OBJECTS.lock().unwrap().iter() {
-        if name == output && let Ok(o) = w.upgrade() {
+        if name == output
+            && let Ok(o) = w.upgrade()
+        {
             o.image_description_changed();
         }
     }

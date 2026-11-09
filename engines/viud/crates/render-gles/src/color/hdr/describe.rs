@@ -242,18 +242,22 @@ pub fn set_output(name: &str, color: Option<OutputColor>) -> bool {
 
 /// One output's HDR state, `None` when it is SDR (or unknown).
 pub fn output(name: &str) -> Option<OutputColor> {
-    OUTPUTS.read().unwrap().as_ref().and_then(|m| m.get(name).copied())
+    OUTPUTS
+        .read()
+        .unwrap()
+        .as_ref()
+        .and_then(|m| m.get(name).copied())
 }
 
 /// The HDR state of some HDR output, for answers not tied to one output (a
 /// surface's preferred description). The brightest, so content is never
 /// mastered below what any HDR output can show. `None` when all are SDR.
 pub fn any_hdr_output() -> Option<OutputColor> {
-    OUTPUTS.read().unwrap().as_ref().and_then(|m| {
-        m.values()
-            .copied()
-            .max_by(|a, b| a.max.total_cmp(&b.max))
-    })
+    OUTPUTS
+        .read()
+        .unwrap()
+        .as_ref()
+        .and_then(|m| m.values().copied().max_by(|a, b| a.max.total_cmp(&b.max)))
 }
 
 /// A tagged surface: its description and the generation it was set at. The

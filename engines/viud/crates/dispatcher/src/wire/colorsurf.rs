@@ -106,9 +106,7 @@ pub fn dispatch_color_surface(req: SurfReq, surface: &WlSurface) {
         SurfReq::SetImageDescription {
             image_description, ..
         } => {
-            let d = image_description
-                .data::<ImageDescData>()
-                .and_then(|d| d.0);
+            let d = image_description.data::<ImageDescData>().and_then(|d| d.0);
             store_surface_color(surface, d);
         }
         SurfReq::UnsetImageDescription | SurfReq::Destroy => {
@@ -225,7 +223,10 @@ pub fn dispatch_image_desc<W: Dispatch<WpImageDescriptionInfoV1, ()> + 'static>(
         if let Some(d) = &data.0 {
             send_info(&info, d);
         }
-        info!("color: get_information answered ({:?}); done deferred", data.0.map(|d| d.transfer));
+        info!(
+            "color: get_information answered ({:?}); done deferred",
+            data.0.map(|d| d.transfer)
+        );
         return Some(info);
     }
     None

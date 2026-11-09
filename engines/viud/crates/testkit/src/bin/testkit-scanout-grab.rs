@@ -24,8 +24,8 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{
     Bind, Color32F, ExportMem, Frame, ImportDma, Offscreen, Renderer,
 };
-use smithay::reexports::drm::control::Device as ControlDevice;
 use smithay::reexports::drm::Device as DrmDevice;
+use smithay::reexports::drm::control::Device as ControlDevice;
 use smithay::utils::{DeviceFd, Physical, Rectangle, Size, Transform};
 
 struct Card(File);
@@ -84,7 +84,9 @@ fn main() {
     let context = EGLContext::new(&display).expect("EGL context");
     let mut gles = unsafe { GlesRenderer::new(context) }.expect("GLES renderer");
 
-    let src = gles.import_dmabuf(&dmabuf, None).expect("import scanout dmabuf");
+    let src = gles
+        .import_dmabuf(&dmabuf, None)
+        .expect("import scanout dmabuf");
     let size: Size<i32, Physical> = (w as i32, h as i32).into();
     let full = Rectangle::from_size(size);
     let mut target = Offscreen::<GlesTexture>::create_buffer(
@@ -95,8 +97,12 @@ fn main() {
     .expect("10-bit offscreen target");
     {
         let mut fbuf = gles.bind(&mut target).expect("bind target");
-        let mut frame = gles.render(&mut fbuf, size, Transform::Normal).expect("frame");
-        frame.clear(Color32F::new(0.0, 0.0, 0.0, 1.0), &[full]).expect("clear");
+        let mut frame = gles
+            .render(&mut fbuf, size, Transform::Normal)
+            .expect("frame");
+        frame
+            .clear(Color32F::new(0.0, 0.0, 0.0, 1.0), &[full])
+            .expect("clear");
         Frame::render_texture_from_to(
             &mut frame,
             &src,
@@ -112,7 +118,11 @@ fn main() {
     }
     let fbuf = gles.bind(&mut target).expect("rebind");
     let mapping = gles
-        .copy_framebuffer(&fbuf, Rectangle::from_size((w as i32, h as i32).into()), Fourcc::Abgr2101010)
+        .copy_framebuffer(
+            &fbuf,
+            Rectangle::from_size((w as i32, h as i32).into()),
+            Fourcc::Abgr2101010,
+        )
         .expect("readback");
     drop(fbuf);
     let bytes = gles.map_texture(&mapping).expect("map").to_vec();
@@ -121,7 +131,11 @@ fn main() {
     let code = |x: u32, y: u32| -> [u16; 3] {
         let i = ((y * w + x) * 4) as usize;
         let v = u32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
-        [(v & 0x3ff) as u16, ((v >> 10) & 0x3ff) as u16, ((v >> 20) & 0x3ff) as u16]
+        [
+            (v & 0x3ff) as u16,
+            ((v >> 10) & 0x3ff) as u16,
+            ((v >> 20) & 0x3ff) as u16,
+        ]
     };
 
     let mut out = File::create(&args[3]).expect("create output");

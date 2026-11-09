@@ -254,7 +254,11 @@ impl HdrPass {
         HdrEncode {
             texture: self.texture.clone(),
             program: hdr.then(|| self.encode.clone()),
-            uniforms: if hdr { output.encode_uniforms() } else { Vec::new() },
+            uniforms: if hdr {
+                output.encode_uniforms()
+            } else {
+                Vec::new()
+            },
             size: self.size,
             id: self.id.clone(),
             damage: self.damage.snapshot(),
@@ -298,7 +302,9 @@ pub fn copy_sdr(
             &[],
         )
         .map_err(|e| format!("HDR capture copy: {e}"))?;
-    frame.finish().map_err(|e| format!("HDR capture finish: {e}"))
+    frame
+        .finish()
+        .map_err(|e| format!("HDR capture finish: {e}"))
 }
 
 /// The encode stage as a render element: the whole output, opaque, damaged

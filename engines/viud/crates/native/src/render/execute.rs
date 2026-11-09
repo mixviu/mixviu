@@ -969,8 +969,10 @@ pub fn execute(
                             // scene; full captures blit the whole framebuffer.
                             let src = src_override.unwrap_or(full_src);
                             if let Some(intermediate) = &hdr_copy {
-                                let copied = r.bind(&mut entry_tex).map_err(|e| e.to_string()).and_then(
-                                    |mut entry_fb| {
+                                let copied = r
+                                    .bind(&mut entry_tex)
+                                    .map_err(|e| e.to_string())
+                                    .and_then(|mut entry_fb| {
                                         render_gles::color::hdr::pass::copy_sdr(
                                             r.as_mut(),
                                             intermediate,
@@ -979,8 +981,7 @@ pub fn execute(
                                             entry_size,
                                         )
                                         .map(|_| ())
-                                    },
-                                );
+                                    });
                                 if let Err(e) = copied {
                                     warn!("HDR capture copy failed: entry_id={entry_id:?} err={e}");
                                 }

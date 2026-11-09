@@ -82,7 +82,9 @@ pub fn select(info: &connector::Info, profile: Option<&OutputProfile>) -> Option
                 .rev()
                 .max_by_key(|m| exact_refresh_mhz(m))
         } else {
-            info.modes().iter().find(|m| matches(m) && !is_interlaced(m))
+            info.modes()
+                .iter()
+                .find(|m| matches(m) && !is_interlaced(m))
         }
         .or_else(|| info.modes().iter().find(matches));
         if let Some(m) = hit {

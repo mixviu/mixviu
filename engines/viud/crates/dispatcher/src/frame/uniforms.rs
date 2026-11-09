@@ -147,9 +147,7 @@ pub fn draw_pixel_program(
 /// afresh, and a failed compile is remembered (as `None`) so it is tried and
 /// logged once.
 #[derive(Default)]
-struct TexPrograms(
-    std::cell::RefCell<std::collections::HashMap<&'static str, Option<TexProgram>>>,
-);
+struct TexPrograms(std::cell::RefCell<std::collections::HashMap<&'static str, Option<TexProgram>>>);
 
 /// A custom texture program in both builds: `sdr` as written, and `hdr` with
 /// the HDR composite's decode stage applied to its output (`VIU_OUT(color)`,
@@ -183,8 +181,7 @@ pub fn tex_program(
     let mut names: Vec<UniformName<'static>> = uniforms.to_vec();
     names.push(UniformName::new("u_frag_to_phys", UniformType::Matrix3x3));
     use render_gles::color::hdr::glsl;
-    let compiled = match renderer.compile_custom_texture_shader(glsl::sdr_variant(source), &names)
-    {
+    let compiled = match renderer.compile_custom_texture_shader(glsl::sdr_variant(source), &names) {
         Ok(sdr) => {
             let hdr = glsl::inject_decode(source).and_then(|hdr_source| {
                 let mut hdr_names = names.clone();

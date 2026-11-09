@@ -26,12 +26,14 @@ use smithay::utils::Scale;
 pub fn output_color(caps: &HdrInfo) -> OutputColor {
     let p = &caps.primaries;
     let f = |c: (f32, f32)| (c.0 as f64, c.1 as f64);
-    let display = (p.red.0 > 0.0 && p.green.0 > 0.0 && p.blue.0 > 0.0 && p.white.0 > 0.0)
-        .then(|| Chromaticity {
-            r: f(p.red),
-            g: f(p.green),
-            b: f(p.blue),
-            w: f(p.white),
+    let display =
+        (p.red.0 > 0.0 && p.green.0 > 0.0 && p.blue.0 > 0.0 && p.white.0 > 0.0).then(|| {
+            Chromaticity {
+                r: f(p.red),
+                g: f(p.green),
+                b: f(p.blue),
+                w: f(p.white),
+            }
         });
     OutputColor::from_edid(
         caps.hdr.max_luminance.map(f64::from),
@@ -96,7 +98,10 @@ pub fn compose(
     } else {
         OutputColor::sdr()
     };
-    let size = pipe.output.current_transform().transform_size(pipe.mode.size);
+    let size = pipe
+        .output
+        .current_transform()
+        .transform_size(pipe.mode.size);
     let scale = Scale::from(scale);
     if !pipe.hdr_pass.as_ref().is_some_and(|p| p.fits(size, scale)) {
         match HdrPass::new(renderer, size, scale) {
