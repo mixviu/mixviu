@@ -453,3 +453,83 @@ Merged main 60cb1270 without rebase or force-push. Main’s Mix-first Dopus, fou
 GitHub exposed a pipe-read boundary assumption in an inherited audio test. The follow-up changes test code only: it retains all assertions, adds a pending-batch precondition and calls real unwatch. CBC’s mutation proof rejects deliberately broken slot retirement, then the restored full lib-mix DKIM suite passes. Final-head CBC and GitHub checks are required before handoff. PR.md and PR #8 record the evidence, scanner false-positive exception, deferrals and undo instructions.
 
 Branch fix/security-tls; head is this status commit (test source c8b15ac9fe364d95124f34ee36c9858f46005bca, production gate a6434f41468e9e6a6137cebceaceca4b27404b66); gate PASS on merged production plus strengthened lib-mix regression, final-head verification required before handoff; CBC 20261108-153157-b139388e-a1, 20261108-153359-f8acf742-a1, 20261108-153400-7256afc2-a1, 20261108-153401-4b361290-a1, 20261108-153403-980add31-a1, 20261108-153404-dc557563-a1, 20261108-153405-e638aa26-a1, 20261108-171202-1a7a06b0-a1, 20261108-171553-37a3846c-a1, final pr8-tls-final-20261108; PR #8.
+# PR #8 settlement assessment — 2026-11-10
+
+STOP: the security/dependency scope is overtaken by main. The common brief
+explicitly requires stopping in this case rather than rewriting the PR.
+Recommend closing #8 as superseded, with its remaining parser hardening,
+audio regression and scanner exception considered separately by the reviewer.
+This assessment does not close or merge any PR or delete any branch.
+
+Inspected PR code head: `788b3f0dd6fd51b6ac0d58632ea29ede62eeee45`.
+Fetched main: `d17f7caab647954da3d2b05a7aa552e4e02fc461`.
+The receipt commit changes only last.md; its pushed SHA is the branch head.
+
+## Why stop
+
+Merged #9 (`2ec0dca9`) brought in the complete original advisory history's
+substance, including the TLS/XML/runtime fixes that #8 was split out to carry.
+Main already locks rustls 0.23.46, rustls-webpki 0.103.16,
+webpki-roots 1.0.11 (plus 0.26.11 compatibility re-export), ctutils 0.4.8,
+Tokio 1.53.3 and quick-xml 0.41.0. rustls-pemfile is absent. Main also retains
+rusqlite 0.41.1 / libsqlite3-sys 0.39.1 from #49.
+
+Dependabot #17 (webpki-roots 1.0.11) is covered by #8's lockfile and is
+already covered by main through #9. It needs no additional version change.
+
+## Original branch commit coverage
+
+All ten commits unique to `fix/security-advisories` at `40a3c756` relative to
+main have their intended capability covered. They are squash coverage, not
+commit ancestry; the DNS adapters on main include subsequent API repairs.
+
+| Commit | Intent | Coverage |
+| --- | --- | --- |
+| `61a80788` | Update rustls and certificate trust | #8 and main #9: versions above. |
+| `fd7d0480` | Require fixed Hickory | Main #9: resolver/proto resolve to 0.26.3, beyond required 0.26.1. |
+| `a47f5bea` | Migrate resolver users and mail authentication | Main #9: Mix DNS, maild resolver/DNSBL/rDNS/delivery/DKIM and webd MX; mail-auth =0.11.0. |
+| `7bb61843` | Replace rustls-pemfile | #8 and main #9: rustls-pki-types PEM adapters in config, daemon and Mix; obsolete dependencies removed. |
+| `39f512a4` | Refuse scoped IPv6 resolver addresses | Main #9: scope_id guard and regression in maild-rules dnsbl.rs. |
+| `ffbeb9e1` | Adapt DNS message codec and retain ARC | Main #9: Mix/dnsd metadata/codec migration; mail-auth arc feature and verify_arc path retained. |
+| `28788324` | Tokio I/O safety patch | #8 and main #9: Tokio 1.53.3 and application/library pins; former Rust Dopus removed by later main work. |
+| `7f2a959e` | ctutils constant-time fix | #8 and main #9: ctutils 0.4.8. |
+| `eeb1db55` | quick-xml security update | #8 and main #9: only quick-xml 0.41.0 remains. |
+| `40a3c756` | Preserve REPORT entities | #8 and main #9: GeneralRef decoding for predefined/numeric entities in hrefs and sync tokens; unknown references rejected. |
+
+## Tier 2: maild/webd TLS
+
+The original #8 updates their shared TLS stack and certificate trust:
+patched rustls and webpki, updated root certificates, and PEM loading through
+rustls-pki-types instead of the unmaintained rustls-pemfile. Both services
+drop their obsolete direct parser dependency. Shared config still builds the
+server acceptor without client authentication and keeps SNI identity selection;
+daemon chain validation uses the maintained PEM parser. Certificate/key file
+formats, TLS listener configuration and deployment are unchanged. These
+changes already exist on main via #9; #8 adds no further maild/webd TLS change
+against that main. No live TLS traffic or production deployment was tested.
+
+## Advisory debt
+
+#8 already removes all eleven advisories it fixes: RUSTSEC-2025-0134;
+RUSTSEC-2026-0194, 0195, 0346, 0347, 0348, 0349, 0381, 0382, 0385 and 0386.
+Its remaining Hickory ignores (0118/0119) belong to #9 and are already removed
+on main. Main retains only RSA 2023-0071 and ZIP 2026-0367/0368/0369/0429.
+No additional ignore was removed or introduced during this assessment.
+
+## Merge conflicts and validation
+
+Attempted merge of origin/main conflicted in Cargo.lock, deny.toml, PR.md,
+last.md, jwt.rs, DAV report.rs and the Mix lint baseline. Inspection used
+main's lockfile/policy/baseline and #8's parser hardening: JWT skips unrelated
+PEM labels; REPORT rejects invalid UTF-8 between entity events. These parser
+regressions, the audio unwatch regression and Gitleaks exception remain unique
+to #8. They do not justify silently repurposing the security PR.
+
+The attempted merge was aborted after confirming supersession; no conflict
+resolution or dependency rollback was committed. The branch remains at its
+original code head plus this receipt. No CBC job was submitted (job IDs/rc:
+none), no rustfmt or Rust test was run, and no fresh gate success is claimed.
+Validation was source/history/manifest/lockfile comparison and git diff --check.
+Historical receipts below remain historical, not current-main acceptance.
+
+---
