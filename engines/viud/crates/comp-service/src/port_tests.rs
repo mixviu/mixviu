@@ -66,10 +66,13 @@ async fn supervised_unix_reconnect_refreshes_context_and_replays_subscriptions()
     let mut incoming = client.deliveries().unwrap();
     client.subscribe_topic("audit.events").await.unwrap();
     let UnixConnectOutcome::VerifiedUnix(caller) = NodedClient::connect_unix(
-        "", &broker.url, &broker.options(), None).await.unwrap() else { panic!("native") };
+        "audit-probe", &broker.url, &broker.options(), None).await.unwrap() else { panic!("native") };
     caller.client().send("audit-reconnect", "comp.ping", Value::Null).await.unwrap();
     let before = tokio::time::timeout(Duration::from_secs(3), incoming.recv()).await.unwrap().unwrap();
     let before_principal = before.principal().unwrap().clone();
+    client.send("audit-probe", "probe", Value::Null).await.unwrap();
+    let own_before = tokio::time::timeout(Duration::from_secs(3), caller.recv_shared()).await.unwrap().unwrap();
+    let own_before = own_before.trusted_context().unwrap().clone();
     broker.bounce();
     tokio::time::timeout(Duration::from_secs(10), async {
         while client.connection_generation() < 2 || client.state() != ConnState::Connected {
@@ -78,14 +81,20 @@ async fn supervised_unix_reconnect_refreshes_context_and_replays_subscriptions()
     }).await.unwrap();
     // The Unix endpoint is stable although the fixture's ephemeral TCP URL changes.
     let UnixConnectOutcome::VerifiedUnix(caller) = NodedClient::connect_unix(
-        "", &broker.url, &broker.options(), None).await.unwrap() else { panic!("native") };
+        "audit-probe", &broker.url, &broker.options(), None).await.unwrap() else { panic!("native") };
     caller.client().send("audit-reconnect", "comp.ping", Value::Null).await.unwrap();
     let after = tokio::time::timeout(Duration::from_secs(3), incoming.recv()).await.unwrap().unwrap();
     assert!(after.command().generation > before.command().generation);
     assert_ne!(after.principal().unwrap().connection_id, before_principal.connection_id);
     assert_ne!(after.principal().unwrap().broker_epoch, before_principal.broker_epoch);
+    client.send("audit-probe", "probe", Value::Null).await.unwrap();
+    let own_after = tokio::time::timeout(Duration::from_secs(3), caller.recv_shared()).await.unwrap().unwrap();
+    assert_ne!(own_after.trusted_context().unwrap().connection_id, own_before.connection_id);
+    assert_ne!(own_after.trusted_context().unwrap().broker_epoch, own_before.broker_epoch);
     let headers = BTreeMap::from([("name".into(), "audit.events".into())]);
-    caller.client().call_with_headers_raw("noded", "topic.publish", &headers, "{}").await.unwrap();
+    let wire = BusMessage::new().with_header("bus", "1").with_header("type", "event").with_body("{}").to_wire();
+    let (rc, body, _) = caller.client().call_with_headers_raw("noded", "topic.publish", &headers, &wire).await.unwrap();
+    assert_eq!(rc, 0, "{body}");
     let event = tokio::time::timeout(Duration::from_secs(3), incoming.recv()).await.unwrap().unwrap();
     assert_eq!(event.command().topic(), Some("audit.events"));
     client.close().await;
@@ -116,6 +125,35 @@ async fn missing_native_endpoint_falls_back_without_principal() {
     assert_eq!(audit.snapshot(false)["protected_recipient"], false);
     client.close().await;
     caller.close().await;
+}
+
+#[tokio::test]
+async fn forged_principal_is_stripped_before_verified_delivery() {
+    use bus::native_client::{NodedClient, UnixConnectOutcome};
+    let broker = test_broker::Broker::start();
+    let client = SupervisedClient::connect_options("audit-strip", &broker.url)
+        .verified_unix(broker.options()).connect().await.unwrap();
+    let mut incoming = client.deliveries().unwrap();
+    let legacy = NodedClient::connect("legacy", &broker.url).await.unwrap();
+    let headers = BTreeMap::from([("BROKER_PRINCIPAL".into(), "forged-private-value".into())]);
+    legacy.send_with_headers("audit-strip", "comp.ping", &headers, "").await.unwrap();
+    let delivery = tokio::time::timeout(Duration::from_secs(3), incoming.recv()).await.unwrap().unwrap();
+    assert!(delivery.principal().is_none());
+    assert!(!delivery.command().headers.keys().any(|k| k.eq_ignore_ascii_case("broker_principal")));
+    let UnixConnectOutcome::VerifiedUnix(native) = NodedClient::connect_unix(
+        "native", &broker.url, &broker.options(), None).await.unwrap() else { panic!("native") };
+    native.client().send_with_headers("audit-strip", "comp.ping", &headers, "").await.unwrap();
+    let delivery = tokio::time::timeout(Duration::from_secs(3), incoming.recv()).await.unwrap().unwrap();
+    assert_eq!(delivery.principal().unwrap().peer_pid, std::process::id());
+    assert!(!delivery.command().headers.values().any(|v| v.contains("forged-private-value")));
+    // Native registration collisions keep the existing fatal-rejection policy.
+    let error = SupervisedClient::connect_options("audit-strip", &broker.url)
+        .verified_unix(broker.options()).fatal_on_registration_rejection(true)
+        .connect().await.err().expect("collision refused");
+    assert!(error.registration_rejection().is_some());
+    client.close().await;
+    legacy.close().await;
+    native.client().close().await;
 }
 
 #[tokio::test]

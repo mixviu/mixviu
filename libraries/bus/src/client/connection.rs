@@ -70,10 +70,7 @@ impl Connection {
                 return Err(ClientError::Native(anyhow::anyhow!("verified supervision requires an unbounded incoming lane")));
             }
             match NodedClient::connect_unix(name, url, unix, options.provenance.clone())
-                .await.map_err(|error| match error {
-                    crate::native_client::ConnectError::Protocol(error) => ClientError::from_native(error),
-                    error => ClientError::from_native(anyhow::Error::new(error)),
-                })? {
+                .await.map_err(unix_client_error)? {
                 crate::native_client::UnixConnectOutcome::VerifiedUnix(connection) => {
                     let (inner, incoming) = connection.into_supervised_parts();
                     let crate::native_client::unix::VerifiedIncoming::Unbounded(incoming) = incoming else { unreachable!("unbounded Unix options checked") };
@@ -282,4 +279,21 @@ impl Connection {
             .await
             .map_err(ClientError::from_native)
     }
+}
+
+#[cfg(unix)]
+fn unix_client_error(error: crate::native_client::ConnectError) -> ClientError {
+    // Endpoint diagnostics wrap the protocol error. Preserve registration
+    // rejection through that chain so the supervisor's fatal policy is shared.
+    let mut cause: &dyn std::error::Error = &error;
+    loop {
+        if let Some(rejection) = cause.downcast_ref::<crate::RegistrationRejected>() {
+            return ClientError::Rejected(rejection.clone());
+        }
+        match cause.source() {
+            Some(source) => cause = source,
+            None => break,
+        }
+    }
+    ClientError::Native(anyhow::Error::new(error))
 }
