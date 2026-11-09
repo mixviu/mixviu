@@ -67,15 +67,15 @@ pub fn touch_output(state: &Loop, device: &Device) -> Option<String> {
         .iter()
         .find(|p| p.touch_device.as_deref() == Some(id.as_str()))
         .and_then(|p| p.identity.clone());
-    if let Some(edid) = claimed
-        && let Some(output) = space.state.outputs().find(|o| {
-            model::environment::preference::identity::matches(
-                &edid,
-                &world::state::output_preference_key(o),
-            )
-        })
-    {
-        return Some(output_key(output));
+    if let Some(edid) = claimed {
+        let outputs = space.state.outputs().collect::<Vec<_>>();
+        let keys = outputs.iter().map(|o| world::state::output_preference_key(o)).collect::<Vec<_>>();
+        let associated = device.output_name();
+        if let Some(index) = model::environment::preference::identity::touch_index(
+            &keys, &edid, associated.as_deref(),
+        ) {
+            return Some(output_key(outputs[index]));
+        }
     }
 
     // 1. Explicit libinput output association.

@@ -364,6 +364,7 @@ pub fn build_teleport(
                 let key = connected_keys
                     .iter()
                     .filter(|k| identity::matches(&p.identity, k))
+                    .filter(|k| output_active(&prefs.outputs, k))
                     .min()?;
                 // A legacy placement belongs to one connector only. Explicit
                 // placements replace it rather than duplicating its zone id.

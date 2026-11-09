@@ -64,8 +64,8 @@ pub fn enumerate(
         let conn_name = format!("{:?}-{}", info.interface(), info.interface_id());
         let raw = parse::read(drm, info);
         let parsed = raw.as_ref().and_then(parse::parse);
-        let id = identity::identity(parsed.as_ref(), &conn_name);
-        let edid_key = id.preference_key(&kms::connector::select::connector_name(info));
+        let id = identity::for_connector(parsed.as_ref(), info);
+        let edid_key = identity::connector_key(parsed.as_ref(), info);
         let label = if parsed.is_some() {
             format!("{} {} ({conn_name})", id.make, id.model)
         } else {

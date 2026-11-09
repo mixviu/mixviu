@@ -67,11 +67,7 @@ fn mode_info(m: DrmMode) -> ModeInfo {
 fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
     let raw = kms::edid::parse::read(drm, info);
     let parsed = raw.as_ref().and_then(kms::edid::parse::parse);
-    kms::edid::identity::identity(
-        parsed.as_ref(),
-        &format!("{:?}-{}", info.interface(), info.interface_id()),
-    )
-    .preference_key(&kms_connector_name(info))
+    kms::edid::identity::connector_key(parsed.as_ref(), info)
 }
 
 /// Tear down the current pipe (freeing its CRTC) and bring `target` up as the primary
@@ -252,8 +248,10 @@ fn write_snapshots(state: &mut Loop, ctx: &NativeRenderContext) {
 
 /// The preferred-monitor key (the FIRST output profile's identity — same default-output
 /// rule startup uses), if set.
-fn preferred_key() -> Option<String> {
-    profile::get().into_iter().next().and_then(|p| p.identity)
+fn preferred_index(keys: &[String]) -> Option<usize> {
+    let profiles = profile::get();
+    let saved = profiles.iter().filter_map(|p| p.identity.as_deref()).collect::<Vec<_>>();
+    model::environment::preference::identity::preferred_index(keys, &saved)
 }
 
 /// Resolve the mode to bring `info` up at FROM PREFERENCES — its per-output profile's
@@ -284,14 +282,8 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
 /// Pick the connector to drive among the connected ones: the preferred monitor if
 /// present, else the first connected — exactly the startup `connector.select` policy.
 fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connector::Info> {
-    if let Some(key) = preferred_key()
-        && let Some(c) = connected.iter().find(|c| {
-            model::environment::preference::identity::matches(&key, &identity_key(drm, c))
-        })
-    {
-        return Some(c.clone());
-    }
-    connected.first().cloned()
+    let keys = connected.iter().map(|c| identity_key(drm, c)).collect::<Vec<_>>();
+    preferred_index(&keys).and_then(|i| connected.get(i)).or_else(|| connected.first()).cloned()
 }
 
 /// Bring a NEW connected monitor online as an ADDITIONAL output: build a fresh
@@ -474,14 +466,8 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         let drive = if !active.is_empty() {
             active
         } else if !connected.is_empty() {
-            let chosen = preferred_key()
-                .and_then(|pk| {
-                    keyed
-                        .iter()
-                        .find(|(_, k)| model::environment::preference::identity::matches(&pk, k))
-                        .map(|(c, _)| c.clone())
-                })
-                .or_else(|| connected.first().cloned());
+            let chosen = preferred_index(&connected_keys)
+                .and_then(|i| connected.get(i)).or_else(|| connected.first()).cloned();
             chosen.into_iter().collect()
         } else {
             Vec::new()
@@ -753,6 +739,3 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     }
 }
 
-fn kms_connector_name(info: &connector::Info) -> String {
-    kms::connector::select::connector_name(info)
-}

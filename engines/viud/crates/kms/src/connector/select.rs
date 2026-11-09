@@ -24,7 +24,20 @@ pub fn force(name: String) {
 }
 
 /// The kernel's name for a connector (`HDMI-A-1`): interface plus index.
-pub fn connector_name(info: &connector::Info) -> String {
+/// The identity-relevant part of connector::Info, also usable in CPU fixtures.
+pub trait ConnectorInfo {
+    fn interface(&self) -> connector::Interface;
+    fn interface_id(&self) -> u32;
+    fn size(&self) -> Option<(u32, u32)>;
+}
+
+impl ConnectorInfo for connector::Info {
+    fn interface(&self) -> connector::Interface { self.interface() }
+    fn interface_id(&self) -> u32 { self.interface_id() }
+    fn size(&self) -> Option<(u32, u32)> { self.size() }
+}
+
+pub fn connector_name(info: &impl ConnectorInfo) -> String {
     format!("{}-{}", info.interface().as_str(), info.interface_id())
 }
 
@@ -54,12 +67,9 @@ pub fn select(
         return found.and_then(|i| connected.into_iter().nth(i));
     }
 
-    let chosen = profiles.iter().find_map(|p| {
-        let want = p.identity.as_deref()?;
-        connected.iter().position(|c| {
-            model::environment::preference::identity::matches(want, &identity_key(drm, c))
-        })
-    });
+    let keys = connected.iter().map(|c| identity_key(drm, c)).collect::<Vec<_>>();
+    let saved = profiles.iter().filter_map(|p| p.identity.as_deref()).collect::<Vec<_>>();
+    let chosen = model::environment::preference::identity::preferred_index(&keys, &saved);
 
     match chosen {
         Some(idx) => connected.into_iter().nth(idx),
@@ -74,13 +84,6 @@ pub fn select(
 fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
     let raw = parse::read(drm, info);
     let parsed = raw.as_ref().and_then(parse::parse);
-    identity::identity(
-        parsed.as_ref(),
-        &format!("{:?}-{}", info.interface(), info.interface_id()),
-    )
-    .preference_key(&kms_connector_name(info))
+    identity::connector_key(parsed.as_ref(), info)
 }
 
-fn kms_connector_name(info: &connector::Info) -> String {
-    crate::connector::select::connector_name(info)
-}

@@ -887,7 +887,7 @@ pub fn save_fields_at(
 
 /// Set the mode for the output profile matching `edid_key`, inserting a new
 /// profile if none exists. Other fields of an existing profile are preserved.
-pub fn upsert_output(outputs: &mut Vec<OutputProfile>, edid_key: &str, mode: ModeRequest) {
+pub fn upsert_output(outputs: &mut Vec<OutputProfile>, edid_key: &str, mode: ModeRequest, connected: &[String]) {
     inherit_output(outputs, edid_key);
     if let Some(p) = outputs
         .iter_mut()
@@ -902,6 +902,7 @@ pub fn upsert_output(outputs: &mut Vec<OutputProfile>, edid_key: &str, mode: Mod
             touch_device: None,
         });
     }
+    sync_legacy_output(outputs, edid_key, connected);
 }
 
 /// Whether the monitor keyed by `edid_key` is DRIVEN (active). Unknown monitors —
@@ -914,7 +915,7 @@ pub fn output_active(outputs: &[OutputProfile], edid_key: &str) -> bool {
 
 /// Set the active (driven) flag for `edid_key`, inserting an identity-only profile
 /// if none exists. Preserves the profile's mode + position.
-pub fn set_active(outputs: &mut Vec<OutputProfile>, edid_key: &str, active: bool) {
+pub fn set_active(outputs: &mut Vec<OutputProfile>, edid_key: &str, active: bool, connected: &[String]) {
     inherit_output(outputs, edid_key);
     if let Some(p) = outputs
         .iter_mut()
@@ -929,6 +930,7 @@ pub fn set_active(outputs: &mut Vec<OutputProfile>, edid_key: &str, active: bool
             touch_device: None,
         });
     }
+    sync_legacy_output(outputs, edid_key, connected);
 }
 
 /// The touch-device id (if any) claimed by the monitor keyed by `edid_key`.
@@ -953,6 +955,7 @@ pub fn set_touch_device(
     outputs: &mut Vec<OutputProfile>,
     edid_key: &str,
     device_id: Option<String>,
+    connected: &[String],
 ) {
     inherit_output(outputs, edid_key);
     if let Some(id) = &device_id {
@@ -975,6 +978,7 @@ pub fn set_touch_device(
             touch_device: device_id,
         });
     }
+    sync_legacy_output(outputs, edid_key, connected);
 }
 
 /// Replace the whole cursor-teleport layout (the settings canvas commits the full
@@ -987,7 +991,7 @@ pub fn set_layout(prefs: &mut Preference, placements: Vec<LayoutPlacement>) {
 /// preferred output the compositor drives (`display.base` uses `profiles.first()`).
 /// Reuses an existing profile (preserving its mode) or creates an identity-only one,
 /// then moves it to the front. Shared by the settings window and the settings editor.
-pub fn set_default(outputs: &mut Vec<OutputProfile>, edid_key: &str) {
+pub fn set_default(outputs: &mut Vec<OutputProfile>, edid_key: &str, connected: &[String]) {
     inherit_output(outputs, edid_key);
     let profile = match outputs
         .iter()
@@ -1002,6 +1006,7 @@ pub fn set_default(outputs: &mut Vec<OutputProfile>, edid_key: &str) {
         },
     };
     outputs.insert(0, profile);
+    sync_legacy_output(outputs, edid_key, connected);
 }
 
 // Copy the entire legacy profile before changing one field. Keep the original
@@ -1013,5 +1018,24 @@ fn inherit_output(outputs: &mut Vec<OutputProfile>, key: &str) {
     if let Some(mut p) = super::identity::find(outputs, key, |p| p.identity.as_deref()).cloned() {
         p.identity = Some(key.to_owned());
         outputs.push(p);
+    }
+}
+
+/// Keep the portable legacy fallback current only when live topology proves the
+/// panel is unambiguous. Callers must supply all connected outputs, including
+/// inactive ones; an empty/unknown topology never permits a shared write.
+pub fn sync_legacy_output(outputs: &mut Vec<OutputProfile>, key: &str, connected: &[String]) {
+    use super::identity;
+    if identity::connector(key).is_none() || !connected.iter().any(|k| k == key)
+        || connected.iter().filter(|k| identity::stable(k) == identity::stable(key)).count() != 1 {
+        return;
+    }
+    let Some(mut current) = outputs.iter().find(|p| p.identity.as_deref() == Some(key)).cloned() else { return };
+    let legacy = identity::stable(key);
+    current.identity = Some(legacy.to_owned());
+    if let Some(old) = outputs.iter_mut().find(|p| p.identity.as_deref() == Some(legacy)) {
+        *old = current;
+    } else {
+        outputs.push(current);
     }
 }

@@ -310,8 +310,8 @@ pub fn wire(
             .inner
             .kernel
             .get_mut(&drivers::output::base::OUTPUT_MODES_SNAPSHOT_MUT) = OutputModesSnapshot {
-            // EDID identity "make model serial" — the per-monitor key the picker
-            // selects with and the settings-editor persists.
+            // Preference identity "make model serial @connector:NAME";
+            // runtime routing uses the connector/protocol name alone.
             edid_key: world::state::output_preference_key(&display.output),
             current: Some(to_info(&display.drm_mode)),
             available: display.connector.modes().iter().map(to_info).collect(),
