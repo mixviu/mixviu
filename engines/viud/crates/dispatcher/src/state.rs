@@ -2489,6 +2489,8 @@ mod handler_impls {
             // PROTOCOL only — buffer handling + popup commit; the world effect is
             // applied at drain via `apply_commit`
             on_commit_buffer_handler::<Dispatch>(surface);
+            // Committed colour descriptions reach the composite with their buffer.
+            crate::wire::color::on_commit(surface);
             self.popup.state.commit(surface);
             if let Some(popup) = self.popup.state.find_popup(surface) {
                 match popup {

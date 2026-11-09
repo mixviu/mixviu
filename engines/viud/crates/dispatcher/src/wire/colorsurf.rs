@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::wire::color::{
     ImageDescData, ParamsState, chromaticity, output_description, preferred, primaries_from,
-    send_info, send_ready, store_surface_color, track_feedback, track_output, transfer_from, wenum,
+    send_info, send_ready, set_pending_color, track_feedback, track_output, transfer_from, wenum,
 };
 use render_gles::color::hdr::describe::{Description, Transfer};
 use render_gles::color::hdr::math::BT709;
@@ -36,7 +36,10 @@ fn scrgb() -> Description {
     d.lum_ref = 203.0;
     let target = preferred();
     d.mastering_min = target.mastering_min;
-    d.mastering_max = target.mastering_max;
+    // The range scRGB can carry far exceeds 80 cd/m² (values above 1.0). With
+    // no HDR output to take the target from, assume a 1000 cd/m² master, so an
+    // SDR output tone-maps highlights instead of clipping them all to white.
+    d.mastering_max = target.mastering_max.or(Some(1000.0));
     d.mastering_primaries = target.mastering_primaries;
     d
 }
@@ -97,9 +100,9 @@ pub fn dispatch_color_output<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
     }
 }
 
-/// Simplification: the description applies at once rather than on the next
-/// `wl_surface.commit` (the protocol double-buffers it). A client sets it
-/// before attaching the buffer it describes, which is what matters.
+/// Set and unset are double-buffered: they take effect on the surface's next
+/// commit, with the buffer they describe (`color::on_commit`). Destroying the
+/// object unsets the description, also at the next commit.
 pub fn dispatch_color_surface(req: SurfReq, surface: &WlSurface) {
     info!("color: surface request {:?}", req);
     match req {
@@ -107,10 +110,10 @@ pub fn dispatch_color_surface(req: SurfReq, surface: &WlSurface) {
             image_description, ..
         } => {
             let d = image_description.data::<ImageDescData>().and_then(|d| d.0);
-            store_surface_color(surface, d);
+            set_pending_color(surface, d);
         }
         SurfReq::UnsetImageDescription | SurfReq::Destroy => {
-            store_surface_color(surface, None);
+            set_pending_color(surface, None);
         }
         _ => {}
     }
@@ -230,4 +233,31 @@ pub fn dispatch_image_desc<W: Dispatch<WpImageDescriptionInfoV1, ()> + 'static>(
         return Some(info);
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use render_gles::color::hdr::describe::OutputColor;
+    use smithay::backend::renderer::gles::UniformValue;
+
+    fn tm(us: &[smithay::backend::renderer::gles::Uniform<'static>]) -> (f32, f32, f32) {
+        match &us.iter().find(|u| u.name == "u_tm").unwrap().value {
+            UniformValue::_3f(a, b, c) => (*a, *b, *c),
+            v => panic!("{v:?}"),
+        }
+    }
+
+    /// scRGB: 1.0 is 80 cd/m² anchored to a 203 cd/m² reference white, and with
+    /// no HDR output its highlights are tone-mapped on an SDR target rather
+    /// than all clipped to white (Sol round 2).
+    #[test]
+    fn scrgb_scale_reference_and_sdr_highlights() {
+        let d = scrgb();
+        assert_eq!((d.lum_max, d.lum_ref), (80.0, 203.0));
+        assert_eq!(d.mastering_max, Some(1000.0));
+        let (on, src, dst) = tm(&OutputColor::sdr().decode_uniforms(&d));
+        assert_eq!(on, 1.0);
+        assert!(src > dst, "content peak must exceed SDR white: {src} vs {dst}");
+    }
 }

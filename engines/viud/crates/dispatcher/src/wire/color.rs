@@ -17,6 +17,7 @@ use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
 use smithay::reexports::wayland_server::Weak;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch, Resource};
+use smithay::wayland::compositor::with_states;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -271,9 +272,71 @@ pub fn output_changed(output: &str) {
     }
 }
 
-/// The surface's description, for the composite (`None` clears it).
-pub fn store_surface_color(surface: &WlSurface, description: Option<Description>) {
-    describe::set_surface(surface, description);
+/// A surface's colour description as double-buffered surface state: set by
+/// `set_image_description` / `unset_image_description` (pending), applied by
+/// `wl_surface.commit` with the buffer it describes, and through smithay's
+/// cache for synchronised subsurfaces. `serial` changes on every set or unset.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ColorCached {
+    pub description: Option<Description>,
+    pub serial: u64,
+}
+
+impl smithay::wayland::compositor::Cacheable for ColorCached {
+    fn commit(&mut self, _dh: &DisplayHandle) -> Self {
+        *self
+    }
+    fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
+        *into = self;
+    }
+}
+
+static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// The serial last handed to the composite, per surface.
+#[derive(Default)]
+struct AppliedSerial(std::sync::atomic::AtomicU64);
+
+/// Record a pending description (`None`: unset); it takes effect on commit.
+pub fn set_pending_color(surface: &WlSurface, description: Option<Description>) {
+    let serial = SERIAL.fetch_add(1, Ordering::Relaxed) + 1;
+    with_states(surface, |states| {
+        let mut cached = states.cached_state.get::<ColorCached>();
+        let pending = cached.pending();
+        pending.description = description;
+        pending.serial = serial;
+    });
+}
+
+/// `wl_surface.commit`: hand the composite every committed description change
+/// in this surface's tree (a parent commit applies its synchronised
+/// subsurfaces' cached state too).
+pub fn on_commit(surface: &WlSurface) {
+    use smithay::wayland::compositor::{TraversalAction, with_surface_tree_downward};
+    // The global exists only with `hdr` set; without it no client can have set
+    // a description, so skip the walk on every commit.
+    if !model::environment::config::base::try_get().is_some_and(|e| e.hdr) {
+        return;
+    }
+    let mut changed: Vec<(WlSurface, Option<Description>)> = Vec::new();
+    with_surface_tree_downward(
+        surface,
+        (),
+        |_, _, _| TraversalAction::DoChildren(()),
+        |s, states, _| {
+            let current = *states.cached_state.get::<ColorCached>().current();
+            states.data_map.insert_if_missing_threadsafe(AppliedSerial::default);
+            if let Some(applied) = states.data_map.get::<AppliedSerial>()
+                && applied.0.swap(current.serial, Ordering::Relaxed) != current.serial
+            {
+                changed.push((s.clone(), current.description));
+            }
+        },
+        |_, _, _| true,
+    );
+    for (s, d) in changed {
+        describe::set_surface(&s, d);
+    }
 }
 
 pub fn send_ready(desc: &WpImageDescriptionV1) {

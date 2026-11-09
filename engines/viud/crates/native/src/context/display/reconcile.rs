@@ -170,6 +170,7 @@ fn bring_up(
         // succeeded, so a failed fail-over leaves the old identity in place rather
         // than half-migrating.
         let old = std::mem::replace(&mut ctx.pipe_mut().output, output.clone());
+        crate::render::execute::hdr::publish(&old.name(), None);
         // Every world's Space, not just the hosted one: a world parked across this
         // fail-over would otherwise keep the departed monitor and never see the new
         // one (`map_output_everywhere`).
@@ -494,6 +495,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     while i < ctx.outputs.len() {
         if !drive_handles.contains(&ctx.outputs[i].connector) {
             let removed = ctx.outputs.remove(i);
+            crate::render::execute::hdr::publish(&removed.output.name(), None);
             state
                 .state
                 .redraw
@@ -555,6 +557,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 while i < ctx.outputs.len() {
                     if ctx.outputs[i].connector == th && ctx.outputs[i].drm_output.is_some() {
                         let removed = ctx.outputs.remove(i);
+                        crate::render::execute::hdr::publish(&removed.output.name(), None);
                         state
                             .state
                             .redraw
