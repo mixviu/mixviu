@@ -5,11 +5,12 @@
 //! dimensions; SVGs keep their bytes and are rasterised at the size they are
 //! drawn (`crate::view` uploads both as egui textures on its own context).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
+const BRAND: &[u8] = include_bytes!("../../../share/brand/logos/alien-cyclops.svg");
 
 /// A unique id per decoded asset, so a texture cache can tell a re-decoded
 /// file from the same one.
@@ -79,7 +80,15 @@ pub(crate) fn rasterise(svg: &Svg, width: u32, height: u32) -> Option<egui::Colo
 }
 
 pub(crate) type Prepared = BTreeMap<(String, String, String), Asset>;
-type AssetCache = BTreeMap<(String, u32, Option<String>), Asset>;
+type FileStamp = (Option<SystemTime>, u64);
+type AssetCache =
+    crate::cache::Cache<(String, u32, Option<String>), (Asset, Option<(PathBuf, FileStamp)>)>;
+
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    // Accepted limitation: coarse mtimes can hide same-size in-place writes.
+    let meta = path.metadata().ok()?;
+    Some((meta.modified().ok(), meta.len()))
+}
 
 pub(crate) fn key(id: &str, row: Option<&crate::view::Route>) -> (String, String, String) {
     (
@@ -92,17 +101,14 @@ pub(crate) fn key(id: &str, row: Option<&crate::view::Route>) -> (String, String
     )
 }
 
-// The panel behaviour publishes an empty src and hides the image when apps
-// cannot resolve its requested theme. Recover these shell glyphs locally;
-// never replace a deliberately hidden application image.
+// Legacy visible panel images with an empty source use the shared catalogue.
+// Hidden images remain hidden, including in older scene documents.
 pub(crate) fn panel_fallback(id: &str) -> Option<&'static str> {
     match id {
-        "st_notes_i" => Some("preferences-system-notifications-symbolic"),
-        "st_vol_i" => Some("audio-volume-high-symbolic"),
-        "st_net_i" => Some("network-wired-symbolic"),
-        // The launcher mark, the full-colour cyclops (share/brand installs
-        // it). Not symbolic: its red eye must keep its colour.
-        "launcher_icon" => Some("dev.mixos"),
+        "st_notes_i" => Some("icon:bell"),
+        "st_vol_i" => Some("icon:volume-2"),
+        "st_net_i" => Some("icon:ethernet-port"),
+        "launcher_icon" => Some("brand:cyclops"),
         _ => None,
     }
 }
@@ -117,19 +123,95 @@ pub(crate) fn fallback_image(id: &str) -> Option<&'static str> {
     }
 }
 
+/// Legacy panel fallbacks are image references as well as child edges.
+/// Return only references not already placed by the ordinary children path.
+pub(crate) fn fallback_reference(tree: &scene::ResolvedScene, id: &str) -> Option<&'static str> {
+    if tree.name != "panel" {
+        return None;
+    }
+    let target = fallback_image(id)?;
+    let image = tree.nodes.get(target)?;
+    if image.family != "image" || crate::view::flag(image, "hidden") {
+        return None;
+    }
+    let mut pending = vec!["root"];
+    let mut seen = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let Some(node) = tree.nodes.get(id) else {
+            continue;
+        };
+        if crate::view::flag(node, "hidden") {
+            continue;
+        }
+        if id == target {
+            return None;
+        }
+        pending.extend(crate::templates::children(node));
+    }
+    Some(target)
+}
+
 pub(crate) fn prepare(
     tree: &scene::ResolvedScene,
     lists: &crate::templates::PreparedLists,
 ) -> Prepared {
+    // Embedded catalogue sources do not depend on XDG or the filesystem.
+    // Keep the shell's fixed glyphs off the search-path validation path too.
+    let templates = crate::templates::template_ids(tree);
+    let embedded = |id: &str, node: &scene::Node, row: bool| {
+        if node.family != "image" || crate::view::flag(node, "hidden") {
+            return true;
+        }
+        let source = crate::freedesktop::normalise(crate::templates::text(node, "src"));
+        source.starts_with("icon:")
+            || source == "brand:cyclops"
+            || (!row
+                && source.is_empty()
+                && (tree.name != "panel"
+                    || panel_fallback(id).is_none_or(|source| {
+                        source.starts_with("icon:") || source == "brand:cyclops"
+                    })))
+    };
+    if tree
+        .nodes
+        .iter()
+        .all(|(id, node)| templates.contains(id) || embedded(id, node, false))
+        && lists.values().all(|data| {
+            data.instances
+                .values()
+                .all(|nodes| nodes.iter().all(|(id, node)| embedded(id, node, true)))
+        })
+    {
+        static EMBEDDED: OnceLock<Mutex<AssetCache>> = OnceLock::new();
+        return prepare_with(
+            tree,
+            lists,
+            EMBEDDED.get_or_init(Mutex::default),
+            |_, _, _| None,
+        );
+    }
     // Only the fixed production resolver shares this cache. Injected resolvers
     // must use their own cache so they cannot consume or replace its assets.
-    static CACHE: OnceLock<Mutex<AssetCache>> = OnceLock::new();
-    prepare_with(
-        tree,
-        lists,
-        CACHE.get_or_init(Mutex::default),
-        crate::icons::resolve,
-    )
+    static CACHE: OnceLock<Mutex<(u64, AssetCache)>> = OnceLock::new();
+    crate::icons::with_resolver(|resolver, generation| {
+        let mut cache = CACHE.get_or_init(Mutex::default).lock().unwrap();
+        if cache.0 != generation {
+            cache.0 = generation;
+            cache.1.clear();
+        }
+        let assets = Mutex::new(std::mem::take(&mut cache.1));
+        let prepared = prepare_with(tree, lists, &assets, |source, size, app| {
+            if source.starts_with("mix:") {
+                return paths::resolve(source).ok().filter(|path| path.is_file());
+            }
+            resolver.resolve_in_generation(source, size, 1, app)
+        });
+        cache.1 = assets.into_inner().unwrap();
+        prepared
+    })
 }
 
 fn prepare_with(
@@ -140,10 +222,10 @@ fn prepare_with(
 ) -> Prepared {
     let mut prepared = Prepared::new();
     let mut insert = |key, id: &str, node: &scene::Node, app: Option<&str>| {
-        if node.family != "image" {
+        if node.family != "image" || crate::view::flag(node, "hidden") {
             return;
         }
-        let source = crate::templates::text(node, "src");
+        let source = crate::freedesktop::normalise(crate::templates::text(node, "src"));
         let source = if source.is_empty() && tree.name == "panel" {
             panel_fallback(id).unwrap_or(source)
         } else {
@@ -162,15 +244,55 @@ fn prepare_with(
         });
         let size = size[0].max(size[1]).ceil() as u32;
         let cache_key = (source.to_owned(), size, app.map(str::to_owned));
-        if let Some(asset) = cache
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(&cache_key).cloned())
+        if !Path::new(source).is_absolute()
+            && let Some(asset) = cache.lock().ok().and_then(|mut cache| {
+                cache
+                    .get(&cache_key)
+                    .filter(|(_, file)| {
+                        file.as_ref()
+                            .is_none_or(|(path, stamp)| file_stamp(path) == Some(*stamp))
+                    })
+                    .map(|(asset, _)| asset.clone())
+            })
         {
             prepared.insert(key, asset);
             return;
         }
-        if let Some(path) = resolve(source, size, app) {
+        let embedded: Option<(Arc<[u8]>, bool)> = if source == "brand:cyclops" {
+            Some((BRAND.into(), false))
+        } else {
+            source
+                .strip_prefix("icon:")
+                .and_then(viu::icons::Icon::from_name)
+                .map(|icon| (viu::icons::source(icon).into_bytes().into(), true))
+        };
+        if let Some((bytes, symbolic)) = embedded {
+            let asset = Asset::Svg(Svg {
+                id: next_id(),
+                bytes,
+                symbolic,
+            });
+            let mut cache = cache.lock().unwrap();
+            cache.insert(cache_key, (asset.clone(), None));
+            prepared.insert(key, asset);
+        } else if let Some(path) = resolve(source, size, app) {
+            // Explicit sources must be resolved each preparation: a new file
+            // must replace a cached fallback. Still reuse unchanged decoded
+            // bytes once the resolver has confirmed which path now wins.
+            if let Some(asset) = cache.lock().ok().and_then(|mut cache| {
+                cache
+                    .get(&cache_key)
+                    .filter(|(_, file)| {
+                        file.as_ref().is_some_and(|(cached, old)| {
+                            cached == &path && file_stamp(cached) == Some(*old)
+                        })
+                    })
+                    .map(|(asset, _)| asset.clone())
+            }) {
+                prepared.insert(key, asset);
+                return;
+            }
+            let stamp = file_stamp(&path);
             let asset = if crate::icons::is_svg(&path) {
                 // Keep bytes and identity alive through layout/page switches.
                 std::fs::read(&path).ok().map(|bytes| {
@@ -184,23 +306,55 @@ fn prepare_with(
                 raster(&path).map(Asset::Raster)
             };
             if let Some(asset) = asset {
-                if let Ok(mut cache) = cache.lock()
-                    && cache.len() < 512
-                {
-                    cache.insert(cache_key, asset.clone());
+                if let Ok(mut cache) = cache.lock() {
+                    cache.insert(
+                        cache_key,
+                        (asset.clone(), stamp.map(|stamp| (path.clone(), stamp))),
+                    );
                 }
                 prepared.insert(key, asset);
             }
         }
     };
+    fn visible<'a>(
+        get: &impl Fn(&str) -> Option<&'a scene::Node>,
+        id: &str,
+        out: &mut BTreeSet<String>,
+        tree: Option<&scene::ResolvedScene>,
+    ) {
+        let Some(node) = get(id) else {
+            return;
+        };
+        if crate::view::flag(node, "hidden") || !out.insert(id.into()) {
+            return;
+        }
+        for child in crate::templates::children(node) {
+            visible(get, child, out, tree);
+        }
+        if let Some(target) = tree.and_then(|tree| fallback_reference(tree, id)) {
+            visible(get, target, out, tree);
+        }
+    }
+    let mut drawn = BTreeSet::new();
+    visible(&|id| tree.nodes.get(id), "root", &mut drawn, Some(tree));
     let templates = crate::templates::template_ids(tree);
     for (id, node) in &tree.nodes {
-        if !templates.contains(id) {
+        if drawn.contains(id) && !templates.contains(id) {
             insert(key(id, None), id, node, None);
         }
     }
     for (list, data) in lists {
+        if !drawn.contains(list) {
+            continue;
+        }
         for (item, nodes) in &data.instances {
+            let mut drawn = BTreeSet::new();
+            visible(
+                &|id| nodes.get(id),
+                crate::templates::text(&tree.nodes[list], "row"),
+                &mut drawn,
+                None,
+            );
             let app = tree
                 .nodes
                 .get(list)
@@ -211,7 +365,9 @@ fn prepare_with(
                 })
                 .and_then(|row| row["app_id"].as_str().or_else(|| row["id"].as_str()));
             for (id, node) in nodes {
-                insert((list.clone(), item.clone(), id.clone()), id, node, app);
+                if drawn.contains(id) {
+                    insert((list.clone(), item.clone(), id.clone()), id, node, app);
+                }
             }
         }
     }
@@ -243,7 +399,7 @@ fn raster_with_cache(path: &Path, cache: &Mutex<RasterCache>) -> Option<Raster> 
         pixels.height() as usize,
         pixels.into_raw(),
     );
-    if cache.len() >= 512 {
+    if cache.len() >= crate::cache::CAPACITY {
         // A live handle shares its pixel buffer with the cache. Only discard
         // unused entries, allowing the limit to grow while scenes hold icons.
         cache.retain(|_, (_, _, handle)| Arc::strong_count(&handle.rgba) > 1);
@@ -271,6 +427,157 @@ pub(crate) fn theme_glyph(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panel_catalogue_names_all_exist() {
+        use sha2::{Digest, Sha256};
+        let mut names = BTreeSet::new();
+        for source in [
+            include_str!("../../../share/scenes/panel/behaviour.mix"),
+            include_str!("../../../share/scenes/panel/scene.mix"),
+        ] {
+            for tail in source.split("\"icon:").skip(1) {
+                let name = tail.split('"').next().unwrap();
+                assert!(
+                    viu::icons::Icon::from_name(name).is_some(),
+                    "unknown panel catalogue icon: {name}"
+                );
+                names.insert(name);
+            }
+        }
+        assert!(names.len() >= 10, "the check must cover the panel mapping");
+        let provenance = include_str!("../../../provenance/panel-embedded-icons.md");
+        let hash = |bytes: &[u8]| format!("{:x}", Sha256::digest(bytes));
+        let brand_hash = provenance
+            .split('`')
+            .find(|token| token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit()))
+            .unwrap();
+        assert_eq!(
+            hash(BRAND),
+            brand_hash,
+            "canonical embedded brand provenance"
+        );
+        let mut copies = 0;
+        for line in provenance.lines() {
+            let fields: Vec<_> = line.split('|').map(str::trim).collect();
+            if fields.len() != 4 || !fields[1].ends_with(".svg") {
+                continue;
+            }
+            let icon = viu::icons::Icon::from_name(fields[1].trim_end_matches(".svg")).unwrap();
+            assert_eq!(
+                hash(icon.svg().as_bytes()),
+                fields[2],
+                "{} provenance hash",
+                fields[1]
+            );
+            let original = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../share/icons/lucide")
+                .join(fields[1]);
+            assert_eq!(
+                icon.svg().as_bytes(),
+                std::fs::read(original).unwrap().as_slice(),
+                "{} byte-identical copy",
+                fields[1]
+            );
+            copies += 1;
+        }
+        assert_eq!(copies, 4);
+    }
+
+    #[test]
+    fn file_uri_appearing_outside_search_roots_replaces_miss_or_placeholder_next_prepare() {
+        for placeholder in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let data = root.path().join("search");
+            let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+            if placeholder {
+                let path = data.join("icons/Fixture/32x32/apps/application-x-executable.svg");
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::copy(fixtures.join("embedded-icon.svg"), path).unwrap();
+            }
+            let resolver = crate::freedesktop::Resolver::new(
+                crate::freedesktop::Lookup::in_data_dirs("Fixture", [data]),
+            );
+            let path = root.path().join("new.png");
+            let uri = serde_json::to_string(&format!("file://{}", path.display())).unwrap();
+            let source = format!(
+                "---\nscene: 1\nname: explicit\ncitizen: test\n---\n```mix\nroot: {{widget: \"image\", src: {uri}, w: 20, h: 20}}\n```\n"
+            );
+            let tree = scene::resolve(&scene::parse(&source).unwrap()).unwrap();
+            let lists = crate::templates::validate_templates(&tree).unwrap();
+            let cache = Mutex::new(AssetCache::new());
+            let prepare = || {
+                prepare_with(&tree, &lists, &cache, |source, size, app| {
+                    resolver.resolve_in_generation(source, size, 1, app)
+                })
+            };
+            let first = prepare();
+            assert_eq!(first.contains_key(&key("root", None)), placeholder);
+            let generation = resolver.generation();
+            std::fs::copy(fixtures.join("icon.png"), &path).unwrap();
+            assert_eq!(
+                resolver.generation(),
+                generation,
+                "explicit file is outside tracked roots"
+            );
+            let second = prepare();
+            let Some(Asset::Raster(image)) = second.get(&key("root", None)) else {
+                panic!("new explicit file must replace the miss or placeholder");
+            };
+            assert!(image.rgba[3] > 0, "pixels ready for the next paint");
+            let third = prepare();
+            let Some(Asset::Raster(reused)) = third.get(&key("root", None)) else {
+                panic!("cached raster");
+            };
+            assert_eq!(
+                image.id, reused.id,
+                "unchanged explicit file retains its decoded handle"
+            );
+        }
+    }
+
+    #[test]
+    fn hidden_subtrees_and_rows_never_resolve_and_visible_assets_reuse_handles() {
+        let tree = scene::resolve(
+            &scene::parse(
+                r#"---
+scene: 1
+name: hidden
+citizen: test
+---
+```mix
+root: {widget: "column", children: ["hidden", "rows", "shown"]}
+hidden: {widget: "column", hidden: true, children: ["bad"]}
+bad: {widget: "image", src: "hidden-parent"}
+rows: {widget: "list", row: "row", row_height: 20, rows: [{id: "one", cells: []}]}
+row: {widget: "column", hidden: true, children: ["row_icon"]}
+row_icon: {widget: "image", src: "hidden-row"}
+shown: {widget: "image", src: "visible", w: 20, h: 20}
+```
+"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let lists = crate::templates::validate_templates(&tree).unwrap();
+        let cache = Mutex::new(AssetCache::new());
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/embedded-icon.svg");
+        let first = prepare_with(&tree, &lists, &cache, |source, _, _| {
+            assert_eq!(source, "visible");
+            Some(path.clone())
+        });
+        assert_eq!(first.len(), 1);
+        let second = prepare_with(&tree, &lists, &cache, |_, _, _| {
+            panic!("unchanged inputs must reuse the asset")
+        });
+        let Some(Asset::Svg(a)) = first.get(&key("shown", None)) else {
+            panic!("SVG");
+        };
+        let Some(Asset::Svg(b)) = second.get(&key("shown", None)) else {
+            panic!("SVG");
+        };
+        assert_eq!(a.id, b.id);
+    }
 
     #[test]
     fn empty_launcher_sources_reach_desktop_lookup_and_prepare_real_pixels() {
@@ -327,29 +634,14 @@ icon: {widget: "image", src: "", w: 31, h: 31}
     }
 
     #[test]
-    fn empty_panel_launcher_recovers_the_full_colour_cyclops() {
+    fn empty_panel_launcher_uses_embedded_colour_brand() {
         let tree = scene::resolve(&scene::parse(
             "---\nscene: 1\nname: panel\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"launcher_icon\"]}\nlauncher_icon: {widget: \"image\", src: \"\", w: 28, h: 28}\n```\n",
         ).unwrap()).unwrap();
         let lists = crate::templates::validate_templates(&tree).unwrap();
-        // Where share/brand installs it: icons/mixos/symbolic/apps/dev.mixos.svg.
-        let root = std::env::temp_dir().join(format!("viud-launcher-{}", std::process::id()));
-        let mark = root.join("icons/mixos/symbolic/apps/dev.mixos.svg");
-        std::fs::create_dir_all(mark.parent().unwrap()).unwrap();
-        std::fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/embedded-icon.svg"),
-            &mark,
-        )
-        .unwrap();
-        let images = prepare_with(
-            &tree,
-            &lists,
-            &Mutex::new(AssetCache::new()),
-            |name, _, _| {
-                assert_eq!(name, "dev.mixos");
-                Some(mark.clone())
-            },
-        );
+        let images = prepare_with(&tree, &lists, &Mutex::new(AssetCache::new()), |_, _, _| {
+            panic!("catalogue icons never search the filesystem")
+        });
         assert!(
             matches!(
                 images.get(&key("launcher_icon", None)),
@@ -358,10 +650,16 @@ icon: {widget: "image", src: "", w: 31, h: 31}
                     ..
                 }))
             ),
-            "the cyclops keeps its colours (its eye is red)"
+            "the cyclops keeps its colours"
         );
+        let Some(Asset::Svg(svg)) = images.get(&key("launcher_icon", None)) else {
+            panic!("brand SVG");
+        };
+        let pixels = rasterise(svg, 64, 64).unwrap();
+        assert!(pixels.pixels.iter().any(|p| p.r() > 100
+            && p.r() > p.g().saturating_mul(2)
+            && p.r() > p.b().saturating_mul(2)));
         assert_eq!(fallback_image("launcher_text"), Some("launcher_icon"));
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -418,7 +716,7 @@ icon: {widget: "image", src: "", w: 31, h: 31}
             let mut live = Vec::new();
             {
                 let mut entries = cache.lock().unwrap();
-                for index in 0..511 {
+                for index in 0..crate::cache::CAPACITY - 1 {
                     let handle = Raster::from_rgba(1, 1, vec![0; 4]);
                     if keep_live {
                         live.push(handle.clone());
@@ -428,12 +726,19 @@ icon: {widget: "image", src: "", w: 31, h: 31}
                         (None, 0, handle),
                     );
                 }
-                assert_eq!(entries.len(), 512);
+                assert_eq!(entries.len(), crate::cache::CAPACITY);
             }
             let _other = raster_with_cache(&other, &cache).unwrap();
             let second = raster_with_cache(&path, &cache).unwrap();
             assert_eq!(first.id, second.id, "keep_live={keep_live}");
-            assert_eq!(cache.lock().unwrap().len(), if keep_live { 513 } else { 2 });
+            assert_eq!(
+                cache.lock().unwrap().len(),
+                if keep_live {
+                    crate::cache::CAPACITY + 1
+                } else {
+                    2
+                }
+            );
             drop(live);
         }
     }
