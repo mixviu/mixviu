@@ -11,6 +11,9 @@ pub mod seat;
 pub mod store;
 pub mod templates;
 pub mod view;
+
+#[cfg(test)]
+pub(crate) mod panel_profile;
 pub use command::SceneCommand;
 pub const DEFAULT_SERVICE: &str = "shell";
 

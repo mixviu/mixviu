@@ -28,6 +28,8 @@ fn content(source: &str, frame: Option<Frame>, dialog: bool) -> Arc<Content> {
 #[test]
 fn p2_real_panel_binding_and_cpu_frame_measurement() {
     use std::time::Instant;
+    let profiled = std::env::var_os("P2_PROFILE").is_some();
+    crate::panel_profile::enable(profiled);
     let source = include_str!("../../../../share/scenes/panel/scene.mix");
     let baseline = source
         .replace("$src.clock.time", "$model.clock.time")
@@ -44,8 +46,10 @@ fn p2_real_panel_binding_and_cpu_frame_measurement() {
         view.setup(&ctx);
         let mut patch_ns = Vec::new();
         let mut frame_ns = Vec::new();
+        let mut stage_samples = Vec::new();
         let mut counts = std::collections::BTreeSet::new();
         for i in 0..110 {
+            crate::panel_profile::take();
             let time = format!("12:{:02}", i % 60);
             let value = if path == "model" {
                 let mut model = tree.model.clone();
@@ -63,7 +67,10 @@ fn p2_real_panel_binding_and_cpu_frame_measurement() {
             }
             tree = result.tree;
             let started = Instant::now();
+            let templates_stage = crate::panel_profile::span("templates");
             let lists = crate::templates::validate_templates(&tree).unwrap();
+            drop(templates_stage);
+            let replace_stage = crate::panel_profile::span("replace_content");
             view.update(SceneMessage::Replace(Arc::new(Content {
                 tree: tree.clone(),
                 lists,
@@ -71,6 +78,8 @@ fn p2_real_panel_binding_and_cpu_frame_measurement() {
                 frame: None,
                 dialog: false,
             })));
+            drop(replace_stage);
+            let run_stage = crate::panel_profile::span("egui_run");
             let mut output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
@@ -81,12 +90,21 @@ fn p2_real_panel_binding_and_cpu_frame_measurement() {
                 },
                 |ui| view.show(ui, &mut Vec::new()),
             );
+            drop(run_stage);
             output.textures_delta.clear();
             let frame = started.elapsed().as_nanos();
+            if profiled {
+                // Additional stage: the old CPU-frame number stopped before
+                // tessellation. Keep that boundary unchanged for comparison.
+                let _tess = crate::panel_profile::span("tessellate_extra");
+                std::hint::black_box(ctx.tessellate(output.shapes, output.pixels_per_point));
+            }
+            let stages = crate::panel_profile::take();
             assert!(view.layout.nodes.contains_key("clock_time"));
             if i >= 10 {
                 patch_ns.push(patch);
                 frame_ns.push(frame);
+                stage_samples.push(stages);
             }
         }
         patch_ns.sort();
@@ -98,7 +116,20 @@ fn p2_real_panel_binding_and_cpu_frame_measurement() {
             frame_ns[50] as f64 / 1000.0,
             frame_ns[94] as f64 / 1000.0
         );
+        if profiled {
+            let keys: std::collections::BTreeSet<_> = stage_samples.iter()
+                .flat_map(|sample| sample.keys().cloned()).collect();
+            let mut summary = serde_json::Map::new();
+            for key in keys {
+                let mut ns: Vec<_> = stage_samples.iter().map(|s| s.get(&key).map_or(0, |v| v.0)).collect();
+                ns.sort();
+                let calls: u64 = stage_samples.iter().map(|s| s.get(&key).map_or(0, |v| v.1)).sum();
+                summary.insert(key, json!({"median_us":ns[50] as f64/1000.0,"p95_us":ns[94] as f64/1000.0,"mean_us":ns.iter().sum::<u128>() as f64/100000.0,"calls_per_frame":calls as f64/100.0}));
+            }
+            println!("P2_STAGES {name} inclusive=true samples=100 {}", serde_json::Value::Object(summary));
+        }
     }
+    crate::panel_profile::enable(false);
 }
 
 fn runtime(source: &str, size: (u32, u32)) -> UiRuntime<SceneUi> {

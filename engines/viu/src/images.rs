@@ -54,6 +54,8 @@ pub(crate) enum Asset {
 /// Rasterise `svg` to `width` x `height` pixels (premultiplied in egui's
 /// form). A symbolic icon comes out white with its alpha, to be tinted.
 pub(crate) fn rasterise(svg: &Svg, width: u32, height: u32) -> Option<egui::ColorImage> {
+    #[cfg(test)]
+    let _stage = crate::panel_profile::span("svg_rasterise");
     let tree = resvg::usvg::Tree::from_data(&svg.bytes, &resvg::usvg::Options::default()).ok()?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width.max(1), height.max(1))?;
     let size = tree.size();
@@ -138,6 +140,8 @@ fn prepare_with(
     cache: &Mutex<AssetCache>,
     resolve: impl Fn(&str, u32, Option<&str>) -> Option<PathBuf>,
 ) -> Prepared {
+    #[cfg(test)]
+    let _stage = crate::panel_profile::span("images_prepare");
     let mut prepared = Prepared::new();
     let mut insert = |key, id: &str, node: &scene::Node, app: Option<&str>| {
         if node.family != "image" {
@@ -167,13 +171,26 @@ fn prepare_with(
             .ok()
             .and_then(|cache| cache.get(&cache_key).cloned())
         {
+            #[cfg(test)]
+            crate::panel_profile::count("asset_cache_hit");
             prepared.insert(key, asset);
             return;
         }
-        if let Some(path) = resolve(source, size, app) {
+        #[cfg(test)]
+        crate::panel_profile::count("asset_cache_miss");
+        #[cfg(test)]
+        let lookup = crate::panel_profile::span(format!("icon_lookup:{source}"));
+        let path = resolve(source, size, app);
+        #[cfg(test)]
+        drop(lookup);
+        #[cfg(test)]
+        if path.is_none() { crate::panel_profile::count("icon_lookup_missing"); }
+        if let Some(path) = path {
             let asset = if crate::icons::is_svg(&path) {
                 // Keep bytes and identity alive through layout/page switches.
                 std::fs::read(&path).ok().map(|bytes| {
+                    #[cfg(test)]
+                    crate::panel_profile::count("svg_read");
                     Asset::Svg(Svg {
                         id: next_id(),
                         bytes: bytes.into(),
@@ -237,6 +254,8 @@ fn raster_with_cache(path: &Path, cache: &Mutex<RasterCache>) -> Option<Raster> 
     {
         return Some(handle.clone());
     }
+    #[cfg(test)]
+    let _stage = crate::panel_profile::span("raster_decode");
     let pixels = image::open(path).ok()?.into_rgba8();
     let handle = Raster::from_rgba(
         pixels.width() as usize,

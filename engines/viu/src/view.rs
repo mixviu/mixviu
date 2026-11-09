@@ -326,6 +326,8 @@ impl SceneUi {
     }
 
     fn theme(&self) -> Arc<Theme> {
+        #[cfg(test)]
+        let _stage = crate::panel_profile::span("theme");
         match &self.look {
             Some(look) => look.theme.clone(),
             None => embedded(self.content.dialog),
@@ -478,6 +480,8 @@ impl SceneUi {
                     .size()
             })
         };
+        #[cfg(test)]
+        let layout_stage = crate::panel_profile::span("layout");
         self.layout = flex::layout(
             &self.content,
             ui.max_rect().size(),
@@ -485,6 +489,10 @@ impl SceneUi {
             &self.images,
             &measure,
         );
+        #[cfg(test)]
+        drop(layout_stage);
+        #[cfg(test)]
+        let _paint_stage = crate::panel_profile::span("paint_shapes");
         paint::paint(self, ui, emit);
     }
 

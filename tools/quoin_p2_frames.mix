@@ -1,0 +1,12 @@
+-- Lab-only release measurement. Two jobs is within either heavy worker cap.
+-- Run only through CBC; this never installs or connects to a desktop.
+for $profile in [false, true]
+  $cmd = ["env", "CARGO_BUILD_JOBS=2"]
+  if $profile then push($cmd, "P2_PROFILE=1") end
+  $cmd = concat($cmd, ["cargo", "test", "--release", "--locked", "-p", "viu", "--lib", "p2_real_panel_binding_and_cpu_frame_measurement", "--", "--nocapture", "--test-threads=1"])
+  print("P2_RELEASE profiled=" .. to_string($profile) .. " CARGO_BUILD_JOBS=2")
+  $r = run_argv($cmd, {timeout:3600})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
