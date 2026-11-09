@@ -60,16 +60,20 @@ in `app.mix`; the migrated chooser, raw-name and filesystem tests are retained.
 | Code | Main | Merged branch |
 | --- | ---: | ---: |
 | MIX-E1101 | 146 | 145 |
-| MIX-E1102 | 1051 | 646 |
+| MIX-E1102 | 1051 | 647 |
 | MIX-E1201 | 4 | 4 |
 | MIX-E1401 | 2 | 2 |
 | MIX-W2201 | 2 | 2 |
 | MIX-W2302 | 5 | 5 |
 | MIX-W2307 | 2 | 2 |
 | MIX-W2401 | 53 | 49 |
-| **Total** | **1265** | **855** |
+| **Total** | **1265** | **856** |
 
-410 diagnostics removed; no per-file/code regression.
+409 diagnostics removed; no per-file/code regression. The 2026-11-10 refresh
+merged main at d17f7caa. Its newer P1, place-attribute and icon-cache scripts
+already use require imports; the volume-lab rename retains its host declaration.
+CBC regenerated the baseline using this tree’s Mix: errors 1203 -> 798,
+warnings 62 -> 58. Lock resolution and rustfmt produced no changes.
 
 
 The pre-cut-over reduction was 828 to 527. Main subsequently added app and
