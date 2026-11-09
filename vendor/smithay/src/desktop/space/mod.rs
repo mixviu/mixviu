@@ -34,6 +34,14 @@ pub use self::utils::*;
 
 crate::utils::ids::id_gen!(space_id);
 
+static MEMBERSHIP_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Process-wide Space membership revision. Moving or raising existing elements
+/// does not change it; mapping into another Space or unmapping does.
+pub fn membership_revision() -> u64 {
+    MEMBERSHIP_REVISION.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Debug)]
 struct InnerElement<E> {
     element: E,
@@ -153,6 +161,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         let outputs = if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
             self.elements.remove(pos).outputs
         } else {
+            MEMBERSHIP_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             HashMap::new()
         };
 
@@ -246,6 +255,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// This function does nothing for already unmapped windows
     pub fn unmap_elem(&mut self, element: &E) {
         if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
+            MEMBERSHIP_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let elem = self.elements.remove(pos);
             for output in elem.outputs.keys() {
                 elem.element.output_leave(output);
@@ -449,7 +459,11 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// One third of [`refresh`](Self::refresh); see it for when to call the parts
     /// individually.
     pub fn refresh_alive(&mut self) {
+        let before = self.elements.len();
         self.elements.retain(|e| e.alive());
+        if self.elements.len() != before {
+            MEMBERSHIP_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// Send output enter/leave to elements, deciding membership by position: an element

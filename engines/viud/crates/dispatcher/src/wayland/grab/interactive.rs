@@ -43,6 +43,20 @@ impl InteractiveGrab {
 /// Cancel only our own interactive grab. Unsetting reports End first; Cancel
 /// follows it in the same ordered drain, so the host never commits a zone.
 pub fn cancel(dispatch: &mut Dispatch, time: u32) -> bool {
+    cancel_matching(dispatch, |_| true, time)
+}
+
+/// Hiding a window must also revoke chrome grabs, whose start has no client
+/// focus. Match the grab's window handle rather than its optional seat focus.
+pub fn cancel_for(dispatch: &mut Dispatch, handle: &SurfaceHandle, time: u32) -> bool {
+    cancel_matching(dispatch, |target| target == handle, time)
+}
+
+fn cancel_matching(
+    dispatch: &mut Dispatch,
+    matches: impl FnOnce(&SurfaceHandle) -> bool,
+    time: u32,
+) -> bool {
     let Some(pointer) = dispatch.seat.seat.get_pointer() else {
         return false;
     };
@@ -52,7 +66,9 @@ pub fn cancel(dispatch: &mut Dispatch, time: u32) -> bool {
                 .map(|grab| grab.handle.clone())
         })
         .flatten();
-    let Some(handle) = handle else { return false };
+    let Some(handle) = handle.filter(matches) else {
+        return false;
+    };
     pointer.unset_grab_without_focus_restore(dispatch, SERIAL_COUNTER.next_serial(), time);
     dispatch.push_surface_event(SurfaceEvent::Interactive {
         handle,

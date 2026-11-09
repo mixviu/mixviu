@@ -38,6 +38,7 @@ pub fn button<I: InputBackend>(event: &I::TabletToolButtonEvent, _loop: &mut Loo
     let state = event.button_state();
     let pressed = state == ButtonState::Pressed;
     let time = event.time_msec();
+    super::revoke::flush(_loop, time);
 
     // 1. An explicit binding (Settings → Pen) overrides everything.
     let bound = _loop.inner.preference.pen.stylus_action(raw);
@@ -50,10 +51,26 @@ pub fn button<I: InputBackend>(event: &I::TabletToolButtonEvent, _loop: &mut Loo
     let pen = &_loop.inner.preference.pen;
     if pen.below_threshold_cursor {
         if pen.below_left == Some(raw) {
+            if pressed {
+                _loop
+                    .state
+                    .tablet
+                    .push_emulated_button(&tool, raw, BTN_LEFT);
+            } else {
+                _loop.state.tablet.take_emulated_button(&tool, raw);
+            }
             crate::pointer::input::touch::emulate::button(_loop, BTN_LEFT, pressed, time);
             return;
         }
         if pen.below_right == Some(raw) {
+            if pressed {
+                _loop
+                    .state
+                    .tablet
+                    .push_emulated_button(&tool, raw, BTN_RIGHT);
+            } else {
+                _loop.state.tablet.take_emulated_button(&tool, raw);
+            }
             crate::pointer::input::touch::emulate::button(_loop, BTN_RIGHT, pressed, time);
             return;
         }
@@ -72,13 +89,13 @@ pub fn button<I: InputBackend>(event: &I::TabletToolButtonEvent, _loop: &mut Loo
             } else if let Some(mapped) = map_stylus_button(raw) {
                 // Non-tablet target → the pen is a mouse.
                 crate::pointer::input::touch::emulate::button(_loop, mapped, true, time);
-                _loop.state.tablet.push_emulated_button(raw, mapped);
+                _loop.state.tablet.push_emulated_button(&tool, raw, mapped);
             }
         }
         ButtonState::Released => {
             // A release matching an emulated press wins regardless of where the pen
             // now sits, so a held barrel button never gets stuck pressed.
-            if let Some(mapped) = _loop.state.tablet.take_emulated_button(raw) {
+            if let Some(mapped) = _loop.state.tablet.take_emulated_button(&tool, raw) {
                 crate::pointer::input::touch::emulate::button(_loop, mapped, false, time);
             } else {
                 let serial = SERIAL_COUNTER.next_serial();
