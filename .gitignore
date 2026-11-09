@@ -1,6 +1,5 @@
 # Runtime state, logs, receipts
 /_var/
-/last.md
 # Lab specimens and fixtures (may hold personal data or real captures)
 /_lab/
 # Mesh-private values: hosts, addresses, operator paths

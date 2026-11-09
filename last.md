@@ -1,3 +1,58 @@
+# Quoin P3 discovery lab — 2026-11-09
+
+Branch: `lab/quoin-p3`, never merge; no PR. Code head before receipt: `35648554cf0423bd24fec751c030d0a2eeea1d96`.
+
+**Acceptance is incomplete.** Small panel instances mount on two headless outputs. Both behaviour shapes pass the lifecycle/state checks below, but captured frames can be blank or show another output's panel. Full shipped-panel policy is not ported or measured; no full-panel rendered acceptance is claimed.
+
+## D2 evidence and recommendation
+
+Three trials per count on real viud headless 1/2/3-output runs; actual comp output snapshots feed equivalent native Bus behaviour processes. Medians below. RSS sums behaviour VmRSS only. Startup is spawn-to-first-reply with warm caches, not panel presentation. Calls and JSON request+reply payload bytes cover 20 successful update ticks; registration, retries, protocol overhead, loader/host/compositor/GPU are excluded. Shared runs first, so startup order is confounded. No tail claim.
+
+| Shape | Outputs | RSS KiB | Startup ms | Calls / 20 ticks | Payload bytes | Behaviour bytes |
+|---|---:|---:|---:|---:|---:|---:|
+| shared | 1 | 21200 | 22.78 | 20 | 9560 | 289 |
+| shared | 2 | 21076 | 22.74 | 20 | 17340 | 289 |
+| shared | 3 | 21228 | 23 | 20 | 25120 | 289 |
+| instance | 1 | 21004 | 8.43 | 20 | 9560 | 288 |
+| instance | 2 | 41976 | 32.02 | 40 | 19360 | 288 |
+| instance | 3 | 63132 | 31.79 | 60 | 29160 | 288 |
+
+Code sizes cover tiny specimen behaviours plus common panel-state.mix policy, not the shipped panel. Earlier synthetic-snapshot trials show the same memory slope but are superseded by these real-output trials. Raw data and captures remain private.
+
+Recommend **one behaviour per scene**, provisionally: behaviour RSS is flat while instance processes scale with output count; the shared shape needs fewer sample requests and keeps state under one loader writer. Per-output sections remain keyed by comp key, persisted modes by output name. Fable decides D2; representative full-panel code complexity, memory and presentation latency remain unmeasured.
+
+## State and repeat findings
+
+Both shared and per-instance private live runs pass: two instances accepted; a workspace action changes its named output; a mode is persisted by output name; timed unplug removes the last output's scene from the host; survivor identity and mode remain. These are lifecycle passes, not visual passes. Output removal occurs during the loader's periodic update activity, but no deterministic pause inside a Bus transaction is injected. Adapter tests explicitly remove an output before pending model fanout and prove only its instance unloads. Replug/restart and keyed-widget-state reorder still need evidence.
+
+`instances: per_output|primary|named` is a lab opt-in loader entry point. Page ids are NAME@OUTPUT; backing scene names are hashed to satisfy P0. Output feed is behind one adapter using subscribe-before-snapshot/watch invalidation and reconnect refresh. Shared behaviour runs once; per-instance runs once per selected output, with one settings writer.
+
+`repeat` lowers in Mix to existing list templates. over is a dotted model/src path; max defaults 64, valid 1..128; unique nonempty string keys; no nested repeat/list or shared template subtrees. Exceeding bounds refuses the candidate. Variable-token rewriting preserves literals. P0 template families reject button: clickable row+text is the workspace button specimen. Host/core retains pure-binding validation and existing evaluation/node budgets. Production needs structural dirty tracking, arbitrary pure over expressions, source diagnostic mapping and keyed widget-state retention tests.
+
+P2 read at `35260eb5`, untouched. Watch is a watermark, not state; source updates are dotted src paths. Workspaces expose a map with `.list` (numeric index, optional name), plus per-output current. A Mix projection provides {id,index,label} for repeat, with current bound per output. Reserved model sections substitute for P0's absent read-only src/instance roots only in this lab.
+
+## CBC receipts
+
+- `20261109-154042-8c44f078-a1`: RC=0, baseline binaries.
+- `20261109-154221-7c40fe59-a1`: RC=0, multi-output prototype.
+- `20261109-154428-ed37f9ee`: RC=75, queue deadline; command did not run. Replaced by the direct native CBC jobs below, not a compiler failure.
+- `20261109-155240-1d8cba1f`: RC=1, wrapper's default 60-second process timeout; corrected.
+- `20261109-155428-d4feb81a`: RC=0, viu+viud build; worker formatting and Cargo.lock diffs applied locally.
+- `quoin-p3-redraw-final` and `20261109-155956-ab643307`: RC=0, redraw registration repair, source `585a5e2a`; formatting diff applied locally.
+- `quoin-p3-output-views`: pending, source `35648554`, per-output view initialisation matching native render path.
+
+Saved logs were read for completed jobs. Rust ran only on CBC. `check.mix` and Mix lint with deny-warnings pass. Builds have existing dependency warnings; no full-workspace green claim.
+
+## Native rendering findings and remaining work
+
+Headless previously supplied one output. Bounded lab controls add 1..3 and timed removal; every output needs redraw registration. Without it, the second capture timed out. With it, captures complete but one output can be blank or show another output's panel. Host accepts separate models and comp reports separate mapped layer surfaces; images still fail. Native's per-output view initialisation is the next repair under test.
+
+Operational fixture corrections: full smoke settings are required; frozen harness uses MIXOS_* while P0 engines use MIX_*, including MIX_VIU_COMP_SERVICE; capture accepts output name, not comp key. These were corrected in the isolated harness.
+
+Remaining: prove correct pixels on both outputs, full shipped panel set/policy and representative D2 measurements, deterministic mid-transaction unplug, replug/restart settings and reordered widget identity. Production derivation requires P2 landing and independent whole-specimen survey. No production install, desk4, VT or prefix writes.
+
+---
+
 # Quoin P0 — 2026-11-09
 
 PR: https://github.com/mixviu/mixviu/pull/36 (`docs/quoin-p0` -> `main`).

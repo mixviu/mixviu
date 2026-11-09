@@ -16,7 +16,7 @@ Run with the native Mix interpreter:
 
 ```text
 mix apps/quoin-p3-lab/check.mix
-mix apps/quoin-p3-lab/measure.mix HARNESS PRIVATE-RESULT-DIRECTORY
+mix apps/quoin-p3-lab/measure.mix HARNESS PRIVATE-RESULT-DIRECTORY [CBC-BINARY-DIRECTORY SMOKE-SETTINGS]
 mix apps/quoin-p3-lab/live.mix HARNESS CBC-BINARY-DIRECTORY PRIVATE-RUN-DIRECTORY
 ```
 
@@ -64,7 +64,9 @@ No code from the concurrent P2 branch is copied or edited here.
 ## Measurement limits
 
 `measure.mix` uses real native Bus calls and real behaviour processes with
-equivalent synthetic 1/2/3-output snapshots. Three trials, 20 synchronous
+equivalent 1/2/3-output snapshots. With a binary directory and smoke settings,
+it starts a private headless viud for each output count and takes the actual
+snapshot; without them, it uses synthetic snapshots. Three trials, 20 synchronous
 updates each; per-instance processes receive only their output section.
 It records summed behaviour VmRSS, spawn-to-first-reply time, successful
 request count and JSON request-plus-reply payload bytes. Protocol overhead,
@@ -80,3 +82,10 @@ The live harness separately captures both outputs and checks one surviving
 identity after compositor removal. Inspect its images and receipts before
 calling rendered acceptance complete. The host's settings and hidden-page
 behaviour remain separate questions for the independent survey.
+
+The lifecycle pass marker does not certify the screenshots. In the first
+multi-output runs, scene acceptance, workspace actions, settings persistence
+and teardown passed while capture images were blank or showed another
+output's panel. Redraw registration fixed capture deadlines; per-output
+render-view initialisation is the next bounded repair. These are lab findings,
+not permission to advertise visual acceptance.

@@ -61,6 +61,10 @@ try
     push($records, $io.rpc("shell", "shell.scene.get", {scene:$scene.id, output:$key}))
     push($records, $io.rpc("comp-p3", "comp.capture.frame", {output:$outputs[$key].name, path:$dir .. "/" .. $key .. ".png", cursor:false}))
   end
+  push($records, {surfaces:$io.rpc("comp-p3", "comp.props.get", {path:"surfaces"}), panels:$io.rpc("shell", "shell.props.get", {})})
+  $io.rpc("p3-loader", "workspace", {scene:$mounted.instances[$kept_key].id, item:{index:2}})
+  $ws = $io.rpc("comp-p3", "comp.props.get", {path:"workspaces"})
+  if $ws[$kept_key].current != 2 then raise("P3_LIVE", "workspace action did not target its output") end
   $until = monotonic() + 35
   $after = $mounted
   while monotonic() < $until
@@ -73,6 +77,14 @@ try
   if $after.instances[$survivor].id != $mounted.instances[$survivor].id then raise("P3_LIVE", "surviving identity changed") end
   if $after.model.outputs[$survivor].mode != "pinned" then raise("P3_LIVE", "survivor mode changed") end
   if load_data($env.P3_SETTINGS)[$after.model.outputs[$survivor].name] != "pinned" then raise("P3_LIVE", "mode not persisted by name") end
+  $removed = filter(keys($mounted.instances), fn($k) = $k != $survivor)[0]
+  $gone = false
+  try
+    $io.rpc("shell", "shell.scene.watch", {scene:$mounted.instances[$removed].id, output:$survivor})
+  catch $message, $error
+    $gone = (($error.details ?? {}).upstream ?? {}).error == "unknown scene"
+  end
+  if not $gone then raise("P3_LIVE", "removed instance remains in host") end
   push($records, $io.rpc("shell", "shell.scene.get", {scene:$after.instances[$survivor].id, output:$survivor}))
   write_file($dir .. "/result.json", json_encode({result:"pass", before:$mounted, after:$after, records:$records}))
   print("P3_LIVE=pass")
