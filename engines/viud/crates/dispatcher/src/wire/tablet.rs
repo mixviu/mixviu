@@ -406,6 +406,29 @@ impl TabletState {
         }
     }
 
+    /// Revoke tool and pad focus for a hidden surface, including an active stroke.
+    pub fn clear_surface_focus(&mut self, matches: impl Fn(&WlSurface) -> bool, serial: Serial, time: u32) {
+        let mut cleared = false;
+        for tool in self.tools.values_mut() {
+            if tool.focus.as_ref().is_some_and(&matches) {
+                tool.proximity_out(time);
+                tool.is_down = false;
+                cleared = true;
+            }
+        }
+        for pad in self.pads.values_mut() {
+            if pad.focused.as_ref().is_some_and(&matches) {
+                pad.set_focus(None, None, serial);
+            }
+        }
+        if cleared {
+            self.stroke = Stroke::None;
+            self.tool_cursor = false;
+            self.last_pen_screen = None;
+            self.emulated_buttons.clear();
+        }
+    }
+
     pub fn tool_motion(
         &mut self,
         tool: &TabletToolDescriptor,

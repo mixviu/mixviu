@@ -7,7 +7,7 @@ coordinates). Optional visual fields may be sent without geometry:
 | Field | Value | Reset (`null`) |
 | --- | --- | --- |
 | opacity | finite number 0–1 | 1 |
-| z | signed 32-bit integer, higher is forward | 0 |
+| z | signed 32-bit JSON integer, higher is forward; `1.0` is refused | 0 |
 | visible | boolean | true |
 | clip | `{x,y,width,height}`, logical window-local numbers | no crop |
 
@@ -30,3 +30,8 @@ Stacking uses the existing workspace band and normal raise order for equal
 z values. Compositor-marked drawables remain barriers, and lock, OSD and
 other compositor bands remain above client windows. Scale/rotation are
 reserved for a separately specified transform contract.
+
+A hidden window may still be raised; its new order takes effect when shown.
+Unregistered same-layer drawables also act as stacking barriers. Clip corners
+are clamped to the framebuffer after adding the window origin and projecting,
+so an extreme origin, clip or zoom cannot overflow a physical rectangle.

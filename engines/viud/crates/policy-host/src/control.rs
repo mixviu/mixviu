@@ -763,18 +763,10 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
         Ok(record) => record.id(),
         Err(error) => return ControlReply::WindowTarget { id: spec.id, error },
     };
-    let visual_only = spec.output.is_none()
-        && spec.x.is_none()
-        && spec.y.is_none()
-        && spec.width.is_none()
-        && spec.height.is_none();
-    if visual_only {
-        apply_visual(lp, id, spec);
-        return ControlReply::Body(
-            serde_json::json!({"id": spec.id, "generation": spec.generation}),
-        );
-    }
-    let facts = window_facts(lp, id);
+    let mut facts = window_facts(lp, id);
+    let mut requested_visual = lp.inner.comp.visual(id);
+    requested_visual.update(spec);
+    facts.input_presentable = requested_visual.visible;
     let (outputs, _, _) = crate::project::project_outputs(lp);
     let window = window_of(lp, id);
     let hints = window.as_ref().map(size_hints).unwrap_or_default();
@@ -853,6 +845,7 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
     lp.inner.comp.settings_changed("windows", "window.place");
     world::comp::visibility::sync_hidden(lp);
     if !visual.visible {
+        execute(lp, vec![Effect::FinishInteractive(id)]);
         crate::input::hide_window(lp, id);
         settle(lp, None);
     }

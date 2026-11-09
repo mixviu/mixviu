@@ -1881,6 +1881,7 @@ fn placement_visual_validation_and_resets() {
         json!({"opacity":"0.5"}),
         json!({"visible":0}),
         json!({"z":1.5}),
+        json!({"z":1.0}),
         json!({"z":2147483648_i64}),
         json!({"clip":{"x":0,"y":0,"width":-1,"height":5}}),
         json!({"clip":{"x":0,"y":0,"width":5,"height":5,"typo":0}}),

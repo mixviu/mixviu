@@ -26,3 +26,7 @@ and layer-shell, lock, OSD and screen UI bands are never promoted across.
 workspace and minimisation. State lasts for the window role's lifetime and
 can be re-queried after a shell restart. Scale and rotation need a later
 transform contract and are outside this command's current scope.
+
+Hidden windows can still be raised; the order applies when they are shown.
+Unregistered same-layer drawables are stacking barriers too. `z` requires a
+JSON integer token (`1.0` is refused).
