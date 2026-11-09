@@ -811,7 +811,9 @@ macro_rules! window_snapshot {
 }
 
 window_snapshot!(
-    opacity, z, requested_visible,
+    opacity,
+    z,
+    requested_visible,
     placement,
     id,
     foreign_id,
@@ -1023,7 +1025,10 @@ pub fn project_window_row(surface: &SurfaceSnapshot) -> WindowSnapshot {
         } else {
             "floating"
         },
-        opacity: 1.0, z: 0, clip: None, requested_visible: true,
+        opacity: 1.0,
+        z: 0,
+        clip: None,
+        requested_visible: true,
         float_geometry: None,
         occlusion: surface.occlusion.clone(),
         id: surface.id,
@@ -1784,14 +1789,46 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         Bool,
         "Whether the window is effectively on screen (false while minimised)"
     ),
-    descriptor!(&[L("windows"), S, L("opacity")], Number, "Persistent composite opacity, 0..=1; set through window.place"),
-    descriptor!(&[L("windows"), S, L("z")], Number, "Persistent stacking request within the workspace band"),
-    descriptor!(&[L("windows"), S, L("requested_visible")], Bool, "Persistent visibility request; visible also includes workspace and minimisation"),
-    descriptor!(&[L("windows"), S, L("clip")], Object, "Window-local logical clip rectangle, or null"),
-    descriptor!(&[L("windows"), S, L("clip"), L("x")], Number, "Local logical clip x"),
-    descriptor!(&[L("windows"), S, L("clip"), L("y")], Number, "Local logical clip y"),
-    descriptor!(&[L("windows"), S, L("clip"), L("width")], Number, "Local logical clip width"),
-    descriptor!(&[L("windows"), S, L("clip"), L("height")], Number, "Local logical clip height"),
+    descriptor!(
+        &[L("windows"), S, L("opacity")],
+        Number,
+        "Persistent composite opacity, 0..=1; set through window.place"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("z")],
+        Number,
+        "Persistent stacking request within the workspace band"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("requested_visible")],
+        Bool,
+        "Persistent visibility request; visible also includes workspace and minimisation"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip")],
+        Object,
+        "Window-local logical clip rectangle, or null"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip"), L("x")],
+        Number,
+        "Local logical clip x"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip"), L("y")],
+        Number,
+        "Local logical clip y"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip"), L("width")],
+        Number,
+        "Local logical clip width"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip"), L("height")],
+        Number,
+        "Local logical clip height"
+    ),
     descriptor!(
         &[L("windows"), S, L("pid")],
         Number,

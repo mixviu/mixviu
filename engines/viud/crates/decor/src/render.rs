@@ -42,7 +42,9 @@ pub struct Piece<R: Renderer> {
 }
 
 impl<R: Renderer> Element for Piece<R> {
-    fn alpha(&self) -> f32 { self.inner.alpha() }
+    fn alpha(&self) -> f32 {
+        self.inner.alpha()
+    }
     fn id(&self) -> &Id {
         &self.id
     }
@@ -612,7 +614,8 @@ where
                 for (id, (sx, _), (dx, dy)) in pieces {
                     let src = Rectangle::new((sx, 0.0).into(), (rr as f64, rr as f64).into());
                     let dst = Rectangle::new((dx, dy).into(), (rr, rr).into());
-                    if let Some(e) = piece(renderer, id, wc.commit, buffer, src, dst, clip, opacity) {
+                    if let Some(e) = piece(renderer, id, wc.commit, buffer, src, dst, clip, opacity)
+                    {
                         out.front.push(e);
                     }
                 }

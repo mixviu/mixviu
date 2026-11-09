@@ -262,7 +262,9 @@ where
             // A window cut to its rounded frame carries the cut as output-space
             // shader uniforms: move them with the thumbnail too.
             let mut element = element;
-            if let crate::window::draw::element::RawElement::WindowFitClipped(clipped) = element.element_mut() {
+            if let crate::window::draw::element::RawElement::WindowFitClipped(clipped) =
+                element.element_mut()
+            {
                 clipped.set_rescale(s, at);
             }
             let r =

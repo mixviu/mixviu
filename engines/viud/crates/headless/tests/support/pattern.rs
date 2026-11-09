@@ -334,7 +334,16 @@ delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);
 delegate_noop!(State: ignore WlBuffer);
 impl Dispatch<WlPointer, ()> for State {
-    fn event(state: &mut Self, _: &WlPointer, event: wl_pointer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if matches!(event, wl_pointer::Event::Button { .. }) { state.pointer_buttons += 1; }
+    fn event(
+        state: &mut Self,
+        _: &WlPointer,
+        event: wl_pointer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if matches!(event, wl_pointer::Event::Button { .. }) {
+            state.pointer_buttons += 1;
+        }
     }
 }

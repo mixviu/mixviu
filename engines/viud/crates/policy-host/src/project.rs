@@ -124,7 +124,10 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
             let mut row = project_window_row(surface);
             let id = surfaces::SurfaceId(row.id);
             let visual = lp.inner.comp.visual(id);
-            row.opacity = visual.opacity; row.z = visual.z; row.clip = visual.clip; row.requested_visible = visual.visible;
+            row.opacity = visual.opacity;
+            row.z = visual.z;
+            row.clip = visual.clip;
+            row.requested_visible = visual.visible;
             row.placement = lp.inner.comp.placement(id).name();
             row.float_geometry = lp.inner.comp.float_snapshot(id);
             if window_presentation {

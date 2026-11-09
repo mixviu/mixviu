@@ -24,7 +24,7 @@ use crate::camera::transform::translate::transform::{Context as XformCtx, Transf
 use crate::scene::identity::SolidBank;
 use crate::state::CoordinateTrait;
 use crate::state::Loop;
-use crate::window::draw::element::{ClampOpaque, RawElement as Element, ElementWindowSurface};
+use crate::window::draw::element::{ClampOpaque, ElementWindowSurface, RawElement as Element};
 use crate::window::draw::occlude::{Drawn, Occluders};
 use crate::window::interface::draw::visible::DrawWindow;
 use crate::window::interface::record::window::LoopWindow;
@@ -285,7 +285,9 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
-    if !visual_of(window).visible { return (Vec::new(), Drawn::default()); }
+    if !visual_of(window).visible {
+        return (Vec::new(), Drawn::default());
+    }
     // viud: no shader bundle composites windows (compositor.pipeline is cut),
     // so the engine always draws and occludes them itself.
     // Windows inside an active capture region must keep rendering (and getting
@@ -411,9 +413,19 @@ where
         decoration,
         decor::render::Pass::Presented,
     );
-    drawn.opaque = if visual_of(window).opacity < 1.0 { Vec::new() } else { opaque };
+    drawn.opaque = if visual_of(window).opacity < 1.0 {
+        Vec::new()
+    } else {
+        opaque
+    };
     let (elements, crop) = crop_elements(elements, window, ctx, elem_loc, size);
-    if let Some(crop) = crop { drawn.opaque = drawn.opaque.into_iter().filter_map(|r| r.intersection(crop)).collect(); }
+    if let Some(crop) = crop {
+        drawn.opaque = drawn
+            .opaque
+            .into_iter()
+            .filter_map(|r| r.intersection(crop))
+            .collect();
+    }
     (elements, drawn)
 }
 
@@ -424,7 +436,10 @@ struct WindowPlacement {
     crop_output: Rectangle<i32, Physical>,
 }
 
-pub type WindowCapture<R> = (Vec<crate::window::draw::element::Element<R>>, Size<i32, Physical>);
+pub type WindowCapture<R> = (
+    Vec<crate::window::draw::element::Element<R>>,
+    Size<i32, Physical>,
+);
 pub type FramedWindowCapture<R> = (
     Vec<crate::window::draw::element::Element<R>>,
     Size<i32, Physical>,
@@ -943,20 +958,45 @@ where
 }
 
 pub fn visual_of(window: &Window) -> comp_model::request::VisualAttributes {
-    window.user_data().get::<std::sync::Mutex<comp_model::request::VisualAttributes>>()
-        .map(|v| *v.lock().unwrap()).unwrap_or_default()
+    window
+        .user_data()
+        .get::<std::sync::Mutex<comp_model::request::VisualAttributes>>()
+        .map(|v| *v.lock().unwrap())
+        .unwrap_or_default()
 }
 
-fn crop_elements<R>(elements: Vec<Element<R>>, window: &Window, ctx: XformCtx,
-    loc: Point<i32, Logical>, size: Size<i32, Physical>)
-    -> (Vec<crate::window::draw::element::Element<R>>, Option<Rectangle<i32, Physical>>)
-where R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
+fn crop_elements<R>(
+    elements: Vec<Element<R>>,
+    window: &Window,
+    ctx: XformCtx,
+    loc: Point<i32, Logical>,
+    size: Size<i32, Physical>,
+) -> (
+    Vec<crate::window::draw::element::Element<R>>,
+    Option<Rectangle<i32, Physical>>,
+)
+where
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
     let visual = visual_of(window);
-    let crop = visual.clip.map(|c| project_rect(ctx, loc.x as f64 + c.x, loc.y as f64 + c.y, c.width, c.height));
+    let crop = visual.clip.map(|c| {
+        project_rect(
+            ctx,
+            loc.x as f64 + c.x,
+            loc.y as f64 + c.y,
+            c.width,
+            c.height,
+        )
+    });
     let rect = crop.unwrap_or(Rectangle::from_size(size));
-    let elements = if !visual.visible { Vec::new() } else { elements.into_iter()
-        .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect)).collect() };
+    let elements = if !visual.visible {
+        Vec::new()
+    } else {
+        elements
+            .into_iter()
+            .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect))
+            .collect()
+    };
     (elements, crop)
 }

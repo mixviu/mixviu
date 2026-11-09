@@ -158,7 +158,7 @@ fn fixture() -> CompSnapshot {
     windows.insert(
         "s2".into(),
         WindowSnapshot {
-            opacity: 1.0, z: 0, clip: None, requested_visible: true,
+            opacity: 1.0, z: 0, clip: Some(crate::request::ClipRect { x: 0.0, y: 0.0, width: 64.0, height: 48.0 }), requested_visible: true,
             placement: "floating",
             float_geometry: None,
             occlusion: Default::default(),

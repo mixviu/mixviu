@@ -205,38 +205,71 @@ pub struct VisualAttributes {
 
 impl Default for VisualAttributes {
     fn default() -> Self {
-        Self { opacity: 1.0, z: 0, visible: true, clip: None }
+        Self {
+            opacity: 1.0,
+            z: 0,
+            visible: true,
+            clip: None,
+        }
     }
 }
 
 impl VisualAttributes {
     pub fn update(&mut self, spec: &PlaceSpec) {
-        if let Some(value) = spec.opacity { self.opacity = value.unwrap_or(1.0); }
-        if let Some(value) = spec.z { self.z = value.unwrap_or(0); }
-        if let Some(value) = spec.visible { self.visible = value.unwrap_or(true); }
-        if let Some(value) = spec.clip { self.clip = value; }
+        if let Some(value) = spec.opacity {
+            self.opacity = value.unwrap_or(1.0);
+        }
+        if let Some(value) = spec.z {
+            self.z = value.unwrap_or(0);
+        }
+        if let Some(value) = spec.visible {
+            self.visible = value.unwrap_or(true);
+        }
+        if let Some(value) = spec.clip {
+            self.clip = value;
+        }
     }
 }
 
-fn visual_arg<T>(object: &serde_json::Map<String, Value>, key: &str,
-    parse: impl FnOnce(&Value) -> Option<T>, expected: &'static str, range: &'static str,
+fn visual_arg<T>(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    parse: impl FnOnce(&Value) -> Option<T>,
+    expected: &'static str,
+    range: &'static str,
 ) -> Result<Option<Option<T>>, ControlReply> {
     match object.get(key) {
         None => Ok(None),
         Some(Value::Null) => Ok(Some(None)),
-        Some(value) => parse(value).map(|v| Some(Some(v)))
+        Some(value) => parse(value)
+            .map(|v| Some(Some(v)))
             .ok_or_else(|| invalid_argument(key, expected, range)),
     }
 }
 
 fn clip_value(value: &Value) -> Option<ClipRect> {
     let o = value.as_object()?;
-    if o.len() != 4 { return None; }
-    let rect = ClipRect { x: o.get("x")?.as_f64()?, y: o.get("y")?.as_f64()?,
-        width: o.get("width")?.as_f64()?, height: o.get("height")?.as_f64()? };
-    [rect.x, rect.y, rect.width, rect.height, rect.x + rect.width, rect.y + rect.height]
-        .iter().all(|v| v.is_finite() && v.abs() <= i32::MAX as f64)
-        .then_some(rect).filter(|r| r.width >= 0.0 && r.height >= 0.0)
+    if o.len() != 4 {
+        return None;
+    }
+    let rect = ClipRect {
+        x: o.get("x")?.as_f64()?,
+        y: o.get("y")?.as_f64()?,
+        width: o.get("width")?.as_f64()?,
+        height: o.get("height")?.as_f64()?,
+    };
+    [
+        rect.x,
+        rect.y,
+        rect.width,
+        rect.height,
+        rect.x + rect.width,
+        rect.y + rect.height,
+    ]
+    .iter()
+    .all(|v| v.is_finite() && v.abs() <= i32::MAX as f64)
+    .then_some(rect)
+    .filter(|r| r.width >= 0.0 && r.height >= 0.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -938,7 +971,19 @@ pub fn parse_window_command(
             }
         }
         "comp.window.place" => {
-            const ALLOWED: &[&str] = &["id", "generation", "output", "x", "y", "width", "height", "opacity", "z", "visible", "clip"];
+            const ALLOWED: &[&str] = &[
+                "id",
+                "generation",
+                "output",
+                "x",
+                "y",
+                "width",
+                "height",
+                "opacity",
+                "z",
+                "visible",
+                "clip",
+            ];
             let object = args_object(args, &empty, ALLOWED)?;
             let (id, generation) = required_target(object)?;
             let output = output_arg(object)?;
@@ -949,10 +994,37 @@ pub fn parse_window_command(
                 y: finite_arg(object, "y")?,
                 width: size_arg(object, "width")?,
                 height: size_arg(object, "height")?,
-                opacity: visual_arg(object, "opacity", |v| v.as_f64().filter(|n| n.is_finite() && (0.0..=1.0).contains(n)), "number or null", "0..=1")?,
-                z: visual_arg(object, "z", |v| v.as_i64().and_then(|n| i32::try_from(n).ok()), "integer or null", "i32")?,
-                visible: visual_arg(object, "visible", Value::as_bool, "boolean or null", "true or false")?,
-                clip: visual_arg(object, "clip", clip_value, "rectangle or null", "finite x,y; non-negative width,height; i32 logical bounds")?,
+                opacity: visual_arg(
+                    object,
+                    "opacity",
+                    |v| {
+                        v.as_f64()
+                            .filter(|n| n.is_finite() && (0.0..=1.0).contains(n))
+                    },
+                    "number or null",
+                    "0..=1",
+                )?,
+                z: visual_arg(
+                    object,
+                    "z",
+                    |v| v.as_i64().and_then(|n| i32::try_from(n).ok()),
+                    "integer or null",
+                    "i32",
+                )?,
+                visible: visual_arg(
+                    object,
+                    "visible",
+                    Value::as_bool,
+                    "boolean or null",
+                    "true or false",
+                )?,
+                clip: visual_arg(
+                    object,
+                    "clip",
+                    clip_value,
+                    "rectangle or null",
+                    "finite x,y; non-negative width,height; i32 logical bounds",
+                )?,
                 output,
             };
             if spec.output.is_none()
@@ -960,7 +1032,10 @@ pub fn parse_window_command(
                 && spec.y.is_none()
                 && spec.width.is_none()
                 && spec.height.is_none()
-                && spec.opacity.is_none() && spec.z.is_none() && spec.visible.is_none() && spec.clip.is_none()
+                && spec.opacity.is_none()
+                && spec.z.is_none()
+                && spec.visible.is_none()
+                && spec.clip.is_none()
             {
                 return Err(invalid_argument(
                     "x",
