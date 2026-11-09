@@ -17,6 +17,10 @@ use world::window::lifecycle::event::WindowLifecycleEvent;
 ///
 /// The camera is pinned to identity, so activation does not move the view.
 fn activate_window(_loop: &mut Loop, window: Window) {
+    if window.uuid().and_then(|uuid| _loop.inner.comp.registry.id_for_uuid(uuid))
+        .is_some_and(|id| !_loop.inner.comp.visual(id).visible) {
+        return;
+    }
     // An override-redirect X11 window is never activated or focused (a dock or
     // xdg-activation cannot reach one through the registry; this is the
     // engine-side backstop).

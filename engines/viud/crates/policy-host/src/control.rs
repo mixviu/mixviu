@@ -629,6 +629,7 @@ fn raise(lp: &mut Loop, id: u64, generation: u64) -> ControlReply {
 
 /// Give the primary seat's keyboard to a window.
 fn focus_keyboard(lp: &mut Loop, id: SurfaceId) {
+    if !lp.inner.comp.visual(id).visible { return; }
     let Some(window) = window_of(lp, id) else {
         return;
     };
@@ -1022,7 +1023,7 @@ pub fn window_facts(lp: &Loop, id: SurfaceId) -> WindowFacts {
         min_size,
         max_size,
         visible: drawn(lp, &window),
-        input_presentable: true,
+        input_presentable: lp.inner.comp.visual(id).visible,
         geometry_size: (geometry.size.w, geometry.size.h),
         window_origin: (origin.x as f32, origin.y as f32),
         interactive: lp.inner.comp.interactive.is_some_and(|grab| grab.id == id),

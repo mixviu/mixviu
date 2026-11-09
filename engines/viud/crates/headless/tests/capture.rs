@@ -464,6 +464,8 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
     let hidden = bus.window();
     assert_eq!(hidden["requested_visible"],false);
     assert_eq!(hidden["visible"],false);
+    let focused = bus.call("comp.window.focus", json!({"id":window["id"],"generation":window["generation"]}));
+    assert_eq!(focused["focused"],false,"hidden windows cannot reacquire keyboard focus");
     assert_eq!(hidden["opacity"],0.5, "omitted attributes persist across list");
     assert_eq!(hidden["window_width"],window["window_width"]);
     assert_eq!(hidden["window_height"],window["window_height"]);
