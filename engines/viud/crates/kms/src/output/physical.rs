@@ -43,17 +43,19 @@ fn scale_state(s: f64) -> Scale {
     }
 }
 
-pub fn create(info: &connector::Info, identity: &MonitorIdentity) -> Output {
+pub fn create(
+    info: &impl crate::connector::select::ConnectorInfo,
+    identity: &MonitorIdentity,
+) -> Output {
     let (size_x, size_y) = info.size().unwrap_or((0, 0));
     Output::new(
         // Output NAME is the canonical DRM connector name (`eDP-1`, `HDMI-A-1`, …)
         // via `Interface::as_str()` — the SAME string the kernel and libinput use,
         // so `Device::output_name()` (a touchscreen's associated output) matches an
         // output by `name()`. It is unique per output (label / debug id / touch
-        // routing). The IDENTITY that keys everything else (render, settings, prefs,
-        // teleport) lives in `PhysicalProperties` below and falls back to the
-        // connector when the EDID has no serial.
-        format!("{}-{}", info.interface().as_str(), info.interface_id()),
+        // routing). Saved preference identity uses the EDID properties below plus
+        // this connector name; runtime routing uses the name alone.
+        crate::connector::select::connector_name(info),
         PhysicalProperties {
             size: Size::new(size_x as i32, size_y as i32),
             subpixel: Subpixel::Unknown,

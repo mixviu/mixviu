@@ -537,6 +537,8 @@ pub fn event_of(message: &SceneMessage) -> Option<(&str, &str, Value)> {
 }
 
 #[cfg(test)]
+mod icon_bench;
+#[cfg(test)]
 mod tests;
 
 #[cfg(test)]

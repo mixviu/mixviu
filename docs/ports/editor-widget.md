@@ -1,5 +1,9 @@
 # Reusable Viu editor
 
+Current source: `libraries/editor`, `libraries/editor-model`, `libraries/edit`
+and `libraries/syntax`. The paths in the gold reference below belong to its
+historical MixOS revision.
+
 Gold reference: MixOS 8779f3328, `libs/editor`, `libs/editor-model`, `libs/edit`
 and `libs/syntax`. Ced composes these facilities from Mix; there is no Ced
 Rust controller or editd connection inside the widget.

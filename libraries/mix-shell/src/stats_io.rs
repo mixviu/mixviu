@@ -2054,11 +2054,7 @@ fn query_db(sql: &str) -> Result<(), String> {
     println!("Usage statistics — all-time SQLite query");
     let mut statement = connection.prepare(sql).map_err(|e| e.to_string())?;
     let columns = statement.column_count();
-    let names: Vec<String> = statement
-        .column_names()
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let names: Vec<String> = statement.column_names().map(|s| s.to_string()).collect();
     println!("{}", names.join("\t"));
     let rows = statement
         .query_map([], |row| {

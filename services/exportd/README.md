@@ -3,7 +3,7 @@
 One-way exports of the MixViu settings to foreign desktops and toolkits,
 written in Mix. Each target is its own Bus citizen in `scripts/` with its
 own unit; settingsd stays the one source and nothing is read back. The
-[manual](../../docs/exportd/README.md) describes each exporter.
+manual (manual not included in this source tree) describes each exporter.
 
 - `scripts/cosmic.mix`: the COSMIC desktop (cosmic-config), unit
   `exportd-cosmic@.service`.

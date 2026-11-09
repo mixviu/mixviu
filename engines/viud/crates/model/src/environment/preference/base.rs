@@ -887,7 +887,14 @@ pub fn save_fields_at(
 
 /// Set the mode for the output profile matching `edid_key`, inserting a new
 /// profile if none exists. Other fields of an existing profile are preserved.
-pub fn upsert_output(outputs: &mut Vec<OutputProfile>, edid_key: &str, mode: ModeRequest) {
+/// `connected` must describe all connected panels, including inactive ones.
+pub fn upsert_output(
+    outputs: &mut Vec<OutputProfile>,
+    edid_key: &str,
+    mode: ModeRequest,
+    connected: ConnectedOutputs<'_>,
+) {
+    inherit_output(outputs, edid_key);
     if let Some(p) = outputs
         .iter_mut()
         .find(|p| p.identity.as_deref() == Some(edid_key))
@@ -901,21 +908,27 @@ pub fn upsert_output(outputs: &mut Vec<OutputProfile>, edid_key: &str, mode: Mod
             touch_device: None,
         });
     }
+    sync_legacy_output(outputs, edid_key, connected);
 }
 
 /// Whether the monitor keyed by `edid_key` is DRIVEN (active). Unknown monitors —
 /// and any without an explicit profile — default to active.
 pub fn output_active(outputs: &[OutputProfile], edid_key: &str) -> bool {
-    outputs
-        .iter()
-        .find(|p| p.identity.as_deref() == Some(edid_key))
+    super::identity::find(outputs, edid_key, |p| p.identity.as_deref())
         .map(|p| p.active)
         .unwrap_or(true)
 }
 
 /// Set the active (driven) flag for `edid_key`, inserting an identity-only profile
 /// if none exists. Preserves the profile's mode + position.
-pub fn set_active(outputs: &mut Vec<OutputProfile>, edid_key: &str, active: bool) {
+/// `connected` must describe all connected panels, including inactive ones.
+pub fn set_active(
+    outputs: &mut Vec<OutputProfile>,
+    edid_key: &str,
+    active: bool,
+    connected: ConnectedOutputs<'_>,
+) {
+    inherit_output(outputs, edid_key);
     if let Some(p) = outputs
         .iter_mut()
         .find(|p| p.identity.as_deref() == Some(edid_key))
@@ -929,13 +942,12 @@ pub fn set_active(outputs: &mut Vec<OutputProfile>, edid_key: &str, active: bool
             touch_device: None,
         });
     }
+    sync_legacy_output(outputs, edid_key, connected);
 }
 
 /// The touch-device id (if any) claimed by the monitor keyed by `edid_key`.
 pub fn touch_device_of<'a>(outputs: &'a [OutputProfile], edid_key: &str) -> Option<&'a str> {
-    outputs
-        .iter()
-        .find(|p| p.identity.as_deref() == Some(edid_key))
+    super::identity::find(outputs, edid_key, |p| p.identity.as_deref())
         .and_then(|p| p.touch_device.as_deref())
 }
 
@@ -951,11 +963,14 @@ pub fn output_for_touch(outputs: &[OutputProfile], device_id: &str) -> Option<St
 /// device belongs to at most one monitor, so a claim first clears that id from
 /// EVERY other profile, then sets it on the target (inserting an identity-only
 /// profile if none exists). Preserves the target's mode/active/position.
+/// `connected` must describe all connected panels, including inactive ones.
 pub fn set_touch_device(
     outputs: &mut Vec<OutputProfile>,
     edid_key: &str,
     device_id: Option<String>,
+    connected: ConnectedOutputs<'_>,
 ) {
+    inherit_output(outputs, edid_key);
     if let Some(id) = &device_id {
         for p in outputs.iter_mut() {
             if p.touch_device.as_deref() == Some(id.as_str()) {
@@ -976,6 +991,7 @@ pub fn set_touch_device(
             touch_device: device_id,
         });
     }
+    sync_legacy_output(outputs, edid_key, connected);
 }
 
 /// Replace the whole cursor-teleport layout (the settings canvas commits the full
@@ -988,7 +1004,13 @@ pub fn set_layout(prefs: &mut Preference, placements: Vec<LayoutPlacement>) {
 /// preferred output the compositor drives (`display.base` uses `profiles.first()`).
 /// Reuses an existing profile (preserving its mode) or creates an identity-only one,
 /// then moves it to the front. Shared by the settings window and the settings editor.
-pub fn set_default(outputs: &mut Vec<OutputProfile>, edid_key: &str) {
+/// `connected` must describe all connected panels, including inactive ones.
+pub fn set_default(
+    outputs: &mut Vec<OutputProfile>,
+    edid_key: &str,
+    connected: ConnectedOutputs<'_>,
+) {
+    inherit_output(outputs, edid_key);
     let profile = match outputs
         .iter()
         .position(|p| p.identity.as_deref() == Some(edid_key))
@@ -1002,4 +1024,134 @@ pub fn set_default(outputs: &mut Vec<OutputProfile>, edid_key: &str) {
         },
     };
     outputs.insert(0, profile);
+    sync_legacy_output(outputs, edid_key, connected);
+}
+
+// Copy the entire legacy profile before changing one field. Keep the original
+// for other connectors and older versions; an explicit qualified entry wins.
+fn inherit_output(outputs: &mut Vec<OutputProfile>, key: &str) {
+    if outputs.iter().any(|p| p.identity.as_deref() == Some(key)) {
+        return;
+    }
+    if let Some(mut p) = super::identity::find(outputs, key, |p| p.identity.as_deref()).cloned() {
+        p.identity = Some(key.to_owned());
+        outputs.push(p);
+    }
+}
+
+/// Keep the portable legacy fallback current only when live topology proves the
+/// panel is unambiguous. Callers must supply all connected outputs, including
+/// inactive ones; an empty/unknown topology never permits a shared write.
+pub fn sync_legacy_output(
+    outputs: &mut Vec<OutputProfile>,
+    key: &str,
+    connected: ConnectedOutputs<'_>,
+) {
+    use super::identity;
+    let connected = connected.0;
+    if identity::connector(key).is_none()
+        || !connected.iter().any(|k| k == key)
+        || connected
+            .iter()
+            .filter(|k| identity::stable(k) == identity::stable(key))
+            .count()
+            != 1
+    {
+        return;
+    }
+    let Some(mut current) = outputs
+        .iter()
+        .find(|p| p.identity.as_deref() == Some(key))
+        .cloned()
+    else {
+        return;
+    };
+    let legacy = identity::stable(key);
+    current.identity = Some(legacy.to_owned());
+    if let Some(old) = outputs
+        .iter_mut()
+        .find(|p| p.identity.as_deref() == Some(legacy))
+    {
+        *old = current;
+    } else {
+        outputs.push(current);
+    }
+}
+
+/// Complete connected-output preference-key snapshot, including disabled panels.
+/// Do not derive this from the active/driven set or saved profiles: either can
+/// omit a duplicate and incorrectly authorise a shared legacy write.
+#[derive(Clone, Copy)]
+pub struct ConnectedOutputs<'a>(&'a [String]);
+
+impl<'a> ConnectedOutputs<'a> {
+    /// The caller attests that these are ALL connected preference keys from a
+    /// topology snapshot, including inactive panels. Empty/unknown snapshots
+    /// never authorise a legacy refresh. Shape assertions cannot prove that a
+    /// caller did not omit hardware; the completeness contract remains explicit.
+    pub fn from_complete_snapshot(keys: &'a [String]) -> Self {
+        debug_assert!(
+            keys.iter().all(|k| super::identity::connector(k).is_some()),
+            "connected snapshot must contain qualified preference keys"
+        );
+        debug_assert!(
+            keys.iter().enumerate().all(|(i, k)| !keys[..i]
+                .iter()
+                .any(|p| super::identity::connector(p) == super::identity::connector(k))),
+            "connected snapshot must not contain duplicate runtime connectors"
+        );
+        Self(keys)
+    }
+}
+
+/// Result of resolving saved claims before automatic device heuristics.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TouchClaim {
+    Auto,
+    Target(usize),
+    /// A saved claim exists, but every matching live output overrides it.
+    Unmapped,
+}
+
+/// Qualified profiles decide their own claim, including None. A legacy claim
+/// can only apply where no exact profile exists. Resolve all candidates before
+/// consulting the association, so it cannot reintroduce an overridden claim.
+pub fn resolve_touch_claim(
+    outputs: &[OutputProfile],
+    keys: &[String],
+    device: &str,
+    associated: Option<&str>,
+) -> TouchClaim {
+    use super::identity;
+    let mut legacy = Vec::new();
+    for (index, key) in keys.iter().enumerate() {
+        if let Some(exact) = outputs.iter().find(|p| p.identity.as_deref() == Some(key)) {
+            if exact.touch_device.as_deref() == Some(device) {
+                return TouchClaim::Target(index);
+            }
+        } else if touch_device_of(outputs, key) == Some(device) {
+            legacy.push(index);
+        }
+    }
+    if let Some(index) = associated
+        .and_then(|name| {
+            legacy
+                .iter()
+                .copied()
+                .find(|i| identity::connector(&keys[*i]) == Some(name))
+        })
+        .or_else(|| legacy.first().copied())
+    {
+        return TouchClaim::Target(index);
+    }
+    if outputs.iter().any(|p| {
+        p.touch_device.as_deref() == Some(device)
+            && p.identity
+                .as_deref()
+                .is_some_and(|saved| keys.iter().any(|k| identity::matches(saved, k)))
+    }) {
+        TouchClaim::Unmapped
+    } else {
+        TouchClaim::Auto
+    }
 }

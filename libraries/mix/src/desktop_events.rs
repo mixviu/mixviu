@@ -1959,8 +1959,77 @@ mod tests {
         let pid = source.pid;
         drop(source);
         assert!(reaped(pid), "unwatch kills and reaps the pactl stand-in");
-        // Cancellation is not an unexpected exit: no terminal batch appears.
-        assert!(!q.source_ready_for_test("audio:1"));
+        assert_audio_cancelled_without_terminal_batch(&q).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn assert_audio_cancelled_without_terminal_batch(q: &crate::native_events::Queue) {
+        // Drop joins the reader, so no more batches can arrive. A pipe read
+        // need not contain the fixture's entire printf: an ordinary repeated
+        // sink change may still be queued after the first batch was consumed.
+        while q.source_ready_for_test("audio:1") {
+            let ev = q.next(None).await.unwrap();
+            let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
+            assert!(body.get("closed").is_none(), "{body}");
+            let changes = body["changes"].as_array().unwrap();
+            assert_eq!(changes.len(), 1);
+            assert_eq!(changes[0]["facility"], "sink");
+            assert_eq!(changes[0]["index"], 5);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn audio_cancel_with_a_second_read_queued_has_no_terminal_batch() {
+        use std::io::Write;
+        struct PipePath(std::path::PathBuf);
+        impl Drop for PipePath {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = PipePath(
+            std::env::temp_dir().join(format!("mix-audio-split-{}-{nonce}", std::process::id())),
+        );
+        let path = &path.0;
+        let name = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        // Open both ends before starting cat; the writer stays open through
+        // cancellation, so only cancellation can terminate the reader.
+        let mut pipe = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        let mut command = std::process::Command::new("cat");
+        command.arg(path);
+        let q = audio_queue();
+        let source =
+            linux::AudioSource::start(q.clone(), "audio:1".into(), vec!["sink".into()], command)
+                .unwrap();
+        pipe.write_all(b"Event 'change' on sink #5\n").unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), q.next(None))
+            .await
+            .unwrap()
+            .unwrap();
+        // The first batch has been consumed. Force a separate read to enqueue
+        // the duplicate before dropping, reproducing the old empty-queue failure.
+        pipe.write_all(b"Event 'change' on sink #5\n").unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !q.source_ready_for_test("audio:1") {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let pid = source.pid;
+        drop(source);
+        assert!(reaped(pid));
+        assert_audio_cancelled_without_terminal_batch(&q).await;
     }
 
     #[cfg(target_os = "linux")]

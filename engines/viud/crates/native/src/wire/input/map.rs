@@ -60,17 +60,22 @@ pub fn touch_output(state: &Loop, device: &Device) -> Option<String> {
     // 0. Explicit user claim (settings Display tab) wins over every heuristic —
     // as long as the claimed monitor is currently driven.
     let id = touch_device_id(device);
-    let claimed = state
-        .inner
-        .preference
-        .outputs
+    let outputs = space.state.outputs().collect::<Vec<_>>();
+    let keys = outputs
         .iter()
-        .find(|p| p.touch_device.as_deref() == Some(id.as_str()))
-        .and_then(|p| p.identity.clone());
-    if let Some(edid) = claimed
-        && space.state.outputs().any(|o| output_key(o) == edid)
-    {
-        return Some(edid);
+        .map(|o| world::state::output_preference_key(o))
+        .collect::<Vec<_>>();
+    let associated = device.output_name();
+    use model::environment::preference::base::{TouchClaim, resolve_touch_claim};
+    match resolve_touch_claim(
+        &state.inner.preference.outputs,
+        &keys,
+        &id,
+        associated.as_deref(),
+    ) {
+        TouchClaim::Target(index) => return Some(output_key(outputs[index])),
+        TouchClaim::Unmapped => return None,
+        TouchClaim::Auto => {}
     }
 
     // 1. Explicit libinput output association.

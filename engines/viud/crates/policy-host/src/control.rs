@@ -629,6 +629,9 @@ fn raise(lp: &mut Loop, id: u64, generation: u64) -> ControlReply {
 
 /// Give the primary seat's keyboard to a window.
 fn focus_keyboard(lp: &mut Loop, id: SurfaceId) {
+    if !lp.inner.comp.visual(id).visible {
+        return;
+    }
     let Some(window) = window_of(lp, id) else {
         return;
     };
@@ -760,7 +763,10 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
         Ok(record) => record.id(),
         Err(error) => return ControlReply::WindowTarget { id: spec.id, error },
     };
-    let facts = window_facts(lp, id);
+    let mut facts = window_facts(lp, id);
+    let mut requested_visual = lp.inner.comp.visual(id);
+    requested_visual.update(spec);
+    facts.input_presentable = requested_visual.visible;
     let (outputs, _, _) = crate::project::project_outputs(lp);
     let window = window_of(lp, id);
     let hints = window.as_ref().map(size_hints).unwrap_or_default();
@@ -794,6 +800,7 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
         Err(reply) => return reply,
     };
     execute(lp, std::mem::take(&mut placement.effects));
+    apply_visual(lp, id, spec);
     let placed = window_of(lp, id)
         .and_then(|window| {
             world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), &window)?
@@ -804,6 +811,46 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
             (origin.x as f32, origin.y as f32)
         });
     policy::window::place_reply(spec, &placement, placed, placement.requested.is_some())
+}
+
+fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceSpec) {
+    let old = lp.inner.comp.visual(id);
+    let mut visual = old;
+    visual.update(spec);
+    if old == visual {
+        return;
+    }
+    lp.inner.comp.visuals.insert(id, (spec.generation, visual));
+    if let Some(window) = window_of(lp, id) {
+        *window
+            .user_data()
+            .get_or_insert(|| {
+                std::sync::Mutex::new(comp_model::request::VisualAttributes::default())
+            })
+            .lock()
+            .unwrap() = visual;
+        if spec.z.is_some() {
+            if let Some(owner) = lp.inner.world_of_window(&window) {
+                if let Some(uuid) = lp.inner.comp.registry.uuid_for(id) {
+                    lp.inner
+                        .worlds
+                        .get_mut(owner)
+                        .storage_mut()
+                        .get_mut(&world::order::track::base::DRAW_ORDER_MUT)
+                        .set_z(world::order::track::base::ComponentId(uuid), visual.z);
+                }
+            }
+        }
+    }
+    lp.inner.comp.settings_changed("windows", "window.place");
+    world::comp::visibility::sync_hidden(lp);
+    if !visual.visible {
+        execute(lp, vec![Effect::FinishInteractive(id)]);
+        crate::input::hide_window(lp, id);
+        settle(lp, None);
+    }
+    crate::input::retarget_pointer(lp);
+    lp.state.schedule_redraw(RedrawReason::WindowState);
 }
 
 /// Test-only placement of a wl_surface origin in the native world Space.
@@ -989,7 +1036,7 @@ pub fn window_facts(lp: &Loop, id: SurfaceId) -> WindowFacts {
         min_size,
         max_size,
         visible: drawn(lp, &window),
-        input_presentable: true,
+        input_presentable: lp.inner.comp.visual(id).visible,
         geometry_size: (geometry.size.w, geometry.size.h),
         window_origin: (origin.x as f32, origin.y as f32),
         interactive: lp.inner.comp.interactive.is_some_and(|grab| grab.id == id),
@@ -1628,6 +1675,11 @@ fn maximize_on(lp: &mut Loop, id: SurfaceId, enabled: bool, output: Option<&str>
 /// The client's own maximise / minimise requests, through the same policy as
 /// the commands (a refusal still answers the client with a configure).
 pub fn apply_client_requests(lp: &mut Loop) {
+    // Protocol-side tablet resource destruction may revoke a pointer stroke.
+    seat::pointer::input::tablet::revoke::flush(
+        lp,
+        lp.inner.start_time.elapsed().as_millis() as u32,
+    );
     for (id, request) in lp.inner.comp.take_requests() {
         let Some((window_id, generation)) = lp
             .inner

@@ -191,6 +191,9 @@ pub struct VerifiedConnection {
     pub(crate) session_context: tokio::sync::OnceCell<crate::native_client::session::Hello>,
 }
 impl VerifiedConnection {
+    pub(crate) fn into_supervised_parts(self) -> (NodedClient, VerifiedIncoming) {
+        (self.client, self.incoming.into_inner())
+    }
     /// Requests/replies use the existing ABP client API. Its raw receive lane
     /// is absent on this handle; trusted deliveries come only from `recv`.
     pub fn client(&self) -> &NodedClient {
@@ -282,6 +285,9 @@ pub struct VerifiedCommand {
     delivery: Delivery,
 }
 impl VerifiedCommand {
+    pub(crate) fn into_parts(self) -> (IncomingCommand, Option<BrokerPrincipal>) {
+        (self.command, self.principal)
+    }
     pub(crate) fn new(command: IncomingCommand, principal: Option<BrokerPrincipal>) -> Self {
         Self {
             command,

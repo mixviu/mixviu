@@ -16,6 +16,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime};
+
+pub(crate) fn normalise(source: &str) -> &str {
+    let source = source.trim();
+    source.strip_prefix("file://").unwrap_or(source)
+}
 
 /// Themes searched after the selected one, in order.
 pub const FALLBACK_THEMES: [&str; 3] = ["hicolor", "Adwaita", "AdwaitaLegacy"];
@@ -197,8 +203,7 @@ impl Lookup {
     /// (optionally `file://`) is returned as is; a name with a path
     /// separator never leaves the icon directories.
     pub fn find(&self, name: &str, size: u32) -> Option<PathBuf> {
-        let name = name.trim();
-        let name = name.strip_prefix("file://").unwrap_or(name);
+        let name = normalise(name);
         let path = Path::new(name);
         if path.is_absolute() && is_image_file(path) {
             return Some(path.into());
@@ -364,6 +369,7 @@ impl Lookup {
     /// `app` (its ID as an icon name, then its `Icon=`), else the file name
     /// of a stale path, else a placeholder icon.
     pub fn resolve(&self, source: &str, size: u32, app: Option<&str>) -> Option<PathBuf> {
+        let source = normalise(source);
         self.find(source, size)
             .or_else(|| app.and_then(|id| self.find(id.trim_end_matches(".desktop"), size)))
             .or_else(|| {
@@ -443,24 +449,150 @@ fn icon_in(dir: &Path, name: &str) -> Option<PathBuf> {
         .find(|path| is_image_file(path))
 }
 
-type Key = (String, u32, Option<String>);
+type Key = (String, u32, u32, String, Option<String>);
+
+// Reuse the decoded-file cache's metadata validation strategy. Directory
+// mtimes detect additions/removals; index files detect inheritance edits.
+// Retain missing roots too, so installing a previously absent theme works.
+type Stamp = (SystemTime, u64, Option<(SystemTime, u64)>);
+type Stamps = BTreeMap<PathBuf, Option<Stamp>>;
+const INVENTORY_LIMIT: usize = 4096;
+const INVENTORY_WORK_LIMIT: usize = 65536;
+
+#[derive(Debug)]
+struct Inventory {
+    stamps: Stamps,
+    complete: bool,
+    checked: Instant,
+}
+
+fn stamp(path: &Path) -> Option<Stamp> {
+    let meta = path.symlink_metadata().ok()?;
+    let target = meta
+        .file_type()
+        .is_symlink()
+        .then(|| {
+            path.metadata()
+                .ok()
+                .and_then(|m| Some((m.modified().ok()?, m.len())))
+        })
+        .flatten();
+    // (mtime, len) can miss same-size in-place writes on coarse-mtime filesystems.
+    Some((meta.modified().ok()?, meta.len(), target))
+}
+
+fn inventory(
+    path: &Path,
+    root: &Path,
+    depth: usize,
+    stamps: &mut Stamps,
+    visited: &mut BTreeSet<PathBuf>,
+    work: &mut usize,
+) -> bool {
+    if stamps.len() >= INVENTORY_LIMIT || *work >= INVENTORY_WORK_LIMIT {
+        return false;
+    }
+    // Charge each monitored path once, never the untracked icon files or
+    // both a directory's parent enumeration and its recursive visit.
+    if !stamps.contains_key(path) {
+        *work += 1;
+    }
+    stamps.insert(path.into(), stamp(path));
+    let meta = match path.symlink_metadata() {
+        Ok(meta) => meta,
+        Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+    };
+    let canonical = match path.canonicalize() {
+        Ok(path) => path,
+        Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+    };
+    if !canonical.starts_with(root) {
+        // External directory aliases cannot be monitored completely without
+        // escaping the configured roots. Never enter them; use timed freshness.
+        return !path.is_dir();
+    }
+    if !(meta.is_dir() || (meta.file_type().is_symlink() && path.is_dir())) {
+        return true;
+    }
+    if depth > 16 {
+        return false;
+    }
+    if !visited.insert(canonical) {
+        return true;
+    }
+    // There is a one-level canonicalise/read_dir TOCTOU here. This is a
+    // bounded, read-only inventory of same-user search paths, not a sandbox.
+    let mut complete = true;
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            complete = false;
+            continue;
+        };
+        let Ok(kind) = entry.file_type() else {
+            complete = false;
+            continue;
+        };
+        if kind.is_dir() || kind.is_symlink() {
+            complete &= inventory(&entry.path(), root, depth + 1, stamps, visited, work);
+        } else if entry.file_name() == "index.theme"
+            || entry.path().extension().is_some_and(|ext| ext == "desktop")
+        {
+            if stamps.len() >= INVENTORY_LIMIT || *work >= INVENTORY_WORK_LIMIT {
+                return false;
+            }
+            if !stamps.contains_key(&entry.path()) {
+                *work += 1;
+            }
+            stamps.insert(entry.path(), stamp(&entry.path()));
+        }
+    }
+    complete
+}
+
+fn snapshot(lookup: &Lookup) -> Inventory {
+    let mut stamps = Stamps::new();
+    let mut visited = BTreeSet::new();
+    let mut work = 0;
+    let mut complete = true;
+    for path in lookup
+        .roots
+        .iter()
+        .chain(&lookup.pixmaps)
+        .chain(&lookup.applications)
+    {
+        let root = path.canonicalize().unwrap_or_else(|_| path.clone());
+        complete &= inventory(path, &root, 0, &mut stamps, &mut visited, &mut work);
+    }
+    Inventory {
+        stamps,
+        complete,
+        checked: Instant::now(),
+    }
+}
 
 /// A [`Lookup`] with a bounded cache of resolutions, re-checked against
 /// the file system on every hit.
 #[derive(Debug)]
 pub struct Resolver {
     lookup: Lookup,
-    cache: Mutex<BTreeMap<Key, PathBuf>>,
+    cache: Mutex<crate::cache::Cache<Key, Option<PathBuf>>>,
+    stamps: Mutex<Inventory>,
+    generation: std::sync::atomic::AtomicU64,
+    single_check: Mutex<Instant>,
 }
-
-/// Entries kept before the cache is emptied.
-const CACHE_LIMIT: usize = 512;
 
 impl Resolver {
     pub fn new(lookup: Lookup) -> Self {
+        let stamps = snapshot(&lookup);
         Self {
             lookup,
-            cache: Mutex::new(BTreeMap::new()),
+            cache: Mutex::new(crate::cache::Cache::new()),
+            stamps: Mutex::new(stamps),
+            generation: std::sync::atomic::AtomicU64::new(1),
+            single_check: Mutex::new(Instant::now()),
         }
     }
 
@@ -469,31 +601,83 @@ impl Resolver {
         &self.lookup
     }
 
-    /// [`Lookup::resolve`], cached by `(source, size, app)`. A cached file
-    /// that no longer exists is resolved again.
+    /// Validate search paths once per preparation batch, before asset reuse.
+    /// Complete inventories validate each batch. Over-limit/partial inventories
+    /// retain caches for up to one second, then resnapshot and invalidate once.
+    /// No thread or watcher service is created.
+    pub fn generation(&self) -> u64 {
+        let mut stamps = self.stamps.lock().unwrap();
+        let refresh = if stamps.complete {
+            stamps.stamps.iter().any(|(path, old)| stamp(path) != *old)
+        } else {
+            stamps.checked.elapsed() >= Duration::from_secs(1)
+        };
+        if refresh {
+            self.cache.lock().unwrap().clear();
+            *stamps = snapshot(&self.lookup);
+            self.generation
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.generation.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// [`Lookup::resolve`], cached by name, size, scale, theme and app.
+    /// Single callers share freshness sweeps (at most every 250 ms).
+    /// Batch callers use generation() for immediate explicit validation.
     pub fn resolve(&self, source: &str, size: u32, app: Option<&str>) -> Option<PathBuf> {
-        let source = source.trim();
-        let source = source.strip_prefix("file://").unwrap_or(source);
-        let path = Path::new(source);
-        if path.is_absolute() && is_image_file(path) {
-            return Some(path.into());
-        }
-        let key = (source.to_owned(), size, app.map(str::to_owned));
-        if let Some(path) = self
-            .cache
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(&key).filter(|path| is_image_file(path)).cloned())
-        {
-            return Some(path);
-        }
-        let path = self.lookup.resolve(source, size, app);
-        if let Some(path) = &path
-            && let Ok(mut cache) = self.cache.lock()
-        {
-            if cache.len() >= CACHE_LIMIT {
-                cache.clear();
+        let due = {
+            let mut last = self.single_check.lock().unwrap();
+            let due = last.elapsed() >= Duration::from_millis(250);
+            if due {
+                *last = Instant::now();
             }
+            due
+        };
+        if due {
+            self.generation();
+        }
+        self.resolve_in_generation(source, size, 1, app)
+    }
+
+    /// Batch callers validate generation once, then use this for each image.
+    pub fn resolve_in_generation(
+        &self,
+        source: &str,
+        size: u32,
+        scale: u32,
+        app: Option<&str>,
+    ) -> Option<PathBuf> {
+        let source = normalise(source);
+        let path = Path::new(source);
+        if path.is_absolute() {
+            if is_image_file(path) {
+                return Some(path.into());
+            }
+            // Explicit paths may be outside every search root. Stat on every
+            // call, and cache only the basename/app recovery, never this path.
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            return self.resolve_in_generation(name, size, scale, app);
+        }
+        let key = (
+            source.to_owned(),
+            size,
+            scale,
+            self.lookup.theme.clone(),
+            app.map(str::to_owned),
+        );
+        if let Some(path) = self.cache.lock().ok().and_then(|mut cache| {
+            cache
+                .get(&key)
+                .filter(|path| path.as_ref().is_none_or(|path| is_image_file(path)))
+                .cloned()
+        }) {
+            return path;
+        }
+        let path = self.lookup.resolve(source, size.saturating_mul(scale), app);
+        if let Ok(mut cache) = self.cache.lock() {
             cache.insert(key, path.clone());
         }
         path
@@ -503,6 +687,171 @@ impl Resolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn inventory_never_enters_an_external_directory_symlink() {
+        let scratch = Scratch::new();
+        let outside = Scratch::new();
+        for i in 0..5000 {
+            std::fs::create_dir_all(outside.0.join(format!("large/{i}/nested"))).unwrap();
+        }
+        scratch.write("icons/Fixture/32x32/apps/icon.svg", "svg");
+        let link = scratch.0.join("icons/external");
+        std::os::unix::fs::symlink(&outside.0, &link).unwrap();
+        let resolver = Resolver::new(scratch.lookup("Fixture"));
+        let inventory = resolver.stamps.lock().unwrap();
+        assert!(!inventory.complete, "external trees use timed freshness");
+        assert!(inventory.stamps.len() < 20);
+        assert!(
+            inventory
+                .stamps
+                .keys()
+                .all(|path| !path.starts_with(&link) || path == &link)
+        );
+        drop(inventory);
+        resolver.resolve_in_generation("missing", 20, 1, None);
+        assert_eq!(resolver.cache.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn inventory_limit_retains_caches_until_the_one_second_refresh() {
+        let scratch = Scratch::new();
+        for i in 0..INVENTORY_LIMIT + 1 {
+            std::fs::create_dir_all(scratch.0.join(format!("icons/{i}"))).unwrap();
+        }
+        let resolver = Resolver::new(scratch.lookup("Fixture"));
+        let inventory = resolver.stamps.lock().unwrap();
+        assert!(!inventory.complete);
+        assert!(inventory.stamps.len() <= INVENTORY_LIMIT);
+        drop(inventory);
+        resolver.resolve_in_generation("later", 20, 1, None);
+        assert_eq!(resolver.cache.lock().unwrap().len(), 1);
+        let generation = resolver.generation();
+        scratch.write("icons/Fixture/32x32/apps/later.svg", "svg");
+        resolver.stamps.lock().unwrap().checked = Instant::now();
+        assert_eq!(resolver.generation(), generation);
+        assert!(
+            resolver
+                .resolve_in_generation("later", 20, 1, None)
+                .is_none()
+        );
+        resolver.stamps.lock().unwrap().checked = Instant::now() - Duration::from_secs(2);
+        assert!(resolver.generation() > generation);
+        assert!(
+            resolver
+                .resolve_in_generation("later", 20, 1, None)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn inventory_charges_only_monitored_paths_once() {
+        let scratch = Scratch::new();
+        for i in 0..1000 {
+            scratch.write(&format!("icons/Fixture/32x32/apps/unused-{i}.svg"), "svg");
+        }
+        let root = scratch.0.join("icons");
+        let mut stamps = Stamps::new();
+        let mut visited = BTreeSet::new();
+        let mut work = 0;
+        assert!(inventory(
+            &root,
+            &root.canonicalize().unwrap(),
+            0,
+            &mut stamps,
+            &mut visited,
+            &mut work
+        ));
+        assert_eq!(work, stamps.len());
+        assert_eq!(
+            work, 4,
+            "icons/theme/size/context only; SVG files are not stamped"
+        );
+    }
+
+    #[test]
+    fn single_calls_share_freshness_checks_and_batch_normalisation() {
+        let scratch = Scratch::new();
+        scratch.write("icons/Fixture/32x32/apps/named.svg", "svg");
+        let resolver = Resolver::new(scratch.lookup("Fixture"));
+        let path = scratch.0.join("icons/Fixture/32x32/apps/named.svg");
+        assert_eq!(
+            resolver.resolve_in_generation("  named  ", 32, 1, None),
+            Some(path.clone())
+        );
+        assert_eq!(resolver.resolve("named", 32, None), Some(path.clone()));
+        assert_eq!(resolver.cache.lock().unwrap().len(), 1);
+        assert_eq!(
+            resolver.resolve_in_generation(&format!("  file://{}  ", path.display()), 32, 1, None),
+            Some(path)
+        );
+        assert!(resolver.resolve("later", 32, None).is_none());
+        *resolver.single_check.lock().unwrap() = Instant::now();
+        let generation = resolver
+            .generation
+            .load(std::sync::atomic::Ordering::Relaxed);
+        scratch.write("icons/Fixture/32x32/apps/later.svg", "svg");
+        assert!(
+            resolver.resolve("later", 32, None).is_none(),
+            "single-call sweeps are rate limited"
+        );
+        assert_eq!(
+            resolver
+                .generation
+                .load(std::sync::atomic::Ordering::Relaxed),
+            generation
+        );
+        assert!(
+            resolver.generation() > generation,
+            "explicit batches validate immediately"
+        );
+        assert!(resolver.resolve("later", 32, None).is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_broken_icon_symlink_is_invalidated_when_its_target_appears() {
+        let scratch = Scratch::new();
+        scratch.write("icons/Fixture/32x32/apps/existing.svg", "svg");
+        let target = scratch.0.join("external.svg");
+        let link = scratch.0.join("icons/Fixture/32x32/apps/linked.svg");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let resolver = Resolver::new(scratch.lookup("Fixture"));
+        assert!(resolver.resolve("linked", 32, None).is_none());
+        let generation = resolver.generation();
+        std::fs::write(target, "svg").unwrap();
+        assert!(resolver.generation() > generation);
+        assert_eq!(resolver.resolve("linked", 32, None), Some(link));
+    }
+
+    #[test]
+    fn misses_are_bounded_and_new_files_invalidate_them() {
+        let scratch = Scratch::new();
+        scratch.write("icons/Fixture/32x32/status/existing.svg", "svg");
+        let resolver = Resolver::new(scratch.lookup("Fixture"));
+        assert!(resolver.resolve("later", 20, None).is_none());
+        let generation = resolver.generation();
+        assert!(resolver.resolve("later", 20, None).is_none());
+        assert_eq!(resolver.generation(), generation);
+        assert!(resolver.cache.lock().unwrap().values().all(Option::is_none));
+        scratch.write("icons/Fixture/32x32/status/later.svg", "svg");
+        assert!(resolver.generation() > generation);
+        assert_eq!(
+            resolver.resolve("later", 20, None),
+            Some(scratch.0.join("icons/Fixture/32x32/status/later.svg"))
+        );
+        for i in 0..crate::cache::CAPACITY + 5 {
+            resolver.resolve_in_generation(&format!("missing-{i}"), 20, 1, None);
+        }
+        assert!(resolver.cache.lock().unwrap().len() <= crate::cache::CAPACITY);
+        resolver.resolve_in_generation("missing", 20, 1, None);
+        resolver.resolve_in_generation("missing", 20, 2, None);
+        resolver.resolve_in_generation("missing", 24, 1, None);
+        let cache = resolver.cache.lock().unwrap();
+        assert!(cache.contains_key(&("missing".into(), 20, 2, "Fixture".into(), None)));
+        assert!(cache.contains_key(&("missing".into(), 24, 1, "Fixture".into(), None)));
+    }
 
     /// A fresh directory under the system temporary directory, removed on
     /// drop.

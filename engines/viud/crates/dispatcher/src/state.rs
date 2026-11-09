@@ -171,6 +171,12 @@ pub struct Dispatch {
     /// queue, because separate ones can only be drained in a fixed sequence and that
     /// sequence then outranks the order things actually happened.
     pub deferred: Vec<crate::state::deferred::Deferred>,
+    /// `wp_image_description_info_v1` objects whose events are sent and whose `done`
+    /// is owed. `done` is a destructor event: sent inside the `get_information`
+    /// handler it frees the object wayland-backend is about to give its data to
+    /// (a use-after-free, viud SIGSEGV on Firefox's first query, 2026-11-09). The
+    /// drain sends it after dispatch.
+    pub pending_info_done: Vec<smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_image_description_info_v1::WpImageDescriptionInfoV1>,
     /// The `bool` is "was this toplevel being carried by a live
     /// `xdg_toplevel_drag_v1` at the moment it was destroyed" — sampled at
     /// destroy time rather than at drain time, since the drag may well have
@@ -1060,30 +1066,30 @@ mod color_impls {
             cs::dispatch_color_manager(request, di);
         }
     }
-    impl WLDispatch<WpColorManagementOutputV1, ()> for Dispatch {
+    impl WLDispatch<WpColorManagementOutputV1, String> for Dispatch {
         fn request(
             _: &mut Self,
             _: &Client,
             _: &WpColorManagementOutputV1,
             request: wp_color_management_output_v1::Request,
-            _: &(),
+            output: &String,
             _: &DisplayHandle,
             di: &mut DataInit<'_, Self>,
         ) {
-            cs::dispatch_color_output(request, di);
+            cs::dispatch_color_output(request, output, di);
         }
     }
     impl WLDispatch<WpColorManagementSurfaceV1, WlSurface> for Dispatch {
         fn request(
             _: &mut Self,
             _: &Client,
-            _: &WpColorManagementSurfaceV1,
+            resource: &WpColorManagementSurfaceV1,
             request: wp_color_management_surface_v1::Request,
             surface: &WlSurface,
             _: &DisplayHandle,
             _: &mut DataInit<'_, Self>,
         ) {
-            cs::dispatch_color_surface(request, surface);
+            cs::dispatch_color_surface(request, resource, surface);
         }
     }
     impl WLDispatch<WpColorManagementSurfaceFeedbackV1, WlSurface> for Dispatch {
@@ -1127,7 +1133,7 @@ mod color_impls {
     }
     impl WLDispatch<WpImageDescriptionV1, ImageDescData> for Dispatch {
         fn request(
-            _: &mut Self,
+            state: &mut Self,
             _: &Client,
             _: &WpImageDescriptionV1,
             request: wp_image_description_v1::Request,
@@ -1135,7 +1141,10 @@ mod color_impls {
             _: &DisplayHandle,
             di: &mut DataInit<'_, Self>,
         ) {
-            cs::dispatch_image_desc(request, data, di);
+            if let Some(info) = cs::dispatch_image_desc(request, data, di) {
+                state.pending_info_done.push(info);
+                state.arm_drain();
+            }
         }
     }
     impl WLDispatch<WpImageDescriptionInfoV1, ()> for Dispatch {
@@ -2480,6 +2489,8 @@ mod handler_impls {
             // PROTOCOL only — buffer handling + popup commit; the world effect is
             // applied at drain via `apply_commit`
             on_commit_buffer_handler::<Dispatch>(surface);
+            // Committed colour descriptions reach the composite with their buffer.
+            crate::wire::color::on_commit(surface);
             self.popup.state.commit(surface);
             if let Some(popup) = self.popup.state.find_popup(surface) {
                 match popup {
