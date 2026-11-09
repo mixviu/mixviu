@@ -6,7 +6,7 @@ Branch: `lab/quoin-p3`, never merge; no PR. Code head before receipt: `35648554c
 
 ## D2 evidence and recommendation
 
-Three trials per count on real viud headless 1/2/3-output runs; actual comp output snapshots feed equivalent native Bus behaviour processes. Medians below. RSS sums behaviour VmRSS only. Startup is spawn-to-first-reply with warm caches, not panel presentation. Calls and JSON request+reply payload bytes cover 20 successful update ticks; registration, retries, protocol overhead, loader/host/compositor/GPU are excluded. Shared runs first, so startup order is confounded. No tail claim.
+Three trials per count on real viud headless 1/2/3-output runs; actual comp output snapshots feed equivalent native Bus behaviour processes. Measurement binaries: `585a5e2a5fe3c010cc8ccd2fc94e68a0af57e47f`; later render-view changes do not affect output enumeration or these behaviour scripts. Medians below. RSS sums behaviour VmRSS only. Startup is spawn-to-first-reply with warm caches, not panel presentation. Calls and JSON request+reply payload bytes cover 20 successful update ticks; registration, retries, protocol overhead, loader/host/compositor/GPU are excluded. Shared runs first, so startup order is confounded. No tail claim.
 
 | Shape | Outputs | RSS KiB | Startup ms | Calls / 20 ticks | Payload bytes | Behaviour bytes |
 |---|---:|---:|---:|---:|---:|---:|
