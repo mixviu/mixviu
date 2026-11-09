@@ -1,3 +1,55 @@
+# SQLite security fix — 2026-11-09
+
+PR: https://github.com/mixviu/mixviu/pull/49 (`fix/security-sqlite` -> `main`),
+opened and pushed through mixviu-agent. Validated head SHA:
+`23809a9d26fa97553ef9460dd614417baf4d4cc4`; this receipt-only commit follows it.
+The PR exposes the current head SHA. Based on origin/main `95382ad1`.
+
+- rusqlite: 0.38.0 -> 0.41.1; crates.io confirms its libsqlite3-sys ^0.39.0 requirement.
+- libsqlite3-sys: 0.36.0 -> 0.39.1; linked bundled SQLite: **3.54.1**.
+  The new files/sqlite_version test prints rusqlite::version(), asserts at least
+  3.54.0, and checks SELECT sqlite_version() agrees.
+- Targeted cargo update reused hashlink 0.12.2 and removed 0.11.1; no other
+  registry versions changed. SQLite remains bundled; no new C crate or deny ignore.
+- The old spamlite 0.9.6 pin also required rusqlite ^0.38. New pin
+  `e4cda94713f696414550f414feaea4e8d6c4355e` is exactly one manifest change
+  from `98f91a9d8142f92ae89ba4f070a165ce86fa5e8d`, on spamlite's retained
+  fix/security-sqlite branch. No unrelated spamlite changes were imported.
+- API adapters: consume column_names() directly as an iterator in shell stats;
+  webd AuthGuard borrows the locked connection mutably for authorizer install
+  and Drop cleanup. Queries use that guard's connection; policy, binding and
+  schema isolation remain unchanged. Existing webd authorizer tests pass.
+- Open PR overlap checked: #8 and #25 both touch Cargo.toml/Cargo.lock but
+  neither upgrades SQLite. #25 references old hashlink 0.11.1; lockfiles may
+  need regeneration after merge. Neither PR was edited.
+
+CBC jobs (all worker any, CARGO_BUILD_JOBS=2; saved logs inspected):
+
+- `20261109-203931-86119cbe-a1`: rc=101; found the pinned spamlite constraint.
+- `20261109-210051-72e1ea03-a1`: rc=0; targeted dependency resolution;
+  exact generated lock diff applied locally.
+- `20261109-210123-3cce10fa-a1`: rc=1; fmt output applied, version test and
+  cargo-deny passed; temporary foreign-gate binary-name adaptation corrected.
+- `20261109-210242-a4c52dd8-a1`: rc=1; found webd's mutable authorizer API;
+  version test, cargo-deny and adapted foreign gate passed.
+- `20261109-210420-33f8ce8f-a1`: **BUILD_RC=0**, validated source above.
+  Full `mix tools/ci.mix all`, explicit SQLite version test, `cargo deny check`
+  and foreign gate each returned 0. Across 605 Rust test summaries: 10,614
+  passed, zero failed, 100 ignored (includes the explicit version test).
+  Mix policy checks and lint ratchet passed, zero regressions.
+
+MixViu main lacks tools/foreign_gate.mix and tools/foreign.conf.mix. CBC used
+temporary copies of MixOS's existing gate/policy with repository root adapted,
+strict crates mix/mix-shell/lib-mix, and the inherited system allocator exception
+mapped to the renamed mix binary. Result: 15 foreign crates, all listed;
+strict closure and ELF checks clean. No committed policy change or new exception.
+
+GitHub security-ok passed on the validated source. Code-owner approval and
+cross-family review remain merge requirements. No deployment, VT interaction
+or /opt writes.
+
+---
+
 # Quoin P0 — 2026-11-09
 
 PR: https://github.com/mixviu/mixviu/pull/36 (`docs/quoin-p0` -> `main`).

@@ -8535,7 +8535,7 @@ dependencies = [
 [[package]]
 name = "spamlite"
 version = "0.9.6"
-source = "git+https://github.com/markc/spamlite?rev=3ef06bfba8abb1e17d0e06f94725b9e983ef8d58#3ef06bfba8abb1e17d0e06f94725b9e983ef8d58"
+source = "git+https://github.com/markc/spamlite?rev=e4cda94713f696414550f414feaea4e8d6c4355e#e4cda94713f696414550f414feaea4e8d6c4355e"
 dependencies = [
  "mail-parser",
  "nanohtml2text",
