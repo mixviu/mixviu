@@ -136,6 +136,35 @@ impl<E: RenderElement<GlesRenderer>> RenderElement<GlesRenderer> for Decoded<'_,
     }
 }
 
+/// `elements` wrapped for a direct SDR draw with tagged surfaces decoded (no
+/// intermediate, no re-damage): what a capture replay of the scene must draw so
+/// its colours match the composite's. `program` is [`HdrPass::decode_program`].
+pub fn decoded_sdr<'a, E: Element>(
+    elements: &'a [E],
+    program: &GlesTexProgram,
+    tagged: &HashMap<Id, Tagged>,
+) -> Vec<Decoded<'a, E>> {
+    let target = OutputColor::sdr();
+    elements
+        .iter()
+        .map(|e| Decoded {
+            inner: e,
+            decode: tagged
+                .get(e.id())
+                .filter(|t| !t.description.is_identity())
+                .map(|t| (program.clone(), target.decode_uniforms(&t.description))),
+            restale: false,
+        })
+        .collect()
+}
+
+impl<'a, E> Decoded<'a, E> {
+    /// The wrapped element.
+    pub fn inner(&self) -> &'a E {
+        self.inner
+    }
+}
+
 /// One HDR output's composite state.
 pub struct HdrPass {
     size: Size<i32, Physical>,
@@ -185,6 +214,11 @@ impl HdrPass {
             id: Id::new(),
             seen: HashMap::new(),
         })
+    }
+
+    /// The compiled decode stage, for [`decoded_sdr`].
+    pub fn decode_program(&self) -> &GlesTexProgram {
+        &self.decode
     }
 
     /// Whether this pass was made for `size` at `scale` (else rebuild it).

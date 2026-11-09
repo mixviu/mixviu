@@ -413,6 +413,11 @@ fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
         .redraw
         .release(&world::state::output_key(&ctx.pipe().output));
     ctx.outputs[0].drm_output = None;
+    // Its colour state goes with the scanout: no client may keep being offered
+    // a departed display's HDR volume (the pass is rebuilt on bring-up).
+    ctx.outputs[0].hdr_pass = None;
+    let name = ctx.pipe().output.name();
+    crate::render::execute::hdr::publish(&name, None);
     // The anchor keeps its `wl_output` global AND its Space mapping, deliberately.
     //
     // It cannot be unmapped: `current_output()` ends in

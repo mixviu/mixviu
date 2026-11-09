@@ -804,6 +804,14 @@ pub fn execute(
                         .as_ref()
                         .map(|p| p.texture().clone())
                 });
+                // A replay of the scene for a capture (cursorless) must decode
+                // tagged surfaces too, or they come out as raw PQ/scRGB.
+                let hdr_decode = hdr_frame.as_ref().and_then(|_| {
+                    ctx_ref.outputs[output_idx]
+                        .hdr_pass
+                        .as_ref()
+                        .map(|p| p.decode_program().clone())
+                });
                 let wrapped: Vec<GlesElementWrapper<_>> = match &hdr_frame {
                     Some(encode) => vec![GlesElementWrapper(encode)],
                     None => scene.elements.iter().map(GlesElementWrapper).collect(),
@@ -1112,7 +1120,24 @@ pub fn execute(
                                 }
                                 return Ok(texture);
                             }
-                            if !with_pointer && (!cursor_separate || hdr_copy.is_some()) {
+                            if !with_pointer
+                                && let Some(program) = &hdr_decode
+                            {
+                                let tagged = render_gles::color::hdr::describe::surfaces();
+                                let decoded = render_gles::color::hdr::pass::decoded_sdr(
+                                    &scene.elements,
+                                    program,
+                                    &tagged,
+                                );
+                                return screencopy::render_offscreen(
+                                    r.as_mut(),
+                                    &decoded,
+                                    |d| !d.inner().is_cursor(),
+                                    size,
+                                    scale,
+                                );
+                            }
+                            if !with_pointer && !cursor_separate {
                                 return screencopy::render_offscreen(
                                     r.as_mut(),
                                     &scene.elements,
