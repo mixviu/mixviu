@@ -116,145 +116,166 @@ pub fn wire(
         .get_mut(&render_gles::format::registrar::COMPOSITE_NODE_MUT) = Some(node);
     // P3 discovery-only controls: bounded virtual monitors, no physical seat.
     let count: usize = std::env::var("MIX_VIUD_LAB_OUTPUTS")
-        .unwrap_or_else(|_| "1".into()).parse()?;
-    if !(1..=3).contains(&count) { return Err("lab outputs must be 1..=3".into()); }
+        .unwrap_or_else(|_| "1".into())
+        .parse()?;
+    if !(1..=3).contains(&count) {
+        return Err("lab outputs must be 1..=3".into());
+    }
     let mut contexts = Vec::new();
     let mut globals = Vec::new();
     for index in 0..count {
-    let renderer = render_gles::context::egl::create(&display)?;
-    let refresh = match std::env::var("MIX_VIUD_HEADLESS_REFRESH_HZ") {
-        Ok(value) => value
-            .parse::<i32>()
-            .ok()
-            .filter(|hz| (30..=60).contains(hz))
-            .ok_or("headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ must be 30..=60")?,
-        Err(std::env::VarError::NotPresent) => 60,
-        Err(_) => {
-            return Err(
-                "headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ is not UTF-8".into(),
-            );
-        }
-    };
-    let mode = Mode {
-        size: options.size,
-        refresh: refresh * 1000,
-    };
-    let output = Output::new(
-        format!("headless-{index}"),
-        PhysicalProperties {
-            size: (0, 0).into(),
-            subpixel: Subpixel::Unknown,
-            make: "MixOS".into(),
-            model: "Headless".into(),
-            serial_number: "Unknown".into(),
-        },
-    );
-    output.change_current_state(
-        Some(mode),
-        Some(Transform::Normal),
-        Some(Scale::Fractional(options.scale)),
-        Some((0, 0).into()),
-    );
-    output.set_preferred(mode);
-    let mut contract = Contract {
-        output: output.clone(),
-        mode,
-        renderer,
-    };
-    let handle = state.state.output.display_handle.clone();
-    let global = output.create_global::<dispatcher::state::Dispatch>(&handle);
-    state.inner.map_output_everywhere(&output, smithay::utils::Point::from((index as i32 * options.size.w, 0)));
-    scenegraph::display::output::bind_display(state, &mut contract);
-    let damage_tracker = smithay::backend::renderer::damage::OutputDamageTracker::from_output(&output);
-    globals.push((output.clone(), global));
-    // This runs before the event loop serves any client.
-    human_seat_without_sources(&mut state.state.seat.seat);
-    state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
-    // The loop pins the camera to identity before input or drawing. Put the
-    // agent at the logical output centre, as centre_pointer_once does for
-    // the human pointer. main's apply_pointer only seeds the human accumulator.
-    let centre = smithay::utils::Point::from((
-        f64::from(mode.size.w) / options.scale / 2.0,
-        f64::from(mode.size.h) / options.scale / 2.0,
-    ));
-    state.inner.comp.injection.agent_pointer = Some((centre.x, centre.y));
-    if let Some(pointer) = state
-        .state
-        .seat
-        .agent
-        .as_ref()
-        .and_then(|seat| seat.get_pointer())
-    {
-        pointer.motion(
-            &mut state.state,
-            None,
-            &smithay::input::pointer::MotionEvent {
-                location: centre,
-                serial: smithay::utils::SERIAL_COUNTER.next_serial(),
-                time: 0,
+        let renderer = render_gles::context::egl::create(&display)?;
+        let refresh = match std::env::var("MIX_VIUD_HEADLESS_REFRESH_HZ") {
+            Ok(value) => value
+                .parse::<i32>()
+                .ok()
+                .filter(|hz| (30..=60).contains(hz))
+                .ok_or("headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ must be 30..=60")?,
+            Err(std::env::VarError::NotPresent) => 60,
+            Err(_) => {
+                return Err(
+                    "headless-refresh-invalid: MIX_VIUD_HEADLESS_REFRESH_HZ is not UTF-8".into(),
+                );
+            }
+        };
+        let mode = Mode {
+            size: options.size,
+            refresh: refresh * 1000,
+        };
+        let output = Output::new(
+            format!("headless-{index}"),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: "MixOS".into(),
+                model: "Headless".into(),
+                serial_number: "Unknown".into(),
             },
         );
-        pointer.frame(&mut state.state);
-    }
-    let formats = state
-        .inner
-        .kernel
-        .get(&render_gles::format::registrar::FORMATS);
-    use render_gles::format::{registrar::Device, role::Role};
-    formats.register(
-        Device::UNSPECIFIED,
-        Role::Sample,
-        contract.renderer.dmabuf_formats(),
-        "headless renderer",
-    );
-    formats.absent(Role::ScanoutEgl, "headless: no scanout device");
-    formats.absent(Role::Render, "headless: no scanout render format");
-    formats.absent(Role::Plane, "headless: no KMS plane");
-    model::stats::registry::base::set_compositor_prefers_dmabuf(false);
-    frames::scene::gpu::prewarm(state, &mut contract.renderer);
-    let targets = [
-        Offscreen::<GlesTexture>::create_buffer(
-            &mut contract.renderer,
-            Fourcc::Abgr8888,
-            (options.size.w, options.size.h).into(),
-        )?,
-        Offscreen::<GlesTexture>::create_buffer(
-            &mut contract.renderer,
-            Fourcc::Abgr8888,
-            (options.size.w, options.size.h).into(),
-        )?,
-    ];
-    decor::window::install(decor::ChromeTheme::load(
-        decor::ChromeStyle::from_name(&state.inner.preference.chrome_style).unwrap_or_default(),
-    ));
-    let context = Rc::new(RefCell::new(crate::frame::Context::new(
-        output,
-        contract.renderer,
-        targets,
-        damage_tracker,
-    )));
-    contexts.push(context);
+        output.change_current_state(
+            Some(mode),
+            Some(Transform::Normal),
+            Some(Scale::Fractional(options.scale)),
+            Some((0, 0).into()),
+        );
+        output.set_preferred(mode);
+        let mut contract = Contract {
+            output: output.clone(),
+            mode,
+            renderer,
+        };
+        let handle = state.state.output.display_handle.clone();
+        let global = output.create_global::<dispatcher::state::Dispatch>(&handle);
+        state.inner.map_output_everywhere(
+            &output,
+            smithay::utils::Point::from((index as i32 * options.size.w, 0)),
+        );
+        scenegraph::display::output::bind_display(state, &mut contract);
+        let damage_tracker =
+            smithay::backend::renderer::damage::OutputDamageTracker::from_output(&output);
+        globals.push((output.clone(), global));
+        // This runs before the event loop serves any client.
+        human_seat_without_sources(&mut state.state.seat.seat);
+        state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
+        // The loop pins the camera to identity before input or drawing. Put the
+        // agent at the logical output centre, as centre_pointer_once does for
+        // the human pointer. main's apply_pointer only seeds the human accumulator.
+        let centre = smithay::utils::Point::from((
+            f64::from(mode.size.w) / options.scale / 2.0,
+            f64::from(mode.size.h) / options.scale / 2.0,
+        ));
+        state.inner.comp.injection.agent_pointer = Some((centre.x, centre.y));
+        if let Some(pointer) = state
+            .state
+            .seat
+            .agent
+            .as_ref()
+            .and_then(|seat| seat.get_pointer())
+        {
+            pointer.motion(
+                &mut state.state,
+                None,
+                &smithay::input::pointer::MotionEvent {
+                    location: centre,
+                    serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                    time: 0,
+                },
+            );
+            pointer.frame(&mut state.state);
+        }
+        let formats = state
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::FORMATS);
+        use render_gles::format::{registrar::Device, role::Role};
+        formats.register(
+            Device::UNSPECIFIED,
+            Role::Sample,
+            contract.renderer.dmabuf_formats(),
+            "headless renderer",
+        );
+        formats.absent(Role::ScanoutEgl, "headless: no scanout device");
+        formats.absent(Role::Render, "headless: no scanout render format");
+        formats.absent(Role::Plane, "headless: no KMS plane");
+        model::stats::registry::base::set_compositor_prefers_dmabuf(false);
+        frames::scene::gpu::prewarm(state, &mut contract.renderer);
+        let targets = [
+            Offscreen::<GlesTexture>::create_buffer(
+                &mut contract.renderer,
+                Fourcc::Abgr8888,
+                (options.size.w, options.size.h).into(),
+            )?,
+            Offscreen::<GlesTexture>::create_buffer(
+                &mut contract.renderer,
+                Fourcc::Abgr8888,
+                (options.size.w, options.size.h).into(),
+            )?,
+        ];
+        decor::window::install(decor::ChromeTheme::load(
+            decor::ChromeStyle::from_name(&state.inner.preference.chrome_style).unwrap_or_default(),
+        ));
+        let context = Rc::new(RefCell::new(crate::frame::Context::new(
+            output,
+            contract.renderer,
+            targets,
+            damage_tracker,
+        )));
+        contexts.push(context);
     }
     if let Ok(seconds) = std::env::var("MIX_VIUD_LAB_UNPLUG_SECS") {
         let seconds: u64 = seconds.parse()?;
-        if !(1..=300).contains(&seconds) || count < 2 { return Err("lab unplug needs 2+ outputs and 1..=300 seconds".into()); }
+        if !(1..=300).contains(&seconds) || count < 2 {
+            return Err("lab unplug needs 2+ outputs and 1..=300 seconds".into());
+        }
         let (output, global) = globals.pop().expect("lab output");
         event_loop.handle().insert_source(
-            smithay::reexports::calloop::timer::Timer::from_duration(std::time::Duration::from_secs(seconds)),
+            smithay::reexports::calloop::timer::Timer::from_duration(
+                std::time::Duration::from_secs(seconds),
+            ),
             move |_, _, state| {
-                state.state.redraw.remove(&world::state::output_key(&output));
+                state
+                    .state
+                    .redraw
+                    .remove(&world::state::output_key(&output));
                 state.inner.unmap_output_everywhere(&output);
-                state.state.output.display_handle.remove_global::<dispatcher::state::Dispatch>(global.clone());
+                state
+                    .state
+                    .output
+                    .display_handle
+                    .remove_global::<dispatcher::state::Dispatch>(global.clone());
                 info!("P3_LAB_UNPLUG {}", output.name());
                 smithay::reexports::calloop::timer::TimeoutAction::Drop
-            })?;
+            },
+        )?;
     }
     let (ping, source) = make_ping()?;
     let first = ping.clone();
     event_loop
         .handle()
         .insert_source(source, move |_, _, state| {
-            for context in &contexts { crate::frame::arm(state, context); }
+            for context in &contexts {
+                crate::frame::arm(state, context);
+            }
         })?;
     state.state.redraw.set_ping(ping);
     first.ping();

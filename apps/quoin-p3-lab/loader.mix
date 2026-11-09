@@ -20,12 +20,19 @@ fn sample($name, $snapshot, $key)
   if not has_key($children, $name) then
     $file = if $shape == "shared" then "behaviour-shared.mix" else "behaviour-instance.mix" end
     $children[$name] = spawn(["/opt/mixos/bin/mix", "--serve", dirname(script_path()) .. "/" .. $file, "--name", $name], {die_with_parent:true})
-    sleep(0.3)
   end
   if $key != nil then
     $one = {}; $one[$key] = $snapshot[$key]; $snapshot = $one
   end
-  return $io.rpc($name, "sample", {outputs:$snapshot, settings:$settings, key:$key})
+  $deadline = monotonic() + 5
+  while true
+    try
+      return $io.rpc($name, "sample", {outputs:$snapshot, settings:$settings, key:$key})
+    catch $message
+      if monotonic() >= $deadline then raise("P3_SAMPLE", $message) end
+      sleep(0.02)
+    end
+  end
 end
 
 fn update()
