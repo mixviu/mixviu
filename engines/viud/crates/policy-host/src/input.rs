@@ -1586,9 +1586,8 @@ pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
             }
         }
         if let Some(touch) = handle.get_touch() {
-            let touch_here = touch.grab_start_data().and_then(|start| start.focus)
-                .and_then(|(surface, _)| record_of(lp, &surface))
-                .is_some_and(|target| root_of(lp, target) == id);
+            let touch_here = touch.current_focuses().iter().any(|surface|
+                record_of(lp, surface).is_some_and(|target| root_of(lp, target) == id));
             if touch_here {
                 touch.cancel(&mut lp.state);
                 touch.unset_grab(&mut lp.state);

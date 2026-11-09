@@ -313,6 +313,14 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         }
     }
 
+    /// Focus targets of every active touch slot, including slots beyond the
+    /// one that started the current grab. Used to revoke a disappearing target.
+    pub fn current_focuses(&self) -> Vec<D::TouchFocus> {
+        self.inner.lock().unwrap().focus.values()
+            .filter_map(|slot| slot.focus.as_ref().map(|(focus, _)| focus.clone()))
+            .collect()
+    }
+
     /// Calls `f` with the active grab, if any.
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn TouchGrab<D>) -> T) -> Option<T> {
         let guard = self.inner.lock().unwrap();
