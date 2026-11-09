@@ -6,7 +6,9 @@ thread_local! {
     static ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static STAGES: RefCell<BTreeMap<String, (u128, u64)>> = RefCell::default();
 }
-pub fn enable(active: bool) { ACTIVE.set(active); }
+pub fn enable(active: bool) {
+    ACTIVE.set(active);
+}
 pub fn take() -> BTreeMap<String, (u128, u64)> {
     STAGES.with(|stages| std::mem::take(&mut *stages.borrow_mut()))
 }

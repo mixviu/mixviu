@@ -184,7 +184,9 @@ fn prepare_with(
         #[cfg(test)]
         drop(lookup);
         #[cfg(test)]
-        if path.is_none() { crate::panel_profile::count("icon_lookup_missing"); }
+        if path.is_none() {
+            crate::panel_profile::count("icon_lookup_missing");
+        }
         if let Some(path) = path {
             let asset = if crate::icons::is_svg(&path) {
                 // Keep bytes and identity alive through layout/page switches.

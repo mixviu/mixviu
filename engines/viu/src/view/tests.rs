@@ -117,16 +117,27 @@ fn p2_real_panel_binding_and_cpu_frame_measurement() {
             frame_ns[94] as f64 / 1000.0
         );
         if profiled {
-            let keys: std::collections::BTreeSet<_> = stage_samples.iter()
-                .flat_map(|sample| sample.keys().cloned()).collect();
+            let keys: std::collections::BTreeSet<_> = stage_samples
+                .iter()
+                .flat_map(|sample| sample.keys().cloned())
+                .collect();
             let mut summary = serde_json::Map::new();
             for key in keys {
-                let mut ns: Vec<_> = stage_samples.iter().map(|s| s.get(&key).map_or(0, |v| v.0)).collect();
+                let mut ns: Vec<_> = stage_samples
+                    .iter()
+                    .map(|s| s.get(&key).map_or(0, |v| v.0))
+                    .collect();
                 ns.sort();
-                let calls: u64 = stage_samples.iter().map(|s| s.get(&key).map_or(0, |v| v.1)).sum();
+                let calls: u64 = stage_samples
+                    .iter()
+                    .map(|s| s.get(&key).map_or(0, |v| v.1))
+                    .sum();
                 summary.insert(key, json!({"median_us":ns[50] as f64/1000.0,"p95_us":ns[94] as f64/1000.0,"mean_us":ns.iter().sum::<u128>() as f64/100000.0,"calls_per_frame":calls as f64/100.0}));
             }
-            println!("P2_STAGES {name} inclusive=true samples=100 {}", serde_json::Value::Object(summary));
+            println!(
+                "P2_STAGES {name} inclusive=true samples=100 {}",
+                serde_json::Value::Object(summary)
+            );
         }
     }
     crate::panel_profile::enable(false);
