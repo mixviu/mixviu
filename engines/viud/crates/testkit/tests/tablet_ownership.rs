@@ -16,6 +16,8 @@ fn tool(n: u64) -> TabletToolDescriptor {
 #[test]
 fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     let mut h = testkit::Harness::new();
+    h.client.bind_tablet();
+    h.roundtrip();
     h.mapped_toplevel(64, 48);
     h.mapped_toplevel(64, 48);
     let surfaces: Vec<_> = h
@@ -37,6 +39,7 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
         usb_id: None,
         syspath: None,
     };
+    state.add_tablet::<dispatcher::state::Dispatch>(&dh, &tablet);
     for (t, s) in [(&a, &surfaces[0]), (&b, &surfaces[1])] {
         state.tool_proximity_in(
             t,
@@ -52,8 +55,13 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     assert!(state.begin_stroke(&a, Stroke::Tablet));
     state.tool_tip_down(&a, SERIAL_COUNTER.next_serial(), 1);
     assert!(state.tool_is_down(&a));
-    state.cursor_owner = Some(b.clone());
-    state.tool_cursor = true;
+    h.roundtrip();
+    assert_eq!(h.client.state.tablet.tools.len(),2);
+    let cursor=h.client.create_surface();
+    h.client.state.tablet.tools[1].set_cursor(1,Some(&cursor),0,0);
+    h.roundtrip();
+    assert_eq!(h.wire.state.tablet.cursor_owner,Some(b.clone()));
+    let state=&mut h.wire.state.tablet;
     assert!(!state.begin_stroke(&b, Stroke::Tablet));
     state.tool_tip_down(&b, SERIAL_COUNTER.next_serial(), 2);
     assert!(!state.tool_is_down(&b));
@@ -70,6 +78,12 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     state.remove_tool(&a, 5);
     assert_eq!(state.stroke, Stroke::None);
     assert!(state.stroke_owner.is_none());
+    h.roundtrip();
+    let tips=&h.client.state.tablet.tips;
+    assert_eq!(tips.len(),2,"only A's down and lift reach the real tablet client");
+    assert_eq!(tips[0].0,tips[1].0);
+    assert!(tips[0].1);
+    assert!(!tips[1].1);
 }
 
 #[test]

@@ -306,8 +306,12 @@ impl TabletState {
 
     /// Acquire the single seat stroke only when routing has taken a real stroke.
     pub fn begin_stroke(&mut self, tool: &TabletToolDescriptor, stroke: Stroke) -> bool {
-        if stroke == Stroke::None || self.stroke_owner.is_some() || !self.tools.contains_key(tool) { return false; }
-        if stroke == Stroke::Tablet && !self.tool_has_focus(tool) { return false; }
+        if stroke == Stroke::None || self.stroke_owner.is_some() || !self.tools.contains_key(tool) {
+            return false;
+        }
+        if stroke == Stroke::Tablet && !self.tool_has_focus(tool) {
+            return false;
+        }
         self.stroke_owner = Some(tool.clone());
         self.stroke_surface = self.tools.get(tool).and_then(|t| t.focus.clone());
         self.stroke = stroke;
@@ -318,14 +322,21 @@ impl TabletState {
     /// emulated releases stays in the seat's existing emulate path.
     fn revoke_tool(&mut self, tool: &TabletToolDescriptor) {
         if self.stroke_owner.as_ref() == Some(tool) {
-            if self.stroke == Stroke::Pointer { self.revoked_buttons.push(0x110); }
+            if self.stroke == Stroke::Pointer {
+                self.revoked_buttons.push(0x110);
+            }
             self.stroke = Stroke::None;
             self.stroke_owner = None;
             self.stroke_surface = None;
             self.last_pen_screen = None;
         }
         self.emulated_buttons.retain(|(owner, _, button)| {
-            if owner == tool { self.revoked_buttons.push(*button); false } else { true }
+            if owner == tool {
+                self.revoked_buttons.push(*button);
+                false
+            } else {
+                true
+            }
         });
         if self.cursor_owner.as_ref() == Some(tool) {
             self.cursor_owner = None;
@@ -452,10 +463,17 @@ impl TabletState {
         self.tools.get(tool).is_some_and(|t| t.is_down)
     }
 
-    pub fn focus_stroke(&mut self, tool: &TabletToolDescriptor,
-        location: Point<f64, Logical>, focus: (WlSurface, Point<f64, Logical>),
-        serial: Serial, time: u32) -> bool {
-        let Some(tablet) = self.tools.get(tool).and_then(|t| t.tablet.clone()) else { return false; };
+    pub fn focus_stroke(
+        &mut self,
+        tool: &TabletToolDescriptor,
+        location: Point<f64, Logical>,
+        focus: (WlSurface, Point<f64, Logical>),
+        serial: Serial,
+        time: u32,
+    ) -> bool {
+        let Some(tablet) = self.tools.get(tool).and_then(|t| t.tablet.clone()) else {
+            return false;
+        };
         self.tool_motion(tool, &tablet, location, Some(focus), serial, time);
         self.tool_has_focus(tool)
     }
@@ -516,14 +534,22 @@ impl TabletState {
         serial: Serial,
         time: u32,
     ) {
-        let mut tools: Vec<_> = self.tools.iter().filter(|(_, t)| t.focus.as_ref().is_some_and(&matches))
-            .map(|(d, _)| d.clone()).collect();
+        let mut tools: Vec<_> = self
+            .tools
+            .iter()
+            .filter(|(_, t)| t.focus.as_ref().is_some_and(&matches))
+            .map(|(d, _)| d.clone())
+            .collect();
         if self.stroke_surface.as_ref().is_some_and(&matches) {
             if let Some(owner) = self.stroke_owner.clone() {
-                if !tools.contains(&owner) { tools.push(owner); }
+                if !tools.contains(&owner) {
+                    tools.push(owner);
+                }
             }
         }
-        for tool in tools { self.tool_proximity_out(&tool, time); }
+        for tool in tools {
+            self.tool_proximity_out(&tool, time);
+        }
         for pad in self.pads.values_mut() {
             if pad.focused.as_ref().is_some_and(&matches) {
                 pad.set_focus(None, None, serial);

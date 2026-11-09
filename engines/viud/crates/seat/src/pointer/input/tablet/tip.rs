@@ -39,7 +39,13 @@ pub fn start_draw(
         return;
     }
     if let Some(focus) = client::tablet_focus(_loop, world) {
-        if !_loop.state.tablet.focus_stroke(tool, world, focus, SERIAL_COUNTER.next_serial(), time) { return; }
+        if !_loop
+            .state
+            .tablet
+            .focus_stroke(tool, world, focus, SERIAL_COUNTER.next_serial(), time)
+        {
+            return;
+        }
         super::revoke::flush(_loop, time);
         client::apply_focus(_loop, world);
         let serial = SERIAL_COUNTER.next_serial();
@@ -48,7 +54,9 @@ pub fn start_draw(
         }
     } else if let Some(hit) = client::topmost(_loop, world) {
         // A window / layer / UI overlay (NOT bare canvas) → the pen acts as a mouse.
-        if !_loop.state.tablet.begin_stroke(tool, Stroke::Pointer) { return; }
+        if !_loop.state.tablet.begin_stroke(tool, Stroke::Pointer) {
+            return;
+        }
         _loop.state.tablet.stroke_surface = client::focus_of(&hit).map(|(surface, _)| surface);
         cursor::follow(_loop, screen, world, time);
         crate::pointer::input::touch::emulate::press(_loop, time);

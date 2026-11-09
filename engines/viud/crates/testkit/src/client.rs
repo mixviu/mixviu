@@ -20,6 +20,8 @@ use wayland_client::protocol::{
     wl_seat::WlSeat, wl_shm, wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
+#[path = "tablet.rs"]
+pub mod tablet;
 use wayland_protocols::xdg::shell::client::{
     xdg_popup::XdgPopup, xdg_positioner::XdgPositioner, xdg_surface, xdg_surface::XdgSurface,
     xdg_toplevel::XdgToplevel, xdg_wm_base, xdg_wm_base::XdgWmBase,
@@ -40,6 +42,7 @@ use wayland_protocols_wlr::screencopy::v1::client::{
 /// What the client's event handlers record.
 #[derive(Default)]
 pub struct ClientState {
+    pub tablet: tablet::State,
     /// `(name, interface, version)` of every advertised global.
     pub globals: Vec<(u32, String, u32)>,
     /// `wl_display.sync` callbacks that have come back.
