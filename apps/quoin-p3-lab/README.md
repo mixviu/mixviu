@@ -58,3 +58,39 @@ window and a private materialised transport copy to pass its installed-scene
 validator; authored scene files remain unchanged. Generic scene behaviour
 lifecycle, capabilities, stage ownership and final vocabulary remain survey
 and Fable decisions.
+
+## Repeat and the output feed
+
+The collection form is `repeat: {over: '= $src.comp.workspaces', as: ws,
+key: id, max: 64}` with `child: template_id`. Bounds are 1..128, default 64.
+Duplicate, empty or non-string keys, shared templates and nested repeat/list
+refuse the candidate. Variable-token rewriting preserves literal strings;
+the native host still validates bindings and owns its evaluation budgets.
+The prototype handles dotted model/source paths and re-lowers on updates.
+Arbitrary pure collection expressions, structural dirty tracking, diagnostics
+mapping and keyed widget-state retention across reorder need derivation.
+
+P2 watch is an invalidation watermark: subscribe before snapshot, then refresh
+on change or reconnect. Workspace `.list` rows have numeric index and optional
+name. The adapter projects `{id,index,label}` for repeat and binds current
+workspace from the instance's output row. Production needs P2's actual
+read-only roots and invalidation of collection structure and item bindings.
+
+The headless lab controls are `MIX_VIUD_LAB_OUTPUTS=1..3` and optional
+`MIX_VIUD_LAB_UNPLUG_SECS=1..300` (two or more outputs). These are bounded test
+controls, not a production virtual-output API. Direct loader use requires a
+private `P3_SETTINGS` file; the stage loader requires private `P3_STATE_DIR`.
+
+## D2 baseline
+
+`measure.mix HARNESS PRIVATE-RESULT-DIR [CBC-BIN-DIR SMOKE-SETTINGS]` records
+three trials of 20 synchronous sample calls at each output count. Supplying
+binaries uses actual viud output snapshots; omitting them uses synthetic data.
+The recorded D2 numbers stand; round two did not rerun this benchmark.
+VmRSS sums behaviour processes only, startup means spawn to first reply, and
+traffic means successful JSON request plus reply payload bytes. Registration,
+retries, protocol framing, loader, compositor, host, GPU and visible startup
+are excluded. Shared runs first, confounding startup order. The behaviours are
+tiny and share `panel-state.mix`; this cannot establish full-policy complexity
+or whole-panel performance. Adapter unplug tests precede pending fanout; live
+unplug runs during periodic activity without pausing a Bus transaction.

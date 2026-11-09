@@ -1,5 +1,7 @@
 # Quoin P3 discovery lab — 2026-11-09
 
+Round two completed visual acceptance; see the round-two addendum at the end.
+
 Branch: `lab/quoin-p3`, never merge; no PR. Code head before receipt: `35648554cf0423bd24fec751c030d0a2eeea1d96`.
 
 **Acceptance is incomplete.** Small panel instances mount on two headless outputs. Both behaviour shapes pass the lifecycle/state checks below, but captured frames can be blank or show another output's panel. Full shipped-panel policy is not ported or measured; no full-panel rendered acceptance is claimed.
@@ -598,3 +600,224 @@ Final lab merge (2026-11-08): origin/lab/gold-parity at 01912877 (eight accepted
 Branch cutover/four-engines; head is this last.md commit (source db16141); full gate: the coordinator runs it on infra/pr-ci; CBC light 20261108-105611-7534e7c2, 20261108-104904-e4317f0f, 20261108-104841-c85e2532, 20261108-105441-54343276.
 
 Branch fix/email-desk4-tree-table; tested commit 1e38766b9a8dfcc260a8f377162aaaa3c37ec19d; Email legacy account-tree startup FIXED; hot-apply apps/email/mail.mix + apps/email/surface.mix to /opt/mix/share/mixviu/apps/email/; CBC email-desk4-scope-r4-a1 rc0 (17/17), email-desk4-native-r5 rc0 (real maild before/after); no desk4/main/infra/pr-ci changes.
+
+---
+
+# Quoin P3 round two — 2026-11-09
+
+**Visual acceptance completed.** This addendum supersedes the incomplete
+acceptance status in the round-one receipt above. Lab approved 2026-11-09;
+branch `lab/quoin-p3`, never merge, no PR. Code head before this receipt:
+`58edd29ac5b56fb3f2b98ab0c878126f2a7624da`. The previously uncommitted receipt
+was committed and pushed first (`a9fce167`). Fable still decides D2 and the
+theatre/stage vocabulary and ownership; this is evidence and a recommendation.
+
+## Visual diagnosis and acceptance
+
+Capture targeting was tested independently of scene rendering: clearing output
+0 red and output 1 green returned the correct colours from the corresponding
+capture names. Trace showed distinct wl_output names and accepted surface
+bindings, but identical internal render keys: `MixOS Headless Unknown`.
+`world::state::output_key()` uses make/model/serial, not the protocol name or
+comp key. The synthetic outputs shared those properties, collapsing redraw,
+view and layer selection. Sharing a renderer alone did not repair that alias.
+
+The headless lab now assigns stable serials `headless-0`, `headless-1`, etc.,
+registers every output for redraw, creates its render view, and uses one shared
+renderer as the native backend does. Timed removal retires its context, redraw
+key, mapped output and protocol global; pending frame callbacks cannot re-arm
+it. Two headless library tests pass on CBC (including stable/distinct keys).
+A separate early blank capture was fixture timing: host Bus readiness precedes
+first GPU presentation. Acceptance now waits for `applied_revision > 0`.
+
+Final live evidence uses CBC engines/pixel probe from `c98f47aa677a7a79565238da6c9a4939475330f1`
+and Mix adapters from the code head above:
+
+- Shared behaviour: two complete shipped-panel node compositions on 1280x720
+  outputs, each with its own name, model colour and current workspace. Ten
+  captures all contain at least 61,520 correctly coloured footer pixels
+  (threshold 10,000). Images manually inspected: output 0 highlights workspace
+  2, output 1 highlights workspace 1. The routed action then changes output 0
+  to 4 while output 1 remains 1. `P3_LIVE=pass visual=true`.
+- Per-instance behaviour: same ten-frame checks and output-specific state,
+  settings and removal checks pass. `P3_LIVE=pass visual=true`.
+- Both runs remove output 1 at 25 seconds. Its host scene disappears; output
+  0 keeps its original scene identity and pinned mode. Settings remain keyed
+  by output name. No surviving instance is recreated.
+- Stage run: two correct panels, Network cast on output 0's right edge, and
+  the same unchanged shipped Network source in P1's native preview. Capture
+  inspected, preview placed at 640x480 through the existing native window API.
+  Five stages become three after unplug at 40 seconds. The surviving panel
+  keeps its identity; uncast removes Network while retaining its right stage.
+  `P3_STAGE_LIVE=pass visual=true preview=true`.
+
+These use full panel composition with bounded authored defaults for tasks,
+tray, audio and other service-dependent data. The shipped device behaviour
+suite is not ported or activated. Native workspace policy deliberately accepts
+switches only on the default output (`WorkspaceState::resolve_output`); the
+other panel correctly displays its unchanged row. A trial requesting a switch
+on the second output was refused by that existing policy. No new workspace
+policy was hidden in the lab.
+
+## Separate production finding on main
+
+**Main is vulnerable to the same internal-key collision when two connected
+monitors report the same manufacturer/model/nonzero EDID serial.** The CBC
+CPU reproducer gives DP-1 and DP-2 the same parsed serial 42 and obtains
+`Example Panel 42` for both. It deliberately asserts equality to record the
+existing bug. Missing EDID or serial zero correctly falls back to connector
+name and produces distinct keys.
+
+The identity builder, world output-key function and layer render filtering
+are unchanged against fetched `origin/main` at
+`b5fefbb62f1cdc629399dad4807d5032ba30b659`. Thus the alias is reachable through
+the ordinary native monitor path, independent of lab capture. The observed
+headless crossed/blank rendering demonstrates the consequence of an alias;
+the duplicate EDID main path is source/CPU proven, not physically exercised on
+a desk. This is a production fix finding, separate from the lab: runtime
+output uniqueness must be separated from stable preference identity. No native
+production identity fix, deployment or blanket second-monitor acceptance is
+claimed here. Ordinary distinct identities and connector fallback do not
+reproduce the lab alias.
+
+## Theatre -> stage -> scene prototype
+
+`theatre.conf.mix` is strict data. It defines theatre `lab`, bottom and right
+rules expanded per output, plus an explicit preview stage. Bottom stages cast
+panel; right stages initially have no cast; preview casts Network. Addresses
+are `lab/bottom@headless-0/panel`, `lab/right@headless-0/network` and
+`lab/preview/network`. The output is a stage property. The Mix stage host expands
+rules on output invalidation/reconnect, then reconciles casts using existing
+`shell.scene.load/unload`. The output feed stays behind the same seam as the
+instances entry point. No new transport or Rust stage runtime was introduced.
+
+Stage placement overrides header fields (`kind`, `edge`, `panel`, `w`, `h`);
+missing fields use the scene header during migration when kind is unchanged.
+A change of kind starts a new placement descriptor, avoiding incompatible
+edge/panel fields and old geometry. The Network source is byte-for-byte the
+shipped scene and is never edited to dock or preview it. P1's installed-scene
+validator reserves dialog names, so the lab materialises a private transport
+copy with an accepted header for its passive preview window, then applies the
+stage size through `comp.window.place`. The logical stage retains dialog kind.
+This bridge is a concrete preview limitation to remove in production, not a
+claim that the present validator already understands stages.
+
+Both controllers use one behaviour process per scene in the shared shape,
+with the same D2 actor and common policy. Per-output model sections and repeat
+remain unchanged. Stage mode persists by output name then edge; cast overrides
+persist by stage id and remain desired state while an output is absent. Pure
+adapter checks prove replug restores those assignments and explicit nil uncast
+survives rule expansion. Live tests prove removal and persistence files, not a
+full process-restart/replug acceptance cycle.
+
+Source sizes (all lines / nonblank non-comment lines / bytes; code only,
+excluding fixtures, checks, README and config):
+
+| Component | Lines | Code lines | Bytes |
+|---|---:|---:|---:|
+| instances controller `loader.mix` | 143 | 130 | 5,106 |
+| stage controller `theatre-loader.mix` | 171 | 152 | 6,901 |
+| added stage helper `theatre.mix` | 118 | 105 | 5,731 |
+| common output/repeat/render adapter `instances.mix` | 161 | 141 | 6,894 |
+| common full-panel decoration `furniture.mix` | 10 | 8 | 464 |
+| stage-specific Rust viu host changes | 0 | 0 | 0 |
+
+The stage controller plus helper adds 146 raw lines / 127 code lines / 7,526
+bytes over the instances controller. Common code is counted once per model.
+This includes registry, cast operations, persistence, preview bridge and change
+notifications that the instances controller does not offer; it is not an
+equal-feature implementation contest. Headless/render diagnostic changes serve
+both entry points and are excluded from this stage cost. No additional behaviour
+actors or performance benchmark was introduced. D2's numbers above stand,
+pinned to their original binaries and workload. Actor/policy files are unchanged
+from `585a5e2a`; full composition decoration is in the loader only. Synthetic
+serial correction can change snapshot bytes slightly, so those old traffic
+numbers are a baseline, not a fresh measurement of today's snapshot strings.
+
+| Case | Scene `instances` entry point | Theatre stages |
+|---|---|---|
+| Hotplug | Scene selects outputs; reconcile removes that instance | Rule adds/removes places; cast reconciler removes only their scenes |
+| Mode persistence | Scene controller owns output-name map | Host owns output-name/edge map, independent of current cast |
+| Preview and edge | Needs placement override beyond instance selection | Same scene cast into explicit preview or edge place; header fallback retained |
+| Agent asks for Network on a right edge | Needs scene metadata/placement API and output selection | Read stages, then cast Network into the existing right stage |
+| State consistency | One settings writer; scene/output model sections | One stage writer; revision fence and durable desired casts, same shared model |
+
+**Recommend theatre-owned stages as the placement model**, with one behaviour
+per scene provisionally retained for D2. The extra registry/control code buys a
+stable place an agent can discover and address, independent of which scene is
+playing. It also makes preview/docking an operation on placement rather than
+an edit to content. Keep `instances` as a migration shorthand that expands to
+stage rules; it should not become a second independent ownership system.
+Fable decides final vocabulary and ownership after the survey.
+
+P2 was also read at `20df76cb` after the original `35260eb5` inspection.
+Its final hand-off confirms host-owned subscriptions, coherent snapshots at
+load, stable native keys, explicit ordering, descendant-path invalidation,
+deletions, availability and sequence/gap handling. These remain requirements
+for production repeat/stage derivation; no P2 code was edited or merged.
+
+## Minimal proposed Bus surface and migration
+
+Use the theatre's existing Bus identity, with these commands:
+
+- `stages` returns revision and inventory: stage id/address, placement,
+  output identity, current cast and scene address. Production should include
+  desired/applied state and structured last errors.
+- `cast {stage, scene, if_revision}` and `uncast {stage, if_revision}` return
+  the new revision and affected stage. For the request “cast Network on the
+  desk's right edge”, an agent discovers `right@DP-1` then sends `cast` to that
+  theatre. It does not need host hashes, native surface ids or EDID keys.
+- `<theatre>.stages.changed` invalidates inventory; subscribe before taking
+  the snapshot. This follows the P2 pattern.
+
+The lab implements those operations, optional revision checking, plus `mode`
+and backend-only `attach_preview`. The latter is an adapter handshake, not a
+minimum agent API. A bounded placement/mode setter may follow if dynamic stage
+creation is required; it is unnecessary for the predeclared right-edge example.
+Casting is one scene per stage in this prototype. Durable desired-state writes
+precede host reconciliation; this is not an atomic multi-cast transaction.
+Generic behaviour start/stop, capability ownership, conflicts and failure
+recovery need production derivation; Network uses its authored static model.
+
+Move output selection and window placement (`kind/edge/panel/w/h`) from scene
+grammar to theatre stage configuration. Output topology, input, focus, lock and
+identity root remain theatre responsibilities. Scene content, pure bindings,
+source requirements and behaviour stay with the scene. Final title/chrome and
+placement constraints need Fable's ownership decision.
+
+Migration: inventory shipped headers and controller policy; generate equivalent
+stage rules from per_output/primary/named selection; let explicit stage fields
+override headers while warning on conflicts; migrate persisted output-name
+modes into output-name/edge stage settings with an explicit conflict check;
+route events through cast identity; accept each shipped scene in preview and
+docked placement; only then remove header placement compatibility. Preserve
+existing scenes during this transition. Production PRs follow P2 landing and an
+independent whole-specimen survey; this branch never lands.
+
+## Checks and CBC receipts, round two
+
+All completed saved logs were read, including the complete final log. Rust
+builds/tests/fmt ran only through CBC. Final gate built viu, viud and the pixel
+probe, passed two headless library tests and two native identity reproducer
+tests. Formatting diffs were applied locally; final Rust differences after
+the gate are formatting only. Mix adapter checks and executable-script lint
+with deny-warnings pass. Existing dependency warnings remain; no workspace-wide
+gate or production acceptance is claimed.
+
+| CBC job | RC | Source / purpose |
+|---|---:|---|
+| `quoin-p3-shared-renderer` | 0 | `71aee456`, shared-renderer experiment |
+| `quoin-p3-shared-borrow` | 75 | Mistyped commit; command did not run; requeued |
+| `quoin-p3-shared-borrow-r2` | 0 | `7bf450f1`, bounded RefCell target allocation |
+| `quoin-p3-p1-preview` | 0 | P1 `5cb266763fd5b4ea811c10b9284e0b494dfcfbca`, read-only preview binary |
+| `quoin-p3-capture-trace` | 0 | `c228c763`, target colour and layer trace |
+| `quoin-p3-unique-outputs` | 0 | `f092cbc8`, unique synthetic identities/retirement |
+| `quoin-p3-visual-gate` | 0 | `5afa3b9e`, identity tests and pixel probe |
+| `quoin-p3-round2-final` | 0 | `c98f47aa`, full gate and main collision reproducer |
+
+The earlier `quoin-p3-output-views` job recorded pending above completed RC=0
+before round two. Round-two failed live trials (shared renderer alone, temporary
+RefCell borrow, early presentation capture and non-default workspace switch)
+were diagnosed before the passes above. No failed trial is counted as acceptance.
+Private evidence/log paths are indexed in the private P3 hub receipt. No desk4,
+VT, prefix write, production deployment, P1/P2 edit or PR was performed.
