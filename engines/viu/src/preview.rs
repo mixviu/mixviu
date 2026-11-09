@@ -180,7 +180,8 @@ mod tests {
             "print(\"trusted\")",
         )
         .unwrap();
-        std::os::unix::fs::symlink(crate::dev_loop::tests::test_mix(), prefix.join("bin/mix")).unwrap();
+        std::os::unix::fs::symlink(crate::dev_loop::tests::test_mix(), prefix.join("bin/mix"))
+            .unwrap();
         let tools = Tools::for_binary(&prefix.join("bin/viu"), None).unwrap();
         let output = std::process::Command::new(tools.mix)
             .arg(tools.validator)
