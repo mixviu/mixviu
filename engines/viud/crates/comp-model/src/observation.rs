@@ -307,6 +307,7 @@ pub struct SurfaceEdgeWindow {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum PropValue {
+    Clip(Option<crate::request::ClipRect>),
     FloatGeometry(Option<Box<crate::snapshot::FloatGeometrySnapshot>>),
     Null(()),
     Bool(bool),

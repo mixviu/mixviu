@@ -337,7 +337,7 @@ pub(crate) fn sender_domain_of(addr: &str, default_domain: &str) -> String {
 pub async fn delivery_worker(state: Arc<SmtpState>) {
     tracing::info!("SMTP delivery worker started");
 
-    let resolver = match Resolver::builder_tokio().map(|b| b.build()) {
+    let resolver = match Resolver::builder_tokio().and_then(|b| b.build()) {
         Ok(r) => r,
         Err(e) => {
             tracing::error!(error = %e, "Failed to create DNS resolver — delivery worker disabled");
@@ -782,8 +782,14 @@ async fn resolve_mx(resolver: &TokioResolver, domain: &str) -> Result<Vec<String
     match resolver.mx_lookup(domain).await {
         Ok(mx) => {
             let mut hosts: Vec<(u16, String)> = mx
+                .answers()
                 .iter()
-                .map(|r| (r.preference(), r.exchange().to_ascii()))
+                .filter_map(|record| match &record.data {
+                    hickory_resolver::proto::rr::RData::MX(mx) => {
+                        Some((mx.preference, mx.exchange.to_ascii()))
+                    }
+                    _ => None,
+                })
                 .collect();
             hosts.sort_by_key(|h| h.0);
             Ok(hosts

@@ -17,6 +17,13 @@ use world::window::lifecycle::event::WindowLifecycleEvent;
 ///
 /// The camera is pinned to identity, so activation does not move the view.
 fn activate_window(_loop: &mut Loop, window: Window) {
+    if window
+        .uuid()
+        .and_then(|uuid| _loop.inner.comp.registry.id_for_uuid(uuid))
+        .is_some_and(|id| !_loop.inner.comp.visual(id).visible)
+    {
+        return;
+    }
     // An override-redirect X11 window is never activated or focused (a dock or
     // xdg-activation cannot reach one through the registry; this is the
     // engine-side backstop).
@@ -417,6 +424,21 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
         state
             .inner
             .register_drawable(uuid, world::order::track::base::DrawLayer::CONTENT);
+        let target = state.inner.worlds.spawn_target();
+        let z = state
+            .inner
+            .comp
+            .registry
+            .id_for_uuid(uuid)
+            .map(|id| state.inner.comp.visual(id).z)
+            .unwrap_or(0);
+        state
+            .inner
+            .worlds
+            .get_mut(target)
+            .storage_mut()
+            .get_mut(&world::order::track::base::DRAW_ORDER_MUT)
+            .set_z(world::order::track::base::ComponentId(uuid), z);
     }
 
     // Focus-on-map: a managed window takes the keyboard (and the top of the

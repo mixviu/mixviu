@@ -67,11 +67,7 @@ fn mode_info(m: DrmMode) -> ModeInfo {
 fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
     let raw = kms::edid::parse::read(drm, info);
     let parsed = raw.as_ref().and_then(kms::edid::parse::parse);
-    kms::edid::identity::identity(
-        parsed.as_ref(),
-        &format!("{:?}-{}", info.interface(), info.interface_id()),
-    )
-    .key()
+    kms::edid::identity::connector_key(parsed.as_ref(), info)
 }
 
 /// Tear down the current pipe (freeing its CRTC) and bring `target` up as the primary
@@ -90,20 +86,8 @@ fn bring_up(
     requested: Option<ModeInfo>,
     busy: &[crtc::Handle],
 ) -> Result<(), String> {
-    // A smithay `Output` may NOT be carried across a change of MONITOR.
-    //
-    // `output_key` — the identity every per-output map keys on: the viewport trees
-    // and so the size everything is laid out and rendered at, the preference
-    // profiles, the background worker's panes, the teleport placements — is
-    // "{make} {model} {serial}" read from `PhysicalProperties`, and smithay fixes
-    // those at `Output::new` with no setter. So failing the anchor over to a
-    // different connector while reusing its `Output` hands the new monitor the
-    // departed one's identity wholesale. The DRM modeset is correct (it is chosen
-    // from `target`'s own EDID), but the compositor goes on laying out through the
-    // unplugged monitor's viewport tree — a 5120x1440 panel drawn as the 1280x1024
-    // that just went away. Reconnecting the old monitor appeared to fix it only
-    // because the survivor then came back through `add_output`, which mints a
-    // fresh `Output`.
+    // Connector name and EDID properties are immutable on a smithay Output.
+    // Replace on either change, including fail-over to a duplicate EDID panel.
     let identity = {
         let mgr = ctx.drm_output_manager.borrow();
         let drm = mgr.device();
@@ -114,7 +98,8 @@ fn bring_up(
             &format!("{:?}-{}", target.interface(), target.interface_id()),
         )
     };
-    let replace = identity.key() != world::state::output_key(&ctx.pipe().output);
+    let replace = identity.preference_key(&kms::connector::select::connector_name(target))
+        != world::state::output_preference_key(&ctx.pipe().output);
     // Keep the anchor where it already sat: a fail-over must not shuffle the
     // placement out from under a surviving secondary.
     let position = state
@@ -157,9 +142,9 @@ fn bring_up(
         requested,
     )?;
     let env = model::environment::config::base::get();
-    // HDR output needs a Vulkan composite, which there is none of; GLES scans
-    // out SDR.
-    let new_hdr_active = env.hdr && built.hdr.hdr_capable() && false;
+    // HDR on a PQ-capable display when asked for (the GLES HDR composite,
+    // `render_gles::color::hdr`).
+    let new_hdr_active = env.hdr && built.hdr.hdr_capable();
     let new_mode = Mode::from(built.drm_mode);
     if replace {
         state
@@ -170,6 +155,7 @@ fn bring_up(
         // succeeded, so a failed fail-over leaves the old identity in place rather
         // than half-migrating.
         let old = std::mem::replace(&mut ctx.pipe_mut().output, output.clone());
+        crate::render::execute::hdr::publish(&old.name(), None);
         // Every world's Space, not just the hosted one: a world parked across this
         // fail-over would otherwise keep the departed monitor and never see the new
         // one (`map_output_everywhere`).
@@ -208,6 +194,12 @@ fn bring_up(
     ctx.pipe_mut().connector = built.connector;
     ctx.pipe_mut().hdr_caps = built.hdr;
     ctx.pipe_mut().hdr_active = new_hdr_active;
+    ctx.pipe_mut().hdr_pass = None;
+    ctx.pipe_mut().sdr_reset_pending = 0;
+    ctx.pipe_mut().props_retry_at = None;
+    if !new_hdr_active {
+        crate::render::execute::hdr::publish(&output.name(), None);
+    }
     ctx.pipe_mut().props_applied = false;
     ctx.pipe_mut().render_failures = 0;
     // Fresh scanout target — no page-flip is pending on it, so any flight the
@@ -254,10 +246,14 @@ fn write_snapshots(state: &mut Loop, ctx: &NativeRenderContext) {
     *state.inner.kernel.get_mut(&OUTPUTS_SNAPSHOT_MUT) = snap;
 }
 
-/// The preferred-monitor key (the FIRST output profile's identity — same default-output
-/// rule startup uses), if set.
-fn preferred_key() -> Option<String> {
-    profile::get().into_iter().next().and_then(|p| p.identity)
+/// Use the same exact-before-legacy profile priority as startup selection.
+fn preferred_index(keys: &[String]) -> Option<usize> {
+    let profiles = profile::get();
+    let saved = profiles
+        .iter()
+        .filter_map(|p| p.identity.as_deref())
+        .collect::<Vec<_>>();
+    model::environment::preference::identity::preferred_index(keys, &saved)
 }
 
 /// Resolve the mode to bring `info` up at FROM PREFERENCES — its per-output profile's
@@ -278,9 +274,7 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
     };
     let key = identity_key(drm, info);
     let profiles = profile::get();
-    profiles
-        .iter()
-        .find(|p| p.identity.as_deref() == Some(key.as_str()))
+    model::environment::preference::identity::find(&profiles, &key, |p| p.identity.as_deref())
         .or_else(|| profiles.iter().find(|p| p.identity.is_none()))
         .and_then(|p| p.mode.as_ref())
         .and_then(to_info)
@@ -290,12 +284,14 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
 /// Pick the connector to drive among the connected ones: the preferred monitor if
 /// present, else the first connected — exactly the startup `connector.select` policy.
 fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connector::Info> {
-    if let Some(key) = preferred_key()
-        && let Some(c) = connected.iter().find(|c| identity_key(drm, c) == key)
-    {
-        return Some(c.clone());
-    }
-    connected.first().cloned()
+    let keys = connected
+        .iter()
+        .map(|c| identity_key(drm, c))
+        .collect::<Vec<_>>();
+    preferred_index(&keys)
+        .and_then(|i| connected.get(i))
+        .or_else(|| connected.first())
+        .cloned()
 }
 
 /// Bring a NEW connected monitor online as an ADDITIONAL output: build a fresh
@@ -358,8 +354,7 @@ fn add_output(
         .inner
         .map_output_everywhere(&output, smithay::utils::Point::from((x, 0)));
     let env = model::environment::config::base::get();
-    // viud: SDR only without the Vulkan renderer (see `new_hdr_active` above).
-    let hdr_active = env.hdr && built.hdr.hdr_capable() && false;
+    let hdr_active = env.hdr && built.hdr.hdr_capable();
     info!(
         "add_output: connector={:?} crtc={:?} mode={}x{} pos=({}, 0) → {} outputs total",
         built.connector,
@@ -376,6 +371,9 @@ fn add_output(
         drm_output: Some(built.drm_output),
         hdr_caps: built.hdr,
         hdr_active,
+        hdr_pass: None,
+        sdr_reset_pending: 0,
+        props_retry_at: None,
         props_applied: false,
         render_failures: 0,
         connector: built.connector,
@@ -408,6 +406,11 @@ fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
         .redraw
         .release(&world::state::output_key(&ctx.pipe().output));
     ctx.outputs[0].drm_output = None;
+    // Its colour state goes with the scanout: no client may keep being offered
+    // a departed display's HDR volume (the pass is rebuilt on bring-up).
+    ctx.outputs[0].hdr_pass = None;
+    let name = ctx.pipe().output.name();
+    crate::render::execute::hdr::publish(&name, None);
     // The anchor keeps its `wl_output` global AND its Space mapping, deliberately.
     //
     // It cannot be unmapped: `current_output()` ends in
@@ -451,9 +454,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     // first connected — so we never go dark just because everything was deactivated.
     let profiles = render_gles::preference::output::profile::get();
     let is_active = |key: &str| {
-        profiles
-            .iter()
-            .find(|p| p.identity.as_deref() == Some(key))
+        model::environment::preference::identity::find(&profiles, key, |p| p.identity.as_deref())
             .map(|p| p.active)
             .unwrap_or(true)
     };
@@ -473,9 +474,10 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         let drive = if !active.is_empty() {
             active
         } else if !connected.is_empty() {
-            let chosen = preferred_key()
-                .and_then(|pk| keyed.iter().find(|(_, k)| *k == pk).map(|(c, _)| c.clone()))
-                .or_else(|| connected.first().cloned());
+            let chosen = preferred_index(&connected_keys)
+                .and_then(|i| connected.get(i))
+                .or_else(|| connected.first())
+                .cloned();
             chosen.into_iter().collect()
         } else {
             Vec::new()
@@ -490,6 +492,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     while i < ctx.outputs.len() {
         if !drive_handles.contains(&ctx.outputs[i].connector) {
             let removed = ctx.outputs.remove(i);
+            crate::render::execute::hdr::publish(&removed.output.name(), None);
             state
                 .state
                 .redraw
@@ -551,6 +554,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 while i < ctx.outputs.len() {
                     if ctx.outputs[i].connector == th && ctx.outputs[i].drm_output.is_some() {
                         let removed = ctx.outputs.remove(i);
+                        crate::render::execute::hdr::publish(&removed.output.name(), None);
                         state
                             .state
                             .redraw

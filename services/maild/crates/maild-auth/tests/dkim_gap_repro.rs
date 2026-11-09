@@ -17,24 +17,26 @@ use std::{borrow::Borrow, hash::Hash, time::Instant};
 // error locally. Resolver construction performs no network I/O.
 struct OfflineTxt;
 
-impl ResolverCache<String, Txt> for OfflineTxt {
+impl ResolverCache<Box<str>, Txt> for OfflineTxt {
     fn get<Q>(&self, _: &Q) -> Option<Txt>
     where
-        String: Borrow<Q>,
+        Box<str>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        Some(Txt::Error(mail_auth::Error::InvalidRecordType))
+        Some(Txt::Error(mail_auth::Error::Dns(
+            mail_auth::DnsError::InvalidRecordType,
+        )))
     }
 
     fn remove<Q>(&self, _: &Q) -> Option<Txt>
     where
-        String: Borrow<Q>,
+        Box<str>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         None
     }
 
-    fn insert(&self, _: String, _: Txt, _: Instant) {
+    fn insert(&self, _: Box<str>, _: Txt, _: Instant) {
         panic!("offline TXT cache must satisfy every lookup");
     }
 }
@@ -118,15 +120,19 @@ async fn attached_signature_does_not_authenticate_bounce() {
         From: Mail Delivery System <postmaster@example.org>\r\n\
         Content-Type: multipart/report; boundary=bounce\r\n\r\n\
         --bounce\r\nContent-Type: message/rfc822\r\n\r\n\
-        DKIM-Signature: v=1; d=example.org; s=mail\r\n\
+        DKIM-Signature: v=1; a=rsa-sha256; d=example.org; s=mail; h=from; bh=AAAA; b=AAAA\r\n\
         From: sender@example.org\r\n\r\nbody\r\n--bounce--\r\n";
     check_outer("synthetic bounce", stored).await;
 }
 
+// mail-auth 0.11 requires d, s, b, bh and h before a signature reaches
+// dkim_headers, so this fixture carries every tag with a bogus hash: the
+// folded, mixed-case header is still recognised and fails as neutral.
 #[tokio::test]
 async fn malformed_folded_mixed_case_signature_still_produces_output() {
-    let raw = b"dKiM-sIgNaTuRe: v=1;\r\n\
-        \td=example.org; s=mail\r\nFrom: sender@example.org\r\n\r\nbody\r\n";
+    let raw = b"dKiM-sIgNaTuRe: v=1; a=rsa-sha256;\r\n\
+        \td=example.org; s=mail; h=from; bh=AAAA; b=AAAA\r\n\
+        From: sender@example.org\r\n\r\nbody\r\n";
     let parsed = AuthenticatedMessage::parse(raw).unwrap();
     assert_eq!(parsed.dkim_headers.len(), 1);
     let auth = MessageAuthenticator::new_cloudflare().unwrap();
@@ -146,6 +152,56 @@ async fn malformed_folded_mixed_case_signature_still_produces_output() {
             .to_string()
             .contains("dkim=neutral")
     );
+}
+
+// mail-auth 0.11 turns a signature missing required tags into a
+// MissingParameters parse error and verify_dkim reports nothing for it (it
+// surfaces only Error::Dkim parse errors). Pin that upstream behaviour, then
+// check maild restores the RFC 8601 `dkim=neutral` result 0.7 produced.
+#[tokio::test]
+async fn signature_missing_required_tags_is_reported_neutral() {
+    let raw = b"DKIM-Signature: v=1; d=example.org; s=mail\r\n\
+        From: sender@example.org\r\n\r\nbody\r\n";
+    let parsed = AuthenticatedMessage::parse(raw).unwrap();
+    assert!(parsed.dkim_headers.is_empty());
+    assert!(parsed.has_dkim_errors);
+    assert!(
+        parsed
+            .errors
+            .iter()
+            .any(|h| matches!(h.header, mail_auth::Error::MissingParameters))
+    );
+    let auth = MessageAuthenticator::new_cloudflare().unwrap();
+    let mut outputs = auth
+        .verify_dkim(Parameters::new(&parsed).with_txt_cache(&OfflineTxt))
+        .await;
+    assert!(outputs.is_empty(), "upstream behaviour changed; revisit");
+
+    maild_auth::mapping::surface_dkim_parse_errors(&parsed, &mut outputs);
+    assert_eq!(outputs.len(), 1);
+    assert!(matches!(outputs[0].result(), DkimResult::Neutral(_)));
+    assert!(
+        AuthenticationResults::new("maild.example.org")
+            .with_dkim_results(&outputs, parsed.from())
+            .to_string()
+            .contains("dkim=neutral")
+    );
+}
+
+// A signature mail-auth already reports (an Error::Dkim parse error) must not
+// be reported twice.
+#[tokio::test]
+async fn dkim_parse_errors_are_not_reported_twice() {
+    let raw = b"DKIM-Signature: v=2; d=example.org; s=mail\r\n\
+        From: sender@example.org\r\n\r\nbody\r\n";
+    let parsed = AuthenticatedMessage::parse(raw).unwrap();
+    let auth = MessageAuthenticator::new_cloudflare().unwrap();
+    let mut outputs = auth
+        .verify_dkim(Parameters::new(&parsed).with_txt_cache(&OfflineTxt))
+        .await;
+    assert_eq!(outputs.len(), 1);
+    maild_auth::mapping::surface_dkim_parse_errors(&parsed, &mut outputs);
+    assert_eq!(outputs.len(), 1);
 }
 
 #[tokio::test]

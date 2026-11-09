@@ -174,6 +174,8 @@ where
     // to mean "the left edge" every frame, and an edge clipped fully out of the
     // pane `continue`s, which would otherwise shift every later edge's slot.
     let borders = window.user_data().get_or_insert(Border::default);
+    let opacity = crate::window::draw::frame::scene::visual_of(window).opacity as f32;
+    let color = color.map(|channel| channel * opacity);
     for (slot, rect) in [top_rect, left_rect, right_rect, bottom_rect]
         .into_iter()
         .enumerate()

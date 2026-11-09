@@ -88,7 +88,7 @@ const EDNS_MAX: u16 = 1232;
 const UDP_NO_EDNS: u16 = 512;
 
 fn negotiate_udp(req: &hickory_proto::op::Message) -> u16 {
-    match req.extensions() {
+    match req.edns.as_ref() {
         Some(edns) => edns.max_payload().min(EDNS_MAX),
         None => UDP_NO_EDNS,
     }
@@ -293,11 +293,15 @@ mod tests {
         use hickory_proto::op::{Message, MessageType, OpCode, Query};
         use hickory_proto::rr::{Name, RecordType};
         use hickory_proto::serialize::binary::BinEncodable;
-        let mut m = Message::new();
-        m.set_id(0x1234)
-            .set_message_type(MessageType::Query)
-            .set_op_code(OpCode::Query)
-            .set_recursion_desired(false);
+        let mut m = Message::new(
+            0,
+            hickory_proto::op::MessageType::Query,
+            hickory_proto::op::OpCode::Query,
+        );
+        m.metadata.id = 0x1234;
+        m.metadata.message_type = MessageType::Query;
+        m.metadata.op_code = OpCode::Query;
+        m.metadata.recursion_desired = false;
         m.add_query(Query::query(Name::from_ascii(name).unwrap(), RecordType::A));
         m.to_bytes().unwrap()
     }

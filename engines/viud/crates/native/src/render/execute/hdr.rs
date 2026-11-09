@@ -11,11 +11,156 @@
 //! fails (malformed blob, unsupported property, wrong enum) we return an error
 //! and the caller stays SDR — a bad blob can never blank the display.
 
+use crate::context::render::OutputPipe;
 use kms::edid::parse::HdrInfo;
+use render_gles::color::hdr::describe::{self, OutputColor};
+use render_gles::color::hdr::math::Chromaticity;
+use render_gles::color::hdr::pass::HdrPass;
+use scenegraph::scene::element::SceneElement;
 use smithay::backend::drm::DrmDeviceFd;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::utils::Scale;
+
+/// What this display shows in HDR, from its EDID (with the
+/// `MIX_VIUD_HDR_SDR_WHITE` / `MIX_VIUD_HDR_MAX_NITS` overrides).
+pub fn output_color(caps: &HdrInfo) -> OutputColor {
+    let p = &caps.primaries;
+    let f = |c: (f32, f32)| (c.0 as f64, c.1 as f64);
+    let display =
+        (p.red.0 > 0.0 && p.green.0 > 0.0 && p.blue.0 > 0.0 && p.white.0 > 0.0).then(|| {
+            Chromaticity {
+                r: f(p.red),
+                g: f(p.green),
+                b: f(p.blue),
+                w: f(p.white),
+            }
+        });
+    OutputColor::from_edid(
+        caps.hdr.max_luminance.map(f64::from),
+        caps.hdr.min_luminance.map(f64::from),
+        display,
+    )
+}
+
+/// Tell the protocol layer what output `name` wants (`None`: SDR), log it, and
+/// notify the clients that asked when it changed.
+pub fn publish(name: &str, color: Option<OutputColor>) {
+    if let Some(c) = &color {
+        info!(
+            "HDR output {name}: PQ BT.2020, SDR white {} cd/m², peak {} cd/m², black {} cd/m²",
+            c.sdr_white, c.max, c.min
+        );
+    }
+    if describe::set_output(name, color) {
+        dispatcher::wire::color::output_changed(name);
+    }
+}
+
+/// Take a pipe off HDR after a failure: back to SDR signalling (the connector
+/// pass runs again and resets `Colorspace`/metadata) and an SDR composite.
+pub fn fall_back(pipe: &mut OutputPipe, why: &str) {
+    warn!("HDR off for this session: {why}");
+    pipe.hdr_active = false;
+    pipe.hdr_pass = None;
+    pipe.props_applied = false;
+    publish(&pipe.output.name(), None);
+    let c = &pipe.hdr_caps;
+    model::stats::registry::base::set_hdr_info(
+        false,
+        c.hdr_capable(),
+        "SDR",
+        c.hdr.max_luminance.unwrap_or(0.0),
+        c.colorimetry.bt2020_rgb,
+        "8-bit sRGB",
+    );
+}
+
+/// Compose a pipe's frame through the colour pass when it needs one: always on
+/// an HDR pipe (PQ encode), and on an SDR pipe while some surface carries a
+/// colour description that needs decoding (tone-mapped to SDR white, gamut
+/// clipped by the target). Returns the one element the scanout compositor
+/// should draw, or `None` to draw the scene directly (an SDR pipe with nothing
+/// to decode, or after a failure).
+pub fn compose(
+    pipe: &mut OutputPipe,
+    renderer: &mut GlesRenderer,
+    elements: &[SceneElement<GlesRenderer>],
+    scale: f64,
+) -> Option<SceneElement<GlesRenderer>> {
+    let hdr = pipe.hdr_active;
+    if !hdr && SDR_PASS_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
+        return None;
+    }
+    if !hdr && !describe::any_decoding() {
+        // Nothing to decode on SDR: draw directly. The intermediate is kept, so
+        // tags coming and going cannot churn output-sized allocations.
+        return None;
+    }
+    let color = if hdr {
+        output_color(&pipe.hdr_caps)
+    } else {
+        OutputColor::sdr()
+    };
+    let size = pipe
+        .output
+        .current_transform()
+        .transform_size(pipe.mode.size);
+    let scale = Scale::from(scale);
+    if !pipe.hdr_pass.as_ref().is_some_and(|p| p.fits(size, scale)) {
+        match HdrPass::new(renderer, size, scale) {
+            Ok(pass) => {
+                info!(
+                    "colour pass ({}): {}x{} FP16 intermediate",
+                    if hdr { "HDR" } else { "SDR decode" },
+                    size.w,
+                    size.h
+                );
+                pipe.hdr_pass = Some(pass);
+                if hdr {
+                    publish(&pipe.output.name(), Some(color));
+                }
+            }
+            Err(e) => {
+                if hdr {
+                    fall_back(pipe, &e);
+                } else {
+                    sdr_pass_failed(&e);
+                }
+                return None;
+            }
+        }
+    }
+    let pass = pipe.hdr_pass.as_mut()?;
+    let tagged = describe::surfaces();
+    if let Err(e) = pass.render(renderer, elements, &tagged, &color) {
+        if hdr {
+            fall_back(pipe, &e);
+        } else {
+            pipe.hdr_pass = None;
+            sdr_pass_failed(&e);
+        }
+        return None;
+    }
+    Some(SceneElement::HdrEncode(scenegraph::scene::hdr::Encode(
+        pass.encode_element(&color, hdr),
+    )))
+}
+
+/// Set once an SDR colour pass has failed: the GPU cannot do it (no FP16
+/// target, a shader that does not compile), so it is not retried every frame,
+/// which would reallocate an output-sized texture and recompile per frame.
+static SDR_PASS_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// An SDR pipe could not decode tagged surfaces: they draw undecoded for the
+/// rest of the session. Logged once.
+fn sdr_pass_failed(why: &str) {
+    if !SDR_PASS_FAILED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        warn!("SDR colour pass unavailable, tagged surfaces draw undecoded: {why}");
+    }
+}
 use smithay::reexports::drm::control::atomic::AtomicModeReq;
 use smithay::reexports::drm::control::{
-    AtomicCommitFlags, Device as ControlDevice, connector, property,
+    AtomicCommitFlags, Device as ControlDevice, ResourceHandle, connector, crtc, property,
 };
 
 /// Kernel `struct hdr_metadata_infoframe` (CTA-861 static metadata type 1).
@@ -100,10 +245,10 @@ fn build_metadata(caps: &HdrInfo) -> HdrOutputMetadata {
     }
 }
 
-/// Look up a connector property handle by name.
-fn prop_handle(
+/// Look up a property handle by name on a connector, CRTC or any DRM object.
+fn prop_handle<H: ResourceHandle>(
     drm: &DrmDeviceFd,
-    conn: connector::Handle,
+    conn: H,
     name: &str,
 ) -> Result<property::Handle, String> {
     let set = drm
@@ -116,7 +261,7 @@ fn prop_handle(
             return Ok(*h);
         }
     }
-    Err(format!("connector lacks property {name}"))
+    Err(format!("object lacks property {name}"))
 }
 
 /// Raw value of an enum property's entry named `name`.
@@ -136,18 +281,18 @@ fn enum_value(drm: &DrmDeviceFd, handle: property::Handle, name: &str) -> Result
     Err("not an enum property".into())
 }
 
-/// A connector property handle by name, or `None` when the connector lacks it.
-/// Absence is normal (not every connector exposes `Colorspace` or `max bpc`) and
-/// must not fail the whole pass.
-fn opt_prop(drm: &DrmDeviceFd, conn: connector::Handle, name: &str) -> Option<property::Handle> {
+/// A property handle by name on a connector or CRTC, or `None` when the object
+/// lacks it. Absence is normal (not every connector exposes `Colorspace` or
+/// `max bpc`, not every CRTC a `DEGAMMA_LUT`) and must not fail the whole pass.
+fn opt_prop<H: ResourceHandle>(drm: &DrmDeviceFd, conn: H, name: &str) -> Option<property::Handle> {
     prop_handle(drm, conn, name).ok()
 }
 
-/// The connector's CURRENT raw value for `handle` — what the previous owner of
-/// this connector left behind. Logged so a stale value is visible as a fact.
-fn current_raw(
+/// The object's CURRENT raw value for `handle` — what the previous owner of the
+/// connector or CRTC left behind. Logged so a stale value is visible as a fact.
+fn current_raw<H: ResourceHandle>(
     drm: &DrmDeviceFd,
-    conn: connector::Handle,
+    conn: H,
     handle: property::Handle,
 ) -> Option<u64> {
     let set = drm.get_properties(conn).ok()?;
@@ -172,6 +317,9 @@ pub struct PropOutcome {
     pub colorspace: String,
     pub metadata: String,
     pub max_bpc: String,
+    /// The CRTC colour pipeline (DEGAMMA_LUT, CTM, GAMMA_LUT): what was loaded and
+    /// whether the reset was committed.
+    pub crtc_color: String,
 }
 
 /// Bring the connector's colorimetry and bit-depth properties in line with what
@@ -202,11 +350,24 @@ pub struct PropOutcome {
 /// (validated against the whole device's bandwidth with every pipe present), not
 /// poked in afterwards one connector at a time.
 ///
+/// The CRTC colour pipeline is reset too: `DEGAMMA_LUT`, `CTM` and `GAMMA_LUT`
+/// are cleared (blob 0, identity). They are just as sticky, and a compositor that
+/// offloads its colour pipeline leaves them loaded: KWin in HDR keeps gamma-encoded
+/// SDR in its framebuffer and lets `GAMMA_LUT` produce PQ, so viud on the next VT
+/// sent its own PQ pixels through that LUT a second time. The double encoding
+/// lifted every grey into a grey film (seen on an i915 HDMI HDR monitor, 2026-11-09). viud does
+/// all colour work in its shaders, so the pipeline must be identity.
+///
+/// Only loaded (non-zero) LUT properties are written. If the driver rejects the
+/// LUT reset, the connector half is still committed on its own, so a CRTC-side
+/// refusal cannot cost the `Colorspace` and metadata reset.
+///
 /// Missing properties are skipped, not fatal. Every commit is preceded by a
 /// `TEST_ONLY` commit, so a rejected request can never blank the display.
 pub fn apply_connector_props(
     drm: &DrmDeviceFd,
     conn: connector::Handle,
+    crtc: crtc::Handle,
     caps: &HdrInfo,
     hdr_active: bool,
     want_bpc: u64,
@@ -219,6 +380,25 @@ pub fn apply_connector_props(
         colorspace: "absent".into(),
         metadata: "absent".into(),
         max_bpc: "absent".into(),
+        crtc_color: String::new(),
+    };
+
+    // CRTC colour pipeline: clear whatever the previous owner loaded.
+    let mut luts: Vec<property::Handle> = Vec::new();
+    let mut found: Vec<String> = Vec::new();
+    for name in ["DEGAMMA_LUT", "CTM", "GAMMA_LUT"] {
+        if let Some(h) = opt_prop(drm, crtc, name) {
+            let was = current_raw(drm, crtc, h).unwrap_or(0);
+            if was != 0 {
+                found.push(format!("{name}=blob({was})"));
+                luts.push(h);
+            }
+        }
+    }
+    outcome.crtc_color = if found.is_empty() {
+        "identity".into()
+    } else {
+        found.join(" ")
     };
 
     // Target colorspace: BT.2020 only while HDR is actually driving this pipe,
@@ -274,11 +454,11 @@ pub fn apply_connector_props(
     }
     let bpc: Option<(property::Handle, u64)> = None;
 
-    if cs.is_none() && meta.is_none() && bpc.is_none() {
+    if cs.is_none() && meta.is_none() && bpc.is_none() && luts.is_empty() {
         return Ok(outcome);
     }
 
-    let build = || {
+    let build = |with_luts: bool| {
         let mut req = AtomicModeReq::new();
         if let Some((h, v)) = cs {
             req.add_property(conn, h, property::Value::UnsignedRange(v));
@@ -289,30 +469,53 @@ pub fn apply_connector_props(
         if let Some((h, v)) = bpc {
             req.add_property(conn, h, property::Value::UnsignedRange(v));
         }
+        if with_luts {
+            for h in &luts {
+                req.add_property(crtc, *h, property::Value::Blob(0));
+            }
+        }
         req
     };
+    let test = |with_luts: bool| {
+        drm.atomic_commit(
+            AtomicCommitFlags::TEST_ONLY | AtomicCommitFlags::ALLOW_MODESET,
+            build(with_luts),
+        )
+    };
 
-    // Validate before committing — a bad blob fails here, never on screen.
-    if let Err(e) = drm.atomic_commit(
-        AtomicCommitFlags::TEST_ONLY | AtomicCommitFlags::ALLOW_MODESET,
-        build(),
-    ) {
-        if let Some(b) = blob_raw {
-            let _ = drm.destroy_property_blob(b);
-        }
+    // Validate before committing — a bad blob fails here, never on screen. A
+    // rejected LUT reset falls back to the connector half alone.
+    let mut with_luts = !luts.is_empty();
+    if with_luts && let Err(e) = test(true) {
+        outcome.crtc_color = format!("{} kept (reset rejected: {e})", outcome.crtc_color);
+        with_luts = false;
+    }
+    if !with_luts && cs.is_none() && meta.is_none() && bpc.is_none() {
         return Err(format!(
-            "connector-props TEST commit rejected: {e} [{}|{}|{}]",
-            outcome.colorspace, outcome.metadata, outcome.max_bpc
+            "connector-props: nothing committable [{}]",
+            outcome.crtc_color
         ));
     }
-    if let Err(e) = drm.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, build()) {
+    if !with_luts && let Err(e) = test(false) {
         if let Some(b) = blob_raw {
             let _ = drm.destroy_property_blob(b);
         }
         return Err(format!(
-            "connector-props commit failed: {e} [{}|{}|{}]",
-            outcome.colorspace, outcome.metadata, outcome.max_bpc
+            "connector-props TEST commit rejected: {e} [{}|{}|{}|{}]",
+            outcome.colorspace, outcome.metadata, outcome.max_bpc, outcome.crtc_color
         ));
+    }
+    if let Err(e) = drm.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, build(with_luts)) {
+        if let Some(b) = blob_raw {
+            let _ = drm.destroy_property_blob(b);
+        }
+        return Err(format!(
+            "connector-props commit failed: {e} [{}|{}|{}|{}]",
+            outcome.colorspace, outcome.metadata, outcome.max_bpc, outcome.crtc_color
+        ));
+    }
+    if with_luts {
+        outcome.crtc_color = format!("{} -> cleared", outcome.crtc_color);
     }
     // The HDR blob is intentionally leaked for as long as the property references
     // it; it is replaced (or cleared) by the next pass on this connector.

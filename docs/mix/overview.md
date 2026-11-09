@@ -115,7 +115,7 @@ reinstall, no recompile, no script edits. A runtime lazy-probe decides
 bare-vs-mesh at execution time.
 
 MixViu locations use `mix_path(root[, rel[, opts]])`, backed by the shared
-[paths resolver](../paths/README.md). For example,
+paths resolver (manual not included in this source tree). For example,
 `mix -c 'print(mix_path("prefix"))'` prints the current installation prefix.
 The roots are `prefix`, `share`, `etc`, `var`, `run`, `cache`. Defaults follow
 the process uid. `{tier: "system"}` or `{tier: "user"}` selects a tier
@@ -125,7 +125,7 @@ Before installation, a staged binary can print target defaults independently
 of its own location: `mix layout defaults --tier system --json`, with an
 optional `--prefix DIR`. The `user` tier requires `--prefix`. Installers run
 that staged command even when their own interpreter is the previous release
-or `mix-static`; [relocatable paths](../paths/README.md) describes the target
+or `mix-static`; relocatable paths (manual not included in this source tree) describes the target
 flags and receipt-based rollback.
 
 ## How to run it

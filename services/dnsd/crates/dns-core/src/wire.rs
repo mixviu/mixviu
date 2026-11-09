@@ -26,7 +26,7 @@ use hickory_proto::serialize::binary::{BinDecodable, BinEncodable};
 /// Decode a bare inbound DNS message. Malformed input is an `Err`
 /// (the serve loop turns it into FORMERR/drop — never a panic).
 pub fn decode(bytes: &[u8]) -> Result<Message, ProtoError> {
-    Message::from_bytes(bytes)
+    Message::from_bytes(bytes).map_err(Into::into)
 }
 
 fn serialize(msg: &Message) -> Result<Vec<u8>, ProtoError> {
@@ -37,12 +37,9 @@ fn serialize(msg: &Message) -> Result<Vec<u8>, ProtoError> {
 /// (should not happen for well-formed responses; never panic on the
 /// serve path). Preserves id + question so the client can correlate.
 fn servfail_bytes(msg: &Message) -> Vec<u8> {
-    let mut m = Message::new();
-    m.set_id(msg.id());
-    m.set_message_type(hickory_proto::op::MessageType::Response);
-    m.set_op_code(msg.op_code());
-    m.set_response_code(ResponseCode::ServFail);
-    for q in msg.queries() {
+    let mut m = Message::response(msg.metadata.id, msg.metadata.op_code);
+    m.metadata.response_code = ResponseCode::ServFail;
+    for q in msg.queries.as_slice() {
         m.add_query(q.clone());
     }
     m.to_bytes().unwrap_or_default()
@@ -68,8 +65,8 @@ pub fn encode_udp(msg: &Message, max_payload: u16) -> Vec<u8> {
 
     // Drop ADDITIONAL (keep any echoed OPT so EDNS negotiation holds).
     let mut trimmed = msg.clone();
-    let opt = trimmed.extensions().clone();
-    trimmed.additionals_mut().clear();
+    let opt = trimmed.edns.clone();
+    trimmed.additionals.clear();
     if let Some(edns) = opt {
         trimmed.set_edns(edns);
     }
@@ -80,9 +77,9 @@ pub fn encode_udp(msg: &Message, max_payload: u16) -> Vec<u8> {
     }
 
     // Still over → TC=1 and drop ANSWER (truncation per DNS).
-    trimmed.set_truncated(true);
-    trimmed.answers_mut().clear();
-    trimmed.name_servers_mut().clear();
+    trimmed.metadata.truncation = true;
+    trimmed.answers.clear();
+    trimmed.authorities.clear();
     match serialize(&trimmed) {
         Ok(b) => b,
         Err(_) => servfail_bytes(msg),

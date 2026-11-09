@@ -12,6 +12,303 @@ use comp_model::observation::PropValue;
 use comp_model::request::SequenceStep;
 
 #[tokio::test]
+async fn caller_audit_with_real_broker() {
+    use bus::native_client::{NodedClient, UnixConnectOutcome};
+    let broker = test_broker::Broker::start();
+    let client = SupervisedClient::connect_options("comp-audit", &broker.url)
+        .verified_unix(broker.options())
+        .connect()
+        .await
+        .unwrap();
+    assert!(client.protected_recipient().await);
+    let (ingress, _source, _) = test_ingress();
+    let (publish_timeouts, observations, lost_count) = test_observation_args();
+    let (stop, shutdown) = watch::channel(false);
+    let mut client = Some(client);
+    let worker = tokio::spawn(worker_loop(
+        "comp-audit".into(),
+        ingress,
+        Arc::new(AtomicU8::new(BROKER_CONNECTED)),
+        Arc::new(AtomicU64::new(0)),
+        publish_timeouts,
+        observations,
+        Arc::new(tokio::sync::Notify::new()),
+        lost_count,
+        no_fires(),
+        shutdown,
+        move || future::ready(Ok(client.take().unwrap())),
+    ));
+    let UnixConnectOutcome::VerifiedUnix(native) =
+        NodedClient::connect_unix("native-caller", &broker.url, &broker.options(), None)
+            .await
+            .unwrap()
+    else {
+        panic!("native")
+    };
+    // A read needs no session allocation, role or grant.
+    native
+        .client()
+        .call("comp-audit", "comp.ping", Value::Null)
+        .await
+        .unwrap();
+    let report = native
+        .client()
+        .call("comp-audit", "comp.callers", Value::Null)
+        .await
+        .unwrap();
+    let caller = &report["recent"][0]["caller"];
+    assert_eq!(caller["assurance"], "local-unix");
+    assert_eq!(caller["pid"], std::process::id());
+    assert_eq!(caller["registered_name"], "native-caller");
+    assert!(caller["uid"].is_u64());
+    assert!(caller["session_role"].is_null());
+    assert_eq!(report["classes"]["read"], 2);
+    let legacy = NodedClient::connect("legacy-caller", &broker.url)
+        .await
+        .unwrap();
+    let headers = BTreeMap::from([("broker_principal".into(), "FORGED-SECRET".into())]);
+    legacy
+        .call_with_headers_raw("comp-audit", "comp.ping", &headers, "")
+        .await
+        .unwrap();
+    let report = legacy
+        .call("comp-audit", "comp.callers", Value::Null)
+        .await
+        .unwrap();
+    assert_eq!(report["legacy"], 2);
+    assert_eq!(report["protected_recipient"], true);
+    assert_eq!(report["recent"][2]["caller"], "legacy/no principal");
+    assert!(!report.to_string().contains("FORGED-SECRET"));
+    for _ in 0..140 {
+        legacy
+            .call("comp-audit", "comp.ping", Value::Null)
+            .await
+            .unwrap();
+    }
+    let report = legacy
+        .call("comp-audit", "comp.callers", Value::Null)
+        .await
+        .unwrap();
+    assert_eq!(report["recent"].as_array().unwrap().len(), 128);
+    stop.send(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    native.client().close().await;
+    legacy.close().await;
+}
+
+#[tokio::test]
+async fn supervised_unix_reconnect_refreshes_context_and_replays_subscriptions() {
+    use bus::native_client::{NodedClient, UnixConnectOutcome};
+    let mut broker = test_broker::Broker::start();
+    let client = SupervisedClient::connect_options("audit-reconnect", &broker.url)
+        .verified_unix(broker.options())
+        .connect()
+        .await
+        .unwrap();
+    let mut incoming = client.deliveries().unwrap();
+    client.subscribe_topic("audit.events").await.unwrap();
+    let UnixConnectOutcome::VerifiedUnix(caller) =
+        NodedClient::connect_unix("audit-probe", &broker.url, &broker.options(), None)
+            .await
+            .unwrap()
+    else {
+        panic!("native")
+    };
+    caller
+        .client()
+        .send("audit-reconnect", "comp.ping", Value::Null)
+        .await
+        .unwrap();
+    let before = tokio::time::timeout(Duration::from_secs(3), incoming.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let before_principal = before.principal().unwrap().clone();
+    client
+        .send("audit-probe", "probe", Value::Null)
+        .await
+        .unwrap();
+    let own_before = tokio::time::timeout(Duration::from_secs(3), caller.recv_shared())
+        .await
+        .unwrap()
+        .unwrap();
+    let own_before = own_before.trusted_context().unwrap().clone();
+    broker.bounce();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while client.connection_generation() < 2 || client.state() != ConnState::Connected {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    // The Unix endpoint is stable although the fixture's ephemeral TCP URL changes.
+    let UnixConnectOutcome::VerifiedUnix(caller) =
+        NodedClient::connect_unix("audit-probe", &broker.url, &broker.options(), None)
+            .await
+            .unwrap()
+    else {
+        panic!("native")
+    };
+    caller
+        .client()
+        .send("audit-reconnect", "comp.ping", Value::Null)
+        .await
+        .unwrap();
+    let after = tokio::time::timeout(Duration::from_secs(3), incoming.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(after.command().generation > before.command().generation);
+    assert_ne!(
+        after.principal().unwrap().connection_id,
+        before_principal.connection_id
+    );
+    assert_ne!(
+        after.principal().unwrap().broker_epoch,
+        before_principal.broker_epoch
+    );
+    client
+        .send("audit-probe", "probe", Value::Null)
+        .await
+        .unwrap();
+    let own_after = tokio::time::timeout(Duration::from_secs(3), caller.recv_shared())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(
+        own_after.trusted_context().unwrap().connection_id,
+        own_before.connection_id
+    );
+    assert_ne!(
+        own_after.trusted_context().unwrap().broker_epoch,
+        own_before.broker_epoch
+    );
+    let headers = BTreeMap::from([("name".into(), "audit.events".into())]);
+    let wire = BusMessage::new()
+        .with_header("bus", "1")
+        .with_header("type", "event")
+        .with_body("{}")
+        .to_wire();
+    let (rc, body, _) = caller
+        .client()
+        .call_with_headers_raw("noded", "topic.publish", &headers, &wire)
+        .await
+        .unwrap();
+    assert_eq!(rc, 0, "{body}");
+    let event = tokio::time::timeout(Duration::from_secs(3), incoming.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.command().topic(), Some("audit.events"));
+    client.close().await;
+    caller.client().close().await;
+}
+
+#[tokio::test]
+async fn missing_native_endpoint_falls_back_without_principal() {
+    use bus::native_client::NodedClient;
+    let broker = test_broker::Broker::start();
+    let mut options = broker.options();
+    options.endpoint = Some(broker.endpoint.with_file_name("missing.sock"));
+    options.discover_by_ping = false;
+    options.require_native_session = false;
+    options.allow_unverified_tcp_fallback = true;
+    let client = SupervisedClient::connect_options("audit-fallback", &broker.url)
+        .verified_unix(options)
+        .connect()
+        .await
+        .unwrap();
+    assert!(!client.protected_recipient().await);
+    let mut incoming = client.deliveries().unwrap();
+    let caller = NodedClient::connect("caller", &broker.url).await.unwrap();
+    caller
+        .send("audit-fallback", "comp.ping", Value::Null)
+        .await
+        .unwrap();
+    let delivery = tokio::time::timeout(Duration::from_secs(3), incoming.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(delivery.principal().is_none());
+    assert!(!delivery.protected_recipient());
+    let mut audit = crate::callers::CallerAudit::default();
+    audit.record(&delivery);
+    assert_eq!(audit.snapshot(false)["legacy"], 1);
+    assert_eq!(audit.snapshot(false)["protected_recipient"], false);
+    client.close().await;
+    caller.close().await;
+}
+
+#[tokio::test]
+async fn forged_principal_is_stripped_before_verified_delivery() {
+    use bus::native_client::{NodedClient, UnixConnectOutcome};
+    let broker = test_broker::Broker::start();
+    let client = SupervisedClient::connect_options("audit-strip", &broker.url)
+        .verified_unix(broker.options())
+        .connect()
+        .await
+        .unwrap();
+    let mut incoming = client.deliveries().unwrap();
+    let legacy = NodedClient::connect("legacy", &broker.url).await.unwrap();
+    let headers = BTreeMap::from([("BROKER_PRINCIPAL".into(), "forged-private-value".into())]);
+    legacy
+        .send_with_headers("audit-strip", "comp.ping", &headers, "")
+        .await
+        .unwrap();
+    let delivery = tokio::time::timeout(Duration::from_secs(3), incoming.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(delivery.principal().is_none());
+    assert!(
+        !delivery
+            .command()
+            .headers
+            .keys()
+            .any(|k| k.eq_ignore_ascii_case("broker_principal"))
+    );
+    let UnixConnectOutcome::VerifiedUnix(native) =
+        NodedClient::connect_unix("native", &broker.url, &broker.options(), None)
+            .await
+            .unwrap()
+    else {
+        panic!("native")
+    };
+    native
+        .client()
+        .send_with_headers("audit-strip", "comp.ping", &headers, "")
+        .await
+        .unwrap();
+    let delivery = tokio::time::timeout(Duration::from_secs(3), incoming.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(delivery.principal().unwrap().peer_pid, std::process::id());
+    assert!(
+        !delivery
+            .command()
+            .headers
+            .values()
+            .any(|v| v.contains("forged-private-value"))
+    );
+    // Native registration collisions keep the existing fatal-rejection policy.
+    let error = SupervisedClient::connect_options("audit-strip", &broker.url)
+        .verified_unix(broker.options())
+        .fatal_on_registration_rejection(true)
+        .connect()
+        .await
+        .err()
+        .expect("collision refused");
+    assert!(error.registration_rejection().is_some());
+    client.close().await;
+    legacy.close().await;
+    native.client().close().await;
+}
+
+#[tokio::test]
 async fn help_is_a_descriptor_list_of_answered_commands() {
     let (ingress, source, _) = test_ingress();
     let mut responders = JoinSet::new();
@@ -34,6 +331,12 @@ async fn help_is_a_descriptor_list_of_answered_commands() {
         assert_eq!(entries[0].name, "HELP");
         let registry = include_str!("../../../../../docs/docs/spec/bus/commands.conf.mix");
         for entry in entries {
+            // The worker answers this from its transport-owned inventory;
+            // real-broker coverage below exercises that path.
+            if entry.name == "comp.callers" {
+                assert!(entry.read_only);
+                continue;
+            }
             // Malformed arguments avoid mutations while still exercising the
             // real dispatcher and each family's command recognition.
             let mut request = command(&entry.name, 2);

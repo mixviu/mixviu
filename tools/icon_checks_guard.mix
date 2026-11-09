@@ -1,0 +1,37 @@
+-- CBC check for the formatting guard. A Mix cargo stub exercises cleanup
+-- without running Rust in the temporary fixture repository.
+$mix = realpath("/proc/self/exe")
+$driver = realpath("tools/icon_checks.mix")
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/viu-format-guard.XXXXXX"]))
+try
+  mkdir($tmp .. "/engines/viu/src", {parents:true})
+  mkdir($tmp .. "/libraries/icons")
+  mkdir($tmp .. "/bin")
+  run_argv_must(["git", "init", "-q", $tmp])
+  for $name in ["main", "untouched"] write_file($tmp .. "/engines/viu/src/" .. $name .. ".rs", "original\n") end
+  run_argv_must(["git", "-C", $tmp, "add", "."])
+  $expected = {"main.rs":"preexisting touched edit\n", "untouched.rs":"preexisting untouched edit\n", "untracked.rs":"preexisting untracked module\n"}
+  for $name, $value in $expected write_file($tmp .. "/engines/viu/src/" .. $name, $value) end
+  write_file($tmp .. "/outside.txt", "unrelated work\n")
+  write_file($tmp .. "/bin/cargo", "#!/opt/mixos/bin/mix\nif args()[0] == \"fmt\" and env(\"FORMAT_TEST_DRIFT\") == \"1\" then\n  write_file(\"engines/viu/src/main.rs\", \"formatted\\n\")\n  write_file(\"engines/viu/src/untracked.rs\", \"formatted\\n\")\nend\n")
+  chmod($tmp .. "/bin/cargo", 0o755)
+  for $drift in ["1", "0"]
+    $r = run_argv([$mix, $driver], {cwd:$tmp, env:{PATH:$tmp .. "/bin:" .. env("PATH"), FORMAT_TEST_DRIFT:$drift}, timeout:60})
+    $expected_rc = if $drift == "1" then 1 else 0 end
+    if $r.exit_code != $expected_rc then print($r.stdout); print($r.stderr); raise("FMT_GUARD", "wrong exit status") end
+    if $drift == "1" and not contains($r.stdout, "FORMAT_DRIFT=2") then raise("FMT_GUARD", "drift did not fail with the exact changed-file count") end
+    for $name, $value in $expected
+      if read_file($tmp .. "/engines/viu/src/" .. $name) != $value then raise("FMT_GUARD", "lost prior content: " .. $name) end
+    end
+    if read_file($tmp .. "/outside.txt") != "unrelated work\n" then raise("FMT_GUARD", "lost unrelated work") end
+  end
+  print("FMT_GUARD_PASS: clean and drift exits; tracked, untracked and unrelated edits preserved")
+finally
+  run_argv_must(["rm", "-rf", $tmp])
+end
+if contains(args(), "--checks") then
+  $r = run_argv([$mix, $driver, "--frames"], {timeout:7200, max_output:16000000})
+  print($r.stdout)
+  print($r.stderr)
+  exit($r.exit_code ?? 1)
+end

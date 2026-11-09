@@ -119,11 +119,15 @@ pub fn query_msg_class(
 ) -> Message {
     let mut q = Query::query(HName::from_ascii(name).expect("test qname"), qtype);
     q.set_query_class(class);
-    let mut m = Message::new();
-    m.set_id(0x2a2a);
-    m.set_message_type(MessageType::Query);
-    m.set_op_code(OpCode::Query);
-    m.set_recursion_desired(true);
+    let mut m = Message::new(
+        0,
+        hickory_proto::op::MessageType::Query,
+        hickory_proto::op::OpCode::Query,
+    );
+    m.metadata.id = 0x2a2a;
+    m.metadata.message_type = MessageType::Query;
+    m.metadata.op_code = OpCode::Query;
+    m.metadata.recursion_desired = true;
     m.add_query(q);
     if let Some(payload) = edns {
         let mut e = Edns::new();
@@ -138,8 +142,8 @@ pub fn query_msg_class(
 /// (answer or authority section).
 pub fn soa_serial(records: &[hickory_proto::rr::Record]) -> Option<u32> {
     use hickory_proto::rr::RData as HRData;
-    records.iter().find_map(|r| match r.data() {
-        HRData::SOA(soa) => Some(soa.serial()),
+    records.iter().find_map(|r| match (&r.data) {
+        HRData::SOA(soa) => Some(soa.serial),
         _ => None,
     })
 }

@@ -29,5 +29,5 @@ pub use error::{ClientError, RegistrationRejected, RegistrationRejectionKind, Su
 pub use locate::{DEFAULT_NODED_URL, node_config_path, noded_url, url_from_node_config};
 pub use supervised::{
     ConnState, MAX_INITIAL_ATTEMPTS, SubscriptionRegistry, SupervisedClient,
-    SupervisedConnectOptions,
+    SupervisedConnectOptions, SupervisedDelivery,
 };

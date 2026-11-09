@@ -738,6 +738,10 @@ fn step_eight_window_commands_parse_and_refuse_by_field() {
             y: None,
             width: None,
             height: Some(300),
+            opacity: None,
+            z: None,
+            visible: None,
+            clip: None,
         })))
     );
     assert_eq!(
@@ -1861,4 +1865,58 @@ fn debug_commands_are_live_direct_requests_under_literal_names() {
     assert!(crate::catalogue::read_only("comp.debug.recent"));
     assert!(!crate::catalogue::read_only("comp.debug.set"));
     assert!(classify("comp-nested.debug", &json!({}), false).is_err());
+}
+#[test]
+fn placement_visual_validation_and_resets() {
+    let parse = |extra: Value| {
+        let mut args = json!({"id":7,"generation":3});
+        args.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        parse_window_command("comp.window.place", &args)
+    };
+    for x in [i32::MIN as f64, i32::MAX as f64] {
+        assert!(parse(json!({"clip":{"x":x,"y":0,"width":0,"height":0}})).is_ok());
+    }
+    for x in [i32::MIN as f64 - 1.0, i32::MAX as f64 + 1.0] {
+        assert!(parse(json!({"clip":{"x":x,"y":0,"width":0,"height":0}})).is_err());
+    }
+    for args in [
+        json!({"opacity":-0.01}),
+        json!({"opacity":1.01}),
+        json!({"opacity":"0.5"}),
+        json!({"visible":0}),
+        json!({"z":1.5}),
+        json!({"z":1.0}),
+        json!({"z":2147483648_i64}),
+        json!({"clip":{"x":0,"y":0,"width":-1,"height":5}}),
+        json!({"clip":{"x":0,"y":0,"width":5,"height":5,"typo":0}}),
+    ] {
+        assert!(parse(args).is_err());
+    }
+    let WindowCommand::Op(WindowOp::Place(spec)) =
+        parse(json!({"opacity":0.5,"z":-2,"visible":false,
+        "clip":{"x":-5,"y":2,"width":30,"height":0}}))
+        .unwrap()
+    else {
+        panic!()
+    };
+    let mut visual = VisualAttributes::default();
+    visual.update(&spec);
+    assert_eq!(visual.opacity, 0.5);
+    assert_eq!(visual.z, -2);
+    assert!(!visual.visible);
+    assert_eq!(visual.clip.unwrap().x, -5.0);
+    let WindowCommand::Op(WindowOp::Place(spec)) = parse(json!({"x":2})).unwrap() else {
+        panic!()
+    };
+    visual.update(&spec);
+    assert_eq!(visual.opacity, 0.5, "omission preserves state");
+    let WindowCommand::Op(WindowOp::Place(spec)) =
+        parse(json!({"opacity":null,"z":null,"visible":null,"clip":null})).unwrap()
+    else {
+        panic!()
+    };
+    visual.update(&spec);
+    assert_eq!(visual, VisualAttributes::default());
 }

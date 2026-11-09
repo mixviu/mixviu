@@ -24,7 +24,7 @@ use smithay::backend::renderer::gles::{
 use smithay::backend::renderer::{Renderer, RendererSuper};
 use smithay::utils::{Buffer as BufferCoord, Physical, Rectangle, Size};
 
-pub use crate::frame::uniforms::{NativeShaderPass, ParallaxUniforms, ShaderVariant};
+pub use crate::frame::uniforms::{NativeShaderPass, ParallaxUniforms, ShaderVariant, TexProgram};
 
 /// Which coordinate space an element lives in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -243,7 +243,7 @@ pub trait SceneDispatch: Renderer {
         _key: &'static str,
         _source: &'static str,
         _uniforms: &[UniformName<'static>],
-    ) -> Option<GlesTexProgram> {
+    ) -> Option<TexProgram> {
         None
     }
 
@@ -255,13 +255,26 @@ pub trait SceneDispatch: Renderer {
     /// orientation. Default: nothing (the default program draws).
     fn push_tex_program(
         _frame: &mut <Self as RendererSuper>::Frame<'_, '_>,
-        _program: Option<&GlesTexProgram>,
+        _program: Option<&TexProgram>,
         _uniforms: Vec<Uniform<'static>>,
     ) {
     }
 
     /// End a [`push_tex_program`](Self::push_tex_program).
     fn pop_tex_program(_frame: &mut <Self as RendererSuper>::Frame<'_, '_>) {}
+
+    /// Draw the HDR composite's encode stage (the FP16 blending-space frame to
+    /// BT.2020 PQ). Blank for renderers without the GLES HDR path.
+    fn draw_hdr_encode(
+        _frame: &mut <Self as RendererSuper>::Frame<'_, '_>,
+        _encode: &render_gles::color::hdr::pass::HdrEncode,
+        _src: Rectangle<f64, BufferCoord>,
+        _dst: Rectangle<i32, Physical>,
+        _damage: &[Rectangle<i32, Physical>],
+        _opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), <Self as RendererSuper>::Error> {
+        Ok(())
+    }
 }
 
 impl SceneDispatch for GlesRenderer {
@@ -295,19 +308,30 @@ impl SceneDispatch for GlesRenderer {
         key: &'static str,
         source: &'static str,
         uniforms: &[UniformName<'static>],
-    ) -> Option<GlesTexProgram> {
+    ) -> Option<TexProgram> {
         gles::tex_program(self, key, source, uniforms)
     }
 
     fn push_tex_program(
         frame: &mut GlesFrame<'_, '_>,
-        program: Option<&GlesTexProgram>,
+        program: Option<&TexProgram>,
         uniforms: Vec<Uniform<'static>>,
     ) {
         gles::push_tex_program(frame, program, uniforms)
     }
 
     fn pop_tex_program(frame: &mut GlesFrame<'_, '_>) {
-        frame.clear_tex_program_override();
+        gles::pop_tex_program(frame)
+    }
+
+    fn draw_hdr_encode(
+        frame: &mut GlesFrame<'_, '_>,
+        encode: &render_gles::color::hdr::pass::HdrEncode,
+        src: Rectangle<f64, BufferCoord>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), <Self as RendererSuper>::Error> {
+        encode.draw_gles(frame, src, dst, damage, opaque_regions)
     }
 }

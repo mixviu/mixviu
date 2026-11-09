@@ -55,16 +55,19 @@ pub struct RenderTarget {
     pub size_physical: (f64, f64),
 }
 
-/// The stable per-monitor identity of a smithay `Output`: its EDID key
-/// "make model serial", matching `DisplayInfo::edid_key` / `MonitorIdentity::key()`
-/// and the per-monitor preference keys. The kernel's EDID identity falls back to the
-/// connector name for the serial when the EDID is unreadable / serial-less, so this
-/// is UNIQUE per physical output even for two identical / EDID-less monitors — the
-/// key the per-output render loop, coordinate contexts, settings and teleport all
-/// resolve against.
+/// Live routing identity: the backend's unique connector/protocol name.
+/// Never use EDID fields for runtime equality; panels can share all of them.
 pub fn output_key(output: &smithay::output::Output) -> drivers::output::base::OutputKey {
+    output.name()
+}
+
+/// EDID identity with a persistent connector tie-break, for saved settings only.
+pub fn output_preference_key(output: &smithay::output::Output) -> String {
     let p = output.physical_properties();
-    format!("{} {} {}", p.make, p.model, p.serial_number)
+    model::environment::preference::identity::key(
+        &format!("{} {} {}", p.make, p.model, p.serial_number),
+        &output.name(),
+    )
 }
 
 /// How long a window must go unseen on every monitor before it is told
