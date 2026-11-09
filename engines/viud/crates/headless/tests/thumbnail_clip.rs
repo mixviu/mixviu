@@ -24,6 +24,14 @@ fn clipped_window_thumbnail_scales_the_visual_crop() {
     surface.commit();
     h.roundtrip();
     let window = h.wire.inner.space.state.elements().next().unwrap().clone();
+    let revision = smithay::desktop::space::membership_revision();
+    h.wire.inner.space.state.map_element(window.clone(), (0, 0), false);
+    assert_eq!(smithay::desktop::space::membership_revision(), revision,
+        "moving an existing window must not invalidate the ownership cache");
+    let mut other = smithay::desktop::Space::<smithay::desktop::Window>::default();
+    other.map_element(window.clone(), (0, 0), false);
+    assert_ne!(smithay::desktop::space::membership_revision(), revision,
+        "mapping into another world must invalidate the ownership cache");
     window.user_data().insert_if_missing(|| {
         std::sync::Mutex::new(comp_model::request::VisualAttributes {
             clip: Some(comp_model::request::ClipRect {
@@ -61,7 +69,11 @@ fn clipped_window_thumbnail_scales_the_visual_crop() {
     }
     let fb = renderer.bind(&mut target).unwrap();
     let mapping = renderer
-        .copy_framebuffer(&fb, Rectangle::from_size((128, 128).into()), Fourcc::Abgr8888)
+        .copy_framebuffer(
+            &fb,
+            Rectangle::from_size((128, 128).into()),
+            Fourcc::Abgr8888,
+        )
         .unwrap();
     drop(fb);
     let pixels = renderer.map_texture(&mapping).unwrap();
