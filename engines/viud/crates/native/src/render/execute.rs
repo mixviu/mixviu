@@ -789,6 +789,7 @@ pub fn execute(
                 // scanout compositor draws one element, the PQ encode of it. Captures
                 // copy the intermediate (`hdr_copy`), the frame's SDR rendition, not
                 // the PQ buffer.
+                let was_hdr = ctx_ref.outputs[output_idx].hdr_active;
                 let hdr_frame = {
                     let mut r = gles_renderer.borrow_mut();
                     let _hdr = ledger::frame_trace::span("kms_hdr_compose", output_id.0);
@@ -799,6 +800,39 @@ pub fn execute(
                         output_scale,
                     )
                 };
+                // The colour pass fell back to SDR after the connector was signalled
+                // PQ: put the connector back to SDR NOW, before this SDR frame is
+                // presented, and redraw, so SDR pixels are never left on screen
+                // under PQ signalling (a static desktop would not redraw by itself).
+                if was_hdr && !ctx_ref.outputs[output_idx].hdr_active {
+                    let depth = model::environment::config::base::get().depth;
+                    let want_bpc: u64 = if depth == 10 { 10 } else { 8 };
+                    let pipe = &ctx_ref.outputs[output_idx];
+                    let reset = crate::render::execute::hdr::apply_connector_props(
+                        &ctx_ref.drm_fd,
+                        pipe.connector,
+                        pipe.crtc,
+                        &pipe.hdr_caps,
+                        false,
+                        want_bpc,
+                    );
+                    match reset {
+                        Ok(o) => {
+                            ctx_ref.outputs[output_idx].props_applied = true;
+                            info!(
+                                "HDR fallback: connector back to SDR: colorspace {} | metadata {}",
+                                o.colorspace, o.metadata
+                            );
+                        }
+                        Err(e) => warn!(
+                            "HDR fallback: SDR connector reset failed ({e}); the connector pass retries it"
+                        ),
+                    }
+                    state
+                        .state
+                        .redraw
+                        .request_gated(protocols::redraw::schedule::RedrawReason::Rearm);
+                }
                 let hdr_copy = hdr_frame.as_ref().and_then(|_| {
                     ctx_ref.outputs[output_idx]
                         .hdr_pass
