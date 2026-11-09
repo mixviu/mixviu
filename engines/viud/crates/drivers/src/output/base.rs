@@ -9,12 +9,7 @@
 
 use slots::storage::token::base::{Token, TokenMut};
 
-/// Stable cross-layer key for one physical monitor: the EDID identity
-/// "make model serial" (the same string as `DisplayInfo::edid_key` and
-/// `MonitorIdentity::key()`). Used to key per-output view state and the
-/// cursor-teleport layout. A plain `String` so this primitive-only driver crate
-/// stays free of smithay/DRM types; the `smithay::Output` → key mapping lives in
-/// the orchestration core (`output_key`), where an `Output` is available.
+/// Live connector/protocol name, independent of saved preference identity.
 pub type OutputKey = String;
 
 /// One advertised mode, primitive form (refresh in mHz to match DRM `vrefresh*1000`).
@@ -114,8 +109,8 @@ pub static OUTPUT_ACTIVE_REVERT_MUT: TokenMut<Option<ActiveRevert>> =
 /// Kernel → rim: one connected connector, primitive form, for the monitor picker.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DisplayInfo {
-    /// Stable per-monitor key: the EDID identity "make model serial" (incl. the
-    /// unit's serial, so two identical monitors differ). The picker selection key,
+    /// Stable per-monitor key: the EDID identity "make model serial" (with a
+    /// connector qualifier, so duplicated EDIDs differ). The picker selection key,
     /// switch-request target, and persistence key — the SAME key the standalone
     /// settings-editor writes, so preferences match across both.
     pub edid_key: String,
@@ -365,17 +360,25 @@ pub fn build_teleport(
         prefs
             .outputs_layout
             .iter()
-            .filter(|p| {
-                connected_keys.iter().any(|k| k == &p.identity)
-                    && output_active(&prefs.outputs, &p.identity)
-            })
-            .map(|p| Placement {
+            .filter_map(|p| {
+                use model::environment::preference::identity;
+                let key = connected_keys.iter()
+                    .filter(|k| identity::matches(&p.identity, k))
+                    .min()?;
+                // A legacy placement belongs to one connector only. Explicit
+                // placements replace it rather than duplicating its zone id.
+                if !output_active(&prefs.outputs, key)
+                    || (p.identity != *key && prefs.outputs_layout.iter().any(|q| q.identity == *key)) {
+                    return None;
+                }
+                Some(Placement {
                 id: p.id,
-                key: p.identity.clone(),
+                key: identity::connector(key).unwrap_or(key).to_owned(),
                 x: p.x,
                 y: p.y,
                 w: p.w,
                 h: p.h,
+                })
             })
             .collect(),
         prefs.teleport_cyclic,

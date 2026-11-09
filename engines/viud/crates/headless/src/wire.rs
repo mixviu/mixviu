@@ -139,7 +139,7 @@ pub fn wire(
             subpixel: Subpixel::Unknown,
             make: "MixOS".into(),
             model: "Headless".into(),
-            serial_number: "Unknown".into(),
+            serial_number: "headless-0".into(),
         },
     );
     output.change_current_state(

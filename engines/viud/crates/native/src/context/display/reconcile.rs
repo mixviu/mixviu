@@ -71,7 +71,7 @@ fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
         parsed.as_ref(),
         &format!("{:?}-{}", info.interface(), info.interface_id()),
     )
-    .key()
+    .preference_key(&kms_connector_name(info))
 }
 
 /// Tear down the current pipe (freeing its CRTC) and bring `target` up as the primary
@@ -114,7 +114,8 @@ fn bring_up(
             &format!("{:?}-{}", target.interface(), target.interface_id()),
         )
     };
-    let replace = identity.key() != world::state::output_key(&ctx.pipe().output);
+    let replace = identity.preference_key(&kms::connector::select::connector_name(target))
+        != world::state::output_preference_key(&ctx.pipe().output);
     // Keep the anchor where it already sat: a fail-over must not shuffle the
     // placement out from under a surviving secondary.
     let position = state
@@ -285,9 +286,7 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
     };
     let key = identity_key(drm, info);
     let profiles = profile::get();
-    profiles
-        .iter()
-        .find(|p| p.identity.as_deref() == Some(key.as_str()))
+    model::environment::preference::identity::find(&profiles, &key, |p| p.identity.as_deref())
         .or_else(|| profiles.iter().find(|p| p.identity.is_none()))
         .and_then(|p| p.mode.as_ref())
         .and_then(to_info)
@@ -298,7 +297,7 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
 /// present, else the first connected — exactly the startup `connector.select` policy.
 fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connector::Info> {
     if let Some(key) = preferred_key()
-        && let Some(c) = connected.iter().find(|c| identity_key(drm, c) == key)
+        && let Some(c) = connected.iter().find(|c| model::environment::preference::identity::matches(&key, &identity_key(drm, c)))
     {
         return Some(c.clone());
     }
@@ -465,9 +464,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     // first connected — so we never go dark just because everything was deactivated.
     let profiles = render_gles::preference::output::profile::get();
     let is_active = |key: &str| {
-        profiles
-            .iter()
-            .find(|p| p.identity.as_deref() == Some(key))
+        model::environment::preference::identity::find(&profiles, key, |p| p.identity.as_deref())
             .map(|p| p.active)
             .unwrap_or(true)
     };
@@ -488,7 +485,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             active
         } else if !connected.is_empty() {
             let chosen = preferred_key()
-                .and_then(|pk| keyed.iter().find(|(_, k)| *k == pk).map(|(c, _)| c.clone()))
+                .and_then(|pk| keyed.iter().find(|(_, k)| model::environment::preference::identity::matches(&pk, k)).map(|(c, _)| c.clone()))
                 .or_else(|| connected.first().cloned());
             chosen.into_iter().collect()
         } else {
@@ -759,4 +756,8 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     } else {
         Some(OutputChange::Changed)
     }
+}
+
+fn kms_connector_name(info: &connector::Info) -> String {
+    kms::connector::select::connector_name(info)
 }

@@ -25,9 +25,7 @@ fn to_info(m: &DrmMode) -> ModeInfo {
 /// profile's advertised mode), if set — so the picker can default an inactive monitor
 /// to its saved mode rather than the recommended one.
 fn preferred_mode(edid_key: &str) -> Option<ModeInfo> {
-    profile::get()
-        .iter()
-        .find(|p| p.identity.as_deref() == Some(edid_key))
+    model::environment::preference::identity::find(&profile::get(), edid_key, |p| p.identity.as_deref())
         .and_then(|p| p.mode.as_ref())
         .and_then(|m| match m {
             ModeRequest::Advertised {
@@ -67,7 +65,7 @@ pub fn enumerate(
         let raw = parse::read(drm, info);
         let parsed = raw.as_ref().and_then(parse::parse);
         let id = identity::identity(parsed.as_ref(), &conn_name);
-        let edid_key = id.key();
+        let edid_key = id.preference_key(&kms::connector::select::connector_name(info));
         let label = if parsed.is_some() {
             format!("{} {} ({conn_name})", id.make, id.model)
         } else {

@@ -56,7 +56,7 @@ pub fn select(
 
     let chosen = profiles.iter().find_map(|p| {
         let want = p.identity.as_deref()?;
-        connected.iter().position(|c| identity_key(drm, c) == want)
+        connected.iter().position(|c| model::environment::preference::identity::matches(want, &identity_key(drm, c)))
     });
 
     match chosen {
@@ -76,5 +76,9 @@ fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
         parsed.as_ref(),
         &format!("{:?}-{}", info.interface(), info.interface_id()),
     )
-    .key()
+    .preference_key(&kms_connector_name(info))
+}
+
+fn kms_connector_name(info: &connector::Info) -> String {
+    crate::connector::select::connector_name(info)
 }

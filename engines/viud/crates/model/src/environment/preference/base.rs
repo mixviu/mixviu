@@ -888,6 +888,7 @@ pub fn save_fields_at(
 /// Set the mode for the output profile matching `edid_key`, inserting a new
 /// profile if none exists. Other fields of an existing profile are preserved.
 pub fn upsert_output(outputs: &mut Vec<OutputProfile>, edid_key: &str, mode: ModeRequest) {
+    inherit_output(outputs, edid_key);
     if let Some(p) = outputs
         .iter_mut()
         .find(|p| p.identity.as_deref() == Some(edid_key))
@@ -906,9 +907,7 @@ pub fn upsert_output(outputs: &mut Vec<OutputProfile>, edid_key: &str, mode: Mod
 /// Whether the monitor keyed by `edid_key` is DRIVEN (active). Unknown monitors —
 /// and any without an explicit profile — default to active.
 pub fn output_active(outputs: &[OutputProfile], edid_key: &str) -> bool {
-    outputs
-        .iter()
-        .find(|p| p.identity.as_deref() == Some(edid_key))
+    super::identity::find(outputs, edid_key, |p| p.identity.as_deref())
         .map(|p| p.active)
         .unwrap_or(true)
 }
@@ -916,6 +915,7 @@ pub fn output_active(outputs: &[OutputProfile], edid_key: &str) -> bool {
 /// Set the active (driven) flag for `edid_key`, inserting an identity-only profile
 /// if none exists. Preserves the profile's mode + position.
 pub fn set_active(outputs: &mut Vec<OutputProfile>, edid_key: &str, active: bool) {
+    inherit_output(outputs, edid_key);
     if let Some(p) = outputs
         .iter_mut()
         .find(|p| p.identity.as_deref() == Some(edid_key))
@@ -933,9 +933,7 @@ pub fn set_active(outputs: &mut Vec<OutputProfile>, edid_key: &str, active: bool
 
 /// The touch-device id (if any) claimed by the monitor keyed by `edid_key`.
 pub fn touch_device_of<'a>(outputs: &'a [OutputProfile], edid_key: &str) -> Option<&'a str> {
-    outputs
-        .iter()
-        .find(|p| p.identity.as_deref() == Some(edid_key))
+    super::identity::find(outputs, edid_key, |p| p.identity.as_deref())
         .and_then(|p| p.touch_device.as_deref())
 }
 
@@ -956,6 +954,7 @@ pub fn set_touch_device(
     edid_key: &str,
     device_id: Option<String>,
 ) {
+    inherit_output(outputs, edid_key);
     if let Some(id) = &device_id {
         for p in outputs.iter_mut() {
             if p.touch_device.as_deref() == Some(id.as_str()) {
@@ -989,6 +988,7 @@ pub fn set_layout(prefs: &mut Preference, placements: Vec<LayoutPlacement>) {
 /// Reuses an existing profile (preserving its mode) or creates an identity-only one,
 /// then moves it to the front. Shared by the settings window and the settings editor.
 pub fn set_default(outputs: &mut Vec<OutputProfile>, edid_key: &str) {
+    inherit_output(outputs, edid_key);
     let profile = match outputs
         .iter()
         .position(|p| p.identity.as_deref() == Some(edid_key))
@@ -1002,4 +1002,16 @@ pub fn set_default(outputs: &mut Vec<OutputProfile>, edid_key: &str) {
         },
     };
     outputs.insert(0, profile);
+}
+
+// Copy the entire legacy profile before changing one field. Keep the original
+// for other connectors and older versions; an explicit qualified entry wins.
+fn inherit_output(outputs: &mut Vec<OutputProfile>, key: &str) {
+    if outputs.iter().any(|p| p.identity.as_deref() == Some(key)) {
+        return;
+    }
+    if let Some(mut p) = super::identity::find(outputs, key, |p| p.identity.as_deref()).cloned() {
+        p.identity = Some(key.to_owned());
+        outputs.push(p);
+    }
 }

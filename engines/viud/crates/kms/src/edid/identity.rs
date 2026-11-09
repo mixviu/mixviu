@@ -24,6 +24,10 @@ impl MonitorIdentity {
     }
 
     /// The stable key preferences are matched against.
+    pub fn preference_key(&self, connector: &str) -> String {
+        model::environment::preference::identity::key(&self.key(), connector)
+    }
+
     pub fn key(&self) -> String {
         format!("{} {} {}", self.make, self.model, self.serial)
     }
