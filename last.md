@@ -96,3 +96,79 @@ All new CPU regressions passed. Existing GPU/headless acceptance tests retained
 their explicit ignores. No real-glass/GPU rendering acceptance, VT, desk or
 installation changes were performed. This is a PR for production main, not a
 lab promotion or deployment.
+
+## PR 47 review round 1 — 2026-11-09
+
+All ten requested items addressed on the same branch. PR remains
+https://github.com/mixviu/mixviu/pull/47.
+New tested implementation head: `5549936b1585d11e403566a4b19c2ac39b8e9f43`.
+The following receipt-only commit appends this section; its SHA is the PR head.
+
+1. **Headless migration:** `identity::find` and `matches` accept legacy
+   `MixOS Headless Unknown` only for qualified headless-0. Exact new keys win;
+   headless-1 cannot inherit it. Test:
+   `model/tests/output_identity.rs::headless_legacy_maps_to_zero_only_and_exact_wins`.
+2. **Inactive teleport target:** active filtering now precedes minimum-key
+   selection. Test: `drivers/tests/output_identity.rs::legacy_placement_uses_smallest_active_matching_connector`
+   disables DP-1 and proves the legacy zone survives on DP-2.
+3. **Startup shadowing:** shared `identity::preferred_index` tries exact matches
+   across every profile before any legacy match, retaining priority within each
+   pass. KMS startup, hotplug target selection and all-inactive recovery share
+   this rule. Test: `qualified_selection_beats_earlier_legacy_but_keeps_priority_within_pass`.
+4. **Legacy touch claims:** `touch_index` retains an exact qualified claim first;
+   for legacy duplicates it prefers the associated libinput output when it is a
+   matching driven output. Otherwise the existing first-match order is preserved.
+   Test: `legacy_touch_uses_association_only_within_matching_outputs` covers a
+   matching association, absent/unmatched association, and explicit priority.
+   This fallback is documented in code and the Bus contract.
+5. **Port moves:** profile mutation APIs (`upsert_output`, `set_active`,
+   `set_touch_device`, `set_default`) now require the complete connected
+   preference-key list, including inactive panels, and call `sync_legacy_output`.
+   A sole matching panel refreshes/creates the legacy fallback from the complete
+   qualified profile; duplicates or unknown topology cannot refresh it. This
+   allows a move to a new port to inherit the latest mode/active/touch fields.
+   Test: `single_panel_writes_refresh_legacy_for_moves_but_duplicates_do_not`
+   exercises all four APIs, checks a move, then duplicate and unknown-topology
+   writes. No in-tree production Rust caller currently invokes these legacy
+   profile mutation APIs (the repository search found only definitions/tests);
+   future callers must supply live topology rather than infer it from saved
+   profiles. Raw JSON file edits remain the editor's responsibility.
+6. **Public format:** corrected the snapshot comment in `native/src/wire/entry.rs`.
+   `docs/docs/spec/bus/commands.conf.mix` now describes the qualified `edid_key`,
+   opaque echo-back requirement, legacy/headless migration and touch fallback.
+   `rg` audit of `apps/` and `share/` found no `edid_key`, `@connector:` or
+   `MixOS Headless` references; no app parser/constructor needs migration.
+7. **Last separator:** `identity::stable` explains why it splits on the last
+   qualifier. Test: `stable_splits_only_the_last_connector_suffix` uses an EDID
+   model containing the separator text.
+8. **Teleport caller proof:** `kms::edid::identity::connector_key` is now the
+   shared function used by reconcile's `identity_key` and enumeration. Test
+   `kms/tests/output_identity.rs::reconcile_connector_key_preserves_edid_placement`
+   supplies a serial-42 EDID, constructs the Output, compares preference keys,
+   and feeds that connector key through `build_teleport`, retaining the DP-2 zone.
+9. **Connector name agreement:** `physical::create` now calls `connector_name`
+   directly. A narrow `ConnectorInfo` trait exposes the same three getters on
+   real DRM Info and CPU fixtures, allowing the actual constructor to be tested
+   without a DRM device or unsafe fabricated struct. Test:
+   `physical_output_and_connector_selection_share_names` checks DP, HDMI-A and
+   eDP fixtures with `physical::create(...).name() == connector_name(...)`.
+10. **EDID-less spelling:** shared `for_connector` deliberately preserves the
+    historical Debug spelling in fallback serials (`DisplayPort-1`), while the
+    qualifier and runtime name use canonical `DP-1`. Test:
+    `enumeration_key_matches_output_even_with_debug_spelled_fallback_serial`
+    proves enumeration's saved key equals the real Output preference key.
+
+Round 1 CBC receipts (BUILD_RC and saved logs read):
+
+- `20261109-181155-54b6c08d-a1`, cbc3, **RC 0**, source `e81180f4`:
+  `cargo fmt --all`; affected model/drivers/kms/world/headless `--lib --tests`;
+  `cargo check --locked -p viud --all-targets`. Captured formatting and the two
+  test-only workspace lock dependencies, printed diff and restored this job's
+  worker changes in the same job. Applied the captured diff locally.
+- `20261109-181328-b0746f10-a1`, cbc2, **RC 0**, exact implementation head
+  `5549936b1585d11e403566a4b19c2ac39b8e9f43`: `cargo fmt --all --check`;
+  `cargo test --locked -p model -p drivers -p kms -p world --test output_identity`
+  (**14 passed**); `cargo check --locked -p viud --all-targets`.
+
+No local Rust commands, deployment, desk, VT or installed-prefix changes.
+Existing GPU acceptance tests retain their explicit ignores.
