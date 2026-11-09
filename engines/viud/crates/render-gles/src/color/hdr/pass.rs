@@ -11,7 +11,7 @@
 //! the output's colour pipeline is not offloaded) and one FP16 output-sized
 //! texture per HDR output.
 
-use super::describe::{Description, OutputColor};
+use super::describe::{OutputColor, Tagged};
 use super::glsl;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -46,6 +46,10 @@ pub fn active_decode() -> Option<(GlesTexProgram, Vec<Uniform<'static>>)> {
 pub struct Decoded<'a, E> {
     inner: &'a E,
     decode: Option<(GlesTexProgram, Vec<Uniform<'static>>)>,
+    /// The surface's description changed (or appeared, or went) since the last
+    /// frame: its whole area is stale in the intermediate even without buffer
+    /// damage, so report all of it.
+    restale: bool,
 }
 
 impl<E: Element> Element for Decoded<'_, E> {
@@ -72,6 +76,10 @@ impl<E: Element> Element for Decoded<'_, E> {
         scale: Scale<f64>,
         commit: Option<CommitCounter>,
     ) -> DamageSet<i32, Physical> {
+        if self.restale {
+            let size = self.inner.geometry(scale).size;
+            return DamageSet::from_slice(&[Rectangle::from_size(size)]);
+        }
         self.inner.damage_since(scale, commit)
     }
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
@@ -139,6 +147,9 @@ pub struct HdrPass {
     decode: GlesTexProgram,
     encode: GlesTexProgram,
     id: Id,
+    /// Description generation per tagged element at the last render, so a
+    /// description change re-damages that element (see `Decoded::restale`).
+    seen: HashMap<Id, u64>,
 }
 
 impl HdrPass {
@@ -172,6 +183,7 @@ impl HdrPass {
             decode,
             encode,
             id: Id::new(),
+            seen: HashMap::new(),
         })
     }
 
@@ -194,18 +206,25 @@ impl HdrPass {
         &mut self,
         renderer: &mut GlesRenderer,
         elements: &[E],
-        tagged: &HashMap<Id, Description>,
+        tagged: &HashMap<Id, Tagged>,
         output: &OutputColor,
     ) -> Result<(), String> {
         let wrapped: Vec<Decoded<'_, E>> = elements
             .iter()
-            .map(|e| Decoded {
-                inner: e,
-                decode: tagged
-                    .get(e.id())
-                    .filter(|d| !d.is_identity())
-                    .map(|d| (self.decode.clone(), output.decode_uniforms(d))),
+            .map(|e| {
+                let t = tagged.get(e.id());
+                Decoded {
+                    inner: e,
+                    decode: t
+                        .filter(|t| !t.description.is_identity())
+                        .map(|t| (self.decode.clone(), output.decode_uniforms(&t.description))),
+                    restale: t.map(|t| t.generation) != self.seen.get(e.id()).copied(),
+                }
             })
+            .collect();
+        let seen: HashMap<Id, u64> = elements
+            .iter()
+            .filter_map(|e| tagged.get(e.id()).map(|t| (e.id().clone(), t.generation)))
             .collect();
         let age = usize::from(self.rendered);
         let mut target = renderer
@@ -223,15 +242,19 @@ impl HdrPass {
             self.damage.add(damage.iter().copied());
         }
         self.rendered = true;
+        self.seen = seen;
         Ok(())
     }
 
     /// This frame's encode element, to hand the scanout compositor.
-    pub fn encode_element(&self, output: &OutputColor) -> HdrEncode {
+    /// `hdr`: PQ-encode for an HDR output; otherwise the intermediate is drawn as
+    /// it is (an SDR output: blending space is already its encoding, and the
+    /// target clips HDR and wide-gamut values).
+    pub fn encode_element(&self, output: &OutputColor, hdr: bool) -> HdrEncode {
         HdrEncode {
             texture: self.texture.clone(),
-            program: self.encode.clone(),
-            uniforms: output.encode_uniforms(),
+            program: hdr.then(|| self.encode.clone()),
+            uniforms: if hdr { output.encode_uniforms() } else { Vec::new() },
             size: self.size,
             id: self.id.clone(),
             damage: self.damage.snapshot(),
@@ -282,7 +305,7 @@ pub fn copy_sdr(
 /// where the composite changed.
 pub struct HdrEncode {
     pub texture: GlesTexture,
-    pub program: GlesTexProgram,
+    pub program: Option<GlesTexProgram>,
     pub uniforms: Vec<Uniform<'static>>,
     pub size: Size<i32, Physical>,
     id: Id,
@@ -362,7 +385,7 @@ impl HdrEncode {
             opaque_regions,
             Transform::Normal,
             1.0,
-            Some(&self.program),
+            self.program.as_ref(),
             &self.uniforms,
         )
     }

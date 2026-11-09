@@ -128,6 +128,18 @@ pub struct OutputColor {
 }
 
 impl OutputColor {
+    /// An SDR output as a decode target: white is the peak, so HDR content is
+    /// tone-mapped into SDR white, and the 8/10-bit target clips the gamut to
+    /// BT.709. The absolute level only scales the curve; 203 is BT.2408's.
+    pub fn sdr() -> Self {
+        Self {
+            sdr_white: 203.0,
+            max: 203.0,
+            min: 0.2,
+            display: BT709,
+        }
+    }
+
     /// Defaults per BT.2408 when the EDID is silent: 203 cd/m² reference white
     /// and a conservative 400 cd/m² (HDR400) peak.
     pub fn from_edid(max: Option<f64>, min: Option<f64>, display: Option<Chromaticity>) -> Self {
@@ -207,30 +219,76 @@ impl OutputColor {
     }
 }
 
-/// The HDR output state, when one is active. The protocol layer reads it to
-/// answer "what does the output want" (preferred and output descriptions).
-static OUTPUT: RwLock<Option<OutputColor>> = RwLock::new(None);
+/// Each output's HDR state, by output name (absent: SDR). The protocol layer
+/// reads it to answer "what does this output want" per `wl_output`.
+static OUTPUTS: RwLock<Option<HashMap<String, OutputColor>>> = RwLock::new(None);
 
-pub fn set_output(color: Option<OutputColor>) {
-    *OUTPUT.write().unwrap() = color;
+/// Record (or, with `None`, clear) one output's HDR state. Other outputs keep
+/// theirs. Returns whether anything changed, so callers notify only then.
+pub fn set_output(name: &str, color: Option<OutputColor>) -> bool {
+    let mut guard = OUTPUTS.write().unwrap();
+    let map = guard.get_or_insert_with(HashMap::new);
+    let before = map.get(name).copied();
+    match color {
+        Some(c) => {
+            map.insert(name.to_string(), c);
+        }
+        None => {
+            map.remove(name);
+        }
+    }
+    before != color
 }
 
-pub fn output() -> Option<OutputColor> {
-    *OUTPUT.read().unwrap()
+/// One output's HDR state, `None` when it is SDR (or unknown).
+pub fn output(name: &str) -> Option<OutputColor> {
+    OUTPUTS.read().unwrap().as_ref().and_then(|m| m.get(name).copied())
 }
 
-type Registry = HashMap<Id, (Weak<WlSurface>, Description)>;
+/// The HDR state of some HDR output, for answers not tied to one output (a
+/// surface's preferred description). The brightest, so content is never
+/// mastered below what any HDR output can show. `None` when all are SDR.
+pub fn any_hdr_output() -> Option<OutputColor> {
+    OUTPUTS.read().unwrap().as_ref().and_then(|m| {
+        m.values()
+            .copied()
+            .max_by(|a, b| a.max.total_cmp(&b.max))
+    })
+}
+
+/// A tagged surface: its description and the generation it was set at. The
+/// generation changes on every set or unset, so the composite can tell a
+/// description change from an unchanged surface even when no buffer damage
+/// came with it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tagged {
+    pub description: Description,
+    pub generation: u64,
+}
+
+type Registry = HashMap<Id, (Weak<WlSurface>, Tagged)>;
 static SURFACES: Mutex<Option<Registry>> = Mutex::new(None);
+static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// Record (or, with `None`, forget) a surface's image description, keyed by
 /// the render element id smithay gives that surface.
 pub fn set_surface(surface: &WlSurface, description: Option<Description>) {
     let id = Id::from_wayland_resource(surface);
+    let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut guard = SURFACES.lock().unwrap();
     let map = guard.get_or_insert_with(HashMap::new);
     match description {
-        Some(d) => {
-            map.insert(id, (surface.downgrade(), d));
+        Some(description) => {
+            map.insert(
+                id,
+                (
+                    surface.downgrade(),
+                    Tagged {
+                        description,
+                        generation,
+                    },
+                ),
+            );
         }
         None => {
             map.remove(&id);
@@ -240,13 +298,19 @@ pub fn set_surface(surface: &WlSurface, description: Option<Description>) {
 
 /// The live tagged surfaces, by render element id. Dead surfaces are dropped
 /// here, so the registry never outgrows the surfaces that exist.
-pub fn surfaces() -> HashMap<Id, Description> {
+pub fn surfaces() -> HashMap<Id, Tagged> {
     let mut guard = SURFACES.lock().unwrap();
     let Some(map) = guard.as_mut() else {
         return HashMap::new();
     };
     map.retain(|_, (weak, _)| weak.upgrade().is_ok());
-    map.iter().map(|(id, (_, d))| (id.clone(), *d)).collect()
+    map.iter().map(|(id, (_, t))| (id.clone(), *t)).collect()
+}
+
+/// Whether any live surface carries a description that needs decoding: an SDR
+/// output must then composite through the decode stage too.
+pub fn any_decoding() -> bool {
+    surfaces().values().any(|t| !t.description.is_identity())
 }
 
 #[cfg(test)]

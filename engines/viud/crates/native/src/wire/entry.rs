@@ -242,6 +242,7 @@ pub fn wire(
         color_format,
     );
     crate::render::execute::hdr::publish(
+        &display.output.name(),
         hdr_active.then(|| crate::render::execute::hdr::output_color(&hdr_caps)),
     );
 

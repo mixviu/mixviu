@@ -40,15 +40,18 @@ pub fn output_color(caps: &HdrInfo) -> OutputColor {
     )
 }
 
-/// Tell the protocol layer what the HDR output wants (`None`: SDR), and log it.
-pub fn publish(color: Option<OutputColor>) {
+/// Tell the protocol layer what output `name` wants (`None`: SDR), log it, and
+/// notify the clients that asked when it changed.
+pub fn publish(name: &str, color: Option<OutputColor>) {
     if let Some(c) = &color {
         info!(
-            "HDR output: PQ BT.2020, SDR white {} cd/m², peak {} cd/m², black {} cd/m²",
+            "HDR output {name}: PQ BT.2020, SDR white {} cd/m², peak {} cd/m², black {} cd/m²",
             c.sdr_white, c.max, c.min
         );
     }
-    describe::set_output(color);
+    if describe::set_output(name, color) {
+        dispatcher::wire::color::output_changed(name);
+    }
 }
 
 /// Take a pipe off HDR after a failure: back to SDR signalling (the connector
@@ -58,7 +61,7 @@ pub fn fall_back(pipe: &mut OutputPipe, why: &str) {
     pipe.hdr_active = false;
     pipe.hdr_pass = None;
     pipe.props_applied = false;
-    publish(None);
+    publish(&pipe.output.name(), None);
     let c = &pipe.hdr_caps;
     model::stats::registry::base::set_hdr_info(
         false,
@@ -70,27 +73,51 @@ pub fn fall_back(pipe: &mut OutputPipe, why: &str) {
     );
 }
 
-/// Compose an HDR pipe's frame: the scene into the FP16 intermediate, and the
-/// one encode element the scanout compositor should draw. `None` when the
-/// pipe fell back to SDR (the caller draws the scene directly).
+/// Compose a pipe's frame through the colour pass when it needs one: always on
+/// an HDR pipe (PQ encode), and on an SDR pipe while some surface carries a
+/// colour description that needs decoding (tone-mapped to SDR white, gamut
+/// clipped by the target). Returns the one element the scanout compositor
+/// should draw, or `None` to draw the scene directly (an SDR pipe with nothing
+/// to decode, or after a failure).
 pub fn compose(
     pipe: &mut OutputPipe,
     renderer: &mut GlesRenderer,
     elements: &[SceneElement<GlesRenderer>],
     scale: f64,
 ) -> Option<SceneElement<GlesRenderer>> {
-    let color = output_color(&pipe.hdr_caps);
+    let hdr = pipe.hdr_active;
+    if !hdr && !describe::any_decoding() {
+        // Nothing to decode on SDR: free the intermediate.
+        pipe.hdr_pass = None;
+        return None;
+    }
+    let color = if hdr {
+        output_color(&pipe.hdr_caps)
+    } else {
+        OutputColor::sdr()
+    };
     let size = pipe.output.current_transform().transform_size(pipe.mode.size);
     let scale = Scale::from(scale);
     if !pipe.hdr_pass.as_ref().is_some_and(|p| p.fits(size, scale)) {
         match HdrPass::new(renderer, size, scale) {
             Ok(pass) => {
-                info!("HDR composite: {}x{} FP16 intermediate", size.w, size.h);
+                info!(
+                    "colour pass ({}): {}x{} FP16 intermediate",
+                    if hdr { "HDR" } else { "SDR decode" },
+                    size.w,
+                    size.h
+                );
                 pipe.hdr_pass = Some(pass);
-                publish(Some(color));
+                if hdr {
+                    publish(&pipe.output.name(), Some(color));
+                }
             }
             Err(e) => {
-                fall_back(pipe, &e);
+                if hdr {
+                    fall_back(pipe, &e);
+                } else {
+                    sdr_pass_failed(&e);
+                }
                 return None;
             }
         }
@@ -98,12 +125,26 @@ pub fn compose(
     let pass = pipe.hdr_pass.as_mut()?;
     let tagged = describe::surfaces();
     if let Err(e) = pass.render(renderer, elements, &tagged, &color) {
-        fall_back(pipe, &e);
+        if hdr {
+            fall_back(pipe, &e);
+        } else {
+            pipe.hdr_pass = None;
+            sdr_pass_failed(&e);
+        }
         return None;
     }
     Some(SceneElement::HdrEncode(scenegraph::scene::hdr::Encode(
-        pass.encode_element(&color),
+        pass.encode_element(&color, hdr),
     )))
+}
+
+/// An SDR pipe could not decode tagged surfaces: they draw undecoded. Logged
+/// once, not every frame.
+fn sdr_pass_failed(why: &str) {
+    static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        warn!("SDR colour pass unavailable, tagged surfaces draw undecoded: {why}");
+    }
 }
 use smithay::reexports::drm::control::atomic::AtomicModeReq;
 use smithay::reexports::drm::control::{

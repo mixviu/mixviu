@@ -1066,17 +1066,17 @@ mod color_impls {
             cs::dispatch_color_manager(request, di);
         }
     }
-    impl WLDispatch<WpColorManagementOutputV1, ()> for Dispatch {
+    impl WLDispatch<WpColorManagementOutputV1, String> for Dispatch {
         fn request(
             _: &mut Self,
             _: &Client,
             _: &WpColorManagementOutputV1,
             request: wp_color_management_output_v1::Request,
-            _: &(),
+            output: &String,
             _: &DisplayHandle,
             di: &mut DataInit<'_, Self>,
         ) {
-            cs::dispatch_color_output(request, di);
+            cs::dispatch_color_output(request, output, di);
         }
     }
     impl WLDispatch<WpColorManagementSurfaceV1, WlSurface> for Dispatch {

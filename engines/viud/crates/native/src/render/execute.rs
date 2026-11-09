@@ -788,7 +788,7 @@ pub fn execute(
                 // scanout compositor draws one element, the PQ encode of it. Captures
                 // copy the intermediate (`hdr_copy`), the frame's SDR rendition, not
                 // the PQ buffer.
-                let hdr_frame = if ctx_ref.outputs[output_idx].hdr_active {
+                let hdr_frame = {
                     let mut r = gles_renderer.borrow_mut();
                     let _hdr = ledger::frame_trace::span("kms_hdr_compose", output_id.0);
                     crate::render::execute::hdr::compose(
@@ -797,8 +797,6 @@ pub fn execute(
                         &scene.elements,
                         output_scale,
                     )
-                } else {
-                    None
                 };
                 let hdr_copy = hdr_frame.as_ref().and_then(|_| {
                     ctx_ref.outputs[output_idx]

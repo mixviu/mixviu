@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::wire::color::{
-    ImageDescData, ParamsState, chromaticity, preferred, primaries_from, send_info, send_ready,
-    store_surface_color, transfer_from, wenum,
+    ImageDescData, ParamsState, chromaticity, output_description, preferred, primaries_from,
+    send_info, send_ready, store_surface_color, track_feedback, track_output, transfer_from, wenum,
 };
 use render_gles::color::hdr::describe::{Description, Transfer};
 use render_gles::color::hdr::math::BT709;
@@ -29,8 +29,11 @@ type DI<'a, W> = DataInit<'a, W>;
 fn scrgb() -> Description {
     let mut d = Description::new(Transfer::Linear, BT709);
     d.lum_min = 0.0;
+    // RGB 1.0 is 80 cd/m² (the linear scale); the reference white the content
+    // is anchored to is the protocol's assumed 203 cd/m², not 80, or scRGB
+    // would come out 2.54x too bright.
     d.lum_max = 80.0;
-    d.lum_ref = 80.0;
+    d.lum_ref = 203.0;
     let target = preferred();
     d.mastering_min = target.mastering_min;
     d.mastering_max = target.mastering_max;
@@ -40,7 +43,7 @@ fn scrgb() -> Description {
 
 pub fn dispatch_color_manager<W>(req: MgrReq, di: &mut DI<'_, W>)
 where
-    W: Dispatch<WpColorManagementOutputV1, ()> + 'static,
+    W: Dispatch<WpColorManagementOutputV1, String> + 'static,
     W: Dispatch<WpColorManagementSurfaceV1, WlSurface> + 'static,
     W: Dispatch<WpColorManagementSurfaceFeedbackV1, WlSurface> + 'static,
     W: Dispatch<WpImageDescriptionCreatorIccV1, ()> + 'static,
@@ -50,14 +53,19 @@ where
     info!("color: manager request {:?}", req);
     match req {
         MgrReq::Destroy => {}
-        MgrReq::GetOutput { id, .. } => {
-            di.init(id, ());
+        MgrReq::GetOutput { id, output } => {
+            let name = smithay::output::Output::from_resource(&output)
+                .map(|o| o.name())
+                .unwrap_or_default();
+            let obj = di.init(id, name.clone());
+            track_output(&name, &obj);
         }
         MgrReq::GetSurface { id, surface } => {
             di.init(id, surface);
         }
         MgrReq::GetSurfaceFeedback { id, surface } => {
-            di.init(id, surface);
+            let fb = di.init(id, surface);
+            track_feedback(&fb);
         }
         MgrReq::CreateIccCreator { obj } => {
             di.init(obj, ());
@@ -79,11 +87,13 @@ where
 
 pub fn dispatch_color_output<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 'static>(
     req: OutReq,
+    output: &str,
     di: &mut DI<'_, W>,
 ) {
     if let OutReq::GetImageDescription { image_description } = req {
-        info!("color: output description -> {:?}", preferred().transfer);
-        send_ready(&di.init(image_description, ImageDescData(Some(preferred()))));
+        let d = output_description(output);
+        info!("color: output {output} description -> {:?}", d.transfer);
+        send_ready(&di.init(image_description, ImageDescData(Some(d))));
     }
 }
 

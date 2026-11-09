@@ -210,7 +210,7 @@ fn bring_up(
     ctx.pipe_mut().hdr_active = new_hdr_active;
     ctx.pipe_mut().hdr_pass = None;
     if !new_hdr_active {
-        crate::render::execute::hdr::publish(None);
+        crate::render::execute::hdr::publish(&output.name(), None);
     }
     ctx.pipe_mut().props_applied = false;
     ctx.pipe_mut().render_failures = 0;

@@ -9,9 +9,13 @@ use render_gles::color::hdr::describe::{self, Description, Transfer};
 use render_gles::color::hdr::math::{self, BT709, BT2020, Chromaticity, D65, DISPLAY_P3};
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
     wp_color_manager_v1::{Feature, Primaries, RenderIntent, TransferFunction, WpColorManagerV1},
+    wp_color_management_output_v1::WpColorManagementOutputV1,
+    wp_color_management_surface_feedback_v1::WpColorManagementSurfaceFeedbackV1,
     wp_image_description_info_v1::WpImageDescriptionInfoV1,
     wp_image_description_v1::WpImageDescriptionV1,
 };
+use smithay::reexports::wayland_server::Weak;
+use std::sync::Mutex;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch, Resource};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -189,11 +193,20 @@ fn xy6(c: &Chromaticity) -> [i32; 8] {
     ]
 }
 
-/// What the compositor wants surfaces in: the HDR output's description (PQ,
-/// BT.2020, reference white at the SDR white, the display's volume as the
-/// target), or plain sRGB.
+/// An output's description: for an HDR output PQ, BT.2020, reference white at
+/// the SDR white and the display's volume as the target; plain sRGB otherwise.
+pub fn output_description(output: &str) -> Description {
+    describe_output(describe::output(output))
+}
+
+/// What a surface should be in, not tied to one output: the brightest HDR
+/// output's description when there is one, else sRGB.
 pub fn preferred() -> Description {
-    match describe::output() {
+    describe_output(describe::any_hdr_output())
+}
+
+fn describe_output(out: Option<describe::OutputColor>) -> Description {
+    match out {
         Some(out) => {
             let mut d = Description::new(Transfer::Pq, BT2020);
             d.lum_ref = out.sdr_white;
@@ -204,6 +217,44 @@ pub fn preferred() -> Description {
             d
         }
         None => Description::srgb(),
+    }
+}
+
+/// Live `wp_color_management_output_v1` objects (with their output's name) and
+/// surface feedback objects, so a change in an output's HDR state reaches the
+/// clients that asked.
+static OUTPUT_OBJECTS: Mutex<Vec<(String, Weak<WpColorManagementOutputV1>)>> = Mutex::new(Vec::new());
+static FEEDBACK_OBJECTS: Mutex<Vec<Weak<WpColorManagementSurfaceFeedbackV1>>> = Mutex::new(Vec::new());
+
+pub fn track_output(output: &str, obj: &WpColorManagementOutputV1) {
+    let mut v = OUTPUT_OBJECTS.lock().unwrap();
+    v.retain(|(_, w)| w.upgrade().is_ok());
+    v.push((output.to_string(), obj.downgrade()));
+}
+
+pub fn track_feedback(obj: &WpColorManagementSurfaceFeedbackV1) {
+    let mut v = FEEDBACK_OBJECTS.lock().unwrap();
+    v.retain(|w| w.upgrade().is_ok());
+    v.push(obj.downgrade());
+}
+
+/// An output's HDR state changed: tell that output's objects, and every surface
+/// feedback object (their preferred description follows the HDR outputs).
+pub fn output_changed(output: &str) {
+    for (name, w) in OUTPUT_OBJECTS.lock().unwrap().iter() {
+        if name == output && let Ok(o) = w.upgrade() {
+            o.image_description_changed();
+        }
+    }
+    let identity = IDENTITY.fetch_add(1, Ordering::Relaxed);
+    for w in FEEDBACK_OBJECTS.lock().unwrap().iter() {
+        if let Ok(fb) = w.upgrade() {
+            if fb.version() >= 2 {
+                fb.preferred_changed2(0, identity);
+            } else {
+                fb.preferred_changed(identity);
+            }
+        }
     }
 }
 
