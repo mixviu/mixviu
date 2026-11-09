@@ -439,7 +439,8 @@ fn legacy_ready_does_not_split_the_citizens_boot_record() {
             self.0.extend_from_slice(bytes);
             // Force the competing append after the first write, where the
             // old writeln! had only emitted `legacy-ready|{"pid":`.
-            self.0.extend_from_slice(b"boot|{\"legacy\":42,\"managed\":43}|t=1\n");
+            self.0
+                .extend_from_slice(b"boot|{\"legacy\":42,\"managed\":43}|t=1\n");
             Ok(bytes.len())
         }
         fn flush(&mut self) -> std::io::Result<()> {

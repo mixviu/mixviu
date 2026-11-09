@@ -1988,20 +1988,34 @@ mod tests {
                 let _ = std::fs::remove_file(&self.0);
             }
         }
-        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let path = PipePath(std::env::temp_dir().join(format!("mix-audio-split-{}-{nonce}", std::process::id())));
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = PipePath(
+            std::env::temp_dir().join(format!("mix-audio-split-{}-{nonce}", std::process::id())),
+        );
         let path = &path.0;
         let name = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         // Open both ends before starting cat; the writer stays open through
         // cancellation, so only cancellation can terminate the reader.
-        let mut pipe = std::fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        let mut pipe = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
         let mut command = std::process::Command::new("cat");
-        command.arg(&path);
+        command.arg(path);
         let q = audio_queue();
-        let source = linux::AudioSource::start(q.clone(), "audio:1".into(), vec!["sink".into()], command).unwrap();
+        let source =
+            linux::AudioSource::start(q.clone(), "audio:1".into(), vec!["sink".into()], command)
+                .unwrap();
         pipe.write_all(b"Event 'change' on sink #5\n").unwrap();
-        tokio::time::timeout(std::time::Duration::from_secs(5), q.next(None)).await.unwrap().unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), q.next(None))
+            .await
+            .unwrap()
+            .unwrap();
         // The first batch has been consumed. Force a separate read to enqueue
         // the duplicate before dropping, reproducing the old empty-queue failure.
         pipe.write_all(b"Event 'change' on sink #5\n").unwrap();
@@ -2009,7 +2023,9 @@ mod tests {
             while !q.source_ready_for_test("audio:1") {
                 tokio::task::yield_now().await;
             }
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         let pid = source.pid;
         drop(source);
         assert!(reaped(pid));
