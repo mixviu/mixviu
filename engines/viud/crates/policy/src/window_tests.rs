@@ -760,9 +760,9 @@ fn visual_only_place_shares_role_lock_and_reply_contract() {
     assert_eq!(reply,json!({"id":id,"generation":generation,"output":OUT,
         "window_x":100.0,"window_y":100.0,"requested":null,"configure_pending":false}));
     for role in [SurfaceRole::Popup,SurfaceRole::ImePopup,SurfaceRole::Layer,SurfaceRole::Lock,SurfaceRole::Subsurface,SurfaceRole::X11{override_redirect:true}] {
-        let (sid,gen) = registry.take_role(100,role,None).unwrap();
+        let (sid,role_generation) = registry.take_role(100,role,None).unwrap();
         registry.set_mapped(sid,true).unwrap();
-        let visual = PlaceSpec { opacity:Some(Some(0.5)), ..spec(sid.0,gen) };
+        let visual = PlaceSpec { opacity:Some(Some(0.5)), ..spec(sid.0,role_generation) };
         let (rc,reply) = body(place(&registry,&visual,&facts(),&outputs(),Some(OUT),Some(OUT),|s|s,|p|p).unwrap_err());
         assert_eq!(rc,10);
         assert_eq!(reply["error"],"not_managed", "{role:?}");
