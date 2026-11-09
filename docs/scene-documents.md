@@ -333,7 +333,9 @@ The running binary's own prefix supplies `bin/mix` and
 `share/viud/scripts/scene_preview.mix` (release layout in
 `tools/apps_bundle.mix`). Only explicit `VIU_PREVIEW_VALIDATOR` overrides the
 validator; cwd ancestors and build-machine paths are never executable discovery
-sources. Source-tree development must set that explicit override. Preview also
+sources. Development binaries must be staged with Mix in a common `bin/`
+prefix and use that explicit override unless the validator is packaged there.
+Preview also
 checks libraries through the loader; checker/lint stdout is captured and only
 the scene document reaches its stdout transport. The passive error strip has
 no editor-action hint; host strips target the configured `SCENES_SERVICE`.
