@@ -53,6 +53,9 @@ impl Bus {
         }
     }
     fn call(&self, command_name: &str, args: Value) -> Value {
+        self.call_rc(command_name, args, 0)
+    }
+    fn call_rc(&self, command_name: &str, args: Value, expected_rc: i32) -> Value {
         let output = helper(
             "call",
             &self.root,
@@ -66,7 +69,7 @@ impl Bus {
             String::from_utf8_lossy(&output.stderr)
         );
         let reply: Value = serde_json::from_str(text.lines().last().expect("Bus reply")).unwrap();
-        assert_eq!(reply["rc"], 0, "{command_name}: {reply}");
+        assert_eq!(reply["rc"], expected_rc, "{command_name}: {reply}");
         match &reply["body"] {
             Value::String(body) => serde_json::from_str(body).unwrap(),
             body => body.clone(),
@@ -509,7 +512,8 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
     }
     let buttons = pattern.state.pointer_buttons;
     let callbacks = pattern.state.callbacks;
-    click();
+    let refused = bus.call_rc("comp.input.pointer.button", json!({"seat":"agent","button":"left","action":"click"}), 10);
+    assert_eq!(refused["error"],"no_pointer_target");
     pattern.commit(true);
     let blank = capture("hidden");
     assert_eq!(at(&blank, 320, 180), [18, 20, 25]);
