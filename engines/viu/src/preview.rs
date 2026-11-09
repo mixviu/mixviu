@@ -31,7 +31,9 @@ impl Preview {
         ];
         let fingerprint: Vec<_> = files
             .iter()
-            .map(|p| p.as_ref().and_then(|p| std::fs::read(p).ok()))
+            .map(|p| p.as_ref().and_then(|p| {
+                (std::fs::metadata(p).ok()?.len() <= 262144).then(|| std::fs::read(p).ok()).flatten()
+            }))
             .collect();
         if fingerprint == self.fingerprint {
             return;
@@ -41,6 +43,12 @@ impl Preview {
             let script = std::env::var_os("VIU_PREVIEW_VALIDATOR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| {
+                    if let Ok(cwd) = std::env::current_dir() {
+                        for root in cwd.ancestors() {
+                            let script = root.join("engines/viud/scripts/scene_preview.mix");
+                            if script.is_file() { return script; }
+                        }
+                    }
                     PathBuf::from(concat!(
                         env!("CARGO_MANIFEST_DIR"),
                         "/../viud/scripts/scene_preview.mix"
