@@ -13,6 +13,24 @@ const SHELL_COMMANDS: &str = include_str!("../tests/fixtures/shell-commands.json
 const TOAST: &str = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"kind\":\"toast\",\"w\":360,\"h\":120}\nmodel: {\"text\":\"hello\"}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
 
 #[test]
+fn load_batch_refusal_leaves_all_revisions_and_seats_unchanged() {
+    let mut store = SceneStore::default();
+    let mut caller = mount("loader", 1);
+    assert_eq!(store.dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller).rc, 0);
+    let revision = store.scene("toast-probe").unwrap().revision();
+    let batch = json!({"sources":[{"source":TOAST.replace("360", "400")},{"source":"broken"}]});
+    assert_eq!(store.dispatch(SceneCommand::Load, "", &batch, &mut caller).rc, 10);
+    assert_eq!(store.scene("toast-probe").unwrap().revision(), revision);
+    assert!(store.scene("toast-probe").unwrap().tree().name == "toast-probe");
+    let batch = json!({"sources":[{"source":TOAST.replace("360", "400")},{"source":TOAST.replace("toast-probe", "other-toast")}]});
+    let result = store.dispatch(SceneCommand::Load, "", &batch, &mut caller);
+    assert_eq!(result.rc, 0, "{}", result.body);
+    assert!(store.scene("toast-probe").unwrap().revision() > revision);
+    assert!(store.scene("other-toast").is_some());
+    assert_eq!(result.publish.len(), 2);
+}
+
+#[test]
 fn toast_show_is_busy_independently_of_the_dialog_and_hide_frees_it() {
     let mut store = SceneStore::default();
     let mut caller = mount("loader", 1);

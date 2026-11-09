@@ -990,8 +990,6 @@ end
 
 fn filesystem($s, $batch)
   if $batch.overflow then
-    $s = reload_group($s, "lib", nil)
-    if $s.rc != 0 then return $s end
     return rescan($s, false)
   end
   for each $change in $batch.changes
@@ -1044,16 +1042,20 @@ fn library_roots($s)
 end
 
 fn check_library($s, $dir)
-  if not is_dir($dir) then return end
+  if not is_dir($dir) then return $s end
   for each $file in ls($dir)
     $path = $dir .. "/" .. $file
     if is_dir($path) then
-      check_library($s, $path)
+      $s = check_library($s, $path)
     elif ends_with($file, ".mix") then
-      bounded_read($path, 262144)
-      $s.io.check($path, {lint:"report"})
+      $digest = hash_sha256(bounded_read($path, 262144))
+      if ($s.library_checked ?? {})[$path] != $digest then
+        $s.io.check($path, {lint:"report"})
+        $s.library_checked[$path] = $digest
+      end
     end
   end
+  return $s
 end
 
 fn reload_group($s, $scope, $name)
@@ -1063,16 +1065,24 @@ fn reload_group($s, $scope, $name)
     if $e.enabled and ($scope == "all" or ($scope == "scene" and $n == $name) or ($scope == "lib" and regular(scene_dir($s, $n) .. "/behaviour.mix"))) then push($names, $n) end
   end
   $diagnostics = []
+  $candidates = {}
+  $sources = []
   try
+    if not $s.host_live then fail("SCENES_TRANSPORT", "scene host is unavailable", {}) end
     if $scope != "scene" then
-      for each $dir in library_roots($s) check_library($s, $dir) end
+      if $s.library_checked == nil then $s.library_checked = {} end
+      for each $dir in library_roots($s) $s = check_library($s, $dir) end
     end
     for each $n in $names
       $dir = scene_dir($s, $n)
       $c = candidate($s, $n, $dir)
-      if $c.behaviour_digest != "" then $s.io.check($dir .. "/behaviour.mix", {lint:check_mode($s, $n, $dir)}) end
+      if $c.behaviour_digest != "" and $c.behaviour_digest != $s.scenes[$n].behaviour_digest then $s.io.check($dir .. "/behaviour.mix", {lint:check_mode($s, $n, $dir)}) end
       $s.io.rpc($s.host, "shell.scene.validate", with_model($c.source, $s.scenes[$n].model ?? $c.model))
+      $candidates[$n] = $c
+      push($sources, {source:with_model($c.source, $s.scenes[$n].model ?? $c.model), model_generation:$s.scenes[$n].generation})
     end
+    $receipt = $s.io.rpc($s.host, "shell.scene.load", {sources:$sources})
+    if type($receipt.revisions) != "map" then fail("SCENES_SNAPSHOT", "missing batch receipt; update the scene host", {}) end
   catch $message, $error
     $d = {error_code:$error.code, message:$message, context:$error.details}
     push($diagnostics, $d)
@@ -1083,7 +1093,25 @@ fn reload_group($s, $scope, $name)
   end
   $revisions = {}
   for each $n in $names
-    $s = reconcile_safe($s, $n, true)
+    $c = $candidates[$n]
+    $s.scenes[$n].source = $c.source
+    $s.scenes[$n].model = $s.scenes[$n].model ?? $c.model
+    $s.scenes[$n].digest = $c.digest
+    $s.scenes[$n].behaviour_digest = $c.behaviour_digest
+    $s.scenes[$n].meta_digest = $c.meta_digest
+    $s.scenes[$n].revision = $receipt.revisions[$n]
+    $s.scenes[$n].mounted = true
+    $s.scenes[$n].page = $c.page
+    $s.scenes[$n].edge = $c.edge
+    $s.scenes[$n].kind = $c.kind
+    $s.scenes[$n].load_diagnostic = nil
+    $s.scenes[$n].diagnostic = nil
+    $s = invalidate($s, $n)
+    try
+      $s = start($s, $n)
+    catch $message, $error
+      $s.scenes[$n].diagnostic = {error_code:$error.code, message:$message, context:$error.details}
+    end
     if failure($s.scenes[$n]) != nil then push($diagnostics, failure($s.scenes[$n])) end
     $revisions[$n] = $s.scenes[$n].revision
   end

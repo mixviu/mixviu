@@ -42,6 +42,7 @@ pub struct Mounted {
     pub revision: u64,
 }
 
+#[derive(Clone)]
 pub struct SceneEntry {
     pub(crate) document: SceneDocument,
     pub(crate) bindings: scene::bindings::BindingSet,
@@ -155,7 +156,7 @@ pub struct Dispatched {
     pub publish: Vec<String>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SceneStore {
     pub(crate) scenes: BTreeMap<String, SceneEntry>,
     pub(crate) removed: Vec<Mounted>,
@@ -485,7 +486,7 @@ impl SceneStore {
         kind: SceneCommand,
         body: &str,
         args: &Value,
-        mount: Option<&mut SceneMount<'_>>,
+        mut mount: Option<&mut SceneMount<'_>>,
     ) -> Result<(Value, Option<Value>), Value> {
         let name = args["scene"].as_str().unwrap_or_default();
         match kind {
@@ -501,6 +502,22 @@ impl SceneStore {
                 ))
             }
             SceneCommand::Load => {
+                if let Some(sources) = args.get("sources") {
+                    let sources = sources.as_array().filter(|s| s.len() <= 128)
+                        .ok_or_else(|| json!({"error":"sources must be a list of at most 128 load envelopes"}))?;
+                    let mut staged = self.clone();
+                    let mut revisions = serde_json::Map::new();
+                    for source in sources {
+                        if source.get("sources").is_some() { return Err(json!({"error":"nested load batch"})); }
+                        let text = source["source"].as_str().ok_or_else(|| json!({"error":"missing source"}))?;
+                        let (receipt, summary) = staged.request_mounted(SceneCommand::Load, text, source, mount.as_deref_mut())?;
+                        let name = receipt["scene"].as_str().ok_or_else(|| json!({"error":"missing scene receipt"}))?;
+                        revisions.insert(name.into(), receipt["revision"].clone());
+                        if let Some(summary) = summary { staged.notices.push(summary); }
+                    }
+                    *self = staged;
+                    return Ok((json!({"accepted":true,"revisions":revisions}), None));
+                }
                 let managed_generation = if args.get("model_generation").is_some() {
                     Some(args["model_generation"].as_u64().filter(|g| *g <= 9_007_199_254_740_990).ok_or_else(
                         || json!({"error_code":"SCENE_MODEL_GENERATION", "message":"model_generation must be an exact nonnegative integer"}),

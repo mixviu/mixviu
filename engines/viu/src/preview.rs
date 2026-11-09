@@ -27,7 +27,7 @@ impl Preview {
             let output = command.output().map_err(|e| e.to_string())?;
             if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).into_owned()); }
             let source = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
-            self.store.request(SceneCommand::Load, &source, &json!({})).map_err(|e| e.to_string())?;
+            self.store.request_mounted(SceneCommand::Load, &source, &json!({}), None).map_err(|e| e.to_string())?;
             let (_, entry) = self.store.scenes().next().ok_or("missing scene")?;
             Ok(Arc::new(Content { tree:entry.tree().clone(), lists:entry.prepared().clone(), revision:entry.revision(), frame:None, dialog:false }))
         })();
@@ -42,10 +42,11 @@ impl Preview {
     }
 }
 impl eframe::App for Preview {
-    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        if Instant::now() >= self.next { self.refresh(ctx); self.next=Instant::now()+Duration::from_millis(200); }
+    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        if Instant::now() >= self.next { self.refresh(&ctx); self.next=Instant::now()+Duration::from_millis(200); }
         ctx.request_repaint_after(Duration::from_millis(200));
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             if let Some(view) = &mut self.view { view.show(ui, &mut Vec::new()); }
             if let Some(error)=&self.error { crate::dev_loop::error_strip(ui,error); }
         });

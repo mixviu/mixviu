@@ -36,6 +36,14 @@ fn rpc($host, $command, $body)
     raise("SCENES_UPSTREAM", "scene host refused request", {rc:10, upstream:{error:"unknown scene", error_code:"SCENE_REFUSED", message:"unknown scene"}})
   end
   if contains(["shell.scene.load", "shell.scene.validate"], $command) then
+    if type($body) == "map" and $body.sources != nil then
+      $revisions = {}
+      for each $source in $body.sources
+        $r = rpc($host, $command, $source)
+        $revisions[$r.scene] = $r.revision
+      end
+      return {accepted:true, revisions:$revisions}
+    end
     $source = type($body) == "map" ? $body.source : $body
     $d = $l.document($source)
     if $d.name == $host_state.load_error then raise("SCENES_UPSTREAM", "load timed out", {rpc:"shell.scene.load"}) end
@@ -78,7 +86,7 @@ fn rpc($host, $command, $body)
     $mounted = {}
     for each $line in read_lines($log)
       $call = json_parse($line)
-      if $call.command == "shell.scene.load" and not contains($call.body.source, "BROKEN") then
+      if $call.command == "shell.scene.load" and $call.body.sources == nil and not contains($call.body.source, "BROKEN") then
         $mounted[$l.document($call.body.source).name] = true
       elif $call.command == "shell.scene.unload" then
         $mounted = delete($mounted, $call.body.scene)
@@ -1455,6 +1463,28 @@ try
   $s = $l.filesystem($s, {overflow:false, changes:[{path:$scene_path, kind:"modified"}, {path:$behaviour_path, kind:"modified"}]})
   $row = filter($l.inventory($s).scenes, fn($r) = $r.name == "alpha")[0]
   check($row.problems[0].line == 2 and $row.problems[0].col == 3 and $row.problems[0].code == "MIX-W2001" and $row.problems[0].digest == $row.digests.behaviour and $row.problems[0].file == $row.files.behaviour, "P1: behaviour lint lines and digest: " .. json_encode($row.problems))
+
+  -- Library fan-out preflights every dependent before host load or stop.
+  $s = se_fresh("lib-group", $tpl)
+  $s = $l.request($s, "install", {template:"alpha", enable:true})
+  $s = $l.request($s, "install", {template:"alpha", name:"alpha-two", enable:true})
+  mkdir($s.root .. "/lib")
+  $helper = $s.root .. "/lib/helper.mix"
+  write_file($helper, "-- BROKEN\n")
+  $before = $s.scenes
+  $mark = log_mark()
+  $s = $l.filesystem($s, {changes:[{path:$helper}], overflow:false})
+  check($s.rc == 10 and len(since($mark, "stop")) == 0 and len(since($mark, "shell.scene.load")) == 0, "broken library never loads or stops any dependent")
+  check($s.scenes.alpha.revision == $before.alpha.revision and $s.scenes["alpha-two"].revision == $before["alpha-two"].revision and $s.scenes.alpha.load_diagnostic != nil, "whole dependency set retains last-good and diagnostics")
+  write_file($helper, "-- helper repaired\n")
+  $began = monotonic()
+  $s = $l.filesystem($s, {changes:[{path:$helper}], overflow:false})
+  check($s.rc == 0 and $s.scenes.alpha.load_diagnostic == nil and $s.scenes["alpha-two"].load_diagnostic == nil, "repair commits whole dependency set and clears refusals")
+  check(monotonic() - $began < 1, "headless library fan-out completes within one second")
+  $s = $l.request($s, "quoin.reload", {scope:"scene", name:"alpha"})
+  check($s.rc == 0 and type($s.response.revisions.alpha) == "number", "quoin.reload returns revision map")
+  $s = $l.request($s, "quoin.reload", {scope:"wrong"})
+  check($s.rc == 10, "quoin.reload refuses unknown scope")
 
   -- T1: the gallery listing.
   mkdir($tpl .. "/broken")
