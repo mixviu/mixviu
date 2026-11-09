@@ -1,0 +1,9 @@
+theatre: lab
+rules: [
+  {id: bottom, outputs: per_output, placement: {kind: edge, edge: bottom, h: 52}, cast: panel},
+  {id: right, outputs: per_output, placement: {kind: edge, edge: right, w: 400}, cast: nil}
+]
+stages: {
+  preview: {backend: preview, placement: {kind: dialog, w: 640, h: 480}, cast: network}
+}
+scenes: {panel: "panel.mix", network: "network.mix"}

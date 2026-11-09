@@ -110,6 +110,18 @@ fn lower_repeat($nodes, $context)
 end
 
 fn render($source, $name, $output, $model, $src, $citizen)
+  return render_placed($source, $name, $output, $model, $src, $citizen, {})
+end
+
+-- Stage placement wins per field; legacy scene window remains the fallback.
+fn placement($fallback, $stage)
+  $window = merge($fallback, $stage)
+  if $stage.kind != nil and $stage.kind != $fallback.kind then $window = $stage end
+  if $window.kind != "edge" then $window = delete(delete($window, "edge"), "panel") end
+  return $window
+end
+
+fn render_placed($source, $name, $output, $model, $src, $citizen, $stage)
   $doc = $amp.document($source)
   $id = "p3-" .. substr(hash_sha256($name .. "@" .. $output), 0, 24)
   $model.__instance = {output:$output}
@@ -123,8 +135,8 @@ fn render($source, $name, $output, $model, $src, $citizen)
     end
   end
   $body = data_encode($nodes)
-  $window = $doc.window
-  $window.panel = $name .. "@" .. $output
+  $window = placement($doc.window, $stage)
+  if $window.kind == "edge" then $window.panel = $stage.panel ?? $name .. "@" .. $output end
   return {id:$id, page:$window.panel, output:$output, source:"---\nscene: 1\nname: " .. $id .. "\ncitizen: " .. $citizen .. "\nwindow: " .. json_encode($window) .. "\nmodel: " .. json_encode($model) .. "\n---\n```mix\n" .. $body .. "\n```\n"}
 end
 

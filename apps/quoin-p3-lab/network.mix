@@ -1,0 +1,12 @@
+---
+scene: 1
+name: network
+citizen: scene-network
+window: {"kind":"edge","edge":"right","w":400,"title":"Network"}
+model: {"title":"Network","status":"Offline specimen — no device actions"}
+---
+```mix
+root: {widget: column, children: [title, status], padding: 16, gap: 8, background: '#202326'}
+title: {widget: text, text: '= $model.title', bold: true, size: 20}
+status: {widget: text, text: '= $model.status'}
+```

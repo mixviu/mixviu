@@ -1,0 +1,121 @@
+-- version: 0.1.0
+-- Lab stage host. Scene behaviour remains Mix; existing viu mounts each cast.
+$t = require("theatre.mix")
+$p3 = require("instances.mix")
+$io = require("../../engines/viud/scripts/lib/scenes_io.mix")
+$policy = require("panel-state.mix")
+$config_path = env("P3_THEATRE_CONFIG", dirname(script_path()) .. "/theatre.conf.mix")
+$cfg = $t.checked_config(load_data($config_path))
+$root = dirname($config_path)
+$private = env("P3_STATE_DIR")
+if $private == "" then raise("P3_STATE", "set a private P3_STATE_DIR") end
+mkdir($private, {parents:true})
+$assignments = {}; $modes = {}; $applied_modes = {}; $stages = {}; $mounted = {}; $revision = 0
+if is_file($private .. "/casts.conf.mix") then $assignments = load_data($private .. "/casts.conf.mix") end
+if is_file($private .. "/modes.conf.mix") then $modes = load_data($private .. "/modes.conf.mix") end
+$comp = env("VIU_COMP_SERVICE", "comp-headless")
+$host = env("SCENE_HOST", "shell")
+$feed = nil
+
+fn refresh()
+  global $feed, $stages, $mounted, $revision, $applied_modes
+  if $feed == nil then $feed = $p3.outputs($io, $comp) end
+  $next = $t.expand($cfg, $feed, $assignments)
+  if not deep_eq($next, $stages) then $revision = $revision + 1 end
+  $stages = $next
+  $ws = $io.rpc($comp, "comp.props.get", {path:"workspaces"})
+  $src = {comp:{workspaces:[]}}
+  for $row in $ws.list
+    $src.comp.workspaces = push($src.comp.workspaces, {id:to_string($row.index),index:$row.index,label:$row.name ?? to_string($row.index)})
+  end
+  $panel = {outputs:{}, current:{}, clock:$policy.clock_model()}
+  for $key in keys($feed)
+    $panel.outputs[$key] = {name:$feed[$key].name}
+    $panel.current[$key] = ($ws[$key] ?? {}).current ?? $ws.current
+  end
+  $mounted = $t.reconcile($mounted, $stages, $cfg, $root, $private .. "/preview", {panel:$panel}, $src, $io, $host, serve_name())
+  for $id in keys($applied_modes)
+    if not has_key($stages, $id) or $stages[$id].cast == nil then $applied_modes = delete($applied_modes, $id) end
+  end
+  for $id in keys($stages)
+    $stage = $stages[$id]
+    if $stage.backend != "host" or $stage.cast == nil or $stage.placement.kind != "edge" then continue end
+    $mode = (($modes[$stage.output_name] ?? {})[$stage.placement.edge]) ?? "pinned"
+    if $applied_modes[$id] != $mode then
+      $io.rpc($host, "shell.panel.mode", {output:$stage.output,edge:$stage.placement.edge,mode:$mode})
+      $applied_modes[$id] = $mode
+    end
+  end
+end
+
+fn change_cast($args, $scene)
+  global $assignments
+  if $args.if_revision != nil and $args.if_revision != $revision then raise("P3_STALE", "stage revision changed") end
+  $assignments = $t.assign($cfg, $stages, $assignments, $args.stage, $scene)
+  write_atomic($private .. "/casts.conf.mix", data_encode($assignments))
+  refresh()
+  return {theatre:$cfg.theatre,revision:$revision,stage:$stages[$args.stage]}
+end
+
+on stages
+  reply(0, json_encode({theatre:$cfg.theatre,revision:$revision,stages:$stages,mounted:$mounted}))
+end
+
+on cast
+  try
+    reply(0, json_encode(change_cast($event.args, $event.args.scene)))
+  catch $message, $error
+    reply(10, json_encode({error_code:$error.code,message:$message}))
+  end
+end
+
+on uncast
+  try
+    reply(0, json_encode(change_cast($event.args, nil)))
+  catch $message, $error
+    reply(10, json_encode({error_code:$error.code,message:$message}))
+  end
+end
+
+on mode
+  global $modes
+  $stage = $stages[$event.args.stage]
+  if $stage == nil or $stage.backend != "host" or $stage.placement.kind != "edge" or not contains(["hidden", "pinned", "docked"], $event.args.mode) then reply(10, "invalid stage/mode"); return end
+  if $modes[$stage.output_name] == nil then $modes[$stage.output_name] = {} end
+  $modes[$stage.output_name][$stage.placement.edge] = $event.args.mode
+  write_atomic($private .. "/modes.conf.mix", data_encode($modes))
+  refresh()
+  reply(0, "ok")
+end
+
+on workspace
+  $ids = filter(keys($mounted), fn($id) = $mounted[$id].id == $event.args.scene)
+  if len($ids) != 1 then reply(10, "stale cast"); return end
+  $stage = $stages[$ids[0]]
+  $r = $io.rpc($comp, "comp.workspace.switch", {output:$stage.output,index:$event.args.item.index})
+  reply(0, json_encode($r))
+end
+
+on timer.tick
+  if len(keys($event.headers)) != 0 or $event.args.tag != "tick" then return end
+  refresh()
+end
+
+on props.changed
+  global $feed
+  if $event.headers.topic != $comp .. ".props.changed" then return end
+  $feed = nil
+  refresh()
+end
+
+on bus.connected
+  global $feed
+  if len(keys($event.headers)) != 0 then return end
+  $feed = nil
+  $p3.watch_outputs($io, $comp)
+  refresh()
+end
+
+$p3.watch_outputs($io, $comp)
+refresh()
+interval(1, "tick")

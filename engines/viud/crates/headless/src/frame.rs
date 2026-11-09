@@ -224,13 +224,7 @@ fn compose(
         let mut target = renderer.bind(&mut ctx.targets[ctx.next])?;
         // No buffer-age assumptions: each target is repainted completely.
         OutputDamageTracker::from_output(&ctx.output)
-            .render_output(
-                renderer,
-                &mut target,
-                0,
-                &elements,
-                [0.1, 0.1, 0.1, 1.0],
-            )?
+            .render_output(renderer, &mut target, 0, &elements, [0.1, 0.1, 0.1, 1.0])?
             .sync
             .wait()?;
     }
@@ -252,8 +246,7 @@ fn compose(
             )?);
         }
         {
-            let mut target = renderer
-                .bind(ctx.cursor.as_mut().expect("cursor texture"))?;
+            let mut target = renderer.bind(ctx.cursor.as_mut().expect("cursor texture"))?;
             OutputDamageTracker::from_output(&ctx.output)
                 .render_output(
                     renderer,

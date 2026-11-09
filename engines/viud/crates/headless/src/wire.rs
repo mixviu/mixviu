@@ -65,10 +65,17 @@ impl RenderContract for Contract {
         DisplayBackend::bind_display(self, handle)
     }
     fn supported_formats(&mut self) -> FormatSet {
-        self.renderer.borrow().egl_context().dmabuf_texture_formats().clone()
+        self.renderer
+            .borrow()
+            .egl_context()
+            .dmabuf_texture_formats()
+            .clone()
     }
     fn import_dmabuf(&mut self, buffer: &Dmabuf) -> bool {
-        self.renderer.borrow_mut().import_dmabuf(buffer, None).is_ok()
+        self.renderer
+            .borrow_mut()
+            .import_dmabuf(buffer, None)
+            .is_ok()
     }
     fn early_import(&mut self, _surface: &WlSurface) {}
     fn sync_capable(&self) -> bool {

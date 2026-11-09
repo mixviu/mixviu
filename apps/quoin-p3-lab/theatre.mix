@@ -1,0 +1,108 @@
+-- Theatre/stage/scene discovery model. Output enumeration stays in instances.mix.
+$p3 = require("instances.mix")
+$amp = require("../../engines/viud/scripts/lib/scenes.mix")
+
+fn checked_config($cfg)
+  if type($cfg) != "map" or not re_match($cfg.theatre ?? "", '^[a-z][a-z0-9-]{0,30}$') then raise("P3_THEATRE", "invalid theatre name") end
+  if type($cfg.rules) != "list" or len($cfg.rules) > 16 or type($cfg.stages) != "map" or len(keys($cfg.stages)) > 32 or type($cfg.scenes) != "map" then raise("P3_THEATRE", "invalid/big theatre config") end
+  $ids = []
+  for $rule in $cfg.rules
+    if not re_match($rule.id ?? "", '^[a-z][a-z0-9-]{0,30}$') or contains($ids, $rule.id) or type($rule.placement) != "map" then raise("P3_RULE", "invalid/duplicate stage rule") end
+    push($ids, $rule.id)
+    $p3.select_outputs({instances:$rule.outputs, output:$rule.output}, {})
+  end
+  return $cfg
+end
+
+fn expand($cfg, $outputs, $assignments)
+  $cfg = checked_config($cfg)
+  $stages = {}
+  for $rule in $cfg.rules
+    $selected = $p3.select_outputs({instances:$rule.outputs, output:$rule.output}, $outputs)
+    for $key in $selected
+      $name = $outputs[$key].name
+      if type($name) != "string" or contains($name, "/") or contains($name, "@") then raise("P3_STAGE", "output name is not addressable") end
+      $id = $rule.id .. "@" .. $name
+      if has_key($stages, $id) then raise("P3_STAGE", "duplicate stage") end
+      $stages[$id] = {id:$id, address:$cfg.theatre .. "/" .. $id, backend:"host", output:$key, output_name:$name, placement:$rule.placement, cast:$rule.cast}
+    end
+  end
+  for $id in keys($cfg.stages)
+    if contains($id, "/") or has_key($stages, $id) then raise("P3_STAGE", "duplicate/unaddressable explicit stage") end
+    $stage = $cfg.stages[$id]
+    if not contains(["host", "preview"], $stage.backend ?? "host") or type($stage.placement) != "map" then raise("P3_STAGE", "invalid explicit stage") end
+    $stage.id = $id; $stage.address = $cfg.theatre .. "/" .. $id
+    $stage.backend = $stage.backend ?? "host"
+    if $stage.backend == "host" then
+      $keys = $p3.select_outputs({instances:"named", output:$stage.output}, $outputs)
+      if len($keys) == 0 then continue end
+      $stage.output = $keys[0]; $stage.output_name = $outputs[$keys[0]].name
+    end
+    $stages[$id] = $stage
+  end
+  for $id in keys($stages)
+    if has_key($assignments, $id) then $stages[$id].cast = $assignments[$id] end
+    $scene = $stages[$id].cast
+    if $scene != nil and not has_key($cfg.scenes, $scene) then raise("P3_CAST", "unknown scene in cast") end
+    $stages[$id].scene_address = if $scene == nil then nil else $stages[$id].address .. "/" .. $scene end
+  end
+  if len(keys($stages)) > 128 then raise("P3_STAGE", "stage limit exceeded") end
+  return $stages
+end
+
+fn assign($cfg, $stages, $assignments, $id, $scene)
+  if not has_key($stages, $id) then raise("P3_STAGE", "stage does not currently exist") end
+  if $scene != nil and not has_key($cfg.scenes, $scene) then raise("P3_CAST", "unknown scene") end
+  $assignments[$id] = $scene
+  return $assignments
+end
+
+fn scene_source($root, $cfg, $scene)
+  $file = $cfg.scenes[$scene]
+  if type($file) != "string" or starts_with($file, "/") or contains($file, "..") then raise("P3_CAST", "scene path must be relative to theatre directory") end
+  return $amp.bounded_read($root .. "/" .. $file, 262144)
+end
+
+fn render_cast($stage, $source, $model, $src, $citizen)
+  $window = $stage.placement
+  if $window.kind == "edge" then $window.panel = $stage.scene_address end
+  $output = $stage.output ?? "preview"
+  return $p3.render_placed($source, $stage.scene_address, $output, $model, $src, $citizen, $window)
+end
+
+-- Preview is materialised for P1's existing --preview boundary. No scene edit,
+-- behaviour launch or device action; it uses the same source and model.
+fn preview($root, $cast)
+  $dir = $root .. "/" .. $cast.id
+  mkdir($dir, {parents:true})
+  write_atomic($dir .. "/scene.mix", $cast.source)
+  write_atomic($dir .. "/template.conf.mix", data_encode({title:"Stage preview"}))
+  return $dir
+end
+
+fn reconcile($mounted, $stages, $cfg, $root, $preview_root, $models, $src, $io, $host, $citizen)
+  for $id in keys($mounted)
+    $stage = $stages[$id]
+    if $stage == nil or $stage.cast == nil or $stage.scene_address != $mounted[$id].address then
+      if $mounted[$id].backend == "host" then $io.rpc($host, "shell.scene.unload", {scene:$mounted[$id].id, output:$mounted[$id].output}) end
+      $mounted = delete($mounted, $id)
+    end
+  end
+  for $id in keys($stages)
+    $stage = $stages[$id]
+    if $stage.cast == nil then continue end
+    $source = scene_source($root, $cfg, $stage.cast)
+    $doc = $amp.document($source)
+    $cast = render_cast($stage, $source, $models[$stage.cast] ?? $doc.model, $src, $citizen)
+    $cast.address = $stage.scene_address; $cast.backend = $stage.backend
+    if ($mounted[$id] ?? {}).source != $cast.source then
+      if $stage.backend == "host" then
+        $io.rpc($host, "shell.scene.load", {source:$cast.source, output:$stage.output})
+      else
+        $cast.preview = preview($preview_root, $cast)
+      end
+      $mounted[$id] = $cast
+    end
+  end
+  return $mounted
+end

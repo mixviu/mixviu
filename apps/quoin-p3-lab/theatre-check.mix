@@ -1,0 +1,32 @@
+-- version: 0.1.0
+$t = require("theatre.mix")
+$p3 = require("instances.mix")
+$root = dirname(script_path())
+$cfg = load_data($root .. "/theatre.conf.mix")
+$outputs = {a:{name:"DP-1",default:true},b:{name:"HDMI-A-1"}}
+fn ensure($condition, $message)
+  if not $condition then raise("P3_THEATRE_CHECK", $message) end
+end
+$s = $t.expand($cfg, $outputs, {})
+ensure(len(keys($s)) == 5, "two stages per output plus preview")
+ensure($s["bottom@DP-1"].scene_address == "lab/bottom@DP-1/panel", "full scene address")
+$assignments = $t.assign($cfg, $s, {}, "right@DP-1", "network")
+$s = $t.expand($cfg, $outputs, $assignments)
+ensure($s["right@DP-1"].cast == "network", "agent casts into named stage")
+$without = $t.expand($cfg, {b:$outputs.b}, $assignments)
+ensure(len(keys($without)) == 3 and $without["right@DP-1"] == nil, "hotplug removes only that output's stages")
+$again = $t.expand($cfg, $outputs, $assignments)
+ensure($again["right@DP-1"].cast == "network", "cast survives unplug and replug by stable stage id")
+$source = $t.scene_source($root, $cfg, "network")
+$amp = require("../../engines/viud/scripts/lib/scenes.mix")
+$model = $amp.document($source).model
+$edge = $t.render_cast($s["right@DP-1"], $source, $model, {}, "theatre")
+$preview = $t.render_cast($s.preview, $source, $model, {}, "theatre")
+ensure($amp.document($edge.source).window.edge == "right", "stage controls edge")
+ensure($amp.document($preview.source).window.kind == "dialog", "same scene gets preview geometry")
+ensure($amp.document($preview.source).window.edge == nil, "edge metadata does not leak into preview")
+ensure(deep_eq(data_parse(between($amp.document($edge.source).body, "```mix\n", "```")),data_parse(between($amp.document($preview.source).body, "```mix\n", "```"))), "content unchanged across placements")
+ensure($p3.placement({kind:"edge",edge:"left",h:44}, {edge:"right"}).h == 44, "header fallback per field")
+$assignments = $t.assign($cfg, $s, $assignments, "right@DP-1", nil)
+ensure($t.expand($cfg, $outputs, $assignments)["right@DP-1"].cast == nil, "explicit nil uncast overrides rule")
+print("P3_THEATRE_CHECK=pass")
