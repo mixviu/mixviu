@@ -32,10 +32,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex as TokioMutex, RwLock, mpsc, watch};
 
 use super::IncomingCommand;
+use super::connection::ConnectionIncoming;
 use super::connection::{Connection, ConnectionOptions};
 use super::error::{ClientError, RegistrationRejected, SupervisedError};
 use crate::BusMessage;
-use super::connection::ConnectionIncoming;
 
 /// One supervised delivery. Context is captured only on the verified transport
 /// that received this command; it is never reconstructed from public headers.
@@ -47,12 +47,24 @@ pub struct SupervisedDelivery {
 
 impl SupervisedDelivery {
     pub fn legacy(command: IncomingCommand) -> Self {
-        Self { command, principal: None, protected_recipient: false }
+        Self {
+            command,
+            principal: None,
+            protected_recipient: false,
+        }
     }
-    pub fn command(&self) -> &IncomingCommand { &self.command }
-    pub fn principal(&self) -> Option<&crate::native_session::BrokerPrincipal> { self.principal.as_ref() }
-    pub fn protected_recipient(&self) -> bool { self.protected_recipient }
-    pub fn into_command(self) -> IncomingCommand { self.command }
+    pub fn command(&self) -> &IncomingCommand {
+        &self.command
+    }
+    pub fn principal(&self) -> Option<&crate::native_session::BrokerPrincipal> {
+        self.principal.as_ref()
+    }
+    pub fn protected_recipient(&self) -> bool {
+        self.protected_recipient
+    }
+    pub fn into_command(self) -> IncomingCommand {
+        self.command
+    }
 }
 use crate::native_client::bounded::{
     BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, BoundedSendResult,
@@ -423,9 +435,13 @@ impl SupervisedClient {
         let connection_generation = Arc::new(AtomicU64::new(u64::from(established)));
         let contextual = {
             #[cfg(unix)]
-            { connection_options.unix.is_some() }
+            {
+                connection_options.unix.is_some()
+            }
             #[cfg(not(unix))]
-            { false }
+            {
+                false
+            }
         };
         let (delivery_tx, delivery_rx) = mpsc::unbounded_channel();
         let (out_tx, out_rx, bounded_out_rx) = match connection_options.capacity {
@@ -485,12 +501,19 @@ impl SupervisedClient {
     /// Contextual stream for the opt-in Unix transport, including explicitly
     /// unprotected TCP fallback deliveries. Survives reconnects like `incoming`.
     pub fn deliveries(&self) -> Option<mpsc::UnboundedReceiver<SupervisedDelivery>> {
-        self.deliveries_rx.lock().unwrap_or_else(|e| e.into_inner()).take()
+        self.deliveries_rx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
     }
 
     /// Current registration only. Each queued delivery carries its own status.
     pub async fn protected_recipient(&self) -> bool {
-        self.inner.read().await.as_ref().is_some_and(|c| c.is_connected() && c.protected_recipient())
+        self.inner
+            .read()
+            .await
+            .as_ref()
+            .is_some_and(|c| c.is_connected() && c.protected_recipient())
     }
 
     /// Take the outward incoming stream (once). It survives reconnects and
@@ -899,7 +922,9 @@ impl SupervisorOutgoing {
     /// so the supervisor can answer it on the connection it arrived on.
     fn forward(&self, event: BoundedIncomingEvent, refuse_rpc: bool) -> ForwardOutcome {
         match (self, event) {
-            (Self::Contextual(_), _) => unreachable!("contextual delivery is forwarded with its context"),
+            (Self::Contextual(_), _) => {
+                unreachable!("contextual delivery is forwarded with its context")
+            }
             (Self::Unbounded(sender), BoundedIncomingEvent::Command(command)) => {
                 if sender.send(command).is_ok() {
                     ForwardOutcome::Sent

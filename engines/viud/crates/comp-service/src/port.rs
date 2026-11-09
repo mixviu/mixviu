@@ -955,7 +955,9 @@ impl WorkerIncoming {
 }
 
 trait WorkerClient: Send + Sync + 'static {
-    fn deliveries(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::SupervisedDelivery>> { None }
+    fn deliveries(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::SupervisedDelivery>> {
+        None
+    }
     fn chrome_client(&self) -> Option<&SupervisedClient> {
         None
     }
@@ -1125,7 +1127,9 @@ async fn worker_loop<F, Fut, C>(
         }
         ConnectOutcome::Shutdown => return,
     };
-    let incoming = client.deliveries().map(WorkerIncoming::Contextual)
+    let incoming = client
+        .deliveries()
+        .map(WorkerIncoming::Contextual)
         .or_else(|| client.incoming().map(WorkerIncoming::Legacy));
     let Some(mut incoming) = incoming else {
         tracing::error!(service = %service, "compositor Bus incoming stream was already taken");

@@ -28,13 +28,23 @@ pub(crate) enum ConnectionIncoming {
 }
 
 impl ConnectionIncoming {
-    pub(crate) async fn recv(&mut self) -> Option<(crate::native_client::BoundedIncomingEvent, Option<crate::native_session::BrokerPrincipal>, bool)> {
+    pub(crate) async fn recv(
+        &mut self,
+    ) -> Option<(
+        crate::native_client::BoundedIncomingEvent,
+        Option<crate::native_session::BrokerPrincipal>,
+        bool,
+    )> {
         match self {
             Self::Legacy(receiver) => receiver.recv().await.map(|event| (event, None, false)),
             #[cfg(unix)]
             Self::Unix(receiver) => receiver.recv().await.map(|delivery| {
                 let (command, principal) = delivery.into_parts();
-                (crate::native_client::BoundedIncomingEvent::Command(command), principal, true)
+                (
+                    crate::native_client::BoundedIncomingEvent::Command(command),
+                    principal,
+                    true,
+                )
             }),
         }
     }
@@ -67,23 +77,46 @@ impl Connection {
             // Contextual supervision currently uses the same unbounded lane as
             // the default supervisor. Never silently change a bounded policy.
             if options.capacity.is_some() || unix.incoming_capacity.is_some() {
-                return Err(ClientError::Native(anyhow::anyhow!("verified supervision requires an unbounded incoming lane")));
+                return Err(ClientError::Native(anyhow::anyhow!(
+                    "verified supervision requires an unbounded incoming lane"
+                )));
             }
             match NodedClient::connect_unix(name, url, unix, options.provenance.clone())
-                .await.map_err(unix_client_error)? {
+                .await
+                .map_err(unix_client_error)?
+            {
                 crate::native_client::UnixConnectOutcome::VerifiedUnix(connection) => {
                     let (inner, incoming) = connection.into_supervised_parts();
-                    let crate::native_client::unix::VerifiedIncoming::Unbounded(incoming) = incoming else { unreachable!("unbounded Unix options checked") };
+                    let crate::native_client::unix::VerifiedIncoming::Unbounded(incoming) =
+                        incoming
+                    else {
+                        unreachable!("unbounded Unix options checked")
+                    };
                     if let Some(commands) = &options.commands {
                         inner.set_commands(commands.clone());
                     }
-                    return Ok(Self { name: name.to_owned(), inner, incoming: Mutex::new(Some(ConnectionIncoming::Unix(incoming))), protected_recipient: true });
+                    return Ok(Self {
+                        name: name.to_owned(),
+                        inner,
+                        incoming: Mutex::new(Some(ConnectionIncoming::Unix(incoming))),
+                        protected_recipient: true,
+                    });
                 }
                 crate::native_client::UnixConnectOutcome::UnverifiedTcp { client, unix_error } => {
-                    if let Some(commands) = &options.commands { client.set_commands(commands.clone()); }
+                    if let Some(commands) = &options.commands {
+                        client.set_commands(commands.clone());
+                    }
                     tracing::warn!(service = name, error = %unix_error, "native endpoint missing; TCP recipient is unprotected");
-                    let incoming = client.take_native_incoming().await.map(ConnectionIncoming::Legacy);
-                    return Ok(Self { name: name.to_owned(), inner: client, incoming: Mutex::new(incoming), protected_recipient: false });
+                    let incoming = client
+                        .take_native_incoming()
+                        .await
+                        .map(ConnectionIncoming::Legacy);
+                    return Ok(Self {
+                        name: name.to_owned(),
+                        inner: client,
+                        incoming: Mutex::new(incoming),
+                        protected_recipient: false,
+                    });
                 }
             }
         }
@@ -120,9 +153,16 @@ impl Connection {
             .incoming
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if matches!(&*incoming, Some(ConnectionIncoming::Legacy(NativeIncomingReceiver::Unbounded(_)))) {
+        if matches!(
+            &*incoming,
+            Some(ConnectionIncoming::Legacy(
+                NativeIncomingReceiver::Unbounded(_)
+            ))
+        ) {
             match incoming.take() {
-                Some(ConnectionIncoming::Legacy(NativeIncomingReceiver::Unbounded(receiver))) => Some(receiver),
+                Some(ConnectionIncoming::Legacy(NativeIncomingReceiver::Unbounded(receiver))) => {
+                    Some(receiver)
+                }
                 _ => unreachable!("unbounded receiver checked under lock"),
             }
         } else {

@@ -25,8 +25,8 @@
 //! - Observation records go into [`outbox::ObservationProducer`]; the
 //!   publisher task frames them as Bus messages with gap recovery.
 
-pub mod channel;
 pub mod callers;
+pub mod channel;
 pub mod chrome;
 pub mod outbox;
 pub mod port;
