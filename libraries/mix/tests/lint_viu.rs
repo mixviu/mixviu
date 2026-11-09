@@ -22,7 +22,9 @@ fn diagnostics(source: &str) -> Vec<String> {
 
 fn viu_vocabulary_available() -> bool {
     if VIU_EXTENSIONS.is_empty() {
-        eprintln!("skipping viu vocabulary assertions: sibling viu sources unavailable (standalone lib-mix build)");
+        eprintln!(
+            "skipping viu vocabulary assertions: sibling viu sources unavailable (standalone lib-mix build)"
+        );
         return false;
     }
     true
