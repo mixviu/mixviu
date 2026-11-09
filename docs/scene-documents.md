@@ -63,6 +63,12 @@ needs a string `widget`; every other key is a port. `@` is reserved for
 generated instance IDs. (`libraries/scene/src/envelope.rs:28`,
 `libraries/scene/src/lib.rs:395`.)
 
+Scene names follow `[a-z][a-z0-9-]{1,30}`. The core envelope replaces a
+duplicate header with its last value, whereas the loader refuses duplicates;
+author each header once. (`libraries/scene/src/lib.rs:955`,
+`libraries/scene/src/envelope.rs:73`,
+`engines/viud/scripts/lib/scenes.mix:105`.)
+
 Fence contents use strict data: optional top-level braces, newline/comma
 separators at top level, comma separators inside maps/lists, trailing commas,
 bare or quoted keys, bare word string values, `nil`, booleans, f64 numbers,
@@ -133,6 +139,12 @@ do not interpret duplicates as separate ports. `describe` returns path, type,
 mutable, sensitive, description, enum/default/min/max; field.value is sensitive.
 (`libraries/scene/src/schema.rs:90`, `libraries/scene/src/schema.rs:317`,
 `libraries/scene/src/schema.rs:397`, `libraries/scene/src/schema.rs:505`.)
+
+Two current inconsistencies: bound length ports fail binding-type because
+the binding coercer does not handle length; a family-less host describe lists
+only ten families, although an explicit family query reaches the full schema.
+(`libraries/scene/src/bindings.rs:509`, `engines/viu/src/store.rs:33`,
+`engines/viu/src/store.rs:530`.)
 
 Explicit grow/shrink/basis conflicts with authored fill (even false), spacer
 size, or fixed row height. Min width/height cannot exceed max; list max_rows
