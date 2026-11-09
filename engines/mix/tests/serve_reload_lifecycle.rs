@@ -407,7 +407,6 @@ if not is_reload_candidate() then start_watch() end
 #[test]
 #[ignore = "subprocess helper, launched explicitly by the grace test"]
 fn term_ignoring_child_fixture() {
-    use std::io::Write;
     unsafe {
         libc::signal(libc::SIGTERM, libc::SIG_IGN);
     }
@@ -418,10 +417,41 @@ fn term_ignoring_child_fixture() {
         .create(true)
         .open(std::env::var_os("REL_TRACE").expect("fixture trace"))
         .unwrap();
-    writeln!(trace, "legacy-ready|{{\"pid\":{}}}|t=0", std::process::id()).unwrap();
+    write_legacy_ready(&mut trace, std::process::id());
     loop {
         std::thread::park();
     }
+}
+
+fn write_legacy_ready(trace: &mut impl std::io::Write, pid: u32) {
+    // Format before writing: writeln!(File, ...) splits at format arguments,
+    // allowing the citizen's boot record to land in the middle of this line.
+    trace
+        .write_all(format!("legacy-ready|{{\"pid\":{pid}}}|t=0\n").as_bytes())
+        .unwrap();
+}
+
+#[test]
+fn legacy_ready_does_not_split_the_citizens_boot_record() {
+    struct Interleaved(Vec<u8>);
+    impl std::io::Write for Interleaved {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.extend_from_slice(bytes);
+            // Force the competing append after the first write, where the
+            // old writeln! had only emitted `legacy-ready|{"pid":`.
+            self.0.extend_from_slice(b"boot|{\"legacy\":42,\"managed\":43}|t=1\n");
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut writer = Interleaved(Vec::new());
+    write_legacy_ready(&mut writer, 42);
+    let dir = Dir::new("trace-interleaving");
+    dir.write("trace", std::str::from_utf8(&writer.0).unwrap());
+    assert_eq!(parse_trace(&dir, "legacy-ready").len(), 1);
+    assert_eq!(parse_trace(&dir, "boot").len(), 1);
 }
 
 #[derive(Clone, Copy)]
