@@ -4,10 +4,11 @@ The scene renderer embeds the canonical `share/brand/logos/alien-cyclops.svg`
 directly using `include_bytes!`; there is no copied brand original or runtime
 filesystem lookup. It retains full colour (`symbolic: false`). The source at
 this change has SHA-256
-`78c965ac326d2ba6375003c7581c8b78d779e76ab59ad266b6646cda096cf2e7`.
+`e83ab64cd4cfb160c680bcc3261a447812f84ba88565a09d5dee4c0e6d6b7c4e`
+(the 4 px outline and `#FF0000` eye from PR #51, which replaced #23).
 The SVG carries Mark Constable's 2026 copyright and MIT OR Apache-2.0 licence.
-Future changes to the canonical brand source, including the separate outline
-work in PR #23, are picked up at build time.
+Future changes to the canonical brand source are picked up at build time;
+the test in `engines/viu/src/images.rs` makes this pin move with them.
 
 Four catalogue additions are byte-identical copies of existing Lucide 1.54.0
 assets in `share/icons/lucide/`, with source hashes already pinned in
