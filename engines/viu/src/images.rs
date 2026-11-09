@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
+const BRAND: &[u8] = include_bytes!("../../../share/brand/logos/alien-cyclops.svg");
 
 /// A unique id per decoded asset, so a texture cache can tell a re-decoded
 /// file from the same one.
@@ -221,13 +222,7 @@ fn prepare_with(
 ) -> Prepared {
     let mut prepared = Prepared::new();
     let mut insert = |key, id: &str, node: &scene::Node, app: Option<&str>| {
-        if node.family != "image"
-            || node
-                .ports
-                .get("hidden")
-                .and_then(serde_json::Value::as_bool)
-                == Some(true)
-        {
+        if node.family != "image" || crate::view::flag(node, "hidden") {
             return;
         }
         let source = crate::freedesktop::normalise(crate::templates::text(node, "src"));
@@ -249,7 +244,7 @@ fn prepare_with(
         });
         let size = size[0].max(size[1]).ceil() as u32;
         let cache_key = (source.to_owned(), size, app.map(str::to_owned));
-        if let Some(asset) = cache.lock().ok().and_then(|mut cache| {
+        if !Path::new(source).is_absolute() && let Some(asset) = cache.lock().ok().and_then(|mut cache| {
             cache
                 .get(&cache_key)
                 .filter(|(_, file)| {
@@ -262,12 +257,7 @@ fn prepare_with(
             return;
         }
         let embedded: Option<(Arc<[u8]>, bool)> = if source == "brand:cyclops" {
-            Some((
-                include_bytes!("../../../share/brand/logos/alien-cyclops.svg")
-                    .as_slice()
-                    .into(),
-                false,
-            ))
+            Some((BRAND.into(), false))
         } else {
             source
                 .strip_prefix("icon:")
@@ -284,6 +274,15 @@ fn prepare_with(
             cache.insert(cache_key, (asset.clone(), None));
             prepared.insert(key, asset);
         } else if let Some(path) = resolve(source, size, app) {
+            // Explicit sources must be resolved each preparation: a new file
+            // must replace a cached fallback. Still reuse unchanged decoded
+            // bytes once the resolver has confirmed which path now wins.
+            if let Some(asset) = cache.lock().ok().and_then(|mut cache| {
+                cache.get(&cache_key).filter(|(_, file)| file.as_ref().is_some_and(|(cached, old)| cached == &path && file_stamp(cached) == Some(*old))).map(|(asset, _)| asset.clone())
+            }) {
+                prepared.insert(key, asset);
+                return;
+            }
             let stamp = file_stamp(&path);
             let asset = if crate::icons::is_svg(&path) {
                 // Keep bytes and identity alive through layout/page switches.
@@ -317,12 +316,7 @@ fn prepare_with(
         let Some(node) = get(id) else {
             return;
         };
-        if node
-            .ports
-            .get("hidden")
-            .and_then(serde_json::Value::as_bool)
-            == Some(true)
-            || !out.insert(id.into())
+        if crate::view::flag(node, "hidden") || !out.insert(id.into())
         {
             return;
         }
@@ -397,7 +391,7 @@ fn raster_with_cache(path: &Path, cache: &Mutex<RasterCache>) -> Option<Raster> 
         pixels.height() as usize,
         pixels.into_raw(),
     );
-    if cache.len() >= 512 {
+    if cache.len() >= crate::cache::CAPACITY {
         // A live handle shares its pixel buffer with the cache. Only discard
         // unused entries, allowing the limit to grow while scenes hold icons.
         cache.retain(|_, (_, _, handle)| Arc::strong_count(&handle.rgba) > 1);
@@ -428,6 +422,7 @@ mod tests {
 
     #[test]
     fn panel_catalogue_names_all_exist() {
+        use sha2::{Digest, Sha256};
         let mut names = BTreeSet::new();
         for source in [
             include_str!("../../../share/scenes/panel/behaviour.mix"),
@@ -443,6 +438,54 @@ mod tests {
             }
         }
         assert!(names.len() >= 10, "the check must cover the panel mapping");
+        let provenance = include_str!("../../../provenance/panel-embedded-icons.md");
+        let hash = |bytes: &[u8]| format!("{:x}", Sha256::digest(bytes));
+        let brand_hash = provenance.split('`').find(|token| token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit())).unwrap();
+        assert_eq!(hash(BRAND), brand_hash, "canonical embedded brand provenance");
+        let mut copies = 0;
+        for line in provenance.lines() {
+            let fields: Vec<_> = line.split('|').map(str::trim).collect();
+            if fields.len() != 4 || !fields[1].ends_with(".svg") { continue; }
+            let icon = viu::icons::Icon::from_name(fields[1].trim_end_matches(".svg")).unwrap();
+            assert_eq!(hash(icon.svg().as_bytes()), fields[2], "{} provenance hash", fields[1]);
+            let original = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../share/icons/lucide").join(fields[1]);
+            assert_eq!(icon.svg().as_bytes(), std::fs::read(original).unwrap().as_slice(), "{} byte-identical copy", fields[1]);
+            copies += 1;
+        }
+        assert_eq!(copies, 4);
+    }
+
+    #[test]
+    fn file_uri_appearing_outside_search_roots_replaces_miss_or_placeholder_next_prepare() {
+        for placeholder in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let data = root.path().join("search");
+            let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+            if placeholder {
+                let path = data.join("icons/Fixture/32x32/apps/application-x-executable.svg");
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::copy(fixtures.join("embedded-icon.svg"), path).unwrap();
+            }
+            let resolver = crate::freedesktop::Resolver::new(crate::freedesktop::Lookup::in_data_dirs("Fixture", [data]));
+            let path = root.path().join("new.png");
+            let uri = serde_json::to_string(&format!("file://{}", path.display())).unwrap();
+            let source = format!("---\nscene: 1\nname: explicit\ncitizen: test\n---\n```mix\nroot: {{widget: \"image\", src: {uri}, w: 20, h: 20}}\n```\n");
+            let tree = scene::resolve(&scene::parse(&source).unwrap()).unwrap();
+            let lists = crate::templates::validate_templates(&tree).unwrap();
+            let cache = Mutex::new(AssetCache::new());
+            let prepare = || prepare_with(&tree, &lists, &cache, |source, size, app| resolver.resolve_in_generation(source, size, 1, app));
+            let first = prepare();
+            assert_eq!(first.contains_key(&key("root", None)), placeholder);
+            let generation = resolver.generation();
+            std::fs::copy(fixtures.join("icon.png"), &path).unwrap();
+            assert_eq!(resolver.generation(), generation, "explicit file is outside tracked roots");
+            let second = prepare();
+            let Some(Asset::Raster(image)) = second.get(&key("root", None)) else { panic!("new explicit file must replace the miss or placeholder"); };
+            assert!(image.rgba[3] > 0, "pixels ready for the next paint");
+            let third = prepare();
+            let Some(Asset::Raster(reused)) = third.get(&key("root", None)) else { panic!("cached raster"); };
+            assert_eq!(image.id, reused.id, "unchanged explicit file retains its decoded handle");
+        }
     }
 
     #[test]
@@ -625,7 +668,7 @@ icon: {widget: "image", src: "", w: 31, h: 31}
             let mut live = Vec::new();
             {
                 let mut entries = cache.lock().unwrap();
-                for index in 0..511 {
+                for index in 0..crate::cache::CAPACITY - 1 {
                     let handle = Raster::from_rgba(1, 1, vec![0; 4]);
                     if keep_live {
                         live.push(handle.clone());
@@ -635,12 +678,12 @@ icon: {widget: "image", src: "", w: 31, h: 31}
                         (None, 0, handle),
                     );
                 }
-                assert_eq!(entries.len(), 512);
+                assert_eq!(entries.len(), crate::cache::CAPACITY);
             }
             let _other = raster_with_cache(&other, &cache).unwrap();
             let second = raster_with_cache(&path, &cache).unwrap();
             assert_eq!(first.id, second.id, "keep_live={keep_live}");
-            assert_eq!(cache.lock().unwrap().len(), if keep_live { 513 } else { 2 });
+            assert_eq!(cache.lock().unwrap().len(), if keep_live { crate::cache::CAPACITY + 1 } else { 2 });
             drop(live);
         }
     }

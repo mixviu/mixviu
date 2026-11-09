@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Small LRU shared by decoded assets and icon resolutions.
 use std::collections::BTreeMap;
+pub(crate) const CAPACITY: usize = 512;
 
 #[derive(Debug)]
 pub(crate) struct Cache<K, V> {
@@ -28,7 +29,7 @@ impl<K: Ord + Clone, V> Cache<K, V> {
         Some(value)
     }
     pub fn insert(&mut self, key: K, value: V) {
-        if self.entries.len() >= 512 && !self.entries.contains_key(&key) {
+        if self.entries.len() >= CAPACITY && !self.entries.contains_key(&key) {
             let oldest = self
                 .entries
                 .iter()
@@ -64,14 +65,14 @@ mod tests {
     #[test]
     fn pressure_evicts_one_old_entry_and_keeps_recent_hits() {
         let mut cache = Cache::new();
-        for i in 0..512 {
+        for i in 0..CAPACITY {
             cache.insert(i, i);
         }
         assert_eq!(cache.get(&0), Some(&0));
-        cache.insert(512, 512);
-        assert_eq!(cache.len(), 512);
+        cache.insert(CAPACITY, CAPACITY);
+        assert_eq!(cache.len(), CAPACITY);
         assert!(cache.contains_key(&0));
         assert!(!cache.contains_key(&1));
-        assert!(cache.contains_key(&511));
+        assert!(cache.contains_key(&(CAPACITY - 1)));
     }
 }

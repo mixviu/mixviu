@@ -27,3 +27,13 @@ wired-port variant in the catalogue: plain wired uses plug, activated wired
 uses ethernet-port. bell-dot is not shipped; bell-ring preserves the active
 notification distinction. The optional installed start-here-kde mark remains
 available through the panel's cached apps.icon lookup.
+
+Search inventories retain at most 4,096 tracked paths. Unstamped SVG/raster
+files do not consume the traversal work budget, and directories are charged
+only on their recursive visit. A partial inventory (limit, external directory
+alias or read error) retains lookup and decoded-asset caches for up to one
+second, then resnapshots and advances the generation once. This bounds
+freshness for very large trees at about one second without repeating failed
+lookups on every frame. Complete inventories validate tracked metadata at
+each preparation batch. Explicit absolute/file:// paths are rechecked on
+every preparation, independently of these search-root generations.

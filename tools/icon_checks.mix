@@ -1,9 +1,25 @@
--- Run only through CBC. Print and restore worker-only rustfmt changes.
+-- Run only through CBC. Snapshot candidates before fmt so even pre-existing
+-- edits in a formatted file are preserved. Restore only files fmt changed.
+$files = lines(trim(run_argv_must(["rg", "--files", "--hidden", "--no-ignore", "-g", "*.rs", "--", "engines/viu", "libraries/icons"])))
+$before = {}
+for $f in $files $before[$f] = read_file($f) end
 $fmt = run_argv(["cargo", "fmt", "-p", "viu", "-p", "icons"], {timeout:120})
 print($fmt.stdout)
 print($fmt.stderr)
-print(run_argv_must(["git", "diff", "--", "engines/viu", "libraries/icons"]))
-print(run_argv_must(["git", "checkout", "-q", "--", "engines/viu", "libraries/icons"]))
+$changed = []
+for $f in $files
+  if not is_file($f) or read_file($f) != $before[$f] then push($changed, $f) end
+end
+if len($changed) > 0 then
+  print("FMT_PATCH_BEGIN")
+  $diff = run_argv(concat(["git", "diff", "--"], $changed))
+  print($diff.stdout)
+  print($diff.stderr)
+  print("FMT_PATCH_END")
+  for $f in $changed write_file($f, $before[$f]) end
+  print("FORMAT_DRIFT=" .. to_string(len($changed)))
+  exit(1)
+end
 if not $fmt.ok then exit($fmt.exit_code ?? 1) end
 $r = run_argv(["env", "CARGO_BUILD_JOBS=2", "cargo", "test", "--locked", "-p", "viu", "-p", "icons", "--lib"], {timeout:3600})
 print($r.stdout)
