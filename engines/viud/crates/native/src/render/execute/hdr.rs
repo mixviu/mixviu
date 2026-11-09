@@ -11,8 +11,100 @@
 //! fails (malformed blob, unsupported property, wrong enum) we return an error
 //! and the caller stays SDR — a bad blob can never blank the display.
 
+use crate::context::render::OutputPipe;
 use kms::edid::parse::HdrInfo;
+use render_gles::color::hdr::describe::{self, OutputColor};
+use render_gles::color::hdr::math::Chromaticity;
+use render_gles::color::hdr::pass::HdrPass;
+use scenegraph::scene::element::SceneElement;
 use smithay::backend::drm::DrmDeviceFd;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::utils::Scale;
+
+/// What this display shows in HDR, from its EDID (with the
+/// `MIX_VIUD_HDR_SDR_WHITE` / `MIX_VIUD_HDR_MAX_NITS` overrides).
+pub fn output_color(caps: &HdrInfo) -> OutputColor {
+    let p = &caps.primaries;
+    let f = |c: (f32, f32)| (c.0 as f64, c.1 as f64);
+    let display = (p.red.0 > 0.0 && p.green.0 > 0.0 && p.blue.0 > 0.0 && p.white.0 > 0.0)
+        .then(|| Chromaticity {
+            r: f(p.red),
+            g: f(p.green),
+            b: f(p.blue),
+            w: f(p.white),
+        });
+    OutputColor::from_edid(
+        caps.hdr.max_luminance.map(f64::from),
+        caps.hdr.min_luminance.map(f64::from),
+        display,
+    )
+}
+
+/// Tell the protocol layer what the HDR output wants (`None`: SDR), and log it.
+pub fn publish(color: Option<OutputColor>) {
+    if let Some(c) = &color {
+        info!(
+            "HDR output: PQ BT.2020, SDR white {} cd/m², peak {} cd/m², black {} cd/m²",
+            c.sdr_white, c.max, c.min
+        );
+    }
+    describe::set_output(color);
+}
+
+/// Take a pipe off HDR after a failure: back to SDR signalling (the connector
+/// pass runs again and resets `Colorspace`/metadata) and an SDR composite.
+pub fn fall_back(pipe: &mut OutputPipe, why: &str) {
+    warn!("HDR off for this session: {why}");
+    pipe.hdr_active = false;
+    pipe.hdr_pass = None;
+    pipe.props_applied = false;
+    publish(None);
+    let c = &pipe.hdr_caps;
+    model::stats::registry::base::set_hdr_info(
+        false,
+        c.hdr_capable(),
+        "SDR",
+        c.hdr.max_luminance.unwrap_or(0.0),
+        c.colorimetry.bt2020_rgb,
+        "8-bit sRGB",
+    );
+}
+
+/// Compose an HDR pipe's frame: the scene into the FP16 intermediate, and the
+/// one encode element the scanout compositor should draw. `None` when the
+/// pipe fell back to SDR (the caller draws the scene directly).
+pub fn compose(
+    pipe: &mut OutputPipe,
+    renderer: &mut GlesRenderer,
+    elements: &[SceneElement<GlesRenderer>],
+    scale: f64,
+) -> Option<SceneElement<GlesRenderer>> {
+    let color = output_color(&pipe.hdr_caps);
+    let size = pipe.output.current_transform().transform_size(pipe.mode.size);
+    let scale = Scale::from(scale);
+    if !pipe.hdr_pass.as_ref().is_some_and(|p| p.fits(size, scale)) {
+        match HdrPass::new(renderer, size, scale) {
+            Ok(pass) => {
+                info!("HDR composite: {}x{} FP16 intermediate", size.w, size.h);
+                pipe.hdr_pass = Some(pass);
+                publish(Some(color));
+            }
+            Err(e) => {
+                fall_back(pipe, &e);
+                return None;
+            }
+        }
+    }
+    let pass = pipe.hdr_pass.as_mut()?;
+    let tagged = describe::surfaces();
+    if let Err(e) = pass.render(renderer, elements, &tagged, &color) {
+        fall_back(pipe, &e);
+        return None;
+    }
+    Some(SceneElement::HdrEncode(scenegraph::scene::hdr::Encode(
+        pass.encode_element(&color),
+    )))
+}
 use smithay::reexports::drm::control::atomic::AtomicModeReq;
 use smithay::reexports::drm::control::{
     AtomicCommitFlags, Device as ControlDevice, connector, property,

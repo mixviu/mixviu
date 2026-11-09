@@ -157,9 +157,9 @@ fn bring_up(
         requested,
     )?;
     let env = model::environment::config::base::get();
-    // HDR output needs a Vulkan composite, which there is none of; GLES scans
-    // out SDR.
-    let new_hdr_active = env.hdr && built.hdr.hdr_capable() && false;
+    // HDR on a PQ-capable display when asked for (the GLES HDR composite,
+    // `render_gles::color::hdr`).
+    let new_hdr_active = env.hdr && built.hdr.hdr_capable();
     let new_mode = Mode::from(built.drm_mode);
     if replace {
         state
@@ -208,6 +208,10 @@ fn bring_up(
     ctx.pipe_mut().connector = built.connector;
     ctx.pipe_mut().hdr_caps = built.hdr;
     ctx.pipe_mut().hdr_active = new_hdr_active;
+    ctx.pipe_mut().hdr_pass = None;
+    if !new_hdr_active {
+        crate::render::execute::hdr::publish(None);
+    }
     ctx.pipe_mut().props_applied = false;
     ctx.pipe_mut().render_failures = 0;
     // Fresh scanout target — no page-flip is pending on it, so any flight the
@@ -358,8 +362,7 @@ fn add_output(
         .inner
         .map_output_everywhere(&output, smithay::utils::Point::from((x, 0)));
     let env = model::environment::config::base::get();
-    // viud: SDR only without the Vulkan renderer (see `new_hdr_active` above).
-    let hdr_active = env.hdr && built.hdr.hdr_capable() && false;
+    let hdr_active = env.hdr && built.hdr.hdr_capable();
     info!(
         "add_output: connector={:?} crtc={:?} mode={}x{} pos=({}, 0) → {} outputs total",
         built.connector,
@@ -376,6 +379,7 @@ fn add_output(
         drm_output: Some(built.drm_output),
         hdr_caps: built.hdr,
         hdr_active,
+        hdr_pass: None,
         props_applied: false,
         render_failures: 0,
         connector: built.connector,

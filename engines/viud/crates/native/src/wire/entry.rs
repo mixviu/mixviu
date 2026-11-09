@@ -142,8 +142,8 @@ pub fn wire(
     // leaving the client on 8-bit sRGB is the honest answer. Computed here rather
     // than with the HDR block below because the dmabuf feedback is built in
     // `lifecycle::initialize`, which is next.
-    // viud: only the Vulkan composite took a per-surface transfer (HDR); GLES is SDR.
-    let hdr_active = env.hdr && display.hdr.hdr_capable() && false;
+    // The GLES HDR composite decodes per surface (`render_gles::color::hdr`).
+    let hdr_active = env.hdr && display.hdr.hdr_capable();
     _loop
         .inner
         .kernel
@@ -241,6 +241,9 @@ pub fn wire(
         hdr_caps.colorimetry.bt2020_rgb,
         color_format,
     );
+    crate::render::execute::hdr::publish(
+        hdr_active.then(|| crate::render::execute::hdr::output_color(&hdr_caps)),
+    );
 
     let ctx_rc = Rc::new(RefCell::new(NativeRenderContext {
         display_handle: _loop.inner.loader.display_handle.clone(),
@@ -251,6 +254,7 @@ pub fn wire(
             drm_output: Some(renderer.drm_output),
             hdr_caps,
             hdr_active,
+            hdr_pass: None,
             props_applied: false,
             render_failures: 0,
             connector: display.connector.handle(),

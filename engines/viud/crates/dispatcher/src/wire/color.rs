@@ -1,59 +1,215 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+//! `wp_color_management_v1`: the vocabulary (what the manager advertises), the
+//! conversions between protocol values and `render_gles::color::hdr`
+//! descriptions, and the image-description info events. The request handlers
+//! are in `wire::colorsurf`.
+
+use render_gles::color::hdr::describe::{self, Description, Transfer};
+use render_gles::color::hdr::math::{self, BT709, BT2020, Chromaticity, D65, DISPLAY_P3};
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
     wp_color_manager_v1::{Feature, Primaries, RenderIntent, TransferFunction, WpColorManagerV1},
+    wp_image_description_info_v1::WpImageDescriptionInfoV1,
     wp_image_description_v1::WpImageDescriptionV1,
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch, Resource};
-use smithay::wayland::compositor::with_states;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 pub static IDENTITY: AtomicU32 = AtomicU32::new(1);
 
-#[derive(Debug, Clone, Copy)]
-pub struct SurfaceColor {
-    pub transfer: Option<TransferFunction>,
-    pub primaries: Option<Primaries>,
-}
-impl SurfaceColor {
-    pub fn is_hdr(&self) -> bool {
-        matches!(
-            self.transfer,
-            Some(TransferFunction::St2084Pq) | Some(TransferFunction::Hlg)
-        )
-    }
-}
-
-#[derive(Default)]
-pub struct ParamsState {
-    pub transfer: Option<TransferFunction>,
-    pub primaries: Option<Primaries>,
-}
-
+/// An image description object's data: the description, or `None` for one
+/// that was sent `failed` (any use of it is then a protocol error the client
+/// already knows about; it is treated as untagged).
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ImageDescData {
-    pub transfer: Option<TransferFunction>,
-    pub primaries: Option<Primaries>,
+pub struct ImageDescData(pub Option<Description>);
+
+/// A parametric creator's accumulated requests.
+#[derive(Debug, Default)]
+pub struct ParamsState {
+    pub transfer: Option<Transfer>,
+    pub primaries: Option<Chromaticity>,
+    /// (min, max, reference) in cd/m².
+    pub luminances: Option<(f64, f64, f64)>,
+    pub mastering_primaries: Option<Chromaticity>,
+    /// (min, max) in cd/m².
+    pub mastering_luminance: Option<(f64, f64)>,
+    pub max_cll: Option<f64>,
+    pub max_fall: Option<f64>,
+    /// Set by a request the compositor cannot honour; `create` then fails.
+    pub unsupported: Option<&'static str>,
 }
 
-pub fn transfer_code(tf: Option<TransferFunction>) -> u8 {
-    match tf {
-        Some(TransferFunction::St2084Pq) => 1,
-        Some(TransferFunction::Hlg) => 2,
-        Some(TransferFunction::ExtLinear) => 3,
-        _ => 0,
+impl ParamsState {
+    /// The finished description, or why it cannot be made.
+    pub fn build(&self) -> Result<Description, &'static str> {
+        if let Some(why) = self.unsupported {
+            return Err(why);
+        }
+        let (Some(transfer), Some(primaries)) = (self.transfer, self.primaries) else {
+            return Err("transfer function and primaries are both required");
+        };
+        let mut d = Description::new(transfer, primaries);
+        if let Some((min, max, reference)) = self.luminances {
+            if !(min < reference && min < max) {
+                return Err("luminances: min must be below reference and max");
+            }
+            d.lum_min = min;
+            // PQ's range is fixed by the transfer function itself.
+            if transfer != Transfer::Pq {
+                d.lum_max = max;
+            }
+            d.lum_ref = reference;
+        }
+        d.mastering_primaries = self.mastering_primaries;
+        if let Some((min, max)) = self.mastering_luminance {
+            d.mastering_min = Some(min);
+            d.mastering_max = Some(max);
+        }
+        d.max_cll = self.max_cll;
+        d.max_fall = self.max_fall;
+        Ok(d)
     }
 }
 
-pub fn store_surface_color(surface: &WlSurface, color: Option<SurfaceColor>) {
-    let hdr = color.map(|c| render_gles::color::surface::SurfaceHdr {
-        transfer: transfer_code(c.transfer),
-        is_hdr: c.is_hdr(),
-    });
-    with_states(surface, |states| {
-        render_gles::color::surface::set(states, hdr);
-    });
+pub fn transfer_from(tf: TransferFunction) -> Option<Transfer> {
+    Some(match tf {
+        TransferFunction::Srgb => Transfer::Srgb,
+        TransferFunction::Gamma22 => Transfer::Gamma22,
+        TransferFunction::Gamma28 => Transfer::Gamma28,
+        TransferFunction::Bt1886 => Transfer::Bt1886,
+        TransferFunction::ExtLinear => Transfer::Linear,
+        TransferFunction::St2084Pq => Transfer::Pq,
+        TransferFunction::Hlg => Transfer::Hlg,
+        _ => return None,
+    })
+}
+
+pub fn transfer_to(tf: Transfer) -> TransferFunction {
+    match tf {
+        Transfer::Srgb => TransferFunction::Srgb,
+        Transfer::Gamma22 => TransferFunction::Gamma22,
+        Transfer::Gamma28 => TransferFunction::Gamma28,
+        Transfer::Bt1886 => TransferFunction::Bt1886,
+        Transfer::Linear => TransferFunction::ExtLinear,
+        Transfer::Pq => TransferFunction::St2084Pq,
+        Transfer::Hlg => TransferFunction::Hlg,
+    }
+}
+
+const NAMED_TF: [TransferFunction; 7] = [
+    TransferFunction::Srgb,
+    TransferFunction::Gamma22,
+    TransferFunction::Gamma28,
+    TransferFunction::Bt1886,
+    TransferFunction::ExtLinear,
+    TransferFunction::St2084Pq,
+    TransferFunction::Hlg,
+];
+
+/// The named primaries the compositor knows the chromaticities of.
+pub fn primaries_from(p: Primaries) -> Option<Chromaticity> {
+    Some(match p {
+        Primaries::Srgb => BT709,
+        Primaries::Bt2020 => BT2020,
+        Primaries::DisplayP3 => DISPLAY_P3,
+        Primaries::DciP3 => Chromaticity {
+            w: (0.314, 0.351),
+            ..DISPLAY_P3
+        },
+        // BT.601 625-line (EBU).
+        Primaries::Pal => Chromaticity {
+            r: (0.640, 0.330),
+            g: (0.290, 0.600),
+            b: (0.150, 0.060),
+            w: D65,
+        },
+        // SMPTE 170M / BT.601 525-line.
+        Primaries::Ntsc => Chromaticity {
+            r: (0.630, 0.340),
+            g: (0.310, 0.595),
+            b: (0.155, 0.070),
+            w: D65,
+        },
+        Primaries::AdobeRgb => Chromaticity {
+            r: (0.640, 0.330),
+            g: (0.210, 0.710),
+            b: (0.150, 0.060),
+            w: D65,
+        },
+        _ => return None,
+    })
+}
+
+const NAMED_PRIMARIES: [Primaries; 7] = [
+    Primaries::Srgb,
+    Primaries::Bt2020,
+    Primaries::DisplayP3,
+    Primaries::DciP3,
+    Primaries::Pal,
+    Primaries::Ntsc,
+    Primaries::AdobeRgb,
+];
+
+fn named_primaries_of(c: &Chromaticity) -> Option<Primaries> {
+    NAMED_PRIMARIES
+        .into_iter()
+        .find(|p| primaries_from(*p).as_ref() == Some(c))
+}
+
+/// Protocol chromaticity (×1 000 000 integers) to xy.
+#[allow(clippy::too_many_arguments)]
+pub fn chromaticity(rx: i32, ry: i32, gx: i32, gy: i32, bx: i32, by: i32, wx: i32, wy: i32) -> Option<Chromaticity> {
+    let f = |v: i32| v as f64 / 1_000_000.0;
+    let c = Chromaticity {
+        r: (f(rx), f(ry)),
+        g: (f(gx), f(gy)),
+        b: (f(bx), f(by)),
+        w: (f(wx), f(wy)),
+    };
+    // Degenerate primaries (collinear, or a zero y) cannot form a matrix.
+    if [c.r.1, c.g.1, c.b.1, c.w.1].iter().any(|y| *y <= 0.0) {
+        return None;
+    }
+    math::rgb_to_xyz(&c)?;
+    Some(c)
+}
+
+fn xy6(c: &Chromaticity) -> [i32; 8] {
+    let i = |v: f64| (v * 1_000_000.0).round() as i32;
+    [
+        i(c.r.0),
+        i(c.r.1),
+        i(c.g.0),
+        i(c.g.1),
+        i(c.b.0),
+        i(c.b.1),
+        i(c.w.0),
+        i(c.w.1),
+    ]
+}
+
+/// What the compositor wants surfaces in: the HDR output's description (PQ,
+/// BT.2020, reference white at the SDR white, the display's volume as the
+/// target), or plain sRGB.
+pub fn preferred() -> Description {
+    match describe::output() {
+        Some(out) => {
+            let mut d = Description::new(Transfer::Pq, BT2020);
+            d.lum_ref = out.sdr_white;
+            d.mastering_primaries = Some(out.display);
+            d.mastering_min = Some(out.min);
+            d.mastering_max = Some(out.max);
+            d.max_cll = Some(out.max);
+            d
+        }
+        None => Description::srgb(),
+    }
+}
+
+/// The surface's description, for the composite (`None` clears it).
+pub fn store_surface_color(surface: &WlSurface, description: Option<Description>) {
+    describe::set_surface(surface, description);
 }
 
 pub fn send_ready(desc: &WpImageDescriptionV1) {
@@ -63,6 +219,37 @@ pub fn send_ready(desc: &WpImageDescriptionV1) {
     } else {
         desc.ready(id);
     }
+}
+
+/// The info events for `d`, then `done`.
+pub fn send_info(info: &WpImageDescriptionInfoV1, d: &Description) {
+    match named_primaries_of(&d.primaries) {
+        Some(p) => info.primaries_named(p),
+        None => {
+            let [rx, ry, gx, gy, bx, by, wx, wy] = xy6(&d.primaries);
+            info.primaries(rx, ry, gx, gy, bx, by, wx, wy);
+        }
+    }
+    info.tf_named(transfer_to(d.transfer));
+    info.luminances(
+        (d.lum_min * 10000.0).round() as u32,
+        d.lum_max.round() as u32,
+        d.lum_ref.round() as u32,
+    );
+    let target = d.mastering_primaries.unwrap_or(d.primaries);
+    let [rx, ry, gx, gy, bx, by, wx, wy] = xy6(&target);
+    info.target_primaries(rx, ry, gx, gy, bx, by, wx, wy);
+    info.target_luminance(
+        (d.mastering_min.unwrap_or(d.lum_min) * 10000.0).round() as u32,
+        d.mastering_max.unwrap_or(d.lum_max).round() as u32,
+    );
+    if let Some(cll) = d.max_cll {
+        info.target_max_cll(cll.round() as u32);
+    }
+    if let Some(fall) = d.max_fall {
+        info.target_max_fall(fall.round() as u32);
+    }
+    info.done();
 }
 
 pub fn wenum<T: TryFrom<u32>>(w: smithay::reexports::wayland_server::WEnum<T>) -> Option<T> {
@@ -78,20 +265,61 @@ pub fn create_global<W: GlobalDispatch<WpColorManagerV1, ()> + 'static>(dh: &Dis
 
 pub fn bind_color_manager(mgr: WpColorManagerV1) {
     mgr.supported_intent(RenderIntent::Perceptual);
-    mgr.supported_feature(Feature::Parametric);
-    mgr.supported_feature(Feature::SetLuminances);
-    mgr.supported_feature(Feature::SetMasteringDisplayPrimaries);
-    for tf in [
-        TransferFunction::Srgb,
-        TransferFunction::Gamma22,
-        TransferFunction::ExtLinear,
-        TransferFunction::St2084Pq,
-        TransferFunction::Hlg,
+    for feature in [
+        Feature::Parametric,
+        Feature::SetPrimaries,
+        Feature::SetLuminances,
+        Feature::SetMasteringDisplayPrimaries,
+        Feature::ExtendedTargetVolume,
+        Feature::WindowsScrgb,
     ] {
+        mgr.supported_feature(feature);
+    }
+    for tf in NAMED_TF {
         mgr.supported_tf_named(tf);
     }
-    for p in [Primaries::Srgb, Primaries::DisplayP3, Primaries::Bt2020] {
+    for p in NAMED_PRIMARIES {
         mgr.supported_primaries_named(p);
     }
     mgr.done();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_advertised_name_converts() {
+        for tf in NAMED_TF {
+            assert_eq!(transfer_to(transfer_from(tf).unwrap()), tf);
+        }
+        for p in NAMED_PRIMARIES {
+            let c = primaries_from(p).unwrap();
+            assert_eq!(named_primaries_of(&c), Some(p));
+            assert!(math::rgb_to_xyz(&c).is_some());
+        }
+    }
+
+    #[test]
+    fn a_creator_needs_both_names_and_sane_luminances() {
+        let mut s = ParamsState::default();
+        assert!(s.build().is_err());
+        s.transfer = Some(Transfer::Pq);
+        s.primaries = Some(BT2020);
+        let d = s.build().unwrap();
+        assert_eq!((d.lum_max, d.lum_ref), (10000.0, 203.0));
+        s.luminances = Some((0.01, 400.0, 300.0));
+        let d = s.build().unwrap();
+        // PQ keeps its fixed range; the reference moves.
+        assert_eq!((d.lum_max, d.lum_ref), (10000.0, 300.0));
+        s.luminances = Some((500.0, 400.0, 300.0));
+        assert!(s.build().is_err());
+    }
+
+    #[test]
+    fn protocol_chromaticity_round_trips() {
+        let [rx, ry, gx, gy, bx, by, wx, wy] = xy6(&BT2020);
+        assert_eq!(chromaticity(rx, ry, gx, gy, bx, by, wx, wy), Some(BT2020));
+        assert_eq!(chromaticity(0, 0, 0, 0, 0, 0, 0, 0), None);
+    }
 }

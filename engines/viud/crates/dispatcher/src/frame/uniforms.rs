@@ -148,8 +148,19 @@ pub fn draw_pixel_program(
 /// logged once.
 #[derive(Default)]
 struct TexPrograms(
-    std::cell::RefCell<std::collections::HashMap<&'static str, Option<GlesTexProgram>>>,
+    std::cell::RefCell<std::collections::HashMap<&'static str, Option<TexProgram>>>,
 );
+
+/// A custom texture program in both builds: `sdr` as written, and `hdr` with
+/// the HDR composite's decode stage applied to its output (`VIU_OUT(color)`,
+/// see `render_gles::color::hdr::glsl::inject_decode`). `hdr` is `None` for a
+/// source without the marker, or when that build did not compile; such a
+/// program draws undecoded inside an HDR composite.
+#[derive(Clone, Debug)]
+pub struct TexProgram {
+    pub sdr: GlesTexProgram,
+    pub hdr: Option<GlesTexProgram>,
+}
 
 /// GLES body for `SceneDispatch::tex_program`.
 pub fn tex_program(
@@ -157,7 +168,7 @@ pub fn tex_program(
     key: &'static str,
     source: &'static str,
     uniforms: &[UniformName<'static>],
-) -> Option<GlesTexProgram> {
+) -> Option<TexProgram> {
     let cached = renderer
         .egl_context()
         .user_data()
@@ -171,8 +182,22 @@ pub fn tex_program(
     // push fail with UnknownUniform at draw time.
     let mut names: Vec<UniformName<'static>> = uniforms.to_vec();
     names.push(UniformName::new("u_frag_to_phys", UniformType::Matrix3x3));
-    let compiled = match renderer.compile_custom_texture_shader(source, &names) {
-        Ok(program) => Some(program),
+    use render_gles::color::hdr::glsl;
+    let compiled = match renderer.compile_custom_texture_shader(glsl::sdr_variant(source), &names)
+    {
+        Ok(sdr) => {
+            let hdr = glsl::inject_decode(source).and_then(|hdr_source| {
+                let mut hdr_names = names.clone();
+                hdr_names.extend(glsl::decode_uniforms());
+                renderer
+                    .compile_custom_texture_shader(hdr_source, &hdr_names)
+                    .map_err(|err| {
+                        warn!("texture program {key}: HDR build did not compile ({err:?})")
+                    })
+                    .ok()
+            });
+            Some(TexProgram { sdr, hdr })
+        }
         Err(err) => {
             warn!(
                 "texture program {key} did not compile ({err:?}); drawing with the default program"
@@ -192,11 +217,20 @@ pub fn tex_program(
 /// frame's default texture program, with `uniforms` plus `u_frag_to_phys`.
 pub fn push_tex_program(
     frame: &mut GlesFrame<'_, '_>,
-    program: Option<&GlesTexProgram>,
+    program: Option<&TexProgram>,
     mut uniforms: Vec<Uniform<'static>>,
 ) {
     let Some(program) = program else {
         return;
+    };
+    // Inside the HDR composite's decode, the program's HDR build carries the
+    // decode on; without one it draws undecoded (never not at all).
+    let program = match (render_gles::color::hdr::pass::active_decode(), &program.hdr) {
+        (Some((_, decode)), Some(hdr)) => {
+            uniforms.extend(decode);
+            hdr
+        }
+        _ => &program.sdr,
     };
     let projection = *frame.projection();
     let mut viewport = [0i32; 4];
@@ -226,6 +260,15 @@ pub fn push_tex_program(
         },
     ));
     frame.override_default_tex_program(program.clone(), uniforms);
+}
+
+/// GLES body for `SceneDispatch::pop_tex_program`: back to the HDR decode when
+/// one is in force for this element, else to smithay's default program.
+pub fn pop_tex_program(frame: &mut GlesFrame<'_, '_>) {
+    match render_gles::color::hdr::pass::active_decode() {
+        Some((program, uniforms)) => frame.override_default_tex_program(program, uniforms),
+        None => frame.clear_tex_program_override(),
+    }
 }
 
 /// The column-major 3x3 that takes `gl_FragCoord.xy` (window coordinates of

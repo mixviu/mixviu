@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::wire::color::{
-    ImageDescData, ParamsState, SurfaceColor, send_ready, store_surface_color, wenum,
+    ImageDescData, ParamsState, chromaticity, preferred, primaries_from, send_info, send_ready,
+    store_surface_color, transfer_from, wenum,
 };
+use render_gles::color::hdr::describe::{Description, Transfer};
+use render_gles::color::hdr::math::BT709;
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
     wp_color_management_output_v1::{Request as OutReq, WpColorManagementOutputV1},
     wp_color_management_surface_feedback_v1::{
         Request as FbReq, WpColorManagementSurfaceFeedbackV1,
     },
     wp_color_management_surface_v1::{Request as SurfReq, WpColorManagementSurfaceV1},
-    wp_color_manager_v1::{Primaries, Request as MgrReq, TransferFunction},
+    wp_color_manager_v1::Request as MgrReq,
     wp_image_description_creator_icc_v1::{Request as IccReq, WpImageDescriptionCreatorIccV1},
     wp_image_description_creator_params_v1::{Request as PrReq, WpImageDescriptionCreatorParamsV1},
     wp_image_description_info_v1::WpImageDescriptionInfoV1,
@@ -19,13 +22,21 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DataInit, Dispatch, Resource};
 use std::sync::Mutex;
 
-fn srgb() -> ImageDescData {
-    ImageDescData {
-        transfer: Some(TransferFunction::Srgb),
-        primaries: Some(Primaries::Srgb),
-    }
-}
 type DI<'a, W> = DataInit<'a, W>;
+
+/// Windows scRGB: linear BT.709, 1.0 = 80 cd/m², the output's volume as the
+/// target (the protocol's definition).
+fn scrgb() -> Description {
+    let mut d = Description::new(Transfer::Linear, BT709);
+    d.lum_min = 0.0;
+    d.lum_max = 80.0;
+    d.lum_ref = 80.0;
+    let target = preferred();
+    d.mastering_min = target.mastering_min;
+    d.mastering_max = target.mastering_max;
+    d.mastering_primaries = target.mastering_primaries;
+    d
+}
 
 pub fn dispatch_color_manager<W>(req: MgrReq, di: &mut DI<'_, W>)
 where
@@ -54,13 +65,12 @@ where
             di.init(obj, Mutex::new(ParamsState::default()));
         }
         MgrReq::CreateWindowsScrgb { image_description } => {
-            di.init(image_description, ImageDescData::default())
-                .failed(Cause::Unsupported, "windows scRGB not supported".into());
+            send_ready(&di.init(image_description, ImageDescData(Some(scrgb()))));
         }
         MgrReq::GetImageDescription {
             image_description, ..
         } => {
-            send_ready(&di.init(image_description, srgb()));
+            send_ready(&di.init(image_description, ImageDescData(Some(preferred()))));
         }
         _ => {}
     }
@@ -71,24 +81,22 @@ pub fn dispatch_color_output<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
     di: &mut DI<'_, W>,
 ) {
     if let OutReq::GetImageDescription { image_description } = req {
-        send_ready(&di.init(image_description, srgb()));
+        send_ready(&di.init(image_description, ImageDescData(Some(preferred()))));
     }
 }
 
+/// Simplification: the description applies at once rather than on the next
+/// `wl_surface.commit` (the protocol double-buffers it). A client sets it
+/// before attaching the buffer it describes, which is what matters.
 pub fn dispatch_color_surface(req: SurfReq, surface: &WlSurface) {
     match req {
         SurfReq::SetImageDescription {
             image_description, ..
         } => {
-            if let Some(d) = image_description.data::<ImageDescData>() {
-                store_surface_color(
-                    surface,
-                    Some(SurfaceColor {
-                        transfer: d.transfer,
-                        primaries: d.primaries,
-                    }),
-                );
-            }
+            let d = image_description
+                .data::<ImageDescData>()
+                .and_then(|d| d.0);
+            store_surface_color(surface, d);
         }
         SurfReq::UnsetImageDescription | SurfReq::Destroy => {
             store_surface_color(surface, None);
@@ -104,7 +112,7 @@ pub fn dispatch_color_feedback<W: Dispatch<WpImageDescriptionV1, ImageDescData> 
     match req {
         FbReq::GetPreferred { image_description }
         | FbReq::GetPreferredParametric { image_description } => {
-            send_ready(&di.init(image_description, srgb()));
+            send_ready(&di.init(image_description, ImageDescData(Some(preferred()))));
         }
         _ => {}
     }
@@ -115,23 +123,65 @@ pub fn dispatch_color_params<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
     data: &Mutex<ParamsState>,
     di: &mut DI<'_, W>,
 ) {
+    let mut p = data.lock().unwrap();
     match req {
-        PrReq::SetTfNamed { tf } => {
-            data.lock().unwrap().transfer = wenum(tf);
-        }
-        PrReq::SetPrimariesNamed { primaries } => {
-            data.lock().unwrap().primaries = wenum(primaries);
-        }
-        PrReq::Create { image_description } => {
-            let p = data.lock().unwrap();
-            send_ready(&di.init(
-                image_description,
-                ImageDescData {
-                    transfer: p.transfer,
-                    primaries: p.primaries,
-                },
+        PrReq::SetTfNamed { tf } => match wenum(tf).and_then(transfer_from) {
+            Some(t) => p.transfer = Some(t),
+            None => p.unsupported = Some("transfer function not supported"),
+        },
+        PrReq::SetTfPower { .. } => p.unsupported = Some("power transfer functions not supported"),
+        PrReq::SetPrimariesNamed { primaries } => match wenum(primaries).and_then(primaries_from) {
+            Some(c) => p.primaries = Some(c),
+            None => p.unsupported = Some("named primaries not supported"),
+        },
+        PrReq::SetPrimaries {
+            r_x,
+            r_y,
+            g_x,
+            g_y,
+            b_x,
+            b_y,
+            w_x,
+            w_y,
+        } => match chromaticity(r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y) {
+            Some(c) => p.primaries = Some(c),
+            None => p.unsupported = Some("degenerate primaries"),
+        },
+        PrReq::SetLuminances {
+            min_lum,
+            max_lum,
+            reference_lum,
+        } => {
+            p.luminances = Some((
+                min_lum as f64 / 10000.0,
+                max_lum as f64,
+                reference_lum as f64,
             ));
         }
+        PrReq::SetMasteringDisplayPrimaries {
+            r_x,
+            r_y,
+            g_x,
+            g_y,
+            b_x,
+            b_y,
+            w_x,
+            w_y,
+        } => {
+            p.mastering_primaries = chromaticity(r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y);
+        }
+        PrReq::SetMasteringLuminance { min_lum, max_lum } => {
+            p.mastering_luminance = Some((min_lum as f64 / 10000.0, max_lum as f64));
+        }
+        PrReq::SetMaxCll { max_cll } => p.max_cll = Some(max_cll as f64),
+        PrReq::SetMaxFall { max_fall } => p.max_fall = Some(max_fall as f64),
+        PrReq::Create { image_description } => match p.build() {
+            Ok(d) => send_ready(&di.init(image_description, ImageDescData(Some(d)))),
+            Err(why) => {
+                di.init(image_description, ImageDescData(None))
+                    .failed(Cause::Unsupported, why.into());
+            }
+        },
         _ => {}
     }
 }
@@ -141,7 +191,7 @@ pub fn dispatch_color_icc<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 'st
     di: &mut DI<'_, W>,
 ) {
     if let IccReq::Create { image_description } = req {
-        di.init(image_description, ImageDescData::default())
+        di.init(image_description, ImageDescData(None))
             .failed(Cause::Unsupported, "ICC profiles not supported".into());
     }
 }
@@ -153,12 +203,9 @@ pub fn dispatch_image_desc<W: Dispatch<WpImageDescriptionInfoV1, ()> + 'static>(
 ) {
     if let DsReq::GetInformation { information } = req {
         let info: WpImageDescriptionInfoV1 = di.init(information, ());
-        if let Some(p) = data.primaries {
-            info.primaries_named(p);
+        match &data.0 {
+            Some(d) => send_info(&info, d),
+            None => info.done(),
         }
-        if let Some(tf) = data.transfer {
-            info.tf_named(tf);
-        }
-        info.done();
     }
 }
