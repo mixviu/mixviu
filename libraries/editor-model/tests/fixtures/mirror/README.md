@@ -2,7 +2,7 @@
 
 Each `*.json` file is one scripted scenario. The server-side runner
 (`tests/fixture_server_side.rs`) plays every **server-side** step against the
-fake editd (`src/fake.rs`, which wraps the real `edit::Buffer`) and checks
+fake editd (`libraries/editor-model/src/fake.rs`, which wraps the real `edit::Buffer`) and checks
 every declared server expectation. That way a contradictory fixture fails in
 the server-side runner, not in the mirror test. The mirror test
 (`tests/mirror_convergence.rs`) then drives a `Mirror` through the whole script

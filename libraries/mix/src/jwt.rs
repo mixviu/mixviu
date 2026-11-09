@@ -7,7 +7,10 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::rand::SystemRandom;
 use ring::signature::{RSA_PKCS1_SHA256, RsaKeyPair};
-use rustls_pemfile::Item;
+use rustls_pki_types::{
+    PrivateKeyDer as Item,
+    pem::{PemObject, from_buf},
+};
 use serde_json::{Map, Value};
 use std::io::Cursor;
 
@@ -72,15 +75,16 @@ pub(crate) fn sign_rs256(
     }
 
     let mut pem_cursor = Cursor::new(private_pem.as_bytes());
-    let item = rustls_pemfile::read_one(&mut pem_cursor)
+    let item = from_buf(&mut pem_cursor)
         .map_err(|_| MixError::structured("JWT_KEY_INVALID", "Failed to read PEM"))?
         .ok_or_else(|| MixError::structured("JWT_KEY_INVALID", "No PEM item found"))?;
 
+    let item = Item::from_pem(item.0, item.1);
     let key_pair = match item {
-        Item::Pkcs8Key(key) => RsaKeyPair::from_pkcs8(key.secret_pkcs8_der()).map_err(|_| {
+        Some(Item::Pkcs8(key)) => RsaKeyPair::from_pkcs8(key.secret_pkcs8_der()).map_err(|_| {
             MixError::structured("JWT_KEY_INVALID", "Invalid PKCS8 RSA key structure")
         })?,
-        Item::Pkcs1Key(key) => RsaKeyPair::from_der(key.secret_pkcs1_der()).map_err(|_| {
+        Some(Item::Pkcs1(key)) => RsaKeyPair::from_der(key.secret_pkcs1_der()).map_err(|_| {
             MixError::structured("JWT_KEY_INVALID", "Invalid PKCS1 RSA key structure")
         })?,
         _ => {
@@ -131,6 +135,16 @@ mod tests {
     }
 
     #[test]
+    fn certificate_before_key_is_not_silently_skipped() {
+        let pem = format!(
+            "-----BEGIN CERTIFICATE-----\nAQ==\n-----END CERTIFICATE-----\n{}",
+            get_test_key()
+        );
+        let error = sign_rs256("{}", &pem, None).unwrap_err();
+        assert!(format!("{error:?}").contains("JWT_KEY_INVALID"));
+    }
+
+    #[test]
     fn oversized_inputs_are_refused_without_echoing_them() {
         let sentinel = "PRIVATE_INPUT_SENTINEL";
         let oversized = sentinel.repeat(MAX_INPUT_LEN / sentinel.len() + 1);
@@ -167,10 +181,11 @@ mod tests {
 
         // Verify output via ring public key verifier
         let mut cursor = Cursor::new(pem.as_bytes());
-        let item = rustls_pemfile::read_one(&mut cursor).unwrap().unwrap();
+        let item = from_buf(&mut cursor).unwrap().unwrap();
+        let item = Item::from_pem(item.0, item.1);
         let key_pair = match item {
-            Item::Pkcs8Key(k) => RsaKeyPair::from_pkcs8(k.secret_pkcs8_der()).unwrap(),
-            Item::Pkcs1Key(k) => RsaKeyPair::from_der(k.secret_pkcs1_der()).unwrap(),
+            Some(Item::Pkcs8(k)) => RsaKeyPair::from_pkcs8(k.secret_pkcs8_der()).unwrap(),
+            Some(Item::Pkcs1(k)) => RsaKeyPair::from_der(k.secret_pkcs1_der()).unwrap(),
             _ => panic!("Unexpected key type"),
         };
 
@@ -207,10 +222,11 @@ mod tests {
         let sig_bytes = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
 
         let mut cursor = Cursor::new(pem.as_bytes());
-        let item = rustls_pemfile::read_one(&mut cursor).unwrap().unwrap();
+        let item = from_buf(&mut cursor).unwrap().unwrap();
+        let item = Item::from_pem(item.0, item.1);
         let key_pair = match item {
-            Item::Pkcs8Key(k) => RsaKeyPair::from_pkcs8(k.secret_pkcs8_der()).unwrap(),
-            Item::Pkcs1Key(k) => RsaKeyPair::from_der(k.secret_pkcs1_der()).unwrap(),
+            Some(Item::Pkcs8(k)) => RsaKeyPair::from_pkcs8(k.secret_pkcs8_der()).unwrap(),
+            Some(Item::Pkcs1(k)) => RsaKeyPair::from_der(k.secret_pkcs1_der()).unwrap(),
             _ => panic!("Unexpected key type"),
         };
 

@@ -499,6 +499,15 @@ impl<'a> Builder<'a> {
             return None;
         }
         let node = nodes.get(id)?;
+        if flag(node, "hidden") {
+            return None;
+        }
+        if *source == Source::Tree
+            && let Some(target) = crate::images::fallback_reference(&self.content.tree, id)
+            && self.images.contains_key(&crate::images::key(target, None))
+        {
+            return self.element(nodes, target, parent, origin, depth + 1);
+        }
         if !self.drawn(id, node, *source != Source::Tree) {
             return None;
         }

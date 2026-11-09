@@ -42,6 +42,9 @@ pub struct Piece<R: Renderer> {
 }
 
 impl<R: Renderer> Element for Piece<R> {
+    fn alpha(&self) -> f32 {
+        self.inner.alpha()
+    }
     fn id(&self) -> &Id {
         &self.id
     }
@@ -376,6 +379,7 @@ fn piece<R>(
     src: Rectangle<f64, Buffer>,
     dst: Rectangle<i32, Physical>,
     clip: Rectangle<i32, Physical>,
+    opacity: f32,
 ) -> Option<ChromeElement<R>>
 where
     R: Renderer + ImportMem,
@@ -403,7 +407,7 @@ where
         renderer,
         clipped.loc.to_f64(),
         buffer,
-        None,
+        Some(opacity),
         None,
         None,
         Kind::Unspecified,
@@ -430,6 +434,7 @@ pub fn elements<R>(
     scale: f64,
     clip: Rectangle<i32, Physical>,
     pass: Pass,
+    opacity: f32,
 ) -> Elements<R>
 where
     R: Renderer + ImportMem,
@@ -499,6 +504,7 @@ where
             Rectangle::from_size(size.to_f64()),
             dst,
             clip,
+            opacity,
         ) {
             out.front.push(e);
         }
@@ -608,7 +614,8 @@ where
                 for (id, (sx, _), (dx, dy)) in pieces {
                     let src = Rectangle::new((sx, 0.0).into(), (rr as f64, rr as f64).into());
                     let dst = Rectangle::new((dx, dy).into(), (rr, rr).into());
-                    if let Some(e) = piece(renderer, id, wc.commit, buffer, src, dst, clip) {
+                    if let Some(e) = piece(renderer, id, wc.commit, buffer, src, dst, clip, opacity)
+                    {
                         out.front.push(e);
                     }
                 }
@@ -688,6 +695,7 @@ where
                         src,
                         dst,
                         clip,
+                        opacity,
                     ) {
                         out.back.push(e);
                     }

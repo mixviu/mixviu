@@ -131,7 +131,7 @@ async fn handle_check(cmd: &IncomingCommand, state: &DkimState) -> Result<JsonVa
         (selector, pem)
     };
     let name = format!("{selector}._domainkey.{domain}.");
-    let resolver = hickory_resolver::TokioResolver::builder_tokio()?.build();
+    let resolver = hickory_resolver::TokioResolver::builder_tokio()?.build()?;
     check_published(&resolver, &name, &pem).await?;
     Ok(json!({"domain":domain,"selector":selector,"dns_name":name,"matches":true}))
 }
@@ -143,10 +143,15 @@ async fn check_published(
 ) -> Result<()> {
     let records = resolver.txt_lookup(name).await?;
     let records: Vec<String> = records
+        .answers()
         .iter()
+        .filter_map(|record| match &record.data {
+            hickory_resolver::proto::rr::RData::TXT(txt) => Some(txt),
+            _ => None,
+        })
         .map(|txt| {
             String::from_utf8(
-                txt.txt_data()
+                txt.txt_data
                     .iter()
                     .flat_map(|part| part.iter().copied())
                     .collect(),
@@ -692,11 +697,10 @@ mod tests {
     async fn check_fetches_chunked_dns_txt_and_refuses_wrong_key() {
         use hickory_resolver::{
             config::{NameServerConfig, ResolverConfig},
-            name_server::TokioConnectionProvider,
+            net::runtime::TokioRuntimeProvider,
             proto::{
                 op::{Message, MessageType},
                 rr::{RData, Record, rdata::TXT},
-                xfer::Protocol,
             },
         };
         let material = keygen::generate(KeySpec::Rsa { bits: 2048 }).unwrap();
@@ -708,22 +712,25 @@ mod tests {
             let (n, peer) = socket.recv_from(&mut buf).await.unwrap();
             let query = Message::from_vec(&buf[..n]).unwrap();
             assert_eq!(
-                query.queries()[0].name().to_utf8(),
+                query.queries.as_slice()[0].name().to_utf8(),
                 "s2026a._domainkey.example.com."
             );
-            let mut answer = Message::new();
-            answer
-                .set_id(query.id())
-                .set_message_type(MessageType::Response)
-                .set_recursion_available(true);
-            answer.add_queries(query.queries().iter().cloned());
+            let mut answer = Message::new(
+                0,
+                hickory_resolver::proto::op::MessageType::Query,
+                hickory_resolver::proto::op::OpCode::Query,
+            );
+            answer.metadata.id = query.metadata.id;
+            answer.metadata.message_type = MessageType::Response;
+            answer.metadata.recursion_available = true;
+            answer.add_queries(query.queries.as_slice().iter().cloned());
             let parts = txt
                 .as_bytes()
                 .chunks(200)
                 .map(|s| String::from_utf8(s.to_vec()).unwrap())
                 .collect();
             answer.add_answer(Record::from_rdata(
-                query.queries()[0].name().clone(),
+                query.queries.as_slice()[0].name().clone(),
                 300,
                 RData::TXT(TXT::new(parts)),
             ));
@@ -735,13 +742,18 @@ mod tests {
         let config = ResolverConfig::from_parts(
             None,
             vec![],
-            vec![NameServerConfig::new(addr, Protocol::Udp)],
+            vec![{
+                let mut server = NameServerConfig::udp(addr.ip());
+                server.connections[0].port = addr.port();
+                server
+            }],
         );
         let resolver = hickory_resolver::TokioResolver::builder_with_config(
             config,
-            TokioConnectionProvider::default(),
+            TokioRuntimeProvider::default(),
         )
-        .build();
+        .build()
+        .unwrap();
         check_published(
             &resolver,
             "s2026a._domainkey.example.com.",

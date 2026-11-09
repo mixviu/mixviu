@@ -24,26 +24,79 @@ use crate::state::Loop;
 
 thread_local! {
     /// The CompState revision the last stamp ran at.
-    static STAMPED: Cell<Option<u64>> = const { Cell::new(None) };
+    static STAMPED: Cell<Option<(u64, u64)>> = const { Cell::new(None) };
 }
 
 /// One loop pass: stamp every world window with the policy's hidden decision,
 /// when CompState moved since the last stamp. Returns whether any stamp
 /// changed.
-pub fn sync_hidden(lp: &Loop) -> bool {
-    let revision = lp.inner.comp.revision();
+pub fn sync_hidden(lp: &mut Loop) -> bool {
+    let revision = (
+        lp.inner.comp.revision(),
+        smithay::desktop::space::membership_revision(),
+    );
     if STAMPED.with(Cell::get) == Some(revision) {
         return false;
     }
     STAMPED.with(|stamped| stamped.set(Some(revision)));
+    // Space ownership may change without a visibility revision. Reconcile the
+    // persistent request in the owning world's order before draw or hit testing.
+    let updates: Vec<_> = lp
+        .inner
+        .all_world_spaces()
+        .into_iter()
+        .flat_map(|s| s.state.elements())
+        .filter_map(|w| {
+            let id = comp_id(lp, w)?;
+            Some((
+                lp.inner.world_of_window(w)?,
+                lp.inner.comp.registry.uuid_for(id)?,
+                lp.inner.comp.visual(id).z,
+            ))
+        })
+        .collect();
+    for (owner, uuid, z) in updates {
+        lp.inner
+            .worlds
+            .get_mut(owner)
+            .storage_mut()
+            .get_mut(&crate::order::track::base::DRAW_ORDER_MUT)
+            .set_z(crate::order::track::base::ComponentId(uuid), z);
+    }
     let comp = &lp.inner.comp;
     let mut changed = false;
     for space in lp.inner.all_world_spaces() {
         for window in space.state.elements() {
+            let visual = SurfaceHandle::of_window(window)
+                .and_then(|h| comp.registry.id_for_handle(&h))
+                .map(|id| comp.visual(id))
+                .unwrap_or_default();
+            *window
+                .user_data()
+                .get_or_insert(|| {
+                    std::sync::Mutex::new(comp_model::request::VisualAttributes::default())
+                })
+                .lock()
+                .unwrap() = visual;
             let hidden =
                 SurfaceHandle::of_window(window).is_some_and(|handle| comp.hidden(&handle));
             changed |= ident::set_hidden(window, hidden);
         }
     }
     changed
+}
+
+fn comp_id(lp: &Loop, window: &smithay::desktop::Window) -> Option<surfaces::SurfaceId> {
+    let id = lp
+        .inner
+        .comp
+        .registry
+        .id_for_handle(&SurfaceHandle::of_window(window)?)?;
+    lp.inner
+        .comp
+        .registry
+        .get(id)?
+        .role()
+        .managed_toplevel()
+        .then_some(id)
 }

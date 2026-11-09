@@ -9,7 +9,7 @@ File hashes and reasons are in imports.json. No source history was transplanted.
   machinery and its tests/fixtures.
 - libraries/expr and libraries/strict: that library's complete first-party
   dependency closure, with tests/fixtures.
-- apps/quoin/volume: one existing useful shell specimen, its template and the
+- apps/volume-lab/volume: one existing useful shell specimen, its template and the
   seven helper modules its current module-level dependency graph requires.
 
 The helpers remain a captured baseline; their current broad models module

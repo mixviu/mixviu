@@ -1,0 +1,19 @@
+-- version: 0.1.0
+-- Passive preview: the real loader's file, metadata, envelope and behaviour
+-- checks, without launching a citizen or touching a live shell.
+$l = require("lib/scenes.mix")
+$io = require("lib/scenes_io.mix")
+$argv = args()
+$dir = realpath($argv[0])
+$name = basename($dir)
+$s = $l.initial(dirname($dir), $io.templates($0), "preview", "preview", $io)
+$s.library_checked = {}
+for $lib in $l.library_roots($s) $s = $l.check_library($s, $lib) end
+$c = $l.candidate($s, $name, $dir)
+if $c.behaviour_digest != "" then $io.check($dir .. "/behaviour.mix", {lint:"deny"}) end
+$model = $c.model
+if len($argv) > 1 then
+  $model = json_parse($l.bounded_read($argv[1], 262144))
+  if type($model) != "map" then raise("SCENES_MODEL", "recorded model must be a JSON object", {}) end
+end
+print($l.with_model($c.source, $model))

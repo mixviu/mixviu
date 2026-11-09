@@ -1,12 +1,12 @@
 ---
 title: mix — changelog
-description: Release notes of the mix component, mirrored from libs/mix/CHANGELOG.md.
-generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
+description: Release notes of the mix component, mirrored from libraries/mix/CHANGELOG.md.
+generated: by docs/_build/gen-site.mix from libraries/mix/CHANGELOG.md; do not edit
 ---
 
 # Changelog
 
-> Mirrored from [`libs/mix/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
+> Mirrored from [`libraries/mix/CHANGELOG.md`](https://github.com/mixviu/mixviu/blob/main/libraries/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
 

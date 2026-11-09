@@ -220,6 +220,7 @@ pub fn register(
                         if !state.state.tablet.has_tablets() {
                             state.state.tablet.clear_tools();
                         }
+                        seat::pointer::input::tablet::revoke::flush(state, 0);
                     }
                     if device.has_capability(DeviceCapability::TabletPad) {
                         state.state.tablet.remove_pad(device.sysname());
