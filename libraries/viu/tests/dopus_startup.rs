@@ -31,6 +31,8 @@ fn bundle_autostarts_and_embedded_host_initialises_before_first_command() {
         if embedded {
             // The legacy Rust host was retired at cut-over. Retain the
             // explicit embedded contract alongside the production bundle.
+            // The test-only argv prefix displaces the lint host header;
+            // Runtime supplies native bindings independently of that header.
             runtime
                 .load(Program {
                     source: "$app_args=nil\n".to_owned()

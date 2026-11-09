@@ -2,7 +2,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 $policy=require("macro-policy.mix")
-$panel=$policy.panel
+$panel=merge($policy.panel,{})
 on macros.call
   try
     $s=$panel;$a=$event.args

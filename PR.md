@@ -43,7 +43,7 @@ in `app.mix`; the migrated chooser, raw-name and filesystem tests are retained.
   are recorded below. No per-file/code entry may grow.
 - Security scan: three exact historical findings in `.gitleaksignore` cover
   terminal shortcut help and two notes quoting it in another open branch.
-  The full-history CI checkout fetches that branch too. These are confirmed
+  These fingerprints already exist on main; this PR changes only their comment. These are confirmed
   text false positives; secret-detection rules and workflow coverage remain.
 
 ### Dopus launcher audit after cut-over
@@ -81,10 +81,102 @@ service files. Remaining diagnostics inherited from main, including the newer
 Email sibling modules, webd examples/widgets and intentional negative tests,
 stay in the ratchet; this refresh does not broaden that migration.
 
+### Per-file baseline provenance (review round)
+
+Compared with main at d17f7caa. Counts below are per code, before → after.
+
+| File | Entries reduced or removed | Cause |
+| --- | --- | --- |
+| `apps/backdrop/app.mix` | MIX-W2401: 1 → 0 | Host declaration (viu vocabulary); require resolution; source replaced by require/inlining |
+| `apps/backdrop/decode-job.mix` | MIX-E1102: 3 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/backdrop/probe.mix` | MIX-E1102: 2 → 0 | Host declaration (viu vocabulary) |
+| `apps/backdrop/runtime.mix` | MIX-E1102: 23 → 0 | File inlined into app.mix by this PR; require resolution and host declaration at entry |
+| `apps/ced/actions.mix` | MIX-E1102: 35 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/ced/app.mix` | MIX-W2401: 1 → 0 | Host declaration (viu vocabulary); require resolution; source replaced by require/inlining |
+| `apps/ced/bus.mix` | MIX-E1102: 42 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/ced/core.mix` | MIX-E1102: 25 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/ced/dialogs.mix` | MIX-E1102: 8 → 0 | Require resolution: sibling calls are namespaced |
+| `apps/ced/job.mix` | MIX-W2401: 1 → 0 | Host declaration (viu vocabulary); require resolution; source replaced by require/inlining |
+| `apps/ced/mail.mix` | MIX-E1102: 20 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/ced/session.mix` | MIX-E1102: 10 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/ced/ui.mix` | MIX-E1101: 1 → 0; MIX-E1102: 38 → 0 | Host declaration (viu vocabulary); require resolution; module-local viu_context binding replaces ambient ctx |
+| `apps/dopus/app.mix` | MIX-W2401: 1 → 0 | Host declaration (viu vocabulary); require resolution; source replaced by require/inlining |
+| `apps/dopus/chooser-engine.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary) |
+| `apps/dopus/chooser.mix` | MIX-E1102: 21 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/dopus/config.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary) |
+| `apps/dopus/core.mix` | MIX-E1102: 11 → 0 | Host declaration (viu vocabulary) |
+| `apps/dopus/dopus.mix` | MIX-E1102: 16 → 0 | File inlined into app.mix by this PR; require resolution and host declaration at entry |
+| `apps/dopus/effects.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary) |
+| `apps/dopus/macro-job.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary) |
+| `apps/dopus/operations.mix` | MIX-E1102: 8 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/dopus/presentation.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/dopus/preview-job.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary) |
+| `apps/dopus/reducer.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/email/mail.mix` | MIX-E1102: 4 → 0 | Host declaration (viu vocabulary) |
+| `apps/gallery/gallery.mix` | MIX-E1102: 2 → 0 | Host declaration (viu vocabulary) |
+| `apps/monitor/app.mix` | MIX-E1102: 3 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/monitor/fetch.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/prefs/app.mix` | MIX-E1102: 9 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/prefs/catalogue-job.mix` | MIX-E1102: 2 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/prefs/core.mix` | MIX-E1102: 2 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/prefs/custom.mix` | MIX-E1102: 3 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/prefs/email.mix` | MIX-E1102: 4 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/prefs/gallery-job.mix` | MIX-E1102: 5 → 0 | Host declaration (viu vocabulary) |
+| `apps/prefs/gallery.mix` | MIX-E1102: 3 → 0 | Host declaration (viu vocabulary) |
+| `apps/prefs/look.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary) |
+| `apps/prefs/pages.mix` | MIX-E1102: 2 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/screenshot/app.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/screenshot/events.mix` | MIX-E1102: 4 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/screenshot/job.mix` | MIX-E1102: 10 → 0 | Host declaration (viu vocabulary) |
+| `apps/screenshot/macro-job.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary) |
+| `apps/screenshot/macros.mix` | MIX-E1102: 2 → 0 | Host declaration (viu vocabulary) |
+| `apps/screenshot/operations.mix` | MIX-E1102: 3 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/screenshot/state.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/screenshot/storage.mix` | MIX-E1102: 3 → 0 | Host declaration (viu vocabulary) |
+| `apps/volume-lab/lib/embedded-runtime.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary) |
+| `apps/workshop/app.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/workshop/controller.mix` | MIX-E1102: 5 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/workshop/discovery.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `apps/workshop/macro-job.mix` | MIX-E1102: 4 → 0 | Host declaration (viu vocabulary) |
+| `apps/workshop/macro.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `engines/viud/crates/testkit/scripts/app_reference.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `engines/viud/scripts/lib/apps.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `engines/viud/tests/editor_app_bus_test.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `engines/viud/tests/network_behaviour_test.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `engines/viud/tests/scene_editor_e2e.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `engines/viud/tests/scene_editor_test.mix` | MIX-E1102: 3 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `engines/viud/tests/scene_reconnect_test.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `engines/viud/tests/toast_summary_test.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `engines/viud/tests/volume_behaviour_test.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `libraries/toolkit/scripts/install_licenses.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `libraries/toolkit/tests/asset_licenses_test.mix` | MIX-E1102: 7 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `libraries/viu/mix/macros.mix` | MIX-E1102: 2 → 0 | Host declaration (viu vocabulary); require resolution |
+| `libraries/viu/mix/session-runtime.mix` | MIX-E1102: 1 → 0 | Host declaration (viu vocabulary); require resolution |
+| `services/clipd/scripts/clipd.mix` | MIX-E1102: 4 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/clipd/tests/clipd_test.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/clipd/tests/wayland_test.mix` | MIX-E1102: 3 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/dlnad/scripts/dlnad.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/editd/tests/edit_bus_test.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/exportd/scripts/gtkqt.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/exportd/scripts/kde.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/exportd/tests/cosmic_export_test.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/exportd/tests/gtkqt_export_test.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/exportd/tests/gtkqt_recovery_test.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/exportd/tests/kde_test.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `services/notifyd/tests/notifyd_test.mix` | MIX-E1102: 3 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `share/assets/install.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `share/brand/install.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `share/icons/install.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `share/layout/apply.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `share/scenes/sync.mix` | MIX-E1102: 2 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+| `tests/lib/private_bus.mix` | MIX-E1102: 1 → 0 | Stale entry cleared: core mix_path is already registered in libraries/mix/src/builtins.rs:277 on main |
+
+Host audit: `git grep -n -E '^-- host: viu[[:space:]]*$' -- services tools share tests engines` returns no matches (rc 1). The complete `git grep -l -E '^-- host: viu[[:space:]]*$' -- '*.mix'` list contains only viu app/worker modules and libraries/viu/mix helpers. No plain-mix or mixd service entry opts into viu. In particular clipd, dlnad, editd, exportd and notifyd have no such declaration. Their removed E1102 counts match core mix_path calls; require imports remain namespaced. The stale main baseline predates that core registration. No service diagnostic is hidden by the new vocabulary.
+
 ## Risk tier
 
-Tier 1 for lint and viu runtime/app integration. The exact historical scanner
-exceptions are security-policy changes requiring Tier 2 review. Module
+Tier 2 overall, including the exact historical scanner exceptions. Lint and
+viu runtime/app integration are Tier 1 areas within that review. Module
 isolation and preserving Dopus's cut-over behaviour are the main runtime risks.
 
 ## How tested
@@ -128,7 +220,7 @@ exceptions. No runtime installation or external data migration is involved.
 
 ## Authorship and review
 
-Author: OpenAI Codex, committed and pushed through the mixviu-agent bot.
-GLM-5.3 and DeepSeek approved the earlier implementation with nits; all seven
-follow-up items were addressed. This main refresh needs review of its new
+Author: Sol (gpt-6.1-sol), committed and pushed through the mixviu-agent bot.
+Earlier review nits were addressed; the 2026-11-10 GLM and DeepSeek round
+requested changes. Its findings and dispositions are recorded in last.md. This main refresh needs review of its new
 diff, including security-policy review, and human approval. Open PR: #6.
