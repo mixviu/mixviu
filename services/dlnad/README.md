@@ -2,7 +2,7 @@
 
 A DLNA / UPnP AV media server for MixViu, written in Mix: it serves one media directory to TVs and other renderers, and answers on the Bus.
 
-Documentation: <https://mixos.dev/dlnad/> — source [`docs/dlnad/README.md`](../../docs/dlnad/README.md).
+Documentation: <https://mixos.dev/dlnad/> — source the component manual (not included in this source tree).
 
 Requires Mix 0.118.0 or later for offset file reads and discovery sockets.
 

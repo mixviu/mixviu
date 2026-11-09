@@ -16,8 +16,8 @@ font metadata. This directory adds an accessible copy alongside the complete
 licence texts. No font files are modified or renamed.
 
 Source: the published `epaint_default_fonts` 0.37.0 crate, `fonts/` directory.
-`libs/toolkit/assets/licenses.conf.mix` pins the copied text hashes. The native
-installer ships this README and those texts under `share/licenses/toolkit/`.
+`libraries/toolkit/assets/licenses.conf.mix` pins the copied text hashes. The native
+installer ships this README and those texts under the installed prefix's `share/licenses/toolkit/` (an install destination, not a source directory).
 
 The bundled egui-icons subset carries five private-use glyphs from Emoji Icon
 Font, under the same John Slegers MIT licence. The explicit monochrome emoji

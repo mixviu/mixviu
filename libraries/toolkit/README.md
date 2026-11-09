@@ -2,7 +2,7 @@
 
 The shared shell for MixViu egui applications: theme, fonts, Lucide icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive commands.
 
-Documentation: <https://mixos.dev/toolkit/> — source [`docs/toolkit/README.md`](../../docs/toolkit/README.md).
+Documentation: <https://mixos.dev/toolkit/> — source the component manual (not included in this source tree).
 
 `markdown::Preview<K>` keeps one parsed `Arc<Document>` by a caller's key
 and `u64` revision. `document(key, revision, source)` calls the source
@@ -25,7 +25,7 @@ errors and the thread that reaps the child (`<app_name>-xdg-open-reap`).
 
 `toolkit::choose(request)` returns a non-blocking handle. Build a validated
 `choose::Request` with `choose::request(json)` using the
-[`files.choose` request shape](../../docs/docs/spec/files/README.md).
+`files.choose` request shape (manual not included in this source tree).
 The types and validation live in `files::chooser`, also used by DOpus;
 the toolkit supplies translated defaults.
 
@@ -88,5 +88,5 @@ Run `cargo test -p toolkit -p files` on CBC for the private noded/D-Bus,
 viewport, stall and fallback UI tests. The optional real DOpus acceptance
 test needs CBC's headless weston host, fresh `mix`, `noded`, `viud` and
 `dopus` binaries and toolkit's `choose_probe` example:
-`MIX_TEST_BIN=<bin> mix libs/toolkit/tests/choose_bus_test.mix`.
-It is deliberately excluded from `tools/mix_tests.mix`.
+`MIX_TEST_BIN=<bin> mix libraries/toolkit/tests/choose_bus_test.mix`.
+It requires its own acceptance environment; no shared Mix-test driver is included here.

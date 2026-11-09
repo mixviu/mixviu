@@ -42,6 +42,16 @@ document from the existing widget catalogue, binds it only to declared
 actions, and viu shows it as a clearly marked agent surface. Today agents
 drive the UI through actions and by editing scene files.
 
+## Quoin
+
+Quoin is the shell made from the generic `viu --host` host (`engines/viu`),
+viud's loader (`engines/viud/scripts/scenes.mix` and its `lib/` helpers), and
+the furniture in `share/scenes/`. It is one set of scenes on a generic host;
+a different shell can use the same host. The volume specimen at
+`apps/volume-lab` is a lab app, not the shell. See
+[the scene-document reference](scene-documents.md) for the current grammar,
+loader contracts and limits.
+
 ## Principles
 
 Build useful application behaviour in Mix first, then measure representative

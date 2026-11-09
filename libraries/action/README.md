@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # command
 
-The UI-free command registry. See the [manual](../../docs/action/README.md)
+The UI-free command registry. See the manual (manual not included in this source tree)
 for dispatch, schemas, classes and toolkit compatibility. Public contract 0.3.0.
 
 The legacy nullary path (`Registry::add_nullary`),
