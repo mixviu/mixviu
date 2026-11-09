@@ -129,3 +129,23 @@ impl DrawOrder {
 
 pub static DRAW_ORDER: Token<DrawOrder> = Token::new();
 pub static DRAW_ORDER_MUT: TokenMut<DrawOrder> = TokenMut::new(&DRAW_ORDER);
+
+#[cfg(test)]
+mod visual_tests {
+    use super::*;
+
+    #[test]
+    fn z_reorders_windows_but_never_crosses_compositor_barriers_or_layers() {
+        let ids = (1..=5).map(|n| ComponentId(Uuid::from_u128(n))).collect::<Vec<_>>();
+        let mut order = DrawOrder::new();
+        for id in &ids { order.insert_top(*id, DrawLayer::CONTENT); }
+        // Third entry is compositor-marked: it is never registered as a window.
+        for (id, z) in [(ids[0], 9), (ids[1], -9), (ids[3], i32::MAX), (ids[4], 0)] { order.set_z(id,z); }
+        let ordered = || order.ordered().iter().map(|(id,_)| *id).collect::<Vec<_>>();
+        assert_eq!(ordered(), vec![ids[1],ids[0],ids[2],ids[4],ids[3]]);
+        order.insert_top(ids[0], DrawLayer(-50));
+        assert_eq!(order.ordered()[0].0, ids[0], "z never promotes out of its layer");
+        order.remove(ids[0]);
+        assert!(!order.z.contains_key(&ids[0]));
+    }
+}

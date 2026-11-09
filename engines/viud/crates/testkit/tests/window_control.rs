@@ -633,3 +633,18 @@ fn a_corner_config_change_moves_both_revisions() {
     );
     assert_eq!(comp.corners.config().dwell_ms, 350);
 }
+#[test]
+fn explicit_visibility_keeps_mapping_and_generation_fences_visual_state() {
+    let mut h = harness();
+    let (surface, _, _) = h.mapped_toplevel(64,48);
+    let id = id_of(&h,&surface);
+    let generation = h.comp().registry.get(id).unwrap().generation();
+    let visual = comp_model::request::VisualAttributes { visible: false, opacity: 0.4, ..Default::default() };
+    h.wire.inner.comp.visuals.insert(id,(generation,visual));
+    assert!(h.comp().hidden_id(id));
+    assert!(h.comp().registry.get(id).unwrap().mapped());
+    assert_eq!(h.comp().visual(id),visual);
+    h.wire.inner.comp.visuals.insert(id,(generation+1,visual));
+    assert!(!h.comp().hidden_id(id), "another generation never inherits visuals");
+    assert_eq!(h.comp().visual(id),Default::default());
+}

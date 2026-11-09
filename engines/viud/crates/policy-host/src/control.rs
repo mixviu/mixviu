@@ -832,11 +832,8 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
     lp.inner.comp.settings_changed("windows", "window.place");
     world::comp::visibility::sync_hidden(lp);
     if !visual.visible {
-        if let Some(keyboard) = lp.state.seat.seat.get_keyboard() {
-            if keyboard.current_focus().as_ref().and_then(|s| lp.inner.comp.id_for_surface(s)) == Some(id) {
-                keyboard.set_focus(&mut lp.state, None, SERIAL_COUNTER.next_serial());
-            }
-        }
+        crate::input::hide_window(lp, id);
+        settle(lp, None);
     }
     crate::input::retarget_pointer(lp);
     lp.state.schedule_redraw(RedrawReason::WindowState);

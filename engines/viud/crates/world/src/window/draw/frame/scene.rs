@@ -520,7 +520,7 @@ where
                     popup.wl_surface(),
                     pl,
                     Scale::from(ctx.scale),
-                    1.0,
+                    opacity,
                     Kind::Unspecified,
                 );
                 elements.extend(native.into_iter().map(|inner| {

@@ -1563,6 +1563,31 @@ pub fn retarget_pointer(lp: &mut Loop) {
     try_retarget_pointer(lp);
 }
 
+/// Revoke established seat focus as well as future hit tests when a window is
+/// explicitly hidden. Popup focus resolves through the same root as injection.
+pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
+    let time = now_ms(lp);
+    for seat in [SeatKind::Human, SeatKind::Agent] {
+        let Some(handle) = seat_of(lp, seat) else { continue };
+        let keyboard_here = delivery_target(lp, seat, true).is_some_and(|(target, _)| target == id.0);
+        let pointer_here = delivery_target(lp, seat, false).is_some_and(|(target, _)| target == id.0);
+        if keyboard_here {
+            if let Some(keyboard) = handle.get_keyboard() {
+                keyboard.set_focus(&mut lp.state, None, SERIAL_COUNTER.next_serial());
+            }
+        }
+        if pointer_here {
+            if let Some(pointer) = handle.get_pointer() {
+                pointer.unset_grab_without_focus_restore(&mut lp.state, SERIAL_COUNTER.next_serial(), time);
+                pointer.motion(&mut lp.state, None, &smithay::input::pointer::MotionEvent {
+                    location: pointer.current_location(), serial: SERIAL_COUNTER.next_serial(), time,
+                });
+                pointer.frame(&mut lp.state);
+            }
+        }
+    }
+}
+
 /// Return whether routing ran so deferred scene work survives a parked seat.
 pub fn try_retarget_pointer(lp: &mut Loop) -> bool {
     seat::pointer::input::retarget_stationary(lp)
