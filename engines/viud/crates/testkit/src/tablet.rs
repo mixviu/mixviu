@@ -63,7 +63,9 @@ impl Dispatch<ZwpTabletToolV2, ()> for ClientState {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            zwp_tablet_tool_v2::Event::ProximityIn { serial, .. } => state.tablet.proximity_serial = serial,
+            zwp_tablet_tool_v2::Event::ProximityIn { serial, .. } => {
+                state.tablet.proximity_serial = serial
+            }
             zwp_tablet_tool_v2::Event::Down { .. } => {
                 state.tablet.tips.push((tool.id().protocol_id(), true))
             }

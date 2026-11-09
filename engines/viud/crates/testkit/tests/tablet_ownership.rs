@@ -56,12 +56,17 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     state.tool_tip_down(&a, SERIAL_COUNTER.next_serial(), 1);
     assert!(state.tool_is_down(&a));
     h.roundtrip();
-    assert_eq!(h.client.state.tablet.tools.len(),2);
-    let cursor=h.client.create_surface();
-    h.client.state.tablet.tools[1].set_cursor(h.client.state.tablet.proximity_serial,Some(&cursor),0,0);
+    assert_eq!(h.client.state.tablet.tools.len(), 2);
+    let cursor = h.client.create_surface();
+    h.client.state.tablet.tools[1].set_cursor(
+        h.client.state.tablet.proximity_serial,
+        Some(&cursor),
+        0,
+        0,
+    );
     h.roundtrip();
-    assert_eq!(h.wire.state.tablet.cursor_owner,Some(b.clone()));
-    let state=&mut h.wire.state.tablet;
+    assert_eq!(h.wire.state.tablet.cursor_owner, Some(b.clone()));
+    let state = &mut h.wire.state.tablet;
     assert!(!state.begin_stroke(&b, Stroke::Tablet));
     state.tool_tip_down(&b, SERIAL_COUNTER.next_serial(), 2);
     assert!(!state.tool_is_down(&b));
@@ -70,17 +75,31 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     assert!(state.cursor_owner.is_none());
     assert_eq!(state.stroke_owner, Some(a.clone()));
     assert!(state.tool_is_down(&a));
-    state.tool_proximity_in(&b,&tablet,(0.0,0.0).into(),
-        (surfaces[1].clone(),(0.0,0.0).into()),SERIAL_COUNTER.next_serial(),3);
+    state.tool_proximity_in(
+        &b,
+        &tablet,
+        (0.0, 0.0).into(),
+        (surfaces[1].clone(), (0.0, 0.0).into()),
+        SERIAL_COUNTER.next_serial(),
+        3,
+    );
     h.roundtrip();
-    h.client.state.tablet.tools[1].set_cursor(h.client.state.tablet.proximity_serial,Some(&cursor),0,0);
+    h.client.state.tablet.tools[1].set_cursor(
+        h.client.state.tablet.proximity_serial,
+        Some(&cursor),
+        0,
+        0,
+    );
     h.roundtrip();
-    let state=&mut h.wire.state.tablet;
+    let state = &mut h.wire.state.tablet;
     assert!(state.tool_cursor);
-    state.clear_surface_focus(|s|s==&surfaces[1],SERIAL_COUNTER.next_serial(),4);
-    assert!(!state.tool_cursor,"hiding B's surface revokes B's hovering cursor");
+    state.clear_surface_focus(|s| s == &surfaces[1], SERIAL_COUNTER.next_serial(), 4);
+    assert!(
+        !state.tool_cursor,
+        "hiding B's surface revokes B's hovering cursor"
+    );
     assert!(state.tool_is_down(&a));
-    assert_eq!(state.stroke_owner,Some(a.clone()));
+    assert_eq!(state.stroke_owner, Some(a.clone()));
     state.tool_tip_up(&a, 4);
     assert!(
         !state.tool_is_down(&a),
@@ -90,9 +109,13 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     assert_eq!(state.stroke, Stroke::None);
     assert!(state.stroke_owner.is_none());
     h.roundtrip();
-    let tips=&h.client.state.tablet.tips;
-    assert_eq!(tips.len(),2,"only A's down and lift reach the real tablet client");
-    assert_eq!(tips[0].0,tips[1].0);
+    let tips = &h.client.state.tablet.tips;
+    assert_eq!(
+        tips.len(),
+        2,
+        "only A's down and lift reach the real tablet client"
+    );
+    assert_eq!(tips[0].0, tips[1].0);
     assert!(tips[0].1);
     assert!(!tips[1].1);
 }
@@ -180,7 +203,7 @@ fn tablet_device_removal_clears_its_live_stroke() {
     };
     let state = &mut h.wire.state.tablet;
     state.add_tool::<dispatcher::state::Dispatch>(&dh, &a);
-    state.add_tablet::<dispatcher::state::Dispatch>(&dh,&tablet);
+    state.add_tablet::<dispatcher::state::Dispatch>(&dh, &tablet);
     state.tool_proximity_in(
         &a,
         &tablet,
@@ -196,7 +219,7 @@ fn tablet_device_removal_clears_its_live_stroke() {
     assert!(state.stroke_owner.is_none());
     assert!(!state.tool_is_down(&a));
     h.roundtrip();
-    assert_eq!(h.client.state.tablet.tips.len(),2);
+    assert_eq!(h.client.state.tablet.tips.len(), 2);
     assert!(h.client.state.tablet.tips[0].1);
     assert!(!h.client.state.tablet.tips[1].1);
     let _ = server;
