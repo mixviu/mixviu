@@ -76,7 +76,7 @@ impl LayerProgram for ToastProgram {
         if entry.0 != name {
             let mut view = SceneUi::new(content.clone());
             view.setup(ui.ctx());
-            *entry = (name, view, u64::MAX);
+            *entry = (name.clone(), view, u64::MAX);
         }
         if entry.1.revision() != content.revision {
             entry.1.update(SceneMessage::Replace(content));
@@ -89,6 +89,11 @@ impl LayerProgram for ToastProgram {
         }
         let mut messages = Vec::new();
         entry.1.show(ui, &mut messages);
+        if let Some(error) = self.state.lock().unwrap().errors.get(&name) {
+            if crate::dev_loop::error_strip(ui, error) {
+                let _ = self.send.send(Outgoing::Fire("scenes".into(), "scenes.editor.open".into(), json!({"scene":name})));
+            }
+        }
         for message in messages {
             if let Some((to, command, body)) = view::event_of(&message) {
                 let _ = self

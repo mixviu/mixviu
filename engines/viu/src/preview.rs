@@ -46,10 +46,8 @@ impl eframe::App for Preview {
         let ctx = ui.ctx().clone();
         if Instant::now() >= self.next { self.refresh(&ctx); self.next=Instant::now()+Duration::from_millis(200); }
         ctx.request_repaint_after(Duration::from_millis(200));
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            if let Some(view) = &mut self.view { view.show(ui, &mut Vec::new()); }
-            if let Some(error)=&self.error { crate::dev_loop::error_strip(ui,error); }
-        });
+        if let Some(view) = &mut self.view { view.show(ui, &mut Vec::new()); }
+        if let Some(error)=&self.error { crate::dev_loop::error_strip(ui,error); }
     }
 }
 pub fn run(args: &[String]) -> eframe::Result {
@@ -58,4 +56,33 @@ pub fn run(args: &[String]) -> eframe::Result {
     let dir=PathBuf::from(&args[0]);
     let model=args.get(2).map(PathBuf::from);
     eframe::run_native("Scene Preview", eframe::NativeOptions::default(), Box::new(move |_| Ok(Box::new(Preview {dir,model,fingerprint:Vec::new(),next:Instant::now(),store:SceneStore::default(),view:None,error:None}))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn preview_loads_recorded_model_and_retains_last_good_after_bad_edit() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("preview-test");
+        std::fs::create_dir(&dir).unwrap();
+        let source = "---\nscene: 1\nname: preview-test\ncitizen: preview-test\nmodel: {\"text\":\"stub\"}\n---\n```mix\nroot: {widget: text, text: '= $model.text'}\n```\n";
+        std::fs::write(dir.join("scene.mix"), source).unwrap();
+        std::fs::write(dir.join("template.conf.mix"), "{title: Preview}").unwrap();
+        let model = temp.path().join("model.json");
+        std::fs::write(&model, r#"{"text":"recorded"}"#).unwrap();
+        let mut preview = Preview {dir:dir.clone(),model:Some(model),fingerprint:Vec::new(),next:Instant::now(),store:SceneStore::default(),view:None,error:None};
+        let ctx = egui::Context::default();
+        preview.refresh(&ctx);
+        assert!(preview.error.is_none(), "{:?}", preview.error);
+        assert_eq!(preview.store.scene("preview-test").unwrap().tree().nodes["root"].ports["text"], "recorded");
+        let revision = preview.store.scene("preview-test").unwrap().revision();
+        std::fs::write(dir.join("scene.mix"), "broken").unwrap();
+        preview.refresh(&ctx);
+        assert!(preview.error.is_some() && preview.view.is_some());
+        assert_eq!(preview.store.scene("preview-test").unwrap().revision(), revision);
+        std::fs::write(dir.join("scene.mix"), source).unwrap();
+        preview.refresh(&ctx);
+        assert!(preview.error.is_none());
+    }
 }

@@ -992,13 +992,18 @@ fn filesystem($s, $batch)
   if $batch.overflow then
     return rescan($s, false)
   end
+  $lib_changed = false
   for each $change in $batch.changes
     for each $path in [$change.path, $change.old_path]
       if type($path) != "string" then continue end
       for each $lib in library_roots($s)
-        if $path == $lib or starts_with($path, $lib .. "/") then return reload_group($s, "lib", nil) end
+        if $path == $lib or starts_with($path, $lib .. "/") then $lib_changed = true end
       end
     end
+  end
+  if $lib_changed then
+    $s = reload_group($s, "lib", nil)
+    if $s.rc != 0 then return $s end
   end
   $names = []
   $editor = false

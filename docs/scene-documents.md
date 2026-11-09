@@ -265,8 +265,12 @@ diagnostics, and watch exposes revision/digest/applied_revision/diagnostics.
 
 Filesystem batches reconcile changes to installed scene.mix, behaviour.mix,
 template.conf.mix and scene directories; overflow/root/state changes rescan.
-Shared or user helper lib edits do not trigger dependent reload. Editor copy
-handling is special. (`engines/viud/scripts/lib/scenes.mix:991`.)
+Shared catalogue `lib/`, installed user `lib/` and an explicit `SCENES_LIB`
+are watched recursively. A helper edit preflights all enabled scenes with
+behaviours: computed `require()` paths prevent a complete static import graph,
+so this dependency set is deliberately conservative. Helpers are syntax checked
+without executing them; unchanged helper checks are cached by content digest.
+Editor copy handling is special. (`engines/viud/scripts/lib/scenes.mix`.)
 
 Reconcile checks changed behaviour before mounting. Scene edits load against
 the last accepted runtime model (or authored model initially); behaviour-only
@@ -278,12 +282,37 @@ it. (`engines/viud/scripts/lib/scenes.mix:729`,
 `engines/viud/scripts/lib/scenes.mix:748`,
 `engines/viud/scripts/lib/scenes.mix:2153`.)
 
-This is kill/spawn, without behaviour state hand-off or an error overlay.
+This is kill/spawn, without behaviour state hand-off (P1 item 3 is deferred).
 Reloading user copies does not copy updated catalogue templates; reset does,
-with a recovery copy. There is no reload transaction over shared imports.
+with a recovery copy. Library fan-out validates every candidate first, then
+commits a single `shell.scene.load {sources:[{source,model_generation}]}` batch.
+The host stages its store and seats and commits only when every load succeeds.
+Any preflight or batch refusal leaves every dependent on last-good; restarting
+behaviours happens after that commit. Runtime behaviour faults are separate
+from revision acceptance and still use the existing crash/restart path.
+The furniture host consumes `scenes.changed` and draws a marked error strip
+over last-good content. Clicking opens `scenes.editor.open {scene}`. Successful
+reload clears it. The strip does not change the accepted scene layout.
 (`engines/viud/scripts/lib/scenes_io.mix:81`,
 `engines/viud/scripts/lib/scenes.mix:2053`,
 `engines/viud/scripts/lib/scenes.mix:991`.)
+
+`quoin.reload {scope:"scene"|"lib"|"all",name?}` is handled by the `scenes`
+citizen. `name` is required for scene scope; lib scope uses the conservative
+dependency set above, and all scope covers all enabled scenes. Replies are
+`{accepted,revisions:{NAME:REVISION},diagnostics:[]}` or rc 10 with
+`{accepted:false,diagnostics:[...]}`. Invalid arguments use `SCENES_ARGUMENT`.
+The existing `scenes.reload {name}` remains available.
+
+`viu --preview DIR [--model FILE]` opens a passive plain window with one
+scene. It checks files, metadata and behaviour using the same Mix loader
+candidate and native SceneStore acceptance. It uses the authored model as a
+stub or a bounded JSON object recording. It checks scene, metadata, behaviour
+and model bytes every 200 ms; invalid edits keep the previous content and
+show an error strip. It never starts behaviours or dispatches scene actions.
+`VIU_PREVIEW_VALIDATOR` can select an installed `scene_preview.mix`; source
+builds default to the validator beside the viud scripts. Preview requires
+the native Mix interpreter and catalogue discovery described above.
 
 Each page has one output seat; loader loads do not specify an output and
 host dispatch selects one. There is no per-output instancing. The host polls
