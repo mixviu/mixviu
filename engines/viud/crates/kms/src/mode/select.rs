@@ -24,16 +24,32 @@ pub fn is_interlaced(m: &DrmMode) -> bool {
 /// `!is_interlaced` is the HIGHEST-priority key, ahead of area — an interlaced
 /// mode is only ever selected when the connector advertises nothing else.
 pub fn select_default(info: &connector::Info) -> Option<DrmMode> {
+    // HDR: among same-size, same-refresh timings prefer the one closest to the
+    // nominal rate, i.e. the CTA-861 video timing (4K60: VIC 97, 594 MHz,
+    // 60.000 Hz) over an EDID reduced-blanking one (533.25 MHz, 59.997 Hz).
+    // That is the timing KWin drives this LG with in HDR; on the reduced-blanking
+    // timing the same PQ signal showed a grey film (desk4, 2026-11-09).
+    let hdr = model::environment::config::base::try_get().is_some_and(|e| e.hdr);
     info.modes()
         .iter()
         .max_by_key(|m| {
             let (w, h) = m.size();
             let area = (w as u64) * (h as u64);
             let refresh = m.vrefresh();
+            let nominal = if hdr { exact_refresh_mhz(m) } else { 0 };
             let is_preferred = m.mode_type().contains(ModeTypeFlags::PREFERRED);
-            (!is_interlaced(m), area, refresh, is_preferred)
+            (!is_interlaced(m), area, refresh, nominal, is_preferred)
         })
         .copied()
+}
+
+/// The mode's exact refresh in mHz from its pixel clock and totals.
+pub fn exact_refresh_mhz(m: &DrmMode) -> u64 {
+    let (htotal, vtotal) = (m.hsync().2 as u64, m.vsync().2 as u64);
+    if htotal == 0 || vtotal == 0 {
+        return 0;
+    }
+    (m.clock() as u64) * 1_000_000 / (htotal * vtotal)
 }
 
 /// Preference-aware selection: an `Advertised` request narrows the list; any
@@ -56,11 +72,19 @@ pub fn select(info: &connector::Info, profile: Option<&OutputProfile>) -> Option
             let (w, h) = m.size();
             w == *width && h == *height && m.vrefresh() * 1000 == *refresh_mhz
         };
-        let hit = info
-            .modes()
-            .iter()
-            .find(|m| matches(m) && !is_interlaced(m))
-            .or_else(|| info.modes().iter().find(matches));
+        // HDR: several timings can share WxH@R (see `select_default`); take the
+        // one closest to nominal (first among equals). SDR keeps the first.
+        let hdr = model::environment::config::base::try_get().is_some_and(|e| e.hdr);
+        let hit = if hdr {
+            info.modes()
+                .iter()
+                .filter(|m| matches(m) && !is_interlaced(m))
+                .rev()
+                .max_by_key(|m| exact_refresh_mhz(m))
+        } else {
+            info.modes().iter().find(|m| matches(m) && !is_interlaced(m))
+        }
+        .or_else(|| info.modes().iter().find(matches));
         if let Some(m) = hit {
             return Some(*m);
         }
