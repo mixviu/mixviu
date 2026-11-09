@@ -285,7 +285,9 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
 /// present, else the first connected — exactly the startup `connector.select` policy.
 fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connector::Info> {
     if let Some(key) = preferred_key()
-        && let Some(c) = connected.iter().find(|c| model::environment::preference::identity::matches(&key, &identity_key(drm, c)))
+        && let Some(c) = connected.iter().find(|c| {
+            model::environment::preference::identity::matches(&key, &identity_key(drm, c))
+        })
     {
         return Some(c.clone());
     }
@@ -473,7 +475,12 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             active
         } else if !connected.is_empty() {
             let chosen = preferred_key()
-                .and_then(|pk| keyed.iter().find(|(_, k)| model::environment::preference::identity::matches(&pk, k)).map(|(c, _)| c.clone()))
+                .and_then(|pk| {
+                    keyed
+                        .iter()
+                        .find(|(_, k)| model::environment::preference::identity::matches(&pk, k))
+                        .map(|(c, _)| c.clone())
+                })
                 .or_else(|| connected.first().cloned());
             chosen.into_iter().collect()
         } else {

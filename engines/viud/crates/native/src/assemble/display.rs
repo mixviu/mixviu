@@ -263,9 +263,12 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     // panel came up at the 1280x1024 of a display that was not connected, and
     // plugging that display back in "fixed" it only by making first-in-prefs and
     // selected-connector agree again.
-    let preference_key = identity.preference_key(&kms::connector::select::connector_name(&connector));
-    let profile = model::environment::preference::identity::find(&profiles, &preference_key, |p| p.identity.as_deref())
-        .or_else(|| profiles.iter().find(|p| p.identity.is_none()));
+    let preference_key =
+        identity.preference_key(&kms::connector::select::connector_name(&connector));
+    let profile = model::environment::preference::identity::find(&profiles, &preference_key, |p| {
+        p.identity.as_deref()
+    })
+    .or_else(|| profiles.iter().find(|p| p.identity.is_none()));
     let drm_mode = resolve_mode(&connector, profile);
     kms::mode::select::log_selected(&drm_mode);
     kms::mode::enumerate::dump(&connector);

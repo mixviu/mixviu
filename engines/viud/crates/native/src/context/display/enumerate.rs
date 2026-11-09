@@ -25,20 +25,22 @@ fn to_info(m: &DrmMode) -> ModeInfo {
 /// profile's advertised mode), if set — so the picker can default an inactive monitor
 /// to its saved mode rather than the recommended one.
 fn preferred_mode(edid_key: &str) -> Option<ModeInfo> {
-    model::environment::preference::identity::find(&profile::get(), edid_key, |p| p.identity.as_deref())
-        .and_then(|p| p.mode.as_ref())
-        .and_then(|m| match m {
-            ModeRequest::Advertised {
-                width,
-                height,
-                refresh_mhz,
-            } => Some(ModeInfo {
-                width: *width,
-                height: *height,
-                refresh_mhz: *refresh_mhz,
-            }),
-            _ => None,
-        })
+    model::environment::preference::identity::find(&profile::get(), edid_key, |p| {
+        p.identity.as_deref()
+    })
+    .and_then(|p| p.mode.as_ref())
+    .and_then(|m| match m {
+        ModeRequest::Advertised {
+            width,
+            height,
+            refresh_mhz,
+        } => Some(ModeInfo {
+            width: *width,
+            height: *height,
+            refresh_mhz: *refresh_mhz,
+        }),
+        _ => None,
+    })
 }
 
 /// One `DisplayInfo` per CONNECTED connector. `active` marks the connector treated
@@ -57,10 +59,8 @@ pub fn enumerate(
         if info.state() != connector::State::Connected {
             continue;
         }
-        // The stable per-monitor key is the EDID identity ("make model serial",
-        // incl. the unit's serial so two identical monitors differ) — the SAME key
-        // the standalone settings-editor persists, so a preference set in either
-        // place matches. The connector name is only a friendlier label suffix.
+        // Always qualify saved identity by connector: duplicate serials are real,
+        // and keys must not change when one member of a pair is unplugged.
         let conn_name = format!("{:?}-{}", info.interface(), info.interface_id());
         let raw = parse::read(drm, info);
         let parsed = raw.as_ref().and_then(parse::parse);

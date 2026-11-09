@@ -18,10 +18,15 @@ pub fn connector(key: &str) -> Option<&str> {
 }
 
 /// Exact qualified settings win over legacy shared settings, regardless of order.
-pub fn find<'a, T>(items: &'a [T], requested: &str, id: impl Fn(&T) -> Option<&str>) -> Option<&'a T> {
-    items.iter().find(|p| id(p) == Some(requested)).or_else(|| {
-        items.iter().find(|p| id(p) == Some(stable(requested)))
-    })
+pub fn find<'a, T>(
+    items: &'a [T],
+    requested: &str,
+    id: impl Fn(&T) -> Option<&str>,
+) -> Option<&'a T> {
+    items
+        .iter()
+        .find(|p| id(p) == Some(requested))
+        .or_else(|| items.iter().find(|p| id(p) == Some(stable(requested))))
 }
 
 /// Used only at preference boundaries, never for live output equality.

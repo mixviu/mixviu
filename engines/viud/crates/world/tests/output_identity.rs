@@ -3,10 +3,16 @@ use smithay::output::{Output, PhysicalProperties, Subpixel};
 use world::state::{output_key, output_preference_key};
 
 fn panel(connector: &str, serial: &str) -> Output {
-    Output::new(connector.into(), PhysicalProperties {
-        size: (600, 340).into(), subpixel: Subpixel::Unknown,
-        make: "Example".into(), model: "Panel".into(), serial_number: serial.into(),
-    })
+    Output::new(
+        connector.into(),
+        PhysicalProperties {
+            size: (600, 340).into(),
+            subpixel: Subpixel::Unknown,
+            make: "Example".into(),
+            model: "Panel".into(),
+            serial_number: serial.into(),
+        },
+    )
 }
 
 #[test]
@@ -16,7 +22,10 @@ fn duplicated_nonzero_edid_serial_never_aliases_runtime_or_preferences() {
     assert_eq!(output_key(&a), "DP-1");
     assert_ne!(output_key(&a), output_key(&b));
     assert_ne!(output_preference_key(&a), output_preference_key(&b));
-    assert_eq!(output_preference_key(&a), "Example Panel 42 @connector:DP-1");
+    assert_eq!(
+        output_preference_key(&a),
+        "Example Panel 42 @connector:DP-1"
+    );
 
     // A hotplug must neither rename the survivor nor steal its independent view.
     let mut views = world::viewport::state::OutputViews::default();
@@ -28,7 +37,10 @@ fn duplicated_nonzero_edid_serial_never_aliases_runtime_or_preferences() {
     space.map_output(&a, (0, 0));
     space.map_output(&b, (1920, 0));
     space.unmap_output(&a);
-    assert_eq!(space.outputs().map(output_key).collect::<Vec<_>>(), ["DP-2"]);
+    assert_eq!(
+        space.outputs().map(output_key).collect::<Vec<_>>(),
+        ["DP-2"]
+    );
     drop(a);
     assert_eq!(output_preference_key(&b), before);
     let reconnected = panel("DP-1", "42");
@@ -36,7 +48,10 @@ fn duplicated_nonzero_edid_serial_never_aliases_runtime_or_preferences() {
     assert_eq!(space.outputs().count(), 2);
     views.ensure(&output_key(&reconnected));
     assert_eq!(views.views(&output_key(&b)).next_id, 42);
-    assert_eq!(output_preference_key(&reconnected), "Example Panel 42 @connector:DP-1");
+    assert_eq!(
+        output_preference_key(&reconnected),
+        "Example Panel 42 @connector:DP-1"
+    );
 }
 
 #[test]

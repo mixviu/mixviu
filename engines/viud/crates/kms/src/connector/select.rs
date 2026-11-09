@@ -56,7 +56,9 @@ pub fn select(
 
     let chosen = profiles.iter().find_map(|p| {
         let want = p.identity.as_deref()?;
-        connected.iter().position(|c| model::environment::preference::identity::matches(want, &identity_key(drm, c)))
+        connected.iter().position(|c| {
+            model::environment::preference::identity::matches(want, &identity_key(drm, c))
+        })
     });
 
     match chosen {

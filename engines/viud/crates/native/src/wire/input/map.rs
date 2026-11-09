@@ -69,7 +69,10 @@ pub fn touch_output(state: &Loop, device: &Device) -> Option<String> {
         .and_then(|p| p.identity.clone());
     if let Some(edid) = claimed
         && let Some(output) = space.state.outputs().find(|o| {
-            model::environment::preference::identity::matches(&edid, &world::state::output_preference_key(o))
+            model::environment::preference::identity::matches(
+                &edid,
+                &world::state::output_preference_key(o),
+            )
         })
     {
         return Some(output_key(output));

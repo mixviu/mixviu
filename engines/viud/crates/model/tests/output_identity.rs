@@ -13,7 +13,12 @@ fn legacy_profile_is_read_and_copied_without_losing_other_fields() {
     assert!(output_active(&profiles, &a));
     assert!(!output_active(&profiles, &b));
     assert_eq!(touch_device_of(&profiles, &a), Some("touch"));
-    assert!(identity::find(&profiles, &a, |p| p.identity.as_deref()).unwrap().mode.is_some());
+    assert!(
+        identity::find(&profiles, &a, |p| p.identity.as_deref())
+            .unwrap()
+            .mode
+            .is_some()
+    );
     let saved = serde_json::to_string(&profiles).unwrap();
     let loaded: Vec<OutputProfile> = serde_json::from_str(&saved).unwrap();
     assert!(output_active(&loaded, &a));

@@ -41,8 +41,7 @@ pub enum OutputModeRequest {
     Revert,
 }
 
-/// Kernel → rim: the connector's advertised modes for the settings UI to list,
-/// plus its current mode and a stable EDID identity ("make model serial").
+/// Kernel → rim: advertised modes, current mode and qualified preference identity.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OutputModesSnapshot {
     pub edid_key: String,
@@ -109,8 +108,8 @@ pub static OUTPUT_ACTIVE_REVERT_MUT: TokenMut<Option<ActiveRevert>> =
 /// Kernel → rim: one connected connector, primitive form, for the monitor picker.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DisplayInfo {
-    /// Stable per-monitor key: the EDID identity "make model serial" (with a
-    /// connector qualifier, so duplicated EDIDs differ). The picker selection key,
+    /// Stable per-monitor key: EDID identity plus connector qualifier.
+    /// The picker selection key,
     /// switch-request target, and persistence key — the SAME key the standalone
     /// settings-editor writes, so preferences match across both.
     pub edid_key: String,
@@ -362,22 +361,25 @@ pub fn build_teleport(
             .iter()
             .filter_map(|p| {
                 use model::environment::preference::identity;
-                let key = connected_keys.iter()
+                let key = connected_keys
+                    .iter()
                     .filter(|k| identity::matches(&p.identity, k))
                     .min()?;
                 // A legacy placement belongs to one connector only. Explicit
                 // placements replace it rather than duplicating its zone id.
                 if !output_active(&prefs.outputs, key)
-                    || (p.identity != *key && prefs.outputs_layout.iter().any(|q| q.identity == *key)) {
+                    || (p.identity != *key
+                        && prefs.outputs_layout.iter().any(|q| q.identity == *key))
+                {
                     return None;
                 }
                 Some(Placement {
-                id: p.id,
-                key: identity::connector(key).unwrap_or(key).to_owned(),
-                x: p.x,
-                y: p.y,
-                w: p.w,
-                h: p.h,
+                    id: p.id,
+                    key: identity::connector(key).unwrap_or(key).to_owned(),
+                    x: p.x,
+                    y: p.y,
+                    w: p.w,
+                    h: p.h,
                 })
             })
             .collect(),
