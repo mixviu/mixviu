@@ -244,15 +244,17 @@ fn prepare_with(
         });
         let size = size[0].max(size[1]).ceil() as u32;
         let cache_key = (source.to_owned(), size, app.map(str::to_owned));
-        if !Path::new(source).is_absolute() && let Some(asset) = cache.lock().ok().and_then(|mut cache| {
-            cache
-                .get(&cache_key)
-                .filter(|(_, file)| {
-                    file.as_ref()
-                        .is_none_or(|(path, stamp)| file_stamp(path) == Some(*stamp))
-                })
-                .map(|(asset, _)| asset.clone())
-        }) {
+        if !Path::new(source).is_absolute()
+            && let Some(asset) = cache.lock().ok().and_then(|mut cache| {
+                cache
+                    .get(&cache_key)
+                    .filter(|(_, file)| {
+                        file.as_ref()
+                            .is_none_or(|(path, stamp)| file_stamp(path) == Some(*stamp))
+                    })
+                    .map(|(asset, _)| asset.clone())
+            })
+        {
             prepared.insert(key, asset);
             return;
         }
@@ -278,7 +280,14 @@ fn prepare_with(
             // must replace a cached fallback. Still reuse unchanged decoded
             // bytes once the resolver has confirmed which path now wins.
             if let Some(asset) = cache.lock().ok().and_then(|mut cache| {
-                cache.get(&cache_key).filter(|(_, file)| file.as_ref().is_some_and(|(cached, old)| cached == &path && file_stamp(cached) == Some(*old))).map(|(asset, _)| asset.clone())
+                cache
+                    .get(&cache_key)
+                    .filter(|(_, file)| {
+                        file.as_ref().is_some_and(|(cached, old)| {
+                            cached == &path && file_stamp(cached) == Some(*old)
+                        })
+                    })
+                    .map(|(asset, _)| asset.clone())
             }) {
                 prepared.insert(key, asset);
                 return;
@@ -316,8 +325,7 @@ fn prepare_with(
         let Some(node) = get(id) else {
             return;
         };
-        if crate::view::flag(node, "hidden") || !out.insert(id.into())
-        {
+        if crate::view::flag(node, "hidden") || !out.insert(id.into()) {
             return;
         }
         for child in crate::templates::children(node) {
@@ -440,16 +448,37 @@ mod tests {
         assert!(names.len() >= 10, "the check must cover the panel mapping");
         let provenance = include_str!("../../../provenance/panel-embedded-icons.md");
         let hash = |bytes: &[u8]| format!("{:x}", Sha256::digest(bytes));
-        let brand_hash = provenance.split('`').find(|token| token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit())).unwrap();
-        assert_eq!(hash(BRAND), brand_hash, "canonical embedded brand provenance");
+        let brand_hash = provenance
+            .split('`')
+            .find(|token| token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit()))
+            .unwrap();
+        assert_eq!(
+            hash(BRAND),
+            brand_hash,
+            "canonical embedded brand provenance"
+        );
         let mut copies = 0;
         for line in provenance.lines() {
             let fields: Vec<_> = line.split('|').map(str::trim).collect();
-            if fields.len() != 4 || !fields[1].ends_with(".svg") { continue; }
+            if fields.len() != 4 || !fields[1].ends_with(".svg") {
+                continue;
+            }
             let icon = viu::icons::Icon::from_name(fields[1].trim_end_matches(".svg")).unwrap();
-            assert_eq!(hash(icon.svg().as_bytes()), fields[2], "{} provenance hash", fields[1]);
-            let original = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../share/icons/lucide").join(fields[1]);
-            assert_eq!(icon.svg().as_bytes(), std::fs::read(original).unwrap().as_slice(), "{} byte-identical copy", fields[1]);
+            assert_eq!(
+                hash(icon.svg().as_bytes()),
+                fields[2],
+                "{} provenance hash",
+                fields[1]
+            );
+            let original = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../share/icons/lucide")
+                .join(fields[1]);
+            assert_eq!(
+                icon.svg().as_bytes(),
+                std::fs::read(original).unwrap().as_slice(),
+                "{} byte-identical copy",
+                fields[1]
+            );
             copies += 1;
         }
         assert_eq!(copies, 4);
@@ -466,25 +495,44 @@ mod tests {
                 std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                 std::fs::copy(fixtures.join("embedded-icon.svg"), path).unwrap();
             }
-            let resolver = crate::freedesktop::Resolver::new(crate::freedesktop::Lookup::in_data_dirs("Fixture", [data]));
+            let resolver = crate::freedesktop::Resolver::new(
+                crate::freedesktop::Lookup::in_data_dirs("Fixture", [data]),
+            );
             let path = root.path().join("new.png");
             let uri = serde_json::to_string(&format!("file://{}", path.display())).unwrap();
-            let source = format!("---\nscene: 1\nname: explicit\ncitizen: test\n---\n```mix\nroot: {{widget: \"image\", src: {uri}, w: 20, h: 20}}\n```\n");
+            let source = format!(
+                "---\nscene: 1\nname: explicit\ncitizen: test\n---\n```mix\nroot: {{widget: \"image\", src: {uri}, w: 20, h: 20}}\n```\n"
+            );
             let tree = scene::resolve(&scene::parse(&source).unwrap()).unwrap();
             let lists = crate::templates::validate_templates(&tree).unwrap();
             let cache = Mutex::new(AssetCache::new());
-            let prepare = || prepare_with(&tree, &lists, &cache, |source, size, app| resolver.resolve_in_generation(source, size, 1, app));
+            let prepare = || {
+                prepare_with(&tree, &lists, &cache, |source, size, app| {
+                    resolver.resolve_in_generation(source, size, 1, app)
+                })
+            };
             let first = prepare();
             assert_eq!(first.contains_key(&key("root", None)), placeholder);
             let generation = resolver.generation();
             std::fs::copy(fixtures.join("icon.png"), &path).unwrap();
-            assert_eq!(resolver.generation(), generation, "explicit file is outside tracked roots");
+            assert_eq!(
+                resolver.generation(),
+                generation,
+                "explicit file is outside tracked roots"
+            );
             let second = prepare();
-            let Some(Asset::Raster(image)) = second.get(&key("root", None)) else { panic!("new explicit file must replace the miss or placeholder"); };
+            let Some(Asset::Raster(image)) = second.get(&key("root", None)) else {
+                panic!("new explicit file must replace the miss or placeholder");
+            };
             assert!(image.rgba[3] > 0, "pixels ready for the next paint");
             let third = prepare();
-            let Some(Asset::Raster(reused)) = third.get(&key("root", None)) else { panic!("cached raster"); };
-            assert_eq!(image.id, reused.id, "unchanged explicit file retains its decoded handle");
+            let Some(Asset::Raster(reused)) = third.get(&key("root", None)) else {
+                panic!("cached raster");
+            };
+            assert_eq!(
+                image.id, reused.id,
+                "unchanged explicit file retains its decoded handle"
+            );
         }
     }
 
@@ -683,7 +731,14 @@ icon: {widget: "image", src: "", w: 31, h: 31}
             let _other = raster_with_cache(&other, &cache).unwrap();
             let second = raster_with_cache(&path, &cache).unwrap();
             assert_eq!(first.id, second.id, "keep_live={keep_live}");
-            assert_eq!(cache.lock().unwrap().len(), if keep_live { crate::cache::CAPACITY + 1 } else { 2 });
+            assert_eq!(
+                cache.lock().unwrap().len(),
+                if keep_live {
+                    crate::cache::CAPACITY + 1
+                } else {
+                    2
+                }
+            );
             drop(live);
         }
     }

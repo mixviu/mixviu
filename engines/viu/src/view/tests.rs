@@ -42,10 +42,18 @@ fn fallback_only_image_reference_prepares_and_places_the_colour_brand() {
 fn hidden_fallback_node_stays_hidden_even_when_its_image_is_prepared() {
     let source = "---\nscene: 1\nname: panel\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"launcher_text\"]}\nlauncher_text: {widget: \"text\", text: \"Apps\"}\nlauncher_icon: {widget: \"image\", src: \"brand:cyclops\", w: 28, h: 28}\n```\n";
     let mut scene = SceneUi::new(content(source, None, false));
-    assert!(scene.images.contains_key(&crate::images::key("launcher_icon", None)));
+    assert!(
+        scene
+            .images
+            .contains_key(&crate::images::key("launcher_icon", None))
+    );
     // Deliberately retain the prepared image: visibility must be enforced by
     // layout even when an asset was prepared independently or by an older view.
-    scene.content = content(&source.replace("text: \"Apps\"", "text: \"Apps\", hidden: true"), None, false);
+    scene.content = content(
+        &source.replace("text: \"Apps\"", "text: \"Apps\", hidden: true"),
+        None,
+        false,
+    );
     let mut rt = UiRuntime::headless(scene, (200, 52), 1.0);
     rt.tick();
     assert!(!rt.program.layout().nodes.contains_key("launcher_text"));

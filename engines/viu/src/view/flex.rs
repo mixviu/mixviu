@@ -499,7 +499,9 @@ impl<'a> Builder<'a> {
             return None;
         }
         let node = nodes.get(id)?;
-        if flag(node, "hidden") { return None; }
+        if flag(node, "hidden") {
+            return None;
+        }
         if *source == Source::Tree
             && let Some(target) = crate::images::fallback_reference(&self.content.tree, id)
             && self.images.contains_key(&crate::images::key(target, None))

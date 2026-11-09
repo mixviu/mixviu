@@ -494,7 +494,9 @@ fn inventory(
     }
     // Charge each monitored path once, never the untracked icon files or
     // both a directory's parent enumeration and its recursive visit.
-    if !stamps.contains_key(path) { *work += 1; }
+    if !stamps.contains_key(path) {
+        *work += 1;
+    }
     stamps.insert(path.into(), stamp(path));
     let meta = match path.symlink_metadata() {
         Ok(meta) => meta,
@@ -521,10 +523,18 @@ fn inventory(
     // There is a one-level canonicalise/read_dir TOCTOU here. This is a
     // bounded, read-only inventory of same-user search paths, not a sandbox.
     let mut complete = true;
-    let Ok(entries) = std::fs::read_dir(path) else { return false; };
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
     for entry in entries {
-        let Ok(entry) = entry else { complete = false; continue; };
-        let Ok(kind) = entry.file_type() else { complete = false; continue; };
+        let Ok(entry) = entry else {
+            complete = false;
+            continue;
+        };
+        let Ok(kind) = entry.file_type() else {
+            complete = false;
+            continue;
+        };
         if kind.is_dir() || kind.is_symlink() {
             complete &= inventory(&entry.path(), root, depth + 1, stamps, visited, work);
         } else if entry.file_name() == "index.theme"
@@ -533,7 +543,9 @@ fn inventory(
             if stamps.len() >= INVENTORY_LIMIT || *work >= INVENTORY_WORK_LIMIT {
                 return false;
             }
-            if !stamps.contains_key(&entry.path()) { *work += 1; }
+            if !stamps.contains_key(&entry.path()) {
+                *work += 1;
+            }
             stamps.insert(entry.path(), stamp(&entry.path()));
         }
     }
@@ -638,10 +650,15 @@ impl Resolver {
         let source = normalise(source);
         let path = Path::new(source);
         if path.is_absolute() {
-            if is_image_file(path) { return Some(path.into()); }
+            if is_image_file(path) {
+                return Some(path.into());
+            }
             // Explicit paths may be outside every search root. Stat on every
             // call, and cache only the basename/app recovery, never this path.
-            let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
             return self.resolve_in_generation(name, size, scale, app);
         }
         let key = (
@@ -714,23 +731,43 @@ mod tests {
         scratch.write("icons/Fixture/32x32/apps/later.svg", "svg");
         resolver.stamps.lock().unwrap().checked = Instant::now();
         assert_eq!(resolver.generation(), generation);
-        assert!(resolver.resolve_in_generation("later", 20, 1, None).is_none());
+        assert!(
+            resolver
+                .resolve_in_generation("later", 20, 1, None)
+                .is_none()
+        );
         resolver.stamps.lock().unwrap().checked = Instant::now() - Duration::from_secs(2);
         assert!(resolver.generation() > generation);
-        assert!(resolver.resolve_in_generation("later", 20, 1, None).is_some());
+        assert!(
+            resolver
+                .resolve_in_generation("later", 20, 1, None)
+                .is_some()
+        );
     }
 
     #[test]
     fn inventory_charges_only_monitored_paths_once() {
         let scratch = Scratch::new();
-        for i in 0..1000 { scratch.write(&format!("icons/Fixture/32x32/apps/unused-{i}.svg"), "svg"); }
+        for i in 0..1000 {
+            scratch.write(&format!("icons/Fixture/32x32/apps/unused-{i}.svg"), "svg");
+        }
         let root = scratch.0.join("icons");
         let mut stamps = Stamps::new();
         let mut visited = BTreeSet::new();
         let mut work = 0;
-        assert!(inventory(&root, &root.canonicalize().unwrap(), 0, &mut stamps, &mut visited, &mut work));
+        assert!(inventory(
+            &root,
+            &root.canonicalize().unwrap(),
+            0,
+            &mut stamps,
+            &mut visited,
+            &mut work
+        ));
         assert_eq!(work, stamps.len());
-        assert_eq!(work, 4, "icons/theme/size/context only; SVG files are not stamped");
+        assert_eq!(
+            work, 4,
+            "icons/theme/size/context only; SVG files are not stamped"
+        );
     }
 
     #[test]
