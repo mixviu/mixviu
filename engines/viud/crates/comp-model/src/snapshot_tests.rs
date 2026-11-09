@@ -158,7 +158,10 @@ fn fixture() -> CompSnapshot {
     windows.insert(
         "s2".into(),
         WindowSnapshot {
-            opacity: 1.0, z: 0, clip: None, requested_visible: true,
+            opacity: 1.0,
+            z: 0,
+            clip: None,
+            requested_visible: true,
             placement: "floating",
             float_geometry: None,
             occlusion: Default::default(),
@@ -638,7 +641,10 @@ fn descriptor_table_and_serialised_fixture_have_exact_parity() {
         output: "o_dp_1".into(),
     });
     snapshot.windows.values_mut().next().unwrap().clip = Some(crate::request::ClipRect {
-        x: 0.0, y: 0.0, width: 64.0, height: 48.0,
+        x: 0.0,
+        y: 0.0,
+        width: 64.0,
+        height: 48.0,
     });
     leaves.extend(flattened_paths(&serde_json::to_value(snapshot).unwrap()));
     for leaf in &leaves {

@@ -1568,9 +1568,13 @@ pub fn retarget_pointer(lp: &mut Loop) {
 pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
     let time = now_ms(lp);
     for seat in [SeatKind::Human, SeatKind::Agent] {
-        let Some(handle) = seat_of(lp, seat) else { continue };
-        let keyboard_here = delivery_target(lp, seat, true).is_some_and(|(target, _)| target == id.0);
-        let pointer_here = delivery_target(lp, seat, false).is_some_and(|(target, _)| target == id.0);
+        let Some(handle) = seat_of(lp, seat) else {
+            continue;
+        };
+        let keyboard_here =
+            delivery_target(lp, seat, true).is_some_and(|(target, _)| target == id.0);
+        let pointer_here =
+            delivery_target(lp, seat, false).is_some_and(|(target, _)| target == id.0);
         if keyboard_here {
             if let Some(keyboard) = handle.get_keyboard() {
                 keyboard.set_focus(&mut lp.state, None, SERIAL_COUNTER.next_serial());
@@ -1578,16 +1582,27 @@ pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
         }
         if pointer_here {
             if let Some(pointer) = handle.get_pointer() {
-                pointer.unset_grab_without_focus_restore(&mut lp.state, SERIAL_COUNTER.next_serial(), time);
-                pointer.motion(&mut lp.state, None, &smithay::input::pointer::MotionEvent {
-                    location: pointer.current_location(), serial: SERIAL_COUNTER.next_serial(), time,
-                });
+                pointer.unset_grab_without_focus_restore(
+                    &mut lp.state,
+                    SERIAL_COUNTER.next_serial(),
+                    time,
+                );
+                pointer.motion(
+                    &mut lp.state,
+                    None,
+                    &smithay::input::pointer::MotionEvent {
+                        location: pointer.current_location(),
+                        serial: SERIAL_COUNTER.next_serial(),
+                        time,
+                    },
+                );
                 pointer.frame(&mut lp.state);
             }
         }
         if let Some(touch) = handle.get_touch() {
-            let touch_here = touch.current_focuses().iter().any(|surface|
-                record_of(lp, surface).is_some_and(|target| root_of(lp, target) == id));
+            let touch_here = touch.current_focuses().iter().any(|surface| {
+                record_of(lp, surface).is_some_and(|target| root_of(lp, target) == id)
+            });
             if touch_here {
                 touch.cancel(&mut lp.state);
                 touch.unset_grab(&mut lp.state);
