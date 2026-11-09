@@ -12,10 +12,18 @@ export MIXOS_BROKER_ACCOUNT = $bus.account
 $io = require("../../engines/viud/scripts/lib/scenes_io.mix")
 $runtime = $dir .. "/wayland"
 mkdir($runtime); chmod($runtime, 0o700)
-write_file($dir .. "/settings.json", "{}")
+copy(dirname(args()[0]) .. "/smoke-settings.json", $dir .. "/settings.json")
 write_file($dir .. "/preferences.json", json_encode({scene_host:false}))
 $env = {HOME:$dir .. "/home", XDG_RUNTIME_DIR:$runtime, XDG_CONFIG_HOME:$dir .. "/config", XDG_DATA_HOME:$dir .. "/data", XDG_STATE_HOME:$dir .. "/state", XDG_CACHE_HOME:$dir .. "/cache", MIXOS_ETC:$dir .. "/etc", MIXOS_VAR:$dir .. "/var", MIXOS_RUN:$bus.dir .. "/run", MIXOS_NODE_CONFIG:$bus.conf, MIXOS_NODED_URL:$bus.url, VIU_COMP_SERVICE:"comp-p3", WAYLAND_DISPLAY:"p3", DISPLAY:nil, DBUS_SESSION_BUS_ADDRESS:nil, MIXOS_VT:nil, NOTIFY_SOCKET:nil, MESA_VK_WSI_PRESENT_MODE:"mailbox", P3_SETTINGS:$dir .. "/panel-settings.conf.mix"}
 mkdir($env.HOME, {parents:true})
+-- The frozen operational harness uses MIXOS_; the P0 engines use MIX_.
+-- Pin both generations to the same private broker and private state.
+for $suffix in ["ETC", "VAR", "RUN", "NODE_CONFIG", "NODED_URL"]
+  $env["MIX_" .. $suffix] = $env["MIXOS_" .. $suffix]
+end
+$env.MIX_BROKER_ACCOUNT = $bus.account
+$env.MIX_BUS_SOCKET = $bus.endpoint
+$env.MIX_SESSION_FD = nil
 $children = []; $records = []
 fn launch($argv, $name, $extra)
   return spawn($argv, {env:merge($env, $extra), die_with_parent:true, stdout:{file:$dir .. "/" .. $name .. ".log"}, stderr:"stdout"})
@@ -44,10 +52,13 @@ try
   push($children, $loader)
   $mounted = wait_call("p3-loader", "snapshot", {})
   if len(keys($mounted.instances)) != 2 then raise("P3_LIVE", "two panels not loaded") end
+  $kept_key = sort(keys($mounted.instances))[0]
+  $io.rpc("p3-loader", "mode", {output:$kept_key, mode:"docked"})
+  sleep(1)
   for $key in keys($mounted.instances)
     $scene = $mounted.instances[$key]
     push($records, $io.rpc("shell", "shell.scene.get", {scene:$scene.id, output:$key}))
-    push($records, $io.rpc("comp-p3", "comp.capture.frame", {output:$key, path:$dir .. "/" .. $key .. ".png", cursor:false}))
+    push($records, $io.rpc("comp-p3", "comp.capture.frame", {output:$outputs[$key].name, path:$dir .. "/" .. $key .. ".png", cursor:false}))
   end
   $until = monotonic() + 35
   $after = $mounted
@@ -59,9 +70,14 @@ try
   if len(keys($after.instances)) != 1 then raise("P3_LIVE", "unplug did not remove one instance") end
   $survivor = keys($after.instances)[0]
   if $after.instances[$survivor].id != $mounted.instances[$survivor].id then raise("P3_LIVE", "surviving identity changed") end
+  if $after.model.outputs[$survivor].mode != "docked" then raise("P3_LIVE", "survivor mode changed") end
+  if load_data($env.P3_SETTINGS)[$after.model.outputs[$survivor].name] != "docked" then raise("P3_LIVE", "mode not persisted by name") end
   push($records, $io.rpc("shell", "shell.scene.get", {scene:$after.instances[$survivor].id, output:$survivor}))
   write_file($dir .. "/result.json", json_encode({result:"pass", before:$mounted, after:$after, records:$records}))
   print("P3_LIVE=pass")
+catch $message, $error
+  eprint(json_encode({message:$message, error:$error}))
+  raise($error.code, $message, $error.details)
 finally
   write_file($dir .. "/progress.json", json_encode($records))
   for $child in reverse($children) $stopped = kill($child, 9) end

@@ -14,6 +14,7 @@ $shape = env("P3_SHAPE", "shared")
 if not contains(["shared", "instance"], $shape) then raise("P3_SHAPE", "shared or instance") end
 $children = {}
 $feed = nil; $watching = false
+$modes = {}
 
 fn sample($name, $snapshot, $key)
   global $children
@@ -36,7 +37,7 @@ fn sample($name, $snapshot, $key)
 end
 
 fn update()
-  global $state, $model, $settings, $children, $feed
+  global $state, $model, $settings, $children, $feed, $modes
   if $feed == nil then $feed = $p3.outputs($io, $comp) end
   $snapshot = $feed
   $keys = $p3.select_outputs($meta, $snapshot)
@@ -68,12 +69,23 @@ fn update()
   end
   $model.clock = date_format(time(), "%H:%M:%S")
   $state = $p3.reconcile($state, $meta, $snapshot, $source, $model, $src, $io, $host, serve_name())
+  for $key in keys($modes)
+    if not has_key($state, $key) then $modes = delete($modes, $key) end
+  end
+  for $key in keys($state)
+    $mode = $model.outputs[$key].mode
+    if $modes[$key] != $mode then
+      $io.rpc($host, "shell.panel.mode", {output:$key, edge:"bottom", mode:$mode})
+      $modes[$key] = $mode
+    end
+  end
 end
 
 on mode
   global $settings
   $key = $event.args.output
   if not has_key($state, $key) then reply(10, "output removed"); return end
+  if not contains(["hidden", "pinned", "docked"], $event.args.mode) then reply(10, "invalid panel mode"); return end
   $settings[$model.outputs[$key].name] = $event.args.mode
   write_atomic($settings_path, data_encode($settings))
   update()
@@ -118,5 +130,10 @@ on bus.connected
 end
 
 $watching = $p3.watch_outputs($io, $comp)
-update()
+try
+  update()
+catch $message, $error
+  eprint(json_encode({message:$message, error:$error}))
+  raise($error.code, $message, $error.details)
+end
 interval(1, "tick")

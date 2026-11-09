@@ -174,6 +174,7 @@ pub fn wire(
         let damage_tracker =
             smithay::backend::renderer::damage::OutputDamageTracker::from_output(&output);
         globals.push((output.clone(), global));
+        state.state.redraw.register(&world::state::output_key(&output));
         // This runs before the event loop serves any client.
         human_seat_without_sources(&mut state.state.seat.seat);
         state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;

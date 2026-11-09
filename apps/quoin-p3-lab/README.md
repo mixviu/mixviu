@@ -34,7 +34,8 @@ virtual-output management API. No renderer or physical seat is replaced.
 Set `P3_SETTINGS` to a private file when running the loader directly.
 `P3_SHAPE=shared|instance` chooses one Mix behaviour process or one per output.
 `mode {output,mode}` stores mode by output **name** and rejects absent outputs.
-The specimen exposes mode in the model; it does not apply panel visibility.
+It applies hidden/pinned/docked mode through the existing host API; new
+outputs default to pinned so the specimen is visible.
 
 ## Repeat and P2
 

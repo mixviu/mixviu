@@ -9,7 +9,8 @@ model: {}
 root: {widget: row, children: [launcher, pager, tasks, fill, notes, volume, network, clock], gap: 8, padding: 6, background: '#202326f2'}
 launcher: {widget: button, label: Apps}
 pager: {repeat: {over: '= $src.comp.workspaces', as: ws, key: id, max: 64}, child: ws_button, flow: horizontal, row_height: 30, on_click: workspace}
-ws_button: {widget: button, label: '= $ws.label', tone: '= if $ws.index == $model.current[$instance.output] then "primary" else "normal" end'}
+ws_button: {widget: row, children: [ws_label], padding: 8, background: '= if $ws.index == $model.current[$instance.output] then "#3daee9" else "#303438" end'}
+ws_label: {widget: text, text: '= $ws.label'}
 tasks: {widget: text, text: '= $model.outputs[$instance.output].name'}
 fill: {widget: spacer}
 notes: {widget: button, label: Notes}
