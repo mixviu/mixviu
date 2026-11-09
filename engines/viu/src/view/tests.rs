@@ -25,6 +25,52 @@ fn content(source: &str, frame: Option<Frame>, dialog: bool) -> Arc<Content> {
     })
 }
 
+#[test]
+fn p2_real_panel_binding_and_cpu_frame_measurement() {
+    use std::time::Instant;
+    let source = include_str!("../../../../share/scenes/panel/scene.mix");
+    let baseline = source.replace("$src.clock.time", "$model.clock.time")
+        .replace("$src.clock.date", "$model.clock.date");
+    for (name, source, path) in [("whole-model", baseline.as_str(), "model"), ("source-path", source, "src.clock.time")] {
+        let doc = scene::parse(source).unwrap();
+        let set = scene::bindings::compile(&doc).unwrap();
+        let mut tree = scene::resolve(&doc).unwrap();
+        let ctx = egui::Context::default();
+        let mut view = SceneUi::new(content(source, None, false));
+        view.setup(&ctx);
+        let mut patch_ns = Vec::new();
+        let mut frame_ns = Vec::new();
+        let mut counts = std::collections::BTreeSet::new();
+        for i in 0..110 {
+            let time = format!("12:{:02}", i % 60);
+            let value = if path == "model" {
+                let mut model = tree.model.clone();
+                model["clock"]["time"] = json!(time);
+                model
+            } else { json!(time) };
+            let started = Instant::now();
+            let result = scene::bindings::reevaluate(&tree, &set, path, &value).unwrap();
+            let patch = started.elapsed().as_nanos();
+            counts.insert(result.evaluated.len());
+            if path != "model" { assert_eq!(result.evaluated, ["clock_time.text"]); }
+            tree = result.tree;
+            let started = Instant::now();
+            let lists = crate::templates::validate_templates(&tree).unwrap();
+            view.update(SceneMessage::Replace(Arc::new(Content {tree:tree.clone(),lists,revision:i+1,frame:None,dialog:false})));
+            let mut output = ctx.run_ui(egui::RawInput {
+                screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1920.0,52.0))),
+                ..Default::default()
+            }, |ui| view.show(ui, &mut Vec::new()));
+            output.textures_delta.clear();
+            let frame = started.elapsed().as_nanos();
+            assert!(view.layout.nodes.contains_key("clock_time"));
+            if i >= 10 { patch_ns.push(patch); frame_ns.push(frame); }
+        }
+        patch_ns.sort(); frame_ns.sort();
+        println!("P2_PANEL {name} samples=100 reevaluations={counts:?} patch_median_us={} patch_p95_us={} cpu_frame_median_us={} cpu_frame_p95_us={} (headless authored panel; no GPU/presentation, empty task/tray fixtures)", patch_ns[50] as f64/1000.0,patch_ns[94] as f64/1000.0,frame_ns[50] as f64/1000.0,frame_ns[94] as f64/1000.0);
+    }
+}
+
 fn runtime(source: &str, size: (u32, u32)) -> UiRuntime<SceneUi> {
     let mut rt = UiRuntime::headless(SceneUi::new(content(source, None, false)), size, 1.0);
     rt.tick();

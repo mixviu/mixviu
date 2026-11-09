@@ -62,7 +62,10 @@ fn publish_changed($s)
       $source_clock_armed = true
       task_start("scenes.source.tick", "{}")
     end
-    if $needed.clock then $source_cache.clock = {unix:floor(time())} end
+    if $needed.clock then
+      $now = time()
+      $source_cache.clock = {unix:floor($now), time:date_format($now, "%H:%M"), date:date_format($now, "%a %d %b")}
+    end
     $s = $sources.distribute($s, $source_cache, $decls)
   catch $message, $error
     $s.diagnostic = {error_code:$error.code, message:$message}

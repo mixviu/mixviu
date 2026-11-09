@@ -37,6 +37,6 @@ st_net_i: {"h":20,"hidden":"= not $model.network.has_icon","src":"= $model.netwo
 st_net_f: {"color":"#a1a9b1","hidden":"= $model.network.has_icon","size":14,"text":"•","widget":"text"}
 clock: {"align":"center","background":"= $model.clock.background","children":["clock_col"],"height":44,"hover":"#ffffff1a","on_click":"calendar","padding":10,"radius":8,"tooltip":"= $model.clock.tip","widget":"row"}
 clock_col: {"align":"center","children":["clock_time","clock_date"],"gap":0,"widget":"column"}
-clock_time: {"bold":true,"color":"#fcfcfc","size":19,"text":"= $model.clock.time","widget":"text"}
-clock_date: {"color":"#a1a9b1","size":11,"text":"= $model.clock.date","widget":"text"}
+clock_time: {"bold":true,"color":"#fcfcfc","size":19,"text":"= $src.clock.time","widget":"text"}
+clock_date: {"color":"#a1a9b1","size":11,"text":"= $src.clock.date","widget":"text"}
 ```
