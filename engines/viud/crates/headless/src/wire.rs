@@ -128,7 +128,7 @@ pub fn wire(
     if !(1..=3).contains(&count) {
         return Err("lab outputs must be 1..=3".into());
     }
-    let mut contexts = Vec::new();
+    let contexts = Rc::new(RefCell::new(Vec::new()));
     let mut globals = Vec::new();
     // Native uses one renderer across its output pipes. The engine's shared
     // graphics caches belong to that renderer, not one EGL context per output.
@@ -158,7 +158,10 @@ pub fn wire(
                 subpixel: Subpixel::Unknown,
                 make: "MixOS".into(),
                 model: "Headless".into(),
-                serial_number: "Unknown".into(),
+                // world::output_key is make/model/serial, not wl_output.name.
+                // Native falls back to connector name; synthetic outputs must
+                // likewise have distinct stable identities.
+                serial_number: format!("headless-{index}"),
             },
         );
         output.change_current_state(
@@ -258,7 +261,7 @@ pub fn wire(
             targets,
             damage_tracker,
         )));
-        contexts.push(context);
+        contexts.borrow_mut().push(context);
     }
     if let Ok(seconds) = std::env::var("MIX_VIUD_LAB_UNPLUG_SECS") {
         let seconds: u64 = seconds.parse()?;
@@ -266,6 +269,7 @@ pub fn wire(
             return Err("lab unplug needs 2+ outputs and 1..=300 seconds".into());
         }
         let (output, global) = globals.pop().expect("lab output");
+        let retiring = Rc::clone(&contexts);
         event_loop.handle().insert_source(
             smithay::reexports::calloop::timer::Timer::from_duration(
                 std::time::Duration::from_secs(seconds),
@@ -276,6 +280,7 @@ pub fn wire(
                     .redraw
                     .remove(&world::state::output_key(&output));
                 state.inner.unmap_output_everywhere(&output);
+                retiring.borrow_mut().retain(|context| !context.borrow().is_output(&output));
                 state
                     .state
                     .output
@@ -291,7 +296,7 @@ pub fn wire(
     event_loop
         .handle()
         .insert_source(source, move |_, _, state| {
-            for context in &contexts {
+            for context in contexts.borrow().iter() {
                 crate::frame::arm(state, context);
             }
         })?;

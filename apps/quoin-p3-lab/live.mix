@@ -25,6 +25,7 @@ $env.MIX_BROKER_ACCOUNT = $bus.account
 $env.MIX_BUS_SOCKET = $bus.endpoint
 $env.MIX_SESSION_FD = nil
 $env.MIX_VIU_COMP_SERVICE = "comp-p3"
+$env.MIX_VIUD_LAB_CAPTURE_PATTERN = env("P3_CAPTURE_PATTERN", "")
 $children = []; $records = []
 fn launch($argv, $name, $extra)
   return spawn($argv, {env:merge($env, $extra), die_with_parent:true, stdout:{file:$dir .. "/" .. $name .. ".log"}, stderr:"stdout"})

@@ -1,0 +1,10 @@
+-- Shipped panel composition with a bounded lab model. Not loaded by D2's
+-- measured behaviour processes, whose code and workload remain unchanged.
+fn decorate($sample, $authored)
+  $out = merge($authored, $sample)
+  $out.clock = merge($authored.clock, {time:$sample.clock,date:date_format(time(), "%a %d %b")})
+  for $key in keys($out.outputs)
+    $out.outputs[$key].background = if ends_with($key, "0") then "#243640" else "#403024" end
+  end
+  return $out
+end

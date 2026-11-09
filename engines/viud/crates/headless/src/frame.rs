@@ -54,6 +54,10 @@ pub(crate) struct Context {
 }
 
 impl Context {
+    pub(crate) fn is_output(&self, output: &Output) -> bool {
+        self.output == *output
+    }
+
     pub(crate) fn new(
         output: Output,
         renderer: Rc<RefCell<GlesRenderer>>,
@@ -80,7 +84,7 @@ impl Context {
 pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     let mut ctx = context.borrow_mut();
     let key = world::state::output_key(&ctx.output);
-    if ctx.armed || !state.state.redraw.needs(&key) {
+    if !connected(state, &ctx.output) || ctx.armed || !state.state.redraw.needs(&key) {
         return;
     }
     let at = ctx.last.map_or_else(Instant::now, |last| {
@@ -104,7 +108,7 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
     let key = world::state::output_key(&ctx.output);
-    if !state.state.redraw.needs(&key) {
+    if !connected(state, &ctx.output) || !state.state.redraw.needs(&key) {
         return;
     }
     let _cpu = ledger::frame_trace::span("headless_frame_cpu", 0);
@@ -169,6 +173,10 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     }
 }
 
+fn connected(state: &Loop, output: &Output) -> bool {
+    state.inner.space_state().state.outputs().any(|candidate| candidate == output)
+}
+
 fn compose(
     state: &mut Loop,
     ctx: &mut Context,
@@ -187,13 +195,26 @@ fn compose(
     let pattern = std::env::var("MIX_VIUD_LAB_CAPTURE_PATTERN").as_deref() == Ok("1");
     let clear = if pattern {
         scene.elements.clear();
-        if ctx.output.name() == "headless-0" { [0.6, 0.0, 0.0, 1.0] } else { [0.0, 0.6, 0.0, 1.0] }
-    } else { [0.1, 0.1, 0.1, 1.0] };
+        if ctx.output.name() == "headless-0" {
+            [0.6, 0.0, 0.0, 1.0]
+        } else {
+            [0.0, 0.6, 0.0, 1.0]
+        }
+    } else {
+        [0.1, 0.1, 0.1, 1.0]
+    };
     if capture {
         let render_key = state.inner.render_output.clone();
         let layers = frames::scene::layershell::layershell(state, size, render_key.as_deref());
-        info!("P3_CAPTURE output={} render={:?} layers={:?}", ctx.output.name(), state.inner.render_output,
-            layers.iter().map(|(_, n)| (n.surface.id().protocol_id(), n.location)).collect::<Vec<_>>());
+        info!(
+            "P3_CAPTURE output={} render={:?} layers={:?}",
+            ctx.output.name(),
+            state.inner.render_output,
+            layers
+                .iter()
+                .map(|(_, n)| (n.surface.id().protocol_id(), n.location))
+                .collect::<Vec<_>>()
+        );
     }
     *visible = scene.visible_window;
     // Track content changes independently of the alternating targets. This
@@ -260,13 +281,7 @@ fn compose(
         {
             let mut target = renderer.bind(ctx.cursor.as_mut().expect("cursor texture"))?;
             OutputDamageTracker::from_output(&ctx.output)
-                .render_output(
-                    renderer,
-                    &mut target,
-                    0,
-                    &scene.elements,
-                    clear,
-                )?
+                .render_output(renderer, &mut target, 0, &scene.elements, clear)?
                 .sync
                 .wait()?;
         }

@@ -4,6 +4,9 @@ $p3 = require("instances.mix")
 $io = require("../../engines/viud/scripts/lib/scenes_io.mix")
 $meta = load_data(dirname(script_path()) .. "/template.conf.mix")
 $source = read_file(dirname(script_path()) .. "/panel.mix")
+$amp = require("../../engines/viud/scripts/lib/scenes.mix")
+$furniture = require("furniture.mix")
+$authored_model = $amp.document($source).model
 $state = {}; $model = {outputs:{}}; $settings = {}
 $settings_path = env("P3_SETTINGS")
 if $settings_path == "" then raise("P3_SETTINGS", "set a private settings path") end
@@ -68,6 +71,7 @@ fn update()
     $src.comp.workspaces = push($src.comp.workspaces, {id:to_string($ws.index), index:$ws.index, label:$ws.name ?? to_string($ws.index)})
   end
   $model.clock = date_format(time(), "%H:%M:%S")
+  $model = $furniture.decorate($model, $authored_model)
   $state = $p3.reconcile($state, $meta, $snapshot, $source, $model, $src, $io, $host, serve_name())
   for $key in keys($modes)
     if not has_key($state, $key) then $modes = delete($modes, $key) end

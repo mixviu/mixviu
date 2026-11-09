@@ -75,7 +75,17 @@ end
 fn preview($root, $cast)
   $dir = $root .. "/" .. $cast.id
   mkdir($dir, {parents:true})
-  write_atomic($dir .. "/scene.mix", $cast.source)
+  -- P1 reuses the installed-scene validator, which reserves dialog names.
+  -- Its plain window ignores document kind. Adapt only this transport copy;
+  -- the stage descriptor retains its kind and the authored file is untouched.
+  $doc = $amp.document($cast.source)
+  $window = $doc.window
+  $window.kind = "edge"
+  $window = delete(delete($window, "edge"), "panel")
+  $doc.headers.window = json_encode($window)
+  $source = "---\n"
+  for $key in keys($doc.headers) $source = $source .. $key .. ": " .. $doc.headers[$key] .. "\n" end
+  write_atomic($dir .. "/scene.mix", $source .. "---\n" .. $doc.body)
   write_atomic($dir .. "/template.conf.mix", data_encode({title:"Stage preview"}))
   return $dir
 end

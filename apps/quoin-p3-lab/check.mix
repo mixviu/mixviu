@@ -15,6 +15,9 @@ $meta = {name:"panel", instances:"per_output"}
 $outputs = {a:{name:"headless-0", primary:true}, b:{name:"headless-1"}, c:{name:"headless-2"}}
 $src = {comp:{workspaces:[{id:"one",label:"1",current:true}, {id:"two",label:"2",current:false}]}}
 $model = {outputs:{a:{name:"A"}, b:{name:"B"}, c:{name:"C"}}, clock:"12:00"}
+$amp = require("../../engines/viud/scripts/lib/scenes.mix")
+$furniture = require("furniture.mix")
+$model = $furniture.decorate($model, $amp.document($fixture).model)
 ensure(deep_eq($p3.select_outputs({instances:"primary"}, $outputs), ["a"]), "primary")
 ensure(deep_eq($p3.select_outputs({instances:"named",output:"headless-1"}, $outputs), ["b"]), "named by stable name")
 $state = $p3.reconcile({}, $meta, $outputs, $fixture, $model, $src, $io, "shell", "p3")
@@ -24,7 +27,7 @@ $calls = []
 $state = $p3.reconcile($state, $meta, $outputs, $fixture, $model, $src, $io, "shell", "p3")
 ensure(len($calls) == 0, "identical snapshot must be silent")
 $outputs = delete($outputs, "b")
-$model.clock = "12:01"
+$model.clock.time = "12:01"
 $calls = []
 $state = $p3.reconcile($state, $meta, $outputs, $fixture, $model, $src, $io, "shell", "p3")
 ensure(len($calls) == 3 and $calls[0].command == "shell.scene.unload", "unplug before pending update")
