@@ -744,6 +744,7 @@ pub fn execute(
                     );
                 }
                 Err(_e) => {
+                    warn!("connector property pass failed: {_e}");
                     ctx_ref.outputs[output_idx].props_applied = true; // don't retry every frame
                     if hdr_active {
                         ctx_ref.outputs[output_idx].hdr_active = false;

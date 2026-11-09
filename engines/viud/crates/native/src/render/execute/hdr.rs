@@ -136,15 +136,15 @@ fn enum_value(drm: &DrmDeviceFd, handle: property::Handle, name: &str) -> Result
     Err("not an enum property".into())
 }
 
-/// A connector property handle by name, or `None` when the connector lacks it.
-/// Absence is normal (not every connector exposes `Colorspace` or `max bpc`) and
-/// must not fail the whole pass.
+/// A property handle by name on a connector or CRTC, or `None` when the object
+/// lacks it. Absence is normal (not every connector exposes `Colorspace` or
+/// `max bpc`, not every CRTC a `DEGAMMA_LUT`) and must not fail the whole pass.
 fn opt_prop<H: ResourceHandle>(drm: &DrmDeviceFd, conn: H, name: &str) -> Option<property::Handle> {
     prop_handle(drm, conn, name).ok()
 }
 
-/// The connector's CURRENT raw value for `handle` — what the previous owner of
-/// this connector left behind. Logged so a stale value is visible as a fact.
+/// The object's CURRENT raw value for `handle` — what the previous owner of the
+/// connector or CRTC left behind. Logged so a stale value is visible as a fact.
 fn current_raw<H: ResourceHandle>(
     drm: &DrmDeviceFd,
     conn: H,
@@ -172,7 +172,8 @@ pub struct PropOutcome {
     pub colorspace: String,
     pub metadata: String,
     pub max_bpc: String,
-    /// The CRTC colour pipeline (DEGAMMA_LUT, CTM, GAMMA_LUT) as found, and reset.
+    /// The CRTC colour pipeline (DEGAMMA_LUT, CTM, GAMMA_LUT): what was loaded and
+    /// whether the reset was committed.
     pub crtc_color: String,
 }
 
@@ -212,6 +213,10 @@ pub struct PropOutcome {
 /// lifted every grey into a grey film (desk4 and the LG, 2026-11-09). viud does
 /// all colour work in its shaders, so the pipeline must be identity.
 ///
+/// Only loaded (non-zero) LUT properties are written. If the driver rejects the
+/// LUT reset, the connector half is still committed on its own, so a CRTC-side
+/// refusal cannot cost the `Colorspace` and metadata reset.
+///
 /// Missing properties are skipped, not fatal. Every commit is preceded by a
 /// `TEST_ONLY` commit, so a rejected request can never blank the display.
 pub fn apply_connector_props(
@@ -235,18 +240,21 @@ pub fn apply_connector_props(
 
     // CRTC colour pipeline: clear whatever the previous owner loaded.
     let mut luts: Vec<property::Handle> = Vec::new();
+    let mut found: Vec<String> = Vec::new();
     for name in ["DEGAMMA_LUT", "CTM", "GAMMA_LUT"] {
         if let Some(h) = opt_prop(drm, crtc, name) {
             let was = current_raw(drm, crtc, h).unwrap_or(0);
-            let state = if was == 0 {
-                "none".to_string()
-            } else {
-                format!("blob({was})->cleared")
-            };
-            outcome.crtc_color.push_str(&format!("{name}={state} "));
-            luts.push(h);
+            if was != 0 {
+                found.push(format!("{name}=blob({was})"));
+                luts.push(h);
+            }
         }
     }
+    outcome.crtc_color = if found.is_empty() {
+        "identity".into()
+    } else {
+        found.join(" ")
+    };
 
     // Target colorspace: BT.2020 only while HDR is actually driving this pipe,
     // Default otherwise — the reset half that never existed before.
@@ -305,7 +313,7 @@ pub fn apply_connector_props(
         return Ok(outcome);
     }
 
-    let build = || {
+    let build = |with_luts: bool| {
         let mut req = AtomicModeReq::new();
         if let Some((h, v)) = cs {
             req.add_property(conn, h, property::Value::UnsignedRange(v));
@@ -316,17 +324,31 @@ pub fn apply_connector_props(
         if let Some((h, v)) = bpc {
             req.add_property(conn, h, property::Value::UnsignedRange(v));
         }
-        for h in &luts {
-            req.add_property(crtc, *h, property::Value::Blob(0));
+        if with_luts {
+            for h in &luts {
+                req.add_property(crtc, *h, property::Value::Blob(0));
+            }
         }
         req
     };
+    let test = |with_luts: bool| {
+        drm.atomic_commit(
+            AtomicCommitFlags::TEST_ONLY | AtomicCommitFlags::ALLOW_MODESET,
+            build(with_luts),
+        )
+    };
 
-    // Validate before committing — a bad blob fails here, never on screen.
-    if let Err(e) = drm.atomic_commit(
-        AtomicCommitFlags::TEST_ONLY | AtomicCommitFlags::ALLOW_MODESET,
-        build(),
-    ) {
+    // Validate before committing — a bad blob fails here, never on screen. A
+    // rejected LUT reset falls back to the connector half alone.
+    let mut with_luts = !luts.is_empty();
+    if with_luts && let Err(e) = test(true) {
+        outcome.crtc_color = format!("{} kept (reset rejected: {e})", outcome.crtc_color);
+        with_luts = false;
+    }
+    if !with_luts && cs.is_none() && meta.is_none() && bpc.is_none() {
+        return Err(format!("connector-props: nothing committable [{}]", outcome.crtc_color));
+    }
+    if !with_luts && let Err(e) = test(false) {
         if let Some(b) = blob_raw {
             let _ = drm.destroy_property_blob(b);
         }
@@ -335,7 +357,7 @@ pub fn apply_connector_props(
             outcome.colorspace, outcome.metadata, outcome.max_bpc, outcome.crtc_color
         ));
     }
-    if let Err(e) = drm.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, build()) {
+    if let Err(e) = drm.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, build(with_luts)) {
         if let Some(b) = blob_raw {
             let _ = drm.destroy_property_blob(b);
         }
@@ -343,6 +365,9 @@ pub fn apply_connector_props(
             "connector-props commit failed: {e} [{}|{}|{}|{}]",
             outcome.colorspace, outcome.metadata, outcome.max_bpc, outcome.crtc_color
         ));
+    }
+    if with_luts {
+        outcome.crtc_color = format!("{} -> cleared", outcome.crtc_color);
     }
     // The HDR blob is intentionally leaked for as long as the property references
     // it; it is replaced (or cleared) by the next pass on this connector.
