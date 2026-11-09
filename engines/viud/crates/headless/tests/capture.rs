@@ -512,8 +512,12 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
     }
     let buttons = pattern.state.pointer_buttons;
     let callbacks = pattern.state.callbacks;
-    let refused = bus.call_rc("comp.input.pointer.button", json!({"seat":"agent","button":"left","action":"click"}), 10);
-    assert_eq!(refused["error"],"no_pointer_target");
+    let refused = bus.call_rc(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+        10,
+    );
+    assert_eq!(refused["error"], "no_pointer_target");
     pattern.commit(true);
     let blank = capture("hidden");
     assert_eq!(at(&blank, 320, 180), [18, 20, 25]);
