@@ -1,3 +1,109 @@
+# CI flakes 2 — 2026-11-10
+
+Branch: `fix/ci-flakes-2`, based on `origin/main` at
+`aaedc99d03a3c6c286fda4c3e292988c688c52f6`.
+Tested code head: `e055f84615df0bf63c17f24980d4714440768db0`.
+The receipt commit changes only last.md; the PR exposes its current head SHA.
+
+## Audio: queued change mistaken for terminal exit
+
+The source publishes per read, not per printf. The fixture repeats sink #5.
+If the reader publishes one sink change, the test consumes it, and another
+read publishes the duplicate, the queue is ready after Drop for an ordinary
+change. The old assertion required an empty queue and did not inspect
+`closed`. Drop sets cancelled before killing the group, then joins the reader;
+it is not an early check for worker completion.
+
+The replacement drains the now-stable queue after Drop, checks each remaining
+batch contains the expected sink change and rejects any closed marker.
+The original filtering, coalescing and child-reaping assertions remain.
+
+Controlled proof: a FIFO-fed real cat child emits one sink line, the test
+consumes its batch, then emits the duplicate and waits until that second read
+has queued a batch before dropping the source. Restoring the old empty-queue
+assertion fails (cargo rc 101); the corrected assertion passes (rc 0).
+
+A natural EOF can pass the worker's cancelled check before a concurrent Drop
+records cancellation; that is an already-observed stream exit. This is not
+the cause with the still-live fixture. The public source_unwatch path removes
+the pending slot BEFORE dropping the source, so even such a late terminal
+callback is discarded. No product change is required.
+
+## Lifecycle: boot trace corrupted by formatted fixture writes
+
+The failing wait was for one boot record, before RELOAD, not a heartbeat or
+commit. CI run [42581336097](https://github.com/mixviu/mixviu/actions/runs/42581336097)
+contains:
+
+```text
+legacy-ready|{"pid":boot|{"legacy":11230,"managed":11231}|t=407.542488794
+11230}|t=0
+```
+
+The helper's writeln!(File, format, pid) performs several writes. The citizen's
+append landed between them, so parse_trace could never find a valid boot
+record. Waiting longer cannot repair those bytes. The helper now formats the
+whole readiness record before write_all, giving the regular append file one
+complete short record per write.
+
+Controlled proof: a Write adapter inserts a valid boot record after each
+write. Restoring the old writeln! makes the parser regression fail (rc 101);
+the complete-record helper passes (rc 0). This forces the CI interleaving.
+
+The grace assertion still requires at least 1.5 seconds between candidate-done
+and commit and verifies the old child is reaped. The heartbeat lives until the
+citizen is stopped, rather than expiring after five wall-clock seconds.
+At least one stamp must lie strictly inside the grace window: that proves
+reactor progress; the previous minimum of five also imposed scheduler
+throughput. A runner starved for the entire window can still fail this
+wall-clock responsiveness test; deadlines were not lengthened.
+
+## CBC evidence
+
+All Rust commands ran on CBC. Saved logs were read. Two yes processes and
+each cargo test process (including descendants) were pinned to the same
+allowed CPU with taskset. Each original named test was invoked separately
+50 times before and 50 times after; counters include every invocation.
+Load processes were stopped in finally.
+
+| Run | Audio pass/fail | Lifecycle pass/fail |
+| --- | --- | --- |
+| Before | 50 / 0 | 50 / 0 |
+| After | 50 / 0 | 50 / 0 |
+
+Both baseline loops passed: repetition alone did not expose the races.
+Each controlled regression failed once with the old code and passed once
+with the fix. The final module/binary run repeats both passing regressions.
+
+| CBC job | Revision | BUILD_RC | Evidence |
+| --- | --- | --- | --- |
+| 20261110-002554-b937890f-a1 | aaedc99d | 1 | Load harness setup refused a stdout path string; no test ran. Corrected to native stdout null and requeued. |
+| 20261110-002703-51923577-a1 | aaedc99d | 0 | Before: 50/50 each under load. |
+| 20261110-003109-73e78118 | 78417d67 | 0 | CBC rustfmt diff, fixed regressions rc 0 each, old-code mutations rc 101 each. Own worker edits restored in finally. |
+| 20261110-003329-79ce459c | e055f846 | 0 | Final checks and after loops: 50/50 each. |
+| 20261110-002809-00858da7 | 3d39ac37 | 143 | Superseded queued probe, cancelled before running. |
+| 20261110-003024-e567df98 | 78417d67 | 143 | Superseded queued probe, cancelled before running. |
+
+Final checks: cargo fmt --all -- --check; cargo clippy --locked -p lib-mix
+--all-targets; separately cargo clippy --locked -p mix --all-targets;
+cargo test --locked -p lib-mix --lib desktop_events:: (17 passed);
+cargo test --locked -p mix --test serve_reload_lifecycle (8 passed,
+1 ignored subprocess helper); tools/ci.mix env (196 names, zero problems).
+Existing unrelated deprecation/dead-code/clippy warnings remain.
+
+Saved logs (under the maintainer's CBC log directory):
+
+- `20261110-002703-cbc3-aaedc99d03a3-20261110-002703-51923577-a1-59246340.log`
+- `20261110-003109-cbc3-78417d6752f8-20261110-003109-73e78118-aa20931d.log`
+- `20261110-003329-cbc3-e055f84615df-20261110-003329-79ce459c-6326d611.log`
+
+PR: https://github.com/mixviu/mixviu/pull/50
+Pushed and opened through gh_agent as mixviu-agent.
+No product changes, timeout increases, new environment variables, deployments,
+desktop/VT interaction or installed-prefix writes.
+
+---
+
 # Quoin P1 hand-off — 2026-11-09
 
 Implemented P1 items 1, 2, 4 and 5. Item 3 remains the later lab.
