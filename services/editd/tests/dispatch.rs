@@ -114,6 +114,15 @@ impl H {
         p
     }
 
+    fn write_atomic(&self, path: &Path, text: &str) {
+        // Publish complete fixture content in one rename. A truncate/write
+        // can legitimately produce an empty reload before the write finishes.
+        use std::io::Write;
+        let mut temp = tempfile::NamedTempFile::new_in(path.parent().unwrap()).unwrap();
+        temp.write_all(text.as_bytes()).unwrap();
+        temp.persist(path).unwrap();
+    }
+
     async fn open(&self, path: &Path) -> String {
         let v = self.ok("edit.open", json!({"path": path})).await;
         v["buffer"].as_str().unwrap().to_string()
@@ -1179,7 +1188,7 @@ async fn save_semantics() {
         .unwrap()
         .clone();
     assert_eq!(entry["path"], fresh.display().to_string());
-    std::fs::write(&fresh, "external\n").unwrap();
+    h.write_atomic(&fresh, "external\n");
     h.event(|e| e["event"] == "edit" && e["buffer"] == b.as_str() && e["kind"] == "reload")
         .await;
     assert_eq!(h.text(&b).await, "external\n");
@@ -1217,21 +1226,10 @@ async fn watcher_reloads_clean_and_flags_deleted() {
     let h = start();
     let f = h.file("w.txt", "one\n");
     let b = h.open(&f).await;
-    // A same-length rewrite can keep (dev, ino, size, mtime_ns) equal on a
-    // coarse-mtime filesystem, and an equal stat is intentionally skipped by
-    // the recheck. Give the rewrite a distinct mtime so the reload's
-    // stat-change precondition holds; set_times raises the watcher's
-    // attribute event itself.
-    let meta = std::fs::metadata(&f).unwrap();
+    // Replacing the inode also makes this same-length update observable on
+    // coarse-mtime filesystems, without an intermediate empty-file reload.
     let pre = editd::files::stat(&f).unwrap();
-    let mtime = meta.modified().unwrap() + Duration::from_secs(2);
-    std::fs::write(&f, "two\n").unwrap();
-    std::fs::File::options()
-        .write(true)
-        .open(&f)
-        .unwrap()
-        .set_times(std::fs::FileTimes::new().set_modified(mtime))
-        .unwrap();
+    h.write_atomic(&f, "two\n");
     assert_ne!(
         editd::files::stat(&f).unwrap(),
         pre,
@@ -1285,7 +1283,7 @@ async fn watcher_reloads_clean_and_flags_deleted() {
         .collect();
     assert_eq!(disk, vec![json!("deleted")], "redundant disk events");
     // Recreate.
-    std::fs::write(&f, "four\n").unwrap();
+    h.write_atomic(&f, "four\n");
     h.event(|e| {
         e["event"] == "edit"
             && e["kind"] == "reload"

@@ -20,13 +20,13 @@
 //! screencopy texture).
 
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
-use smithay::backend::renderer::gles::{GlesTexProgram, Uniform, UniformName, UniformType};
+use smithay::backend::renderer::gles::{Uniform, UniformName, UniformType};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer};
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Transform};
 
-use dispatcher::frame::SceneDispatch;
+use dispatcher::frame::{SceneDispatch, TexProgram};
 
 /// The cache key the renderer seam compiles [`SHADER`] under.
 pub const KEY: &str = "decor:rounded-clip";
@@ -98,7 +98,8 @@ void main() {
         color = vec4(0.0, 0.2, 0.0, 0.2) + color * 0.8;
 #endif
 
-    gl_FragColor = color;
+    // The HDR composite decodes here (see `glsl::inject_decode`).
+    gl_FragColor = VIU_OUT(color);
 }
 "#;
 
@@ -147,7 +148,7 @@ impl Clip {
 
 /// The program, compiled once per renderer by the seam (`None` on a renderer
 /// without texture programs: content then draws unclipped).
-pub fn program<R: SceneDispatch>(renderer: &mut R) -> Option<GlesTexProgram> {
+pub fn program<R: SceneDispatch>(renderer: &mut R) -> Option<TexProgram> {
     let names: Vec<UniformName<'static>> = UNIFORMS
         .iter()
         .map(|(name, kind)| UniformName::new(*name, *kind))
@@ -158,7 +159,7 @@ pub fn program<R: SceneDispatch>(renderer: &mut R) -> Option<GlesTexProgram> {
 /// A content element drawn through the rounded clip.
 pub struct Clipped<E> {
     inner: E,
-    program: Option<GlesTexProgram>,
+    program: Option<TexProgram>,
     /// In the inner element's space: the corners `opaque_regions` cuts.
     clip: Clip,
     /// Where the shader cuts, in the space the frame is drawn in: `clip`,
@@ -167,7 +168,7 @@ pub struct Clipped<E> {
 }
 
 impl<E> Clipped<E> {
-    pub fn new(inner: E, program: Option<GlesTexProgram>, clip: Clip) -> Self {
+    pub fn new(inner: E, program: Option<TexProgram>, clip: Clip) -> Self {
         Clipped {
             inner,
             program,
@@ -182,6 +183,11 @@ impl<E> Clipped<E> {
     /// opaque regions stay in the inner element's space, where the wrapping
     /// rescale and relocate map them.
     pub fn rescaled(mut self, scale: f64, offset: Point<i32, Physical>) -> Self {
+        self.set_rescale(scale, offset);
+        self
+    }
+
+    pub fn set_rescale(&mut self, scale: f64, offset: Point<i32, Physical>) {
         let r = self.clip.rect;
         let x0 = (r.loc.x as f64 * scale).round() as i32 + offset.x;
         let y0 = (r.loc.y as f64 * scale).round() as i32 + offset.y;
@@ -191,7 +197,6 @@ impl<E> Clipped<E> {
             rect: Rectangle::new((x0, y0).into(), ((x1 - x0).max(0), (y1 - y0).max(0)).into()),
             radius: (self.clip.radius as f64 * scale) as f32,
         };
-        self
     }
 }
 

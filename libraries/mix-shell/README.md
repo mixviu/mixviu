@@ -2,4 +2,4 @@
 
 The Mix shell library: line editor, command classifier, native-session bootstrap and Bus citizen runtime.
 
-Documentation: <https://mixos.dev/mix-shell/> — source [`docs/mix-shell/README.md`](../../docs/mix-shell/README.md).
+Documentation: <https://mixos.dev/mix-shell/> — source the component manual (not included in this source tree).

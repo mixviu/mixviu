@@ -407,7 +407,6 @@ if not is_reload_candidate() then start_watch() end
 #[test]
 #[ignore = "subprocess helper, launched explicitly by the grace test"]
 fn term_ignoring_child_fixture() {
-    use std::io::Write;
     unsafe {
         libc::signal(libc::SIGTERM, libc::SIG_IGN);
     }
@@ -418,14 +417,42 @@ fn term_ignoring_child_fixture() {
         .create(true)
         .open(std::env::var_os("REL_TRACE").expect("fixture trace"))
         .unwrap();
-    // Formatting directly into the file writes fragments. The citizen can
-    // append its boot record between those fragments, corrupting both lines.
-    // Assemble first so the small readiness record is appended in one write.
-    let ready = format!("legacy-ready|{{\"pid\":{}}}|t=0\n", std::process::id());
-    trace.write_all(ready.as_bytes()).unwrap();
+    write_legacy_ready(&mut trace, std::process::id());
     loop {
         std::thread::park();
     }
+}
+
+fn write_legacy_ready(trace: &mut impl std::io::Write, pid: u32) {
+    // Format before writing: writeln!(File, ...) splits at format arguments,
+    // allowing the citizen's boot record to land in the middle of this line.
+    trace
+        .write_all(format!("legacy-ready|{{\"pid\":{pid}}}|t=0\n").as_bytes())
+        .unwrap();
+}
+
+#[test]
+fn legacy_ready_does_not_split_the_citizens_boot_record() {
+    struct Interleaved(Vec<u8>);
+    impl std::io::Write for Interleaved {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.extend_from_slice(bytes);
+            // Force the competing append after the first write, where the
+            // old writeln! had only emitted `legacy-ready|{"pid":`.
+            self.0
+                .extend_from_slice(b"boot|{\"legacy\":42,\"managed\":43}|t=1\n");
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut writer = Interleaved(Vec::new());
+    write_legacy_ready(&mut writer, 42);
+    let dir = Dir::new("trace-interleaving");
+    dir.write("trace", std::str::from_utf8(&writer.0).unwrap());
+    assert_eq!(parse_trace(&dir, "legacy-ready").len(), 1);
+    assert_eq!(parse_trace(&dir, "boot").len(), 1);
 }
 
 #[derive(Clone, Copy)]
@@ -472,7 +499,9 @@ fn script(v: &Variant) -> String {
         ""
     };
     let cand_hb = if v.candidate_heartbeat {
-        "task_start(\"rel.heartbeat\", json_encode({till: monotonic() + 5}))\n"
+        // Lifetime is owned by the citizen, not a five-second wall-clock
+        // budget that can expire before a loaded runner dispatches the task.
+        "task_start(\"rel.heartbeat\", json_encode({}))\n"
     } else {
         ""
     };
@@ -498,7 +527,7 @@ on lifecycle.commit
   tlog("commit", {{gen: $s.gen, successor: $s.successor, old_managed: exists("/proc/" .. json_encode($s.gen0_managed)), old_legacy: exists("/proc/" .. json_encode($s.gen0_legacy)), cand_legacy_alive: exists("/proc/" .. json_encode($s.cand_legacy ?? 0))}})
   {hook_slow}end
 on rel.heartbeat async
-  while monotonic() < $event.args.till
+  loop
     append_file($TRACE, "hb|" .. monotonic() .. chr(10))
     sleep(0.05)
   end
@@ -960,14 +989,15 @@ async fn offloaded_grace_keeps_reactor_responsive_while_sweeping_a_term_ignoring
 
     // The reactor stayed live DURING that grace: the candidate's heartbeat
     // task kept appending. An inline (runtime-blocking) sweep would yield
-    // zero stamps between candidate-done and commit.
+    // zero stamps between candidate-done and commit. One observed stamp proves
+    // progress; requiring five also measured scheduler throughput under load.
     let hbs: Vec<f64> = trace(&dir)
         .lines()
         .filter_map(|l| l.strip_prefix("hb|").and_then(|t| t.parse::<f64>().ok()))
         .collect();
     let during = hbs.iter().filter(|t| **t > cand_done && **t < c0.t).count();
     assert!(
-        during >= 5,
+        during >= 1,
         "only {during} heartbeats during the {waited:.2}s sweep window — the reactor was blocked"
     );
     broker.stop();

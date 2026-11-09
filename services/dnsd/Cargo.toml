@@ -45,10 +45,10 @@ bus = { workspace = true, features = ["native"], optional = true }
 buildinfo = { workspace = true, optional = true }
 logging = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-hickory-proto = { version = "0.25", default-features = false, optional = true }
+hickory-proto = { version = "0.26.1", default-features = false, optional = true }
 
 [dev-dependencies]
-hickory-proto = { version = "0.25", default-features = false }
+hickory-proto = { version = "0.26.1", default-features = false }
 tempfile.workspace = true
 
 [build-dependencies]

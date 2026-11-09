@@ -30,7 +30,7 @@ pub static EFFECTS_MUT: TokenMut<Box<dyn EffectHost>> = TokenMut::new(&EFFECTS);
 /// What the scene knows about the output frame it is asking for.
 #[derive(Clone, Debug)]
 pub struct EffectFrame {
-    /// The output's stable key (`state::output_key`), so a host can keep per-output state.
+    /// The output's runtime key (`state::output_key`), so a host can keep per-output state.
     pub output: std::sync::Arc<str>,
     /// The output's size in physical pixels.
     pub size: Size<i32, Physical>,

@@ -383,7 +383,10 @@ impl HickoryResolver {
     pub fn from_system() -> crate::error::Result<Self> {
         let inner = hickory_resolver::Resolver::builder_tokio()
             .map_err(|e| crate::error::Error::Internal(format!("DNSBL resolver init failed: {e}")))?
-            .build();
+            .build()
+            .map_err(|e| {
+                crate::error::Error::Internal(format!("DNSBL resolver init failed: {e}"))
+            })?;
         Ok(Self { inner })
     }
 
@@ -395,32 +398,35 @@ impl HickoryResolver {
     /// `maild-auth::resolver` — UDP first, TCP fallback for
     /// responses that exceed UDP MTU.
     ///
-    /// The transport enum is `proto::xfer::Protocol`, NOT the
-    /// `config::ProtocolConfig` that `maild-auth` uses: this crate
-    /// pins hickory-resolver 0.25 (see its manifest — deliberately, to keep
-    /// one 0.25.x in the workspace graph), while maild-auth reaches
-    /// hickory 0.26-alpha through `mail_auth`'s re-export, and 0.26 renamed
-    /// and moved that type. Copying maild-auth's import here is what rotted
-    /// this function; it did not compile between then and 2026-08-20
-    /// because `dnsbl` is an optional feature and nothing built it.
+    /// Each upstream uses UDP with TCP fallback on the same configured port.
     pub fn with_resolvers(addrs: &[std::net::SocketAddr]) -> crate::error::Result<Self> {
-        use hickory_resolver::config::{NameServerConfig, NameServerConfigGroup, ResolverConfig};
-        use hickory_resolver::proto::xfer::Protocol;
+        use hickory_resolver::config::{NameServerConfig, ResolverConfig};
+        if addrs
+            .iter()
+            .any(|addr| matches!(addr, std::net::SocketAddr::V6(addr) if addr.scope_id() != 0))
+        {
+            return Err(crate::error::Error::Internal(
+                "Hickory 0.26 cannot represent scoped IPv6 DNS resolver addresses".into(),
+            ));
+        }
         if addrs.is_empty() {
             return Self::from_system();
         }
-        let mut servers: Vec<NameServerConfig> = Vec::with_capacity(addrs.len() * 2);
+        let mut servers: Vec<NameServerConfig> = Vec::with_capacity(addrs.len());
         for addr in addrs {
-            servers.push(NameServerConfig::new(*addr, Protocol::Udp));
-            servers.push(NameServerConfig::new(*addr, Protocol::Tcp));
+            let mut server = NameServerConfig::udp_and_tcp(addr.ip());
+            for connection in &mut server.connections {
+                connection.port = addr.port();
+            }
+            servers.push(server);
         }
-        let group = NameServerConfigGroup::from(servers);
-        let config = ResolverConfig::from_parts(None, vec![], group);
+        let config = ResolverConfig::from_parts(None, vec![], servers);
         let inner = hickory_resolver::Resolver::builder_with_config(
             config,
-            hickory_resolver::name_server::TokioConnectionProvider::default(),
+            hickory_resolver::net::runtime::TokioRuntimeProvider::default(),
         )
-        .build();
+        .build()
+        .map_err(|e| crate::error::Error::Internal(format!("DNSBL resolver init failed: {e}")))?;
         Ok(Self { inner })
     }
 }
@@ -438,7 +444,13 @@ impl AsyncDnsResolver for HickoryResolver {
 
     async fn lookup_txt(&self, qname: &str) -> Option<String> {
         let lookup = self.inner.txt_lookup(qname).await.ok()?;
-        lookup.iter().next().map(|t| t.to_string())
+        lookup
+            .answers()
+            .iter()
+            .find_map(|record| match &record.data {
+                hickory_resolver::proto::rr::RData::TXT(txt) => Some(txt.to_string()),
+                _ => None,
+            })
     }
 }
 
@@ -453,15 +465,15 @@ impl AsyncDnsResolver for HickoryResolver {
 /// Same shape as `webd::mxresolve::classify`; we want one
 /// workspace-wide reading of "DNS said no, definitely" vs "DNS broke."
 #[cfg(feature = "dnsbl")]
-fn is_genuine_negative(e: &hickory_resolver::ResolveError) -> bool {
-    use hickory_resolver::proto::ProtoErrorKind;
+fn is_genuine_negative(e: &hickory_resolver::net::NetError) -> bool {
+    use hickory_resolver::net::{DnsError, NetError, NoRecords};
     use hickory_resolver::proto::op::ResponseCode;
     matches!(
-        e.proto().map(|p| p.kind()),
-        Some(ProtoErrorKind::NoRecordsFound {
+        e,
+        NetError::Dns(DnsError::NoRecordsFound(NoRecords {
             response_code: ResponseCode::NXDomain | ResponseCode::NoError,
             ..
-        })
+        }))
     )
 }
 
@@ -476,6 +488,13 @@ pub type HickoryDnsbl = Dnsbl<HickoryResolver>;
 #[cfg(test)]
 mod encode_tests {
     use super::*;
+
+    #[cfg(feature = "dnsbl")]
+    #[test]
+    fn scoped_ipv6_resolver_is_refused_before_its_scope_can_be_lost() {
+        let addr = std::net::SocketAddrV6::new("fe80::1".parse().unwrap(), 5300, 0, 7);
+        assert!(HickoryResolver::with_resolvers(&[addr.into()]).is_err());
+    }
 
     #[test]
     fn ipv4_reverse_order() {

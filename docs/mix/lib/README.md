@@ -1,7 +1,7 @@
 # Mix language library
 
 `mix` is the embeddable Rust implementation of the Mix language at
-[`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix). It tokenises,
+[`libraries/mix`](https://github.com/mixviu/mixviu/tree/main/libraries/mix). It tokenises,
 parses, analyses and evaluates Mix source, exposes the Mix value and error
 models, and supplies host interfaces for Bus and other mediated services.
 Bus-facing behaviour enters through injected traits, so embedders can use

@@ -269,6 +269,10 @@ pub struct LayerSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WindowSnapshot {
+    pub opacity: f64,
+    pub z: i32,
+    pub clip: Option<crate::request::ClipRect>,
+    pub requested_visible: bool,
     pub placement: &'static str,
     pub float_geometry: Option<FloatGeometrySnapshot>,
     #[serde(flatten)]
@@ -782,6 +786,7 @@ macro_rules! window_snapshot {
                     [] => serialise_selected(self),
                     $([stringify!($field)] => serialise_selected(&self.$field),)+
                     ["float_geometry", tail @ ..] => select_serialised(&self.float_geometry, tail),
+                    ["clip", tail @ ..] => select_serialised(&self.clip, tail),
                     ["presentation", tail @ ..] => {
                         select_serialised(self.presentation.as_ref()?, tail)
                     }
@@ -794,6 +799,7 @@ macro_rules! window_snapshot {
                     [] => Some(SnapshotNodeKind::Object),
                     $([stringify!($field)] => Some(SnapshotNodeKind::Leaf),)+
                     ["float_geometry", tail @ ..] => serialised_node_kind(&self.float_geometry, tail),
+                    ["clip", tail @ ..] => serialised_node_kind(&self.clip, tail),
                     ["presentation", tail @ ..] => {
                         serialised_node_kind(self.presentation.as_ref()?, tail)
                     }
@@ -805,6 +811,9 @@ macro_rules! window_snapshot {
 }
 
 window_snapshot!(
+    opacity,
+    z,
+    requested_visible,
     placement,
     id,
     foreign_id,
@@ -1016,6 +1025,10 @@ pub fn project_window_row(surface: &SurfaceSnapshot) -> WindowSnapshot {
         } else {
             "floating"
         },
+        opacity: 1.0,
+        z: 0,
+        clip: None,
+        requested_visible: true,
         float_geometry: None,
         occlusion: surface.occlusion.clone(),
         id: surface.id,
@@ -1775,6 +1788,46 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         &[L("windows"), S, L("visible")],
         Bool,
         "Whether the window is effectively on screen (false while minimised)"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("opacity")],
+        Number,
+        "Persistent composite opacity, 0..=1; set through window.place"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("z")],
+        Number,
+        "Persistent stacking request within the workspace band"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("requested_visible")],
+        Bool,
+        "Persistent visibility request; visible also includes workspace and minimisation"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip")],
+        Object,
+        "Window-local logical clip rectangle, or null"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip"), L("x")],
+        Number,
+        "Local logical clip x"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip"), L("y")],
+        Number,
+        "Local logical clip y"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip"), L("width")],
+        Number,
+        "Local logical clip width"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("clip"), L("height")],
+        Number,
+        "Local logical clip height"
     ),
     descriptor!(
         &[L("windows"), S, L("pid")],

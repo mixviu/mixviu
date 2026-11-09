@@ -83,7 +83,7 @@ impl<'a> HitCx<'a> {
     /// projections (screen-space hit-testing) must use, so a physical cursor on a
     /// secondary monitor is mapped against THAT monitor, not the primary. Resolved
     /// from `OUTPUT_VIEWS.current` (the key the pointer path keeps in sync with the
-    /// cursor's output) by matching the same "make model serial" `output_key` the
+    /// cursor's output) by matching the same connector/protocol `output_key` the
     /// render/input paths use; falls back to the first output pre-identity.
     fn current_output(&self) -> &smithay::output::Output {
         let key = &self

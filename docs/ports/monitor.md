@@ -1,3 +1,4 @@
+<!-- Inventory paths apps/monitor/src and apps/monitor/crates/vitals below refer to the historical MixOS oracle, not this checkout. Current Mix app: apps/monitor. -->
 # Monitor parity inventory
 
 Oracle: MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`,

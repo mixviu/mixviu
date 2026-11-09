@@ -218,11 +218,15 @@ fn wait_ready(d: &mut Daemon, load: load_guard::LoadSample) -> bool {
 fn query(name: HName, qtype: HRT, class: DNSClass, edns: bool) -> Message {
     let mut q = Query::query(name, qtype);
     q.set_query_class(class);
-    let mut m = Message::new();
-    m.set_id(0x2a2a);
-    m.set_message_type(MessageType::Query);
-    m.set_op_code(OpCode::Query);
-    m.set_recursion_desired(true);
+    let mut m = Message::new(
+        0,
+        hickory_proto::op::MessageType::Query,
+        hickory_proto::op::OpCode::Query,
+    );
+    m.metadata.id = 0x2a2a;
+    m.metadata.message_type = MessageType::Query;
+    m.metadata.op_code = OpCode::Query;
+    m.metadata.recursion_desired = true;
     m.add_query(q);
     if edns {
         let mut e = hickory_proto::op::Edns::new();
@@ -275,9 +279,10 @@ fn tcp(port: u16, m: &Message) -> Message {
 }
 
 fn a_of(m: &Message) -> Vec<Ipv4Addr> {
-    m.answers()
+    m.answers
+        .as_slice()
         .iter()
-        .filter_map(|r| match r.data() {
+        .filter_map(|r| match (&r.data) {
             HRData::A(a) => Some(a.0),
             _ => None,
         })
@@ -285,7 +290,7 @@ fn a_of(m: &Message) -> Vec<Ipv4Addr> {
 }
 
 fn has_soa(recs: &[hickory_proto::rr::Record]) -> bool {
-    recs.iter().any(|r| matches!(r.data(), HRData::SOA(_)))
+    recs.iter().any(|r| matches!((&r.data), HRData::SOA(_)))
 }
 
 // ── the §8 Layer-2 deterministic query set, end-to-end ───────────────
@@ -311,28 +316,33 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
         ("beta.bus", Ipv4Addr::new(192, 0, 2, 1)),
     ] {
         let r = udp(p, &q(name, HRT::A));
-        assert_eq!(r.response_code(), ResponseCode::NoError, "{name} A NOERROR");
-        assert!(r.authoritative(), "{name} A AA=1");
+        assert_eq!(
+            r.metadata.response_code,
+            ResponseCode::NoError,
+            "{name} A NOERROR"
+        );
+        assert!(r.metadata.authoritative, "{name} A AA=1");
         assert_eq!(a_of(&r), vec![ip], "{name} A == {ip}");
-        assert_eq!(r.id(), 0x2a2a, "{name} id echoed");
+        assert_eq!(r.metadata.id, 0x2a2a, "{name} id echoed");
     }
 
     // 2. MX self + in-zone A glue in ADDITIONAL.
     let r = udp(p, &q("alpha.bus", HRT::MX));
-    assert_eq!(r.response_code(), ResponseCode::NoError);
+    assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     let mx = r
-        .answers()
+        .answers
+        .as_slice()
         .iter()
-        .find_map(|r| match r.data() {
-            HRData::MX(mx) => Some((mx.preference(), mx.exchange().to_ascii())),
+        .find_map(|r| match (&r.data) {
+            HRData::MX(mx) => Some((mx.preference, mx.exchange.to_ascii())),
             _ => None,
         })
         .expect("MX answer");
     assert_eq!(mx.0, 10, "MX pref");
     assert_eq!(mx.1, "alpha.bus.", "MX exch self");
     assert!(
-        r.additionals().iter().any(|x| matches!(
-            x.data(),
+        r.additionals.as_slice().iter().any(|x| matches!(
+            (&x.data),
             HRData::A(a) if a.0 == Ipv4Addr::new(192, 0, 2, 5)
         )),
         "in-zone MX target → A glue in ADDITIONAL"
@@ -340,12 +350,13 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
 
     // 3. SRV (the maild implicit-TLS set) + in-zone glue.
     let r = udp(p, &q("_imaps._tcp.alpha.bus", HRT::SRV));
-    assert_eq!(r.response_code(), ResponseCode::NoError);
+    assert_eq!(r.metadata.response_code, ResponseCode::NoError);
     let srv = r
-        .answers()
+        .answers
+        .as_slice()
         .iter()
-        .find_map(|r| match r.data() {
-            HRData::SRV(s) => Some((s.priority(), s.weight(), s.port(), s.target().to_ascii())),
+        .find_map(|r| match (&r.data) {
+            HRData::SRV(s) => Some((s.priority, s.weight, s.port, s.target.to_ascii())),
             _ => None,
         })
         .expect("SRV answer");
@@ -355,16 +366,16 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
         "imaps SRV tuple"
     );
     assert!(
-        r.additionals().iter().any(|x| matches!(
-            x.data(),
+        r.additionals.as_slice().iter().any(|x| matches!(
+            (&x.data),
             HRData::A(a) if a.0 == Ipv4Addr::new(192, 0, 2, 5)
         )),
         "in-zone SRV target → A glue"
     );
     let r = udp(p, &q("_submissions._tcp.alpha.bus", HRT::SRV));
     assert!(
-        r.answers().iter().any(|x| matches!(
-            x.data(), HRData::SRV(s) if s.port() == 465
+        r.answers.as_slice().iter().any(|x| matches!(
+            (&x.data), HRData::SRV(s) if s.port == 465
         )),
         "submissions SRV 465 present"
     );
@@ -409,14 +420,15 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
         // (a) reverse leg: PTR(<rev>) → <node>.example.com.
         let r = udp(p, &q(rev, HRT::PTR));
         assert_eq!(
-            r.response_code(),
+            r.metadata.response_code,
             ResponseCode::NoError,
             "{rev} PTR NOERROR"
         );
         let got = r
-            .answers()
+            .answers
+            .as_slice()
             .iter()
-            .find_map(|x| match x.data() {
+            .find_map(|x| match (&x.data) {
                 HRData::PTR(n) => Some(n.0.to_ascii()),
                 _ => None,
             })
@@ -428,11 +440,11 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
         let fwd_name = fwd.trim_end_matches('.');
         let rf = udp(p, &q(fwd_name, HRT::A));
         assert_eq!(
-            rf.response_code(),
+            rf.metadata.response_code,
             ResponseCode::NoError,
             "{fwd_name} A NOERROR (FCrDNS forward leg)"
         );
-        assert!(rf.authoritative(), "{fwd_name} A AA=1");
+        assert!(rf.metadata.authoritative, "{fwd_name} A AA=1");
         assert_eq!(
             a_of(&rf),
             vec![ip],
@@ -444,17 +456,18 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     for zone in ["bus", "example.com", "2.0.192.in-addr.arpa"] {
         let r = udp(p, &q(zone, HRT::SOA));
         assert_eq!(
-            r.response_code(),
+            r.metadata.response_code,
             ResponseCode::NoError,
             "{zone} SOA NOERROR"
         );
-        assert!(r.authoritative(), "{zone} SOA AA=1");
-        assert!(has_soa(r.answers()), "{zone} apex SOA in ANSWER");
+        assert!(r.metadata.authoritative, "{zone} SOA AA=1");
+        assert!(has_soa(r.answers.as_slice()), "{zone} apex SOA in ANSWER");
         let r = udp(p, &q(zone, HRT::NS));
         assert!(
-            r.answers()
+            r.answers
+                .as_slice()
                 .iter()
-                .any(|x| matches!(x.data(), HRData::NS(_))),
+                .any(|x| matches!((&x.data), HRData::NS(_))),
             "{zone} apex NS in ANSWER"
         );
     }
@@ -462,21 +475,28 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     // 6. NXDOMAIN — absent name → RCODE 3 + SOA in AUTHORITY, AA=1.
     let r = udp(p, &q("does-not-exist.bus", HRT::A));
     assert_eq!(
-        r.response_code(),
+        r.metadata.response_code,
         ResponseCode::NXDomain,
         "absent → NXDOMAIN"
     );
-    assert!(r.authoritative(), "NXDOMAIN AA=1");
-    assert!(r.answers().is_empty(), "NXDOMAIN no answer");
-    assert!(has_soa(r.name_servers()), "NXDOMAIN SOA in AUTHORITY");
+    assert!(r.metadata.authoritative, "NXDOMAIN AA=1");
+    assert!(r.answers.as_slice().is_empty(), "NXDOMAIN no answer");
+    assert!(
+        has_soa(r.authorities.as_slice()),
+        "NXDOMAIN SOA in AUTHORITY"
+    );
 
     // 7. NODATA — existing name, absent type (no TXT in sample) →
     //    NOERROR, empty ANSWER, SOA in AUTHORITY, AA=1.
     let r = udp(p, &q("alpha.bus", HRT::TXT));
-    assert_eq!(r.response_code(), ResponseCode::NoError, "NODATA NOERROR");
-    assert!(r.authoritative(), "NODATA AA=1");
-    assert!(r.answers().is_empty(), "NODATA empty ANSWER");
-    assert!(has_soa(r.name_servers()), "NODATA SOA in AUTHORITY");
+    assert_eq!(
+        r.metadata.response_code,
+        ResponseCode::NoError,
+        "NODATA NOERROR"
+    );
+    assert!(r.metadata.authoritative, "NODATA AA=1");
+    assert!(r.answers.as_slice().is_empty(), "NODATA empty ANSWER");
+    assert!(has_soa(r.authorities.as_slice()), "NODATA SOA in AUTHORITY");
 
     // 8. Out-of-zone → REFUSED, AA=0, nothing leaked.
     //    Using `notazone.invalid` (RFC 2606 reserved test TLD) so this
@@ -484,37 +504,49 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
     //    zones the fixture happens to publish.
     let r = udp(p, &q("notazone.invalid", HRT::A));
     assert_eq!(
-        r.response_code(),
+        r.metadata.response_code,
         ResponseCode::Refused,
         "out-of-zone REFUSED"
     );
-    assert!(!r.authoritative(), "REFUSED AA=0");
-    assert!(r.answers().is_empty(), "REFUSED no answer");
+    assert!(!r.metadata.authoritative, "REFUSED AA=0");
+    assert!(r.answers.as_slice().is_empty(), "REFUSED no answer");
 
     // 9. QTYPE=ANY — the single mandatory minimal outcome: NOERROR,
     //    AA=1, empty ANSWER, no synthetic RR, no SOA-as-answer.
     let r = udp(p, &q("alpha.bus", HRT::ANY));
-    assert_eq!(r.response_code(), ResponseCode::NoError, "ANY NOERROR");
-    assert!(r.authoritative(), "ANY AA=1");
-    assert!(r.answers().is_empty(), "ANY ANCOUNT=0 (no expansion)");
-    assert!(!has_soa(r.answers()), "ANY no SOA-as-answer");
+    assert_eq!(
+        r.metadata.response_code,
+        ResponseCode::NoError,
+        "ANY NOERROR"
+    );
+    assert!(r.metadata.authoritative, "ANY AA=1");
     assert!(
-        r.answers()
+        r.answers.as_slice().is_empty(),
+        "ANY ANCOUNT=0 (no expansion)"
+    );
+    assert!(!has_soa(r.answers.as_slice()), "ANY no SOA-as-answer");
+    assert!(
+        r.answers
+            .as_slice()
             .iter()
-            .chain(r.name_servers())
-            .chain(r.additionals())
+            .chain(r.authorities.as_slice())
+            .chain(r.additionals.as_slice())
             .all(|x| x.record_type() != HRT::HINFO),
         "ANY: no HINFO/RFC-8482 synthetic anywhere"
     );
 
     // 10. TCP path — same answer, length-framed, never truncated.
     let r = tcp(p, &q("alpha.bus", HRT::A));
-    assert_eq!(r.response_code(), ResponseCode::NoError, "TCP A NOERROR");
-    assert!(!r.truncated(), "TCP never TC=1");
+    assert_eq!(
+        r.metadata.response_code,
+        ResponseCode::NoError,
+        "TCP A NOERROR"
+    );
+    assert!(!r.metadata.truncation, "TCP never TC=1");
     assert_eq!(a_of(&r), vec![Ipv4Addr::new(192, 0, 2, 5)], "TCP A rdata");
     let r = tcp(p, &q("bus", HRT::SOA));
-    assert!(has_soa(r.answers()), "TCP apex SOA");
-    assert!(!r.truncated(), "TCP SOA not truncated");
+    assert!(has_soa(r.answers.as_slice()), "TCP apex SOA");
+    assert!(!r.metadata.truncation, "TCP SOA not truncated");
 
     // 11. EDNS0 — OPT advertised → OPT echoed on the response.
     let r = udp(
@@ -526,7 +558,10 @@ fn standalone_answers_the_section_8_query_set_over_udp_and_tcp() {
             true,
         ),
     );
-    assert!(r.extensions().is_some(), "OPT echoed when client sends OPT");
+    assert!(
+        r.edns.as_ref().is_some(),
+        "OPT echoed when client sends OPT"
+    );
     assert_eq!(
         a_of(&r),
         vec![Ipv4Addr::new(192, 0, 2, 5)],

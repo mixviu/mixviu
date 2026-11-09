@@ -2,4 +2,4 @@
 
 Shared headless text buffers used by editd and Ced.
 
-Documentation: <https://mixos.dev/edit/> — source [`docs/edit/README.md`](../../docs/edit/README.md).
+Documentation: <https://mixos.dev/edit/> — source the component manual (not included in this source tree).

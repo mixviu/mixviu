@@ -60,7 +60,7 @@ fn refresh_snapshot_current(state: &mut Loop, edid_key: &str, cur: ModeInfo) {
 fn pipe_of(ctx: &NativeRenderContext, edid_key: &str) -> Option<usize> {
     ctx.outputs
         .iter()
-        .position(|p| world::state::output_key(&p.output) == edid_key)
+        .position(|p| world::state::output_preference_key(&p.output) == edid_key)
 }
 /// Apply `mode` to the pipe at `idx` and propagate to its smithay Output.
 fn set_mode_now(
@@ -190,7 +190,7 @@ fn finish(state: &mut Loop, ctx_rc: &Ctx, revert: bool) {
         set_result(state, ApplyResult::Reverted);
     } else {
         let cur = mode_info(ctx.outputs[idx].current_drm_mode);
-        let edid = world::state::output_key(&ctx.outputs[idx].output);
+        let edid = world::state::output_preference_key(&ctx.outputs[idx].output);
         drop(ctx);
         refresh_snapshot_current(state, &edid, cur);
         set_result(state, ApplyResult::Confirmed);

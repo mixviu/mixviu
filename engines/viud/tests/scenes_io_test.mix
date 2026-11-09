@@ -23,7 +23,7 @@ $pb = require("../../../tests/lib/private_bus.mix")
 -- This test's own interpreter, the same reference the loader now uses.
 $SELF = "/proc/" .. to_string(pid()) .. "/exe"
 $noded = env("MIX_TEST_NODED_EXE", "")
-if $noded == "" then $noded = (mix_path("prefix") .. "/bin/noded") end
+if $noded == "" then $noded = (mixos_path("prefix") .. "/bin/noded") end
 
 fn check($ok, $message)
   if not $ok then raise("SCENES_IO_TEST", $message) end

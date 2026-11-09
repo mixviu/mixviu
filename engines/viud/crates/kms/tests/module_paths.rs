@@ -21,6 +21,11 @@ fn monitor_identity_uses_edid_and_keeps_connector_fallback_for_zero_serial() {
         identity::identity(Some(&parsed), "connector").key(),
         "ABC 1234 42"
     );
+    let a = identity::identity(Some(&parsed), "DP-1");
+    let b = identity::identity(Some(&parsed), "DP-2");
+    assert_eq!(a.key(), b.key()); // EDID is not a runtime identifier.
+    assert_ne!(a.preference_key("DP-1"), b.preference_key("DP-2"));
+    assert_eq!(a.preference_key("DP-1"), a.preference_key("DP-1"));
     assert!(parse::parse(&parse::RawEdid(vec![0; 128])).is_none());
 }
 

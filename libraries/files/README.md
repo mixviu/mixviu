@@ -1,6 +1,6 @@
 # files
 
-Shared file model. See [the manual](../../docs/files/README.md).
+Shared file model. See the manual (manual not included in this source tree).
 
 `chooser` owns the renderer-free `files.choose` request grammar, byte paths,
 filters, choices, acceptance validation and provider lifecycle engine.
