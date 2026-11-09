@@ -467,6 +467,7 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
     assert_eq!(hidden["opacity"],0.5, "omitted attributes persist across list");
     assert_eq!(hidden["window_width"],window["window_width"]);
     assert_eq!(hidden["window_height"],window["window_height"]);
+    for _ in 0..20 { pattern.pump(); thread::sleep(Duration::from_millis(5)); }
     let buttons = pattern.state.pointer_buttons;
     let callbacks = pattern.state.callbacks;
     click();
