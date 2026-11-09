@@ -9,9 +9,12 @@ pub fn errors(body: &Value) -> BTreeMap<String, String> {
         .flatten()
         .filter_map(|row| {
             let name = row["name"].as_str()?;
-            let diagnostic = row.get("load_diagnostic").filter(|d| !d.is_null())
+            let diagnostic = row
+                .get("load_diagnostic")
+                .filter(|d| !d.is_null())
                 .or_else(|| row.get("diagnostic").filter(|d| !d.is_null()))?;
-            let first = diagnostic.pointer("/context/upstream/diagnostics/0")
+            let first = diagnostic
+                .pointer("/context/upstream/diagnostics/0")
                 .or_else(|| diagnostic.pointer("/context/problems/0"))
                 .unwrap_or(diagnostic);
             let message = first["message"].as_str().unwrap_or("Revision refused");
@@ -35,11 +38,21 @@ pub fn scenes_service() -> String {
 }
 
 fn compact_text(message: &str) -> String {
-    message.split_whitespace().map(|word| {
-        if let Some(start) = word.find('/') {
-            format!("{}…/{}", &word[..start], word.rsplit('/').next().unwrap_or_default())
-        } else { word.into() }
-    }).collect::<Vec<_>>().join(" ")
+    message
+        .split_whitespace()
+        .map(|word| {
+            if let Some(start) = word.find('/') {
+                format!(
+                    "{}…/{}",
+                    &word[..start],
+                    word.rsplit('/').next().unwrap_or_default()
+                )
+            } else {
+                word.into()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Painted after content, with a separate hit target. Last-good layout stays intact.
@@ -85,12 +98,26 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let notice = temp.path().join("notice.json");
         let output = std::process::Command::new("/opt/mixos/bin/mix")
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../viud/tests/scenes_test.mix"))
-            .env("P1_SURFACE_NOTICE", &notice).output().unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../viud/tests/scenes_test.mix"
+            ))
+            .env("P1_SURFACE_NOTICE", &notice)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let body: Value = serde_json::from_slice(&std::fs::read(notice).unwrap()).unwrap();
         let mut body = body;
-        let row = body["scenes"].as_array_mut().unwrap().iter_mut().find(|r| r["name"]=="alpha").unwrap();
+        let row = body["scenes"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|r| r["name"] == "alpha")
+            .unwrap();
         assert_eq!(row["mounted"], true);
         row["problems"] = json!([{"message":"unrelated lint warning"}]);
         let errors = errors(&body);
@@ -99,24 +126,44 @@ mod tests {
         let ctx = egui::Context::default();
         let mut store = crate::store::SceneStore::default();
         let source = "---\nscene: 1\nname: alpha\ncitizen: alpha\n---\n```mix\nroot: {widget: text, text: 'last good'}\n```\n";
-        store.request(crate::SceneCommand::Load, source, &Value::Null).unwrap();
+        store
+            .request(crate::SceneCommand::Load, source, &Value::Null)
+            .unwrap();
         let entry = store.scene("alpha").unwrap();
         let revision = entry.revision();
         let mut view = crate::view::SceneUi::new(std::sync::Arc::new(crate::view::Content {
-            tree:entry.tree().clone(), lists:entry.prepared().clone(), revision, frame:None, dialog:false,
+            tree: entry.tree().clone(),
+            lists: entry.prepared().clone(),
+            revision,
+            frame: None,
+            dialog: false,
         }));
         view.setup(&ctx);
         for pass in 0..3 {
-            let output = ctx.run_ui(egui::RawInput {screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0,128.0))), ..Default::default()}, |ui| {
-                view.show(ui, &mut Vec::new());
-                error_strip(ui, &errors["alpha"]);
-            });
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(512.0, 128.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui, &mut Vec::new());
+                    error_strip(ui, &errors["alpha"]);
+                },
+            );
             assert!(!output.shapes.is_empty());
-            if pass == 2 { assert!(format!("{:?}", output.shapes).contains("broken")); }
+            if pass == 2 {
+                assert!(format!("{:?}", output.shapes).contains("broken"));
+            }
             output.drop_without_applying_deltas();
         }
         assert_eq!(view.revision(), revision);
-        assert_eq!(compact_text("refused /home/private/projects/scene.mix:7"), "refused …/scene.mix:7");
+        assert_eq!(
+            compact_text("refused /home/private/projects/scene.mix:7"),
+            "refused …/scene.mix:7"
+        );
         assert!(!errors["alpha"].contains("open Scene Editor"));
     }
 }

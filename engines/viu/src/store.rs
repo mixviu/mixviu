@@ -141,6 +141,8 @@ pub(crate) struct SceneOwner {
 
 /// Host-supplied identity and seat, independent of authored scene metadata.
 /// The caller derives `owner` from broker-attested request provenance.
+/// Input only: all page/dialog/toast mount effects live in SceneStore, so
+/// a batch stages them in its cloned store without mutating the caller.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SceneMount<'a> {
     pub output: &'a str,

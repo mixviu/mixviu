@@ -1524,6 +1524,8 @@ try
   $notice = $l.inventory($s)
   $affected = filter($notice.scenes, fn($r) = $r.name == "alpha")[0]
   check($affected.mounted and $affected.load_diagnostic.error_code == "SCENES_BEHAVIOUR_INVALID" and deep_eq($affected.diagnostic, $affected.load_diagnostic), "published surface inventory carries the refused library diagnostic")
+  $single = $l.request($s, "quoin.reload", {scope:"scene", name:"alpha"})
+  check($single.rc == 10 and len($single.reload_blocked) == 2, "single-scene reload cannot bypass a refused shared library group")
   if env("P1_SURFACE_NOTICE", "") != "" then
     $s = $l.changed($s)
     $publications = calls("publish")

@@ -1114,7 +1114,13 @@ end
 
 fn reload_group($s, $scope, $name)
   $s.library_retry = false
-  if $scope == "scene" then return reload_group_once($s, $scope, $name, $s.library_seen) end
+  if $scope == "scene" then
+    if len($s.reload_blocked ?? []) > 0 then
+      $s = reload_group($s, "lib", nil)
+      if $s.rc != 0 then return $s end
+    end
+    return reload_group_once($s, $scope, $name, $s.library_seen)
+  end
   -- Bound continuous writes without ever acknowledging an unvalidated signature.
   for $attempt = 1 to 4
     $validated = library_signature($s)
@@ -1157,14 +1163,14 @@ fn reload_group_once($s, $scope, $name, $validated)
     $d = {error_code:$error.code, message:$message, context:$error.details}
     push($diagnostics, $d)
     for each $n in $names $s.scenes[$n].load_diagnostic = $d end
-    $s.reload_blocked = $names
+    if $scope != "scene" then $s.reload_blocked = $names end
     $s.rc = 10
     $s.response = {accepted:false, diagnostics:$diagnostics}
     return $s
   end
   $revisions = {}
   if $scope != "scene" then $s.library_seen = $validated end
-  $s.reload_blocked = []
+  if $scope != "scene" then $s.reload_blocked = [] end
   for each $n in $names
     $c = $candidates[$n]
     $s.scenes[$n].source = $c.source

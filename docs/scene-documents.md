@@ -278,6 +278,11 @@ and unchanged-signature suppression coalesce duplicate saves. Oversized helpers
 and symlinks are refused by both fingerprinting and validation. A signature is
 acknowledged only for the preflight it names; writes during commit trigger
 another complete pass, with a deferred retry if writes continue.
+Watches live on existing parents so catalogue replacement and late creation of
+an explicit `SCENES_LIB` remain observable. A refused group does not discard
+the rest of a coalesced batch or an overflow rescan: its dependants retain
+last-good while unrelated scenes reconcile. Single-scene reload cannot bypass
+a standing shared-library refusal.
 Editor copy handling is special. (`engines/viud/scripts/lib/scenes.mix`.)
 
 Reconcile checks changed behaviour before mounting. Scene edits load against
