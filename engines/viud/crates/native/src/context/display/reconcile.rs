@@ -90,20 +90,8 @@ fn bring_up(
     requested: Option<ModeInfo>,
     busy: &[crtc::Handle],
 ) -> Result<(), String> {
-    // A smithay `Output` may NOT be carried across a change of MONITOR.
-    //
-    // `output_key` — the identity every per-output map keys on: the viewport trees
-    // and so the size everything is laid out and rendered at, the preference
-    // profiles, the background worker's panes, the teleport placements — is
-    // "{make} {model} {serial}" read from `PhysicalProperties`, and smithay fixes
-    // those at `Output::new` with no setter. So failing the anchor over to a
-    // different connector while reusing its `Output` hands the new monitor the
-    // departed one's identity wholesale. The DRM modeset is correct (it is chosen
-    // from `target`'s own EDID), but the compositor goes on laying out through the
-    // unplugged monitor's viewport tree — a 5120x1440 panel drawn as the 1280x1024
-    // that just went away. Reconnecting the old monitor appeared to fix it only
-    // because the survivor then came back through `add_output`, which mints a
-    // fresh `Output`.
+    // Connector name and EDID properties are immutable on a smithay Output.
+    // Replace on either change, including fail-over to a duplicate EDID panel.
     let identity = {
         let mgr = ctx.drm_output_manager.borrow();
         let drm = mgr.device();

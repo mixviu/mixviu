@@ -24,9 +24,16 @@ fn duplicated_nonzero_edid_serial_never_aliases_runtime_or_preferences() {
     views.ensure(&output_key(&b));
     views.views_mut(&output_key(&b)).next_id = 42;
     let before = output_preference_key(&b);
+    let mut space = smithay::desktop::Space::<smithay::desktop::Window>::default();
+    space.map_output(&a, (0, 0));
+    space.map_output(&b, (1920, 0));
+    space.unmap_output(&a);
+    assert_eq!(space.outputs().map(output_key).collect::<Vec<_>>(), ["DP-2"]);
     drop(a);
     assert_eq!(output_preference_key(&b), before);
     let reconnected = panel("DP-1", "42");
+    space.map_output(&reconnected, (0, 0));
+    assert_eq!(space.outputs().count(), 2);
     views.ensure(&output_key(&reconnected));
     assert_eq!(views.views(&output_key(&b)).next_id, 42);
     assert_eq!(output_preference_key(&reconnected), "Example Panel 42 @connector:DP-1");

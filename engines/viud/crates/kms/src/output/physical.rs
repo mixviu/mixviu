@@ -50,9 +50,8 @@ pub fn create(info: &connector::Info, identity: &MonitorIdentity) -> Output {
         // via `Interface::as_str()` — the SAME string the kernel and libinput use,
         // so `Device::output_name()` (a touchscreen's associated output) matches an
         // output by `name()`. It is unique per output (label / debug id / touch
-        // routing). The IDENTITY that keys everything else (render, settings, prefs,
-        // teleport) lives in `PhysicalProperties` below and falls back to the
-        // connector when the EDID has no serial.
+        // routing). Saved preference identity uses the EDID properties below plus
+        // this connector name; runtime routing uses the name alone.
         format!("{}-{}", info.interface().as_str(), info.interface_id()),
         PhysicalProperties {
             size: Size::new(size_x as i32, size_y as i32),
