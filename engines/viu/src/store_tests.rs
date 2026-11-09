@@ -10,6 +10,30 @@ const FIXTURE: &str = scene::fixtures::CONFORMANCE;
 const CLIPPANEL: &str = scene::fixtures::CLIPPANEL;
 const SHELL_COMMANDS: &str = include_str!("../tests/fixtures/shell-commands.json");
 
+#[test]
+fn p2_batch_refusal_preserves_last_good_and_source_root() {
+    let source = "---\nscene: 1\nname: p2-test\ncitizen: test\nmodel: {\"text\":\"old\",\"scalar\":1}\n---\n```mix\nroot: {widget: text, text: '= $model.text'}\n```\n";
+    let mut store = SceneStore::default();
+    let mut caller = mount("loader", 1);
+    assert_eq!(store.dispatch(SceneCommand::Load, source, &Value::Null, &mut caller).rc, 0);
+    let revision = store.scene("p2-test").unwrap().revision();
+    let refused = store.dispatch(SceneCommand::Patch, "", &json!({"scene":"p2-test", "patches":[
+        {"path":"model.text","value":"new"},
+        {"path":"model.scalar.field","value":2}
+    ]}), &mut caller);
+    assert_eq!(refused.rc, 10);
+    assert_eq!(store.scene("p2-test").unwrap().revision(), revision);
+    assert_eq!(store.scene("p2-test").unwrap().tree().model["text"], "old");
+    assert_eq!(store.dispatch(SceneCommand::Patch, "", &json!({"scene":"p2-test","path":"src.clock.unix","value":1}), &mut caller).rc, 0);
+    let patched = store.dispatch(SceneCommand::Patch, "", &json!({"scene":"p2-test", "patches":[
+        {"path":"model.text","value":"new"},
+        {"path":"model.scalar","value":2}
+    ]}), &mut caller);
+    assert_eq!(patched.rc, 0);
+    assert_eq!(store.scene("p2-test").unwrap().tree().model["text"], "new");
+    assert_eq!(store.scene("p2-test").unwrap().tree().sources["clock"]["unix"], 1);
+}
+
 const TOAST: &str = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"kind\":\"toast\",\"w\":360,\"h\":120}\nmodel: {\"text\":\"hello\"}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
 
 #[test]
