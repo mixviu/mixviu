@@ -92,7 +92,7 @@ hickory-resolver = { version = "0.26.1", features = ["tokio", "system-config"] }
 # Trust roots for the operator-policy implicit-TLS probe (verifies the
 # MX target terminates 993/465 with a valid cert). Same version as
 # maild's delivery TLS path so the graph keeps one webpki-roots.
-webpki-roots = "0.26"
+webpki-roots = "1.0"
 # Timestamp arithmetic for the ACME provisioner's backoff scheduler
 # and `MetaV1` on-disk record. Same version as `mixos-lib-daemon`
 # (the sibling crate that ships `WebdAcmeClient`) so the graph keeps

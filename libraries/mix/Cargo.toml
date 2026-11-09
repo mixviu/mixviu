@@ -179,7 +179,7 @@ reqwest = { workspace = true, optional = true, features = ["gzip"] }
 # http `ca_file`/`ca_pem` (0.29.0): private-CA trust ADDED to the default
 # webpki roots. Version lines match ureq 2's own transitive deps so cargo
 # unifies them (no second rustls/root-store in the tree).
-webpki-roots = { version = "0.26", optional = true }
+webpki-roots = { version = "1.0", optional = true }
 rustls-pki-types = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
 # `archive` feature only — see the feature comment above.
