@@ -7,7 +7,7 @@
 //! compositor process.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use crate::freedesktop::{Lookup, Resolver};
 
@@ -15,9 +15,21 @@ pub(crate) fn is_svg(path: &Path) -> bool {
     crate::freedesktop::is_svg(path)
 }
 
-fn resolver() -> &'static Resolver {
-    static RESOLVER: OnceLock<Resolver> = OnceLock::new();
-    RESOLVER.get_or_init(|| Resolver::new(Lookup::from_xdg()))
+pub(crate) fn with_resolver<T>(f: impl FnOnce(&Resolver, u64) -> T) -> T {
+    static STATE: OnceLock<Mutex<(Lookup, Resolver, u64, u64)>> = OnceLock::new();
+    let lookup = Lookup::from_xdg();
+    let mut state = STATE.get_or_init(|| Mutex::new((lookup.clone(), Resolver::new(lookup.clone()), 0, 0))).lock().unwrap();
+    if state.0 != lookup {
+        state.1 = Resolver::new(lookup.clone());
+        state.0 = lookup;
+        state.2 = 0;
+    }
+    let generation = state.1.generation();
+    if state.2 != generation {
+        state.2 = generation;
+        state.3 += 1;
+    }
+    f(&state.1, state.3)
 }
 
 pub(crate) fn resolve(source: &str, size: u32, app: Option<&str>) -> Option<PathBuf> {
@@ -25,7 +37,7 @@ pub(crate) fn resolve(source: &str, size: u32, app: Option<&str>) -> Option<Path
         let path = paths::resolve(source).ok()?;
         return path.is_file().then_some(path);
     }
-    resolver().resolve(source, size, app)
+    with_resolver(|resolver, _| resolver.resolve_in_generation(source, size, 1, app))
 }
 
 #[cfg(test)]
@@ -34,7 +46,7 @@ mod tests {
 
     #[test]
     fn resolver_follows_the_process_environment() {
-        let lookup = resolver().lookup();
+        let lookup = Lookup::from_xdg();
         assert!(!lookup.theme.is_empty());
         assert!(!lookup.roots.is_empty());
         assert!(is_svg(Path::new("icon.SVG")));

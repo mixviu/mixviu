@@ -16,6 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
+use std::time::SystemTime;
 
 /// Themes searched after the selected one, in order.
 pub const FALLBACK_THEMES: [&str; 3] = ["hicolor", "Adwaita", "AdwaitaLegacy"];
@@ -443,14 +444,38 @@ fn icon_in(dir: &Path, name: &str) -> Option<PathBuf> {
         .find(|path| is_image_file(path))
 }
 
-type Key = (String, u32, Option<String>);
+type Key = (String, u32, u32, String, Option<String>);
+
+// Reuse the decoded-file cache's metadata validation strategy. Directory
+// mtimes detect additions/removals; index files detect inheritance edits.
+// Retain missing roots too, so installing a previously absent theme works.
+type Stamps = BTreeMap<PathBuf, Option<(SystemTime, u64)>>;
+
+fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
+    let meta = path.metadata().ok()?;
+    Some((meta.modified().ok()?, meta.len()))
+}
+
+fn inventory(path: &Path, depth: usize, stamps: &mut Stamps) {
+    stamps.insert(path.into(), stamp(path));
+    if depth > 16 { return; }
+    for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
+        if entry.path().is_dir() {
+            inventory(&entry.path(), depth + 1, stamps);
+        } else if entry.file_name() == "index.theme" || entry.path().extension().is_some_and(|ext| ext == "desktop") {
+            stamps.insert(entry.path(), stamp(&entry.path()));
+        }
+    }
+}
 
 /// A [`Lookup`] with a bounded cache of resolutions, re-checked against
 /// the file system on every hit.
 #[derive(Debug)]
 pub struct Resolver {
     lookup: Lookup,
-    cache: Mutex<BTreeMap<Key, PathBuf>>,
+    cache: Mutex<BTreeMap<Key, Option<PathBuf>>>,
+    stamps: Mutex<Stamps>,
+    generation: std::sync::atomic::AtomicU64,
 }
 
 /// Entries kept before the cache is emptied.
@@ -458,9 +483,15 @@ const CACHE_LIMIT: usize = 512;
 
 impl Resolver {
     pub fn new(lookup: Lookup) -> Self {
+        let mut stamps = Stamps::new();
+        for root in lookup.roots.iter().chain(&lookup.pixmaps).chain(&lookup.applications) {
+            inventory(root, 0, &mut stamps);
+        }
         Self {
             lookup,
             cache: Mutex::new(BTreeMap::new()),
+            stamps: Mutex::new(stamps),
+            generation: std::sync::atomic::AtomicU64::new(1),
         }
     }
 
@@ -469,27 +500,47 @@ impl Resolver {
         &self.lookup
     }
 
-    /// [`Lookup::resolve`], cached by `(source, size, app)`. A cached file
-    /// that no longer exists is resolved again.
+    /// Validate search paths once per preparation batch, before asset reuse.
+    /// No thread or watcher service is created. The next revision sees changes.
+    pub fn generation(&self) -> u64 {
+        let mut stamps = self.stamps.lock().unwrap();
+        if stamps.iter().any(|(path, old)| stamp(path) != *old) {
+            self.cache.lock().unwrap().clear();
+            stamps.clear();
+            for root in self.lookup.roots.iter().chain(&self.lookup.pixmaps).chain(&self.lookup.applications) {
+                inventory(root, 0, &mut stamps);
+            }
+            self.generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.generation.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// [`Lookup::resolve`], cached by name, size, scale, theme and app.
+    /// Search-path changes invalidate both hits and misses.
     pub fn resolve(&self, source: &str, size: u32, app: Option<&str>) -> Option<PathBuf> {
+        self.generation();
+        self.resolve_in_generation(source, size, 1, app)
+    }
+
+    /// Batch callers validate generation once, then use this for each image.
+    pub fn resolve_in_generation(&self, source: &str, size: u32, scale: u32, app: Option<&str>) -> Option<PathBuf> {
         let source = source.trim();
         let source = source.strip_prefix("file://").unwrap_or(source);
         let path = Path::new(source);
         if path.is_absolute() && is_image_file(path) {
             return Some(path.into());
         }
-        let key = (source.to_owned(), size, app.map(str::to_owned));
+        let key = (source.to_owned(), size, scale, self.lookup.theme.clone(), app.map(str::to_owned));
         if let Some(path) = self
             .cache
             .lock()
             .ok()
-            .and_then(|cache| cache.get(&key).filter(|path| is_image_file(path)).cloned())
+            .and_then(|cache| cache.get(&key).filter(|path| path.as_ref().is_none_or(|path| is_image_file(path))).cloned())
         {
-            return Some(path);
+            return path;
         }
-        let path = self.lookup.resolve(source, size, app);
-        if let Some(path) = &path
-            && let Ok(mut cache) = self.cache.lock()
+        let path = self.lookup.resolve(source, size.saturating_mul(scale), app);
+        if let Ok(mut cache) = self.cache.lock()
         {
             if cache.len() >= CACHE_LIMIT {
                 cache.clear();
@@ -503,6 +554,31 @@ impl Resolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn misses_are_bounded_and_new_files_invalidate_them() {
+        let scratch = Scratch::new();
+        scratch.write("icons/Fixture/32x32/status/existing.svg", "svg");
+        let resolver = Resolver::new(scratch.lookup("Fixture"));
+        assert!(resolver.resolve("later", 20, None).is_none());
+        let generation = resolver.generation();
+        assert!(resolver.resolve("later", 20, None).is_none());
+        assert_eq!(resolver.generation(), generation);
+        assert!(resolver.cache.lock().unwrap().values().all(Option::is_none));
+        scratch.write("icons/Fixture/32x32/status/later.svg", "svg");
+        assert!(resolver.generation() > generation);
+        assert_eq!(resolver.resolve("later", 20, None), Some(scratch.0.join("icons/Fixture/32x32/status/later.svg")));
+        for i in 0..CACHE_LIMIT + 5 {
+            resolver.resolve_in_generation(&format!("missing-{i}"), 20, 1, None);
+        }
+        assert!(resolver.cache.lock().unwrap().len() <= CACHE_LIMIT);
+        resolver.resolve_in_generation("missing", 20, 1, None);
+        resolver.resolve_in_generation("missing", 20, 2, None);
+        resolver.resolve_in_generation("missing", 24, 1, None);
+        let cache = resolver.cache.lock().unwrap();
+        assert!(cache.contains_key(&("missing".into(), 20, 2, "Fixture".into(), None)));
+        assert!(cache.contains_key(&("missing".into(), 24, 1, "Fixture".into(), None)));
+    }
 
     /// A fresh directory under the system temporary directory, removed on
     /// drop.

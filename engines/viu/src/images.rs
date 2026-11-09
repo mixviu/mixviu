@@ -5,7 +5,7 @@
 //! dimensions; SVGs keep their bytes and are rasterised at the size they are
 //! drawn (`crate::view` uploads both as egui textures on its own context).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -79,7 +79,13 @@ pub(crate) fn rasterise(svg: &Svg, width: u32, height: u32) -> Option<egui::Colo
 }
 
 pub(crate) type Prepared = BTreeMap<(String, String, String), Asset>;
-type AssetCache = BTreeMap<(String, u32, Option<String>), Asset>;
+type FileStamp = (Option<SystemTime>, u64);
+type AssetCache = BTreeMap<(String, u32, Option<String>), (Asset, Option<(PathBuf, FileStamp)>)>;
+
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    let meta = path.metadata().ok()?;
+    Some((meta.modified().ok(), meta.len()))
+}
 
 pub(crate) fn key(id: &str, row: Option<&crate::view::Route>) -> (String, String, String) {
     (
@@ -92,17 +98,14 @@ pub(crate) fn key(id: &str, row: Option<&crate::view::Route>) -> (String, String
     )
 }
 
-// The panel behaviour publishes an empty src and hides the image when apps
-// cannot resolve its requested theme. Recover these shell glyphs locally;
-// never replace a deliberately hidden application image.
+// Legacy visible panel images with an empty source use the shared catalogue.
+// Hidden images remain hidden, including in older scene documents.
 pub(crate) fn panel_fallback(id: &str) -> Option<&'static str> {
     match id {
-        "st_notes_i" => Some("preferences-system-notifications-symbolic"),
-        "st_vol_i" => Some("audio-volume-high-symbolic"),
-        "st_net_i" => Some("network-wired-symbolic"),
-        // The launcher mark, the full-colour cyclops (share/brand installs
-        // it). Not symbolic: its red eye must keep its colour.
-        "launcher_icon" => Some("dev.mixos"),
+        "st_notes_i" => Some("icon:message-square"),
+        "st_vol_i" => Some("icon:volume-2"),
+        "st_net_i" => Some("icon:ethernet-port"),
+        "launcher_icon" => Some("icon:layout-grid"),
         _ => None,
     }
 }
@@ -123,13 +126,23 @@ pub(crate) fn prepare(
 ) -> Prepared {
     // Only the fixed production resolver shares this cache. Injected resolvers
     // must use their own cache so they cannot consume or replace its assets.
-    static CACHE: OnceLock<Mutex<AssetCache>> = OnceLock::new();
-    prepare_with(
-        tree,
-        lists,
-        CACHE.get_or_init(Mutex::default),
-        crate::icons::resolve,
-    )
+    static CACHE: OnceLock<Mutex<(u64, AssetCache)>> = OnceLock::new();
+    crate::icons::with_resolver(|resolver, generation| {
+        let mut cache = CACHE.get_or_init(Mutex::default).lock().unwrap();
+        if cache.0 != generation {
+            cache.0 = generation;
+            cache.1.clear();
+        }
+        let assets = Mutex::new(std::mem::take(&mut cache.1));
+        let prepared = prepare_with(tree, lists, &assets, |source, size, app| {
+            if source.starts_with("mix:") {
+                return paths::resolve(source).ok().filter(|path| path.is_file());
+            }
+            resolver.resolve_in_generation(source, size, 1, app)
+        });
+        cache.1 = assets.into_inner().unwrap();
+        prepared
+    })
 }
 
 fn prepare_with(
@@ -140,7 +153,7 @@ fn prepare_with(
 ) -> Prepared {
     let mut prepared = Prepared::new();
     let mut insert = |key, id: &str, node: &scene::Node, app: Option<&str>| {
-        if node.family != "image" {
+        if node.family != "image" || node.ports.get("hidden").and_then(serde_json::Value::as_bool) == Some(true) {
             return;
         }
         let source = crate::templates::text(node, "src");
@@ -165,12 +178,18 @@ fn prepare_with(
         if let Some(asset) = cache
             .lock()
             .ok()
-            .and_then(|cache| cache.get(&cache_key).cloned())
+            .and_then(|cache| cache.get(&cache_key).filter(|(_, file)| file.as_ref().is_none_or(|(path, stamp)| file_stamp(path) == Some(*stamp))).map(|(asset, _)| asset.clone()))
         {
             prepared.insert(key, asset);
             return;
         }
-        if let Some(path) = resolve(source, size, app) {
+        if let Some(icon) = source.strip_prefix("icon:").and_then(viu::icons::Icon::from_name) {
+            let asset = Asset::Svg(Svg { id: next_id(), bytes: viu::icons::source(icon).into_bytes().into(), symbolic: true });
+            let mut cache = cache.lock().unwrap();
+            if cache.len() >= 512 { cache.clear(); }
+            cache.insert(cache_key, (asset.clone(), None));
+            prepared.insert(key, asset);
+        } else if let Some(path) = resolve(source, size, app) {
             let asset = if crate::icons::is_svg(&path) {
                 // Keep bytes and identity alive through layout/page switches.
                 std::fs::read(&path).ok().map(|bytes| {
@@ -187,20 +206,30 @@ fn prepare_with(
                 if let Ok(mut cache) = cache.lock()
                     && cache.len() < 512
                 {
-                    cache.insert(cache_key, asset.clone());
+                    cache.insert(cache_key, (asset.clone(), file_stamp(&path).map(|stamp| (path.clone(), stamp))));
                 }
                 prepared.insert(key, asset);
             }
         }
     };
+    fn visible(nodes: &BTreeMap<String, scene::Node>, id: &str, out: &mut BTreeSet<String>) {
+        let Some(node) = nodes.get(id) else { return; };
+        if node.ports.get("hidden").and_then(serde_json::Value::as_bool) == Some(true) || !out.insert(id.into()) { return; }
+        for child in crate::templates::children(node) { visible(nodes, child, out); }
+    }
+    let mut drawn = BTreeSet::new();
+    visible(&tree.nodes, "root", &mut drawn);
     let templates = crate::templates::template_ids(tree);
     for (id, node) in &tree.nodes {
-        if !templates.contains(id) {
+        if drawn.contains(id) && !templates.contains(id) {
             insert(key(id, None), id, node, None);
         }
     }
     for (list, data) in lists {
+        if !drawn.contains(list) { continue; }
         for (item, nodes) in &data.instances {
+            let mut drawn = BTreeSet::new();
+            visible(nodes, crate::templates::text(&tree.nodes[list], "row"), &mut drawn);
             let app = tree
                 .nodes
                 .get(list)
@@ -211,7 +240,9 @@ fn prepare_with(
                 })
                 .and_then(|row| row["app_id"].as_str().or_else(|| row["id"].as_str()));
             for (id, node) in nodes {
-                insert((list.clone(), item.clone(), id.clone()), id, node, app);
+                if drawn.contains(id) {
+                    insert((list.clone(), item.clone(), id.clone()), id, node, app);
+                }
             }
         }
     }
@@ -273,6 +304,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hidden_subtrees_and_rows_never_resolve_and_visible_assets_reuse_handles() {
+        let tree = scene::resolve(&scene::parse(r#"---
+scene: 1
+name: hidden
+citizen: test
+---
+```mix
+root: {widget: "column", children: ["hidden", "rows", "shown"]}
+hidden: {widget: "column", hidden: true, children: ["bad"]}
+bad: {widget: "image", src: "hidden-parent"}
+rows: {widget: "list", row: "row", row_height: 20, rows: [{id: "one", cells: []}]}
+row: {widget: "column", hidden: true, children: ["row_icon"]}
+row_icon: {widget: "image", src: "hidden-row"}
+shown: {widget: "image", src: "visible", w: 20, h: 20}
+```
+"#).unwrap()).unwrap();
+        let lists = crate::templates::validate_templates(&tree).unwrap();
+        let cache = Mutex::new(AssetCache::new());
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/embedded-icon.svg");
+        let first = prepare_with(&tree, &lists, &cache, |source, _, _| {
+            assert_eq!(source, "visible");
+            Some(path.clone())
+        });
+        assert_eq!(first.len(), 1);
+        let second = prepare_with(&tree, &lists, &cache, |_, _, _| panic!("unchanged inputs must reuse the asset"));
+        let Some(Asset::Svg(a)) = first.get(&key("shown", None)) else { panic!("SVG"); };
+        let Some(Asset::Svg(b)) = second.get(&key("shown", None)) else { panic!("SVG"); };
+        assert_eq!(a.id, b.id);
+    }
+
+    #[test]
     fn empty_launcher_sources_reach_desktop_lookup_and_prepare_real_pixels() {
         let document = scene::parse(
             r#"---
@@ -327,41 +389,28 @@ icon: {widget: "image", src: "", w: 31, h: 31}
     }
 
     #[test]
-    fn empty_panel_launcher_recovers_the_full_colour_cyclops() {
+    fn empty_panel_launcher_uses_shared_catalogue() {
         let tree = scene::resolve(&scene::parse(
             "---\nscene: 1\nname: panel\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"launcher_icon\"]}\nlauncher_icon: {widget: \"image\", src: \"\", w: 28, h: 28}\n```\n",
         ).unwrap()).unwrap();
         let lists = crate::templates::validate_templates(&tree).unwrap();
-        // Where share/brand installs it: icons/mixos/symbolic/apps/dev.mixos.svg.
-        let root = std::env::temp_dir().join(format!("viud-launcher-{}", std::process::id()));
-        let mark = root.join("icons/mixos/symbolic/apps/dev.mixos.svg");
-        std::fs::create_dir_all(mark.parent().unwrap()).unwrap();
-        std::fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/embedded-icon.svg"),
-            &mark,
-        )
-        .unwrap();
         let images = prepare_with(
             &tree,
             &lists,
             &Mutex::new(AssetCache::new()),
-            |name, _, _| {
-                assert_eq!(name, "dev.mixos");
-                Some(mark.clone())
-            },
+            |_, _, _| panic!("catalogue icons never search the filesystem"),
         );
         assert!(
             matches!(
                 images.get(&key("launcher_icon", None)),
                 Some(Asset::Svg(Svg {
-                    symbolic: false,
+                    symbolic: true,
                     ..
                 }))
             ),
-            "the cyclops keeps its colours (its eye is red)"
+            "the catalogue icon takes the panel ink"
         );
         assert_eq!(fallback_image("launcher_text"), Some("launcher_icon"));
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
