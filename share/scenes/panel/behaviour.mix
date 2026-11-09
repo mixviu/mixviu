@@ -290,13 +290,18 @@ fn resolve_icons()
   if length(keys($state.icons.windows)) + length(keys($state.icons.plain)) >= 512 then $state.icons = empty_icons() end
   -- Model keys retain the shared panel contract; values are embedded
   -- libraries/icons catalogue sources, never installed theme names.
-  $state.icons.themed = {"start-here": "icon:layout-grid",
-    "notification-active": "icon:message-square", "notification-inactive": "icon:message-square",
-    "notifications": "icon:message-square", "audio-volume-muted": "icon:volume-x",
-    "audio-volume-high": "icon:volume-2", "audio-volume-medium": "icon:volume-2",
-    "audio-volume-low": "icon:volume-2", "audio-card": "icon:speaker",
+  if not has_key($state.icons.themed, "start-here") then
+    $state.icons.themed = {"start-here": "brand:cyclops",
+    "notification-active": "icon:bell-ring", "notification-inactive": "icon:bell",
+    "notifications": "icon:bell", "audio-volume-muted": "icon:volume-x",
+    "audio-volume-high": "icon:volume-2", "audio-volume-medium": "icon:volume-1",
+    "audio-volume-low": "icon:volume", "audio-card": "icon:speaker",
     "network-wireless-signal-excellent": "icon:wifi", "network-wired-activated": "icon:ethernet-port",
-    "network-offline": "icon:unplug", "network-wired": "icon:ethernet-port"}
+    "network-offline": "icon:unplug", "network-wired": "icon:plug"}
+    -- Retain the optional system-theme KDE launcher, with the embedded brand
+    -- when it is absent. Both successes and misses are retained per session.
+    $state.icons.themed["start-here-kde"] = apps_icon("start-here-kde", $m.LAUNCHER_ICON_SIZE, $ICON_THEME)
+  end
   for each $w in $t.panel_tasks($state.windows, $state.ws_current, $state.tasks_scope, $m.MAX_TASKS)
     $key = to_string($w.app_id)
     if not has_key($state.icons.windows, $key) then

@@ -80,9 +80,10 @@ pub(crate) fn rasterise(svg: &Svg, width: u32, height: u32) -> Option<egui::Colo
 
 pub(crate) type Prepared = BTreeMap<(String, String, String), Asset>;
 type FileStamp = (Option<SystemTime>, u64);
-type AssetCache = BTreeMap<(String, u32, Option<String>), (Asset, Option<(PathBuf, FileStamp)>)>;
+type AssetCache = crate::cache::Cache<(String, u32, Option<String>), (Asset, Option<(PathBuf, FileStamp)>)>;
 
 fn file_stamp(path: &Path) -> Option<FileStamp> {
+    // Accepted limitation: coarse mtimes can hide same-size in-place writes.
     let meta = path.metadata().ok()?;
     Some((meta.modified().ok(), meta.len()))
 }
@@ -102,10 +103,10 @@ pub(crate) fn key(id: &str, row: Option<&crate::view::Route>) -> (String, String
 // Hidden images remain hidden, including in older scene documents.
 pub(crate) fn panel_fallback(id: &str) -> Option<&'static str> {
     match id {
-        "st_notes_i" => Some("icon:message-square"),
+        "st_notes_i" => Some("icon:bell"),
         "st_vol_i" => Some("icon:volume-2"),
         "st_net_i" => Some("icon:ethernet-port"),
-        "launcher_icon" => Some("icon:layout-grid"),
+        "launcher_icon" => Some("brand:cyclops"),
         _ => None,
     }
 }
@@ -120,6 +121,25 @@ pub(crate) fn fallback_image(id: &str) -> Option<&'static str> {
     }
 }
 
+/// Legacy panel fallbacks are image references as well as child edges.
+/// Return only references not already placed by the ordinary children path.
+pub(crate) fn fallback_reference(tree: &scene::ResolvedScene, id: &str) -> Option<&'static str> {
+    if tree.name != "panel" { return None; }
+    let target = fallback_image(id)?;
+    let image = tree.nodes.get(target)?;
+    if image.family != "image" || crate::view::flag(image, "hidden") { return None; }
+    let mut pending = vec!["root"];
+    let mut seen = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) { continue; }
+        let Some(node) = tree.nodes.get(id) else { continue; };
+        if crate::view::flag(node, "hidden") { continue; }
+        if id == target { return None; }
+        pending.extend(crate::templates::children(node));
+    }
+    Some(target)
+}
+
 pub(crate) fn prepare(
     tree: &scene::ResolvedScene,
     lists: &crate::templates::PreparedLists,
@@ -131,12 +151,12 @@ pub(crate) fn prepare(
         if node.family != "image" || crate::view::flag(node, "hidden") {
             return true;
         }
-        let source = crate::templates::text(node, "src");
-        source.starts_with("icon:")
+        let source = crate::freedesktop::normalise(crate::templates::text(node, "src"));
+        source.starts_with("icon:") || source == "brand:cyclops"
             || (!row
                 && source.is_empty()
                 && (tree.name != "panel"
-                    || panel_fallback(id).is_none_or(|source| source.starts_with("icon:"))))
+                    || panel_fallback(id).is_none_or(|source| source.starts_with("icon:") || source == "brand:cyclops")))
     };
     if tree
         .nodes
@@ -194,7 +214,7 @@ fn prepare_with(
         {
             return;
         }
-        let source = crate::templates::text(node, "src");
+        let source = crate::freedesktop::normalise(crate::templates::text(node, "src"));
         let source = if source.is_empty() && tree.name == "panel" {
             panel_fallback(id).unwrap_or(source)
         } else {
@@ -213,7 +233,7 @@ fn prepare_with(
         });
         let size = size[0].max(size[1]).ceil() as u32;
         let cache_key = (source.to_owned(), size, app.map(str::to_owned));
-        if let Some(asset) = cache.lock().ok().and_then(|cache| {
+        if let Some(asset) = cache.lock().ok().and_then(|mut cache| {
             cache
                 .get(&cache_key)
                 .filter(|(_, file)| {
@@ -225,22 +245,25 @@ fn prepare_with(
             prepared.insert(key, asset);
             return;
         }
-        if let Some(icon) = source
+        let embedded: Option<(Arc<[u8]>, bool)> = if source == "brand:cyclops" {
+            Some((include_bytes!("../../../share/brand/logos/alien-cyclops.svg").as_slice().into(), false))
+        } else {
+            source
             .strip_prefix("icon:")
             .and_then(viu::icons::Icon::from_name)
-        {
+            .map(|icon| (viu::icons::source(icon).into_bytes().into(), true))
+        };
+        if let Some((bytes, symbolic)) = embedded {
             let asset = Asset::Svg(Svg {
                 id: next_id(),
-                bytes: viu::icons::source(icon).into_bytes().into(),
-                symbolic: true,
+                bytes,
+                symbolic,
             });
             let mut cache = cache.lock().unwrap();
-            if cache.len() >= 512 {
-                cache.clear();
-            }
             cache.insert(cache_key, (asset.clone(), None));
             prepared.insert(key, asset);
         } else if let Some(path) = resolve(source, size, app) {
+            let stamp = file_stamp(&path);
             let asset = if crate::icons::is_svg(&path) {
                 // Keep bytes and identity alive through layout/page switches.
                 std::fs::read(&path).ok().map(|bytes| {
@@ -254,14 +277,12 @@ fn prepare_with(
                 raster(&path).map(Asset::Raster)
             };
             if let Some(asset) = asset {
-                if let Ok(mut cache) = cache.lock()
-                    && cache.len() < 512
-                {
+                if let Ok(mut cache) = cache.lock() {
                     cache.insert(
                         cache_key,
                         (
                             asset.clone(),
-                            file_stamp(&path).map(|stamp| (path.clone(), stamp)),
+                            stamp.map(|stamp| (path.clone(), stamp)),
                         ),
                     );
                 }
@@ -273,6 +294,7 @@ fn prepare_with(
         get: &impl Fn(&str) -> Option<&'a scene::Node>,
         id: &str,
         out: &mut BTreeSet<String>,
+        tree: Option<&scene::ResolvedScene>,
     ) {
         let Some(node) = get(id) else {
             return;
@@ -287,11 +309,14 @@ fn prepare_with(
             return;
         }
         for child in crate::templates::children(node) {
-            visible(get, child, out);
+            visible(get, child, out, tree);
+        }
+        if let Some(target) = tree.and_then(|tree| fallback_reference(tree, id)) {
+            visible(get, target, out, tree);
         }
     }
     let mut drawn = BTreeSet::new();
-    visible(&|id| tree.nodes.get(id), "root", &mut drawn);
+    visible(&|id| tree.nodes.get(id), "root", &mut drawn, Some(tree));
     let templates = crate::templates::template_ids(tree);
     for (id, node) in &tree.nodes {
         if drawn.contains(id) && !templates.contains(id) {
@@ -308,6 +333,7 @@ fn prepare_with(
                 &|id| nodes.get(id),
                 crate::templates::text(&tree.nodes[list], "row"),
                 &mut drawn,
+                None,
             );
             let app = tree
                 .nodes
@@ -381,6 +407,18 @@ pub(crate) fn theme_glyph(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panel_catalogue_names_all_exist() {
+        let source = include_str!("../../../share/scenes/panel/behaviour.mix");
+        let mut names = BTreeSet::new();
+        for tail in source.split("icon:").skip(1) {
+            let name = tail.split(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')).next().unwrap();
+            assert!(viu::icons::Icon::from_name(name).is_some(), "unknown panel catalogue icon: {name}");
+            names.insert(name);
+        }
+        assert!(names.len() >= 10, "the check must cover the panel mapping");
+    }
 
     #[test]
     fn hidden_subtrees_and_rows_never_resolve_and_visible_assets_reuse_handles() {
@@ -480,7 +518,7 @@ icon: {widget: "image", src: "", w: 31, h: 31}
     }
 
     #[test]
-    fn empty_panel_launcher_uses_shared_catalogue() {
+    fn empty_panel_launcher_uses_embedded_colour_brand() {
         let tree = scene::resolve(&scene::parse(
             "---\nscene: 1\nname: panel\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"launcher_icon\"]}\nlauncher_icon: {widget: \"image\", src: \"\", w: 28, h: 28}\n```\n",
         ).unwrap()).unwrap();
@@ -491,10 +529,13 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         assert!(
             matches!(
                 images.get(&key("launcher_icon", None)),
-                Some(Asset::Svg(Svg { symbolic: true, .. }))
+                Some(Asset::Svg(Svg { symbolic: false, .. }))
             ),
-            "the catalogue icon takes the panel ink"
+            "the cyclops keeps its colours"
         );
+        let Some(Asset::Svg(svg)) = images.get(&key("launcher_icon", None)) else { panic!("brand SVG"); };
+        let pixels = rasterise(svg, 64, 64).unwrap();
+        assert!(pixels.pixels.iter().any(|p| p.r() > 100 && p.r() > p.g().saturating_mul(2) && p.r() > p.b().saturating_mul(2)));
         assert_eq!(fallback_image("launcher_text"), Some("launcher_icon"));
     }
 
