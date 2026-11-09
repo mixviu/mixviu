@@ -209,12 +209,6 @@ impl Pattern {
         self.queue.roundtrip(&mut self.state).unwrap();
     }
 
-    pub fn interactive_move(&mut self) {
-        let (serial, seat) = self.state.last_press.clone().expect("pressed pointer");
-        self.top._move(&seat, serial);
-        self.conn.flush().unwrap();
-    }
-
     pub fn popup(&mut self, grab: bool) -> (WlSurface, XdgPopup) {
         let qh = self.queue.handle();
         let surface = self.compositor.create_surface(&qh, ());

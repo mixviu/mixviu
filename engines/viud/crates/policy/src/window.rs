@@ -710,7 +710,10 @@ pub fn place<H: Clone + Eq + Hash>(
         && spec.y.is_none()
         && spec.width.is_none()
         && spec.height.is_none()
-        && (spec.opacity.is_some() || spec.z.is_some() || spec.visible.is_some() || spec.clip.is_some());
+        && (spec.opacity.is_some()
+            || spec.z.is_some()
+            || spec.visible.is_some()
+            || spec.clip.is_some());
     let sid = record.id();
     let maximized = facts.requested_maximized;
     let fullscreen = facts.committed_fullscreen || facts.requested_fullscreen;

@@ -1567,6 +1567,9 @@ pub fn retarget_pointer(lp: &mut Loop) {
 /// explicitly hidden. Popup focus resolves through the same root as injection.
 pub fn hide_window(lp: &mut Loop, id: SurfaceId) {
     let time = now_ms(lp);
+    if let Some(record) = lp.inner.comp.registry.get(id) {
+        dispatcher::wayland::grab::interactive::cancel_for(&mut lp.state, record.handle(), time);
+    }
     for seat in [SeatKind::Human, SeatKind::Agent] {
         let Some(handle) = seat_of(lp, seat) else {
             continue;
