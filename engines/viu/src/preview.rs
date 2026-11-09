@@ -31,9 +31,13 @@ impl Preview {
         ];
         let fingerprint: Vec<_> = files
             .iter()
-            .map(|p| p.as_ref().and_then(|p| {
-                (std::fs::metadata(p).ok()?.len() <= 262144).then(|| std::fs::read(p).ok()).flatten()
-            }))
+            .map(|p| {
+                p.as_ref().and_then(|p| {
+                    (std::fs::metadata(p).ok()?.len() <= 262144)
+                        .then(|| std::fs::read(p).ok())
+                        .flatten()
+                })
+            })
             .collect();
         if fingerprint == self.fingerprint {
             return;
@@ -46,7 +50,9 @@ impl Preview {
                     if let Ok(cwd) = std::env::current_dir() {
                         for root in cwd.ancestors() {
                             let script = root.join("engines/viud/scripts/scene_preview.mix");
-                            if script.is_file() { return script; }
+                            if script.is_file() {
+                                return script;
+                            }
                         }
                     }
                     PathBuf::from(concat!(

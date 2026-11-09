@@ -822,7 +822,7 @@ fn rescan($s, $force)
   end
   if is_dir($s.root) then
     for each $n in ls($s.root)
-      if valid_name($n) and is_dir($s.root .. "/" .. $n) and not contains($names, $n) then push($names, $n) end
+      if $n != "lib" and valid_name($n) and is_dir($s.root .. "/" .. $n) and not contains($names, $n) then push($names, $n) end
     end
   end
   if len($names) > 129 then fail("SCENES_LIMIT", "at most 128 installed scenes", {}) end
