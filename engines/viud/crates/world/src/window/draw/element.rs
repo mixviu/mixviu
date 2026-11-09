@@ -304,7 +304,10 @@ smithay::render_elements! {
 }
 
 impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
-    pub fn raw_mut(&mut self) -> &mut RawElement<R> where R::TextureId: 'static {
+    pub fn raw_mut(&mut self) -> &mut RawElement<R>
+    where
+        R::TextureId: 'static,
+    {
         match self {
             Self::Plain(raw) => raw,
             Self::Cropped(crop) => crop.element_mut(),

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::egl::{EGLContext, EGLDisplay, native::EGLSurfacelessDisplay};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -16,7 +17,8 @@ fn clipped_window_thumbnail_scales_the_visual_crop() {
         800,
         wayland_client::protocol::wl_shm::Format::Argb8888,
     );
-    h.client.write_buffer(file, &[0, 0, 255, 255].repeat(200 * 160));
+    h.client
+        .write_buffer(file, &[0, 0, 255, 255].repeat(200 * 160));
     surface.attach(Some(&buffer), 0, 0);
     surface.damage_buffer(0, 0, 200, 160);
     surface.commit();
@@ -42,9 +44,9 @@ fn clipped_window_thumbnail_scales_the_visual_crop() {
     let (scale, _, _) = world::window::draw::thumbnail::place(source_frame, rect).unwrap();
     assert!(scale < 1.0);
     let elements = world::window::draw::thumbnail::elements(&mut renderer, &window, 1, rect, 1.0);
-    let full = Rectangle::from_size((128, 128).into());
+    let full: Rectangle<i32, smithay::utils::Physical> = Rectangle::from_size((128, 128).into());
     let mut target =
-        Offscreen::<GlesTexture>::create_buffer(&mut renderer, Fourcc::Abgr8888, full.size)
+        Offscreen::<GlesTexture>::create_buffer(&mut renderer, Fourcc::Abgr8888, (128, 128).into())
             .unwrap();
     {
         let mut fb = renderer.bind(&mut target).unwrap();
@@ -59,7 +61,7 @@ fn clipped_window_thumbnail_scales_the_visual_crop() {
     }
     let fb = renderer.bind(&mut target).unwrap();
     let mapping = renderer
-        .copy_framebuffer(&fb, full, Fourcc::Abgr8888)
+        .copy_framebuffer(&fb, Rectangle::from_size((128, 128).into()), Fourcc::Abgr8888)
         .unwrap();
     drop(fb);
     let pixels = renderer.map_texture(&mapping).unwrap();
