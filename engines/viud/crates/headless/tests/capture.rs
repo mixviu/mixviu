@@ -831,6 +831,7 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
         10,
     );
     assert_eq!(refused["error"], "no_pointer_target");
+    let hidden_commit = Instant::now();
     pattern.commit(true);
     let blank = capture("hidden");
     assert_eq!(at(&blank, 320, 180), [18, 20, 25]);
@@ -842,9 +843,9 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
         pattern.state.pointer_buttons, buttons,
         "hidden window receives no pointer buttons"
     );
-    assert_eq!(
-        pattern.state.callbacks, callbacks,
-        "hidden callbacks are withheld"
+    assert!(
+        pattern.state.callbacks - callbacks <= hidden_commit.elapsed().as_secs(),
+        "hidden callbacks must follow the one-second occlusion trickle"
     );
     place(json!({"opacity":null,"z":null,"visible":null,"clip":null}));
     let reset = bus.window();
