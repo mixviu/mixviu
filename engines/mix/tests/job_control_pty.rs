@@ -21,7 +21,9 @@ const PROMPT: &str = "P0J> ";
 const LIMIT: Duration = Duration::from_secs(10);
 fn fixture_limit() -> Duration {
     std::env::var("MIX_PTY_TIMEOUT_SECS").map_or(LIMIT, |value| {
-        let seconds: u64 = value.parse().expect("MIX_PTY_TIMEOUT_SECS must be an integer");
+        let seconds: u64 = value
+            .parse()
+            .expect("MIX_PTY_TIMEOUT_SECS must be an integer");
         assert!(seconds > 0, "MIX_PTY_TIMEOUT_SECS must be positive");
         Duration::from_secs(seconds)
     })
@@ -46,7 +48,10 @@ fn wait_for_event(event: &str, mut f: impl FnMut() -> bool) {
     let limit = fixture_limit();
     let end = Instant::now() + limit;
     while !f() {
-        assert!(Instant::now() < end, "waiting for {event} exceeded {limit:?}");
+        assert!(
+            Instant::now() < end,
+            "waiting for {event} exceeded {limit:?}"
+        );
         std::thread::sleep(Duration::from_millis(2));
     }
 }
@@ -426,9 +431,10 @@ impl Pty {
     }
     fn report(&mut self, name: &str) -> Vec<i32> {
         let path = self.home.path().join(name);
-        wait_for_event(&format!("four-field identity report {}", path.display()), || {
-            fs::read_to_string(&path).is_ok_and(|v| v.split_whitespace().count() == 4)
-        });
+        wait_for_event(
+            &format!("four-field identity report {}", path.display()),
+            || fs::read_to_string(&path).is_ok_and(|v| v.split_whitespace().count() == 4),
+        );
         fs::read_to_string(path)
             .unwrap()
             .split_whitespace()
