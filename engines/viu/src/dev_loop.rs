@@ -113,6 +113,7 @@ mod tests {
             });
             assert!(!output.shapes.is_empty());
             if pass == 2 { assert!(format!("{:?}", output.shapes).contains("broken")); }
+            output.drop_without_applying_deltas();
         }
         assert_eq!(view.revision(), revision);
         assert_eq!(compact_text("refused /home/private/projects/scene.mix:7"), "refused …/scene.mix:7");

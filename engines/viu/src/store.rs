@@ -516,12 +516,8 @@ impl SceneStore {
                         let text = source["source"]
                             .as_str()
                             .ok_or_else(|| json!({"error":"missing source"}))?;
-                        let (receipt, summary) = staged.request_mounted(
-                            SceneCommand::Load,
-                            text,
-                            source,
-                            mount,
-                        )?;
+                        let (receipt, summary) =
+                            staged.request_mounted(SceneCommand::Load, text, source, mount)?;
                         let name = receipt["scene"]
                             .as_str()
                             .ok_or_else(|| json!({"error":"missing scene receipt"}))?;

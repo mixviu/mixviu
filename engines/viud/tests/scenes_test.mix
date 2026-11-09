@@ -1505,6 +1505,11 @@ try
   check($s.rc == 0 and $s.library_seen == $l.library_signature($s), "explicit reload catches in-flight helper edit")
   check(len(filter(since($mark, "shell.scene.load"), fn($r) = $r.body.sources != nil)) == 2, "in-flight edit commits a second complete batch")
   check($s.library_checked[$helper] == hash_sha256(read_file($helper)), "helper cache uses the validated complete digest")
+  write_file($helper, "-- automatic reload\n")
+  $host_state.edit_during_commit = {path:$helper, text:"-- automatic in-flight edit\n"}
+  $mark = log_mark()
+  $s = $l.filesystem($s, {changes:[{path:$helper}], overflow:false})
+  check($s.rc == 0 and $s.library_seen == $l.library_signature($s) and len(filter(since($mark, "shell.scene.load"), fn($r) = $r.body.sources != nil)) == 2, "filesystem reload also catches in-flight helper edit")
 
   -- A refused library and independent static edit in the same event batch.
   install_fixture($s.root, "static-test", false)
@@ -1564,11 +1569,15 @@ try
   write_file($anchor .. "/catalogue/lib/new.mix", "-- new catalogue\n")
   $events = fs_wait($parent_watch)
   check(len($events.changes) > 0, "stable parent watch observes catalogue replacement")
+  write_file($anchor .. "/catalogue/lib/new.mix", "-- second edit in replaced catalogue\n")
+  check(len(fs_wait($parent_watch).changes) > 0, "parent watch continues on new catalogue inode")
   $future = $anchor .. "/future/lib"
   $future_watch = fs_watch($l.watch_anchor($future), {recursive:true})
   mkdir($future)
   write_file($future .. "/late.mix", "-- late helper\n")
   check(len(fs_wait($future_watch).changes) > 0, "watch installed before SCENES_LIB exists observes creation")
+  write_file($future .. "/late.mix", "-- second late edit\n")
+  check(len(fs_wait($future_watch).changes) > 0, "late library remains watched after creation")
 
   -- T1: the gallery listing.
   mkdir($tpl .. "/broken")

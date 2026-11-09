@@ -176,6 +176,9 @@ mod tests {
     fn preview_loads_recorded_model_and_retains_last_good_after_bad_edit() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path().join("preview-test");
+        let lib = temp.path().join("lib");
+        std::fs::create_dir(&lib).unwrap();
+        std::fs::write(lib.join("helper.mix"), "print(\"must not execute or enter transport\")").unwrap();
         std::fs::create_dir(&dir).unwrap();
         let source = "---\nscene: 1\nname: preview-test\ncitizen: preview-test\nmodel: {\"text\":\"stub\"}\n---\n```mix\nroot: {widget: text, text: '= $model.text'}\n```\n";
         std::fs::write(dir.join("scene.mix"), source).unwrap();
@@ -210,5 +213,9 @@ mod tests {
         std::fs::write(dir.join("scene.mix"), source).unwrap();
         preview.refresh(&ctx);
         assert!(preview.error.is_none());
+        std::fs::write(lib.join("helper.mix"), "$broken = [").unwrap();
+        std::fs::write(dir.join("scene.mix"), format!("{source}\n")).unwrap();
+        preview.refresh(&ctx);
+        assert!(preview.error.is_some() && preview.view.is_some(), "preview validates helper syntax");
     }
 }
