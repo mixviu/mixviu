@@ -126,24 +126,24 @@ rustc-hash = "2"
 # non-wasm target, so indexd matches it exactly, giving ONE tokenizers. onig (C)
 # stays because candle needs it. Without `esaxx_fast`, esaxx-rs builds without C++.
 candle-core = { version = "=0.10.2" }
-candle-nn = { version = "=0.10.2" }
+candle-nn = { version = "=0.11.1" }
 candle-transformers = { version = "=0.10.2" }
 tokenizers = { version = "=0.22.2", default-features = false, features = ["onig"] }
 sqlite-vec = { version = "=0.1.9" }
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 # serde_json must never gain `preserve_order` (indexmap): frozen wire formats
 # rely on BTreeMap key order.
-serde_json = { version = "=1.0.151" }
+serde_json = { version = "=1.0.154" }
 schemars = { version = "=1.2.3" }
 sha2 = { version = "=0.10.9" }
 tempfile = "=3.27.0"
-thiserror = { version = "=2.0.20" }
-tokio = { version = "=1.53.3", features = ["macros", "rt", "sync", "time"] }
+thiserror = { version = "=2.0.21" }
+tokio = { version = "=1.54.1", features = ["macros", "rt", "sync", "time"] }
 tokio-tungstenite = "=0.26.2"
 tracing = { version = "=0.1.44" }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
-uuid = { version = "=1.24.1", features = ["fast-rng", "serde", "v7"] }
+uuid = { version = "=1.29.0", features = ["fast-rng", "serde", "v7"] }
 # D-Bus for the session portal (services/portald). Pinned to the version the
 # lock already resolves; the tokio backend only, no async-io or blocking API.
 zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }
@@ -188,9 +188,9 @@ files = { path = "libraries/files" }
 wgpu = { version = "=30.0.1", default-features = false, features = ["gles", "parking_lot", "std", "wgsl"] }
 egui-wgpu = { version = "=0.37.0", default-features = false }
 bindgen = "=0.71.1"
-bitflags = "=2.13.1"
-cc = "=1.4.3"
-crossbeam-channel = "=0.5.16"
+bitflags = "=2.13.2"
+cc = "=1.11.0"
+crossbeam-channel = "=0.5.17"
 drm-ffi = "=0.9.1"
 gbm = "=0.18.0"
 glow = "=0.17.0"
