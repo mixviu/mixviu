@@ -58,7 +58,11 @@ try
   if len(keys($mounted.instances)) != 2 then raise("P3_LIVE", "two panels not loaded") end
   $kept_key = sort(keys($mounted.instances))[0]
   $io.rpc("p3-loader", "mode", {output:$kept_key, mode:"pinned"})
+  -- Native policy currently switches only the default output. Its peer must
+  -- keep workspace 1, and each panel must project that output's own row.
+  $io.rpc("comp-p3","comp.workspace.switch",{output:$kept_key,index:2})
   sleep(2)
+  $mounted = $io.rpc("p3-loader","snapshot",{})
   for $key in keys($mounted.instances)
     $scene = $mounted.instances[$key]
     $deadline = monotonic() + 12
@@ -83,9 +87,12 @@ try
     sleep(0.1)
   end
   push($records, {surfaces:$io.rpc("comp-p3", "comp.props.get", {path:"surfaces"}), panels:$io.rpc("shell", "shell.props.get", {})})
-  $io.rpc("p3-loader", "workspace", {scene:$mounted.instances[$kept_key].id, item:{index:2}})
+  $io.rpc("p3-loader", "workspace", {scene:$mounted.instances[$kept_key].id, item:{index:4}})
   $ws = $io.rpc("comp-p3", "comp.props.get", {path:"workspaces"})
-  if $ws[$kept_key].current != 2 then raise("P3_LIVE", "workspace action did not target its output") end
+  if $ws[$kept_key].current != 4 then raise("P3_LIVE", "workspace action did not target its output") end
+  $other = filter(keys($mounted.instances),fn($key) = $key != $kept_key)[0]
+  if $ws[$other].current != 1 then raise("P3_LIVE","workspace action changed another output") end
+  push($records,{workspace_action:$ws})
   $until = monotonic() + 35
   $after = $mounted
   while monotonic() < $until

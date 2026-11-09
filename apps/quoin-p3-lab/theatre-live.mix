@@ -57,6 +57,8 @@ try
   if $cast.stage.scene_address != "lab/right@headless-0/network" then raise("P3_STAGE_LIVE","agent address mismatch") end
   $snapshot = $io.rpc("lab","stages",{})
   $io.rpc("lab","mode",{stage:"bottom@headless-0",mode:"pinned"})
+  -- The native workspace primitive permits the default output only.
+  $io.rpc("comp-p3","comp.workspace.switch",{output:sort(keys($outputs))[0],index:2})
   sleep(2)
   for $key in keys($outputs)
     $stage_id = "bottom@" .. $outputs[$key].name

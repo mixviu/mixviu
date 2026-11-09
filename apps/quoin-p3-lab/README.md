@@ -1,91 +1,60 @@
-# P3 discovery specimen
+# Quoin P3 discovery specimen
 
-Lab branch only; never merge this implementation. This is a small panel
-specimen, not a port of the shipped panel's audio, tray, task and popup policy.
+Approved as a lab on 2026-11-09. This branch is never merged. The report and
+CBC receipts are in `last.md`, including the round-two addendum. Production
+derivation waits for P2 sources and an independent whole-specimen survey.
 
-`loader.mix` is an opt-in alternative entry point using the existing native
-Bus and `shell.scene.load/unload` API. It does not modify the installed loader.
-`template.conf.mix` selects `per_output`, `primary` or `named` (with `output`
-set to a stable output name). Each page is `NAME@OUTPUT`; the backing scene
-name is a deterministic hash because P0 scene names cannot contain `@`.
-The output feed is isolated in `instances.mix`. It subscribes before taking
-the compositor snapshot, uses P2's watch-as-invalidation contract, and
-refreshes the snapshot on notifications/reconnect. Clock updates remain 1 s.
+Two entry points use the same output-feed seam and existing native Bus:
 
-Run with the native Mix interpreter:
+- `loader.mix`: `instances: per_output | primary | named` in
+  `template.conf.mix`; `P3_SHAPE=shared|instance` chooses the D2 behaviour shape.
+- `theatre-loader.mix`: strict-data `theatre.conf.mix` expands output rules
+  into places, then casts registered scenes onto them. It is a Mix Bus citizen
+  named `lab`, with `stages`, `cast`, `uncast`, `mode` and a lab preview bridge.
+
+`instances.mix` lowers bounded `repeat` into P0 list templates and substitutes
+reserved model sections for the future read-only `$instance` and `$src` roots.
+`theatre.mix` supplies stage expansion, persistent cast overrides and placement
+fallback. No stage-specific Rust host implementation was needed.
+
+The panel retains the shipped panel's complete node composition, with bounded
+authored defaults for service-dependent content. The Network fixture is the
+unchanged shipped scene. This does not activate the shipped device behaviours.
+
+Run the bounded adapter checks with Mix:
 
 ```text
 mix apps/quoin-p3-lab/check.mix
-mix apps/quoin-p3-lab/measure.mix HARNESS PRIVATE-RESULT-DIRECTORY [CBC-BINARY-DIRECTORY SMOKE-SETTINGS]
-mix apps/quoin-p3-lab/live.mix HARNESS CBC-BINARY-DIRECTORY PRIVATE-RUN-DIRECTORY
+mix apps/quoin-p3-lab/theatre-check.mix
 ```
 
-HARNESS is the maintainer's native desktop test harness. It creates and stops
-an isolated noded; nothing connects to the desktop Bus. The live test uses
-only supplied CBC binaries. `cbc.mix` builds and snapshots them on a worker.
-It prints formatting/lock changes for local application.
+Build through CBC, after pushing the chosen SHA:
 
-The headless backend's lab-only environment controls are
-`MIX_VIUD_LAB_OUTPUTS=1..3` and optional
-`MIX_VIUD_LAB_UNPLUG_SECS=1..300` (requires two outputs). The latter removes
-the last output once. These are a bounded experiment, not a production
-virtual-output management API. No renderer or physical seat is replaced.
+```text
+mix ~/.mix/_bin/cbc-build.mix --repo mixviu --commit SHA -- mix apps/quoin-p3-lab/cbc.mix
+```
 
-Set `P3_SETTINGS` to a private file when running the loader directly.
-`P3_SHAPE=shared|instance` chooses one Mix behaviour process or one per output.
-`mode {output,mode}` stores mode by output **name** and rejects absent outputs.
-It applies hidden/pinned/docked mode through the existing host API; new
-outputs default to pinned so the specimen is visible.
+The gate runs the Rust formatter, builds viu/viud and the pixel probe, runs
+headless tests and the main identity-collision reproducer, and saves a snapshot.
+Apply any printed formatting diff locally. Read `BUILD_RC=` and the saved log.
+The collision test deliberately asserts existing faulty behaviour, as evidence;
+it is not a production regression test to merge.
 
-## Repeat and P2
+`live.mix HARNESS BIN-DIR PRIVATE-RUN-DIR` requires the native desktop harness
+module beside its `smoke-settings.json` and the CBC snapshot containing
+`viu`, `viud`, and `testkit-panel-pixels`. It creates an isolated native broker,
+two headless outputs and a timed unplug, and cleans up its children. Run once
+per D2 shape. `theatre-live.mix` takes the same arguments followed by a P1
+`viu --preview` binary and its scene-preview validator. P1 remains read-only.
 
-The lab accepts a node with `repeat: {over: '= $src.comp.workspaces', as: ws,
-key: id, max: 64}` and `child: template_id`. It lowers this to the existing
-keyed list/template machinery. Bounds are 1..128, default 64; exceeding the
-cap, duplicate/empty/non-string keys, shared templates or nested repeat/list
-refuse the candidate. Variable-token rewriting preserves literal strings.
-The host still validates the lowered scene and owns evaluation budgets.
+The live checks wait for a presented scene revision before capturing. Each
+output has its own name, current-workspace highlight and footer colour; repeated
+captures reject blank or crossed panels. Native workspace switching currently
+accepts only the default output, so the specimen shows workspace 2 there and
+workspace 1 on its peer. That native policy limit is reported, not replaced.
 
-This lowering intentionally supports only dotted model/source collection
-paths. It re-lowers on changes, rather than extending core structural dirty
-tracking. Existing list row identity/events supply the row key. Arbitrary
-pure `over` expressions, keyed widget-state retention across reorder, precise
-structural invalidation and diagnostics mapping need a production design.
-
-P2 at `35260eb5` exposes read-only `$src` patches and a watch watermark with
-snapshot invalidation. Workspaces are a map with `.list` rows containing
-numeric `index`, optional `name`, and output-specific `current` fields.
-The Mix adapter projects rows to `{id,index,label}`; `repeat` needs a keyed
-list, not that unmodified map. P0 does not understand `$src`/`$instance`, so
-the specimen lowers these to reserved model sections. P2 integration must
-keep real read-only roots and invalidate both structural and item bindings.
-No code from the concurrent P2 branch is copied or edited here.
-
-## Measurement limits
-
-`measure.mix` uses real native Bus calls and real behaviour processes with
-equivalent 1/2/3-output snapshots. With a binary directory and smoke settings,
-it starts a private headless viud for each output count and takes the actual
-snapshot; without them, it uses synthetic snapshots. Three trials, 20 synchronous
-updates each; per-instance processes receive only their output section.
-It records summed behaviour VmRSS, spawn-to-first-reply time, successful
-request count and JSON request-plus-reply payload bytes. Protocol overhead,
-registration/startup retries, loader, compositor, host/GPU memory and frame
-latency are excluded. Results cannot establish whole-panel parity or visible
-startup latency. Code-size figures cover these tiny behaviours, with policy
-shared in `panel-state.mix`; they say little about a full panel rewrite.
-
-`check.mix` covers selection, stable page identity, unchanged-update silence,
-bounded keyed repeat, and removal preceding pending model fanout. This is
-an adapter test, not evidence of unplug during a live Bus transaction.
-The live harness separately captures both outputs and checks one surviving
-identity after compositor removal. Inspect its images and receipts before
-calling rendered acceptance complete. The host's settings and hidden-page
-behaviour remain separate questions for the independent survey.
-
-The lifecycle pass marker does not certify the screenshots. In the first
-multi-output runs, scene acceptance, workspace actions, settings persistence
-and teardown passed while capture images were blank or showed another
-output's panel. Redraw registration fixed capture deadlines; per-output
-render-view initialisation is the next bounded repair. These are lab findings,
-not permission to advertise visual acceptance.
+The stage specimen supports one active cast per stage. Preview uses P1's passive
+window and a private materialised transport copy to pass its installed-scene
+validator; authored scene files remain unchanged. Generic scene behaviour
+lifecycle, capabilities, stage ownership and final vocabulary remain survey
+and Fable decisions.
