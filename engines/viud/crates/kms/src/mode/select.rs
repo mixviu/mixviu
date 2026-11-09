@@ -24,9 +24,10 @@ pub fn is_interlaced(m: &DrmMode) -> bool {
 /// `!is_interlaced` is the HIGHEST-priority key, ahead of area — an interlaced
 /// mode is only ever selected when the connector advertises nothing else.
 pub fn select_default(info: &connector::Info) -> Option<DrmMode> {
-    // HDR: among same-size, same-refresh timings prefer the one closest to the
-    // nominal rate, i.e. the CTA-861 video timing (4K60: VIC 97, 594 MHz,
-    // 60.000 Hz) over an EDID reduced-blanking one (533.25 MHz, 59.997 Hz).
+    // HDR: among timings with the same size and the same integer refresh, prefer
+    // the highest exact refresh, which in practice is the CTA-861 video timing
+    // (4K60: VIC 97, 594 MHz, 60.000 Hz) over an EDID reduced-blanking one
+    // (533.25 MHz, 59.997 Hz).
     // A CTA video timing is what HDMI sinks expect HDR on, and what KWin picks
     // for the same monitor. (A grey film first blamed on the timing was in fact
     // a stale CRTC GAMMA_LUT; see the connector pass in native's execute/hdr.rs.)

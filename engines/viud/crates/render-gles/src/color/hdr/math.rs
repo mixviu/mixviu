@@ -164,7 +164,10 @@ pub fn rgb_to_rgb(src: &Chromaticity, dst: &Chromaticity) -> Option<Mat3> {
     } else {
         bradford(src.w, dst.w)?
     };
-    Some(mul(&from_xyz, &mul(&adapt, &to_xyz)))
+    let m = mul(&from_xyz, &mul(&adapt, &to_xyz));
+    // Client-supplied primaries reach here; nothing non-finite may go on to a
+    // GL uniform.
+    m.iter().flatten().all(|v| v.is_finite()).then_some(m)
 }
 
 /// A row-major matrix as the column-major `[f32; 9]` GLSL's `mat3` takes.
@@ -283,6 +286,15 @@ mod tests {
         }
         // Nothing to do when the source fits.
         assert!(close(bt2390(0.3, 0.5, 0.7), 0.3, 1e-12));
+    }
+
+    #[test]
+    fn degenerate_white_points_are_refused() {
+        let bad = Chromaticity {
+            w: (1.0e-9, 1.0e-9),
+            ..BT709
+        };
+        assert!(rgb_to_rgb(&bad, &BT709).is_none());
     }
 
     #[test]

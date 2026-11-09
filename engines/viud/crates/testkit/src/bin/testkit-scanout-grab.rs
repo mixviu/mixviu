@@ -138,7 +138,13 @@ fn main() {
         ]
     };
 
-    let mut out = File::create(&args[3]).expect("create output");
+    // Run as root: create a NEW file only, so it can neither overwrite an
+    // existing file nor write through a planted symlink.
+    let mut out = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&args[3])
+        .unwrap_or_else(|e| panic!("create {} (must not exist): {e}", args[3]));
     write!(out, "P6\n{w} {h}\n1023\n").unwrap();
     let mut row = Vec::with_capacity((w * 6) as usize);
     for y in 0..h {

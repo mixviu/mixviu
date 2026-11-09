@@ -182,7 +182,9 @@ pub fn chromaticity(
         w: (f(wx), f(wy)),
     };
     // Degenerate primaries (collinear, or a zero y) cannot form a matrix.
-    if [c.r.1, c.g.1, c.b.1, c.w.1].iter().any(|y| *y <= 0.0) {
+    // CIE xy: 0 <= x, 0 < y, x + y <= 1. Anything else is not a colour.
+    let valid = |(x, y): (f64, f64)| x >= 0.0 && y > 0.0 && x + y <= 1.0;
+    if ![c.r, c.g, c.b, c.w].into_iter().all(valid) {
         return None;
     }
     math::rgb_to_xyz(&c)?;
@@ -238,22 +240,33 @@ static OUTPUT_OBJECTS: Mutex<Vec<(String, Weak<WpColorManagementOutputV1>)>> =
 static FEEDBACK_OBJECTS: Mutex<Vec<Weak<WpColorManagementSurfaceFeedbackV1>>> =
     Mutex::new(Vec::new());
 
+/// At most this many live objects of each kind get change notifications; the
+/// rest still work, they are just not told. Bounds what clients can make the
+/// compositor hold, whatever they keep alive.
+const TRACK_MAX: usize = 4096;
+
 pub fn track_output(output: &str, obj: &WpColorManagementOutputV1) {
-    let mut v = OUTPUT_OBJECTS.lock().unwrap();
+    let mut v = OUTPUT_OBJECTS.lock().unwrap_or_else(|e| e.into_inner());
     v.retain(|(_, w)| w.upgrade().is_ok());
-    v.push((output.to_string(), obj.downgrade()));
+    if v.len() < TRACK_MAX {
+        v.push((output.to_string(), obj.downgrade()));
+    }
 }
 
 pub fn track_feedback(obj: &WpColorManagementSurfaceFeedbackV1) {
-    let mut v = FEEDBACK_OBJECTS.lock().unwrap();
+    let mut v = FEEDBACK_OBJECTS.lock().unwrap_or_else(|e| e.into_inner());
     v.retain(|w| w.upgrade().is_ok());
-    v.push(obj.downgrade());
+    if v.len() < TRACK_MAX {
+        v.push(obj.downgrade());
+    }
 }
 
 /// An output's HDR state changed: tell that output's objects, and every surface
 /// feedback object (their preferred description follows the HDR outputs).
 pub fn output_changed(output: &str) {
-    for (name, w) in OUTPUT_OBJECTS.lock().unwrap().iter() {
+    let mut outputs = OUTPUT_OBJECTS.lock().unwrap_or_else(|e| e.into_inner());
+    outputs.retain(|(_, w)| w.upgrade().is_ok());
+    for (name, w) in outputs.iter() {
         if name == output
             && let Ok(o) = w.upgrade()
         {
@@ -261,7 +274,9 @@ pub fn output_changed(output: &str) {
         }
     }
     let identity = IDENTITY.fetch_add(1, Ordering::Relaxed);
-    for w in FEEDBACK_OBJECTS.lock().unwrap().iter() {
+    let mut feedback = FEEDBACK_OBJECTS.lock().unwrap_or_else(|e| e.into_inner());
+    feedback.retain(|w| w.upgrade().is_ok());
+    for w in feedback.iter() {
         if let Ok(fb) = w.upgrade() {
             if fb.version() >= 2 {
                 fb.preferred_changed2(0, identity);

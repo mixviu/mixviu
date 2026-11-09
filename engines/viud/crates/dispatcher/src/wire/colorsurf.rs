@@ -148,7 +148,7 @@ pub fn dispatch_color_params<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
     di: &mut DI<'_, W>,
 ) {
     info!("color: params request {:?}", req);
-    let mut p = data.lock().unwrap();
+    let mut p = data.lock().unwrap_or_else(|e| e.into_inner());
     match req {
         PrReq::SetTfNamed { tf } => match wenum(tf).and_then(transfer_from) {
             Some(t) => p.transfer = Some(t),

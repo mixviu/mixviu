@@ -237,7 +237,7 @@ static OUTPUTS: RwLock<Option<HashMap<String, OutputColor>>> = RwLock::new(None)
 /// Record (or, with `None`, clear) one output's HDR state. Other outputs keep
 /// theirs. Returns whether anything changed, so callers notify only then.
 pub fn set_output(name: &str, color: Option<OutputColor>) -> bool {
-    let mut guard = OUTPUTS.write().unwrap();
+    let mut guard = OUTPUTS.write().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
     let before = map.get(name).copied();
     match color {
@@ -255,7 +255,7 @@ pub fn set_output(name: &str, color: Option<OutputColor>) -> bool {
 pub fn output(name: &str) -> Option<OutputColor> {
     OUTPUTS
         .read()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .as_ref()
         .and_then(|m| m.get(name).copied())
 }
@@ -266,7 +266,7 @@ pub fn output(name: &str) -> Option<OutputColor> {
 pub fn any_hdr_output() -> Option<OutputColor> {
     OUTPUTS
         .read()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .as_ref()
         .and_then(|m| m.values().copied().max_by(|a, b| a.max.total_cmp(&b.max)))
 }
@@ -290,7 +290,7 @@ static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 pub fn set_surface(surface: &WlSurface, description: Option<Description>) {
     let id = Id::from_wayland_resource(surface);
     let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let mut guard = SURFACES.lock().unwrap();
+    let mut guard = SURFACES.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
     match description {
         Some(description) => {
@@ -314,7 +314,7 @@ pub fn set_surface(surface: &WlSurface, description: Option<Description>) {
 /// The live tagged surfaces, by render element id. Dead surfaces are dropped
 /// here, so the registry never outgrows the surfaces that exist.
 pub fn surfaces() -> HashMap<Id, Tagged> {
-    let mut guard = SURFACES.lock().unwrap();
+    let mut guard = SURFACES.lock().unwrap_or_else(|e| e.into_inner());
     let Some(map) = guard.as_mut() else {
         return HashMap::new();
     };

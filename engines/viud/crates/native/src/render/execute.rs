@@ -828,6 +828,11 @@ pub fn execute(
                             "HDR fallback: SDR connector reset failed ({e}); the connector pass retries it"
                         ),
                     }
+                    // The scanout's per-element history predates HDR: start it over
+                    // so no PQ-encoded region survives as "undamaged" SDR.
+                    if let Some(drm_output) = ctx_ref.outputs[output_idx].drm_output.as_ref() {
+                        drm_output.reset_buffers();
+                    }
                     state
                         .state
                         .redraw
