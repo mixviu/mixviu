@@ -616,8 +616,8 @@ impl OwnedEditor {
         // Captured here, before the worker starts, so no later environment
         // mutation by evaluated Mix can reach it.
         let delay = |name: &str| {
-            std::env::var(name)
-                .ok()
+            crate::test_hooks::var(name)
+                .and_then(|value| value.into_string().ok())
                 .and_then(|value| value.parse::<u64>().ok())
                 .map_or(std::time::Duration::ZERO, std::time::Duration::from_millis)
         };
