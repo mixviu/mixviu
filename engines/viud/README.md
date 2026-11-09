@@ -9,6 +9,7 @@ Its private crates live in `crates/`, its units in `units/` (`viud@`,
 `viud-headless@`). Configuration lives in `~/.config/mix/viud`, environment
 variables are `VIUD_*` (and `MIX_VIUD_CONFIG`). The Bus service is still
 `comp` with its `comp.*` commands: that is the protocol name.
+
 `comp.window.place` accepts persistent visual attributes alongside geometry:
 `opacity` (number 0–1), `z` (signed 32-bit integer), `visible` (boolean), and
 `clip` (`{x,y,width,height}` in window-local logical coordinates, non-negative
@@ -32,3 +33,14 @@ Unregistered same-layer drawables are stacking barriers too. `z` requires a
 JSON integer token (`1.0` is refused).
 
 Hiding a window cancels the whole touch sequence across all active slots when any slot targets that window (Smithay touch-grab semantics).
+
+Caller identity step 1 is audit-only. The port prefers verified Unix Bus
+registration and keeps supervised re-registration and subscription replay.
+A missing native endpoint falls back to TCP with a warning; `comp.callers`
+reports `protected_recipient: false`. No caller needs a role or grant in this
+step. See [the caller audit contract](../../docs/comp-callers.md).
+
+Step 2 introduces desk-rooted roles and revocable grants after design review.
+Step 3 migrates legitimate callers before enforcement; reads stay open and
+input is refused while the session is locked. Capture has its own class for
+future grants because it exposes screen pixels.
