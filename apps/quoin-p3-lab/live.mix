@@ -1,0 +1,69 @@
+-- version: 0.1.0
+-- Usage: mix live.mix HARNESS CBC-BIN-DIR PRIVATE-RUN-DIR
+$h = require(args()[0])
+$bin = args()[1]; $dir = args()[2]
+$root = dirname(script_path())
+mkdir($dir, {parents:true})
+$bus = $h.private_bus({dir:$dir .. "/broker", name:"p3-live"})
+export MIXOS_NODE_CONFIG = $bus.conf
+export MIXOS_NODED_URL = $bus.url
+export MIXOS_RUN = $bus.dir .. "/run"
+export MIXOS_BROKER_ACCOUNT = $bus.account
+$io = require("../../engines/viud/scripts/lib/scenes_io.mix")
+$runtime = $dir .. "/wayland"
+mkdir($runtime); chmod($runtime, 0o700)
+write_file($dir .. "/settings.json", "{}")
+write_file($dir .. "/preferences.json", json_encode({scene_host:false}))
+$env = {HOME:$dir .. "/home", XDG_RUNTIME_DIR:$runtime, XDG_CONFIG_HOME:$dir .. "/config", XDG_DATA_HOME:$dir .. "/data", XDG_STATE_HOME:$dir .. "/state", XDG_CACHE_HOME:$dir .. "/cache", MIXOS_ETC:$dir .. "/etc", MIXOS_VAR:$dir .. "/var", MIXOS_RUN:$bus.dir .. "/run", MIXOS_NODE_CONFIG:$bus.conf, MIXOS_NODED_URL:$bus.url, VIU_COMP_SERVICE:"comp-p3", WAYLAND_DISPLAY:"p3", DISPLAY:nil, DBUS_SESSION_BUS_ADDRESS:nil, MIXOS_VT:nil, NOTIFY_SOCKET:nil, MESA_VK_WSI_PRESENT_MODE:"mailbox", P3_SETTINGS:$dir .. "/panel-settings.conf.mix"}
+mkdir($env.HOME, {parents:true})
+$children = []; $records = []
+fn launch($argv, $name, $extra)
+  return spawn($argv, {env:merge($env, $extra), die_with_parent:true, stdout:{file:$dir .. "/" .. $name .. ".log"}, stderr:"stdout"})
+end
+fn wait_call($svc, $command, $body)
+  $until = monotonic() + 20
+  while monotonic() < $until
+    try
+      return $io.rpc($svc, $command, $body)
+    catch $message
+      sleep(0.1)
+    end
+  end
+  raise("P3_LIVE", "service timeout: " .. $svc .. " " .. $command)
+end
+try
+  $comp = launch([$bin .. "/viud", "--headless", "--size", "1280x720", "--socket", "p3", "--bus-service", "comp-p3", "--config-file", $dir .. "/settings.json"], "viud", {MIX_VIUD_LAB_OUTPUTS:"2", MIX_VIUD_LAB_UNPLUG_SECS:"25"})
+  push($children, $comp)
+  wait_call("comp-p3", "comp.ping", {})
+  $outputs = $io.rpc("comp-p3", "comp.props.get", {path:"outputs"})
+  if len(keys($outputs)) != 2 then raise("P3_LIVE", "headless did not advertise two outputs") end
+  $host = launch([$bin .. "/viu", "--host"], "viu", {})
+  push($children, $host)
+  wait_call("shell", "shell.ping", {})
+  $loader = launch(["/opt/mixos/bin/mix", "--serve", $root .. "/loader.mix", "--name", "p3-loader"], "loader", {})
+  push($children, $loader)
+  $mounted = wait_call("p3-loader", "snapshot", {})
+  if len(keys($mounted.instances)) != 2 then raise("P3_LIVE", "two panels not loaded") end
+  for $key in keys($mounted.instances)
+    $scene = $mounted.instances[$key]
+    push($records, $io.rpc("shell", "shell.scene.get", {scene:$scene.id, output:$key}))
+    push($records, $io.rpc("comp-p3", "comp.capture.frame", {output:$key, path:$dir .. "/" .. $key .. ".png", cursor:false}))
+  end
+  $until = monotonic() + 35
+  $after = $mounted
+  while monotonic() < $until
+    $after = $io.rpc("p3-loader", "snapshot", {})
+    if len(keys($after.instances)) == 1 then break end
+    sleep(0.2)
+  end
+  if len(keys($after.instances)) != 1 then raise("P3_LIVE", "unplug did not remove one instance") end
+  $survivor = keys($after.instances)[0]
+  if $after.instances[$survivor].id != $mounted.instances[$survivor].id then raise("P3_LIVE", "surviving identity changed") end
+  push($records, $io.rpc("shell", "shell.scene.get", {scene:$after.instances[$survivor].id, output:$survivor}))
+  write_file($dir .. "/result.json", json_encode({result:"pass", before:$mounted, after:$after, records:$records}))
+  print("P3_LIVE=pass")
+finally
+  write_file($dir .. "/progress.json", json_encode($records))
+  for $child in reverse($children) $stopped = kill($child, 9) end
+  $h.stop_bus($bus)
+end

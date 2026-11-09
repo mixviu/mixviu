@@ -13,6 +13,7 @@ $comp = env("VIU_COMP_SERVICE", "comp-headless")
 $shape = env("P3_SHAPE", "shared")
 if not contains(["shared", "instance"], $shape) then raise("P3_SHAPE", "shared or instance") end
 $children = {}
+$feed = nil; $watching = false
 
 fn sample($name, $snapshot, $key)
   global $children
@@ -28,8 +29,9 @@ fn sample($name, $snapshot, $key)
 end
 
 fn update()
-  global $state, $model, $settings, $children
-  $snapshot = $p3.outputs($io, $comp)
+  global $state, $model, $settings, $children, $feed
+  if $feed == nil then $feed = $p3.outputs($io, $comp) end
+  $snapshot = $feed
   $keys = $p3.select_outputs($meta, $snapshot)
   if $shape == "shared" then
     $model = sample("p3-panel", $snapshot, nil)
@@ -48,9 +50,14 @@ fn update()
       end
     end
   end
+  $workspaces = $io.rpc($comp, "comp.props.get", {path:"workspaces"})
+  $model.current = {}
+  for $key in $keys $model.current[$key] = ($workspaces[$key] ?? {}).current ?? $workspaces.current end
   $src = {comp:{workspaces:[]}}
-  for $i = 1 to 4
-    $src.comp.workspaces = push($src.comp.workspaces, {id:to_string($i), label:to_string($i), current:$i == 1})
+  -- P2 exposes a map with .list rows (numeric index, optional name), not
+  -- the keyed list consumed by repeat. Keep that projection in Mix.
+  for $ws in $workspaces.list
+    $src.comp.workspaces = push($src.comp.workspaces, {id:to_string($ws.index), index:$ws.index, label:$ws.name ?? to_string($ws.index)})
   end
   $model.clock = date_format(time(), "%H:%M:%S")
   $state = $p3.reconcile($state, $meta, $snapshot, $source, $model, $src, $io, $host, serve_name())
@@ -71,10 +78,28 @@ on snapshot
 end
 
 on timer.tick
+  global $feed
   if len(keys($event.headers)) != 0 then return end
   if $event.args.tag != "tick" then return end
+  if not $watching then $feed = nil end
   update()
 end
 
+on props.changed
+  global $feed
+  if $event.headers.topic != $comp .. ".props.changed" then return end
+  $feed = nil
+  update()
+end
+
+on bus.connected
+  global $feed, $watching
+  if len(keys($event.headers)) != 0 then return end
+  $feed = nil
+  $watching = $p3.watch_outputs($io, $comp)
+  update()
+end
+
+$watching = $p3.watch_outputs($io, $comp)
 update()
 interval(1, "tick")

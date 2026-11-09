@@ -6,6 +6,12 @@ fn outputs($io, $comp)
   return $io.rpc($comp, "comp.props.get", {path:"outputs"})
 end
 
+fn watch_outputs($io, $comp)
+  subscribe($comp .. ".props.changed")
+  $io.rpc($comp, "comp.props.watch", {})
+  return true
+end
+
 fn select_outputs($meta, $snapshot)
   $mode = $meta.instances ?? "primary"
   if not contains(["per_output", "primary", "named"], $mode) then raise("P3_INSTANCES", "invalid instances mode") end
@@ -16,7 +22,7 @@ fn select_outputs($meta, $snapshot)
     if type($meta.output) != "string" then raise("P3_OUTPUT", "named requires output name") end
     return filter($all, fn($k) = $k == $meta.output or $snapshot[$k].name == $meta.output)
   end
-  $primary = filter($all, fn($k) = $snapshot[$k].primary == true)
+  $primary = filter($all, fn($k) = $snapshot[$k].primary == true or $snapshot[$k].default == true)
   return take(if len($primary) > 0 then $primary else $all end, 1)
 end
 

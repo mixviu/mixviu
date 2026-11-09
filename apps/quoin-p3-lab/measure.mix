@@ -30,7 +30,7 @@ try
     for $count = 1 to 3
       $outputs = {}
       for $i = 0 to $count - 1
-        $outputs["o_headless-" .. to_string($i)] = {name:"headless-" .. to_string($i)}
+        $outputs["o_headless_" .. to_string($i)] = {name:"headless-" .. to_string($i)}
       end
       for $shape in ["shared", "instance"]
         $children = []; $names = []; $start = monotonic()
@@ -65,7 +65,7 @@ try
             $wire_bytes = $wire_bytes + byte_length(json_encode($body)) + byte_length(json_encode($answer))
           end
         end
-        if $count > 1 and $merged["o_headless-1"].mode != "hidden" then raise("P3_SETTINGS", "output-name mode lost") end
+        if $count > 1 and $merged["o_headless_1"].mode != "hidden" then raise("P3_SETTINGS", "output-name mode lost") end
         $memory = 0
         for $child in $children $memory = $memory + rss($child) end
         push($results, {trial:$trial, outputs:$count, shape:$shape, processes:$processes, rss_kib:$memory, startup_ms:$startup, calls:$calls, payload_bytes:$wire_bytes, ticks:20, behaviour_bytes:stat($root .. "/behaviour-" .. $shape .. ".mix").size})
