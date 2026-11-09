@@ -577,12 +577,20 @@ impl SceneStore {
                     .get(name)
                     .ok_or_else(|| json!({"error":"unknown scene"}))?;
                 let mut document = entry.document.clone();
-                let path = if args.get("patches").is_some() { "model" } else { args["path"].as_str().unwrap_or_default() };
+                let path = if args.get("patches").is_some() {
+                    "model"
+                } else {
+                    args["path"].as_str().unwrap_or_default()
+                };
                 let value = args
                     .get("value")
                     .or_else(|| args.get("patches"))
                     .ok_or_else(|| json!({"error":"value is required"}))?;
-                if path == "model" || path.starts_with("model.") || path == "src" || path.starts_with("src.") {
+                if path == "model"
+                    || path.starts_with("model.")
+                    || path == "src"
+                    || path.starts_with("src.")
+                {
                     if let Some(generation) = entry.model_generation
                         && path.starts_with("model")
                         && (generation == 0 || args["generation"].as_u64() != Some(generation))
@@ -590,30 +598,40 @@ impl SceneStore {
                         return Err(json!({"scene":name, "error_code":"SCENE_MODEL_GENERATION",
                             "message":"model writes require the current nonzero generation"}));
                     }
-                    let result =
-                        if let Some(patches) = args.get("patches") {
-                            let patches = patches.as_array().filter(|p| !p.is_empty() && p.len() <= 1024)
-                                .ok_or_else(|| json!({"error":"invalid patch batch"}))?;
-                            let mut current = entry.tree.clone();
-                            let mut evaluated = Vec::new();
-                            let mut diagnostics = Vec::new();
-                            let mut changed = Vec::new();
-                            for patch in patches {
-                                let p = patch["path"].as_str().filter(|p| p.starts_with("model." ) || *p == "model")
-                                    .ok_or_else(|| json!({"error":"batch requires model paths"}))?;
-                                let v = patch.get("value").ok_or_else(|| json!({"error":"missing patch value"}))?;
-                                let next = scene::bindings::reevaluate(&current, &entry.bindings, p, v)
-                                    .map_err(|d| json!({"scene":name,"diagnostics":d}))?;
-                                evaluated.extend(next.evaluated);
-                                diagnostics.extend(next.diagnostics);
-                                changed.extend(next.changed);
-                                current = next.tree;
-                            }
-                            scene::bindings::ReEval {tree:current, evaluated, diagnostics, changed}
-                        } else {
+                    let result = if let Some(patches) = args.get("patches") {
+                        let patches = patches
+                            .as_array()
+                            .filter(|p| !p.is_empty() && p.len() <= 1024)
+                            .ok_or_else(|| json!({"error":"invalid patch batch"}))?;
+                        let mut current = entry.tree.clone();
+                        let mut evaluated = Vec::new();
+                        let mut diagnostics = Vec::new();
+                        let mut changed = Vec::new();
+                        for patch in patches {
+                            let p = patch["path"]
+                                .as_str()
+                                .filter(|p| p.starts_with("model.") || *p == "model")
+                                .ok_or_else(|| json!({"error":"batch requires model paths"}))?;
+                            let v = patch
+                                .get("value")
+                                .ok_or_else(|| json!({"error":"missing patch value"}))?;
+                            let next = scene::bindings::reevaluate(&current, &entry.bindings, p, v)
+                                .map_err(|d| json!({"scene":name,"diagnostics":d}))?;
+                            evaluated.extend(next.evaluated);
+                            diagnostics.extend(next.diagnostics);
+                            changed.extend(next.changed);
+                            current = next.tree;
+                        }
+                        scene::bindings::ReEval {
+                            tree: current,
+                            evaluated,
+                            diagnostics,
+                            changed,
+                        }
+                    } else {
                         scene::bindings::reevaluate(&entry.tree, &entry.bindings, path, value)
                             .map_err(|d| json!({"scene":name,"diagnostics":d}))?
-                        };
+                    };
                     document.model = Some(result.tree.model.clone());
                     check_size(&document)?;
                     let prepared = validate_templates(&result.tree)?;
@@ -642,8 +660,7 @@ impl SceneStore {
                     entry.tree = result.tree;
                     entry.prepared = prepared;
                     entry.render_error = None;
-                    let reply =
-                        json!({"scene":name,"revision":revision,"digest":digest(&entry.tree),"evaluated":result.evaluated.len()});
+                    let reply = json!({"scene":name,"revision":revision,"digest":digest(&entry.tree),"evaluated":result.evaluated.len()});
                     let summary = json!({"scene":name,"revision":revision,"ops":result.changed.len(),"diagnostics":result.diagnostics});
                     return Ok((reply, Some(summary)));
                 }

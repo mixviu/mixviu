@@ -795,14 +795,17 @@ async fn refresh_comp(client: &bus::SupervisedClient, comp: &str, state: &Shared
     let result = tokio::time::timeout(Duration::from_secs(2), async {
         client.call(comp, "comp.props.watch", json!({})).await?;
         client.call(comp, "comp.props.get", json!({})).await
-    }).await;
+    })
+    .await;
     if let Ok(Ok(props)) = result {
         let mut shared = state.lock().unwrap();
         shared.outputs = props["outputs"].clone();
         shared.comp_state = props;
         shared.wake();
         true
-    } else { false }
+    } else {
+        false
+    }
 }
 
 fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {

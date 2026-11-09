@@ -1,0 +1,37 @@
+$sources = require("../scripts/lib/scene_sources.mix")
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/p2-sources.XXXXXXXX"]))
+$log = $tmp .. "/calls"
+write_file($log, "")
+fn rpc($host, $command, $body)
+  append_file($log, json_encode($body) .. "\n")
+  return {revision:100 + len(read_lines($log))}
+end
+fn check($ok, $why)
+  if not $ok then raise("P2_SOURCE_TEST", $why) end
+end
+try
+  for $n in ["one", "two"]
+    mkdir($tmp .. "/" .. $n)
+    write_file($tmp .. "/" .. $n .. "/template.conf.mix", 'sources: {clock: {every: "1s"}, comp: [outputs]}')
+  end
+  $s = {host:"example-shell", io:{rpc:fn($a,$b,$c) = rpc($a,$b,$c)}, scenes:{
+    one:{mounted:true,dir:$tmp .. "/one",generation:1,digest:"one"},
+    two:{mounted:true,dir:$tmp .. "/two",generation:2,digest:"two"}}}
+  $decls = $sources.declarations($s)
+  check(len(keys($decls)) == 2, "two declared consumers")
+  $cache = {clock:{unix:1},comp:{outputs:{example:{width:1920}},windows:{ignored:{}}}}
+  $s = $sources.distribute($s,$cache,$decls)
+  check(deep_eq($s.source_sent.one.value,$s.source_sent.two.value), "shared snapshot")
+  check(not has_key($s.source_sent.one.value.comp,"windows"), "only selected comp fields")
+  $before = len(read_lines($log))
+  $s = $sources.distribute($s,$cache,$decls)
+  check(len(read_lines($log)) == $before, "equal snapshot suppressed")
+  $cache.clock.unix = 2
+  $s = $sources.distribute($s,$cache,$decls)
+  $calls = read_lines($log)
+  check(len($calls) == $before + 2, "one mutation per consumer")
+  check(json_parse($calls[len($calls)-1]).path == "src.clock.unix", "precise source path")
+  print("PASS P2 source distribution: 6 assertions")
+finally
+  run_argv_must(["rm", "-r", $tmp])
+end

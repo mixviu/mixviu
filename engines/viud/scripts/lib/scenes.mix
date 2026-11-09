@@ -2191,7 +2191,7 @@ fn request($s, $command, $args)
         if not has_key($args, "value") then fail("SCENES_MODEL", "value is required", {}) end
         $next = $args.value
         if $command == "patch" then
-          if type($args.path) != "string" or not starts_with($args.path, "model.") then fail("SCENES_MODEL", "path must start with model.", {}) end
+          if type($args.path) != "string" or ($args.path != "model" and not starts_with($args.path, "model.")) then fail("SCENES_MODEL", "path must start with model", {}) end
           $next = $paths.patched($e.model ?? {}, slice(split($args.path, "."), 1), $args.value)
         end
         if type($next) != "map" then fail("SCENES_MODEL", "value must be the complete model map", {}) end

@@ -76,7 +76,12 @@ impl CompiledBinding {
         let deps = compiled
             .reads()
             .iter()
-            .filter(|path| *path == "model" || path.starts_with("model.") || *path == "src" || path.starts_with("src."))
+            .filter(|path| {
+                *path == "model"
+                    || path.starts_with("model.")
+                    || *path == "src"
+                    || path.starts_with("src.")
+            })
             .cloned()
             .collect();
         let reads_item = compiled.roots().contains("item");
@@ -271,7 +276,10 @@ pub fn reevaluate_with_model_limit(
         )]);
     }
     let parts: Vec<_> = path.split('.').collect();
-    if parts.is_empty() || parts.iter().any(|p| p.is_empty()) || !matches!(parts[0], "model" | "src") {
+    if parts.is_empty()
+        || parts.iter().any(|p| p.is_empty())
+        || !matches!(parts[0], "model" | "src")
+    {
         return Err(vec![Diagnostic::error(
             "model-path",
             1,
@@ -279,7 +287,11 @@ pub fn reevaluate_with_model_limit(
         )]);
     }
     let mut next = tree.clone();
-    let target = if parts[0] == "src" { &mut next.sources } else { &mut next.model };
+    let target = if parts[0] == "src" {
+        &mut next.sources
+    } else {
+        &mut next.model
+    };
     if !apply_model_patch(target, &parts[1..], value) {
         return Err(vec![Diagnostic::error(
             "model-path",
@@ -290,7 +302,8 @@ pub fn reevaluate_with_model_limit(
     // A sequence of individually small patches must not grow an unbounded
     // model. The host also bounds authored ports and metadata together with
     // this model before committing a revision.
-    if too_large_for(&next.model, max_model_bytes) || too_large_for(&next.sources, max_model_bytes) {
+    if too_large_for(&next.model, max_model_bytes) || too_large_for(&next.sources, max_model_bytes)
+    {
         return Err(vec![Diagnostic::error(
             "model-path",
             1,
@@ -644,17 +657,25 @@ mod template_budget_tests {
     #[test]
     fn fifty_source_properties_only_reevaluate_dependents() {
         let children: Vec<_> = (0..50).map(|i| format!("n{i}")).collect();
-        let mut source = format!("---\nscene: 1\nname: sources\ncitizen: test\n---\n```mix\nroot: {{widget: column, children: {}}}\n", serde_json::to_string(&children).unwrap());
+        let mut source = format!(
+            "---\nscene: 1\nname: sources\ncitizen: test\n---\n```mix\nroot: {{widget: column, children: {}}}\n",
+            serde_json::to_string(&children).unwrap()
+        );
         for i in 0..50 {
-            source.push_str(&format!("n{i}: {{widget: text, text: '= $src.clock.v{i} ?? \"waiting\"'}}\n"));
+            source.push_str(&format!(
+                "n{i}: {{widget: text, text: '= $src.clock.v{i} ?? \"waiting\"'}}\n"
+            ));
         }
         source.push_str("```\n");
         let doc = crate::parse(&source).unwrap();
         let tree = crate::resolve(&doc).unwrap();
         let set = compile(&doc).unwrap();
         let initial: serde_json::Map<String, JsonValue> = (0..50)
-            .map(|i| (format!("v{i}"), json!("waiting"))).collect();
-        let tree = reevaluate(&tree, &set, "src.clock", &JsonValue::Object(initial)).unwrap().tree;
+            .map(|i| (format!("v{i}"), json!("waiting")))
+            .collect();
+        let tree = reevaluate(&tree, &set, "src.clock", &JsonValue::Object(initial))
+            .unwrap()
+            .tree;
         let result = reevaluate(&tree, &set, "src.clock.v17", &json!("tick")).unwrap();
         assert_eq!(result.evaluated, ["n17.text"]);
         assert_eq!(result.changed.len(), 1);
