@@ -73,6 +73,16 @@ on mode
   reply(0, "ok")
 end
 
+on workspace
+  $matches = filter(keys($state), fn($key) = $state[$key].id == $event.args.scene)
+  if len($matches) != 1 or type(($event.args.item ?? {}).index) != "number" then
+    reply(10, "stale workspace instance")
+    return
+  end
+  $r = $io.rpc($comp, "comp.workspace.switch", {output:$matches[0], index:$event.args.item.index})
+  reply(0, json_encode($r))
+end
+
 on snapshot
   reply(0, json_encode({instances:$state, model:$model, shape:$shape}))
 end
