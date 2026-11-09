@@ -3,6 +3,8 @@
 $h = require(args()[0])
 $bin = args()[1]; $dir = args()[2]
 $root = dirname(script_path())
+$probe = $bin .. "/testkit-panel-pixels"
+if not is_file($probe) then raise("P3_LIVE", "supply the CBC snapshot including testkit-panel-pixels") end
 mkdir($dir, {parents:true})
 $bus = $h.private_bus({dir:$dir .. "/broker", name:"p3-live"})
 export MIXOS_NODE_CONFIG = $bus.conf
@@ -61,6 +63,17 @@ try
     $scene = $mounted.instances[$key]
     push($records, $io.rpc("shell", "shell.scene.get", {scene:$scene.id, output:$key}))
     push($records, $io.rpc("comp-p3", "comp.capture.frame", {output:$outputs[$key].name, path:$dir .. "/" .. $key .. ".png", cursor:false}))
+    $colour = if env("P3_CAPTURE_PATTERN") == "1" then (if ends_with($key,"0") then "990000" else "009900" end) else (if ends_with($key,"0") then "243640" else "403024" end) end
+    push($records, json_parse(run_argv_must([$probe,$dir .. "/" .. $key .. ".png",$colour,"10000"])))
+  end
+  for $sample = 1 to 4
+    for $key in keys($mounted.instances)
+      $path = $dir .. "/sample-" .. to_string($sample) .. "-" .. $key .. ".png"
+      $io.rpc("comp-p3", "comp.capture.frame", {output:$outputs[$key].name,path:$path,cursor:false})
+      $colour = if env("P3_CAPTURE_PATTERN") == "1" then (if ends_with($key,"0") then "990000" else "009900" end) else (if ends_with($key,"0") then "243640" else "403024" end) end
+      push($records, json_parse(run_argv_must([$probe,$path,$colour,"10000"])))
+    end
+    sleep(0.1)
   end
   push($records, {surfaces:$io.rpc("comp-p3", "comp.props.get", {path:"surfaces"}), panels:$io.rpc("shell", "shell.props.get", {})})
   $io.rpc("p3-loader", "workspace", {scene:$mounted.instances[$kept_key].id, item:{index:2}})
@@ -87,8 +100,8 @@ try
   end
   if not $gone then raise("P3_LIVE", "removed instance remains in host") end
   push($records, $io.rpc("shell", "shell.scene.get", {scene:$after.instances[$survivor].id, output:$survivor}))
-  write_file($dir .. "/result.json", json_encode({result:"pass", before:$mounted, after:$after, records:$records}))
-  print("P3_LIVE=pass")
+  write_file($dir .. "/result.json", json_encode({result:"pass",visual:true,before:$mounted,after:$after,records:$records}))
+  print("P3_LIVE=pass visual=true")
 catch $message, $error
   eprint(json_encode({message:$message, error:$error}))
   raise($error.code, $message, $error.details)

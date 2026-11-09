@@ -86,6 +86,30 @@ impl RenderContract for Contract {
     }
 }
 
+fn virtual_output(index: usize, mode: Mode, scale: f64) -> Output {
+    let output = Output::new(
+        format!("headless-{index}"),
+        PhysicalProperties {
+            size: (0, 0).into(),
+            subpixel: Subpixel::Unknown,
+            make: "MixOS".into(),
+            model: "Headless".into(),
+            // world::output_key is make/model/serial, not wl_output.name.
+            // Native falls back to connector name; synthetic outputs must
+            // likewise have distinct stable identities.
+            serial_number: format!("headless-{index}"),
+        },
+    );
+    output.change_current_state(
+        Some(mode),
+        Some(Transform::Normal),
+        Some(Scale::Fractional(scale)),
+        Some((0, 0).into()),
+    );
+    output.set_preferred(mode);
+    output
+}
+
 pub fn wire(
     state: &mut Loop,
     event_loop: &mut EventLoop<Loop>,
@@ -151,26 +175,7 @@ pub fn wire(
             size: options.size,
             refresh: refresh * 1000,
         };
-        let output = Output::new(
-            format!("headless-{index}"),
-            PhysicalProperties {
-                size: (0, 0).into(),
-                subpixel: Subpixel::Unknown,
-                make: "MixOS".into(),
-                model: "Headless".into(),
-                // world::output_key is make/model/serial, not wl_output.name.
-                // Native falls back to connector name; synthetic outputs must
-                // likewise have distinct stable identities.
-                serial_number: format!("headless-{index}"),
-            },
-        );
-        output.change_current_state(
-            Some(mode),
-            Some(Transform::Normal),
-            Some(Scale::Fractional(options.scale)),
-            Some((0, 0).into()),
-        );
-        output.set_preferred(mode);
+        let output = virtual_output(index, mode, options.scale);
         let mut contract = Contract {
             output: output.clone(),
             mode,
@@ -308,4 +313,21 @@ pub fn wire(
         options.size.w, options.size.h, options.scale
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn virtual_monitor_identity_is_distinct_and_stable() {
+        let mode = Mode { size: (64, 48).into(), refresh: 60_000 };
+        let first = virtual_output(0, mode, 1.0);
+        let second = virtual_output(1, mode, 1.0);
+        let again = virtual_output(0, mode, 2.0);
+        assert_ne!(world::state::output_key(&first), world::state::output_key(&second));
+        assert_eq!(world::state::output_key(&first), world::state::output_key(&again));
+        assert_eq!(first.name(), "headless-0");
+        assert_eq!(second.name(), "headless-1");
+    }
 }
