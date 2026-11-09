@@ -14,6 +14,7 @@ use wayland_protocols::wp::tablet::zv2::client::{
 
 #[derive(Default)]
 pub struct State {
+    pub proximity_serial: u32,
     pub tools: Vec<ZwpTabletToolV2>,
     pub tips: Vec<(u32, bool)>,
 }
@@ -62,6 +63,7 @@ impl Dispatch<ZwpTabletToolV2, ()> for ClientState {
         _: &QueueHandle<Self>,
     ) {
         match event {
+            zwp_tablet_tool_v2::Event::ProximityIn { serial, .. } => state.tablet.proximity_serial = serial,
             zwp_tablet_tool_v2::Event::Down { .. } => {
                 state.tablet.tips.push((tool.id().protocol_id(), true))
             }

@@ -58,7 +58,7 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     h.roundtrip();
     assert_eq!(h.client.state.tablet.tools.len(),2);
     let cursor=h.client.create_surface();
-    h.client.state.tablet.tools[1].set_cursor(1,Some(&cursor),0,0);
+    h.client.state.tablet.tools[1].set_cursor(h.client.state.tablet.proximity_serial,Some(&cursor),0,0);
     h.roundtrip();
     assert_eq!(h.wire.state.tablet.cursor_owner,Some(b.clone()));
     let state=&mut h.wire.state.tablet;
@@ -73,7 +73,7 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     state.tool_proximity_in(&b,&tablet,(0.0,0.0).into(),
         (surfaces[1].clone(),(0.0,0.0).into()),SERIAL_COUNTER.next_serial(),3);
     h.roundtrip();
-    h.client.state.tablet.tools[1].set_cursor(1,Some(&cursor),0,0);
+    h.client.state.tablet.tools[1].set_cursor(h.client.state.tablet.proximity_serial,Some(&cursor),0,0);
     h.roundtrip();
     let state=&mut h.wire.state.tablet;
     assert!(state.tool_cursor);
