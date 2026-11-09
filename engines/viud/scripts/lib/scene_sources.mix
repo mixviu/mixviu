@@ -1,0 +1,51 @@
+-- P2 lab: one source owner in the loader for its host. No expression I/O.
+$paths = require("scene_paths.mix")
+
+fn declarations($s)
+  $out = {}
+  for $name in keys($s.scenes)
+    $e = $s.scenes[$name]
+    if not $e.mounted or $e.dir == nil then continue end
+    $meta = load_data($e.dir .. "/template.conf.mix")
+    $decl = $meta.sources ?? {}
+    if type($decl) != "map" then raise("SCENES_SOURCES", "sources must be a map") end
+    for $k in keys($decl)
+      if not contains(["clock", "comp", "audio", "net"], $k) then raise("SCENES_SOURCES", "unknown source: " .. $k) end
+      if $k == "clock" and ($decl.clock.every ?? "1s") != "1s" then raise("SCENES_SOURCES", "lab supports clock.every 1s") end
+      if $k == "comp" then
+        if type($decl.comp) != "list" then raise("SCENES_SOURCES", "comp must be a list") end
+        for $field in $decl.comp
+          if not contains(["outputs", "workspaces", "windows"], $field) then raise("SCENES_SOURCES", "unknown comp field") end
+        end
+      end
+    end
+    $out[$name] = $decl
+  end
+  return $out
+end
+
+fn distribute($s, $cache, $decls)
+  for $name in keys($decls)
+    $e = $s.scenes[$name]
+    $wanted = {}
+    for $k in keys($decls[$name])
+      if $k == "comp" then
+        $wanted.comp = {}
+        for $f in $decls[$name].comp $wanted.comp[$f] = ($cache.comp ?? {})[$f] end
+      else
+        $wanted[$k] = $cache[$k]
+      end
+    end
+    $identity = to_string($e.generation) .. "/" .. $e.digest
+    $sent = ($s.source_sent ?? {})[$name]
+    $old = $sent != nil and $sent.identity == $identity ? $sent.value : {}
+    for $p in $paths.diff_paths($old, $wanted, "src")
+      $r = $s.io.rpc($s.host, "shell.scene.patch", {scene:$name, path:$p.path, value:$p.value})
+      if type($r.revision) != "number" then raise("SCENES_SOURCES", "missing source receipt") end
+      $s.scenes[$name].revision = $r.revision
+    end
+    if $s.source_sent == nil then $s.source_sent = {} end
+    $s.source_sent[$name] = {identity:$identity, value:$wanted}
+  end
+  return $s
+end

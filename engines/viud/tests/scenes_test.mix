@@ -63,7 +63,10 @@ fn rpc($host, $command, $body)
   end
   if $command == "shell.scene.unload" and type($host_state.dialog) == "map" and $host_state.dialog.scene == $body.scene then $host_state.dialog = nil end
   if $command == "shell.scene.patch" then
-    if $body.value.refuse == true then raise("SCENES_UPSTREAM", "refused model", {rc:10, upstream:{error_code:"DOCUMENT_TOO_LARGE", message:"large"}}) end
+    for $p in $body.patches ?? []
+      if $p.path == "model.refuse" then raise("SCENES_UPSTREAM", "refused model", {}) end
+    end
+    if $body.path == "model.refuse" or (type($body.value) == "map" and $body.value.refuse == true) then raise("SCENES_UPSTREAM", "refused model", {rc:10, upstream:{error_code:"DOCUMENT_TOO_LARGE", message:"large"}}) end
     return {revision:100 + len(calls("shell.scene.patch"))}
   end
   if $command == "shell.props.get" then return {panels:$host_state.panels, dialog:$host_state.dialog} end

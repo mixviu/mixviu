@@ -47,7 +47,7 @@ fn nested_list(line: usize) -> Diagnostic {
 fn prepare_lists(tree: &ResolvedScene) -> Result<PreparedLists, Diagnostic> {
     // Resolved expressions were already policy-checked by scene core.
     let set = BindingSet::from_resolved(tree);
-    let mut evaluation = TemplateEvaluation::new(&tree.model);
+    let mut evaluation = TemplateEvaluation::new(&tree.model).with_sources(&tree.sources);
     let mut lists = BTreeMap::new();
     let templates = template_ids(tree);
     for (id, node) in &tree.nodes {

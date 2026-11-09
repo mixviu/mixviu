@@ -30,6 +30,69 @@ $state.editor_diagnostics_armed = false
 $state.editor_activation_armed = false
 $state.editor_activation_seq = 0
 
+$sources = require("lib/scene_sources.mix")
+$source_cache = {}
+$source_handles = {}
+$source_clock_armed = false
+$COMP = env("COMP_SERVICE", "comp")
+
+fn publish_changed($s)
+  global $source_cache, $source_handles, $source_clock_armed
+  try
+    $decls = $sources.declarations($s)
+    $needed = {}
+    for $n in keys($decls)
+      for $k in keys($decls[$n]) $needed[$k] = true end
+    end
+    if $needed.comp and $source_cache.comp == nil then
+      -- Subscribe before the snapshot. watch is a watermark, never state.
+      subscribe($COMP .. ".props.changed")
+      $s.io.rpc($COMP, "comp.props.watch", {})
+      $source_cache.comp = $s.io.rpc($COMP, "comp.props.get", {})
+    end
+    if $needed.audio and $source_handles.audio == nil then
+      $source_handles.audio = audio_watch()
+      $source_cache.audio = audio_state()
+    end
+    if $needed.net and $source_handles.net == nil then
+      $source_handles.net = net_watch({events:["link", "addr"]})
+      $source_cache.net = net_state()
+    end
+    if $needed.clock and not $source_clock_armed then
+      $source_clock_armed = true
+      task_start("scenes.source.tick", "{}")
+    end
+    if $needed.clock then $source_cache.clock = {unix:floor(time())} end
+    $s = $sources.distribute($s, $source_cache, $decls)
+  catch $message, $error
+    $s.diagnostic = {error_code:$error.code, message:$message}
+  end
+  return $loader.changed($s)
+end
+
+on scenes.source.tick async
+  if len(keys($event.headers)) != 0 then return end
+  sleep(1)
+end
+
+on scenes.source.tick
+  if len(keys($event.headers)) != 0 then return end
+  $source_clock_armed = false
+  $state = publish_changed($state)
+end
+
+on audio.changed
+  if len(keys($event.headers)) != 0 or $event.args.watch != $source_handles.audio then return end
+  $source_cache.audio = audio_state()
+  $state = publish_changed($state)
+end
+
+on net.changed
+  if len(keys($event.headers)) != 0 or $event.args.watch != $source_handles.net then return end
+  $source_cache.net = net_state()
+  $state = publish_changed($state)
+end
+
 fn schedule_editor_activation($s)
   if $s.editor_first_run_pending != true or $s.editor_activation_armed then return $s end
   $s.editor_activation_armed = true
@@ -50,7 +113,7 @@ on scenes.editor.activation
   $state.editor_activation_armed = false
   if $state.editor_first_run_pending != true then return end
   $state = $state.editor_frontend.activation_failed($state, "Scene Editor did not confirm activation within its startup deadline; open it again to retry")
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 fn schedule_editor_diagnostics($s)
@@ -105,7 +168,7 @@ on fs.changed
     catch $message, $error
       $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
     end
-    $state = $loader.changed($state)
+    $state = publish_changed($state)
     $state = schedule_editor_diagnostics($state)
   end
 end
@@ -113,6 +176,8 @@ end
 on bus.connected
   if len(keys($event.headers)) != 0 then return end
   if $state.connection != $event.args.generation then
+    $source_cache.comp = nil
+    $state.source_sent = {}
     $reconnect = $state.connection != nil
     $state.connection = $event.args.generation
     $state.published = ""
@@ -121,11 +186,17 @@ on bus.connected
     catch $message, $error
       $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
     end
-    $state = $loader.changed($state)
+    $state = publish_changed($state)
   end
 end
 
 on props.changed
+  if $event.headers.topic == $COMP .. ".props.changed" then
+    -- Re-read the snapshot for a batch hint; never interpret a leaf as state.
+    $source_cache.comp = nil
+    $state = publish_changed($state)
+    return
+  end
   if $event.headers.topic == "noded.props.changed" then
     try
       if $event.headers.gap == "true" then
@@ -136,7 +207,7 @@ on props.changed
     catch $message, $error
       $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
     end
-    $state = $loader.changed($state)
+    $state = publish_changed($state)
     $state = schedule_editor_diagnostics($state)
   end
 end
@@ -152,7 +223,7 @@ on "shell.panel.changed"
     catch $message, $error
       $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
     end
-    $state = $loader.changed($state)
+    $state = publish_changed($state)
   end
 end
 
@@ -170,7 +241,7 @@ on "shell.scene.changed"
     $state.scenes[$notice.scene].diagnostics = $notice.diagnostics ?? []
   end
   $state = $loader.scene_notice($state, $notice)
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on proc.exited
@@ -182,12 +253,12 @@ on proc.exited
     $state = $loader.exited($state, $exit)
   catch $message, $error
     $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
-    $state = $loader.changed($state)
+    $state = publish_changed($state)
     return
   end
   $name = ($exit.tag ?? {}).name
   $e = $state.scenes[$name]
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
   if $e != nil and $e.enabled and contains(["backoff", "handover"], $e.status) then
     task_start("scenes.restart", json_encode({name:$name, generation:$e.generation}))
   end
@@ -215,7 +286,7 @@ on lifecycle.commit
   catch $message, $error
     $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
   end
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 -- One local task: the async phase only waits, then the synchronous phase
@@ -241,7 +312,7 @@ on scenes.restart
       $state.scenes[$name].diagnostic = {error_code:$error.code, message:$message, context:$error.details}
     end
   end
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.handover async
@@ -258,80 +329,86 @@ on scenes.handover
     $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
   end
   $state = schedule_handover($state)
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 -- Registration precedes enumeration/snapshots, closing startup observation gaps.
 on scenes.list desc "Installed/enabled/mounted state, revisions, diagnostics and needs_setup"
   $state = $loader.request($state, "list", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.install desc "Stage and validate shipped template {template,name?,enable?}; disabled by default"
   $state = $loader.request($state, "install", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.remove desc "Stop/unload managed installation {name}; retain recovery copy"
   $state = $loader.request($state, "remove", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.enable desc "Persist enablement and reconcile {name}"
   $state = $loader.request($state, "enable", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.disable desc "Persist disablement, invalidate behaviour and unload {name}"
   $state = $loader.request($state, "disable", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.reload desc "Retry files and behaviour {name}; preserve accepted runtime model"
   $state = $loader.request($state, "reload", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.reset desc "Restore recorded template defaults {name}; retain recovery copy"
   $state = $loader.request($state, "reset", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.open desc "Request mutually exclusive popup {name}; completion via scenes.changed"
   $state = $loader.request($state, "open", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.close desc "Release popup and restore saved panel mode {name}"
   $state = $loader.request($state, "close", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.toggle desc "Toggle popup {name}"
   $state = $loader.request($state, "toggle", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.ready desc "Behaviour ready {name,generation}; reply requests complete model publication"
   $state = $loader.request($state, "ready", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.model desc "Publish complete runtime model {name,generation,value}; reject stale generations"
   $state = $loader.request($state, "model", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
+end
+
+on scenes.patch desc "Publish runtime model path {name,generation,path,value}"
+  $state = $loader.request($state, "patch", $event.args ?? {})
+  reply($state.rc, json_encode($state.response))
+  $state = publish_changed($state)
 end
 
 on scenes.templates desc "Shipped templates with gallery metadata and installed_as; hidden templates omitted"
@@ -342,14 +419,14 @@ end
 on scenes.editor.open desc "Open Scene Editor {safe?,view?,scene?,first_run?}; SCENES_EDITOR_APP=0 selects the legacy scene frontend"
   $state = $loader.request($state, "editor.open", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
   $state = schedule_editor_activation($state)
 end
 
 on scenes.editor.close desc "Close Scene Editor {unload?}; the legacy frontend hides or unloads its scene"
   $state = $loader.request($state, "editor.close", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.editor.snapshot desc "Native Scene Editor snapshot {selection?}; schema scene-editor.snapshot.v1"
@@ -361,26 +438,26 @@ end
 on scenes.editor.action desc "Native Scene Editor action {action,state_token,selection?,confirmed?,edge?,mode?,direction?}"
   $state = $state.editor_frontend.request($state, "action", $event.args ?? {}, $loader)
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
   $state = schedule_editor_diagnostics($state)
 end
 
 on scenes.fork desc "Copy an installation into a sandbox scene {name,as?,enable?=true}"
   $state = $loader.request($state, "fork", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.promote desc "Validate a sandbox and swap it over its original {from}; the old copy goes to .recovery"
   $state = $loader.request($state, "promote", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 on scenes.move desc "Move a scene to another edge {name,edge}; rewrites only its window header"
   $state = $loader.request($state, "move", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end
 
 
@@ -406,5 +483,5 @@ if is_reload_candidate() then
 else
   $state = $loader.rescan($state, false)
   $state = refresh_services($state, false)
-  $state = $loader.changed($state)
+  $state = publish_changed($state)
 end

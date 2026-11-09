@@ -665,12 +665,6 @@ async fn worker(
         .await
         .map_err(|e| e.to_string())?;
     let mut incoming = client.incoming().ok_or("Bus incoming already taken")?;
-    if let Ok(outputs) = client
-        .call(&comp, "comp.props.get", json!({"path":"outputs"}))
-        .await
-    {
-        state.lock().unwrap().outputs = outputs;
-    }
     for suffix in [
         "corner.input",
         "corner.clicked.v2",
@@ -690,16 +684,23 @@ async fn worker(
         .map_err(|e| format!("settings consumer: {e:?}"))?;
     let mut work = None;
     let mut generation = None;
+    let mut comp_generation = None;
     let mut states = client.subscribe_state();
     let mut retry = tokio::time::interval(Duration::from_secs(1));
     retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         if let Some(live) = settings::native::live_generation(&client) {
+            if comp_generation != Some(live) {
+                if refresh_comp(&client, &comp, &state).await {
+                    comp_generation = Some(live);
+                }
+            }
             if generation != Some(live) {
                 generation = Some(live);
                 work = consumer.connected(live);
             }
         } else {
+            comp_generation = None;
             generation = None;
             consumer.disconnected();
         }
@@ -747,8 +748,6 @@ async fn worker(
             changed=states.changed()=>{if changed.is_err(){break;} states.borrow_and_update();}
             _=retry.tick()=>{
                 work=consumer.refresh();
-                if let Ok(Ok(props))=tokio::time::timeout(Duration::from_secs(1),client.call(&comp,"comp.props.watch",json!({}))).await {state.lock().unwrap().comp_state=props;}
-                if let Ok(Ok(outputs))=tokio::time::timeout(Duration::from_secs(1),client.call(&comp,"comp.props.get",json!({"path":"outputs"}))).await {state.lock().unwrap().outputs=outputs;}
                 let reports:Vec<_>={let shared=state.lock().unwrap();shared.panels.iter().map(|((o,e),p)|(o.clone(),e.clone(),p.snapshot().mode.as_str().to_owned())).collect()};
                 for (output,edge,mode) in reports {report(&client,&comp,&output,&edge,&mode).await;}
             }
@@ -769,6 +768,9 @@ async fn worker(
                 let Some(command)=command else {break;};
                 if command.is_topic_delivery() {
                     if command.header("broker_service")==Some(comp.as_str()) && command.header("broker_origin")==Some("local") {
+                        if command.topic()==Some(format!("{comp}.props.changed").as_str()) {
+                            if !refresh_comp(&client,&comp,&state).await {comp_generation=None;}
+                        }
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {topic(&state,&comp,command.topic().unwrap_or(""),&body);}
                     }
                     if let Some(next)=consumer.native_delivery(&command) {work=Some(next);}
@@ -789,6 +791,20 @@ async fn worker(
     }
     Ok(())
 }
+async fn refresh_comp(client: &bus::SupervisedClient, comp: &str, state: &Shared) -> bool {
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        client.call(comp, "comp.props.watch", json!({})).await?;
+        client.call(comp, "comp.props.get", json!({})).await
+    }).await;
+    if let Ok(Ok(props)) = result {
+        let mut shared = state.lock().unwrap();
+        shared.outputs = props["outputs"].clone();
+        shared.comp_state = props;
+        shared.wake();
+        true
+    } else { false }
+}
+
 fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {
     let mut shared = state.lock().unwrap();
     if topic == format!("{comp}.chrome.action.hover") {
@@ -797,7 +813,6 @@ fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {
         return;
     }
     if topic == format!("{comp}.props.changed") {
-        shared.comp_state = body.clone();
         return;
     }
     if topic == format!("{comp}.corner.input") {

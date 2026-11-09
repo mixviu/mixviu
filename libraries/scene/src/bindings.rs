@@ -76,7 +76,7 @@ impl CompiledBinding {
         let deps = compiled
             .reads()
             .iter()
-            .filter(|path| *path == "model" || path.starts_with("model."))
+            .filter(|path| *path == "model" || path.starts_with("model.") || *path == "src" || path.starts_with("src."))
             .cloned()
             .collect();
         let reads_item = compiled.roots().contains("item");
@@ -222,7 +222,7 @@ pub fn compile_with(
             let bad_root = binding
                 .roots()
                 .iter()
-                .any(|root| root != "model" && root != "item");
+                .any(|root| root != "model" && root != "item" && root != "src");
             if bad_root || (binding.reads_item && !templates.contains(id)) {
                 errors.push(Diagnostic::error(
                     "binding-policy",
@@ -271,7 +271,7 @@ pub fn reevaluate_with_model_limit(
         )]);
     }
     let parts: Vec<_> = path.split('.').collect();
-    if parts.is_empty() || parts.iter().any(|p| p.is_empty()) || parts[0] != "model" {
+    if parts.is_empty() || parts.iter().any(|p| p.is_empty()) || !matches!(parts[0], "model" | "src") {
         return Err(vec![Diagnostic::error(
             "model-path",
             1,
@@ -279,7 +279,8 @@ pub fn reevaluate_with_model_limit(
         )]);
     }
     let mut next = tree.clone();
-    if !apply_model_patch(&mut next.model, &parts[1..], value) {
+    let target = if parts[0] == "src" { &mut next.sources } else { &mut next.model };
+    if !apply_model_patch(target, &parts[1..], value) {
         return Err(vec![Diagnostic::error(
             "model-path",
             1,
@@ -289,7 +290,7 @@ pub fn reevaluate_with_model_limit(
     // A sequence of individually small patches must not grow an unbounded
     // model. The host also bounds authored ports and metadata together with
     // this model before committing a revision.
-    if too_large_for(&next.model, max_model_bytes) {
+    if too_large_for(&next.model, max_model_bytes) || too_large_for(&next.sources, max_model_bytes) {
         return Err(vec![Diagnostic::error(
             "model-path",
             1,
@@ -315,7 +316,7 @@ pub fn reevaluate_with_model_limit(
         let Some(node) = next.nodes.get_mut(id) else {
             continue;
         };
-        let result = evaluate_budgeted(binding, &model, None, started, || {
+        let result = evaluate_budgeted(binding, &model, &next.sources, None, started, || {
             evaluated.push(path.clone())
         })
         .and_then(|v| coerce_port(&v, port_for(&node.family, port)));
@@ -369,6 +370,7 @@ pub fn template_instantiate(
 /// One aggregate budget for a scene revision, shared by every list and row.
 pub struct TemplateEvaluation {
     model: JsonValue,
+    sources: JsonValue,
     started: Instant,
     remaining_nodes: usize,
 }
@@ -380,9 +382,15 @@ impl TemplateEvaluation {
     pub fn new(model: &JsonValue) -> Self {
         Self {
             model: model.clone(),
+            sources: json!({}),
             started: Instant::now(),
             remaining_nodes: MAX_TEMPLATE_NODES,
         }
+    }
+
+    pub fn with_sources(mut self, sources: &JsonValue) -> Self {
+        self.sources = sources.clone();
+        self
     }
 }
 
@@ -419,6 +427,7 @@ pub fn template_instantiate_with(
         let value = evaluate_budgeted(
             binding,
             &evaluation.model,
+            &evaluation.sources,
             Some(item),
             evaluation.started,
             || {},
@@ -457,6 +466,7 @@ pub fn template_instantiate_with(
 pub(crate) fn evaluate_budgeted(
     binding: &CompiledBinding,
     model: &JsonValue,
+    sources: &JsonValue,
     item: Option<&JsonValue>,
     started: Instant,
     on_evaluate: impl FnOnce(),
@@ -469,7 +479,7 @@ pub(crate) fn evaluate_budgeted(
     on_evaluate();
     #[cfg(test)]
     EVALUATE_COUNT.with(|n| n.set(n.get() + 1));
-    let mut globals = vec![("model", model)];
+    let mut globals = vec![("model", model), ("src", sources)];
     if let Some(item) = item {
         globals.push(("item", item));
     }
@@ -532,7 +542,7 @@ pub(crate) fn evaluate_for_resolve(
     port: Port,
     started: Instant,
 ) -> Result<Option<JsonValue>, String> {
-    let value = evaluate_budgeted(binding, model, None, started, || {})?;
+    let value = evaluate_budgeted(binding, model, &json!({}), None, started, || {})?;
     coerce_port(&value, Some(port))
 }
 
@@ -630,6 +640,29 @@ pub(crate) fn template_ids(doc: &SceneDocument) -> BTreeSet<String> {
 #[cfg(test)]
 mod template_budget_tests {
     use super::*;
+
+    #[test]
+    fn fifty_source_properties_only_reevaluate_dependents() {
+        let children: Vec<_> = (0..50).map(|i| format!("n{i}")).collect();
+        let mut source = format!("---\nscene: 1\nname: sources\ncitizen: test\n---\n```mix\nroot: {{widget: column, children: {}}}\n", serde_json::to_string(&children).unwrap());
+        for i in 0..50 {
+            source.push_str(&format!("n{i}: {{widget: text, text: '= $src.clock.v{i} ?? \"waiting\"'}}\n"));
+        }
+        source.push_str("```\n");
+        let doc = crate::parse(&source).unwrap();
+        let tree = crate::resolve(&doc).unwrap();
+        let set = compile(&doc).unwrap();
+        let result = reevaluate(&tree, &set, "src.clock.v17", &json!("tick")).unwrap();
+        assert_eq!(result.evaluated, ["n17.text"]);
+        assert_eq!(result.changed.len(), 1);
+        assert_eq!(result.tree.nodes["n17"].ports["text"], "tick");
+        assert_eq!(result.tree.nodes["n18"].ports["text"], "waiting");
+        let whole = reevaluate(&tree, &set, "src", &json!({"clock":{"v17":"tick"}})).unwrap();
+        assert_eq!(whole.evaluated.len(), 50);
+        let model = reevaluate(&result.tree, &set, "model.unrelated", &json!(true)).unwrap();
+        assert!(model.evaluated.is_empty());
+        assert_eq!(model.tree.sources, result.tree.sources);
+    }
 
     #[test]
     fn all_rows_share_work_and_time_limits() {

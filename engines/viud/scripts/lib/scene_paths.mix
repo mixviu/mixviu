@@ -1,0 +1,38 @@
+-- P2 lab: maps recurse; lists/scalars replace atomically. A dotted key or
+-- explicit nil cannot be addressed by the patch grammar: replace its parent.
+fn diff_paths($old, $new, $path)
+  if deep_eq($old, $new) then return [] end
+  if type($old) != "map" or type($new) != "map" then return [{path:$path, value:$new}] end
+  for $k in keys($new)
+    if $k == "" or contains($k, ".") or $new[$k] == nil then return [{path:$path, value:$new}] end
+  end
+  for $k in keys($old)
+    if $k == "" or contains($k, ".") then return [{path:$path, value:$new}] end
+  end
+  $out = []
+  for $k in keys($old)
+    if not has_key($new, $k) then push($out, {path:$path .. "." .. $k, value:nil}) end
+  end
+  for $k in keys($new)
+    for $p in diff_paths($old[$k], $new[$k], $path .. "." .. $k) push($out, $p) end
+  end
+  return $out
+end
+
+fn patched($model, $parts, $value)
+  if len($parts) == 0 then
+    if $value == nil then return {} end
+    if type($value) != "map" then raise("SCENES_MODEL", "root must be a map") end
+    return $value
+  end
+  if type($model) != "map" then raise("SCENES_MODEL", "path traverses a scalar") end
+  $k = $parts[0]
+  if $k == "" then raise("SCENES_MODEL", "empty path key") end
+  if len($parts) == 1 then
+    if $value == nil then return delete($model, $k) end
+    $model[$k] = $value
+  else
+    $model[$k] = patched($model[$k] ?? {}, slice($parts, 1), $value)
+  end
+  return $model
+end

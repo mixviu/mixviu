@@ -6,6 +6,8 @@ $EDGES = ["left", "right", "top", "bottom"]
 $VIEWS = ["gallery", "installed", "arrange"]
 $STATE_UNREADABLE = "state.conf.mix could not be read; refusing to write it"
 
+$paths = require("scene_paths.mix")
+
 fn valid_name($name)
   if type($name) != "string" or len($name) == 0 or len($name) > 64 then return false end
   for each $c in split($name, "")
@@ -2176,7 +2178,7 @@ fn request($s, $command, $args)
       return $s
     elif $command == "reset" then
       return reset_scene($s, $name, $e)
-    elif $command == "ready" or $command == "model" then
+    elif contains(["ready", "model", "patch"], $command) then
       if not $e.enabled or $e.pid == nil or type($args.generation) != "number" or $e.generation != $args.generation then
         fail("SCENES_STALE_GENERATION", "behaviour generation is no longer current", {name:$name})
       end
@@ -2186,14 +2188,28 @@ fn request($s, $command, $args)
         $s.scenes[$name].status = "running"
         $s.response = {name:$name, generation:$e.generation, publish_model:true}
       else
-        if not has_key($args, "value") or type($args.value) != "map" then fail("SCENES_MODEL", "value must be the complete model map", {}) end
-        if bytes_len(string_to_bytes(json_encode($args.value))) > 262144 then fail("SCENES_LIMIT", "model exceeds limit", {}) end
-        if not deep_eq($args.value, $e.model) then
-          $r = $s.io.rpc($s.host, "shell.scene.patch", {scene:$name, path:"model", value:$args.value, generation:$e.generation})
+        if not has_key($args, "value") then fail("SCENES_MODEL", "value is required", {}) end
+        $next = $args.value
+        if $command == "patch" then
+          if type($args.path) != "string" or not starts_with($args.path, "model.") then fail("SCENES_MODEL", "path must start with model.", {}) end
+          $next = $paths.patched($e.model ?? {}, slice(split($args.path, "."), 1), $args.value)
+        end
+        if type($next) != "map" then fail("SCENES_MODEL", "value must be the complete model map", {}) end
+        if bytes_len(string_to_bytes(json_encode($next))) > 262144 then fail("SCENES_LIMIT", "model exceeds limit", {}) end
+        $patches = $command == "patch" ? [{path:$args.path, value:$args.value}] : $paths.diff_paths($e.model ?? {}, $next, "model")
+        if len($patches) > 0 then
+          $body = {scene:$name, generation:$e.generation}
+          if len($patches) == 1 then
+            $body.path = $patches[0].path
+            $body.value = $patches[0].value
+          else
+            $body.patches = $patches
+          end
+          $r = $s.io.rpc($s.host, "shell.scene.patch", $body)
           if type($r) != "map" or type($r.revision) != "number" then fail("SCENES_SNAPSHOT", "missing model receipt", {name:$name}) end
-          $s.scenes[$name].model = $args.value
           $s.scenes[$name].revision = $r.revision
         end
+        $s.scenes[$name].model = $next
         $s.scenes[$name].diagnostic = nil
       end
       $s = drive_popups($s)

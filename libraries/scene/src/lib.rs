@@ -179,6 +179,9 @@ pub struct Node {
 /// A resolved document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ResolvedScene {
+    /// Host-owned source snapshot, independent of behaviour model writes.
+    #[serde(default = "empty_model", skip_serializing_if = "is_empty_model")]
+    pub sources: JsonValue,
     pub name: String,
     pub citizen: String,
     pub window: Option<JsonValue>,
@@ -866,6 +869,7 @@ pub fn resolve(doc: &SceneDocument) -> Result<ResolvedScene, Vec<Diagnostic>> {
     }
     templates.sort();
     Ok(ResolvedScene {
+        sources: empty_model(),
         name: doc.name.clone(),
         citizen: doc.citizen.clone(),
         window: doc.window.clone(),
