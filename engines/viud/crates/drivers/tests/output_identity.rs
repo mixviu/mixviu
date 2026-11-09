@@ -80,7 +80,7 @@ fn legacy_placement_uses_smallest_active_matching_connector() {
         &mut prefs.outputs,
         &a,
         false,
-        &[a.clone(), b.clone()],
+        ConnectedOutputs::from_complete_snapshot(&[a.clone(), b.clone()]),
     );
     let layout = build_teleport(&prefs, &[a, b]);
     assert_eq!(layout.placements.len(), 1);

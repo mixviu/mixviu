@@ -71,6 +71,9 @@ pub fn enumerate(
         } else {
             conn_name
         };
+        // DisplayInfo.active is the primary marker, not the saved active flag.
+        // The latter is DisplayInfo.enabled, resolved through profile::active
+        // (identity::find) below so migrated legacy profiles still apply.
         let is_active = info.handle() == active;
         let available: Vec<ModeInfo> = info.modes().iter().map(to_info).collect();
         // Each DRIVEN connector reports its own live mode; a connected-but-undriven

@@ -11,6 +11,10 @@
 -- names; public comp output slugs are unchanged. An unqualified touch claim on
 -- duplicated EDIDs prefers libinput's associated output, otherwise the first
 -- matching driven output in existing enumeration order.
+-- A qualified output profile overrides its legacy touch claim, including None;
+-- association only chooses among outputs that still inherit the legacy claim.
+-- If all live candidates override a saved claim, it is unmapped rather than
+-- revived by automatic association/size heuristics.
 -- All host requests also accept optional output:string and edge:string (default bottom);
 -- dispatch validates the edge even for queries. Failures generally rc10, error_code or error,
 -- and/or diagnostics; successful acceptance does not prove surface presentation.

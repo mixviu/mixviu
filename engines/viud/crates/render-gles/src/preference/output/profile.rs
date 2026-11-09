@@ -48,7 +48,13 @@ impl Default for OutputProfile {
 /// Whether the monitor keyed by `edid_key` is DRIVEN (active). Unknown / profile-less
 /// monitors default to active — so this is behavior-neutral until the user deactivates.
 pub fn active(edid_key: &str) -> bool {
-    model::environment::preference::identity::find(&get(), edid_key, |p| p.identity.as_deref())
+    active_in(&get(), edid_key)
+}
+
+/// Preference lookup used by the display snapshot's `enabled` flag; `active`
+/// on DisplayInfo independently marks the primary connector.
+pub fn active_in(profiles: &[OutputProfile], edid_key: &str) -> bool {
+    model::environment::preference::identity::find(profiles, edid_key, |p| p.identity.as_deref())
         .map(|p| p.active)
         .unwrap_or(true)
 }

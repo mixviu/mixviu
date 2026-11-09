@@ -60,16 +60,3 @@ pub fn preferred_index(keys: &[String], saved: &[&str]) -> Option<usize> {
         })
 }
 
-/// Resolve a saved touch claim; use udev association to disambiguate a legacy
-/// shared EDID. Without an association retain the original output order.
-pub fn touch_index(keys: &[String], saved: &str, associated: Option<&str>) -> Option<usize> {
-    keys.iter()
-        .position(|k| k == saved)
-        .or_else(|| {
-            associated.and_then(|name| {
-                keys.iter()
-                    .position(|k| matches(saved, k) && connector(k) == Some(name))
-            })
-        })
-        .or_else(|| keys.iter().position(|k| matches(saved, k)))
-}

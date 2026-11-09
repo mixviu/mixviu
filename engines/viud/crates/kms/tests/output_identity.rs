@@ -7,6 +7,19 @@ use kms::{
 use model::environment::preference::base::{LayoutPlacement, Preference};
 use smithay::reexports::drm::control::connector::Interface;
 
+#[test]
+fn display_enabled_lookup_accepts_migrated_legacy_profile_and_exact_override() {
+    use render_gles::preference::output::profile::{OutputProfile, active_in};
+    let key = model::environment::preference::identity::key("Example Panel 42", "DP-2");
+    let mut profiles = vec![OutputProfile {
+        identity: Some("Example Panel 42".into()), active: false, ..OutputProfile::default()
+    }];
+    // Same lookup called by profile::active in enumerate, not raw equality.
+    assert!(!active_in(&profiles, &key));
+    profiles.push(OutputProfile { identity: Some(key.clone()), active: true, ..OutputProfile::default() });
+    assert!(active_in(&profiles, &key));
+}
+
 struct Connector(Interface, u32);
 impl ConnectorInfo for Connector {
     fn interface(&self) -> Interface {
