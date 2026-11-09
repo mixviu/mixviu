@@ -4451,11 +4451,13 @@ dependencies = [
 name = "kms"
 version = "0.1.2"
 dependencies = [
+ "drivers",
  "drm-ffi",
  "libc",
  "model",
  "render-gles",
  "smithay",
+ "world",
 ]
 
 [[package]]

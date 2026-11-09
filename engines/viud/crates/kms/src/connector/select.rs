@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Which connector to drive. Policy: honor the highest-priority monitor preference
-//! whose monitor is currently connected — `profiles` are in priority order, so the
-//! FIRST profile is the default output. With no profiles, no profile identities, or
+//! whose monitor is currently connected. Exact qualified profiles win before
+//! legacy profiles; each pass preserves preference order. With no profile identities or
 //! no match among the connected monitors, the policy is the original first-connected
 //! behavior (so this is behavior-neutral when the user has set no default).
 
@@ -23,15 +23,33 @@ pub fn force(name: String) {
     let _ = FORCED.set(name);
 }
 
+/// The identity-relevant part of connector::Info, also usable in CPU fixtures.
+pub trait ConnectorInfo {
+    fn interface(&self) -> connector::Interface;
+    fn interface_id(&self) -> u32;
+    fn size(&self) -> Option<(u32, u32)>;
+}
+
+impl ConnectorInfo for connector::Info {
+    fn interface(&self) -> connector::Interface {
+        self.interface()
+    }
+    fn interface_id(&self) -> u32 {
+        self.interface_id()
+    }
+    fn size(&self) -> Option<(u32, u32)> {
+        self.size()
+    }
+}
+
 /// The kernel's name for a connector (`HDMI-A-1`): interface plus index.
-pub fn connector_name(info: &connector::Info) -> String {
+pub fn connector_name(info: &impl ConnectorInfo) -> String {
     format!("{}-{}", info.interface().as_str(), info.interface_id())
 }
 
-/// Pick the connector to drive. The first profile whose EDID identity
-/// ("make model serial") matches a connected monitor wins; otherwise the first
-/// connected connector is used. The EDID identity is the per-monitor key both the
-/// in-compositor switch and the standalone settings-editor persist.
+/// Pick the connector to drive. Try all exact qualified profiles before any
+/// legacy match, preserving profile order within each pass. Otherwise use the
+/// first connected connector.
 pub fn select(
     drm: &DrmDevice,
     connectors: Vec<connector::Info>,
@@ -54,10 +72,15 @@ pub fn select(
         return found.and_then(|i| connected.into_iter().nth(i));
     }
 
-    let chosen = profiles.iter().find_map(|p| {
-        let want = p.identity.as_deref()?;
-        connected.iter().position(|c| identity_key(drm, c) == want)
-    });
+    let keys = connected
+        .iter()
+        .map(|c| identity_key(drm, c))
+        .collect::<Vec<_>>();
+    let saved = profiles
+        .iter()
+        .filter_map(|p| p.identity.as_deref())
+        .collect::<Vec<_>>();
+    let chosen = model::environment::preference::identity::preferred_index(&keys, &saved);
 
     match chosen {
         Some(idx) => connected.into_iter().nth(idx),
@@ -72,9 +95,5 @@ pub fn select(
 fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
     let raw = parse::read(drm, info);
     let parsed = raw.as_ref().and_then(parse::parse);
-    identity::identity(
-        parsed.as_ref(),
-        &format!("{:?}-{}", info.interface(), info.interface_id()),
-    )
-    .key()
+    identity::connector_key(parsed.as_ref(), info)
 }
