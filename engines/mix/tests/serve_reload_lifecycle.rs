@@ -498,7 +498,9 @@ fn script(v: &Variant) -> String {
         ""
     };
     let cand_hb = if v.candidate_heartbeat {
-        "task_start(\"rel.heartbeat\", json_encode({till: monotonic() + 5}))\n"
+        // Lifetime is owned by the citizen, not a five-second wall-clock
+        // budget that can expire before a loaded runner dispatches the task.
+        "task_start(\"rel.heartbeat\", json_encode({}))\n"
     } else {
         ""
     };
@@ -524,7 +526,7 @@ on lifecycle.commit
   tlog("commit", {{gen: $s.gen, successor: $s.successor, old_managed: exists("/proc/" .. json_encode($s.gen0_managed)), old_legacy: exists("/proc/" .. json_encode($s.gen0_legacy)), cand_legacy_alive: exists("/proc/" .. json_encode($s.cand_legacy ?? 0))}})
   {hook_slow}end
 on rel.heartbeat async
-  while monotonic() < $event.args.till
+  loop
     append_file($TRACE, "hb|" .. monotonic() .. chr(10))
     sleep(0.05)
   end
@@ -986,14 +988,15 @@ async fn offloaded_grace_keeps_reactor_responsive_while_sweeping_a_term_ignoring
 
     // The reactor stayed live DURING that grace: the candidate's heartbeat
     // task kept appending. An inline (runtime-blocking) sweep would yield
-    // zero stamps between candidate-done and commit.
+    // zero stamps between candidate-done and commit. One observed stamp proves
+    // progress; requiring five also measured scheduler throughput under load.
     let hbs: Vec<f64> = trace(&dir)
         .lines()
         .filter_map(|l| l.strip_prefix("hb|").and_then(|t| t.parse::<f64>().ok()))
         .collect();
     let during = hbs.iter().filter(|t| **t > cand_done && **t < c0.t).count();
     assert!(
-        during >= 5,
+        during >= 1,
         "only {during} heartbeats during the {waited:.2}s sweep window — the reactor was blocked"
     );
     broker.stop();

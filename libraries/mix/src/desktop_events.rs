@@ -1982,7 +1982,15 @@ mod tests {
     #[tokio::test]
     async fn audio_cancel_with_a_second_read_queued_has_no_terminal_batch() {
         use std::io::Write;
-        let path = std::env::temp_dir().join(format!("mix-audio-split-{}", std::process::id()));
+        struct PipePath(std::path::PathBuf);
+        impl Drop for PipePath {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let path = PipePath(std::env::temp_dir().join(format!("mix-audio-split-{}-{nonce}", std::process::id())));
+        let path = &path.0;
         let name = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         // Open both ends before starting cat; the writer stays open through
@@ -2005,7 +2013,6 @@ mod tests {
         let pid = source.pid;
         drop(source);
         assert!(reaped(pid));
-        let _ = std::fs::remove_file(path);
         assert_audio_cancelled_without_terminal_batch(&q).await;
     }
 
