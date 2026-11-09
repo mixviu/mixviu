@@ -126,7 +126,7 @@ rustc-hash = "2"
 # non-wasm target, so indexd matches it exactly, giving ONE tokenizers. onig (C)
 # stays because candle needs it. Without `esaxx_fast`, esaxx-rs builds without C++.
 candle-core = { version = "=0.10.2" }
-candle-nn = { version = "=0.10.2" }
+candle-nn = { version = "=0.11.1" }
 candle-transformers = { version = "=0.10.2" }
 tokenizers = { version = "=0.22.2", default-features = false, features = ["onig"] }
 sqlite-vec = { version = "=0.1.9" }
