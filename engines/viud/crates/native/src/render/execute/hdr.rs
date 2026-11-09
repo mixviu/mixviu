@@ -346,7 +346,10 @@ pub fn apply_connector_props(
         with_luts = false;
     }
     if !with_luts && cs.is_none() && meta.is_none() && bpc.is_none() {
-        return Err(format!("connector-props: nothing committable [{}]", outcome.crtc_color));
+        return Err(format!(
+            "connector-props: nothing committable [{}]",
+            outcome.crtc_color
+        ));
     }
     if !with_luts && let Err(e) = test(false) {
         if let Some(b) = blob_raw {
