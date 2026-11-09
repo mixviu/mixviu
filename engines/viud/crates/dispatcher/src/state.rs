@@ -1083,13 +1083,13 @@ mod color_impls {
         fn request(
             _: &mut Self,
             _: &Client,
-            _: &WpColorManagementSurfaceV1,
+            resource: &WpColorManagementSurfaceV1,
             request: wp_color_management_surface_v1::Request,
             surface: &WlSurface,
             _: &DisplayHandle,
             _: &mut DataInit<'_, Self>,
         ) {
-            cs::dispatch_color_surface(request, surface);
+            cs::dispatch_color_surface(request, resource, surface);
         }
     }
     impl WLDispatch<WpColorManagementSurfaceFeedbackV1, WlSurface> for Dispatch {

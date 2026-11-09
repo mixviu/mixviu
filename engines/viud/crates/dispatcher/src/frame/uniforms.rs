@@ -261,6 +261,10 @@ pub fn push_tex_program(
 
 /// GLES body for `SceneDispatch::pop_tex_program`: back to the HDR decode when
 /// one is in force for this element, else to smithay's default program.
+///
+/// Not a stack: a program pushed inside another pushed program would lose the
+/// outer one on pop. Only one level exists today (decor's corner clip); make
+/// this a real stack before nesting texture programs.
 pub fn pop_tex_program(frame: &mut GlesFrame<'_, '_>) {
     match render_gles::color::hdr::pass::active_decode() {
         Some((program, uniforms)) => frame.override_default_tex_program(program, uniforms),

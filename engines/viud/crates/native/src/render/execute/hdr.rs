@@ -88,6 +88,9 @@ pub fn compose(
     scale: f64,
 ) -> Option<SceneElement<GlesRenderer>> {
     let hdr = pipe.hdr_active;
+    if !hdr && SDR_PASS_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
+        return None;
+    }
     if !hdr && !describe::any_decoding() {
         // Nothing to decode on SDR: free the intermediate.
         pipe.hdr_pass = None;
@@ -143,11 +146,15 @@ pub fn compose(
     )))
 }
 
-/// An SDR pipe could not decode tagged surfaces: they draw undecoded. Logged
-/// once, not every frame.
+/// Set once an SDR colour pass has failed: the GPU cannot do it (no FP16
+/// target, a shader that does not compile), so it is not retried every frame,
+/// which would reallocate an output-sized texture and recompile per frame.
+static SDR_PASS_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// An SDR pipe could not decode tagged surfaces: they draw undecoded for the
+/// rest of the session. Logged once.
 fn sdr_pass_failed(why: &str) {
-    static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+    if !SDR_PASS_FAILED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         warn!("SDR colour pass unavailable, tagged surfaces draw undecoded: {why}");
     }
 }

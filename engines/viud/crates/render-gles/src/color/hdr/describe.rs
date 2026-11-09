@@ -182,13 +182,24 @@ impl OutputColor {
     /// The decode stage's uniforms for content described by `d`.
     pub fn decode_uniforms(&self, d: &Description) -> Vec<Uniform<'static>> {
         let prim = math::rgb_to_rgb(&d.primaries, &BT709).unwrap_or(math::IDENTITY);
-        let lum_ref = if d.lum_ref > 0.0 { d.lum_ref } else { 80.0 };
-        // BT.2100 HLG system gamma for the nominal peak.
-        let hlg_gamma = 1.2 + 0.42 * (d.lum_max.max(1.0) / 1000.0).log10();
+        let hlg = d.transfer == Transfer::Hlg;
+        // HLG is scene-referred: BT.2100's OOTF renders it for the DISPLAY's peak
+        // Lw (system gamma from Lw too), giving absolute display light directly.
+        // So for HLG the scale is this output's peak and the result is taken as
+        // nits as is (reference = SDR white), with no further tone mapping.
+        let lum_max = if hlg { self.max } else { d.lum_max };
+        let lum_ref = if hlg {
+            self.sdr_white
+        } else if d.lum_ref > 0.0 {
+            d.lum_ref
+        } else {
+            80.0
+        };
+        let hlg_gamma = 1.2 + 0.42 * (lum_max.max(1.0) / 1000.0).log10();
         // Tone map on the composite's absolute output luminance: the content's
         // peak lands at peak / ref * sdr_white; compress it into the display.
         let peak_out = d.content_peak() / lum_ref * self.sdr_white;
-        let tm = if d.transfer.is_hdr() || d.transfer == Transfer::Linear {
+        let tm = if !hlg && (d.transfer.is_hdr() || d.transfer == Transfer::Linear) {
             if peak_out > self.max {
                 (
                     1.0,
@@ -210,7 +221,7 @@ impl OutputColor {
                     transpose: false,
                 },
             ),
-            Uniform::new("u_lum_max", d.lum_max as f32),
+            Uniform::new("u_lum_max", lum_max as f32),
             Uniform::new("u_inv_ref", (1.0 / lum_ref) as f32),
             Uniform::new("u_hlg_gamma", hlg_gamma as f32),
             Uniform::new("u_sdr_white", self.sdr_white as f32),
@@ -355,6 +366,23 @@ mod tests {
             value(&out.decode_uniforms(&d), "u_tm"),
             UniformValue::_3f(on, _, _) if on == 0.0
         ));
+    }
+
+    #[test]
+    fn hlg_is_rendered_for_the_display_peak() {
+        let out = OutputColor {
+            sdr_white: 203.0,
+            max: 400.0,
+            min: 0.005,
+            display: BT2020,
+        };
+        let us = out.decode_uniforms(&Description::new(Transfer::Hlg, BT2020));
+        // Scale and system gamma from the display (400), not the content (1000).
+        assert!(matches!(value(&us, "u_lum_max"), UniformValue::_1f(v) if v == 400.0));
+        let want_gamma = (1.2 + 0.42 * (400.0f64 / 1000.0).log10()) as f32;
+        assert!(matches!(value(&us, "u_hlg_gamma"), UniformValue::_1f(v) if (v - want_gamma).abs() < 1e-6));
+        // Absolute display light: no further tone mapping.
+        assert!(matches!(value(&us, "u_tm"), UniformValue::_3f(on, _, _) if on == 0.0));
     }
 
     #[test]

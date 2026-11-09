@@ -103,15 +103,24 @@ pub fn dispatch_color_output<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
 /// Set and unset are double-buffered: they take effect on the surface's next
 /// commit, with the buffer they describe (`color::on_commit`). Destroying the
 /// object unsets the description, also at the next commit.
-pub fn dispatch_color_surface(req: SurfReq, surface: &WlSurface) {
+pub fn dispatch_color_surface(
+    req: SurfReq,
+    resource: &WpColorManagementSurfaceV1,
+    surface: &WlSurface,
+) {
     info!("color: surface request {:?}", req);
     match req {
         SurfReq::SetImageDescription {
             image_description, ..
-        } => {
-            let d = image_description.data::<ImageDescData>().and_then(|d| d.0);
-            set_pending_color(surface, d);
-        }
+        } => match image_description.data::<ImageDescData>().and_then(|d| d.0) {
+            Some(d) => set_pending_color(surface, Some(d)),
+            // Only ready descriptions may be set; a failed one is the
+            // protocol's image_description error.
+            None => resource.post_error(
+                smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_color_management_surface_v1::Error::ImageDescription,
+                "image description is not ready (it failed)",
+            ),
+        },
         SurfReq::UnsetImageDescription | SurfReq::Destroy => {
             set_pending_color(surface, None);
         }
