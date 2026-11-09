@@ -1,0 +1,78 @@
+-- version: 0.1.0
+-- Private native Bus; harness is external operational tooling, never vendored.
+-- Usage: mix measure.mix HARNESS RESULT-DIRECTORY
+$h = require(args()[0])
+$root = dirname(script_path())
+$dir = args()[1]
+mkdir($dir, {parents:true})
+$bus = $h.private_bus({dir:$dir .. "/broker",name:"p3-lab"})
+export MIXOS_NODE_CONFIG = $bus.conf
+export MIXOS_NODED_URL = $bus.url
+export MIXOS_RUN = $bus.dir .. "/run"
+export MIXOS_BROKER_ACCOUNT = $bus.account
+$io = require("../../engines/viud/scripts/lib/scenes_io.mix")
+$results = []; $children = []
+fn rss($child)
+  for $line in lines(read_file("/proc/" .. to_string($child) .. "/status"))
+    if starts_with($line, "VmRSS:") then return to_number(word($line, 2)) end
+  end
+  raise("P3_RSS", "no VmRSS")
+end
+try
+  for $trial = 1 to 3
+    for $count = 1 to 3
+      $outputs = {}
+      for $i = 0 to $count - 1
+        $outputs["o_headless-" .. to_string($i)] = {name:"headless-" .. to_string($i)}
+      end
+      for $shape in ["shared", "instance"]
+        $children = []; $names = []; $start = monotonic()
+        $processes = if $shape == "shared" then 1 else $count end
+        for $i = 0 to $processes - 1
+          $name = "p3-" .. $shape .. "-" .. to_string($i)
+          push($names, $name)
+          push($children, spawn(["/opt/mixos/bin/mix", "--serve", $root .. "/behaviour-" .. $shape .. ".mix", "--name", $name], {die_with_parent:true, stdout:{file:$dir .. "/" .. $name .. ".log"},stderr:"stdout"}))
+        end
+        $wire_bytes = 0; $calls = 0; $merged = {}
+        for $i = 0 to $processes - 1
+          $body = {outputs:$outputs, settings:{"headless-1":"hidden"}, key:keys($outputs)[$i]}
+          $deadline = monotonic() + 10; $answer = nil
+          while monotonic() < $deadline
+            try
+              $answer = $io.rpc($names[$i], "sample", $body)
+              break
+            catch $message
+              sleep(0.02)
+            end
+          end
+          if $answer == nil then raise("P3_STARTUP", "behaviour did not register") end
+          $merged = merge($merged, $answer.outputs)
+        end
+        $startup = (monotonic() - $start) * 1000
+        -- Fixed 20 ticks: equivalent complete output snapshot each tick.
+        for $tick = 1 to 20
+          for $i = 0 to $processes - 1
+            $body = {outputs:$outputs, settings:{"headless-1":"hidden"}, key:keys($outputs)[$i]}
+            $answer = $io.rpc($names[$i], "sample", $body)
+            $calls = $calls + 1
+            $wire_bytes = $wire_bytes + byte_length(json_encode($body)) + byte_length(json_encode($answer))
+          end
+        end
+        if $count > 1 and $merged["o_headless-1"].mode != "hidden" then raise("P3_SETTINGS", "output-name mode lost") end
+        $memory = 0
+        for $child in $children $memory = $memory + rss($child) end
+        push($results, {trial:$trial, outputs:$count, shape:$shape, processes:$processes, rss_kib:$memory, startup_ms:$startup, calls:$calls, payload_bytes:$wire_bytes, ticks:20, behaviour_bytes:stat($root .. "/behaviour-" .. $shape .. ".mix").size})
+        for $child in $children
+          if not kill($child, 9) then raise("P3_STOP", "child stop failed") end
+        end
+        $children = []
+        sleep(0.1)
+      end
+    end
+  end
+  write_file($dir .. "/results.json", json_encode($results))
+  print(json_encode($results))
+finally
+  for $child in $children $stopped = kill($child, 9) end
+  $h.stop_bus($bus)
+end

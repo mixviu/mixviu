@@ -114,6 +114,13 @@ pub fn wire(
         .inner
         .kernel
         .get_mut(&render_gles::format::registrar::COMPOSITE_NODE_MUT) = Some(node);
+    // P3 discovery-only controls: bounded virtual monitors, no physical seat.
+    let count: usize = std::env::var("MIX_VIUD_LAB_OUTPUTS")
+        .unwrap_or_else(|_| "1".into()).parse()?;
+    if !(1..=3).contains(&count) { return Err("lab outputs must be 1..=3".into()); }
+    let mut contexts = Vec::new();
+    let mut globals = Vec::new();
+    for index in 0..count {
     let renderer = render_gles::context::egl::create(&display)?;
     let refresh = match std::env::var("MIX_VIUD_HEADLESS_REFRESH_HZ") {
         Ok(value) => value
@@ -133,7 +140,7 @@ pub fn wire(
         refresh: refresh * 1000,
     };
     let output = Output::new(
-        "headless-0".into(),
+        format!("headless-{index}"),
         PhysicalProperties {
             size: (0, 0).into(),
             subpixel: Subpixel::Unknown,
@@ -155,8 +162,11 @@ pub fn wire(
         renderer,
     };
     let handle = state.state.output.display_handle.clone();
-    let damage_tracker =
-        scenegraph::state::lifecycle::initialize(state, &output, &handle, &mut contract);
+    let global = output.create_global::<dispatcher::state::Dispatch>(&handle);
+    state.inner.map_output_everywhere(&output, smithay::utils::Point::from((index as i32 * options.size.w, 0)));
+    scenegraph::display::output::bind_display(state, &mut contract);
+    let damage_tracker = smithay::backend::renderer::damage::OutputDamageTracker::from_output(&output);
+    globals.push((output.clone(), global));
     // This runs before the event loop serves any client.
     human_seat_without_sources(&mut state.state.seat.seat);
     state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
@@ -223,19 +233,35 @@ pub fn wire(
         targets,
         damage_tracker,
     )));
+    contexts.push(context);
+    }
+    if let Ok(seconds) = std::env::var("MIX_VIUD_LAB_UNPLUG_SECS") {
+        let seconds: u64 = seconds.parse()?;
+        if !(1..=300).contains(&seconds) || count < 2 { return Err("lab unplug needs 2+ outputs and 1..=300 seconds".into()); }
+        let (output, global) = globals.pop().expect("lab output");
+        event_loop.handle().insert_source(
+            smithay::reexports::calloop::timer::Timer::from_duration(std::time::Duration::from_secs(seconds)),
+            move |_, _, state| {
+                state.state.redraw.remove(&world::state::output_key(&output));
+                state.inner.unmap_output_everywhere(&output);
+                state.state.output.display_handle.remove_global::<dispatcher::state::Dispatch>(global.clone());
+                info!("P3_LAB_UNPLUG {}", output.name());
+                smithay::reexports::calloop::timer::TimeoutAction::Drop
+            })?;
+    }
     let (ping, source) = make_ping()?;
     let first = ping.clone();
     event_loop
         .handle()
         .insert_source(source, move |_, _, state| {
-            crate::frame::arm(state, &context);
+            for context in &contexts { crate::frame::arm(state, context); }
         })?;
     state.state.redraw.set_ping(ping);
     first.ping();
     screencopy::create_global(&state.state.output.display_handle);
     info!(
         "headless: headless-0 {}x{} at scale {} wired",
-        mode.size.w, mode.size.h, options.scale
+        options.size.w, options.size.h, options.scale
     );
     Ok(())
 }

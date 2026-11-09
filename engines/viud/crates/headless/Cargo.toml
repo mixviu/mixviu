@@ -27,6 +27,7 @@ render-gles = { workspace = true }
 protocols = { workspace = true }
 graphics = { workspace = true }
 scenegraph = { workspace = true }
+dispatcher = { workspace = true }
 slots = { workspace = true }
 decor = { workspace = true }
 screencopy = { workspace = true }

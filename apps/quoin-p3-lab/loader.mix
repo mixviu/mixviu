@@ -67,8 +67,9 @@ on snapshot
   reply(0, json_encode({instances:$state, model:$model, shape:$shape}))
 end
 
-on tick
+on timer.tick
   if len(keys($event.headers)) != 0 then return end
+  if $event.args.tag != "tick" then return end
   update()
 end
 
