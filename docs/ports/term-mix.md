@@ -10,7 +10,7 @@ terminal replies remains a fresh process token, used to reject stale input.
 Launch from an installed tree:
 
 ```text
-/opt/mix/bin/viu run /opt/mix/share/apps/term --service term-mix --app-id mixviu.term-mix --title "Term (Mix)"
+/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/term --service term-mix --app-id mixviu.term-mix --title "Term (Mix)"
 ```
 
 `/opt/mix/bin/term-mix` supplies those options and forwards further arguments,
@@ -22,6 +22,13 @@ and app id are unchanged.
 
 ## Install recipe (operator action; not performed by this PR)
 
+The normal gold path builds `tools/apps_bundle.mix` into `apps.tar`, rooted
+at `/opt/mix`. It includes the runtime bundle at `share/mixviu/apps/term`,
+the shared library at `share/mixviu/libraries/viu/mix`, executable
+`bin/term-mix` and `share/applications/mixviu.term-mix.desktop`. Install the
+whole reviewed release set through that path; no separate Term copy is needed.
+The table below records the corresponding file destinations.
+
 Build the exact reviewed commit on CBC. Retain the build receipt and hashes.
 Build `mix` separately to preserve its shell feature profile; then build
 `mixd` and `viu`. Use `--locked --release` for both commands. Preserve the
@@ -32,8 +39,8 @@ previous destination files and their receipts before copying anything.
 | CBC `target/release/viu` | `/opt/mix/bin/viu` | 0755 |
 | CBC `target/release/mix` | `/opt/mix/bin/mix` | 0755 |
 | CBC `target/release/mixd` | `/opt/mix/bin/mixd` | 0755 |
-| `apps/term/` (complete directory) | `/opt/mix/share/apps/term/` | directories 0755, files 0644 |
-| `libraries/viu/mix/` (complete directory) | `/opt/mix/share/libraries/viu/mix/` | directories 0755, files 0644 |
+| `apps/term/` (complete directory) | `/opt/mix/share/mixviu/apps/term/` | directories 0755, files 0644 |
+| `libraries/viu/mix/` (complete directory) | `/opt/mix/share/mixviu/libraries/viu/mix/` | directories 0755, files 0644 |
 | `apps/term/term-mix.mix` | `/opt/mix/bin/term-mix` | 0755 |
 | `apps/term/mixviu.term-mix.desktop` | `/opt/mix/share/applications/mixviu.term-mix.desktop` | 0644 |
 
