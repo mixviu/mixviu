@@ -900,9 +900,8 @@ pub fn execute(
                             ctx_ref.outputs[output_idx].sdr_reset_pending = 0;
                             // Keep trying to fix the signalling in the background.
                             ctx_ref.outputs[output_idx].props_applied = true;
-                            ctx_ref.outputs[output_idx].props_retry_at = Some(
-                                std::time::Instant::now() + std::time::Duration::from_secs(2),
-                            );
+                            ctx_ref.outputs[output_idx].props_retry_at =
+                                Some(std::time::Instant::now() + std::time::Duration::from_secs(2));
                         }
                     }
                 }
