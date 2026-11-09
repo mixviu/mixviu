@@ -259,6 +259,40 @@ mod tests {
         assert!(sdr_variant(marked).contains("#define VIU_OUT(x) (x)"));
     }
 
+    /// Every build smithay compiles (its `//_DEFINES_` variants), framed for
+    /// an external validator: `cargo test -p render-gles dump_shaders --
+    /// --ignored --nocapture`, then `glslangValidator` each block.
+    pub fn variants(name: &str, src: &str) -> Vec<(String, String)> {
+        [
+            ("plain", ""),
+            ("no_alpha", "#define NO_ALPHA\n"),
+            ("external", "#define EXTERNAL\n"),
+            ("debug", "#define DEBUG_FLAGS\n"),
+        ]
+        .iter()
+        .map(|(v, d)| (format!("{name}-{v}"), src.replace("//_DEFINES_", d)))
+        .collect()
+    }
+
+    pub fn dump(name: &str, src: &str) {
+        for (n, s) in variants(name, src) {
+            println!("=====SHADER {n}=====\n{s}\n=====END=====");
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_shaders() {
+        dump("decode", &decode_shader());
+        dump("encode", &encode_shader());
+        // decor's corner clip, both builds (the seam compiles both).
+        let file = include_str!("../../../../decor/src/clip.rs");
+        let start = file.find("pub const SHADER: &str = r#\"").unwrap() + 28;
+        let clip = &file[start..start + file[start..].find("\"#;").unwrap()];
+        dump("clip-sdr", &sdr_variant(clip));
+        dump("clip-hdr", &inject_decode(clip).unwrap());
+    }
+
     #[test]
     fn the_glsl_constants_are_the_rust_ones() {
         // Transcription check: the PQ constants in COMMON equal math.rs's.
