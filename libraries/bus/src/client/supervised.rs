@@ -35,7 +35,25 @@ use super::IncomingCommand;
 use super::connection::{Connection, ConnectionOptions};
 use super::error::{ClientError, RegistrationRejected, SupervisedError};
 use crate::BusMessage;
-use crate::native_client::NativeIncomingReceiver;
+use super::connection::ConnectionIncoming;
+
+/// One supervised delivery. Context is captured only on the verified transport
+/// that received this command; it is never reconstructed from public headers.
+pub struct SupervisedDelivery {
+    command: IncomingCommand,
+    principal: Option<crate::native_session::BrokerPrincipal>,
+    protected_recipient: bool,
+}
+
+impl SupervisedDelivery {
+    pub fn legacy(command: IncomingCommand) -> Self {
+        Self { command, principal: None, protected_recipient: false }
+    }
+    pub fn command(&self) -> &IncomingCommand { &self.command }
+    pub fn principal(&self) -> Option<&crate::native_session::BrokerPrincipal> { self.principal.as_ref() }
+    pub fn protected_recipient(&self) -> bool { self.protected_recipient }
+    pub fn into_command(self) -> IncomingCommand { self.command }
+}
 use crate::native_client::bounded::{
     BoundedIncomingEvent, BoundedIncomingReceiver, BoundedIncomingSender, BoundedSendResult,
     bounded_incoming_channel, is_rpc_request,
@@ -177,6 +195,15 @@ pub struct SupervisedConnectOptions {
 }
 
 impl SupervisedConnectOptions {
+    /// Opt into verified Unix registration on every dial. TCP remains the
+    /// default. Missing-endpoint fallback follows the supplied Unix policy.
+    /// Use `deliveries` to receive context. This option uses an unbounded lane;
+    /// combining it with bounded incoming options is refused explicitly.
+    #[cfg(unix)]
+    pub fn verified_unix(mut self, options: crate::native_client::UnixConnectOptions) -> Self {
+        self.connection.unix = Some(options);
+        self
+    }
     pub fn with_commands(mut self, command_names: Vec<crate::CommandDescriptor>) -> Self {
         self.connection.commands = Some(command_names);
         self
@@ -249,6 +276,7 @@ impl SupervisedConnectOptions {
 /// calls through the state-gated methods; the supervisor task reconnects,
 /// re-registers and replays the [`SubscriptionRegistry`] underneath.
 pub struct SupervisedClient {
+    deliveries_rx: std::sync::Mutex<Option<mpsc::UnboundedReceiver<SupervisedDelivery>>>,
     /// The live connection. Swapped by the supervisor on reconnect under a
     /// brief write lock; outbound calls clone the `Arc` under a read lock so
     /// no network await holds it.
@@ -393,7 +421,15 @@ impl SupervisedClient {
 
         let inner = Arc::new(RwLock::new(connection.map(Arc::new)));
         let connection_generation = Arc::new(AtomicU64::new(u64::from(established)));
+        let contextual = {
+            #[cfg(unix)]
+            { connection_options.unix.is_some() }
+            #[cfg(not(unix))]
+            { false }
+        };
+        let (delivery_tx, delivery_rx) = mpsc::unbounded_channel();
         let (out_tx, out_rx, bounded_out_rx) = match connection_options.capacity {
+            None if contextual => (SupervisorOutgoing::Contextual(delivery_tx), None, None),
             Some(capacity) => {
                 let (sender, receiver) = bounded_incoming_channel(capacity);
                 (SupervisorOutgoing::Bounded(sender), None, Some(receiver))
@@ -425,6 +461,7 @@ impl SupervisedClient {
         }));
 
         SupervisedClient {
+            deliveries_rx: std::sync::Mutex::new(contextual.then_some(delivery_rx)),
             inner,
             state_tx,
             state_publish,
@@ -443,6 +480,17 @@ impl SupervisedClient {
     /// The shared [`SubscriptionRegistry`] the supervisor replays.
     pub fn subscription_registry(&self) -> SubscriptionRegistry {
         self.registry.clone()
+    }
+
+    /// Contextual stream for the opt-in Unix transport, including explicitly
+    /// unprotected TCP fallback deliveries. Survives reconnects like `incoming`.
+    pub fn deliveries(&self) -> Option<mpsc::UnboundedReceiver<SupervisedDelivery>> {
+        self.deliveries_rx.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    /// Current registration only. Each queued delivery carries its own status.
+    pub async fn protected_recipient(&self) -> bool {
+        self.inner.read().await.as_ref().is_some_and(|c| c.is_connected() && c.protected_recipient())
     }
 
     /// Take the outward incoming stream (once). It survives reconnects and
@@ -824,6 +872,7 @@ impl Drop for StopOnDrop<'_> {
 }
 
 enum SupervisorOutgoing {
+    Contextual(mpsc::UnboundedSender<SupervisedDelivery>),
     Unbounded(mpsc::UnboundedSender<IncomingCommand>),
     Bounded(BoundedIncomingSender),
 }
@@ -831,6 +880,7 @@ enum SupervisorOutgoing {
 impl SupervisorOutgoing {
     async fn closed(&self) {
         match self {
+            Self::Contextual(sender) => sender.closed().await,
             Self::Unbounded(sender) => sender.closed().await,
             Self::Bounded(sender) => sender.closed().await,
         }
@@ -838,6 +888,7 @@ impl SupervisorOutgoing {
 
     fn is_closed(&self) -> bool {
         match self {
+            Self::Contextual(sender) => sender.is_closed(),
             Self::Unbounded(sender) => sender.is_closed(),
             Self::Bounded(sender) => sender.is_closed(),
         }
@@ -848,6 +899,7 @@ impl SupervisorOutgoing {
     /// so the supervisor can answer it on the connection it arrived on.
     fn forward(&self, event: BoundedIncomingEvent, refuse_rpc: bool) -> ForwardOutcome {
         match (self, event) {
+            (Self::Contextual(_), _) => unreachable!("contextual delivery is forwarded with its context"),
             (Self::Unbounded(sender), BoundedIncomingEvent::Command(command)) => {
                 if sender.send(command).is_ok() {
                     ForwardOutcome::Sent
@@ -906,7 +958,7 @@ struct SupervisorCtx {
     noded_url: String,
     fatal_on_registration_rejection: bool,
     connection_options: ConnectionOptions,
-    first_rx: Option<NativeIncomingReceiver>,
+    first_rx: Option<ConnectionIncoming>,
 }
 
 /// Answer a request the bounded RPC lane refused with `BUSY`, on the
@@ -1025,7 +1077,7 @@ async fn supervisor_loop(mut ctx: SupervisorCtx) {
     }
 }
 
-async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<NativeIncomingReceiver>) {
+async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<ConnectionIncoming>) {
     loop {
         // Forward phase: pump the live connection's frames outward until it
         // drops or a stop is requested.
@@ -1045,11 +1097,17 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<NativeIn
                 }
                 maybe = receiver.recv() => {
                     match maybe {
-                        Some(mut command) => {
+                        Some((mut command, principal)) => {
                             if let BoundedIncomingEvent::Command(incoming) = &mut command {
                                 incoming.generation = ctx.connection_generation.load(Ordering::SeqCst);
                             }
                             let refuse_rpc = ctx.connection_options.refuse_overflowed_requests;
+                            if let SupervisorOutgoing::Contextual(sender) = &ctx.out_tx {
+                                let BoundedIncomingEvent::Command(command) = command else { unreachable!("contextual lane is unbounded") };
+                                let protected_recipient = ctx.inner.read().await.as_ref().is_some_and(|c| c.protected_recipient());
+                                if sender.send(SupervisedDelivery { command, principal, protected_recipient }).is_err() { return; }
+                                continue;
+                            }
                             match ctx.out_tx.forward(command, refuse_rpc) {
                                 ForwardOutcome::Sent => {}
                                 ForwardOutcome::Stopped => {

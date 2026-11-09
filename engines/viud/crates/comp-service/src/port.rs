@@ -787,7 +787,18 @@ impl PortStarter {
                         let service = connect_service.clone();
                         let url = connect_url.clone();
                         async move {
-                            SupervisedClient::connect_options(&service, &url)
+                            let options = bus::client_helpers::resolve_broker_account()
+                                .and_then(bus::client_helpers::unix_connect_options);
+                            let mut connect = SupervisedClient::connect_options(&service, &url);
+                            match options {
+                                Ok(mut options) => {
+                                    options.require_native_session = false;
+                                    options.allow_unverified_tcp_fallback = true;
+                                    connect = connect.verified_unix(options);
+                                }
+                                Err(error) => tracing::warn!(%error, "native broker discovery unavailable; TCP recipient is unprotected"),
+                            }
+                            connect
                                 .fatal_on_registration_rejection(true)
                                 .connect()
                                 .await
@@ -930,7 +941,21 @@ where
 
 type WorkerFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+enum WorkerIncoming {
+    Legacy(tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>),
+    Contextual(tokio_mpsc::UnboundedReceiver<bus::SupervisedDelivery>),
+}
+impl WorkerIncoming {
+    async fn recv(&mut self) -> Option<bus::SupervisedDelivery> {
+        match self {
+            Self::Legacy(receiver) => receiver.recv().await.map(bus::SupervisedDelivery::legacy),
+            Self::Contextual(receiver) => receiver.recv().await,
+        }
+    }
+}
+
 trait WorkerClient: Send + Sync + 'static {
+    fn deliveries(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::SupervisedDelivery>> { None }
     fn chrome_client(&self) -> Option<&SupervisedClient> {
         None
     }
@@ -958,6 +983,9 @@ trait WorkerClient: Send + Sync + 'static {
 }
 
 impl WorkerClient for SupervisedClient {
+    fn deliveries(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::SupervisedDelivery>> {
+        SupervisedClient::deliveries(self)
+    }
     fn chrome_client(&self) -> Option<&SupervisedClient> {
         Some(self)
     }
@@ -1097,11 +1125,14 @@ async fn worker_loop<F, Fut, C>(
         }
         ConnectOutcome::Shutdown => return,
     };
-    let Some(mut incoming) = client.incoming() else {
+    let incoming = client.deliveries().map(WorkerIncoming::Contextual)
+        .or_else(|| client.incoming().map(WorkerIncoming::Legacy));
+    let Some(mut incoming) = incoming else {
         tracing::error!(service = %service, "compositor Bus incoming stream was already taken");
         return;
     };
     let mut states = client.subscribe_state();
+    let mut callers = crate::callers::CallerAudit::default();
     let (chrome_sender, chrome_receiver) = tokio_mpsc::channel(64);
     let chrome_live = Arc::new(AtomicU64::new(
         client
@@ -1189,7 +1220,7 @@ async fn worker_loop<F, Fut, C>(
                 }
             }
             command = incoming.recv() => {
-                let Some(command) = command else {
+                let Some(delivery) = command else {
                     let state = client.state();
                     apply_connection_state(&broker, state);
                     if state == ConnState::Fatal {
@@ -1197,6 +1228,14 @@ async fn worker_loop<F, Fut, C>(
                     }
                     break;
                 };
+                callers.record(&delivery);
+                if delivery.command().command == "comp.callers" && !delivery.command().is_topic_delivery() {
+                    let protected = delivery.protected_recipient();
+                    queue_reply(&reply_sender, &reply_timeouts,
+                        PendingReply::new(delivery.into_command(), (0, Arc::from(callers.snapshot(protected).to_string()))));
+                    continue;
+                }
+                let command = delivery.into_command();
                 if crate::chrome::enabled() && command.is_topic_delivery() {
                     let _ = chrome_sender.try_send(bus::IncomingCommand {
                         generation: command.generation, from: command.from.clone(),

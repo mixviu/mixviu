@@ -33,10 +33,46 @@ pub const READ_COMMANDS: &[&str] = &[
     "comp.workspaces.list",
 ];
 
+/// Audit classes only. Step 1 makes no admission decision from these values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommandClass { Read, Window, Input, Capture, Debug }
+
+impl CommandClass {
+    pub fn as_str(self) -> &'static str {
+        match self { Self::Read => "read", Self::Window => "window", Self::Input => "input", Self::Capture => "capture", Self::Debug => "debug" }
+    }
+}
+
+/// Explicit membership: adding a command without a class fails completeness.
+pub fn command_class(command: &str) -> Option<CommandClass> {
+    use CommandClass::*;
+    Some(match command {
+        "comp.info" | "comp.session.get" | "comp.props.get" | "comp.props.list"
+        | "comp.props.describe" | "comp.windows.list" | "comp.workspaces.list"
+        | "comp.tiles.get" | "comp.debug" | "comp.debug.recent" | "comp.ping"
+        | "comp.props.watch" | "comp.pointer.watch" | "comp.window.wait"
+        | "comp.window.stats" | "comp.callers" => Read,
+        "comp.capture.frame" => Capture,
+        "comp.debug.set" => Debug,
+        "comp.input.sequence" | "comp.input.pointer.move" | "comp.input.pointer.button"
+        | "comp.input.pointer.scroll" | "comp.input.key" | "comp.input.release_all" => Input,
+        "comp.props.set" | "comp.region.select" | "comp.motion.run" | "comp.panel.hold"
+        | "comp.panel.mode" | "comp.window.place_as" | "comp.window.tile_key"
+        | "comp.window.maximize" | "comp.window.unmaximize" | "comp.window.fullscreen"
+        | "comp.window.unfullscreen" | "comp.window.minimize" | "comp.window.restore"
+        | "comp.window.focus" | "comp.window.raise" | "comp.window.close"
+        | "comp.window.menu" | "comp.window.action" | "comp.window.place"
+        | "comp.window.stats.reset" | "comp.workspace.switch"
+        | "comp.window.send_to_workspace" | "comp.workspaces.set_count"
+        | "comp.workspace.rename" => Window,
+        _ => return None,
+    })
+}
+
 /// Registry queries, including commands that wait, capture or observe rather
 /// than reading the current snapshot. This is discovery metadata, not routing.
 pub fn read_only(command: &str) -> bool {
-    READ_COMMANDS.contains(&command)
+    command == "comp.callers" || READ_COMMANDS.contains(&command)
         || matches!(
             command,
             "comp.capture.frame"
@@ -54,6 +90,7 @@ pub fn read_only(command: &str) -> bool {
 /// The 21 commands the dispatcher answers directly (not a window or input
 /// family member).
 pub const DIRECT_COMMANDS: &[&str] = &[
+    "comp.callers",
     "comp.tiles.get",
     "comp.debug",
     "comp.debug.recent",
@@ -148,12 +185,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_command_has_an_audit_class() {
+        let mut counts = std::collections::BTreeMap::new();
+        for command in all_commands() {
+            let class = command_class(command).unwrap_or_else(|| panic!("missing class: {command}"));
+            *counts.entry(class.as_str()).or_insert(0) += 1;
+        }
+        // Original 47 plus the read-only audit command itself.
+        assert_eq!(counts, std::collections::BTreeMap::from([("read", 16), ("window", 24), ("input", 6), ("capture", 1), ("debug", 1)]));
+        assert_eq!(command_class("comp.unknown"), None);
+    }
+
+    #[test]
     fn the_surface_is_47_commands_and_14_topics() {
-        assert_eq!(DIRECT_COMMANDS.len(), 21);
+        assert_eq!(DIRECT_COMMANDS.len(), 22);
         assert_eq!(WINDOW_COMMANDS.len(), 21);
         assert_eq!(INPUT_COMMANDS.len(), 5);
         let commands = all_commands().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(commands.len(), 47, "no command is in two families");
+        assert_eq!(commands.len(), 48, "no command is in two families");
         assert!(commands.iter().all(|command| command.starts_with("comp.")));
         assert!(
             READ_COMMANDS
