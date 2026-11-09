@@ -1,0 +1,76 @@
+-- Lab opt-in loader, one accepted panel document per output.
+-- version: 0.1.0
+$p3 = require("instances.mix")
+$io = require("../../engines/viud/scripts/lib/scenes_io.mix")
+$meta = load_data(dirname(script_path()) .. "/template.conf.mix")
+$source = read_file(dirname(script_path()) .. "/panel.mix")
+$state = {}; $model = {outputs:{}}; $settings = {}
+$settings_path = env("P3_SETTINGS")
+if $settings_path == "" then raise("P3_SETTINGS", "set a private settings path") end
+if is_file($settings_path) then $settings = load_data($settings_path) end
+$host = env("SCENE_HOST", "shell")
+$comp = env("VIU_COMP_SERVICE", "comp-headless")
+$shape = env("P3_SHAPE", "shared")
+if not contains(["shared", "instance"], $shape) then raise("P3_SHAPE", "shared or instance") end
+$children = {}
+
+fn sample($name, $snapshot, $key)
+  global $children
+  if not has_key($children, $name) then
+    $file = if $shape == "shared" then "behaviour-shared.mix" else "behaviour-instance.mix" end
+    $children[$name] = spawn(["/opt/mixos/bin/mix", "--serve", dirname(script_path()) .. "/" .. $file, "--name", $name], {die_with_parent:true})
+    sleep(0.3)
+  end
+  return $io.rpc($name, "sample", {outputs:$snapshot, settings:$settings, key:$key})
+end
+
+fn update()
+  global $state, $model, $settings, $children
+  $snapshot = $p3.outputs($io, $comp)
+  $keys = $p3.select_outputs($meta, $snapshot)
+  if $shape == "shared" then
+    $model = sample("p3-panel", $snapshot, nil)
+  else
+    $model = {outputs:{}}
+    for $key in $keys
+      $name = "p3-" .. substr(hash_sha256($key), 0, 16)
+      $part = sample($name, $snapshot, $key)
+      $model.outputs[$key] = $part.outputs[$key]
+      $model.clock = $part.clock
+    end
+    for $name in keys($children)
+      if not any($keys, fn($k) = $name == "p3-" .. substr(hash_sha256($k), 0, 16)) then
+        if not kill($children[$name], 9) then raise("P3_STOP", "failed to stop instance behaviour") end
+        $children = delete($children, $name)
+      end
+    end
+  end
+  $src = {comp:{workspaces:[]}}
+  for $i = 1 to 4
+    $src.comp.workspaces = push($src.comp.workspaces, {id:to_string($i), label:to_string($i), current:$i == 1})
+  end
+  $model.clock = date_format(time(), "%H:%M:%S")
+  $state = $p3.reconcile($state, $meta, $snapshot, $source, $model, $src, $io, $host, serve_name())
+end
+
+on mode
+  global $settings
+  $key = $event.args.output
+  if not has_key($state, $key) then reply(10, "output removed"); return end
+  $settings[$model.outputs[$key].name] = $event.args.mode
+  write_atomic($settings_path, data_encode($settings))
+  update()
+  reply(0, "ok")
+end
+
+on snapshot
+  reply(0, json_encode({instances:$state, model:$model, shape:$shape}))
+end
+
+on tick
+  if len(keys($event.headers)) != 0 then return end
+  update()
+end
+
+update()
+interval(1, "tick")

@@ -1,0 +1,7 @@
+-- Shared panel policy for equivalent D2 processes. No host side effects.
+fn section($output, $settings)
+  return {name:$output.name, mode:$settings[$output.name] ?? "auto"}
+end
+fn clock_model()
+  return date_format(time(), "%H:%M:%S")
+end

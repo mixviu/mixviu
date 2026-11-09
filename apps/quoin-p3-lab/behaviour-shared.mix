@@ -1,0 +1,9 @@
+-- version: 0.1.0
+$panel = require("panel-state.mix")
+on sample
+  $model = {outputs:{}, clock:$panel.clock_model()}
+  for $key in keys($event.args.outputs)
+    $model.outputs[$key] = $panel.section($event.args.outputs[$key], $event.args.settings)
+  end
+  reply(0, json_encode($model))
+end

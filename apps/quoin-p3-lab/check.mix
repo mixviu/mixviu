@@ -1,0 +1,48 @@
+-- version: 0.1.0
+$p3 = require("instances.mix")
+$fixture = read_file(dirname(script_path()) .. "/panel.mix")
+fn ensure($ok, $message)
+  if not $ok then raise("P3_CHECK", $message) end
+end
+fn rpc($host, $command, $body)
+  global $calls
+  push($calls, {command:$command, body:$body})
+  return {revision:1}
+end
+$calls = []
+$io = {rpc:fn($host, $command, $body) = rpc($host, $command, $body)}
+$meta = {name:"panel", instances:"per_output"}
+$outputs = {a:{name:"headless-0", primary:true}, b:{name:"headless-1"}, c:{name:"headless-2"}}
+$src = {comp:{workspaces:[{id:"one",label:"1",current:true}, {id:"two",label:"2",current:false}]}}
+$model = {outputs:{a:{name:"A"}, b:{name:"B"}, c:{name:"C"}}, clock:"12:00"}
+ensure(deep_eq($p3.select_outputs({instances:"primary"}, $outputs), ["a"]), "primary")
+ensure(deep_eq($p3.select_outputs({instances:"named",output:"headless-1"}, $outputs), ["b"]), "named by stable name")
+$state = $p3.reconcile({}, $meta, $outputs, $fixture, $model, $src, $io, "shell", "p3")
+ensure(len(keys($state)) == 3 and len($calls) == 3, "three mounts")
+ensure($state.b.page == "panel@b", "page identity")
+$calls = []
+$state = $p3.reconcile($state, $meta, $outputs, $fixture, $model, $src, $io, "shell", "p3")
+ensure(len($calls) == 0, "identical snapshot must be silent")
+$outputs = delete($outputs, "b")
+$model.clock = "12:01"
+$calls = []
+$state = $p3.reconcile($state, $meta, $outputs, $fixture, $model, $src, $io, "shell", "p3")
+ensure(len($calls) == 3 and $calls[0].command == "shell.scene.unload", "unplug before pending update")
+ensure($calls[0].body.scene != $state.a.id and $calls[0].body.scene != $state.c.id, "only removed instance unloads")
+$nodes = {root:{repeat:{over:'= $src.comp.workspaces', as:"ws", key:"id", max:2}, child:"leaf"}, leaf:{widget:"text",text:'= $ws.label'}}
+$lowered = $p3.lower_repeat($nodes, {src:$src})
+ensure($lowered.root.rows[0].id == "one" and $lowered.leaf.text == '= $item.label', "keyed rows and alias")
+for $case in ["cap", "duplicate", "nested"]
+  $bad = $nodes; $ctx = {src:$src}; $refused = false
+  if $case == "cap" then $bad.root.repeat.max = 1 end
+  if $case == "duplicate" then $ctx.src.comp.workspaces[1].id = "one" end
+  if $case == "nested" then $bad.leaf.repeat = {} end
+  try
+    $p3.lower_repeat($bad, $ctx)
+  catch $message
+    $refused = true
+  end
+  ensure($refused, "must refuse " .. $case)
+end
+write_file(env("P3_RENDER", "/var/tmp/quoin-p3-render.mix"), $state.a.source)
+print("P3_CHECK=pass: selection, identity, repeat bounds/keys/nesting, unplug mid-update")

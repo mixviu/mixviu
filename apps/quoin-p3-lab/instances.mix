@@ -1,0 +1,123 @@
+-- Discovery specimen only. Not the production scenes loader.
+$amp = require("../../engines/viud/scripts/lib/scenes.mix")
+
+-- The only output-feed seam. P2 can replace this snapshot with watch events.
+fn outputs($io, $comp)
+  return $io.rpc($comp, "comp.props.get", {path:"outputs"})
+end
+
+fn select_outputs($meta, $snapshot)
+  $mode = $meta.instances ?? "primary"
+  if not contains(["per_output", "primary", "named"], $mode) then raise("P3_INSTANCES", "invalid instances mode") end
+  $all = sort(keys($snapshot))
+  if len($all) > 16 then raise("P3_OUTPUT_LIMIT", "at most 16 outputs") end
+  if $mode == "per_output" then return $all end
+  if $mode == "named" then
+    if type($meta.output) != "string" then raise("P3_OUTPUT", "named requires output name") end
+    return filter($all, fn($k) = $k == $meta.output or $snapshot[$k].name == $meta.output)
+  end
+  $primary = filter($all, fn($k) = $snapshot[$k].primary == true)
+  return take(if len($primary) > 0 then $primary else $all end, 1)
+end
+
+-- Repeat's lab expression subset is deliberately only a root + dotted path.
+-- No eval/source: pure host expressions elsewhere still go to scene core.
+fn collection($expr, $context)
+  if not re_match($expr, '^= \\$(model|src)(\\.[a-zA-Z_][a-zA-Z0-9_]*)+$') then
+    raise("P3_REPEAT_OVER", "repeat.over needs a dotted model/src path")
+  end
+  $value = $context
+  for $part in split(substr($expr, 3), ".")
+    if type($value) != "map" then raise("P3_REPEAT_OVER", "collection path traverses non-map") end
+    $value = $value[$part]
+  end
+  if type($value) != "list" then raise("P3_REPEAT_OVER", "collection must be a list") end
+  return $value
+end
+
+fn alias_ports($nodes, $id, $alias, $seen)
+  if contains($seen, $id) then raise("P3_REPEAT_TEMPLATE", "cycle/shared child in repeat") end
+  push($seen, $id)
+  $node = $nodes[$id]
+  if $node == nil or $node.repeat != nil or $node.widget == "list" then raise("P3_REPEAT_NESTED", "nested repeat/list or missing child") end
+  for $port in keys($node)
+    $v = $node[$port]
+    if type($v) == "string" and starts_with($v, "= ") then
+      $nodes[$id][$port] = replace($v, "$" .. $alias .. ".", '$item.')
+    end
+  end
+  for $child in $node.children ?? []
+    $r = alias_ports($nodes, $child, $alias, $seen)
+    $nodes = $r.nodes
+    $seen = $r.seen
+  end
+  return {nodes:$nodes, seen:$seen}
+end
+
+fn lower_repeat($nodes, $context)
+  $owned = []
+  for $id in keys($nodes)
+    $r = $nodes[$id].repeat
+    if $r == nil then continue end
+    if type($r) != "map" or not re_match($r.as ?? "", '^[a-zA-Z_][a-zA-Z0-9_]*$') or type($r.key) != "string" then raise("P3_REPEAT", "repeat requires as/key") end
+    $cap = $r.max ?? 64
+    if type($cap) != "number" or $cap < 1 or $cap > 128 or floor($cap) != $cap then raise("P3_REPEAT_LIMIT", "max must be an integer 1..128") end
+    $rows = collection($r.over, $context)
+    if len($rows) > $cap then raise("P3_REPEAT_LIMIT", "collection exceeds max; revision refused") end
+    $items = []; $ids = []
+    for $item in $rows
+      if type($item) != "map" then raise("P3_REPEAT_KEY", "repeat item must be a map") end
+      $key = $item[$r.key]
+      if type($key) != "string" or $key == "" or contains($ids, $key) then raise("P3_REPEAT_KEY", "key must be a unique nonempty string") end
+      push($ids, $key)
+      $item.id = $key
+      $item.cells = []
+      push($items, $item)
+    end
+    $template = $nodes[$id].child
+    $rewritten = alias_ports($nodes, $template, $r.as, $owned)
+    $nodes = $rewritten.nodes; $owned = $rewritten.seen
+    $node = $nodes[$id]
+    $node = delete(delete($node, "repeat"), "child")
+    $node.widget = "list"; $node.row = $template; $node.rows = $items
+    $node.row_height = $node.row_height ?? 30
+    $nodes[$id] = $node
+  end
+  return $nodes
+end
+
+fn render($source, $name, $output, $model, $src, $citizen)
+  $doc = $amp.document($source)
+  $id = "p3-" .. substr(hash_sha256($name .. "@" .. $output), 0, 24)
+  $model.__instance = {output:$output}
+  $model.__src = $src
+  $body = between($doc.body, "```mix\n", "```")
+  $nodes = lower_repeat(data_parse($body), {model:$model, src:$src})
+  $body = data_encode($nodes)
+  -- P0 has no read-only roots: lab lowering, never execute this text.
+  $body = replace($body, '$instance.', '$model.__instance.')
+  $body = replace($body, '$src.', '$model.__src.')
+  $window = $doc.window
+  $window.panel = $name .. "@" .. $output
+  return {id:$id, page:$window.panel, output:$output, source:"---\nscene: 1\nname: " .. $id .. "\ncitizen: " .. $citizen .. "\nwindow: " .. json_encode($window) .. "\nmodel: " .. json_encode($model) .. "\n---\n```mix\n" .. $body .. "\n```\n"}
+end
+
+-- Caller commits returned state only after successful host replies. Retrying
+-- after a partial RPC failure is idempotent; no removed instance is patched.
+fn reconcile($state, $meta, $snapshot, $source, $model, $src, $io, $host, $citizen)
+  $wanted = select_outputs($meta, $snapshot)
+  for $key in keys($state)
+    if not contains($wanted, $key) then
+      $io.rpc($host, "shell.scene.unload", {scene:$state[$key].id, output:$key})
+      $state = delete($state, $key)
+    end
+  end
+  for $key in $wanted
+    $r = render($source, $meta.name, $key, $model, $src, $citizen)
+    if ($state[$key] ?? {}).source != $r.source then
+      $io.rpc($host, "shell.scene.load", {source:$r.source, output:$key})
+      $state[$key] = $r
+    end
+  end
+  return $state
+end
