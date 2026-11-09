@@ -70,6 +70,17 @@ fn unrelated_proximity_and_tip_down_preserve_the_live_owner_and_its_lift() {
     assert!(state.cursor_owner.is_none());
     assert_eq!(state.stroke_owner, Some(a.clone()));
     assert!(state.tool_is_down(&a));
+    state.tool_proximity_in(&b,&tablet,(0.0,0.0).into(),
+        (surfaces[1].clone(),(0.0,0.0).into()),SERIAL_COUNTER.next_serial(),3);
+    h.roundtrip();
+    h.client.state.tablet.tools[1].set_cursor(1,Some(&cursor),0,0);
+    h.roundtrip();
+    let state=&mut h.wire.state.tablet;
+    assert!(state.tool_cursor);
+    state.clear_surface_focus(|s|s==&surfaces[1],SERIAL_COUNTER.next_serial(),4);
+    assert!(!state.tool_cursor,"hiding B's surface revokes B's hovering cursor");
+    assert!(state.tool_is_down(&a));
+    assert_eq!(state.stroke_owner,Some(a.clone()));
     state.tool_tip_up(&a, 4);
     assert!(
         !state.tool_is_down(&a),
@@ -153,6 +164,8 @@ fn removal_revokes_the_owner_and_queues_real_emulation_releases_once() {
 #[test]
 fn tablet_device_removal_clears_its_live_stroke() {
     let mut h = testkit::Harness::new();
+    h.client.bind_tablet();
+    h.roundtrip();
     let (surface, _, _) = h.mapped_toplevel(64, 48);
     let server = h.handle_of(&surface);
     let surface =
@@ -167,6 +180,7 @@ fn tablet_device_removal_clears_its_live_stroke() {
     };
     let state = &mut h.wire.state.tablet;
     state.add_tool::<dispatcher::state::Dispatch>(&dh, &a);
+    state.add_tablet::<dispatcher::state::Dispatch>(&dh,&tablet);
     state.tool_proximity_in(
         &a,
         &tablet,
@@ -181,5 +195,9 @@ fn tablet_device_removal_clears_its_live_stroke() {
     assert_eq!(state.stroke, Stroke::None);
     assert!(state.stroke_owner.is_none());
     assert!(!state.tool_is_down(&a));
+    h.roundtrip();
+    assert_eq!(h.client.state.tablet.tips.len(),2);
+    assert!(h.client.state.tablet.tips[0].1);
+    assert!(!h.client.state.tablet.tips[1].1);
     let _ = server;
 }
