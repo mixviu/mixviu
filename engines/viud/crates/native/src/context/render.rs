@@ -56,6 +56,9 @@ pub struct OutputPipe {
     /// Default, because whatever ran on another VT leaves its own value behind.
     /// Cleared on every pipe build AND on session resume.
     pub props_applied: bool,
+    /// When a failed connector pass is retried: a rejection (transient, e.g. a
+    /// concurrent modeset) must not leave stale signalling for the session.
+    pub props_retry_at: Option<std::time::Instant>,
     /// Consecutive `render_frame` failures on this pipe. Reset by any success and
     /// by a rebuild. Past `RENDER_FAILURE_PARK` the pipe is skipped entirely
     /// instead of being retried (and re-logged) every frame — see

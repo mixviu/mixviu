@@ -210,6 +210,8 @@ fn bring_up(
     ctx.pipe_mut().hdr_caps = built.hdr;
     ctx.pipe_mut().hdr_active = new_hdr_active;
     ctx.pipe_mut().hdr_pass = None;
+    ctx.pipe_mut().sdr_reset_pending = 0;
+    ctx.pipe_mut().props_retry_at = None;
     if !new_hdr_active {
         crate::render::execute::hdr::publish(&output.name(), None);
     }
@@ -382,6 +384,7 @@ fn add_output(
         hdr_active,
         hdr_pass: None,
         sdr_reset_pending: 0,
+        props_retry_at: None,
         props_applied: false,
         render_failures: 0,
         connector: built.connector,

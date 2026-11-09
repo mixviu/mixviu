@@ -721,6 +721,13 @@ pub fn execute(
         // earlier HDR session of our own. An SDR pipe must therefore actively reset
         // `Colorspace` to Default and clear the HDR metadata; leaving them alone is
         // what made SDR content render through BT.2020 (heavy red cast).
+        // A failed pass is retried on a timer, never abandoned for the session.
+        if let Some(at) = ctx_ref.outputs[output_idx].props_retry_at
+            && std::time::Instant::now() >= at
+        {
+            ctx_ref.outputs[output_idx].props_retry_at = None;
+            ctx_ref.outputs[output_idx].props_applied = false;
+        }
         if !ctx_ref.outputs[output_idx].props_applied
             && (*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN))
         {
@@ -744,8 +751,11 @@ pub fn execute(
                     );
                 }
                 Err(_e) => {
-                    warn!("connector property pass failed: {_e}");
-                    ctx_ref.outputs[output_idx].props_applied = true; // don't retry every frame
+                    warn!("connector property pass failed: {_e}; retrying in 2 s");
+                    // Not every frame, but not never: retried on a timer.
+                    ctx_ref.outputs[output_idx].props_applied = true;
+                    ctx_ref.outputs[output_idx].props_retry_at =
+                        Some(std::time::Instant::now() + std::time::Duration::from_secs(2));
                     if hdr_active {
                         // Signalling failed: back to an SDR composite, and run the
                         // connector pass again in SDR to reset what it could.
@@ -844,6 +854,10 @@ pub fn execute(
                 // A rejected SDR reset holds SDR frames back (the previous frame stays
                 // on screen) and retries every frame, bounded: past SDR_RESET_TRIES
                 // the frame is presented anyway rather than freezing the output.
+                if ctx_ref.outputs[output_idx].hdr_active {
+                    // Back on HDR (rebuilt or re-enabled): no SDR reset is owed.
+                    ctx_ref.outputs[output_idx].sdr_reset_pending = 0;
+                }
                 if ctx_ref.outputs[output_idx].sdr_reset_pending > 0 {
                     const SDR_RESET_TRIES: u32 = 30;
                     let depth = model::environment::config::base::get().depth;
@@ -884,7 +898,11 @@ pub fn execute(
                                 "HDR fallback: SDR connector reset still rejected after {tries} frames ({e}); presenting SDR anyway"
                             );
                             ctx_ref.outputs[output_idx].sdr_reset_pending = 0;
-                            ctx_ref.outputs[output_idx].props_applied = false;
+                            // Keep trying to fix the signalling in the background.
+                            ctx_ref.outputs[output_idx].props_applied = true;
+                            ctx_ref.outputs[output_idx].props_retry_at = Some(
+                                std::time::Instant::now() + std::time::Duration::from_secs(2),
+                            );
                         }
                     }
                 }

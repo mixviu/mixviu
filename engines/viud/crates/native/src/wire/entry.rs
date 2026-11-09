@@ -257,6 +257,7 @@ pub fn wire(
             hdr_active,
             hdr_pass: None,
             sdr_reset_pending: 0,
+            props_retry_at: None,
             props_applied: false,
             render_failures: 0,
             connector: display.connector.handle(),
