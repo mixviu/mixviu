@@ -1,6 +1,6 @@
 -- Run only through CBC. Snapshot candidates before fmt so even pre-existing
 -- edits in a formatted file are preserved. Restore only files fmt changed.
-$files = lines(trim(run_argv_must(["rg", "--files", "--hidden", "--no-ignore", "-g", "*.rs", "--", "engines/viu", "libraries/icons"])))
+$files = filter(lines(trim(run_argv_must(["git", "ls-files", "--cached", "--others", "--", "engines/viu", "libraries/icons"]))), fn($f) = ends_with($f, ".rs"))
 $before = {}
 for $f in $files $before[$f] = read_file($f) end
 $fmt = run_argv(["cargo", "fmt", "-p", "viu", "-p", "icons"], {timeout:120})
