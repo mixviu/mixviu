@@ -172,3 +172,70 @@ Round 1 CBC receipts (BUILD_RC and saved logs read):
 
 No local Rust commands, deployment, desk, VT or installed-prefix changes.
 Existing GPU acceptance tests retain their explicit ignores.
+
+## PR 47 review round 2 — 2026-11-09
+
+All four requested items addressed on `fix/viud-output-identity`.
+PR: https://github.com/mixviu/mixviu/pull/47.
+New implementation head: `ce38baa18c38fbc5265735f98d8d7ddd497de90c`.
+The receipt-only commit appending this section follows that implementation.
+
+1. **Qualified touch override:** replaced the first-claim lookup and identity-only
+   `touch_index` with `resolve_touch_claim`, which inspects the effective profile
+   for each driven output. Any exact qualified profile decides its own claim,
+   including None or a different device. Only outputs without an exact profile
+   can inherit the legacy claim; association chooses among those candidates.
+   Qualified positive claims take priority over inherited ones. When a saved
+   claim exists but all matching live outputs override it, the native caller
+   returns unmapped instead of reintroducing it through automatic association,
+   size or EDID heuristics. With no saved claim, normal automatic routing remains.
+   The Bus spec documents this boundary.
+
+   Tests in `model/tests/output_identity.rs`:
+   - `cleared_qualified_touch_does_not_inherit_legacy_on_duplicate_panels` uses
+     the real setter to clear DP-2 with both panels connected, asserts legacy L
+     still claims touch and DP-2's exact profile is None, then verifies association
+     with DP-2 routes to eligible DP-1. It also covers association absent, only
+     the overridden panel driven, all candidates overridden and another exact
+     device claim.
+   - `legacy_touch_single_panel_and_unqualified_duplicates_keep_their_routes`
+     covers a single panel, duplicate panels without qualified profiles, associated
+     and unassociated selection, an unclaimed device, and clearing the sole panel
+     (which refreshes legacy and restores automatic mapping).
+2. **Teleport cleanup:** removed the redundant `!output_active(...)` disjunct
+   after the earlier active filter. The legacy placement, active-connector and
+   unplug/replug tests continue to pass unchanged in behaviour.
+3. **Complete topology API:** all four profile mutation APIs and
+   `sync_legacy_output` now take the private-field `ConnectedOutputs` wrapper.
+   Construction is explicitly named `from_complete_snapshot`; its API requires
+   all connected preference keys, including inactive panels, never just the
+   driven set or saved profiles. Debug assertions reject unqualified keys and
+   repeated runtime connector names. The API explicitly states that shape checks
+   cannot discover hardware omitted by the caller. Empty/unknown topology still
+   cannot authorise shared legacy writes. Existing duplicate/unknown-topology
+   mutation tests use the wrapper; two new debug-build panic tests prove the
+   malformed-snapshot guards.
+4. **Display flags verified:** `DisplayInfo.active` marks the primary connector,
+   so its handle comparison is intentional and independent of saved preference
+   identity. The saved active flag is exposed as `DisplayInfo.enabled`, already
+   resolved through `profile::active` and `identity::find`. Kept those meanings
+   intact and clarified the enumeration comment. Extracted `profile::active_in`
+   as the exact lookup called by `active`; the new KMS regression
+   `display_enabled_lookup_accepts_migrated_legacy_profile_and_exact_override`
+   verifies a migrated qualified key inherits a disabled legacy profile and that
+   a later explicit qualified enabled profile wins over it.
+
+CBC receipts (BUILD_RC checked and saved logs read):
+
+- `20261109-183151-fca1937b-a1`, cbc2, **RC 0**, source `8315126e`:
+  `cargo fmt --all`, then the same round 1 suites:
+  `cargo test --locked -p model -p drivers -p kms -p world -p headless --lib --tests`
+  and `cargo check --locked -p viud --all-targets`. Worker formatting diff was
+  printed and restored in that same job, then applied locally.
+- `20261109-183303-d0250a55-a1`, cbc2, **RC 0**, exact implementation
+  `ce38baa18c38fbc5265735f98d8d7ddd497de90c`: `cargo fmt --all --check`;
+  `cargo test --locked -p model -p drivers -p kms -p world --test output_identity`
+  (**18 passed**); `cargo check --locked -p viud --all-targets`.
+
+Existing GPU acceptance targets remain explicitly ignored. No local Rust,
+deployment, desk/VT or installed-prefix changes. All pushes used the bot.
