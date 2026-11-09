@@ -287,13 +287,13 @@
     {name:"monitor.debug", owner:"monitor", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"monitor.debug.recent", owner:"monitor", version:"0.1.0", status:"accepted", class:"query", schema:"logging::debug::RecentRequest"},
     {name:"monitor.debug.set", owner:"monitor", version:"0.1.0", status:"accepted", class:"intent", schema:"logging::debug::SetRequest"},
-    {name:"backdrop.ping", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
-    {name:"backdrop.state", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
-    {name:"backdrop.set", owner:"backdrop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
-    {name:"backdrop.next", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"backdrop.view.set", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"backdrop.ping", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query", schema:"none"},
+    {name:"backdrop.state", owner:"backdrop", version:"0.1.1", status:"accepted", class:"query", schema:"none"},
+    {name:"backdrop.set", owner:"backdrop", version:"0.1.1", status:"accepted", class:"intent", schema:"none"},
+    {name:"backdrop.next", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"backdrop.view.set", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"backdrop.view.list", owner:"backdrop", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
-    {name:"backdrop.view.cycle", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"backdrop.view.cycle", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"backdrop.debug", owner:"backdrop", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"backdrop.debug.recent", owner:"backdrop", version:"0.1.0", status:"accepted", class:"query", schema:"logging::debug::RecentRequest"},
     {name:"backdrop.debug.set", owner:"backdrop", version:"0.1.0", status:"accepted", class:"intent", schema:"logging::debug::SetRequest"},
@@ -928,8 +928,8 @@
     "params": {
       "output?": "string"
     },
-    "reply": "SceneInventory[] (store.list)",
-    "source": "engines/viu/src/store.rs:290"
+    "reply": "{name:string,kind?:dialog|toast,page:string|null,edge:string|null,citizen:string,owner:string|null,revision:number,applied_revision:number,diagnostics:object[],model_generation:number|null,digest:string,registered:bool}[]",
+    "source": "engines/viu/src/store.rs:371"
   },
   "shell.ping": {
     "params": {},
@@ -1337,8 +1337,62 @@
       "target": "Source",
       "operation_id": "decimal u64 string"
     },
-    "reply": "{version:1,operation_id:decimal-string,outcome:string,delivery:string,signalled_pgid?:integer|null}",
-    "source": "libraries/mix-shell/src/session_execute.rs:152"
+    "reply": "{version:1,operation_id:decimal-string,outcome:already_settled|requested,delivery:string}",
+    "source": "libraries/mix-shell/src/session_execute.rs:1250"
+  },
+  "backdrop.ping": {
+    "params": {},
+    "reply": "{schema:backdrop.v1,service:string}",
+    "source": "apps/backdrop/runtime.mix:156"
+  },
+  "backdrop.state": {
+    "params": {},
+    "reply": "{schema:backdrop.v1,service:string,requested:number,active:number,pending:number|null,error:JSON,config:BackdropDocument,config_file:string,outputs:object[],fit:string,slideshows:object[],view:string}",
+    "source": "apps/backdrop/engine.mix:107"
+  },
+  "backdrop.set": {
+    "params": {
+      "schema": "1",
+      "default?": "BackdropFill",
+      "outputs?": "map<output-name,BackdropFill> (max64)"
+    },
+    "reply": "{requested:number,active:number,config_file:string}",
+    "source": "apps/backdrop/runtime.mix:162"
+  },
+  "backdrop.next": {
+    "params": {},
+    "reply": "{}; rc10 when no slideshow or busy",
+    "source": "apps/backdrop/runtime.mix:172"
+  },
+  "backdrop.view.set": {
+    "params": {
+      "view": "wallpaper|train",
+      "args?": "{zoom?:1h|24h|7d,renderer?:2d|3d,train_service?:string,buildd_service?:string}"
+    },
+    "reply": "{view:wallpaper|train}",
+    "source": "apps/backdrop/views.mix:7"
+  },
+  "backdrop.view.cycle": {
+    "params": {
+      "dir": "next|prev"
+    },
+    "reply": "{view:wallpaper|train}",
+    "source": "apps/backdrop/views.mix:34"
   }
+},
+  contract_types: {
+  "Diagnostic": "{severity:Error|Warning,code:string,line:number,message:string}; libraries/scene/src/lib.rs:87",
+  "PortDescribe": "{path:string,type:string,mutable:bool,sensitive:bool,description:string,enum?:string[],default?:JSON,min?:number,max?:number}; libraries/scene/src/schema.rs:12",
+  "ResolvedScene": "{name:string,citizen:string,window:JSON,subscribe:JSON,nodes:map<string,Node>,templates:string[],model?:object,bindings?:map<string,string>}; libraries/scene/src/lib.rs:179",
+  "Node": "{family:string,ports:map<string,JSON>,line:number,is_template:bool}; libraries/scene/src/lib.rs:170",
+  "Source": "{broker_epoch:hex16,record:RecordRef,instance_id:hex16,pane_id:decimal-string|null,pane_generation:decimal-string|null}; libraries/mix-shell/src/session_state.rs:17; RecordRef from libraries/bus/src/native_session",
+  "View": "{snapshot:Snapshot,sampled_ms:decimal-string,transition_age_ms:decimal-string,cwd_age_ms:decimal-string}; libraries/mix-shell/src/session_state.rs:112; Snapshot fields at :95",
+  "Completion": "{outcome:string,status?:integer,value?:{type:string,version:1,bytes:decimal-string,truncated:bool,text:string},error?:string,duration_ms:decimal-string,cancellation:{requested:bool,source?:string,delivered:string}}; libraries/mix-shell/src/session_execute.rs:163",
+  "TaskReport": "{version:number,outcome:object,stdout:Stream,stderr:Stream,result:{kind:not_applicable|value|result_missing|result_torn|result_abandoned,data?:string},duration_ms:decimal-string}; Stream={bytes:decimal-string,truncated:bool,writer_survived:bool,text:string}; libraries/mix-shell/src/session_task.rs:373",
+  "EditorSnapshot": "{schema:scene-editor.snapshot.v1,state_token:string,selection:EditorSelection,model:object,inventory:object,templates:object,panels:object|array,host_problem:object|null,failure?:object|null,warnings?:array}; engines/viud/scripts/lib/editor_app.mix:39",
+  "EditorSelection": "{view?:gallery|installed|arrange,template?:string,scene?:string,page?:{edge:left|right|top|bottom,page:string}}; engines/viud/scripts/lib/editor_app.mix:6",
+  "SceneRecord": "all inventory fields including files/digests/problems; engines/viud/scripts/lib/scenes.mix:335",
+  "BackdropDocument": "{schema:1,default?:BackdropFill,outputs?:map<string,BackdropFill>}; apps/backdrop/document.mix:64",
+  "BackdropFill": "exactly one of colour:#RRGGBB, image:absolute-path, slideshow:{folder?:absolute-path,images?:absolute-path[],interval_s?:integer>=5,shuffle?:bool}; image/slideshow allow fallback:#RRGGBB and fit:fill|fit|centre|tile|stretch; apps/backdrop/document.mix:24"
 }
 }

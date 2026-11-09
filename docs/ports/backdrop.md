@@ -1,5 +1,9 @@
 # Backdrop port inventory
 
+Paths in the oracle inventory below refer to the named historical MixOS
+revision; they are not current MixViu source paths. Current code is under
+`apps/backdrop` and `engines/viud`.
+
 Oracle: MixOS `8779f3328`, `apps/backdrop/{src,crates/wallpaper}`, its README
 and the component manual (not included in this source tree). The latest acceptance record is at the end of
 this file; earlier checkpoints are retained as historical evidence.

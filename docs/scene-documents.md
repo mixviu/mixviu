@@ -32,6 +32,11 @@ They are children terminated with SIGKILL on invalidation. No declared
 (`engines/viud/scripts/lib/scenes_io.mix:81`,
 `engines/viud/scripts/lib/scenes_io.mix:89`.)
 
+Catalogue metadata additionally reads description (truncated to 200 characters),
+hidden, recommended, numeric order and string-list requires; it reports
+installed_as. Requires is display metadata. Other metadata keys are not a
+generic settings contract. (`engines/viud/scripts/lib/scenes.mix:1565`.)
+
 ## Document grammar
 
 Minimal document (the outer four-backtick fence here is documentation only):
@@ -76,7 +81,7 @@ against available cells. (`libraries/scene/src/lib.rs:608`,
 Window metadata has `kind: edge|dialog|toast` (header defaults to edge),
 `edge: right|left|top|bottom`, optional string title, numeric nonnegative
 `w`/`h`, and chrome. Dialog requires w/h in 240..2048 and forbids edge/panel;
-toast also forbids edge/panel. Window nodes and headers must agree.
+toast also forbids edge/panel. Window nodes and headers must agree on the authored kind/edge/title/w/h/chrome values (before defaults).
 Managed pages and edges must be static. The loader reserves dialog/toast for
 the editor and shipped system scenes, and reserves page `scene-editor`.
 (`libraries/scene/src/lib.rs:232`, `libraries/scene/src/lib.rs:249`,
@@ -137,7 +142,10 @@ string id and string-list cells (additional fields can be read through item).
 
 ## Pure bindings and model patches
 
-A string port whose trimmed source starts `=` is compiled as one expression.
+A string port beginning with `=` followed by whitespace is compiled as one
+expression; `=` alone is an empty expression error. `=foo` and a leading
+space before `=` are literals. `== text` escapes the literal `= text`.
+(`libraries/scene/src/bindings.rs:151`.)
 `children`, `row`, `widget` cannot bind. Only `$model` and template-only
 `$item` roots are allowed. There is no `$src`, `$instance`, sources declaration
 or structural `repeat`. The nineteen-family schema has no repeater.
@@ -188,6 +196,11 @@ Lists instantiate row templates with `$item`; legacy cells substitution runs
 after binding evaluation and never reinterprets bound results as substitution
 source. The host refuses nested lists and preflights templates before commit.
 (`engines/viu/src/templates.rs:38`, `engines/viu/src/templates.rs:102`.)
+
+Event ports name a handler on the document's citizen. Interaction bodies are
+`{scene,node,kind,value?,item?}`; kinds include click, context, change and
+submit. No bound handler means no event. (`engines/viu/src/view.rs:63`,
+`engines/viu/src/view.rs:520`.)
 
 ## Bounds and diagnostics
 
