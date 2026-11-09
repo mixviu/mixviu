@@ -66,7 +66,9 @@ fn cancel_matching(
                 .map(|grab| grab.handle.clone())
         })
         .flatten();
-    let Some(handle) = handle.filter(matches) else { return false };
+    let Some(handle) = handle.filter(matches) else {
+        return false;
+    };
     pointer.unset_grab_without_focus_restore(dispatch, SERIAL_COUNTER.next_serial(), time);
     dispatch.push_surface_event(SurfaceEvent::Interactive {
         handle,

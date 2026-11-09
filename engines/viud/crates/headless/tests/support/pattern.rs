@@ -76,7 +76,7 @@ pub struct Pattern {
     compositor: WlCompositor,
     shell: XdgWmBase,
     xdg: XdgSurface,
-    pub top: XdgToplevel,
+    _top: XdgToplevel,
 }
 
 impl Pattern {
@@ -149,7 +149,7 @@ impl Pattern {
             compositor,
             shell,
             xdg,
-            top,
+            _top: top,
         };
         client.commit(true);
         client

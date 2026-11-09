@@ -686,7 +686,9 @@ fn hiding_cancels_client_and_chrome_move_and_resize_grabs() {
             let serial = press_at(&mut h, &window, (300.0, 200.0), chrome);
             if chrome {
                 assert!(dispatcher::wayland::grab::interactive::start_chrome(
-                    &mut h.wire.state, &window, edges,
+                    &mut h.wire.state,
+                    &window,
+                    edges,
                 ));
             } else if edges == 0 {
                 top._move(h.client.seat(PRIMARY), serial);
@@ -703,7 +705,9 @@ fn hiding_cancels_client_and_chrome_move_and_resize_grabs() {
             assert!(geometry::finish_interactive(&mut h.wire.inner.comp, id));
             apply(&mut h, &window);
             assert!(dispatcher::wayland::grab::interactive::cancel_for(
-                &mut h.wire.state, &handle, 0,
+                &mut h.wire.state,
+                &handle,
+                0,
             ));
             h.roundtrip();
             let pointer = h.wire.state.seat.seat.get_pointer().unwrap();
