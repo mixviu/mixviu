@@ -284,6 +284,8 @@ pub struct Tagged {
 type Registry = HashMap<Id, (Weak<WlSurface>, Tagged)>;
 static SURFACES: Mutex<Option<Registry>> = Mutex::new(None);
 static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+/// Most live tagged surfaces kept; beyond it new tags draw undecoded.
+const SURFACES_MAX: usize = 16384;
 
 /// Record (or, with `None`, forget) a surface's image description, keyed by
 /// the render element id smithay gives that surface.
@@ -292,7 +294,12 @@ pub fn set_surface(surface: &WlSurface, description: Option<Description>) {
     let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut guard = SURFACES.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
+    // Dead surfaces go now, not only at the next render, so a client cannot
+    // grow this by tagging and destroying surfaces between frames; and it
+    // never exceeds a hard cap of live tagged surfaces.
+    map.retain(|_, (weak, _)| weak.upgrade().is_ok());
     match description {
+        Some(_) if map.len() >= SURFACES_MAX && !map.contains_key(&id) => {}
         Some(description) => {
             map.insert(
                 id,

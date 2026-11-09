@@ -92,8 +92,8 @@ pub fn compose(
         return None;
     }
     if !hdr && !describe::any_decoding() {
-        // Nothing to decode on SDR: free the intermediate.
-        pipe.hdr_pass = None;
+        // Nothing to decode on SDR: draw directly. The intermediate is kept, so
+        // tags coming and going cannot churn output-sized allocations.
         return None;
     }
     let color = if hdr {

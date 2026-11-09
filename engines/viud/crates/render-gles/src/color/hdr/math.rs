@@ -167,7 +167,12 @@ pub fn rgb_to_rgb(src: &Chromaticity, dst: &Chromaticity) -> Option<Mat3> {
     let m = mul(&from_xyz, &mul(&adapt, &to_xyz));
     // Client-supplied primaries reach here; nothing non-finite may go on to a
     // GL uniform.
-    m.iter().flatten().all(|v| v.is_finite()).then_some(m)
+    // Real gamut matrices have entries of order 1; anything near f32's range
+    // would overflow to inf when cast for the GL uniform.
+    m.iter()
+        .flatten()
+        .all(|v| v.is_finite() && v.abs() <= 1.0e6)
+        .then_some(m)
 }
 
 /// A row-major matrix as the column-major `[f32; 9]` GLSL's `mat3` takes.
@@ -296,6 +301,14 @@ mod tests {
             ..BT709
         };
         assert!(rgb_to_rgb(&bad, &BT709).is_none());
+        // Finite in f64 but far outside any real gamut: refused too.
+        let thin = Chromaticity {
+            r: (0.3127, 0.3290),
+            g: (0.3127 + 1.0e-12, 0.3290),
+            b: (0.3127, 0.3290 + 1.0e-12),
+            w: D65,
+        };
+        assert!(rgb_to_rgb(&thin, &BT709).is_none());
     }
 
     #[test]
