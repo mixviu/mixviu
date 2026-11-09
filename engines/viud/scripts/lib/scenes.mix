@@ -52,7 +52,7 @@ fn prepare_reload($s)
   end
   if is_dir($s.root) then
     for each $n in ls($s.root)
-      if valid_name($n) and is_dir($s.root .. "/" .. $n) and not contains($names, $n) then push($names, $n) end
+      if $n != "lib" and valid_name($n) and is_dir($s.root .. "/" .. $n) and not contains($names, $n) then push($names, $n) end
     end
   end
   for each $n in $names
@@ -989,7 +989,19 @@ fn legacy_handover($s)
 end
 
 fn filesystem($s, $batch)
-  if $batch.overflow then return rescan($s, false) end
+  if $batch.overflow then
+    $s = reload_group($s, "lib", nil)
+    if $s.rc != 0 then return $s end
+    return rescan($s, false)
+  end
+  for each $change in $batch.changes
+    for each $path in [$change.path, $change.old_path]
+      if type($path) != "string" then continue end
+      for each $lib in library_roots($s)
+        if $path == $lib or starts_with($path, $lib .. "/") then return reload_group($s, "lib", nil) end
+      end
+    end
+  end
   $names = []
   $editor = false
   for each $change in $batch.changes
@@ -1002,7 +1014,7 @@ fn filesystem($s, $batch)
         $editor = true
         continue
       end
-      if valid_name($parts[0]) and (len($parts) == 1 or (len($parts) == 2 and contains(["scene.mix", "behaviour.mix", "template.conf.mix"], $parts[1]))) then
+      if $parts[0] != "lib" and valid_name($parts[0]) and (len($parts) == 1 or (len($parts) == 2 and contains(["scene.mix", "behaviour.mix", "template.conf.mix"], $parts[1]))) then
         if not contains($names, $parts[0]) then push($names, $parts[0]) end
       end
     end
@@ -1021,6 +1033,62 @@ fn filesystem($s, $batch)
       $s.scenes.editor.user_dirty = true
     end
   end
+  return $s
+end
+
+-- require() accepts computed paths. Until imports are declarative, all
+-- behaviour scenes are a conservative dependency set, including transitive
+-- and conditional imports. Never execute a helper during preflight.
+fn library_roots($s)
+  return unique([$s.templates .. "/lib", $s.root .. "/lib", env("SCENES_LIB", $s.templates .. "/lib")])
+end
+
+fn check_library($s, $dir)
+  if not is_dir($dir) then return end
+  for each $file in ls($dir)
+    $path = $dir .. "/" .. $file
+    if is_dir($path) then
+      check_library($s, $path)
+    elif ends_with($file, ".mix") then
+      bounded_read($path, 262144)
+      $s.io.check($path, {lint:"report"})
+    end
+  end
+end
+
+fn reload_group($s, $scope, $name)
+  $names = []
+  for each $n in sort(keys($s.scenes))
+    $e = $s.scenes[$n]
+    if $e.enabled and ($scope == "all" or ($scope == "scene" and $n == $name) or ($scope == "lib" and regular(scene_dir($s, $n) .. "/behaviour.mix"))) then push($names, $n) end
+  end
+  $diagnostics = []
+  try
+    if $scope != "scene" then
+      for each $dir in library_roots($s) check_library($s, $dir) end
+    end
+    for each $n in $names
+      $dir = scene_dir($s, $n)
+      $c = candidate($s, $n, $dir)
+      if $c.behaviour_digest != "" then $s.io.check($dir .. "/behaviour.mix", {lint:check_mode($s, $n, $dir)}) end
+      $s.io.rpc($s.host, "shell.scene.validate", with_model($c.source, $s.scenes[$n].model ?? $c.model))
+    end
+  catch $message, $error
+    $d = {error_code:$error.code, message:$message, context:$error.details}
+    push($diagnostics, $d)
+    for each $n in $names $s.scenes[$n].load_diagnostic = $d end
+    $s.rc = 10
+    $s.response = {accepted:false, diagnostics:$diagnostics}
+    return $s
+  end
+  $revisions = {}
+  for each $n in $names
+    $s = reconcile_safe($s, $n, true)
+    if failure($s.scenes[$n]) != nil then push($diagnostics, failure($s.scenes[$n])) end
+    $revisions[$n] = $s.scenes[$n].revision
+  end
+  $s.rc = len($diagnostics) == 0 ? 0 : 10
+  $s.response = {accepted:$s.rc == 0, revisions:$revisions, diagnostics:$diagnostics}
   return $s
 end
 
@@ -2086,6 +2154,11 @@ fn request($s, $command, $args)
   $s.response = {}
   try
     if type($args) != "map" then fail("SCENES_ARGUMENT", "arguments must be a map", {}) end
+    if $command == "quoin.reload" then
+      if not contains(["scene", "lib", "all"], $args.scope) then fail("SCENES_ARGUMENT", "scope must be scene, lib or all", {}) end
+      if $args.scope == "scene" then known($s, $args.name) end
+      return reload_group($s, $args.scope, $args.name)
+    end
     if $command == "list" then
       $s.response = inventory($s)
       return $s

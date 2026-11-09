@@ -99,7 +99,7 @@ end
 
 on fs.changed
   if len(keys($event.headers)) != 0 then return end
-  if $event.args.watch == $WATCH or $event.args.watch == $PARENT_WATCH then
+  if contains([$WATCH, $PARENT_WATCH, $LIB_WATCH, $EXTRA_LIB_WATCH], $event.args.watch) then
     try
       $state = $loader.filesystem($state, $event.args)
     catch $message, $error
@@ -298,6 +298,12 @@ on scenes.reload desc "Retry files and behaviour {name}; preserve accepted runti
   $state = $loader.changed($state)
 end
 
+on quoin.reload desc "Reload {scope:scene|lib|all,name?}; preflight the group before applying"
+  $state = $loader.request($state, "quoin.reload", $event.args ?? {})
+  reply($state.rc, json_encode($state.response))
+  $state = $loader.changed($state)
+end
+
 on scenes.reset desc "Restore recorded template defaults {name}; retain recovery copy"
   $state = $loader.request($state, "reset", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
@@ -393,6 +399,11 @@ end
 -- reconcile below is the only boot work the candidate defers to the commit.
 $PARENT_WATCH = fs_watch(dirname($ROOT), {recursive:false, events:["created", "modified", "deleted", "moved"]})
 $WATCH = fs_watch($ROOT, {recursive:true, events:["created", "modified", "deleted", "moved"]})
+$LIB_WATCH = fs_watch($TEMPLATES, {recursive:true, events:["created", "modified", "deleted", "moved"]})
+$EXTRA_LIB_WATCH = nil
+if is_dir(env("SCENES_LIB")) and env("SCENES_LIB") != $TEMPLATES .. "/lib" then
+  $EXTRA_LIB_WATCH = fs_watch(dirname(env("SCENES_LIB")), {recursive:true, events:["created", "modified", "deleted", "moved"]})
+end
 subscribe("noded.props.changed")
 subscribe($HOST .. ".panel.changed")
 subscribe($HOST .. ".scene.changed")

@@ -50,6 +50,7 @@ struct State {
     output_size: BTreeMap<String, (f32, f32)>,
     preferences: crate::preferences::Preferences,
     selected: BTreeMap<Key, String>,
+    errors: BTreeMap<String, String>,
 }
 impl State {
     fn new() -> Self {
@@ -71,6 +72,7 @@ impl State {
             tips: BTreeMap::new(),
             output_size: BTreeMap::new(),
             selected: BTreeMap::new(),
+            errors: BTreeMap::new(),
             preferences: crate::preferences::Preferences::prepare(&settings::view::Panels::of(
                 &Default::default(),
             ))
@@ -301,6 +303,11 @@ impl LayerProgram for Program {
         }
         let mut messages = Vec::new();
         entry.1.show(ui, &mut messages);
+        if let Some(error) = self.state.lock().unwrap().errors.get(&name) {
+            if crate::dev_loop::error_strip(ui, error) {
+                let _ = self.send.send(Outgoing::Fire("scenes".into(), "scenes.editor.open".into(), json!({"scene":name})));
+            }
+        }
         for message in messages {
             if let Some((service, command, body)) = view::event_of(&message) {
                 let _ = self
@@ -665,6 +672,11 @@ async fn worker(
         .await
         .map_err(|e| e.to_string())?;
     let mut incoming = client.incoming().ok_or("Bus incoming already taken")?;
+    let scenes = std::env::var("SCENES_SERVICE").unwrap_or_else(|_| "scenes".into());
+    client.subscribe_topic(&format!("{scenes}.changed")).await.map_err(|e| e.to_string())?;
+    if let Ok(body) = client.call(&scenes, "scenes.list", json!({})).await {
+        state.lock().unwrap().errors = crate::dev_loop::errors(&body);
+    }
     if let Ok(outputs) = client
         .call(&comp, "comp.props.get", json!({"path":"outputs"}))
         .await
@@ -768,6 +780,13 @@ async fn worker(
             command=incoming.recv()=>{
                 let Some(command)=command else {break;};
                 if command.is_topic_delivery() {
+                    if command.header("broker_service")==Some(scenes.as_str()) && command.header("broker_origin")==Some("local") && command.topic()==Some(format!("{scenes}.changed").as_str()) {
+                        if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
+                            let mut shared=state.lock().unwrap();
+                            shared.errors=crate::dev_loop::errors(&body);
+                            shared.wake();
+                        }
+                    }
                     if command.header("broker_service")==Some(comp.as_str()) && command.header("broker_origin")==Some("local") {
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {topic(&state,&comp,command.topic().unwrap_or(""),&body);}
                     }

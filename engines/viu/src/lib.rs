@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 pub mod appearance;
 pub mod command;
+pub mod dev_loop;
+pub mod preview;
 pub mod freedesktop;
 pub mod icons;
 pub mod images;
