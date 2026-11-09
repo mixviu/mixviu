@@ -746,7 +746,6 @@ where
     // because both suppressing modes existed to escape the full-slot backstop,
     // and with that gone a bundle asking for them gets a worse result than the
     // shared arm already gives it.
-    if !visual_of(window).visible { return (Vec::new(), Drawn::default()); }
     // viud: no shader bundle, so the letterbox policy is always the bars arm.
     let bars: Vec<Rectangle<i32, Physical>> = crop_slot.subtract_rect(content);
     // Per-window bank (see `scene.identity`), separate from the decoration crate's
