@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # maildoc
 
-Inert mail documents in ABP framing. See [the manual](../../docs/maildoc/README.md).
+Inert mail documents in ABP framing. See the manual (manual not included in this source tree).
 
 `write(&MailDocument) -> Result<String, Refusal>` refuses non-canonical input.
 `validate(&MailDocument) -> Result<(), Refusal>` exposes the same checks for

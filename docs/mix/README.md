@@ -78,11 +78,11 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 ## Where Mix lives
 
 Mix is the MixViu shell and scripting language. The interpreter lives in the
-`mix` library at `libs/mix`; `cli/mix-shell` owns the interactive shell and
+`mix` library at `libraries/mix`; `libraries/mix-shell` owns the interactive shell and
 native ABP citizen runtime, and `engines/mix` builds the `mix` binary.
 The source versions are declared in
-[`libs/mix/Cargo.toml`](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml)
-and [`cli/mix-shell/Cargo.toml`](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml).
+[`libraries/mix/Cargo.toml`](https://github.com/mixviu/mixviu/blob/main/libraries/mix/Cargo.toml)
+and [`libraries/mix-shell/Cargo.toml`](https://github.com/mixviu/mixviu/blob/main/libraries/mix-shell/Cargo.toml).
 Use `mix --version` to identify the installed binary, which can differ from
 the current source.
 
@@ -148,7 +148,7 @@ installed binary when a feature's availability matters.
 ## The library
 
 The `mix` component is the language library
-([`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix)): lexer,
+([`libraries/mix`](https://github.com/mixviu/mixviu/tree/main/libraries/mix)): lexer,
 parser, evaluator, builtin contracts and embedded handler interfaces.
 Features select the optional data, networking and cryptographic
 facilities; the interpreter's core stays independent of the Bus and
@@ -160,7 +160,7 @@ and the `mix` binary is built by [system](https://mixos.dev/system/).
 ## Changes
 
 - **[changelog](changelog.md)**: the Mix library's change history, generated from
-  `libs/mix/CHANGELOG.md`.
+  `libraries/mix/CHANGELOG.md`.
 
 ## See also
 
