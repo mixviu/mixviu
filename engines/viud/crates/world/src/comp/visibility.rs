@@ -31,7 +31,10 @@ thread_local! {
 /// when CompState moved since the last stamp. Returns whether any stamp
 /// changed.
 pub fn sync_hidden(lp: &mut Loop) -> bool {
-    let revision = (lp.inner.comp.revision(), smithay::desktop::space::membership_revision());
+    let revision = (
+        lp.inner.comp.revision(),
+        smithay::desktop::space::membership_revision(),
+    );
     if STAMPED.with(Cell::get) == Some(revision) {
         return false;
     }

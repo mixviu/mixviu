@@ -378,6 +378,12 @@ impl TestClient {
         bytes
     }
 
+    /// Fill a client shm buffer before committing it.
+    pub fn write_buffer(&self, index: usize, bytes: &[u8]) {
+        use std::os::unix::fs::FileExt;
+        self.files[index].write_all_at(bytes, 0).expect("write shm buffer");
+    }
+
     /// `zwlr_screencopy_manager_v1.capture_output` (or `_region` with `region`
     /// as `(x, y, width, height)` in output-local logical coordinates) of the
     /// first `wl_output`. Its events land in [`ClientState::frames`] under the

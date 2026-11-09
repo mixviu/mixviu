@@ -990,7 +990,10 @@ where
             .map(crate::window::draw::element::Element::Cropped)
             .collect()
     } else {
-        elements.into_iter().map(crate::window::draw::element::Element::Plain).collect()
+        elements
+            .into_iter()
+            .map(crate::window::draw::element::Element::Plain)
+            .collect()
     };
     (elements, crop)
 }
