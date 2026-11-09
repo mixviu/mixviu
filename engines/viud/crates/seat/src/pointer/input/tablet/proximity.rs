@@ -6,8 +6,6 @@
 
 use crate::pointer::input::tablet::{client, coords, cursor, hand_active};
 use dispatcher::state::Dispatch;
-use dispatcher::state::RedrawReason;
-use dispatcher::wire::tablet::Stroke;
 use smithay::backend::input::{
     Event, InputBackend, ProximityState, TabletToolEvent, TabletToolProximityEvent,
 };
@@ -44,15 +42,7 @@ pub fn proximity<I: InputBackend>(event: &I::TabletToolProximityEvent, _loop: &m
         }
         ProximityState::Out => {
             _loop.state.tablet.tool_proximity_out(&tool, time);
-            _loop.state.tablet.stroke = Stroke::None;
-            _loop.state.tablet.last_pen_screen = None;
-            // Revert a client tool cursor so a stale cursor surface isn't left behind
-            // once the pen lifts out of range.
-            if _loop.state.tablet.take_tool_cursor() {
-                _loop.state.seat.pointer_status =
-                    smithay::input::pointer::CursorImageStatus::default_named();
-                _loop.state.schedule_redraw(RedrawReason::Input);
-            }
+            super::revoke::flush(_loop, time);
         }
     }
 }

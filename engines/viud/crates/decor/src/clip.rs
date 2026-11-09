@@ -183,6 +183,11 @@ impl<E> Clipped<E> {
     /// opaque regions stay in the inner element's space, where the wrapping
     /// rescale and relocate map them.
     pub fn rescaled(mut self, scale: f64, offset: Point<i32, Physical>) -> Self {
+        self.set_rescale(scale, offset);
+        self
+    }
+
+    pub fn set_rescale(&mut self, scale: f64, offset: Point<i32, Physical>) {
         let r = self.clip.rect;
         let x0 = (r.loc.x as f64 * scale).round() as i32 + offset.x;
         let y0 = (r.loc.y as f64 * scale).round() as i32 + offset.y;
@@ -192,7 +197,6 @@ impl<E> Clipped<E> {
             rect: Rectangle::new((x0, y0).into(), ((x1 - x0).max(0), (y1 - y0).max(0)).into()),
             radius: (self.clip.radius as f64 * scale) as f32,
         };
-        self
     }
 }
 
