@@ -6,7 +6,7 @@
 //! the surface's output scale. The lookup follows the XDG environment of the
 //! compositor process.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use crate::freedesktop::{Lookup, Resolver};
@@ -19,6 +19,11 @@ pub(crate) fn with_resolver<T>(f: impl FnOnce(&Resolver, u64) -> T) -> T {
     static STATE: OnceLock<Mutex<(Lookup, Resolver, u64, u64)>> = OnceLock::new();
     let lookup = Lookup::from_xdg();
     let mut state = STATE.get_or_init(|| Mutex::new((lookup.clone(), Resolver::new(lookup.clone()), 0, 0))).lock().unwrap();
+    refresh(&mut state, lookup);
+    f(&state.1, state.3)
+}
+
+fn refresh(state: &mut (Lookup, Resolver, u64, u64), lookup: Lookup) {
     if state.0 != lookup {
         state.1 = Resolver::new(lookup.clone());
         state.0 = lookup;
@@ -29,20 +34,28 @@ pub(crate) fn with_resolver<T>(f: impl FnOnce(&Resolver, u64) -> T) -> T {
         state.2 = generation;
         state.3 += 1;
     }
-    f(&state.1, state.3)
-}
-
-pub(crate) fn resolve(source: &str, size: u32, app: Option<&str>) -> Option<PathBuf> {
-    if source.starts_with("mix:") {
-        let path = paths::resolve(source).ok()?;
-        return path.is_file().then_some(path);
-    }
-    with_resolver(|resolver, _| resolver.resolve_in_generation(source, size, 1, app))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn theme_changes_invalidate_misses_and_prepared_generation() {
+        let root = tempfile::tempdir().unwrap();
+        let first = Lookup::in_data_dirs("First", [root.path().into()]);
+        let mut state = (first.clone(), Resolver::new(first.clone()), 0, 0);
+        refresh(&mut state, first);
+        assert!(state.1.resolve("new-icon", 20, None).is_none());
+        let generation = state.3;
+        let path = root.path().join("icons/Second/32x32/apps/new-icon.svg");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "svg").unwrap();
+        refresh(&mut state, Lookup::in_data_dirs("Second", [root.path().into()]));
+        assert!(state.3 > generation);
+        assert_eq!(state.1.resolve("new-icon", 20, None), Some(path));
+    }
 
     #[test]
     fn resolver_follows_the_process_environment() {
