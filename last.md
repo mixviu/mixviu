@@ -1,6 +1,84 @@
 # PR #24 settlement — 2026-11-10
 
-Merged current origin/main. Only conflict: last.md; preserved both receipts below. Cargo.lock starts from main and will be re-resolved on CBC, retaining its SQLite security versions. Bundle launcher and desktop layout checks pending. No desktop access or install.
+PR: https://github.com/mixviu/mixviu/pull/24
+Branch: feat/term-mix. Tested source head: `0743ce4d7214cd3612f380338ee28c1ce74df1aa`.
+The final receipt commit follows this source revision; the PR exposes its head SHA.
+
+Merged `origin/main` at `d17f7caab647954da3d2b05a7aa552e4e02fc461` without rebasing.
+Only conflict: `last.md`; retained both the Term and main receipts below.
+Cargo.toml and source merged automatically, preserving both sides. Per brief,
+replaced Cargo.lock with main then regenerated it on CBC; rusqlite 0.41.1 and
+libsqlite3-sys 0.39.1 remain. No Rust Term edits in this settlement.
+
+Bundle fix: `tools/apps_bundle.mix` already packed apps/term runtime files,
+but omitted the installed launcher and desktop entry. It now packs executable
+`bin/term-mix` (0755), `share/applications/mixviu.term-mix.desktop` (0644),
+and the existing runtime under `share/mixviu/apps/term/`. The launcher now
+selects that actual bundle path. The shared library remains at
+`share/mixviu/libraries/viu/mix/`, preserving relative imports. Documentation
+and PR install paths follow the same layout. No new environment variables.
+
+CBC lock/fmt job `20261110-065011-46868179-a1`: BUILD_RC=0; lock step rc 0,
+fmt step rc 0 with empty formatting patch. Generated lock patch applied locally.
+Saved log read in full: `20261110-065021-cbc2-67b5d010bf56-20261110-065011-46868179-a1-3b96b124.log`.
+
+CBC job `20261110-065218-ac87e1de-a1`: BUILD_RC=0; tools/ci.mix all
+rc 0 and cutover_gate.mix bundle rc 0 at the tested source. Saved log read
+in full (1,113,444 bytes), SHA256
+`08bf156955f05e654ae0f3a93097c08684c49e8e7fd22e014125da856e5f90e2`.
+Log: `20261110-071956-cbc2-0743ce4d7214-20261110-065218-ac87e1de-a1-b8070d82.log`.
+610 Rust result groups: 10,894 passed, 0 failed, 106 ignored. All 13 Term
+Mix suites ran; env registry has 198 names and 0 problems; lint has 0
+regressions. Existing warnings and explicit ignored cases remain.
+
+CBC exact-source apps.tar: 46,796,800 bytes; SHA256
+`1e50eb6d9805030ad1748f2a0b28dc49861dc3d378164e905ff716c39bdb2f57`.
+The listing below is from this CBC archive; archived launcher and desktop
+contents were printed and checked too.
+
+Local native Mix bundle verification at the tested source returned rc 0.
+apps.tar: 46,796,800 bytes; SHA256
+`50faa103b637499ee3c8d33849448b725103b9eb02646c663c27003bc0a94f9a`.
+Manifest source matches the tested source and prefix is `/opt/mix`. Archived
+launcher and desktop contents inspected; test and Rust files excluded.
+No local Rust build, /opt writes, desktop access, deployment or PR merge.
+Opus owns the final review, merge and gold installation on desk4.
+
+Actual Term apps.tar entries (relative to /opt/mix; runtime files 0644):
+
+```text
+-rwxr-xr-x 0/0             414 2026-11-10 06:52 bin/term-mix
+-rw-r--r-- 0/0             214 2026-11-10 06:52 share/applications/mixviu.term-mix.desktop
+drwxr-xr-x 0/0               0 2026-11-10 06:52 share/mixviu/apps/term/
+-rw-r--r-- 0/0           13197 2026-11-10 06:52 share/mixviu/apps/term/actions.json
+-rw-r--r-- 0/0            9183 2026-11-10 06:52 share/mixviu/apps/term/actions.mix
+-rw-r--r-- 0/0           19172 2026-11-10 06:52 share/mixviu/apps/term/app.mix
+-rw-r--r-- 0/0           45586 2026-11-10 06:52 share/mixviu/apps/term/bus-contract.mix
+-rw-r--r-- 0/0            8718 2026-11-10 06:52 share/mixviu/apps/term/bus.mix
+-rw-r--r-- 0/0            1473 2026-11-10 06:52 share/mixviu/apps/term/clipboard.mix
+-rw-r--r-- 0/0           17221 2026-11-10 06:52 share/mixviu/apps/term/contract.json
+-rw-r--r-- 0/0            2542 2026-11-10 06:52 share/mixviu/apps/term/controls.mix
+-rw-r--r-- 0/0            3458 2026-11-10 06:52 share/mixviu/apps/term/core.mix
+-rw-r--r-- 0/0             999 2026-11-10 06:52 share/mixviu/apps/term/discovery.mix
+-rw-r--r-- 0/0             711 2026-11-10 06:52 share/mixviu/apps/term/event-job.mix
+-rw-r--r-- 0/0            4427 2026-11-10 06:52 share/mixviu/apps/term/find.mix
+-rw-r--r-- 0/0             477 2026-11-10 06:52 share/mixviu/apps/term/font-job.mix
+-rw-r--r-- 0/0            3611 2026-11-10 06:52 share/mixviu/apps/term/font-persistence.mix
+-rw-r--r-- 0/0            1499 2026-11-10 06:52 share/mixviu/apps/term/help.txt
+-rw-r--r-- 0/0            2008 2026-11-10 06:52 share/mixviu/apps/term/lifecycle.mix
+-rw-r--r-- 0/0           11035 2026-11-10 06:52 share/mixviu/apps/term/menus.json
+-rw-r--r-- 0/0             214 2026-11-10 06:52 share/mixviu/apps/term/mixviu.term-mix.desktop
+-rw-r--r-- 0/0           11628 2026-11-10 06:52 share/mixviu/apps/term/model.mix
+-rw-r--r-- 0/0            1627 2026-11-10 06:52 share/mixviu/apps/term/notifications.mix
+-rw-r--r-- 0/0             660 2026-11-10 06:52 share/mixviu/apps/term/notify-job.mix
+-rw-r--r-- 0/0            2865 2026-11-10 06:52 share/mixviu/apps/term/protected-layout.mix
+-rw-r--r-- 0/0            1534 2026-11-10 06:52 share/mixviu/apps/term/scene.mix
+-rw-r--r-- 0/0             431 2026-11-10 06:52 share/mixviu/apps/term/show-job.mix
+-rw-r--r-- 0/0            1375 2026-11-10 06:52 share/mixviu/apps/term/startup-policy.mix
+-rw-r--r-- 0/0            1245 2026-11-10 06:52 share/mixviu/apps/term/startup.mix
+-rw-r--r-- 0/0             414 2026-11-10 06:52 share/mixviu/apps/term/term-mix.mix
+-rw-r--r-- 0/0            8334 2026-11-10 06:52 share/mixviu/apps/term/wire.mix
+```
 
 ---
 
