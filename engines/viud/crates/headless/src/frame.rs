@@ -182,7 +182,17 @@ fn compose(
     }
     let size = ctx.output.current_mode().expect("headless mode").size;
     let prepared = frames::scene::prepare(state, renderer, size);
-    let scene = frames::scene::scene(state, renderer, size, prepared);
+    let mut scene = frames::scene::scene(state, renderer, size, prepared);
+    let pattern = std::env::var("MIX_VIUD_LAB_CAPTURE_PATTERN").as_deref() == Ok("1");
+    let clear = if pattern {
+        scene.elements.clear();
+        if ctx.output.name() == "headless-0" { [0.6, 0.0, 0.0, 1.0] } else { [0.0, 0.6, 0.0, 1.0] }
+    } else { [0.1, 0.1, 0.1, 1.0] };
+    if capture {
+        let layers = frames::scene::layershell::layershell(state, size, state.inner.render_output.clone().as_deref());
+        info!("P3_CAPTURE output={} render={:?} layers={:?}", ctx.output.name(), state.inner.render_output,
+            layers.iter().map(|(_, n)| (n.surface.id().protocol_id(), n.location)).collect::<Vec<_>>());
+    }
     *visible = scene.visible_window;
     // Track content changes independently of the alternating targets. This
     // age-1 query is only a scene diff; it never assumes preserved pixels in
@@ -224,7 +234,7 @@ fn compose(
         let mut target = renderer.bind(&mut ctx.targets[ctx.next])?;
         // No buffer-age assumptions: each target is repainted completely.
         OutputDamageTracker::from_output(&ctx.output)
-            .render_output(renderer, &mut target, 0, &elements, [0.1, 0.1, 0.1, 1.0])?
+            .render_output(renderer, &mut target, 0, &elements, clear)?
             .sync
             .wait()?;
     }
@@ -253,7 +263,7 @@ fn compose(
                     &mut target,
                     0,
                     &scene.elements,
-                    [0.1, 0.1, 0.1, 1.0],
+                    clear,
                 )?
                 .sync
                 .wait()?;
