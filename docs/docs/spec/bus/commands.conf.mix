@@ -702,8 +702,8 @@
     {name:"shell.scene.watch", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
     {name:"shell.scene.layout", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
     {name:"shell.scenes.list", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
-    {name:"shell.dialog.show", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
-    {name:"shell.dialog.hide", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.dialog.show", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.dialog.hide", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
     {name:"shell.toast.show", owner:"viu", version:"0.1.0", status:"draft", class:"intent", schema:"none"},
     {name:"shell.toast.hide", owner:"viu", version:"0.1.0", status:"draft", class:"intent", schema:"none"},
     {name:"shell.ping", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
@@ -712,7 +712,7 @@
     {name:"shell.panel.state", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
     {name:"shell.panel.mode", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
     {name:"shell.panel.page.set", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
-    {name:"shell.panel.order", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.panel.order", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
     {name:"shell.panel.resize", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
     {name:"shell.panel.show", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
     {name:"shell.panel.hide", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
@@ -725,9 +725,9 @@
     {name:"shell.corner.toggle", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
     {name:"shell.corner.pin", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
     {name:"shell.corner.unpin", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
-    {name:"shell.corner.menu.open", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
-    {name:"shell.corner.menu.choose", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
-    {name:"shell.corner.menu.close", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"shell.corner.menu.open", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.corner.menu.choose", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
+    {name:"shell.corner.menu.close", owner:"viu", version:"0.2.0", status:"draft", class:"intent", schema:"none"},
     {name:"host.info", owner:"hostd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"net.state", owner:"hostd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"hostd.status", owner:"hostd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
@@ -1378,6 +1378,11 @@
     },
     "reply": "{view:wallpaper|train}",
     "source": "apps/backdrop/views.mix:34"
+  },
+  "backdrop.view.list": {
+    "params": {},
+    "reply": "{views:[wallpaper,train],selected:wallpaper|train}; non-empty args refused rc10 {error_code:ARGUMENT,message:string}",
+    "source": "apps/backdrop/runtime.mix:183"
   }
 },
   contract_types: {

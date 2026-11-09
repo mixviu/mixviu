@@ -63,7 +63,11 @@ needs a string `widget`; every other key is a port. `@` is reserved for
 generated instance IDs. (`libraries/scene/src/envelope.rs:28`,
 `libraries/scene/src/lib.rs:395`.)
 
-Scene names follow `[a-z][a-z0-9-]{1,30}`. The core envelope replaces a
+Scene names follow `[a-z][a-z0-9-]{1,30}`. A scene that ships
+`behaviour.mix` is limited to 25 characters, because its citizen
+`scene-<name>` must fit noded's 31-character service names; a longer name with
+a behaviour is refused at install with `SCENES_BUS_NAME`
+(`engines/viud/scripts/lib/scenes.mix:17`, `engines/viud/scripts/lib/scenes.mix:577`). The core envelope replaces a
 duplicate header with its last value, whereas the loader refuses duplicates;
 author each header once. (`libraries/scene/src/lib.rs:955`,
 `libraries/scene/src/envelope.rs:73`,
@@ -86,12 +90,16 @@ against available cells. (`libraries/scene/src/lib.rs:608`,
 
 Window metadata has `kind: edge|dialog|toast` (header defaults to edge),
 `edge: right|left|top|bottom`, optional string title, numeric nonnegative
-`w`/`h`, and chrome. Dialog requires w/h in 240..2048 and forbids edge/panel;
+`w`/`h`, and chrome. Edge windows also take an optional static string
+`panel`, the page id the scene mounts on (default `scene-<name>`); it is a
+header key handled by the core and the loader, not a `window` node port.
+Dialog requires w/h in 240..2048 and forbids edge/panel;
 toast also forbids edge/panel. Window nodes and headers must agree on the authored kind/edge/title/w/h/chrome values (before defaults).
 Managed pages and edges must be static. The loader reserves dialog/toast for
 the editor and shipped system scenes, and reserves page `scene-editor`.
 (`libraries/scene/src/lib.rs:232`, `libraries/scene/src/lib.rs:249`,
-`libraries/scene/src/lib.rs:750`, `engines/viud/scripts/lib/scenes.mix:551`.)
+`libraries/scene/src/lib.rs:750`, `libraries/scene/src/lib.rs:300`,
+`engines/viud/scripts/lib/scenes.mix:551`, `engines/viud/scripts/lib/scenes.mix:556`.)
 
 ## Widget ports
 
@@ -111,7 +119,7 @@ widgets today. The ordinary app renderer has a separate implementation.
 
 | Family | Ports | Evidence |
 |---|---|---|
-| window | kind:s! (edge/dialog/toast), edge:s=right, title:s?, w:n?, h:n?, chrome:b=true | `libraries/scene/src/schema.rs:94` |
+| window | kind:s! (edge/dialog/toast), edge:s=right, title:s?, w:n?, h:n?, chrome:b=true; header-only `panel:s?` on edge windows (see above) | `libraries/scene/src/schema.rs:94`, `libraries/scene/src/lib.rs:300` |
 | column | children:l!, gap:n=0, padding:n=0, fill:b=false, align:s=stretch, height:n?, radius:n?, background:s?, scroll:b=false | `libraries/scene/src/schema.rs:109` |
 | row | children:l!, wrap:b=false, gap:n=0, padding:n=0, fill:b=false, align:s=start, height:n?, radius:n?, background:s?, hover:s?, on_click:s?, on_context:s? | `libraries/scene/src/schema.rs:158` |
 | section | children:l!, titles:l!, frame:s=plain (plain/dock), on_change:s?, actions:l?, on_action:s?, focused:b? | `libraries/scene/src/schema.rs:122` |

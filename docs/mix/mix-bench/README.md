@@ -28,5 +28,5 @@ These are correctness tests, not a replacement performance score. Check
 the current manifests and test sources when selecting a workload.
 
 See the [language library](../lib/README.md),
-[shell library](../mix-shell/README.md) and
+[shell library](../../../libraries/mix-shell/README.md) and
 system executable (manual not included in this source tree).
