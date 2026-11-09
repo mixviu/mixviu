@@ -1,9 +1,9 @@
 # Quoin P0 — 2026-11-09
 
 PR: https://github.com/mixviu/mixviu/pull/36 (`docs/quoin-p0` -> `main`).
-Implementation head before this receipt: `c9f11a5ab3bcfa8f9269553e00bf924b6bf9c9c9`.
+Head before the final receipt commit: `741001b802781bce46e02e3246fff91ab00b5b49`.
 Rust rename-test source: `001c2a0b1907` (later changes are documentation and
-the matching CI baseline path key). The receipt commit is a descendant of
+the matching CI baseline path key and rustfmt line wrap, without semantic Rust changes). The receipt commit is a descendant of
 those heads; the PR exposes its current head SHA.
 
 Spec outline (`docs/scene-documents.md`): directory/catalogue/metadata and
@@ -46,7 +46,8 @@ Code bugs found, deliberately not fixed:
 - Host props.get returns a panels array; loader popup paths require a map.
 - Advertised dialog/menu/panel.order operations return NOT_IMPLEMENTED;
   scene.layout returns SCENE_NOT_RENDERED.
-- Family-less scene.describe enumerates ten families rather than nineteen.
+- Family-less scene.describe enumerates ten families rather than nineteen;
+  shell furniture layout also skips nine families accepted by the grammar.
 - Binding coercion rejects length ports accepted by the literal schema.
 - port-max is emitted but missing from ALL_CODES.
 - Duplicate envelope headers are overwritten by the core but rejected by
@@ -64,10 +65,16 @@ Validation:
   historical oracle paths, installed destinations and external source links.
 - All scene-reference path:line citations checked for file existence and line
   bounds. git diff --check PASS.
-- CBC rename tests: running on cbc2; result to be recorded after completion.
+- CBC rename tests PASS: BUILD_RC=0, job `20261109-152512-58ecf1c3-a1`,
+  source `001c2a0b1907`, cargo test -p viu -p lib-viu --lib --tests.
+  371 passed, zero failed, 6 existing environment-dependent tests ignored.
+  Full 907-line saved log read, including existing dependency warnings.
+  Final CI fmt diff (longer include_str path) applied exactly.
+- 124 scene-reference citations checked for path/line bounds.
+- Observed PR security checks are green; the task's #21 caveat is retained
+  as context rather than reported as an observed failure.
 
-No desk4/VT interaction, production deployment or /opt writes. Security is
-expected red until #21 lands. Author: Codex <codex@openai.com>.
+No desk4/VT interaction, production deployment or /opt writes. Author: Codex <codex@openai.com>.
 
 ---
 

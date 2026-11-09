@@ -101,6 +101,14 @@ are nonnegative unless noted; `row_height` is strictly positive. These are
 schema ports, including families used by ordinary app scenes. All nineteen
 families are selected at `libraries/scene/src/schema.rs:279`.
 
+The shell furniture renderer currently builds row, column, list, text, button,
+field, toggle, image and spacer. Window is metadata and draws nothing; other
+families fall through without an element. Thus section/content/panes/sides/
+control/grid/dock/band/split are grammar entries, not working shell-host
+widgets today. The ordinary app renderer has a separate implementation.
+(`engines/viu/src/runtime.rs:5`, `engines/viu/src/view/flex.rs:515`,
+`libraries/viu/src/view.rs:521`.)
+
 | Family | Ports | Evidence |
 |---|---|---|
 | window | kind:s! (edge/dialog/toast), edge:s=right, title:s?, w:n?, h:n?, chrome:b=true | `libraries/scene/src/schema.rs:94` |
