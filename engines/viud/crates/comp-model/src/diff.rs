@@ -554,6 +554,15 @@ fn diff_window_row(
 ) {
     if let (Some(old), Some(new)) = (old, new) {
         diff_occlusion(prefix, &old.occlusion, &new.occlusion, cause, pending);
+        for (leaf, old, new) in [
+            ("opacity", PropValue::F64(old.opacity), PropValue::F64(new.opacity)),
+            ("z", PropValue::I32(old.z), PropValue::I32(new.z)),
+            ("requested_visible", PropValue::Bool(old.requested_visible), PropValue::Bool(new.requested_visible)),
+            ("clip", PropValue::Clip(old.clip), PropValue::Clip(new.clip)),
+        ] {
+            queue_prop_change(pending, format!("{prefix}.{leaf}"), old, new, cause);
+        }
+
     }
     let (old, new) = match (old, new) {
         (None, None) => return,

@@ -42,6 +42,7 @@ pub struct Piece<R: Renderer> {
 }
 
 impl<R: Renderer> Element for Piece<R> {
+    fn alpha(&self) -> f32 { self.inner.alpha() }
     fn id(&self) -> &Id {
         &self.id
     }

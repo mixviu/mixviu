@@ -1782,6 +1782,10 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         Bool,
         "Whether the window is effectively on screen (false while minimised)"
     ),
+    descriptor!(&[L("windows"), S, L("opacity")], Number, "Persistent composite opacity, 0..=1; set through window.place"),
+    descriptor!(&[L("windows"), S, L("z")], Number, "Persistent stacking request within the workspace band"),
+    descriptor!(&[L("windows"), S, L("requested_visible")], Bool, "Persistent visibility request; visible also includes workspace and minimisation"),
+    descriptor!(&[L("windows"), S, L("clip")], Object, "Window-local logical clip rectangle, or null"),
     descriptor!(
         &[L("windows"), S, L("pid")],
         Number,

@@ -40,6 +40,9 @@ pub fn sync_hidden(lp: &Loop) -> bool {
     let mut changed = false;
     for space in lp.inner.all_world_spaces() {
         for window in space.state.elements() {
+            let visual = SurfaceHandle::of_window(window)
+                .and_then(|h| comp.registry.id_for_handle(&h)).map(|id| comp.visual(id)).unwrap_or_default();
+            *window.user_data().get_or_insert(|| std::sync::Mutex::new(comp_model::request::VisualAttributes::default())).lock().unwrap() = visual;
             let hidden =
                 SurfaceHandle::of_window(window).is_some_and(|handle| comp.hidden(&handle));
             changed |= ident::set_hidden(window, hidden);

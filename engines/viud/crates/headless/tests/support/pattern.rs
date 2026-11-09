@@ -16,7 +16,7 @@ use wayland_client::{
         wl_buffer::WlBuffer,
         wl_callback::{self, WlCallback},
         wl_compositor::WlCompositor,
-        wl_pointer::WlPointer,
+        wl_pointer::{self, WlPointer},
         wl_registry::{self, WlRegistry},
         wl_seat::{self, WlSeat},
         wl_shm::{self, WlShm},
@@ -45,6 +45,7 @@ pub struct State {
     pointers: Vec<WlPointer>,
     pub size: (i32, i32),
     pub callbacks: u64,
+    pub pointer_buttons: u64,
     pub presented: u64,
     pub discarded: u64,
     pub clock: Option<u32>,
@@ -332,4 +333,8 @@ delegate_noop!(State: ignore WlSurface);
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);
 delegate_noop!(State: ignore WlBuffer);
-delegate_noop!(State: ignore WlPointer);
+impl Dispatch<WlPointer, ()> for State {
+    fn event(state: &mut Self, _: &WlPointer, event: wl_pointer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        if matches!(event, wl_pointer::Event::Button { .. }) { state.pointer_buttons += 1; }
+    }
+}

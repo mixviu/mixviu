@@ -417,6 +417,8 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
         state
             .inner
             .register_drawable(uuid, world::order::track::base::DrawLayer::CONTENT);
+        let target = state.inner.worlds.spawn_target();
+        state.inner.worlds.get_mut(target).storage_mut().get_mut(&world::order::track::base::DRAW_ORDER_MUT).set_z(world::order::track::base::ComponentId(uuid), 0);
     }
 
     // Focus-on-map: a managed window takes the keyboard (and the top of the

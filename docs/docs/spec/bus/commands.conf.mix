@@ -647,7 +647,7 @@
     {name:"comp.window.close", owner:"viud", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.menu", owner:"viud", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.action", owner:"viud", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"comp.window.place", owner:"viud", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
+    {name:"comp.window.place", owner:"viud", version:"0.1.12", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.place_as", owner:"viud", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.tile_key", owner:"viud", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.tiles.get", owner:"viud", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},

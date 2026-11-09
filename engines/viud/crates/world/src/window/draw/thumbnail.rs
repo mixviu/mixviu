@@ -261,12 +261,10 @@ where
             let key = (window_id, element.id().clone());
             // A window cut to its rounded frame carries the cut as output-space
             // shader uniforms: move them with the thumbnail too.
-            let element = match element {
-                WindowElement::WindowFitClipped(clipped) => {
-                    WindowElement::WindowFitClipped(clipped.rescaled(s, at))
-                }
-                other => other,
-            };
+            let mut element = element;
+            if let crate::window::draw::element::RawElement::WindowFitClipped(clipped) = element.element_mut() {
+                clipped.set_rescale(s, at);
+            }
             let r =
                 RescaleRenderElement::from_element(element, Point::from((0, 0)), Scale::from(s));
             let l = RelocateRenderElement::from_element(r, at, Relocate::Relative);

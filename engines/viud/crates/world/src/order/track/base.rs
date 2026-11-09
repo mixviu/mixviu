@@ -59,6 +59,7 @@ impl DrawOrder {
 
     pub fn remove(&mut self, id: ComponentId) {
         self.entries.retain(|(c, _, _)| *c != id);
+        self.z.remove(&id);
     }
 
     /// Teardown after Space unmap must resolve ownership from every stack.
@@ -111,7 +112,17 @@ impl DrawOrder {
     /// front-to-back input hit-testing.
     pub fn ordered(&self) -> Vec<(ComponentId, OrderKey)> {
         let mut v = self.entries.clone();
-        v.sort_by(|a, b| a.1.cmp(&b.1).then(self.z.get(&a.0).unwrap_or(&0).cmp(self.z.get(&b.0).unwrap_or(&0))).then(a.2.total_cmp(&b.2)));
+        v.sort_by(|a, b| a.1.cmp(&b.1).then(a.2.total_cmp(&b.2)));
+        // Only window slots move. Compositor-marked drawables keep their exact
+        // place and remain barriers; z cannot promote a client across one.
+        let mut start = 0;
+        while start < v.len() {
+            if !self.z.contains_key(&v[start].0) { start += 1; continue; }
+            let mut end = start + 1;
+            while end < v.len() && v[end].1 == v[start].1 && self.z.contains_key(&v[end].0) { end += 1; }
+            v[start..end].sort_by(|a,b| self.z[&a.0].cmp(&self.z[&b.0]).then(a.2.total_cmp(&b.2)));
+            start = end;
+        }
         v.into_iter().map(|(c, _, k)| (c, k)).collect()
     }
 }

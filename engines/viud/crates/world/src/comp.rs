@@ -274,6 +274,7 @@ impl CompState {
                         self.minimize_lifo.retain(|entry| *entry != id);
                         self.clear_placement(id);
                         self.float_geometries.remove(&id);
+                        self.visuals.remove(&id);
                         if self.focused == Some(id) {
                             self.focused = None;
                         }
@@ -477,6 +478,7 @@ impl CompState {
     }
 
     fn forget(&mut self, id: SurfaceId) {
+        self.visuals.remove(&id);
         self.placed.remove(&id);
         self.fullscreen.forget(id);
         self.presentation.forget(id);
