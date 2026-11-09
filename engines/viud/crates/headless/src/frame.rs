@@ -10,6 +10,7 @@ use smithay::backend::renderer::{
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::wayland_server::Resource;
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -189,7 +190,8 @@ fn compose(
         if ctx.output.name() == "headless-0" { [0.6, 0.0, 0.0, 1.0] } else { [0.0, 0.6, 0.0, 1.0] }
     } else { [0.1, 0.1, 0.1, 1.0] };
     if capture {
-        let layers = frames::scene::layershell::layershell(state, size, state.inner.render_output.clone().as_deref());
+        let render_key = state.inner.render_output.clone();
+        let layers = frames::scene::layershell::layershell(state, size, render_key.as_deref());
         info!("P3_CAPTURE output={} render={:?} layers={:?}", ctx.output.name(), state.inner.render_output,
             layers.iter().map(|(_, n)| (n.surface.id().protocol_id(), n.location)).collect::<Vec<_>>());
     }
