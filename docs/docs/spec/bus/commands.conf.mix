@@ -2,6 +2,19 @@
 -- schema:none means no Rust request deserialiser; it does not mean no params.
 -- Rust-backed terminal shell entries name their actual deserialisers.
 -- Contract notation: ? optional, | union, [] list; JSON is arbitrary JSON.
+-- viud output identity compatibility (2026-11-09): edid_key in display/mode
+-- snapshots is now "make model serial @connector:NAME", e.g.
+-- "Example Panel 42 @connector:DP-1". Treat it as an opaque preference token:
+-- echo the snapshot value for mode/profile requests; never parse or construct it.
+-- Legacy EDID-only preference keys remain readable, including "MixOS Headless
+-- Unknown" for headless-0 only. Runtime output routing uses connector/protocol
+-- names; public comp output slugs are unchanged. An unqualified touch claim on
+-- duplicated EDIDs prefers libinput's associated output, otherwise the first
+-- matching driven output in existing enumeration order.
+-- A qualified output profile overrides its legacy touch claim, including None;
+-- association only chooses among outputs that still inherit the legacy claim.
+-- If all live candidates override a saved claim, it is unmapped rather than
+-- revived by automatic association/size heuristics.
 -- All host requests also accept optional output:string and edge:string (default bottom);
 -- dispatch validates the edge even for queries. Failures generally rc10, error_code or error,
 -- and/or diagnostics; successful acceptance does not prove surface presentation.
