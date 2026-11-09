@@ -69,10 +69,15 @@ pub fn touch_output(state: &Loop, device: &Device) -> Option<String> {
         .and_then(|p| p.identity.clone());
     if let Some(edid) = claimed {
         let outputs = space.state.outputs().collect::<Vec<_>>();
-        let keys = outputs.iter().map(|o| world::state::output_preference_key(o)).collect::<Vec<_>>();
+        let keys = outputs
+            .iter()
+            .map(|o| world::state::output_preference_key(o))
+            .collect::<Vec<_>>();
         let associated = device.output_name();
         if let Some(index) = model::environment::preference::identity::touch_index(
-            &keys, &edid, associated.as_deref(),
+            &keys,
+            &edid,
+            associated.as_deref(),
         ) {
             return Some(output_key(outputs[index]));
         }

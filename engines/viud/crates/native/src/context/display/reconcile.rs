@@ -246,11 +246,13 @@ fn write_snapshots(state: &mut Loop, ctx: &NativeRenderContext) {
     *state.inner.kernel.get_mut(&OUTPUTS_SNAPSHOT_MUT) = snap;
 }
 
-/// The preferred-monitor key (the FIRST output profile's identity — same default-output
-/// rule startup uses), if set.
+/// Use the same exact-before-legacy profile priority as startup selection.
 fn preferred_index(keys: &[String]) -> Option<usize> {
     let profiles = profile::get();
-    let saved = profiles.iter().filter_map(|p| p.identity.as_deref()).collect::<Vec<_>>();
+    let saved = profiles
+        .iter()
+        .filter_map(|p| p.identity.as_deref())
+        .collect::<Vec<_>>();
     model::environment::preference::identity::preferred_index(keys, &saved)
 }
 
@@ -282,8 +284,14 @@ fn pref_mode(drm: &DrmDevice, info: &connector::Info) -> Option<ModeInfo> {
 /// Pick the connector to drive among the connected ones: the preferred monitor if
 /// present, else the first connected — exactly the startup `connector.select` policy.
 fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connector::Info> {
-    let keys = connected.iter().map(|c| identity_key(drm, c)).collect::<Vec<_>>();
-    preferred_index(&keys).and_then(|i| connected.get(i)).or_else(|| connected.first()).cloned()
+    let keys = connected
+        .iter()
+        .map(|c| identity_key(drm, c))
+        .collect::<Vec<_>>();
+    preferred_index(&keys)
+        .and_then(|i| connected.get(i))
+        .or_else(|| connected.first())
+        .cloned()
 }
 
 /// Bring a NEW connected monitor online as an ADDITIONAL output: build a fresh
@@ -467,7 +475,9 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             active
         } else if !connected.is_empty() {
             let chosen = preferred_index(&connected_keys)
-                .and_then(|i| connected.get(i)).or_else(|| connected.first()).cloned();
+                .and_then(|i| connected.get(i))
+                .or_else(|| connected.first())
+                .cloned();
             chosen.into_iter().collect()
         } else {
             Vec::new()
@@ -738,4 +748,3 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         Some(OutputChange::Changed)
     }
 }
-

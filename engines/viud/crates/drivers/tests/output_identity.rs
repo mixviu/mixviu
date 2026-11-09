@@ -69,9 +69,19 @@ fn legacy_placement_uses_smallest_active_matching_connector() {
     let b = identity::key("Example Panel 42", "DP-2");
     let mut prefs = Preference::default();
     prefs.outputs_layout.push(LayoutPlacement {
-        id: 7, identity: "Example Panel 42".into(), x: 1.0, y: 2.0, w: 100.0, h: 100.0,
+        id: 7,
+        identity: "Example Panel 42".into(),
+        x: 1.0,
+        y: 2.0,
+        w: 100.0,
+        h: 100.0,
     });
-    model::environment::preference::base::set_active(&mut prefs.outputs, &a, false, &[a.clone(), b.clone()]);
+    model::environment::preference::base::set_active(
+        &mut prefs.outputs,
+        &a,
+        false,
+        &[a.clone(), b.clone()],
+    );
     let layout = build_teleport(&prefs, &[a, b]);
     assert_eq!(layout.placements.len(), 1);
     assert_eq!(layout.placements[0].key, "DP-2");

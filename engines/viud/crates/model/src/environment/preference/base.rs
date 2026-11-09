@@ -887,7 +887,12 @@ pub fn save_fields_at(
 
 /// Set the mode for the output profile matching `edid_key`, inserting a new
 /// profile if none exists. Other fields of an existing profile are preserved.
-pub fn upsert_output(outputs: &mut Vec<OutputProfile>, edid_key: &str, mode: ModeRequest, connected: &[String]) {
+pub fn upsert_output(
+    outputs: &mut Vec<OutputProfile>,
+    edid_key: &str,
+    mode: ModeRequest,
+    connected: &[String],
+) {
     inherit_output(outputs, edid_key);
     if let Some(p) = outputs
         .iter_mut()
@@ -915,7 +920,12 @@ pub fn output_active(outputs: &[OutputProfile], edid_key: &str) -> bool {
 
 /// Set the active (driven) flag for `edid_key`, inserting an identity-only profile
 /// if none exists. Preserves the profile's mode + position.
-pub fn set_active(outputs: &mut Vec<OutputProfile>, edid_key: &str, active: bool, connected: &[String]) {
+pub fn set_active(
+    outputs: &mut Vec<OutputProfile>,
+    edid_key: &str,
+    active: bool,
+    connected: &[String],
+) {
     inherit_output(outputs, edid_key);
     if let Some(p) = outputs
         .iter_mut()
@@ -1026,14 +1036,29 @@ fn inherit_output(outputs: &mut Vec<OutputProfile>, key: &str) {
 /// inactive ones; an empty/unknown topology never permits a shared write.
 pub fn sync_legacy_output(outputs: &mut Vec<OutputProfile>, key: &str, connected: &[String]) {
     use super::identity;
-    if identity::connector(key).is_none() || !connected.iter().any(|k| k == key)
-        || connected.iter().filter(|k| identity::stable(k) == identity::stable(key)).count() != 1 {
+    if identity::connector(key).is_none()
+        || !connected.iter().any(|k| k == key)
+        || connected
+            .iter()
+            .filter(|k| identity::stable(k) == identity::stable(key))
+            .count()
+            != 1
+    {
         return;
     }
-    let Some(mut current) = outputs.iter().find(|p| p.identity.as_deref() == Some(key)).cloned() else { return };
+    let Some(mut current) = outputs
+        .iter()
+        .find(|p| p.identity.as_deref() == Some(key))
+        .cloned()
+    else {
+        return;
+    };
     let legacy = identity::stable(key);
     current.identity = Some(legacy.to_owned());
-    if let Some(old) = outputs.iter_mut().find(|p| p.identity.as_deref() == Some(legacy)) {
+    if let Some(old) = outputs
+        .iter_mut()
+        .find(|p| p.identity.as_deref() == Some(legacy))
+    {
         *old = current;
     } else {
         outputs.push(current);

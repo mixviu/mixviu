@@ -43,7 +43,10 @@ fn scale_state(s: f64) -> Scale {
     }
 }
 
-pub fn create(info: &impl crate::connector::select::ConnectorInfo, identity: &MonitorIdentity) -> Output {
+pub fn create(
+    info: &impl crate::connector::select::ConnectorInfo,
+    identity: &MonitorIdentity,
+) -> Output {
     let (size_x, size_y) = info.size().unwrap_or((0, 0));
     Output::new(
         // Output NAME is the canonical DRM connector name (`eDP-1`, `HDMI-A-1`, …)
