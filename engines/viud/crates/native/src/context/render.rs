@@ -38,10 +38,13 @@ pub struct OutputPipe {
     pub drm_output: Option<NativeDrmOutput>,
     /// HDR (M5): the display's parsed EDID HDR/colorimetry caps.
     pub hdr_caps: kms::edid::parse::HdrInfo,
-    /// HDR output path active this session (`COMPOSITOR_HDR` + capable display +
-    /// Vulkan). When true the executor signals the connector (BT.2020 + PQ) once
-    /// and composites in the HDR working space.
+    /// HDR output path active this session (`hdr` in the settings + a PQ-capable
+    /// display). When true the executor signals the connector (BT.2020 + PQ) once
+    /// and composites through `hdr_pass`.
     pub hdr_active: bool,
+    /// The HDR composite (FP16 intermediate + PQ encode), made on the first HDR
+    /// frame and remade when the output's size or scale changes. `None` on SDR.
+    pub hdr_pass: Option<render_gles::color::hdr::pass::HdrPass>,
     /// Whether this pipe's one-time raw-DRM CONNECTOR PROPERTY pass has run
     /// (colorimetry + bit depth). Named for HDR historically, but it now gates
     /// the SDR case too — an SDR pipe must actively reset `Colorspace` to

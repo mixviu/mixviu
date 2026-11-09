@@ -157,9 +157,9 @@ fn bring_up(
         requested,
     )?;
     let env = model::environment::config::base::get();
-    // HDR output needs a Vulkan composite, which there is none of; GLES scans
-    // out SDR.
-    let new_hdr_active = env.hdr && built.hdr.hdr_capable() && false;
+    // HDR on a PQ-capable display when asked for (the GLES HDR composite,
+    // `render_gles::color::hdr`).
+    let new_hdr_active = env.hdr && built.hdr.hdr_capable();
     let new_mode = Mode::from(built.drm_mode);
     if replace {
         state
@@ -170,6 +170,7 @@ fn bring_up(
         // succeeded, so a failed fail-over leaves the old identity in place rather
         // than half-migrating.
         let old = std::mem::replace(&mut ctx.pipe_mut().output, output.clone());
+        crate::render::execute::hdr::publish(&old.name(), None);
         // Every world's Space, not just the hosted one: a world parked across this
         // fail-over would otherwise keep the departed monitor and never see the new
         // one (`map_output_everywhere`).
@@ -208,6 +209,10 @@ fn bring_up(
     ctx.pipe_mut().connector = built.connector;
     ctx.pipe_mut().hdr_caps = built.hdr;
     ctx.pipe_mut().hdr_active = new_hdr_active;
+    ctx.pipe_mut().hdr_pass = None;
+    if !new_hdr_active {
+        crate::render::execute::hdr::publish(&output.name(), None);
+    }
     ctx.pipe_mut().props_applied = false;
     ctx.pipe_mut().render_failures = 0;
     // Fresh scanout target — no page-flip is pending on it, so any flight the
@@ -358,8 +363,7 @@ fn add_output(
         .inner
         .map_output_everywhere(&output, smithay::utils::Point::from((x, 0)));
     let env = model::environment::config::base::get();
-    // viud: SDR only without the Vulkan renderer (see `new_hdr_active` above).
-    let hdr_active = env.hdr && built.hdr.hdr_capable() && false;
+    let hdr_active = env.hdr && built.hdr.hdr_capable();
     info!(
         "add_output: connector={:?} crtc={:?} mode={}x{} pos=({}, 0) → {} outputs total",
         built.connector,
@@ -376,6 +380,7 @@ fn add_output(
         drm_output: Some(built.drm_output),
         hdr_caps: built.hdr,
         hdr_active,
+        hdr_pass: None,
         props_applied: false,
         render_failures: 0,
         connector: built.connector,
@@ -408,6 +413,11 @@ fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
         .redraw
         .release(&world::state::output_key(&ctx.pipe().output));
     ctx.outputs[0].drm_output = None;
+    // Its colour state goes with the scanout: no client may keep being offered
+    // a departed display's HDR volume (the pass is rebuilt on bring-up).
+    ctx.outputs[0].hdr_pass = None;
+    let name = ctx.pipe().output.name();
+    crate::render::execute::hdr::publish(&name, None);
     // The anchor keeps its `wl_output` global AND its Space mapping, deliberately.
     //
     // It cannot be unmapped: `current_output()` ends in
@@ -490,6 +500,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     while i < ctx.outputs.len() {
         if !drive_handles.contains(&ctx.outputs[i].connector) {
             let removed = ctx.outputs.remove(i);
+            crate::render::execute::hdr::publish(&removed.output.name(), None);
             state
                 .state
                 .redraw
@@ -551,6 +562,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 while i < ctx.outputs.len() {
                     if ctx.outputs[i].connector == th && ctx.outputs[i].drm_output.is_some() {
                         let removed = ctx.outputs.remove(i);
+                        crate::render::execute::hdr::publish(&removed.output.name(), None);
                         state
                             .state
                             .redraw

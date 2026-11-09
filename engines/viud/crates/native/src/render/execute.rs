@@ -747,15 +747,11 @@ pub fn execute(
                     warn!("connector property pass failed: {_e}");
                     ctx_ref.outputs[output_idx].props_applied = true; // don't retry every frame
                     if hdr_active {
-                        ctx_ref.outputs[output_idx].hdr_active = false;
-                        let c = &ctx_ref.outputs[output_idx].hdr_caps;
-                        model::stats::registry::base::set_hdr_info(
-                            false,
-                            c.hdr_capable(),
-                            "SDR",
-                            c.hdr.max_luminance.unwrap_or(0.0),
-                            c.colorimetry.bt2020_rgb,
-                            "8-bit sRGB",
+                        // Signalling failed: back to an SDR composite, and run the
+                        // connector pass again in SDR to reset what it could.
+                        crate::render::execute::hdr::fall_back(
+                            &mut ctx_ref.outputs[output_idx],
+                            &format!("connector signalling rejected: {_e}"),
                         );
                     }
                 }
@@ -789,8 +785,38 @@ pub fn execute(
                     &ctx_ref.outputs[output_idx].output.name(),
                     &scene.elements,
                 );
-                let wrapped: Vec<GlesElementWrapper<_>> =
-                    scene.elements.iter().map(GlesElementWrapper).collect();
+                // HDR: the scene composes into the pipe's FP16 intermediate and the
+                // scanout compositor draws one element, the PQ encode of it. Captures
+                // copy the intermediate (`hdr_copy`), the frame's SDR rendition, not
+                // the PQ buffer.
+                let hdr_frame = {
+                    let mut r = gles_renderer.borrow_mut();
+                    let _hdr = ledger::frame_trace::span("kms_hdr_compose", output_id.0);
+                    crate::render::execute::hdr::compose(
+                        &mut ctx_ref.outputs[output_idx],
+                        r.as_mut(),
+                        &scene.elements,
+                        output_scale,
+                    )
+                };
+                let hdr_copy = hdr_frame.as_ref().and_then(|_| {
+                    ctx_ref.outputs[output_idx]
+                        .hdr_pass
+                        .as_ref()
+                        .map(|p| p.texture().clone())
+                });
+                // A replay of the scene for a capture (cursorless) must decode
+                // tagged surfaces too, or they come out as raw PQ/scRGB.
+                let hdr_decode = hdr_frame.as_ref().and_then(|_| {
+                    ctx_ref.outputs[output_idx]
+                        .hdr_pass
+                        .as_ref()
+                        .map(|p| p.decode_program().clone())
+                });
+                let wrapped: Vec<GlesElementWrapper<_>> = match &hdr_frame {
+                    Some(encode) => vec![GlesElementWrapper(encode)],
+                    None => scene.elements.iter().map(GlesElementWrapper).collect(),
+                };
 
                 // ---- render_frame: hold RefMut for the lifetime of scene_result. ----
                 let mut r = gles_renderer.borrow_mut();
@@ -951,6 +977,25 @@ pub fn execute(
                             // Region captures blit their sub-rect of the composed
                             // scene; full captures blit the whole framebuffer.
                             let src = src_override.unwrap_or(full_src);
+                            if let Some(intermediate) = &hdr_copy {
+                                let copied = r
+                                    .bind(&mut entry_tex)
+                                    .map_err(|e| e.to_string())
+                                    .and_then(|mut entry_fb| {
+                                        render_gles::color::hdr::pass::copy_sdr(
+                                            r.as_mut(),
+                                            intermediate,
+                                            entry_fb.as_mut(),
+                                            src,
+                                            entry_size,
+                                        )
+                                        .map(|_| ())
+                                    });
+                                if let Err(e) = copied {
+                                    warn!("HDR capture copy failed: entry_id={entry_id:?} err={e}");
+                                }
+                                continue;
+                            }
                             let result: Result<(), _> = (|| {
                                 let mut entry_fb = r
                                     .bind(&mut entry_tex)
@@ -984,17 +1029,26 @@ pub fn execute(
                         let mut target = r
                             .bind(&mut texture)
                             .map_err(|err| format!("bind Bus capture: {err}"))?;
-                        let sync = scene_result
-                            .blit_frame_result(
+                        let sync = match &hdr_copy {
+                            Some(intermediate) => render_gles::color::hdr::pass::copy_sdr(
+                                r.as_mut(),
+                                intermediate,
+                                target.as_mut(),
+                                Rectangle::from_size(size),
                                 size,
-                                Transform::Normal,
-                                Scale::from(output_scale),
-                                &mut *r,
-                                &mut target,
-                                [Rectangle::from_size(size)],
-                                std::iter::empty::<Id>(),
-                            )
-                            .map_err(|err| format!("copy KMS capture: {err:?}"))?;
+                            )?,
+                            None => scene_result
+                                .blit_frame_result(
+                                    size,
+                                    Transform::Normal,
+                                    Scale::from(output_scale),
+                                    &mut *r,
+                                    &mut target,
+                                    [Rectangle::from_size(size)],
+                                    std::iter::empty::<Id>(),
+                                )
+                                .map_err(|err| format!("copy KMS capture: {err:?}"))?,
+                        };
                         sync.wait()
                             .map_err(|err| format!("wait KMS capture: {err:?}"))?;
                         screencopy::file::service(
@@ -1044,6 +1098,44 @@ pub fn execute(
                 });
                     let mut render = |with_pointer: bool| {
                         let result = (|| -> Result<_, String> {
+                            // HDR: the scene replay draws SDR directly, and the KMS
+                            // buffer is PQ, so a cursorless copy replays and any other
+                            // copies the intermediate.
+                            if let Some(intermediate) = &hdr_copy
+                                && with_pointer
+                            {
+                                let mut texture = screencopy::offscreen_texture(r.as_mut(), size)?;
+                                {
+                                    let mut target = r
+                                        .bind(&mut texture)
+                                        .map_err(|err| format!("bind HDR copy target: {err}"))?;
+                                    render_gles::color::hdr::pass::copy_sdr(
+                                        r.as_mut(),
+                                        intermediate,
+                                        target.as_mut(),
+                                        Rectangle::from_size(size),
+                                        size,
+                                    )?
+                                    .wait()
+                                    .map_err(|err| format!("wait HDR copy: {err:?}"))?;
+                                }
+                                return Ok(texture);
+                            }
+                            if !with_pointer && let Some(program) = &hdr_decode {
+                                let tagged = render_gles::color::hdr::describe::surfaces();
+                                let decoded = render_gles::color::hdr::pass::decoded_sdr(
+                                    &scene.elements,
+                                    program,
+                                    &tagged,
+                                );
+                                return screencopy::render_offscreen(
+                                    r.as_mut(),
+                                    &decoded,
+                                    |d| !d.inner().is_cursor(),
+                                    size,
+                                    scale,
+                                );
+                            }
                             if !with_pointer && !cursor_separate {
                                 return screencopy::render_offscreen(
                                     r.as_mut(),
