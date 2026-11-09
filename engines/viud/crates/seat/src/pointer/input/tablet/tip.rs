@@ -35,16 +35,19 @@ pub fn start_draw(
     time: u32,
 ) {
     super::revoke::flush(_loop, time);
-    if _loop.state.tablet.stroke_owner.is_some() { return; }
+    if _loop.state.tablet.stroke_owner.is_some() {
+        return;
+    }
     if client::tablet_focus(_loop, world).is_some() {
         client::apply_focus(_loop, world);
         let serial = SERIAL_COUNTER.next_serial();
         if _loop.state.tablet.begin_stroke(tool, Stroke::Tablet) {
             _loop.state.tablet.tool_tip_down(tool, serial, time);
         }
-    } else if client::topmost(_loop, world).is_some() {
+    } else if let Some(hit) = client::topmost(_loop, world) {
         // A window / layer / UI overlay (NOT bare canvas) → the pen acts as a mouse.
         if !_loop.state.tablet.begin_stroke(tool, Stroke::Pointer) { return; }
+        _loop.state.tablet.stroke_surface = client::focus_of(&hit).map(|(surface, _)| surface);
         cursor::follow(_loop, screen, world, time);
         crate::pointer::input::touch::emulate::press(_loop, time);
     } else {
@@ -65,6 +68,7 @@ pub fn end_draw(_loop: &mut Loop, tool: &TabletToolDescriptor, time: u32) {
     }
     _loop.state.tablet.stroke = Stroke::None;
     _loop.state.tablet.stroke_owner = None;
+    _loop.state.tablet.stroke_surface = None;
 }
 
 /// Clear the transient Select grab on lift, mirroring `touch/session.rs::disarm_select`.
@@ -84,14 +88,20 @@ pub fn tip<I: InputBackend>(event: &I::TabletToolTipEvent, _loop: &mut Loop) {
     match event.tip_state() {
         TabletToolTipState::Down => {
             super::revoke::flush(_loop, time);
-            if _loop.state.tablet.stroke_owner.is_some() { return; }
+            if _loop.state.tablet.stroke_owner.is_some() {
+                return;
+            }
             _loop.state.tablet.last_pen_screen = Some(screen);
             if hand_active(_loop) {
-                if !_loop.state.tablet.begin_stroke(&tool, Stroke::Pan) { return; }
+                if !_loop.state.tablet.begin_stroke(&tool, Stroke::Pan) {
+                    return;
+                }
                 // Hand tool: the tip-drag pans (axis.rs); no draw, no click.
                 cursor::follow(_loop, screen, world, time);
             } else if select_active(_loop) {
-                if !_loop.state.tablet.begin_stroke(&tool, Stroke::Pointer) { return; }
+                if !_loop.state.tablet.begin_stroke(&tool, Stroke::Pointer) {
+                    return;
+                }
                 // Select tool: arm the transient grab (disarmed on lift) so the
                 // emulated press + drag rubber-band selects, like the touch session.
                 _loop.inner.canvas_mut().grab =
@@ -106,7 +116,9 @@ pub fn tip<I: InputBackend>(event: &I::TabletToolTipEvent, _loop: &mut Loop) {
             }
         }
         TabletToolTipState::Up => {
-            if _loop.state.tablet.stroke_owner.as_ref() != Some(&tool) { return; }
+            if _loop.state.tablet.stroke_owner.as_ref() != Some(&tool) {
+                return;
+            }
             end_draw(_loop, &tool, time);
             disarm_select(_loop);
         }

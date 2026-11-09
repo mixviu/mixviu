@@ -10,6 +10,7 @@ pub fn flush(lp: &mut world::state::Loop, time: u32) {
     }
     if lp.state.tablet.take_revoked_cursor() {
         lp.state.seat.pointer_status = smithay::input::pointer::CursorImageStatus::default_named();
-        lp.state.schedule_redraw(dispatcher::state::RedrawReason::Input);
+        lp.state
+            .schedule_redraw(dispatcher::state::RedrawReason::Input);
     }
 }

@@ -1676,7 +1676,10 @@ fn maximize_on(lp: &mut Loop, id: SurfaceId, enabled: bool, output: Option<&str>
 /// the commands (a refusal still answers the client with a configure).
 pub fn apply_client_requests(lp: &mut Loop) {
     // Protocol-side tablet resource destruction may revoke a pointer stroke.
-    seat::pointer::input::tablet::revoke::flush(lp, lp.inner.start_time.elapsed().as_millis() as u32);
+    seat::pointer::input::tablet::revoke::flush(
+        lp,
+        lp.inner.start_time.elapsed().as_millis() as u32,
+    );
     for (id, request) in lp.inner.comp.take_requests() {
         let Some((window_id, generation)) = lp
             .inner
