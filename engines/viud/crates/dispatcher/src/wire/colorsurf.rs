@@ -258,6 +258,9 @@ mod tests {
         assert_eq!(d.mastering_max, Some(1000.0));
         let (on, src, dst) = tm(&OutputColor::sdr().decode_uniforms(&d));
         assert_eq!(on, 1.0);
-        assert!(src > dst, "content peak must exceed SDR white: {src} vs {dst}");
+        assert!(
+            src > dst,
+            "content peak must exceed SDR white: {src} vs {dst}"
+        );
     }
 }

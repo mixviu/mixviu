@@ -325,7 +325,9 @@ pub fn on_commit(surface: &WlSurface) {
         |_, _, _| TraversalAction::DoChildren(()),
         |s, states, _| {
             let current = *states.cached_state.get::<ColorCached>().current();
-            states.data_map.insert_if_missing_threadsafe(AppliedSerial::default);
+            states
+                .data_map
+                .insert_if_missing_threadsafe(AppliedSerial::default);
             if let Some(applied) = states.data_map.get::<AppliedSerial>()
                 && applied.0.swap(current.serial, Ordering::Relaxed) != current.serial
             {
