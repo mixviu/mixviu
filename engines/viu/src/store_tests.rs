@@ -16,10 +16,20 @@ const TOAST: &str = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"ki
 fn load_batch_refusal_leaves_all_revisions_and_seats_unchanged() {
     let mut store = SceneStore::default();
     let mut caller = mount("loader", 1);
-    assert_eq!(store.dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller).rc, 0);
+    assert_eq!(
+        store
+            .dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller)
+            .rc,
+        0
+    );
     let revision = store.scene("toast-probe").unwrap().revision();
     let batch = json!({"sources":[{"source":TOAST.replace("360", "400")},{"source":"broken"}]});
-    assert_eq!(store.dispatch(SceneCommand::Load, "", &batch, &mut caller).rc, 10);
+    assert_eq!(
+        store
+            .dispatch(SceneCommand::Load, "", &batch, &mut caller)
+            .rc,
+        10
+    );
     assert_eq!(store.scene("toast-probe").unwrap().revision(), revision);
     assert!(store.scene("toast-probe").unwrap().tree().name == "toast-probe");
     let batch = json!({"sources":[{"source":TOAST.replace("360", "400")},{"source":TOAST.replace("toast-probe", "other-toast")}]});

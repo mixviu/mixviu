@@ -305,7 +305,11 @@ impl LayerProgram for Program {
         entry.1.show(ui, &mut messages);
         if let Some(error) = self.state.lock().unwrap().errors.get(&name) {
             if crate::dev_loop::error_strip(ui, error) {
-                let _ = self.send.send(Outgoing::Fire("scenes".into(), "scenes.editor.open".into(), json!({"scene":name})));
+                let _ = self.send.send(Outgoing::Fire(
+                    "scenes".into(),
+                    "scenes.editor.open".into(),
+                    json!({"scene":name}),
+                ));
             }
         }
         for message in messages {
@@ -673,7 +677,10 @@ async fn worker(
         .map_err(|e| e.to_string())?;
     let mut incoming = client.incoming().ok_or("Bus incoming already taken")?;
     let scenes = std::env::var("SCENES_SERVICE").unwrap_or_else(|_| "scenes".into());
-    client.subscribe_topic(&format!("{scenes}.changed")).await.map_err(|e| e.to_string())?;
+    client
+        .subscribe_topic(&format!("{scenes}.changed"))
+        .await
+        .map_err(|e| e.to_string())?;
     if let Ok(body) = client.call(&scenes, "scenes.list", json!({})).await {
         state.lock().unwrap().errors = crate::dev_loop::errors(&body);
     }

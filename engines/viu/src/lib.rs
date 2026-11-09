@@ -2,12 +2,12 @@
 pub mod appearance;
 pub mod command;
 pub mod dev_loop;
-pub mod preview;
 pub mod freedesktop;
 pub mod icons;
 pub mod images;
 pub mod mount;
 pub mod panels;
+pub mod preview;
 pub mod runtime;
 pub mod seat;
 pub mod store;

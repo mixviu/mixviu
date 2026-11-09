@@ -1,4 +1,4 @@
-# Scene documents: P0 reference
+# Scene documents: P0 grammar and P1 reload
 
 Baseline: `881e405162dc42a20361cce53a68ffe1f7225c39` (2026-11-09).
 This describes the parser, loader and generic `viu --host` separately: accepting

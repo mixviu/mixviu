@@ -91,7 +91,11 @@ impl LayerProgram for ToastProgram {
         entry.1.show(ui, &mut messages);
         if let Some(error) = self.state.lock().unwrap().errors.get(&name) {
             if crate::dev_loop::error_strip(ui, error) {
-                let _ = self.send.send(Outgoing::Fire("scenes".into(), "scenes.editor.open".into(), json!({"scene":name})));
+                let _ = self.send.send(Outgoing::Fire(
+                    "scenes".into(),
+                    "scenes.editor.open".into(),
+                    json!({"scene":name}),
+                ));
             }
         }
         for message in messages {

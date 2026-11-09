@@ -190,7 +190,7 @@ fn initial($root, $templates, $host, $me, $io)
       fail("SCENES_GENERATION", "invalid generation counter", {})
     end
   end
-  return {root:$root, root_handle:dir_open($root), templates:$templates, host:$host, me:$me, io:$io,
+  $s = {root:$root, root_handle:dir_open($root), templates:$templates, host:$host, me:$me, io:$io,
     desired:{schema_version:1, enabled:[], origins:{}, recovery:{}}, state_digest:"",
     state_ok:true, state_error:nil,
     scenes:{editor:editor_entry($templates)}, retiring:{}, panels:{}, panel_revision:0, panel_generation:nil, open:nil,
@@ -198,6 +198,8 @@ fn initial($root, $templates, $host, $me, $io)
     recovery_attempted:{}, recovery_diagnostics:{}, faults:[],
     host_live:false, sync_needed:true, services:nil, legacy:"quoin-panel", connection:nil, revision:0, published:"",
     sequence:$sequence, diagnostic:nil, response:{}, rc:0}
+  $s.library_seen = library_signature($s)
+  return $s
 end
 
 fn scene_dir($s, $name)
@@ -989,10 +991,14 @@ fn legacy_handover($s)
 end
 
 fn filesystem($s, $batch)
+  $lib_changed = library_signature($s) != $s.library_seen
   if $batch.overflow then
+    if $lib_changed then
+      $s = reload_group($s, "lib", nil)
+      if $s.rc != 0 then return $s end
+    end
     return rescan($s, false)
   end
-  $lib_changed = false
   for each $change in $batch.changes
     for each $path in [$change.path, $change.old_path]
       if type($path) != "string" then continue end
@@ -1046,10 +1052,31 @@ fn library_roots($s)
   return unique([$s.templates .. "/lib", $s.root .. "/lib", env("SCENES_LIB", $s.templates .. "/lib")])
 end
 
+fn library_files($dir, $files)
+  if not is_dir($dir) then return $files end
+  for each $file in sort(ls($dir))
+    $path = $dir .. "/" .. $file
+    if stat($path, {follow_symlinks:false}).is_symlink then continue end
+    if is_dir($path) then
+      $files = library_files($path, $files)
+    elif ends_with($file, ".mix") then
+      $files[$path] = hash_file($path, "sha256")
+    end
+  end
+  return $files
+end
+
+fn library_signature($s)
+  $files = {}
+  for each $dir in library_roots($s) $files = library_files($dir, $files) end
+  return hash_sha256(json_encode($files))
+end
+
 fn check_library($s, $dir)
   if not is_dir($dir) then return $s end
   for each $file in ls($dir)
     $path = $dir .. "/" .. $file
+    if stat($path, {follow_symlinks:false}).is_symlink then fail("SCENES_FILES", "library helpers must not be symlinks", {file:$path}) end
     if is_dir($path) then
       $s = check_library($s, $path)
     elif ends_with($file, ".mix") then
@@ -1097,6 +1124,7 @@ fn reload_group($s, $scope, $name)
     return $s
   end
   $revisions = {}
+  $s.library_seen = library_signature($s)
   for each $n in $names
     $c = $candidates[$n]
     $s.scenes[$n].source = $c.source

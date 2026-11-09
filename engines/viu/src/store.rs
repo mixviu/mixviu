@@ -503,17 +503,31 @@ impl SceneStore {
             }
             SceneCommand::Load => {
                 if let Some(sources) = args.get("sources") {
-                    let sources = sources.as_array().filter(|s| s.len() <= 128)
-                        .ok_or_else(|| json!({"error":"sources must be a list of at most 128 load envelopes"}))?;
+                    let sources = sources.as_array().filter(|s| s.len() <= 128).ok_or_else(
+                        || json!({"error":"sources must be a list of at most 128 load envelopes"}),
+                    )?;
                     let mut staged = self.clone();
                     let mut revisions = serde_json::Map::new();
                     for source in sources {
-                        if source.get("sources").is_some() { return Err(json!({"error":"nested load batch"})); }
-                        let text = source["source"].as_str().ok_or_else(|| json!({"error":"missing source"}))?;
-                        let (receipt, summary) = staged.request_mounted(SceneCommand::Load, text, source, mount.as_deref_mut())?;
-                        let name = receipt["scene"].as_str().ok_or_else(|| json!({"error":"missing scene receipt"}))?;
+                        if source.get("sources").is_some() {
+                            return Err(json!({"error":"nested load batch"}));
+                        }
+                        let text = source["source"]
+                            .as_str()
+                            .ok_or_else(|| json!({"error":"missing source"}))?;
+                        let (receipt, summary) = staged.request_mounted(
+                            SceneCommand::Load,
+                            text,
+                            source,
+                            mount.as_deref_mut(),
+                        )?;
+                        let name = receipt["scene"]
+                            .as_str()
+                            .ok_or_else(|| json!({"error":"missing scene receipt"}))?;
                         revisions.insert(name.into(), receipt["revision"].clone());
-                        if let Some(summary) = summary { staged.notices.push(summary); }
+                        if let Some(summary) = summary {
+                            staged.notices.push(summary);
+                        }
                     }
                     *self = staged;
                     return Ok((json!({"accepted":true,"revisions":revisions}), None));
