@@ -467,30 +467,62 @@ struct Inventory {
 
 fn stamp(path: &Path) -> Option<(SystemTime, u64, Option<(SystemTime, u64)>)> {
     let meta = path.symlink_metadata().ok()?;
-    let target = meta.file_type().is_symlink().then(|| path.metadata().ok().and_then(|m| Some((m.modified().ok()?, m.len())))).flatten();
+    let target = meta
+        .file_type()
+        .is_symlink()
+        .then(|| {
+            path.metadata()
+                .ok()
+                .and_then(|m| Some((m.modified().ok()?, m.len())))
+        })
+        .flatten();
     // (mtime, len) can miss same-size in-place writes on coarse-mtime filesystems.
     Some((meta.modified().ok()?, meta.len(), target))
 }
 
-fn inventory(path: &Path, root: &Path, depth: usize, stamps: &mut Stamps, visited: &mut BTreeSet<PathBuf>, work: &mut usize) -> bool {
-    if stamps.len() >= INVENTORY_LIMIT || *work >= INVENTORY_WORK_LIMIT { return false; }
+fn inventory(
+    path: &Path,
+    root: &Path,
+    depth: usize,
+    stamps: &mut Stamps,
+    visited: &mut BTreeSet<PathBuf>,
+    work: &mut usize,
+) -> bool {
+    if stamps.len() >= INVENTORY_LIMIT || *work >= INVENTORY_WORK_LIMIT {
+        return false;
+    }
     *work += 1;
     stamps.insert(path.into(), stamp(path));
-    let Ok(meta) = path.symlink_metadata() else { return true; };
-    let Ok(canonical) = path.canonicalize() else { return true; };
+    let Ok(meta) = path.symlink_metadata() else {
+        return true;
+    };
+    let Ok(canonical) = path.canonicalize() else {
+        return true;
+    };
     if !canonical.starts_with(root) {
         // External directory aliases cannot be monitored completely without
         // escaping the configured roots. Never enter them; disable caching.
         return !path.is_dir();
     }
-    if !(meta.is_dir() || (meta.file_type().is_symlink() && path.is_dir())) { return true; }
-    if depth > 16 { return false; }
-    if !visited.insert(canonical) { return true; }
+    if !(meta.is_dir() || (meta.file_type().is_symlink() && path.is_dir())) {
+        return true;
+    }
+    if depth > 16 {
+        return false;
+    }
+    if !visited.insert(canonical) {
+        return true;
+    }
     let mut complete = true;
     for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
-        if stamps.len() >= INVENTORY_LIMIT || *work >= INVENTORY_WORK_LIMIT { return false; }
+        if stamps.len() >= INVENTORY_LIMIT || *work >= INVENTORY_WORK_LIMIT {
+            return false;
+        }
         *work += 1;
-        if entry.file_type().is_ok_and(|kind| kind.is_dir() || kind.is_symlink()) {
+        if entry
+            .file_type()
+            .is_ok_and(|kind| kind.is_dir() || kind.is_symlink())
+        {
             complete &= inventory(&entry.path(), root, depth + 1, stamps, visited, work);
         } else if entry.file_type().is_ok_and(|kind| kind.is_symlink())
             || entry.file_name() == "index.theme"
@@ -507,11 +539,20 @@ fn snapshot(lookup: &Lookup) -> Inventory {
     let mut visited = BTreeSet::new();
     let mut work = 0;
     let mut complete = true;
-    for path in lookup.roots.iter().chain(&lookup.pixmaps).chain(&lookup.applications) {
+    for path in lookup
+        .roots
+        .iter()
+        .chain(&lookup.pixmaps)
+        .chain(&lookup.applications)
+    {
         let root = path.canonicalize().unwrap_or_else(|_| path.clone());
         complete &= inventory(path, &root, 0, &mut stamps, &mut visited, &mut work);
     }
-    Inventory { stamps, complete, checked: Instant::now() }
+    Inventory {
+        stamps,
+        complete,
+        checked: Instant::now(),
+    }
 }
 
 /// A [`Lookup`] with a bounded cache of resolutions, re-checked against
@@ -561,7 +602,9 @@ impl Resolver {
             self.generation
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        if stamps.complete { stamps.checked = Instant::now(); }
+        if stamps.complete {
+            stamps.checked = Instant::now();
+        }
         self.generation.load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -572,10 +615,14 @@ impl Resolver {
         let due = {
             let mut last = self.single_check.lock().unwrap();
             let due = last.elapsed() >= Duration::from_millis(250);
-            if due { *last = Instant::now(); }
+            if due {
+                *last = Instant::now();
+            }
             due
         };
-        if due { self.generation(); }
+        if due {
+            self.generation();
+        }
         self.resolve_in_generation(source, size, 1, app)
     }
 
@@ -600,7 +647,9 @@ impl Resolver {
             app.map(str::to_owned),
         );
         let cacheable = self.stamps.lock().unwrap().complete;
-        if !cacheable { return self.lookup.resolve(source, size.saturating_mul(scale), app); }
+        if !cacheable {
+            return self.lookup.resolve(source, size.saturating_mul(scale), app);
+        }
         if let Some(path) = self.cache.lock().ok().and_then(|mut cache| {
             cache
                 .get(&key)
@@ -636,7 +685,12 @@ mod tests {
         let inventory = resolver.stamps.lock().unwrap();
         assert!(!inventory.complete, "external trees use uncached fallback");
         assert!(inventory.stamps.len() < 20);
-        assert!(inventory.stamps.keys().all(|path| !path.starts_with(&link) || path == &link));
+        assert!(
+            inventory
+                .stamps
+                .keys()
+                .all(|path| !path.starts_with(&link) || path == &link)
+        );
         drop(inventory);
         resolver.resolve_in_generation("missing", 20, 1, None);
         assert_eq!(resolver.cache.lock().unwrap().len(), 0);
@@ -665,17 +719,36 @@ mod tests {
         scratch.write("icons/Fixture/32x32/apps/named.svg", "svg");
         let resolver = Resolver::new(scratch.lookup("Fixture"));
         let path = scratch.0.join("icons/Fixture/32x32/apps/named.svg");
-        assert_eq!(resolver.resolve_in_generation("  named  ", 32, 1, None), Some(path.clone()));
+        assert_eq!(
+            resolver.resolve_in_generation("  named  ", 32, 1, None),
+            Some(path.clone())
+        );
         assert_eq!(resolver.resolve("named", 32, None), Some(path.clone()));
         assert_eq!(resolver.cache.lock().unwrap().len(), 1);
-        assert_eq!(resolver.resolve_in_generation(&format!("  file://{}  ", path.display()), 32, 1, None), Some(path));
+        assert_eq!(
+            resolver.resolve_in_generation(&format!("  file://{}  ", path.display()), 32, 1, None),
+            Some(path)
+        );
         assert!(resolver.resolve("later", 32, None).is_none());
         *resolver.single_check.lock().unwrap() = Instant::now();
-        let generation = resolver.generation.load(std::sync::atomic::Ordering::Relaxed);
+        let generation = resolver
+            .generation
+            .load(std::sync::atomic::Ordering::Relaxed);
         scratch.write("icons/Fixture/32x32/apps/later.svg", "svg");
-        assert!(resolver.resolve("later", 32, None).is_none(), "single-call sweeps are rate limited");
-        assert_eq!(resolver.generation.load(std::sync::atomic::Ordering::Relaxed), generation);
-        assert!(resolver.generation() > generation, "explicit batches validate immediately");
+        assert!(
+            resolver.resolve("later", 32, None).is_none(),
+            "single-call sweeps are rate limited"
+        );
+        assert_eq!(
+            resolver
+                .generation
+                .load(std::sync::atomic::Ordering::Relaxed),
+            generation
+        );
+        assert!(
+            resolver.generation() > generation,
+            "explicit batches validate immediately"
+        );
         assert!(resolver.resolve("later", 32, None).is_some());
     }
 

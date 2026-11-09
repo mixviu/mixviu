@@ -29,7 +29,11 @@ pub(super) fn content(source: &str, frame: Option<Frame>, dialog: bool) -> Arc<C
 fn fallback_only_image_reference_prepares_and_places_the_colour_brand() {
     let source = "---\nscene: 1\nname: panel\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"launcher_text\"]}\nlauncher_text: {widget: \"text\", text: \"Apps\"}\nlauncher_icon: {widget: \"image\", src: \"brand:cyclops\", w: 28, h: 28}\n```\n";
     let rt = runtime(source, (200, 52));
-    assert!(rt.program.images.contains_key(&crate::images::key("launcher_icon", None)));
+    assert!(
+        rt.program
+            .images
+            .contains_key(&crate::images::key("launcher_icon", None))
+    );
     assert!(rt.program.layout().nodes.contains_key("launcher_icon"));
     assert!(!rt.program.layout().nodes.contains_key("launcher_text"));
 }

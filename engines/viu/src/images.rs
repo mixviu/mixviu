@@ -80,7 +80,8 @@ pub(crate) fn rasterise(svg: &Svg, width: u32, height: u32) -> Option<egui::Colo
 
 pub(crate) type Prepared = BTreeMap<(String, String, String), Asset>;
 type FileStamp = (Option<SystemTime>, u64);
-type AssetCache = crate::cache::Cache<(String, u32, Option<String>), (Asset, Option<(PathBuf, FileStamp)>)>;
+type AssetCache =
+    crate::cache::Cache<(String, u32, Option<String>), (Asset, Option<(PathBuf, FileStamp)>)>;
 
 fn file_stamp(path: &Path) -> Option<FileStamp> {
     // Accepted limitation: coarse mtimes can hide same-size in-place writes.
@@ -124,17 +125,29 @@ pub(crate) fn fallback_image(id: &str) -> Option<&'static str> {
 /// Legacy panel fallbacks are image references as well as child edges.
 /// Return only references not already placed by the ordinary children path.
 pub(crate) fn fallback_reference(tree: &scene::ResolvedScene, id: &str) -> Option<&'static str> {
-    if tree.name != "panel" { return None; }
+    if tree.name != "panel" {
+        return None;
+    }
     let target = fallback_image(id)?;
     let image = tree.nodes.get(target)?;
-    if image.family != "image" || crate::view::flag(image, "hidden") { return None; }
+    if image.family != "image" || crate::view::flag(image, "hidden") {
+        return None;
+    }
     let mut pending = vec!["root"];
     let mut seen = BTreeSet::new();
     while let Some(id) = pending.pop() {
-        if !seen.insert(id) { continue; }
-        let Some(node) = tree.nodes.get(id) else { continue; };
-        if crate::view::flag(node, "hidden") { continue; }
-        if id == target { return None; }
+        if !seen.insert(id) {
+            continue;
+        }
+        let Some(node) = tree.nodes.get(id) else {
+            continue;
+        };
+        if crate::view::flag(node, "hidden") {
+            continue;
+        }
+        if id == target {
+            return None;
+        }
         pending.extend(crate::templates::children(node));
     }
     Some(target)
@@ -152,11 +165,14 @@ pub(crate) fn prepare(
             return true;
         }
         let source = crate::freedesktop::normalise(crate::templates::text(node, "src"));
-        source.starts_with("icon:") || source == "brand:cyclops"
+        source.starts_with("icon:")
+            || source == "brand:cyclops"
             || (!row
                 && source.is_empty()
                 && (tree.name != "panel"
-                    || panel_fallback(id).is_none_or(|source| source.starts_with("icon:") || source == "brand:cyclops")))
+                    || panel_fallback(id).is_none_or(|source| {
+                        source.starts_with("icon:") || source == "brand:cyclops"
+                    })))
     };
     if tree
         .nodes
@@ -246,12 +262,17 @@ fn prepare_with(
             return;
         }
         let embedded: Option<(Arc<[u8]>, bool)> = if source == "brand:cyclops" {
-            Some((include_bytes!("../../../share/brand/logos/alien-cyclops.svg").as_slice().into(), false))
+            Some((
+                include_bytes!("../../../share/brand/logos/alien-cyclops.svg")
+                    .as_slice()
+                    .into(),
+                false,
+            ))
         } else {
             source
-            .strip_prefix("icon:")
-            .and_then(viu::icons::Icon::from_name)
-            .map(|icon| (viu::icons::source(icon).into_bytes().into(), true))
+                .strip_prefix("icon:")
+                .and_then(viu::icons::Icon::from_name)
+                .map(|icon| (viu::icons::source(icon).into_bytes().into(), true))
         };
         if let Some((bytes, symbolic)) = embedded {
             let asset = Asset::Svg(Svg {
@@ -280,10 +301,7 @@ fn prepare_with(
                 if let Ok(mut cache) = cache.lock() {
                     cache.insert(
                         cache_key,
-                        (
-                            asset.clone(),
-                            stamp.map(|stamp| (path.clone(), stamp)),
-                        ),
+                        (asset.clone(), stamp.map(|stamp| (path.clone(), stamp))),
                     );
                 }
                 prepared.insert(key, asset);
@@ -410,12 +428,19 @@ mod tests {
 
     #[test]
     fn panel_catalogue_names_all_exist() {
-        let source = include_str!("../../../share/scenes/panel/behaviour.mix");
         let mut names = BTreeSet::new();
-        for tail in source.split("icon:").skip(1) {
-            let name = tail.split(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')).next().unwrap();
-            assert!(viu::icons::Icon::from_name(name).is_some(), "unknown panel catalogue icon: {name}");
-            names.insert(name);
+        for source in [
+            include_str!("../../../share/scenes/panel/behaviour.mix"),
+            include_str!("../../../share/scenes/panel/scene.mix"),
+        ] {
+            for tail in source.split("\"icon:").skip(1) {
+                let name = tail.split('"').next().unwrap();
+                assert!(
+                    viu::icons::Icon::from_name(name).is_some(),
+                    "unknown panel catalogue icon: {name}"
+                );
+                names.insert(name);
+            }
         }
         assert!(names.len() >= 10, "the check must cover the panel mapping");
     }
@@ -529,13 +554,20 @@ icon: {widget: "image", src: "", w: 31, h: 31}
         assert!(
             matches!(
                 images.get(&key("launcher_icon", None)),
-                Some(Asset::Svg(Svg { symbolic: false, .. }))
+                Some(Asset::Svg(Svg {
+                    symbolic: false,
+                    ..
+                }))
             ),
             "the cyclops keeps its colours"
         );
-        let Some(Asset::Svg(svg)) = images.get(&key("launcher_icon", None)) else { panic!("brand SVG"); };
+        let Some(Asset::Svg(svg)) = images.get(&key("launcher_icon", None)) else {
+            panic!("brand SVG");
+        };
         let pixels = rasterise(svg, 64, 64).unwrap();
-        assert!(pixels.pixels.iter().any(|p| p.r() > 100 && p.r() > p.g().saturating_mul(2) && p.r() > p.b().saturating_mul(2)));
+        assert!(pixels.pixels.iter().any(|p| p.r() > 100
+            && p.r() > p.g().saturating_mul(2)
+            && p.r() > p.b().saturating_mul(2)));
         assert_eq!(fallback_image("launcher_text"), Some("launcher_icon"));
     }
 
