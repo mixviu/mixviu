@@ -5,7 +5,7 @@
 use smithay::utils::{Physical, Rectangle};
 
 /// Identifies a compositor output by a STABLE id derived from its identity
-/// (EDID key, connector-name fallback) — not a positional index, so it survives
+/// (the live connector/protocol name) — not a positional index, so it survives
 /// hotplug reordering and means the same monitor across the render loop and the
 /// capture-request side. ALWAYS build it with [`OutputId::from_key`] from the same
 /// `output_key` the rim uses (every backend, incl. single-output / winit) so the
@@ -14,8 +14,7 @@ use smithay::utils::{Physical, Rectangle};
 pub struct OutputId(pub u64);
 
 impl OutputId {
-    /// Stable id for an output's identity string (its `output_key`: "make model
-    /// serial", or the connector name when EDID is unavailable). FNV-1a 64-bit —
+    /// Stable id for an output's runtime connector/protocol key. FNV-1a 64-bit —
     /// deterministic and dependency-free, so the kernel render loop and the rim
     /// capture requests derive the SAME id for the same monitor without sharing
     /// any state or a positional index.
