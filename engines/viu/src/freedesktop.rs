@@ -467,7 +467,7 @@ struct Inventory {
 
 fn stamp(path: &Path) -> Option<(SystemTime, u64, Option<(SystemTime, u64)>)> {
     let meta = path.symlink_metadata().ok()?;
-    let target = meta.is_symlink().then(|| path.metadata().ok().and_then(|m| Some((m.modified().ok()?, m.len())))).flatten();
+    let target = meta.file_type().is_symlink().then(|| path.metadata().ok().and_then(|m| Some((m.modified().ok()?, m.len())))).flatten();
     // (mtime, len) can miss same-size in-place writes on coarse-mtime filesystems.
     Some((meta.modified().ok()?, meta.len(), target))
 }
@@ -483,7 +483,7 @@ fn inventory(path: &Path, root: &Path, depth: usize, stamps: &mut Stamps, visite
         // escaping the configured roots. Never enter them; disable caching.
         return !path.is_dir();
     }
-    if !(meta.is_dir() || (meta.is_symlink() && path.is_dir())) { return true; }
+    if !(meta.is_dir() || (meta.file_type().is_symlink() && path.is_dir())) { return true; }
     if depth > 16 { return false; }
     if !visited.insert(canonical) { return true; }
     let mut complete = true;
