@@ -269,6 +269,10 @@ pub struct LayerSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WindowSnapshot {
+    pub opacity: f64,
+    pub z: i32,
+    pub clip: Option<crate::request::ClipRect>,
+    pub requested_visible: bool,
     pub placement: &'static str,
     pub float_geometry: Option<FloatGeometrySnapshot>,
     #[serde(flatten)]
@@ -805,6 +809,7 @@ macro_rules! window_snapshot {
 }
 
 window_snapshot!(
+    opacity, z, clip, requested_visible,
     placement,
     id,
     foreign_id,
@@ -1016,6 +1021,7 @@ pub fn project_window_row(surface: &SurfaceSnapshot) -> WindowSnapshot {
         } else {
             "floating"
         },
+        opacity: 1.0, z: 0, clip: None, requested_visible: true,
         float_geometry: None,
         occlusion: surface.occlusion.clone(),
         id: surface.id,

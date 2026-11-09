@@ -34,6 +34,7 @@ impl DrawLayer {
 pub struct DrawOrder {
     entries: Vec<(ComponentId, DrawLayer, OrderKey)>,
     next: OrderKey,
+    z: std::collections::HashMap<ComponentId, i32>,
 }
 
 impl DrawOrder {
@@ -41,6 +42,7 @@ impl DrawOrder {
         Self {
             entries: Vec::new(),
             next: 1.0,
+            z: Default::default(),
         }
     }
 
@@ -95,6 +97,9 @@ impl DrawOrder {
         }
     }
 
+    /// Stacking request within the existing workspace tier; never changes tier.
+    pub fn set_z(&mut self, id: ComponentId, z: i32) { self.z.insert(id, z); }
+
     pub fn key(&self, id: ComponentId) -> Option<OrderKey> {
         self.entries
             .iter()
@@ -106,7 +111,7 @@ impl DrawOrder {
     /// front-to-back input hit-testing.
     pub fn ordered(&self) -> Vec<(ComponentId, OrderKey)> {
         let mut v = self.entries.clone();
-        v.sort_by(|a, b| a.1.cmp(&b.1).then(a.2.total_cmp(&b.2)));
+        v.sort_by(|a, b| a.1.cmp(&b.1).then(self.z.get(&a.0).unwrap_or(&0).cmp(self.z.get(&b.0).unwrap_or(&0))).then(a.2.total_cmp(&b.2)));
         v.into_iter().map(|(c, _, k)| (c, k)).collect()
     }
 }

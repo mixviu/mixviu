@@ -114,6 +114,7 @@ fn window_commands_refuse_stale_targets_and_the_lock() {
                 y: None,
                 width: None,
                 height: None,
+                opacity: None, z: None, visible: None, clip: None,
             },
             &facts(),
             &outputs(),
@@ -735,6 +736,7 @@ fn spec(id: u64, generation: u64) -> PlaceSpec {
         y: None,
         width: None,
         height: None,
+                opacity: None, z: None, visible: None, clip: None,
     }
 }
 

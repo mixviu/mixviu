@@ -24,7 +24,7 @@ use crate::camera::transform::translate::transform::{Context as XformCtx, Transf
 use crate::scene::identity::SolidBank;
 use crate::state::CoordinateTrait;
 use crate::state::Loop;
-use crate::window::draw::element::{ClampOpaque, Element, ElementWindowSurface};
+use crate::window::draw::element::{ClampOpaque, RawElement as Element, ElementWindowSurface};
 use crate::window::draw::occlude::{Drawn, Occluders};
 use crate::window::interface::draw::visible::DrawWindow;
 use crate::window::interface::record::window::LoopWindow;
@@ -278,13 +278,14 @@ pub fn scene<R>(
     window: &Window,
     context: &crate::canvas::draw::context::Context,
     occluders: &Occluders,
-) -> (Vec<Element<R>>, Drawn)
+) -> (Vec<crate::window::draw::element::Element<R>>, Drawn)
 where
     // SceneDispatch: the chrome's client corner clip compiles and drives its
     // texture program through it (decor `clip`).
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
+    if !visual_of(window).visible { return (Vec::new(), Drawn::default()); }
     // viud: no shader bundle composites windows (compositor.pipeline is cut),
     // so the engine always draws and occludes them itself.
     // Windows inside an active capture region must keep rendering (and getting
@@ -410,7 +411,9 @@ where
         decoration,
         decor::render::Pass::Presented,
     );
-    drawn.opaque = opaque;
+    drawn.opaque = if visual_of(window).opacity < 1.0 { Vec::new() } else { opaque };
+    let (elements, crop) = crop_elements(elements, window, ctx, elem_loc, size);
+    if let Some(crop) = crop { drawn.opaque = drawn.opaque.into_iter().filter_map(|r| r.intersection(crop)).collect(); }
     (elements, drawn)
 }
 
@@ -421,9 +424,9 @@ struct WindowPlacement {
     crop_output: Rectangle<i32, Physical>,
 }
 
-pub type WindowCapture<R> = (Vec<Element<R>>, Size<i32, Physical>);
+pub type WindowCapture<R> = (Vec<crate::window::draw::element::Element<R>>, Size<i32, Physical>);
 pub type FramedWindowCapture<R> = (
-    Vec<Element<R>>,
+    Vec<crate::window::draw::element::Element<R>>,
     Size<i32, Physical>,
     Rectangle<i32, Physical>,
 );
@@ -447,6 +450,7 @@ where
         slot_size,
         crop_output,
     } = placement;
+    let opacity = visual_of(window).opacity as f32;
     let bundle_owned = false;
     let output_scale = ctx.scale * ctx.camera_zoom;
     let zoom = ctx.camera_zoom;
@@ -472,7 +476,7 @@ where
             surface,
             loc,
             Scale::from(output_scale),
-            1.0,
+            opacity,
             Kind::Unspecified,
         );
         out.extend(native.into_iter().map(|inner| {
@@ -610,7 +614,7 @@ where
                 popup.wl_surface(),
                 Point::from((0, 0)),
                 Scale::from(ctx.scale),
-                1.0,
+                opacity,
                 Kind::Unspecified,
             );
             for inner in native {
@@ -633,7 +637,7 @@ where
             popup.wl_surface(),
             Point::from((off_x.round() as i32, off_y.round() as i32)),
             Scale::from(ctx.scale),
-            1.0,
+            opacity,
             Kind::Unspecified,
         );
         for inner in native {
@@ -672,6 +676,7 @@ where
         output_scale,
         crop_output,
         pass,
+        opacity,
     );
     elements.extend(chrome.front.into_iter().map(Element::Chrome));
 
@@ -681,7 +686,7 @@ where
         &root_surface,
         Point::from((0, 0)),
         Scale::from(ctx.scale),
-        1.0,
+        opacity,
         Kind::Unspecified,
     );
     // With server-side chrome the content (toplevel and subsurfaces, not popups)
@@ -741,6 +746,7 @@ where
     // because both suppressing modes existed to escape the full-slot backstop,
     // and with that gone a bundle asking for them gets a worse result than the
     // shared arm already gives it.
+    if !visual_of(window).visible { return (Vec::new(), Drawn::default()); }
     // viud: no shader bundle, so the letterbox policy is always the bars arm.
     let bars: Vec<Rectangle<i32, Physical>> = crop_slot.subtract_rect(content);
     // Per-window bank (see `scene.identity`), separate from the decoration crate's
@@ -757,7 +763,7 @@ where
         elements.push(Element::SolidBox(letterbox.solid(
             slot,
             *rect,
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, opacity],
         )));
     }
 
@@ -929,9 +935,29 @@ where
         Vec::new(),
         decor::render::Pass::Captured,
     );
+    let (elements, _) = crop_elements(elements, window, ctx, (0, 0).into(), size);
     Ok((
         elements,
         size,
         Rectangle::new(frame.loc - bounds.loc, frame.size),
     ))
+}
+
+pub fn visual_of(window: &Window) -> comp_model::request::VisualAttributes {
+    window.user_data().get::<std::sync::Mutex<comp_model::request::VisualAttributes>>()
+        .map(|v| *v.lock().unwrap()).unwrap_or_default()
+}
+
+fn crop_elements<R>(elements: Vec<Element<R>>, window: &Window, ctx: XformCtx,
+    loc: Point<i32, Logical>, size: Size<i32, Physical>)
+    -> (Vec<crate::window::draw::element::Element<R>>, Option<Rectangle<i32, Physical>>)
+where R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
+    R::TextureId: Texture + Clone + Send + 'static,
+{
+    let visual = visual_of(window);
+    let crop = visual.clip.map(|c| project_rect(ctx, loc.x as f64 + c.x, loc.y as f64 + c.y, c.width, c.height));
+    let rect = crop.unwrap_or(Rectangle::from_size(size));
+    let elements = if !visual.visible { Vec::new() } else { elements.into_iter()
+        .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect)).collect() };
+    (elements, crop)
 }

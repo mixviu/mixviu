@@ -167,6 +167,7 @@ pub struct CompState {
     /// output loss and parked frames; drained by the owning seat path.
     input_geometry_dirty: bool,
     pub registry: Registry<SurfaceHandle>,
+    pub visuals: HashMap<SurfaceId, (u64, comp_model::request::VisualAttributes)>,
     /// The workspace model (count, current per output).
     pub workspaces: WorkspaceState,
     /// The default output (the single-output rule), refreshed from the
@@ -589,11 +590,15 @@ impl CompState {
 
     /// Whether a record is hidden: it carries a workspace and is minimised or
     /// off the current one (policy `presentable`, less the mapped term).
+    pub fn visual(&self, id: SurfaceId) -> comp_model::request::VisualAttributes {
+        self.visuals.get(&id).filter(|(generation, _)| self.registry.get(id).is_some_and(|r| r.generation() == *generation)).map(|(_, v)| *v).unwrap_or_default()
+    }
+
     pub fn hidden_id(&self, id: SurfaceId) -> bool {
         let current = self.current_workspace();
         self.registry.get(id).is_some_and(|record| {
             record.role().carries_workspace()
-                && (record.minimized() || !policy::workspaces::on_workspace(record, current))
+                && (!self.visual(id).visible || record.minimized() || !policy::workspaces::on_workspace(record, current))
         })
     }
 

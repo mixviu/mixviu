@@ -738,6 +738,7 @@ fn step_eight_window_commands_parse_and_refuse_by_field() {
             y: None,
             width: None,
             height: Some(300),
+                opacity: None, z: None, visible: None, clip: None,
         })))
     );
     assert_eq!(

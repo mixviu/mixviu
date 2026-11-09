@@ -17,7 +17,7 @@ use dispatcher::frame::SceneDispatch;
 
 smithay::render_elements! {
     // SceneDispatch: `WindowFitClipped` draws through a texture program.
-    pub Element<R> where R: ImportAll + ImportMem + SceneDispatch;
+    pub RawElement<R> where R: ImportAll + ImportMem + SceneDispatch;
     // Native window surface (camera-zoom only) — used for the client-driven (no decided size)
     // fallback path. Wrapped in `ClampOpaque`, which declines direct scanout when it spans
     // the output.
@@ -295,3 +295,6 @@ where
         self.inner.capture_framebuffer(frame, src, dst, cache)
     }
 }
+
+/// Final per-window crop, shared by presentation and captures.
+pub type Element<R> = CropRenderElement<RawElement<R>>;

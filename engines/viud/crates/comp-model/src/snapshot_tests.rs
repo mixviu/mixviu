@@ -158,6 +158,7 @@ fn fixture() -> CompSnapshot {
     windows.insert(
         "s2".into(),
         WindowSnapshot {
+            opacity: 1.0, z: 0, clip: None, requested_visible: true,
             placement: "floating",
             float_geometry: None,
             occlusion: Default::default(),
