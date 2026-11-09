@@ -454,7 +454,8 @@ type Key = (String, u32, u32, String, Option<String>);
 // Reuse the decoded-file cache's metadata validation strategy. Directory
 // mtimes detect additions/removals; index files detect inheritance edits.
 // Retain missing roots too, so installing a previously absent theme works.
-type Stamps = BTreeMap<PathBuf, Option<(SystemTime, u64, Option<(SystemTime, u64)>)>>;
+type Stamp = (SystemTime, u64, Option<(SystemTime, u64)>);
+type Stamps = BTreeMap<PathBuf, Option<Stamp>>;
 const INVENTORY_LIMIT: usize = 4096;
 const INVENTORY_WORK_LIMIT: usize = 65536;
 
@@ -465,7 +466,7 @@ struct Inventory {
     checked: Instant,
 }
 
-fn stamp(path: &Path) -> Option<(SystemTime, u64, Option<(SystemTime, u64)>)> {
+fn stamp(path: &Path) -> Option<Stamp> {
     let meta = path.symlink_metadata().ok()?;
     let target = meta
         .file_type()
