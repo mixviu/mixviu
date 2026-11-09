@@ -171,6 +171,12 @@ pub struct Dispatch {
     /// queue, because separate ones can only be drained in a fixed sequence and that
     /// sequence then outranks the order things actually happened.
     pub deferred: Vec<crate::state::deferred::Deferred>,
+    /// `wp_image_description_info_v1` objects whose events are sent and whose `done`
+    /// is owed. `done` is a destructor event: sent inside the `get_information`
+    /// handler it frees the object wayland-backend is about to give its data to
+    /// (a use-after-free, viud SIGSEGV on Firefox's first query, 2026-11-09). The
+    /// drain sends it after dispatch.
+    pub pending_info_done: Vec<smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_image_description_info_v1::WpImageDescriptionInfoV1>,
     /// The `bool` is "was this toplevel being carried by a live
     /// `xdg_toplevel_drag_v1` at the moment it was destroyed" — sampled at
     /// destroy time rather than at drain time, since the drag may well have
@@ -1127,7 +1133,7 @@ mod color_impls {
     }
     impl WLDispatch<WpImageDescriptionV1, ImageDescData> for Dispatch {
         fn request(
-            _: &mut Self,
+            state: &mut Self,
             _: &Client,
             _: &WpImageDescriptionV1,
             request: wp_image_description_v1::Request,
@@ -1135,7 +1141,10 @@ mod color_impls {
             _: &DisplayHandle,
             di: &mut DataInit<'_, Self>,
         ) {
-            cs::dispatch_image_desc(request, data, di);
+            if let Some(info) = cs::dispatch_image_desc(request, data, di) {
+                state.pending_info_done.push(info);
+                state.arm_drain();
+            }
         }
     }
     impl WLDispatch<WpImageDescriptionInfoV1, ()> for Dispatch {

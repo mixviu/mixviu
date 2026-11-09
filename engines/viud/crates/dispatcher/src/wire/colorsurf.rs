@@ -47,6 +47,7 @@ where
     W: Dispatch<WpImageDescriptionCreatorParamsV1, Mutex<ParamsState>> + 'static,
     W: Dispatch<WpImageDescriptionV1, ImageDescData> + 'static,
 {
+    info!("color: manager request {:?}", req);
     match req {
         MgrReq::Destroy => {}
         MgrReq::GetOutput { id, .. } => {
@@ -81,6 +82,7 @@ pub fn dispatch_color_output<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
     di: &mut DI<'_, W>,
 ) {
     if let OutReq::GetImageDescription { image_description } = req {
+        info!("color: output description -> {:?}", preferred().transfer);
         send_ready(&di.init(image_description, ImageDescData(Some(preferred()))));
     }
 }
@@ -89,6 +91,7 @@ pub fn dispatch_color_output<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
 /// `wl_surface.commit` (the protocol double-buffers it). A client sets it
 /// before attaching the buffer it describes, which is what matters.
 pub fn dispatch_color_surface(req: SurfReq, surface: &WlSurface) {
+    info!("color: surface request {:?}", req);
     match req {
         SurfReq::SetImageDescription {
             image_description, ..
@@ -112,6 +115,7 @@ pub fn dispatch_color_feedback<W: Dispatch<WpImageDescriptionV1, ImageDescData> 
     match req {
         FbReq::GetPreferred { image_description }
         | FbReq::GetPreferredParametric { image_description } => {
+            info!("color: preferred description -> {:?}", preferred().transfer);
             send_ready(&di.init(image_description, ImageDescData(Some(preferred()))));
         }
         _ => {}
@@ -123,6 +127,7 @@ pub fn dispatch_color_params<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
     data: &Mutex<ParamsState>,
     di: &mut DI<'_, W>,
 ) {
+    info!("color: params request {:?}", req);
     let mut p = data.lock().unwrap();
     match req {
         PrReq::SetTfNamed { tf } => match wenum(tf).and_then(transfer_from) {
@@ -178,6 +183,7 @@ pub fn dispatch_color_params<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 
         PrReq::Create { image_description } => match p.build() {
             Ok(d) => send_ready(&di.init(image_description, ImageDescData(Some(d)))),
             Err(why) => {
+                warn!("color: parametric create failed: {why}");
                 di.init(image_description, ImageDescData(None))
                     .failed(Cause::Unsupported, why.into());
             }
@@ -196,16 +202,21 @@ pub fn dispatch_color_icc<W: Dispatch<WpImageDescriptionV1, ImageDescData> + 'st
     }
 }
 
+/// `get_information`: the info events now, and the info object back to the
+/// caller, which owes it `done` after dispatch (a destructor event; sending it
+/// here frees the object wayland-backend is about to attach data to).
 pub fn dispatch_image_desc<W: Dispatch<WpImageDescriptionInfoV1, ()> + 'static>(
     req: DsReq,
     data: &ImageDescData,
     di: &mut DI<'_, W>,
-) {
+) -> Option<WpImageDescriptionInfoV1> {
     if let DsReq::GetInformation { information } = req {
         let info: WpImageDescriptionInfoV1 = di.init(information, ());
-        match &data.0 {
-            Some(d) => send_info(&info, d),
-            None => info.done(),
+        if let Some(d) = &data.0 {
+            send_info(&info, d);
         }
+        info!("color: get_information answered ({:?}); done deferred", data.0.map(|d| d.transfer));
+        return Some(info);
     }
+    None
 }

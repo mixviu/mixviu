@@ -221,7 +221,8 @@ pub fn send_ready(desc: &WpImageDescriptionV1) {
     }
 }
 
-/// The info events for `d`, then `done`.
+/// The info events for `d`. NOT `done`: it is a destructor event, so the caller
+/// queues it for after dispatch (`Dispatch::pending_info_done`).
 pub fn send_info(info: &WpImageDescriptionInfoV1, d: &Description) {
     match named_primaries_of(&d.primaries) {
         Some(p) => info.primaries_named(p),
@@ -249,7 +250,6 @@ pub fn send_info(info: &WpImageDescriptionInfoV1, d: &Description) {
     if let Some(fall) = d.max_fall {
         info.target_max_fall(fall.round() as u32);
     }
-    info.done();
 }
 
 pub fn wenum<T: TryFrom<u32>>(w: smithay::reexports::wayland_server::WEnum<T>) -> Option<T> {
