@@ -7,12 +7,31 @@ use crate::{
 };
 use serde_json::json;
 use std::{
+    ffi::OsString,
+    path::Path,
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
 
+struct Tools {
+    mix: PathBuf,
+    validator: PathBuf,
+    share: PathBuf,
+}
+impl Tools {
+    fn for_binary(binary: &Path, explicit: Option<OsString>) -> Result<Self, String> {
+        let prefix = binary.parent().and_then(Path::parent).ok_or("viu executable has no prefix")?;
+        Ok(Self {
+            mix: prefix.join("bin/mix"),
+            share: prefix.join("share"),
+            validator: explicit.map(PathBuf::from).unwrap_or_else(|| prefix.join("share/viud/scripts/scene_preview.mix")),
+        })
+    }
+}
+
 struct Preview {
+    tools: Tools,
     dir: PathBuf,
     model: Option<PathBuf>,
     fingerprint: Vec<Option<Vec<u8>>>,
@@ -44,24 +63,9 @@ impl Preview {
         }
         self.fingerprint = fingerprint;
         let result = (|| -> Result<_, String> {
-            let script = std::env::var_os("VIU_PREVIEW_VALIDATOR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    if let Ok(cwd) = std::env::current_dir() {
-                        for root in cwd.ancestors() {
-                            let script = root.join("engines/viud/scripts/scene_preview.mix");
-                            if script.is_file() {
-                                return script;
-                            }
-                        }
-                    }
-                    PathBuf::from(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/../viud/scripts/scene_preview.mix"
-                    ))
-                });
-            let mut command = std::process::Command::new("/opt/mixos/bin/mix");
-            command.arg(script).arg(&self.dir);
+            let mut command = std::process::Command::new(&self.tools.mix);
+            command.env("MIX_SHARE", &self.tools.share);
+            command.arg(&self.tools.validator).arg(&self.dir);
             if let Some(model) = &self.model {
                 command.arg(model);
             }
@@ -121,11 +125,16 @@ pub fn run(args: &[String]) -> eframe::Result {
     }
     let dir = PathBuf::from(&args[0]);
     let model = args.get(2).map(PathBuf::from);
+    let tools = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| Tools::for_binary(&exe, std::env::var_os("VIU_PREVIEW_VALIDATOR"))).unwrap_or_else(|error| {
+        eprintln!("viu preview: {error}");
+        std::process::exit(1);
+    });
     eframe::run_native(
         "Scene Preview",
         eframe::NativeOptions::default(),
         Box::new(move |_| {
             Ok(Box::new(Preview {
+                tools,
                 dir,
                 model,
                 fingerprint: Vec::new(),
@@ -142,6 +151,28 @@ pub fn run(args: &[String]) -> eframe::Result {
 mod tests {
     use super::*;
     #[test]
+    fn planted_ancestor_validator_is_not_executed() {
+        let temp = tempfile::tempdir().unwrap();
+        let prefix = temp.path().join("installed");
+        let ancestor = temp.path().join("download");
+        let cwd = ancestor.join("nested/scene");
+        let planted = ancestor.join("engines/viud/scripts");
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::create_dir_all(&planted).unwrap();
+        std::fs::create_dir_all(prefix.join("bin")).unwrap();
+        std::fs::create_dir_all(prefix.join("share/viud/scripts")).unwrap();
+        let marker = temp.path().join("executed");
+        std::fs::write(planted.join("scene_preview.mix"), format!("write_file({}, \"bad\")", json!(marker))).unwrap();
+        std::fs::write(prefix.join("share/viud/scripts/scene_preview.mix"), "print(\"trusted\")").unwrap();
+        std::os::unix::fs::symlink("/opt/mixos/bin/mix", prefix.join("bin/mix")).unwrap();
+        let tools = Tools::for_binary(&prefix.join("bin/viu"), None).unwrap();
+        let output = std::process::Command::new(tools.mix).arg(tools.validator).current_dir(&cwd).output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "trusted");
+        assert!(!marker.exists());
+        assert_eq!(Tools::for_binary(&prefix.join("bin/viu"), Some(OsString::from("explicit.mix"))).unwrap().validator, PathBuf::from("explicit.mix"));
+    }
+    #[test]
     fn preview_loads_recorded_model_and_retains_last_good_after_bad_edit() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path().join("preview-test");
@@ -152,6 +183,7 @@ mod tests {
         let model = temp.path().join("model.json");
         std::fs::write(&model, r#"{"text":"recorded"}"#).unwrap();
         let mut preview = Preview {
+            tools: Tools {mix: PathBuf::from("/opt/mixos/bin/mix"), validator: PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../viud/scripts/scene_preview.mix")), share:PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../share"))},
             dir: dir.clone(),
             model: Some(model),
             fingerprint: Vec::new(),

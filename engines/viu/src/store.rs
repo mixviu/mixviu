@@ -141,6 +141,7 @@ pub(crate) struct SceneOwner {
 
 /// Host-supplied identity and seat, independent of authored scene metadata.
 /// The caller derives `owner` from broker-attested request provenance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SceneMount<'a> {
     pub output: &'a str,
     pub owner: &'a str,
@@ -486,7 +487,7 @@ impl SceneStore {
         kind: SceneCommand,
         body: &str,
         args: &Value,
-        mut mount: Option<&mut SceneMount<'_>>,
+        mount: Option<&SceneMount<'_>>,
     ) -> Result<(Value, Option<Value>), Value> {
         let name = args["scene"].as_str().unwrap_or_default();
         match kind {
@@ -519,7 +520,7 @@ impl SceneStore {
                             SceneCommand::Load,
                             text,
                             source,
-                            mount.as_deref_mut(),
+                            mount,
                         )?;
                         let name = receipt["scene"]
                             .as_str()
@@ -796,7 +797,7 @@ impl SceneStore {
     fn accept(
         &mut self,
         document: SceneDocument,
-        mount: Option<&mut SceneMount<'_>>,
+        mount: Option<&SceneMount<'_>>,
         loading: bool,
         preempt: bool,
     ) -> Result<(Value, Option<Value>), Value> {

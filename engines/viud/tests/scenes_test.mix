@@ -37,6 +37,11 @@ fn rpc($host, $command, $body)
   end
   if contains(["shell.scene.load", "shell.scene.validate"], $command) then
     if type($body) == "map" and $body.sources != nil then
+      if $host_state.edit_during_commit != nil then
+        $edit = $host_state.edit_during_commit
+        $host_state.edit_during_commit = nil
+        write_file($edit.path, $edit.text)
+      end
       $revisions = {}
       for each $source in $body.sources
         $r = rpc($host, $command, $source)
@@ -131,6 +136,7 @@ fn check_behaviour($path, $opts)
   return {ok:true, problems:$problems}
 end
 fn launch($dir, $name, $generation, $host, $me)
+  if $host_state.launch_failure == $name then raise("SCENES_LAUNCH", "fixture spawn failed", {}) end
   record("launch", {dir:$dir, name:$name, generation:$generation, host:$host, me:$me})
   return 1000 + len(calls("launch"))
 end
@@ -1487,6 +1493,82 @@ try
   check($s.rc == 0 and type($s.response.revisions.alpha) == "number", "quoin.reload returns revision map")
   $s = $l.request($s, "quoin.reload", {scope:"wrong"})
   check($s.rc == 10, "quoin.reload refuses unknown scope")
+  for $arg in [{scope:"lib", name:"alpha"}, {scope:"all", name:nil}, {scope:"scene", name:7}, {scope:"scene"}]
+    $bad = $l.request($s, "quoin.reload", $arg)
+    check($bad.rc == 10 and $bad.response.error_code == "SCENES_ARGUMENT", "reload validates name's scope and type")
+  end
+
+  -- A helper write inside the host commit must cause a second validation pass.
+  $host_state.edit_during_commit = {path:$helper, text:"-- edited during commit\n"}
+  $mark = log_mark()
+  $s = $l.request($s, "quoin.reload", {scope:"lib"})
+  check($s.rc == 0 and $s.library_seen == $l.library_signature($s), "explicit reload catches in-flight helper edit")
+  check(len(filter(since($mark, "shell.scene.load"), fn($r) = $r.body.sources != nil)) == 2, "in-flight edit commits a second complete batch")
+  check($s.library_checked[$helper] == hash_sha256(read_file($helper)), "helper cache uses the validated complete digest")
+
+  -- A refused library and independent static edit in the same event batch.
+  install_fixture($s.root, "static-test", false)
+  $s = $l.request($l.rescan($s, false), "enable", {name:"static-test"})
+  $static = $s.root .. "/static-test/scene.mix"
+  $static_rev = $s.scenes["static-test"].revision
+  $good_rev = $s.scenes.alpha.revision
+  write_file($static, replace(read_file($static), "hello", "new static content"))
+  write_file($helper, "-- BROKEN\n")
+  $s = $l.filesystem($s, {changes:[{path:$helper}, {path:$static}], overflow:false})
+  check($s.rc == 10 and $s.scenes["static-test"].revision > $static_rev and $s.scenes.alpha.revision == $good_rev, "coalesced refusal keeps group last-good and applies unrelated scene")
+  $notice = $l.inventory($s)
+  $affected = filter($notice.scenes, fn($r) = $r.name == "alpha")[0]
+  check($affected.mounted and $affected.load_diagnostic.error_code == "SCENES_BEHAVIOUR_INVALID" and deep_eq($affected.diagnostic, $affected.load_diagnostic), "published surface inventory carries the refused library diagnostic")
+  if env("P1_SURFACE_NOTICE", "") != "" then
+    $s = $l.changed($s)
+    $publications = calls("publish")
+    write_file(env("P1_SURFACE_NOTICE"), json_encode($publications[len($publications) - 1].body))
+  end
+  $static_rev = $s.scenes["static-test"].revision
+  write_file($static, replace(read_file($static), "new static content", "overflow content"))
+  $s = $l.filesystem($s, {changes:[], overflow:true})
+  check($s.scenes["static-test"].revision > $static_rev and $s.scenes.alpha.revision == $good_rev, "overflow rescan proceeds after library refusal")
+  write_file($helper, "-- repaired again\n")
+  $s = $l.request($s, "quoin.reload", {scope:"lib"})
+  -- Reap the test adapter's old processes, so the next reload actually spawns.
+  for $n in ["alpha", "alpha-two"]
+    if $s.retiring[$n] != nil then
+      $old = $s.retiring[$n]
+      $s = $l.exited($s, {pid:$old.pid, tag:{name:$n, generation:$old.generation}, exit_code:0})
+    end
+  end
+  $host_state.launch_failure = "alpha"
+  write_file($static, replace(read_file($static), "overflow content", "post-commit content"))
+  write_file($helper, "-- spawn pass\n")
+  $s = $l.filesystem($s, {changes:[{path:$helper}, {path:$static}], overflow:false})
+  $host_state.launch_failure = nil
+  check($s.rc == 10 and type($s.response.revisions.alpha) == "number" and $s.scenes.alpha.diagnostic.error_code == "SCENES_LAUNCH", "post-commit failure returns new revisions and diagnostic")
+  check($s.scenes["static-test"].source == read_file($static), "post-commit spawn failure does not drop unrelated changes")
+
+  -- Tail bytes and symlinks are never silently marked as checked.
+  write_file($helper, repeat(" ", 262144) .. "-- tail\n")
+  $s = $l.request($s, "quoin.reload", {scope:"lib"})
+  check($s.rc == 10 and $s.response.diagnostics[0].error_code == "SCENES_LIMIT", "oversized helper including tail is refused")
+  write_file($helper, "-- valid\n")
+  run_argv_must(["ln", "-s", $helper, $s.root .. "/lib/link.mix"])
+  $signature = $l.library_signature($s)
+  $s = $l.request($s, "quoin.reload", {scope:"lib"})
+  check($s.rc == 10 and $s.response.diagnostics[0].error_code == "SCENES_FILES", "symlink fingerprint and preflight both refuse links")
+
+  -- A parent watch observes a replaced catalogue and a newly created lib.
+  $anchor = $tmp .. "/watch-root"
+  mkdir($anchor .. "/catalogue/lib")
+  $parent_watch = fs_watch($l.watch_anchor($anchor .. "/catalogue"), {recursive:true})
+  run_argv_must(["mv", $anchor .. "/catalogue", $anchor .. "/old-catalogue"])
+  mkdir($anchor .. "/catalogue/lib")
+  write_file($anchor .. "/catalogue/lib/new.mix", "-- new catalogue\n")
+  $events = fs_wait($parent_watch)
+  check(len($events.changes) > 0, "stable parent watch observes catalogue replacement")
+  $future = $anchor .. "/future/lib"
+  $future_watch = fs_watch($l.watch_anchor($future), {recursive:true})
+  mkdir($future)
+  write_file($future .. "/late.mix", "-- late helper\n")
+  check(len(fs_wait($future_watch).changes) > 0, "watch installed before SCENES_LIB exists observes creation")
 
   -- T1: the gallery listing.
   mkdir($tpl .. "/broken")

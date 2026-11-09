@@ -1161,7 +1161,7 @@
   },
   "quoin.reload": {
     "params": {"scope":"scene|lib|all", "name?":"string"},
-    "reply": "{accepted:bool,revisions?:object,diagnostics:list}",
+    "reply": "rc0 {accepted:true,revisions:object,diagnostics:[]}; rc10 precommit {accepted:false,diagnostics:list}; rc10 postcommit {accepted:false,revisions:object,diagnostics:list}; SCENES_ARGUMENT for invalid scope/name (name string required for scene, forbidden for lib/all)",
     "source": "engines/viud/scripts/lib/scenes.mix"
   },
   "scenes.remove": {

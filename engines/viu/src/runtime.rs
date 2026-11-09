@@ -304,9 +304,9 @@ impl LayerProgram for Program {
         let mut messages = Vec::new();
         entry.1.show(ui, &mut messages);
         if let Some(error) = self.state.lock().unwrap().errors.get(&name) {
-            if crate::dev_loop::error_strip(ui, error) {
+            if crate::dev_loop::error_strip(ui, &format!("{error} — open Scene Editor")) {
                 let _ = self.send.send(Outgoing::Fire(
-                    "scenes".into(),
+                    crate::dev_loop::scenes_service(),
                     "scenes.editor.open".into(),
                     json!({"scene":name}),
                 ));
