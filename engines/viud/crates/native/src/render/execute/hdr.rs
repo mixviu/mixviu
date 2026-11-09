@@ -107,7 +107,7 @@ pub fn compose(
 }
 use smithay::reexports::drm::control::atomic::AtomicModeReq;
 use smithay::reexports::drm::control::{
-    AtomicCommitFlags, Device as ControlDevice, connector, property,
+    AtomicCommitFlags, Device as ControlDevice, ResourceHandle, connector, crtc, property,
 };
 
 /// Kernel `struct hdr_metadata_infoframe` (CTA-861 static metadata type 1).
@@ -192,10 +192,10 @@ fn build_metadata(caps: &HdrInfo) -> HdrOutputMetadata {
     }
 }
 
-/// Look up a connector property handle by name.
-fn prop_handle(
+/// Look up a property handle by name on a connector, CRTC or any DRM object.
+fn prop_handle<H: ResourceHandle>(
     drm: &DrmDeviceFd,
-    conn: connector::Handle,
+    conn: H,
     name: &str,
 ) -> Result<property::Handle, String> {
     let set = drm
@@ -208,7 +208,7 @@ fn prop_handle(
             return Ok(*h);
         }
     }
-    Err(format!("connector lacks property {name}"))
+    Err(format!("object lacks property {name}"))
 }
 
 /// Raw value of an enum property's entry named `name`.
@@ -231,15 +231,15 @@ fn enum_value(drm: &DrmDeviceFd, handle: property::Handle, name: &str) -> Result
 /// A connector property handle by name, or `None` when the connector lacks it.
 /// Absence is normal (not every connector exposes `Colorspace` or `max bpc`) and
 /// must not fail the whole pass.
-fn opt_prop(drm: &DrmDeviceFd, conn: connector::Handle, name: &str) -> Option<property::Handle> {
+fn opt_prop<H: ResourceHandle>(drm: &DrmDeviceFd, conn: H, name: &str) -> Option<property::Handle> {
     prop_handle(drm, conn, name).ok()
 }
 
 /// The connector's CURRENT raw value for `handle` — what the previous owner of
 /// this connector left behind. Logged so a stale value is visible as a fact.
-fn current_raw(
+fn current_raw<H: ResourceHandle>(
     drm: &DrmDeviceFd,
-    conn: connector::Handle,
+    conn: H,
     handle: property::Handle,
 ) -> Option<u64> {
     let set = drm.get_properties(conn).ok()?;
@@ -264,6 +264,8 @@ pub struct PropOutcome {
     pub colorspace: String,
     pub metadata: String,
     pub max_bpc: String,
+    /// The CRTC colour pipeline (DEGAMMA_LUT, CTM, GAMMA_LUT) as found, and reset.
+    pub crtc_color: String,
 }
 
 /// Bring the connector's colorimetry and bit-depth properties in line with what
@@ -294,11 +296,20 @@ pub struct PropOutcome {
 /// (validated against the whole device's bandwidth with every pipe present), not
 /// poked in afterwards one connector at a time.
 ///
+/// The CRTC colour pipeline is reset too: `DEGAMMA_LUT`, `CTM` and `GAMMA_LUT`
+/// are cleared (blob 0, identity). They are just as sticky, and a compositor that
+/// offloads its colour pipeline leaves them loaded: KWin in HDR keeps gamma-encoded
+/// SDR in its framebuffer and lets `GAMMA_LUT` produce PQ, so viud on the next VT
+/// sent its own PQ pixels through that LUT a second time. The double encoding
+/// lifted every grey into a grey film (desk4 and the LG, 2026-11-09). viud does
+/// all colour work in its shaders, so the pipeline must be identity.
+///
 /// Missing properties are skipped, not fatal. Every commit is preceded by a
 /// `TEST_ONLY` commit, so a rejected request can never blank the display.
 pub fn apply_connector_props(
     drm: &DrmDeviceFd,
     conn: connector::Handle,
+    crtc: crtc::Handle,
     caps: &HdrInfo,
     hdr_active: bool,
     want_bpc: u64,
@@ -311,7 +322,23 @@ pub fn apply_connector_props(
         colorspace: "absent".into(),
         metadata: "absent".into(),
         max_bpc: "absent".into(),
+        crtc_color: String::new(),
     };
+
+    // CRTC colour pipeline: clear whatever the previous owner loaded.
+    let mut luts: Vec<property::Handle> = Vec::new();
+    for name in ["DEGAMMA_LUT", "CTM", "GAMMA_LUT"] {
+        if let Some(h) = opt_prop(drm, crtc, name) {
+            let was = current_raw(drm, crtc, h).unwrap_or(0);
+            let state = if was == 0 {
+                "none".to_string()
+            } else {
+                format!("blob({was})->cleared")
+            };
+            outcome.crtc_color.push_str(&format!("{name}={state} "));
+            luts.push(h);
+        }
+    }
 
     // Target colorspace: BT.2020 only while HDR is actually driving this pipe,
     // Default otherwise — the reset half that never existed before.
@@ -366,7 +393,7 @@ pub fn apply_connector_props(
     }
     let bpc: Option<(property::Handle, u64)> = None;
 
-    if cs.is_none() && meta.is_none() && bpc.is_none() {
+    if cs.is_none() && meta.is_none() && bpc.is_none() && luts.is_empty() {
         return Ok(outcome);
     }
 
@@ -381,6 +408,9 @@ pub fn apply_connector_props(
         if let Some((h, v)) = bpc {
             req.add_property(conn, h, property::Value::UnsignedRange(v));
         }
+        for h in &luts {
+            req.add_property(crtc, *h, property::Value::Blob(0));
+        }
         req
     };
 
@@ -393,8 +423,8 @@ pub fn apply_connector_props(
             let _ = drm.destroy_property_blob(b);
         }
         return Err(format!(
-            "connector-props TEST commit rejected: {e} [{}|{}|{}]",
-            outcome.colorspace, outcome.metadata, outcome.max_bpc
+            "connector-props TEST commit rejected: {e} [{}|{}|{}|{}]",
+            outcome.colorspace, outcome.metadata, outcome.max_bpc, outcome.crtc_color
         ));
     }
     if let Err(e) = drm.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, build()) {
@@ -402,8 +432,8 @@ pub fn apply_connector_props(
             let _ = drm.destroy_property_blob(b);
         }
         return Err(format!(
-            "connector-props commit failed: {e} [{}|{}|{}]",
-            outcome.colorspace, outcome.metadata, outcome.max_bpc
+            "connector-props commit failed: {e} [{}|{}|{}|{}]",
+            outcome.colorspace, outcome.metadata, outcome.max_bpc, outcome.crtc_color
         ));
     }
     // The HDR blob is intentionally leaked for as long as the property references
