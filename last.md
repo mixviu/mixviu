@@ -1,3 +1,44 @@
+# viud agent seat opt-in — 2026-11-10
+
+PR: https://github.com/mixviu/mixviu/pull/56 (against main, stacked on #54; unmerged).
+Branch: feat/viud-agent-seat-optin. Base 496f627b is preserved.
+Tested source head: 44dc62b2bf93b4c2f55fca735f874b2e067f50ca.
+The final receipt commit changes only last.md; the PR exposes the current head.
+
+## Design choices
+
+- Keys: agent_seat.default=false, agent_seat.allow=["viu"], agent_seat.deny=[], applied by viud, page applications/agent-seat. Deny wins, then allow, then default. Lists use the registry's directory-name grammar for executable basenames (255 bytes, up to 256 entries).
+- Current policy lives in comp-model::agent_seat behind a shared RwLock. The existing settingsd consumer sends it through the generation-fenced chrome Update. The shell change comparison includes agent_seat.*; settingsd publishes the new prefix topic and Prefs subscribes to it.
+- Per-client decision lives in protocols::seat::state::Seat.agent_clients: Arc<Mutex<HashMap<ClientId,bool>>> shared with the seat filter. The first decision stays fixed for the connection; subsequent filter calls prune dead clients. Input checks and window snapshots read that decision. Credentials identify the executable through /proc/<pid>/exe; app IDs and directories are not policy inputs.
+- Headless tests have ONE injection: MIX_TEST_VIUD_AGENT_SEAT_ALLOW, comma-separated executable basenames, read exclusively by the headless backend and registered in etc/env.conf.mix. A settingsd snapshot supersedes it. Test support allows the probe/app binaries and its own executable. In-process testkit clients always receive the seat with no override. Real sessions use settingsd only.
+- Windows report agent_seat; named targets and output hit tests refuse seat_unavailable with the seat, window and setting to change. No fallback to seat0. Docs explain that policy changes apply the next time the app starts.
+
+## Validation
+
+- 20261110-144808-b0fca6c2-a1: **BUILD_RC=0**, full tools/ci.mix all at the tested source head. Saved log audited: 620 summaries, 10,688 passed, zero failed, 101 ignored; 198 environment names with zero problems; 153 Mix lint files with zero regressions. Rustfmt, clippy and the viud dependency check passed.
+- 20261110-151842-e9270fac-a1: **BUILD_RC=0**, real render-node headless capture (9/9) and input (7/7), without settingsd. This includes the one-seat Firefox regression and seat_unavailable replies for named key/pointer targets and output hit tests. Built mix/mixd and set MIX_TEST_MIX_EXE to the source-built interpreter.
+- The renderer-free external-client test passed at the same SHA: denied sees only seat0, allowed sees both. Existing testkit clipboard and interactive suites passed in the full gate.
+- Rustfmt was run on the worker and its printed diffs applied locally. Cargo.lock's dispatcher dependency change also came from the worker.
+
+Earlier CBC attempts, all resolved or superseded:
+- 20261110-141334-80bc4248-a1: wrapper BUILD_RC=0; nested check=101 (missing map type annotation), fixed.
+- 20261110-141541-819a736c-a1: BUILD_RC=101 (missing WaylandFocus import), fixed.
+- 20261110-141725-0718304c-a1: BUILD_RC=1 (nested default 30-second timeout during compilation). Corrected subsequent wrappers to use explicit timeouts.
+- 20261110-141941-b7a0ec7f-a1 and 20261110-142450-906ee564-a1: BUILD_RC=143, explicitly cancelled as superseded. The latter exposed the missing settings topic route, fixed before the green full gate.
+- 20261110-150848-f8642d43-a1: BUILD_RC=101, private broker startup failed with the installed interpreter; corrected invocation passed as above.
+- Unstarted headless jobs 20261110-141952-456c8a60, 20261110-142501-3890a14a, 20261110-144745-0b9827a4 and 20261110-150813-5d3fe0d9 were explicitly cancelled as their invocations were superseded.
+
+## Left undone
+
+- Prefs GUI deferred under item 6: the current list controls select fixed catalogue entries; executable allow/deny editing needs a new editor. No partial page was added. All keys remain writable through settings.get/settings.apply; docs include the Bus shape and restart behaviour. The page and its restart note need a second PR.
+- Pre-existing app-test fixture is absent: headless/tests/app.rs requires examples/ced-headless-probe and a ced Cargo package, neither present in this checkout. That ignored test could not be run against exact-source artefacts. No stale worker binary or alternate app was substituted.
+
+No installation, deployment, desktop/VT changes or merge performed.
+
+---
+
+Previous hand-backs follow unchanged.
+
 # CI flakes 2 — 2026-11-10
 
 Branch: `fix/ci-flakes-2`, based on `origin/main` at
