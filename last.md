@@ -46,7 +46,8 @@ CBC apps.tar: 46,807,040 bytes, SHA256
 Manifest source matches the validated source. The actual Term entries below
 are relative to `/opt/mix`; Rust source and test scripts are excluded.
 
-```text-rwxr-xr-x 0/0             414 2026-11-10 14:18 bin/term-mix
+```text
+-rwxr-xr-x 0/0             414 2026-11-10 14:18 bin/term-mix
 -rw-r--r-- 0/0             214 2026-11-10 14:18 share/applications/mixviu.term-mix.desktop
 drwxr-xr-x 0/0               0 2026-11-10 14:18 share/mixviu/apps/term/
 -rw-r--r-- 0/0           13197 2026-11-10 14:18 share/mixviu/apps/term/actions.json
