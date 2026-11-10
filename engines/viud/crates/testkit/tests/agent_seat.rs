@@ -129,7 +129,7 @@ fn external_clients_only_see_the_opted_in_seat() {
         } else {
             "SEATS=seat0"
         };
-        assert!(text.lines().any(|line| line == expected), "{text}");
+        assert!(text.contains(&format!("{expected}\n")), "{text}");
     }
     agent_seat::install(Policy::default());
     std::fs::remove_file(path).unwrap();
