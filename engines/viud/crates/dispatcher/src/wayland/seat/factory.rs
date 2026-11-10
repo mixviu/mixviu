@@ -98,6 +98,13 @@ where
     let decisions = agent_clients.clone();
     let display = display_handle.clone();
     let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, move |client| {
+        // Xwayland has Smithay-owned client data and no session disconnect
+        // hook. Its fixed exclusion needs no cached decision. Keep the own-PID
+        // exception ahead of that exclusion, as for ordinary clients below.
+        if client.get_data::<XWaylandClientData>().is_some() {
+            return client.get_credentials(&display).ok().map(|c| c.pid)
+                == Some(std::process::id() as i32);
+        }
         if let Some(session) =
             client.get_data::<protocols::wayland::connection::record::WaylandClientSession>()
         {
