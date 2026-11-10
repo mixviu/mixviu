@@ -58,6 +58,7 @@ pub struct Update {
     generation: u64,
     live: Arc<AtomicU64>,
     theme: Option<decor::appearance::Look>,
+    agent_seat: Option<comp_model::agent_seat::Policy>,
     services: BTreeSet<String>,
     bars: BTreeMap<String, Value>,
 }
@@ -72,6 +73,9 @@ impl Update {
             return false;
         }
         let mut changed = self.theme.is_some();
+        if let Some(policy) = self.agent_seat {
+            comp_model::agent_seat::install(policy);
+        }
         if let Some(look) = self.theme {
             decor::window::install(look.chrome(look.window_style));
         }
@@ -121,8 +125,16 @@ pub(crate) async fn run(
             work = consumer.complete(&action, result);
         }
         let mut theme = None;
+        let mut agent_seat = None;
         let pending = consumer.pending().cloned();
         if let Some(update) = &pending {
+            use settings::view::View;
+            let policy = settings::view::AgentSeat::of(&update.snapshot().values);
+            agent_seat = Some(comp_model::agent_seat::Policy {
+                default: policy.default,
+                allow: policy.allow,
+                deny: policy.deny,
+            });
             match decor::appearance::build(update.snapshot()) {
                 Ok(look) => theme = Some(look),
                 Err(error) => tracing::warn!(?error, "native chrome settings refused"),
@@ -172,6 +184,7 @@ pub(crate) async fn run(
                     generation: epoch,
                     live: live.clone(),
                     theme,
+                    agent_seat,
                     services: services.clone(),
                     bars,
                 })
@@ -217,6 +230,7 @@ mod tests {
                 generation: 1,
                 live: Arc::new(AtomicU64::new(2)),
                 theme: None,
+                agent_seat: None,
                 services: BTreeSet::from(["unexpected".into()]),
                 bars: BTreeMap::new()
             }

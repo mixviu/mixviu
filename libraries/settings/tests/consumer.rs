@@ -32,6 +32,25 @@ fn snapshot(revision: u64, incarnation: &str) -> Snapshot {
 fn consumer() -> Consumer {
     Consumer::for_app(binding(), "ced").unwrap()
 }
+
+#[test]
+fn agent_seat_only_changes_stage_for_the_shell_consumer() {
+    let before = snapshot(1, "authority");
+    for (key, value) in [
+        ("agent_seat.default", serde_json::json!(true)),
+        (
+            "agent_seat.allow",
+            serde_json::json!(["viu", "example-app"]),
+        ),
+        ("agent_seat.deny", serde_json::json!(["example-app"])),
+    ] {
+        let mut after = snapshot(2, "authority");
+        after.values.insert(key.into(), value);
+        let plan = ChangePlan::between(Some(&before), &after, "desktop", true);
+        assert!(plan.input, "{key}: {plan:?}");
+        assert!(!ChangePlan::between(Some(&before), &after, "desktop", false).input);
+    }
+}
 fn rebound(instance: &str) -> Snapshot {
     let mut next = snapshot(1, "new");
     next.binding.instance = instance.into();

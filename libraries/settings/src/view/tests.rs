@@ -32,6 +32,7 @@ fn each_view(values: &Values) -> Vec<(&'static str, BTreeSet<&'static str>, Stri
         one::<Accessibility>("Accessibility", values),
         one::<Applications>("Applications", values),
         one::<Xwayland>("Xwayland", values),
+        one::<AgentSeat>("AgentSeat", values),
         one::<AppLooks>("AppLooks", values),
         one::<Tune>("Tune", values),
         one::<AppDomains>("AppDomains", values),

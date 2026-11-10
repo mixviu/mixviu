@@ -25,9 +25,9 @@ use crate::state::DispatchWire;
 /// Named `seat0` on the wire.
 pub const PRIMARY_SEAT: &str = "seat0";
 
-/// The agent seat: the per-agent input lane. Created and advertised now, routed
-/// nowhere yet — no device feeds it and the `SeatHandler` callbacks ignore it
-/// (`state.rs`), so it cannot disturb the primary seat's focus, cursor or LEDs.
+/// The independent agent input lane. Advertised only to settingsd opt-ins
+/// (and in-process testkit clients), never Xwayland. Settings changes apply
+/// the next time the app starts; seat0 remains unchanged.
 pub const AGENT_SEAT: &str = "agent";
 
 /// One named `wl_seat` on `seat_state`, with a keyboard (the saved layout, NumLock
@@ -94,8 +94,32 @@ where
     let mut seat: Seat<I> = seat_named(&mut seat_state, display_handle, PRIMARY_SEAT, |_| true);
     // The agent seat is hidden from Xwayland: an X server binding it would treat
     // a second seat as more X input devices.
-    let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, |client| {
-        client.get_data::<XWaylandClientData>().is_none()
+    let agent_clients = protocols::seat::state::AgentClients::default();
+    let decisions = agent_clients.clone();
+    let display = display_handle.clone();
+    let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, move |client| {
+        let mut decisions = decisions.lock().unwrap();
+        decisions.retain(|id, _: &mut bool| {
+            display.backend_handle().get_client_data(id.clone()).is_ok()
+        });
+        decisions
+            .entry(client.id())
+            .or_insert_with(|| {
+                let pid = client.get_credentials(&display).ok().map(|c| c.pid);
+                let executable =
+                    pid.and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok());
+                let name = executable
+                    .as_ref()
+                    .and_then(|path| path.file_name())
+                    .and_then(|name| name.to_str())
+                    // The kernel appends this when the binary was replaced on
+                    // disk under a running process (an upgrade, a rebuild).
+                    .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
+                pid == Some(std::process::id() as i32)
+                    || (client.get_data::<XWaylandClientData>().is_none()
+                        && comp_model::agent_seat::allows(name))
+            })
+            .to_owned()
     });
 
     // (`seat_named` already added the pointer: clients render their own cursor
@@ -130,6 +154,7 @@ where
         state: seat_state,
         seat,
         agent: Some(agent),
+        agent_clients,
         pointer_status: CursorImageStatus::default_named(),
         relative_pointer_manager_state,
         pointer_constraints_state,

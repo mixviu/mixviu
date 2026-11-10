@@ -84,6 +84,21 @@ pub fn wire(
     event_loop: &mut EventLoop<Loop>,
     options: Options<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Test-only injection, read exclusively by this backend. A later settingsd
+    // snapshot supersedes it. Real sessions never read this variable.
+    if let Some(names) = std::env::var_os("MIX_TEST_VIUD_AGENT_SEAT_ALLOW") {
+        let names = names
+            .into_string()
+            .map_err(|_| "agent-seat test allow list is not UTF-8")?;
+        comp_model::agent_seat::install(comp_model::agent_seat::Policy {
+            allow: names
+                .split(',')
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            ..Default::default()
+        });
+    }
     // No DrmDevice, seat, udev or input backend: GBM holds only this render fd.
     let node = DrmNode::from_path(options.render_node).map_err(|error| {
         format!(

@@ -108,7 +108,11 @@ impl ChangePlan {
         let native = |values: &Values| -> Values {
             values
                 .iter()
-                .filter(|(k, _)| k.starts_with("window.") || k.starts_with("shell."))
+                .filter(|(k, _)| {
+                    k.starts_with("window.")
+                        || k.starts_with("shell.")
+                        || (shell && k.starts_with("agent_seat."))
+                })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect()
         };
@@ -121,6 +125,7 @@ impl ChangePlan {
             plan.motion |= v.motion;
             // Only a context that draws the shell takes its keys.
             plan.shell |= shell && v.shell;
+            plan.input |= shell && v.input;
         }
         plan.shell |= shell && previous.is_none_or(|s| s.desktop.shell != next.desktop.shell);
         plan.layout |= plan.shell;

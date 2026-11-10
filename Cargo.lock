@@ -1999,6 +1999,7 @@ dependencies = [
 name = "dispatcher"
 version = "0.1.2"
 dependencies = [
+ "comp-model",
  "model",
  "protocols",
  "render-gles",

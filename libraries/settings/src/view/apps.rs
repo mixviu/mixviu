@@ -5,6 +5,23 @@ use super::{Reader, View};
 use crate::registry::CATEGORIES;
 use std::collections::BTreeMap;
 
+/// Executable basenames offered viud's second seat on their next connection.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentSeat {
+    pub default: bool,
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
+}
+impl View for AgentSeat {
+    fn read(r: &Reader) -> Self {
+        Self {
+            default: r.bool("agent_seat.default"),
+            allow: r.texts("agent_seat.allow"),
+            deny: r.texts("agent_seat.deny"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Applications {
     /// Desktop-entry ids by category; a category not listed keeps what
