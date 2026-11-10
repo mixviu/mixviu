@@ -94,10 +94,10 @@ impl TouchCursor for Loop {
         // location; a following relative motion re-derives it anyway.
         if let Some(pointer) = self.state.seat.seat.get_pointer() {
             let serial = SERIAL_COUNTER.next_serial();
-            let time = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u32)
-                .unwrap_or(0);
+            // libinput's clock, the time base of every real pointer event.
+            let time = smithay::utils::Clock::<smithay::utils::Monotonic>::new()
+                .now()
+                .as_millis();
             pointer.motion(
                 &mut self.state,
                 None,

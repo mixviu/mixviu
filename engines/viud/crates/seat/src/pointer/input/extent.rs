@@ -526,11 +526,11 @@ fn ramp(v: f64, max: f64) -> Option<(f64, f64)> {
     Some((if v <= EDGE_BAND { -1.0 } else { 1.0 }, t))
 }
 
+/// libinput's clock (`CLOCK_MONOTONIC` ms), the time base of real input events.
 fn now_msec() -> u32 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u32)
-        .unwrap_or(0)
+    smithay::utils::Clock::<smithay::utils::Monotonic>::new()
+        .now()
+        .as_millis()
 }
 
 /// `push` reduced toward zero by `sustained` (an unsigned distance), keeping its
