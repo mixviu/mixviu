@@ -23,6 +23,7 @@
 //! sibling cores (surfaces for ids, seats and target refusals,
 //! ledger for the presentation leaves).
 
+pub mod agent_seat;
 pub mod capture;
 pub mod catalogue;
 pub mod diff;

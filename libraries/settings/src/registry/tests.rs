@@ -11,6 +11,19 @@ fn set(changes: &[(&str, Value)]) -> Result<Values, Vec<Diagnostic>> {
     apply(&Values::new(), &changes, &[])
 }
 
+#[test]
+fn agent_seat_defaults_and_executable_lists() {
+    use crate::view::{AgentSeat, View};
+    let defaults = AgentSeat::of(&Values::new());
+    assert!(!defaults.default);
+    assert_eq!(defaults.allow, ["viu"]);
+    assert!(defaults.deny.is_empty());
+    assert!(set(&[("agent_seat.allow", json!(["app-bin", "App_2"]))]).is_ok());
+    for invalid in [json!(["/usr/bin/app"]), json!([""]), json!("app")] {
+        assert!(set(&[("agent_seat.allow", invalid)]).is_err());
+    }
+}
+
 fn codes(result: Result<Values, Vec<Diagnostic>>) -> Vec<(String, String)> {
     result
         .expect_err("refused")

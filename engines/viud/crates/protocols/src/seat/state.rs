@@ -18,6 +18,9 @@ pub struct Seat<Handler: SeatHandler> {
     /// primary one and routed nowhere yet. Input and every `self.seat.seat` user
     /// stay on the primary seat; the `SeatHandler` callbacks ignore this one.
     pub agent: Option<smithay::input::Seat<Handler>>,
+    /// First registry decision, fixed for this connection. Dead clients are pruned
+    /// by the filter; ClientId also distinguishes reconnects and PID reuse.
+    pub agent_clients: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<smithay::reexports::wayland_server::backend::ClientId, bool>>>,
     pub pointer_status: CursorImageStatus,
     pub relative_pointer_manager_state: RelativePointerManagerState,
     pub pointer_constraints_state: PointerConstraintsState,

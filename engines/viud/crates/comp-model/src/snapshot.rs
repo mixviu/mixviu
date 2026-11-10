@@ -269,6 +269,7 @@ pub struct LayerSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WindowSnapshot {
+    pub agent_seat: bool,
     pub opacity: f64,
     pub z: i32,
     pub clip: Option<crate::request::ClipRect>,
@@ -811,6 +812,7 @@ macro_rules! window_snapshot {
 }
 
 window_snapshot!(
+    agent_seat,
     opacity,
     z,
     requested_visible,
@@ -1020,6 +1022,7 @@ impl SurfaceSnapshot {
 /// The `windows.*` row of a mapped managed toplevel's `surfaces.*` row.
 pub fn project_window_row(surface: &SurfaceSnapshot) -> WindowSnapshot {
     WindowSnapshot {
+        agent_seat: false,
         placement: if surface.maximized {
             "maximized"
         } else {
@@ -1803,6 +1806,11 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         &[L("windows"), S, L("requested_visible")],
         Bool,
         "Persistent visibility request; visible also includes workspace and minimisation"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("agent_seat")],
+        Bool,
+        "Whether this client was offered the agent seat; settingsd agent_seat.* changes apply the next time the app starts"
     ),
     descriptor!(
         &[L("windows"), S, L("clip")],

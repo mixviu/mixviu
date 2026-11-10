@@ -158,6 +158,7 @@ fn fixture() -> CompSnapshot {
     windows.insert(
         "s2".into(),
         WindowSnapshot {
+            agent_seat: false,
             opacity: 1.0,
             z: 0,
             clip: None,

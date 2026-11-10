@@ -19,6 +19,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+comp-model.workspace = true
 model = { workspace = true }
 surfaces = { workspace = true }
 render-gles = { workspace = true }
