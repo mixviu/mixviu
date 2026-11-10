@@ -1,88 +1,18 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- Reusable Mix composition/behaviour over the caller-owned native macro session.
-$panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
-fn macro_rpc($command,$body)
-  $r=viu_macros($command,$body)
-  if $r.rc!=0 then raise($r.body.error_code ?? "MACRO_REFUSED",$r.body.message ?? json_encode($r.body)) end
-  return $r.body
-end
-fn macro_choice($id,$label)
-  return {id:$id,label:$label,enabled:true}
-end
-fn macro_form($s,$page,$title,$body,$field,$choices)
-  $s.serial=$s.serial+1;$s.page=$page
-  $s.form={open:true,title:$title,body:$body,field:$field,choices:$choices,error:"",instance:"macros-"..to_string($s.epoch).."-"..to_string($s.serial)}
-  return $s
-end
-fn macro_catalogue($s)
-  $catalogue=macro_rpc("list",{})
-  $choices=[{id:"close",label:"Close",enabled:true,cancel:true},macro_choice("new","New macro"),macro_choice("reload","Rescan"),macro_choice("output","Run output / Stop")]
-  $matches=filter($catalogue.macros,fn($m)=contains(lower($m.title.." "..$m.id),lower($s.filter)))
-  for $m in slice($matches,0,200) push($choices,macro_choice("select:"..$m.id,$m.title.."  ["..$m.tier.."]")) end
-  $s=macro_form($s,"catalogue","Macros",to_string(len($catalogue.macros)).." macros. Filter by title or ID. Showing up to 200 matches.\n"..to_string(len($catalogue.diagnostics)).." catalogue diagnostics.",$s.filter,$choices)
-  $s.form.choice_layout="list"
-  return $s
-end
-fn macro_detail($s)
-  $m=macro_rpc("get",{id:$s.id});$status=macro_rpc("status",{})
-  $choices=[{id:"back",label:"Back",enabled:true,cancel:true},macro_choice("run","Run"),macro_choice("edit","Edit source"),macro_choice("output","Output / Stop")]
-  $entry=filter(macro_rpc("list",{}).macros,fn($entry)=$entry.id==$s.id)[0]
-  if $entry!=nil and $entry.targets!=nil then push($choices,macro_choice("run-target","Run for another app")) end
-  if starts_with($m.tier,"builtin-") then push($choices,macro_choice("copy","Copy to user tier"))
-  else
-    push($choices,macro_choice("remove","Delete"));push($choices,macro_choice("move-global","Move to global"));push($choices,macro_choice("move-app","Move to this app"));push($choices,macro_choice("move-other","Move to another app"))
-  end
-  return macro_form($s,"detail",$s.id,$m.path.."\nTier: "..$m.tier.."\nRun: "..json_encode($status),nil,$choices)
-end
-fn macro_output($s)
-  $o=macro_rpc("output",{});$status=macro_rpc("status",{})
-  return macro_form($s,"output","Macro output",json_encode($status).."\nDropped bytes: "..to_string($o.dropped).."\n\n"..$o.text,nil,[{id:"back",label:"Back",enabled:true,cancel:true},macro_choice("refresh","Refresh"),macro_choice("stop","Stop")])
-end
-fn macro_answer($s,$choice)
-  if $choice=="close" then $s.form.open=false;$s.page="closed";return $s end
-  if $choice=="back" then return macro_catalogue($s) end
-  if starts_with($choice,"select:") then $s.id=slice($choice,7);return macro_detail($s) end
-  if $choice=="reload" then macro_rpc("reload",{});return macro_catalogue($s) end
-  if $choice=="output" or $choice=="refresh" then return macro_output($s) end
-  if $choice=="stop" then macro_rpc("stop",{});return macro_output($s) end
-  if $choice=="new" then return macro_form($s,"new","New macro","Macro title","",[{id:"back",label:"Cancel",enabled:true,cancel:true},{id:"create",label:"Create",enabled:true,default:true}]) end
-  if $choice=="create" then $m=macro_rpc("new",{title:$s.form.field});$s.id=$m.id;return macro_detail($s) end
-  if $choice=="run" then macro_rpc("run",{id:$s.id});return macro_output($s) end
-  if $choice=="run-target" then return macro_form($s,"target","Run for another app","Enter an app allowed by the macro's target header.","",[{id:"back",label:"Cancel",enabled:true,cancel:true},{id:"run-on",label:"Run",enabled:true,default:true}]) end
-  if $choice=="run-on" then macro_rpc("run",{id:$s.id,target:$s.form.field});return macro_output($s) end
-  if $choice=="copy" then macro_rpc("copy",{id:$s.id});return macro_detail($s) end
-  if $choice=="move-global" or $choice=="move-app" then
-    macro_rpc("move",{id:$s.id,tier:if $choice=="move-global" then "user-global" else "user-app" end});$s.id=nil;return macro_catalogue($s)
-  end
-  if $choice=="move-other" then return macro_form($s,"destination","Move to another app","Destination app ID. The macro leaves this app's catalogue.","",[{id:"back",label:"Cancel",enabled:true,cancel:true},{id:"move-to",label:"Move",enabled:true,default:true}]) end
-  if $choice=="move-to" then macro_rpc("move",{id:$s.id,tier:"user-app",destination:$s.form.field});$s.id=nil;return macro_catalogue($s) end
-  if $choice=="remove" then return macro_form($s,"remove","Delete macro",$s.id.." will be deleted permanently.",nil,[{id:"back",label:"Cancel",enabled:true,cancel:true},macro_choice("confirm-remove","Delete")]) end
-  if $choice=="confirm-remove" then macro_rpc("remove",{id:$s.id});$s.id=nil;return macro_catalogue($s) end
-  if $choice=="edit" then
-    $m=macro_rpc("get",{id:$s.id})
-    if starts_with($m.tier,"builtin-") then raise("DENIED","Copy the built-in macro to a user tier before editing") end
-    $s=macro_form($s,"edit","Edit "..$s.id,"Ctrl+S or Ctrl+Enter saves. Escape cancels.",$m.text,[{id:"back",label:"Cancel",enabled:true,cancel:true},{id:"save",label:"Save",enabled:true,default:true}])
-    $s.form.multiline=true;$s.form.rows=20;$s.form.width=760;$s.form.max_field_bytes=262144
-    return $s
-  end
-  if $choice=="save" then macro_rpc("put",{id:$s.id,text:$s.form.field});return macro_detail($s) end
-  raise("INVALID_ARGUMENT","Unknown macro panel choice")
-end
-fn macro_publish($s)
-  send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{form:$s.form}}
-  if $rc!=0 then raise("MODEL_PUBLISH",to_string($result)) end
-end
+$policy=require("macro-policy.mix")
+$panel=merge($policy.panel,{})
 on macros.call
   try
     $s=$panel;$a=$event.args
     if $a.command=="open" then
       if $s.form.open then raise("BUSY","Macro panel is already open") end
-      $s.epoch=$a.epoch;$s.filter="";$s=macro_catalogue($s)
+      $s.epoch=$a.epoch;$s.filter="";$s=$policy.macro_catalogue($s)
     elif $a.command=="edit" then
       if not $s.form.open or type($a.value)!="string" then raise("INVALID_ARGUMENT","No editable macro form") end
       $s.form.field=$a.value
-      if $s.page=="catalogue" then $s.filter=$a.value;$s=macro_catalogue($s) end
+      if $s.page=="catalogue" then $s.filter=$a.value;$s=$policy.macro_catalogue($s) end
     elif $a.command=="answer" then
       if not $s.form.open or not deep_eq($a.instance,$s.form.instance) then raise("STALE_FORM","Read the current dialog instance") end
       if not any($s.form.choices,fn($c)=$c.id==$a.choice and $c.enabled) then raise("INVALID_ARGUMENT","Disabled or unknown form choice") end
@@ -90,16 +20,16 @@ on macros.call
         if type($a.field)!="string" or len($a.field)>($s.form.max_field_bytes ?? 4096) then raise("INVALID_ARGUMENT","Invalid form text") end
         $s.form.field=$a.field
       end
-      $s=macro_answer($s,$a.choice)
+      $s=$policy.macro_answer($s,$a.choice)
     elif $a.command=="refresh" then
       $instance=$s.form.instance
-      if $s.page=="output" then $s=macro_output($s)
-      elif $s.page=="detail" then $s=macro_detail($s) end
+      if $s.page=="output" then $s=$policy.macro_output($s)
+      elif $s.page=="detail" then $s=$policy.macro_detail($s) end
       $s.form.instance=$instance
     else raise("UNKNOWN_COMMAND","Unknown macro panel command") end
-    $panel=$s;macro_publish($panel);reply(0,json_encode({ok:true}))
+    $panel=$s;$policy.macro_publish($panel);reply(0,json_encode({ok:true}))
   catch $message,$error
-    $panel.form.error=$message;macro_publish($panel)
+    $panel.form.error=$message;$policy.macro_publish($panel)
     reply(10,json_encode({error_code:$error.code,message:$message}))
   end
 end

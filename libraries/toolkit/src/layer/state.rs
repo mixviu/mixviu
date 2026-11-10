@@ -32,7 +32,7 @@ use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::{
 };
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
-    KeyCode, KeyEvent, KeyboardHandler, Keymap, Keysym, Modifiers, RepeatInfo,
+    KeyCode, KeyEvent, KeyboardHandler, Keymap, Keysym, Modifiers, RawModifiers, RepeatInfo,
 };
 use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
@@ -1275,6 +1275,19 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         }
     }
 
+    fn repeat_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        event: KeyEvent,
+    ) {
+        // Compositor repeats replace our local timer.
+        self.stop_repeat();
+        self.key(&event, true, true);
+    }
+
     fn release_key(
         &mut self,
         _: &Connection,
@@ -1337,6 +1350,7 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         _: &wl_keyboard::WlKeyboard,
         _: u32,
         modifiers: Modifiers,
+        _: RawModifiers,
         _: u32,
     ) {
         self.modifiers = modifiers;

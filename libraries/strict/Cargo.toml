@@ -19,12 +19,12 @@ mod_module_files = "deny"
 
 [dependencies]
 # Maps keep insertion order: a config file reads back in the order it was written.
-indexmap = "=2.14.1"
+indexmap = "=2.14.2"
 # The runtime traits only; consumers bring their own `derive`.
 serde = "=1.0.229"
 # `to_json` / `from_json` for consumers that work on JSON trees. Never enable
 # `preserve_order` here: the workspace relies on serde_json's sorted keys.
-serde_json = "=1.0.151"
+serde_json = "=1.0.154"
 
 [dev-dependencies]
 serde = { version = "=1.0.229", features = ["derive"] }
