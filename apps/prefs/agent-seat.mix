@@ -4,7 +4,7 @@
 $paths={default:"agent_seat.default",allow:"agent_seat.allow",deny:"agent_seat.deny"}
 $defaults={default:false,allow:[],deny:[]}
 fn valid_name($name)
-  return type($name)=="string" and len($name)>0 and trim($name)==$name and not contains($name,"/") and not re_match($name,"[\x00-\x1f\x7f]")
+  return type($name)=="string" and len($name)>0 and len($name)<=255 and $name!="." and $name!=".." and trim($name)==$name and not contains($name,"/") and not re_match($name,"[\x00-\x1f\x7f]")
 end
 fn initial()
   return {current:nil,base:nil,edited:{},conflicts:[],sent:nil,uncertain:nil,confirm:false,accepted:false,hold:false,syncing:false,incarnation:nil,revision:nil,job:nil,serial:0,read:false,settings:"unknown",custom_source:false,problem:nil,problem_source:nil,tries:0}
@@ -133,6 +133,7 @@ end
 fn choose($l,$name,$choice)
   if not valid_name($name) or not contains(["allow","deny","default"],$choice) then raise("ARGUMENT","Invalid app choice") end
   $v=shown($l)
+  if $v==nil then raise("NOT_READY","The session agent seat has not been read yet") end
   $allow=filter($v.allow,fn($x)=$x!=$name);$deny=filter($v.deny,fn($x)=$x!=$name)
   if $choice=="allow" then push($allow,$name) elif $choice=="deny" then push($deny,$name) end
   return edit($l,{allow:$allow,deny:$deny})

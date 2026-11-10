@@ -37,7 +37,7 @@ $l=observed($l,true,["other"],[],"9007199254740995")
 if len($l.conflicts)==0 then raise("CONFLICT","Concurrent list changes need a decision") end
 $l=$m.decide($l,"revert")
 if len(keys($l.edited))!=0 or $l.hold then raise("REVERT","Revert must discard the draft") end
-for $name in ["", "/usr/bin/editor", " editor", "bad\nname"]
+for $name in ["", "/usr/bin/editor", " editor", "bad\nname", ".", "..", repeat("a", 256)]
   if $m.valid_name($name) then raise("NAME","Invalid executable accepted") end
 end
 print("prefs agent seat: default, union, add/remove/move, deny precedence, fences, refusal, receipt recovery and conflicts pass")

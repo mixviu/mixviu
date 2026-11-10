@@ -98,22 +98,23 @@ where
     let decisions = agent_clients.clone();
     let display = display_handle.clone();
     let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, move |client| {
-        // Xwayland has Smithay-owned client data and no session disconnect
-        // hook. Its fixed exclusion needs no cached decision. Keep the own-PID
-        // exception ahead of that exclusion, as for ordinary clients below.
+        // Xwayland never, and before anything else: Smithay connects it over a
+        // socketpair the compositor created, so its peer credentials are OUR
+        // pid and the own-pid exception below would hand it the seat. Its
+        // client data is Smithay's (no disconnect hook), so nothing is cached.
         if client.get_data::<XWaylandClientData>().is_some() {
-            return client.get_credentials(&display).ok().map(|c| c.pid)
-                == Some(std::process::id() as i32);
+            return false;
         }
+        // Every other client carries a WaylandClientSession, whose disconnect
+        // hook removes the cached decision. The map lock is held only around
+        // map operations and /proc reads, never across a call into the
+        // Wayland backend (the hook runs under the backend's own lock).
         if let Some(session) =
             client.get_data::<protocols::wayland::connection::record::WaylandClientSession>()
         {
             let _ = session.agent_clients.set(decisions.clone());
         }
         let mut decisions = decisions.lock().unwrap();
-        decisions.retain(|id, _: &mut bool| {
-            display.backend_handle().get_client_data(id.clone()).is_ok()
-        });
         decisions
             .entry(client.id())
             .or_insert_with(|| {
@@ -127,9 +128,7 @@ where
                     // The kernel appends this when the binary was replaced on
                     // disk under a running process (an upgrade, a rebuild).
                     .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
-                pid == Some(std::process::id() as i32)
-                    || (client.get_data::<XWaylandClientData>().is_none()
-                        && comp_model::agent_seat::allows(name))
+                pid == Some(std::process::id() as i32) || comp_model::agent_seat::allows(name)
             })
             .to_owned()
     });

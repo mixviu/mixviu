@@ -18,7 +18,7 @@ fn agent_seat($s)
     push($rows,{id:"seat.app."..$name,title:$name,kind:"choice",presentation:"dropdown",inline:true,shown:true,blocked:$blocked,value:$seat.choice($l,$name),choices:choices(["default","allow","deny"],["seat-follow","seat-allow","seat-deny"])})
     push($rows,{id:"seat.remove."..$name,title:"",kind:"buttons",inline:true,shown:true,blocked:$blocked,choices:[{value:$name,label:$n.text_for("seat-remove"),enabled:$blocked==nil}]})
   end
-  if $l.problem!=nil or len($l.conflicts)>0 then push($rows,{id:"seat.problem",title:"",kind:"info",inline:true,shown:true,blocked:nil,value:$n.text_for(if $l.uncertain!=nil then "seat-uncertain" elif len($l.conflicts)>0 then "seat-conflict" else "seat-refused" end)}) end
+  if $l.problem!=nil or len($l.conflicts)>0 or $l.uncertain!=nil then push($rows,{id:"seat.problem",title:"",kind:"info",inline:true,shown:true,blocked:nil,value:$n.text_for(if $l.uncertain!=nil then "seat-uncertain" elif len($l.conflicts)>0 then "seat-conflict" else "seat-refused" end)}) end
   push($rows,{id:"seat.decide",title:"",kind:"buttons",inline:true,shown:true,blocked:nil,choices:[
     {value:"apply",label:$n.text_for("seat-apply"),enabled:$l.hold and len($l.conflicts)==0 and $l.uncertain==nil},
     {value:"keep",label:$n.text_for("seat-keep"),enabled:len($l.conflicts)>0 and $l.uncertain==nil},
