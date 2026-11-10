@@ -18,6 +18,9 @@ use serde_json::{Value as Json, json};
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub type BackendFactory = Box<dyn FnOnce() -> Rc<dyn BusHandler> + Send>;
 pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
+/// A native owner installs a non-serialisable scope only on the evaluator
+/// thread around its queued callback. Ordinary Bus/UI events cannot supply it.
+pub(crate) type NativeContext = Box<dyn FnOnce() -> Box<dyn std::any::Any> + Send>;
 
 /// Caller-owned native facilities shared by its root and job evaluators.
 /// Supplying one does not create a Bus citizen, broker or global registry.
@@ -35,6 +38,7 @@ pub struct Services {
     pub timers: Option<crate::timers::Timers>,
     pub documents: Option<crate::documents::Documents>,
     pub rasters: Option<crate::raster::Rasters>,
+    pub terminals: Option<crate::terminal::sessions::Sessions>,
     pub macros: Option<macros::Session>,
     pub chooser: Option<crate::chooser::Service>,
     pub annotations: crate::annotation::Documents,
@@ -45,7 +49,7 @@ pub struct Services {
 // Match the native Mix CLI's explicit evaluation-thread stack. Async evaluator
 // frames in debug can overflow the Rust default before Mix's depth guard runs.
 const EVALUATOR_STACK: usize = 64 * 1024 * 1024;
-struct WorkerPolicy;
+pub(crate) struct WorkerPolicy;
 impl mix::evaluator::CapabilityPolicy for WorkerPolicy {
     fn check_builtin(&self, name: &str) -> Result<(), String> {
         if ["chdir", "exit"].contains(&name) {
@@ -102,6 +106,14 @@ pub struct Program {
     pub scene: String,
     pub citizen: String,
 }
+pub(crate) fn context(program: &Program, generation: u64) -> Json {
+    json!({"name":program.scene,"generation":generation,"citizen":program.citizen,
+        "version":env!("CARGO_PKG_VERSION"),"git_sha":buildinfo::build_info!().git_sha,"build_time":buildinfo::build_info!().build_time,
+        "build":serde_json::from_str::<Json>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
+        "executable":std::env::current_exe().ok(),"cwd":std::env::current_dir().ok().map(|p|p.to_string_lossy().into_owned()),
+        "build_line":buildinfo::build_info!().line(),"git_sha_full":buildinfo::build_info!().git_sha_full,
+        "pid":std::process::id(),"loader":"viu-local","host":"viu-local"})
+}
 
 #[derive(Debug, Clone)]
 pub struct Reply {
@@ -153,7 +165,15 @@ impl RunFailure {
 
 enum Request {
     Load(u64, Program),
-    Event(u64, u64, String, Json, bool, BTreeMap<String, String>),
+    Event(
+        u64,
+        u64,
+        String,
+        String,
+        bool,
+        BTreeMap<String, String>,
+        Option<NativeContext>,
+    ),
     Forget(u64, u64),
 }
 
@@ -246,6 +266,12 @@ impl Runtime {
                         eval.register("viu_palette",crate::native_primitives::palette());
                         eval.register("viu_instants",crate::native_primitives::instants());
 
+                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs(services.application_roots.clone()));
+                        eval.register("viu_maildoc",crate::native_primitives::mail_document());
+                        eval.register("viu_editor_write",crate::native_primitives::editor_write());
+                        eval.register("viu_digest",crate::native_primitives::digest());
+                        eval.register("viu_json_numbers",crate::native_primitives::json_numbers());
+                        eval.register("viu_action_event",crate::native_primitives::action_event());
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
@@ -275,37 +301,24 @@ impl Runtime {
                         eval.register("viu_token",crate::native_primitives::token());
                         eval.register("viu_fonts",crate::native_primitives::installed_fonts());
                         if let Some(documents)=services.documents.clone(){eval.register("viu_text_document",documents.binding());}
+                        if let Some(terminals)=services.terminals.clone(){eval.register("viu_terminal",terminals.binding());}
                         if let Some(timers)=services.timers.clone(){eval.register("viu_timer",timers.binding());}
                         if let Some(state)=services.ui_state.clone(){eval.register("viu_ui_state",state.binding());eval.register("viu_exit",state.exit_binding());}
                         if let Some(rasters)=services.rasters.clone(){eval.register("viu_raster",rasters.binding());}
                         if let Some(platform)=services.platform.clone(){eval.register("viu_platform",platform.binding());}
-                        eval.register("viu_app_dirs",crate::native_primitives::app_dirs(services.application_roots.clone()));
-                        eval.register("viu_maildoc",crate::native_primitives::mail_document());
-                        eval.register("viu_digest",crate::native_primitives::digest());
-                        eval.register("viu_editor_write",crate::native_primitives::editor_write());
-                        eval.register("viu_action_event",crate::native_primitives::action_event());
-                        let options=services.options.clone();
-                        let native_backend=backend.is_some();
-                        let native_facilities=services.calls.is_some();
-
-                        eval.register("viu_context", mix::sync_ext(move |_| from_json(json!({
-                            "name": program.scene, "generation": generation, "citizen": program.citizen,
-                            "git_sha":option_env!("MIX_GIT_SHA").unwrap_or("unknown"),"build_time":option_env!("MIX_BUILD_TIME").unwrap_or("unknown"), "loader": "viu-local", "host": "viu-local", "options":options,
-                            "pid":std::process::id(), "version":env!("CARGO_PKG_VERSION"),
-                            "build":serde_json::from_str::<serde_json::Value>(&buildinfo::build_info!().json()).expect("build provenance JSON"),
-                            "executable":std::env::current_exe().ok(),
-                            "cwd":std::env::current_dir().ok().map(|p|p.to_string_lossy().into_owned()),
-
-                            "native_backend":native_backend, "native_facilities":native_facilities,
-
-                        }))));
+                        let mut context=context(&program,generation);
+                        context["options"]=services.options.clone();
+                        context["native_backend"]=json!(backend.is_some());
+                        context["native_facilities"]=json!(services.calls.is_some());
+                        eval.register("viu_context", mix::sync_ext(move |_| from_json(context.clone())));
                         #[cfg(test)]
                         if let Some(observe) = &services.registry_observer { observe(eval.extension_names()); }
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))
                     }
-                    Request::Event(generation, sequence, command, args, is_request, mut headers) => {
+                    Request::Event(generation, sequence, command, body, is_request, mut headers, native) => {
+                        let _native_scope = native.map(|enter| enter());
                         let outcome = match current.as_mut() {
                             Some((active, eval, local, ..)) if *active == generation => {
                                 local.is_request.set(is_request);
@@ -313,7 +326,7 @@ impl Runtime {
                                 *local.active.borrow_mut()=is_request.then(||(sequence,caller));
                                 headers.insert("type".into(),if is_request{"request"}else{"event"}.into());
                                 headers.insert("id".into(),sequence.to_string());
-                                let event = IncomingEvent { generation, command, headers, body: args.to_string() };
+                                let event = IncomingEvent { generation, command, headers, body };
                                 let tasks = tokio::task::LocalSet::new();
                                 rt.block_on(bounded(&worker_stop, deadline, async {
                                     tasks.run_until(eval.dispatch_event(event)).await?;
@@ -389,7 +402,15 @@ impl Runtime {
     }
 
     pub fn event(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
-        self.submit_event(command, args, true, BTreeMap::new())
+        self.submit_event(command, args, true, BTreeMap::new(), None)
+    }
+    pub(crate) fn native_event(
+        &mut self,
+        command: String,
+        args: Json,
+        context: NativeContext,
+    ) -> Result<u64, Refusal> {
+        self.submit_event(command, args, false, BTreeMap::new(), Some(context))
     }
     /// Preserve broker-stamped caller and topic metadata. Request correlation
     /// remains local to the mailbox; the native owner retains the wire reply.
@@ -399,13 +420,25 @@ impl Runtime {
         args: Json,
         headers: BTreeMap<String, String>,
     ) -> Result<u64, Refusal> {
-        self.submit_event(command, args, true, headers)
+        self.submit_event(command, args, true, headers, None)
+    }
+
+    /// Preserve the original native envelope for application-owned parsing and
+    /// byte budgets. Structured `$event.args` still comes from the evaluator's
+    /// ordinary parser; `$event.body` retains whitespace and duplicate keys.
+    pub fn event_with_body(
+        &mut self,
+        command: String,
+        body: String,
+        headers: BTreeMap<String, String>,
+    ) -> Result<u64, Refusal> {
+        self.submit_body(command, body, true, headers, None)
     }
 
     /// Native Bus topic delivery has no reply obligation. It uses the same
     /// ordered mailbox and generation fences as UI requests.
     pub fn notify(&mut self, command: String, args: Json) -> Result<u64, Refusal> {
-        self.submit_event(command, args, false, BTreeMap::new())
+        self.submit_event(command, args, false, BTreeMap::new(), None)
     }
     pub fn notify_with_headers(
         &mut self,
@@ -413,7 +446,7 @@ impl Runtime {
         args: Json,
         headers: BTreeMap<String, String>,
     ) -> Result<u64, Refusal> {
-        self.submit_event(command, args, false, headers)
+        self.submit_event(command, args, false, headers, None)
     }
 
     fn submit_event(
@@ -422,15 +455,28 @@ impl Runtime {
         args: Json,
         is_request: bool,
         headers: BTreeMap<String, String>,
+        native: Option<NativeContext>,
+    ) -> Result<u64, Refusal> {
+        self.submit_body(command, args.to_string(), is_request, headers, native)
+    }
+
+    fn submit_body(
+        &mut self,
+        command: String,
+        body: String,
+        is_request: bool,
+        headers: BTreeMap<String, String>,
+        native: Option<NativeContext>,
     ) -> Result<u64, Refusal> {
         let sequence = self.sequence.checked_add(1).expect("sequence overflow");
         self.enqueue(Request::Event(
             self.generation,
             sequence,
             command,
-            args,
+            body,
             is_request,
             headers,
+            native,
         ))?;
         self.sequence = sequence;
         Ok(sequence)
@@ -483,10 +529,7 @@ impl Runtime {
     pub fn accepts(&self, completion: &Completion) -> bool {
         completion.generation == self.generation
     }
-}
-
-impl Drop for Runtime {
-    fn drop(&mut self) {
+    pub(crate) fn shutdown(&mut self) {
         self.stop.store(true, Ordering::Release);
         self.interrupt.store(true, Ordering::Release);
         self.tx.take();
@@ -495,6 +538,11 @@ impl Drop for Runtime {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+    }
+}
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 

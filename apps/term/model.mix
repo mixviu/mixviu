@@ -1,0 +1,265 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold tab/pane policy expressed as a pure Mix reducer. Native session
+-- handles are supplied by the caller; this module never spawns or draws.
+fn initial()
+  return {tabs:[],active:0,panes:{},next_tab:1,next_pane:1,revision:0,focus_serial:0,closing:false,event_revision:0,events:[],watching:false}
+end
+fn metadata($s)
+  $tabs=[]
+  for $i=0 to len($s.tabs)-1
+    $tab=$s.tabs[$i]
+    push($tabs,{id:$tab.id,title:$tab.title,active:$i==$s.active,selected:$tab.active_pane,panes:leaves($tab.tree)})
+  end
+  return {tabs:$tabs}
+end
+fn changed($s,$topic,$tab,$pane,$kind)
+  $s.event_revision=$s.event_revision+1
+  if $s.watching and len($s.events)<256 then $s.events=push($s.events,{topic:"term."..$topic,body:{tab:$tab,pane:$pane,kind:$kind,revision:$s.event_revision}}) end
+  return $s
+end
+fn leaves($tree)
+  $pending=[$tree];$out=[]
+  while len($pending)>0
+    $node=pop($pending)
+    if $node!=nil then
+      if $node.kind=="leaf" then push($out,$node.pane)
+      else push($pending,$node.second);push($pending,$node.first) end
+    end
+  end
+  return $out
+end
+fn tab_index($s,$id)
+  for $i=0 to len($s.tabs)-1
+    if $s.tabs[$i].id==$id then return $i end
+  end
+  raise("NOT_FOUND","not-found: tab id="..to_string($id))
+end
+fn tab_of($s,$pane)
+  for $tab in $s.tabs
+    if contains(leaves($tab.tree),$pane) then return $tab.id end
+  end
+  raise("NOT_FOUND","not-found: pane id="..to_string($pane))
+end
+-- Gold TabSet::control_affected: source, destination and replacement tabs
+-- can all lose focus or geometry. Return leaves in tab/tree order.
+fn control_affected($s,$pane,$command)
+  $target=nil
+  for $i=0 to len($s.tabs)-1
+    if contains(leaves($s.tabs[$i].tree),$pane) then $target=$i;break end
+  end
+  if $target==nil then return [] end
+  $closes=$command=="term.tab.close" or ($command=="term.pane.close" and len(leaves($s.tabs[$target].tree))==1)
+  $replacement=nil
+  if $closes and ($command=="term.pane.close" or $target==$s.active) and len($s.tabs)>1 then
+    $replacement=if $target+1<len($s.tabs) then $target+1 else $target-1 end
+  end
+  $out=[]
+  for $i=0 to len($s.tabs)-1
+    if $i==$target or $i==$replacement or ($command!="term.tab.close" and $i==$s.active) then
+      $out=concat($out,leaves($s.tabs[$i].tree))
+    end
+  end
+  return $out
+end
+fn resolve($s,$pane,$tab)
+  if $tab!=nil then $index=tab_index($s,$tab) end
+  if $pane!=nil then
+    $owner=tab_of($s,$pane)
+    if $tab!=nil and $tab!=$owner then raise("ARGUMENT","invalid-argument: pane does not belong to tab") end
+    return {tab:$owner,pane:$pane}
+  end
+  if len($s.tabs)==0 then raise("CLOSING","application closing") end
+  $index=if $tab==nil then $s.active else tab_index($s,$tab) end
+  return {tab:$s.tabs[$index].id,pane:$s.tabs[$index].active_pane}
+end
+fn surface_tree($s,$tree)
+  return transform_tree($tree,"surface",$s,nil,nil)
+end
+fn replace_leaf($tree,$id,$replacement)
+  return transform_tree($tree,"replace",nil,$id,$replacement)
+end
+fn without_leaf($tree,$id)
+  return transform_tree($tree,"remove",nil,$id,nil)
+end
+-- Repeated splits may put all 32 leaves on one branch. Use an explicit
+-- postorder stack so layout depth never consumes evaluator call frames.
+fn transform_tree($tree,$operation,$s,$id,$replacement)
+  $pending=[{tree:$tree,joined:false}];$values=[]
+  while len($pending)>0
+    $item=pop($pending);$node=$item.tree
+    if $node.kind=="leaf" then
+      $value=$node
+      if $operation=="surface" then $value=$s.panes[to_string($node.pane)].handle
+      elif $node.pane==$id then $value=$replacement end
+      push($values,$value)
+    elif not $item.joined then
+      push($pending,{tree:$node,joined:true})
+      push($pending,{tree:$node.second,joined:false})
+      push($pending,{tree:$node.first,joined:false})
+    else
+      $second=pop($values);$first=pop($values)
+      if $operation=="remove" and $first==nil then $value=$second
+      elif $operation=="remove" and $second==nil then $value=$first
+      elif $operation=="surface" then $value={dir:$node.dir,ratio:$node.ratio,first:$first,second:$second}
+      else $value=$node;$value.first=$first;$value.second=$second end
+      push($values,$value)
+    end
+  end
+  return $values[0]
+end
+fn sibling_focus($tree,$id)
+  $pending=[$tree]
+  while len($pending)>0
+    $node=pop($pending)
+    if $node.kind!="leaf" then
+      if $node.first.kind=="leaf" and $node.first.pane==$id then return leaves($node.second)[0] end
+      if $node.second.kind=="leaf" and $node.second.pane==$id then return leaves($node.first)[0] end
+      push($pending,$node.second);push($pending,$node.first)
+    end
+  end
+  return nil
+end
+fn ensure_slot($s)
+  if $s.closing then raise("CLOSING","application closing") end
+  if len(keys($s.panes))>=32 then raise("LIMIT","tab limit (32) reached") end
+end
+fn insert_pane($s,$session)
+  $id=$s.next_pane;$s.next_pane=$id+1
+  $s.panes[to_string($id)]={id:$id,handle:$session.handle,pid:$session.pid,title:"",cols:80,rows:24,geometry:{x:0,y:0,w:0,h:0}}
+  return {state:$s,id:$id}
+end
+fn refresh_titles($s)
+  for $i=0 to len($s.tabs)-1
+    $tab=$s.tabs[$i]
+    $title=$s.panes[to_string($tab.active_pane)].title
+    $title=$tab.user_title ?? (if $title=="" then "mix" else $title end)
+    if $tab.title!=$title then
+      $s.tabs[$i].title=$title
+      $s=changed($s,"tabs.changed",$tab.id,$tab.active_pane,"retitled")
+      $s=changed($s,"title.changed",$tab.id,$tab.active_pane,"retitled")
+    end
+  end
+  return $s
+end
+fn sanitise_title($title)
+  $out=""
+  for $c in chars($title)
+    if not re_match($c,"[\\p{Cc}\\u{2028}\\u{2029}]") then
+      if byte_length($out)+byte_length($c)>256 then break end
+      $out=$out..$c
+    end
+  end
+  return $out
+end
+fn set_title($s,$id,$title)
+  $i=tab_index($s,$id);$title=sanitise_title($title)
+  $s.tabs[$i].user_title=if $title=="" then nil else $title end
+  return refresh_titles($s)
+end
+fn open_tab($s,$session,$title)
+  ensure_slot($s)
+  $added=insert_pane($s,$session);$s=$added.state;$pane=$added.id
+  $id=$s.next_tab;$s.next_tab=$id+1;$s.revision=$s.revision+1
+  $s.tabs=push($s.tabs,{id:$id,title:"mix",user_title:if $title==nil or sanitise_title($title)=="" then nil else sanitise_title($title) end,active_pane:$pane,tree:{kind:"leaf",pane:$pane},revision:$s.revision})
+  $s.active=len($s.tabs)-1;$s.focus_serial=$s.focus_serial+1
+  for $event in [["tabs.changed","added"],["pane.changed","added"],["tabs.changed","selected"],["pane.changed","selected"]] $s=changed($s,$event[0],$id,$pane,$event[1]) end
+  return refresh_titles($s)
+end
+fn select_tab($s,$id)
+  $index=tab_index($s,$id)
+  if $s.active!=$index then
+    $pane=$s.tabs[$index].active_pane
+    $s=changed($s,"tabs.changed",$id,$pane,"selected");$s=changed($s,"pane.changed",$id,$pane,"selected")
+  end
+  $s.active=$index;$s.focus_serial=$s.focus_serial+1
+  return $s
+end
+fn split_pane($s,$dir,$session)
+  ensure_slot($s)
+  if not contains(["h","v"],$dir) then raise("ARGUMENT","invalid-argument: direction") end
+  if len($s.tabs)==0 then raise("CLOSING","application closing") end
+  $tab=$s.tabs[$s.active];$old=$tab.active_pane
+  $added=insert_pane($s,$session);$s=$added.state;$pane=$added.id
+  $s.revision=$s.revision+1
+  $s.tabs[$s.active].tree=replace_leaf($tab.tree,$old,{kind:"split",dir:$dir,ratio:0.5,first:{kind:"leaf",pane:$old},second:{kind:"leaf",pane:$pane}})
+  $s.tabs[$s.active].active_pane=$pane;$s.tabs[$s.active].revision=$s.revision
+  $s.focus_serial=$s.focus_serial+1
+  $s=changed($s,"pane.changed",$tab.id,$pane,"added");$s=changed($s,"pane.changed",$tab.id,$pane,"selected")
+  return refresh_titles($s)
+end
+fn select_pane($s,$id)
+  if len($s.tabs)==0 or not contains(leaves($s.tabs[$s.active].tree),$id) then raise("NOT_FOUND","not-found: pane in active tab id="..to_string($id)) end
+  if $s.tabs[$s.active].active_pane!=$id then $s=changed($s,"pane.changed",$s.tabs[$s.active].id,$id,"selected") end
+  $s.tabs[$s.active].active_pane=$id;$s.focus_serial=$s.focus_serial+1
+  return refresh_titles($s)
+end
+fn map_without($m,$remove)
+  $out={}
+  for $key in keys($m)
+    if not contains($remove,$key) then $out[$key]=$m[$key] end
+  end
+  return $out
+end
+fn close_tab($s,$id)
+  $index=tab_index($s,$id);$ids=leaves($s.tabs[$index].tree);$removed=[]
+  $was_active=$index==$s.active;$old_pane=$s.tabs[$index].active_pane
+  for $pane in $ids push($removed,$s.panes[to_string($pane)].handle) end
+  $s.panes=map_without($s.panes,map($ids,fn($id)=to_string($id)))
+  $s.tabs=concat(slice($s.tabs,0,$index),slice($s.tabs,$index+1))
+  if $index<$s.active or $s.active>=len($s.tabs) then $s.active=max(0,$s.active-1) end
+  $s.revision=$s.revision+1;$s.focus_serial=$s.focus_serial+1
+  for $pane in $ids $s=changed($s,"pane.changed",$id,$pane,"removed") end
+  $s=changed($s,"tabs.changed",$id,$old_pane,"removed")
+  if $was_active and len($s.tabs)>0 then
+    $tab=$s.tabs[$s.active];$s=changed($s,"tabs.changed",$tab.id,$tab.active_pane,"selected");$s=changed($s,"pane.changed",$tab.id,$tab.active_pane,"selected")
+  end
+  if len($s.tabs)==0 then $s.closing=true end
+  return {state:$s,removed:$removed}
+end
+fn close_pane($s,$id)
+  $tab=tab_of($s,$id);$index=tab_index($s,$tab);$tree=$s.tabs[$index].tree
+  if len(leaves($tree))==1 then return close_tab($s,$tab) end
+  $removed=[$s.panes[to_string($id)].handle]
+  $focus_changed=$s.tabs[$index].active_pane==$id
+  $s.panes=map_without($s.panes,[to_string($id)])
+  $s.tabs[$index].tree=without_leaf($tree,$id)
+  if $s.tabs[$index].active_pane==$id then $s.tabs[$index].active_pane=sibling_focus($tree,$id) end
+  $s.revision=$s.revision+1;$s.tabs[$index].revision=$s.revision;$s.focus_serial=$s.focus_serial+1
+  $s=changed($s,"pane.changed",$tab,$id,"removed")
+  if $focus_changed then $s=changed($s,"pane.changed",$tab,$s.tabs[$index].active_pane,"selected") end
+  return {state:refresh_titles($s),removed:$removed}
+end
+fn move_tab($s,$id,$index)
+  $from=tab_index($s,$id);$tab=$s.tabs[$from];$active=$s.tabs[$s.active].id
+  $rest=concat(slice($s.tabs,0,$from),slice($s.tabs,$from+1));$to=max(0,min(len($rest),$index))
+  $s.tabs=concat(slice($rest,0,$to),[$tab],slice($rest,$to));$s.active=tab_index($s,$active)
+  if $from!=$to then $s.revision=$s.revision+1;$s.tabs[$to].revision=$s.revision;$s=changed($s,"tabs.changed",$id,$tab.active_pane,"moved") end
+  return $s
+end
+fn placed_leaves($tree,$g)
+  $pending=[{tree:$tree,geometry:$g}];$out=[]
+  while len($pending)>0
+    $item=pop($pending);$node=$item.tree;$g=$item.geometry
+    if $node.kind=="leaf" then push($out,{id:$node.pane,geometry:$g})
+    else
+      $first=$g;$second=$g
+      if $node.dir=="v" then $first.w=$g.w*$node.ratio;$second.x=$g.x+$first.w;$second.w=$g.w-$first.w
+      else $first.h=$g.h*$node.ratio;$second.y=$g.y+$first.h;$second.h=$g.h-$first.h end
+      push($pending,{tree:$node.second,geometry:$second});push($pending,{tree:$node.first,geometry:$first})
+    end
+  end
+  return $out
+end
+fn neighbour($s,$direction)
+  $tab=$s.tabs[$s.active];$leaves=map(leaves($tab.tree),fn($id)={id:$id,geometry:$s.panes[to_string($id)].geometry})
+  if any($leaves,fn($p)=$p.geometry.w==0 or $p.geometry.h==0) then $leaves=placed_leaves($tab.tree,{x:0,y:0,w:1,h:1}) end
+  $g=filter($leaves,fn($p)=$p.id==$tab.active_pane)[0].geometry
+  $best=nil;$distance=nil
+  for $p in $leaves
+    $dx=$p.geometry.x+$p.geometry.w/2-($g.x+$g.w/2);$dy=$p.geometry.y+$p.geometry.h/2-($g.y+$g.h/2)
+    $eligible=if $direction=="left" then $dx<0 elif $direction=="right" then $dx>0 elif $direction=="up" then $dy<0 else $dy>0 end
+    $score=$dx*$dx+$dy*$dy
+    if $eligible and ($distance==nil or $score<$distance) then $best=$p.id;$distance=$score end
+  end
+  return $best
+end

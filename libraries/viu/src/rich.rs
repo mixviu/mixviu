@@ -234,6 +234,28 @@ pub fn validate(kind: &str, value: &Value) -> Result<(), String> {
             }
             let mut ids = BTreeSet::new();
             entries(&value["choices"], 0, &mut ids)?;
+            if let Some(rows) = value.get("grid") {
+                let rows = rows
+                    .as_array()
+                    .filter(|r| r.len() <= 1024)
+                    .ok_or("bounded dialog grid required")?;
+                for row in rows {
+                    if !row["label"].is_string()
+                        || row.get("keys").is_some_and(|keys| {
+                            keys.as_array().is_none_or(|keys| {
+                                keys.len() > 16 || keys.iter().any(|k| !k.is_string())
+                            })
+                        })
+                    {
+                        return Err("dialog grid requires labels and shortcut strings".into());
+                    }
+                }
+                for flag in ["grid_striped", "grid_monospace"] {
+                    if value.get(flag).is_some_and(|v| !v.is_boolean()) {
+                        return Err("dialog grid flags must be boolean".into());
+                    }
+                }
+            }
             for key in ["picks", "tools"] {
                 if let Some(rows) = value.get(key) {
                     entries(rows, 0, &mut ids)?;
@@ -648,7 +670,9 @@ pub(crate) fn draw(
     if widget.kind == "dialog-form"
         && widget.properties["style"] == "gold"
         && widget.properties["presentation"] != "form"
-        && !value["grid"].is_array()
+        && (!value["grid"].is_array()
+            || value["grid_striped"] == true
+            || value["grid_monospace"] == true)
     {
         return gold_dialog(ui, widget, value, geometry, events);
     }
@@ -1364,6 +1388,26 @@ fn gold_dialog(
         }
         if let Some(commands)=value.get("shortcuts"){crate::command_palette::shortcuts(ui,commands);}
 
+        if let Some(rows) = value["grid"].as_array() {
+            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                egui::Grid::new((id, "shortcuts"))
+                    .striped(value["grid_striped"] == true)
+                    .show(ui, |ui| {
+                        for row in rows {
+                            ui.label(text(row, "label"));
+                            let keys = row["keys"].as_array().map(|keys| {
+                                keys.iter().filter_map(Value::as_str)
+                                    .filter_map(toolkit::keymap::parse_chord)
+                                    .map(|s| ui.ctx().format_shortcut(&s))
+                                    .collect::<Vec<_>>().join(", ")
+                            }).unwrap_or_else(|| text(row, "shortcut").into());
+                            if value["grid_monospace"] == true { ui.monospace(keys); }
+                            else { ui.weak(keys); }
+                            ui.end_row();
+                        }
+                    });
+            });
+        }
         if let Some(footer)=value["footer"].as_str(){ui.weak(footer);}
         if let Some(details)=value["details"].as_array(){
             ui.add_space(4.0);
@@ -1451,4 +1495,55 @@ fn gold_dialog(
         Dialog::reset(ui.ctx(), key);
     }
     ui.allocate_rect(shown.rect, egui::Sense::hover())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gold_shortcut_grid_reaches_the_live_widget_renderer() {
+        let rows: Vec<_> = (0..23)
+            .map(|i| {
+                json!({
+                    "label":format!("Command {i}"), "keys":["Ctrl+Shift+T"]
+                })
+            })
+            .collect();
+        let mut widget = Widget::new(
+            "keys",
+            "dialog-form",
+            "Keys",
+            json!({
+                "open":true, "title":"Keyboard Shortcuts", "body":"", "instance":"keys",
+                "grid":rows,"grid_striped":true,"grid_monospace":true,
+                "choices":[{"id":"done","label":"Close","enabled":true,"default":true}]
+            }),
+        );
+        widget.properties = json!({"style":"gold"});
+        let mut widgets = crate::widgets::Widgets::default();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 560.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    widgets.begin_frame();
+                    assert!(widgets.widget(ui, &widget, &json!({})).is_empty());
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+        assert!(
+            widgets.geometry["keys"].height() > 400.0,
+            "shortcut rows must contribute to the dialog body"
+        );
+        widget.initial["grid"][0]["keys"] = json!(42);
+        assert!(validate("dialog-form", &widget.initial).is_err());
+    }
 }

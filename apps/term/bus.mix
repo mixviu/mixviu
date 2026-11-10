@@ -1,0 +1,143 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Global command policy. The supplied native function owns PTYs, never tabs.
+$model=require("model.mix");$lifecycle=require("lifecycle.mix")
+$wire=require("wire.mix")
+$discovery=require("discovery.mix")
+fn change_topic($service,$topic)
+  return if starts_with($topic,"term.") then $service.."."..strip_prefix($topic,"term.") else $topic end
+end
+fn identity($s,$target)
+  return "tab="..to_string($target.tab).." pane="..to_string($target.pane).." revision="..to_string($s.layout.revision)
+end
+fn active($s) return $model.resolve($s.layout,nil,nil) end
+fn target_handle($s,$target) return $s.layout.panes[to_string($target.pane)].handle end
+fn refresh($s,$native)
+  for $key in keys($s.layout.panes)
+    $p=$s.layout.panes[$key];$n=$native("state",$p.handle,{})
+    $s.layout.panes[$key]=merge($p,$n)
+    if $p.cols!=$n.cols or $p.rows!=$n.rows then $s.layout=$model.changed($s.layout,"pane.changed",$model.tab_of($s.layout,$p.id),$p.id,"resized") end
+  end
+  $s.layout=$model.refresh_titles($s.layout)
+  return $s
+end
+fn shut($s,$native)
+  for $tab in $s.layout.tabs $s=close_removed($s,$lifecycle.close_tab($s.layout,$tab.id,$native),$native) end
+  $s.layout.closing=true;$s.closed=true
+  return $s
+end
+fn close_removed($s,$out,$native)
+  for $handle in $out.removed $r=$native("close",$handle,{}) end
+  $s.layout=$out.state;$s.closed=$s.layout.closing
+  return $s
+end
+fn dispatch($s,$command,$a,$native)
+  if byte_length(json_encode($a))>8192 then return {state:$s,rc:10,body:"request exceeds 8192 bytes"} end
+  return dispatch_parsed($s,$command,$a,$native)
+end
+fn dispatch_raw($s,$wire_command,$command,$body,$native)
+  $decoded=$wire.decode($wire_command,$body)
+  if $decoded.error!=nil then return {state:$s,rc:10,body:$decoded.error} end
+  return dispatch_parsed($s,$command,$decoded.args,$native)
+end
+fn dispatch_inspected($s,$wire_command,$command,$body,$native,$inspect)
+  $decoded=$wire.decode($wire_command,$body)
+  if $decoded.error!=nil then return {state:$s,rc:10,body:$decoded.error} end
+  $numbers=if starts_with($wire_command,"term.") then $inspect(if $body=="" then "{}" else $body end) else {} end
+  return dispatch_fields($s,$command,$decoded.args,$native,$numbers)
+end
+fn dispatch_parsed($s,$command,$a,$native)
+  return dispatch_fields($s,$command,$a,$native,{})
+end
+fn dispatch_fields($s,$command,$a,$native,$numbers)
+  if type($a)!="map" then return {state:$s,rc:10,body:"body must be a JSON object"} end
+  $mutates=$wire.mutates($command)
+  if $mutates and type($a.request_id)=="string" then
+    $cached=$wire.replay_fields($s.replies,$command,$a,$numbers)
+    if $cached!=nil then return {state:$s,rc:$cached.rc,body:$cached.body} end
+  end
+  $invalid=$wire.field_arguments($command,$a,$numbers)
+  if $invalid!=nil then return {state:$s,rc:10,body:$invalid} end
+  $original=$a
+  $a=$wire.materialise($a,$numbers)
+  if $command=="term.type" and $a.instance!=nil and $a.instance!=$s.identity.instance then
+    return {state:$s,rc:10,body:json_encode({error_code:"INVALID_ARGUMENT",message:"instance "..to_string($a.instance).." is not this term process (instance="..to_string($s.identity.instance).."); re-read term.panes"})}
+  end
+  -- Resolve before replay only for argument disagreement. Stale selectors are
+  -- state outcomes and must replay the original result after a close.
+  if $a.pane!=nil and $a.tab!=nil then
+    try
+      $target=$model.resolve($s.layout,$a.pane,$a.tab)
+    catch $message
+      if starts_with($message,"invalid-argument:") then
+        return {state:$s,rc:10,body:if $command=="term.type" then json_encode({error_code:"INVALID_ARGUMENT",message:slice($message,18)}) else $message end}
+      end
+    end
+  end
+  $rc=0;$body=""
+  try
+    $s=refresh($s,$native)
+    if $command=="term.info" then $body=$discovery.info($s.service ?? "term",$s.identity)
+    elif $command=="term.session" then $body=json_encode($native("session","",{}))
+    elif $command=="term.tabs" then
+      $lines=[]
+      for $i=0 to len($s.layout.tabs)-1
+        $t=$s.layout.tabs[$i];$p=$s.layout.panes[to_string($t.active_pane)]
+        push($lines,fmt("id=%d active=%s title=%s cols=%d rows=%d child_pid=%d revision=%d instance=%d",$t.id,to_string($i==$s.layout.active),$t.title,$p.cols,$p.rows,$p.pid,$s.layout.revision,$s.identity.instance))
+      end
+      $body=join($lines,"\n")
+    elif $command=="term.panes" then
+      $target=$model.resolve($s.layout,nil,$a.tab);$t=$s.layout.tabs[$model.tab_index($s.layout,$target.tab)];$lines=[]
+      for $id in $model.leaves($t.tree)
+        $p=$s.layout.panes[to_string($id)];$g=$p.geometry
+        push($lines,fmt("id=%d active=%s cols=%d rows=%d child_pid=%d x=%s y=%s w=%s h=%s tab=%d revision=%d instance=%d pid=%d",$id,to_string($t.active_pane==$id),$p.cols,$p.rows,$p.pid,to_string($g.x),to_string($g.y),to_string($g.w),to_string($g.h),$t.id,$s.layout.revision,$s.identity.instance,$s.identity.pid))
+      end
+      $body=join($lines,"\n")
+    elif $command=="term.tab.new" or $command=="term.pane.split" then
+      $model.ensure_slot($s.layout)
+      $startup=$s.startup ?? {}
+      $session=$native("create","",{pane_id:$s.layout.next_pane,cwd:$a.cwd,scrollback:$s.look.values["terminal.scrollback.lines"] ?? $startup.scrollback ?? 1000,term:$s.look.values["terminal.env.term"] ?? $startup.TERM ?? "xterm-256color"})
+      if $command=="term.tab.new" then
+        $s.layout=$lifecycle.open_tab($s.layout,$session,$a.title,$native);$t=active($s)
+        $body="opened id="..to_string($t.tab).." "..identity($s,$t).." binding="..($session.binding ?? "unavailable")
+      else
+        $dir=if starts_with($a.dir,"h") then "h" else "v" end
+        $s.layout=$lifecycle.split_pane($s.layout,$dir,$session,$native);$t=active($s)
+        $body="split id="..to_string($t.pane).." dir="..$dir.." "..identity($s,$t)
+      end
+    elif $command=="term.tab.select" then
+      $s.layout=$lifecycle.select_tab($s.layout,$a.id,$native);$body="selected id="..to_string($a.id).." "..identity($s,active($s))
+    elif $command=="term.pane.select" then
+      $s.layout=$lifecycle.select_pane($s.layout,$a.id,$native);$body="selected id="..to_string($a.id).." "..identity($s,active($s))
+    elif $command=="term.tab.title" then
+      $s.layout=$model.set_title($s.layout,$a.id,$a.title);$t=$model.resolve($s.layout,nil,$a.id)
+      $body="retitled id="..to_string($a.id).." "..identity($s,$t)
+    elif $command=="term.tab.move" then
+      $s.layout=$model.move_tab($s.layout,$a.id,$a.index);$t=$model.resolve($s.layout,nil,$a.id)
+      $body="moved id="..to_string($a.id).." index="..to_string($model.tab_index($s.layout,$a.id)).." "..identity($s,$t)
+    elif $command=="term.tab.close" then
+      $s=close_removed($s,$lifecycle.close_tab($s.layout,$a.id,$native),$native)
+      $body="closed id="..to_string($a.id)..(if $s.closed then " last" else " remaining="..to_string(len($s.layout.tabs)) end).." revision="..to_string($s.layout.revision)
+    elif $command=="term.pane.close" then
+      $t=active($s);$index=$model.tab_index($s.layout,$t.tab);$count=len($model.leaves($s.layout.tabs[$index].tree))
+      $s=close_removed($s,$lifecycle.close_pane($s.layout,$t.pane,$native),$native)
+      $body="closed id="..to_string($t.pane)..(if $count==1 then " tab-closed" else " panes="..to_string($count-1) end).." tab="..to_string($t.tab).." revision="..to_string($s.layout.revision)
+    elif contains(["term.snapshot","term.type","term.scroll"],$command) then
+      $t=$model.resolve($s.layout,$a.pane,$a.tab);$handle=target_handle($s,$t)
+      if $command=="term.snapshot" then $body=identity($s,$t).." "..$native("snapshot",$handle,$a)
+      elif $command=="term.type" then
+        $r=$native("type",$handle,$a);$body="DIAGNOSTIC synthetic keys queued; inspect input_written for actual writes "..identity($s,$t)
+      else
+        $r=$native("scroll",$handle,$a);$body=json_encode({pane:$t.pane,display_offset:$r.display_offset,history_lines:$r.history_size})
+        if $r.changed then $s.layout=$model.changed($s.layout,"pane.changed",$t.tab,$t.pane,"scrolled") end
+      end
+    elif $command=="term.props.watch" then
+      $s.layout.watching=true;$body=json_encode({topics:map(["term.tabs.changed","term.pane.changed","term.title.changed"],fn($topic)=change_topic($s.service ?? "term",$topic)),revision:$s.layout.event_revision})
+    else raise("UNKNOWN","unknown command; use HELP") end
+  catch $message
+    $rc=10;$body=$message
+  end
+  if $mutates and not starts_with($body,"invalid-argument:") and not starts_with($body,"{\"error_code\":\"INVALID_ARGUMENT\"") then
+    $s.replies=$wire.remember_fields($s.replies,$command,$original,$numbers,$rc,$body)
+  end
+  return {state:$s,rc:$rc,body:$body}
+end

@@ -37,6 +37,7 @@ fn generated_lint_vocabulary_matches_the_live_complete_registry() {
             )),
             chooser: Some(crate::chooser::Service::new(1, b"/tmp".to_vec(), wake).unwrap()),
             clipboard: Some(clipboard),
+            terminals: Some(Default::default()),
             ..Default::default()
         },
     );

@@ -501,6 +501,7 @@ mod tests {
                 from: "test".into(),
                 command: "viu.ui.click".into(),
                 args: json!({"id":"button"}),
+                body: json!({"id":"button"}).to_string(),
                 headers: Default::default(),
                 reply,
                 close_after_reply: Default::default(),

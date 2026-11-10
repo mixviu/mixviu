@@ -1,0 +1,153 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold registry/menu data; Mix owns availability, targets and effects.
+$base=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+$menu_template=json_parse(read_file(path_join(dirname(script_path()),"menus.json")))
+$layout=require("model.mix");$bus=require("bus.mix")
+fn binding_defaults() return $base end
+fn registry($s)
+  $out=[];$running=not $s.closed and len($s.layout.tabs)>0
+  $split=$running and len($layout.leaves($s.layout.tabs[$s.layout.active].tree))>1
+  for $a in $base
+    $a.enabled=if contains(["pane.next","pane.prev","pane.focus_left","pane.focus_right","pane.focus_up","pane.focus_down"],$a.id) then $split elif contains(["tab.next","tab.prev"],$a.id) then len($s.layout.tabs)>1 elif starts_with($a.id,"tab.") or starts_with($a.id,"pane.") or starts_with($a.id,"edit.") or starts_with($a.id,"scroll.") then $running else true end
+    $a.reason=if $a.enabled then nil else "disabled" end
+    if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end
+    for $axis in [["theme","scheme"],["mode","mode"],["style","style"],["decorations","decorations"],["captions","caption_side"]]
+      $prefix="view."..$axis[0].."."
+      if starts_with($a.id,$prefix) then
+        $value=strip_prefix($a.id,$prefix);$choice=$s.choice[$axis[1]]
+        $a.checked=if $value=="session" then $choice==nil elif $value=="auto" then ($choice ?? "auto")=="auto" else $choice==$value end
+      end
+    end
+    -- Gold theme_menu registers this toggle with an always-false checked readback.
+    if $a.id=="view.mode" then $a.checked=false end
+    push($out,$a)
+  end
+  return $out
+end
+fn rows($rows,$actions)
+  $out=[]
+  for $row in $rows
+    if $row.separator then push($out,$row)
+    elif $row.submenu!=nil then push($out,{id:"theme-menu",label:$row.label,enabled:true,children:rows($row.submenu,$actions)})
+    else
+      $a=filter($actions,fn($a)=$a.id==$row.id)[0]
+      push($out,{id:$a.id,label:$a.label,enabled:$a.enabled,checked:$a.checked,shortcut:$a.shortcut})
+    end
+  end
+  return $out
+end
+fn menus($s)
+  $actions=registry($s)
+  return map($menu_template,fn($menu)={id:$menu.title,label:$menu.title,enabled:true,children:rows($menu.rows,$actions)})
+end
+fn toolbar($s)
+  $all=registry($s);$out=[]
+  for $pair in [["help.macros","scroll-text"],["view.search","search"],["help.keys","keyboard"],["view.mode",if ($s.effective.mode ?? $s.look.appearance.mode)=="light" then "moon" else "sun" end]]
+    $a=filter($all,fn($a)=$a.id==$pair[0])[0];$a.icon=$pair[1];$a.icon_only=true
+    -- Gold titlebar::icon_bar leaves the mode button untoggled in both modes.
+    if $a.id=="view.mode" then $a.checked=false end
+    push($out,$a)
+  end
+  return $out
+end
+fn terminal_shortcuts($s)
+  $out=[]
+  for $a in registry($s)
+    $binding=$s.bindings[$a.id] ?? {}; $keys=$binding.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
+    for $chord in $keys
+      $parts=split($chord,"+");$key=$parts[len($parts)-1]
+      $alias={"=":"Equals","-":"Minus","Left":"ArrowLeft","Right":"ArrowRight","Up":"ArrowUp","Down":"ArrowDown"}
+      push($out,{command:$a.id,key:$alias[$key] ?? $key,ctrl:contains($parts,"Ctrl"),shift:contains($parts,"Shift"),alt:contains($parts,"Alt"),enabled:$a.enabled,repeat:starts_with($a.id,"view.zoom_") or starts_with($a.id,"scroll."),normal_screen_only:starts_with($a.id,"scroll.")})
+    end
+  end
+  $tab=$s.layout.tabs[$s.layout.active]
+  if not $s.closed then
+    push($out,{command:"terminal.find",key:"F",ctrl:true,shift:true,alt:false,enabled:true,repeat:false})
+    $find=$s.find ?? {}
+    if $find.open ?? false then
+      for $shift in [false,true] push($out,{command:if $shift then "terminal.find.prev" else "terminal.find.next" end,key:"F3",ctrl:false,shift:$shift,alt:false,enabled:true,repeat:false}) end
+    end
+  end
+  if $tab!=nil and len($layout.leaves($tab.tree))>1 then
+    for $shift in [false,true] push($out,{command:if $shift then "pane.prev" else "pane.next" end,key:"Tab",ctrl:false,shift:$shift,alt:false,enabled:true,repeat:false}) end
+  end
+  return $out
+end
+fn observed_state($s)
+  $tab=$s.layout.tabs[$s.layout.active]
+  $ids=if $tab==nil then [] else $layout.leaves($tab.tree) end
+  $panes=[]
+  for $id in $ids
+    $p=$s.layout.panes[to_string($id)];$g=$p.window_geometry??$p.geometry
+    push($panes,{id:$id,focused:$id==$tab.active_pane,grid:if $p.cell==nil then nil else [$p.cols,$p.rows] end,rect:[$g.x,$g.y,$g.w,$g.h]})
+  end
+  $active=if $tab==nil then {} else $s.layout.panes[to_string($tab.active_pane)] end
+  return {tabs:map($s.layout.tabs,fn($t)={id:$t.id,title:$t.title,active:$t.id==$tab.id}),panes:$panes,font_px:$active.font_px,cell:$active.cell,scale:$active.scale,paste_notice:$s.notice}
+end
+fn invoke($s,$id,$args,$native)
+  $matches=filter(registry($s),fn($a)=$a.id==$id)
+  if len($matches)==0 then return {state:$s,rc:10,body:{error_code:"UNKNOWN_ACTION",message:"Unknown action"},effects:[]} end
+  if not $matches[0].enabled then return {state:$s,rc:10,body:{error_code:"DISABLED",message:"Command is disabled"},effects:[]} end
+  $effects=[];$command=nil;$params={}
+  if $id=="tab.new" then $command="term.tab.new"
+  elif $id=="tab.close" then $command="term.tab.close";$params.id=$args.tab ?? $s.layout.tabs[$s.layout.active].id
+  elif $id=="tab.select" and $args.tab!=nil then $command="term.tab.select";$params.id=$args.tab
+  elif $id=="pane.focus" and $args.pane!=nil then $command="term.pane.select";$params.id=$args.pane
+  elif contains(["pane.split_right","pane.split_down"],$id) then $command="term.pane.split";$params.dir=if $id=="pane.split_right" then "v" else "h" end
+  elif $id=="pane.close" then $command="term.pane.close"
+  elif contains(["tab.next","tab.prev"],$id) then
+    $index=($s.layout.active+(if $id=="tab.next" then 1 else len($s.layout.tabs)-1 end))%len($s.layout.tabs)
+    $command="term.tab.select";$params.id=$s.layout.tabs[$index].id
+  elif contains(["pane.next","pane.prev"],$id) then
+    $tab=$s.layout.tabs[$s.layout.active];$ids=$layout.leaves($tab.tree);$index=index_of($ids,$tab.active_pane)
+    $command="term.pane.select";$params.id=$ids[($index+(if $id=="pane.next" then 1 else len($ids)-1 end))%len($ids)]
+  elif starts_with($id,"pane.focus_") then
+    $wanted=$layout.neighbour($s.layout,strip_prefix($id,"pane.focus_"))
+    if $wanted!=nil then $command="term.pane.select";$params.id=$wanted end
+  elif $id=="app.quit" then $s=$bus.shut($s,$native)
+  elif starts_with($id,"scroll.") then
+    $command="term.scroll"
+    if $id=="scroll.page_up" then $params.page=1 elif $id=="scroll.page_down" then $params.page=-1 else $params.to=strip_prefix($id,"scroll.") end
+  elif starts_with($id,"view.zoom_") then
+    $profile=$s.font_profile ?? $s.look.values["terminal.font.size"] ?? 14.667
+    $base=$s.font_base ?? $profile
+    if $id=="view.zoom_reset" then
+      $s.font_base=$profile;$s.zoom_steps=0;$s.zoom=0;$s.font_current=$native("font-size","",{base:$profile,steps:0})
+      push($effects,{kind:"font",size:$s.font_current,reset:true})
+    else
+      $previous=$s.zoom_steps ?? 0
+      $steps=$previous+(if $id=="view.zoom_in" then 1 else -1 end)
+      -- Native FontSize owns f32 rounding and stops at the accepted bound.
+      -- A second f64 range check can reject a step Gold rounds to6 or48.
+      $current=$native("font-size","",{base:$base,steps:$previous})
+      $next=$native("font-size","",{base:$base,steps:$steps})
+      if $next!=$current then
+        $s.font_base=$base;$s.zoom_steps=$steps;$s.zoom=$steps*2/3;$s.font_current=$next
+        push($effects,{kind:"font",size:$s.font_current,reset:false})
+      end
+    end
+  elif $id=="edit.copy" or $id=="edit.paste" then
+    $target=$bus.active($s);$handle=$args.clipboard_handle ?? $bus.target_handle($s,$target)
+    push($effects,{kind:if $id=="edit.copy" then "copy" else "paste" end,handle:$handle,primary:$args.primary==true,supplied:contains(keys($args),"paste_text"),text:if $id=="edit.copy" then $native("selection",$handle,{}) else $args.paste_text end})
+  elif $id=="help.macros" then $s.macros_open=not ($s.macros_open ?? false)
+  elif $id=="help.keys" then $s.dialog="keys"
+  elif $id=="help.about" then $s.dialog="about"
+  elif $id=="view.search" then $s.search_open=true
+  elif $id=="view.mode" then
+    $s.choice.mode=if ($s.effective.mode ?? $s.look.appearance.mode)=="dark" then "light" else "dark" end;push($effects,{kind:"theme",choice:$s.choice})
+  elif starts_with($id,"view.") then
+    for $axis in [["theme","scheme"],["mode","mode"],["style","style"],["decorations","decorations"],["captions","caption_side"]]
+      $prefix="view."..$axis[0].."."
+      if starts_with($id,$prefix) then
+        $value=strip_prefix($id,$prefix);$s.choice[$axis[1]]=if $value=="session" then nil else $value end
+        push($effects,{kind:"theme",choice:$s.choice})
+      end
+    end
+  end
+  if $command!=nil then
+    $out=$bus.dispatch($s,$command,$params,$native);$s=$out.state
+    -- Gold accepts the registry action even if its stale target is a no-op.
+    -- A layout refusal is not a clipboard failure and must not replace notice.
+  end
+  return {state:$s,rc:0,body:{executed:$id},effects:$effects}
+end

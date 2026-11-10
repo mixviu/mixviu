@@ -1,0 +1,80 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold persistence scenarios; no real clock, files, Bus or settings changes.
+$font=require("font-persistence.mix")
+$good={kind:"read-answered",usable:true,following:true,continued:false}
+$bad={kind:"read-answered",usable:false,following:true,continued:false}
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+for $body in [nil,"",[],"not JSON","null",{rc:10,body:nil},{rc:10,body:""},{rc:10,body:[]}]
+  $answer=$font.answer({rc:0,body:$body})
+  check($answer.rc!=0 and type($answer.body)=="map","empty native failure settles without dereferencing a null body")
+end
+check($font.answer({rc:20,body:{rc:0,body:{status:"changed"}}}).rc==20,"job failure takes precedence over an apparent reply")
+check(deep_eq($font.answer({rc:0,body:json_encode({rc:0,body:{status:"current"}})}),{rc:0,body:{status:"current"}}),"encoded native reply retains its typed body")
+fn feed($s,$e,$at,$expected)
+  $out=$font.event($s,$e,$at)
+  check(deep_eq($out.actions,$expected),json_encode({event:$e,state:$s,expected:$expected,actual:$out}))
+  check(not ($out.state.reading and $out.state.sent!=nil),"no overlapping read and write")
+  return $out.state
+end
+fn ready()
+  $s=feed($font.initial(),{kind:"read-requested"},0,[{kind:"read"}])
+  return feed($s,$good,0,[])
+end
+fn writing()
+  $s=feed(ready(),{kind:"zoom",size:16},0,[{kind:"debounce"}])
+  return feed($s,{kind:"timer"},400,[{kind:"write",size:16}])
+end
+-- Only the latest 400ms quiet period writes; stale timers cannot write early.
+$s=feed(ready(),{kind:"zoom",size:16},0,[{kind:"debounce"}])
+$s=feed($s,{kind:"zoom",size:18},200,[{kind:"debounce"}])
+$s=feed($s,{kind:"timer"},400,[])
+$s=feed($s,{kind:"now"},600,[{kind:"write",size:18}])
+$s=feed($s,{kind:"write-settled",reply:"saved"},601,[{kind:"read"}])
+$s=feed($s,$good,602,[]);check($s.pending==nil,"saved zoom clears pending")
+-- No authority: retain zoom and wait for a real event, with no retry timer.
+$s=feed($font.initial(),{kind:"zoom",size:16},0,[{kind:"debounce"}])
+$s=feed($s,{kind:"timer"},400,[{kind:"read"}])
+$s=feed($s,$bad,401,[])
+$s=feed($s,{kind:"now"},60401,[])
+check($s.pending==16 and $s.unsaved and $s.debounce_at==nil,"failed read retains unsaved zoom without polling")
+$s=feed($s,{kind:"read-requested"},60402,[{kind:"read"}])
+$s=feed($s,{kind:"read-requested"},60403,[])
+$s=feed($s,$good,60404,[{kind:"write",size:16}])
+-- A newer zoom in flight and failed write cancel even the newer debounce.
+$s=feed(writing(),{kind:"zoom",size:18},401,[{kind:"debounce"}])
+$s=feed($s,{kind:"write-settled",reply:"failed"},402,[])
+$s=feed($s,{kind:"timer"},1000,[])
+check($s.pending==18 and $s.unsaved,"write failure retains newer zoom")
+$s=feed($s,{kind:"zoom",size:20},1001,[{kind:"debounce"}])
+$s=feed($s,{kind:"timer"},1401,[{kind:"read"}])
+$s=feed($s,$good,1402,[{kind:"write",size:20}])
+-- Ctrl+0 drops unwritten/failed zooms and corrects differing in-flight writes.
+$s=feed(ready(),{kind:"zoom",size:16},0,[{kind:"debounce"}])
+$s=feed($s,{kind:"reset",size:13},100,[])
+$s=feed($s,{kind:"timer"},400,[]);check($s.pending==nil,"reset cancels unwritten zoom")
+for $profile in [13,16]
+  $s=feed(writing(),{kind:"reset",size:$profile},401,[])
+  $s=feed($s,{kind:"write-settled",reply:"saved"},402,[{kind:"read"}])
+  $s=feed($s,$good,403,if $profile==16 then [] else [{kind:"write",size:13}] end)
+  if $profile==16 then check($s.pending==nil,"equal in-flight reset needs no correction") end
+end
+-- Conflict demands a fresh fence. Refusal clears all pending values.
+$s=feed(writing(),{kind:"write-settled",reply:"conflict"},401,[{kind:"read"}])
+$s=feed($s,$bad,402,[])
+$s=feed($s,{kind:"now"},60402,[])
+$s=feed($s,{kind:"read-requested"},60403,[{kind:"read"}])
+$s=feed($s,$good,60404,[{kind:"write",size:16}])
+$s=feed($s,{kind:"zoom",size:18},60405,[{kind:"debounce"}])
+$s=feed($s,{kind:"write-settled",reply:"refused"},60406,[{kind:"read"}])
+$s=feed($s,$good,60407,[])
+check($s.pending==nil and $s.unsaved and $s.debounce_at==nil,"refusal restores profile and cancels timer")
+-- A hint queued in flight may read after failure, but cannot write on failure.
+$s=feed(writing(),{kind:"read-requested"},401,[])
+$s=feed($s,{kind:"write-settled",reply:"failed"},402,[{kind:"read"}])
+$s=feed($s,$bad,403,[])
+-- Retargeted read continues without releasing the one-request lock.
+$s=feed($font.initial(),{kind:"zoom",size:16},0,[{kind:"debounce"}])
+$s=feed($s,{kind:"timer"},400,[{kind:"read"}])
+$s=feed($s,{kind:"read-answered",usable:false,following:false,continued:true},401,[{kind:"read"}])
+$s=feed($s,$good,402,[{kind:"write",size:16}])
+print("term font persistence: debounce, fences, failures, reset, hints and retargeting passed")

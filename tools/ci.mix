@@ -4,7 +4,7 @@
 -- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
 --
 --   mix tools/ci.mix STAGE [--mix PATH]
---   STAGE: fmt | env | mix-hygiene | clippy | viud | test | mix-lint | mix-lint-baseline | release-mix | all
+--   STAGE: fmt | env | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
 --
 -- MixViu has four engines: mix, mixd, viu, viud. The `mix` package is built and tested apart from the
@@ -17,7 +17,7 @@
 
 $o = getopt(args(), {mix: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|test|mix-lint|mix-lint-baseline|release-mix|all [--mix PATH]")
+  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|foreign|test|mix-lint|mix-lint-baseline|release-mix|all [--mix PATH]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -35,7 +35,9 @@ fn run_step($argv, $env = {})
 end
 
 fn ensure_mix($mix)
-  if not exists($mix) then
+  -- CBC reuses target/: existence alone can select another commit's shell.
+  -- Cargo checks this tree's inputs and preserves the separate shell profile.
+  if $mix == "target/debug/mix" or not exists($mix) then
     run_step(["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"])
   end
 end
@@ -91,6 +93,9 @@ fn stage_test($mix)
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
+  for $case in sort(glob("apps/term/*-test.mix"))
+    run_step([$mix, $case])
+  end
   for $case in ["apps/monitor/core-test.mix", "apps/monitor/history-test.mix", "apps/monitor/wire-test.mix", "apps/monitor/fetch-test.mix", "apps/screenshot/policy-test.mix"]
     if exists($case) then
       run_step([$mix, $case])
@@ -246,6 +251,14 @@ fn stage_viud_egui_free()
   print("viud: no egui/toolkit crates in its normal dependency tree")
 end
 
+-- Foreign code (tools/foreign.conf.mix): every C-building crate is allowed or
+-- debt, the strict mix crates reach allow entries only and no desktop crate,
+-- and the built shell loads no display, GPU, input or audio library (ldd).
+fn stage_foreign($mix)
+  ensure_mix($mix)
+  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix)])
+end
+
 fn stage_mix_lint($mix)
   ensure_mix($mix)
   $now = lint_counts($mix)
@@ -303,6 +316,8 @@ elif $stage == "release-mix" then
   stage_release_mix()
 elif $stage == "viud" then
   stage_viud_egui_free()
+elif $stage == "foreign" then
+  stage_foreign($mix)
 elif $stage == "env" then
   stage_env()
 elif $stage == "mix-lint" then
@@ -314,6 +329,7 @@ elif $stage == "all" then
   stage_env()
   stage_clippy()
   stage_viud_egui_free()
+  stage_foreign($mix)
   stage_test($mix)
   stage_mix_lint($mix)
 else

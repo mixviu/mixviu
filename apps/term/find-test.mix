@@ -1,0 +1,65 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$find=require("find.mix");$layout=require("model.mix");$core=require("core.mix")
+fn assert($ok,$why) if not $ok then raise("TEST",$why) end end
+fn native($op,$handle,$a)
+  assert($handle=="vt-test","native calls stay with the search owner")
+  if $op=="state" then return {cols:12,rows:3,display_offset:0} end
+  assert($op=="scroll" and contains([0,4],$a.lines),"only history inspection or requested reveal")
+  return {display_offset:$a.lines,history_size:5}
+end
+fn forbidden($op,$handle,$a) raise("TEST","stale or idle result called native storage") end
+$native=fn($op,$h,$a)=native($op,$h,$a)
+$forbidden=fn($op,$h,$a)=forbidden($op,$h,$a)
+$s={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},choice:{},bindings:{},effective:{},closed:false,layout:$layout.open_tab($layout.initial(),{handle:"vt-test",pid:1},nil)}
+$s=$find.sync($s)
+assert($find.request($s)==nil and not $core.framed($s).find_open,"closed search adds no visible controls or highlight")
+$s=$find.start($s,$native)
+assert($s.find.open and $s.find.handle=="vt-test" and $s.find.instance==1,"opening binds the active native pane and focuses one field instance")
+assert($find.request($s)==nil,"empty query does not invoke matching")
+$s=$find.intent($s,{action:"edit",value:{pattern:"[x]",regex:false,case:true}},$native)
+$r=$find.request($s)
+assert($r.query=="[x]" and not $r.regex and $r.case_sensitive and $r.origin.row==0 and $r.max_lines==10000,"Mix supplies bounded literal query and explicit live origin")
+$view=$core.framed($s)
+assert($view.find_open and $view.find_bar.kind=="search-bar" and not $view.find_bar.initial.replace,"reuse non-replacing search bar")
+assert(deep_eq($view.terminal.properties.search,$r),"native view receives the same owned request")
+$serial=$r.request
+$wrong=$find.observed($s,{handle:"sibling",request:$serial,matched:{start:{row:-4,col:0},end:{row:-4,col:2}}},$forbidden)
+assert($wrong.find.result==nil,"sibling result ignored")
+$wrong=$find.observed($s,{handle:"vt-test",request:$serial-1},$forbidden)
+assert($wrong.find.result==nil,"old query completion ignored")
+$s=$find.observed($s,{handle:"vt-test",request:$serial,matched:{start:{row:-4,col:0},end:{row:-4,col:2}},wrapped:true,limited:false},$native)
+assert($s.find.revealed==$serial and contains($find.message($s),"Wrapped"),"offscreen match revealed once with wrap feedback")
+$s=$find.observed($s,$s.find.result,$forbidden)
+$s=$find.intent($s,{action:"next"},$native)
+assert($s.find.origin.row==-4 and $s.find.origin.col==3 and not $s.find.backwards,"next skips the complete inclusive range")
+$s.find.result={matched:{start:{row:-5,col:0},end:{row:-5,col:1}}}
+$s=$find.intent($s,{action:"prev"},$native)
+assert($s.find.backwards and $s.find.origin.row==2 and $s.find.origin.col==11,"previous wraps from history start to live grid end")
+$s.find.result={matched:{start:{row:2,col:10},end:{row:2,col:11}}}
+$s=$find.intent($s,{action:"next"},$native)
+assert($s.find.origin.row==-5 and $s.find.origin.col==0,"next wraps from grid end to history start")
+$s=$find.observed($s,{handle:"vt-test",request:$s.find.request,matched:nil,wrapped:false,limited:false},$forbidden)
+assert($s.find.result.wrapped,"Mix boundary wrap survives native coordinate wrap detection")
+$old=$s.find.request
+$s=$find.observed($s,{handle:"vt-test",request:$old,error:"search origin is outside the retained grid"},$native)
+assert($s.find.request==$old+1 and $s.find.origin.row==0,"expired origin rebases once to current viewport")
+$s=$find.observed($s,{handle:"vt-test",request:$s.find.request,error:"search origin is outside the retained grid"},$forbidden)
+assert($s.find.request==$old+1,"repeated invalid origin cannot cause an unbounded retry loop")
+$s=$find.intent($s,{action:"edit",value:{pattern:"[",regex:true,case:false}},$native)
+$s=$find.observed($s,{handle:"vt-test",request:$s.find.request,error:"invalid search expression"},$forbidden)
+assert($find.message($s)=="invalid search expression","native regex refusal is visible")
+$s.find.result={matched:nil,limited:true}
+assert(contains($find.message($s),"10,000"),"bounded no-match does not claim the full history")
+$s.find.result=nil
+$s=$find.intent($s,{action:"next"},$native)
+assert($s.find.origin.row==0 and $s.find.origin.col==0,"navigation recovers from a refused or absent result")
+$focus=$s.layout.focus_serial
+$s=$find.intent($s,{action:"close"},$forbidden)
+assert(not $s.find.open and $find.request($s)==nil and $s.layout.focus_serial==$focus+1,"close clears the query paint and returns terminal focus")
+$s=$find.start($s,$native)
+$s.layout.panes["1"].handle="other"
+$s=$find.sync($s)
+assert(not $s.find.open and $s.find.handle==nil,"focus/owner change closes instead of retargeting")
+$s.closed=true;$s=$find.start($s,$forbidden)
+assert(not $s.find.open,"closed app cannot restart search")
+print("term grid find: owner, query, navigation, wrap, reveal, refusals and lifetime passed")

@@ -1,0 +1,54 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold TabSet lifecycle effects. The model remains pure; Mix chooses which
+-- pane input generations the reusable session owner must revoke.
+$model=require("model.mix")
+fn invalidate_tab($s,$id,$native)
+  $tab=$s.tabs[$model.tab_index($s,$id)]
+  for $pane in $model.leaves($tab.tree)
+    $revoked=$native("invalidate-control",$s.panes[to_string($pane)].handle,{})
+  end
+end
+fn invalidate_active($s,$native)
+  if len($s.tabs)>0 then invalidate_tab($s,$s.tabs[$s.active].id,$native) end
+end
+fn open_tab($s,$session,$title,$native)
+  invalidate_active($s,$native)
+  return $model.open_tab($s,$session,$title)
+end
+fn split_pane($s,$dir,$session,$native)
+  invalidate_active($s,$native)
+  return $model.split_pane($s,$dir,$session)
+end
+fn select_tab($s,$id,$native)
+  $index=$model.tab_index($s,$id)
+  if $s.active!=$index then invalidate_active($s,$native) end
+  -- Gold revokes the destination even when selecting the already active tab.
+  invalidate_tab($s,$id,$native)
+  return $model.select_tab($s,$id)
+end
+fn select_pane($s,$id,$native)
+  $next=$model.select_pane($s,$id)
+  if $s.tabs[$s.active].active_pane!=$id then invalidate_active($s,$native) end
+  return $next
+end
+fn focus_visible($s,$handle,$native)
+  if len($s.tabs)==0 then return $s end
+  $tab=$s.tabs[$s.active]
+  for $id in $model.leaves($tab.tree)
+    if $s.panes[to_string($id)].handle==$handle and $tab.active_pane!=$id then return select_pane($s,$id,$native) end
+  end
+  -- A delayed UI click may name a still-live pane in the previous tab.
+  return $s
+end
+fn close_tab($s,$id,$native)
+  $was_active=$model.tab_index($s,$id)==$s.active
+  $out=$model.close_tab($s,$id)
+  if $was_active then invalidate_active($out.state,$native) end
+  return $out
+end
+fn close_pane($s,$id,$native)
+  $tab=$model.tab_of($s,$id)
+  invalidate_tab($s,$tab,$native)
+  if len($model.leaves($s.tabs[$model.tab_index($s,$tab)].tree))==1 then return close_tab($s,$tab,$native) end
+  return $model.close_pane($s,$id)
+end

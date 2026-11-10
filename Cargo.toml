@@ -226,6 +226,10 @@ dirs-sys = { path = "vendor/dirs-sys" }
 # maild's parser nesting safeguard (MixViu vendor/mail-parser/PATCHES.md).
 mail-parser = { path = "vendor/mail-parser" }
 
+[patch."https://github.com/raphamorim/rio"]
+teletypewriter = { path = "vendor/teletypewriter" }
+rio-vt = { path = "vendor/rio-vt" }
+
 [profile.release]
 codegen-units = 1
 debug = "line-tables-only"
