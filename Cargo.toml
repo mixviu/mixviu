@@ -84,7 +84,7 @@ rpassword = "7"
 rustls-native-certs = "0.8"
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
 smtp-proto = "0.2"
-spamlite = { git = "https://github.com/markc/spamlite", rev = "e4cda94713f696414550f414feaea4e8d6c4355e", default-features = false }
+spamlite = { git = "https://github.com/markc/spamlite", rev = "a4d8202a4d78bbcd1fd737b617bca3591d4e096d", default-features = false }
 tokio-stream = "0.1"
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 unicode-normalization = "0.1"
