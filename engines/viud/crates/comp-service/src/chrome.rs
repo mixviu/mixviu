@@ -130,7 +130,11 @@ pub(crate) async fn run(
         if let Some(update) = &pending {
             use settings::view::View;
             let policy = settings::view::AgentSeat::of(&update.snapshot().values);
-            agent_seat = Some(comp_model::agent_seat::Policy { default: policy.default, allow: policy.allow, deny: policy.deny });
+            agent_seat = Some(comp_model::agent_seat::Policy {
+                default: policy.default,
+                allow: policy.allow,
+                deny: policy.deny,
+            });
             match decor::appearance::build(update.snapshot()) {
                 Ok(look) => theme = Some(look),
                 Err(error) => tracing::warn!(?error, "native chrome settings refused"),

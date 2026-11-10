@@ -206,7 +206,10 @@ fn payload(
     if seat == SeatKind::Agent {
         let window = match op {
             InputOp::Targeted { id, generation, .. }
-            | InputOp::PointerMove { target: PointerMoveTarget::Window { id, generation, .. }, .. } => Some((*id, *generation)),
+            | InputOp::PointerMove {
+                target: PointerMoveTarget::Window { id, generation, .. },
+                ..
+            } => Some((*id, *generation)),
             _ => None,
         };
         if let Some((id, generation)) = window
@@ -924,7 +927,7 @@ fn agent_hit(
             (Some(surface), Some(origin)) => {
                 require_agent_seat(lp, surface)?;
                 Ok(Some((surface.clone(), origin)))
-            },
+            }
             _ => Ok(None),
         },
     }
@@ -1078,17 +1081,29 @@ fn agent_seat_facts(lp: &Loop) -> AgentSeatFacts {
 /// The agent target facts for `surface` (its root's record).
 pub(crate) fn agent_seat_offered(lp: &Loop, surface: &WlSurface) -> bool {
     surface.client().is_some_and(|client| {
-        lp.state.seat.agent_clients.lock().unwrap().get(&client.id()).copied().unwrap_or(false)
+        lp.state
+            .seat
+            .agent_clients
+            .lock()
+            .unwrap()
+            .get(&client.id())
+            .copied()
+            .unwrap_or(false)
     })
 }
 
 fn require_agent_seat(lp: &Loop, surface: &WlSurface) -> Result<(), ControlReply> {
-    if agent_seat_offered(lp, surface) { return Ok(()); }
+    if agent_seat_offered(lp, surface) {
+        return Ok(());
+    }
     let window = record_of(lp, surface).map(|id| root_of(lp, id).0);
-    Err(ControlReply::refused("seat_unavailable", json!({
-        "seat": "agent", "window": window, "setting": "agent_seat.allow",
-        "reason": "Enable the executable in agent_seat.allow (remove it from agent_seat.deny), then restart the app"
-    })))
+    Err(ControlReply::refused(
+        "seat_unavailable",
+        json!({
+            "seat": "agent", "window": window, "setting": "agent_seat.allow",
+            "reason": "Enable the executable in agent_seat.allow (remove it from agent_seat.deny), then restart the app"
+        }),
+    ))
 }
 
 fn agent_target(lp: &Loop, surface: &WlSurface) -> Option<AgentTarget> {

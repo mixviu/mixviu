@@ -94,20 +94,31 @@ where
     let mut seat: Seat<I> = seat_named(&mut seat_state, display_handle, PRIMARY_SEAT, |_| true);
     // The agent seat is hidden from Xwayland: an X server binding it would treat
     // a second seat as more X input devices.
-    let agent_clients = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let agent_clients =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::<smithay::reexports::wayland_server::backend::ClientId, bool>::new()));
     let decisions = agent_clients.clone();
     let display = display_handle.clone();
     let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, move |client| {
         let mut decisions = decisions.lock().unwrap();
-        decisions.retain(|id, _: &mut bool| display.backend_handle().get_client_data(id.clone()).is_ok());
-        decisions.entry(client.id()).or_insert_with(|| {
-            let pid = client.get_credentials(&display).ok().map(|c| c.pid);
-            let executable = pid.and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok());
-            let name = executable.as_ref().and_then(|path| path.file_name()).and_then(|name| name.to_str());
-            let offered = pid == Some(std::process::id() as i32)
-                || (client.get_data::<XWaylandClientData>().is_none() && comp_model::agent_seat::allows(name));
-            offered
-        }).to_owned()
+        decisions.retain(|id, _: &mut bool| {
+            display.backend_handle().get_client_data(id.clone()).is_ok()
+        });
+        decisions
+            .entry(client.id())
+            .or_insert_with(|| {
+                let pid = client.get_credentials(&display).ok().map(|c| c.pid);
+                let executable =
+                    pid.and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok());
+                let name = executable
+                    .as_ref()
+                    .and_then(|path| path.file_name())
+                    .and_then(|name| name.to_str());
+                let offered = pid == Some(std::process::id() as i32)
+                    || (client.get_data::<XWaylandClientData>().is_none()
+                        && comp_model::agent_seat::allows(name));
+                offered
+            })
+            .to_owned()
     });
 
     // (`seat_named` already added the pointer: clients render their own cursor

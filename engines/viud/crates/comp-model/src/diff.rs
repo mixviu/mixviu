@@ -554,7 +554,13 @@ fn diff_window_row(
 ) {
     if let (Some(old), Some(new)) = (old, new) {
         diff_occlusion(prefix, &old.occlusion, &new.occlusion, cause, pending);
-        queue_prop_change(pending, format!("{prefix}.agent_seat"), PropValue::Bool(old.agent_seat), PropValue::Bool(new.agent_seat), cause);
+        queue_prop_change(
+            pending,
+            format!("{prefix}.agent_seat"),
+            PropValue::Bool(old.agent_seat),
+            PropValue::Bool(new.agent_seat),
+            cause,
+        );
         for (leaf, old, new) in [
             (
                 "opacity",

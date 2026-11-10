@@ -11,19 +11,31 @@ pub struct Policy {
 }
 impl Default for Policy {
     fn default() -> Self {
-        Self { default: false, allow: vec!["viu".into()], deny: vec![] }
+        Self {
+            default: false,
+            allow: vec!["viu".into()],
+            deny: vec![],
+        }
     }
 }
 impl Policy {
     pub fn allows(&self, executable: Option<&str>) -> bool {
-        let Some(name) = executable else { return self.default; };
-        if self.deny.iter().any(|entry| entry == name) { return false; }
+        let Some(name) = executable else {
+            return self.default;
+        };
+        if self.deny.iter().any(|entry| entry == name) {
+            return false;
+        }
         self.allow.iter().any(|entry| entry == name) || self.default
     }
 }
 static CURRENT: LazyLock<RwLock<Policy>> = LazyLock::new(|| RwLock::new(Policy::default()));
-pub fn install(policy: Policy) { *CURRENT.write().unwrap() = policy; }
-pub fn allows(executable: Option<&str>) -> bool { CURRENT.read().unwrap().allows(executable) }
+pub fn install(policy: Policy) {
+    *CURRENT.write().unwrap() = policy;
+}
+pub fn allows(executable: Option<&str>) -> bool {
+    CURRENT.read().unwrap().allows(executable)
+}
 
 #[cfg(test)]
 mod tests {

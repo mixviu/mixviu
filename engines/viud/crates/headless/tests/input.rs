@@ -129,9 +129,18 @@ fn unapproved_client_sees_one_seat_and_agent_input_is_refused() {
     let row = window(&bus, SERVICE, "headless-denied");
     assert_eq!(row["agent_seat"], false);
     for (command, args) in [
-        ("comp.input.key", json!({"seat":"agent","window":target(&row),"key":"a"})),
-        ("comp.input.pointer.move", json!({"seat":"agent","window":target(&row),"x":40,"y":50})),
-        ("comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":row["window_x"].as_f64().unwrap()+40.0,"y":row["window_y"].as_f64().unwrap()+50.0})),
+        (
+            "comp.input.key",
+            json!({"seat":"agent","window":target(&row),"key":"a"}),
+        ),
+        (
+            "comp.input.pointer.move",
+            json!({"seat":"agent","window":target(&row),"x":40,"y":50}),
+        ),
+        (
+            "comp.input.pointer.move",
+            json!({"seat":"agent","output":"headless-0","x":row["window_x"].as_f64().unwrap()+40.0,"y":row["window_y"].as_f64().unwrap()+50.0}),
+        ),
     ] {
         let reply = bus.request(SERVICE, command, args);
         assert_eq!(reply["body"]["error"], "seat_unavailable", "{reply}");
