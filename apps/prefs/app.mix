@@ -250,7 +250,7 @@ end
 publish_prefs($state)
 on viu.tick
   if not $state.subscribed then
-    for $prefix in ["wallpaper","appearance","window","shell.panels","workspaces","displays","sound","power","input","keymaps","apps_default","apps_startup","xwayland","time","region","accessibility","terminal","email","ced","apps","tune","state"] subscribe("settingsd.desktop.keys.default."..$prefix) end
+    for $prefix in ["wallpaper","appearance","window","shell.panels","workspaces","displays","sound","power","input","keymaps","apps_default","apps_startup","xwayland","agent_seat","time","region","accessibility","terminal","email","ced","apps","tune","state"] subscribe("settingsd.desktop.keys.default."..$prefix) end
     subscribe("settingsd.desktop.look.default")
     $state.subscribed=true
   end
@@ -715,6 +715,10 @@ on settingsd.desktop.keys.default.apps_startup
 end
 
 on settingsd.desktop.keys.default.xwayland
+  $state=hint_prefs($state)
+end
+
+on settingsd.desktop.keys.default.agent_seat
   $state=hint_prefs($state)
 end
 

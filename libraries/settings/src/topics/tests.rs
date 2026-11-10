@@ -29,8 +29,8 @@ fn every_stored_key_has_exactly_one_topic_and_every_topic_has_a_key() {
     }
     assert_eq!(
         PREFIXES.iter().collect::<BTreeSet<_>>().len(),
-        22,
-        "twenty-two topics"
+        23,
+        "twenty-three topics"
     );
 }
 
