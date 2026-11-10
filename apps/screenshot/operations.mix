@@ -1,3 +1,4 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 $state=require("state.mix");$core=require("core.mix");$store=require("storage.mix");$registry=require("registry.mix");$model=require("model.mix")

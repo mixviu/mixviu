@@ -1,6 +1,7 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Gold ced.v1 application protocol. All policy and deferred conditions are Mix.
--- lint: globals ctx
+$ctx=viu_context()
 fn refused($s,$code,$message,$reason=nil)
   reply(10,json_encode({error_code:$code,message:$message,reason:$reason}));return $s
 end
@@ -40,6 +41,7 @@ fn finish_call($s,$token,$rc,$body,$close=false)
   $s.waits=delete($s.waits,$token);return $s
 end
 fn check_calls($s)
+  $ced_core=require("core.mix")
   for $token in keys($s.waits)
     $w=$s.waits[$token];$i=tab_index($s,{tab:$w.tab})
     if $w.kind=="open" then
@@ -68,7 +70,7 @@ fn check_calls($s)
     elif $w.kind=="outcome" and $s.outcomes[$w.op_id]!=nil then
       $o=$s.outcomes[$w.op_id]
       if $o.ok and $w.close_after then
-        $i=tab_index($s,{tab:$w.tab});$old=$s.active;$s.active=$i;$s=operation($s,"close",{});$s.active=min($old,max(0,len($s.tabs)-1));$s.waits[$token].kind="close"
+        $i=tab_index($s,{tab:$w.tab});$old=$s.active;$s.active=$i;$s=$ced_core.operation($s,"close",{});$s.active=min($old,max(0,len($s.tabs)-1));$s.waits[$token].kind="close"
       elif $o.ok then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
       else $s=finish_call($s,$token,10,{error_code:$o.error.error_code,message:$o.error.message,reason:$o.error.reason}) end
     elif $w.kind=="close" and $i<0 then $s=finish_call($s,$token,0,{id:$w.action,ok:true,result:nil})
@@ -79,25 +81,29 @@ fn check_calls($s)
   return $s
 end
 fn bus_command($s,$e)
-  $s=refresh_tabs($s);$a=$e.args;$command=$e.command
+  $ced_core=require("core.mix")
+  $ced_session=require("session.mix")
+  $ced_actions=require("actions.mix")
+  $ced_dialogs=require("dialogs.mix")
+  $s=$ced_core.refresh_tabs($s);$a=$e.args;$command=$e.command
   if $command=="ced.dialog" then
-    try $s=dialog_apply($s,$a);reply(0,json_encode({dialog:dialog_view($s)}))
+    try $s=$ced_dialogs.dialog_apply($s,$a);reply(0,json_encode({dialog:$ced_dialogs.dialog_view($s)}))
     catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
-    return pump($s)
+    return $ced_core.pump($s)
   end
   if type($a)!="map" then return refused($s,"INVALID_ARGUMENT","Expected an object","bad_args") end
   if $command=="ced.info" then
     reply(0,json_encode({version:$ctx.version ?? "0.1.2",git_sha:$ctx.git_sha ?? "unknown",build_time:$ctx.build_time ?? "unknown",headless:false,tabs:len($s.tabs),edit:$s.edit,config_path:nil,session_path:$s.session_path}));return $s
   elif $command=="ced.tabs" then
-    reply(0,json_encode({active:if len($s.tabs)>0 then to_number(current($s).document) else nil end,tabs:map($s.tabs,fn($t)=tab_row($t,if $t.language=="markdown" then $s.previews[$t.document] ?? "source" else "source" end))}));return $s
+    reply(0,json_encode({active:if len($s.tabs)>0 then to_number($ced_core.current($s).document) else nil end,tabs:map($s.tabs,fn($t)=tab_row($t,if $t.language=="markdown" then $s.previews[$t.document] ?? "source" else "source" end))}));return $s
   elif $command=="ced.open" or $command=="ced.new" then
     $new=$command=="ced.new"
     if not $new and (type($a.paths)!="list" or len($a.paths)==0 or not all($a.paths,fn($p)=type($p)=="string")) then return refused($s,"INVALID_ARGUMENT","ced.open needs paths","bad_args") end
     $docs=[]
-    if $new then $s=operation($s,"new",{});push($docs,to_string($s.next_tab))
+    if $new then $s=$ced_core.operation($s,"new",{});push($docs,to_string($s.next_tab))
     else
       for $path in $a.paths
-        $s=operation($s,"open",{path:$path})
+        $s=$ced_core.operation($s,"open",{path:$path})
         $known=filter($s.tabs,fn($t)=$t.path==$path)
         push($docs,$s.last_open)
       end
@@ -105,15 +111,15 @@ fn bus_command($s,$e)
     return check_calls(hold_call($s,$e,{kind:"open",documents:$docs,new:$new,line:$a.line,col:$a.col,timeout_ms:60000}))
   elif starts_with($command,"ced.macros.") then
     $s=hold_call($s,$e,{kind:"job",timeout_ms:60000})
-    return pump(queue_job($s,"macro",{call:$e.headers["viu-call"],command:replace($command,"ced.macros.",""),args:$a}))
-  elif $command=="ced.actions" then reply(0,json_encode({actions:action_rows($s)}));return $s
+    return $ced_core.pump($ced_core.queue_job($s,"macro",{call:$e.headers["viu-call"],command:replace($command,"ced.macros.",""),args:$a}))
+  elif $command=="ced.actions" then reply(0,json_encode({actions:$ced_actions.action_rows($s)}));return $s
   elif $command=="app.describe" then
-    reply(0,json_encode({contract:"ctk-app-control.v0",app:"ced",title:"MixViu Editor",view:if len($s.tabs)>0 then tab_row(current($s)).name else "" end,engine:"egui",version:$ctx.version ?? "0.1.2",description:"The MixViu Editor: an egui editor over the edit Bus service",controls:[],commands:$s.commands}));return $s
+    reply(0,json_encode({contract:"ctk-app-control.v0",app:"ced",title:"MixViu Editor",view:if len($s.tabs)>0 then tab_row($ced_core.current($s)).name else "" end,engine:"egui",version:$ctx.version ?? "0.1.2",description:"The MixViu Editor: an egui editor over the edit Bus service",controls:[],commands:$s.commands}));return $s
   elif $command=="app.quit" then
     if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
-    $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",timeout_ms:30000}))
+    $s=$ced_session.save_session($ced_session.session_changed($s));return $ced_core.pump(hold_call($s,$e,{kind:"quit",timeout_ms:30000}))
   elif $command=="ced.show" then
-    $s=hold_call($s,$e,{kind:"job",timeout_ms:10000});return pump(queue_job($s,"show",{call:$e.headers["viu-call"]}))
+    $s=hold_call($s,$e,{kind:"job",timeout_ms:10000});return $ced_core.pump($ced_core.queue_job($s,"show",{call:$e.headers["viu-call"]}))
   elif $command=="ced.stats" then
     $v=viu_ui_state();reply(0,json_encode(merge($v.stats,viu_document("stats","*",{}))));return $s
   elif $command=="ced.diagnostics" then
@@ -125,7 +131,7 @@ fn bus_command($s,$e)
     if len($s.diag_paths)>64 then $s.diagnostics=delete($s.diagnostics,$s.diag_paths[0]);$s.diag_paths=slice($s.diag_paths,1) end
     $docs=map(filter($s.tabs,fn($t)=$t.path==$a.path),fn($t)=$t.document)
     $s=hold_call($s,$e,{kind:"job",timeout_ms:30000})
-    return pump(queue_job($s,"diagnostics",{call:$e.headers["viu-call"],request:$a,documents:$docs}))
+    return $ced_core.pump($ced_core.queue_job($s,"diagnostics",{call:$e.headers["viu-call"],request:$a,documents:$docs}))
   elif $command=="ced.execute" then
     if type($a.id)!="string" or ($a.params!=nil and type($a.params)!="map") then return refused($s,"INVALID_ARGUMENT","id and object params required","bad_args") end
     $params=$a.params ?? {}
@@ -135,14 +141,14 @@ fn bus_command($s,$e)
     if ($params.tab!=nil or $params.buffer!=nil) and $index<0 then return refused($s,"NOT_FOUND","No matching tab") end
     if $a.id=="file.exit" then
       if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
-      $s=queue_job($s,"action-publish",{body:viu_action_event($a.id,"bus",$a.params,nil)})
-      $s=save_session(session_changed($s));return pump(hold_call($s,$e,{kind:"quit",action:$a.id,timeout_ms:30000}))
+      $s=$ced_core.queue_job($s,"action-publish",{body:viu_action_event($a.id,"bus",$a.params,nil)})
+      $s=$ced_session.save_session($ced_session.session_changed($s));return $ced_core.pump(hold_call($s,$e,{kind:"quit",action:$a.id,timeout_ms:30000}))
     end
-    try $out=do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"],"bus",$a.params)
+    try $out=$ced_actions.do_action($s,$a.id,$params.args ?? {},caller($e.headers),$index,$e.headers["viu-call"],"bus",$a.params)
     catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
     $s=$out.state
     if $out.kind=="dialog" then
-      if $s.dialog_call!=nil then $s=dialog_cancel($s) end
+      if $s.dialog_call!=nil then $s=$ced_session.dialog_cancel($s) end
       $s=hold_call($s,$e,{kind:"dialog",action:$a.id,timeout_ms:10000});$s.dialog_call=$e.headers["viu-call"];return $s
     end
     if $out.kind=="mail" then return check_calls(hold_call($s,$e,{kind:"job",timeout_ms:150000})) end
@@ -154,7 +160,7 @@ fn bus_command($s,$e)
   if $i<0 then return refused($s,"NOT_FOUND","No matching tab") end
   $t=$s.tabs[$i]
   if $command=="ced.focus" then
-    $s.active=$i;reply(0,json_encode({tab:to_number($t.document)}));return session_changed($s)
+    $s.active=$i;reply(0,json_encode({tab:to_number($t.document)}));return $ced_session.session_changed($s)
   elif $command=="ced.state" then
     if $a.text!=nil and type($a.text)!="bool" then return refused($s,"INVALID_ARGUMENT","text must be boolean","bad_args") end
     try
@@ -169,14 +175,14 @@ fn bus_command($s,$e)
   elif $command=="ced.select" then
     try $v=viu_document("select",$t.document,{anchor:$a.anchor,head:$a.head})
     catch $message return refused($s,"INVALID_ARGUMENT",$message,"bad_position") end
-    reply(0,json_encode({selection:$v.selection}));return session_changed(refresh_tabs($s))
+    reply(0,json_encode({selection:$v.selection}));return $ced_session.session_changed($ced_core.refresh_tabs($s))
   elif $command=="ced.type" then
     if type($a.text)!="string" then return refused($s,"INVALID_ARGUMENT","text is required","bad_args") end
     $m=$s.mail[$t.document]
     if $m!=nil and ($m.sending or ($m.saving and not $m.parked)) then return refused($s,"CONFLICT","Wait for the mail operation to finish") end
     try $v=viu_document("command",$t.document,{name:"insert",text:$a.text,caller:caller($e.headers)})
     catch $message,$error return refused($s,if contains(["INVALID_ARGUMENT","NOT_FOUND","UNKNOWN_ACTION"],$error.code) then $error.code else "CONFLICT" end,$message) end
-    reply(0,json_encode({tab:to_number($t.document),pending:$v.pending}));return pump($s)
+    reply(0,json_encode({tab:to_number($t.document),pending:$v.pending}));return $ced_core.pump($s)
   elif $command=="ced.wait" then
     $conditions=filter(["rev","idle","epoch","phase"],fn($k)=$a[$k]!=nil)
     if len($conditions)!=1 or type($a.timeout_ms)!="number" or $a.timeout_ms<0 or $a.timeout_ms>30000 or floor($a.timeout_ms)!=$a.timeout_ms or ($a.idle!=nil and $a.idle!=true) or ($a.rev!=nil and (type($a.rev)!="number" or $a.rev<0 or floor($a.rev)!=$a.rev)) or ($a.epoch!=nil and type($a.epoch)!="string") or ($a.phase!=nil and not contains(["live","bootstrapping","recovering","detached"],$a.phase)) then return refused($s,"INVALID_ARGUMENT","Exactly one valid condition and timeout_ms <= 30000 required","bad_args") end

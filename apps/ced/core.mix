@@ -1,5 +1,5 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- lint: globals frame ctx
 -- Tab, transport and application policy. Text and mirror mechanics remain
 -- in-process; only this Mix owner schedules editd requests.
 fn current($s)
@@ -83,10 +83,13 @@ fn queue_job($s,$kind,$payload)
   return $s
 end
 fn pump($s)
+  $ced_session=require("session.mix")
+  $ced_bus=require("bus.mix")
+  $ced_mail=require("mail.mix")
   $s=refresh_tabs($s)
-  $s=mail_pump($s)
+  $s=$ced_mail.mail_pump($s)
   for $t in $s.tabs
-    if $t.reattach_needed then $s=request_reattach($s,$t) end
+    if $t.reattach_needed then $s=$ced_session.request_reattach($s,$t) end
     $effects=viu_document("effects",$t.document,{})
     for $request in $effects.out $s=queue_job($s,"io",{document:$t.document,request:$request}) end
     if $effects.retry_ms!=nil then viu_timer($t.document..":retry",$effects.retry_ms,{document:$t.document,kind:"retry"}) end
@@ -114,7 +117,7 @@ fn pump($s)
     if $rc!=0 then $s.queue=concat([$job],$s.queue);viu_timer("drain",25,{kind:"drain"});break end
     $s.running[$job.id]=$job
   end
-  return check_calls(session_changed(refresh_tabs($s)))
+  return $ced_bus.check_calls($ced_session.session_changed(refresh_tabs($s)))
 end
 fn notify_ced($s,$tab,$text,$level)
   $text=basename($tab.path ?? "untitled-"..$tab.document)..": "..$text
@@ -153,6 +156,9 @@ fn operation($s,$op,$a)
   return pump($s)
 end
 fn publish_ced($s)
+  $ctx=viu_context();$frame=require("../../libraries/viu/mix/gold-frame.mix")
+  $ced_actions=require("actions.mix")
+  $ced_ui=require("ui.mix")
   $t=if len($s.tabs)>0 then current($s) else {document:"",path:"No document",rev:nil,phase:"empty",language:"text",pending:0,dirty:false} end
   $has=len($s.tabs)>0;$look=$s.look.appearance;$prefs=$s.look.values
   $density=if $look.density=="compact" then 0.85 elif $look.density=="spacious" then 1.2 else 1 end
@@ -173,14 +179,14 @@ fn publish_ced($s)
   $model.preview_mode=$preview
   $model.preview={id:"preview",kind:"markdown",label:"Markdown preview",initial:"",properties:$editor.properties}
   $model.values.preview=if $has then {document:$t.document} else "" end
-  for $action in action_rows($s)
+  for $action in $ced_actions.action_rows($s)
     if not contains(["edit.cut","edit.copy","edit.paste"],$action.id) or len($s.keys[$action.id] ?? [])>0 then
       for $chord in $action.keys $model.shortcuts=push($model.shortcuts,{chord:$chord,id:$action.id,enabled:$action.enabled,text_scopes:if contains(["file.save","file.send"],$action.id) then ["mail-fields"] else [] end}) end
     end
   end
   $status=if $has then $t.phase.." · rev "..to_string($t.rev).." · "..$t.language.." · pending "..to_string($t.pending) else $s.status end
-  $model=ced_ui_model($s,$model)
+  $model=$ced_ui.ced_ui_model($s,$model)
   $local=$s.local_theme ?? {};if $local.decorations!=nil then $window["window.decorations"]=$local.decorations end;if $local.captions!=nil then $window["window.caption_side"]=$local.captions end
-  $model=$frame.apply($model,{padding_top:0,padding_bottom:0,identity:($local.decorations ?? "ssd")!="ssd",icon:"file-text",title:"MixViu Editor",menus:ced_menus($s),toolbar:ced_toolbar($s),status:ced_status($s,$t),appearance:$look,window:$window})
+  $model=$frame.apply($model,{padding_top:0,padding_bottom:0,identity:($local.decorations ?? "ssd")!="ssd",icon:"file-text",title:"MixViu Editor",menus:$ced_ui.ced_menus($s),toolbar:$ced_ui.ced_toolbar($s),status:$ced_ui.ced_status($s,$t),appearance:$look,window:$window})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end

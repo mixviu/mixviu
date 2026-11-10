@@ -26,6 +26,8 @@ pub(crate) type NativeContext = Box<dyn FnOnce() -> Box<dyn std::any::Any> + Sen
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    #[cfg(test)]
+    pub(crate) registry_observer: Option<Arc<dyn Fn(Vec<String>) + Send + Sync>>,
     /// A caller-owned applications parent, chiefly for isolated embedded runs.
     /// None uses the native environment contract; it never mutates the process.
     pub application_roots: Option<std::path::PathBuf>,
@@ -309,6 +311,8 @@ impl Runtime {
                         context["native_backend"]=json!(backend.is_some());
                         context["native_facilities"]=json!(services.calls.is_some());
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(context.clone())));
+                        #[cfg(test)]
+                        if let Some(observe) = &services.registry_observer { observe(eval.extension_names()); }
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))
