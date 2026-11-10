@@ -59,7 +59,7 @@ fn ced_retains_independent_tab_drafts_and_preserves_recoverable_text_on_caption_
         r#"
 $state.tabs=[viu_document("state","one",{}),viu_document("state","two",{})]
 $state.classified={one:true,two:true}
-publish_ced($state)
+$ced_core.publish_ced($state)
 "#,
     );
     let docs = viu::documents::Documents::default();

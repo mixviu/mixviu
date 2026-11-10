@@ -1,3 +1,4 @@
+-- host: viu
 -- Stateless Bus helpers shared by scene behaviours. No loading or popup state.
 -- Not `context`: $module.context() resolves to the shell`s context command.
 fn scene_context($default_name)

@@ -30,6 +30,19 @@ mix lint [--json | --data] [--deny-warnings] [--require-version] [--fix]
 
 ## The rules (v1)
 
+A leading `-- host: viu` header enables the widget host's registered builtin
+names. Bundle entries declare injected arguments separately with the pragma
+`-- lint: globals app_args`. The vocabulary is generated from viu's
+registration sites at build time; this does not link GUI code into Mix or
+make those functions callable in the shell. Missing, unknown, `mix` and
+`mixd` headers do not enable viu names. Each file declares its own host,
+including modules, and remote `ssh_mix` bodies do not inherit viu builtins.
+
+Use literal `require("sibling.mix")` bindings and namespaced calls for app
+modules. `require` isolates module state and lets lint check exported names;
+it deliberately refuses modules with `on` handlers. Keep those handlers in
+the entry script and put reusable policy in handler-free modules.
+
 Codes are permanent — never reused, never repurposed — from three
 namespaces: `MIX-E1xxx` errors, `MIX-W2xxx` warnings (born warnings), and
 `MIX-D3xxx` **deprecations and release-transition advisories** (0.63.0) —

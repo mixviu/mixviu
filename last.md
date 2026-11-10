@@ -1,3 +1,53 @@
+# PR #6 review round — 2026-11-10
+
+Author: Sol (gpt-6.1-sol). Branch: feat/lint-viu-builtins.
+Reviewed input head: a7effbd5. Test head: db5741ab097fa86450e864c338ccf3e2c2d9387c.
+Final code head: 6060dc1e79a73bc56d3c515d244bec2f6ad6e1ba (CBC rustfmt only).
+The final receipt commit changes only last.md; its SHA is reported in the hand-off.
+Fetched origin/main: a0a5bef3; its baseline blob equals d17f7caa's
+(`cac484d186fcaeb1255378b1dfafd6263b69cf89`). No merge or force push.
+
+Both p6-glm.md and p6-deepseek.md were read. Dispositions:
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| DeepSeek 1, blocker: standalone tests | Fixed. Every viu-vocabulary-dependent assertion group checks VIU_EXTENSIONS.is_empty(), prints the standalone skip reason to stderr and returns. Missing/mix/mixd/typo host rejection assertions still run. Nonempty workspace builds retain all original required-name, unknown-name, collision and remote assertions. No standalone build was run in this bounded validation round. |
+| GLM 1, major: baseline provenance/runtime hosts | Fixed. PR.md lists every reduced/removed file/code entry, with before/after counts and cause. 409 removed, no increases. The unmodified service/tool/install tests' removed E1102s are stale mix_path entries; main already registers that core builtin at libraries/mix/src/builtins.rs:277. git grep of exact host declarations across services/tools/share/tests/engines returns rc 1, no matches. Full tracked host list contains only viu apps/workers and libraries/viu/mix helpers. No mixd/plain mix host declaration needed correction; no diagnostics were suppressed. |
+| GLM 2: standalone lint usability | Follow-up: report vocabulary unavailability once at the lint CLI host boundary. Existing build.rs cargo warning remains; this round fixes the test failure without adding CLI diagnostic policy. |
+| GLM 3: Services fixture | Follow-up: share/derive the registry-test service provisioning from the production host. Existing exact generated/live set equality still rejects omitted conditional registrations. |
+| GLM 4: Backdrop exit boundary | Refuted at input head. apps/backdrop/app.mix starts with startup_code=2, calls launch.options on line 8, then changes startup_code to 1 on line 9. This matches main's old wrapper/runtime sequence: options failure exits 2. No source change needed. |
+| GLM 5: panel map isolation | Fixed: macros.mix uses merge(policy.panel,{}) to make an explicit copy before panel updates. |
+| GLM 6: test header prefix | Fixed with comments in both actual owners, libraries/viu/tests/dopus_startup.rs and dopus_contract.rs. Test argv prefix is deliberate; Runtime bindings do not consult the lint-only host header. The review's libraries/viud path does not exist after cut-over. |
+| GLM 7: name-based ssh_mix stripping | Follow-up: add extension provenance if custom remote extensions need names colliding with viu builtins. Current generated-name filter and remote non-leak assertion remain strict; no provenance redesign in this bounded round. |
+| GLM 8: metadata | Fixed. Ced globals pragma moved into leading header. PR.md authorship is Sol (gpt-6.1-sol), overall risk is Tier 2, and the unsupported full-history workflow claim is replaced with the fact that scanner fingerprints pre-exist on main. Current review status no longer claims approval. |
+| DeepSeek 2: scanner format coupling | Follow-up: consider a shared declaration source/token-aware extraction if registrations move or change syntax. Existing build-time nonempty assertion and live exact registry equality cover workspace drift. |
+| DeepSeek 3: Dopus zero-argument startup | Follow-up: add explicit no-argument production launch coverage under isolated app roots. Source evidence: Bundle::load accepts &[String] and serialises that slice into app_args (bundle.rs:304-305), so an empty slice becomes [] rather than nil. Existing native startup test covers explicit embedded nil and production profile arguments; neither proves the no-argument runtime path. |
+
+CBC receipts (all on cbc2; saved logs read in full):
+
+| Job | Head | BUILD_RC | Evidence |
+| --- | --- | ---: | --- |
+| 20261110-081244-1a568536-a1 | db5741ab | 1 | cargo fmt --all -- --check requested one eprintln line wrap. Applied the worker's exact diff locally and pushed 6060dc1e. |
+| 20261110-081254-b4d79876-a1 | db5741ab | 1 | The single cargo test --locked -p lib-mix --test lint_viu run passed all 3 tests. The subsequent mix-lint stage reused a pre-existing target/debug/mix without this branch's viu vocabulary and reported 51 false regressions. ci.mix ensure_mix only builds an absent binary. |
+| 20261110-081538-9167d4e5-a1 | 6060dc1e | 0 | cargo fmt --all -- --check passed. |
+| 20261110-081608-639ec283-a1 | 6060dc1e | 0 | Corrective cargo build --locked -p mix --bin mix, then /opt/mixos/bin/mix tools/ci.mix mix-lint: 101 files with diagnostics, 0 regressions, 0 improvements. Tests were not repeated. |
+
+Saved log basenames in the CBC log directory:
+
+- 20261110-081437-cbc2-db5741ab097f-20261110-081244-1a568536-a1-bcf91968.log
+- 20261110-081506-cbc2-db5741ab097f-20261110-081254-b4d79876-a1-2608599d.log
+- 20261110-081756-cbc2-6060dc1e79a7-20261110-081538-9167d4e5-a1-501c6c07.log (empty successful fmt log)
+- 20261110-084409-cbc2-6060dc1e79a7-20261110-081608-639ec283-a1-b2b0cb4e.log
+
+The extra CBC invocation corrected stale worker artefact reuse; it did not
+broaden the test scope. Follow-up for CI tooling: ensure mix-lint rebuilds its
+tree interpreter even when target/debug/mix exists from another checkout.
+Existing AsyncFd deprecation and mix-shell dead-code warnings remain.
+git diff --check passes. No full ci.mix all, local Rust, desk/VT,
+installed-prefix or deployment changes. The lint baseline is unchanged.
+All pushes use gh_agent.mix, without force; no merge. Opus owns the full gate.
+
+---
 # CI flakes 2 — 2026-11-10
 
 Branch: `fix/ci-flakes-2`, based on `origin/main` at
