@@ -135,7 +135,7 @@ impl Region {
 /// they come up.
 pub fn begin(lp: &mut Loop, mut run: Run) {
     let seat = lp.state.seat.seat.clone();
-    let time = lp.inner.start_time.elapsed().as_millis() as u32;
+    let time = crate::seat::event_time_ms();
     if let Some(keyboard) = seat.get_keyboard() {
         run.prior_focus = keyboard.current_focus();
         keyboard.set_focus(&mut lp.state, None, SERIAL_COUNTER.next_serial());
@@ -303,7 +303,7 @@ pub fn motion(lp: &mut Loop, position: (f64, f64)) {
     let ctx = lp.size_ctx_all();
     let transform: Transform = (physical, ctx).into();
     let location = transform.into_storage_point_f64();
-    let time = lp.inner.start_time.elapsed().as_millis() as u32;
+    let time = crate::seat::event_time_ms();
     if let Some(pointer) = lp.state.seat.seat.get_pointer() {
         pointer.motion(
             &mut lp.state,

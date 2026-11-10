@@ -48,7 +48,7 @@ pub fn retarget_stationary(lp: &mut world::state::Loop) -> bool {
         return false;
     }
     let location = pointer.current_location();
-    let time = lp.inner.start_time.elapsed().as_millis() as u32;
+    let time = world::seat::event_time_ms();
     native_motion::dispatch::dispatch(
         lp,
         time,

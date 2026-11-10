@@ -1678,7 +1678,7 @@ pub fn apply_client_requests(lp: &mut Loop) {
     // Protocol-side tablet resource destruction may revoke a pointer stroke.
     seat::pointer::input::tablet::revoke::flush(
         lp,
-        lp.inner.start_time.elapsed().as_millis() as u32,
+        world::seat::event_time_ms(),
     );
     for (id, request) in lp.inner.comp.take_requests() {
         let Some((window_id, generation)) = lp

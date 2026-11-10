@@ -32,7 +32,7 @@ pub fn release_held_keys(loop_: &mut Loop) {
     if to_release.is_empty() {
         return;
     }
-    let time = loop_.inner.start_time.elapsed().as_millis() as u32;
+    let time = world::seat::event_time_ms();
     for key in to_release {
         let serial = SERIAL_COUNTER.next_serial();
         let _ = keyboard.input::<(), _>(
