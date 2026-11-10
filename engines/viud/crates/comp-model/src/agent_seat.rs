@@ -68,4 +68,19 @@ mod tests {
         assert!(!policy.allows(Some("viu")));
         assert!(policy.allows(Some("browser")));
     }
+    #[test]
+    fn installs_only_changes_and_refusals_name_the_policy_source() {
+        let policy = Policy {
+            default: false,
+            allow: vec!["editor".into()],
+            deny: vec!["browser".into()],
+        };
+        install(policy.clone());
+        assert!(!install(policy));
+        assert_eq!(refusal_settings(Some("browser")), vec!["agent_seat.deny"]);
+        assert_eq!(refusal_settings(Some("editor")), vec!["agent_seat.allow"]);
+        assert_eq!(refusal_settings(None), vec!["agent_seat.allow", "agent_seat.default"]);
+        assert_eq!(refusal_settings(Some("other")), vec!["agent_seat.allow", "agent_seat.default"]);
+        assert!(install(Policy::default()));
+    }
 }
