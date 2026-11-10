@@ -1,3 +1,92 @@
+# PR #24 refreshed settlement — 2026-11-10
+
+PR: https://github.com/mixviu/mixviu/pull/24
+Branch: `feat/term-mix`. Validated source head:
+`309f2e1e114d8815ef026620c97193b29666399b`.
+This receipt-only commit follows that source; the PR exposes the final head.
+
+Merged `origin/main` at `dcb6713431057d78029a3cbd03c49b6a8ddc4f25`
+with merge commit `966cafabf894c16c50e7ff23ee5e1f0f4f2efba6`.
+Conflicts: Cargo.lock took main's version, then CBC re-resolved the workspace;
+last.md retained this PR's previous receipts and appended main's receipt.
+All other files merged automatically, preserving both sides' intent.
+SQLite remains rusqlite 0.41.1 / libsqlite3-sys 0.39.1.
+No Rust Term code was changed during this refresh.
+
+The existing bundle fix in this PR remains correct: apps.tar includes
+apps/term runtime files under `share/mixviu/apps/term/`, the executable
+`bin/term-mix` and `share/applications/mixviu.term-mix.desktop`.
+The archive manifest declares prefix `/opt/mix`. The desktop Exec selects
+`/opt/mix/bin/term-mix`; the launcher selects the bundled app at
+`/opt/mix/share/mixviu/apps/term` with service `term-mix` and app id
+`mixviu.term-mix`. Shared library relative imports remain in the same layout.
+No further bundle edit or PR body update was needed in this refresh.
+
+CBC jobs:
+
+- `20261110-141653-56d15876-a1`: BUILD_RC=0. Workspace lock regeneration
+  and rustfmt both rc 0. Applied printed lock patch locally; fmt patch empty.
+- `20261110-141817-ddee3ef0-a1`: BUILD_RC=0 at the validated source.
+  `tools/ci.mix all` passed, followed by `tools/cutover_gate.mix bundle`
+  (both bundle steps rc 0), archive listing and archived content inspection.
+  624 Rust result groups: 10,944 passed, 0 failed, 106 ignored.
+  All 13 Term Mix suites ran. Environment registry: 199 names, 0 problems.
+  Foreign gate clean; Mix lint: 0 regressions (existing diagnostics remain).
+
+Saved logs read and checked, including expected negative-test diagnostics
+(release test-hooks refusal, rejected attachment and invalid screencopy):
+
+- `20261110-141653-cbc2-966cafabf894-20261110-141653-56d15876-a1-44a728ef.log`
+- `20261110-141830-cbc2-309f2e1e114d-20261110-141817-ddee3ef0-a1-d32989a8.log`
+  (1,233,912 bytes; SHA256
+  `c145b1c5d0703b976f185ad03db1ed2adf2e85c6bb44bfea4da2b76ff318fe6a`).
+
+CBC apps.tar: 46,807,040 bytes, SHA256
+`98a9e865e3431f05b655ffdaaa8867b7374264e7da820b4af5fb61ebccbc5e86`.
+Manifest source matches the validated source. The actual Term entries below
+are relative to `/opt/mix`; Rust source and test scripts are excluded.
+
+```text-rwxr-xr-x 0/0             414 2026-11-10 14:18 bin/term-mix
+-rw-r--r-- 0/0             214 2026-11-10 14:18 share/applications/mixviu.term-mix.desktop
+drwxr-xr-x 0/0               0 2026-11-10 14:18 share/mixviu/apps/term/
+-rw-r--r-- 0/0           13197 2026-11-10 14:18 share/mixviu/apps/term/actions.json
+-rw-r--r-- 0/0            9183 2026-11-10 14:18 share/mixviu/apps/term/actions.mix
+-rw-r--r-- 0/0           19172 2026-11-10 14:18 share/mixviu/apps/term/app.mix
+-rw-r--r-- 0/0           45586 2026-11-10 14:18 share/mixviu/apps/term/bus-contract.mix
+-rw-r--r-- 0/0            8718 2026-11-10 14:18 share/mixviu/apps/term/bus.mix
+-rw-r--r-- 0/0            1473 2026-11-10 14:18 share/mixviu/apps/term/clipboard.mix
+-rw-r--r-- 0/0           17221 2026-11-10 14:18 share/mixviu/apps/term/contract.json
+-rw-r--r-- 0/0            2542 2026-11-10 14:18 share/mixviu/apps/term/controls.mix
+-rw-r--r-- 0/0            3458 2026-11-10 14:18 share/mixviu/apps/term/core.mix
+-rw-r--r-- 0/0             999 2026-11-10 14:18 share/mixviu/apps/term/discovery.mix
+-rw-r--r-- 0/0             711 2026-11-10 14:18 share/mixviu/apps/term/event-job.mix
+-rw-r--r-- 0/0            4427 2026-11-10 14:18 share/mixviu/apps/term/find.mix
+-rw-r--r-- 0/0             477 2026-11-10 14:18 share/mixviu/apps/term/font-job.mix
+-rw-r--r-- 0/0            3611 2026-11-10 14:18 share/mixviu/apps/term/font-persistence.mix
+-rw-r--r-- 0/0            1499 2026-11-10 14:18 share/mixviu/apps/term/help.txt
+-rw-r--r-- 0/0            2008 2026-11-10 14:18 share/mixviu/apps/term/lifecycle.mix
+-rw-r--r-- 0/0           11035 2026-11-10 14:18 share/mixviu/apps/term/menus.json
+-rw-r--r-- 0/0             214 2026-11-10 14:18 share/mixviu/apps/term/mixviu.term-mix.desktop
+-rw-r--r-- 0/0           11628 2026-11-10 14:18 share/mixviu/apps/term/model.mix
+-rw-r--r-- 0/0            1627 2026-11-10 14:18 share/mixviu/apps/term/notifications.mix
+-rw-r--r-- 0/0             660 2026-11-10 14:18 share/mixviu/apps/term/notify-job.mix
+-rw-r--r-- 0/0            2865 2026-11-10 14:18 share/mixviu/apps/term/protected-layout.mix
+-rw-r--r-- 0/0            1534 2026-11-10 14:18 share/mixviu/apps/term/scene.mix
+-rw-r--r-- 0/0             431 2026-11-10 14:18 share/mixviu/apps/term/show-job.mix
+-rw-r--r-- 0/0            1375 2026-11-10 14:18 share/mixviu/apps/term/startup-policy.mix
+-rw-r--r-- 0/0            1245 2026-11-10 14:18 share/mixviu/apps/term/startup.mix
+-rw-r--r-- 0/0             414 2026-11-10 14:18 share/mixviu/apps/term/term-mix.mix
+-rw-r--r-- 0/0            8334 2026-11-10 14:18 share/mixviu/apps/term/wire.mix
+
+```
+
+No deployment, installed-prefix writes, desktop/VT access or PR merge.
+The coordinating session owns review, merge and the normal gold install on desk4.
+
+---
+
+Previous receipts follow.
+
 # PR #24 settlement — 2026-11-10
 
 PR: https://github.com/mixviu/mixviu/pull/24
