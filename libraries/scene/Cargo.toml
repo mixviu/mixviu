@@ -23,7 +23,7 @@ expr = { path = "../expr" }
 # The node fence is strict data, loaded and never executed.
 strict = { path = "../strict" }
 # Nodes and ports keep their authored order.
-indexmap = { version = "=2.14.1", features = ["serde"] }
+indexmap = { version = "=2.14.2", features = ["serde"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 # Never enable `preserve_order`: resolved trees and digests rely on sorted keys.
-serde_json = { version = "=1.0.151" }
+serde_json = { version = "=1.0.154" }
