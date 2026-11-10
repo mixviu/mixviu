@@ -1,3 +1,75 @@
+# Prefs agent seat page and #56 follow-ups — 2026-11-10
+
+Branch: `feat/prefs-agent-seat-page`. Source: `a38c462ba09e57441654be754860a1000cb8b4cd`.
+No PR opened. No install, app windows, desktop, desk or VT operations.
+
+## Page and layout
+
+Applications now includes Agent seat. The page starts with “Offer the agent
+seat to every app”, followed by the restart and GTK3/Firefox drag-and-drop
+warning. A labelled executable-basename entry and Add app action follow.
+Each app has a labelled three-way dropdown (Follow the default / Allowed /
+Denied) and a Remove app override action. The bottom has Apply again, Keep
+my choices, Revert and Check again, enabled when the draft needs them.
+All added page text uses strings.ftl. Existing browser widgets render the
+page; no Rust widget, toolbar additions or F-key bindings were added.
+
+Rows are the deduplicated union of allow, deny and basenames added in this
+Prefs session. Deny wins when both lists contain a name. Switching choices
+removes the opposite override; Remove clears both. An added name following
+the default is session-only because neither policy list can store it.
+
+The page uses a Mix draft/receipt model adapted from look.mix and existing
+job.mix calls: exact incarnation/revision fences and a fresh operation ID,
+retained refusals, explicit retry/revert, conflict decisions and receipt
+checks before another apply after an uncertain result.
+
+## Limitations
+
+The current comp.windows.list/snapshot WindowRow has app_id, PID and
+agent_seat, but no executable basename. Prefs therefore cannot add open
+windows to the executable list reliably. No app-ID inference, process lookup
+or second transport was introduced. This requires exposing the basename on
+the existing window contract in a later change. Live GUI interaction was
+not tested because opening app windows and touching desktops were forbidden;
+the embedded tests mount and render pages in memory.
+
+## #56 follow-ups
+
+Ordinary Wayland sessions register their decision cache with the client-data
+disconnect callback, which removes the entry immediately. Xwayland's fixed
+exclusion is not cached because its client data belongs to Smithay; the
+own-PID exception remains ahead of that exclusion. The defensive filter prune
+remains. Policy installation returns false for identical policies, and
+Update::apply includes only actual policy changes in its change result.
+seat_unavailable names deny for denied executables, allow for allowed ones,
+and both allow/default for unlisted or unknown executables. Unknown
+executables follow the default; architecture.md documents this.
+
+## Test evidence
+
+- CBC job `20261110-213335-c1375813-a1`, rc 0 at `e59317ec`: rustfmt output
+  returned and applied; all seven lib-viu prefs_parity tests passed. The new
+  Mix test covers default, union, add/remove/moves, deny precedence, fences,
+  refusal retention, receipt recovery and conflict/revert.
+- Rust regression tests cover unchanged installs/refusal settings and real
+  external-client disconnect pruning without another registry fetch.
+- Registry schema and Bus contracts are unchanged; their goldens need no
+  update. The page-count assertion now expects 43 pages.
+- Final full gate: `mix tools/ci.mix all` at pushed source
+  `a38c462ba09e57441654be754860a1000cb8b4cd`, CBC job
+  `20261110-214233-53bfa111-a1` on cbc3, `BUILD_RC=0` (1554.3 seconds).
+  All 625 Rust result groups passed; zero failed groups. The new policy-source
+  and disconnect tests and the embedded Prefs model test explicitly passed.
+  Environment registry: 200 names, zero problems. Mix lint: zero regressions.
+  Saved log read in full and checked:
+  `20261110-215605-cbc3-a38c462ba09e-20261110-214233-53bfa111-a1-d35fcad7.log`,
+  SHA256 `b6450e91ec5261753f178ac97d612078227a4da696581ffb3ab7fdb5d3c02e09`.
+  The following commit only records this hand-back; tested source is unchanged.
+
+Earlier hand-backs follow unchanged.
+
+---
 # PR #24 refreshed settlement — 2026-11-10
 
 PR: https://github.com/mixviu/mixviu/pull/24
