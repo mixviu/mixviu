@@ -154,13 +154,20 @@ impl Harness {
         }
     }
 
-    /// Connect another independent Wayland client and bind its globals.
     /// Attach an external process to the same renderer-free engine. Its socket
     /// must have been connected by that process so SO_PEERCRED names it.
     pub fn attach_external(&mut self, stream: UnixStream) {
-        let client = self.display.handle().insert_client(stream, Arc::new(WaylandClientSession {
-            compositor_state: CompositorClientState::default(), proprietary: false,
-        })).expect("insert external client");
+        let client = self
+            .display
+            .handle()
+            .insert_client(
+                stream,
+                Arc::new(WaylandClientSession {
+                    compositor_state: CompositorClientState::default(),
+                    proprietary: false,
+                }),
+            )
+            .expect("insert external client");
         self.extra_server_clients.push(client);
     }
 

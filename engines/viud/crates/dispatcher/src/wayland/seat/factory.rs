@@ -94,8 +94,7 @@ where
     let mut seat: Seat<I> = seat_named(&mut seat_state, display_handle, PRIMARY_SEAT, |_| true);
     // The agent seat is hidden from Xwayland: an X server binding it would treat
     // a second seat as more X input devices.
-    let agent_clients =
-        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::<smithay::reexports::wayland_server::backend::ClientId, bool>::new()));
+    let agent_clients = protocols::seat::state::AgentClients::default();
     let decisions = agent_clients.clone();
     let display = display_handle.clone();
     let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, move |client| {
@@ -113,10 +112,9 @@ where
                     .as_ref()
                     .and_then(|path| path.file_name())
                     .and_then(|name| name.to_str());
-                let offered = pid == Some(std::process::id() as i32)
+                pid == Some(std::process::id() as i32)
                     || (client.get_data::<XWaylandClientData>().is_none()
-                        && comp_model::agent_seat::allows(name));
-                offered
+                        && comp_model::agent_seat::allows(name))
             })
             .to_owned()
     });

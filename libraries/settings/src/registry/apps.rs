@@ -12,11 +12,22 @@ const fn xwayland(path: &'static str, kind: Kind, default: D) -> K {
 
 pub(super) const KEYS: &[K] = &[
     K::new("agent_seat.default", Bool, D::Bool(false))
-        .on("applications/agent-seat", &[Input]).applied("viud"),
-    K::new("agent_seat.allow", List(&Str(Grammar::DirName, 255), 0, 256), D::Json("[\"viu\"]"))
-        .on("applications/agent-seat", &[Input]).applied("viud"),
-    K::new("agent_seat.deny", List(&Str(Grammar::DirName, 255), 0, 256), D::Json("[]"))
-        .on("applications/agent-seat", &[Input]).applied("viud"),
+        .on("applications/agent-seat", &[Input])
+        .applied("viud"),
+    K::new(
+        "agent_seat.allow",
+        List(&Str(Grammar::DirName, 255), 0, 256),
+        D::Json("[\"viu\"]"),
+    )
+    .on("applications/agent-seat", &[Input])
+    .applied("viud"),
+    K::new(
+        "agent_seat.deny",
+        List(&Str(Grammar::DirName, 255), 0, 256),
+        D::Json("[]"),
+    )
+    .on("applications/agent-seat", &[Input])
+    .applied("viud"),
     K::new("apps_default.<category>", DESKTOP_ID, D::Null)
         .on("applications/default", &[System])
         .applied("xdg-export"),

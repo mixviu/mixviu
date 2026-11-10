@@ -1,3 +1,4 @@
+use smithay::wayland::seat::WaylandFocus;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The props-tree projection: `Loop` → `CompSnapshot`.

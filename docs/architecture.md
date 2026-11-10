@@ -19,8 +19,8 @@ change, including output hit tests. There is no fallback to `seat0`.
 
 Until the Prefs executable-list editor is added, use settingsd's `settings.get`
 with `{binding:{instance:"desktop",profile:"default"},view:"values"}`, then
-`settings.apply` with that binding, the returned `expected_incarnation` and
-`expected_revision`, a fresh `operation_id`, `reset:[]`, and e.g.
+`settings.apply` with that binding, the returned incarnation and revision as
+`expected_incarnation` and `expected_revision`, a fresh `operation_id`, `reset:[]`, and e.g.
 `changes:{"agent_seat.allow":["viu","example-app"]}`. Existing optimistic
 revision checks apply. Remove an executable from deny before allowing it.
 

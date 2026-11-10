@@ -14,7 +14,11 @@ pub struct AgentSeat {
 }
 impl View for AgentSeat {
     fn read(r: &Reader) -> Self {
-        Self { default: r.bool("agent_seat.default"), allow: r.texts("agent_seat.allow"), deny: r.texts("agent_seat.deny") }
+        Self {
+            default: r.bool("agent_seat.default"),
+            allow: r.texts("agent_seat.allow"),
+            deny: r.texts("agent_seat.deny"),
+        }
     }
 }
 
