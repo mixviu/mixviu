@@ -91,7 +91,7 @@ fn prefs_search_is_read_only_and_every_gold_page_mounts() {
     }
     let pages: serde_json::Value =
         serde_json::from_str(include_str!("../../../apps/prefs/pages.json")).unwrap();
-    assert_eq!(pages.as_array().unwrap().len(), 42);
+    assert_eq!(pages.as_array().unwrap().len(), 43);
     let ctx = eframe::egui::Context::default();
     viu::icons::install(&ctx);
     for page in pages.as_array().unwrap() {
@@ -213,6 +213,10 @@ fn email_uses_native_registry_admission_and_redacts_credentials() {
 #[test]
 fn settings_fences_appearance_and_navigation_use_the_embedded_native_path() {
     for (name, source) in [
+        (
+            "agent-seat-test.mix",
+            include_str!("../../../apps/prefs/agent-seat-test.mix"),
+        ),
         (
             "core-test.mix",
             include_str!("../../../apps/prefs/core-test.mix"),

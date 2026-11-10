@@ -83,6 +83,8 @@ fn external_clients_only_see_the_opted_in_seat() {
     let listener = UnixListener::bind(&path).unwrap();
     listener.set_nonblocking(true).unwrap();
     let exe = std::env::current_exe().unwrap();
+    let decisions = harness.wire.state.seat.agent_clients.clone();
+    let initial_clients = decisions.lock().unwrap().len();
     for allowed in [false, true] {
         agent_seat::install(Policy {
             allow: if allowed {
@@ -130,6 +132,12 @@ fn external_clients_only_see_the_opted_in_seat() {
             "SEATS=seat0"
         };
         assert!(text.contains(&format!("{expected}\n")), "{text}");
+        // Pump EOF without fetching another registry: disconnect itself must
+        // retire the cached decision, even if no more clients ever connect.
+        while decisions.lock().unwrap().len() != initial_clients {
+            harness.pump();
+            assert!(Instant::now() < deadline, "disconnected decision retained");
+        }
     }
     agent_seat::install(Policy::default());
     std::fs::remove_file(path).unwrap();

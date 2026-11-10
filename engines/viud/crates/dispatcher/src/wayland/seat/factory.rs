@@ -98,28 +98,39 @@ where
     let decisions = agent_clients.clone();
     let display = display_handle.clone();
     let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, move |client| {
-        let mut decisions = decisions.lock().unwrap();
-        decisions.retain(|id, _: &mut bool| {
-            display.backend_handle().get_client_data(id.clone()).is_ok()
-        });
-        decisions
-            .entry(client.id())
-            .or_insert_with(|| {
-                let pid = client.get_credentials(&display).ok().map(|c| c.pid);
-                let executable =
-                    pid.and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok());
-                let name = executable
-                    .as_ref()
-                    .and_then(|path| path.file_name())
-                    .and_then(|name| name.to_str())
-                    // The kernel appends this when the binary was replaced on
-                    // disk under a running process (an upgrade, a rebuild).
-                    .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
-                pid == Some(std::process::id() as i32)
-                    || (client.get_data::<XWaylandClientData>().is_none()
-                        && comp_model::agent_seat::allows(name))
-            })
-            .to_owned()
+        // Xwayland never, and before anything else: Smithay connects it over a
+        // socketpair the compositor created, so its peer credentials are OUR
+        // pid and the own-pid exception below would hand it the seat. Its
+        // client data is Smithay's (no disconnect hook), so nothing is cached.
+        if client.get_data::<XWaylandClientData>().is_some() {
+            return false;
+        }
+        // Every other client carries a WaylandClientSession, whose disconnect
+        // hook removes the cached decision. The map lock is held only around
+        // map operations, never across a call into the Wayland backend (the
+        // hook runs under the backend's own lock).
+        if let Some(session) =
+            client.get_data::<protocols::wayland::connection::record::WaylandClientSession>()
+        {
+            let _ = session.agent_clients.set(decisions.clone());
+        }
+        let id = client.id();
+        if let Some(decided) = decisions.lock().unwrap().get(&id) {
+            return *decided;
+        }
+        let pid = client.get_credentials(&display).ok().map(|c| c.pid);
+        let executable = pid.and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok());
+        let name = executable
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            // The kernel appends this when the binary was replaced on
+            // disk under a running process (an upgrade, a rebuild).
+            .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
+        let offered =
+            pid == Some(std::process::id() as i32) || comp_model::agent_seat::allows(name);
+        // The first decision stays fixed for the connection.
+        *decisions.lock().unwrap().entry(id).or_insert(offered)
     });
 
     // (`seat_named` already added the pointer: clients render their own cursor

@@ -1097,11 +1097,38 @@ fn require_agent_seat(lp: &Loop, surface: &WlSurface) -> Result<(), ControlReply
         return Ok(());
     }
     let window = record_of(lp, surface).map(|id| root_of(lp, id).0);
+    // X11 windows: no setting changes this, so name none.
+    if surface.client().is_some_and(|client| {
+        client
+            .get_data::<smithay::xwayland::XWaylandClientData>()
+            .is_some()
+    }) {
+        return Err(ControlReply::refused(
+            "seat_unavailable",
+            json!({
+                "seat": "agent", "window": window, "setting": null, "settings": [],
+                "reason": "X11 windows (Xwayland) never receive the agent seat"
+            }),
+        ));
+    }
+    let executable = surface.client().and_then(|client| {
+        let pid = client
+            .get_credentials(&lp.state.output.display_handle)
+            .ok()?
+            .pid;
+        std::fs::read_link(format!("/proc/{pid}/exe")).ok()
+    });
+    let name = executable
+        .as_ref()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
+    let settings = comp_model::agent_seat::refusal_settings(name);
     Err(ControlReply::refused(
         "seat_unavailable",
         json!({
-            "seat": "agent", "window": window, "setting": "agent_seat.allow",
-            "reason": "Enable the executable in agent_seat.allow (remove it from agent_seat.deny), then restart the app"
+            "seat": "agent", "window": window, "setting": settings[0], "settings": settings,
+            "reason": "Change the named agent seat settings, then restart the app"
         }),
     ))
 }

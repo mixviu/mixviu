@@ -62,6 +62,7 @@ impl Harness {
                 Arc::new(WaylandClientSession {
                     compositor_state: CompositorClientState::default(),
                     proprietary: false,
+                    agent_clients: Default::default(),
                 }),
             )
             .expect("insert the test client");
@@ -165,6 +166,7 @@ impl Harness {
                 Arc::new(WaylandClientSession {
                     compositor_state: CompositorClientState::default(),
                     proprietary: false,
+                    agent_clients: Default::default(),
                 }),
             )
             .expect("insert external client");
@@ -182,6 +184,7 @@ impl Harness {
                 Arc::new(WaylandClientSession {
                     compositor_state: CompositorClientState::default(),
                     proprietary: false,
+                    agent_clients: Default::default(),
                 }),
             )
             .expect("insert another test client");

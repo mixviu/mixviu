@@ -134,6 +134,7 @@ impl Adapter {
                 let data = WaylandClientSession {
                     compositor_state: CompositorClientState::default(),
                     proprietary: false,
+                    agent_clients: Default::default(),
                 };
                 let client = state
                     .state

@@ -7,6 +7,7 @@ only to opted-in executables. settingsd owns `agent_seat.default` (false),
 `agent_seat.allow` (["viu"]) and `agent_seat.deny` ([]). Deny wins over allow,
 then the global default applies. Names are executable basenames resolved from
 the client's credentials and `/proc/<pid>/exe`, never app IDs or directories.
+If the executable is unknown, `allows(None)` follows the global default.
 Xwayland never receives the seat; in-process testkit clients always do.
 The embedded defaults apply before the first settingsd snapshot.
 
@@ -17,7 +18,14 @@ report `agent_seat: true|false` per window. `comp.input.*` targeting a window
 without it refuses `seat_unavailable` with the seat, window and setting to
 change, including output hit tests. There is no fallback to `seat0`.
 
-Until the Prefs executable-list editor is added, use settingsd's `settings.get`
+Prefs → Applications → Agent seat offers the global switch and per-executable
+Allowed, Denied or Follow the default choices. Add a basename in the text field;
+remove clears both list overrides. Refused drafts stay available for retry or
+revert, and uncertain writes check their operation receipt before another apply.
+Window records currently expose PID and app ID, but no executable basename, so
+Prefs lists configured entries and names added in this session only.
+
+For direct Bus access, use settingsd's `settings.get`
 with `{binding:{instance:"desktop",profile:"default"},view:"values"}`, then
 `settings.apply` with that binding, the returned incarnation and revision as
 `expected_incarnation` and `expected_revision`, a fresh `operation_id`, `reset:[]`, and e.g.
