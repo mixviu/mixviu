@@ -41,6 +41,8 @@ pub mod raster;
 pub mod raster_decode;
 pub mod raster_fill;
 pub mod raster_fit;
+#[cfg(test)]
+mod registry_tests;
 
 pub mod rich;
 pub mod runtime;

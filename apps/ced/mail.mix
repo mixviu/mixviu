@@ -1,3 +1,4 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Mail documents remain inert until an explicit Send action. Body mirrors
 -- belong to editd; header, save, session and send policy belongs to this Mix.
@@ -70,22 +71,25 @@ fn mail_commit($s,$key)
   return $s
 end
 fn mail_pump($s)
+  $ced_core=require("core.mix")
   for $tab in $s.tabs
     $key=$tab.document;$m=$s.mail[$key]
     if $m!=nil and $m.parked and $tab.idle and $tab.phase=="live" then
       $s.mail[$key].parked=false
-      $s=queue_job($s,"mail-save",{document:$key,headers:$m.headers,expected:$m.disk,original_path:$m.path,path:$m.save.path,send:$m.save.send,action:$m.save.action,call:$m.save.call,close_after:$m.save.close_after})
+      $s=$ced_core.queue_job($s,"mail-save",{document:$key,headers:$m.headers,expected:$m.disk,original_path:$m.path,path:$m.save.path,send:$m.save.send,action:$m.save.action,call:$m.save.call,close_after:$m.save.close_after})
     end
   end
   return $s
 end
 fn mail_completed($s,$job,$reply)
+  $ced_core=require("core.mix")
+  $ced_bus=require("bus.mix")
   $key=$job.payload.document;$body=$reply.body
   if $job.kind=="classify" and $reply.rc==0 then
     if $body.kind=="mail" then
       $t=viu_document("state",$key,{})
       $s.mail[$key]=delete($body,"body")
-      $s=queue_job($s,"mail-seed",{document:$key,body:$body.body,buffer:$t.buffer})
+      $s=$ced_core.queue_job($s,"mail-seed",{document:$key,body:$body.body,buffer:$t.buffer})
     elif $body.notice!=nil then $s.notices[$key]=$body.notice end
   elif $job.kind=="mail-hash" then
     if $s.mail[$key]!=nil then
@@ -100,14 +104,14 @@ fn mail_completed($s,$job,$reply)
       end
       if $job.kind=="mail-save" and $reply.rc==0 and $job.payload.send then
         $m.saving=false;$m.sending=true
-        $s=queue_job($s,"mail-send",{document:$key,path:$job.payload.path,call:$job.payload.call,action:$job.payload.action})
+        $s=$ced_core.queue_job($s,"mail-send",{document:$key,path:$job.payload.path,call:$job.payload.call,action:$job.payload.action})
       else
         $m.saving=false;$m.sending=false;$m.parked=false
         $m.notice=if $reply.rc==0 then $body.message ?? "Saved" else $body.message end
         if $job.payload.call!=nil then
-          $s=finish_call($s,$job.payload.call,$reply.rc,if $reply.rc==0 then {id:$job.payload.action,ok:true,result:{message:$m.notice}} else $body end)
+          $s=$ced_bus.finish_call($s,$job.payload.call,$reply.rc,if $reply.rc==0 then {id:$job.payload.action,ok:true,result:{message:$m.notice}} else $body end)
         end
-        if $reply.rc==0 and $job.payload.close_after then $s=queue_job($s,"close",{document:$key,buffer:viu_document("state",$key,{}).buffer,force:true}) end
+        if $reply.rc==0 and $job.payload.close_after then $s=$ced_core.queue_job($s,"close",{document:$key,buffer:viu_document("state",$key,{}).buffer,force:true}) end
       end
       $s.mail[$key]=$m
     end
@@ -126,15 +130,16 @@ fn restore_mail($s,$key,$tab)
   return $s
 end
 fn mail_action($s,$id,$a,$key,$call=nil)
+  $ced_core=require("core.mix")
   $m=$s.mail[$key]
   if $id=="mail.headers" then
     if $a.headers==nil then $s.header_dialog=$key;$s.mail[$key].focus="to";$s.mail[$key].focus_instance=($s.mail[$key].focus_instance ?? 0)+1 else $s=mail_headers($s,$key,$a.headers) end
-    return {state:pump($s),result:nil,op_id:nil,kind:nil}
+    return {state:$ced_core.pump($s),result:nil,op_id:nil,kind:nil}
   end
   if $m.saving or $m.sending then raise("CONFLICT","A mail save or Send is already in flight") end
   $path=$a.path ?? $m.path
-  if $path==nil then $s.save_dialog=true;return {state:pump($s),result:nil,op_id:nil,kind:nil} end
+  if $path==nil then $s.save_dialog=true;return {state:$ced_core.pump($s),result:nil,op_id:nil,kind:nil} end
   $s.mail[$key].saving=true;$s.mail[$key].sending=$id=="file.send";$s.mail[$key].parked=true
   $s.mail[$key].save={path:$path,action:$id,call:$call,send:$id=="file.send",close_after:$id=="file.close"}
-  return {state:pump($s),result:nil,op_id:nil,kind:"mail"}
+  return {state:$ced_core.pump($s),result:nil,op_id:nil,kind:"mail"}
 end

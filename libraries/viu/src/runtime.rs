@@ -23,6 +23,8 @@ pub type BackendMaker = Arc<dyn Fn() -> BackendFactory + Send + Sync>;
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    #[cfg(test)]
+    pub(crate) registry_observer: Option<Arc<dyn Fn(Vec<String>) + Send + Sync>>,
     /// A caller-owned applications parent, chiefly for isolated embedded runs.
     /// None uses the native environment contract; it never mutates the process.
     pub application_roots: Option<std::path::PathBuf>,
@@ -297,6 +299,8 @@ impl Runtime {
                             "native_backend":native_backend, "native_facilities":native_facilities,
 
                         }))));
+                        #[cfg(test)]
+                        if let Some(observe) = &services.registry_observer { observe(eval.extension_names()); }
                         let outcome = rt.block_on(bounded(&worker_stop, deadline, eval.execute_script_source(&program.source)));
                         current = Some((generation, eval, local, stdout, stderr));
                         (generation, 0, outcome.map(|_| ()))

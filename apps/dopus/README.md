@@ -4,7 +4,7 @@ Run the Mix file manager with `viu run apps/dopus [LEFT [RIGHT]]`. It uses the n
 
 The generic executable also hosts the reusable file chooser: `viu run apps/dopus --choose-service PROFILE_DIR --service files`. Application behaviour and composition remain in `chooser.mix`, `chooser-engine.mix` and `chooser.scene.mix`; Viu owns native viewports, bounded runtime delivery, captures and reply fences.
 
-`core.mix`, `operations.mix`, `reducer.mix`, `presentation.mix` and `dopus.mix` own file-manager policy. The app uses the shared gold frame, navigation rail, virtual tree tables, dialogs, metadata and preview facilities. Intra-app traffic stays in process; live settings use the native authority.
+`core.mix`, `operations.mix`, `reducer.mix`, `presentation.mix` and `app.mix` own file-manager policy. The app uses the shared gold frame, navigation rail, virtual tree tables, dialogs, metadata and preview facilities. Intra-app traffic stays in process; live settings use the native authority.
 
 The former `viu-dopus` executable and Rust comparator are retired. Their source remains in git history; clean pinned MixOS gold is the oracle. Mix chooser and raw-name contract tests now live with Viu.
 
