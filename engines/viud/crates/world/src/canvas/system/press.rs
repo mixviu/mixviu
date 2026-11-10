@@ -24,7 +24,6 @@ use smithay::input::keyboard::Keycode;
 use smithay::input::pointer::ButtonEvent;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) fn press(
     cx: &mut SystemCx,
@@ -150,9 +149,14 @@ fn is_modifier_keysym(raw: u32) -> bool {
     matches!(raw, 0xffe1..=0xffee | 0xff7f | 0xfe01..=0xfe13)
 }
 
-fn now_msec() -> u32 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u32)
-        .unwrap_or(0)
+/// Timestamp for a synthesized wayland input event, on libinput's clock.
+///
+/// Every event a seat sends must share one time base: real presses and motion
+/// carry libinput's `CLOCK_MONOTONIC` milliseconds, so a synthesized event
+/// stamped with wall-clock time (truncated to u32) lands at an arbitrary
+/// offset from the real ones, days ahead or behind.
+/// Firefox stopped selecting and dragging on press-and-hold when its releases
+/// came from this path stamped with `SystemTime`.
+pub(crate) fn now_msec() -> u32 {
+    crate::seat::event_time_ms()
 }

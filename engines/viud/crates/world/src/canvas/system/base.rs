@@ -12,7 +12,6 @@ use smithay::backend::input::ButtonState;
 use smithay::input::pointer::ButtonEvent;
 use smithay::utils::SERIAL_COUNTER;
 use std::any::Any;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub static CANVAS: Token<CanvasState> = Token::new();
 /// TRANSITIONAL pub: legacy call sites still write this slot directly until
@@ -67,10 +66,7 @@ impl System for CanvasSystem {
 
         // The wayland pointer button-up goes to the window under the pointer.
         let serial = SERIAL_COUNTER.next_serial();
-        let time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u32)
-            .unwrap_or(0);
+        let time = crate::canvas::system::press::now_msec();
         if let Some(dispatch) = cx
             .seat
             .as_deref_mut()

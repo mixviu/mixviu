@@ -1797,8 +1797,8 @@ fn press_states(action: PressAction) -> &'static [bool] {
     }
 }
 
-fn now_ms(lp: &Loop) -> u32 {
-    lp.inner.start_time.elapsed().as_millis() as u32
+fn now_ms(_lp: &Loop) -> u32 {
+    world::seat::event_time_ms()
 }
 
 fn unknown_key(key: &KeySpec) -> ControlReply {

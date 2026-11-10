@@ -111,7 +111,7 @@ pub fn centre_pointer_once(lp: &mut crate::state::Loop) {
     lp.inner.pointer_mut().motion.x = physical.0;
     lp.inner.pointer_mut().motion.y = physical.1;
     if let Some(pointer) = lp.state.seat.seat.get_pointer() {
-        let time = lp.inner.start_time.elapsed().as_millis() as u32;
+        let time = crate::seat::event_time_ms();
         pointer.motion(
             &mut lp.state,
             None,
