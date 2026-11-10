@@ -1574,10 +1574,12 @@ try
   $watch_run = run_argv([read_link("/proc/self/exe"), dirname(script_path()) .. "/scenes_parent_watch.mix", $anchor], {timeout:25})
   check($watch_run.ok, "parent-watch checks completed within 25 seconds: " .. $watch_run.stderr)
   $events = json_parse($watch_run.stdout)
+  -- The child raises (and so fails the check above) unless each step saw its
+  -- invalidation; the edit steps need a per-file modified record, not overflow.
   check($events.replacement.overflow or len($events.replacement.changes) > 0, "stable parent watch observes catalogue replacement")
-  check($events.continued.overflow or len($events.continued.changes) > 0, "parent watch continues on new catalogue inode")
+  check(len(filter($events.continued.batch.changes, fn($c) = $c.kind == "modified" and ends_with($c.path, "/catalogue/lib/new.mix"))) > 0, "parent watch continues on new catalogue inode")
   check($events.creation.overflow or len($events.creation.changes) > 0, "watch installed before SCENES_LIB exists observes creation")
-  check($events.edited.overflow or len($events.edited.changes) > 0, "late library remains watched after creation")
+  check(len(filter($events.edited.batch.changes, fn($c) = $c.kind == "modified" and ends_with($c.path, "/future/lib/late.mix"))) > 0, "late library remains watched after creation")
   $s = $l.filesystem($s, $events.creation)
   check($s.rc == 0 and $s.library_seen != $before_signature and $s.library_seen == $l.library_signature($s) and $s.scenes.alpha.revision > $before_revision, "real late-library invalidation reloads dependent and acknowledges helper")
 

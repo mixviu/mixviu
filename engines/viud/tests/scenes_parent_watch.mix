@@ -1,22 +1,45 @@
 -- Run by scenes_test.mix in a child with a whole-call deadline: fs_wait has
--- no timeout argument. A missing notification must fail, never hang CI.
+-- no timeout argument, so the parent's kill is the only bound. A missing
+-- notification must fail there, never hang CI.
 $l = require("../scripts/lib/scenes.mix")
 $anchor = args()[0]
 
-fn observed($watch, $path, $kind = nil)
-  $deadline = monotonic() + 5
-  while monotonic() < $deadline
+fn touches($change, $path)
+  return $change.path == $path or starts_with($change.path, $path .. "/")
+end
+
+-- The first invalidation after a directory appears. Adding a recursive
+-- directory watch publishes overflow BEFORE its creation record, and a file
+-- written before that watch was installed is reported only by the overflow
+-- (the loader rescans on it), so an overflow-only batch counts here.
+fn invalidated($watch, $path)
+  while true
     $batch = fs_wait($watch)
-    -- Adding a recursive directory watch publishes overflow BEFORE its
-    -- creation record. Files written before installation require a rescan.
     if $batch.overflow then return $batch end
     for $change in $batch.changes
-      if ($change.path == $path or starts_with($change.path, $path .. "/") or starts_with($path, $change.path .. "/")) and ($kind == nil or $change.kind == $kind) then
-        return $batch
-      end
+      if touches($change, $path) or starts_with($path, $change.path .. "/") then return $batch end
     end
   end
-  raise("SCENES_TEST", "no invalidation for " .. $path)
+end
+
+-- The watch still delivers per-file events: an edit to FILE must arrive as a
+-- change naming FILE. Overflow does NOT count (one may be left over from the
+-- directory creation, or the edit may have raced the new directory's watch):
+-- on overflow the file is written again, now that the watch is in place.
+fn edit_observed($watch, $file, $text)
+  $n = 0
+  while true
+    $n = $n + 1
+    write_file($file, $text .. " " .. to_string($n) .. "\n")
+    $settled = false
+    while not $settled
+      $batch = fs_wait($watch)
+      for $change in $batch.changes
+        if $change.path == $file and $change.kind == "modified" then return {batch: $batch, writes: $n} end
+      end
+      $settled = $batch.overflow
+    end
+  end
 end
 
 mkdir($anchor .. "/catalogue/lib")
@@ -24,17 +47,15 @@ $parent_watch = fs_watch($l.watch_anchor($anchor .. "/catalogue"), {recursive:tr
 run_argv_must(["mv", $anchor .. "/catalogue", $anchor .. "/old-catalogue"])
 mkdir($anchor .. "/catalogue/lib")
 write_file($anchor .. "/catalogue/lib/new.mix", "-- new catalogue\n")
-$replacement = observed($parent_watch, $anchor .. "/catalogue")
-write_file($anchor .. "/catalogue/lib/new.mix", "-- second edit in replaced catalogue\n")
-$continued = observed($parent_watch, $anchor .. "/catalogue/lib/new.mix", "modified")
+$replacement = invalidated($parent_watch, $anchor .. "/catalogue")
+$continued = edit_observed($parent_watch, $anchor .. "/catalogue/lib/new.mix", "-- edit in replaced catalogue")
 fs_unwatch($parent_watch)
 
 $future = $anchor .. "/future/lib"
 $future_watch = fs_watch($l.watch_anchor($future), {recursive:true})
 mkdir($future)
 write_file($future .. "/late.mix", "-- late helper\n")
-$creation = observed($future_watch, $future)
-write_file($future .. "/late.mix", "-- second late edit\n")
-$edited = observed($future_watch, $future .. "/late.mix", "modified")
+$creation = invalidated($future_watch, $future)
+$edited = edit_observed($future_watch, $future .. "/late.mix", "-- late edit")
 fs_unwatch($future_watch)
 print(json_encode({replacement:$replacement, continued:$continued, creation:$creation, edited:$edited}))
