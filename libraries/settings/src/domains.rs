@@ -108,7 +108,11 @@ impl ChangePlan {
         let native = |values: &Values| -> Values {
             values
                 .iter()
-                .filter(|(k, _)| k.starts_with("window.") || k.starts_with("shell.") || (shell && k.starts_with("agent_seat.")))
+                .filter(|(k, _)| {
+                    k.starts_with("window.")
+                        || k.starts_with("shell.")
+                        || (shell && k.starts_with("agent_seat."))
+                })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect()
         };

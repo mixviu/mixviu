@@ -38,7 +38,10 @@ fn agent_seat_only_changes_stage_for_the_shell_consumer() {
     let before = snapshot(1, "authority");
     for (key, value) in [
         ("agent_seat.default", serde_json::json!(true)),
-        ("agent_seat.allow", serde_json::json!(["viu", "example-app"])),
+        (
+            "agent_seat.allow",
+            serde_json::json!(["viu", "example-app"]),
+        ),
         ("agent_seat.deny", serde_json::json!(["example-app"])),
     ] {
         let mut after = snapshot(2, "authority");
