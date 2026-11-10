@@ -79,8 +79,14 @@ mod tests {
         assert!(!install(policy));
         assert_eq!(refusal_settings(Some("browser")), vec!["agent_seat.deny"]);
         assert_eq!(refusal_settings(Some("editor")), vec!["agent_seat.allow"]);
-        assert_eq!(refusal_settings(None), vec!["agent_seat.allow", "agent_seat.default"]);
-        assert_eq!(refusal_settings(Some("other")), vec!["agent_seat.allow", "agent_seat.default"]);
+        assert_eq!(
+            refusal_settings(None),
+            vec!["agent_seat.allow", "agent_seat.default"]
+        );
+        assert_eq!(
+            refusal_settings(Some("other")),
+            vec!["agent_seat.allow", "agent_seat.default"]
+        );
         assert!(install(Policy::default()));
     }
 }

@@ -1098,10 +1098,16 @@ fn require_agent_seat(lp: &Loop, surface: &WlSurface) -> Result<(), ControlReply
     }
     let window = record_of(lp, surface).map(|id| root_of(lp, id).0);
     let executable = surface.client().and_then(|client| {
-        let pid = client.get_credentials(&lp.state.output.display_handle).ok()?.pid;
+        let pid = client
+            .get_credentials(&lp.state.output.display_handle)
+            .ok()?
+            .pid;
         std::fs::read_link(format!("/proc/{pid}/exe")).ok()
     });
-    let name = executable.as_ref().and_then(|path| path.file_name()).and_then(|name| name.to_str())
+    let name = executable
+        .as_ref()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
         .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
     let settings = comp_model::agent_seat::refusal_settings(name);
     Err(ControlReply::refused(
