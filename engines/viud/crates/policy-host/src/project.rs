@@ -1,4 +1,3 @@
-use smithay::wayland::seat::WaylandFocus;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The props-tree projection: `Loop` → `CompSnapshot`.
@@ -23,6 +22,7 @@ use smithay::wayland::seat::WaylandFocus;
 //! reads `visible: false`. `bindings` is the binding filter state;
 //! `input.corners` is the live corner configuration.
 
+use smithay::wayland::seat::WaylandFocus;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
