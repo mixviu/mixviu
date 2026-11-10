@@ -527,10 +527,7 @@ fn ramp(v: f64, max: f64) -> Option<(f64, f64)> {
 }
 
 fn now_msec() -> u32 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u32)
-        .unwrap_or(0)
+    world::seat::event_time_ms()
 }
 
 /// `push` reduced toward zero by `sustained` (an unsigned distance), keeping its
