@@ -98,6 +98,9 @@ where
     let decisions = agent_clients.clone();
     let display = display_handle.clone();
     let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, move |client| {
+        if let Some(session) = client.get_data::<protocols::wayland::connection::record::WaylandClientSession>() {
+            let _ = session.agent_clients.set(decisions.clone());
+        }
         let mut decisions = decisions.lock().unwrap();
         decisions.retain(|id, _: &mut bool| {
             display.backend_handle().get_client_data(id.clone()).is_ok()

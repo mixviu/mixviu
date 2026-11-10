@@ -74,7 +74,7 @@ impl Update {
         }
         let mut changed = self.theme.is_some();
         if let Some(policy) = self.agent_seat {
-            comp_model::agent_seat::install(policy);
+            changed |= comp_model::agent_seat::install(policy);
         }
         if let Some(look) = self.theme {
             decor::window::install(look.chrome(look.window_style));

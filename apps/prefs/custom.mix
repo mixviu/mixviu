@@ -6,6 +6,26 @@
 $n=require("navigation.mix")
 $actions=require("actions.mix")
 $email=require("email.mix")
+$seat=require("agent-seat.mix")
+fn agent_seat($s)
+  $l=$s.agent_seat ?? $seat.initial();$v=$seat.shown($l)
+  $blocked=if $v==nil or not $s.connected or $s.ui.dialog!=nil or $s.quitting then $n.text_for("busy") else nil end
+  $rows=[{id:"seat.default",title:$n.text_for("seat-default"),kind:"toggle",inline:true,shown:true,value:($v ?? {}).default ?? false,blocked:$blocked},
+    {id:"seat.note",title:"",kind:"info",inline:true,shown:true,value:$n.text_for("seat-note"),blocked:nil},
+    {id:"seat.name",title:$n.text_for("seat-name"),kind:"text",inline:true,shown:true,value:$s.seat_name ?? "",blocked:$blocked},
+    {id:"seat.add",title:"",kind:"buttons",inline:true,shown:true,blocked:$blocked,choices:[{value:"add",label:$n.text_for("seat-add"),enabled:$blocked==nil and $seat.valid_name($s.seat_name ?? "")}] }]
+  for $name in $seat.names($l,$s.seat_names ?? [])
+    push($rows,{id:"seat.app."..$name,title:$name,kind:"choice",presentation:"dropdown",inline:true,shown:true,blocked:$blocked,value:$seat.choice($l,$name),choices:choices(["default","allow","deny"],["seat-follow","seat-allow","seat-deny"])})
+    push($rows,{id:"seat.remove."..$name,title:"",kind:"buttons",inline:true,shown:true,blocked:$blocked,choices:[{value:$name,label:$n.text_for("seat-remove"),enabled:$blocked==nil}]})
+  end
+  if $l.problem!=nil or len($l.conflicts)>0 then push($rows,{id:"seat.problem",title:"",kind:"info",inline:true,shown:true,blocked:nil,value:$n.text_for(if $l.uncertain!=nil then "seat-uncertain" elif len($l.conflicts)>0 then "seat-conflict" else "seat-refused" end)}) end
+  push($rows,{id:"seat.decide",title:"",kind:"buttons",inline:true,shown:true,blocked:nil,choices:[
+    {value:"apply",label:$n.text_for("seat-apply"),enabled:$l.hold and len($l.conflicts)==0 and $l.uncertain==nil},
+    {value:"keep",label:$n.text_for("seat-keep"),enabled:len($l.conflicts)>0 and $l.uncertain==nil},
+    {value:"revert",label:$n.text_for("seat-revert"),enabled:len(keys($l.edited))>0 and $l.uncertain==nil},
+    {value:"recheck",label:$n.text_for("seat-recheck"),enabled:$l.uncertain!=nil and $l.job==nil}]})
+  return [section("agent-seat",nil,$rows)]
+end
 fn value_of($s,$key)
   $value=$s.values[$key] ?? viu_settings("default",$key)
   if contains(keys($s.queue_changes ?? {}),$key) then $value=$s.queue_changes[$key] ?? viu_settings("default",$key)
@@ -145,6 +165,7 @@ fn email_sections($s)
   return [section("email-accounts",nil,$rows),section("email-mail","email-mail",$mail),text_controls($s,"email.reader","text-reader"),text_controls($s,"email.composer","text-composer"),section("email-reset",nil,[$reset])]
 end
 fn sections($s,$page)
+  if $page=="agent_seat" then return agent_seat($s) end
   if $page=="term" then return terminal($s) end
   if $page=="ced" then return [text_controls($s,"ced.editor","text-editor")] end
   if $page=="software" then return software($s) end

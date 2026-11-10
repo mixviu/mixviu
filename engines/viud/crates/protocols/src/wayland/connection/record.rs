@@ -18,6 +18,7 @@ pub struct WaylandClientSession {
     // in a previous file.
     pub compositor_state: CompositorClientState,
     pub proprietary: bool,
+    pub agent_clients: std::sync::OnceLock<crate::seat::state::AgentClients>,
 }
 
 /// The `ClientData` trait allows you to hook into the fundamental lifecycle of the Wayland socket.
@@ -48,5 +49,9 @@ impl ClientData for WaylandClientSession {
     /// which will eventually trigger cleanup in your `Space`. However, if you are caching
     /// custom data (like specific GPU textures mapped to this specific client ID), you would
     /// free that memory here.
-    fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
+    fn disconnected(&self, client_id: ClientId, _reason: DisconnectReason) {
+        if let Some(clients) = self.agent_clients.get() {
+            clients.lock().unwrap().remove(&client_id);
+        }
+    }
 }

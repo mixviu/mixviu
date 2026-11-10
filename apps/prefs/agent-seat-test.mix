@@ -1,0 +1,43 @@
+-- host: viu
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("agent-seat.mix")
+$binding={instance:"example",profile:"default"}
+fn observed($l,$default,$allow,$deny,$revision)
+  return $m.observe($l,{incarnation:"inc",revision:$revision,values:{"agent_seat.default":$default,"agent_seat.allow":$allow,"agent_seat.deny":$deny}})
+end
+$l=observed($m.initial(),false,["editor"],["editor"],"9007199254740993")
+if $m.choice($l,"editor")!="deny" or not deep_eq($m.names($l,["other","editor"]),["editor","other"]) then raise("DENY","Deny must win and names must form a union") end
+$l=$m.edit($l,{default:true});$l=$m.choose($l,"new-app","allow")
+if $m.choice($l,"new-app")!="allow" then raise("ADD","Adding an app failed") end
+$l=$m.choose($l,"new-app","deny")
+if contains($m.shown($l).allow,"new-app") or $m.choice($l,"new-app")!="deny" then raise("MOVE","Moving to deny must remove allow") end
+$l=$m.choose($l,"new-app","allow")
+if contains($m.shown($l).deny,"new-app") then raise("MOVE","Moving to allow must remove deny") end
+$l=$m.choose($l,"editor","default")
+if contains($m.names($l,[]),"editor") then raise("REMOVE","Remove must clear both lists") end
+$l=$m.prepare($l,$binding,false)
+if $l.job.body.expected_incarnation!="inc" or $l.job.body.expected_revision!="9007199254740993" or $l.job.body.changes["agent_seat.default"]!=true or $l.job.body.operation_id==nil then raise("FENCE","Exact fence and operation id required") end
+$l=$m.finished($l,10,{status:"invalid",message:"refused"})
+if not $l.hold or $m.choice($l,"new-app")!="allow" then raise("REFUSAL","Refused draft must be retained") end
+$l=$m.prepare($l,$binding,false)
+if $l.job!=nil then raise("REFUSAL","Refusal must not retry itself") end
+$l=$m.decide($l,"apply");$l=$m.prepare($l,$binding,false)
+$operation=$l.job.body.operation_id
+$l=$m.finished($l,20,{message:"timeout"});$l=$m.prepare($l,$binding,false)
+if $l.job.command!="settings.status" or $l.job.body.operation_id!=$operation then raise("UNCERTAIN","Read the receipt before retrying") end
+$l=$m.finished($l,0,{status:"unknown_operation",recovering:true})
+if $l.uncertain!=$operation or $l.read then raise("RECOVERING","Recovery must not loop or clear uncertainty") end
+$l=$m.decide($l,"recheck");$l=$m.prepare($l,$binding,false)
+$l=$m.finished($l,0,{status:"current",receipt:{operation_id:$operation}})
+$l=observed($l,true,["new-app"],[],"9007199254740994")
+if $l.uncertain!=nil or $l.sent!=nil then raise("RECEIPT","Receipt must settle after the read") end
+$l=$m.choose($l,"new-app","deny");$l=$m.prepare($l,$binding,false)
+$l=$m.finished($l,10,{status:"conflict"})
+$l=observed($l,true,["other"],[],"9007199254740995")
+if len($l.conflicts)==0 then raise("CONFLICT","Concurrent list changes need a decision") end
+$l=$m.decide($l,"revert")
+if len(keys($l.edited))!=0 or $l.hold then raise("REVERT","Revert must discard the draft") end
+for $name in ["", "/usr/bin/editor", " editor", "bad\nname"]
+  if $m.valid_name($name) then raise("NAME","Invalid executable accepted") end
+end
+print("prefs agent seat: default, union, add/remove/move, deny precedence, fences, refusal, receipt recovery and conflicts pass")

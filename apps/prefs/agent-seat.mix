@@ -1,0 +1,139 @@
+-- host: viu
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Fenced draft/receipt model adapted from look.mix.
+$paths={default:"agent_seat.default",allow:"agent_seat.allow",deny:"agent_seat.deny"}
+$defaults={default:false,allow:[],deny:[]}
+fn valid_name($name)
+  return type($name)=="string" and len($name)>0 and trim($name)==$name and not contains($name,"/") and not re_match($name,"[\x00-\x1f\x7f]")
+end
+fn initial()
+  return {current:nil,base:nil,edited:{},conflicts:[],sent:nil,uncertain:nil,confirm:false,accepted:false,hold:false,syncing:false,incarnation:nil,revision:nil,job:nil,serial:0,read:false,settings:"unknown",custom_source:false,problem:nil,problem_source:nil,tries:0}
+end
+fn drop_axes($value,$skip)
+  $out={}
+  for $key in keys($value) if not contains($skip,$key) then $out[$key]=$value[$key] end end
+  return $out
+end
+fn current_of($values)
+  $out={}
+  for $axis in keys($paths) $out[$axis]=$values[$paths[$axis]] ?? $defaults[$axis] end
+  return $out
+end
+fn expected($l)
+  if $l.current==nil then return nil end
+  return if $l.sent!=nil then merge($l.current,$l.sent.axes) else $l.current end
+end
+fn shown($l)
+  $e=expected($l)
+  return if $e==nil then nil else merge($e,$l.edited) end
+end
+fn checked_axes($args)
+  for $axis in keys($args)
+    if not contains(keys($paths),$axis) then raise("ARGUMENT","Unknown agent seat field") end
+    if $axis=="default" then
+      if type($args[$axis])!="bool" then raise("ARGUMENT","Expected a boolean") end
+    else
+      if type($args[$axis])!="list" or not all($args[$axis],fn($name)=valid_name($name)) then raise("ARGUMENT","Expected executable basenames") end
+    end
+  end
+  return $args
+end
+fn edit($l,$args)
+  if $l.current==nil then raise("NOT_READY","The session agent seat has not been read yet") end
+  $axes=checked_axes($args)
+  $e=expected($l)
+  if $l.base==nil then $l.base=$e end
+  for $axis in keys($axes)
+    $l.edited[$axis]=$axes[$axis]
+    if deep_eq($axes[$axis],$e[$axis]) then $l.edited=drop_axes($l.edited,[$axis]) end
+  end
+  $l.conflicts=filter($l.conflicts,fn($axis)=contains(keys($l.edited),$axis))
+  return $l
+end
+fn unsend($l)
+  if $l.sent!=nil then
+    $l.edited=merge($l.sent.axes,$l.edited)
+    $l.base=$l.sent.base
+    $l.sent=nil
+  end
+  return $l
+end
+fn observe($l,$reply)
+  $c=current_of($reply.values)
+  $l.settings="available";$l.custom_source=false
+  $l.incarnation=$reply.incarnation;$l.revision=$reply.revision
+  if $l.confirm and $l.sent!=nil then
+    if all(keys($l.sent.axes),fn($axis)=deep_eq($c[$axis],$l.sent.axes[$axis])) then $l.accepted=true
+    else $l=unsend($l);$l.hold=true;$l.problem="Preferences could not confirm the agent seat change: the session does not show it. Apply tries again." end
+    $l.confirm=false
+  end
+  if $l.accepted then $l.sent=nil;$l.accepted=false end
+  $l.current=$c;$l.syncing=false;$l.read=false
+  $conflicts=[]
+  for $axis in keys($l.edited)
+    if deep_eq($l.edited[$axis],$c[$axis]) and $l.sent==nil then $l.edited=drop_axes($l.edited,[$axis])
+    elif $l.base!=nil and not deep_eq($l.base[$axis],$c[$axis]) and not deep_eq($l.edited[$axis],$c[$axis]) then push($conflicts,$axis) end
+  end
+  $l.conflicts=$conflicts
+  if len(keys($l.edited))==0 and $l.sent==nil then $l.hold=false;$l.problem=nil;$l.problem_source=nil;$l.base=nil end
+  return $l
+end
+fn prepare($l,$binding,$dialog)
+  if $l.job!=nil then return $l end
+  $command=nil;$body=nil
+  if $l.uncertain!=nil and $l.read then
+    $command="settings.status";$body={binding:$binding,operation_id:$l.uncertain}
+    $l.read=false
+  elif $l.current!=nil and len(keys($l.edited))>0 and not $dialog and not $l.hold and not $l.syncing and $l.uncertain==nil and len($l.conflicts)==0 and $l.sent==nil then
+    $changes={}
+    for $axis in keys($l.edited) $changes[$paths[$axis]]=$l.edited[$axis] end
+    $operation="prefs-agent-seat-"..viu_token()
+    $l.sent={operation:$operation,axes:$l.edited,base:$l.base ?? $l.current}
+    $l.edited={};$l.base=nil
+    $command="settings.apply";$body={binding:$binding,expected_incarnation:$l.incarnation,expected_revision:$l.revision,operation_id:$operation,changes:$changes,reset:[]}
+  end
+  if $command!=nil then $l.serial=$l.serial+1;$l.job={serial:$l.serial,command:$command,body:$body} end
+  return $l
+end
+fn finished($l,$rc,$answer)
+  $job=$l.job;$l.job=nil
+  if $job.command=="settings.apply" then
+    if $rc==0 then $l.accepted=true;$l.syncing=true;$l.read=true
+    elif $answer.status=="conflict" then $l=unsend($l);$l.syncing=true;$l.read=true
+    elif $answer.status=="outcome_unknown" or $rc>=20 then $l.uncertain=$l.sent.operation;$l.read=true;$l.tries=0
+    else $l=unsend($l);$l.hold=true;$l.problem=$answer.message ?? json_encode($answer);$l.problem_source="agent seat" end
+  else
+    if $rc==0 and $answer.status=="current" and ($answer.receipt ?? {}).operation_id==$l.uncertain then
+      $l.uncertain=nil;$l.accepted=true;$l.syncing=true;$l.read=true
+    elif $rc==0 and $answer.status=="unknown_operation" and ($answer.recovering ?? false)!=true then
+      $l.uncertain=nil;$l.confirm=true;$l.syncing=true;$l.read=true
+    else $l.tries=$l.tries+1;$l.problem="Agent seat change is uncertain; Check again asks for its receipt.";$l.problem_source="agent seat" end
+  end
+  return $l
+end
+fn decide($l,$action)
+  if $action=="revert" then $l.edited={};$l.conflicts=[];$l.hold=false;$l.problem=nil;$l.problem_source=nil;$l.base=nil
+  elif $action=="keep" then $l.base=$l.current;$l.conflicts=[];$l.hold=false
+  elif $action=="apply" then $l.hold=false
+  elif $action=="recheck" then $l.read=true end
+  return $l
+end
+
+fn names($l,$extra)
+  $v=shown($l) ?? $defaults;$out=[]
+  for $name in concat(concat($v.allow,$v.deny),$extra)
+    if valid_name($name) and not contains($out,$name) then push($out,$name) end
+  end
+  return sort($out)
+end
+fn choice($l,$name)
+  $v=shown($l) ?? $defaults
+  return if contains($v.deny,$name) then "deny" elif contains($v.allow,$name) then "allow" else "default" end
+end
+fn choose($l,$name,$choice)
+  if not valid_name($name) or not contains(["allow","deny","default"],$choice) then raise("ARGUMENT","Invalid app choice") end
+  $v=shown($l)
+  $allow=filter($v.allow,fn($x)=$x!=$name);$deny=filter($v.deny,fn($x)=$x!=$name)
+  if $choice=="allow" then push($allow,$name) elif $choice=="deny" then push($deny,$name) end
+  return edit($l,{allow:$allow,deny:$deny})
+end

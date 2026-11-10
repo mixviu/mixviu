@@ -7,6 +7,7 @@ $nav=require("navigation.mix")
 $pages=require("pages.mix")
 $actions=require("actions.mix")
 $look=require("look.mix")
+$seat=require("agent-seat.mix")
 $email=require("email.mix")
 $software=require("software.mix")
 $gallery=require("gallery.mix")
@@ -17,6 +18,7 @@ if $app_args[0]=="--page" then
   $parts=split($app_args[1],"/")
   try $state=$pages.open_page($state,$parts[0],$parts[1]) catch $ignored $state.nav=$nav.initial_nav() end
 end
+$state.agent_seat=$seat.initial();$state.seat_names=[];$state.seat_name=""
 fn publish_prefs($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
 end
@@ -29,6 +31,17 @@ fn pump_look($s)
     if $rc!=0 then raise("JOB",to_string($result)) end
   end
   if $s.look.read and $s.look.uncertain==nil and not $s.busy then $s=refresh_prefs($s) end
+  return $s
+end
+fn pump_seat($s)
+  $before=$s.agent_seat.serial
+  $s.agent_seat=$seat.prepare($s.agent_seat,$s.binding,$s.ui.dialog!=nil)
+  if $s.agent_seat.serial!=$before then
+    $path=path_join(dirname(script_path()),"job.mix")
+    send "viu-local" "jobs.start" id="prefs-seat" owner=$s.agent_seat.serial path=$path source=read_file($path) command="job.run" args={op:"look",command:$s.agent_seat.job.command,body:$s.agent_seat.job.body}
+    if $rc!=0 then raise("JOB",to_string($result)) end
+  end
+  if $s.agent_seat.read and $s.agent_seat.uncertain==nil and not $s.busy then $s=refresh_prefs($s) end
   return $s
 end
 
@@ -505,6 +518,13 @@ on viu.job.completed
     end
     return
   end
+  if $d.tag.id=="prefs-seat" then
+    if $state.agent_seat.job!=nil and $d.tag.owner==$state.agent_seat.serial then
+      $state.agent_seat=$seat.finished($state.agent_seat,$d.rc,$answer)
+      $state=pump_seat($state);publish_prefs($state)
+    end
+    return
+  end
   if $d.body.op=="release" then
     if $d.body.command=="releases.notes" and $d.tag.owner==$state.notes_owner then
       $state.notes_owner=nil
@@ -528,6 +548,7 @@ on viu.job.completed
       $state.catalog=filter($b.catalog.keys,fn($k)=not contains($k.path,"<"))
       $state.values=$b.read.values;$state.revision=$b.read.revision;$state.incarnation=$b.read.incarnation
       $state.look=$look.observe($state.look,$b.read)
+      $state.agent_seat=$seat.observe($state.agent_seat,$b.read)
       $state=$email.observed($state)
       if ($state.email.removed ?? nil)!=nil and $email.account($state,$state.email.removed.id)==nil then
         $removed=$state.email.removed;$state.email.removed=nil
@@ -565,6 +586,7 @@ on viu.job.completed
     if not $state.busy and $state.needs_read then $state=refresh_prefs($state) end
     if not $state.busy then $state=queued_prefs($state) end
     $state=pump_look($state)
+    $state=pump_seat($state)
     publish_prefs($state)
   end
 end
@@ -602,7 +624,24 @@ on prefs.intent
         $browser=$pages.browser($state)
         viu_widget_admit({id:"browser",kind:"settings-browser",label:"",initial:$browser},nil,"edit",$a.value)
         $key=$a.value.row;$v=$a.value.value
-        if $key=="software.group" then $state=$nav.set_section($state,{name:"software",group:$v})
+        if starts_with($key,"seat.") then
+          if $key=="seat.name" then $state.seat_name=$v
+          elif $key=="seat.add" then
+            if not $seat.valid_name($state.seat_name) then raise("ARGUMENT",$nav.text_for("seat-name")) end
+            if not contains($state.seat_names,$state.seat_name) then $state.seat_names=concat($state.seat_names,[$state.seat_name]) end
+            $state.seat_name=""
+          elif $key=="seat.default" then $state.agent_seat=$seat.edit($state.agent_seat,{default:$v})
+          elif $key=="seat.decide" then $state.agent_seat=$seat.decide($state.agent_seat,$v)
+          elif starts_with($key,"seat.app.") then
+            $name=substr($key,9)
+            if not contains($state.seat_names,$name) then $state.seat_names=concat($state.seat_names,[$name]) end
+            $state.agent_seat=$seat.choose($state.agent_seat,$name,$v)
+          elif starts_with($key,"seat.remove.") then
+            $name=substr($key,12);$state.agent_seat=$seat.choose($state.agent_seat,$name,"default")
+            $state.seat_names=filter($state.seat_names,fn($x)=$x!=$name)
+          end
+          $state=pump_seat($state)
+        elif $key=="software.group" then $state=$nav.set_section($state,{name:"software",group:$v})
         elif $key=="software.apps" then
           $state=$nav.select_app($state,$v);$state=release_request($state,"releases.notes",{app:$v})
         elif $key=="email.accounts" then $state=$email.select_account($state,$v)
