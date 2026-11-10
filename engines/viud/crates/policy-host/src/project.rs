@@ -22,6 +22,7 @@
 //! reads `visible: false`. `bindings` is the binding filter state;
 //! `input.corners` is the live corner configuration.
 
+use smithay::wayland::seat::WaylandFocus;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -123,6 +124,13 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
         .map(|(key, surface)| {
             let mut row = project_window_row(surface);
             let id = surfaces::SurfaceId(row.id);
+            row.agent_seat = crate::control::window_of(lp, id)
+                .and_then(|window| {
+                    window
+                        .wl_surface()
+                        .map(|surface| crate::input::agent_seat_offered(lp, &surface))
+                })
+                .unwrap_or(false);
             let visual = lp.inner.comp.visual(id);
             row.opacity = visual.opacity;
             row.z = visual.z;

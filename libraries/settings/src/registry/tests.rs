@@ -11,6 +11,19 @@ fn set(changes: &[(&str, Value)]) -> Result<Values, Vec<Diagnostic>> {
     apply(&Values::new(), &changes, &[])
 }
 
+#[test]
+fn agent_seat_defaults_and_executable_lists() {
+    use crate::view::{AgentSeat, View};
+    let defaults = AgentSeat::of(&Values::new());
+    assert!(!defaults.default);
+    assert_eq!(defaults.allow, ["viu"]);
+    assert!(defaults.deny.is_empty());
+    assert!(set(&[("agent_seat.allow", json!(["app-bin", "App_2"]))]).is_ok());
+    for invalid in [json!(["/usr/bin/app"]), json!([""]), json!("app")] {
+        assert!(set(&[("agent_seat.allow", invalid)]).is_err());
+    }
+}
+
 fn codes(result: Result<Values, Vec<Diagnostic>>) -> Vec<(String, String)> {
     result
         .expect_err("refused")
@@ -272,7 +285,7 @@ fn live_keys_are_refused_by_set_and_reset() {
 }
 
 /// §2.18 as corrected: `apps_default.<category>` is one pattern, so its row
-/// is 6 and the Desktop total 165 (150 stored, applied or state; 15 live).
+/// is 6; agent_seat adds three applied keys. Desktop totals 168 (153 non-live).
 #[test]
 fn the_counts_match_the_design() {
     let group = |path: &'static str| -> &'static str {
@@ -301,6 +314,7 @@ fn the_counts_match_the_design() {
         ("input", (23, 0)),
         ("keymaps", (2, 0)),
         ("apps_default+", (6, 0)),
+        ("agent_seat", (3, 0)),
         ("time+", (9, 0)),
         ("system", (4, 4)),
         ("accessibility", (16, 0)),
@@ -321,10 +335,10 @@ fn the_counts_match_the_design() {
                 .any(|p| d.path.starts_with(p))
         })
         .collect();
-    assert_eq!(desktop.len(), 165);
+    assert_eq!(desktop.len(), 168);
     assert_eq!(desktop.iter().filter(|d| d.is_live()).count(), 15);
-    assert_eq!(desktop.iter().filter(|d| !d.is_live()).count(), 150);
-    assert_eq!(keys().len(), 204);
+    assert_eq!(desktop.iter().filter(|d| !d.is_live()).count(), 153);
+    assert_eq!(keys().len(), 207);
 }
 
 #[test]

@@ -12,6 +12,9 @@
 //!   coordinates. The agent pointer is invisible and has no cursor; its
 //!   position is what injection last put there. Refusals are policy
 //!   `agent`'s, fed the facts read here.
+//!   Clients opt in through settingsd's `agent_seat.*`; changes apply the next
+//!   time the app starts. A window without the advertised seat refuses
+//!   `seat_unavailable`, never falls back to seat0. Read `windows.*.agent_seat`.
 //!
 //! The full-mesh-access law: no command here checks who is calling. What stays
 //! is correctness: `{id, generation}` freshness, grab and continuity checks
@@ -201,6 +204,22 @@ fn payload(
         return ControlReply::refused("seat_unavailable", json!({"reason":"no_sources"}));
     }
     if seat == SeatKind::Agent {
+        let window = match op {
+            InputOp::Targeted { id, generation, .. }
+            | InputOp::PointerMove {
+                target: PointerMoveTarget::Window { id, generation, .. },
+                ..
+            } => Some((*id, *generation)),
+            _ => None,
+        };
+        if let Some((id, generation)) = window
+            && let Some(sid) = window_record(lp, id, generation)
+            && let Some(window) = crate::control::window_of(lp, sid)
+            && let Some(surface) = window.wl_surface()
+            && let Err(reply) = require_agent_seat(lp, &surface)
+        {
+            return reply;
+        }
         let facts = agent_seat_facts(lp);
         if let Err(reply) = agent_preflight(op, &facts) {
             return reply;
@@ -905,7 +924,10 @@ fn agent_hit(
     match hit {
         None => Ok(None),
         Some(hit) => match (hit.surface(), hit.position_motion()) {
-            (Some(surface), Some(origin)) => Ok(Some((surface.clone(), origin))),
+            (Some(surface), Some(origin)) => {
+                require_agent_seat(lp, surface)?;
+                Ok(Some((surface.clone(), origin)))
+            }
             _ => Ok(None),
         },
     }
@@ -1057,6 +1079,33 @@ fn agent_seat_facts(lp: &Loop) -> AgentSeatFacts {
 }
 
 /// The agent target facts for `surface` (its root's record).
+pub(crate) fn agent_seat_offered(lp: &Loop, surface: &WlSurface) -> bool {
+    surface.client().is_some_and(|client| {
+        lp.state
+            .seat
+            .agent_clients
+            .lock()
+            .unwrap()
+            .get(&client.id())
+            .copied()
+            .unwrap_or(false)
+    })
+}
+
+fn require_agent_seat(lp: &Loop, surface: &WlSurface) -> Result<(), ControlReply> {
+    if agent_seat_offered(lp, surface) {
+        return Ok(());
+    }
+    let window = record_of(lp, surface).map(|id| root_of(lp, id).0);
+    Err(ControlReply::refused(
+        "seat_unavailable",
+        json!({
+            "seat": "agent", "window": window, "setting": "agent_seat.allow",
+            "reason": "Enable the executable in agent_seat.allow (remove it from agent_seat.deny), then restart the app"
+        }),
+    ))
+}
+
 fn agent_target(lp: &Loop, surface: &WlSurface) -> Option<AgentTarget> {
     let id = record_of(lp, surface)?;
     let root = root_of(lp, id);

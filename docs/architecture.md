@@ -1,5 +1,35 @@
 # Direction and boundaries
 
+## Agent input
+
+viud keeps `seat0` unchanged and offers the independent `agent` Wayland seat
+only to opted-in executables. settingsd owns `agent_seat.default` (false),
+`agent_seat.allow` (["viu"]) and `agent_seat.deny` ([]). Deny wins over allow,
+then the global default applies. Names are executable basenames resolved from
+the client's credentials and `/proc/<pid>/exe`, never app IDs or directories.
+Xwayland never receives the seat; in-process testkit clients always do.
+The embedded defaults apply before the first settingsd snapshot.
+
+The decision is fixed on the client's first registry fetch: **applies the next
+time the app starts**. This avoids GTK3's conflicting first/last seat lookups
+breaking Firefox tab and bookmark drags. `comp.windows.list` and the snapshot
+report `agent_seat: true|false` per window. `comp.input.*` targeting a window
+without it refuses `seat_unavailable` with the seat, window and setting to
+change, including output hit tests. There is no fallback to `seat0`.
+
+Until the Prefs executable-list editor is added, use settingsd's `settings.get`
+with `{binding:{instance:"desktop",profile:"default"},view:"values"}`, then
+`settings.apply` with that binding, the returned incarnation and revision as
+`expected_incarnation` and `expected_revision`, a fresh `operation_id`, `reset:[]`, and e.g.
+`changes:{"agent_seat.allow":["viu","example-app"]}`. Existing optimistic
+revision checks apply. Remove an executable from deny before allowing it.
+
+Headless tests have one policy injection:
+`MIX_TEST_VIUD_AGENT_SEAT_ALLOW`, a comma-separated allow list (empty means
+none). Only the headless backend reads it; the next settingsd snapshot replaces
+it. Test support includes the probe/app basenames and its own executable. Real
+sessions use settingsd only. In-process testkit tests need no override.
+
 ## What MixViu is
 
 MixViu is an agent-first operating environment: a shell and scripting

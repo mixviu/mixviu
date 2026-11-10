@@ -5,6 +5,11 @@
 
 //! The `comp.*` reply shape: `(rc, body)` with `rc` 0 for success and 10 for
 //! a refusal whose body is `{"error": code, ...detail}`.
+//! `comp.input.*` on `agent` refuses `seat_unavailable` when the target
+//! client was not offered that seat: detail includes `seat`, `window`,
+//! `setting` (`agent_seat.allow`) and restart guidance in `reason`.
+//! It never falls back to seat0. Check `comp.windows.list`'s `agent_seat`
+//! boolean first; settingsd changes apply the next time the app starts.
 
 use std::sync::Arc;
 

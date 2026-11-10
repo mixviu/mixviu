@@ -116,6 +116,41 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
+#[ignore = "needs a GPU render node and built viud, noded and testkit-input-probe"]
+fn unapproved_client_sees_one_seat_and_agent_input_is_refused() {
+    let bus = Bus::start("seat-denied");
+    let mut process = process::spawn_denied("seat-denied", &bus.url);
+    let probe = Probe::start(&mut process, "headless-denied");
+    bus.ready(SERVICE);
+    let caps = seats::capabilities(&process.root);
+    assert_eq!(caps.len(), 1, "Firefox regression: {caps:?}");
+    assert!(caps.contains_key("seat0"));
+    assert!(!probe.text().contains("PROBE seat \"agent\""));
+    let row = window(&bus, SERVICE, "headless-denied");
+    assert_eq!(row["agent_seat"], false);
+    for (command, args) in [
+        (
+            "comp.input.key",
+            json!({"seat":"agent","window":target(&row),"key":"a"}),
+        ),
+        (
+            "comp.input.pointer.move",
+            json!({"seat":"agent","window":target(&row),"x":40,"y":50}),
+        ),
+        (
+            "comp.input.pointer.move",
+            json!({"seat":"agent","output":"headless-0","x":row["window_x"].as_f64().unwrap()+40.0,"y":row["window_y"].as_f64().unwrap()+50.0}),
+        ),
+    ] {
+        let reply = bus.request(SERVICE, command, args);
+        assert_eq!(reply["body"]["error"], "seat_unavailable", "{reply}");
+        assert_eq!(reply["body"]["seat"], "agent");
+        assert_eq!(reply["body"]["window"], row["id"]);
+        assert_eq!(reply["body"]["setting"], "agent_seat.allow");
+    }
+}
+
+#[test]
 fn backend_authority_and_coordinate_bounds_preserve_session_rules() {
     assert!(BackendInput::Headless.agent_authoritative(true));
     assert!(BackendInput::Headless.agent_authoritative(false));
@@ -154,6 +189,7 @@ fn agent_sequence_types_into_a_probe_window() {
     let mut probe = Probe::start(&mut process, "headless-input");
     bus.ready(SERVICE);
     let row = window(&bus, SERVICE, "headless-input");
+    assert_eq!(row["agent_seat"], true);
     // Read the initial pointer before moving it (the camera is pinned).
     let seats = bus.call(SERVICE, "comp.props.get", json!({"path":"input.seats"}));
     println!("initial seats: {seats}");

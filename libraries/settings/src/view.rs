@@ -44,7 +44,7 @@ pub use app_domains::AppDomains;
 pub use appearance::{
     Accent, AppLook, AppLooks, Appearance, Density, Frosted, Roundness, State, Tune,
 };
-pub use apps::{Applications, Xwayland};
+pub use apps::{AgentSeat, Applications, Xwayland};
 pub use displays::{Display, Displays};
 pub use environment::{Power, Region, Sound, Time, TimeApplet, TimeFormat};
 pub use input::{Input, Keyboard, Mouse, Tablet, Touchpad};
@@ -225,6 +225,7 @@ pub struct Views {
     pub accessibility: Accessibility,
     pub applications: Applications,
     pub xwayland: Xwayland,
+    pub agent_seat: AgentSeat,
     pub app_looks: AppLooks,
     pub tune: Tune,
     pub app_domains: AppDomains,
@@ -249,6 +250,7 @@ impl View for Views {
             accessibility: View::read(r),
             applications: View::read(r),
             xwayland: View::read(r),
+            agent_seat: View::read(r),
             app_looks: View::read(r),
             tune: View::read(r),
             app_domains: View::read(r),

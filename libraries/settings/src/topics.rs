@@ -23,7 +23,7 @@ pub const LOOK_TOPIC_PREFIX: &str = "settingsd.desktop.look.";
 pub const SNAPSHOT_TOPIC_PREFIX: &str = "settingsd.desktop.snapshot.";
 
 /// The prefixes with a topic of their own, one per Prefs page.
-pub const PREFIXES: [&str; 22] = [
+pub const PREFIXES: [&str; 23] = [
     "wallpaper",
     "appearance",
     "window",
@@ -37,6 +37,7 @@ pub const PREFIXES: [&str; 22] = [
     "apps_default",
     "apps_startup",
     "xwayland",
+    "agent_seat",
     "time",
     "region",
     "accessibility",

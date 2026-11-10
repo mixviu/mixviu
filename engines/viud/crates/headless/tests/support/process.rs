@@ -57,22 +57,22 @@ impl Process {
 
 #[allow(dead_code)] // The timing target uses spawn_measurement instead.
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
-    spawn_options(scale, explicit_node, label, bus, "60", None, true)
+    spawn_options(scale, explicit_node, label, bus, "60", None, true, true)
 }
 
 #[allow(dead_code)]
 pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", Some(service), true)
+    spawn_options(1, None, label, Some(bus), "60", Some(service), true, true)
 }
 
 #[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
 pub fn spawn_at_refresh(refresh: &str) -> Process {
-    spawn_options(1, None, "refresh", None, refresh, None, true)
+    spawn_options(1, None, "refresh", None, refresh, None, true, true)
 }
 
 #[allow(dead_code)] // Only the timing integration target disables tracing.
 pub fn spawn_measurement() -> Process {
-    spawn_options(1, None, "presentation", None, "60", None, false)
+    spawn_options(1, None, "presentation", None, "60", None, false, true)
 }
 
 fn spawn_options(
@@ -83,6 +83,7 @@ fn spawn_options(
     refresh: &str,
     service: Option<&str>,
     trace: bool,
+    agent: bool,
 ) -> Process {
     let binary = std::env::var_os("MIX_TEST_VIUD_EXE")
         .map(PathBuf::from)
@@ -139,6 +140,7 @@ fn spawn_options(
         .env("MIX_RUN", root.join("run"))
         .env("MIX_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
         .env("MIX_VIUD_HEADLESS_REFRESH_HZ", refresh)
+        .env("MIX_TEST_VIUD_AGENT_SEAT_ALLOW", if agent { format!("viu,testkit-input-probe,testkit-ssd-client,testkit-dnd-source,ced-headless-probe,{}", std::env::current_exe().unwrap().file_name().unwrap().to_string_lossy()) } else { String::new() })
         .env("MIX_VIUD_FRAME_TRACE", if trace { "1" } else { "0" })
         .env("MIX_VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
         .env("MIX_VIUD_FRAME_TRACE_LIMIT", "0")
@@ -178,4 +180,9 @@ fn spawn_options(
         stop,
         watchdog: Some(watchdog),
     }
+}
+
+#[allow(dead_code)]
+pub fn spawn_denied(label: &str, bus: &str) -> Process {
+    spawn_options(1, None, label, Some(bus), "60", None, true, false)
 }
