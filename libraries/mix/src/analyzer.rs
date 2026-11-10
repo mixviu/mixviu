@@ -44,6 +44,8 @@ use crate::evaluator::{INLINE_SPECIAL_FORMS, split_interp_coalesce};
 use crate::scope::param_arity;
 use crate::token::{StringPart, Token};
 
+include!(concat!(env!("OUT_DIR"), "/viu_extensions.rs"));
+
 /// Diagnostic severity — the D3 wire values are lowercase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -571,6 +573,14 @@ fn has_dynamic_include(stmts: &[Stmt]) -> (bool, Option<usize>) {
 
 /// The whole-file analyzer entry point.
 pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Analysis {
+    let mut cfg = cfg.clone();
+    if matches!(cfg.source.as_deref().map(crate::parse_host_header),
+        Some(crate::HostHeader::Declared { host, .. }) if host == "viu")
+    {
+        cfg.extensions
+            .extend(VIU_EXTENSIONS.iter().map(|name| (*name).to_owned()));
+    }
+    let cfg = &cfg;
     // `-- lint:` pragmas live in comments, so they need the source text. A
     // `globals` pragma is an in-file `--allow-global`; the suppressions are
     // applied to the finished analysis.
@@ -5330,8 +5340,13 @@ fn analyse_remote_body(
         // stand down), but a FUNCTION name cannot ride in through
         // strict-data bindings, so callable checks keep running.
         suppress_name_checks: false,
-        // The remote end is the same mix binary, with the same extensions.
-        extensions: cfg.extensions.clone(),
+        // ssh_mix runs Mix, not the local viu widget host.
+        extensions: cfg
+            .extensions
+            .iter()
+            .filter(|name| !VIU_EXTENSIONS.contains(&name.as_str()))
+            .cloned()
+            .collect(),
         // The BODY's own text, never the enclosing file's — the spelling
         // rules must read the source they are reporting lines against.
         // Lint is the only gate this remote program ever passes through.

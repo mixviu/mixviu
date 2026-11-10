@@ -158,7 +158,5 @@ fn is_modifier_keysym(raw: u32) -> bool {
 /// Firefox stopped selecting and dragging on press-and-hold when its releases
 /// came from this path stamped with `SystemTime`.
 pub(crate) fn now_msec() -> u32 {
-    smithay::utils::Clock::<smithay::utils::Monotonic>::new()
-        .now()
-        .as_millis()
+    crate::seat::event_time_ms()
 }

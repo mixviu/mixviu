@@ -1,3 +1,4 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $work=require("work.mix");$model=require("model.mix")
 fn begin($s,$reply)

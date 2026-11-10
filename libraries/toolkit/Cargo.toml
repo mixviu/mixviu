@@ -59,7 +59,7 @@ thumbs.workspace = true
 # smithay's winit 0.31 dev chain: a known second line, retired when eframe
 # moves to winit 0.31 and this follows it.
 # wgpu's GL backend on the raw wl_surface, and libwayland's display pointer.
-smithay-client-toolkit = { version = "=0.19.2", optional = true }
+smithay-client-toolkit = { version = "=0.20.0", optional = true }
 wayland-backend = { workspace = true, features = ["client_system"], optional = true }
 wayland-scanner = { workspace = true, optional = true }
 winit = { version = "=0.30.13", default-features = false, features = ["wayland", "rwh_06"], optional = true }
