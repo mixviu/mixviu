@@ -1097,6 +1097,20 @@ fn require_agent_seat(lp: &Loop, surface: &WlSurface) -> Result<(), ControlReply
         return Ok(());
     }
     let window = record_of(lp, surface).map(|id| root_of(lp, id).0);
+    // X11 windows: no setting changes this, so name none.
+    if surface.client().is_some_and(|client| {
+        client
+            .get_data::<smithay::xwayland::XWaylandClientData>()
+            .is_some()
+    }) {
+        return Err(ControlReply::refused(
+            "seat_unavailable",
+            json!({
+                "seat": "agent", "window": window, "setting": null, "settings": [],
+                "reason": "X11 windows (Xwayland) never receive the agent seat"
+            }),
+        ));
+    }
     let executable = surface.client().and_then(|client| {
         let pid = client
             .get_credentials(&lp.state.output.display_handle)

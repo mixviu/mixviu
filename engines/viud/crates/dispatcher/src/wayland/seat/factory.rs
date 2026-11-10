@@ -107,30 +107,30 @@ where
         }
         // Every other client carries a WaylandClientSession, whose disconnect
         // hook removes the cached decision. The map lock is held only around
-        // map operations and /proc reads, never across a call into the
-        // Wayland backend (the hook runs under the backend's own lock).
+        // map operations, never across a call into the Wayland backend (the
+        // hook runs under the backend's own lock).
         if let Some(session) =
             client.get_data::<protocols::wayland::connection::record::WaylandClientSession>()
         {
             let _ = session.agent_clients.set(decisions.clone());
         }
-        let mut decisions = decisions.lock().unwrap();
-        decisions
-            .entry(client.id())
-            .or_insert_with(|| {
-                let pid = client.get_credentials(&display).ok().map(|c| c.pid);
-                let executable =
-                    pid.and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok());
-                let name = executable
-                    .as_ref()
-                    .and_then(|path| path.file_name())
-                    .and_then(|name| name.to_str())
-                    // The kernel appends this when the binary was replaced on
-                    // disk under a running process (an upgrade, a rebuild).
-                    .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
-                pid == Some(std::process::id() as i32) || comp_model::agent_seat::allows(name)
-            })
-            .to_owned()
+        let id = client.id();
+        if let Some(decided) = decisions.lock().unwrap().get(&id) {
+            return *decided;
+        }
+        let pid = client.get_credentials(&display).ok().map(|c| c.pid);
+        let executable = pid.and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok());
+        let name = executable
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            // The kernel appends this when the binary was replaced on
+            // disk under a running process (an upgrade, a rebuild).
+            .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
+        let offered =
+            pid == Some(std::process::id() as i32) || comp_model::agent_seat::allows(name);
+        // The first decision stays fixed for the connection.
+        *decisions.lock().unwrap().entry(id).or_insert(offered)
     });
 
     // (`seat_named` already added the pointer: clients render their own cursor
