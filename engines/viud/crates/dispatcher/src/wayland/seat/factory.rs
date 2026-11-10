@@ -111,7 +111,10 @@ where
                 let name = executable
                     .as_ref()
                     .and_then(|path| path.file_name())
-                    .and_then(|name| name.to_str());
+                    .and_then(|name| name.to_str())
+                    // The kernel appends this when the binary was replaced on
+                    // disk under a running process (an upgrade, a rebuild).
+                    .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
                 pid == Some(std::process::id() as i32)
                     || (client.get_data::<XWaylandClientData>().is_none()
                         && comp_model::agent_seat::allows(name))
