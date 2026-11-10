@@ -17,9 +17,10 @@ $mode = args()[0] ?? "gate"
 $failed = []
 $totals = {passed: 0, failed: 0, ignored: 0, filtered: 0}
 
-fn gate_step($argv, $jobs)
+fn gate_step($argv, $jobs, $env = {})
   print("STEP_BEGIN " .. join($argv, " "))
-  $r = run_argv($argv, {timeout: 7200, max_output: 64000000, env: {CARGO_BUILD_JOBS: $jobs}})
+  $env.CARGO_BUILD_JOBS = $jobs
+  $r = run_argv($argv, {timeout: 7200, max_output: 64000000, env: $env})
   print($r.stdout)
   print($r.stderr)
   print("STEP_RC=" .. to_string($r.exit_code ?? 124) .. " " .. join($argv, " "))
@@ -107,11 +108,16 @@ $checks = [
   ["cargo", "clippy", "--locked", "-p", "mix", "--all-targets"],
   -- Shell process tests hand --serve to the sibling service engine.
   ["cargo", "build", "--locked", "-p", "mixd"],
+  -- Tests that start a real interpreter get the one built from this tree,
+  -- never an installed one (tools/ci.mix does the same).
+  ["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"],
   ["cargo", "test", "--locked", "-p", "mix", "--no-fail-fast"],
   ["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"]
 ]
+$test_mix = realpath(".") .. "/target/debug/mix"
 for $argv in $checks
-  $r = gate_step($argv, "6")
+  $env = if $argv[1] == "test" then {MIX_TEST_E2E_EXE: $test_mix, MIX_TEST_MIX_EXE: $test_mix} else {} end
+  $r = gate_step($argv, "6", $env)
   if not $r.ok then push($failed, join($argv, " ")) end
   if $argv[1] == "test" then
     for $line in lines($r.stdout)
