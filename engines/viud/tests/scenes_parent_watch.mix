@@ -1,0 +1,40 @@
+-- Run by scenes_test.mix in a child with a whole-call deadline: fs_wait has
+-- no timeout argument. A missing notification must fail, never hang CI.
+$l = require("../scripts/lib/scenes.mix")
+$anchor = args()[0]
+
+fn observed($watch, $path, $kind = nil)
+  $deadline = monotonic() + 5
+  while monotonic() < $deadline
+    $batch = fs_wait($watch)
+    -- Adding a recursive directory watch publishes overflow BEFORE its
+    -- creation record. Files written before installation require a rescan.
+    if $batch.overflow then return $batch end
+    for $change in $batch.changes
+      if ($change.path == $path or starts_with($change.path, $path .. "/") or starts_with($path, $change.path .. "/")) and ($kind == nil or $change.kind == $kind) then
+        return $batch
+      end
+    end
+  end
+  raise("SCENES_TEST", "no invalidation for " .. $path)
+end
+
+mkdir($anchor .. "/catalogue/lib")
+$parent_watch = fs_watch($l.watch_anchor($anchor .. "/catalogue"), {recursive:true})
+run_argv_must(["mv", $anchor .. "/catalogue", $anchor .. "/old-catalogue"])
+mkdir($anchor .. "/catalogue/lib")
+write_file($anchor .. "/catalogue/lib/new.mix", "-- new catalogue\n")
+$replacement = observed($parent_watch, $anchor .. "/catalogue")
+write_file($anchor .. "/catalogue/lib/new.mix", "-- second edit in replaced catalogue\n")
+$continued = observed($parent_watch, $anchor .. "/catalogue/lib/new.mix", "modified")
+fs_unwatch($parent_watch)
+
+$future = $anchor .. "/future/lib"
+$future_watch = fs_watch($l.watch_anchor($future), {recursive:true})
+mkdir($future)
+write_file($future .. "/late.mix", "-- late helper\n")
+$creation = observed($future_watch, $future)
+write_file($future .. "/late.mix", "-- second late edit\n")
+$edited = observed($future_watch, $future .. "/late.mix", "modified")
+fs_unwatch($future_watch)
+print(json_encode({replacement:$replacement, continued:$continued, creation:$creation, edited:$edited}))

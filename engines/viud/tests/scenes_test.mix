@@ -1562,24 +1562,24 @@ try
   $s = $l.request($s, "quoin.reload", {scope:"lib"})
   check($s.rc == 10 and $s.response.diagnostics[0].error_code == "SCENES_FILES", "symlink fingerprint and preflight both refuse links")
 
-  -- A parent watch observes a replaced catalogue and a newly created lib.
+  -- Exercise the real watches in a bounded child: fs_wait itself has no
+  -- timeout. Accept overflow-only invalidations just as filesystem() does.
   $anchor = $tmp .. "/watch-root"
-  mkdir($anchor .. "/catalogue/lib")
-  $parent_watch = fs_watch($l.watch_anchor($anchor .. "/catalogue"), {recursive:true})
-  run_argv_must(["mv", $anchor .. "/catalogue", $anchor .. "/old-catalogue"])
-  mkdir($anchor .. "/catalogue/lib")
-  write_file($anchor .. "/catalogue/lib/new.mix", "-- new catalogue\n")
-  $events = fs_wait($parent_watch)
-  check(len($events.changes) > 0, "stable parent watch observes catalogue replacement")
-  write_file($anchor .. "/catalogue/lib/new.mix", "-- second edit in replaced catalogue\n")
-  check(len(fs_wait($parent_watch).changes) > 0, "parent watch continues on new catalogue inode")
-  $future = $anchor .. "/future/lib"
-  $future_watch = fs_watch($l.watch_anchor($future), {recursive:true})
-  mkdir($future)
-  write_file($future .. "/late.mix", "-- late helper\n")
-  check(len(fs_wait($future_watch).changes) > 0, "watch installed before SCENES_LIB exists observes creation")
-  write_file($future .. "/late.mix", "-- second late edit\n")
-  check(len(fs_wait($future_watch).changes) > 0, "late library remains watched after creation")
+  $s = se_fresh("late-lib", $tpl)
+  $s = $l.request($s, "install", {template:"alpha", enable:true})
+  $s.templates = $anchor .. "/future"
+  $s.library_seen = $l.library_signature($s)
+  $before_signature = $s.library_seen
+  $before_revision = $s.scenes.alpha.revision
+  $watch_run = run_argv([read_link("/proc/self/exe"), dirname(script_path()) .. "/scenes_parent_watch.mix", $anchor], {timeout:25})
+  check($watch_run.ok, "parent-watch checks completed within 25 seconds: " .. $watch_run.stderr)
+  $events = json_parse($watch_run.stdout)
+  check($events.replacement.overflow or len($events.replacement.changes) > 0, "stable parent watch observes catalogue replacement")
+  check($events.continued.overflow or len($events.continued.changes) > 0, "parent watch continues on new catalogue inode")
+  check($events.creation.overflow or len($events.creation.changes) > 0, "watch installed before SCENES_LIB exists observes creation")
+  check($events.edited.overflow or len($events.edited.changes) > 0, "late library remains watched after creation")
+  $s = $l.filesystem($s, $events.creation)
+  check($s.rc == 0 and $s.library_seen != $before_signature and $s.library_seen == $l.library_signature($s) and $s.scenes.alpha.revision > $before_revision, "real late-library invalidation reloads dependent and acknowledges helper")
 
   -- T1: the gallery listing.
   mkdir($tpl .. "/broken")
