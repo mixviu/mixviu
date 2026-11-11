@@ -12,18 +12,18 @@
 //!   only).
 //! - **No restore tokens**: `persist_mode` is accepted and ignored.
 //! - **shm frames**, copied twice (screencopy buffer, PipeWire buffer).
+#[cfg(feature = "screencast")]
+pub mod capture;
 pub mod consent;
+#[cfg(feature = "screencast")]
+mod enabled;
 pub mod handle;
 pub mod remote;
 pub mod request;
 #[cfg(feature = "screencast")]
-pub mod capture;
-#[cfg(feature = "screencast")]
 pub mod session;
 #[cfg(feature = "screencast")]
 pub mod stream;
-#[cfg(feature = "screencast")]
-mod enabled;
 #[cfg(feature = "screencast")]
 pub use enabled::*;
 use zbus::Connection;
@@ -46,7 +46,8 @@ impl Default for MaxFramerate {
     fn default() -> Self {
         paths::env::setting(paths::env::PORTALD_MAX_FRAMERATE)
             .expect("installed portal frame-rate setting")
-            .parse().expect("valid portal frame-rate setting")
+            .parse()
+            .expect("valid portal frame-rate setting")
     }
 }
 
@@ -76,4 +77,3 @@ pub(crate) async fn caller_pid(connection: &Connection, owner: &str) -> Option<u
     let name = zbus::names::BusName::try_from(owner.to_owned()).ok()?;
     proxy.get_connection_unix_process_id(name).await.ok()
 }
-

@@ -55,16 +55,35 @@ fn main() -> anyhow::Result<()> {
         screencast_consent,
         screencast_max_framerate,
     } = Cli::parse().command;
-    anyhow::ensure!(!screencast || cfg!(feature = "screencast"), "built without the screencast feature");
-    let profile = match profile { Some(value) => value, None => paths::env::setting(paths::env::PORTALD_PROFILE)? };
-    let screencast_consent = match screencast_consent { Some(value) => value, None => paths::env::setting(paths::env::PORTALD_CONSENT)?.parse().map_err(anyhow::Error::msg)? };
-    let screencast_max_framerate = match screencast_max_framerate { Some(value) => value, None => paths::env::setting(paths::env::PORTALD_MAX_FRAMERATE)?.parse().map_err(anyhow::Error::msg)? };
+    anyhow::ensure!(
+        !screencast || cfg!(feature = "screencast"),
+        "built without the screencast feature"
+    );
+    let profile = match profile {
+        Some(value) => value,
+        None => paths::env::setting(paths::env::PORTALD_PROFILE)?,
+    };
+    let screencast_consent = match screencast_consent {
+        Some(value) => value,
+        None => paths::env::setting(paths::env::PORTALD_CONSENT)?
+            .parse()
+            .map_err(anyhow::Error::msg)?,
+    };
+    let screencast_max_framerate = match screencast_max_framerate {
+        Some(value) => value,
+        None => paths::env::setting(paths::env::PORTALD_MAX_FRAMERATE)?
+            .parse()
+            .map_err(anyhow::Error::msg)?,
+    };
     let binding = Binding { instance, profile };
     binding
         .validate()
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.message))?;
     let address = portald::env::session_address()?;
-    let state_dir = Some(match state_dir { Some(path) => path, None => portald::env::state_directory()? });
+    let state_dir = Some(match state_dir {
+        Some(path) => path,
+        None => portald::env::state_directory()?,
+    });
     let runtime = tokio::runtime::Builder::new_multi_thread()
         // This I/O daemon needs a small fixed runtime; creating one worker per
         // CPU would make process startup depend on the host's core count.

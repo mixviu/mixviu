@@ -20,7 +20,9 @@ pub fn socket_path() -> anyhow::Result<PathBuf> {
     }
     let dir = paths::env::raw(paths::env::PIPEWIRE_RUNTIME_DIR)
         .or_else(|| paths::env::raw(paths::env::XDG_RUNTIME_DIR))
-        .ok_or_else(|| anyhow::anyhow!("neither PIPEWIRE_RUNTIME_DIR nor XDG_RUNTIME_DIR is set"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("neither PIPEWIRE_RUNTIME_DIR nor XDG_RUNTIME_DIR is set")
+        })?;
     Ok(PathBuf::from(dir).join(name))
 }
 

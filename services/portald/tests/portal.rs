@@ -20,6 +20,17 @@ use tokio::task::JoinHandle;
 use zbus::Message;
 use zbus::zvariant::{OwnedValue, Value};
 
+#[cfg(not(feature = "screencast"))]
+#[test]
+fn feature_disabled_binary_refuses_screencast_before_starting() {
+    let binary = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("portald");
+    let output = Command::new(binary)
+        .args(["serve", "--instance", "fixture", "--screencast"])
+        .output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("built without the screencast feature"));
+}
+
 /// Exercise production startup, registration and command dispatch. Each mode
 /// runs in a fresh process because installed consent is intentionally permanent.
 #[test]

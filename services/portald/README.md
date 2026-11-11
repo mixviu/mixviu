@@ -1,6 +1,6 @@
 # portald
 
-The MixOS desktop portal on the session bus: `org.freedesktop.portal.Settings`, answered from settingsd; `org.freedesktop.portal.FileChooser` version 4, forwarded to `files.choose`; and with `--screencast` `org.freedesktop.portal.ScreenCast`, monitor sources from viud screencopy delivered as PipeWire video nodes.
+The MixViu desktop portal on the session bus: `org.freedesktop.portal.Settings`, answered from settingsd; `org.freedesktop.portal.FileChooser` version 4, forwarded to `files.choose`; and with `--screencast` `org.freedesktop.portal.ScreenCast`, monitor sources from viud screencopy delivered as PipeWire video nodes.
 
 FileChooser serves `OpenFile`, `SaveFile` and `SaveFiles` on the existing
 Desktop object for trusted unsandboxed callers, including rfd. DOpus must
