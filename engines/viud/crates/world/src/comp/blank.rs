@@ -153,6 +153,16 @@ pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::
     use smithay::utils::SERIAL_COUNTER;
 
     let time = crate::seat::event_time_ms();
+    let (tip, tool_buttons, pad_buttons) = state.tablet.cancel_input(time);
+    if tip {
+        comp.blank.swallowed.insert(Hold::TabletTip);
+    }
+    for button in tool_buttons {
+        comp.blank.swallowed.insert(Hold::TabletButton(button));
+    }
+    for button in pad_buttons {
+        comp.blank.swallowed.insert(Hold::PadButton(button));
+    }
     if let Some(keyboard) = state.seat.seat.get_keyboard() {
         for code in keyboard.pressed_keys() {
             let intercepted = comp.bindings.user.is_swallowed(code.raw())
@@ -194,6 +204,12 @@ pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::
     }
     if let Some(touch) = state.seat.seat.get_touch() {
         touch.cancel(state);
+    }
+    // The same pointer holds were just released above. Discard tablet
+    // emulation's deferred releases rather than delivering them twice.
+    let _ = state.tablet.take_revoked_buttons();
+    if state.tablet.take_revoked_cursor() {
+        state.seat.pointer_status = smithay::input::pointer::CursorImageStatus::default_named();
     }
     comp.bindings.reset_holds();
     let _ = comp.injection.human.take_all();

@@ -10,7 +10,8 @@ fn blank_check($argv, $environment = {})
   if not $r.ok then raise("BLANK_GATE", "step failed") end
 end
 blank_check(["cargo", "check", "--locked", "-p", "viud", "--features", "backend-all", "--all-targets"])
-blank_check(["cargo", "test", "--locked", "-p", "native", "blank"])
+blank_check(["cargo", "test", "--locked", "-p", "native"])
+blank_check(["cargo", "test", "--locked", "-p", "dispatcher", "tablet"])
 blank_check(["cargo", "test", "--locked", "-p", "world", "comp::blank"])
 blank_check(["cargo", "test", "--locked", "-p", "comp-model", "-p", "comp-service"])
 blank_check(["cargo", "test", "--locked", "-p", "testkit", "--test", "blank"])
