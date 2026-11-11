@@ -8,7 +8,7 @@
 //! 2. Walk up from path looking for CLAUDE.md, derive domain from relative path
 //!
 //! Examples:
-//!   ~/Projects/mixviu/libraries/foo → "mixviu"  (via settings map)
+//!   ~/.mixos/src/crates/foo → "mixos"  (via settings map)
 //!   ~/.example/some/deep/path     → "example"      (via settings map)
 //!   ~/.gh/wg-admin/src       → "gh/wg-admin" (via CLAUDE.md walk)
 //!   /tmp/random              → "general"
@@ -88,8 +88,8 @@ mod tests {
         let home = PathBuf::from("/home/user");
 
         assert_eq!(
-            path_to_domain(&PathBuf::from("/home/user/.mixviu"), &home),
-            "mixviu"
+            path_to_domain(&PathBuf::from("/home/user/.mixos"), &home),
+            "mixos"
         );
         assert_eq!(
             path_to_domain(&PathBuf::from("/home/user/.example"), &home),
@@ -117,12 +117,17 @@ mod tests {
             .home_dir()
             .to_path_buf();
         for (path, domain) in [
-            ("Projects/mixviu/src", "mixviu"),
+            ("Projects/mixos/src", "mixos"),
+            ("Projects/mixviu/libraries", "mixviu"),
             (".viu/_doc", "viu"),
+            (".mix/_doc", "mix"),
+            (".ns/_doc", "ns"),
+            (".mc/_doc", "mc"),
         ] {
             assert_eq!(settings.resolve(&home.join(path)).as_deref(), Some(domain));
         }
         assert_eq!(settings.resolve(&home.join(".mix-other")), None);
+        assert_eq!(settings.resolve(&home.join("Projects/mixos-old")), None);
         assert_eq!(settings.resolve(&home.join("Projects/mixviu-old")), None);
     }
 }

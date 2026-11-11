@@ -18,7 +18,7 @@ its internal worker entrypoint are replaced by the sibling interpreter as
 required by the brief; the process-group cancellation and byte bounds remain.
 
 Runtime defaults moved to the registry retain ranking, transport, deadline
-and logging values. The domain map now names MixViu and its hub. As prescribed
+and logging values. The domain map retains all four frozen entries and adds MixViu and its hub. As prescribed
 by `paths::env::raw`, empty environment overrides count as unset (the source
 treated an empty agent session override as invalid). Nonempty malformed agent
 session IDs still refuse the Bus. No compatibility reads of retired names.

@@ -400,7 +400,7 @@ command above, an empty <code>ssh_host</code> and a 120-second call deadline. SS
 requires <code>ssh_host</code>. When a Bus route is available, select
 <code>transport: "bus", target: "indexd.host.example.bus"</code> instead. Presence is
 checked with <code>indexd.stats</code> at the configured target, including routed targets.</p>
-<p>The installed client domain map defaults to the project and its private hub. Custom
+<p>The installed client domain map retains the frozen project/hub mappings and adds MixViu and its private hub. Custom
 <code>domains.conf.mix</code> maps override these defaults. <code>index_workspace</code> expands
 only a leading <code>~</code> or <code>~/</code>, resolves the workspace to an absolute path, and
 sends absolute file paths and content to indexd.</p>

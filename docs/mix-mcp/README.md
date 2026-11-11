@@ -196,7 +196,7 @@ requires `ssh_host`. When a Bus route is available, select
 `transport: "bus", target: "indexd.host.example.bus"` instead. Presence is
 checked with `indexd.stats` at the configured target, including routed targets.
 
-The installed client domain map defaults to the project and its private hub. Custom
+The installed client domain map retains the frozen project/hub mappings and adds MixViu and its private hub. Custom
 `domains.conf.mix` maps override these defaults. `index_workspace` expands
 only a leading `~` or `~/`, resolves the workspace to an absolute path, and
 sends absolute file paths and content to indexd.

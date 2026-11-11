@@ -37,17 +37,19 @@ try
   checked(["cargo", "tree", "--locked", "-i", "rmcp"])
   checked(["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"])
   checked(["target/debug/mix", "tools/ci.mix", "foreign"], $env)
-  $base = toml_parse(run_argv_must(["git", "show", "ea433519158b4a7608b9edf7de12d206ccd03abb:Cargo.lock"]))
+  $base_sha = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
+  print("BASELINE_SHA " .. $base_sha)
+  $base = toml_parse(run_argv_must(["git", "show", $base_sha .. ":Cargo.lock"]))
   $known = {}
   for $p in $base.package $known[$p.name .. " " .. $p.version] = true end
   $metadata = json_parse(run_argv_must(["cargo", "metadata", "--locked", "--format-version", "1"], {max_output: 256000000}))
   for $p in $metadata.packages
-    if $p.source != nil and not has_key($known, $p.name .. " " .. $p.version) then
+    if not has_key($known, $p.name .. " " .. $p.version) then
       print("ADDED_PACKAGE " .. json_encode({name: $p.name, version: $p.version, license: $p.license}))
       $inverse = run_argv_must(["cargo", "tree", "--locked", "--workspace", "-i", $p.name .. "@" .. $p.version])
       if re_match($inverse, '(?m)(lib-mix|mix-shell|mixd|mix) v[0-9]') then
         print($inverse)
-        raise("STRICT_DEPENDENCY", "new package reaches a shell engine: " .. $p.name)
+        raise("STRICT_DEPENDENCY", "shell engine reaches a new package: " .. $p.name)
       end
       print("STRICT_ABSENT " .. $p.name .. " " .. $p.version)
     end
