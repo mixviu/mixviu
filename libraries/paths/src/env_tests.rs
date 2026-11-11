@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 #[test]
 fn installed_settings_success_errors_and_override_precedence() {
     if let Some(mode) = std::env::var_os(env::test::TEST_PATH_CACHE)
-        .and_then(|s| s.into_string().ok()).and_then(|s| s.strip_prefix("setting-").map(str::to_owned)) {
+        .and_then(|s| s.into_string().ok())
+        .and_then(|s| s.strip_prefix("setting-").map(str::to_owned))
+    {
         // This succeeds even when the file is missing, unreadable or malformed.
         assert_eq!(env::setting(env::COMP_SERVICE).unwrap(), "override");
         let result = env::setting(env::NODED_SERVICE);
@@ -13,38 +15,67 @@ fn installed_settings_success_errors_and_override_precedence() {
             "good" => {
                 let prefix = PathBuf::from(std::env::var_os(env::PREFIX).unwrap());
                 assert_eq!(result.unwrap(), "installed");
-                assert_eq!(env::setting(env::HOSTD_SOCKET).unwrap(), prefix.join("run/hostd/hostd.sock").to_str().unwrap());
+                assert_eq!(
+                    env::setting(env::HOSTD_SOCKET).unwrap(),
+                    prefix.join("run/hostd/hostd.sock").to_str().unwrap()
+                );
                 std::fs::write(prefix.join("env.mx"), "bad").unwrap();
                 assert_eq!(env::setting(env::NODED_SERVICE).unwrap(), "installed");
             }
             "malformed" => assert!(matches!(result, Err(env::SettingError::Malformed { .. }))),
-            "schema" => assert!(matches!(result, Err(env::SettingError::UnknownSchema { .. }))),
-            "mismatch" => assert!(matches!(result, Err(env::SettingError::SnapshotMismatch { .. }))),
+            "schema" => assert!(matches!(
+                result,
+                Err(env::SettingError::UnknownSchema { .. })
+            )),
+            "mismatch" => assert!(matches!(
+                result,
+                Err(env::SettingError::SnapshotMismatch { .. })
+            )),
             "unreadable" => assert!(matches!(result, Err(env::SettingError::Unreadable { .. }))),
             _ => panic!("unexpected mode"),
         }
         return;
     }
     for mode in ["good", "malformed", "schema", "mismatch", "unreadable"] {
-        let prefix = std::env::temp_dir().join(format!("paths-setting-{}-{mode}", std::process::id()));
+        let prefix =
+            std::env::temp_dir().join(format!("paths-setting-{}-{mode}", std::process::id()));
         std::fs::create_dir_all(&prefix).unwrap();
         let stamp = env::SNAPSHOT_COMMIT.unwrap_or("unstamped");
         let source = match mode {
-            "good" => format!("{{schema: 1, commit: '{stamp}', {}: 'installed', {}: 'mix:run/hostd/hostd.sock'}}", env::NODED_SERVICE, env::HOSTD_SOCKET),
+            "good" => format!(
+                "{{schema: 1, commit: '{stamp}', {}: 'installed', {}: 'mix:run/hostd/hostd.sock'}}",
+                env::NODED_SERVICE,
+                env::HOSTD_SOCKET
+            ),
             "schema" => "schema: 9\ncommit: 'fixture'".into(),
             "mismatch" => "schema: 1\ncommit: 'another-snapshot'".into(),
             _ => "bad".into(),
         };
-        if mode == "unreadable" { std::fs::create_dir(prefix.join("env.mx")).unwrap(); }
-        else { std::fs::write(prefix.join("env.mx"), source).unwrap(); }
+        if mode == "unreadable" {
+            std::fs::create_dir(prefix.join("env.mx")).unwrap();
+        } else {
+            std::fs::write(prefix.join("env.mx"), source).unwrap();
+        }
         let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .env_clear().env("HOME", "/home/user").env(env::PREFIX, &prefix)
-            .env(env::RUN, prefix.join("run")).env(env::COMP_SERVICE, "override")
+            .env_clear()
+            .env("HOME", "/home/user")
+            .env(env::PREFIX, &prefix)
+            .env(env::RUN, prefix.join("run"))
+            .env(env::COMP_SERVICE, "override")
             .env(env::test::TEST_PATH_CACHE, format!("setting-{mode}"))
-            .args(["--exact", "env_tests::installed_settings_success_errors_and_override_precedence"])
-            .output().unwrap();
+            .args([
+                "--exact",
+                "env_tests::installed_settings_success_errors_and_override_precedence",
+            ])
+            .output()
+            .unwrap();
         std::fs::remove_dir_all(prefix).unwrap();
-        assert!(output.status.success(), "{mode}: {}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{mode}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
