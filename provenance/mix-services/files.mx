@@ -300,7 +300,7 @@
       "path": "services/releasesd/README.md",
       "source_blob": "b2d569af86636667e96539f1886172aea18cebb6",
       "sha256": "f8a1f41f882a91f6bc9a1290d41588b061b2ac1e6199378b26675d773003a2f8",
-      "changed": false
+      "changed": true
     },
     {
       "path": "services/releasesd/component.mx",
@@ -311,7 +311,7 @@
     {
       "path": "services/releasesd/scripts/lib/releases.mix",
       "source_blob": "0fbf9338f4ee5a3ff25245c6da9734d87e5cdbd9",
-      "sha256": "5ed91dbdf8a42532329c401eb318837cf9380b2c1a82e14e2cbbae56f12c773a",
+      "sha256": "d1abfa4b912191b5feef42088d2b64f966e1cf0b6d6b427cfccfacc3b56d2254",
       "changed": true
     },
     {
@@ -335,8 +335,8 @@
     {
       "path": "services/releasesd/tests/releases_test.mix",
       "source_blob": "0e2045ed487501d73523f9e06030d3459d100fa5",
-      "sha256": "b41f070db4dc067a9345c10fd031a0880ba2762f637feb95f4130daefe287178",
-      "changed": true
+      "sha256": "a02454401aa23653c33b2d3f295af0a3ce15627efb905f987fb23f6edb5a3b8f",
+      "changed": false
     },
     {
       "path": "services/releasesd/tests/releasesd_test.mix",

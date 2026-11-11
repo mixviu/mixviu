@@ -29,7 +29,7 @@ Changes from the oracle:
   Their dynamic handler loading is unchanged from the oracle.
 - Use MixViu in service descriptions; retain compatibility tokens below.
 
-Integration: bundle scripts in `lib/<service>`, render all six unit templates
+Integration: bundle scripts in `lib/<service>`, render all five unit templates
 through `share/layout/templates.mx`, and run all 17 test scripts from
 `tools/ci.mix test` (also `all`) using `tools/mix_services_test.mix`.
 Tests create owned loopback brokers and local HTTP fixtures. No public network,

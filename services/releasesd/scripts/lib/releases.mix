@@ -91,7 +91,7 @@ fn desktop_arg($s)
 end
 
 -- Load and check a catalogue document. A missing file is an empty catalogue.
--- With no catalogue file, MixViu follows its own releases (release.yml in
+-- With no catalogue file, MixOS follows its own releases (release.yml in
 -- markc/mixos): the desktop and the headless services, one tarball each.
 -- A catalogue file replaces this list; keep these entries in it to keep them.
 $DEFAULT_APPS = [
