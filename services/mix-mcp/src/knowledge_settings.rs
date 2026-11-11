@@ -202,8 +202,14 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
         std::fs::create_dir(dir.path().join("knowledge")).unwrap();
         std::fs::write(dir.path().join("knowledge/knowledge.conf.mix"), content).unwrap();
         // Invalid files prove that loading knowledge does not consult these.
-        for name in ["skills.conf.mix", "llm.conf.mix"] {
-            std::fs::write(dir.path().join(name), "this is not strict-data config {").unwrap();
+        for service in ["skills", "llm"] {
+            let folder = dir.path().join(service);
+            std::fs::create_dir(&folder).unwrap();
+            std::fs::write(
+                folder.join(format!("{service}.conf.mix")),
+                "this is not strict-data config {",
+            )
+            .unwrap();
         }
         // load_service delegates to this directory-explicit core. Avoid process
         // env changes: the shared paths resolver caches configuration locations.
@@ -239,8 +245,8 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
                 "default config still contains {key}"
             );
         }
-        assert!(!defaults.path().join("skills.conf.mix").exists());
-        assert!(!defaults.path().join("llm.conf.mix").exists());
+        assert!(!defaults.path().join("skills/skills.conf.mix").exists());
+        assert!(!defaults.path().join("llm/llm.conf.mix").exists());
     }
 
     #[test]
