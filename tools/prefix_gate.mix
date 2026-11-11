@@ -225,11 +225,17 @@ fn scan_rust($file, $source)
         $inc = slice($abs, len($root) + 1)
         if not has_key($seen_includes, $inc) then
           $seen_includes[$inc] = true
-          scan_data($inc, bytes_to_string(read_file_bytes($abs), {lossy: true}), $scope)
+          $included = bytes_to_string(read_file_bytes($abs), {lossy: true})
+          scan_data($inc, $included, $scope)
+          if $scope == "rust" and not starts_with($inc, "libraries/paths/") then
+            for $m in re_find($included, '\bMIX_[A-Z][A-Z0-9_]*\b')
+              record_hit($inc, len(split(slice($included, 0, $m.start), "\n")), "rust-mix-token", $m.match)
+            end
+          end
         end
       end
     end
-    if $i + 3 < $nt and contains(["env", "option_env"], $t.text) and $ts[$i + 1].text == "!" and not starts_with($file, "libraries/paths/") then
+    if $scope == "rust" and $i + 3 < $nt and contains(["env", "option_env"], $t.text) and $ts[$i + 1].text == "!" and not starts_with($file, "libraries/paths/") then
       $v = literal_expr($ts, $i + 3)
       if $v != nil and starts_with($v.value, "MIX_") then
         record_hit($file, $t.line, "rust-env", $t.text .. "!(" .. $v.value .. ")")
