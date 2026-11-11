@@ -29,7 +29,7 @@
     {
       "path": "services/agentd/scripts/agentd.mix",
       "source_blob": "ffb002b1bda74d42ba41b990ba9bd7037392305e",
-      "sha256": "c83bc0d699bc64791bffc304fb781353dfe02bec9049fd8645bab555dc06dff9",
+      "sha256": "51fc64d3627e3f7c167ba04b6704cccbb5970f894d2b167e1a6f0855ae6720e4",
       "changed": true
     },
     {
@@ -47,7 +47,7 @@
     {
       "path": "services/agentd/scripts/lib/awaits.mix",
       "source_blob": "581612ef27617a02090a122aaa1d1c5e2f7db127",
-      "sha256": "6264aaa36cb0259ec91ee94e16e0eae0c02f8640b1ff0a784558c9799e1d6da2",
+      "sha256": "66d025e1d687205b063d60b682c288aec562651a11574ea8747a017b4f4fcf57",
       "changed": true
     },
     {
@@ -71,7 +71,7 @@
     {
       "path": "services/agentd/tests/acp_files_test.mix",
       "source_blob": "ff5fa233c49cfc98e2cb8c43947b72911d6e50bb",
-      "sha256": "6119b7de97ae8da130c45f4f3e911de2ec60e0a08a96a9dc18204d73ea08a316",
+      "sha256": "083b25cb68bf550d32f69b27c69759fbd639403089d1abdf701b29ab89676cf5",
       "changed": true
     },
     {
@@ -89,7 +89,7 @@
     {
       "path": "services/agentd/tests/acp_test.mix",
       "source_blob": "03fa016218e525cbcb2f49ad777b3b05588713a5",
-      "sha256": "673fdedf385576a9c3bf0bca8d90572acbc4698a5b107c8f51d8efb3d3d88095",
+      "sha256": "d81e93abf1fc716ace313260886b78be0996e14565500028316689433c6cd524",
       "changed": true
     },
     {
@@ -167,7 +167,7 @@
     {
       "path": "services/agentd/tests/fixtures/buildd-done-47b2f6cef23b.json",
       "source_blob": "54febcb39c1eca1ebba52ced343d1eb726b185c5",
-      "sha256": "78f5cbf41d935494a99627fde5f917e0abd2bb186876f03c2b69d3d2970a0ebc",
+      "sha256": "515ba71a4c44227519a5323c69711147a760fb76ac94142355902b4b9198047c",
       "changed": true
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "services/agentd/units/agentd.service",
       "source_blob": "a47e32873154ca0a4f8e5abb421142b2f0ee5b77",
-      "sha256": "454b2fc65c8869834d6d8e5caa0f1aa6e7e7fdfae8be14d07adef13368d4964e",
+      "sha256": "e071b65116146c23c7909a6025d00dc7dc309c4098f49286dafb99c0da6a78d2",
       "changed": true
     },
     {
@@ -293,13 +293,13 @@
     {
       "path": "services/peersd/units/peersd.service",
       "source_blob": "916787ce22b1aa2e4949f889d4dedbcbf2d2f1dc",
-      "sha256": "9cd9d72d21cdf09ef32df7d235ae743f6b6be45bb48ca24d97c47195ee327804",
+      "sha256": "0663d134e8dec9afe83d77fb578b5b0ec7c6a41952a5a90824423dae46c0402e",
       "changed": true
     },
     {
       "path": "services/releasesd/README.md",
       "source_blob": "b2d569af86636667e96539f1886172aea18cebb6",
-      "sha256": "f8a1f41f882a91f6bc9a1290d41588b061b2ac1e6199378b26675d773003a2f8",
+      "sha256": "87ac2c5418fe18d05d7bd66e2aa5446f778335b0e19661aba158f636018e269a",
       "changed": true
     },
     {
@@ -335,13 +335,13 @@
     {
       "path": "services/releasesd/tests/releases_test.mix",
       "source_blob": "0e2045ed487501d73523f9e06030d3459d100fa5",
-      "sha256": "a02454401aa23653c33b2d3f295af0a3ce15627efb905f987fb23f6edb5a3b8f",
-      "changed": false
+      "sha256": "9fa354b32190d1e3cdfc3c790714c7dc4cc424368148e49b12152dfa4bb07665",
+      "changed": true
     },
     {
       "path": "services/releasesd/tests/releasesd_test.mix",
       "source_blob": "096dd7021a7fb4ea432159657de64b18f9a4ea9a",
-      "sha256": "008b9eed3e549b8000fed73ecc74b774fd04ecc9e110791d567f95cec0550312",
+      "sha256": "6132438e21f089adc6194a05fe51cac189889a2264b6db05cd2ec1af46eedfba",
       "changed": true
     },
     {

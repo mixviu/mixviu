@@ -37,9 +37,14 @@ Changes from the oracle:
   one; every other field keeps the oracle value. The await test reads only
   `log`, and only to compare the fixture with itself.
   Use a neutral MCP executable path in the unit fixture.
-- Document lint's inability to analyse the two shared-scope handler files.
-  Their dynamic handler loading is unchanged from the oracle.
-- Use MixViu in service descriptions; retain compatibility tokens below.
+- Mark the one `include` in `agentd.mix` and the one dynamic `source` in
+  `lib/awaits.mix` with line-level MIX-W2401 pragmas. Their dynamic handler
+  loading is unchanged from the oracle.
+- Tests that used a literal `/var/tmp` scratch root (`acp_test`,
+  `acp_files_test`, `releases_test`, `releasesd_test`) use
+  `env("TMPDIR", "/tmp")` like the others.
+- Use MixViu in service descriptions and the releasesd README; retain
+  compatibility tokens below.
 
 Integration: bundle scripts in `lib/<service>`, render all five unit templates
 through `share/layout/templates.mx`, and run all 17 test scripts from
