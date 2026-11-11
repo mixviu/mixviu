@@ -398,7 +398,7 @@ mod tests {
         // Tracing's callsite interest cache is shared with parallel tests.
         // Isolate the capture so both silence and the positive control are
         // checked with one subscriber for the lifetime of the process.
-        const CAPTURE: &str = paths::env::PORTALD_TEST_LOG_CAPTURE;
+        const CAPTURE: &str = paths::env::test::TEST_PORTALD_LOG_CAPTURE;
         if paths::env::raw(CAPTURE).is_none() {
             let status = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
