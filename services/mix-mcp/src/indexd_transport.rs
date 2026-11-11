@@ -203,7 +203,10 @@ impl Bridge {
     }
 
     fn spawn(&self) -> Result<Session> {
-        let remote_source = format!("exit(run_stream([{}]))", remote_arguments(&self.settings.ssh_command));
+        let remote_source = format!(
+            "exit(run_stream([{}]))",
+            remote_arguments(&self.settings.ssh_command)
+        );
         let remote_command = format!("mix -c {}", mix::builtins::shell_quote(&remote_source));
         let mut command = Command::new("ssh");
         command
@@ -314,10 +317,18 @@ impl Bridge {
 }
 
 fn remote_arguments(arguments: &[String]) -> String {
-    arguments.iter().map(|arg| {
-        let data = config::to_conf_mix_string(arg).expect("string is strict data");
-        if arg.starts_with("mix:") { format!("mix_path({data})") } else { data }
-    }).collect::<Vec<_>>().join(", ")
+    arguments
+        .iter()
+        .map(|arg| {
+            let data = config::to_conf_mix_string(arg).expect("string is strict data");
+            if arg.starts_with("mix:") {
+                format!("mix_path({data})")
+            } else {
+                data
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[derive(Deserialize)]
@@ -444,8 +455,13 @@ mod tests {
         let result = std::process::Command::new(mix)
             .args(["-c", &format!("print(json_encode([{arguments}]))")])
             .env(paths::env::PREFIX, prefix.path())
-            .output().unwrap();
-        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
         let actual: Value = serde_json::from_slice(&result.stdout).unwrap();
         assert_eq!(actual, json!([prefix.path().join("bin/indexd"), literal]));
     }
@@ -465,7 +481,9 @@ mod tests {
                 })
             });
         let Some(mix) = mix else {
-            eprintln!("SKIP fake bridge test: set the registered test interpreter or put Mix on PATH");
+            eprintln!(
+                "SKIP fake bridge test: set the registered test interpreter or put Mix on PATH"
+            );
             return None;
         };
         let dir = tempfile::tempdir().unwrap();

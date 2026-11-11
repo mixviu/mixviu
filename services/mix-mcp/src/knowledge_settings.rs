@@ -27,7 +27,9 @@ pub struct DomainsSettings {
 
 impl Default for DomainsSettings {
     fn default() -> Self {
-        Self { map: installed(paths::env::MCP_DOMAINS, None) }
+        Self {
+            map: installed(paths::env::MCP_DOMAINS, None),
+        }
     }
 }
 
@@ -97,10 +99,19 @@ impl Default for KnowledgeSettings {
             trust_weight_doc: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_doc")),
             trust_weight_notes: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_notes")),
             trust_weight_plan: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_plan")),
-            trust_weight_journal: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_journal")),
+            trust_weight_journal: installed(
+                paths::env::MCP_KNOWLEDGE,
+                Some("trust_weight_journal"),
+            ),
             trust_weight_memory: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_memory")),
-            journal_decay_per_month: installed(paths::env::MCP_KNOWLEDGE, Some("journal_decay_per_month")),
-            journal_max_age_days: installed(paths::env::MCP_KNOWLEDGE, Some("journal_max_age_days")),
+            journal_decay_per_month: installed(
+                paths::env::MCP_KNOWLEDGE,
+                Some("journal_decay_per_month"),
+            ),
+            journal_max_age_days: installed(
+                paths::env::MCP_KNOWLEDGE,
+                Some("journal_max_age_days"),
+            ),
         }
     }
 }
@@ -263,8 +274,12 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
 }
 
 fn installed<T: serde::de::DeserializeOwned>(name: &str, field: Option<&str>) -> T {
-    let value: serde_json::Value = serde_json::from_str(&installed_value(name)).expect("invalid MCP setting JSON");
-    let value = match field { Some(key) => value.get(key).expect("missing MCP setting field").clone(), None => value };
+    let value: serde_json::Value =
+        serde_json::from_str(&installed_value(name)).expect("invalid MCP setting JSON");
+    let value = match field {
+        Some(key) => value.get(key).expect("missing MCP setting field").clone(),
+        None => value,
+    };
     serde_json::from_value(value).expect("invalid MCP setting type")
 }
 
@@ -278,6 +293,13 @@ fn installed_value(name: &str) -> String {
     // Unit tests use the shipped registry, without process-global env mutation.
     let registry = mix::parse_data(include_str!("../../../etc/env.conf.mix")).unwrap();
     let registry = mix::json::mix_to_json(&registry).unwrap();
-    registry["vars"].as_array().unwrap().iter()
-        .find(|v| v["name"] == name).unwrap()["default"].as_str().unwrap().into()
+    registry["vars"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["name"] == name)
+        .unwrap()["default"]
+        .as_str()
+        .unwrap()
+        .into()
 }

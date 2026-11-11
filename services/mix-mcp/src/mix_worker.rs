@@ -5,7 +5,6 @@
 //! owned Rust worker. Only the parent speaks MCP. Cancellation terminates the
 //! worker process group; it cannot undo effects already committed through Bus.
 
-
 use std::process::Stdio;
 
 use rmcp::model::CallToolResult;
@@ -92,7 +91,9 @@ async fn execute_inner(
     if let Some(cwd) = cwd {
         let expanded = if let Some(rest) = cwd.strip_prefix("~/") {
             std::path::PathBuf::from(std::env::var_os("HOME").ok_or("HOME is unset")?).join(rest)
-        } else { cwd.into() };
+        } else {
+            cwd.into()
+        };
         command.current_dir(expanded);
     }
     command
@@ -151,14 +152,19 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_script_is_rejected_before_starting_the_interpreter() {
-        let error = execute_inner("x".repeat(SCRIPT_LIMIT + 1), None).await.unwrap_err();
+        let error = execute_inner("x".repeat(SCRIPT_LIMIT + 1), None)
+            .await
+            .unwrap_err();
         assert!(error.contains("nothing was started"));
     }
 
     #[tokio::test]
     async fn output_bounds_accept_the_limit_and_reject_one_extra_byte() {
         let exact = vec![b'x'; OUTPUT_LIMIT];
-        assert_eq!(bounded_read(exact.as_slice()).await.unwrap().len(), OUTPUT_LIMIT);
+        assert_eq!(
+            bounded_read(exact.as_slice()).await.unwrap().len(),
+            OUTPUT_LIMIT
+        );
         let extra = vec![b'x'; OUTPUT_LIMIT + 1];
         let error = bounded_read(extra.as_slice()).await.unwrap_err();
         assert!(error.contains("effects may already have occurred"));

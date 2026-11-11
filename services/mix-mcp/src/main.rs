@@ -565,8 +565,12 @@ struct AwaitOpParams {
 }
 
 fn await_op_request(session: Option<&str>, p: AwaitOpParams) -> Result<serde_json::Value, String> {
-    let session =
-        session.ok_or_else(|| format!("await_op requires {}; run inside an agentd session", paths::env::AGENT_SESSION))?;
+    let session = session.ok_or_else(|| {
+        format!(
+            "await_op requires {}; run inside an agentd session",
+            paths::env::AGENT_SESSION
+        )
+    })?;
     connection::broker_name(Some(session), 0, 0)?;
     if p.service.is_empty()
         || p.op.is_empty()
@@ -1140,7 +1144,8 @@ impl MixMcp {
         &self,
         Parameters(p): Parameters<AwaitOpParams>,
     ) -> rmcp::model::CallToolResult {
-        let session = paths::env::raw(connection::AGENT_SESSION_ENV).map(|s| s.to_string_lossy().into_owned());
+        let session = paths::env::raw(connection::AGENT_SESSION_ENV)
+            .map(|s| s.to_string_lossy().into_owned());
         let args = match await_op_request(session.as_deref(), p) {
             Ok(args) => args,
             Err(error) => return tool_output::failure(error),
@@ -2048,9 +2053,14 @@ fn workspace_path(path: Option<&str>) -> Result<std::path::PathBuf, String> {
 /// The tool deadline setting overrides the 120s default; `0` disables
 /// every deadline (debug escape hatch, exempt tools included).
 fn tool_deadline_secs(tool: &str) -> u64 {
-
-    let long_secs = paths::env::setting(paths::env::MCP_SCRIPT_DEADLINE_SECS).expect("script deadline setting").parse::<u64>().expect("invalid script deadline");
-    let base = paths::env::setting(paths::env::MCP_TOOL_DEADLINE_SECS).expect("tool deadline setting").parse::<u64>().expect("invalid tool deadline");
+    let long_secs = paths::env::setting(paths::env::MCP_SCRIPT_DEADLINE_SECS)
+        .expect("script deadline setting")
+        .parse::<u64>()
+        .expect("invalid script deadline");
+    let base = paths::env::setting(paths::env::MCP_TOOL_DEADLINE_SECS)
+        .expect("tool deadline setting")
+        .parse::<u64>()
+        .expect("invalid tool deadline");
     if base == 0 {
         return 0;
     }
@@ -2295,7 +2305,9 @@ fn main() {
     // fd-starved host still gets an answer. Lazy native registration also
     // publishes this build provenance when the first Bus tool is called.
     buildinfo::exit_on_version!();
-    if let Some(commit) = paths::stamp!(GIT_SHA_FULL) { paths::env::register_snapshot(commit); }
+    if let Some(commit) = paths::stamp!(GIT_SHA_FULL) {
+        paths::env::register_snapshot(commit);
+    }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -2316,7 +2328,9 @@ async fn async_main() {
         &logging::StatsOpts::default(),
         logging::LogDefaults::daemon("mix-mcp")
             .with_stats(false)
-            .with_filter(&paths::env::setting(paths::env::MCP_LOG_FILTER).expect("log filter setting"))
+            .with_filter(
+                &paths::env::setting(paths::env::MCP_LOG_FILTER).expect("log filter setting"),
+            )
             .with_rotation(logging::RotationMode::Never)
             .with_log_file(log_dir()),
     )
@@ -2770,7 +2784,8 @@ mod tests {
             "the error must name the frontends in TERM_SERVICES order: {absent}"
         );
         assert!(
-            absent.contains("not registered") || absent.contains("no MixViu terminal is registered")
+            absent.contains("not registered")
+                || absent.contains("no MixViu terminal is registered")
         );
 
         let wedged_one = term_unresponsive(&["bterm"]);

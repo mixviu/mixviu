@@ -212,7 +212,8 @@ impl BrokerConnection {
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        let tcp_opt_in = paths::env::raw(paths::env::MCP_ALLOW_TCP).map(|s| s.to_string_lossy().into_owned());
+        let tcp_opt_in =
+            paths::env::raw(paths::env::MCP_ALLOW_TCP).map(|s| s.to_string_lossy().into_owned());
         let connect = async {
             let result = match configuration.resolve_endpoint().await {
                 Ok(endpoint) => {

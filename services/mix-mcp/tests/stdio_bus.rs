@@ -21,7 +21,8 @@ async fn clipboard_tools_use_the_local_clipd_and_preserve_parameters() {
         .env(paths::env::NODE_CONFIG, &config)
         .env(paths::env::ETC, dir.path())
         .env("HOME", dir.path())
-        .env(paths::env::VAR, dir.path()).env(paths::env::PREFIX, dir.path())
+        .env(paths::env::VAR, dir.path())
+        .env(paths::env::PREFIX, dir.path())
         .env_remove(paths::env::AGENT_SESSION)
         .current_dir(dir.path());
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
@@ -117,7 +118,8 @@ async fn application_tools_round_trip_the_registry_contract() {
         .env(paths::env::NODE_CONFIG, &config)
         .env(paths::env::ETC, dir.path())
         .env("HOME", dir.path())
-        .env(paths::env::VAR, dir.path()).env(paths::env::PREFIX, dir.path())
+        .env(paths::env::VAR, dir.path())
+        .env(paths::env::PREFIX, dir.path())
         .current_dir(dir.path());
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
     let tools = service.list_tools(None).await.unwrap().tools;
@@ -308,7 +310,8 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
         .env(paths::env::NODE_CONFIG, &config)
         .env(paths::env::ETC, dir.path())
         .env("HOME", dir.path())
-        .env(paths::env::VAR, dir.path()).env(paths::env::PREFIX, dir.path())
+        .env(paths::env::VAR, dir.path())
+        .env(paths::env::PREFIX, dir.path())
         .current_dir(dir.path());
     command.env_remove(paths::env::AGENT_SESSION);
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
@@ -691,13 +694,20 @@ fn stage_defaults(prefix: &std::path::Path) {
     let registry = mix::json::mix_to_json(&registry).unwrap();
     let mut values = serde_json::Map::new();
     values.insert("schema".into(), json!(1));
-    values.insert("commit".into(), json!(paths::stamp!(GIT_SHA_FULL).unwrap_or("fixture")));
+    values.insert(
+        "commit".into(),
+        json!(paths::stamp!(GIT_SHA_FULL).unwrap_or("fixture")),
+    );
     for entry in registry["vars"].as_array().unwrap() {
         if let Some(value) = entry.get("default") {
             values.insert(entry["name"].as_str().unwrap().into(), value.clone());
         }
     }
-    std::fs::write(prefix.join("env.mx"), serde_json::to_string(&values).unwrap()).unwrap();
+    std::fs::write(
+        prefix.join("env.mx"),
+        serde_json::to_string(&values).unwrap(),
+    )
+    .unwrap();
 }
 
 #[tokio::test]
@@ -719,7 +729,7 @@ async fn stdio_tool_inventory_status_and_bus_contract() {
         .env_remove(paths::env::AGENT_SESSION)
         .env("HOME", dir.path());
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
-    assert_eq!(service.peer_info().unwrap().server_info.name, "mix-mcp");
+    assert_eq!(service.peer_info().unwrap().server_info.as_ref().unwrap().name, "mix-mcp");
     let list = service.list_tools(None).await.unwrap();
     assert!(list.next_cursor.is_none());
     let mut actual: Vec<_> = list.tools.iter().map(|tool| tool.name.as_ref()).collect();
@@ -729,12 +739,25 @@ async fn stdio_tool_inventory_status_and_bus_contract() {
     let request = |name, args: Value| {
         CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone())
     };
-    let status = result(service.call_tool(request("mcp_status", json!({}))).await.unwrap());
+    let status = result(
+        service
+            .call_tool(request("mcp_status", json!({})))
+            .await
+            .unwrap(),
+    );
     assert_eq!(status["broker_connected"], false);
-    let ping = service.call_tool(request("noded_ping", json!({}))).await.unwrap();
+    let ping = service
+        .call_tool(request("noded_ping", json!({})))
+        .await
+        .unwrap();
     assert!(!ping.is_error.unwrap_or(false));
     assert!(format!("{ping:?}").contains("pong"));
-    let execution = result(service.call_tool(request("mix_execute", json!({"script":"print(6 * 7)"}))).await.unwrap());
+    let execution = result(
+        service
+            .call_tool(request("mix_execute", json!({"script":"print(6 * 7)"})))
+            .await
+            .unwrap(),
+    );
     assert_eq!(execution["stdout"], "42\n");
     assert_eq!(execution["exit_code"], 0);
     service.cancel().await.unwrap();

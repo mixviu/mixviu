@@ -23,6 +23,16 @@ if args()[0] == "resolve" then
   end
   exit(0)
 end
+if args()[0] == "focused" then
+  try
+    checked(["cargo", "fmt", "-p", "mix-mcp"])
+    print("FMT_DIFF_BEGIN")
+    print(run_argv_must(["git", "diff", "--", "services/mix-mcp"]))
+    print("FMT_DIFF_END")
+  finally
+    checked(["git", "checkout", "-q", "--", "services/mix-mcp"])
+  end
+end
 checked(["cargo", "build", "--locked", "-p", "mix"])
 $prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir", "mcp-ci-XXXXXXXX"]))
 try
