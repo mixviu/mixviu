@@ -22,6 +22,13 @@ pub fn collect_snapshot_diff(
 ) {
     queue_prop_change(
         pending,
+        "display.inhibited".into(),
+        PropValue::Bool(old.display.inhibited),
+        PropValue::Bool(new.display.inhibited),
+        cause,
+    );
+    queue_prop_change(
+        pending,
         "display.blanked".into(),
         PropValue::Bool(old.display.blanked),
         PropValue::Bool(new.display.blanked),

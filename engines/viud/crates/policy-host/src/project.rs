@@ -68,6 +68,37 @@ pub struct Identity {
     pub port: PortSnapshot,
 }
 
+/// Reuse the props visibility contract, only after a protocol/model/Space edge.
+/// No timer, renderer traversal, or per-frame projection is introduced.
+pub fn service_inhibitors(lp: &mut Loop) {
+    let stamp = (
+        lp.state.inhibitors.revision,
+        lp.inner.comp.revision(),
+        smithay::desktop::space::membership_revision(),
+        world::comp::session_lock::active(lp),
+    );
+    if lp.state.inhibitors.projected == Some(stamp) {
+        return;
+    }
+    let inhibited = if lp.state.inhibitors.surfaces.is_empty() {
+        false
+    } else {
+        let (_, outputs, _) = project_outputs(lp);
+        let placements = Placements::of(lp, &outputs);
+        lp.state.inhibitors.surfaces.iter().any(|surface| {
+            if !surface.is_alive() {
+                return false;
+            }
+            let Some(record) = lp.inner.comp.id_for_surface(surface)
+                .and_then(|id| lp.inner.comp.registry.get(id)) else { return false };
+            let row = project_surface(lp, record, &placements);
+            row.visible && row.output.is_some() && !row.occlusion.occluded
+        })
+    };
+    world::comp::blank::set_inhibited(lp, inhibited);
+    lp.state.inhibitors.projected = Some((stamp.0, lp.inner.comp.revision(), stamp.2, stamp.3));
+}
+
 /// One read snapshot. `scopes` bounds the volatile leaves: `input.seats` is
 /// projected only for a read that can reach it, and so are `dmabuf.*` and
 /// the `windows.*` / `outputs.*` presentation leaves.
@@ -186,6 +217,7 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
     CompSnapshot {
         display: comp_model::snapshot::DisplaySnapshot {
             blanked: lp.inner.comp.blank.blanked,
+            inhibited: lp.inner.comp.blank.inhibited,
             blank_supported: lp.inner.comp.blank.supported,
         },
         power: comp_model::snapshot::PowerSnapshot {

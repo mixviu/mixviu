@@ -3,7 +3,7 @@
 use _idle_inhibit::zwp_idle_inhibitor_v1::{Request, ZwpIdleInhibitorV1};
 use wayland_protocols::wp::idle_inhibit::zv1::server as _idle_inhibit;
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Client, DataInit, DisplayHandle};
+use wayland_server::{backend::ClientId, Client, DataInit, DisplayHandle};
 
 use crate::wayland::Dispatch2;
 use crate::wayland::idle_inhibit::IdleInhibitHandler;
@@ -28,7 +28,7 @@ where
 {
     fn request(
         &self,
-        state: &mut D,
+        _state: &mut D,
         _client: &Client,
         _inhibitor: &ZwpIdleInhibitorV1,
         request: Request,
@@ -36,8 +36,12 @@ where
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
-            Request::Destroy => state.uninhibit(self.surface.clone()),
+            Request::Destroy => (),
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(&self, state: &mut D, _client: ClientId, _inhibitor: &ZwpIdleInhibitorV1) {
+        state.uninhibit(self.surface.clone());
     }
 }

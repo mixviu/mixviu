@@ -132,6 +132,7 @@ pub struct CompSnapshot {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct DisplaySnapshot {
     pub blanked: bool,
+    pub inhibited: bool,
     pub blank_supported: bool,
 }
 
@@ -774,7 +775,7 @@ flat_snapshot!(
     failures
 );
 flat_snapshot!(DmabufLedgerSnapshot, accepted, failed, failures);
-flat_snapshot!(DisplaySnapshot, blanked, blank_supported);
+flat_snapshot!(DisplaySnapshot, blanked, inhibited, blank_supported);
 flat_snapshot!(PowerSnapshot, screen_off_s);
 flat_snapshot!(OutputWorkspaceSnapshot, current);
 
@@ -1308,6 +1309,11 @@ macro_rules! volatile {
 use PatternSegment::{Literal as L, OutputKey as O, SeatKey as K, SourceKey as C, SurfaceKey as S};
 
 pub static DESCRIPTORS: &[DescribeEntry] = &[
+    descriptor!(
+        &[L("display"), L("inhibited")],
+        Bool,
+        "Whether a live visible surface inhibits idle blanking and idle notifications"
+    ),
     descriptor!(
         &[L("display"), L("blanked")],
         Bool,
