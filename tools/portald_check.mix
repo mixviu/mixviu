@@ -1,22 +1,22 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- CBC only: refresh the lock/fmt, exercise both feature modes, return the diff.
-fn step($argv, $env = {})
+fn check_step($argv, $env = {})
   print(join($argv, " "))
   $r = run_argv($argv, {env: $env, timeout: 3600, stdout: "inherit", stderr: "inherit"})
   if not $r.ok then raise("CHECK_FAILED", join($argv, " ")) end
 end
 $rc = 0
 try
-  step(["cargo", "metadata", "--format-version", "1", "--no-deps"], {})
-  step(["cargo", "fmt", "--all"])
-  step(["cargo", "check", "-p", "portald", "--all-targets"])
-  step(["cargo", "check", "-p", "portald", "--no-default-features", "--all-targets"])
+  check_step(["cargo", "metadata", "--format-version", "1", "--no-deps"], {})
+  check_step(["cargo", "fmt", "--all"])
+  check_step(["cargo", "check", "-p", "portald", "--all-targets"])
+  check_step(["cargo", "check", "-p", "portald", "--no-default-features", "--all-targets"])
   $prefix = trim(run_argv_must(["/opt/mixos/bin/mix", "tools/ci.mix", "stage-install"]))
   $env = {MIX_PREFIX: $prefix, RUSTC_WRAPPER: ""}
-  step(["cargo", "test", "--locked", "-p", "portald", "--no-fail-fast"], $env)
-  step(["cargo", "test", "--locked", "-p", "portald", "--no-default-features", "--no-fail-fast"], $env)
-  step(["cargo", "tree", "--locked", "-i", "pipewire-sys"])
-  step(["/opt/mixos/bin/mix", "tools/foreign_gate.mix", "--locked"])
+  check_step(["cargo", "test", "--locked", "-p", "portald", "--no-fail-fast"], $env)
+  check_step(["cargo", "test", "--locked", "-p", "portald", "--no-default-features", "--no-fail-fast"], $env)
+  check_step(["cargo", "tree", "--locked", "-i", "pipewire-sys"])
+  check_step(["/opt/mixos/bin/mix", "tools/foreign_gate.mix", "--locked"])
 catch $message
   print($message)
   $rc = 1
@@ -24,6 +24,6 @@ finally
   print("WORKER_DIFF_BEGIN")
   print(run_argv_must(["git", "diff"]))
   print("WORKER_DIFF_END")
-  step(["git", "checkout", "-q", "--", "."])
+  check_step(["git", "checkout", "-q", "--", "."])
 end
 exit($rc)
