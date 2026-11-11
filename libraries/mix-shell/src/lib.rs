@@ -888,7 +888,11 @@ pub(crate) fn run_mesh_cli(args: &[String]) -> i32 {
             return 1;
         }
     };
-    match std::process::Command::new(exe).arg("mesh").args(args).status() {
+    match std::process::Command::new(exe)
+        .arg("mesh")
+        .args(args)
+        .status()
+    {
         Ok(status) => status.code().unwrap_or(1),
         Err(error) => {
             eprintln!("mix mesh: {error}");
