@@ -393,6 +393,7 @@ fn no_fires() -> FireReceiver {
 }
 
 struct FakeClient {
+    power_writes: Arc<AtomicUsize>,
     sent: SentMessages,
     incoming: Mutex<Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>>>,
     states: watch::Sender<ConnState>,
@@ -420,6 +421,7 @@ impl FakeClient {
         let (states, _) = watch::channel(initial_state);
         (
             Self {
+                power_writes: Arc::new(AtomicUsize::new(0)),
                 sent: Arc::new(Mutex::new(Vec::new())),
                 incoming: Mutex::new(Some(incoming)),
                 states: states.clone(),
@@ -440,6 +442,10 @@ impl FakeClient {
 }
 
 impl WorkerClient for FakeClient {
+    fn persist_screen_off<'a>(&'a self, _value: &'a Value) -> WorkerFuture<'a, Result<(), String>> {
+        self.power_writes.fetch_add(1, Ordering::AcqRel);
+        Box::pin(future::ready(Ok(())))
+    }
     fn incoming(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>> {
         self.incoming
             .lock()
@@ -889,6 +895,46 @@ fn local_set_command(id: usize, path: &str, value: Value) -> bus::IncomingComman
         .headers
         .insert("broker_origin".into(), "local".into());
     command
+}
+
+#[tokio::test]
+async fn worker_rejects_topic_and_invalid_power_writes_before_persistence() {
+    let (ingress, source, _) = test_ingress();
+    let broker = Arc::new(AtomicU8::new(BROKER_RETRYING));
+    let (stop, shutdown) = watch::channel(false);
+    let (client, commands, _) = FakeClient::new(ConnState::Connected, false);
+    let writes = Arc::clone(&client.power_writes);
+    let responses = Arc::clone(&client.responses_started);
+    let mut client = Some(client);
+    let (publish_timeouts, observations, lost_count) = test_observation_args();
+    let worker = tokio::spawn(worker_loop(
+        "comp-security".into(), ingress, Arc::clone(&broker),
+        Arc::new(AtomicU64::new(0)), publish_timeouts, observations,
+        Arc::new(tokio::sync::Notify::new()), lost_count, no_fires(), shutdown,
+        move || future::ready(Ok(client.take().unwrap())),
+    ));
+    wait_for_broker(&broker, BROKER_CONNECTED).await;
+    let mut topic = local_set_command(1, "power.screen_off_s", json!(1));
+    topic.headers.insert("topic".into(), "attacker.events".into());
+    commands.send(topic).unwrap();
+    commands.send(local_set_command(2, "power.screen_off_s", json!(0))).unwrap();
+    commands.send(command("comp.ping", 3)).unwrap();
+    wait_for_counter(&responses, 2, "invalid write and ping answered").await;
+    assert_eq!(writes.load(Ordering::Acquire), 0);
+    assert!(matches!(source.try_recv(), Err(mpsc::TryRecvError::Empty)));
+
+    // A valid request takes the same real worker branch, persists once and
+    // only then becomes an engine mutation. The spy makes a missing security
+    // guard observable even though no settings service or engine is running.
+    commands.send(local_set_command(4, "power.screen_off_s", json!(30))).unwrap();
+    let PortCommand::Set(mut request) = next_port_command(&source).await else { panic!("power set"); };
+    assert_eq!(writes.load(Ordering::Acquire), 1);
+    assert_eq!(request.path, "power.screen_off_s");
+    assert_eq!(request.value, json!(30));
+    request.reply.take().unwrap().send(ControlReply::Body(json!({"persisted": true}))).unwrap();
+    wait_for_counter(&responses, 3, "persisted write answered").await;
+    stop.send(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), worker).await.unwrap().unwrap();
 }
 
 /// Mesh law (2026-09-15): being on the mesh is the whole authorization.

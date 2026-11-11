@@ -74,4 +74,16 @@ mod tests {
         causes.clear();
         assert_eq!(causes.resolve("windows.s3.maximized"), None);
     }
+
+    #[test]
+    fn backend_capability_changes_do_not_replace_the_blank_transition_cause() {
+        let mut causes = Causes::default();
+        for cause in ["idle", "bus"] {
+            causes.note("display.blanked", cause);
+            causes.note("display.blank_supported", "backend");
+            causes.note("display", "backend");
+            assert_eq!(causes.resolve("display.blanked"), Some(cause));
+            assert_eq!(causes.resolve("display.blank_supported"), Some("backend"));
+        }
+    }
 }
