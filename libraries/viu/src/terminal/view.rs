@@ -141,60 +141,123 @@ mod tests {
         for opt_in in [false, true] {
             for (shift, released) in [(false, false), (true, false), (true, true)] {
                 let sessions = Sessions::fixture();
-                let receiver = sessions.get("vt-1").unwrap().lock().unwrap().listener.test_input_receiver();
+                let receiver = sessions
+                    .get("vt-1")
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .listener
+                    .test_input_receiver();
                 let ctx = egui::Context::default();
                 crate::appearance::install(&ctx);
                 crate::fonts::install(&ctx, 400, 600);
                 let mut views = Views::default();
                 let mut widget = Widget::new("vt", "terminal", "Terminal", json!("vt-1"));
                 let mut bar = json!({"pattern":"needle","replacement":"","replace":false,"regex":false,"case":true,"instance":1});
-                if opt_in { bar["submit_modifiers"] = json!(true); }
+                if opt_in {
+                    bar["submit_modifiers"] = json!(true);
+                }
                 let key = |pressed, modifiers| egui::Event::Key {
-                    key: egui::Key::Enter, physical_key: None, pressed, repeat: false, modifiers,
+                    key: egui::Key::Enter,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers,
                 };
-                let mut frame = |open: bool, serial: u64, input_events: Vec<egui::Event>, modifiers: egui::Modifiers| {
+                let mut frame = |open: bool,
+                                 serial: u64,
+                                 input_events: Vec<egui::Event>,
+                                 modifiers: egui::Modifiers| {
                     let mut events = Vec::new();
                     let mut input_events = input_events;
                     input_events.insert(0, egui::Event::ModifiersChanged(modifiers));
                     widget.properties = json!({"focus_serial":serial});
-                    ctx.run_ui(egui::RawInput {
-                        screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0,560.0))),
-                        events: input_events, ..Default::default()
-                    }, |ui| {
-                        if open {
-                            crate::editor_controls::draw(ui,"find","search-bar",&bar,&mut events);
-                        }
-                        views.draw(ui,&widget,&json!("vt-1"),&sessions,&mut events);
-                    }).drop_without_applying_deltas();
+                    ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(900.0, 560.0),
+                            )),
+                            events: input_events,
+                            ..Default::default()
+                        },
+                        |ui| {
+                            if open {
+                                crate::editor_controls::draw(
+                                    ui,
+                                    "find",
+                                    "search-bar",
+                                    &bar,
+                                    &mut events,
+                                );
+                            }
+                            views.draw(ui, &widget, &json!("vt-1"), &sessions, &mut events);
+                        },
+                    )
+                    .drop_without_applying_deltas();
                     events
                 };
-                for _ in 0..2 { frame(false,1,vec![],egui::Modifiers::NONE); }
-                for _ in 0..2 { frame(true,1,vec![],egui::Modifiers::NONE); }
+                for _ in 0..2 {
+                    frame(false, 1, vec![], egui::Modifiers::NONE);
+                }
+                for _ in 0..2 {
+                    frame(true, 1, vec![], egui::Modifiers::NONE);
+                }
                 let field = ctx.memory(|m| m.focused()).expect("find field focused");
-                let modifiers = egui::Modifiers { shift, ..egui::Modifiers::NONE };
-                let mut input = vec![key(true,modifiers)];
-                if released { input.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE)); }
-                let events = frame(true,1,input,modifiers);
-                let actions: Vec<_> = events.iter().filter(|e| e.id=="find").collect();
-                assert_eq!(actions.len(),1,"{events:?}");
-                assert_eq!(actions[0].action,if opt_in {"submit"} else {"next"});
+                let modifiers = egui::Modifiers {
+                    shift,
+                    ..egui::Modifiers::NONE
+                };
+                let mut input = vec![key(true, modifiers)];
+                if released {
+                    input.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+                }
+                let events = frame(true, 1, input, modifiers);
+                let actions: Vec<_> = events.iter().filter(|e| e.id == "find").collect();
+                assert_eq!(actions.len(), 1, "{events:?}");
+                assert_eq!(actions[0].action, if opt_in { "submit" } else { "next" });
                 if opt_in {
-                    assert_eq!(actions[0].value,json!({"shift":shift}));
-                    assert_eq!(ctx.memory(|m| m.focused()),Some(field));
+                    assert_eq!(actions[0].value, json!({"shift":shift}));
+                    assert_eq!(ctx.memory(|m| m.focused()), Some(field));
                     let control = Widget::new("find", "search-bar", "Find", bar.clone());
                     assert!(control.actions().contains(&"submit"));
                     assert!(control.validate_action("submit", &actions[0].value).is_ok());
-                    assert!(control.admit(&json!({}), "submit", &actions[0].value).is_ok());
+                    assert!(
+                        control
+                            .admit(&json!({}), "submit", &actions[0].value)
+                            .is_ok()
+                    );
                 } else {
                     let control = Widget::new("find", "search-bar", "Find", bar.clone());
                     assert!(!control.actions().contains(&"submit"));
-                    assert!(control.validate_action("submit", &json!({"shift":shift})).is_err());
+                    assert!(
+                        control
+                            .validate_action("submit", &json!({"shift":shift}))
+                            .is_err()
+                    );
                 }
-                assert!(super::pointer_order_tests::read(&receiver).is_empty(),"find submission reached the PTY input queue");
-                frame(false,2,vec![key(false,egui::Modifiers::NONE)],egui::Modifiers::NONE);
-                frame(false,2,vec![],egui::Modifiers::NONE);
-                frame(false,2,vec![key(true,egui::Modifiers::NONE)],egui::Modifiers::NONE);
-                assert_eq!(super::pointer_order_tests::read(&receiver),b"\r","closed find bar must leave Enter with the shell");
+                assert!(
+                    super::pointer_order_tests::read(&receiver).is_empty(),
+                    "find submission reached the PTY input queue"
+                );
+                frame(
+                    false,
+                    2,
+                    vec![key(false, egui::Modifiers::NONE)],
+                    egui::Modifiers::NONE,
+                );
+                frame(false, 2, vec![], egui::Modifiers::NONE);
+                frame(
+                    false,
+                    2,
+                    vec![key(true, egui::Modifiers::NONE)],
+                    egui::Modifiers::NONE,
+                );
+                assert_eq!(
+                    super::pointer_order_tests::read(&receiver),
+                    b"\r",
+                    "closed find bar must leave Enter with the shell"
+                );
             }
         }
     }
