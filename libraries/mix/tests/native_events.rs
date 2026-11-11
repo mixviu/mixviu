@@ -495,24 +495,45 @@ fn shutdown_reaps_a_managed_leader_that_left_its_process_group() {
         rt.block_on(async {
             let listener = tokio::net::UnixListener::bind(&socket).unwrap();
             let mut e = Evaluator::new();
-            e.set_global("exe", Value::String(std::env::current_exe().unwrap().to_str().unwrap().into()));
+            e.set_global(
+                "exe",
+                Value::String(std::env::current_exe().unwrap().to_str().unwrap().into()),
+            );
             e.set_global("socket", Value::String(socket.to_str().unwrap().into()));
-            exec(&mut e, &r#"$pid = spawn([$exe, "--exact", "managed_child_fixture"], {
+            exec(
+                &mut e,
+                &r#"$pid = spawn([$exe, "--exact", "managed_child_fixture"], {
                 exit_event: true, env: {@FIXTURE@: "1", @ESCAPE@: $socket}
-            })"#.replace("@FIXTURE@", paths::env::test::TEST_NATIVE_CHILD_FIXTURE)
-                .replace("@ESCAPE@", paths::env::test::TEST_NATIVE_CHILD_ESCAPE)).await.unwrap();
+            })"#
+                .replace("@FIXTURE@", paths::env::test::TEST_NATIVE_CHILD_FIXTURE)
+                .replace("@ESCAPE@", paths::env::test::TEST_NATIVE_CHILD_ESCAPE),
+            )
+            .await
+            .unwrap();
             let pid = e.get_global("pid").unwrap().to_number().unwrap() as i32;
             pid_tx.send(pid).unwrap();
-            let (mut ready, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await.unwrap().unwrap();
+            let (mut ready, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+                .await
+                .unwrap()
+                .unwrap();
             let mut bytes = [0; 5];
             use tokio::io::AsyncReadExt;
-            tokio::time::timeout(Duration::from_secs(5), ready.read_exact(&mut bytes)).await.unwrap().unwrap();
+            tokio::time::timeout(Duration::from_secs(5), ready.read_exact(&mut bytes))
+                .await
+                .unwrap()
+                .unwrap();
             assert_eq!(&bytes, b"ready");
             assert_ne!(unsafe { libc::getpgid(pid) }, pid);
             e.close_native_events();
             let mut status = 0;
-            assert_eq!(unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) }, -1);
-            assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+            assert_eq!(
+                unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },
+                -1
+            );
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ECHILD)
+            );
             done_tx.send(()).unwrap();
         });
     });
@@ -693,7 +714,8 @@ async fn blocked_child(e: &mut Evaluator) -> i32 {
         e,
         &r#"$pid = spawn([$exe, "--exact", "managed_child_fixture"], {
         exit_event: true, tag: "child:9", env: {@FIXTURE@: "1"}
-    })"#.replace("@FIXTURE@", paths::env::test::TEST_NATIVE_CHILD_FIXTURE),
+    })"#
+        .replace("@FIXTURE@", paths::env::test::TEST_NATIVE_CHILD_FIXTURE),
     )
     .await
     .unwrap();

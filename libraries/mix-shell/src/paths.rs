@@ -75,7 +75,9 @@ fn resolve_all() -> ResolvedPaths {
         exe.as_deref(),
     );
 
-    let src = ::paths::env::raw(::paths::env::SRC).map(PathBuf::from).or_else(|| root.clone());
+    let src = ::paths::env::raw(::paths::env::SRC)
+        .map(PathBuf::from)
+        .or_else(|| root.clone());
 
     let bin = env_or(::paths::env::BIN, || ::paths::bin(""));
 
@@ -126,7 +128,10 @@ mod tests {
             Some(root.clone())
         );
         // a system install has no checkout above it
-        assert_eq!(locate_root(None, Some(Path::new("/srv/fixture/bin/mix"))), None);
+        assert_eq!(
+            locate_root(None, Some(Path::new("/srv/fixture/bin/mix"))),
+            None
+        );
     }
 
     #[test]

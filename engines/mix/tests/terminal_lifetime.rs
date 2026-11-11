@@ -261,7 +261,12 @@ fn fixture_job() {
     let Some(report) = paths::env::raw("TERMINAL_JOB_REPORT") else {
         return;
     };
-    if paths::env::raw("TERMINAL_JOB_IGNORE_HUP").and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent).as_deref() == Ok("1") {
+    if paths::env::raw("TERMINAL_JOB_IGNORE_HUP")
+        .and_then(|v| v.into_string().ok())
+        .ok_or(std::env::VarError::NotPresent)
+        .as_deref()
+        == Ok("1")
+    {
         unsafe { libc::signal(libc::SIGHUP, libc::SIG_IGN) };
     }
     fs::write(report, std::process::id().to_string()).unwrap();

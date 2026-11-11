@@ -119,7 +119,10 @@ fn same_modes(a: libc::termios, b: libc::termios) {
 #[test]
 fn fixture_editor() {
     let _fixture = fixture_guard();
-    let Ok(scenario) = paths::env::raw("OWNED_FIXTURE").and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent) else {
+    let Ok(scenario) = paths::env::raw("OWNED_FIXTURE")
+        .and_then(|v| v.into_string().ok())
+        .ok_or(std::env::VarError::NotPresent)
+    else {
         return;
     };
     let original = modes(0);
@@ -690,7 +693,10 @@ impl Pty {
             .env(paths::env::SRC, home.path())
             .env(paths::env::STATS, "off")
             .env("TERM", "xterm-256color")
-            .env(paths::env::EDITOR, if owned { "owned" } else { "rustyline" })
+            .env(
+                paths::env::EDITOR,
+                if owned { "owned" } else { "rustyline" },
+            )
             .stdin(slave.try_clone().unwrap())
             .stdout(slave.try_clone().unwrap())
             .stderr(slave.try_clone().unwrap());

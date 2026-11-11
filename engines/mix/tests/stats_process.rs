@@ -146,9 +146,10 @@ fn disabled_repl_stats_command_prints_the_disabled_message() {
         .unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains(&format!("Usage statistics — disabled ({})", paths::env::STATS))
-    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains(&format!(
+        "Usage statistics — disabled ({})",
+        paths::env::STATS
+    )));
     assert!(!state.join("mix").exists());
     let _ = std::fs::remove_dir_all(&state);
 }

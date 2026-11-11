@@ -12,7 +12,7 @@ mod install;
 use std::fs::File;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
 use ::bus::native_client::{NodedClient, UnixConnectOutcome, VerifiedConnection};

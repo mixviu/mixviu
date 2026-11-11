@@ -151,7 +151,10 @@ fn real_mix_receives_only_an_explicit_allowed_target() {
     fs::create_dir_all(&roots.user).unwrap();
     fs::write(
         roots.user.join("target.mix"),
-        format!("-- target: ced, dopus\nprint(env(\"{}\", \"absent\"))\n", paths::env::MACRO_TARGET),
+        format!(
+            "-- target: ced, dopus\nprint(env(\"{}\", \"absent\"))\n",
+            paths::env::MACRO_TARGET
+        ),
     )
     .unwrap();
     let entry = Catalogue::scan_globals(&roots).unwrap().entries.remove(0);
@@ -472,9 +475,7 @@ fn real_mix_runs_with_context_bounded_output_and_stop() {
     let temp = tempfile::tempdir().unwrap();
     let roots = roots(temp.path());
     if !mix_binary::executable(&roots.mix) {
-        eprintln!(
-            "macro runner requires an exact built interpreter"
-        );
+        eprintln!("macro runner requires an exact built interpreter");
         return;
     }
     let path = temp.path().join("real.mix");
@@ -532,9 +533,7 @@ fn descendant_fixture(detached: bool) {
     let temp = tempfile::tempdir().unwrap();
     let roots = roots(temp.path());
     if !mix_binary::executable(&roots.mix) {
-        eprintln!(
-            "macro descendants require an exact built interpreter"
-        );
+        eprintln!("macro descendants require an exact built interpreter");
         return;
     }
     if detached

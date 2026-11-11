@@ -17,7 +17,10 @@ fn command() -> Command {
         .args([
             "--no-prelude",
             "-c",
-            &format!("print(\"USER_SOURCE=[\" .. env(\"{}\") .. \"]\")", paths::env::SESSION_FD),
+            &format!(
+                "print(\"USER_SOURCE=[\" .. env(\"{}\") .. \"]\")",
+                paths::env::SESSION_FD
+            ),
         ])
         .env_remove(MARKER)
         .env(paths::env::STATS, "off");

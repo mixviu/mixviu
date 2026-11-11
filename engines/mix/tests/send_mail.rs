@@ -16,7 +16,6 @@ mod install;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::Command;
 
 const FAKE_SENDMAIL: &str = r#"#!/bin/sh
 printf '%s\n' "$@" > "$SENDMAIL_CAPTURE.args"
@@ -60,7 +59,11 @@ impl Bed {
         let dir = tempfile::tempdir().expect("tempdir");
         for (name, body) in [("sendmail", FAKE_SENDMAIL), ("ssh", FAKE_SSH)] {
             let p = dir.path().join(name);
-            fs::write(&p, body.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE)).unwrap();
+            fs::write(
+                &p,
+                body.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE),
+            )
+            .unwrap();
             fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
         }
         Bed { dir }

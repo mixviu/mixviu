@@ -101,12 +101,15 @@ fn audit_tilde_corpus() {
 }
 
 fn audit_roots() -> Vec<PathBuf> {
-    let raw = paths::env::raw(paths::env::test::TEST_AUDIT_ROOTS).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap_or_else(|_| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .display()
-            .to_string()
-    });
+    let raw = paths::env::raw(paths::env::test::TEST_AUDIT_ROOTS)
+        .ok_or(std::env::VarError::NotPresent)
+        .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .display()
+                .to_string()
+        });
     raw.split(':')
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)

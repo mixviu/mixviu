@@ -30,7 +30,11 @@ impl Bed {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         let p = dir.path().join("ssh");
-        fs::write(&p, FAKE_SSH.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE)).unwrap();
+        fs::write(
+            &p,
+            FAKE_SSH.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE),
+        )
+        .unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
         Bed { dir }
     }
@@ -136,7 +140,10 @@ fn a_bad_value_raises_locally_and_never_reaches_ssh() {
     let (out, err, ok) = bed.run(&ssh_mix(""), Some("mix; rm"));
     assert!(!ok, "stdout={out} stderr={err}");
     assert!(err.contains(paths::env::REMOTE_EXE), "{err}");
-    assert!(!bed.ssh_ran(), "ssh must not run on a bad remote executable");
+    assert!(
+        !bed.ssh_ran(),
+        "ssh must not run on a bad remote executable"
+    );
 }
 
 #[test]

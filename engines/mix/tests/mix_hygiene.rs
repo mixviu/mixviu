@@ -1,4 +1,3 @@
-
 #[path = "support/install.rs"]
 mod install;
 use std::io::Read;
@@ -48,10 +47,7 @@ fn update_refuses_local_cargo() {
 #[test]
 fn help_describes_the_disabled_shortcuts() {
     for help in ["help", "--help"] {
-        let output = install::command()
-            .arg(help)
-            .output()
-            .unwrap();
+        let output = install::command().arg(help).output().unwrap();
         assert!(output.status.success());
         let text = String::from_utf8_lossy(&output.stdout);
         for command in ["build", "clean", "update", "test"] {

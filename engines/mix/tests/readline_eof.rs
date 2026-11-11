@@ -7,7 +7,7 @@
 #[path = "support/install.rs"]
 mod install;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 fn run(script: &str, stdin_bytes: &[u8]) -> std::process::Output {
     let mut child = install::command()

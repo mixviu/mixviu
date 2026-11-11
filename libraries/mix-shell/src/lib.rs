@@ -704,7 +704,10 @@ fn resolve_term(
 ) -> Result<std::path::PathBuf, String> {
     if let Some(path) = override_bin {
         return lookup(Path::new(&path)).ok_or_else(|| {
-            format!("mix --gui: {} must name an executable frontend file", ::paths::env::TERM_EXE)
+            format!(
+                "mix --gui: {} must name an executable frontend file",
+                ::paths::env::TERM_EXE
+            )
         });
     }
     // The Term frontend is searched in the development, installed
@@ -2412,7 +2415,9 @@ pub fn main() -> process::ExitCode {
     // Reached through a mix -> mixd handoff, yet this is not the service
     // engine: the installed `mixd` is a shell-profile build. Refuse before
     // argv is interpreted (the handoff's leading `run` is not a filename).
-    if mix::builtins::engine_profile() != "service" && ::paths::env::raw(ENGINE_HANDOFF_ENV).is_some() {
+    if mix::builtins::engine_profile() != "service"
+        && ::paths::env::raw(ENGINE_HANDOFF_ENV).is_some()
+    {
         eprintln!(
             "mix: handed off to a shell-profile binary ({}); the installed mixd is not the \
              service engine",
@@ -3041,7 +3046,10 @@ mod gui_tests {
                 term_lookup,
             )
             .unwrap_err();
-            assert!(error.contains(&format!("{} must name an executable", ::paths::env::TERM_EXE)));
+            assert!(error.contains(&format!(
+                "{} must name an executable",
+                ::paths::env::TERM_EXE
+            )));
         }
     }
 }
@@ -3162,6 +3170,9 @@ mod serve_name_tests {
         assert_eq!(probe(Some("probe"), "/x/quoin-panel.mix").await, "probe\n");
         // Stem fallback, with the `mix-` prefix normalised away.
         assert_eq!(probe(None, "/x/quoin-panel.mix").await, "quoin-panel\n");
-        assert_eq!(probe(None, "/srv/fixture/mix-statecache.mix").await, "statecache\n");
+        assert_eq!(
+            probe(None, "/srv/fixture/mix-statecache.mix").await,
+            "statecache\n"
+        );
     }
 }

@@ -329,19 +329,27 @@ fn man_with_files(args: &[&str], local: bool, files: &[(&str, &str)]) -> std::pr
     let root = home.path().join("no-checkout");
     std::fs::create_dir(&root).unwrap();
     let cache_url = "https://manual.example.test/mix";
-    let cache_fingerprint = cache_url.bytes().fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
-    });
+    let cache_fingerprint = cache_url
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
     for (path, body) in files {
         let path = if let Some(page) = path.strip_prefix("no-cache/mix/man/") {
             let prefix = home.path().join("no-prefix");
             std::fs::create_dir_all(&prefix).unwrap();
-            let mut defaults: serde_json::Value = serde_json::from_slice(
-                &std::fs::read(install::prefix().join("env.mx")).unwrap(),
-            ).unwrap();
+            let mut defaults: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(install::prefix().join("env.mx")).unwrap())
+                    .unwrap();
             defaults[paths::env::MAN_URL] = cache_url.into();
-            std::fs::write(prefix.join("env.mx"), serde_json::to_vec(&defaults).unwrap()).unwrap();
-            home.path().join(format!("no-cache/mix/man/sources/{cache_fingerprint:016x}/{page}"))
+            std::fs::write(
+                prefix.join("env.mx"),
+                serde_json::to_vec(&defaults).unwrap(),
+            )
+            .unwrap();
+            home.path().join(format!(
+                "no-cache/mix/man/sources/{cache_fingerprint:016x}/{page}"
+            ))
         } else {
             home.path().join(path)
         };

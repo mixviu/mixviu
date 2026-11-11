@@ -560,12 +560,7 @@ end
 fn boot(citizen_script: &Variant, dir: &Dir, broker: &Broker) -> (PathBuf, Citizen) {
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(broker)));
     let script = dir.write("svc.mix", &script(citizen_script));
-    let citizen = Citizen::spawn(
-        Path::new(install::exe()),
-        dir,
-        &node_conf,
-        &script,
-    );
+    let citizen = Citizen::spawn(Path::new(install::exe()), dir, &node_conf, &script);
     (node_conf, citizen)
 }
 
@@ -903,12 +898,7 @@ async fn sigterm_shuts_down_the_child_group_from_prep_and_from_the_dispatching_h
     dir.write("svc-b.mix", &script(&slow));
     let node_conf_b = dir.write("node-b.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
     let script_b = dir.0.join("svc-b.mix");
-    let mut citizen_b = Citizen::spawn(
-        Path::new(install::exe()),
-        &dir,
-        &node_conf_b,
-        &script_b,
-    );
+    let mut citizen_b = Citizen::spawn(Path::new(install::exe()), &dir, &node_conf_b, &script_b);
     let cb = connect(&broker).await;
     wait_service(&cb, HARD).await;
     let boot_b = wait_lines(&dir, "boot", 2, HARD);

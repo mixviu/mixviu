@@ -319,7 +319,12 @@ fn resident_uses_configuration_captured_before_thread_start() {
         .split("fn environment_account")
         .next()
         .unwrap();
-    for forbidden in ["std::env::var", "use std::env", "dirs::", "::paths::env::raw"] {
+    for forbidden in [
+        "std::env::var",
+        "use std::env",
+        "dirs::",
+        "::paths::env::raw",
+    ] {
         assert!(!resolution.contains(forbidden));
     }
 }

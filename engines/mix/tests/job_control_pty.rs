@@ -7,10 +7,10 @@
 //! Nextest uses separate test processes (no shared mutex); its timeout budget
 //! still needs to allow setup plus the real job-control fixture durations.
 #![cfg(target_os = "linux")]
-#[path = "support/pty.rs"]
-mod pty;
 #[path = "support/install.rs"]
 mod install;
+#[path = "support/pty.rs"]
+mod pty;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -22,13 +22,14 @@ use std::time::{Duration, Instant};
 const PROMPT: &str = "P0J> ";
 const LIMIT: Duration = Duration::from_secs(10);
 fn fixture_limit() -> Duration {
-    paths::env::raw(paths::env::test::PTY_TIMEOUT_SECS).and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent).map_or(LIMIT, |value| {
-        let seconds: u64 = value
-            .parse()
-            .expect("PTY timeout must be an integer");
-        assert!(seconds > 0, "PTY timeout must be positive");
-        Duration::from_secs(seconds)
-    })
+    paths::env::raw(paths::env::test::PTY_TIMEOUT_SECS)
+        .and_then(|v| v.into_string().ok())
+        .ok_or(std::env::VarError::NotPresent)
+        .map_or(LIMIT, |value| {
+            let seconds: u64 = value.parse().expect("PTY timeout must be an integer");
+            assert!(seconds > 0, "PTY timeout must be positive");
+            Duration::from_secs(seconds)
+        })
 }
 static FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn fixture_guard() -> std::sync::MutexGuard<'static, ()> {
@@ -75,7 +76,10 @@ fn tty_modes(fd: i32) -> libc::termios {
 #[test]
 fn fixture_process() {
     let _fixture = fixture_guard();
-    let Ok(mode) = paths::env::raw("P0J_MODE").and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent) else {
+    let Ok(mode) = paths::env::raw("P0J_MODE")
+        .and_then(|v| v.into_string().ok())
+        .ok_or(std::env::VarError::NotPresent)
+    else {
         return;
     };
     let report = PathBuf::from(paths::env::raw("P0J_REPORT").unwrap());
@@ -1189,7 +1193,12 @@ fn ssh_dash_c_has_zero_shell_group_or_terminal_handoff_syscalls() {
 fn run_bounded_ptrace_case(name: &str) -> bool {
     const CASE_LIMIT: Duration = Duration::from_secs(60);
     const CASE_ENV: &str = "P0J_PTRACE_CASE";
-    if paths::env::raw(CASE_ENV).and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent).as_deref() == Ok(name) {
+    if paths::env::raw(CASE_ENV)
+        .and_then(|v| v.into_string().ok())
+        .ok_or(std::env::VarError::NotPresent)
+        .as_deref()
+        == Ok(name)
+    {
         return false;
     }
     // Files rather than pipes: diagnostic output must not wedge the child.

@@ -6,7 +6,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 fn doctor() -> std::process::Output {
     // env::DOCTOR_SKIP_BUS keeps the run hermetic — no connection to a real

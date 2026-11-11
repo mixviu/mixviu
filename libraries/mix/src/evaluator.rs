@@ -8568,8 +8568,11 @@ impl Evaluator {
                             .scope
                             .get_value(base)
                             .map(|v| v.into_value())
-                            .or_else(|| paths::env::raw(base).and_then(|v| v.into_string().ok()).map(Value::String))
-                        {
+                            .or_else(|| {
+                                paths::env::raw(base)
+                                    .and_then(|v| v.into_string().ok())
+                                    .map(Value::String)
+                            }) {
                             Some(v) => Some(v),
                             None => match coalesce {
                                 Some((_, src)) => return self.eval_interp_default(src).await,
@@ -11108,7 +11111,11 @@ impl Evaluator {
                                 self.scope
                                     .get_value(head)
                                     .map(|v| v.into_value())
-                                    .or_else(|| paths::env::raw(head).and_then(|v| v.into_string().ok()).map(Value::String))
+                                    .or_else(|| {
+                                        paths::env::raw(head)
+                                            .and_then(|v| v.into_string().ok())
+                                            .map(Value::String)
+                                    })
                             });
                             let mut val: Value = match resolved {
                                 Some(v) => v,
@@ -11136,7 +11143,11 @@ impl Evaluator {
                         }
                         StringPart::CommandSub(_) => return None,
                         StringPart::EnvVar(name) => {
-                            result.push_str(&paths::env::raw(name).and_then(|v| v.into_string().ok()).unwrap_or_default());
+                            result.push_str(
+                                &paths::env::raw(name)
+                                    .and_then(|v| v.into_string().ok())
+                                    .unwrap_or_default(),
+                            );
                         }
                     }
                 }
@@ -14003,7 +14014,11 @@ impl Evaluator {
                                 val.write_mix(&mut result);
                             }
                             StringPart::EnvVar(name) => {
-                                result.push_str(&paths::env::raw(name).and_then(|v| v.into_string().ok()).unwrap_or_default());
+                                result.push_str(
+                                    &paths::env::raw(name)
+                                        .and_then(|v| v.into_string().ok())
+                                        .unwrap_or_default(),
+                                );
                             }
                         }
                     }
@@ -19473,8 +19488,8 @@ mod fifo_arity_tests {
 mod standing_interrupt_tests {
     use super::{Evaluator, Value};
 
-    use paths::env::test::TEST_STANDING_INTERRUPT_CHILD as CHILD_ENV;
     use paths::env::test::TEST_STANDING_INTERRUPT_CASE as CASE_ENV;
+    use paths::env::test::TEST_STANDING_INTERRUPT_CHILD as CHILD_ENV;
     use paths::env::test::TEST_STANDING_INTERRUPT_MARKER as MARKER_ENV;
     /// How long one case's child may run before it is killed and the test
     /// fails, so a regression fails instead of hanging the suite.
@@ -19598,7 +19613,9 @@ mod standing_interrupt_tests {
         if paths::env::raw(CHILD_ENV).is_none() {
             return;
         }
-        let case: usize = paths::env::raw(CASE_ENV).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+        let case: usize = paths::env::raw(CASE_ENV)
+            .ok_or(std::env::VarError::NotPresent)
+            .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
             .expect("case index")
             .parse()
             .expect("case index is a number");

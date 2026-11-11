@@ -83,21 +83,45 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     }
     // Self-location is never used: the child received every path input before
     // the process-global resolver was first called.
-    let prefix = paths::env::raw(paths::env::PREFIX).expect("front-door test needs an explicit prefix");
+    let prefix =
+        paths::env::raw(paths::env::PREFIX).expect("front-door test needs an explicit prefix");
     let evaluator = mix::evaluator::Evaluator::new();
     use mix::evaluator::ShellVarResolver;
     assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_EMPTY), None);
     assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_UNSET), None);
-    assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_SET).as_deref(), Some("present"));
-    for name in [paths::env::test::TEST_ENV_EMPTY, paths::env::test::TEST_ENV_UNSET] {
+    assert_eq!(
+        evaluator.resolve(paths::env::test::TEST_ENV_SET).as_deref(),
+        Some("present")
+    );
+    for name in [
+        paths::env::test::TEST_ENV_EMPTY,
+        paths::env::test::TEST_ENV_UNSET,
+    ] {
         let source = format!("\"${{{name} ?? 'fallback'}}\"");
-        assert_eq!(mix::run(&source).await.unwrap(), mix::value::Value::String("fallback".into()));
-        assert_eq!(mix::run(&format!("env('{name}', 'fallback')")).await.unwrap(), mix::value::Value::String("fallback".into()));
+        assert_eq!(
+            mix::run(&source).await.unwrap(),
+            mix::value::Value::String("fallback".into())
+        );
+        assert_eq!(
+            mix::run(&format!("env('{name}', 'fallback')"))
+                .await
+                .unwrap(),
+            mix::value::Value::String("fallback".into())
+        );
     }
-    assert_eq!(mix::run("mix_prefix()").await.unwrap(), mix::value::Value::String(prefix.to_str().unwrap().into()));
-    assert_eq!(mix::run("mix_exe()").await.unwrap(), mix::value::Value::String(std::env::current_exe().unwrap().to_str().unwrap().into()));
+    assert_eq!(
+        mix::run("mix_prefix()").await.unwrap(),
+        mix::value::Value::String(prefix.to_str().unwrap().into())
+    );
+    assert_eq!(
+        mix::run("mix_exe()").await.unwrap(),
+        mix::value::Value::String(std::env::current_exe().unwrap().to_str().unwrap().into())
+    );
     for source in ["mix_prefix('extra')", "mix_exe('extra')"] {
-        assert!(mix::run(source).await.is_err(), "unexpected argument accepted: {source}");
+        assert!(
+            mix::run(source).await.is_err(),
+            "unexpected argument accepted: {source}"
+        );
     }
     for (tier, uid) in [("system", 0), ("user", 1000)] {
         let inputs = paths::Environment {

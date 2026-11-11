@@ -5,7 +5,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 #[test]
 fn project_info_reports_members_excludes_and_toolchain() {

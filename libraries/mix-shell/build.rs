@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 fn main() {
     if ::paths::env::raw("CARGO_FEATURE_TEST_HOOKS").is_some() {
         assert_eq!(
-            ::paths::env::raw("PROFILE").map(|s| s.to_string_lossy().into_owned()).ok_or(()).as_deref(),
+            ::paths::env::raw("PROFILE")
+                .map(|s| s.to_string_lossy().into_owned())
+                .ok_or(())
+                .as_deref(),
             Ok("debug"),
             "test-hooks is forbidden outside the debug test profile"
         );
@@ -18,7 +21,8 @@ fn main() {
 /// copied alone still has `mix man`. The layout is, per page in name order,
 /// `u32 LE name length, name, u32 LE body length, body`.
 fn pack_manual() {
-    let dir = PathBuf::from(::paths::env::raw("CARGO_MANIFEST_DIR").unwrap()).join("../../docs/mix");
+    let dir =
+        PathBuf::from(::paths::env::raw("CARGO_MANIFEST_DIR").unwrap()).join("../../docs/mix");
     println!("cargo:rerun-if-changed={}", dir.display());
     let mut names: Vec<String> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))

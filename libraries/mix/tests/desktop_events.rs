@@ -58,13 +58,20 @@ async fn audio_watch_owns_a_subscription_child_and_reports_its_exit() {
     let dir = std::env::temp_dir().join(format!("mix-fake-pactl-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let pactl = dir.join("pactl");
-    std::fs::write(&pactl, FAKE_PACTL.replace("@EXIT@", paths::env::test::TEST_FAKE_PACTL_EXIT)).unwrap();
+    std::fs::write(
+        &pactl,
+        FAKE_PACTL.replace("@EXIT@", paths::env::test::TEST_FAKE_PACTL_EXIT),
+    )
+    .unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&pactl, std::fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!(
         "{}:{}",
         dir.display(),
-        paths::env::raw("PATH").ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap_or_default()
+        paths::env::raw("PATH")
+            .ok_or(std::env::VarError::NotPresent)
+            .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+            .unwrap_or_default()
     );
     // SAFETY: the only test in this binary that reads or writes the
     // environment, and no other thread is running yet.

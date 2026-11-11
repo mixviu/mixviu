@@ -34,7 +34,9 @@ pub fn stats_setting_enabled(value: Option<&str>) -> bool {
 /// Read STATS once for the process. Front ends consult this before
 /// allocating a collector, which makes the kill switch skip all event work.
 pub fn stats_enabled() -> bool {
-    *STATS_ENABLED.get_or_init(|| stats_setting_enabled(crate::env_string(::paths::env::STATS).ok().as_deref()))
+    *STATS_ENABLED.get_or_init(|| {
+        stats_setting_enabled(crate::env_string(::paths::env::STATS).ok().as_deref())
+    })
 }
 
 fn debug_note(message: impl std::fmt::Display) {
@@ -125,7 +127,9 @@ fn legacy_advisory() {
     if marker.exists() {
         return;
     }
-    let Some(src) = crate::paths::mix_src() else { return; };
+    let Some(src) = crate::paths::mix_src() else {
+        return;
+    };
     let legacy_dir = src.join("_stats");
     if legacy_dir == new_dir {
         return;

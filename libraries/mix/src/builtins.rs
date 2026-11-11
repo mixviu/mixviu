@@ -3681,7 +3681,9 @@ fn builtin_delete(args: Vec<Value>) -> MixResult<Option<Value>> {
 fn builtin_env(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("env", &args, 1, 2)?;
     let name = args[0].to_mix_string();
-    let val = paths::env::raw(&name).and_then(|v| v.into_string().ok()).unwrap_or_default();
+    let val = paths::env::raw(&name)
+        .and_then(|v| v.into_string().ok())
+        .unwrap_or_default();
     // Two-arg form: env(name, default) returns the default when the variable is
     // unset OR set-but-empty (shell `${VAR:-default}` semantics) — the common
     // "env or fallback" need in config code. The one-arg form is unchanged:
@@ -8907,7 +8909,10 @@ fn build_ssh_argv(host: &str, remote: &str, opts: &SshOpts) -> Vec<String> {
         // The trade-off is intentional: callers choose connection reuse over
         // reliable remote cancellation. `ssh_close_multiplex(host)` (deferred,
         // see spec §6.5) is the future explicit teardown path.
-        let home = paths::env::raw("HOME").ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap_or_else(|_| ".".into());
+        let home = paths::env::raw("HOME")
+            .ok_or(std::env::VarError::NotPresent)
+            .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+            .unwrap_or_else(|_| ".".into());
         a.extend(["-o".into(), "ControlMaster=auto".into()]);
         a.extend(["-o".into(), format!("ControlPath={}/.ssh/cm-%C", home)]);
         a.extend(["-o".into(), "ControlPersist=60s".into()]);
@@ -11750,10 +11755,18 @@ fn resolve_remote_mix_bin(caller: &str, opt: Option<&str>, env: Option<&str>) ->
 /// The resolver every remote builtin uses: call option, environment, installed default.
 fn remote_mix_bin(caller: &str, opt: Option<&str>) -> MixResult<String> {
     // An explicit call option must win even over a non-Unicode environment value.
-    let env = if opt.is_some() { None } else {
+    let env = if opt.is_some() {
+        None
+    } else {
         paths::env::raw(paths::env::REMOTE_EXE)
-            .map(|v| v.into_string().map_err(|_| opt_invalid(caller,
-                format!("{} is not valid UTF-8", paths::env::REMOTE_EXE))))
+            .map(|v| {
+                v.into_string().map_err(|_| {
+                    opt_invalid(
+                        caller,
+                        format!("{} is not valid UTF-8", paths::env::REMOTE_EXE),
+                    )
+                })
+            })
             .transpose()?
     };
     let binary = resolve_remote_mix_bin(caller, opt, env.as_deref())?;
@@ -14128,15 +14141,21 @@ fn builtin_mix_prefix(args: Vec<Value>) -> MixResult<Option<Value>> {
 
 fn builtin_mix_exe(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("mix_exe", &args, 0)?;
-    let path = std::env::current_exe()
-        .map_err(|e| MixError::RuntimeError { span: None, msg: format!("mix_exe: {e}") })?;
+    let path = std::env::current_exe().map_err(|e| MixError::RuntimeError {
+        span: None,
+        msg: format!("mix_exe: {e}"),
+    })?;
     builtin_path_string(path)
 }
 
 fn builtin_path_string(path: std::path::PathBuf) -> MixResult<Option<Value>> {
-    path.into_os_string().into_string()
+    path.into_os_string()
+        .into_string()
         .map(|value| Some(Value::String(value)))
-        .map_err(|_| MixError::RuntimeError { span: None, msg: "MixViu path is not UTF-8".into() })
+        .map_err(|_| MixError::RuntimeError {
+            span: None,
+            msg: "MixViu path is not UTF-8".into(),
+        })
 }
 
 fn builtin_mix_path(args: Vec<Value>) -> MixResult<Option<Value>> {
@@ -17218,8 +17237,10 @@ fn builtin_project_info(args: Vec<Value>) -> MixResult<Option<Value>> {
         .map(std::path::PathBuf::from)
         .map(Ok)
         .unwrap_or_else(std::env::current_dir)
-        .map_err(|e| MixError::RuntimeError { span: None,
-            msg: format!("project_info(): cannot resolve current directory: {e}") })?;
+        .map_err(|e| MixError::RuntimeError {
+            span: None,
+            msg: format!("project_info(): cannot resolve current directory: {e}"),
+        })?;
     let src = std::path::Path::new(&root).join("src");
 
     let ws_text =
@@ -17295,9 +17316,17 @@ fn builtin_project_info(args: Vec<Value>) -> MixResult<Option<Value>> {
     main.insert("toolchain".into(), Value::String(toolchain));
 
     let mut out = indexmap::IndexMap::new();
-    out.insert("root".into(), Value::String(root.into_os_string().into_string().map_err(|_| MixError::RuntimeError {
-        span: None, msg: "project_info(): project root is not UTF-8".into(),
-    })?));
+    out.insert(
+        "root".into(),
+        Value::String(
+            root.into_os_string()
+                .into_string()
+                .map_err(|_| MixError::RuntimeError {
+                    span: None,
+                    msg: "project_info(): project root is not UTF-8".into(),
+                })?,
+        ),
+    );
     out.insert("main".into(), Value::map(main));
     out.insert("desktop".into(), Value::Bool(desktop));
     Ok(Some(Value::map(out)))
@@ -17965,7 +17994,10 @@ fn builtin_which(args: Vec<Value>) -> MixResult<Option<Value>> {
             ));
         }
     };
-    let path_var = paths::env::raw("PATH").ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap_or_default();
+    let path_var = paths::env::raw("PATH")
+        .ok_or(std::env::VarError::NotPresent)
+        .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+        .unwrap_or_default();
     for dir in path_var.split(':') {
         let full = std::path::Path::new(dir).join(&cmd);
         if full.is_file() && access_ok("which", &full.to_string_lossy(), libc::X_OK)? {
@@ -33917,7 +33949,10 @@ mod ssh_helpers_tests {
         assert_eq!(
             run_stream_opts(
                 probe.clone(),
-                vec![("env", env_map(vec![(paths::env::test::TEST_RS_PROBE, "ok")]))]
+                vec![(
+                    "env",
+                    env_map(vec![(paths::env::test::TEST_RS_PROBE, "ok")])
+                )]
             )
             .expect("spawn ok"),
             Some(Value::Number(0.0)),
@@ -33937,7 +33972,10 @@ mod ssh_helpers_tests {
         // The value goes through execve, not a shell: spaces, globs and a
         // literal `$HOME` survive verbatim.
         let raw = "a b * $HOME";
-        let command = format!("test \"${}\" = 'a b * $HOME'", paths::env::test::TEST_RS_RAW);
+        let command = format!(
+            "test \"${}\" = 'a b * $HOME'",
+            paths::env::test::TEST_RS_RAW
+        );
         let probe = vec!["/bin/sh", "-c", &command];
         // Falsifier first: without the option the probe must FAIL, so a green
         // assertion below cannot come from a variable the parent already had.
@@ -33981,13 +34019,19 @@ mod ssh_helpers_tests {
     fn run_stream_clear_env_then_env_layers_exactly_the_given_pairs() {
         // Order is clear-then-layer: the explicit pair survives the clear,
         // and nothing else does.
-        let command = format!("test \"${}\" = yes && test -z \"$HOME\"", paths::env::test::TEST_RS_ONLY);
+        let command = format!(
+            "test \"${}\" = yes && test -z \"$HOME\"",
+            paths::env::test::TEST_RS_ONLY
+        );
         assert_eq!(
             run_stream_opts(
                 vec!["/bin/sh", "-c", &command],
                 vec![
                     ("clear_env", Value::Bool(true)),
-                    ("env", env_map(vec![(paths::env::test::TEST_RS_ONLY, "yes")])),
+                    (
+                        "env",
+                        env_map(vec![(paths::env::test::TEST_RS_ONLY, "yes")])
+                    ),
                 ]
             )
             .expect("spawn ok"),
@@ -35480,9 +35524,9 @@ mod flock_tests {
     use std::sync::Mutex;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
+    use paths::env::test::TEST_FLOCK_EXIT as CHILD_EXIT_ENV;
     use paths::env::test::TEST_FLOCK_PATH as CHILD_PATH_ENV;
     use paths::env::test::TEST_FLOCK_READY as CHILD_READY_ENV;
-    use paths::env::test::TEST_FLOCK_EXIT as CHILD_EXIT_ENV;
     use paths::env::test::TEST_FLOCK_SHARED as CHILD_SHARED_ENV;
 
     fn tmpdir(suffix: &str) -> std::path::PathBuf {
@@ -35584,13 +35628,21 @@ mod flock_tests {
     /// process holding the kernel lock.
     #[test]
     fn flock_child_process() {
-        let Ok(path) = paths::env::raw(CHILD_PATH_ENV).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)) else {
+        let Ok(path) = paths::env::raw(CHILD_PATH_ENV)
+            .ok_or(std::env::VarError::NotPresent)
+            .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+        else {
             return;
         };
         let ready = std::path::PathBuf::from(paths::env::raw(CHILD_READY_ENV).unwrap());
         let exit_path = std::path::PathBuf::from(paths::env::raw(CHILD_EXIT_ENV).unwrap());
 
-        let args = if paths::env::raw(CHILD_SHARED_ENV).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).as_deref() == Ok("1") {
+        let args = if paths::env::raw(CHILD_SHARED_ENV)
+            .ok_or(std::env::VarError::NotPresent)
+            .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+            .as_deref()
+            == Ok("1")
+        {
             vec![Value::String(path), shared_opts()]
         } else {
             vec![Value::String(path)]

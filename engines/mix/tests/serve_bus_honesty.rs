@@ -288,12 +288,7 @@ on rel.state
 end
 "#,
     );
-    let mut citizen = Citizen::spawn(
-        Path::new(install::exe()),
-        &dir,
-        &node_conf,
-        &script,
-    );
+    let mut citizen = Citizen::spawn(Path::new(install::exe()), &dir, &node_conf, &script);
     wait_trace(&dir, "bus.connected|1\n", HARD).await;
     broker.stop();
     wait_trace(&dir, "bus.disconnected|1\n", HARD).await;
@@ -344,12 +339,7 @@ on capture
 end
 "#,
     );
-    let _citizen = Citizen::spawn(
-        Path::new(install::exe()),
-        &dir,
-        &node_conf,
-        &script,
-    );
+    let _citizen = Citizen::spawn(Path::new(install::exe()), &dir, &node_conf, &script);
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
     for (name, required, ready) in [("alpha", "alpha", true), ("beta", "alpha", false)] {
@@ -375,12 +365,7 @@ async fn lookup_reports_transport_failure_and_emit_remains_nonfatal() {
     let mut broker = Broker::start();
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
     let script = dir.write("svc.mix", SCRIPT);
-    let _citizen = Citizen::spawn(
-        Path::new(install::exe()),
-        &dir,
-        &node_conf,
-        &script,
-    );
+    let _citizen = Citizen::spawn(Path::new(install::exe()), &dir, &node_conf, &script);
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
 
@@ -416,12 +401,7 @@ async fn uncaught_interruption_text_is_a_reported_serve_error() {
         "svc.mix",
         r#"raise("PROBE_REFUSAL", json_encode({interrupted:false,error:"not a signal"}))"#,
     );
-    let mut citizen = Citizen::spawn(
-        Path::new(install::exe()),
-        &dir,
-        &node_conf,
-        &script,
-    );
+    let mut citizen = Citizen::spawn(Path::new(install::exe()), &dir, &node_conf, &script);
     let deadline = Instant::now() + HARD;
     let status = loop {
         if let Some(status) = citizen.child.try_wait().unwrap() {
@@ -450,12 +430,7 @@ async fn sigint_during_stalled_registration_exits_promptly_with_130() {
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
     let script = dir.write("svc.mix", "-- version: 0.1.0\n");
     let stall = broker.pause();
-    let mut citizen = Citizen::spawn(
-        Path::new(install::exe()),
-        &dir,
-        &node_conf,
-        &script,
-    );
+    let mut citizen = Citizen::spawn(Path::new(install::exe()), &dir, &node_conf, &script);
     // Give the citizen time to reach its registration await.
     tokio::time::sleep(Duration::from_millis(1500)).await;
     assert!(
@@ -498,13 +473,8 @@ async fn sigint_during_cpu_only_prelude_exits_promptly_with_130() {
         let script = dir.write("svc.mix", "on rel.state\nreply(0, \"{}\")\nend\n");
         let prelude = "print(\"PRELUDE_READY\")\n$n=0\nwhile true\n$n=$n+1\nend\n";
         dir.write("prelude.mix", if reload { "" } else { prelude });
-        let mut citizen = Citizen::spawn_with_prelude(
-            Path::new(install::exe()),
-            &dir,
-            &node_conf,
-            &script,
-            true,
-        );
+        let mut citizen =
+            Citizen::spawn_with_prelude(Path::new(install::exe()), &dir, &node_conf, &script, true);
         if reload {
             let c = connect(&broker).await;
             wait_service(&c, HARD).await;
@@ -573,12 +543,7 @@ async fn sigint_ends_a_citizen_whose_catch_keeps_computing() {
          $m = 0\nwhile true\n$m = $m + 1\nend\n\
          end\n",
     );
-    let mut citizen = Citizen::spawn(
-        Path::new(install::exe()),
-        &dir,
-        &node_conf,
-        &script,
-    );
+    let mut citizen = Citizen::spawn(Path::new(install::exe()), &dir, &node_conf, &script);
     wait_trace(&dir, "ready", HARD).await;
     assert_eq!(unsafe { libc::kill(citizen.pgid, libc::SIGINT) }, 0);
     let sent_at = Instant::now();
@@ -629,12 +594,7 @@ async fn a_handler_waiting_on_a_fifo_does_not_stop_quit() {
             fifo = fifo.to_str().unwrap()
         ),
     );
-    let mut citizen = Citizen::spawn(
-        Path::new(install::exe()),
-        &dir,
-        &node_conf,
-        &script,
-    );
+    let mut citizen = Citizen::spawn(Path::new(install::exe()), &dir, &node_conf, &script);
     let c = connect(&broker).await;
     wait_trace(&dir, "blocking", HARD).await;
     // Another command is answered while the handler waits.

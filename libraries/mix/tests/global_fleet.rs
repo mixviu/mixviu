@@ -9,7 +9,10 @@ use mix::{
 #[test]
 #[ignore = "requires an operator-supplied test global-fleet JSON corpus"]
 fn global_bug_signature_fleet_sweep() {
-    let path = paths::env::raw(paths::env::test::TEST_GLOBAL_FLEET).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap();
+    let path = paths::env::raw(paths::env::test::TEST_GLOBAL_FLEET)
+        .ok_or(std::env::VarError::NotPresent)
+        .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+        .unwrap();
     let corpus: Vec<(String, String)> =
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let mut parsed = 0;

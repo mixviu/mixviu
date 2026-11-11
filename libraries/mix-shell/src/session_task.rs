@@ -196,7 +196,11 @@ pub(crate) fn capture_base_env() {
     let _ = BASE_ENV.get_or_init(|| {
         let mut base: Vec<(String, String)> = BASE_NAMES
             .iter()
-            .filter_map(|name| crate::env_string(name).ok().map(|v| ((*name).to_owned(), v)))
+            .filter_map(|name| {
+                crate::env_string(name)
+                    .ok()
+                    .map(|v| ((*name).to_owned(), v))
+            })
             .collect();
         // Fixed, not inherited: a task has no terminal, and a child that
         // believes it does will emit escapes into a captured pipe.

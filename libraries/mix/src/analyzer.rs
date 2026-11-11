@@ -2801,7 +2801,10 @@ const REFLEX_SURPLUS_HINTS: &[(&str, usize, &str)] = &[
 /// Whether `head` names an executable on this host's PATH — the B2 gate:
 /// only a real shell reflex fires, a prose string never does.
 fn on_path(head: &str) -> bool {
-    let Ok(path) = paths::env::raw("PATH").ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)) else {
+    let Ok(path) = paths::env::raw("PATH")
+        .ok_or(std::env::VarError::NotPresent)
+        .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+    else {
         return false;
     };
     path.split(':').any(|dir| {

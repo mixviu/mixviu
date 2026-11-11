@@ -8,7 +8,7 @@
 #[path = "support/install.rs"]
 mod install;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 use serde_json::Value;
 use tempfile::TempDir;

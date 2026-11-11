@@ -290,7 +290,10 @@ impl Child {
         // spawned FROM the enrolled shell must see neither seed fd nor marker.
         std::fs::write(
             home.path().join(".mixrc"),
-            format!("print(\"RC_MARKER=[\" .. env(\"{}\") .. \"]\")\n", paths::env::SESSION_FD),
+            format!(
+                "print(\"RC_MARKER=[\" .. env(\"{}\") .. \"]\")\n",
+                paths::env::SESSION_FD
+            ),
         )
         .unwrap();
         let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
@@ -578,7 +581,10 @@ fn mix_child_bootstrap_proves_end_to_end() {
         let helper = child.home.path().join("descendant.mix");
         std::fs::write(
             &helper,
-            format!("print(\"DESCENDANT=[\" .. env(\"{}\") .. \"]\")\n", paths::env::SESSION_FD),
+            format!(
+                "print(\"DESCENDANT=[\" .. env(\"{}\") .. \"]\")\n",
+                paths::env::SESSION_FD
+            ),
         )
         .unwrap();
         child.send(&format!(

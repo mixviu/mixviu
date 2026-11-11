@@ -39,7 +39,11 @@ impl Bed {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         let ssh = dir.path().join("ssh");
-        fs::write(&ssh, FAKE_SSH.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE)).unwrap();
+        fs::write(
+            &ssh,
+            FAKE_SSH.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE),
+        )
+        .unwrap();
         fs::set_permissions(&ssh, fs::Permissions::from_mode(0o755)).unwrap();
         Bed { dir }
     }

@@ -302,9 +302,10 @@ async fn bytes_within_cap_pass() {
 
 #[tokio::test]
 async fn export_denied_without_process_capability() {
-    let err = run(&format!("export {} = \"x\"\n", paths::env::test::TEST_EVAL_SAFETY), |e| {
-        e.set_capability_policy(Rc::new(CategoryAllowList::new(&[CapabilityClass::FsRead])))
-    })
+    let err = run(
+        &format!("export {} = \"x\"\n", paths::env::test::TEST_EVAL_SAFETY),
+        |e| e.set_capability_policy(Rc::new(CategoryAllowList::new(&[CapabilityClass::FsRead]))),
+    )
     .await
     .expect_err("export must be denied without the Process capability");
     assert!(
@@ -312,7 +313,10 @@ async fn export_denied_without_process_capability() {
         "got: {err}"
     );
     assert!(
-        paths::env::raw(paths::env::test::TEST_EVAL_SAFETY).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).is_err(),
+        paths::env::raw(paths::env::test::TEST_EVAL_SAFETY)
+            .ok_or(std::env::VarError::NotPresent)
+            .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+            .is_err(),
         "denied export must not have touched the environment"
     );
 }
@@ -320,7 +324,10 @@ async fn export_denied_without_process_capability() {
 #[tokio::test]
 async fn export_allowed_with_process_capability() {
     let out = run(
-        &format!("export {name} = \"yes\"\nprint(env(\"{name}\"))\n", name = paths::env::test::TEST_EVAL_SAFETY_OK),
+        &format!(
+            "export {name} = \"yes\"\nprint(env(\"{name}\"))\n",
+            name = paths::env::test::TEST_EVAL_SAFETY_OK
+        ),
         |e| {
             e.set_capability_policy(Rc::new(CategoryAllowList::new(&[
                 CapabilityClass::Process,

@@ -18,10 +18,12 @@ use mix::value::Value;
 
 fn mix_src_str() -> String {
     crate::paths::mix_src()
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|error| {
-            eprintln!("mix: cannot resolve current directory for source tooling: {error}");
-            std::process::exit(2);
-        }))
+        .unwrap_or_else(|| {
+            std::env::current_dir().unwrap_or_else(|error| {
+                eprintln!("mix: cannot resolve current directory for source tooling: {error}");
+                std::process::exit(2);
+            })
+        })
         .to_string_lossy()
         .into_owned()
 }
@@ -911,7 +913,8 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Read {}/{}. Pick the highest-value uncompleted item. \
              Implement it with tests. Run cargo test.",
-                mix_src_str(), concat!("MIX_", "TODO.md")
+                mix_src_str(),
+                concat!("MIX_", "TODO.md")
             ),
         ),
         "dogfood" => cmd_ai(
@@ -1148,7 +1151,9 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     //    the checkout docs dir and the `mix man` cache.
     let mut man_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
     if let Some(root) = man_cache_root(
-        ::paths::env::raw("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
+        ::paths::env::raw("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .as_deref(),
         dirs::home_dir().as_deref(),
     ) {
         man_dirs.push(root);
@@ -1197,7 +1202,10 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     // `mix doctor` never touches a real broker — the reachability line is the
     // one check with an outward side effect.
     if ::paths::env::raw(::paths::env::DOCTOR_SKIP_BUS).is_some() {
-        println!("  — bus        probe skipped ({} set)", ::paths::env::DOCTOR_SKIP_BUS);
+        println!(
+            "  — bus        probe skipped ({} set)",
+            ::paths::env::DOCTOR_SKIP_BUS
+        );
         return finish_doctor(fails);
     }
     let noded = crate::node_config::resolve_noded_url();
@@ -2619,7 +2627,8 @@ fn parse_man_source(value: Option<&str>) -> Result<ManSource, String> {
         Some(value) if value.eq_ignore_ascii_case("auto") => Ok(ManSource::Auto),
         Some(value) if value.eq_ignore_ascii_case("local") => Ok(ManSource::Local),
         Some(value) => Err(format!(
-            "invalid {} '{value}' (expected auto or local)", ::paths::env::MAN_SOURCE
+            "invalid {} '{value}' (expected auto or local)",
+            ::paths::env::MAN_SOURCE
         )),
     }
 }
@@ -2653,7 +2662,8 @@ fn man_page_url(base_url: &str, filename: &str) -> String {
 /// root that is the only candidate; without one, the documented default
 /// clone location is tried.
 fn man_dir_candidates(_home: Option<&Path>, root: Option<&Path>) -> Vec<PathBuf> {
-    root.map(|root| vec![root.join("docs/mix")]).unwrap_or_default()
+    root.map(|root| vec![root.join("docs/mix")])
+        .unwrap_or_default()
 }
 
 fn local_man_dirs() -> Vec<PathBuf> {
@@ -2876,7 +2886,8 @@ fn print_man_not_found(topic: Option<&str>, base_url: Option<&str>) {
         }
         eprintln!("Local fallback looked in the configured source root's docs/mix.");
         eprintln!(
-            "Use {}=local with an explicit source root to read checkout manuals", ::paths::env::MAN_SOURCE
+            "Use {}=local with an explicit source root to read checkout manuals",
+            ::paths::env::MAN_SOURCE
         );
     } else {
         eprintln!("Available topics: {}", topics.join(", "));
@@ -2885,7 +2896,8 @@ fn print_man_not_found(topic: Option<&str>, base_url: Option<&str>) {
 
 /// `mix man [TOPIC]`: print a manual page; the built-in manual by default.
 fn cmd_man(topic: Option<&str>) {
-    let source = match parse_man_source(crate::env_string(::paths::env::MAN_SOURCE).ok().as_deref()) {
+    let source = match parse_man_source(crate::env_string(::paths::env::MAN_SOURCE).ok().as_deref())
+    {
         Ok(source) => source,
         Err(error) => {
             eprintln!("mix man: {error}");
@@ -3169,7 +3181,9 @@ fn cmd_apropos(term: &str) {
         .collect();
     let checkout = dir_pages(&resolve_man_dir());
     let cached = man_cache_root(
-        ::paths::env::raw("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
+        ::paths::env::raw("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .as_deref(),
         dirs::home_dir().as_deref(),
     )
     .and_then(|root| {
@@ -3470,10 +3484,7 @@ mod man_resolver_tests {
         let override_path = man_cache_path(root, "http://127.0.0.1:8080/mix", "syntax.md");
         assert!(override_path.starts_with("/cache/mix/man/sources"));
         assert!(override_path.ends_with("syntax.md"));
-        assert_ne!(
-            override_path,
-            canonical_path
-        );
+        assert_ne!(override_path, canonical_path);
         assert_eq!(
             override_path,
             man_cache_path(root, "http://127.0.0.1:8080/mix", "syntax.md")

@@ -117,12 +117,15 @@ fn audit_interp_corpus() {
 }
 
 fn audit_roots() -> Vec<PathBuf> {
-    let raw = paths::env::raw(paths::env::test::TEST_AUDIT_ROOTS).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap_or_else(|_| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .display()
-            .to_string()
-    });
+    let raw = paths::env::raw(paths::env::test::TEST_AUDIT_ROOTS)
+        .ok_or(std::env::VarError::NotPresent)
+        .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .display()
+                .to_string()
+        });
     raw.split(':')
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
@@ -288,7 +291,10 @@ fn classify(
     if any_assign.contains(&site.head) {
         return Category::ScopeAssignedNotProvenDominating;
     }
-    if paths::env::raw(&site.head).and_then(|v| v.into_string().ok()).is_some() {
+    if paths::env::raw(&site.head)
+        .and_then(|v| v.into_string().ok())
+        .is_some()
+    {
         return Category::EnvNameExistsNow;
     }
     if is_common_env_shaped(&site.head) {

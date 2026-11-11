@@ -36,7 +36,6 @@
 #[path = "support/install.rs"]
 mod install;
 use std::path::PathBuf;
-use std::process::Command;
 
 /// Rows below this are the load-bearing content. If the page is ever
 /// trimmed under it, the harness has stopped testing what it claims to.

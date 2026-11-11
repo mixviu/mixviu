@@ -58,7 +58,10 @@ pub(crate) fn agent_profile_from_env() -> bool {
 }
 
 fn agent_profile(value: Option<&str>) -> bool {
-    matches!(value, Some("agent" | "error" | "warn" | "1" | "true" | "yes"))
+    matches!(
+        value,
+        Some("agent" | "error" | "warn" | "1" | "true" | "yes")
+    )
 }
 
 #[test]

@@ -77,7 +77,10 @@ async fn strict_accepts_run_stream_options_map() {
     // compatible-mode call, which such a build would run while quietly
     // dropping the map. The env probe proves the option is applied, not
     // merely accepted.
-    let source = format!("print(run_stream([\"/bin/sh\", \"-c\", \"test x${name} = xy\"], {{env: {{{name}: \"y\"}}}}))\n", name = paths::env::test::TEST_SA_PROBE);
+    let source = format!(
+        "print(run_stream([\"/bin/sh\", \"-c\", \"test x${name} = xy\"], {{env: {{{name}: \"y\"}}}}))\n",
+        name = paths::env::test::TEST_SA_PROBE
+    );
     let src = source.as_str();
     assert_eq!(strict_ok(src).await, "0\n");
 }
