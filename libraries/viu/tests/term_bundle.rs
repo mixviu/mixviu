@@ -126,7 +126,7 @@ fn term_bundle_child() {
         "term.intent",
         json!({"id":"terminal-find","action":"edit","value":{"pattern":"needle","regex":false,"case":true}}),
     );
-    let mut previous = 0;
+    let mut previous = 0.0;
     for shift in [false, true] {
         let submitted = invoke(
             &mut runtime,
@@ -138,7 +138,7 @@ fn term_bundle_child() {
         let search = &model["terminal"]["properties"]["search"];
         assert_eq!(search["query"], "needle");
         assert_eq!(search["backwards"], shift);
-        let request = search["request"].as_u64().unwrap();
+        let request = search["request"].as_f64().unwrap();
         assert!(request > previous);
         previous = request;
         assert_eq!(model["find_open"], true);
