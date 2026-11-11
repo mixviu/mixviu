@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Hermetic suite: only temporary hub state, never a real key or SSH target.
+$exe = realpath("/proc/self/exe")
+$root = trim(run_argv_must(["mktemp", "-d"]))
+try
+  mkdir($root .. "/_etc/mesh", {parents:true})
+  $config = $root .. "/nodes.conf.mix"
+  write_file($config, data_encode({nodes:{local:{roots:{prefix:$root,etc:$root .. "/etc",var:$root .. "/var"}}}}))
+  for $file in sort(glob(dirname($0) .. "/*_test.mix"))
+    print("mesh fixture: " .. basename($file))
+    $result = run_argv([$exe,$file], {env:{MESH_HUB:$root,MESH_NODES_CONFIG:$config},stdout:"inherit",stderr:"inherit",timeout:180})
+    if not $result.ok then raise("MESH_TEST", "fixture failed: " .. basename($file)) end
+  end
+finally
+  run_argv_must(["rm", "-rf", $root])
+end
