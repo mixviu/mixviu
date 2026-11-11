@@ -6,6 +6,12 @@ fn reserved_chord($text)
 end
 fn inspect_bindings($v,$path,$binding=false)
   if type($v)=="map" then
+    if type($v.key)=="string" then
+      $mods=$v.modifiers ?? []
+      if type($mods)!="list" then $mods=[] end
+      $chord=(if $v.ctrl==true or contains($mods,"ctrl") or contains($mods,"command") then "Ctrl+" else "" end)..(if $v.alt==true or contains($mods,"alt") then "Alt+" else "" end)..(if $v.shift==true or contains($mods,"shift") then "Shift+" else "" end)..$v.key
+      if reserved_chord($chord) then raise("RESERVED_KEY",$path..": reserved binding "..$chord) end
+    end
     for $k in keys($v) inspect_bindings($v[$k],$path.."."..$k,contains(["shortcut","shortcuts","keys","key"],$k)) end
   elif type($v)=="list" then
     for $item in $v inspect_bindings($item,$path,$binding) end
