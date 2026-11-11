@@ -333,7 +333,10 @@ fn derived_refuses_relative_and_parent_overrides() {
                 root: Some(bad.into()),
                 ..base.clone()
             };
-            assert!(Dirs::derived(prefix, &root).is_err(), "root {bad} uid {uid}");
+            assert!(
+                Dirs::derived(prefix, &root).is_err(),
+                "root {bad} uid {uid}"
+            );
         }
     }
     assert!(Dirs::derived(Path::new("relative"), &Environment::default()).is_err());
