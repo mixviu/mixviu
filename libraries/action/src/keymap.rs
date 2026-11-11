@@ -145,10 +145,6 @@ impl Bindings {
         let mut chosen = BTreeMap::new();
         let mut claimed = BTreeSet::new();
         for (action, chords) in overrides {
-            if chords.iter().any(|s| reserved(s)) {
-                notes.push(format!("{action}: F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused; defaults kept"));
-                continue;
-            }
             let Some((&id, _)) = self.current.get_key_value(action.as_str()) else {
                 notes.push(format!("{action}: no such command"));
                 continue;
@@ -162,6 +158,10 @@ impl Bindings {
                     }
                     Some(s) => parsed.push(s),
                 }
+            }
+            if chords.iter().chain(parsed.iter()).any(|s| reserved(s)) {
+                notes.push(format!("{action}: F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused; defaults kept"));
+                continue;
             }
             if !chords.is_empty() && parsed.is_empty() {
                 notes.push(format!(
@@ -204,6 +204,16 @@ impl Bindings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_reserved_alias_keeps_defaults() {
+        let mut bindings = Bindings::default();
+        bindings.add("cmd", Some("Ctrl+O".into()));
+        let overrides = Overrides::from([("cmd".into(), vec!["alias".into()])]);
+        let notes = bindings.rebind(&overrides, |_| Some("Ctrl+ArrowLeft".into()));
+        assert!(notes[0].contains("reserved for the desk"));
+        assert_eq!(bindings.shortcuts_of("cmd"), ["Ctrl+O"]);
+    }
 
     #[test]
     #[should_panic(expected = "F1-F12 belong to the user")]
