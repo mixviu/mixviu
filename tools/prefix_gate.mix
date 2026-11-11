@@ -261,7 +261,7 @@ fn scan_rust($file, $source)
       $constant = false
       if $file == $policy.prefix_constant.file and $text == "/opt/mix" then
         $before = map(slice($ts, max(0, $i - 6), $i), fn($x) = $x.text)
-        $constant = deep_eq($before, ["const", $policy.prefix_constant.name, ":", "&", "str", "="])
+        $constant = $t.literal and deep_eq($before, ["const", $policy.prefix_constant.name, ":", "&", "str", "="])
       end
       path_hits($file, $t.line, $text, $scope, $constant)
     end
