@@ -2,10 +2,23 @@
 -- Real portal, chooser and viewport driving on private D-Bus/noded/viud.
 -- Needs CBC's headless weston host. Never touches a desktop, VT or service.
 -- Build on CBC: cargo build -p portald -p dopus -p viud -p noded -p system --bins --examples
--- MIX_TEST_BIN=<bin> mix services/portald/tests/chooser_bus_test.mix
-$n = require("../../../tests/desktop/nested_host_lib.mix")
+-- mix services/portald/tests/chooser_bus_test.mix --bin <bin>
+-- Not in the headless gate: the frozen visual helper/native Dopus are absent.
+$helper = "../../../tests/desktop/nested_host_lib.mix"
+if not is_file(dirname(realpath($0)) .. "/" .. $helper) then
+  raise("VISUAL_FIXTURE_UNAVAILABLE", "requires the frozen nested-host helper and native Dopus; see provenance/portald.md")
+end
+$n = require($helper)
 $root = dirname(dirname(dirname(dirname(realpath($0)))))
-$bin = env("MIX_TEST_BIN", $root .. "/target/debug")
+$o = getopt(args(), {bin: {arg: true}})
+if len($o.errors) > 0 then raise("ARGS", json_encode($o.errors)) end
+$bin = $o.opts.bin ?? ($root .. "/target/debug")
+fn registered_name($suffix)
+  for $v in load_data($root .. "/etc/env.conf.mix").vars
+    if ends_with($v.name, "_" .. $suffix) then return $v.name end
+  end
+  raise("ENV_REGISTRY", "unregistered suffix " .. $suffix)
+end
 $run = $n.new_run("/tmp/mixos-portal-chooser")
 $tmp = $run.path
 $broker = nil
@@ -20,9 +33,13 @@ try
   write_file($tmp .. "/settings.json", read_file($root .. "/tests/desktop/smoke-settings.json"))
   $session = $n.start({bin:$bin .. "/viud", tag:"portal-chooser", run:$run, config:$tmp .. "/settings.json", software:true, dbus:true})
   if not $n.wait_ready($session,40) then raise("PORTAL_TEST", "nested viud did not start: " .. $session.log) end
-  $client = $n.client_env($session,{HOME:$tmp .. "/home", XDG_CONFIG_HOME:$tmp .. "/config", XDG_STATE_HOME:$tmp .. "/state",
-    MIX_APP_HOME:$tmp .. "/dopus", MIX_COMP_SERVICE:$session.service, WINIT_UNIX_BACKEND:"wayland", WGPU_BACKEND:"gl", LIBGL_ALWAYS_SOFTWARE:"1",
-    MESA_VK_WSI_PRESENT_MODE:"mailbox", MIX_NODED_URL:$broker.url})
+  $extra = {HOME:$tmp .. "/home", XDG_CONFIG_HOME:$tmp .. "/config", XDG_STATE_HOME:$tmp .. "/state",
+    WINIT_UNIX_BACKEND:"wayland", WGPU_BACKEND:"gl", LIBGL_ALWAYS_SOFTWARE:"1",
+    MESA_VK_WSI_PRESENT_MODE:"mailbox"}
+  $extra[registered_name("APP_HOME")] = $tmp .. "/dopus"
+  $extra[registered_name("COMP_SERVICE")] = $session.service
+  $extra[registered_name("NODED_URL")] = $broker.url
+  $client = $n.client_env($session, $extra)
   $provider = spawn([$bin .. "/dopus", "--choose-service", "--noded-url", $broker.url],
     {env:$client, stdout:{file:$tmp .. "/files.log"}, stderr:"stdout", detach:true})
   $ready = false

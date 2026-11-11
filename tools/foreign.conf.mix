@@ -18,7 +18,7 @@ foreign: {
   },
   admitted: {
     "pipewire-sys": {kind: "system", via: "pipewire (portald ScreenCast only)", exit: "a pure-Rust PipeWire native-protocol client once one can publish a video stream; until then OS interface", only: ["portald"], by: "Mark", on: "2026-11-12"},
-    "libspa-sys": {kind: "vendored", via: "pipewire (portald ScreenCast only); compiles SPA inline-function shims, runs bindgen", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"},
+    "libspa-sys": {kind: "vendored", via: "pipewire (portald ScreenCast only); runs bindgen; compiles generated SPA inline shims and src/{type-info,command,node-command,meta}.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"},
     "libspa": {kind: "vendored", via: "pipewire (portald ScreenCast only); compiles upstream tests/pod.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"}
   },
   debt: {

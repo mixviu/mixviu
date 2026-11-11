@@ -130,6 +130,7 @@ fn startup_help_matches_screencast_dispatch() {
         return;
     }
     for mode in ["off", "on"] {
+        if mode == "on" && !cfg!(feature = "screencast") { continue; }
         let broker = test_broker::Broker::start();
         let dbus = PrivateBus::start().unwrap();
         let output = Command::new(std::env::current_exe().unwrap())
@@ -140,7 +141,7 @@ fn startup_help_matches_screencast_dispatch() {
             ])
             .env(MODE, mode)
             .env(paths::env::NODED_URL, &broker.url)
-            .env("PORTALD_TEST_DBUS", &dbus.address)
+            .env(paths::env::PORTALD_TEST_DBUS, &dbus.address)
             .output()
             .unwrap();
         assert!(
@@ -614,7 +615,7 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         let bus = PrivateBus::start()?;
         let connection = client(&bus).await?;
         let proxy = portal_proxy(&connection).await?;
-        let mut command = Command::new(env!("CARGO_BIN_EXE_portald"));
+        let mut command = Command::new(std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("portald"));
         command
             .args(["serve", "--instance", "host", "--profile", profile])
             .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
@@ -705,7 +706,7 @@ async fn losing_the_session_bus_exits_non_zero_for_the_restart() -> anyhow::Resu
     let connection = client(&bus).await?;
     let proxy = portal_proxy(&connection).await?;
     let mut process = Process(
-        Command::new(env!("CARGO_BIN_EXE_portald"))
+        Command::new(std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("portald"))
             .args(["serve", "--instance", "host", "--profile", "default"])
             .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
             .env(paths::env::NODED_URL, &broker.url)

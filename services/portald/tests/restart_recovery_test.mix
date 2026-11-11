@@ -174,7 +174,7 @@ try
   if $first == nil then raise("SETTINGS", "ReadOne did not answer before the outage") end
   print("before outage: ReadOne answered after " .. to_string($first.tries) .. " tries: " .. $first.out)
 
-  kill($bus_pid)
+  $_kill_bus = kill($bus_pid)
   if exists($socket) then remove($socket) end
   sleep($DOWN_SECONDS)
   $during = unit_state($unit)

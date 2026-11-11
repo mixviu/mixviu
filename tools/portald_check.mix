@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- CBC only: refresh the lock/fmt, exercise both feature modes, return the diff.
 fn check_step($argv, $env = {})
+  $env.RUSTC_WRAPPER = ""
+  $env.TMPDIR = "/var/tmp"
   print(join($argv, " "))
   $r = run_argv($argv, {env: $env, timeout: 3600, stdout: "inherit", stderr: "inherit"})
   if not $r.ok then raise("CHECK_FAILED", join($argv, " ")) end
