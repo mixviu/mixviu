@@ -493,6 +493,9 @@ fn targeted_human_button(
     pressed: bool,
     time: u32,
 ) {
+    if swallow_blank(lp, SeatKind::Human, world::comp::blank::Edge::from_button(button, pressed)) {
+        return;
+    }
     let Some(pointer) = lp.state.seat.seat.get_pointer() else {
         return;
     };
@@ -543,6 +546,9 @@ fn move_human_pointer(
     corners: bool,
     time: u32,
 ) -> Result<(), ControlReply> {
+    if swallow_blank(lp, SeatKind::Human, world::comp::blank::Edge::Other) {
+        return Ok(());
+    }
     let moved = match target {
         PointerMoveTarget::Relative { dx, dy } => Moved::By(*dx, *dy),
         PointerMoveTarget::Output { output, x, y } => {
@@ -1169,6 +1175,9 @@ fn agent_target(lp: &Loop, surface: &WlSurface) -> Option<AgentTarget> {
 // ── delivery ─────────────────────────────────────────────────────────────────
 
 fn inject_button(lp: &mut Loop, seat: SeatKind, button: u32, pressed: bool, time: u32) {
+    if swallow_blank(lp, seat, world::comp::blank::Edge::from_button(button, pressed)) {
+        return;
+    }
     // A region selection takes the human seat's buttons.
     if seat == SeatKind::Human && world::comp::region::button(lp, button, pressed) {
         injected(lp, seat);
@@ -1209,6 +1218,9 @@ fn inject_scroll(
     v120: (Option<i32>, Option<i32>),
     time: u32,
 ) {
+    if swallow_blank(lp, seat, world::comp::blank::Edge::Other) {
+        return;
+    }
     injected(lp, seat);
     let source = match source {
         ScrollSource::Wheel => AxisSource::Wheel,
@@ -1323,6 +1335,9 @@ fn inject_key(
     pressed: bool,
     time: u32,
 ) -> (bool, Option<(u64, u64)>) {
+    if swallow_blank(lp, seat, world::comp::blank::Edge::from_key(keycode.raw(), pressed)) {
+        return (true, None);
+    }
     // A region selection takes the human seat's keys: handled, no target.
     if seat == SeatKind::Human && world::comp::region::key(lp, keycode.raw(), pressed) {
         injected(lp, seat);
@@ -1457,6 +1472,14 @@ fn release_holds(lp: &mut Loop, seat: SeatKind, holds: Vec<Hold>, time: u32) {
 /// One injected event went through a seat: counted for a
 /// sequence's yield and recorded as that seat's activity (an injected human
 /// event counts as human input).
+fn swallow_blank(lp: &mut Loop, seat: SeatKind, edge: world::comp::blank::Edge) -> bool {
+    if seat == SeatKind::Human && world::comp::blank::consume(lp, edge) {
+        injected(lp, seat);
+        return true;
+    }
+    false
+}
+
 fn injected(lp: &mut Loop, seat: SeatKind) {
     let injection = &mut lp.inner.comp.injection;
     injection.events = injection.events.wrapping_add(1);

@@ -231,11 +231,16 @@ pub fn note_press(lp: &mut Loop, button: bool) {
 pub fn note_human_activity(lp: &mut Loop) {
     lp.inner.comp.injection.note_activity(SeatKind::Human);
     dispatcher::idle::note_human_activity(&mut lp.state);
+    super::blank::activity(lp);
 }
 
 pub fn human_input<I: InputBackend>(lp: &mut Loop, event: &InputEvent<I>) -> bool {
     let injection = &mut lp.inner.comp.injection;
     if !injection.host_gate(event) {
+        return false;
+    }
+    if super::blank::device_input(lp, event) {
+        note_human_activity(lp);
         return false;
     }
     // A region selection holds the seat: it takes the event.
