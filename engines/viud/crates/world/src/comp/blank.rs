@@ -43,12 +43,18 @@ pub enum Edge {
 
 impl Edge {
     pub fn injected_key(code: u32, pressed: bool) -> Self {
-        if pressed { Self::Press(Hold::InjectedKey(code)) }
-        else { Self::Release(Hold::InjectedKey(code)) }
+        if pressed {
+            Self::Press(Hold::InjectedKey(code))
+        } else {
+            Self::Release(Hold::InjectedKey(code))
+        }
     }
     pub fn injected_button(code: u32, pressed: bool) -> Self {
-        if pressed { Self::Press(Hold::InjectedButton(code)) }
-        else { Self::Release(Hold::InjectedButton(code)) }
+        if pressed {
+            Self::Press(Hold::InjectedButton(code))
+        } else {
+            Self::Release(Hold::InjectedButton(code))
+        }
     }
     pub fn from_key(code: u32, pressed: bool) -> Self {
         if pressed {
@@ -96,8 +102,8 @@ impl BlankPolicy {
     /// ReleaseAll also ends consumed injected presses, which never entered
     /// the seat's pressed set or injection's ordinary hold ledger.
     pub fn clear_injected_holds(&mut self) {
-        self.swallowed.retain(|hold| !matches!(hold,
-            Hold::InjectedKey(_) | Hold::InjectedButton(_)));
+        self.swallowed
+            .retain(|hold| !matches!(hold, Hold::InjectedKey(_) | Hold::InjectedButton(_)));
     }
 
     pub fn timeout(&self) -> Option<u64> {
@@ -190,9 +196,16 @@ pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::
                     .bindings
                     .state()
                     .is_some_and(|table| table.is_intercepted(code.raw()));
-            let hold = if comp.injection.human.owners_of(policy::agent::Hold::Key(code.raw())) > 0 {
+            let hold = if comp
+                .injection
+                .human
+                .owners_of(policy::agent::Hold::Key(code.raw()))
+                > 0
+            {
                 Hold::InjectedKey(code.raw())
-            } else { Hold::Key(code.raw()) };
+            } else {
+                Hold::Key(code.raw())
+            };
             comp.blank.swallowed.insert(hold);
             keyboard.input::<(), _>(
                 state,
@@ -212,7 +225,12 @@ pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::
     }
     if let Some(pointer) = state.seat.seat.get_pointer() {
         for button in pointer.current_pressed() {
-            if comp.injection.human.owners_of(policy::agent::Hold::Button(button)) > 0 {
+            if comp
+                .injection
+                .human
+                .owners_of(policy::agent::Hold::Button(button))
+                > 0
+            {
                 comp.blank.swallowed.insert(Hold::InjectedButton(button));
             } else if !tablet_pointer_buttons.contains(&button) {
                 comp.blank.swallowed.insert(Hold::Button(button));

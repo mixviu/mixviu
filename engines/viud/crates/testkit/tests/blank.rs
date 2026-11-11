@@ -200,11 +200,21 @@ fn tablet_pointer_alias_does_not_suppress_the_next_mouse_click() {
     });
     h.blank(true);
     assert_eq!(h.client.state.buttons.len(), 2, "alias is released once");
-    assert!(h.wire.inner.comp.blank.consume_edge(Edge::Release(Hold::TabletTip)));
+    assert!(
+        h.wire
+            .inner
+            .comp
+            .blank
+            .consume_edge(Edge::Release(Hold::TabletTip))
+    );
     h.blank(false);
     h.press(&surface, button);
     h.release(&surface, button);
-    assert_eq!(h.client.state.buttons.len(), 4, "next mouse click is delivered");
+    assert_eq!(
+        h.client.state.buttons.len(),
+        4,
+        "next mouse click is delivered"
+    );
 }
 
 #[test]
@@ -222,7 +232,10 @@ fn injected_holds_are_separate_from_physical_holds_and_release_all_clears_them()
     assert!(!h.key(EV_A + 8, false, false));
     h.press(&surface, button);
     h.release(&surface, button);
-    assert_eq!(h.client.state.keys, [(EV_A, true), (EV_A, false), (EV_A, true), (EV_A, false)]);
+    assert_eq!(
+        h.client.state.keys,
+        [(EV_A, true), (EV_A, false), (EV_A, true), (EV_A, false)]
+    );
     assert_eq!(h.client.state.buttons.len(), 4);
     // The actual injected release still belongs to blank entry.
     assert!(h.injected_key(EV_A + 8, false));
