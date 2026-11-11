@@ -49,12 +49,20 @@ MCP SDK or any package added by it. Normal Mix invocation keeps its existing
 handler. Additional stdio tests cover attribution and a failed Unix socket
 with TCP explicitly enabled. `adaptation_targets` records these source moves.
 
-Verification remains incomplete. CBC's foreign gate passes, and the inverse
-`rmcp` tree contains only `mix-mcp`. The required `cargo deny` check rejects
-the authorised pin for RUSTSEC-2026-0457, RUSTSEC-2026-0461 and
-RUSTSEC-2026-0462; bans, licences and sources pass. These advisories concern
-OAuth and Streamable HTTP features outside this stdio adapter's feature set,
-but the crate-level advisory gate still fails. No advisory exception or pin
-change has been made. The focused job stops there, before tests and release
-size measurement; the final full gate has not run.
+Verification remains incomplete. At source commit
+`109f3efca2b3e0b2f0c4a2eed4321b0c0a3ec339`, CBC passes all 65 adapter tests
+(59 unit, six stdio), with none ignored. Worker formatting is unchanged. Both
+debug and release Mix pass the foreign gate; release Mix has no test-hook
+marker. The inverse `rmcp` tree contains only `mix-mcp`, and none of the seven
+added lock packages reaches a strict engine. The release adapter is 6,094,608
+bytes. Package licences are confirmed by Cargo metadata.
+
+The required `cargo deny` check rejects the authorised pin for
+RUSTSEC-2026-0457, RUSTSEC-2026-0461 and RUSTSEC-2026-0462; bans, licences and
+sources pass. These advisories concern OAuth and Streamable HTTP features
+outside this stdio adapter's feature set, but the crate-level advisory gate
+still fails. No advisory exception or pin change has been made. The final full
+gate has not run. The empty-session compatibility difference above remains an
+open decision because a presence-preserving reader would exceed the brief's
+permitted `paths` edits.
 
