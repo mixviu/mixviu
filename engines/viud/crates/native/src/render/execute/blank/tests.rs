@@ -126,3 +126,57 @@ fn connector_sdr_and_hdr_plan_retains_blank_and_clears_foreign_luts() {
     f.values.borrow_mut().insert(1, 99);
     assert_eq!(color_plan(&f, None), [(1, 0)]);
 }
+
+#[derive(Default)]
+struct FakeDevice {
+    values: RefCell<BTreeMap<(u32, u32), u64>>,
+    tests: RefCell<Vec<bool>>,
+    refuse: Cell<Option<bool>>,
+}
+impl AtomicDevice for FakeDevice {
+    fn commit(&self, changes: &[Change], test: bool) -> Result<(), String> {
+        self.tests.borrow_mut().push(test);
+        if self.refuse.get() == Some(test) { return Err("one CRTC refused".into()); }
+        if !test {
+            let mut next = self.values.borrow().clone();
+            for change in changes {
+                for (h, v) in &change.props { next.insert((change.crtc.into(), *h), *v); }
+            }
+            *self.values.borrow_mut() = next;
+        }
+        Ok(())
+    }
+}
+
+fn two_outputs(value: u64) -> Vec<Change> {
+    [1, 2].into_iter().map(|raw| Change {
+        crtc: std::num::NonZeroU32::new(raw).unwrap().into(),
+        props: vec![(3, value)],
+    }).collect()
+}
+
+#[test]
+fn two_output_refusal_never_partially_blanks_or_unblanks() {
+    for fail_test in [true, false] {
+        let f = FakeDevice::default();
+        f.refuse.set(Some(fail_test));
+        assert!(transaction(&f, &two_outputs(99)).is_err());
+        assert!(f.values.borrow().is_empty());
+        assert_eq!(f.tests.borrow().as_slice(), if fail_test { &[true][..] } else { &[true, false][..] });
+        f.tests.borrow_mut().clear();
+        f.values.borrow_mut().extend([((1, 3), 99), ((2, 3), 99)]);
+        assert!(transaction(&f, &two_outputs(0)).is_err());
+        assert!(f.values.borrow().values().all(|v| *v == 99));
+    }
+}
+
+#[test]
+fn two_output_success_is_one_test_then_one_commit() {
+    let f = FakeDevice::default();
+    transaction(&f, &two_outputs(99)).unwrap();
+    assert_eq!(*f.tests.borrow(), [true, false]);
+    assert_eq!(f.values.borrow().len(), 2);
+    assert!(f.values.borrow().values().all(|v| *v == 99));
+    transaction(&f, &two_outputs(0)).unwrap();
+    assert!(f.values.borrow().values().all(|v| *v == 0));
+}
