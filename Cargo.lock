@@ -5455,6 +5455,7 @@ dependencies = [
  "libc",
  "mimalloc",
  "mix-shell",
+ "paths",
  "proptest",
  "rustyline",
  "serde",
