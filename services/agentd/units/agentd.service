@@ -20,6 +20,7 @@ Type=simple
 Environment=MIX_AGENTD_CONF=%E/mixos/agent.conf.mix
 Environment=MIX_AGENTD_DB=%S/mixos/agentd/sessions.db
 ExecStartPre=/usr/bin/mkdir -p %S/mixos/agentd
+ExecStartPre=/usr/bin/chmod 0700 %S/mixos/agentd
 UMask=0077
 ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/agentd/agentd.mix --name agent
 # Agents are children of agentd; stopping the unit ends every session. The

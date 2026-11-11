@@ -41,7 +41,7 @@
     {
       "path": "services/agentd/scripts/lib/agent.mix",
       "source_blob": "f95923e34fa7bd12b7891a6b94bc644b6cff0a27",
-      "sha256": "0c83c614ac5f7842943101ffcf8ca3e20f2f1177b03365b61dcd1b10b7bf1b7a",
+      "sha256": "a1108e7cdcb401bd91eb9f7d6afc385851e118ec03314e8b45f7b82af6c29d65",
       "changed": true
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "services/agentd/units/agentd.service",
       "source_blob": "a47e32873154ca0a4f8e5abb421142b2f0ee5b77",
-      "sha256": "660cb169f81f1c9cdfe0e52c701342d653c5586bc46557e77ba42bb0c7fdd4ab",
+      "sha256": "454b2fc65c8869834d6d8e5caa0f1aa6e7e7fdfae8be14d07adef13368d4964e",
       "changed": true
     },
     {
@@ -293,7 +293,7 @@
     {
       "path": "services/peersd/units/peersd.service",
       "source_blob": "916787ce22b1aa2e4949f889d4dedbcbf2d2f1dc",
-      "sha256": "8c00e4c98b6193e7328768f215de5b971e237c18204f5ebc6e02c9cbc095a9f2",
+      "sha256": "9cd9d72d21cdf09ef32df7d235ae743f6b6be45bb48ca24d97c47195ee327804",
       "changed": true
     },
     {
