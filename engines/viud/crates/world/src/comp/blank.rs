@@ -313,9 +313,16 @@ pub fn configure(lp: &mut Loop, timeout: Option<u64>) {
 }
 
 pub fn set_inhibited(lp: &mut Loop, inhibited: bool) {
-    if lp.inner.comp.blank.inhibit(inhibited, lp.inner.comp.clock.now()) {
+    if lp
+        .inner
+        .comp
+        .blank
+        .inhibit(inhibited, lp.inner.comp.clock.now())
+    {
         dispatcher::idle::set_inhibited(&mut lp.state, inhibited);
-        lp.inner.comp.settings_changed("display.inhibited", "wayland.idle_inhibit");
+        lp.inner
+            .comp
+            .settings_changed("display.inhibited", "wayland.idle_inhibit");
         service(lp);
     }
 }

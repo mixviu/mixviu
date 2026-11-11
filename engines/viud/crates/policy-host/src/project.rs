@@ -89,8 +89,14 @@ pub fn service_inhibitors(lp: &mut Loop) {
             if !surface.is_alive() {
                 return false;
             }
-            let Some(record) = lp.inner.comp.id_for_surface(surface)
-                .and_then(|id| lp.inner.comp.registry.get(id)) else { return false };
+            let Some(record) = lp
+                .inner
+                .comp
+                .id_for_surface(surface)
+                .and_then(|id| lp.inner.comp.registry.get(id))
+            else {
+                return false;
+            };
             let row = project_surface(lp, record, &placements);
             row.visible && row.output.is_some() && !row.occlusion.occluded
         })

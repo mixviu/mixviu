@@ -395,6 +395,85 @@ fn continuous_agent_input_does_not_postpone_the_idle_blank_timer() {
     bus.call("comp.display.blank", json!({"on":false}));
 }
 
+fn wait_inhibited(bus: &Bus, expected: bool) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if bus.call("comp.props.get", json!({"path":"display.inhibited"})) == expected {
+            return;
+        }
+        assert!(Instant::now() < deadline, "inhibited never became {expected}");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+#[ignore = "needs a render node and built viud/noded/Mix"]
+fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
+    let bus = Bus::start("inhibit");
+    let mut process = process::spawn(1, None, "inhibit", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let observer = BlankObserver::start(&bus);
+    wait_inhibited(&bus, false);
+    let a = pattern.inhibit();
+    wait_inhibited(&bus, true);
+    let row = bus.window();
+    bus.call("comp.window.minimize", target(&row));
+    wait_inhibited(&bus, false);
+    bus.call("comp.window.restore", target(&row));
+    wait_inhibited(&bus, true);
+    bus.call("comp.window.send_to_workspace", place_args(&row, json!({"index":2})));
+    wait_inhibited(&bus, false);
+    bus.call("comp.workspace.switch", json!({"index":2}));
+    wait_inhibited(&bus, true);
+    bus.call("comp.workspace.switch", json!({"index":1}));
+    wait_inhibited(&bus, false);
+    bus.call("comp.window.send_to_workspace", place_args(&row, json!({"index":1})));
+    wait_inhibited(&bus, true);
+    bus.call("comp.display.blank", json!({"on":true}));
+    assert_eq!(bus.call("comp.props.get", json!({"path":"display.blanked"})), true);
+    let b = pattern.inhibit();
+    wait_inhibited(&bus, true);
+    assert_eq!(bus.call("comp.props.get", json!({"path":"display.blanked"})), true);
+    bus.call("comp.display.blank", json!({"on":false}));
+    a.destroy();
+    pattern.pump();
+    wait_inhibited(&bus, true);
+    b.destroy();
+    pattern.pump();
+    wait_inhibited(&bus, false);
+    let _c = pattern.inhibit();
+    wait_inhibited(&bus, true);
+    pattern.unmap();
+    wait_inhibited(&bus, false);
+    // Disconnect with a live resource, then positively prove a new client
+    // can hold and release inhibition without the old resource remaining.
+    drop(pattern);
+    let mut next = Pattern::new(connect(&mut process));
+    next.wait_callback(0);
+    let _d = next.inhibit();
+    wait_inhibited(&bus, true);
+    drop(next);
+    wait_inhibited(&bus, false);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let reply = observer.request(&bus, "observer.inhibitors");
+        assert_eq!(reply["rc"], 0);
+        let edges = reply["body"].as_array().unwrap();
+        if edges.len() >= 14 {
+            assert_eq!(edges.len(), 14);
+            for (i, edge) in edges.iter().enumerate() {
+                assert_eq!(edge["old"], i % 2 != 0);
+                assert_eq!(edge["new"], i % 2 == 0);
+                assert_eq!(edge["cause"], "wayland.idle_inhibit");
+            }
+            break;
+        }
+        assert!(Instant::now() < deadline, "missing inhibitor edges: {reply}");
+    }
+}
+
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn review_z_overlap_and_workspace_move_deliver_to_top_window() {

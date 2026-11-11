@@ -3,7 +3,7 @@
 use _idle_inhibit::zwp_idle_inhibitor_v1::{Request, ZwpIdleInhibitorV1};
 use wayland_protocols::wp::idle_inhibit::zv1::server as _idle_inhibit;
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{backend::ClientId, Client, DataInit, DisplayHandle};
+use wayland_server::{Client, DataInit, DisplayHandle, backend::ClientId};
 
 use crate::wayland::Dispatch2;
 use crate::wayland::idle_inhibit::IdleInhibitHandler;

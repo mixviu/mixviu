@@ -80,6 +80,22 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    pub fn inhibit(&mut self) -> wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1 {
+        use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
+        let name = self.state.globals.iter().find(|(_, i, _)| i == "zwp_idle_inhibit_manager_v1").unwrap().0;
+        let qh = self.queue.handle();
+        let manager: ZwpIdleInhibitManagerV1 = self.registry.bind(name, 1, &qh, ());
+        let inhibitor = manager.create_inhibitor(&self.surface, &qh, ());
+        manager.destroy();
+        self.conn.flush().unwrap();
+        inhibitor
+    }
+
+    pub fn unmap(&mut self) {
+        self.surface.attach(None, 0, 0);
+        self.surface.commit();
+        self.conn.flush().unwrap();
+    }
     pub fn new(stream: UnixStream) -> Self {
         Self::named(stream, "headless-pattern", true)
     }
@@ -424,6 +440,8 @@ impl Dispatch<WpPresentationFeedback, ()> for State {
     }
 }
 delegate_noop!(State: ignore WlCompositor);
+delegate_noop!(State: ignore wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1);
+delegate_noop!(State: ignore wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1);
 delegate_noop!(State: ignore WlSurface);
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);
