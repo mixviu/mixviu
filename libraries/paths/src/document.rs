@@ -49,7 +49,10 @@ pub(super) fn parse(source: &str) -> Result<BTreeMap<Root, PathBuf>> {
         };
         let root = Root::parse(&key)?;
         if root == Root::Prefix {
-            return Err("layout.mx refuses a prefix key; use MIX_PREFIX".into());
+            return Err(format!(
+                "layout.mx refuses a prefix key; use {}",
+                super::env::PREFIX
+            ));
         }
         p.space();
         if p.chars.next() != Some(':') {
@@ -71,11 +74,11 @@ pub(super) fn parse(source: &str) -> Result<BTreeMap<Root, PathBuf>> {
     }
 }
 
-struct Reader<'a> {
-    chars: std::iter::Peekable<std::str::Chars<'a>>,
+pub(super) struct Reader<'a> {
+    pub(super) chars: std::iter::Peekable<std::str::Chars<'a>>,
 }
 impl Reader<'_> {
-    fn space(&mut self) -> bool {
+    pub(super) fn space(&mut self) -> bool {
         let mut newline = false;
         loop {
             while self.chars.peek().is_some_and(|c| c.is_whitespace()) {
@@ -96,7 +99,7 @@ impl Reader<'_> {
             }
         }
     }
-    fn string(&mut self) -> Result<String> {
+    pub(super) fn string(&mut self) -> Result<String> {
         let quote = self.chars.next().ok_or("expected layout path string")?;
         if quote != '\'' && quote != '"' {
             return Err("layout paths must be quoted strings".into());

@@ -6,6 +6,8 @@
 --   mix tools/ci.mix STAGE [--mix PATH]
 --   STAGE: fmt | env | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
+--   stage-install (not in all): copy built debug binaries to a temporary prefix,
+--   write registry defaults as env.mx (no layout.mx), and print the prefix.
 --
 -- MixViu has four engines: mix, mixd, viu, viud. The `mix` package is built and tested apart from the
 -- rest of the workspace: the workspace build would unify features and ship
@@ -179,6 +181,10 @@ fn stage_env()
       exit(1)
     end
     $listed[$v.name] = true
+    if has_key($v, "default") and ($v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
+      print("::error::" .. $v.name .. ": default must be a runtime environment string")
+      exit(1)
+    end
   end
   $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path]
   $used = {}
@@ -305,7 +311,26 @@ fn stage_mix_lint_baseline($mix)
   print("wrote " + $baseline_path)
 end
 
-if $stage == "fmt" then
+-- Optional staging only. Callers choose when to use this install.
+fn stage_install()
+  $prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir", "mix-stage-XXXXXXXX"]))
+  mkdir($prefix .. "/bin")
+  for $file in sort(glob("target/debug/*"))
+    if is_file($file) and access($file, "x") then
+      run_argv_must(["cp", "--", $file, $prefix .. "/bin/" .. basename($file)])
+    end
+  end
+  $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
+  for $v in load_data("etc/env.conf.mix").vars
+    if has_key($v, "default") then $defaults[$v.name] = $v.default end
+  end
+  write_file($prefix .. "/env.mx", data_encode($defaults))
+  print($prefix)
+end
+
+if $stage == "stage-install" then
+  stage_install()
+elif $stage == "fmt" then
   stage_fmt()
 elif $stage == "clippy" then
   stage_clippy()

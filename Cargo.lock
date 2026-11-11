@@ -935,6 +935,9 @@ dependencies = [
 [[package]]
 name = "buildinfo"
 version = "0.1.2"
+dependencies = [
+ "paths",
+]
 
 [[package]]
 name = "bumpalo"

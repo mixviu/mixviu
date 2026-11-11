@@ -2389,7 +2389,14 @@ pub fn main_with_args(args: Vec<std::ffi::OsString>) -> process::ExitCode {
     main()
 }
 
+/// Register the shell engine's existing stamp before settings or routing.
+/// mixd also calls this before choosing a service personality.
+pub fn register_build_snapshot() {
+    let _ = buildinfo::build_info!();
+}
+
 pub fn main() -> process::ExitCode {
+    register_build_snapshot();
     // Reached through a mix -> mixd handoff, yet this is not the service
     // engine: the installed `mixd` is a shell-profile build. Refuse before
     // argv is interpreted (the handoff's leading `run` is not a filename).
