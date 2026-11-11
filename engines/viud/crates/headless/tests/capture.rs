@@ -421,15 +421,24 @@ fn idle_inhibitor_holds_both_timers_then_rearms_from_release() {
     let inhibitor = pattern.inhibit();
     wait_inhibited(&bus, true);
     pattern.idle_notification(100);
-    bus.call("comp.props.set", json!({"path":"power.screen_off_s","value":2}));
-    bus.call("comp.props.set", json!({"path":"power.screen_off_s","value":1}));
+    bus.call(
+        "comp.props.set",
+        json!({"path":"power.screen_off_s","value":2}),
+    );
+    bus.call(
+        "comp.props.set",
+        json!({"path":"power.screen_off_s","value":1}),
+    );
     let until = Instant::now() + Duration::from_millis(1200);
     while Instant::now() < until {
         pattern.pump();
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(pattern.state.idled, 0);
-    assert_eq!(bus.call("comp.props.get", json!({"path":"display.blanked"})), false);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        false
+    );
     inhibitor.destroy();
     pattern.pump();
     wait_inhibited(&bus, false);
@@ -439,12 +448,18 @@ fn idle_inhibitor_holds_both_timers_then_rearms_from_release() {
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(pattern.state.idled, 1);
-    assert_eq!(bus.call("comp.props.get", json!({"path":"display.blanked"})), false);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        false
+    );
     loop {
         if bus.call("comp.props.get", json!({"path":"display.blanked"})) == true {
             break;
         }
-        assert!(released.elapsed() < Duration::from_secs(3), "blank did not rearm");
+        assert!(
+            released.elapsed() < Duration::from_secs(3),
+            "blank did not rearm"
+        );
         thread::sleep(Duration::from_millis(20));
     }
     assert!(released.elapsed() >= Duration::from_millis(900));

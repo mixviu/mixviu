@@ -92,7 +92,13 @@ impl Pattern {
             .0;
         let qh = self.queue.handle();
         let manager: ExtIdleNotifierV1 = self.registry.bind(name, 1, &qh, ());
-        let name = self.state.globals.iter().find(|(_, i, _)| i == "wl_seat").unwrap().0;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "wl_seat")
+            .unwrap()
+            .0;
         let seat: WlSeat = self.registry.bind(name, 1, &qh, ());
         manager.get_idle_notification(timeout_ms, &seat, &qh, ());
         manager.destroy();

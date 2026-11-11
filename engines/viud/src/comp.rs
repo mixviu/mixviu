@@ -568,8 +568,8 @@ impl Bus {
         // ...and the hidden stamps, so a window a command hid this pass is out of
         // the hit driver before the next input dispatch (E5).
         world::comp::visibility::sync_hidden(lp);
-        // What the port's commands and the chords changed this pass reaches the
         policy_host::project::service_inhibitors(lp);
+        // What the port's commands and the chords changed this pass reaches the
         // topics NOW, with its noted causes. The pass above ran before them,
         // so observers see the applied control before its next frame. This
         // also covers state-only controls. Revision-gated, so a pass with no
