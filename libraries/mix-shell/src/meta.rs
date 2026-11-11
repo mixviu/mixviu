@@ -2861,7 +2861,7 @@ fn available_man_topics(man_dir: &Path) -> Vec<String> {
     topics
 }
 
-fn print_man_not_found(topic: Option<&str>, base_url: &str) {
+fn print_man_not_found(topic: Option<&str>, base_url: Option<&str>) {
     mark_missed();
     eprintln!("mix man: no manual page for '{}'", topic.unwrap_or("index"));
     eprintln!();
@@ -2871,7 +2871,9 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
     topics.sort();
     topics.dedup();
     if topics.is_empty() {
-        eprintln!("Browse the manual at {base_url}/");
+        if let Some(base_url) = base_url {
+            eprintln!("Browse the manual at {base_url}/");
+        }
         eprintln!("Local fallback looked in the configured source root's docs/mix.");
         eprintln!(
             "Use {}=local with an explicit source root to read checkout manuals", ::paths::env::MAN_SOURCE
@@ -2897,15 +2899,6 @@ fn cmd_man(topic: Option<&str>) {
             return;
         }
     };
-    let base_url = match ::paths::env::setting(::paths::env::MAN_URL) {
-        Ok(value) => man_base_url(&value),
-        Err(error) => {
-            eprintln!("mix man: {error}");
-            return;
-        }
-    };
-    let cache_path = configured_man_cache_path(&base_url, &filename);
-
     // Lookup order (docs/mix/README.md, "Where the pages come from"):
     // - default: the manual built into this binary, which documents exactly
     //   this binary; then files on disk; then the online fetch below, for a
@@ -2934,11 +2927,25 @@ fn cmd_man(topic: Option<&str>) {
             print!("{content}");
             return;
         }
+    }
+
+    // Installed settings are needed only once local/built-in lookup is exhausted.
+    let base_url = match ::paths::env::setting(::paths::env::MAN_URL) {
+        Ok(value) => man_base_url(&value),
+        Err(error) => {
+            eprintln!("mix man: {error}");
+            print_man_not_found(topic, None);
+            return;
+        }
+    };
+    let cache_path = configured_man_cache_path(&base_url, &filename);
+
+    if source == ManSource::Local {
         if let Some(cached) = cache_path.as_deref().and_then(read_cached_man_page) {
             print!("{}", cached.content);
             return;
         }
-        print_man_not_found(topic, &base_url);
+        print_man_not_found(topic, Some(&base_url));
         return;
     }
 
@@ -2970,7 +2977,7 @@ fn cmd_man(topic: Option<&str>) {
         return;
     }
 
-    print_man_not_found(topic, &base_url);
+    print_man_not_found(topic, Some(&base_url));
 }
 
 /// `mix help` (and `mix --help`): the markdown-friendly capability-discovery

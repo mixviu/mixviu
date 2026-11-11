@@ -5963,7 +5963,7 @@ impl ShellVarResolver for Evaluator {
         if let Some(val) = self.scope.get_value(name) {
             Some(val.to_mix_string())
         } else {
-            std::env::var(name).ok()
+            paths::env::raw(name).and_then(|v| v.into_string().ok())
         }
     }
 
@@ -8568,7 +8568,7 @@ impl Evaluator {
                             .scope
                             .get_value(base)
                             .map(|v| v.into_value())
-                            .or_else(|| std::env::var(base).ok().map(Value::String))
+                            .or_else(|| paths::env::raw(base).and_then(|v| v.into_string().ok()).map(Value::String))
                         {
                             Some(v) => Some(v),
                             None => match coalesce {
@@ -11108,7 +11108,7 @@ impl Evaluator {
                                 self.scope
                                     .get_value(head)
                                     .map(|v| v.into_value())
-                                    .or_else(|| std::env::var(head).ok().map(Value::String))
+                                    .or_else(|| paths::env::raw(head).and_then(|v| v.into_string().ok()).map(Value::String))
                             });
                             let mut val: Value = match resolved {
                                 Some(v) => v,
@@ -11136,7 +11136,7 @@ impl Evaluator {
                         }
                         StringPart::CommandSub(_) => return None,
                         StringPart::EnvVar(name) => {
-                            result.push_str(&std::env::var(name).unwrap_or_default());
+                            result.push_str(&paths::env::raw(name).and_then(|v| v.into_string().ok()).unwrap_or_default());
                         }
                     }
                 }
@@ -14003,7 +14003,7 @@ impl Evaluator {
                                 val.write_mix(&mut result);
                             }
                             StringPart::EnvVar(name) => {
-                                result.push_str(&std::env::var(name).unwrap_or_default());
+                                result.push_str(&paths::env::raw(name).and_then(|v| v.into_string().ok()).unwrap_or_default());
                             }
                         }
                     }

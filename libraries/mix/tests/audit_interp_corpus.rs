@@ -29,7 +29,7 @@
 //!    block, or it's a top-level assignment that comes after an interp
 //!    site. Env-fallback may fire on that earlier site; manual review
 //!    required.
-//!  - `env-name-exists-now` — `std::env::var(head)` returns non-empty
+//!  - `env-name-exists-now` — `paths::env::raw(head)` returns Unicode
 //!    in the audit process env. Env-fallback fires; confirm intent.
 //!  - `common-env-shaped` — UPPERCASE_WITH_UNDERSCORES naming
 //!    convention but env not currently set. Likely env-fallback

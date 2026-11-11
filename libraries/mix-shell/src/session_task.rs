@@ -180,6 +180,8 @@ const BASE_NAMES: &[&str] = &[
     "PATH",
     "LANG",
     "MIXOS",
+    ::paths::env::PREFIX,
+    ::paths::env::ROOT,
     ::paths::env::SRC,
     ::paths::env::BIN,
     ::paths::env::ETC,

@@ -60,6 +60,9 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
             .env("XDG_DATA_HOME", root.0.join("data"))
             .env("XDG_RUNTIME_DIR", root.0.join("runtime"))
             .env("XDG_CACHE_HOME", root.0.join("cache"))
+            .env(paths::env::test::TEST_ENV_EMPTY, "")
+            .env(paths::env::test::TEST_ENV_SET, "present")
+            .env_remove(paths::env::test::TEST_ENV_UNSET)
             .env_remove(paths::env::ROOT)
             .env_remove(paths::env::ETC)
             .env_remove(paths::env::VAR)
@@ -81,6 +84,16 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     // Self-location is never used: the child received every path input before
     // the process-global resolver was first called.
     let prefix = paths::env::raw(paths::env::PREFIX).expect("front-door test needs an explicit prefix");
+    let evaluator = mix::evaluator::Evaluator::new();
+    use mix::evaluator::ShellVarResolver;
+    assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_EMPTY), None);
+    assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_UNSET), None);
+    assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_SET).as_deref(), Some("present"));
+    for name in [paths::env::test::TEST_ENV_EMPTY, paths::env::test::TEST_ENV_UNSET] {
+        let source = format!("\"${{{name} ?? 'fallback'}}\"");
+        assert_eq!(mix::run(&source).await.unwrap(), mix::value::Value::String("fallback".into()));
+        assert_eq!(mix::run(&format!("env('{name}', 'fallback')")).await.unwrap(), mix::value::Value::String("fallback".into()));
+    }
     assert_eq!(mix::run("mix_prefix()").await.unwrap(), mix::value::Value::String(prefix.to_str().unwrap().into()));
     assert_eq!(mix::run("mix_exe()").await.unwrap(), mix::value::Value::String(std::env::current_exe().unwrap().to_str().unwrap().into()));
     for source in ["mix_prefix('extra')", "mix_exe('extra')"] {

@@ -3681,7 +3681,7 @@ fn builtin_delete(args: Vec<Value>) -> MixResult<Option<Value>> {
 fn builtin_env(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("env", &args, 1, 2)?;
     let name = args[0].to_mix_string();
-    let val = std::env::var(&name).unwrap_or_default();
+    let val = paths::env::raw(&name).and_then(|v| v.into_string().ok()).unwrap_or_default();
     // Two-arg form: env(name, default) returns the default when the variable is
     // unset OR set-but-empty (shell `${VAR:-default}` semantics) — the common
     // "env or fallback" need in config code. The one-arg form is unchanged:
