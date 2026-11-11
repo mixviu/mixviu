@@ -99,6 +99,17 @@ pub fn validate(value: &Value) -> Result<(), String> {
 mod tests {
     #[test]
     fn desk_keys_never_encode_or_dispatch() {
+        for code in b"ABCD" {
+            for modifier in [3, 5, 7] {
+                assert!(
+                    super::super::model::encode(super::super::model::Key::Modified {
+                        code: *code,
+                        modifier,
+                    })
+                    .is_empty()
+                );
+            }
+        }
         for &key in toolkit::keymap::USER_KEYS.iter().chain(
             [
                 egui::Key::ArrowLeft,

@@ -351,7 +351,10 @@ pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
     }
     if modifiers.alt {
         if let Some(code) = cursor_code(key) {
-            return vec![TerminalKey::Modified { code, modifier: 3 }];
+            return vec![TerminalKey::Modified {
+                code,
+                modifier: if modifiers.shift { 4 } else { 3 },
+            }];
         }
         let plain = Modifiers {
             alt: false,

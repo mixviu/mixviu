@@ -464,8 +464,7 @@ pub enum Key {
     PageUp,
     PageDown,
     Control(char),
-    /// A cursor key with xterm modifiers: CSI 1 ; `modifier` `code`, e.g.
-    /// Modified navigation keys (desk-owned arrows are refused at input).
+    /// A navigation key with xterm modifiers: CSI 1 ; `modifier` `code`.
     Modified {
         code: u8,
         modifier: u8,
@@ -496,6 +495,23 @@ pub fn encode(key: Key) -> Vec<u8> {
         Key::Control(c @ ('@' | '[' | '\\' | ']' | '^' | '_')) => vec![c as u8 & 0x1f],
         Key::Control(' ') => vec![0],
         Key::Modified { code, modifier } => {
+            let arrow = match code {
+                b'A' => Some(egui::Key::ArrowUp),
+                b'B' => Some(egui::Key::ArrowDown),
+                b'C' => Some(egui::Key::ArrowRight),
+                b'D' => Some(egui::Key::ArrowLeft),
+                _ => None,
+            };
+            let flags = modifier.saturating_sub(1);
+            let modifiers = egui::Modifiers {
+                shift: flags & 1 != 0,
+                alt: flags & 2 != 0,
+                ctrl: flags & 4 != 0,
+                ..egui::Modifiers::NONE
+            };
+            if arrow.is_some_and(|key| toolkit::keymap::reserved(key, modifiers)) {
+                return Vec::new();
+            }
             let mut bytes = format!("\x1b[1;{modifier}").into_bytes();
             bytes.push(code);
             bytes
