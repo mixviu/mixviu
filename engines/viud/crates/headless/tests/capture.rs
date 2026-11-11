@@ -411,6 +411,47 @@ fn wait_inhibited(bus: &Bus, expected: bool) {
 
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
+fn idle_inhibitor_holds_both_timers_then_rearms_from_release() {
+    let bus = Bus::start("inhibit-timers");
+    let _settings = SettingsFixture::start(&bus);
+    let mut process = process::spawn(1, None, "inhibit-timers", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let inhibitor = pattern.inhibit();
+    wait_inhibited(&bus, true);
+    pattern.idle_notification(100);
+    bus.call("comp.props.set", json!({"path":"power.screen_off_s","value":2}));
+    bus.call("comp.props.set", json!({"path":"power.screen_off_s","value":1}));
+    let until = Instant::now() + Duration::from_millis(1200);
+    while Instant::now() < until {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(pattern.state.idled, 0);
+    assert_eq!(bus.call("comp.props.get", json!({"path":"display.blanked"})), false);
+    inhibitor.destroy();
+    pattern.pump();
+    wait_inhibited(&bus, false);
+    let released = Instant::now();
+    while released.elapsed() < Duration::from_millis(250) {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(pattern.state.idled, 1);
+    assert_eq!(bus.call("comp.props.get", json!({"path":"display.blanked"})), false);
+    loop {
+        if bus.call("comp.props.get", json!({"path":"display.blanked"})) == true {
+            break;
+        }
+        assert!(released.elapsed() < Duration::from_secs(3), "blank did not rearm");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(released.elapsed() >= Duration::from_millis(900));
+}
+
+#[test]
+#[ignore = "needs a render node and built viud/noded/Mix"]
 fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
     let bus = Bus::start("inhibit");
     let mut process = process::spawn(1, None, "inhibit", Some(&bus.url));
