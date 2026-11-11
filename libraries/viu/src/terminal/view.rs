@@ -177,7 +177,14 @@ mod tests {
                 if opt_in {
                     assert_eq!(actions[0].value,json!({"shift":shift}));
                     assert_eq!(ctx.memory(|m| m.focused()),Some(field));
-                    assert!(crate::editor_controls::admit("search-bar",&bar,"submit",&actions[0].value).is_ok());
+                    let control = Widget::new("find", "search-bar", "Find", bar.clone());
+                    assert!(control.actions().contains(&"submit"));
+                    assert!(control.validate_action("submit", &actions[0].value).is_ok());
+                    assert!(control.admit(&json!({}), "submit", &actions[0].value).is_ok());
+                } else {
+                    let control = Widget::new("find", "search-bar", "Find", bar.clone());
+                    assert!(!control.actions().contains(&"submit"));
+                    assert!(control.validate_action("submit", &json!({"shift":shift})).is_err());
                 }
                 assert!(read(&receiver).is_empty(),"find submission reached the PTY input queue");
                 frame(false,2,vec![key(false,egui::Modifiers::NONE)],egui::Modifiers::NONE);

@@ -72,4 +72,4 @@ for $phase in ["absent","explicit","transient","lost","recovered","reset"]
   $s=$core.accept_look($s,{appearance:{},state:$follow})
   appearance_is($s,if contains(["absent","reset"],$phase) then $defaults elif $phase=="recovered" then $recovered_expected else $expected end)
 end
-print("term default appearance: 92 checks passed (absent, explicit, transient failure, loss, recovery, reset, family)")
+print("term default appearance: property presence, values, retained loss and distinct recovery passed")

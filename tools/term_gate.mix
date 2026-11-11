@@ -56,7 +56,7 @@ try
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end
   if $rc==0 then
-    $foreign=run_argv(["/opt/mixos/bin/mix","tools/foreign_gate.mix","--locked"],{timeout:1800,max_output:16000000});print($foreign)
+    $foreign=run_argv($targets.prepare_command(["/opt/mixos/bin/mix","tools/foreign_gate.mix","--locked"],$prepare),{timeout:1800,max_output:16000000});print($foreign)
     if not $foreign.ok then $rc=$foreign.exit_code ?? 124 end
   end
   if $rc==0 then
