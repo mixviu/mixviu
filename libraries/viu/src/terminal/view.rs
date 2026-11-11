@@ -152,7 +152,7 @@ mod tests {
                 let key = |pressed, modifiers| egui::Event::Key {
                     key: egui::Key::Enter, physical_key: None, pressed, repeat: false, modifiers,
                 };
-                let mut frame = |open, serial, input_events, modifiers| {
+                let mut frame = |open: bool, serial: u64, input_events: Vec<egui::Event>, modifiers: egui::Modifiers| {
                     let mut events = Vec::new();
                     let mut input_events = input_events;
                     input_events.insert(0, egui::Event::ModifiersChanged(modifiers));
