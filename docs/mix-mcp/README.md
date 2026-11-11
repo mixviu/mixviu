@@ -134,7 +134,9 @@ before connecting: indexd's stats and stale APIs cannot filter by domain.
 Omit `domain` for a global digest; it is never silently ignored or inferred.
 These tools send `indexd.<action>` requests to the configured indexd transport.
 An absent backend returns an explicit tool error. Settings are MixViu strict-data
-files: `knowledge.conf.mix` and `domains.conf.mix`.
+files: `<etc-root>/knowledge/knowledge.conf.mix` and
+`<etc-root>/domains/domains.conf.mix`. An operator must move existing files
+into these service directories when cutting over; this port moves none.
 
 The knowledge skills loop was retired on 2026-10-27. The six `skills_*` tools,
 `knowledge_brief`, skill refinement and graduation to `CLAUDE.md` are removed
@@ -163,7 +165,8 @@ existing [indexd filtered delete](../indexd/README.md#purging-retired-cmm-observ
 ### Host indexd from a desk
 
 When a desk cannot reach the host's Bus, select SSH in
-`$MIX_ETC/knowledge.conf.mix` (normally `<etc-root>/knowledge.conf.mix`):
+`$MIX_ETC/knowledge/knowledge.conf.mix` (normally
+`<etc-root>/knowledge/knowledge.conf.mix`):
 
 ```text
 indexd: {

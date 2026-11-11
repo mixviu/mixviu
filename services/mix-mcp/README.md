@@ -23,6 +23,9 @@ and remove the unused `skills.conf.mix` and `llm.conf.mix` files from the MCP
 config directory (`paths::env::ETC`, normally `<etc-root>`). The config loader
 tolerates unknown keys, but they have no effect; no aliases are provided.
 Generated knowledge defaults omit them. Existing configs are not rewritten.
+The MixViu config store uses `<etc-root>/knowledge/knowledge.conf.mix` and
+`<etc-root>/domains/domains.conf.mix`. Moving existing files into those service
+directories is an operator cutover step; this port changes no configuration.
 
 `knowledge_digest {}` returns global statistics. It refuses a non-null `domain`
 argument because indexd cannot scope these queries. Stale-query failures preserve

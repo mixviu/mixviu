@@ -199,7 +199,8 @@ trust_weight_skill: 0.03
 skills: {min_confidence: 0.3, max_skills: 3}
 llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
 "#;
-        std::fs::write(dir.path().join("knowledge.conf.mix"), content).unwrap();
+        std::fs::create_dir(dir.path().join("knowledge")).unwrap();
+        std::fs::write(dir.path().join("knowledge/knowledge.conf.mix"), content).unwrap();
         // Invalid files prove that loading knowledge does not consult these.
         for name in ["skills.conf.mix", "llm.conf.mix"] {
             std::fs::write(dir.path().join(name), "this is not strict-data config {").unwrap();
@@ -220,13 +221,13 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
             assert!(saved.get(key).is_none(), "retired key {key} retained");
         }
         assert_eq!(
-            std::fs::read_to_string(dir.path().join("knowledge.conf.mix")).unwrap(),
+            std::fs::read_to_string(dir.path().join("knowledge/knowledge.conf.mix")).unwrap(),
             content
         );
         let defaults = tempfile::tempdir().unwrap();
         config::store::load_service_in::<KnowledgeSettings>(defaults.path(), "knowledge").unwrap();
         let generated =
-            std::fs::read_to_string(defaults.path().join("knowledge.conf.mix")).unwrap();
+            std::fs::read_to_string(defaults.path().join("knowledge/knowledge.conf.mix")).unwrap();
         for key in [
             "trust_weight_graduated",
             "trust_weight_skill",
@@ -249,7 +250,7 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
             config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
         assert_eq!(absent.indexd, IndexdSettings::default());
         std::fs::write(
-            dir.path().join("knowledge.conf.mix"),
+            dir.path().join("knowledge/knowledge.conf.mix"),
             "indexd: {transport: \"ssh\", ssh_host: \"user@host.example\"}\n",
         )
         .unwrap();
@@ -263,7 +264,7 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
             ["mix:prefix/bin/indexd", "bridge"]
         );
         std::fs::write(
-            dir.path().join("knowledge.conf.mix"),
+            dir.path().join("knowledge/knowledge.conf.mix"),
             "indexd: {transport: \"invalid\"}\n",
         )
         .unwrap();

@@ -30,6 +30,10 @@ installation/environment identity are updated. The new server identifies as
 `mixos` to `mix-mcp`, change the command to the installed prefix's `bin/mix-mcp`,
 and translate legacy environment overrides to their registered current names.
 No agent configuration is changed by this port.
+The shared MixViu config store places each file in its own service directory:
+`<etc-root>/knowledge/knowledge.conf.mix` and
+`<etc-root>/domains/domains.conf.mix`. Operator relocation is documented;
+fixtures use that store layout without changing their source assertions.
 
 `rmcp = "=3.1.2"` is crate-local, with the original server feature set and
 client/child-process features confined to dev-dependencies. The source lockfile

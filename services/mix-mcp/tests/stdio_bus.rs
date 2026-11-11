@@ -297,8 +297,9 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     std::fs::write(&config, "node: \"fixture\"\nnoded: {port: 4200}\n").unwrap();
     // A different service name proves the client probes its target rather
     // than requiring a locally registered service named indexd.
+    std::fs::create_dir(dir.path().join("knowledge")).unwrap();
     std::fs::write(
-        dir.path().join("knowledge.conf.mix"),
+        dir.path().join("knowledge/knowledge.conf.mix"),
         "indexd: {target: \"knowledge-fixture\"}\n",
     )
     .unwrap();
@@ -847,7 +848,7 @@ async fn sibling_worker_never_downgrades_a_failed_unix_socket_to_tcp() {
     let output = service
         .call_tool(
             CallToolRequestParams::new("mix_execute").with_arguments(
-                json!({"script":"send noded noded.ping\nprint($reply)"})
+                json!({"script":"send noded noded.ping\nprint($rc)\nprint($result)"})
                     .as_object()
                     .unwrap()
                     .clone(),
@@ -855,7 +856,11 @@ async fn sibling_worker_never_downgrades_a_failed_unix_socket_to_tcp() {
         )
         .await
         .unwrap();
-    assert_eq!(output.is_error, Some(true), "{output:?}");
-    assert!(format!("{output:?}").contains("stale.sock"), "{output:?}");
+    // A transport failure sets the Mix rc band and continues the script.
+    // Preserve that source contract instead of expecting a tool failure.
+    let output = result(output);
+    let stdout = output["stdout"].as_str().unwrap();
+    assert!(stdout.starts_with("-1\n"), "{output}");
+    assert!(stdout.contains("stale.sock"), "{output}");
     service.cancel().await.unwrap();
 }
