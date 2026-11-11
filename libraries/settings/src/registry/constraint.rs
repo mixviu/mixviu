@@ -256,11 +256,21 @@ fn user_keys(values: &Values) -> Vec<Diagnostic> {
         .flat_map(|(app, list)| {
             list.into_iter().filter_map(move |(chord, path)| {
                 if app == "comp" {
-                    bare_function_key(chord).then(|| refuse("user_keys", path,
-                        format!("{chord} is the user's key: bind it with a modifier")))
+                    bare_function_key(chord).then(|| {
+                        refuse(
+                            "user_keys",
+                            path,
+                            format!("{chord} is the user's key: bind it with a modifier"),
+                        )
+                    })
                 } else {
-                    action::keymap::reserved(chord).then(|| refuse("user_keys", path,
-                        "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused"))
+                    action::keymap::reserved(chord).then(|| {
+                        refuse(
+                            "user_keys",
+                            path,
+                            "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused",
+                        )
+                    })
                 }
             })
         })
