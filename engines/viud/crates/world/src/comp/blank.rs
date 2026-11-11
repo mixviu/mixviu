@@ -26,6 +26,7 @@ pub enum Hold {
     Button(u32),
     Touch(i32),
     TabletButton(u32),
+    PadButton(u32),
     TabletTip,
 }
 
@@ -171,6 +172,9 @@ pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::
         }
         pointer.frame(state);
     }
+    if let Some(touch) = state.seat.seat.get_touch() {
+        touch.cancel(state);
+    }
     comp.bindings.reset_holds();
     let _ = comp.injection.human.take_all();
 }
@@ -190,6 +194,13 @@ pub fn set(lp: &mut Loop, on: bool, cause: &'static str) -> Result<(), String> {
     if lp.inner.comp.blank.blanked != on {
         if on {
             release_human(&mut lp.state, &mut lp.inner.comp);
+            for contact in &lp.inner.touch.contacts {
+                lp.inner.comp.blank.swallowed.insert(Hold::Touch(contact.slot));
+            }
+            lp.inner.touch.reset();
+            if let Some(registry) = lp.inner.surface_mut().registry.as_mut() {
+                registry.release_all_modifiers();
+            }
         }
         lp.inner.comp.blank.blanked = on;
         lp.inner.comp.settings_changed("display.blanked", cause);
@@ -336,6 +347,7 @@ mod tests {
             Hold::Touch(1),
             Hold::TabletTip,
             Hold::TabletButton(1),
+            Hold::PadButton(1),
         ] {
             let mut p = BlankPolicy {
                 blanked: true,

@@ -1135,8 +1135,9 @@ fn set_leaf(
             path: path.into(),
             old: comp_model::observation::prop_opt_u64(old),
             new: comp_model::observation::prop_opt_u64(wanted),
-            // The port persists this setting through settingsd before admission.
-            persisted: Some(true),
+            // Runtime admission is ordered first. The port fills this from
+            // the subsequent fenced settingsd write, as for other persisted sets.
+            persisted: Some(false),
         });
     }
     if let Some(target) = parse_workspaces_set_path(path) {

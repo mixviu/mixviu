@@ -1161,6 +1161,9 @@ async fn worker_loop<F, Fut, C>(
     };
     apply_connection_state(&broker, *states.borrow());
     let mut responders = JoinSet::new();
+    // Admission stays synchronous and ordered. Settings calls follow engine
+    // acceptance on the existing responder lane, in the same FIFO order.
+    let mut power_tail: Option<tokio::sync::oneshot::Receiver<()>> = None;
     let responder_permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
     let long_permits = Arc::new(Semaphore::new(LONG_COMMAND_PERMITS));
     let (reply_sender, reply_receiver) = tokio_mpsc::channel(PORT_REPLY_CAPACITY);
@@ -1258,18 +1261,35 @@ async fn worker_loop<F, Fut, C>(
                         queue_reply(&reply_sender, &reply_timeouts, PendingReply::new(command, error("busy")));
                         continue;
                     };
+                    let Ok(admission) = ingress.request_set_fenced("power.screen_off_s".into(), command.args["value"].clone(), None) else {
+                        queue_reply(&reply_sender, &reply_timeouts, PendingReply::new(command, error("busy")));
+                        continue;
+                    };
+                    let previous = power_tail.take();
+                    let (finished, next) = tokio::sync::oneshot::channel();
+                    power_tail = Some(next);
                     let client = Arc::clone(&client);
-                    let ingress = ingress.clone();
                     let replies = reply_sender.clone();
                     let timeouts = Arc::clone(&reply_timeouts);
                     responders.spawn(async move {
                         let _permit = permit;
-                        let reply = match client.persist_screen_off(&command.args["value"]).await {
-                            Ok(()) => match ingress.request_set_fenced("power.screen_off_s".into(), command.args["value"].clone(), None) {
-                                Ok(admission) => admission.receive().await.map(ControlReply::into_wire).unwrap_or_else(|_| error("busy")),
-                                Err(_) => error("busy"),
-                            },
-                            Err(reason) => ControlReply::refused("settings_unavailable", json!({"reason": reason})).into_wire(),
+                        // Retaining the sender releases the next responder on
+                        // every exit, including rejection or cancellation.
+                        let _finished = finished;
+                        let mut reply = admission.receive().await;
+                        if let Some(previous) = previous { let _ = previous.await; }
+                        if let Ok(ControlReply::Set { persisted, .. }) = &mut reply {
+                            *persisted = Some(match client.persist_screen_off(&command.args["value"]).await {
+                                Ok(()) => true,
+                                Err(reason) => {
+                                    tracing::warn!(%reason, "screen blank timeout changed but could not be persisted");
+                                    false
+                                },
+                            });
+                        }
+                        let reply = match reply {
+                            Ok(reply) => reply.into_wire(),
+                            Err(()) => error("busy"),
                         };
                         queue_reply(&replies, &timeouts, PendingReply::new(command, reply));
                     });
