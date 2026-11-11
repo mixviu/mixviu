@@ -6,7 +6,7 @@
 resolver = "3"
 exclude = ["vendor", "vendor/smithay", "vendor/eframe", "vendor/egui-wgpu", "vendor/calloop", "vendor/input"]
 # libs/* includes maildoc and every other shared library component.
-members = ["libraries/maildoc","engines/viud/crates/*","libraries/ui","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","libraries/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
+members = ["services/portald","libraries/maildoc","engines/viud/crates/*","libraries/ui","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","libraries/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
 
 [workspace.package]
 version = "0.1.2"
@@ -20,6 +20,10 @@ repository = "https://github.com/mixviu/mixviu"
 warnings = "allow"
 
 [workspace.dependencies]
+wayland-client = "=0.31.15"
+wayland-protocols = "=0.32.13"
+wayland-protocols-wlr = "=0.3.12"
+rfd = { version = "=0.17.2", default-features = false, features = ["xdg-portal"] }
 maildoc = { path = "libraries/maildoc" }
 input = { path = "vendor/input" }
 calloop = { path = "vendor/calloop" }

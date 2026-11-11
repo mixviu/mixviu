@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "portald"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "XDG desktop portal on the session bus: Settings, FileChooser v4 and ScreenCast"
+
+[package.metadata.mixviu]
+component = "portald"
+kind = "service"
+layer = "core"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+default = ["screencast"]
+screencast = ["dep:pipewire", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr"]
+
+[dependencies]
+paths = { path = "../../libraries/paths" }
+settings = { workspace = true, features = ["native"] }
+design.workspace = true
+tempfile.workspace = true
+bus = { workspace = true, features = ["native"] }
+zbus.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+buildinfo.workspace = true
+futures-util.workspace = true
+glob.workspace = true
+libc.workspace = true
+# ScreenCast. The Wayland client crates are pinned to the versions already in
+# Cargo.lock (winit and viud testkit use the same ones). pipewire links the
+# system libpipewire-0.3; v0_3_34 is for pw_stream_trigger_process.
+pipewire = { version = "=0.10.1", features = ["v0_3_34"], optional = true }
+wayland-client = { workspace = true, optional = true }
+wayland-protocols = { workspace = true, features = ["client", "unstable"], optional = true }
+wayland-protocols-wlr = { workspace = true, features = ["client"], optional = true }
+
+[dev-dependencies]
+rfd = { workspace = true }
+test-broker = { path = "../../libraries/test-broker" }
+settingsd = { path = "../settingsd" }
+
+[build-dependencies]
+buildinfo.workspace = true
+
+[[example]]
+name = "screencast_probe"
+required-features = ["screencast"]
