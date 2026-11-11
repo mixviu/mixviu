@@ -12,8 +12,6 @@ compiled into this adapter. Script execution uses the prefix's `bin/mix`.
 
 `mix-mcp` is an MCP stdio server for agents. Install the binary at
 `<prefix>/bin/mix-mcp` and register the MCP server as `mix-mcp`.
-It ships in the server prefix archive. Its package, binary and component
-are the [single naming exception](../docs/decisions/2026-10-19-mcp-program-name.md).
 
 ## Connection
 
@@ -207,6 +205,11 @@ Terminal tools preserve explicit pane selection and instance checks. Native
 application tools require an exact service and semantic target. Read-only
 tools do not invoke mutations; arbitrary `bus_call` and `mix_execute` can.
 Mix execution runs in an isolated worker with bounded output.
+
+These tools use the adapter user's operating-system permissions, without a
+filesystem sandbox. Inherited log filename handling accepts absolute paths
+and parent components; `log_tail` and `log_search` are not confined to the
+log directory. Application commands and arbitrary scripts can write files.
 
 ## Logging and tests
 
