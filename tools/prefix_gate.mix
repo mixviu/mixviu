@@ -489,6 +489,7 @@ end
 fn selftest()
   global $findings, $prefix_hits, $seen_includes, $scanned_rust, $disabled_findings, $old_files
   $cases = load_data($root .. "/tools/test-support/prefix_gate/cases.conf.mix")
+  $deferred_rules = map($policy.disabled_rules, fn($d) = $d.rule)
   for $c in $cases.cases
     $findings = []
     $prefix_hits = 0
@@ -503,12 +504,24 @@ fn selftest()
     elif data_file($c.file) then
       scan_data($c.file, $source, "data")
     end
-    $rules = map($findings, fn($f) = $f.rule)
-    if not deep_eq(sort($rules), sort($c.rules)) then
+    -- Dedicated deferred-rule cases follow policy activation. Other fixtures
+    -- assert their own rules even when they also contain a deferred spelling.
+    $rules = []
+    for $f in $findings
+      if has_key($c, "disabled") or not contains($deferred_rules, $f.rule) then
+        push($rules, $f.rule)
+      end
+    end
+    $expected = $c.rules
+    for $rule in $c.disabled ?? []
+      if not has_key($disabled, $rule) then push($expected, $rule) end
+    end
+    if not deep_eq(sort($rules), sort($expected)) then
       eprint("FAIL " .. $c.fixture .. ": " .. json_encode($findings))
       exit(1)
     end
-    if has_key($c, "disabled") and not deep_eq(sort(map($disabled_findings, fn($f) = $f.rule)), sort($c.disabled)) then
+    $expected_disabled = filter($c.disabled ?? [], fn($rule) = has_key($disabled, $rule))
+    if has_key($c, "disabled") and not deep_eq(sort(map($disabled_findings, fn($f) = $f.rule)), sort($expected_disabled)) then
       raise("SELFTEST", "disabled findings mismatch: " .. $c.fixture)
     end
   end
@@ -598,6 +611,7 @@ fn integration_selftest()
     $findings = []
     $disabled_findings = []
     $saved = $disabled
+    $disabled["bare-mixos"] = "selftest disabled state"
     old_hits("fixture.txt", 1, "mixos")
     if len($findings) != 0 or len($disabled_findings) != 1 then raise("SELFTEST", "disabled rule failed") end
     $disabled = {}
