@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Only the private headless test broker reaches this observer.
+$edges = []
+subscribe("comp-headless.props.changed")
+on props.changed
+  if $event.args.path == "display.blanked" then
+    push($edges, $event.args)
+  end
+end
+on observer.start
+  send comp-headless comp.props.watch body="{}" timeout=5
+  reply($rc, $result)
+end
+on observer.blanks
+  reply(0, json_encode($edges))
+end
