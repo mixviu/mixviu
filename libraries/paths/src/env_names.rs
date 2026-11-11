@@ -5,8 +5,6 @@ pub const APP_HOME: &str = "MIX_APP_HOME";
 pub const APPS_HOME: &str = "MIX_APPS_HOME";
 pub const BIN: &str = "MIX_BIN";
 pub const BROKER_ACCOUNT: &str = "MIX_BROKER_ACCOUNT";
-
-
 pub const BUS_SOCKET: &str = "MIX_BUS_SOCKET";
 pub const CACHE: &str = "MIX_CACHE";
 pub const COMP_SERVICE: &str = "MIX_COMP_SERVICE";
@@ -19,11 +17,9 @@ pub const EDITOR: &str = "MIX_EDITOR";
 pub const ENGINE_HANDOFF: &str = "MIX_ENGINE_HANDOFF";
 pub const ETC: &str = "MIX_ETC";
 pub const EXE: &str = "MIX_EXE";
-
-
-
 pub const INDEXD_SEARCH: &str = "MIX_INDEXD_SEARCH";
 pub const INSTANCE: &str = "MIX_INSTANCE";
+pub const LIB: &str = "MIX_LIB";
 pub const LINT: &str = "MIX_LINT";
 pub const MACRO_APP: &str = "MIX_MACRO_APP";
 pub const MACRO_ID: &str = "MIX_MACRO_ID";
@@ -110,7 +106,6 @@ pub const NOTIFYD_STATE: &str = "MIX_NOTIFYD_STATE";
 pub const SETTINGS_SERVICE: &str = "MIX_SETTINGS_SERVICE";
 pub const EXPORTD_COSMIC_HOME: &str = "MIX_EXPORTD_COSMIC_HOME";
 pub const EXPORTD_KDE_HOME: &str = "MIX_EXPORTD_KDE_HOME";
-pub const LIB: &str = "MIX_LIB";
 
 /// Names reserved for tests.
 pub mod test {
