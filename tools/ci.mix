@@ -4,7 +4,7 @@
 -- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
 --
 --   mix tools/ci.mix STAGE [--mix PATH]
---   STAGE: fmt | env | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
+--   STAGE: fmt | env | mix-services | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
 --
 -- MixViu has four engines: mix, mixd, viu, viud. The `mix` package is built and tested apart from the
@@ -17,7 +17,7 @@
 
 $o = getopt(args(), {mix: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|foreign|test|mix-lint|mix-lint-baseline|release-mix|all [--mix PATH]")
+  eprint("usage: mix tools/ci.mix fmt|env|mix-services|mix-hygiene|clippy|viud|foreign|test|mix-lint|mix-lint-baseline|release-mix|all [--mix PATH]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -93,8 +93,7 @@ fn stage_test($mix)
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
-  run_step(["cargo", "build", "--locked", "-p", "noded", "-p", "settingsd"])
-  run_step([$mix, "tools/mix_services_test.mix", "--mix", $abs, "--bin", dirname($abs)])
+  stage_mix_services($mix)
   for $case in sort(glob("apps/term/*-test.mix"))
     run_step([$mix, $case])
   end
@@ -103,6 +102,13 @@ fn stage_test($mix)
       run_step([$mix, $case])
     end
   end
+end
+
+fn stage_mix_services($mix)
+  ensure_mix($mix)
+  run_step(["cargo", "build", "--locked", "-p", "mixd", "-p", "noded", "-p", "settingsd"])
+  $abs = realpath($mix)
+  run_step([$mix, "tools/mix_services_test.mix", "--mix", $abs, "--bin", dirname($abs)])
 end
 
 -- Both normal binaries and opt-in fault-injection binaries are exercised.
@@ -312,6 +318,8 @@ elif $stage == "clippy" then
   stage_clippy()
 elif $stage == "test" then
   stage_test($mix)
+elif $stage == "mix-services" then
+  stage_mix_services($mix)
 elif $stage == "mix-hygiene" then
   stage_mix_hygiene()
 elif $stage == "release-mix" then
