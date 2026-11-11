@@ -301,7 +301,7 @@ end
 -- (libs/bus and libs/paths). Some agents (Codex) start MCP servers with a
 -- bare environment, so agentd hands its own values to the bridge: the
 -- bridge then reaches the broker agentd is on, not a default one.
-$BUS_ENV_NAMES = ["MIX_PREFIX", "MIX_ROOT", "MIX_ETC", "MIX_VAR", "MIX_RUN", "MIX_CACHE",
+$BUS_ENV_NAMES = ["MIX_PREFIX", "MIX_ROOT", "MIX_LIB", "MIX_ETC", "MIX_VAR", "MIX_RUN", "MIX_CACHE",
   "MIX_SHARE", "MIX_NODE_CONFIG", "MIX_NODED_URL", "MIX_BUS_SOCKET", "MIX_BROKER_ACCOUNT",
   "MIX_MCP_ALLOW_TCP", "XDG_RUNTIME_DIR", "HOME"]
 
