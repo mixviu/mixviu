@@ -40,6 +40,9 @@
 //! println!("{}", info.line());
 //! ```
 
+#[doc(hidden)]
+pub use paths;
+
 /// Compile-time build provenance for a single crate.
 ///
 /// Every field is `'static`, captured at compile time. Construct it with
@@ -193,6 +196,8 @@ fn json_str(s: &str) -> String {
 /// variables so a crate without [`emit`] in its `build.rs` still compiles;
 /// its provenance degrades to `"unknown"` / `false`, which is itself the
 /// "no build.rs wired" signal.
+/// A known full SHA also registers the process snapshot with paths. Expand
+/// this unconditionally at startup, before reading installed settings.
 #[macro_export]
 macro_rules! build_info {
     () => {{
@@ -202,16 +207,20 @@ macro_rules! build_info {
         // that expands this macro in a crate whose build.rs ran `emit()`.
         #[used]
         static MIX_BUILDINFO_MARKER: ::core::option::Option<&str> =
-            option_env!("MIX_BUILDINFO_MARKER");
+            $crate::paths::stamp!(BUILDINFO_MARKER);
         let _ = ::core::hint::black_box(&MIX_BUILDINFO_MARKER);
-        $crate::BuildInfo {
+        let info = $crate::BuildInfo {
             pkg: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),
-            git_sha: option_env!("MIX_GIT_SHA").unwrap_or("unknown"),
-            git_sha_full: option_env!("MIX_GIT_SHA_FULL").unwrap_or("unknown"),
-            git_dirty: matches!(option_env!("MIX_GIT_DIRTY"), Some("1") | Some("true")),
-            build_time: option_env!("MIX_BUILD_TIME").unwrap_or("unknown"),
+            git_sha: $crate::paths::stamp!(GIT_SHA).unwrap_or("unknown"),
+            git_sha_full: $crate::paths::stamp!(GIT_SHA_FULL).unwrap_or("unknown"),
+            git_dirty: matches!($crate::paths::stamp!(GIT_DIRTY), Some("1") | Some("true")),
+            build_time: $crate::paths::stamp!(BUILD_TIME).unwrap_or("unknown"),
+        };
+        if info.git_sha_full != "unknown" {
+            $crate::paths::env::register_snapshot(info.git_sha_full);
         }
+        info
     }};
 }
 
@@ -346,20 +355,22 @@ pub fn emit() {
         .map(|s| !s.trim().is_empty())
         .unwrap_or(false);
 
-    println!("cargo:rustc-env=MIX_GIT_SHA={sha}");
-    println!("cargo:rustc-env=MIX_GIT_SHA_FULL={sha_full}");
+    println!("cargo:rustc-env={}={sha}", paths::env::GIT_SHA);
+    println!("cargo:rustc-env={}={sha_full}", paths::env::GIT_SHA_FULL);
     println!(
-        "cargo:rustc-env=MIX_GIT_DIRTY={}",
+        "cargo:rustc-env={}={}",
+        paths::env::GIT_DIRTY,
         if dirty { 1 } else { 0 }
     );
     let built = build_time();
-    println!("cargo:rustc-env=MIX_BUILD_TIME={built}");
+    println!("cargo:rustc-env={}={built}", paths::env::BUILD_TIME);
     // The embedded marker: the JSON `--version --json` prints, from the same
     // values, for byte-level readers that must not execute the binary.
     let pkg = std::env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "unknown".to_string());
     let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "unknown".to_string());
     println!(
-        "cargo:rustc-env=MIX_BUILDINFO_MARKER={}{}",
+        "cargo:rustc-env={}={}{}",
+        paths::env::BUILDINFO_MARKER,
         marker_prefix(),
         provenance_json(&pkg, &version, &sha, &sha_full, dirty, &built)
     );

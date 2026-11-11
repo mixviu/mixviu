@@ -102,10 +102,11 @@ fn rewrite(args: &[OsString]) -> Option<Vec<OsString>> {
 }
 
 fn main() -> ExitCode {
+    mix_shell::register_build_snapshot();
     // A mix -> mixd handoff marks the environment so a shell-profile binary
     // installed as `mixd` refuses instead of looping. This is the service
     // engine: clear it, so scripts and their children start clean.
-    // SAFETY: first statement of main; no other thread exists yet.
+    // SAFETY: no other thread exists yet; registration above only sets a OnceLock.
     unsafe { std::env::remove_var(mix_shell::ENGINE_HANDOFF_ENV) };
     let args: Vec<OsString> = std::env::args_os().collect();
     match route(&args) {
