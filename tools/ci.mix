@@ -110,8 +110,17 @@ end
 fn stage_mix_services($mix)
   ensure_mix($mix)
   run_step(["cargo", "build", "--locked", "-p", "mixd", "-p", "noded", "-p", "settingsd"])
-  $abs = realpath($mix)
-  run_step([$mix, "tools/mix_services_test.mix", "--mix", $abs, "--bin", dirname($abs)])
+  -- noded and settingsd are where that build put them: the workspace target
+  -- directory's dev-profile output, not wherever --mix happens to live.
+  $meta = json_parse(run_argv_must(["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"]))
+  $bin = $meta.target_directory .. "/debug"
+  for $exe in ["noded", "settingsd"]
+    if not is_file($bin .. "/" .. $exe) then
+      print("::error::mix-services: " .. $exe .. " was not built in " .. $bin)
+      exit(1)
+    end
+  end
+  run_step([$mix, "tools/mix_services_test.mix", "--mix", realpath($mix), "--bin", $bin])
 end
 
 -- Both normal binaries and opt-in fault-injection binaries are exercised.
