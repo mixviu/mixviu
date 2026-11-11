@@ -93,6 +93,7 @@ jobs:
       - run: target/debug/mix tools/ci.mix env
       - run: target/debug/mix tools/ci.mix viud
       - run: target/debug/mix tools/ci.mix foreign
+      - run: target/debug/mix tools/ci.mix prefix
       - run: target/debug/mix tools/ci.mix mix-lint
 
   test:
