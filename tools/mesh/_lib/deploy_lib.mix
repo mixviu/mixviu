@@ -55,7 +55,10 @@ end
 
 fn local_roots()
   $settings = node_settings("local")
-  $roots = json_parse(run_argv_must([mix_bin(), "layout", "defaults", "--tier", "system", "--json"]))
+  if type($settings.roots) == "map" and has_key($settings.roots,"prefix") and has_key($settings.roots,"etc") and has_key($settings.roots,"var") then
+    return checked_roots($settings.roots)
+  end
+  $roots = {prefix:mix_path("prefix","",{tier:"system"}),etc:mix_path("etc","",{tier:"system"}),var:mix_path("var","",{tier:"system"})}
   for $key in keys($settings.roots ?? {})
     $roots[$key] = $settings.roots[$key]
   end
@@ -64,10 +67,18 @@ end
 
 fn remote_roots($node, $transport = nil)
   $exe = remote_mix($node)
-  $result = ssh_exec($transport ?? $node, [$exe, "layout", "defaults", "--tier", "system", "--json"], {mix_bin:$exe, timeout:20})
+  $settings = node_settings($node)
+  $result = nil
+  if $settings.legacy_defaults == true then
+    -- Older interpreters lack the current root builtin. Explicit private
+    -- roots are mandatory; defaults alone cannot describe an installed node.
+    checked_roots($settings.roots)
+    $result = ssh_exec($transport ?? $node, [$exe, "layout", "defaults", "--tier", "system", "--json"], {mix_bin:$exe, timeout:20})
+  else
+    $result = ssh_mix($transport ?? $node, 'print(json_encode({prefix:mix_path("prefix","",{tier:"system"}),etc:mix_path("etc","",{tier:"system"}),var:mix_path("var","",{tier:"system"})}))', {mix_bin:$exe,timeout:20})
+  end
   if not $result.ok then raise("MESH_LAYOUT", "cannot query node layout: " .. $node) end
   $roots = json_parse($result.stdout)
-  $settings = node_settings($node)
   for $key in keys($settings.roots ?? {})
     $roots[$key] = $settings.roots[$key]
   end

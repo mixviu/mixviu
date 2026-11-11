@@ -16,7 +16,10 @@ The signer is `mix mesh ...`, invoked through the running interpreter's physical
 path (`/proc/self/exe`), including when testing an uninstalled binary. No binary
 directory or source checkout setting is needed. Each SSH call passes its
 node's explicit interpreter. Roots are queried using that interpreter's
-`layout defaults --tier system --json`, then explicit node roots override them.
+`mix_path` with the system tier, including layout and environment overrides.
+Explicit node roots then override the query. An older interpreter can use
+`legacy_defaults:true` only with all three explicit `prefix`, `etc` and `var`
+roots; this queries its layout defaults before applying those private roots.
 Keep legacy fleet roots in private configuration while migrating nodes:
 
 ```mix

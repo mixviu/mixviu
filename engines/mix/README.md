@@ -10,6 +10,7 @@ Build with `cargo build -p mix`, never as part of a workspace-unified build.
 `pubkey`, `genesis`, `d2-gen`, `d2-pubkey`, `wg-gen` and `wg-pubkey`
 commands retain the predecessor's arguments, output and refusal rules.
 Verification JSON retains the frozen `cosmix-mesh-sign.verify.v1` format.
+`--version` and `-V` report the containing `mix` engine's build provenance.
 
 The genesis secret stays in the operator's SQLite secrets database. The
 global `--secrets-db PATH` defaults to `~/.ns/_etc/secrets/secrets.db`, with
