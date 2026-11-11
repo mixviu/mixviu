@@ -3,8 +3,9 @@
 $targets=require("term-targets.mix")
 $commands=[["cargo","fmt","-p","lib-viu","--","--check"],["cargo","build","--locked","-p","lib-viu","--example","terminal_ime_driver"]]
 $prepare=contains(args(),"--prepare");$rc=0
-$target_dir=$targets.check($commands,$prepare)
+$target_dir=nil
 try
+  $target_dir=$targets.check($commands,$prepare)
   for $command in $commands
     if $prepare and $command[1]=="fmt" then $command=["cargo","fmt","-p","lib-viu"] end
     if $prepare and $command[1]=="build" then $command=filter($command,fn($arg)=$arg!="--locked") end

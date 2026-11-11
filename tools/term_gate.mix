@@ -6,11 +6,12 @@ $bootstrap_argv=["cargo","test","--locked","-p","lib-viu","--lib","startup::"]
 $host_argv=["cargo","build","--locked","-p","viu","--bin","viu"]
 $fixtures=[ ["cargo","build","--locked","-p","mix","--bin","mix"], ["cargo","build","--locked","-p","mixd","--bin","mixd"] ]
 $prepare=contains(args(),"--prepare")
-$target_dir=$targets.check(concat($commands,[$bootstrap_argv,$host_argv],$fixtures),$prepare)
+$target_dir=nil
 $bootstrap_argv=$targets.prepare_command($bootstrap_argv,$prepare)
 $host_argv=$targets.prepare_command($host_argv,$prepare)
 $rc=0
 try
+  $target_dir=$targets.check(concat($commands,[$bootstrap_argv,$host_argv],$fixtures),$prepare)
   -- Session tests must use this source tree, never an installed fallback.
   for $fixture in $fixtures
     $r=run_argv($targets.prepare_command($fixture,$prepare),{timeout:1800,max_output:16000000});print($r)
