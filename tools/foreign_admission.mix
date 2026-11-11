@@ -23,6 +23,10 @@ fn check($policy, $members, $closures)
     if not contains(["system", "vendored"], $entry.kind) then
       push($bad, $name .. ": invalid kind")
     end
+    if $entry.by != "Mark" then push($bad, $name .. ": admission must be by Mark") end
+    if type($entry.on) == "string" and not re_match($entry.on, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$") then
+      push($bad, $name .. ": on must be YYYY-MM-DD")
+    end
     if type($entry.only) != "list" or len($entry.only) == 0 then
       push($bad, $name .. ": only must be a nonempty member list")
       continue
