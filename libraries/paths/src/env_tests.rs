@@ -162,7 +162,10 @@ fn registry_names_and_scope_match_constants_and_literals_are_unique() {
     }
     assert_eq!(actual, expected);
     let repeated: BTreeMap<_, _> = counts.into_iter().filter(|(_, n)| *n > 1).collect();
-    assert!(repeated.is_empty(), "names spelled more than once: {repeated:?}");
+    assert!(
+        repeated.is_empty(),
+        "names spelled more than once: {repeated:?}"
+    );
 }
 
 #[test]
