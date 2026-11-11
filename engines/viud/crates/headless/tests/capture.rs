@@ -401,7 +401,10 @@ fn wait_inhibited(bus: &Bus, expected: bool) {
         if bus.call("comp.props.get", json!({"path":"display.inhibited"})) == expected {
             return;
         }
-        assert!(Instant::now() < deadline, "inhibited never became {expected}");
+        assert!(
+            Instant::now() < deadline,
+            "inhibited never became {expected}"
+        );
         thread::sleep(Duration::from_millis(20));
     }
 }
@@ -423,19 +426,36 @@ fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
     wait_inhibited(&bus, false);
     bus.call("comp.window.restore", target(&row));
     wait_inhibited(&bus, true);
-    bus.call("comp.window.send_to_workspace", place_args(&row, json!({"index":2})));
+    let lock = pattern.lock_session();
+    wait_inhibited(&bus, false);
+    lock.unlock_and_destroy();
+    pattern.pump();
+    wait_inhibited(&bus, true);
+    bus.call(
+        "comp.window.send_to_workspace",
+        place_args(&row, json!({"index":2})),
+    );
     wait_inhibited(&bus, false);
     bus.call("comp.workspace.switch", json!({"index":2}));
     wait_inhibited(&bus, true);
     bus.call("comp.workspace.switch", json!({"index":1}));
     wait_inhibited(&bus, false);
-    bus.call("comp.window.send_to_workspace", place_args(&row, json!({"index":1})));
+    bus.call(
+        "comp.window.send_to_workspace",
+        place_args(&row, json!({"index":1})),
+    );
     wait_inhibited(&bus, true);
     bus.call("comp.display.blank", json!({"on":true}));
-    assert_eq!(bus.call("comp.props.get", json!({"path":"display.blanked"})), true);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        true
+    );
     let b = pattern.inhibit();
     wait_inhibited(&bus, true);
-    assert_eq!(bus.call("comp.props.get", json!({"path":"display.blanked"})), true);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        true
+    );
     bus.call("comp.display.blank", json!({"on":false}));
     a.destroy();
     pattern.pump();
@@ -461,8 +481,8 @@ fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
         let reply = observer.request(&bus, "observer.inhibitors");
         assert_eq!(reply["rc"], 0);
         let edges = reply["body"].as_array().unwrap();
-        if edges.len() >= 14 {
-            assert_eq!(edges.len(), 14);
+        if edges.len() >= 16 {
+            assert_eq!(edges.len(), 16);
             for (i, edge) in edges.iter().enumerate() {
                 assert_eq!(edge["old"], i % 2 != 0);
                 assert_eq!(edge["new"], i % 2 == 0);
@@ -470,7 +490,10 @@ fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
             }
             break;
         }
-        assert!(Instant::now() < deadline, "missing inhibitor edges: {reply}");
+        assert!(
+            Instant::now() < deadline,
+            "missing inhibitor edges: {reply}"
+        );
     }
 }
 

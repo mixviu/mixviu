@@ -1174,6 +1174,7 @@ fn display_watch_reports_both_edges_with_their_cause() {
     for (on, cause) in [(true, "idle"), (false, "bus")] {
         let mut after = before.clone();
         after.display.blanked = on;
+        after.display.inhibited = on;
         let mut pending = PendingPropChanges::default();
         crate::diff::collect_snapshot_diff(&before, &after, cause, &mut pending);
         assert_eq!(
@@ -1181,6 +1182,11 @@ fn display_watch_reports_both_edges_with_their_cause() {
             Some(&(PropValue::Bool(!on), PropValue::Bool(on), cause))
         );
         assert_eq!(after.select(&["display", "blanked"]), Some(json!(on)));
+        assert_eq!(after.select(&["display", "inhibited"]), Some(json!(on)));
+        assert_eq!(
+            pending.get("display.inhibited"),
+            Some(&(PropValue::Bool(!on), PropValue::Bool(on), cause))
+        );
         before = after;
     }
     assert_eq!(before.select(&["power", "screen_off_s"]), Some(Value::Null));

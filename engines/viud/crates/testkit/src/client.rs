@@ -20,13 +20,12 @@ use wayland_client::protocol::{
     wl_seat::WlSeat, wl_shm, wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
-use wayland_protocols::wp::idle_inhibit::zv1::client::{
-    zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1,
-    zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1,
-};
 use wayland_protocols::ext::idle_notify::v1::client::{
-    ext_idle_notifier_v1::ExtIdleNotifierV1,
     ext_idle_notification_v1::{self, ExtIdleNotificationV1},
+    ext_idle_notifier_v1::ExtIdleNotifierV1,
+};
+use wayland_protocols::wp::idle_inhibit::zv1::client::{
+    zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1, zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1,
 };
 #[path = "tablet.rs"]
 pub mod tablet;
@@ -119,8 +118,13 @@ pub struct TestClient {
 
 impl TestClient {
     pub fn inhibit(&self, surface: &WlSurface) -> ZwpIdleInhibitorV1 {
-        let name = self.state.globals.iter()
-            .find(|(_, name, _)| name == "zwp_idle_inhibit_manager_v1").unwrap().0;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, name, _)| name == "zwp_idle_inhibit_manager_v1")
+            .unwrap()
+            .0;
         let manager: ZwpIdleInhibitManagerV1 = self.registry.bind(name, 1, &self.qh, ());
         let inhibitor = manager.create_inhibitor(surface, &self.qh, ());
         manager.destroy();
@@ -128,8 +132,13 @@ impl TestClient {
     }
 
     pub fn idle_notification(&self, timeout_ms: u32) -> ExtIdleNotificationV1 {
-        let name = self.state.globals.iter()
-            .find(|(_, name, _)| name == "ext_idle_notifier_v1").unwrap().0;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, name, _)| name == "ext_idle_notifier_v1")
+            .unwrap()
+            .0;
         let manager: ExtIdleNotifierV1 = self.registry.bind(name, 1, &self.qh, ());
         let notification = manager.get_idle_notification(timeout_ms, self.seat(0), &self.qh, ());
         manager.destroy();
@@ -741,9 +750,14 @@ delegate_noop!(ClientState: ignore ZwpIdleInhibitManagerV1);
 delegate_noop!(ClientState: ignore ZwpIdleInhibitorV1);
 delegate_noop!(ClientState: ignore ExtIdleNotifierV1);
 impl Dispatch<ExtIdleNotificationV1, ()> for ClientState {
-    fn event(state: &mut Self, _: &ExtIdleNotificationV1,
-        event: ext_idle_notification_v1::Event, _: &(), _: &Connection,
-        _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &ExtIdleNotificationV1,
+        event: ext_idle_notification_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         match event {
             ext_idle_notification_v1::Event::Idled => state.idle_events.push(true),
             ext_idle_notification_v1::Event::Resumed => state.idle_events.push(false),
