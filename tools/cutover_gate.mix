@@ -3,8 +3,13 @@
 --   gate: fmt, clippy, tests per engine boundary, the viud egui check and a
 --         release build of each engine with its size, then the release set
 --         /build/cutover-artifacts/<sha>/{mix,mixd,viu,viud,apps.tar,SHA256SUMS}
---         (tools/apps_bundle.mix). Every step runs; the gate fails if any did.
---         The tree must stay clean.
+--         (tools/apps_bundle.mix), then the env.mx smoke check: the bundle's
+--         env.mx is a root 0644 member listed in its manifest, carries the
+--         release mix's git_sha_full and, unpacked under target/ with the
+--         engines in bin/, supplies a defaulted setting to `mix layout setting`
+--         (and its absence is refused). Every step runs; the gate fails if any
+--         did. The tree must stay clean.
+--   env-mx: the env.mx smoke check alone, with a debug mix and no bundle.
 --   fmt:  run cargo fmt and print the diff to apply locally, then restore.
 --   lint DIR...: build mix and lint every tracked .mix file under DIR.
 --   mixtest FILE...: run Mix test scripts with this tree's debug mix.
@@ -25,6 +30,34 @@ fn gate_step($argv, $jobs, $env = {})
   print($r.stderr)
   print("STEP_RC=" .. to_string($r.exit_code ?? 124) .. " " .. join($argv, " "))
   return $r
+end
+
+-- env.mx smoke check in PREFIX (bin/mix plus env.mx): the file carries the
+-- commit the mix there reports, a defaulted setting resolves to its registry
+-- value with an empty environment (MIX_PREFIX unset: the prefix is the
+-- binary's own), and without the file the same setting is refused.
+-- Returns the failures.
+fn env_mx_probe($prefix)
+  $bad = []
+  $mix = $prefix .. "/bin/mix"
+  $stamp = json_parse(run_argv_must([$mix, "--version", "--json"], {clear_env: true})).git_sha_full
+  $staged = load_data($prefix .. "/env.mx")
+  print("ENV_MX_COMMIT binary=" .. $stamp .. " env.mx=" .. to_string($staged.commit))
+  if $staged.commit != $stamp then push($bad, "env.mx commit " .. to_string($staged.commit) .. " is not the binaries' " .. $stamp) end
+  $vars = filter(load_data("etc/env.conf.mix").vars, fn($v) = has_key($v, "default") and not starts_with($v.default, "mix:"))
+  if len($vars) == 0 then
+    push($bad, "the registry has no plain default to probe")
+    return $bad
+  end
+  $name = $vars[0].name
+  $with = run_argv([$mix, "layout", "setting", $name], {clear_env: true})
+  print("ENV_MX_SETTING " .. $name .. " rc=" .. to_string($with.exit_code) .. " out=" .. trim($with.stdout) .. " err=" .. trim($with.stderr))
+  if not $with.ok or trim($with.stdout) != $vars[0].default then push($bad, "env.mx did not supply " .. $name .. "=" .. $vars[0].default) end
+  remove($prefix .. "/env.mx")
+  $without = run_argv([$mix, "layout", "setting", $name], {clear_env: true})
+  print("ENV_MX_ABSENT " .. $name .. " rc=" .. to_string($without.exit_code) .. " out=" .. trim($without.stdout) .. " err=" .. trim($without.stderr))
+  if $without.ok or not contains($without.stderr, $name .. " is not set and has no installed default") then push($bad, "without env.mx " .. $name .. " was not refused") end
+  return $bad
 end
 
 -- The asset store apps_bundle.mix rebuilds from the pins when anything is missing.
@@ -64,6 +97,26 @@ if $mode == "bundle" then
   $r = gate_step(["target/debug/mix", "tools/apps_bundle.mix", "/tmp/cutover-apps-check.tar", "--mix", "target/debug/mix", "--assets", args()[1] ?? asset_store()], "6")
   exit(if $r.ok then 0 else 1 end)
 end
+if $mode == "env-mx" then
+  -- Light check of env_mx_probe with a debug mix and a freshly written env.mx.
+  $b = gate_step(["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"], "6")
+  if not $b.ok then exit(1) end
+  $dir = realpath(".") .. "/target/env-mx-check"
+  $bad = []
+  try
+    remove_dir($dir)
+    mkdir($dir .. "/bin", {parents: true})
+    copy("target/debug/mix", $dir .. "/bin/mix")
+    chmod($dir .. "/bin/mix", 0o755)
+    $env_mx = require("env_mx.mix")
+    $env_mx.write($dir .. "/env.mx", "etc/env.conf.mix", trim(run_argv_must(["git", "rev-parse", "HEAD"])))
+    $bad = env_mx_probe($dir)
+  finally
+    remove_dir($dir)
+  end
+  print("ENV_MX_FAILED " .. json_encode($bad))
+  exit(if len($bad) == 0 then 0 else 1 end)
+end
 if $mode == "mixtest" then
   -- Run Mix test scripts with this tree's (debug) mix.
   $b = gate_step(["cargo", "build", "--locked", "-p", "mix"], "6")
@@ -100,7 +153,7 @@ if $mode == "lint" then
   print("LINT_FAILED " .. to_string($bad))
   exit(if $bad == 0 then 0 else 1 end)
 end
-if $mode != "gate" then raise("USAGE", "cutover_gate.mix gate|lock|fmt|builtins|lint DIR...") end
+if $mode != "gate" then raise("USAGE", "cutover_gate.mix gate|lock|fmt|builtins|env-mx|lint DIR...") end
 
 $checks = [
   ["cargo", "fmt", "--all", "--", "--check"],
@@ -168,6 +221,34 @@ if len(keys($sizes)) == 4 then
     for $name in ["mix", "mixd", "viud", "viu", "apps.tar"] $sums = $sums .. hash_file($art .. "/" .. $name, "sha256") .. "  " .. $name .. "\n" end
     write_file($art .. "/SHA256SUMS", $sums)
     print("ARTIFACTS " .. $art .. "\n" .. $sums)
+    -- env.mx: a root-owned 0644 member at the archive root, in the manifest,
+    -- stamped with the release engines' commit and supplying a defaulted
+    -- setting, checked in the unpacked bundle with the four engines in bin/.
+    print("STEP_BEGIN env.mx smoke check")
+    $smoke = realpath(".") .. "/target/env-mx-smoke"
+    $bad = []
+    try
+      $member = trim(run_argv_must(["tar", "--numeric-owner", "-tvf", $art .. "/apps.tar", "env.mx"]))
+      print("ENV_MX_MEMBER " .. $member)
+      if not re_match($member, "^-rw-r--r-- 0/0 ") then push($bad, "env.mx member is not root:root 0644: " .. $member) end
+      remove_dir($smoke)
+      mkdir($smoke .. "/bin", {parents: true})
+      run_argv_must(["tar", "-xf", $art .. "/apps.tar", "-C", $smoke], {timeout: 600})
+      $listed = filter(load_data($smoke .. "/share/mixviu/BUNDLE.conf.mix").files, fn($row) = $row.path == "env.mx")
+      if len($listed) != 1 or $listed[0].sha256 != hash_file($smoke .. "/env.mx", "sha256") then push($bad, "env.mx is not in the bundle manifest with its hash") end
+      for $engine in ["mix", "mixd", "viu", "viud"]
+        copy("target/release/" .. $engine, $smoke .. "/bin/" .. $engine)
+        chmod($smoke .. "/bin/" .. $engine, 0o755)
+      end
+      $bad = concat($bad, env_mx_probe($smoke))
+    catch $msg
+      push($bad, "smoke check raised: " .. $msg)
+    finally
+      remove_dir($smoke)
+    end
+    print("ENV_MX_FAILED " .. json_encode($bad))
+    print("STEP_RC=" .. (if len($bad) == 0 then "0" else "1" end) .. " env.mx smoke check")
+    if len($bad) != 0 then push($failed, "env.mx") end
   else
     push($failed, "apps.tar")
   end
