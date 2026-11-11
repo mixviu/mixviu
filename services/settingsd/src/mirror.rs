@@ -104,6 +104,9 @@ impl Cache {
             receipts: Vec::new(),
             content_digest: String::new(),
         };
+        // Read projection only. Cache integrity is checked against the
+        // original bytes before the load boundary reports dropped chords.
+        settings::keymap::scrub_values(&mut accepted.values);
         // Sealed only so the shared checks hold; a mirror never stores it.
         let _ = accepted.seal();
         accepted
@@ -183,6 +186,12 @@ pub fn open(
                 let mut cache: Cache = strict::from_str(std::str::from_utf8(&bytes)?)?;
                 cache.values = canonical(std::mem::take(&mut cache.values));
                 cache.check(binding, authority)?;
+                let mut cache=cache;
+                let notes=settings::keymap::scrub_values(&mut cache.values);
+                if !notes.is_empty() {
+                    for note in notes { eprintln!("settingsd: {note}"); }
+                    cache.seal()?;
+                }
                 Ok(cache)
             });
             match stored {

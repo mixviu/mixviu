@@ -1055,11 +1055,19 @@ mod tests {
             &BTreeMap::from([
                 ("keymaps.dopus.nav.parent".into(), json!(["Ctrl+U"])),
                 ("keymaps.dopus.file.delete".into(), json!([])),
-                ("keymaps.ced.file.save".into(), json!(["Ctrl+S", "Insert"])),
+                ("keymaps.ced.file.save".into(), json!(["Ctrl+S", "F12"])),
             ]),
             &[],
         )
         .unwrap();
+        // Reproduce the old stored form. Loading removes only the retired
+        // chord; fresh validation still refuses that override.
+        assert!(resolve(&next).is_err());
+        let mut next: Desktop=serde_json::from_str(&serde_json::to_string(&next).unwrap()).unwrap();
+        let notes=crate::keymap::scrub_stored(&mut next.keymaps);
+        assert_eq!(notes.len(),1);
+        assert!(notes[0].contains("ced.file.save") && notes[0].contains("F12"));
+        assert_eq!(next.keymaps["ced"]["file.save"],["Ctrl+S"]);
         assert_eq!(next.keymaps["dopus"]["nav.parent"], ["Ctrl+U"]);
         assert!(next.keymaps["dopus"]["file.delete"].is_empty(), "unbound");
         assert_eq!(

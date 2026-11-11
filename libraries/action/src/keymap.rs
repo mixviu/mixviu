@@ -7,34 +7,69 @@ pub type Overrides = BTreeMap<String, Vec<String>>;
 type Bound = (Option<String>, Vec<String>);
 
 /// Store modifier prefixes in Ctrl, Alt, Shift order, preserving the key grammar.
-fn canonical_chord(text: &str) -> String {
+pub fn canonical_chord(text: &str) -> String {
+    parse_chord(text).unwrap_or_else(|| text.to_owned())
+}
+
+/// Shared textual grammar; toolkit adapters only resolve the final key name.
+/// Command and MacCmd are Ctrl, exactly as at the native event boundary.
+pub fn parse_chord(text: &str) -> Option<String> {
     let parts: Vec<_> = text.split('+').collect();
-    let (key, modifiers) = parts.split_last().expect("split always has a part");
-    if modifiers
-        .iter()
-        .any(|m| !["Ctrl", "Alt", "Shift"].contains(m))
-    {
-        return text.to_owned();
+    let (key, mods) = parts.split_last()?;
+    if key.is_empty() || !(key.bytes().all(|b| b.is_ascii_alphanumeric()) || ["=", "-", "/"].contains(key)) {
+        return None;
+    }
+    let mut flags = [false; 4];
+    for m in mods {
+        let index = match m.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" | "command" | "maccmd" => 0,
+            "alt" => 1, "shift" => 2, "super" => 3,
+            _ => return None,
+        };
+        if flags[index] { return None; }
+        flags[index] = true;
     }
     let mut out = String::new();
-    for modifier in ["Ctrl", "Alt", "Shift"] {
-        if modifiers.contains(&modifier) {
-            out.push_str(modifier);
-            out.push('+');
-        }
+    for (i, name) in ["Ctrl+", "Alt+", "Shift+", "Super+"].iter().enumerate() {
+        if flags[i] { out.push_str(name); }
     }
-    out.push_str(key);
-    out
+    let lower = key.to_ascii_lowercase();
+    out.push_str(match lower.as_str() {
+        "left" | "arrowleft" => "ArrowLeft",
+        "right" | "arrowright" => "ArrowRight",
+        "up" | "arrowup" => "ArrowUp",
+        "down" | "arrowdown" => "ArrowDown",
+        _ => key,
+    });
+    Some(out)
 }
 
 pub fn reserved(chord: &str) -> bool {
+    let Some(chord) = parse_chord(chord) else { return false; };
     let parts: Vec<_> = chord.split('+').collect();
     reserved_key(
-        parts.last().unwrap_or(&chord),
+        parts.last().expect("key present"),
         parts.contains(&"Ctrl"),
         parts.contains(&"Alt"),
         parts.contains(&"Shift"),
     )
+}
+
+/// Load compatibility only. Removing the last obsolete chord restores the
+/// command's default; an explicitly empty list continues to mean unbound.
+pub fn scrub_stored(overrides: &mut Overrides) -> Vec<String> {
+    let mut notes = Vec::new();
+    overrides.retain(|command, chords| {
+        let old_len = chords.len();
+        chords.retain(|chord| {
+            if reserved(chord) {
+                notes.push(format!("{command}: dropped stored reserved chord {chord:?}; command default applies when no valid chord remains"));
+                false
+            } else { true }
+        });
+        old_len == 0 || !chords.is_empty()
+    });
+    notes
 }
 
 /// Toolkit-independent admission for physical and injected key events.

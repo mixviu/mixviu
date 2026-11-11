@@ -349,6 +349,11 @@ pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
     if toolkit::keymap::reserved(key, modifiers) {
         return Vec::new();
     }
+    if let Some(code) = cursor_code(key).filter(|_| matches!(key,Key::ArrowUp|Key::ArrowDown|Key::ArrowLeft|Key::ArrowRight)) {
+        let modifier = 1 + u8::from(modifiers.shift) + 2 * u8::from(modifiers.alt)
+            + 4 * u8::from(modifiers.ctrl || modifiers.command || modifiers.mac_cmd);
+        if modifier > 1 { return vec![TerminalKey::Modified { code, modifier }]; }
+    }
     if modifiers.alt {
         if let Some(code) = cursor_code(key) {
             return vec![TerminalKey::Modified {
@@ -373,6 +378,20 @@ pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
             .collect();
     }
     named_key(key).into_iter().collect()
+}
+
+#[cfg(test)]
+mod arrow_bytes_tests {
+    use super::*;
+    #[test]
+    fn allowed_arrow_modifiers_have_exact_xterm_bytes() {
+        for (modifiers,number) in [(Modifiers::SHIFT,2),(Modifiers::ALT | Modifiers::SHIFT,4),(Modifiers::CTRL | Modifiers::SHIFT,6),(Modifiers::CTRL | Modifiers::ALT | Modifiers::SHIFT,8)] {
+            for (key,suffix) in [(Key::ArrowUp,'A'),(Key::ArrowDown,'B'),(Key::ArrowRight,'C'),(Key::ArrowLeft,'D')] {
+                let bytes=keys_for(key,modifiers).into_iter().flat_map(super::super::model::encode).collect::<Vec<_>>();
+                assert_eq!(bytes,format!("\x1b[1;{number}{suffix}").as_bytes(),"{key:?} {modifiers:?}");
+            }
+        }
+    }
 }
 
 /// The character whose control code a Ctrl+punctuation key sends, as

@@ -108,6 +108,19 @@ fn macro_headers_for(app: Option<&str>, id: Option<&str>) -> BTreeMap<String, St
     }
 }
 
+/// Compatibility for stored macro replay only. The app still refuses the
+/// injection; the runner records the skipped step and continues the script.
+/// No other refusal (or ordinary Bus caller) is converted to success.
+fn macro_key_reply(origin: bool, command: &str, args: &serde_json::Value,
+    rc: u8, body: String, error: Option<String>) -> (u8, String, Option<String>) {
+    const RESERVED: &str = "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused";
+    if origin && command.ends_with(".ui.key") && rc >= 10
+        && (body.contains(RESERVED) || error.as_deref().is_some_and(|e| e.contains(RESERVED))) {
+        eprintln!("macro: {command}: skipped stored reserved key {args}");
+        (0, serde_json::json!({"skipped":"reserved key", "command":command,"key":args}).to_string(), None)
+    } else { (rc,body,error) }
+}
+
 #[cfg(test)]
 mod macro_provenance_tests {
     #[test]
@@ -874,6 +887,7 @@ impl BusHandler for MixBusHandler {
                     .await
                 {
                     Ok((rc, reply_body, error_header)) => {
+                        let (rc,reply_body,error_header)=macro_key_reply(!macro_headers().is_empty(),command,&json_args,rc,reply_body,error_header);
                         Ok(headers_reply(rc, reply_body, error_header))
                     }
                     // A TRANSPORT failure (broker close, send error, 60s
@@ -908,7 +922,10 @@ impl BusHandler for MixBusHandler {
                 .call_with_headers_raw(target, command, &macro_headers(), &body)
                 .await
             {
-                Ok((rc, reply_body, error_header)) => Ok(typed_reply(rc, reply_body, error_header)),
+                Ok((rc, reply_body, error_header)) => {
+                    let (rc,reply_body,error_header)=macro_key_reply(!macro_headers().is_empty(),command,&json_args,rc,reply_body,error_header);
+                    Ok(typed_reply(rc, reply_body, error_header))
+                },
                 Err(e) => {
                     self.mark_lost_if_current(&client).await;
                     Err(mesh_unavailable(&format!(
@@ -1790,6 +1807,7 @@ impl BusHandler for MixServeHandler {
                     .await
                 {
                     Ok((rc, reply_body, error_header)) => {
+                        let (rc,reply_body,error_header)=macro_key_reply(!macro_headers().is_empty(),command,&value_to_json(args),rc,reply_body,error_header);
                         Ok(headers_reply(rc, reply_body, error_header))
                     }
                     Err(e) => Err(mesh_unavailable(&format!(
@@ -1809,7 +1827,10 @@ impl BusHandler for MixServeHandler {
                 .call_with_headers_raw(target, command, &BTreeMap::new(), &body)
                 .await
             {
-                Ok((rc, reply_body, error_header)) => Ok(typed_reply(rc, reply_body, error_header)),
+                Ok((rc, reply_body, error_header)) => {
+                    let (rc,reply_body,error_header)=macro_key_reply(!macro_headers().is_empty(),command,&json_args,rc,reply_body,error_header);
+                    Ok(typed_reply(rc, reply_body, error_header))
+                },
                 Err(e) => Err(mesh_unavailable(&format!(
                     "serve call({target}, {command}) transport failure: {e}"
                 ))),

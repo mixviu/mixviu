@@ -328,6 +328,17 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn injected_desk_keys_are_refused_without_partial_input() {
+        let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
+        let mut input=Input::default();
+        for args in [json!({"key":"F1"}),json!({"key":"ArrowLeft","ctrl":true}),json!({"key":"ArrowUp","alt":true})] {
+            assert!(input.queue("key",&args,&mut view).unwrap_err().contains("reserved"));
+            assert!(input.now.is_empty() && input.later.is_empty());
+        }
+        input.queue("key",&json!({"key":"ArrowLeft","ctrl":true,"shift":true}),&mut view).unwrap();
+        assert!(!input.now.is_empty());
+    }
+    #[test]
     fn malformed_gestures_do_not_queue_partial_native_input() {
         let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
         let mut input = Input::default();

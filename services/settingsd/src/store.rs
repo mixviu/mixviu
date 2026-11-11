@@ -311,7 +311,7 @@ impl Stored {
     /// whose digest the migration receipt carries.
     pub fn servable(self, text: &str) -> anyhow::Result<Accepted> {
         let accepted = match self {
-            Self::Current(record) => record,
+            Self::Current(record) => record.with_stored_keys()?,
             Self::Format4(record) => crate::migration::plan(*record, text)?.accepted,
         };
         accepted.effective()?;
@@ -319,13 +319,15 @@ impl Stored {
     }
     fn rebound(self, to: &Binding) -> anyhow::Result<Vec<u8>> {
         match self {
-            Self::Current(mut record) => {
+            Self::Current(record) => {
+                let mut record = record.with_stored_keys()?;
                 record.binding = to.clone();
                 record.seal()?;
                 record.check(to)?;
                 encode(&record)
             }
             Self::Format4(mut record) => {
+                for note in settings::keymap::scrub_stored(&mut record.desktop.keymaps) { eprintln!("settingsd: {note}"); }
                 record.binding = to.clone();
                 record.seal()?;
                 record.check(to)?;
@@ -335,6 +337,18 @@ impl Stored {
     }
 }
 impl Accepted {
+    /// Called only after verifying the stored seal. Keys do not affect the
+    /// sealed design projection; refresh the in-memory content seal only.
+    pub(crate) fn with_stored_keys(mut self) -> anyhow::Result<Self> {
+        self.check(&self.binding)?;
+        let notes = settings::keymap::scrub_values(&mut self.values);
+        if !notes.is_empty() {
+            for note in notes { eprintln!("settingsd: {note}"); }
+            self.effective()?;
+            self.seal()?;
+        }
+        Ok(self)
+    }
     fn canonical(mut self) -> Self {
         self.values = canonical(std::mem::take(&mut self.values));
         self
@@ -512,6 +526,7 @@ impl Store {
             Ok(Stored::Current(data)) => {
                 // An intact accepted document may require a newer compiler or
                 // migration. Semantic refusal must preserve it, not roll back.
+                let data = data.with_stored_keys()?;
                 data.effective()?;
                 Ok((store, data))
             }

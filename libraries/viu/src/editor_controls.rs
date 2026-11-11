@@ -563,6 +563,8 @@ pub fn draw(
     let add = |ui: &mut Ui| {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
+                let focused = ui.memory(|m| m.focused());
+                let submit_event = ui.input(|i| i.events.iter().find(|e| matches!(e, egui::Event::Key { key: egui::Key::Enter, pressed: true, .. })).cloned());
                 let field = toolkit::field::search(ui, &mut pattern, "Find", 220.0);
                 let marker = Id::unique((id, "focus-instance"));
                 if !ui.is_sizing_pass()
@@ -575,30 +577,16 @@ pub fn draw(
                 }
                 if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     if value["submit_modifiers"] == true {
-                        let shift = ui.input(|i| {
-                            i.events
-                                .iter()
-                                .find_map(|event| match event {
-                                    egui::Event::Key {
-                                        key: egui::Key::Enter,
-                                        pressed: true,
-                                        modifiers,
-                                        ..
-                                    } => Some(modifiers.shift),
-                                    _ => None,
-                                })
-                                .unwrap_or(i.modifiers.shift)
-                        });
+                        // TextEdit submits the first Enter it sees while it
+                        // owns focus. Consume that press only, never the rest
+                        // of this frame's Enter presses or releases.
+                        let Some(event @ egui::Event::Key { modifiers, .. }) = submit_event else { return; };
+                        if focused != Some(field.id) { return; }
+                        let shift = modifiers.shift;
                         ui.input_mut(|input| {
-                            input.events.retain(|event| {
-                                !matches!(
-                                    event,
-                                    egui::Event::Key {
-                                        key: egui::Key::Enter,
-                                        ..
-                                    }
-                                )
-                            });
+                            if let Some(index) = input.events.iter().position(|e| e == &event) {
+                                input.events.remove(index);
+                            }
                         });
                         field.request_focus();
                         emit(events, "submit", json!({"shift":shift}));

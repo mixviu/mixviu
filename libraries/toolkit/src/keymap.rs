@@ -49,6 +49,8 @@ pub const RESERVED_MESSAGE: &str =
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
+    let canonical = ::action::keymap::parse_chord(text)?;
+    let text = canonical.as_str();
     let parts: Vec<&str> = text.split('+').collect();
     let (key, mods) = parts.split_last()?;
     let mut modifiers = Modifiers::NONE;
@@ -74,7 +76,7 @@ pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
         "/" => Key::Slash,
         "" => return None,
         one if one.chars().count() == 1 => Key::from_name(&one.to_ascii_uppercase())?,
-        name => Key::from_name(name)?,
+        name => *Key::ALL.iter().find(|key| key.name().eq_ignore_ascii_case(name))?,
     };
     Some(KeyboardShortcut::new(modifiers, key))
 }
@@ -110,6 +112,29 @@ pub fn chord_text(shortcut: &KeyboardShortcut) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_and_native_reservation_agree() {
+        for (text,key,modifiers) in [
+            ("f1",Key::F1,Modifiers::NONE),
+            ("ctrl+left",Key::ArrowLeft,Modifiers::CTRL),
+            ("Control+ARROWLEFT",Key::ArrowLeft,Modifiers::CTRL),
+            ("Command+Right",Key::ArrowRight,Modifiers::COMMAND),
+            ("MacCmd+Down",Key::ArrowDown,Modifiers::MAC_CMD),
+            ("alt+Up",Key::ArrowUp,Modifiers::ALT),
+            ("ctrl+shift+Left",Key::ArrowLeft,Modifiers::CTRL | Modifiers::SHIFT),
+            ("Alt+Shift+Right",Key::ArrowRight,Modifiers::ALT | Modifiers::SHIFT),
+            ("F13",Key::F13,Modifiers::NONE),
+        ] {
+            let parsed=parse_chord(text).expect(text);
+            assert_eq!(parsed.logical_key,key);
+            assert_eq!(::action::keymap::reserved(text), reserved(key,modifiers),"{text}");
+            assert_eq!(reserved(parsed.logical_key,parsed.modifiers),reserved(key,modifiers),"{text}");
+        }
+        // egui/XKB collapses keypad arrows into Arrow*. These spellings
+        // are not keys at either textual injection boundary.
+        for name in ["KP_Left","NumpadLeft","F01","Function3"] { assert!(parse_chord(name).is_none(),"{name}"); }
+    }
 
     #[test]
     fn chords_parse_and_round_trip() {

@@ -1,0 +1,103 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Static structures only: prose containing chord names is not a binding.
+fn reserved_chord($text)
+  $parts=map(split($text,"+"),fn($p)=lower($p));$key=$parts[len($parts)-1]
+  return re_match($key,"^f([1-9]|1[0-2])$") or (contains(["left","right","up","down","arrowleft","arrowright","arrowup","arrowdown"],$key) and not contains($parts,"shift") and any($parts,fn($p)=contains(["ctrl","control","command","maccmd","alt"],$p)))
+end
+fn inspect_bindings($v,$path,$binding=false)
+  if type($v)=="map" then
+    $command=has_key($v,"id") or has_key($v,"command") or has_key($v,"action")
+    $flags=has_key($v,"ctrl") or has_key($v,"alt") or has_key($v,"modifiers")
+    if type($v.key)=="string" and ($command or $flags or $binding) then
+      $mods=$v.modifiers ?? []
+      if type($mods)!="list" then $mods=[] end
+      $mods=map($mods,fn($m)=lower($m))
+      $chord=(if $v.ctrl==true or any($mods,fn($m)=contains(["ctrl","control","command","maccmd"],$m)) then "Ctrl+" else "" end)..(if $v.alt==true or contains($mods,"alt") then "Alt+" else "" end)..(if $v.shift==true or contains($mods,"shift") then "Shift+" else "" end)..$v.key
+      if reserved_chord($chord) then raise("RESERVED_KEY",$path..": reserved binding "..$chord) end
+    end
+    for $k in keys($v)
+      if $binding and reserved_chord($k) then raise("RESERVED_KEY",$path..": reserved binding map key "..$k) end
+      inspect_bindings($v[$k],$path.."."..$k,contains(["shortcut","shortcut_binding","shortcuts","bindings","keymap"],$k) or ($k=="keys" and $command))
+    end
+  elif type($v)=="list" then
+    for $item in $v inspect_bindings($item,$path,$binding) end
+  elif $binding and type($v)=="string" and reserved_chord($v) then raise("RESERVED_KEY",$path..": reserved binding "..$v)
+  end
+end
+fn token_value($t)
+  return if $t.kind=="string" then data_parse("["..$t.text.."]")[0] else $t.text end
+end
+fn literal_value($tokens)
+  try return data_parse("["..join(map($tokens,fn($x)=$x.text)," ").."]")[0] catch $message
+    -- Constant string concatenation in a binding field is still data.
+    $text="";$string=true
+    for $token in $tokens
+      if $string and $token.kind=="string" then $text=$text..token_value($token)
+      elif not $string and $token.text==".." then nil
+      else return nil end
+      $string=not $string
+    end
+    return if not $string then $text else nil end
+  end
+end
+fn inspect_mix($source,$path)
+  -- Scene wrappers are not Mix. Lex each complete code block, preserving
+  -- token source coordinates; a fence inside a string cannot close a block.
+  $tokens=[]
+  if starts_with($source,"---\n") then
+    $lines=split($source,"\n");$in_code=false;$body=[];$offset=0;$line_number=0
+    for $line in $lines
+      $line_number=$line_number+1
+      if not $in_code and starts_with($line,"```mix") then $in_code=true;$offset=$line_number;$body=[]
+      elif $line=="```" and $in_code then
+        $lexed=nil
+        try $lexed=mix_tokens(join($body,"\n")) catch $message $lexed=nil end
+        if $lexed!=nil then
+          for $t in $lexed $t.line=$t.line+$offset;push($tokens,$t) end
+          $in_code=false
+        else push($body,$line) end
+      elif $in_code then push($body,$line) end
+    end
+    if $in_code then raise("RESERVED_KEY",$path..": unclosed scene code block") end
+  else $tokens=mix_tokens($source) end
+  $stack=[]
+  for $i=0 to len($tokens)-1
+    $t=$tokens[$i]
+    if $t.text=="{" then push($stack,$i)
+    elif $t.text=="}" and len($stack)>0 then
+      $start=$stack[len($stack)-1];$stack=slice($stack,0,len($stack)-1)
+      $object={};$locations={};$j=$start+1
+      while $j<$i
+        $key=$tokens[$j]
+        if contains(["word","string"],$key.kind) and $tokens[$j+1].text==":" then
+          $name=token_value($key);$end=$j+2;$nested=0
+          while $end<$i
+            $text=$tokens[$end].text
+            if $nested==0 and $text=="," then break end
+            if contains(["{","[","("],$text) then $nested=$nested+1 end
+            if contains(["}","]",")"],$text) then $nested=$nested-1 end
+            $end=$end+1
+          end
+          $value=literal_value(slice($tokens,$j+2,$end))
+          $object[$name]=$value;$locations[$name]=$tokens[$j+2].line;$j=$end
+        else $j=$j+1 end
+      end
+      $line=$locations.key ?? $locations.shortcut ?? $locations.keys ?? $tokens[$start].line
+      $parent=if $start>=2 then $tokens[$start-2].text else "" end
+      inspect_bindings($object,$path..":"..to_string($line),contains(["bindings","keymap","shortcuts"],$parent))
+    end
+  end
+  $condition=[]
+  for $t in $tokens
+    if contains(["if","elif","then"],$t.text) or $t.kind=="newline" then $condition=[] end
+    if $t.text=="then" then continue end
+    push($condition,$t)
+    if $t.kind=="string" and contains(["left","right","up","down","arrowleft","arrowright","arrowup","arrowdown"],lower(token_value($t))) then
+      $text=join(map($condition,fn($x)=$x.text)," ")
+      $positive=re_replace($text,"not \\$[A-Za-z_][A-Za-z0-9_]* \\. shift","")
+      if re_match($text,"\\. key == ") and re_match($text,"\\. (ctrl|alt|command|mac_cmd) (and|== true)") and not re_match($positive,"\\. shift (and|== true)") then
+        raise("RESERVED_KEY",$path..":"..to_string($t.line)..": reserved arrow flag comparison")
+      end
+    end
+  end
+end

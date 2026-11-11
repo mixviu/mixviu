@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$p=require("reserved-policy.mix")
+fn expect_refused($source,$line)
+  $refused=false
+  try $p.inspect_mix($source,"fixture.mix") catch $message
+    if not re_match($message,"fixture\\.mix:"..to_string($line).."[.:]") then raise("TEST","wrong diagnostic line: "..$message) end
+    $refused=true
+  end
+  if not $refused then raise("TEST","reserved binding escaped: "..$source) end
+end
+expect_refused("-- comment\n$x={id:\"back\",shortcut:\"Alt+Left\"}",2)
+expect_refused("$x={id:\"back\",key:\"ArrowLeft\",ctrl:true}",1)
+expect_refused("$x={id:\"back\",keys:[\"Ctrl+S\",\"F1\"]}",1)
+expect_refused("$x={bindings:{\"F1\":\"back\"}}",1)
+expect_refused("if $a.ctrl and $a.key == \"ArrowLeft\" then print(1) end",1)
+expect_refused("if $a.alt and $a.key == \"ArrowUp\" then print(1) end",1)
+expect_refused("if $a.ctrl and not $a.shift and $a.key == \"ArrowLeft\" then print(1) end",1)
+expect_refused("$x={id:\"back\",shortcut:\"Alt+\"..\"Left\"}",1)
+expect_refused("---\nscene: 1\n---\n```mix\n$x='text\n```\nmore'\n$x={id:\"back\",shortcut:\"F12\"}\n```\n",8)
+expect_refused("---\nscene: 1\n---\n```mix\n$x={id:\"back\",shortcut:\"F12\"}\n```\n",5)
+$p.inspect_mix("$label=\"F1\"\n$message=\"Ctrl+ArrowLeft\"\n$x={key:\"F1\",label:\"Metadata\"}\n$multiline='first\n```\nF1\n'", "prose.mix")
+$p.inspect_mix("if $a.ctrl and $a.shift and $a.key == \"ArrowLeft\" then print(1) end", "permitted.mix")
+$refused=false
+try $p.inspect_bindings({bindings:{"ctrl+left":"back"}},"fixture.json") catch $message $refused=true end
+if not $refused then raise("TEST","binding map keys escaped") end
+print("reserved binding structures: literals, flag comparisons, prose and source lines pass")

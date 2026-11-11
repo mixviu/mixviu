@@ -5,6 +5,17 @@ for $selector in [["-p","lib-viu"],["--package","lib-viu"],["--package=lib-viu"]
   $targets.validate_targets([concat(["cargo","test"],$selector,["--lib","--test","term_bundle","--","--package","not-a-package","--test","not-a-target"])],$metadata)
 end
 $targets.validate_targets([["cargo","test","-p","viu","-p","lib-viu","--test","term_bundle","--lib"]],$metadata)
+for $kind in ["test","example","bin"]
+  $fixture=$metadata
+  $fixture.packages[0].targets=push($fixture.packages[0].targets,{name:"known",kind:[$kind]})
+  $targets.validate_targets([["cargo","test","-p","lib-viu","--"..$kind.."=known"]],$fixture)
+  for $value in ["absent",""]
+    $refused=false
+    try $targets.validate_targets([["cargo","test","-p","lib-viu","--"..$kind.."="..$value]],$fixture) catch $message $refused=true end
+    if not $refused then raise("TEST","equals selector accepted missing target/value: "..$kind) end
+  end
+end
+if not deep_eq($targets.prepare_command(["cargo","test","--locked","--","--locked"],true),["cargo","test","--","--locked"]) then raise("TEST","forwarded locked argument changed") end
 for $argv in [["cargo","test","-p","viu","--lib"],["cargo","test","--package=absent"],["cargo","test","-p","viu","-p","lib-viu","--test","absent"],["cargo","test","--package"]]
   $refused=false
   try $targets.validate_targets([$argv],$metadata) catch $message $refused=true end

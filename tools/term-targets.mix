@@ -1,7 +1,12 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Validate Cargo's package/target selectors before starting a CBC gate.
 fn prepare_command($argv,$prepare)
-  return if $prepare then filter($argv,fn($arg)=$arg!="--locked") else $argv end
+  $out=[];$forwarded=false
+  for $arg in $argv
+    if $arg=="--" then $forwarded=true end
+    if not $prepare or $forwarded or $arg!="--locked" then push($out,$arg) end
+  end
+  return $out
 end
 fn validate_targets($commands,$metadata)
   $packages={}
@@ -20,10 +25,16 @@ fn validate_targets($commands,$metadata)
         else push($targets,{kind:slice($flag,2),name:$value}) end
       elif starts_with($flag,"--package=") then push($selected,slice($flag,10))
       elif starts_with($flag,"-p=") then push($selected,slice($flag,3))
+      elif re_match($flag,"^--(test|example|bin)=") then
+        $parts=split($flag,"=");$value=join(slice($parts,1),"=")
+        if $value=="" then raise("TERM_TARGET","missing value for "..$parts[0]) end
+        push($targets,{kind:slice($parts[0],2),name:$value})
       elif $flag=="--lib" then push($targets,{kind:"lib",name:nil})
       end
       $i=$i+1
     end
+    -- Gates deliberately require explicit packages for target selectors.
+    if len($targets)>0 and len($selected)==0 then raise("TERM_TARGET","target selectors require an explicit package in terminal gates") end
     for $name in $selected
       if not has_key($packages,$name) then raise("TERM_TARGET","missing workspace package: "..$name) end
     end

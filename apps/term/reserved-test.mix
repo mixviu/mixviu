@@ -1,26 +1,14 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Shipped data and generated terminal bindings must respect desk ownership.
-fn reserved_chord($text)
-  $parts=split($text,"+");$key=lower($parts[len($parts)-1])
-  return re_match($key,"^f([1-9]|1[0-2])$") or (contains(["left","right","up","down","arrowleft","arrowright","arrowup","arrowdown"],$key) and not contains($parts,"Shift") and (contains($parts,"Ctrl") or contains($parts,"Alt")))
-end
-fn inspect_bindings($v,$path,$binding=false)
-  if type($v)=="map" then
-    for $k in keys($v) inspect_bindings($v[$k],$path.."."..$k,contains(["shortcut","shortcuts","keys","key"],$k)) end
-  elif type($v)=="list" then
-    for $item in $v inspect_bindings($item,$path,$binding) end
-  elif $binding and type($v)=="string" and reserved_chord($v) then
-    raise("RESERVED_KEY",$path..": reserved binding "..$v)
-  end
-end
+$policy=require("../../tools/reserved-policy.mix")
 $actions=require("actions.mix")
 -- This is the same realistic model used by the terminal action tests.
 $model=require("model.mix")
 $s={closed:false,layout:$model.open_tab($model.initial(),{handle:"vt-1",pid:1},nil),bindings:{},find:{open:true},choice:{},look:{appearance:{mode:"dark"}},effective:{}}
-inspect_bindings($actions.registry($s),"term actions.mix registry")
-inspect_bindings($actions.menus($s),"term actions.mix menus")
+$policy.inspect_bindings($actions.registry($s),"term actions.mix registry")
+$policy.inspect_bindings($actions.menus($s),"term actions.mix menus")
 for $key in $actions.terminal_shortcuts($s)
   $chord=(if $key.ctrl then "Ctrl+" else "" end)..(if $key.alt then "Alt+" else "" end)..(if $key.shift then "Shift+" else "" end)..$key.key
-  if reserved_chord($chord) then raise("RESERVED_KEY","term actions.mix output: "..$chord) end
+  if $policy.reserved_chord($chord) then raise("RESERVED_KEY","term actions.mix output: "..$chord) end
 end
 print("reserved app bindings: clean")

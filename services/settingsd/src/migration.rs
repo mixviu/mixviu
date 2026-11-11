@@ -162,6 +162,7 @@ pub fn dry_run(root: &Path, binding: &Binding, backdrop: Option<&Path>) -> anyho
     stored.check(binding)?;
     let mut result = match stored {
         Stored::Current(accepted) => {
+            let accepted = accepted.with_stored_keys()?;
             accepted.effective()?;
             json!({"status":"current","format":FORMAT,"revision":accepted.revision,"values":accepted.values})
         }
