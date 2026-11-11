@@ -6,6 +6,8 @@ if len($g.errors) != 0 or $g.opts.mix == nil or $g.opts.bin == nil then
 end
 $mix = realpath($g.opts.mix)
 $bin = realpath($g.opts.bin)
+$bundle = run_argv([$mix, "tests/mix_services_bundle_test.mix"], {timeout: 30, stdout: "inherit", stderr: "inherit"})
+if not $bundle.ok then raise("BUNDLE", "installed template closure failed") end
 $failed = []
 for $svc in ["agentd", "peersd", "releasesd", "daylight"]
   $passed_checks = 0

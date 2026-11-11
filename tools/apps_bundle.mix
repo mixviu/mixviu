@@ -101,8 +101,13 @@ for $f in tracked(".")
   end
 end
 for $dir in ["share/layout", "share/daylight"]
-  for $f in tracked($dir) place($stage, $f, $f) end
+  for $f in tracked($dir)
+    if $dir == "share/layout" and ($f == "share/layout/templates.mx" or starts_with($f, "share/layout/manifests/")) then continue end
+    place($stage, $f, $f)
+  end
 end
+$layout = require("../share/layout/files.mix")
+$layout.bundle("share/layout", $stage .. "/share/layout")
 
 -- Icons and brand marks, through their own offline installers.
 for $installer in ["share/icons/install.mix", "share/brand/install.mix"]

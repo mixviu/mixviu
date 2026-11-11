@@ -32,6 +32,11 @@ Changes from the oracle:
 Integration: bundle scripts in `lib/<service>`, render all five unit templates
 through `share/layout/templates.mx`, and run all 17 test scripts from
 `tools/ci.mix test` (also `all`) using `tools/mix_services_test.mix`.
+The `mix-services` CI stage runs these checks separately. Bundle creation
+copies the layout manifest's template closure into `share/layout/sources`
+and rewrites its bundled manifest, so installed rendering does not depend on
+repository source directories. A headless regression check removes the source
+fixture before rendering all five installed service units at a relocated root.
 Tests create owned loopback brokers and local HTTP fixtures. No public network,
 real agent CLI, service installation or desktop is used by these tests.
 
