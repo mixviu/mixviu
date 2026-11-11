@@ -5,7 +5,6 @@
 //! owned sibling Mix worker. Only the parent speaks MCP. Cancellation terminates the
 //! worker process group; it cannot undo effects already committed through Bus.
 
-
 use std::process::Stdio;
 
 use rmcp::model::CallToolResult;

@@ -2,11 +2,11 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! MCP identity and provenance over the shared native agent client.
 
-pub(crate) use bus::agent_client::{AGENT_SESSION_ENV, Client};
+pub(crate) use bus::agent_client::{AGENT_SESSION_ENV, Client, broker_name};
 #[cfg(test)]
-use bus::agent_client::{bridge_reply, broker_name, finish_connect, tcp_permission};
+use bus::agent_client::{bridge_reply, finish_connect, tcp_permission};
 #[cfg(test)]
-use bus::native_client::{ConnectError, NodedClient, UnixConnectOutcome};
+use bus::native_client::{ConnectError, NodedClient};
 
 pub(crate) struct BrokerConnection(bus::agent_client::BrokerConnection);
 
@@ -14,15 +14,26 @@ impl BrokerConnection {
     pub(crate) fn new() -> Self {
         let build = buildinfo::build_info!();
         let provenance = bus::RegisterProvenance {
-            binary: Some("mix-mcp".into()), version: Some(build.version.into()),
-            git_sha: Some(build.git_sha.into()), git_dirty: Some(build.git_dirty),
-            build_time: Some(build.build_time.into()), pid: Some(std::process::id()),
-            started_at: Some(buildinfo::now_rfc3339()), ..Default::default()
+            binary: Some("mix-mcp".into()),
+            version: Some(build.version.into()),
+            git_sha: Some(build.git_sha.into()),
+            git_dirty: Some(build.git_dirty),
+            build_time: Some(build.build_time.into()),
+            pid: Some(std::process::id()),
+            started_at: Some(buildinfo::now_rfc3339()),
+            ..Default::default()
         };
-        Self(bus::agent_client::BrokerConnection::for_current_agent(Some(provenance), Some(paths::env::MCP_ALLOW_TCP)))
+        Self(bus::agent_client::BrokerConnection::for_current_agent(
+            Some(provenance),
+            Some(paths::env::MCP_ALLOW_TCP),
+        ))
     }
-    pub(crate) fn is_connected(&self) -> bool { self.0.is_connected() }
-    pub(crate) async fn get(&self) -> Result<std::sync::Arc<Client>, String> { self.0.get().await }
+    pub(crate) fn is_connected(&self) -> bool {
+        self.0.is_connected()
+    }
+    pub(crate) async fn get(&self) -> Result<std::sync::Arc<Client>, String> {
+        self.0.get().await
+    }
 }
 
 #[cfg(test)]
@@ -82,7 +93,11 @@ mod tests {
 
     #[tokio::test]
     async fn an_invalid_session_fails_every_bus_connection() {
-        let connection = BrokerConnection(bus::agent_client::BrokerConnection::new(broker_name(Some("BAD"), 1, 0), None, None));
+        let connection = BrokerConnection(bus::agent_client::BrokerConnection::new(
+            broker_name(Some("BAD"), 1, 0),
+            None,
+            None,
+        ));
         let error = connection.get().await.err().expect("must refuse");
         assert!(error.contains("refusing to connect"), "{error}");
     }

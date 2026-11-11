@@ -729,7 +729,16 @@ async fn stdio_tool_inventory_status_and_bus_contract() {
         .env_remove(paths::env::AGENT_SESSION)
         .env("HOME", dir.path());
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
-    assert_eq!(service.peer_info().unwrap().server_info.as_ref().unwrap().name, "mix-mcp");
+    assert_eq!(
+        service
+            .peer_info()
+            .unwrap()
+            .server_info
+            .as_ref()
+            .unwrap()
+            .name,
+        "mix-mcp"
+    );
     let list = service.list_tools(None).await.unwrap();
     assert!(list.next_cursor.is_none());
     let mut actual: Vec<_> = list.tools.iter().map(|tool| tool.name.as_ref()).collect();
@@ -763,12 +772,17 @@ async fn stdio_tool_inventory_status_and_bus_contract() {
     service.cancel().await.unwrap();
 }
 
-fn worker_server_command(dir: &std::path::Path, broker: &test_broker::Broker, socket: &std::path::Path) -> Command {
+fn worker_server_command(
+    dir: &std::path::Path,
+    broker: &test_broker::Broker,
+    socket: &std::path::Path,
+) -> Command {
     stage_defaults(dir);
     let config = dir.join("node.conf.mix");
     std::fs::write(&config, "node: \"fixture\"\nnoded: {port: 4200}\n").unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_mix-mcp"));
-    command.env(paths::env::NODED_URL, &broker.url)
+    command
+        .env(paths::env::NODED_URL, &broker.url)
         .env(paths::env::BUS_SOCKET, socket)
         .env(paths::env::BROKER_ACCOUNT, std::env::var("USER").unwrap())
         .env(paths::env::NODE_CONFIG, config)
@@ -778,7 +792,8 @@ fn worker_server_command(dir: &std::path::Path, broker: &test_broker::Broker, so
         .env(paths::env::PREFIX, dir)
         .env(paths::env::AGENT_SESSION, "abcd")
         .env_remove(paths::env::MCP_ALLOW_TCP)
-        .env("HOME", dir).current_dir(dir);
+        .env("HOME", dir)
+        .current_dir(dir);
     command
 }
 
@@ -788,16 +803,34 @@ async fn sibling_worker_preserves_agent_session_attribution() {
     let dir = tempfile::tempdir().unwrap();
     let command = worker_server_command(dir.path(), &broker, &broker.endpoint);
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
-    let owner = NodedClient::connect("identity-probe", &broker.url).await.unwrap();
+    let owner = NodedClient::connect("identity-probe", &broker.url)
+        .await
+        .unwrap();
     let mut incoming = owner.incoming_async().await.unwrap();
     let task = tokio::spawn(async move {
         let command = incoming.recv().await.unwrap();
-        owner.respond(&command, 0, &json!({"sender": &command.from}).to_string()).await.unwrap();
+        owner
+            .respond(&command, 0, &json!({"sender": &command.from}).to_string())
+            .await
+            .unwrap();
     });
-    let output = result(service.call_tool(CallToolRequestParams::new("mix_execute").with_arguments(
-        json!({"script":"send identity-probe probe.identity\nprint($reply)"}).as_object().unwrap().clone()
-    )).await.unwrap());
-    assert!(output["stdout"].as_str().unwrap().contains("mcp-s-abcd-"), "{output}");
+    let output = result(
+        service
+            .call_tool(
+                CallToolRequestParams::new("mix_execute").with_arguments(
+                    json!({"script":"send identity-probe probe.identity\nprint($reply)"})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
+            )
+            .await
+            .unwrap(),
+    );
+    assert!(
+        output["stdout"].as_str().unwrap().contains("mcp-s-abcd-"),
+        "{output}"
+    );
     task.await.unwrap();
     service.cancel().await.unwrap();
 }
@@ -811,9 +844,17 @@ async fn sibling_worker_never_downgrades_a_failed_unix_socket_to_tcp() {
     let mut command = worker_server_command(dir.path(), &broker, &socket);
     command.env(paths::env::MCP_ALLOW_TCP, "1");
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
-    let output = service.call_tool(CallToolRequestParams::new("mix_execute").with_arguments(
-        json!({"script":"send noded noded.ping\nprint($reply)"}).as_object().unwrap().clone()
-    )).await.unwrap();
+    let output = service
+        .call_tool(
+            CallToolRequestParams::new("mix_execute").with_arguments(
+                json!({"script":"send noded noded.ping\nprint($reply)"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        )
+        .await
+        .unwrap();
     assert_eq!(output.is_error, Some(true), "{output:?}");
     assert!(format!("{output:?}").contains("stale.sock"), "{output:?}");
     service.cancel().await.unwrap();

@@ -154,8 +154,16 @@ impl BrokerConnection {
         provenance: Option<bus::RegisterProvenance>,
         tcp_env: Option<&'static str>,
     ) -> Self {
-        if let Err(error) = &name { tracing::error!("{error}"); }
-        Self { client: Mutex::new(None), connecting: tokio::sync::Mutex::new(()), name, provenance, tcp_env }
+        if let Err(error) = &name {
+            tracing::error!("{error}");
+        }
+        Self {
+            client: Mutex::new(None),
+            connecting: tokio::sync::Mutex::new(()),
+            name,
+            provenance,
+            tcp_env,
+        }
     }
 
     /// Preserve the gateway attribution protocol for isolated agent scripts.
@@ -163,9 +171,16 @@ impl BrokerConnection {
         provenance: Option<bus::RegisterProvenance>,
         tcp_env: Option<&'static str>,
     ) -> Self {
-        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
         let session = paths::env::raw(AGENT_SESSION_ENV).map(|v| v.to_string_lossy().into_owned());
-        Self::new(broker_name(session.as_deref(), std::process::id(), nonce), provenance, tcp_env)
+        Self::new(
+            broker_name(session.as_deref(), std::process::id(), nonce),
+            provenance,
+            tcp_env,
+        )
     }
 
     fn live_client(&self) -> Option<Arc<Client>> {
@@ -206,7 +221,10 @@ impl BrokerConnection {
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        let tcp_opt_in = self.tcp_env.and_then(paths::env::raw).map(|v| v.to_string_lossy().into_owned());
+        let tcp_opt_in = self
+            .tcp_env
+            .and_then(paths::env::raw)
+            .map(|v| v.to_string_lossy().into_owned());
         let connect = async {
             let result = match configuration.resolve_endpoint().await {
                 Ok(endpoint) => {
@@ -268,4 +286,3 @@ impl BrokerConnection {
         Ok(client)
     }
 }
-

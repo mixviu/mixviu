@@ -3,9 +3,9 @@
 //! Isolated agent execution, derived from the frozen MCP worker. This private
 //! entry point speaks no MCP and skips ordinary shell hooks. The caller owns
 //! the process group; Bus identity and transport policy stay with agent_client.
-use std::io::{Read, Write};
-use serde::Deserialize;
 use ::bus::agent_client as connection;
+use serde::Deserialize;
+use std::io::{Read, Write};
 
 pub const ARG: &str = "--internal-mix-worker";
 const SCRIPT_LIMIT: usize = 256 * 1024;
@@ -13,15 +13,22 @@ const INPUT_LIMIT: usize = SCRIPT_LIMIT * 6 + 4096;
 const OUTPUT_LIMIT: usize = 1024 * 1024;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Request { script: String, cwd: Option<String> }
+struct Request {
+    script: String,
+    cwd: Option<String>,
+}
 
 fn worker_provenance() -> ::bus::RegisterProvenance {
     let build = buildinfo::build_info!();
     ::bus::RegisterProvenance {
-        binary: Some("mix".into()), version: Some(build.version.into()),
-        git_sha: Some(build.git_sha.into()), git_dirty: Some(build.git_dirty),
-        build_time: Some(build.build_time.into()), pid: Some(std::process::id()),
-        started_at: Some(buildinfo::now_rfc3339()), ..Default::default()
+        binary: Some("mix".into()),
+        version: Some(build.version.into()),
+        git_sha: Some(build.git_sha.into()),
+        git_dirty: Some(build.git_dirty),
+        build_time: Some(build.build_time.into()),
+        pid: Some(std::process::id()),
+        started_at: Some(buildinfo::now_rfc3339()),
+        ..Default::default()
     }
 }
 
@@ -205,7 +212,10 @@ async fn run_mix_script(script: &str, cwd: Option<&str>) -> Result<(String, Stri
     // Native connection is lazy even inside the worker. Pure local scripts
     // need no broker; the first send/emit/port_exists acquires an owned client.
     eval.set_bus_handler(std::rc::Rc::new(AgentBusHandler {
-        noded: connection::BrokerConnection::for_current_agent(Some(worker_provenance()), Some(::paths::env::MCP_ALLOW_TCP)),
+        noded: connection::BrokerConnection::for_current_agent(
+            Some(worker_provenance()),
+            Some(::paths::env::MCP_ALLOW_TCP),
+        ),
     }));
 
     // Execute
@@ -264,10 +274,7 @@ pub fn run() -> i32 {
             return 1;
         }
     };
-    let result = runtime.block_on(run_mix_script(
-        &request.script,
-        request.cwd.as_deref(),
-    ));
+    let result = runtime.block_on(run_mix_script(&request.script, request.cwd.as_deref()));
     match result {
         Ok((stdout, stderr, code)) => {
             if let Err(e) = std::io::stdout().write_all(stdout.as_bytes()) {

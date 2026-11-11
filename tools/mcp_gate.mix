@@ -78,6 +78,8 @@ try
   if $stage == "focused" then
     checked(["cargo", "test", "--locked", "-p", "mix-mcp", "--no-fail-fast"], $env)
   end
+  checked(["target/debug/mix", "tools/ci.mix", "release-mix"], $env)
+  checked(["target/debug/mix", "tools/foreign_gate.mix", "--locked", "--elf", realpath("target/release/mix")], $env)
   checked(["cargo", "build", "--locked", "--release", "-p", "mix-mcp"])
   print("RELEASE_SIZE " .. to_string(stat("target/release/mix-mcp").size))
 finally
