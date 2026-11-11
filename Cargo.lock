@@ -5448,15 +5448,23 @@ dependencies = [
 name = "mix"
 version = "0.1.2"
 dependencies = [
+ "anyhow",
+ "base64 0.22.1",
  "buildinfo",
  "bus",
+ "chrono",
+ "clap",
+ "curve25519-dalek",
  "ed25519-dalek",
  "lib-mix",
  "libc",
+ "mesh-trust",
  "mimalloc",
  "mix-shell",
  "paths",
  "proptest",
+ "rand 0.8.8",
+ "rusqlite",
  "rustyline",
  "serde",
  "serde_json",

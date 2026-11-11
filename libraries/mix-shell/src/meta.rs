@@ -817,7 +817,12 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
                 cmd_diff(args[1]);
             }
         }
-        "mesh" => cmd_mesh(),
+        "mesh" => {
+            let args: Vec<String> = args[1..].iter().map(|s| s.to_string()).collect();
+            if crate::run_mesh_cli(&args) != 0 {
+                mark_missed();
+            }
+        }
         "ports" => cmd_ports(),
         "ping" => {
             if args.len() < 2 {
@@ -1820,7 +1825,7 @@ fn cmd_help_overview() {
     println!("  mix reload       Re-execute ~/.mixrc");
     println!();
     println!("Mesh/ecosystem commands:");
-    println!("  mix mesh         Check Bus mesh status and list active sockets");
+    println!("  mix mesh COMMAND Sign or verify mesh inventories (mix mesh --help)");
     println!("  mix ports        List Bus port sockets with detail");
     println!("  mix ping SERVICE Check if a specific Bus service is reachable");
     println!();
@@ -2547,24 +2552,6 @@ fn query_noded_services() -> Result<(String, Vec<String>), String> {
         .join()
         .map_err(|_| "noded query thread panicked".to_string())??;
     Ok((url, services))
-}
-
-/// `mix mesh`: Bus mesh status — the local noded's registered services.
-fn cmd_mesh() {
-    match query_noded_services() {
-        Ok((url, services)) => {
-            println!("Bus mesh active via local noded ({url})");
-            if services.is_empty() {
-                println!("  (no services registered)");
-            } else {
-                for s in &services {
-                    println!("  {s}");
-                }
-                println!("{} service(s) registered", services.len());
-            }
-        }
-        Err(e) => println!("No mesh — local noded not reachable ({e})"),
-    }
 }
 
 /// `mix ports`: list the Bus services registered with the local noded.
