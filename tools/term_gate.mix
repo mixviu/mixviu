@@ -1,5 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Run on a CBC worker through cbc-build, never on the client machine.
+$targets=require("term-targets.mix")
+$commands=[["cargo","fmt","-p","lib-viu","--","--check"],["cargo","test","--locked","-p","lib-viu","--test","term_bundle"],["cargo","test","--locked","-p","lib-viu","--test","runtime","--test","calls","--test","timers"],["cargo","test","--locked","-p","lib-viu","--lib","terminal::"],["cargo","test","--locked","-p","lib-viu","--lib","launch::"],["cargo","test","--locked","-p","lib-viu","--lib","native_registration::"],["cargo","test","--locked","-p","lib-viu","--lib","native_menu::"],["cargo","test","--locked","-p","lib-viu","--lib","window_frame::title_tests::"],["cargo","test","--locked","-p","lib-viu","--lib","native_bus::tests::"],["cargo","test","--locked","-p","lib-viu","--lib","app_host::tests::"],["cargo","test","--locked","-p","lib-viu","--lib","input::tests::"],["cargo","test","--locked","-p","lib-viu","--lib","editor_controls::"],["cargo","test","--locked","-p","lib-viu","--lib","rich::tests::"]]
+$bootstrap_argv=["cargo","test","--locked","-p","lib-viu","--lib","startup::"]
+$host_argv=["cargo","build","--locked","-p","viu","--bin","viu"]
+$targets.check(concat($commands,[$bootstrap_argv,$host_argv]))
 $prepare=contains(args(),"--prepare")
 $rc=0
 try
@@ -29,10 +34,10 @@ try
   if not $notify_tests.ok then exit($notify_tests.exit_code ?? 1) end
   $startup_tests=run_argv(["/opt/mixos/bin/mix","apps/term/startup-policy-test.mix"]);print($startup_tests)
   if not $startup_tests.ok then exit($startup_tests.exit_code ?? 1) end
-  $bootstrap_tests=run_argv(["cargo","test","--locked","-p","viu","--lib","startup::"],{timeout:1800,max_output:16000000});print($bootstrap_tests)
+  $bootstrap_tests=run_argv($bootstrap_argv,{timeout:1800,max_output:16000000});print($bootstrap_tests)
   if not $bootstrap_tests.ok then exit($bootstrap_tests.exit_code ?? 1) end
-  for $argv in [["cargo","fmt","-p","viu","--","--check"],["cargo","test","--locked","-p","viu","--test","term_bundle"],["cargo","test","--locked","-p","viu","--test","runtime","--test","calls","--test","timers"],["cargo","test","--locked","-p","viu","--lib","terminal::"],["cargo","test","--locked","-p","viu","--lib","launch::"],["cargo","test","--locked","-p","viu","--lib","native_registration::"],["cargo","test","--locked","-p","viu","--lib","native_menu::"],["cargo","test","--locked","-p","viu","--lib","window_frame::title_tests::"],["cargo","test","--locked","-p","viu","--lib","native_bus::tests::"],["cargo","test","--locked","-p","viu","--lib","app_host::tests::"],["cargo","test","--locked","-p","viu","--lib","input::tests::"],["cargo","test","--locked","-p","viu","--lib","editor_controls::"],["cargo","test","--locked","-p","viu","--lib","rich::tests::"]]
-    if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","viu"] end
+  for $argv in $commands
+    if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","lib-viu"] end
     if $prepare and $argv[1]=="test" then $argv=filter($argv,fn($v)=$v!="--locked") end
     $r=run_argv($argv,{timeout:1800,max_output:16000000});print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
@@ -42,7 +47,7 @@ try
     if not $foreign.ok then $rc=$foreign.exit_code ?? 124 end
   end
   if $rc==0 then
-    $host=run_argv(["cargo","build","--locked","-p","viu-engine","--bin","viu"],{timeout:1800,max_output:16000000});print($host)
+    $host=run_argv($host_argv,{timeout:1800,max_output:16000000});print($host)
     if not $host.ok then $rc=$host.exit_code ?? 124 end
   end
   if $rc==0 then

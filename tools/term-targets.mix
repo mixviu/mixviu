@@ -1,0 +1,31 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run on CBC. Validate the actual argv lists before any gate work starts.
+fn check($commands)
+  $metadata=json_parse(run_argv_must(["cargo","metadata","--locked","--no-deps","--format-version","1"]))
+  $packages={}
+  for $p in $metadata.packages
+    if contains($metadata.workspace_members,$p.id) then $packages[$p.name]=$p end
+  end
+  for $command in $commands
+    $selected=[];$targets=[]
+    for $i=0 to len($command)-2
+      $flag=$command[$i];$value=$command[$i+1]
+      if $flag=="-p" then
+        if not has_key($packages,$value) then raise("TERM_TARGET","missing workspace package: "..$value) end
+        push($selected,$value)
+      elif contains(["--test","--example","--bin"],$flag) then
+        push($targets,{kind:slice($flag,2),name:$value})
+      end
+    end
+    for $target in $targets
+      $found=false
+      for $name in $selected
+        for $t in $packages[$name].targets
+          if $t.name==$target.name and contains($t.kind,$target.kind) then $found=true end
+        end
+      end
+      if not $found then raise("TERM_TARGET","missing "..$target.kind.." "..$target.name.." in "..join($selected,", ")) end
+    end
+  end
+  print("term cargo targets: "..to_string(len($commands)).." commands verified against workspace metadata")
+end
