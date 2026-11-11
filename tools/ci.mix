@@ -257,12 +257,14 @@ fn stage_viud_egui_free()
   print("viud: no egui/toolkit crates in its normal dependency tree")
 end
 
--- Foreign code (tools/foreign.conf.mix): every C-building crate is allowed or
--- debt, the strict mix crates reach allow entries only and no desktop crate,
+-- Foreign code (tools/foreign.conf.mix): every C-building crate is in allow,
+-- debt or admitted, the strict mix crates reach allow entries only and no desktop crate,
 -- and the built shell loads no display, GPU, input or audio library (ldd).
 fn stage_foreign($mix)
   ensure_mix($mix)
-  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix)])
+  run_step(["cargo", "build", "--locked", "-p", "mixd"])
+  run_step([$mix, "tools/foreign_admission_test.mix"])
+  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix), "--elf", realpath("target/debug/mixd")])
 end
 
 fn stage_mix_lint($mix)

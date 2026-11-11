@@ -10,7 +10,7 @@
 --
 -- Policy: tools/foreign.conf.mix.
 --   1. Every foreign package in the locked workspace resolve is listed in
---      `allow` (accepted, with a reason and an exit path) or `debt` (present
+--      `allow` (accepted, with a reason and an exit path) or `admitted` (restricted to named members) or `debt` (present
 --      today, to be removed). A new foreign crate fails the gate.
 --   2. The `strict` crates (the `mix` shell and its library) may reach only
 --      `allow` entries in their normal and build closure, in both the default
@@ -55,6 +55,8 @@ end
 $policy = load_data($policy_path).foreign
 $allow = $policy.allow ?? {}
 $debt = $policy.debt ?? {}
+$admitted = $policy.admitted ?? {}
+$admission = require("foreign_admission.mix")
 $strict = $policy.strict ?? []
 $forbid = $policy.strict_forbid ?? []
 -- Named, per-crate exceptions to the strict allowlist: decisions pending for
@@ -101,8 +103,8 @@ end
 
 $members = map(filter($doc.packages, fn($p) = contains($doc.workspace_members, $p.id)), fn($p) = $p.name)
 
-fn closure($crate, $mode)
-  $argv = concat(["cargo", "tree", "-p", $crate, "-e", "normal,build", "--target", $TARGET, "--prefix", "none", "-f", "{p}",
+fn closure($crate, $mode, $edges = "normal,build")
+  $argv = concat(["cargo", "tree", "-p", $crate, "-e", $edges, "--target", $TARGET, "--prefix", "none", "-f", "{p}",
     "--manifest-path", $root .. "/Cargo.toml"], $mode, $pass)
   $r = run_argv($argv, {timeout: 900, max_output: 268435456})
   if not $r.ok then
@@ -120,6 +122,13 @@ fn closure($crate, $mode)
 end
 
 $fail = []
+$closures = {}
+if len(keys($admitted)) > 0 then
+  for $member in $members
+    $closures[$member] = closure($member, ["--all-features"], "normal,build,dev")
+  end
+end
+$fail = $admission.check($policy, $members, $closures)
 $reach = {}
 for each $c in $strict
   if not contains($members, $c) then
@@ -132,7 +141,7 @@ for each $c in $strict
     for each $f in keys($foreign)
       if $names[$f] == true then
         $reach[$f] = ($reach[$f] ?? "") .. " " .. $c .. "(" .. $label .. ")"
-        if $allow[$f] == nil and not contains($strict_exceptions[$c] ?? [], $f) then
+        if ($admitted[$f] != nil or $allow[$f] == nil) and not contains($strict_exceptions[$c] ?? [], $f) then
           push($fail, "strict " .. $c .. " (" .. $label .. ") reaches foreign " .. $f .. " (not in allow)")
         end
       end
@@ -176,15 +185,15 @@ end
 
 if $list then
   for each $f in sort(keys($foreign))
-    $status = $allow[$f] != nil ? "allow" : ($debt[$f] != nil ? "debt" : "UNLISTED")
+    $status = $allow[$f] != nil ? "allow" : ($debt[$f] != nil ? "debt" : ($admitted[$f] != nil ? "admitted" : "UNLISTED"))
     print($f .. "  via " .. $foreign[$f] .. "  " .. $status .. "  strict:" .. ($reach[$f] ?? " none"))
   end
   exit(0)
 end
 
 for each $f in sort(keys($foreign))
-  if $allow[$f] == nil and $debt[$f] == nil then
-    push($fail, "foreign crate " .. $f .. " (builds with " .. $foreign[$f] .. ") is in neither allow nor debt")
+  if $allow[$f] == nil and $debt[$f] == nil and $admitted[$f] == nil then
+    push($fail, "foreign crate " .. $f .. " (builds with " .. $foreign[$f] .. ") is in none of allow, debt, admitted")
   end
 end
 for each $f in sort(keys($debt))
