@@ -1055,7 +1055,7 @@ mod tests {
             &BTreeMap::from([
                 ("keymaps.dopus.nav.parent".into(), json!(["Ctrl+U"])),
                 ("keymaps.dopus.file.delete".into(), json!([])),
-                ("keymaps.ced.file.save".into(), json!(["Ctrl+S", "F12"])),
+                ("keymaps.ced.file.save".into(), json!(["Ctrl+S", "Insert"])),
             ]),
             &[],
         )

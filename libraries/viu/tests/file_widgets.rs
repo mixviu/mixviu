@@ -49,7 +49,7 @@ fn data_authored_menus_share_native_model_and_keyboard_activation() {
     viu::appearance::install(&ctx);
     let widget = Widget::new("commands", "menubar", "", json!([
         {"id":"file","label":"File","enabled":true,"children":[
-            {"id":"runtime.command-42","label":"Run owned command","enabled":true,"shortcut":"Ctrl+R","shortcut_binding":"F2"},
+            {"id":"runtime.command-42","label":"Run owned command","enabled":true,"shortcut":"Ctrl+R","shortcut_binding":"Insert"},
             {"separator":true},
             {"id":"disabled","label":"Refused command","enabled":false}
         ]}
@@ -62,7 +62,7 @@ fn data_authored_menus_share_native_model_and_keyboard_activation() {
     assert_eq!(model[0].title, "File");
     assert_eq!(
         model[0].entries[0].row().unwrap().shortcut.as_deref(),
-        Some("F2")
+        Some("Insert")
     );
     assert_eq!(
         model[0].entries[0].row().unwrap().id.as_deref(),
