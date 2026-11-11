@@ -41,6 +41,7 @@
       "file": "fixture/src/lib.rs",
       "rules": [
         "rust-env",
+        "rust-env",
         "rust-mix-token"
       ]
     },

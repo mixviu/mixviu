@@ -254,12 +254,14 @@ fn standard_env($name)
 end
 
 fn environment_hit($file, $line, $name, $form)
-  if not re_match($name, '^[A-Z_][A-Z0-9_]*$') then return end
   if starts_with($name, "MIX_") then
     if not starts_with($file, "libraries/paths/") and ($form == "env" or $form == "option_env") then
       record_hit($file, $line, "rust-env", $form .. "!(" .. $name .. ")")
     end
-  elif contains($policy.foreign_env_names, $name) then
+    return
+  end
+  if not re_match($name, '^[A-Z_][A-Z0-9_]*$') then return end
+  if contains($policy.foreign_env_names, $name) then
     -- The literal/identifier pass reports catalogued names even when a
     -- constant or derive hides the eventual std::env read.
     return
