@@ -447,6 +447,17 @@ impl Harness {
     ) -> u32 {
         use smithay::input::pointer::{ButtonEvent, MotionEvent};
         use smithay::utils::{Point, SERIAL_COUNTER};
+        let consumed = self.wire.inner.comp.blank.consume_edge(
+            world::comp::blank::Edge::from_button(
+                button,
+                state == smithay::backend::input::ButtonState::Pressed,
+            ),
+        );
+        self.wire.inner.comp.blank.blanked = false;
+        if consumed {
+            self.roundtrip();
+            return 0;
+        }
         let server: ServerSurface = self
             .server_client
             .object_from_protocol_id(&self.display.handle(), protocol_id(surface))
@@ -690,6 +701,15 @@ impl Harness {
         }
         self.roundtrip();
         took
+    }
+
+    /// Backend-free blank transition using production human hold cleanup.
+    pub fn blank(&mut self, on: bool) {
+        if on && !self.wire.inner.comp.blank.blanked {
+            world::comp::blank::release_human(&mut self.wire.state, &mut self.wire.inner.comp);
+        }
+        self.wire.inner.comp.blank.blanked = on;
+        self.roundtrip();
     }
 
     /// The registry record behind `handle`, if it has one.

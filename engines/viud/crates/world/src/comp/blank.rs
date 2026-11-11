@@ -142,6 +142,39 @@ pub fn set_supported(lp: &mut Loop, supported: bool) {
     }
 }
 
+/// End pre-blank human holds before hiding the panel. Clients receive the
+/// release of presses they saw; compositor-owned keys only update xkb. Own
+/// the later physical repeats/releases so the event that wakes is consumed.
+/// The agent seat and its injected holds are deliberately untouched.
+pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::CompState) {
+    use smithay::backend::input::{ButtonState, KeyState};
+    use smithay::input::{keyboard::FilterResult, pointer::ButtonEvent};
+    use smithay::utils::SERIAL_COUNTER;
+
+    let time = crate::seat::event_time_ms();
+    if let Some(keyboard) = state.seat.seat.get_keyboard() {
+        for code in keyboard.pressed_keys() {
+            let intercepted = comp.bindings.user.is_swallowed(code.raw())
+                || comp.bindings.state().is_some_and(|table| table.is_intercepted(code.raw()));
+            comp.blank.swallowed.insert(Hold::Key(code.raw()));
+            keyboard.input::<(), _>(state, code, KeyState::Released,
+                SERIAL_COUNTER.next_serial(), time, |_, _, _| {
+                    if intercepted { FilterResult::Intercept(()) } else { FilterResult::Forward }
+                });
+        }
+    }
+    if let Some(pointer) = state.seat.seat.get_pointer() {
+        for button in pointer.current_pressed() {
+            comp.blank.swallowed.insert(Hold::Button(button));
+            pointer.button(state, &ButtonEvent { serial: SERIAL_COUNTER.next_serial(), time,
+                button, state: ButtonState::Released });
+        }
+        pointer.frame(state);
+    }
+    comp.bindings.reset_holds();
+    let _ = comp.injection.human.take_all();
+}
+
 /// Synchronous native commit, then logical publication. Backends without a
 /// CRTC have no callback: they retain policy state and leave pixels alone.
 pub fn set(lp: &mut Loop, on: bool, cause: &'static str) -> Result<(), String> {
@@ -155,6 +188,9 @@ pub fn set(lp: &mut Loop, on: bool, cause: &'static str) -> Result<(), String> {
         }
     }
     if lp.inner.comp.blank.blanked != on {
+        if on {
+            release_human(&mut lp.state, &mut lp.inner.comp);
+        }
         lp.inner.comp.blank.blanked = on;
         lp.inner.comp.settings_changed("display.blanked", cause);
     }
