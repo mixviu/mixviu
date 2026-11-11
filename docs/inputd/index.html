@@ -321,14 +321,14 @@ apps unclassified.</li>
 <tr><td><code>--grab-name NAME</code></td><td>grab the node whose name in <code>/proc/bus/input/devices</code> is NAME</td></tr>
 <tr><td><code>--vt N[,M...]</code></td><td>hold the grab only on these VTs</td></tr>
 <tr><td><code>--grab-timeout SECONDS</code></td><td>exit after this long, which releases the grab</td></tr>
-<tr><td><code>--keymap PATH</code></td><td>the keymap file (default: <code>keymap.json</code> in the state directory)</td></tr>
+<tr><td><code>--keymap PATH</code></td><td>the keymap file (default: <code>keymap.json</code> in the configuration directory)</td></tr>
 </tbody></table>
 <p>The unit <code>inputd.service</code> runs the Bus service only. An operator turns the
 grab on with a drop-in, after a supervised run with <code>--grab-timeout</code> from a
 shell that can kill it. Any exit of inputd, SIGKILL included, releases the
 grab.</p>
 <h2 id="the-keymap-file">The keymap file</h2>
-<p><code>&lt;state&gt;/inputd/keymap.json</code> (the unit's state directory), in the
+<p><code>&lt;etc&gt;/inputd/keymap.json</code> (the unit's configuration directory), in the
 keymap.v1 format:</p>
 <pre><code class="language-json">{"version": 1, "physical": [
   {"stroke": {"code": 106, "modifiers": {"right_ctrl": true}},

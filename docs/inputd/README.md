@@ -98,7 +98,7 @@ layer.
 | `--grab-name NAME` | grab the node whose name in `/proc/bus/input/devices` is NAME |
 | `--vt N[,M...]` | hold the grab only on these VTs |
 | `--grab-timeout SECONDS` | exit after this long, which releases the grab |
-| `--keymap PATH` | the keymap file (default: `keymap.json` in the state directory) |
+| `--keymap PATH` | the keymap file (default: `keymap.json` in the configuration directory) |
 
 The unit `inputd.service` runs the Bus service only. An operator turns the
 grab on with a drop-in, after a supervised run with `--grab-timeout` from a
@@ -107,7 +107,7 @@ grab.
 
 ## The keymap file
 
-`<state>/inputd/keymap.json` (the unit's state directory), in the
+`<etc>/inputd/keymap.json` (the unit's configuration directory), in the
 keymap.v1 format:
 
 ```json

@@ -46,5 +46,5 @@ loads unchanged.
   toggles.
 - The re-emitter is `inputd virtual keyboard`, created once at start; the
   injector is `inputd virtual pointer`.
-- The keymap is `keymap.json` in the state directory
+- The keymap is `keymap.json` in the configuration directory
   (`&lt;etc&gt;/inputd/`), or `--keymap PATH`.

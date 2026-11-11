@@ -23,9 +23,14 @@ Type=simple
 ExecStart=@{prefix}/bin/inputd --keymap @{etc}/inputd/keymap.json
 Restart=always
 RestartSec=500ms
-# Share viud's keymap and allow atomic rebind writes.
-ExecStartPre=+@{prefix}/bin/mix -c 'mkdir("@{etc}/inputd")'
-ReadWritePaths=@{etc}
+# Existing bindings are NOT carried automatically. Before enabling this unit,
+# the installer must copy the old state directory's keymap.json and backups
+# into @{etc}/inputd, with directory mode 0700 and keymap mode 0600.
+# Run scoped tmpfiles outside the daemon's mount namespace, then confine the
+# daemon's writes to that directory. The shipped unit runs as root.
+ExecStartPre=+/usr/bin/systemd-tmpfiles --create @{prefix}/share/inputd/units/inputd.tmpfiles.conf
+ReadWritePaths=@{etc}/inputd
+UMask=0077
 Environment=RUST_LOG=inputd=info
 SyslogIdentifier=inputd
 LogRateLimitIntervalSec=30s

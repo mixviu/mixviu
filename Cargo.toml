@@ -24,6 +24,7 @@ maildoc = { path = "libraries/maildoc" }
 input = { path = "vendor/input" }
 calloop = { path = "vendor/calloop" }
 inputd-core = { path = "libraries/inputd-core" }
+inputd-schema = { path = "libraries/inputd-schema" }
 world = { path = "engines/viud/crates/world" }
 ui = { path = "libraries/ui" }
 surfaces = { path = "engines/viud/crates/surfaces" }

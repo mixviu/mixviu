@@ -74,17 +74,7 @@ struct Args {
 
 fn main() -> anyhow::Result<()> {
     buildinfo::exit_on_version!();
-    let filter = match tracing_subscriber::EnvFilter::try_from_default_env() {
-        Ok(filter) => filter,
-        Err(_) => {
-            tracing_subscriber::EnvFilter::try_new(paths::env::setting(paths::env::INPUTD_LOG)?)?
-        }
-    };
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
-        .try_init();
+    init_logging();
     let args = Args::parse();
 
     let grabbing = args.grab.is_some() || args.grab_name.is_some();
@@ -98,18 +88,8 @@ fn main() -> anyhow::Result<()> {
         .transpose()
         .map_err(anyhow::Error::msg)?;
 
-    // The keymap file's rows if it loads; otherwise the defaults, seeded so
-    // the file exists. An unusable document is moved aside, never deleted
-    // (keymap_file::open). The path is kept even when writing is off, so
-    // replies stay truthful and input.reload can turn writing back on.
     let path = args.keymap.unwrap_or_else(keymap_file::default_path);
-    let opened = keymap_file::open(&path, &keymap_file::local_stamp());
-    let keymap = InputKeymap {
-        version: KEYMAP_SCHEMA_VERSION,
-        physical: opened.rows,
-    };
-    let store = service::Store::new(Some(path), opened.recovered_from, opened.persist_disabled);
-    let resolver: Shared = Arc::new(Mutex::new(Resolver::new(keymap)));
+    let (resolver, store) = prepare_keymap(path);
 
     // The reader thread sends resolved commands to the Bus side. The original
     // sender lives as long as the process, so the receiver never closes.
@@ -164,6 +144,58 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()?;
     runtime.block_on(serve(resolver, store, fire_rx))
+}
+
+/// Logging is never a startup requirement. RUST_LOG keeps precedence;
+/// absent or invalid overrides retain the frozen daemon's info fallback.
+fn log_filter(
+    rust_log: Option<std::ffi::OsString>,
+    inputd_log: Option<std::ffi::OsString>,
+) -> (tracing_subscriber::EnvFilter, Vec<String>) {
+    let mut ignored = Vec::new();
+    for (name, value) in [("RUST_LOG", rust_log), ("inputd log override", inputd_log)] {
+        if let Some(value) = value {
+            if let Some(value) = value.to_str() {
+                if let Ok(filter) = tracing_subscriber::EnvFilter::try_new(value) {
+                    return (filter, ignored);
+                }
+            }
+            ignored.push(format!("ignored invalid {name}"));
+        }
+    }
+    (tracing_subscriber::EnvFilter::new("info"), ignored)
+}
+
+fn init_logging() {
+    let (filter, ignored) = log_filter(
+        std::env::var_os("RUST_LOG"),
+        paths::env::raw(paths::env::INPUTD_LOG),
+    );
+    if !ignored.is_empty() {
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr(), "inputd: {}", ignored.join("; "));
+    }
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
+        .try_init();
+}
+
+fn prepare_keymap(path: PathBuf) -> (Shared, service::Store) {
+    // The keymap file's rows if it loads; otherwise the defaults, seeded so
+    // the file exists. An unusable document is moved aside, never deleted
+    // (keymap_file::open). The path is kept even when writing is off, so
+    // replies stay truthful and input.reload can turn writing back on.
+    let opened = keymap_file::open(&path, &keymap_file::local_stamp());
+    let keymap = InputKeymap {
+        version: KEYMAP_SCHEMA_VERSION,
+        physical: opened.rows,
+    };
+    let store = service::Store::new(Some(path), opened.recovered_from, opened.persist_disabled);
+    let resolver: Shared = Arc::new(Mutex::new(Resolver::new(keymap)));
+
+    (resolver, store)
 }
 
 /// Run a reader body on its thread. `Err((1, why))` when it returned an
@@ -277,6 +309,55 @@ async fn fire_command(client: &SupervisedClient, fired: &reader::FiredCommand) {
 mod tests {
     use super::*;
     use inputd_core::{Edge, SCENE_EDITOR_CHORDS, SCENE_EDITOR_KEY, default_keymap};
+
+    #[test]
+    fn logging_overrides_are_optional_and_never_fallible() {
+        let (filter, ignored) = log_filter(None, None);
+        assert_eq!(filter.to_string(), "info");
+        assert!(ignored.is_empty());
+        let (filter, ignored) = log_filter(None, Some("[bad".into()));
+        assert_eq!(filter.to_string(), "info");
+        assert_eq!(ignored, ["ignored invalid inputd log override"]);
+        let (filter, ignored) = log_filter(Some("inputd=debug".into()), Some("[bad".into()));
+        assert_eq!(filter.to_string(), "inputd=debug");
+        assert!(ignored.is_empty());
+        let (filter, ignored) = log_filter(Some("[bad".into()), Some("inputd=trace".into()));
+        assert_eq!(filter.to_string(), "inputd=trace");
+        assert_eq!(ignored, ["ignored invalid RUST_LOG"]);
+        use std::os::unix::ffi::OsStringExt;
+        let (filter, ignored) = log_filter(None, Some(std::ffi::OsString::from_vec(vec![255])));
+        assert_eq!(filter.to_string(), "info");
+        assert_eq!(ignored.len(), 1);
+    }
+
+    #[test]
+    fn empty_environment_pre_bus_startup_child() {
+        // Also run normally by the harness. The parent below runs this exact
+        // same startup path with env_clear(), without any installed defaults.
+        init_logging();
+        let args = Args::try_parse_from(["inputd"]).unwrap();
+        assert!(args.grab.is_none() && args.grab_name.is_none() && args.observe.is_none());
+        assert!(keymap_file::default_path().is_absolute());
+        let exe = std::env::current_exe().unwrap();
+        let dir = tempfile::tempdir_in(exe.parent().unwrap()).unwrap();
+        let path = dir.path().join("keymap.json");
+        let (resolver, _store) = prepare_keymap(path.clone());
+        assert_eq!(resolver.lock().unwrap().physical_rows().to_vec(), default_keymap().physical);
+        assert!(path.is_file());
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async { tokio::task::yield_now().await });
+        // Stop before the live Bus or any reader; neither is needed to prove
+        // logging, CLI, keymap/resolver and runtime startup headlessly.
+    }
+
+    #[test]
+    fn empty_environment_pre_bus_startup_succeeds() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .env_clear()
+            .args(["--exact", "tests::empty_environment_pre_bus_startup_child", "--nocapture"])
+            .output().unwrap();
+        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    }
 
     fn fired(command_name: &str, service: Option<&str>) -> reader::FiredCommand {
         reader::FiredCommand {

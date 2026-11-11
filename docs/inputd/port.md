@@ -15,9 +15,32 @@ An installer must move the old state keymap directory into the chosen etc
 root, preserve existing data/backups and remove the old directory compatibility
 link only after reader/writer acceptance. A file symlink is unsuitable:
 atomic save replaces the file. viud watches the containing directory.
-The unit creates that directory before starting and permits writes to the
-etc root under ProtectSystem=strict; no systemd-managed state/run directory
-is used. The shipped unit serves Bus only, without grabbing a device.
+Existing bindings are not carried automatically: the installer must copy the
+old state directory's keymap and backups before enabling the new unit.
+The unit invokes a scoped tmpfiles rule before starting, creating/correcting
+the root-owned configuration directory to 0700 idempotently. Only that
+directory is writable under ProtectSystem=strict. Atomic writes always use
+0600, including replacements of existing files with broader permission bits.
+No systemd-managed state/run directory is used. The shipped unit serves Bus
+only, without grabbing a device. Manual privileged runs still honour
+STATE_DIRECTORY and paths root overrides; the unit pins its --keymap path.
+
+Logging uses an optional raw override and the original non-fatal info fallback.
+No installed defaults file is read by inputd logging. Invalid overrides are
+reported in one stderr line; even a failed stderr write is ignored.
+
+Startup audit against the frozen main: the two fallible logging operations
+introduced by round 1 are removed. Remaining `?` operations (VT validation,
+optional device discovery, runtime creation, incoming stream and Bus serving)
+are unchanged. Keymap preparation was extracted for a pre-Bus test, without
+changing its recovery or in-memory fallback. No other setting() call exists
+in inputd. Manual runs using default_path still require a valid paths layout;
+invalid root/layout configuration can fail resolution, while the unit's
+explicit --keymap bypasses that lookup. Missing env.mx is not a startup error.
+Provisioning failures (permissions, read-only storage, absent systemd-tmpfiles)
+can fail the pre-start step just as failed StateDirectory provisioning could;
+the deployed systemd role must include its tmpfiles tool. No live unit start
+or seat acceptance is claimed here.
 
 ## Protocol
 

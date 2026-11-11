@@ -21,7 +21,7 @@ mod_module_files = "deny"
 [dependencies]
 paths = { path = "../../libraries/paths" }
 inputd-core.workspace = true
-inputd-schema = { path = "../../libraries/inputd-schema" }
+inputd-schema.workspace = true
 bus = { workspace = true, features = ["native"] }
 buildinfo.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }

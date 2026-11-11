@@ -1,5 +1,16 @@
 # inputd contract changes
 
+## MixViu port
+
+- The keymap moves to the configuration directory `<etc>/inputd/`.
+  Existing bindings are not carried automatically: the installer must copy
+  the old state directory's keymap and backups before enabling the unit.
+- Scoped tmpfiles creates a root-owned 0700 directory idempotently; the
+  daemon can write only there. Atomic saves write mode 0600, including
+  replacements of files which previously allowed group access.
+- Logging overrides are optional and never prevent startup; no installed
+  defaults file is needed. The original `info` fallback is retained.
+
 ## 0.5.0 (draft)
 
 The broker enters MixOS. The wire is unchanged: Bus service `inputd`, the
@@ -38,5 +49,5 @@ loads unchanged.
   toggles.
 - The re-emitter is `inputd virtual keyboard`, created once at start; the
   injector is `inputd virtual pointer`.
-- The keymap is `keymap.json` in the state directory
+- The keymap is `keymap.json` in the configuration directory
   (`<etc>/inputd/`), or `--keymap PATH`.

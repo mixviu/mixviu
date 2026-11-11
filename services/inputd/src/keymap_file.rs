@@ -637,8 +637,7 @@ fn sync_parent_after_rename(path: &Path) {
 /// Write the document durably to a new, uniquely named temp file beside
 /// `path` (creating parent directories) and return its name. The file is
 /// created exclusively and never through a symlink (`O_EXCL`,
-/// `O_NOFOLLOW`), with the target's permission bits, or 0600 for a new
-/// keymap.
+/// `O_NOFOLLOW`). Every atomic replacement is private (0600).
 fn write_tmp(path: &Path, physical: &[PhysicalBinding]) -> std::io::Result<PathBuf> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -654,7 +653,6 @@ fn write_tmp(path: &Path, physical: &[PhysicalBinding]) -> std::io::Result<PathB
                 path.display()
             )));
         }
-        Ok(meta) if meta.is_file() => meta.permissions().mode() & 0o7777,
         _ => 0o600,
     };
     let doc = PersistedKeymap {
@@ -906,7 +904,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn save_keeps_the_keymap_mode_and_creates_new_ones_private() {
+    fn atomic_save_creates_and_replaces_keymaps_private() {
         use std::os::unix::fs::PermissionsExt;
         let dir = scratch("modes");
         let path = dir.join(FILE_NAME);
@@ -914,7 +912,7 @@ pub(crate) mod tests {
         assert_eq!(mode_of(&path), 0o600, "a new keymap is private");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
         save(&path, &inputd_core::default_keymap().physical).unwrap();
-        assert_eq!(mode_of(&path), 0o640, "a rewrite keeps the mode");
+        assert_eq!(mode_of(&path), 0o600, "a rewrite removes group access");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -979,10 +977,10 @@ pub(crate) mod tests {
         dir
     }
 
-    /// Like [`scratch`] but under `/tmp` (world-traversable), for tests whose
+    /// Like [`scratch`] but under the test temp root (world-traversable), for tests whose
     /// check runs as uid 65534 — the harness temp dir may be root-only.
     pub(crate) fn scratch_tmp(tag: &str) -> PathBuf {
-        let dir = PathBuf::from(format!("/tmp/inputd-open-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("inputd-open-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

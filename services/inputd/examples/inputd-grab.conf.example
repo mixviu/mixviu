@@ -12,4 +12,4 @@
 # (ssh); the kernel releases the grab when the process exits.
 [Service]
 ExecStart=
-ExecStart=@{prefix}/bin/inputd --grab-name "keyd virtual keyboard" --vt 1
+ExecStart=@{prefix}/bin/inputd --keymap @{etc}/inputd/keymap.json --grab-name "keyd virtual keyboard" --vt 1

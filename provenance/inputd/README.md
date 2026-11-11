@@ -9,10 +9,14 @@ services/inputd/crates copies; only Cargo manifests differ (workspace paths).
 No shared code imported or changed.
 
 Adaptations: workspace dependencies; etc-root default keymap and fixture paths;
-installed log-filter default through paths::env; relocatable unit and manifest;
+optional raw log-filter override through paths::env, non-fatal info fallback;
+scoped tmpfiles provisioning and writable sandbox; relocatable unit and manifest;
 documentation links and historical state paths. Service/injection/grab/reader/
 device code and all original tests otherwise retained. See docs/inputd/port.md
 for protocol, reserved-key mismatch, migration and coverage limits.
+Round 2 deliberately tightens every atomic keymap replacement to 0600;
+the old mode-preservation test now checks that broader modes are removed.
+See shared-crates-round2.md for the complete file-by-file parity comparison.
 
 Frozen input tree (git blob object ids; includes compared shared crates):
 
