@@ -23,6 +23,13 @@ fn installed_settings_success_errors_and_override_precedence() {
                 assert_eq!(env::setting(env::NODED_SERVICE).unwrap(), "installed");
             }
             "malformed" => assert!(matches!(result, Err(env::SettingError::Malformed { .. }))),
+            "nonutf" => {
+                assert_eq!(result.unwrap(), "installed");
+                assert!(matches!(
+                    env::setting(env::HOSTD_SOCKET),
+                    Err(env::SettingError::Malformed { .. })
+                ));
+            }
             "schema" => assert!(matches!(
                 result,
                 Err(env::SettingError::UnknownSchema { .. })
@@ -36,13 +43,13 @@ fn installed_settings_success_errors_and_override_precedence() {
         }
         return;
     }
-    for mode in ["good", "malformed", "schema", "mismatch", "unreadable"] {
+    for mode in ["good", "nonutf", "malformed", "schema", "mismatch", "unreadable"] {
         let prefix =
             std::env::temp_dir().join(format!("paths-setting-{}-{mode}", std::process::id()));
         std::fs::create_dir_all(&prefix).unwrap();
         let stamp = env::SNAPSHOT_COMMIT.unwrap_or("unstamped");
         let source = match mode {
-            "good" => format!(
+            "good" | "nonutf" => format!(
                 "{{schema: 1, commit: '{stamp}', {}: 'installed', {}: 'mix:run/hostd/hostd.sock'}}",
                 env::NODED_SERVICE,
                 env::HOSTD_SOCKET
@@ -56,11 +63,17 @@ fn installed_settings_success_errors_and_override_precedence() {
         } else {
             std::fs::write(prefix.join("env.mx"), source).unwrap();
         }
+        use std::os::unix::ffi::OsStringExt;
+        let run = if mode == "nonutf" {
+            PathBuf::from(std::ffi::OsString::from_vec(b"/srv/fixture/nonutf-\xff".to_vec()))
+        } else {
+            prefix.join("run")
+        };
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .env_clear()
             .env("HOME", "/home/user")
             .env(env::PREFIX, &prefix)
-            .env(env::RUN, prefix.join("run"))
+            .env(env::RUN, run)
             .env(env::COMP_SERVICE, "override")
             .env(env::test::TEST_PATH_CACHE, format!("setting-{mode}"))
             .args([

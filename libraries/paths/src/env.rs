@@ -80,7 +80,11 @@ pub fn setting(name: &str) -> std::result::Result<String, SettingError> {
         .ok_or_else(|| SettingError::NotSet { name: name.into() })?;
     if value.starts_with("mix:") {
         super::resolve(value)
-            .map(|p| p.to_string_lossy().into_owned())
+            .and_then(|p| {
+                p.into_os_string()
+                    .into_string()
+                    .map_err(|_| "resolved setting path is not UTF-8".into())
+            })
             .map_err(|detail| SettingError::Malformed {
                 name: name.into(),
                 detail,
