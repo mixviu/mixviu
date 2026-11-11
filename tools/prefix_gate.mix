@@ -1,9 +1,18 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.3.0
+-- version: 0.4.0
 -- Lexical prefix ratchet; run from the repository root. No runtime evaluation.
--- Cannot see paths assembled from non-literal pieces (even a constant P in
--- concat!(P, "opt/mix")), compressed embedded data, generated
+-- Limitations. Cannot see paths assembled from non-literal pieces (even a
+-- constant P in concat!(P, "opt/mix")), compressed embedded data, generated
 -- OUT_DIR files not in the source tree, or includes with non-literal filenames.
+-- Macro bodies and #[cfg] items are not understood: they are scanned as plain
+-- tokens, so a DEFAULT_PREFIX-shaped item in a macro or a cfg(test) item can
+-- use the single allowed /opt/mix slot. A local variable that shadows a
+-- same-file constant is read as the constant. Any `.env(..)` or
+-- `.env_remove(..)` call is treated as Command's, whatever the receiver (a
+-- deliberate over-approximation; no receiver tracking). Snapshot mode allows
+-- the exact string /opt/mix any number of times (it is the compiled-in
+-- default). vendor/ is scanned here (vendor-path, old names) but excluded
+-- from the env stage, whose MIX_ registry covers only this project's code.
 -- Rust comments contribute path findings, but not MIX-word findings; ordinary/raw
 -- strings, byte strings, escapes and literal concat! arguments are decoded, and
 -- the decoded values are checked for paths, MIX_ words and old names.
@@ -16,6 +25,9 @@
 -- (tracked, or swapped into the working tree), non-regular files, files over
 -- limits.max_file_bytes and non-UTF-8 names are findings and are never read.
 -- Names and matched text are printed with control characters escaped.
+-- Control files (policy, baseline, baseline module, selftest cases) get the
+-- same no-follow regular-file read, capped by $hard.control_bytes, before
+-- they are parsed. The policy cannot raise any cap past the $hard bounds.
 -- Baseline identities omit line numbers so unrelated edits do not reset debt.
 -- --json emits ALL findings, even in baseline mode. --strict ignores debt.
 --
@@ -32,23 +44,69 @@
 $root = dirname(dirname(realpath($0)))
 $scan_root = $root
 $support = $root .. "/tools/test-support/prefix_gate"
-$policy = load_data($root .. "/tools/prefix.conf.mix")
+-- Hard bounds live in code, not policy: a PR's policy cannot raise them.
+$hard = {control_bytes: 4194304, listing_bytes: 67108864, max_file_bytes: 16777216, max_snapshot_bytes: 1073741824}
+-- Control characters, C1 controls and bidi overrides would reach CI logs.
+$unsafe_chars = '[\x00-\x1f\x7f-\x9f\x{2028}\x{2029}\x{202a}-\x{202e}\x{2066}-\x{2069}]'
+$policy = load_policy($root .. "/tools/prefix.conf.mix")
+control_text($root .. "/tools/prefix_baseline.mix")
 $baseline = require("prefix_baseline.mix")
-for $e in $policy.exceptions
-  if trim($e.file ?? "") == "" or trim($e.rule ?? "") == "" or $e.text == nil or trim($e.reason ?? "") == "" then
-    raise("POLICY", "every exception needs an exact file, rule, text and reason")
+$limits = $policy.limits
+
+-- A control file's text: regular, not a symlink, within $hard.control_bytes,
+-- UTF-8. Checked before anything parses it.
+fn control_text($path)
+  $read = read_regular($path, $hard.control_bytes)
+  if $read.problem != nil then
+    raise("CONTROL", "control file " .. shown($path) .. ": " .. $read.problem.text)
+  end
+  try
+    return bytes_to_string($read.bytes)
+  catch $message
+    raise("CONTROL", "control file " .. shown($path) .. " is not UTF-8")
   end
 end
-for $file in keys($policy.excluded_files)
-  if trim($policy.excluded_files[$file]) == "" then
-    raise("POLICY", "excluded file needs a reason: " .. $file)
+
+fn load_policy($path)
+  $p = data_parse(control_text($path))
+  if type($p) != "map" then raise("POLICY", "policy must be a map") end
+  for $e in $p.exceptions ?? []
+    if trim($e.file ?? "") == "" or trim($e.rule ?? "") == "" or $e.text == nil or trim($e.reason ?? "") == "" then
+      raise("POLICY", "every exception needs an exact file, rule, text and reason")
+    end
   end
+  for $file in keys($p.excluded_files ?? {})
+    if trim($p.excluded_files[$file]) == "" then
+      raise("POLICY", "excluded file needs a reason: " .. $file)
+    end
+  end
+  $l = $p.limits ?? {}
+  for $k in ["max_file_bytes", "max_snapshot_bytes"]
+    if type($l[$k] ?? nil) != "number" or $l[$k] < 1 or floor($l[$k]) != $l[$k] then
+      raise("POLICY", "limits." .. $k .. " must be a positive whole number of bytes")
+    end
+    if $l[$k] > $hard[$k] then
+      raise("POLICY", "limits." .. $k .. " exceeds the hard bound of " .. to_string($hard[$k]) .. " bytes")
+    end
+  end
+  return $p
 end
-$limits = $policy.limits ?? {}
-for $k in ["max_file_bytes", "max_snapshot_bytes"]
-  if type($limits[$k] ?? nil) != "number" or $limits[$k] < 1 or floor($limits[$k]) != $limits[$k] then
-    raise("POLICY", "limits." .. $k .. " must be a positive whole number of bytes")
+
+-- The in-tree baseline, or {} when no file of that name exists at all.
+fn load_baseline_file($path)
+  $exists = true
+  try
+    stat($path, {follow_symlinks: false})
+  catch $message
+    $exists = false
   end
+  if not $exists then return {} end
+  return $baseline.checked(json_parse(control_text($path)))
+end
+
+-- check_base with the in-tree copy read through the control-file checks.
+fn check_repo($repo, $before = "")
+  return $baseline.check_base($repo, $before, load_baseline_file($repo .. "/tools/prefix-baseline.json"), $hard.control_bytes)
 end
 $o = getopt(args(), {json: {}, strict: {}, snapshot: {arg: true}, "check-baseline": {}, "update-baseline": {}, "allow-growth": {}})
 if len($o.errors) > 0 or len($o.rest) > 1 then
@@ -91,9 +149,6 @@ for $name in $policy.foreign_env_names
   end
   $rust_prefilter = $rust_prefilter .. '|\b' .. $name .. '\b'
 end
-
--- Control characters, C1 controls and bidi overrides would reach CI logs.
-$unsafe_chars = '[\x00-\x1f\x7f-\x9f\x{2028}\x{2029}\x{202a}-\x{202e}\x{2066}-\x{2069}]'
 
 fn shown($s)
   $s = to_string($s)
@@ -488,6 +543,7 @@ fn scan_rust($file, $source)
   $nt = len($ts)
   $consts = $scope == "rust" ? rust_constants($ts) : {}
   $imports = $scope == "rust" ? env_imports($ts) : {mods: {}, fns: {}}
+  $env_args = {}
   $i = -1
   $skip_next = 0
   for $t in $ts
@@ -545,6 +601,7 @@ fn scan_rust($file, $source)
       $v = literal_expr($ts, $i + 3)
       if $v != nil then
         environment_hit($file, $t.line, $v.value, $t.text .. "!")
+        if re_match($v.value, '^(?i:mix_)') then $env_args[to_string($i + 3)] = true end
       end
     end
     if $scope == "rust" and $i + 2 < $nt and $ts[$i + 1].text == "(" then
@@ -560,6 +617,9 @@ fn scan_rust($file, $source)
       if $form != nil then
         $name = env_name($ts, $i + 2, $consts)
         if $name != nil then environment_hit($file, $t.line, $name, $form) end
+        if $name != nil and re_match($name, '^(?i:mix_)') and literal_expr($ts, $i + 2) != nil then
+          $env_args[to_string($i + 2)] = true
+        end
       end
     end
     $v = nil
@@ -586,7 +646,9 @@ fn scan_rust($file, $source)
         end
       end
     end
-    if $scope == "rust" and contains($text, "MIX_") and not starts_with($file, "libraries/paths/") then
+    -- A literal already reported as an environment read (rust-env) is not
+    -- counted again as a token.
+    if $scope == "rust" and contains($text, "MIX_") and not starts_with($file, "libraries/paths/") and not has_key($env_args, to_string($i)) then
       for $m in re_find($text, '\bMIX_[A-Z0-9_]+\b')
         record_hit($file, $t.line, "rust-mix-token", $m.match)
       end
@@ -689,7 +751,7 @@ end
 
 -- Units by suffix; tmpfiles and sysusers by directory or exact file name.
 fn data_file($file)
-  return starts_with($file, "share/") or (starts_with($file, "apps/") and ends_with($file, ".mix")) or re_match($file, '\.(service|socket|slice|timer|target|path|mount|automount|swap|desktop)$|(^|/)(?:tmpfiles|sysusers)\.d/|(^|/)(?:[^/]+\.)?(?:tmpfiles|sysusers)\.conf$')
+  return starts_with($file, "share/") or (starts_with($file, "apps/") and ends_with($file, ".mix")) or re_match($file, '\.(service|socket|slice|timer|target|path|mount|automount|swap|device|desktop)$|(^|/)(?:tmpfiles|sysusers)\.d/|(^|/)(?:[^/]+\.)?(?:tmpfiles|sysusers)\.conf$')
 end
 
 fn text_data($file, $bytes, $source)
@@ -703,7 +765,8 @@ fn text_data($file, $bytes, $source)
 end
 
 -- NUL-separated output of $argv as a list of raw byte strings. The output
--- goes to a private file, so a non-UTF-8 name never reaches a string.
+-- goes to a private file, so a non-UTF-8 name never reaches a string. A
+-- listing over $hard.listing_bytes is refused before it is read.
 fn nul_listing($argv)
   $tmp = trim(run_argv_must(["mktemp", "-d", "/var/tmp/prefix-list-XXXXXX"]))
   try
@@ -711,7 +774,11 @@ fn nul_listing($argv)
     if not $r.ok then
       raise("CAPTURE", $argv[0] .. " listing failed: " .. $r.stderr)
     end
-    $raw = read_file_bytes($tmp .. "/list")
+    $size = stat($tmp .. "/list", {follow_symlinks: false}).size
+    if $size > $hard.listing_bytes then
+      raise("CAPTURE", $argv[0] .. " listing is over " .. to_string($hard.listing_bytes) .. " bytes")
+    end
+    $raw = read_file_bytes($tmp .. "/list", $hard.listing_bytes + 1)
   finally
     run_argv_must(["rm", "-rf", "--", $tmp])
   end
@@ -816,7 +883,7 @@ end
 
 fn selftest()
   global $findings, $disabled_findings
-  $cases = load_data($support .. "/cases.conf.mix")
+  $cases = data_parse(control_text($support .. "/cases.conf.mix"))
   $deferred_rules = map($policy.disabled_rules, fn($d) = $d.rule)
   for $c in $cases.cases
     reset_scan()
@@ -933,8 +1000,10 @@ fn elf_file($head)
   return $head == chr(127) .. "ELF"
 end
 
-fn complete_capture($r, $label)
-  if not $r.ok or $r.stdout_truncated or ($r.utf8_lossy ?? false) then
+-- $lossy_ok: strings output may carry high-bit bytes; the patterns are ASCII,
+-- so a lossy decode loses nothing they could match.
+fn complete_capture($r, $label, $lossy_ok = false)
+  if not $r.ok or $r.stdout_truncated or (not $lossy_ok and ($r.utf8_lossy ?? false)) then
     raise("CAPTURE", $label .. " failed, truncated or was not UTF-8: " .. $r.stderr)
   end
   return $r.stdout
@@ -963,7 +1032,7 @@ fn scan_snapshot($dir)
       record_hit($name, 1, $read.problem.rule, $read.problem.text)
       continue
     end
-    $s = complete_capture(run_argv(["strings", "-a", $bin], {max_output: $limits.max_snapshot_bytes}), "strings")
+    $s = complete_capture(run_argv(["strings", "-a", $bin], {max_output: $limits.max_snapshot_bytes}), "strings", true)
     scan_data($name, $s, "snapshot")
     old_hits($name, 1, $s)
   end
@@ -982,13 +1051,19 @@ end
 fn baseline_selftest($tmp)
   $path = $tmp .. "/baseline.json"
   write_file($path, json_encode({b: 2, a: 2}))
-  if not expect_raise("BASELINE_GROWTH", fn() = $baseline.update($path, {a: 3, b: 2}, false)) then
+  if not expect_raise("BASELINE_GROWTH", fn() = update_baseline_file($path, {a: 3, b: 2}, false)) then
     raise("SELFTEST", "updater accepted count growth")
   end
-  $baseline.update($path, {a: 1}, false)
+  update_baseline_file($path, {a: 1}, false)
   if read_file($path) != json_encode({a: 1}, true) .. "\n" then raise("SELFTEST", "unstable baseline output") end
-  $baseline.update($path, {b: 3, a: 2}, true)
+  update_baseline_file($path, {b: 3, a: 2}, true)
   if read_file($path) != json_encode({a: 2, b: 3}, true) .. "\n" then raise("SELFTEST", "growth override or sorting failed") end
+  -- A symlinked baseline is refused and its target is never written.
+  write_file($tmp .. "/victim.txt", "untouched")
+  run_argv_must(["ln", "-s", $tmp .. "/victim.txt", $tmp .. "/linked.json"])
+  if not expect_raise("CONTROL", fn() = update_baseline_file($tmp .. "/linked.json", {}, true)) or read_file($tmp .. "/victim.txt") != "untouched" then
+    raise("SELFTEST", "the updater followed a symlinked baseline")
+  end
   $k1 = json_encode(["x/old.rs", "rust-path", "/opt/a"])
   $k2 = json_encode(["x/f.rs", "rust-path", "/opt/b"])
   $moved = json_encode(["y/new.rs", "rust-path", "/opt/a"])
@@ -1007,7 +1082,7 @@ fn baseline_selftest($tmp)
 
   $repo = $tmp .. "/repo"
   run_argv_must(["git", "init", "-q", "-b", "main", $repo])
-  if not expect_raise("BASELINE_BASE", fn() = $baseline.check_base($repo)) then
+  if not expect_raise("BASELINE_BASE", fn() = check_repo($repo)) then
     raise("SELFTEST", "an unborn repository did not fail closed")
   end
   $a = git_commit($repo, "fixture base")
@@ -1015,12 +1090,12 @@ fn baseline_selftest($tmp)
   mkdir($repo .. "/tools")
   write_file($repo .. $file, json_encode($b0))
   -- A push to main of a root commit: merge base is HEAD with no parent.
-  if not expect_raise("BASELINE_BASE", fn() = $baseline.check_base($repo)) then
+  if not expect_raise("BASELINE_BASE", fn() = check_repo($repo)) then
     raise("SELFTEST", "merge base HEAD without a parent did not fail closed")
   end
   git_fixture($repo, ["checkout", "-q", "-b", "topic"])
   $b = git_commit($repo, "fixture baseline")
-  $r = $baseline.check_base($repo)
+  $r = check_repo($repo)
   if not $r.introduced or $r.base != $a then raise("SELFTEST", "initial introduction was rejected") end
   git_fixture($repo, ["update-ref", "refs/remotes/origin/main", $b])
   write_file($repo .. "/other.txt", "unrelated")
@@ -1032,18 +1107,18 @@ fn baseline_selftest($tmp)
   push($cases, {now: $raised, growth: [$k2]})
   for $case in $cases
     write_file($repo .. $file, json_encode($case.now))
-    $r = $baseline.check_base($repo)
+    $r = check_repo($repo)
     if $r.how != "merge base" or $r.base != $b or not deep_eq($r.growth, $case.growth) then
       raise("SELFTEST", "branch comparison against the merge base failed: " .. json_encode($r))
     end
   end
   write_file($repo .. $file, json_encode($b1))
-  if len($baseline.check_base($repo).relocations) != 1 then raise("SELFTEST", "relocation was not reported") end
+  if len(check_repo($repo).relocations) != 1 then raise("SELFTEST", "relocation was not reported") end
   -- Push to main: the pushed commit grows the baseline and is origin/main.
   write_file($repo .. $file, json_encode($b2))
   $c2 = git_commit($repo, "fixture growth")
   git_fixture($repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-  $r = $baseline.check_base($repo)
+  $r = check_repo($repo)
   if $r.how != "first parent" or $r.base != $c or not deep_eq($r.growth, [$grown]) then
     raise("SELFTEST", "a push to main compared the baseline with itself: " .. json_encode($r))
   end
@@ -1051,17 +1126,78 @@ fn baseline_selftest($tmp)
   write_file($repo .. "/other.txt", "more")
   $d = git_commit($repo, "fixture follow-up")
   git_fixture($repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
-  if len($baseline.check_base($repo).growth) != 0 then raise("SELFTEST", "first-parent fallback changed") end
-  $r = $baseline.check_base($repo, $b)
+  if len(check_repo($repo).growth) != 0 then raise("SELFTEST", "first-parent fallback changed") end
+  $r = check_repo($repo, $b)
   if $r.how != "push range" or not deep_eq($r.growth, [$grown]) then
     raise("SELFTEST", "the push range base was not used: " .. json_encode($r))
   end
+  -- A force-pushed range (before is not an ancestor) fails closed.
   $orphan = trim(git_fixture($repo, ["commit-tree", "HEAD^{tree}", "-m", "orphan"]))
-  for $before in [$orphan, "0000000000000000000000000000000000000000", $d, "not-a-sha"]
-    if $baseline.check_base($repo, $before).how != "first parent" then
-      raise("SELFTEST", "an unusable push range base was used: " .. $before)
+  if not expect_raise("BASELINE_BASE", fn() = check_repo($repo, $orphan)) then
+    raise("SELFTEST", "a non-ancestor push range base fell back to the first parent")
+  end
+  for $before in ["0000000000000000000000000000000000000000", $d, "not-a-sha"]
+    if check_repo($repo, $before).how != "first parent" then
+      raise("SELFTEST", "an absent push range base was not ignored: " .. $before)
     end
   end
+  -- The base copy is capped; an in-tree symlink is refused before parsing.
+  if not expect_raise("BASELINE_BASE", fn() = $baseline.check_base($repo, "", {}, 8)) then
+    raise("SELFTEST", "an over-cap base baseline was read")
+  end
+  run_argv_must(["rm", "--", $repo .. $file])
+  run_argv_must(["ln", "-s", "/dev/zero", $repo .. $file])
+  if not expect_raise("CONTROL", fn() = check_repo($repo)) then
+    raise("SELFTEST", "a symlinked in-tree baseline was read")
+  end
+end
+
+fn update_baseline_file($path, $now, $allow_growth)
+  return $baseline.update($path, $now, $allow_growth, load_baseline_file($path))
+end
+
+fn control_selftest($tmp)
+  global $hard
+  $dir = $tmp .. "/control"
+  mkdir($dir)
+  $policy_text = control_text($root .. "/tools/prefix.conf.mix")
+  write_file($dir .. "/policy.conf.mix", $policy_text)
+  if load_policy($dir .. "/policy.conf.mix").limits.max_file_bytes != $limits.max_file_bytes then
+    raise("SELFTEST", "a copied policy did not load")
+  end
+  run_argv_must(["ln", "-s", $dir .. "/policy.conf.mix", $dir .. "/linked.conf.mix"])
+  run_argv_must(["ln", "-s", "/dev/zero", $dir .. "/zero.json"])
+  if not expect_raise("CONTROL", fn() = load_policy($dir .. "/linked.conf.mix")) then
+    raise("SELFTEST", "a symlinked policy was read")
+  end
+  if not expect_raise("CONTROL", fn() = load_baseline_file($dir .. "/zero.json")) then
+    raise("SELFTEST", "a symlinked baseline was read")
+  end
+  for $k in ["max_file_bytes", "max_snapshot_bytes"]
+    $bad = re_replace($policy_text, '"' .. $k .. '": [0-9]+', '"' .. $k .. '": ' .. to_string($hard[$k] + 1))
+    if $bad == $policy_text then raise("SELFTEST", "policy fixture edit missed " .. $k) end
+    write_file($dir .. "/raised.conf.mix", $bad)
+    if not expect_raise("POLICY", fn() = load_policy($dir .. "/raised.conf.mix")) then
+      raise("SELFTEST", "a policy raised " .. $k .. " past the hard bound")
+    end
+  end
+  $saved = $hard
+  try
+    $hard.control_bytes = 64
+    $refused = expect_raise("CONTROL", fn() = load_policy($dir .. "/policy.conf.mix"))
+  finally
+    $hard = $saved
+  end
+  if not $refused then raise("SELFTEST", "an oversize control file was parsed") end
+  -- The listing itself is capped.
+  $saved = $hard
+  try
+    $hard.listing_bytes = 16
+    $refused = expect_raise("CAPTURE", fn() = nul_listing(["git", "-C", $root, "ls-files", "-z", "--", "tools"]))
+  finally
+    $hard = $saved
+  end
+  if not $refused then raise("SELFTEST", "an over-cap listing was read") end
 end
 
 fn tree_selftest($tmp)
@@ -1174,6 +1310,7 @@ fn integration_selftest()
   $tmp = realpath(trim(run_argv_must(["mktemp", "-d", "/var/tmp/prefix-selftest-XXXXXX"])))
   try
     baseline_selftest($tmp)
+    control_selftest($tmp)
     tree_selftest($tmp)
     fixture_selftest($tmp)
     snapshot_selftest($tmp)
@@ -1203,6 +1340,10 @@ fn integration_selftest()
     if not expect_raise("CAPTURE", fn() = complete_capture($r, "printf")) then
       raise("SELFTEST", "a real non-UTF-8 capture was accepted")
     end
+    -- strings output: high-bit bytes decode lossily instead of failing.
+    if complete_capture(run_argv(["printf", "/opt/x\\377"]), "strings", true) != "/opt/x" .. chr(65533) then
+      raise("SELFTEST", "lossy strings output was refused or mangled")
+    end
     if complete_capture(run_argv(["printf", "%s", "0123"], {max_output: 4}), "printf") != "0123" then
       raise("SELFTEST", "a capture exactly at max_output was refused")
     end
@@ -1223,7 +1364,7 @@ end
 
 if $o.opts["check-baseline"] then
   -- GitHub sets PREFIX_GATE_BEFORE to github.event.before on a push.
-  $b = $baseline.check_base($root, env("PREFIX_GATE_BEFORE"))
+  $b = check_repo($root, env("PREFIX_GATE_BEFORE"))
   for $m in $b.relocations
     print("prefix baseline relocation: " .. shown($m.from) .. " -> " .. shown($m.to))
   end
@@ -1243,7 +1384,7 @@ else
 end
 
 if $o.opts["update-baseline"] then
-  $e = $baseline.update($root .. "/tools/prefix-baseline.json", $baseline.counts($findings), $o.opts["allow-growth"])
+  $e = update_baseline_file($root .. "/tools/prefix-baseline.json", $baseline.counts($findings), $o.opts["allow-growth"])
   for $m in $e.relocations
     print("relocated: " .. shown($m.from) .. " -> " .. shown($m.to))
   end
@@ -1256,7 +1397,7 @@ end
 
 $failed = len($findings) > 0
 if not $o.opts.strict and $o.opts.snapshot == nil then
-  $base = $baseline.checked(json_parse(read_file($root .. "/tools/prefix-baseline.json")))
+  $base = load_baseline_file($root .. "/tools/prefix-baseline.json")
   $now = $baseline.counts($findings)
   $failed = false
   for $k in sort(keys($now))

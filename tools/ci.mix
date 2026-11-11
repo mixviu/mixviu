@@ -192,7 +192,7 @@ fn stage_env()
   -- file under tools/test-support/prefix_gate stays in both greps.
   $gate_files = [":!tools/prefix-baseline.json", ":!tools/prefix_gate.mix", ":!tools/prefix.conf.mix"]
   $fixtures = ":!tools/test-support/prefix_gate/"
-  $name_fixtures = map(["comment.txt", "digit.txt", "doc-word.txt", "env.txt", "include-data.txt"], fn($f) = $fixtures + $f)
+  $name_fixtures = map(["cases.conf.mix", "comment.txt", "digit.txt", "doc-word.txt", "env.txt", "env-upper.txt", "include-data.txt"], fn($f) = $fixtures + $f)
   $old_fixtures = map(["bare-opt.txt", "cases.conf.mix", "legacy-boundaries.txt", "legacy-names.txt", "recogniser.txt", "wrong-prefix.txt"], fn($f) = $fixtures + $f)
   $excluded = concat(concat(["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path], $gate_files), $name_fixtures)
   $used = {}

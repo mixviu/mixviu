@@ -104,7 +104,8 @@ end
 
 -- The commit whose baseline the tree must not exceed.
 --   push range: $before (GitHub's github.event.before on a push) when it is a
---     full object name, not all zeros, not HEAD, and an ancestor of HEAD;
+--     full object name, not all zeros and not HEAD; it must then be an
+--     ancestor of HEAD, or the check fails closed (a force-pushed range);
 --   merge base: merge-base HEAD origin/main, for a branch or PR merge ref;
 --   first parent: when that merge base is HEAD itself (a push to main),
 --     HEAD^1. No parent, or no merge base, fails closed.
@@ -119,6 +120,8 @@ fn base_commit($root, $before)
     if $r.exit_code == 0 then
       return {sha: $b, how: "push range"}
     end
+    -- A rewritten range (force push): HEAD^ would see only the last commit.
+    raise("BASELINE_BASE", "push range base " .. $b .. " is not an ancestor of HEAD")
   end
   $r = run_argv(["git", "-C", $root, "merge-base", "HEAD", "origin/main"])
   if not $r.ok or $r.stdout_truncated or trim($r.stdout) == "" then
@@ -135,28 +138,44 @@ fn base_commit($root, $before)
   return {sha: $parent, how: "first parent"}
 end
 
-fn check_base($root, $before = "")
+-- $now is the in-tree baseline, already read by the caller through its
+-- no-follow, size-capped control-file read; the base copy is capped at $cap.
+fn check_base($root, $before, $now, $cap)
   $b = base_commit($root, $before)
   $file = "tools/prefix-baseline.json"
   $tree = run_argv_must(["git", "-C", $root, "ls-tree", "--name-only", $b.sha, "--", $file])
   if trim($tree) == "" then
     return {base: $b.sha, how: $b.how, introduced: true, growth: [], relocations: []}
   end
-  $base = checked(json_parse(run_argv_must(["git", "-C", $root, "show", $b.sha .. ":" .. $file])))
-  $now = checked(json_parse(read_file($root .. "/" .. $file)))
-  $e = explained($now, $base)
+  $r = run_argv(["git", "-C", $root, "show", $b.sha .. ":" .. $file], {max_output: $cap})
+  if not $r.ok or $r.stdout_truncated or ($r.utf8_lossy ?? false) then
+    raise("BASELINE_BASE", "base baseline unreadable, over " .. to_string($cap) .. " bytes or not UTF-8")
+  end
+  $base = checked(json_parse($r.stdout))
+  $e = explained(checked($now), $base)
   return {base: $b.sha, how: $b.how, introduced: false, growth: $e.growth, relocations: $e.relocations}
 end
 
--- Writes sorted, stable output. Returns the relocations and the growth it
--- accepted so the caller prints them into the log.
-fn update($path, $now, $allow_growth)
+-- $current is the existing file's map (read by the caller through the
+-- control-file checks, {} when absent). Writes sorted, stable output to a
+-- fresh mktemp file in the same directory and renames it over $path, so a
+-- symlink at $path is replaced, never followed. Returns the relocations and
+-- the growth it accepted so the caller prints them into the log.
+fn update($path, $now, $allow_growth, $current)
   checked($now)
-  $base = is_file($path) ? checked(json_parse(read_file($path))) : {}
-  $e = explained($now, $base)
+  $e = explained($now, checked($current))
   if not $allow_growth and len($e.growth) > 0 then
     raise("BASELINE_GROWTH", "update would add keys or raise counts; --allow-growth is required")
   end
-  write_file($path, json_encode($now, true) .. "\n")
+  $tmp = trim(run_argv_must(["mktemp", "-p", dirname($path), ".prefix-baseline.XXXXXX"]))
+  try
+    write_file($tmp, json_encode($now, true) .. "\n")
+    chmod($tmp, 0o644)
+    rename($tmp, $path)
+  catch $message, $error
+    $cleanup = run_argv(["rm", "-f", "--", $tmp])
+    if not $cleanup.ok then eprint("could not remove " .. $tmp) end
+    raise("BASELINE", "cannot write " .. $path .. ": " .. $message)
+  end
   return $e
 end

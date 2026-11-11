@@ -135,7 +135,9 @@
     "tools/test-support/prefix_gate/foreign-only.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
     "tools/test-support/prefix_gate/old-decoded.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
     "tools/test-support/prefix_gate/paths-colon.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
-    "tools/test-support/prefix_gate/standard-rust.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename."
+    "tools/test-support/prefix_gate/standard-rust.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-any-receiver.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-upper.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename."
   },
   "foreign_env_names": [
     "MDS_GC_QUIESCENCE_SECS",

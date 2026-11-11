@@ -1,0 +1,2 @@
+const BUILT: &str = env!("MIX_BUILT");
+fn read() { let _ = std::env::var("MIX_UPPER"); let other = "MIX_OTHER"; }

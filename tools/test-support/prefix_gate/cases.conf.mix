@@ -41,8 +41,7 @@
       "file": "fixture/src/lib.rs",
       "rules": [
         "rust-env",
-        "rust-env",
-        "rust-mix-token"
+        "rust-env"
       ]
     },
     {
@@ -178,8 +177,7 @@
       "fixture": "digit.txt",
       "file": "fixture/src/lib.rs",
       "rules": [
-        "rust-env",
-        "rust-mix-token"
+        "rust-env"
       ]
     },
     {
@@ -606,6 +604,38 @@
       "fixture": "env-not-read.txt",
       "file": "fixture/src/lib.rs",
       "rules": []
+    },
+    {
+      "fixture": "env-upper.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-env",
+        "rust-env",
+        "rust-mix-token"
+      ],
+      "texts": [
+        "var(MIX_UPPER)",
+        "env!(MIX_BUILT)",
+        "MIX_OTHER"
+      ]
+    },
+    {
+      "fixture": "env-any-receiver.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env"
+      ],
+      "texts": [
+        "PREFIX_GATE_R"
+      ],
+      "limitation": "any .env(..) receiver is treated as Command; pinned over-approximation"
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.device",
+      "rules": [
+        "data-path"
+      ]
     },
     {
       "fixture": "foreign-only.txt",
