@@ -1,5 +1,5 @@
 -- Included handlers share the citizen scope; dynamic source prevents name analysis.
--- lint: ignore-file MIX-W2401, MIX-E1101, MIX-E1102
+-- lint: ignore-file MIX-W2401
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.1.0
@@ -1224,6 +1224,7 @@ on notification.closed
   notify_settled(body(), false)
 end
 
+include "lib/awaits.mix"
 for each $id in $restart_ended
   publish("agent.session.ended", json_encode({session: $id, error_code: "agentd_restart"}), {command: "agent.session.ended"})
   op_finished($id)
