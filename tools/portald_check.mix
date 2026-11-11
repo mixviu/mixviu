@@ -12,7 +12,8 @@ try
   check_step(["cargo", "fmt", "--all"])
   check_step(["cargo", "check", "-p", "portald", "--all-targets"])
   check_step(["cargo", "check", "-p", "portald", "--no-default-features", "--all-targets"])
-  $prefix = trim(run_argv_must(["/opt/mixos/bin/mix", "tools/ci.mix", "stage-install"]))
+  $staging = require("stage_env.mix")
+  $prefix = $staging.create()
   $env = {MIX_PREFIX: $prefix, RUSTC_WRAPPER: ""}
   check_step(["cargo", "test", "--locked", "-p", "portald", "--no-fail-fast"], $env)
   check_step(["cargo", "test", "--locked", "-p", "portald", "--no-default-features", "--no-fail-fast"], $env)

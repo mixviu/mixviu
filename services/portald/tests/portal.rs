@@ -23,12 +23,21 @@ use zbus::zvariant::{OwnedValue, Value};
 #[cfg(not(feature = "screencast"))]
 #[test]
 fn feature_disabled_binary_refuses_screencast_before_starting() {
-    let binary = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("portald");
+    let binary = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("portald");
     let output = Command::new(binary)
         .args(["serve", "--instance", "fixture", "--screencast"])
-        .output().unwrap();
+        .output()
+        .unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("built without the screencast feature"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("built without the screencast feature")
+    );
 }
 
 /// Exercise production startup, registration and command dispatch. Each mode
@@ -141,7 +150,9 @@ fn startup_help_matches_screencast_dispatch() {
         return;
     }
     for mode in ["off", "on"] {
-        if mode == "on" && !cfg!(feature = "screencast") { continue; }
+        if mode == "on" && !cfg!(feature = "screencast") {
+            continue;
+        }
         let broker = test_broker::Broker::start();
         let dbus = PrivateBus::start().unwrap();
         let output = Command::new(std::env::current_exe().unwrap())
@@ -626,7 +637,15 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         let bus = PrivateBus::start()?;
         let connection = client(&bus).await?;
         let proxy = portal_proxy(&connection).await?;
-        let mut command = Command::new(std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("portald"));
+        let mut command = Command::new(
+            std::env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("portald"),
+        );
         command
             .args(["serve", "--instance", "host", "--profile", profile])
             .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
@@ -717,14 +736,22 @@ async fn losing_the_session_bus_exits_non_zero_for_the_restart() -> anyhow::Resu
     let connection = client(&bus).await?;
     let proxy = portal_proxy(&connection).await?;
     let mut process = Process(
-        Command::new(std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("portald"))
-            .args(["serve", "--instance", "host", "--profile", "default"])
-            .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
-            .env(paths::env::NODED_URL, &broker.url)
-            .env_remove("XDG_CONFIG_HOME")
-            .env_remove("STATE_DIRECTORY")
-            .stdin(Stdio::null())
-            .spawn()?,
+        Command::new(
+            std::env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("portald"),
+        )
+        .args(["serve", "--instance", "host", "--profile", "default"])
+        .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
+        .env(paths::env::NODED_URL, &broker.url)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("STATE_DIRECTORY")
+        .stdin(Stdio::null())
+        .spawn()?,
     );
     let value = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
