@@ -28,8 +28,10 @@ Changes from the oracle:
   required for real agent sessions; these tests use fake ACP agents.
 - Remove script shebangs. Units invoke the prefix's interpreter explicitly.
   Remove systemd StateDirectory directives; user units create their existing
-  private XDG state directories explicitly with umask 0077. Desk units retain
-  their session environment file and account contract.
+  private XDG state directories in `ExecStartPre`: the leaf is the user's and
+  0700 as `StateDirectoryMode=0700` made it, a symlinked or foreign-owned leaf
+  is refused, and no `UMask=` is set, so everything else keeps the manager's
+  umask. Desk units retain their session environment file and account contract.
 - Sanitise the recorded build completion fixture's worker, checkout and log.
   Use a neutral MCP executable path in the unit fixture.
 - Document lint's inability to analyse the two shared-scope handler files.

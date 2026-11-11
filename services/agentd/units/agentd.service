@@ -19,9 +19,15 @@ ConditionPathExists=%E/mixos/agent.conf.mix
 Type=simple
 Environment=MIX_AGENTD_CONF=%E/mixos/agent.conf.mix
 Environment=MIX_AGENTD_DB=%S/mixos/agentd/sessions.db
+# What StateDirectory=mixos/agentd with StateDirectoryMode=0700 gave: the
+# parents are created as the manager's umask allows, the leaf is the user's
+# and 0700. A leaf that is a symlink or belongs to another uid is refused,
+# not chmod'ed. No UMask=: files the service and its agents write keep the
+# manager's umask, as before.
 ExecStartPre=/usr/bin/mkdir -p %S/mixos/agentd
+ExecStartPre=/usr/bin/test ! -L %S/mixos/agentd
+ExecStartPre=/usr/bin/test -O %S/mixos/agentd
 ExecStartPre=/usr/bin/chmod 0700 %S/mixos/agentd
-UMask=0077
 ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/agentd/agentd.mix --name agent
 # Agents are children of agentd; stopping the unit ends every session. The
 # whole group gets SIGTERM at once, so agentd's close grace does not run:

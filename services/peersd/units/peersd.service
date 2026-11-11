@@ -15,9 +15,15 @@ After=noded.service
 [Service]
 Type=simple
 Environment=PEERS_STATE=%S/mixos/peers/%H
+# What StateDirectory=mixos/peers/%H with StateDirectoryMode=0700 gave: the
+# parents are created as the manager's umask allows, the leaf is the user's
+# and 0700. A leaf that is a symlink or belongs to another uid is refused,
+# not chmod'ed. No UMask=: files the service writes keep the manager's
+# umask, as before.
 ExecStartPre=/usr/bin/mkdir -p %S/mixos/peers/%H
+ExecStartPre=/usr/bin/test ! -L %S/mixos/peers/%H
+ExecStartPre=/usr/bin/test -O %S/mixos/peers/%H
 ExecStartPre=/usr/bin/chmod 0700 %S/mixos/peers/%H
-UMask=0077
 ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/peersd/peersd.mix --name peers
 TimeoutStopSec=10
 Restart=on-failure
