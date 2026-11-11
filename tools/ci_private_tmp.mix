@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run the unchanged full gate with job-owned, disk-backed scratch space.
+-- Shared CBC /tmp can be full, including for tests with literal /tmp paths.
+-- The bind mount exists only in this process's private mount namespace.
+$a = args()
+$mix = realpath("/proc/self/exe")
+if len($a) == 2 and $a[0] == "--child" then
+  run_argv_must(["mount", "--bind", $a[1], "/tmp"])
+  $r = run_argv([$mix, "tools/ci.mix", "all"], {timeout: 14400,
+    stdout: "inherit", stderr: "inherit",
+    env: {TMPDIR: $a[1], RUSTC_WRAPPER: "", CARGO_BUILD_JOBS: "2"}})
+  exit($r.exit_code ?? 124)
+end
+if len($a) != 0 then raise("USAGE", "ci_private_tmp.mix") end
+$tmp = "/var/tmp/mix-ci-" .. uuid()
+mkdir($tmp, {parents: true})
+chmod($tmp, 0o1777)
+print("CI_PRIVATE_TMP " .. $tmp)
+$r = run_argv(["unshare", "--mount", "--propagation", "private", $mix,
+  script_path(), "--child", $tmp], {timeout: 15000, stdout: "inherit", stderr: "inherit"})
+if $r.ok then remove_dir($tmp) else print("CI_PRIVATE_TMP retained: " .. $tmp) end
+exit($r.exit_code ?? 124)
