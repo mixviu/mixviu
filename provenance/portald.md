@@ -62,8 +62,10 @@ fixture is unavailable. It is not run by the headless gate and does not stand
 in for visual chooser acceptance. Rust FileChooser tests use the test broker.
 
 The restart-recovery Mix script needs a systemd user manager and creates an
-isolated transient unit and private D-Bus. It is retained for explicit worker
-execution; it must never be pointed at a running desktop/service. No desktop,
+isolated transient unit and private D-Bus. Its authority endpoint is explicitly
+offline, and its layout/defaults live in a temporary prefix. It is exercised
+by tools/portald_check.mix on the worker; it must never be pointed at a
+running desktop/service. No desktop,
 VT, install or production service action is part of this derivation.
 
 The source also patches PipeWire 0.10.1 with Buffer::find_meta_mut, required
