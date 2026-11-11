@@ -1,0 +1,4 @@
+const BUILD_NAME: &str = "PREFIX_GATE_S";
+const OPTIONAL_NAME: &str = "PREFIX_GATE_T";
+const BUILT: &str = env!(BUILD_NAME);
+const MAYBE: Option<&str> = option_env!(OPTIONAL_NAME);

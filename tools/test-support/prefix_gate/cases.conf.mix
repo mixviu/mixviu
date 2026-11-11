@@ -620,6 +620,18 @@
       ]
     },
     {
+      "fixture": "env-macro-const.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env",
+        "rust-unknown-env"
+      ],
+      "texts": [
+        "PREFIX_GATE_S",
+        "PREFIX_GATE_T"
+      ]
+    },
+    {
       "fixture": "env-any-receiver.txt",
       "file": "fixture/src/lib.rs",
       "rules": [

@@ -9,7 +9,8 @@
 -- use the single allowed /opt/mix slot. A local variable that shadows a
 -- same-file constant is read as the constant. Any `.env(..)` or
 -- `.env_remove(..)` call is treated as Command's, whatever the receiver (a
--- deliberate over-approximation; no receiver tracking). Snapshot mode allows
+-- deliberate over-approximation; no receiver tracking). `.envs(..)` is not
+-- understood: names passed in its pairs are not seen. Snapshot mode allows
 -- the exact string /opt/mix any number of times (it is the compiled-in
 -- default). vendor/ is scanned here (vendor-path, old names) but excluded
 -- from the env stage, whose MIX_ registry covers only this project's code.
@@ -598,10 +599,11 @@ fn scan_rust($file, $source)
       end
     end
     if $scope == "rust" and $i + 3 < $nt and ($t.text == "env" or $t.text == "option_env") and $ts[$i + 1].text == "!" then
-      $v = literal_expr($ts, $i + 3)
-      if $v != nil then
-        environment_hit($file, $t.line, $v.value, $t.text .. "!")
-        if re_match($v.value, '^(?i:mix_)') then $env_args[to_string($i + 3)] = true end
+      -- Same name resolution as the var forms: literal, concat! or const.
+      $name = env_name($ts, $i + 3, $consts)
+      if $name != nil then
+        environment_hit($file, $t.line, $name, $t.text .. "!")
+        if re_match($name, '^(?i:mix_)') and literal_expr($ts, $i + 3) != nil then $env_args[to_string($i + 3)] = true end
       end
     end
     if $scope == "rust" and $i + 2 < $nt and $ts[$i + 1].text == "(" then
@@ -817,7 +819,10 @@ fn scan_tree($dir)
       record_hit($e.path, 1, "file-name", "non-UTF-8 name")
     elif $e.mode == "120000" then
       record_hit($e.path, 1, "symlink", "symlink")
-    elif $e.mode == "160000" or has_key($policy.excluded_files, $e.path) then
+    elif $e.mode == "160000" then
+      -- A submodule is an unscanned subtree: visible, never read.
+      record_hit($e.path, 1, "gitlink", "submodule")
+    elif has_key($policy.excluded_files, $e.path) then
       continue
     else
       scan_file($e.path)
@@ -1009,6 +1014,21 @@ fn complete_capture($r, $label, $lossy_ok = false)
   return $r.stdout
 end
 
+-- True for a regular ELF file. A file that vanished or became unreadable
+-- between the listing and here is a file-type finding, not a crash.
+fn snapshot_elf($name, $bin)
+  try
+    $st = stat($bin, {follow_symlinks: false})
+    if $st.is_symlink or not $st.is_file then
+      return false
+    end
+    return elf_file(bytes_to_string(read_file_bytes($bin, 4), {lossy: true}))
+  catch $message
+    record_hit($name, 1, "file-type", "missing or unreadable")
+    return false
+  end
+end
+
 fn scan_snapshot($dir)
   for $raw in nul_listing(["find", "-P", $dir, "-type", "f", "-print0"])
     $bin = nil
@@ -1019,11 +1039,7 @@ fn scan_snapshot($dir)
       continue
     end
     $name = slice($bin, len($dir) + 1)
-    $st = stat($bin, {follow_symlinks: false})
-    if $st.is_symlink or not $st.is_file then
-      continue
-    end
-    if not elf_file(bytes_to_string(read_file_bytes($bin, 4), {lossy: true})) then
+    if not snapshot_elf($name, $bin) then
       continue
     end
     -- strings reads the whole file: the same regular-file and size checks.
@@ -1114,6 +1130,10 @@ fn baseline_selftest($tmp)
   end
   write_file($repo .. $file, json_encode($b1))
   if len(check_repo($repo).relocations) != 1 then raise("SELFTEST", "relocation was not reported") end
+  -- A local run: the push-range variable is unset, env() gives "".
+  if check_repo($repo, env("PREFIX_GATE_SELFTEST_UNSET_VARIABLE")).how != "merge base" then
+    raise("SELFTEST", "an unset push range variable changed the base")
+  end
   -- Push to main: the pushed commit grows the baseline and is origin/main.
   write_file($repo .. $file, json_encode($b2))
   $c2 = git_commit($repo, "fixture growth")
@@ -1234,7 +1254,7 @@ fn tree_selftest($tmp)
     $scan_root = $saved_root
   end
   $got = sort(map($findings, fn($f) = $f.rule .. " " .. $f.file))
-  $want = sort(["rust-path ok.rs", "rust-path " .. $ctl, "file-size big.txt", "symlink evil.rs", "symlink swap.rs", "symlink linkdir/inner.rs", "file-name bad" .. chr(65533) .. ".rs"])
+  $want = sort(["rust-path ok.rs", "rust-path " .. $ctl, "file-size big.txt", "symlink evil.rs", "symlink swap.rs", "symlink linkdir/inner.rs", "file-name bad" .. chr(65533) .. ".rs", "gitlink submodule"])
   if not deep_eq($got, $want) then
     raise("SELFTEST", "tree scan input safety failed: " .. shown(json_encode($got)))
   end
@@ -1243,6 +1263,16 @@ fn tree_selftest($tmp)
       raise("SELFTEST", "a control character in a file name reached the output")
     end
   end
+  -- --json output: C1 controls and bidi overrides, which JSON leaves raw.
+  $odd = {file: "c1" .. chr(155) .. "bidi" .. chr(8238) .. ".rs", line: 1, rule: "rust-path", text: "/opt/" .. chr(8233)}
+  if re_match(json_output(concat($findings, [$odd])), $unsafe_chars) then
+    raise("SELFTEST", "a control character reached the --json output")
+  end
+end
+
+-- --json: names and matched text get the same escaping as the summary.
+fn json_output($fs)
+  return json_encode(map($fs, fn($f) = {file: shown($f.file), line: $f.line, rule: $f.rule, text: shown($f.text), disabled: $f.disabled ?? false}))
 end
 
 fn fixture_selftest($tmp)
@@ -1301,6 +1331,11 @@ fn snapshot_selftest($tmp)
   end
   if not deep_eq(map($findings, fn($f) = $f.rule), ["file-size"]) then
     raise("SELFTEST", "an oversize snapshot ELF reached strings: " .. shown(json_encode($findings)))
+  end
+  -- A file listed by find but gone before stat.
+  reset_scan()
+  if snapshot_elf("gone.so", $snap .. "/gone.so") or not deep_eq(map($findings, fn($f) = $f.rule), ["file-type"]) then
+    raise("SELFTEST", "a vanished snapshot file was not a file-type finding")
   end
   reset_scan()
 end
@@ -1414,7 +1449,7 @@ if not $o.opts.strict and $o.opts.snapshot == nil then
   end
 end
 if $o.opts.json then
-  print(json_encode(concat($findings, $disabled_findings)))
+  print(json_output(concat($findings, $disabled_findings)))
 else
   summary($findings, $disabled_findings)
   if $o.opts.snapshot != nil then
