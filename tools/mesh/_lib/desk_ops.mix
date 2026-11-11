@@ -35,8 +35,9 @@ fn member_named($inventory, $node)
   fail("desk must be an authenticated active Bus member")
 end
 
-fn request($target, $inventory, $genesis, $mix_bin)
+fn request($target, $inventory, $genesis, $mix_bin, $prefix)
   $target = $targets.checked_target($target)
+  $native = $targets.checked_native($target,{node:$target.node,mix_bin:$mix_bin,prefix:$prefix})
   if $target.kind != "desk" or $target.admission == nil then fail("desk target lacks explicit policy") end
   $member = member_named($inventory,$target.node)
   $d2_keys = []
@@ -46,7 +47,7 @@ fn request($target, $inventory, $genesis, $mix_bin)
   if len($d2_keys) == 0 then fail("desk has no current authenticated D2 identity") end
   if type($genesis) != "string" or not re_match($genesis,"^[A-Za-z0-9+/]{43}=$") then fail("invalid authenticated genesis public key") end
   return {target:$target,mesh:$inventory.mesh,ip:$member.mesh_ip,port:$member.noded_port ?? 4200,
-    admission:$target.admission,genesis:$genesis,mix_bin:$mix_bin,d2_keys:$d2_keys}
+    admission:$target.admission,genesis:$genesis,mix_bin:$mix_bin,native:$native,d2_keys:$d2_keys}
 end
 
 fn worker_program($path)
@@ -75,7 +76,7 @@ fn call($base, $operation, $extra, $program, $executor)
     if not contains(["before","payloads","token"],$key) then fail("unexpected request override") end
     $bound[$key] = $extra[$key]
   end
-  $job = $targets.stdin_job($base.target,$program,{request:$bound},"admin",$base.mix_bin)
+  $job = $targets.stdin_job($base.target,$program,{request:$bound},"admin",$base.mix_bin,$base.native)
   $job.mix_bin = $base.mix_bin
   $job.operation = $operation
   if $executor == nil and has_key($extra,"token") then
@@ -151,7 +152,7 @@ $info = {rc:$rc,value:$result}
 send noded noded.inventory timeout=15
 print(json_encode({info:$info,inventory:{rc:$rc,value:$result}}))
 '
-  $job = $targets.stdin_job($base.target,$program,{},"citizen",$base.mix_bin)
+  $job = $targets.stdin_job($base.target,$program,{},"citizen",$base.mix_bin,$base.native)
   $job.mix_bin = $base.mix_bin
   $job.operation = "authority"
   $r = if $executor == nil then live_execute($job) else $executor($job) end

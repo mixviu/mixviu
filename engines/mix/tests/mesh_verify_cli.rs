@@ -167,11 +167,63 @@ fn mesh_version_flags_exit_before_opening_a_database() {
             flag,
             "--json",
         ]));
-        assert!(output.status.success());
+        assert_eq!(output.status.code(), Some(0));
         assert!(output.stderr.is_empty());
         let report = json_stdout(&output);
         assert_eq!(report["component"], "mix");
     }
+}
+
+#[test]
+fn mesh_help_and_usage_name_the_subcommand() {
+    let help = run(&strings(&["--help"]));
+    assert_eq!(help.status.code(), Some(0));
+    assert!(help.stderr.is_empty());
+    let text = String::from_utf8(help.stdout).unwrap();
+    assert!(text.contains("Usage: mix mesh"), "{text}");
+    assert!(!text.contains("Usage: mesh-sign"), "{text}");
+
+    let invalid = run(&strings(&["--invalid-mesh-argument"]));
+    assert_eq!(invalid.status.code(), Some(2));
+    assert!(invalid.stdout.is_empty());
+    let error = String::from_utf8(invalid.stderr).unwrap();
+    assert!(error.contains("Usage: mix mesh"), "{error}");
+    assert!(error.contains("--invalid-mesh-argument"), "{error}");
+    assert!(!error.contains("mesh-sign"), "{error}");
+}
+
+#[test]
+fn mesh_is_reserved_at_the_prompt_with_an_explicit_script_escape() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let dir = TempDir::new("repl-dispatch");
+    std::fs::write(dir.path().join("mesh"), "print(\"explicit mesh script\")\n").unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir(&home).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+        .arg("-i")
+        .current_dir(dir.path())
+        .env("HOME", &home)
+        .env("MIX_STATS", "off")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(
+        b"mix mesh --help\nprint(\"help status=\" .. $status)\nmix mesh --invalid-mesh-argument\nprint(\"error status=\" .. $status)\nmix ./mesh\n",
+    ).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stdout.contains("Usage: mix mesh"), "{stdout}");
+    assert!(stdout.contains("help status=0"), "{stdout}");
+    assert!(stdout.contains("error status=2"), "{stdout}");
+    assert!(stdout.contains("explicit mesh script"), "{stdout}");
+    assert!(stderr.contains("Usage: mix mesh"), "{stderr}");
+    assert!(!stdout.contains("Bus mesh active"), "{stdout}");
 }
 
 #[test]
@@ -204,14 +256,14 @@ fn expected_mesh_mismatch_fails_after_authentication() {
         "--genesis-pub-base64",
         &fixture.pubkey_b64,
         "--expected-mesh",
-        "other.internal",
+        "example.invalid",
         "--json",
     ]));
     assert!(!output.status.success());
     let report = json_stdout(&output);
     assert_eq!(report["error"]["code"], "mesh_mismatch");
     assert_eq!(report["details"]["actual_mesh"], "example.internal");
-    assert_eq!(report["details"]["expected_mesh"], "other.internal");
+    assert_eq!(report["details"]["expected_mesh"], "example.invalid");
 }
 
 #[test]

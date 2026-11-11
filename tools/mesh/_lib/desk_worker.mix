@@ -36,9 +36,13 @@ fn directory($path, $uid, $gid, $perm)
   return {dev:$s.dev,ino:$s.ino,uid:$s.uid,gid:$s.gid,perm:$s.perm}
 end
 
-fn native_binary($path)
+fn native_binary($path, $prefix, $component)
+  if type($prefix) != "string" or not starts_with($prefix,"/") or $prefix == "/" or ends_with($prefix,"/") or not contains(["mix","noded"],$component) then refuse("invalid configured native install") end
+  $expected = $prefix .. "/bin/" .. $component
+  if $path != $expected then refuse("native binary must equal the configured prefix/bin component") end
+  no_links($path)
   $resolved = realpath($path)
-  if $resolved == nil or not starts_with($resolved,"/") then refuse("native binary must resolve to an absolute path") end
+  if $resolved == nil or $resolved != $expected then refuse("native binary must resolve to the configured prefix/bin component") end
   $cursor = $resolved
   while $cursor != "/"
     $s = stat($cursor,{follow_symlinks:false})
@@ -115,6 +119,9 @@ end
 
 fn namespace_context($request)
   $t = $request.target
+  if type($t) != "map" then refuse("invalid desk identity") end
+  $native = $request.native
+  if type($native) != "map" or $native.node != $t.node or $native.mix_bin != $request.mix_bin then refuse("native configuration differs from target request") end
   if $t.identity_schema == 2 then refuse("separate-principal transactions are not implemented; target preview only") end
   if type($t) != "map" or $t.kind != "desk" or not plain($t.project) or not plain($t.node) or not plain($t.account) or $t.account == "root" then refuse("invalid desk identity") end
   if type($t.session) != "number" or floor($t.session) != $t.session or $t.session < 1 or $t.session > 6 then refuse("invalid session") end
@@ -139,15 +146,15 @@ fn namespace_context($request)
   end
   $dirs[$t.var .. "/noded"] = directory($t.var .. "/noded",$uid,$gid,0o700)
   $binding = service_binding($t,$gid)
-  $mix_hash = native_binary($request.mix_bin)
+  $mix_hash = native_binary($request.mix_bin,$native.prefix,"mix")
   $builtins = lines(run_argv_must([$request.mix_bin,"builtins","--names"],{timeout:10}))
   for $needed in ["fs_watch","fs_wait","fs_unwatch","flock","write_new","stat","hash_sha256","data_encode","run_argv"]
     if not contains($builtins,$needed) then refuse("native interpreter lacks a required guarded rollout primitive") end
   end
   $interpreter = {sha256:$mix_hash,version:trim(run_argv_must([$request.mix_bin,"--version"],{timeout:10}))}
-  $binary = dirname($request.mix_bin) .. "/noded"
+  $binary = $native.prefix .. "/bin/noded"
   if not contains($binding.command,"path=" .. $binary .. " ;") then refuse("unit does not execute the planned native noded") end
-  $binary_hash = native_binary($binary)
+  $binary_hash = native_binary($binary,$native.prefix,"noded")
   $version = trim(run_argv_must([$binary,"--version"],{timeout:10}))
   $config_path = $t.etc .. "/node.conf.mix"
   $config_state = file_state($config_path)

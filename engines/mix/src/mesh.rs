@@ -70,7 +70,8 @@ const MAX_EXACT_MIX_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Parser)]
 #[command(
-    name = "mesh-sign",
+    name = "mix mesh",
+    bin_name = "mix mesh",
     about = "SPEC 13 mesh inventory signer (sign + verify the trust root)"
 )]
 struct Cli {
@@ -192,7 +193,7 @@ enum Cmd {
 
 pub(crate) fn run(args: Vec<std::ffi::OsString>) -> Result<()> {
     buildinfo::exit_on_version!();
-    let cli = Cli::parse_from(std::iter::once(std::ffi::OsString::from("mesh-sign")).chain(args));
+    let cli = Cli::parse_from(std::iter::once(std::ffi::OsString::from("mix mesh")).chain(args));
     let db = expand_tilde(&cli.secrets_db);
     match cli.cmd {
         Cmd::Genesis { force } => cmd_genesis(&db, &cli.mesh, force),
@@ -393,7 +394,7 @@ fn load_signing_key(db: &Path, mesh: &str) -> Result<SigningKey> {
     let conn = Connection::open(db).with_context(|| format!("open {}", db.display()))?;
     let seed_b64 = fetch_seed(&conn, mesh)?.ok_or_else(|| {
         anyhow!(
-            "no genesis key for mesh {mesh:?} in {} — run `mesh-sign genesis` first",
+            "no genesis key for mesh {mesh:?} in {} — run `mix mesh genesis` first",
             db.display()
         )
     })?;
@@ -524,7 +525,7 @@ fn cmd_d2pubkey(db: &Path, mesh: &str, node: &str) -> Result<()> {
     let conn = Connection::open(db).with_context(|| format!("open {}", db.display()))?;
     let seed_b64 = fetch_seed_row(&conn, node, mesh, D2_SERVICE, D2_KEY_ID)?.ok_or_else(|| {
         anyhow!(
-            "no d2 key for node {node:?} (mesh {mesh:?}) in {} — run `mesh-sign d2-gen {node}` first",
+            "no d2 key for node {node:?} (mesh {mesh:?}) in {} — run `mix mesh d2-gen {node}` first",
             db.display()
         )
     })?;

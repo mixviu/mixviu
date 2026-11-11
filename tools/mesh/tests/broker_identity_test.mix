@@ -67,7 +67,7 @@ check(refuses(fn()=$identity.node_configs($t,$broker,$bad)),"desktop-owned endpo
 $bad = $client
 $bad.secret = "synthetic-seed"
 check(refuses(fn()=$identity.node_configs($t,$broker,$bad)),"private client config accepted")
-$job = $targets.stdin_job($t,"print(1)",{},"citizen","/srv/example/bin/mix")
+$job = $targets.stdin_job($t,"print(1)",{},"citizen","/srv/example/bin/mix",{node:$t.node,mix_bin:"/srv/example/bin/mix",prefix:"/srv/example"})
 check(contains($job.argv,"--uid=desktop") and contains($job.stdin,"EXAMPLE_BROKER_ACCOUNT") and contains($job.stdin,"noded") and contains($job.stdin,"client.conf.mix"),"citizen native launch identity/config split lost")
 check(not contains($job.stdin,"EXAMPLE_VAR"),"citizen inherited private broker VAR")
 print("PASS synthetic separate broker/client IDs, protected ancestry, explicit config and mutation refusal; no OS ownership proof")

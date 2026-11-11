@@ -461,7 +461,7 @@ $endpoint_mesh = $planned
 $endpoint_mesh.members = []
 for $member in $planned.members
   if has_key($DESKS,$member.name) and contains($bus_active,$member.name) then
-    $base = $desk.request($DESKS[$member.name],$planned,$DESK_GENESIS,$d.remote_mix($member.name))
+    $base = $desk.request($DESKS[$member.name],$planned,$DESK_GENESIS,$d.remote_mix($member.name),$d.remote_roots($member.name,$DESKS[$member.name].host).prefix)
     if $dry then
       $DESK_BASE[$member.name] = $base
       continue
@@ -636,7 +636,7 @@ for each $node in $order
     $d.die_if(not is_file($roster_file), "missing generated roster " .. $roster_file)
     if has_key($DESKS,$node) then
       -- Rebuild identity from authenticated bytes, never just authored input.
-      $base = $desk.request($DESKS[$node],$vi.inventory,$pub,$d.remote_mix($node))
+      $base = $desk.request($DESKS[$node],$vi.inventory,$pub,$d.remote_mix($node),$d.remote_roots($node,$DESKS[$node].host).prefix)
       $d.die_if(not deep_eq($base,$DESK_BASE[$node]),"authenticated desk plan differs from preflight")
       $placed = $desk.place_sync($base,$DESK_BEFORE[$node],read_file($roster_file),read_file($SIGNED_PRIV),$DESK_PROGRAM,nil)
       $authority = $desk.verify_authority($base,$epoch,$vi.canonical_blake3,nil)

@@ -17,21 +17,45 @@ path (`/proc/self/exe`), including when testing an uninstalled binary. No binary
 directory or source checkout setting is needed. Each SSH call passes its
 node's explicit interpreter. Roots are queried using that interpreter's
 `mix_path` with the system tier, including layout and environment overrides.
-Explicit node roots then override the query. An older interpreter can use
-`legacy_defaults:true` only with all three explicit `prefix`, `etc` and `var`
-roots; this queries its layout defaults before applying those private roots.
-Keep legacy fleet roots in private configuration while migrating nodes:
+Settings are read once per invocation, and each node's first successful root
+answer is kept for the whole run. An explicit `roots` setting must contain all
+three absolute `prefix`, `etc` and `var` values. Partial, non-map and relative
+settings refuse with `MESH_LAYOUT`; they never blend with interpreter defaults.
+An older interpreter uses `legacy_defaults:true` with that complete triple.
+Those explicit roots are returned directly, with no SSH layout query.
+
+The hub machine has **two entries**: `local` supplies the roots used for local
+anchors, seeds and freshness witnesses; its roster name supplies `mix_bin` for
+tools that reach the hub through SSH. Filling only `local` is insufficient.
+For example, this hub and its peer still use a legacy layout:
 
 ```mix
 {nodes:{
-  local:{roots:{prefix:"/srv/example",etc:"/srv/example/etc",var:"/srv/example/var"}},
-  "node-a":{mix_bin:"/srv/example/bin/mix",roots:{etc:"/srv/example/etc",var:"/srv/example/var"}}
+  local:{roots:{prefix:"/srv/legacy",etc:"/srv/legacy-etc",var:"/srv/legacy-state"}},
+  hub:{mix_bin:"/srv/legacy/bin/mix",legacy_defaults:true,
+    roots:{prefix:"/srv/legacy",etc:"/srv/legacy-etc",var:"/srv/legacy-state"}},
+  "node-a":{mix_bin:"/srv/legacy/bin/mix",legacy_defaults:true,
+    roots:{prefix:"/srv/legacy",etc:"/srv/legacy-etc",var:"/srv/legacy-state"}}
 }}
 ```
 
-`local` supplies the operator's anchor and freshness-witness roots. Each remote
-entry is keyed by admitted node name; its interpreter must be an absolute path.
-An absent entry refuses rather than guessing another node's installation.
+A MixViu hub and peer can instead use their own configured system roots:
+
+```mix
+{nodes:{
+  local:{},
+  hub:{mix_bin:"/srv/example/bin/mix"},
+  "node-a":{mix_bin:"/srv/example/bin/mix"}
+}}
+```
+
+Only a wholly absent `local.roots` queries the running interpreter's system
+roots. Remote entries are keyed by admitted node name. Their interpreter is
+explicit, and native jobs require the exact configured `<prefix>/bin/mix`.
+Native worker binaries must resolve to `<prefix>/bin/mix` or
+`<prefix>/bin/noded` as appropriate, with no symlink components and with
+root-controlled ancestors. Use physical, normalized installation paths.
+An absent entry refuses rather than guessing another installation.
 
 `_etc/mesh/project.mix` is the hub's copy of the project name:
 
@@ -96,7 +120,8 @@ policy, probe and DNS fixtures. It never contacts a broker or SSH host.
 desk target paths without contacting a host or writing anything. Optional
 `--probe` uses the existing native SSH/Mix path and a namespace stdin pipe to
 query only noded.info and noded.peers as the session account. It requires an
-explicit per-node interpreter path. Process success is reported separately from Bus
+`MESH_HUB` and the explicit per-node interpreter/root settings above; missing
+node settings raise `MESH_LAYOUT`. Process success is reported separately from Bus
 reply codes; neither is an admission or deployment verdict. The version1
 schema has `project` and a nonempty `targets` list. Each target has `node`,
 `host` (an SSH alias) and `kind` (`system` or `desk`). A desk also names its

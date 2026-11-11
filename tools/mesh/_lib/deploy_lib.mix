@@ -1,4 +1,19 @@
 -- Mesh deployment helpers: private hub state, explicit node layout, native Mix.
+-- Module values are copied on calls. A native in-memory SQLite handle keeps
+-- the ceremony's snapshots without globals, disk files or child environment.
+$LAYOUT_CACHE = sqlopen(":memory:","rw")
+$_cache_init = sqlexec($LAYOUT_CACHE,"CREATE TABLE snapshots (name TEXT PRIMARY KEY, document TEXT NOT NULL)")
+
+fn _snapshot($name)
+  $rows = sqlexec($LAYOUT_CACHE,"SELECT document FROM snapshots WHERE name=?",[$name])
+  if len($rows) == 0 then return nil end
+  return json_parse($rows[0].document)
+end
+
+fn _keep_snapshot($name, $value)
+  $_saved = sqlexec($LAYOUT_CACHE,"INSERT INTO snapshots(name,document) VALUES(?,?)",[$name,json_encode($value)])
+  return $value
+end
 
 fn project()
   $e = env("MESH_PROJECT")
@@ -29,9 +44,16 @@ fn mix_bin()
 end
 
 fn node_settings($node)
-  $path = env("MESH_NODES_CONFIG", hub_root() .. "/_etc/mesh/nodes.conf.mix")
-  $config = load_data($path)
-  $entry = $config.nodes[$node]
+  $settings = _snapshot("settings")
+  if $settings == nil then
+    $path = env("MESH_NODES_CONFIG", hub_root() .. "/_etc/mesh/nodes.conf.mix")
+    $config = load_data($path)
+    if type($config) != "map" or type($config.nodes) != "map" then
+      raise("MESH_LAYOUT", "node settings must contain a nodes map")
+    end
+    $settings = _keep_snapshot("settings",$config.nodes)
+  end
+  $entry = $settings[$node]
   if type($entry) != "map" then raise("MESH_LAYOUT", "missing per-node layout settings: " .. $node) end
   return $entry
 end
@@ -44,45 +66,54 @@ fn remote_mix($node)
   return $entry.mix_bin
 end
 
-fn checked_roots($roots)
+fn checked_roots($roots, $node = "local")
+  if type($roots) != "map" then
+    raise("MESH_LAYOUT", $node .. ": roots must be a map containing prefix, etc and var")
+  end
   for $key in ["prefix", "etc", "var"]
+    if not has_key($roots,$key) then
+      raise("MESH_LAYOUT", $node .. ": missing layout root: " .. $key)
+    end
     if type($roots[$key]) != "string" or not starts_with($roots[$key], "/") then
-      raise("MESH_LAYOUT", "invalid node layout root: " .. $key)
+      raise("MESH_LAYOUT", $node .. ": invalid node layout root: " .. $key)
     end
   end
   return $roots
 end
 
 fn local_roots()
+  $cached = _snapshot("local-roots")
+  if $cached != nil then return $cached end
   $settings = node_settings("local")
-  if type($settings.roots) == "map" and has_key($settings.roots,"prefix") and has_key($settings.roots,"etc") and has_key($settings.roots,"var") then
-    return checked_roots($settings.roots)
+  if has_key($settings,"roots") then
+    return _keep_snapshot("local-roots",checked_roots($settings.roots,"local"))
   end
   $roots = {prefix:mix_path("prefix","",{tier:"system"}),etc:mix_path("etc","",{tier:"system"}),var:mix_path("var","",{tier:"system"})}
-  for $key in keys($settings.roots ?? {})
-    $roots[$key] = $settings.roots[$key]
-  end
-  return checked_roots($roots)
+  return _keep_snapshot("local-roots",checked_roots($roots,"local"))
 end
 
 fn remote_roots($node, $transport = nil)
-  $exe = remote_mix($node)
+  $cached = _snapshot("roots:" .. $node)
+  if $cached != nil then return $cached end
   $settings = node_settings($node)
-  $result = nil
   if $settings.legacy_defaults == true then
     -- Older interpreters lack the current root builtin. Explicit private
-    -- roots are mandatory; defaults alone cannot describe an installed node.
-    checked_roots($settings.roots)
-    $result = ssh_exec($transport ?? $node, [$exe, "layout", "defaults", "--tier", "system", "--json"], {mix_bin:$exe, timeout:20})
-  else
-    $result = ssh_mix($transport ?? $node, 'print(json_encode({prefix:mix_path("prefix","",{tier:"system"}),etc:mix_path("etc","",{tier:"system"}),var:mix_path("var","",{tier:"system"})}))', {mix_bin:$exe,timeout:20})
+    -- roots are the complete authority, so do not add a network dependency.
+    $roots = checked_roots($settings.roots,$node)
+    return _keep_snapshot("roots:" .. $node,$roots)
   end
+  $exe = remote_mix($node)
+  $result = ssh_mix($transport ?? $node, 'print(json_encode({prefix:mix_path("prefix","",{tier:"system"}),etc:mix_path("etc","",{tier:"system"}),var:mix_path("var","",{tier:"system"})}))', {mix_bin:$exe,timeout:20})
   if not $result.ok then raise("MESH_LAYOUT", "cannot query node layout: " .. $node) end
   $roots = json_parse($result.stdout)
-  for $key in keys($settings.roots ?? {})
-    $roots[$key] = $settings.roots[$key]
+  if has_key($settings,"roots") then
+    $overrides = checked_roots($settings.roots,$node)
+    for $key in keys($overrides)
+      $roots[$key] = $overrides[$key]
+    end
   end
-  return checked_roots($roots)
+  $roots = checked_roots($roots,$node)
+  return _keep_snapshot("roots:" .. $node,$roots)
 end
 
 fn remote_bin($node, $name)

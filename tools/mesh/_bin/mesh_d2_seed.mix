@@ -387,7 +387,7 @@ $DESTINATIONS = {}
 $reach_token = uuid()
 for each $node in $nodes
   if has_key($DESKS,$node) then
-    $base = $desk.request($DESKS[$node],$mesh,trim(read_file($m.MESH_GENESIS_PUB)),$d.remote_mix($node))
+    $base = $desk.request($DESKS[$node],$mesh,trim(read_file($m.MESH_GENESIS_PUB)),$d.remote_mix($node),$d.remote_roots($node,$DESKS[$node].host).prefix)
     $probe = $desk.preflight($base,$DESK_PROGRAM,nil)
     $d.die_if(word($probe.binary.version,1) != "noded" or not $m.noded_supports_signed_endpoint(word($probe.binary.version,2)),"desk native noded lacks signed endpoint support")
     $DESK_BASE[$node] = $base

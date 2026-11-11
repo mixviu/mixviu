@@ -142,12 +142,21 @@ end
 
 -- Describe a native stdin job without executing it. Secret-bearing bindings
 -- stay in stdin; the caller must not substitute stdin into a -c argument.
-fn stdin_job($target, $program, $bindings, $role, $mix_bin)
+fn checked_native($target, $native)
+  if type($native) != "map" or $native.node != $target.node then fail("native configuration must belong to the target node") end
+  $prefix = $native.prefix
+  if type($prefix) != "string" or not starts_with($prefix,"/") or $prefix == "/" or ends_with($prefix,"/") or contains($prefix,"/../") or contains($prefix,"/./") or contains($prefix,"//") or ends_with($prefix,"/..") or ends_with($prefix,"/.") then fail("native prefix must be an absolute normalized install path") end
+  if $native.mix_bin != $prefix .. "/bin/mix" then fail("configured interpreter must be the node prefix/bin/mix") end
+  return $native
+end
+
+fn stdin_job($target, $program, $bindings, $role, $mix_bin, $native)
   $target = checked_target($target)
   if type($program) != "string" or type($bindings) != "map" then fail("program and bindings have invalid types") end
   if $role != "admin" and $role != "citizen" then fail("role must be admin or citizen") end
   if $target.kind == "system" and $role != "admin" then fail("system target jobs require admin role") end
-  if type($mix_bin) != "string" or not starts_with($mix_bin,"/") then fail("native Mix must use an absolute configured interpreter path") end
+  $native = checked_native($target,$native)
+  if $mix_bin != $native.mix_bin then fail("native Mix must equal the node configured interpreter") end
   $body = ""
   for $key in sort(keys($bindings))
     if not re_match($key, "^[A-Za-z_][A-Za-z0-9_]*$") then fail("invalid binding name") end

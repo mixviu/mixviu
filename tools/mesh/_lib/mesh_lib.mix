@@ -242,7 +242,7 @@ function signed_endpoint_preflight($mesh)
   return $offenders
 end
 
--- First 3 octets of a dotted IPv4 (its /24 prefix), e.g. "172.16.2".
+-- First 3 octets of a dotted IPv4 (its /24 prefix), e.g. "192.0.2".
 function prefix24($ip)
   $p = split($ip, ".")
   return $p[0] .. "." .. $p[1] .. "." .. $p[2]
@@ -472,7 +472,7 @@ end
 -- ─── zones.mix generation (Tier 2, _plan/2026-06-06-mesh-ip-autodiscovery.md) ───
 -- Emit a dnsd zones.mix from the signed inventory (IP-bearing mesh
 -- records) + the hand-authored overlay (zones.overlay.mix: soa/ns/serials/
--- goldcoast/mail-auth). The emitter reproduces the live file's exact 2/4/6/10-
+-- example.org/mail-auth). The emitter reproduces the live file's exact 2/4/6/10-
 -- space hand-format so a regenerate is BYTE-IDENTICAL until the inventory
 -- changes — drift is then a detectable diff, not a state.
 

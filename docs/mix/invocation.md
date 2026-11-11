@@ -56,6 +56,7 @@ program, as before. A `--version` straight after a script path asks for the
 | `mix script.mix --version` / `-V` | Print the **script's** version line without running it (also `mix --serve script.mix --version`, `mix - --version`) — see [below](#--version-for-scripts) (0.95.0) |
 | `mix --help` / `-h` | Usage summary |
 | `mix stats [sub…]` | Window-labelled usage reports and static authorship coverage — see [stats](stats.md) |
+| `mix mesh COMMAND [args…]` | Sign or verify mesh inventories and manage their keys; `mix mesh --help` lists the commands |
 | `mix help` / `mix what <name>` / `mix man [topic]` | Builtin/keyword reference and this manual — see [the `mix` meta-command](cli.md) |
 
 `mix help`, `mix what`, `mix man`, `mix status`, `mix build`, … are the same
@@ -67,6 +68,13 @@ CLI commands: `mix man invocation` prints this page; bare `mix man` prints
 `mix ./build`. Full list on [the cli page](cli.md). An unknown option
 (`mix --zz`) errors and exits 1; an unknown REPL meta token names the token,
 notes that no such file exists, then shows the meta-command overview.
+
+The leading `mesh` argument is reserved by the `mix` engine for the mesh
+signer, before shell or script parsing. A file literally named `mesh` must
+be run with an explicit path: `mix ./mesh [args…]`. `mix mesh --version`
+and `mix mesh -V` report the containing engine's build provenance, without
+reading an inventory or secrets database. `mix mesh --help` exits 0;
+invalid signer arguments exit 2.
 
 Bare `mix` with **no arguments** starts the REPL — including when stdin is a
 pipe. The piped lines are then read and executed one at a time through the
