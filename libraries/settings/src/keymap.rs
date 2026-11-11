@@ -86,7 +86,10 @@ pub fn validate(
             }
             for (n, chord) in chords.iter().enumerate() {
                 if action::keymap::reserved(chord) {
-                    return Err(error(&path, "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused"));
+                    return Err(error(
+                        &path,
+                        "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused",
+                    ));
                 }
                 if !valid_chord(chord) {
                     return Err(error(

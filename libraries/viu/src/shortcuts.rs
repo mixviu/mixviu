@@ -25,7 +25,9 @@ pub fn resolve(args: &serde_json::Value) -> Result<serde_json::Value, String> {
             .map(|s| toolkit::keymap::parse_chord(s).ok_or("invalid default chord"))
             .transpose()?;
         if let Some(chord) = shortcut {
-            if toolkit::keymap::reserved(chord.logical_key, chord.modifiers) || chords.contains(&chord) {
+            if toolkit::keymap::reserved(chord.logical_key, chord.modifiers)
+                || chords.contains(&chord)
+            {
                 return Err("invalid or duplicate default chord".into());
             }
             chords.push(chord);

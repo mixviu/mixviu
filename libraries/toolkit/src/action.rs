@@ -1335,7 +1335,10 @@ mod tests {
                 menu: None,
                 submenu: None,
                 group: 0,
-                shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, key)),
+                shortcut: Some(KeyboardShortcut::new(
+                    Modifiers::COMMAND | Modifiers::SHIFT,
+                    key,
+                )),
                 icon: None,
                 enabled: always,
                 run: |_| {},
@@ -1343,7 +1346,10 @@ mod tests {
         }
         r.add_shortcuts(
             "equals",
-            [KeyboardShortcut::new(Modifiers::ALT | Modifiers::SHIFT, Key::ArrowLeft)],
+            [KeyboardShortcut::new(
+                Modifiers::ALT | Modifiers::SHIFT,
+                Key::ArrowLeft,
+            )],
         );
         let rows =
             serde_json::to_value(r.describe(&Counter::default(), &Strings::new(FTL))).unwrap();

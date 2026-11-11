@@ -398,5 +398,8 @@ pub(crate) fn consume_chord(ctx: &egui::Context, chord: &str) -> bool {
         key if key.len() == 1 => key.to_ascii_uppercase(),
         key => key.into(),
     };
-    egui::Key::from_name(&name).is_some_and(|key| !toolkit::keymap::reserved(key, modifiers) && ctx.input_mut(|i| i.consume_key(modifiers, key)))
+    egui::Key::from_name(&name).is_some_and(|key| {
+        !toolkit::keymap::reserved(key, modifiers)
+            && ctx.input_mut(|i| i.consume_key(modifiers, key))
+    })
 }
