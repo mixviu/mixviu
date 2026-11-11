@@ -175,7 +175,9 @@ pub async fn serve(
             portal::OBJECT_PATH,
             ScreenCast::with_max_framerate(sessions.clone(), config.screencast_max_framerate),
         )?
-    } else { builder };
+    } else {
+        builder
+    };
     let connection = builder.build().await?;
     // Interfaces are exported before the name, and an existing owner is refused
     // rather than queued or replaced.

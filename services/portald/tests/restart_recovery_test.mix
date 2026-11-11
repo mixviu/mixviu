@@ -139,7 +139,7 @@ if not $has_restart then raise("UNIT", "Restart=on-failure missing from " .. $un
 
 $created = false
 if $workdir == "" then
-  $workdir = trim(run_argv_must(["mktemp", "-d"], {timeout: 15}))
+  $workdir = trim(run_argv_must(["mktemp", "-d", "--tmpdir=/var/tmp"], {timeout: 15}))
   $created = true
 else
   mkdir($workdir)
@@ -149,6 +149,9 @@ $address = "unix:path=" .. $socket
 $bus_log = $workdir .. "/bus.log"
 $unit = "portald-restart-" .. to_string(pid()) .. "-" .. to_string(trunc(time()))
 
+$staging = require("../../../tools/stage_env.mix")
+$prefix = $staging.create()
+$prefix_var = filter(load_data("etc/env.conf.mix").vars, fn($v) = ends_with($v.name, "_PREFIX"))[0].name
 $bus_pid = nil
 $verdict = "FAIL"
 $reason = ""
@@ -162,6 +165,7 @@ try
     push($argv, $prop)
   end
   push($argv, "--setenv=DBUS_SESSION_BUS_ADDRESS=" .. $address)
+  push($argv, "--setenv=" .. $prefix_var .. "=" .. $prefix)
   for each $word in ["--", $portald, "serve", "--instance", "test"]
     push($argv, $word)
   end
@@ -208,6 +212,7 @@ finally
   if $bus_pid != nil then $_kill = kill($bus_pid) end
   if exists($socket) then remove($socket) end
   if $created and starts_with($workdir, "/") then remove_dir($workdir) end
+  remove_dir($prefix)
 end
 
 if $verdict == "PASS" then

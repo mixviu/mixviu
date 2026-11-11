@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Stage registry defaults without copying a worker's unrelated target binaries.
 fn create()
-  $prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir", "mix-env-XXXXXXXX"]))
+  $prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir=/var/tmp", "mix-env-XXXXXXXX"]))
   $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
   for $v in load_data("etc/env.conf.mix").vars
     if has_key($v, "default") then $defaults[$v.name] = $v.default end
