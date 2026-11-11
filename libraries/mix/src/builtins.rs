@@ -17295,7 +17295,9 @@ fn builtin_project_info(args: Vec<Value>) -> MixResult<Option<Value>> {
     main.insert("toolchain".into(), Value::String(toolchain));
 
     let mut out = indexmap::IndexMap::new();
-    out.insert("root".into(), Value::String(root));
+    out.insert("root".into(), Value::String(root.into_os_string().into_string().map_err(|_| MixError::RuntimeError {
+        span: None, msg: "project_info(): project root is not UTF-8".into(),
+    })?));
     out.insert("main".into(), Value::map(main));
     out.insert("desktop".into(), Value::Bool(desktop));
     Ok(Some(Value::map(out)))
