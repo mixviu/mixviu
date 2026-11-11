@@ -43,7 +43,14 @@ fn installed_settings_success_errors_and_override_precedence() {
         }
         return;
     }
-    for mode in ["good", "nonutf", "malformed", "schema", "mismatch", "unreadable"] {
+    for mode in [
+        "good",
+        "nonutf",
+        "malformed",
+        "schema",
+        "mismatch",
+        "unreadable",
+    ] {
         let prefix =
             std::env::temp_dir().join(format!("paths-setting-{}-{mode}", std::process::id()));
         std::fs::create_dir_all(&prefix).unwrap();
@@ -65,7 +72,9 @@ fn installed_settings_success_errors_and_override_precedence() {
         }
         use std::os::unix::ffi::OsStringExt;
         let run = if mode == "nonutf" {
-            PathBuf::from(std::ffi::OsString::from_vec(b"/srv/fixture/nonutf-\xff".to_vec()))
+            PathBuf::from(std::ffi::OsString::from_vec(
+                b"/srv/fixture/nonutf-\xff".to_vec(),
+            ))
         } else {
             prefix.join("run")
         };
