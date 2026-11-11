@@ -44,3 +44,29 @@ assert($v.window_settings["window.decorations"]=="ssd","transient read failure r
 $s.settings_connected=true;$s.look.values["window.decorations"]="csd";$v=$core.framed($s)
 assert($v.window_settings["window.decorations"]=="csd","authority recovery reapplies live window policy")
 print("term frame model: 21 checks passed")
+
+-- Oracle: MixOS 8779f33 libs/settings/src/terminal.rs defaults_round_trip.
+$defaults={font_family:nil,font_size:14.667,text_scale:1,font_weight:400,padding:8,border_width:1,focus_ring:"accent",focus_strength:0.25,cursor_blink:false,cursor:"underline",scroll_speed:40,copy_on_select:false}
+$explicit={"terminal.font.family":"Example Mono","terminal.font.size":18,"terminal.font.weight":700,"terminal.padding":16,"terminal.border.width":3,"terminal.focus.ring":"neutral","terminal.focus.strength":0,"terminal.cursor.blink":true,"terminal.cursor.shape":"bar","terminal.scroll.speed":80,"terminal.mouse.copy_on_select":true}
+$expected={font_family:"Example Mono",font_size:18,text_scale:1,font_weight:700,padding:16,border_width:3,focus_ring:"neutral",focus_strength:0,cursor_blink:true,cursor:"bar",scroll_speed:80,copy_on_select:true}
+fn appearance_is($s,$expected)
+  $v=$core.framed($s)
+  for $key in keys($expected)
+    assert(deep_eq($v.terminal.properties[$key],$expected[$key]),"oracle terminal property: "..$key)
+  end
+  assert($v.terminal.initial=="vt-defaults","settings changes retain the session")
+end
+$s={look:{appearance:{},values:{}},choice:{},bindings:{},effective:{},closed:false,layout:$layout.open_tab($layout.initial(),{handle:"vt-defaults",pid:2},nil)}
+appearance_is($s,$defaults)
+$s.look.values={"appearance.mono_family":"Session Mono"}
+assert($core.framed($s).terminal.properties.font_family=="Session Mono","absent family follows session mono family")
+$session=require("../../libraries/viu/mix/session.mix")
+$follow=$session.session_new("test");$s.look.values={}
+for $phase in ["absent","explicit","transient","lost","recovered","reset"]
+  if $phase=="absent" or $phase=="lost" then $follow=$session.session_answer($follow,10,nil,nil)
+  elif $phase=="transient" then $follow=$session.session_answer($follow,20,nil,"offline")
+  else $follow=$session.session_answer($follow,0,{incarnation:"test",revision:if $phase=="reset" then "2" else "1" end,values:if $phase=="reset" then {} else $explicit end},nil) end
+  $s=$core.accept_look($s,{appearance:{},state:$follow})
+  appearance_is($s,if contains(["absent","reset"],$phase) then $defaults else $expected end)
+end
+print("term default appearance: 92 checks passed (absent, explicit, transient failure, loss, recovery, reset, family)")

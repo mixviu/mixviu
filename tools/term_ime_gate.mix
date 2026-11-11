@@ -1,10 +1,12 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Build the generic native Wayland IME fixture on CBC only.
+$targets=require("term-targets.mix")
+$commands=[["cargo","fmt","-p","lib-viu","--","--check"],["cargo","build","--locked","-p","lib-viu","--example","terminal_ime_driver"]]
+$targets.check($commands)
 $prepare=contains(args(),"--prepare");$rc=0
 try
-  $commands=[["cargo","fmt","-p","viu","--","--check"],["cargo","build","--locked","-p","viu","--example","terminal_ime_driver"]]
   for $command in $commands
-    if $prepare and $command[1]=="fmt" then $command=["cargo","fmt","-p","viu"] end
+    if $prepare and $command[1]=="fmt" then $command=["cargo","fmt","-p","lib-viu"] end
     if $prepare and $command[1]=="build" then $command=filter($command,fn($arg)=$arg!="--locked") end
     $r=run_argv($command,{timeout:1800,max_output:16000000});print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
