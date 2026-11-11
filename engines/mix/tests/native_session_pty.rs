@@ -2763,6 +2763,7 @@ fn p4_a_task_inherits_only_what_it_was_given() {
             "PATH",
             "LANG",
             "TERM",
+            paths::env::PREFIX,
             paths::env::ROOT,
             paths::env::SRC,
             paths::env::BIN,
