@@ -17,6 +17,8 @@ Type=simple
 User=mix
 # Keeps DBUS_SESSION_BUS_ADDRESS: the portal serves the session bus itself.
 EnvironmentFile=@{etc}/session/%i.env
+# Replace StateDirectory's ownership setup at the rendered state root.
+ExecStartPre=+/usr/bin/install -d -o mix -g mix -m 0700 -- @{var}/portald/%i
 ExecStart=@{prefix}/bin/portald serve --instance %H --screencast --state-dir @{var}/portald/%i
 KillMode=control-group
 TimeoutStopSec=10
