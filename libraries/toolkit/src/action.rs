@@ -115,11 +115,8 @@ impl<S> Default for Registry<S> {
     }
 }
 
-/// Refuse `shortcut` as a default chord of command `id` when it is on one of
-/// the person's function keys, F1–F12, whatever its modifiers
-/// (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md).
-/// Only [`Registry::rebind`], applying the person's own bindings, may put a
-/// command on one.
+/// Refuse desk-owned chords on application commands, including overrides.
+/// F1–F12 and Ctrl/Alt+arrow without Shift belong to the desk.
 fn default_chord(id: &str, shortcut: KeyboardShortcut) {
     assert!(
         !crate::keymap::reserved(shortcut.logical_key, shortcut.modifiers),
@@ -209,7 +206,7 @@ impl<S> Registry<S> {
     /// # Panics
     /// On a duplicate id or shortcut: both are programming errors that would
     /// otherwise make dispatch ambiguous. On a shortcut on F1–F12, with any
-    /// modifiers: those keys are the person's ([`default_chord`]).
+    /// modifiers, or Ctrl/Alt+arrow without Shift ([`default_chord`]).
     pub fn add(&mut self, command: Action<S>) -> &mut Self {
         assert!(
             self.get(command.id).is_none(),
@@ -1765,7 +1762,7 @@ mod tests {
         assert_eq!(r.get("count.bump").unwrap().shortcut, Some(ctrl(Key::U)));
         assert_eq!(fired_key(&r, &s, ctrl(Key::B)), ["count.reset"]);
         let d = r.describe(&s, &Strings::new(FTL));
-        assert_eq!(d[1].more.len(), 1, "F9 is reported");
+        assert_eq!(d[1].more.len(), 1, "Insert is reported");
         // Unbinding, unknown commands and keys, a chord claimed twice.
         let notes = r.rebind(&overrides(&[
             ("count.bump", &[]),

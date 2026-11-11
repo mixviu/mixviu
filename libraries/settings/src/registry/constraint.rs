@@ -78,7 +78,7 @@ pub const CONSTRAINTS: &[Constraint] = &[
     },
     Constraint {
         id: "user_keys",
-        text: "keymaps.comp.* only: the compositor never binds a bare F1-F12 (any case), the user's keys",
+        text: "apps refuse F1-F12 and Ctrl/Alt+arrow without Shift; the compositor refuses bare F1-F12",
         check: Some(user_keys),
         write_only: false,
     },
