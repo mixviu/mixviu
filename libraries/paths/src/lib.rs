@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
+pub mod env;
+
 pub type Result<T> = std::result::Result<T, String>;
-pub const ROOT_VAR: &str = "MIX_ROOT";
+pub const ROOT_VAR: &str = env::ROOT;
 pub const DEFAULT_PREFIX: &str = "/opt/mix";
 /// Historical assertion constant; runtime Share derives from the executable.
 #[cfg(test)]
@@ -15,15 +17,17 @@ pub const DEFAULT_SHARE: &str = "/opt/mix/share";
 pub enum Root {
     Prefix,
     Share,
+    Lib,
     Etc,
     Var,
     Run,
     Cache,
 }
 impl Root {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Prefix,
         Self::Share,
+        Self::Lib,
         Self::Etc,
         Self::Var,
         Self::Run,
@@ -33,6 +37,7 @@ impl Root {
         match self {
             Self::Prefix => "prefix",
             Self::Share => "share",
+            Self::Lib => "lib",
             Self::Etc => "etc",
             Self::Var => "var",
             Self::Run => "run",
@@ -41,12 +46,13 @@ impl Root {
     }
     pub const fn env_var(self) -> &'static str {
         match self {
-            Self::Prefix => "MIX_PREFIX",
-            Self::Share => "MIX_SHARE",
-            Self::Etc => "MIX_ETC",
-            Self::Var => "MIX_VAR",
-            Self::Run => "MIX_RUN",
-            Self::Cache => "MIX_CACHE",
+            Self::Prefix => env::PREFIX,
+            Self::Share => env::SHARE,
+            Self::Lib => env::LIB,
+            Self::Etc => env::ETC,
+            Self::Var => env::VAR,
+            Self::Run => env::RUN,
+            Self::Cache => env::CACHE,
         }
     }
     pub fn parse(name: &str) -> Result<Self> {
@@ -109,6 +115,7 @@ pub struct Environment {
     pub var: Option<PathBuf>,
     pub run: Option<PathBuf>,
     pub share: Option<PathBuf>,
+    pub lib: Option<PathBuf>,
     pub prefix: Option<PathBuf>,
     pub cache: Option<PathBuf>,
     pub xdg_config_home: Option<PathBuf>,
@@ -130,12 +137,13 @@ impl Environment {
         let var = |key: &str| -> Option<PathBuf> { get(key).filter(|p| !p.as_os_str().is_empty()) };
         Self {
             root: var(ROOT_VAR),
-            etc: var("MIX_ETC"),
-            var: var("MIX_VAR"),
-            run: var("MIX_RUN"),
-            share: var("MIX_SHARE"),
-            prefix: var("MIX_PREFIX"),
-            cache: var("MIX_CACHE"),
+            etc: var(env::ETC),
+            var: var(env::VAR),
+            run: var(env::RUN),
+            share: var(env::SHARE),
+            lib: var(env::LIB),
+            prefix: var(env::PREFIX),
+            cache: var(env::CACHE),
             xdg_config_home: var("XDG_CONFIG_HOME"),
             xdg_data_home: var("XDG_DATA_HOME"),
             xdg_runtime_dir: var("XDG_RUNTIME_DIR"),
@@ -251,16 +259,57 @@ impl Dirs {
             .filter(|p| p.is_absolute())
             .or_else(|| settings.get(&Root::Share).cloned())
             .unwrap_or_else(|| prefix.join("share"));
+        let lib = env
+            .lib
+            .clone()
+            .filter(|p| p.is_absolute())
+            .or_else(|| settings.get(&Root::Lib).cloned())
+            .unwrap_or_else(|| prefix.join("lib"));
         Ok(Self {
             roots: BTreeMap::from([
                 (Root::Prefix, prefix),
                 (Root::Share, share),
+                (Root::Lib, lib),
                 (Root::Etc, etc),
                 (Root::Var, var),
                 (Root::Run, run),
                 (Root::Cache, cache),
             ]),
         })
+    }
+    /// Future system rule, without reading layout.mx. User roots retain XDG.
+    /// Per-root overrides win. MIX_ROOT moves etc, var, run and cache, as
+    /// before; share and lib are installed data and follow the prefix unless
+    /// their own variable is set.
+    pub fn derived(prefix: &Path, env: &Environment) -> Result<Self> {
+        absolute(prefix)?;
+        let inputs = Environment {
+            prefix: Some(prefix.into()),
+            ..env.clone()
+        };
+        let mut dirs = Self::from_source(&inputs, "")?;
+        if env.uid == 0 {
+            for (root, direct) in [
+                (Root::Etc, &env.etc),
+                (Root::Var, &env.var),
+                (Root::Run, &env.run),
+                (Root::Cache, &env.cache),
+            ] {
+                dirs.roots.insert(
+                    root,
+                    direct
+                        .clone()
+                        .or_else(|| env.root.as_ref().map(|p| p.join(root.name())))
+                        .unwrap_or_else(|| prefix.join(root.name())),
+                );
+            }
+        }
+        // Unlike the legacy rule, this constructor refuses a relative or
+        // `..`-bearing root from any override rather than passing it on.
+        for path in dirs.roots.values() {
+            absolute(path)?;
+        }
+        Ok(dirs)
     }
     /// Explicit env, uid and executable inputs. from_source does no file I/O.
     pub fn from_environment(env: &Environment) -> Result<Self> {
@@ -363,6 +412,16 @@ pub fn prefix_from_exe(exe: &Path) -> Result<PathBuf> {
     absolute(&prefix)?;
     Ok(prefix)
 }
+/// Installed executable shape check, independent of legacy cargo-tree rules.
+pub fn prefix_from_exe_strict(exe: &Path) -> Result<PathBuf> {
+    let bin = exe
+        .parent()
+        .filter(|p| p.file_name().is_some_and(|n| n == "bin"))
+        .ok_or("not an installed binary: set the prefix override")?;
+    let prefix = bin.parent().ok_or("executable has no prefix parent")?;
+    absolute(prefix)?;
+    Ok(prefix.into())
+}
 fn absolute(path: &Path) -> Result<()> {
     if !path.is_absolute()
         || path.components().any(|c| c == Component::ParentDir)
@@ -396,57 +455,49 @@ fn read_layout(prefix: &Path) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| "layout.mx is not UTF-8".into())
 }
 
-struct Snapshot {
-    process: Layout,
-    user: Layout,
-    system: Layout,
-}
-static SNAPSHOT: OnceLock<Result<Snapshot>> = OnceLock::new();
-fn snapshot() -> Result<&'static Snapshot> {
-    SNAPSHOT
+// Capture environment once, but resolve each tier independently on first use.
+static INPUTS: OnceLock<Environment> = OnceLock::new();
+static PROCESS: OnceLock<Result<Layout>> = OnceLock::new();
+static USER: OnceLock<Result<Layout>> = OnceLock::new();
+static SYSTEM: OnceLock<Result<Layout>> = OnceLock::new();
+fn snapshot(tier: Option<Tier>) -> Result<&'static Layout> {
+    let cache = match tier {
+        None => &PROCESS,
+        Some(Tier::User) => &USER,
+        Some(Tier::System) => &SYSTEM,
+    };
+    cache
         .get_or_init(|| {
-            // No /proc and no MIX_PREFIX: from_source falls back to the
-            // default prefix, as the old resolver did, rather than failing
-            // every root.
-            let env = Environment::current();
+            let mut env = INPUTS.get_or_init(Environment::current).clone();
+            if let Some(tier) = tier {
+                env.uid = tier.uid();
+            }
             let prefix = Layout::from_source(&env, "")?.try_root(Root::Prefix)?;
-            let source = read_layout(&prefix)?;
-            let process = Layout::from_source(&env, &source)?;
-            let user = Layout::from_source(
-                &Environment {
-                    uid: 1000,
-                    ..env.clone()
-                },
-                &source,
-            )?;
-            let system = Layout::from_source(&Environment { uid: 0, ..env }, &source)?;
-            Ok(Snapshot {
-                process,
-                user,
-                system,
-            })
+            let source = match read_layout(&prefix).and_then(|s| parse_layout(&s).map(|_| s)) {
+                Ok(s) => s,
+                // Only the explicit user tier survives a broken layout; the
+                // process tier keeps the start-up error it always raised.
+                Err(_) if tier == Some(Tier::User) => String::new(),
+                Err(e) => return Err(e),
+            };
+            Layout::from_source(&env, &source)
         })
         .as_ref()
         .map_err(Clone::clone)
 }
 impl Layout {
     pub fn discover() -> Result<Self> {
-        Ok(snapshot()?.process.clone())
+        snapshot(None).cloned()
     }
     pub fn for_tier(tier: Tier) -> Result<Self> {
-        let snapshot = snapshot()?;
-        Ok(match tier {
-            Tier::System => &snapshot.system,
-            Tier::User => &snapshot.user,
-        }
-        .clone())
+        snapshot(Some(tier)).cloned()
     }
 }
 pub fn try_root(root: Root) -> Result<PathBuf> {
-    snapshot()?.process.try_root(root)
+    snapshot(None)?.try_root(root)
 }
 pub fn try_system(root: Root) -> Result<PathBuf> {
-    snapshot()?.system.try_root(root)
+    snapshot(Some(Tier::System))?.try_root(root)
 }
 /// True when Run matches the uid tier default, ignoring MIX_RUN, MIX_ROOT and layout.mx.
 /// An override equal to that default still counts as default.
@@ -462,7 +513,7 @@ pub fn run_root_is_tier_default(env: &Environment, dirs: &Dirs) -> Result<bool> 
 /// overrides. APIs that promised to ignore MIX_RUN (native bus fallback)
 /// or kept storage at a fixed system path use this rather than moving data.
 pub fn system_default(root: Root) -> Result<PathBuf> {
-    if matches!(root, Root::Prefix | Root::Share) {
+    if matches!(root, Root::Prefix | Root::Share | Root::Lib) {
         return Err("installed roots require self-location".into());
     }
     static DEFAULTS: OnceLock<Result<Layout>> = OnceLock::new();
@@ -485,20 +536,23 @@ pub fn path(dir: Dir) -> PathBuf {
     root(dir.root())
 }
 pub fn bin(rel: impl AsRef<Path>) -> PathBuf {
-    snapshot()
-        .and_then(|s| s.process.path(Root::Prefix, Path::new("bin").join(rel)))
+    snapshot(None)
+        .and_then(|s| s.path(Root::Prefix, Path::new("bin").join(rel)))
         .expect("invalid MixViu startup binary path")
 }
 pub fn share(rel: impl AsRef<Path>) -> PathBuf {
-    snapshot()
-        .and_then(|s| s.process.path(Root::Share, rel))
+    snapshot(None)
+        .and_then(|s| s.path(Root::Share, rel))
         .expect("invalid MixViu startup shared path")
 }
 pub fn resolve(value: impl AsRef<str>) -> Result<PathBuf> {
-    snapshot()?.process.resolve_path(value.as_ref())
+    snapshot(None)?.resolve_path(value.as_ref())
 }
 
 mod document;
+mod env_document;
+#[cfg(test)]
+mod env_tests;
 /// Strict, bounded data, exported for cross-parser contract tests.
 pub fn parse_layout(source: &str) -> Result<BTreeMap<Root, PathBuf>> {
     document::parse(source)
@@ -705,12 +759,12 @@ mod tests {
     #[test]
     fn every_dir_has_its_own_variable() {
         let vars: Vec<&str> = Dir::ALL.iter().map(|d| d.env_var()).collect();
-        assert_eq!(vars, ["MIX_ETC", "MIX_VAR", "MIX_RUN", "MIX_SHARE"]);
+        assert_eq!(vars, [env::ETC, env::VAR, env::RUN, env::SHARE]);
     }
 
     #[test]
     fn path_resolves_from_the_process_and_is_stable() {
-        const CHILD: &str = "MIX_TEST_PATH_CACHE";
+        const CHILD: &str = env::test::TEST_PATH_CACHE;
         if std::env::var_os(CHILD).is_none() {
             struct Scratch(PathBuf);
             impl Drop for Scratch {
@@ -729,7 +783,7 @@ mod tests {
                     "--nocapture",
                 ])
                 .env(CHILD, "1")
-                .env("MIX_PREFIX", &prefix.0)
+                .env(env::PREFIX, &prefix.0)
                 .output()
                 .unwrap();
             assert!(
@@ -743,7 +797,7 @@ mod tests {
             return;
         }
         assert!(
-            std::env::var_os("MIX_PREFIX").is_some(),
+            std::env::var_os(env::PREFIX).is_some(),
             "cache test needs an explicit prefix"
         );
         // Whatever the environment, the cached answer is the rule applied

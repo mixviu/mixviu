@@ -66,6 +66,7 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
             .env_remove("MIX_RUN")
             .env_remove("MIX_SHARE")
             .env_remove("MIX_CACHE")
+            .env_remove(paths::env::LIB)
             .output()
             .unwrap();
         assert!(
@@ -90,6 +91,16 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
             expected.root(paths::Root::Prefix),
             std::path::PathBuf::from(&prefix)
         );
+        let lib = mix::run(&format!("mix_path('lib', '', {{tier: '{tier}'}})"))
+            .await
+            .unwrap();
+        let mix::value::Value::String(lib) = &lib else {
+            panic!("lib root did not return a string")
+        };
+        assert_eq!(
+            std::path::Path::new(lib),
+            std::path::PathBuf::from(&prefix).join("lib")
+        );
         for root in paths::Root::ALL {
             let source = format!(
                 "mix_path(\"{}\", \"sentinel\", {{tier: \"{tier}\"}})",
@@ -106,7 +117,7 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
             );
         }
     }
-    for root in ["config", "state", "runtime", "bin", "lib"] {
+    for root in ["config", "state", "runtime", "bin"] {
         assert!(
             mix::run(&format!("mix_path(\"{root}\")")).await.is_err(),
             "old/unknown root accepted: {root}"

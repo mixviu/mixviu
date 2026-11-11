@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 fn main() -> eframe::Result {
+    viu::register_build_snapshot();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "--preview") {
         furniture::preview::run(&args[1..])
