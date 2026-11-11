@@ -154,10 +154,12 @@ mod tests {
                 };
                 let mut frame = |open, serial, input_events, modifiers| {
                     let mut events = Vec::new();
+                    let mut input_events = input_events;
+                    input_events.insert(0, egui::Event::ModifiersChanged(modifiers));
                     widget.properties = json!({"focus_serial":serial});
                     ctx.run_ui(egui::RawInput {
                         screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0,560.0))),
-                        events: input_events, modifiers, ..Default::default()
+                        events: input_events, ..Default::default()
                     }, |ui| {
                         if open {
                             crate::editor_controls::draw(ui,"find","search-bar",&bar,&mut events);
@@ -172,8 +174,7 @@ mod tests {
                 let modifiers = egui::Modifiers { shift, ..egui::Modifiers::NONE };
                 let mut input = vec![key(true,modifiers)];
                 if released { input.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE)); }
-                let held = if released { egui::Modifiers::NONE } else { modifiers };
-                let events = frame(true,1,input,held);
+                let events = frame(true,1,input,modifiers);
                 let actions: Vec<_> = events.iter().filter(|e| e.id=="find").collect();
                 assert_eq!(actions.len(),1,"{events:?}");
                 assert_eq!(actions[0].action,if opt_in {"submit"} else {"next"});
@@ -189,11 +190,11 @@ mod tests {
                     assert!(!control.actions().contains(&"submit"));
                     assert!(control.validate_action("submit", &json!({"shift":shift})).is_err());
                 }
-                assert!(read(&receiver).is_empty(),"find submission reached the PTY input queue");
+                assert!(super::pointer_order_tests::read(&receiver).is_empty(),"find submission reached the PTY input queue");
                 frame(false,2,vec![key(false,egui::Modifiers::NONE)],egui::Modifiers::NONE);
                 frame(false,2,vec![],egui::Modifiers::NONE);
                 frame(false,2,vec![key(true,egui::Modifiers::NONE)],egui::Modifiers::NONE);
-                assert_eq!(read(&receiver),b"\r","closed find bar must leave Enter with the shell");
+                assert_eq!(super::pointer_order_tests::read(&receiver),b"\r","closed find bar must leave Enter with the shell");
             }
         }
     }
@@ -686,7 +687,7 @@ mod tests {
 mod pointer_order_tests {
     use super::*;
     use rio_vt::{corcovado::channel, event::Msg};
-    fn read(receiver: &channel::Receiver<Msg>) -> Vec<u8> {
+    pub(super) fn read(receiver: &channel::Receiver<Msg>) -> Vec<u8> {
         let mut out = Vec::new();
         while let Ok(message) = receiver.try_recv() {
             if let Msg::Input(bytes) = message {
