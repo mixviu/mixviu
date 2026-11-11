@@ -84,7 +84,11 @@ fn blank_entry_releases_preheld_client_key_and_modifier_then_consumes_waking_rel
         assert!(h.key(evdev + 8, true, false), "preheld repeat is consumed");
         assert!(!h.comp().blank.blanked);
         assert!(h.key(evdev + 8, false, false));
-        assert_eq!(h.client.state.keys.len(), 2, "no second release reaches client");
+        assert_eq!(
+            h.client.state.keys.len(),
+            2,
+            "no second release reaches client"
+        );
         assert!(h.wire.inner.comp.bindings.take_comp_fires().is_empty());
         assert!(h.wire.inner.comp.bindings.take_bus_fires().is_empty());
         assert!(!h.key(EV_A + 8, true, false));
@@ -107,7 +111,11 @@ fn blank_entry_releases_preheld_pointer_button_and_consumes_its_physical_release
     assert_eq!(h.client.state.buttons.len(), 2);
     assert_eq!(h.client.state.buttons[1].1, button);
     assert!(!h.client.state.buttons[1].2);
-    assert_eq!(h.release(&surface, button), 0, "waking physical release is consumed");
+    assert_eq!(
+        h.release(&surface, button),
+        0,
+        "waking physical release is consumed"
+    );
     assert!(!h.comp().blank.blanked);
     assert_eq!(h.client.state.buttons.len(), 2);
     h.press(&surface, button);
@@ -121,24 +129,37 @@ fn blank_entry_ends_an_existing_user_binding_repeat_without_client_release() {
     let root = std::env::temp_dir().join(format!("viud-blank-repeat-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     let path = root.join("keymap.json");
-    std::fs::write(&path,
+    std::fs::write(
+        &path,
         r#"{"version":1,"physical":[{"stroke":{"code":63},"action":"user.f05","repeat":"allow"}]}"#,
-    ).unwrap();
+    )
+    .unwrap();
     h.wire.inner.comp.bindings.reload_user_keymap(&path);
     // As in the real seat, update xkb before asking the binding layer for
     // the repeat token. This fixture does not arm a production Loop timer.
     let keyboard = h.wire.state.seat.seat.get_keyboard().unwrap();
-    keyboard.input_intercept(&mut h.wire.state,
+    keyboard.input_intercept(
+        &mut h.wire.state,
         smithay::input::keyboard::Keycode::new(EV_F5 + 8),
-        smithay::backend::input::KeyState::Pressed, |_, _, _| ());
-    let edge = world::comp::bindings::user_key(&mut h.wire.inner.comp.bindings,
-        EV_F5 + 8, true, false, false);
+        smithay::backend::input::KeyState::Pressed,
+        |_, _, _| (),
+    );
+    let edge = world::comp::bindings::user_key(
+        &mut h.wire.inner.comp.bindings,
+        EV_F5 + 8,
+        true,
+        false,
+        false,
+    );
     let token = edge.repeat.expect("repeat-enabled key");
     assert!(h.wire.inner.comp.bindings.user.repeat(token).is_some());
     h.wire.inner.comp.bindings.take_bus_fires();
     h.blank(true);
     assert!(keyboard.pressed_keys().is_empty());
-    assert!(h.client.state.keys.is_empty(), "client saw no press or synthetic release");
+    assert!(
+        h.client.state.keys.is_empty(),
+        "client saw no press or synthetic release"
+    );
     assert!(h.wire.inner.comp.bindings.user.repeat(token).is_none());
     assert!(h.key(EV_F5 + 8, false, false));
     assert!(h.wire.inner.comp.bindings.take_bus_fires().is_empty());

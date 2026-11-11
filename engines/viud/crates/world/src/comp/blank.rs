@@ -156,19 +156,39 @@ pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::
     if let Some(keyboard) = state.seat.seat.get_keyboard() {
         for code in keyboard.pressed_keys() {
             let intercepted = comp.bindings.user.is_swallowed(code.raw())
-                || comp.bindings.state().is_some_and(|table| table.is_intercepted(code.raw()));
+                || comp
+                    .bindings
+                    .state()
+                    .is_some_and(|table| table.is_intercepted(code.raw()));
             comp.blank.swallowed.insert(Hold::Key(code.raw()));
-            keyboard.input::<(), _>(state, code, KeyState::Released,
-                SERIAL_COUNTER.next_serial(), time, |_, _, _| {
-                    if intercepted { FilterResult::Intercept(()) } else { FilterResult::Forward }
-                });
+            keyboard.input::<(), _>(
+                state,
+                code,
+                KeyState::Released,
+                SERIAL_COUNTER.next_serial(),
+                time,
+                |_, _, _| {
+                    if intercepted {
+                        FilterResult::Intercept(())
+                    } else {
+                        FilterResult::Forward
+                    }
+                },
+            );
         }
     }
     if let Some(pointer) = state.seat.seat.get_pointer() {
         for button in pointer.current_pressed() {
             comp.blank.swallowed.insert(Hold::Button(button));
-            pointer.button(state, &ButtonEvent { serial: SERIAL_COUNTER.next_serial(), time,
-                button, state: ButtonState::Released });
+            pointer.button(
+                state,
+                &ButtonEvent {
+                    serial: SERIAL_COUNTER.next_serial(),
+                    time,
+                    button,
+                    state: ButtonState::Released,
+                },
+            );
         }
         pointer.frame(state);
     }
@@ -195,7 +215,11 @@ pub fn set(lp: &mut Loop, on: bool, cause: &'static str) -> Result<(), String> {
         if on {
             release_human(&mut lp.state, &mut lp.inner.comp);
             for contact in &lp.inner.touch.contacts {
-                lp.inner.comp.blank.swallowed.insert(Hold::Touch(contact.slot));
+                lp.inner
+                    .comp
+                    .blank
+                    .swallowed
+                    .insert(Hold::Touch(contact.slot));
             }
             lp.inner.touch.reset();
             if let Some(registry) = lp.inner.surface_mut().registry.as_mut() {

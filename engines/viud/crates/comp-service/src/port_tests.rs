@@ -451,7 +451,11 @@ impl WorkerClient for FakeClient {
     fn persist_screen_off<'a>(&'a self, value: &'a Value) -> WorkerFuture<'a, Result<(), String>> {
         self.power_writes.fetch_add(1, Ordering::AcqRel);
         self.power_values.lock().unwrap().push(value.clone());
-        Box::pin(future::ready(if self.power_fail.load(Ordering::Acquire) { Err("fixture storage refusal".into()) } else { Ok(()) }))
+        Box::pin(future::ready(if self.power_fail.load(Ordering::Acquire) {
+            Err("fixture storage refusal".into())
+        } else {
+            Ok(())
+        }))
     }
     fn incoming(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>> {
         self.incoming
@@ -473,7 +477,11 @@ impl WorkerClient for FakeClient {
         reply: &'a PendingReply,
     ) -> WorkerFuture<'a, Result<(), String>> {
         self.responses_started.fetch_add(1, Ordering::AcqRel);
-        self.responses.lock().unwrap().push((reply.command.to_string(), reply.rc, reply.body.to_string()));
+        self.responses.lock().unwrap().push((
+            reply.command.to_string(),
+            reply.rc,
+            reply.body.to_string(),
+        ));
         if self.hang_replies {
             Box::pin(future::pending())
         } else {
@@ -949,12 +957,20 @@ async fn worker_rejects_topic_and_invalid_power_writes_before_persistence() {
     // A full engine queue refuses admission without a ghost durable write.
     let mut held = Vec::new();
     for _ in 0..PORT_QUEUE_CAPACITY {
-        held.push(direct.request_set("input.corners.enabled".into(), json!(true)).unwrap());
+        held.push(
+            direct
+                .request_set("input.corners.enabled".into(), json!(true))
+                .unwrap(),
+        );
     }
-    commands.send(local_set_command(4, "power.screen_off_s", json!(30))).unwrap();
+    commands
+        .send(local_set_command(4, "power.screen_off_s", json!(30)))
+        .unwrap();
     wait_for_counter(&responses, 3, "full queue refuses power set").await;
     assert_eq!(writes.load(Ordering::Acquire), 0);
-    for _ in 0..PORT_QUEUE_CAPACITY { drop(source.try_recv().unwrap()); }
+    for _ in 0..PORT_QUEUE_CAPACITY {
+        drop(source.try_recv().unwrap());
+    }
     drop(held);
 
     // Admission and runtime mutation precede persistence. Even reversed
@@ -962,12 +978,21 @@ async fn worker_rejects_topic_and_invalid_power_writes_before_persistence() {
     commands
         .send(local_set_command(5, "power.screen_off_s", json!(30)))
         .unwrap();
-    commands.send(local_set_command(6, "power.screen_off_s", json!(60))).unwrap();
+    commands
+        .send(local_set_command(6, "power.screen_off_s", json!(60)))
+        .unwrap();
     let PortCommand::Set(mut first) = next_port_command(&source).await else {
         panic!("power set");
     };
-    let PortCommand::Set(mut second) = next_port_command(&source).await else { panic!("second power set"); };
-    let accepted = |seconds| ControlReply::Set { path: "power.screen_off_s".into(), old: PropValue::Null(()), new: PropValue::U64(seconds), persisted: Some(false) };
+    let PortCommand::Set(mut second) = next_port_command(&source).await else {
+        panic!("second power set");
+    };
+    let accepted = |seconds| ControlReply::Set {
+        path: "power.screen_off_s".into(),
+        old: PropValue::Null(()),
+        new: PropValue::U64(seconds),
+        persisted: Some(false),
+    };
     second.reply.take().unwrap().send(accepted(60)).unwrap();
     commands.send(command("comp.ping", 7)).unwrap();
     wait_for_counter(&responses, 4, "ping while power waits for predecessor").await;
@@ -979,18 +1004,34 @@ async fn worker_rejects_topic_and_invalid_power_writes_before_persistence() {
     // A persistence failure is an accepted runtime change with an honest
     // persisted:false result, matching the existing xwayland set contract.
     fail.store(true, Ordering::Release);
-    commands.send(local_set_command(8, "power.screen_off_s", json!(90))).unwrap();
-    let PortCommand::Set(mut failed) = next_port_command(&source).await else { panic!("power set"); };
+    commands
+        .send(local_set_command(8, "power.screen_off_s", json!(90)))
+        .unwrap();
+    let PortCommand::Set(mut failed) = next_port_command(&source).await else {
+        panic!("power set");
+    };
     failed.reply.take().unwrap().send(accepted(90)).unwrap();
     wait_for_counter(&responses, 7, "storage failure answered").await;
     let (_, rc, body) = replies.lock().unwrap().last().unwrap().clone();
     assert_eq!(rc, 0);
-    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["persisted"], false);
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["persisted"],
+        false
+    );
     assert_eq!(writes.load(Ordering::Acquire), 3);
 
-    commands.send(local_set_command(9, "power.screen_off_s", json!(120))).unwrap();
-    let PortCommand::Set(mut refused) = next_port_command(&source).await else { panic!("power set"); };
-    refused.reply.take().unwrap().send(ControlReply::Busy).unwrap();
+    commands
+        .send(local_set_command(9, "power.screen_off_s", json!(120)))
+        .unwrap();
+    let PortCommand::Set(mut refused) = next_port_command(&source).await else {
+        panic!("power set");
+    };
+    refused
+        .reply
+        .take()
+        .unwrap()
+        .send(ControlReply::Busy)
+        .unwrap();
     wait_for_counter(&responses, 8, "engine refusal answered").await;
     assert_eq!(writes.load(Ordering::Acquire), 3);
     stop.send(true).unwrap();

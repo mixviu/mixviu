@@ -447,12 +447,15 @@ impl Harness {
     ) -> u32 {
         use smithay::input::pointer::{ButtonEvent, MotionEvent};
         use smithay::utils::{Point, SERIAL_COUNTER};
-        let consumed = self.wire.inner.comp.blank.consume_edge(
-            world::comp::blank::Edge::from_button(
-                button,
-                state == smithay::backend::input::ButtonState::Pressed,
-            ),
-        );
+        let consumed =
+            self.wire
+                .inner
+                .comp
+                .blank
+                .consume_edge(world::comp::blank::Edge::from_button(
+                    button,
+                    state == smithay::backend::input::ButtonState::Pressed,
+                ));
         self.wire.inner.comp.blank.blanked = false;
         if consumed {
             self.roundtrip();
