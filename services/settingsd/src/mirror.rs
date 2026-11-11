@@ -111,6 +111,14 @@ impl Cache {
         let _ = accepted.seal();
         accepted
     }
+    fn loaded(mut self) -> anyhow::Result<Self> {
+        let notes=settings::keymap::scrub_values(&mut self.values);
+        if !notes.is_empty() {
+            for note in notes { eprintln!("settingsd: {note}"); }
+            self.seal()?;
+        }
+        Ok(self)
+    }
     /// The seal check the authority's record has, for this binding and
     /// authority, including the interpretation.
     pub fn check(&self, binding: &Binding, authority: &str) -> anyhow::Result<()> {
@@ -186,13 +194,7 @@ pub fn open(
                 let mut cache: Cache = strict::from_str(std::str::from_utf8(&bytes)?)?;
                 cache.values = canonical(std::mem::take(&mut cache.values));
                 cache.check(binding, authority)?;
-                let mut cache=cache;
-                let notes=settings::keymap::scrub_values(&mut cache.values);
-                if !notes.is_empty() {
-                    for note in notes { eprintln!("settingsd: {note}"); }
-                    cache.seal()?;
-                }
-                Ok(cache)
+                cache.loaded()
             });
             match stored {
                 Ok(cache) => return Ok((cache, Origin::Cached)),
@@ -218,6 +220,7 @@ pub fn open(
     };
     let cache = fetch().map_err(|e| anyhow::anyhow!("mirror cache unavailable: {e}"))?;
     cache.check(binding, authority)?;
+    let cache=cache.loaded()?;
     write_in(&dir, &cache)?;
     Ok((cache, Origin::Rebuilt { refused }))
 }
