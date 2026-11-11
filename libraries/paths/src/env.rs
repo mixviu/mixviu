@@ -19,16 +19,32 @@ pub fn raw(name: &str) -> Option<OsString> {
 pub enum SettingError {
     /// Not in the environment, not supplied by the caller's middle step,
     /// and not in the installed env.mx (or there is no installed env.mx).
-    NotSet { name: String },
+    NotSet {
+        name: String,
+    },
     /// The environment value is set but is not UTF-8.
-    NotUtf8 { name: String },
+    NotUtf8 {
+        name: String,
+    },
     /// The prefix override is set but is not a usable prefix.
-    NoPrefix { name: String, detail: String },
+    NoPrefix {
+        name: String,
+        detail: String,
+    },
     /// env.mx exists but could not be read.
-    Unreadable { name: String, detail: String },
+    Unreadable {
+        name: String,
+        detail: String,
+    },
     /// env.mx was read but is not schema-1 data.
-    Malformed { name: String, detail: String },
-    UnknownSchema { name: String, schema: String },
+    Malformed {
+        name: String,
+        detail: String,
+    },
+    UnknownSchema {
+        name: String,
+        schema: String,
+    },
     /// env.mx belongs to another build than this binary.
     SnapshotMismatch {
         name: String,
@@ -36,7 +52,10 @@ pub enum SettingError {
         actual: String,
     },
     /// A `mix:` root reference could not be expanded through the layout.
-    Layout { name: String, detail: String },
+    Layout {
+        name: String,
+        detail: String,
+    },
 }
 impl std::fmt::Display for SettingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

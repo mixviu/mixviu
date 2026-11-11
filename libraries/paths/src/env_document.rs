@@ -151,7 +151,11 @@ pub(super) fn parse(source: &str, stamp: Option<&str>) -> Result<Defaults, Error
     let commit = values
         .remove("commit")
         .ok_or_else(|| Error::Malformed("missing commit".into()))?;
-    if commit.len() != 40 || !commit.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+    if commit.len() != 40
+        || !commit
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return Err(Error::Malformed(
             "commit must be 40 lower-case hex digits".into(),
         ));
