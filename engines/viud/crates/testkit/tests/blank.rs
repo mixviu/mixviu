@@ -181,3 +181,68 @@ fn blank_entry_never_sends_a_release_for_a_native_table_intercepted_key() {
     assert_eq!(h.client.state.keys.len(), 2);
     assert!(h.wire.inner.comp.bindings.take_pending().is_empty());
 }
+
+#[test]
+fn tablet_pointer_alias_does_not_suppress_the_next_mouse_click() {
+    use smithay::backend::input::{TabletToolCapabilities, TabletToolDescriptor, TabletToolType};
+    use world::comp::blank::{Edge, Hold};
+    let mut h = harness();
+    let (surface, _, _) = h.mapped_toplevel(64, 48);
+    let button = 0x110;
+    h.press(&surface, button);
+    // The seat has a mouse-button alias, whose physical owner is the pen tip.
+    h.wire.state.tablet.stroke = dispatcher::wire::tablet::Stroke::Pointer;
+    h.wire.state.tablet.stroke_owner = Some(TabletToolDescriptor {
+        tool_type: TabletToolType::Pen,
+        hardware_serial: 1,
+        hardware_id_wacom: 2,
+        capabilities: TabletToolCapabilities::empty(),
+    });
+    h.blank(true);
+    assert_eq!(h.client.state.buttons.len(), 2, "alias is released once");
+    assert!(h.wire.inner.comp.blank.consume_edge(Edge::Release(Hold::TabletTip)));
+    h.blank(false);
+    h.press(&surface, button);
+    h.release(&surface, button);
+    assert_eq!(h.client.state.buttons.len(), 4, "next mouse click is delivered");
+}
+
+#[test]
+fn injected_holds_are_separate_from_physical_holds_and_release_all_clears_them() {
+    let mut h = harness();
+    let (surface, _, _) = h.mapped_toplevel(64, 48);
+    h.focus_keyboard(&surface);
+    let button = 0x110;
+    assert!(!h.injected_key(EV_A + 8, true));
+    h.injected_button(&surface, button, true);
+    h.blank(true);
+    h.blank(false);
+    // A later physical pair must not inherit injection's suppressed release.
+    assert!(!h.key(EV_A + 8, true, false));
+    assert!(!h.key(EV_A + 8, false, false));
+    h.press(&surface, button);
+    h.release(&surface, button);
+    assert_eq!(h.client.state.keys, [(EV_A, true), (EV_A, false), (EV_A, true), (EV_A, false)]);
+    assert_eq!(h.client.state.buttons.len(), 4);
+    // The actual injected release still belongs to blank entry.
+    assert!(h.injected_key(EV_A + 8, false));
+    assert_eq!(h.injected_button(&surface, button, false), 0);
+    // ReleaseAll must also clear waking injected presses that never reached xkb.
+    h.blank(true);
+    assert!(h.injected_key(EV_A + 8, true));
+    h.wire.inner.comp.blank.clear_injected_holds();
+    assert!(!h.injected_key(EV_A + 8, true));
+    assert!(!h.injected_key(EV_A + 8, false));
+}
+
+#[test]
+fn waking_injected_pair_stays_consumed_through_its_release() {
+    let mut h = harness();
+    h.blank(true);
+    assert!(h.injected_key(EV_A + 8, true));
+    assert!(h.injected_key(EV_A + 8, false));
+    assert!(h.client.state.keys.is_empty());
+    assert!(!h.injected_key(EV_A + 8, true));
+    assert!(!h.injected_key(EV_A + 8, false));
+    assert_eq!(h.client.state.keys, [(EV_A, true), (EV_A, false)]);
+}

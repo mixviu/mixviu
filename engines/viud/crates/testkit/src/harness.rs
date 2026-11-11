@@ -445,21 +445,33 @@ impl Harness {
         state: smithay::backend::input::ButtonState,
         focus_keyboard: bool,
     ) -> u32 {
+        self.pointer_button_origin(surface, button, state, focus_keyboard, false)
+    }
+
+    /// Human injection fixture with the production blank source class.
+    pub fn injected_button(&mut self, surface: &WlSurface, button: u32, pressed: bool) -> u32 {
+        let state = if pressed { smithay::backend::input::ButtonState::Pressed }
+            else { smithay::backend::input::ButtonState::Released };
+        self.pointer_button_origin(surface, button, state, false, true)
+    }
+
+    fn pointer_button_origin(
+        &mut self, surface: &WlSurface, button: u32,
+        state: smithay::backend::input::ButtonState, focus_keyboard: bool, injected: bool,
+    ) -> u32 {
         use smithay::input::pointer::{ButtonEvent, MotionEvent};
         use smithay::utils::{Point, SERIAL_COUNTER};
-        let consumed =
-            self.wire
-                .inner
-                .comp
-                .blank
-                .consume_edge(world::comp::blank::Edge::from_button(
-                    button,
-                    state == smithay::backend::input::ButtonState::Pressed,
-                ));
+        let pressed = state == smithay::backend::input::ButtonState::Pressed;
+        let edge = if injected { world::comp::blank::Edge::injected_button(button, pressed) }
+            else { world::comp::blank::Edge::from_button(button, pressed) };
+        let consumed = self.wire.inner.comp.blank.consume_edge(edge);
         self.wire.inner.comp.blank.blanked = false;
         if consumed {
             self.roundtrip();
             return 0;
+        }
+        if injected {
+            self.wire.inner.comp.injection.human.note(None, policy::agent::Hold::Button(button), pressed);
         }
         let server: ServerSurface = self
             .server_client
@@ -604,24 +616,33 @@ impl Harness {
     /// also runs and queues its actions, as viud's control pass does.
     /// Returns whether either layer took the edge.
     pub fn key(&mut self, keycode: u32, pressed: bool, locked: bool) -> bool {
+        self.key_origin(keycode, pressed, locked, false)
+    }
+
+    /// Human injection fixture with the production blank source class.
+    pub fn injected_key(&mut self, keycode: u32, pressed: bool) -> bool {
+        self.key_origin(keycode, pressed, false, true)
+    }
+
+    fn key_origin(&mut self, keycode: u32, pressed: bool, locked: bool, injected: bool) -> bool {
         use smithay::backend::input::KeyState;
         use smithay::utils::SERIAL_COUNTER;
         // TestHost has no production Loop/backend. Exercise the same policy
         // gate before xkb/bindings/client delivery, and model a successful
         // backend-free wake. Production injection owns the timer and CRTC call.
         let was_blanked = self.wire.inner.comp.blank.blanked;
-        let consumed = self
-            .wire
-            .inner
-            .comp
-            .blank
-            .consume_edge(world::comp::blank::Edge::from_key(keycode, pressed));
+        let edge = if injected { world::comp::blank::Edge::injected_key(keycode, pressed) }
+            else { world::comp::blank::Edge::from_key(keycode, pressed) };
+        let consumed = self.wire.inner.comp.blank.consume_edge(edge);
         if was_blanked {
             self.wire.inner.comp.blank.blanked = false;
         }
         if consumed {
             self.roundtrip();
             return true;
+        }
+        if injected {
+            self.wire.inner.comp.injection.human.note(None, policy::agent::Hold::Key(keycode), pressed);
         }
         let keyboard = self
             .wire

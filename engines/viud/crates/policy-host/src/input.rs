@@ -496,7 +496,7 @@ fn targeted_human_button(
     if swallow_blank(
         lp,
         SeatKind::Human,
-        world::comp::blank::Edge::from_button(button, pressed),
+        world::comp::blank::Edge::injected_button(button, pressed),
     ) {
         return;
     }
@@ -1182,7 +1182,7 @@ fn inject_button(lp: &mut Loop, seat: SeatKind, button: u32, pressed: bool, time
     if swallow_blank(
         lp,
         seat,
-        world::comp::blank::Edge::from_button(button, pressed),
+        world::comp::blank::Edge::injected_button(button, pressed),
     ) {
         return;
     }
@@ -1346,7 +1346,7 @@ fn inject_key(
     if swallow_blank(
         lp,
         seat,
-        world::comp::blank::Edge::from_key(keycode.raw(), pressed),
+        world::comp::blank::Edge::injected_key(keycode.raw(), pressed),
     ) {
         return (true, None);
     }
@@ -1424,6 +1424,9 @@ fn release_injected(lp: &mut Loop, seat: SeatKind) {
     let holds = lp.inner.comp.injection.holds_mut(seat).take_all();
     let time = now_ms(lp);
     release_holds(lp, seat, holds, time);
+    if seat == SeatKind::Human {
+        lp.inner.comp.blank.clear_injected_holds();
+    }
     if seat == SeatKind::Agent {
         dismiss_agent_popups(lp);
     }
