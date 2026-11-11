@@ -7,7 +7,10 @@ fn checked($argv, $env = {})
 end
 if args()[0] == "resolve" then
   try
-    $metadata = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1"], {max_output: 256000000}))
+    $result = run_argv(["cargo", "metadata", "--format-version", "1"], {max_output: 256000000, timeout: 1800})
+    print($result.stderr)
+    if $result.exit_code != 0 then exit($result.exit_code ?? 124) end
+    $metadata = json_parse($result.stdout)
     print("RESOLVED_PACKAGES " .. to_string(len($metadata.packages)))
     checked(["cargo", "fmt", "-p", "mix-mcp"])
     print("DERIVED_DIFF_BEGIN")
@@ -21,8 +24,15 @@ if args()[0] == "resolve" then
   exit(0)
 end
 checked(["cargo", "build", "--locked", "-p", "mix"])
-$prefix = trim(run_argv_must(["target/debug/mix", "tools/ci.mix", "stage-install"]))
+$prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir", "mcp-ci-XXXXXXXX"]))
 try
+  mkdir($prefix .. "/bin")
+  checked(["ln", "-s", realpath("target/debug/mix"), $prefix .. "/bin/mix"])
+  $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
+  for $v in load_data("etc/env.conf.mix").vars
+    if has_key($v, "default") then $defaults[$v.name] = $v.default end
+  end
+  write_file($prefix .. "/env.mx", data_encode($defaults))
   $env = {MIX_PREFIX: $prefix, MIX_TEST_MIX_EXE: realpath("target/debug/mix")}
   checked(["cargo", "tree", "--locked", "-i", "rmcp"])
   checked(["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"])
