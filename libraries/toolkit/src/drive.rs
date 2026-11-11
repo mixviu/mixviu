@@ -2023,9 +2023,21 @@ fn key(args: &Value) -> Result<Job, String> {
 
 #[test]
 fn injected_desk_keys_are_refused() {
-    for name in ["F1", "F12", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] {
+    for name in [
+        "F1",
+        "F12",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+    ] {
         for modifiers in [serde_json::json!(["ctrl"]), serde_json::json!(["alt"])] {
-            assert!(key(&serde_json::json!({"key":name,"modifiers":modifiers})).err().unwrap().contains("reserved for the desk"));
+            assert!(
+                key(&serde_json::json!({"key":name,"modifiers":modifiers}))
+                    .err()
+                    .unwrap()
+                    .contains("reserved for the desk")
+            );
         }
     }
     assert!(key(&serde_json::json!({"key":"ArrowLeft","modifiers":["ctrl","shift"]})).is_ok());

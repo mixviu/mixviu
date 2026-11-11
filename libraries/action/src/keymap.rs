@@ -37,12 +37,18 @@ pub fn reserved(chord: &str) -> bool {
     matches!(
         key.as_str(),
         "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
-    ) || (matches!(key.as_str(), "arrowleft" | "arrowright" | "arrowup" | "arrowdown" | "left" | "right" | "up" | "down")
-        && !parts.contains(&"Shift") && (parts.contains(&"Ctrl") || parts.contains(&"Alt")))
+    ) || (matches!(
+        key.as_str(),
+        "arrowleft" | "arrowright" | "arrowup" | "arrowdown" | "left" | "right" | "up" | "down"
+    ) && !parts.contains(&"Shift")
+        && (parts.contains(&"Ctrl") || parts.contains(&"Alt")))
 }
 
 fn ensure_not_user_fkey(chord: &str) {
-    assert!(!reserved(chord), "F1-F12 belong to the user; Ctrl/Alt+arrow are reserved for the desk");
+    assert!(
+        !reserved(chord),
+        "F1-F12 belong to the user; Ctrl/Alt+arrow are reserved for the desk"
+    );
 }
 
 #[derive(Default)]

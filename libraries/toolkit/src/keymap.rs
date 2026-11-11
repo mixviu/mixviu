@@ -39,7 +39,8 @@ pub fn reserved(key: Key, modifiers: Modifiers) -> bool {
     ::action::keymap::reserved(&chord_text(&KeyboardShortcut::new(modifiers, key)))
 }
 
-pub const RESERVED_MESSAGE: &str = "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused";
+pub const RESERVED_MESSAGE: &str =
+    "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused";
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
