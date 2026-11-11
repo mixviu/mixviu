@@ -575,7 +575,12 @@ pub fn draw(
                 }
                 if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     if value["submit_modifiers"] == true {
-                        let shift = ui.input(|i| i.modifiers.shift);
+                        let shift = ui.input(|i| {
+                            i.events.iter().find_map(|event| match event {
+                                egui::Event::Key { key: egui::Key::Enter, pressed: true, modifiers, .. } => Some(modifiers.shift),
+                                _ => None,
+                            }).unwrap_or(i.modifiers.shift)
+                        });
                         ui.input_mut(|input| {
                             input.events.retain(|event| {
                                 !matches!(event, egui::Event::Key { key: egui::Key::Enter, .. })

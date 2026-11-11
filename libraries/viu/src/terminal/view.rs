@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn find_bar_submit_keeps_focus_and_never_reaches_pty() {
         for opt_in in [false, true] {
-            for shift in [false, true] {
+            for (shift, released) in [(false, false), (true, false), (true, true)] {
                 let sessions = Sessions::fixture();
                 let receiver = sessions.get("vt-1").unwrap().lock().unwrap().listener.test_input_receiver();
                 let ctx = egui::Context::default();
@@ -170,7 +170,10 @@ mod tests {
                 for _ in 0..2 { frame(true,1,vec![],egui::Modifiers::NONE); }
                 let field = ctx.memory(|m| m.focused()).expect("find field focused");
                 let modifiers = egui::Modifiers { shift, ..egui::Modifiers::NONE };
-                let events = frame(true,1,vec![key(true,modifiers)],modifiers);
+                let mut input = vec![key(true,modifiers)];
+                if released { input.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE)); }
+                let held = if released { egui::Modifiers::NONE } else { modifiers };
+                let events = frame(true,1,input,held);
                 let actions: Vec<_> = events.iter().filter(|e| e.id=="find").collect();
                 assert_eq!(actions.len(),1,"{events:?}");
                 assert_eq!(actions[0].action,if opt_in {"submit"} else {"next"});
