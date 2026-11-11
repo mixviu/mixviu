@@ -311,6 +311,34 @@ fn root_references_cannot_escape_their_root() {
     }
 }
 
+/// `derived` refuses a relative or `..`-bearing root from any override, for
+/// both tiers, instead of handing back a root that resolves against the cwd.
+#[test]
+fn derived_refuses_relative_and_parent_overrides() {
+    let prefix = Path::new("/srv/fixture");
+    for uid in [0, 1000] {
+        let base = Environment {
+            uid,
+            home: Some("/home/user".into()),
+            ..Environment::default()
+        };
+        assert!(Dirs::derived(prefix, &base).is_ok());
+        for bad in ["relative/etc", "/srv/fixture/../elsewhere"] {
+            let etc = Environment {
+                etc: Some(bad.into()),
+                ..base.clone()
+            };
+            assert!(Dirs::derived(prefix, &etc).is_err(), "etc {bad} uid {uid}");
+            let root = Environment {
+                root: Some(bad.into()),
+                ..base.clone()
+            };
+            assert!(Dirs::derived(prefix, &root).is_err(), "root {bad} uid {uid}");
+        }
+    }
+    assert!(Dirs::derived(Path::new("relative"), &Environment::default()).is_err());
+}
+
 #[test]
 fn independent_tiers_and_lazy_settings_in_child() {
     if std::env::var_os(env::test::TEST_PATH_CACHE).as_deref()

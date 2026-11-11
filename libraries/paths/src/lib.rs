@@ -304,6 +304,11 @@ impl Dirs {
                 );
             }
         }
+        // Unlike the legacy rule, this constructor refuses a relative or
+        // `..`-bearing root from any override rather than passing it on.
+        for path in dirs.roots.values() {
+            absolute(path)?;
+        }
         Ok(dirs)
     }
     /// Explicit env, uid and executable inputs. from_source does no file I/O.
