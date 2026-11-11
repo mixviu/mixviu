@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Real portal, chooser and viewport driving on private D-Bus/noded/viud.
 -- Needs CBC's headless weston host. Never touches a desktop, VT or service.
--- Build on CBC: cargo build -p portald -p dopus -p viud -p noded -p system --bins --examples
+-- The frozen fixture needs native Dopus and a nested-host helper, absent here.
 -- mix services/portald/tests/chooser_bus_test.mix --bin <bin>
 -- Not in the headless gate: the frozen visual helper/native Dopus are absent.
 $helper = "../../../tests/desktop/nested_host_lib.mix"
