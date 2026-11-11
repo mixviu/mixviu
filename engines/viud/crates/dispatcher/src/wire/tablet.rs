@@ -294,17 +294,7 @@ impl TabletState {
         if let Some(owner) = self.cursor_owner.clone() {
             self.revoke_tool(&owner);
         }
-        let mut tools: Vec<_> = self.tools.keys().cloned().collect();
-        for owner in self
-            .stroke_owner
-            .iter()
-            .chain(self.cursor_owner.iter())
-            .chain(self.emulated_buttons.iter().map(|(owner, _, _)| owner))
-        {
-            if !tools.contains(owner) {
-                tools.push(owner.clone());
-            }
-        }
+        let tools: Vec<_> = self.tools.keys().cloned().collect();
         for tool in tools {
             self.remove_tool(&tool, 0);
         }
@@ -380,7 +370,19 @@ impl TabletState {
             .values()
             .flat_map(|p| p.pressed_buttons.iter().copied())
             .collect();
-        let tools: Vec<_> = self.tools.keys().cloned().collect();
+        let mut tools: Vec<_> = self.tools.keys().cloned().collect();
+        // Resource loss can remove a tool before its stroke/emulated state is
+        // revoked. Those owners still need cancellation, even without a Tool.
+        for owner in self
+            .stroke_owner
+            .iter()
+            .chain(self.cursor_owner.iter())
+            .chain(self.emulated_buttons.iter().map(|(owner, _, _)| owner))
+        {
+            if !tools.contains(owner) {
+                tools.push(owner.clone());
+            }
+        }
         for tool in tools {
             self.tool_proximity_out(&tool, time);
         }
