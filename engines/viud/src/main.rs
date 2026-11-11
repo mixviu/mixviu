@@ -682,6 +682,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // keyboard (once `service` enters the lock, focus is gone).
         policy_host::input::release_keys_for_lock(state);
         world::comp::session_lock::service(state);
+        policy_host::project::service_inhibitors(state);
         world::comp::blank::service(state);
         // The exclusive-keyboard latch, with or without a Bus port.
         world::comp::latch::service(state);

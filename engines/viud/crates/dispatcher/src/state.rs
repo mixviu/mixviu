@@ -93,6 +93,7 @@ pub struct Dispatch {
     pub fractional: protocols::fractional::state::Fractional,
     /// ext-idle-notify-v1: notifications per wl_seat, one-shot timeouts on the loop.
     pub idle_notifier: smithay::wayland::idle_notify::IdleNotifierState<Dispatch>,
+    pub inhibitors: crate::idle_inhibit::Inhibitors,
     pub text_input: protocols::text::input::state::TextInput,
     pub dnd: protocols::dnd::state::DNDState,
     pub singlepixel: protocols::singlepixel::state::SinglePixel,

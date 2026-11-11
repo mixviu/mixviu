@@ -62,6 +62,7 @@ pub struct State {
     pub discarded: u64,
     pub clock: Option<u32>,
     pub times: Vec<u64>,
+    pub idled: u64,
 }
 
 pub struct Pattern {
@@ -80,6 +81,54 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    pub fn idle_notification(&mut self, timeout_ms: u32) {
+        use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "ext_idle_notifier_v1")
+            .unwrap()
+            .0;
+        let qh = self.queue.handle();
+        let manager: ExtIdleNotifierV1 = self.registry.bind(name, 1, &qh, ());
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "wl_seat")
+            .unwrap()
+            .0;
+        let seat: WlSeat = self.registry.bind(name, 1, &qh, ());
+        manager.get_idle_notification(timeout_ms, &seat, &qh, ());
+        manager.destroy();
+        self.conn.flush().unwrap();
+    }
+    pub fn inhibit(
+        &mut self,
+    ) -> wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1
+    {
+        use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "zwp_idle_inhibit_manager_v1")
+            .unwrap()
+            .0;
+        let qh = self.queue.handle();
+        let manager: ZwpIdleInhibitManagerV1 = self.registry.bind(name, 1, &qh, ());
+        let inhibitor = manager.create_inhibitor(&self.surface, &qh, ());
+        manager.destroy();
+        self.conn.flush().unwrap();
+        inhibitor
+    }
+
+    pub fn unmap(&mut self) {
+        self.surface.attach(None, 0, 0);
+        self.surface.commit();
+        self.conn.flush().unwrap();
+    }
     pub fn new(stream: UnixStream) -> Self {
         Self::named(stream, "headless-pattern", true)
     }
@@ -424,6 +473,19 @@ impl Dispatch<WpPresentationFeedback, ()> for State {
     }
 }
 delegate_noop!(State: ignore WlCompositor);
+delegate_noop!(State: ignore wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1);
+impl Dispatch<wayland_protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::ExtIdleNotificationV1, ()> for State {
+    fn event(state: &mut Self,
+        _: &wayland_protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::ExtIdleNotificationV1,
+        event: wayland_protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::Event,
+        _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        if matches!(event, wayland_protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::Event::Idled) {
+            state.idled += 1;
+        }
+    }
+}
+delegate_noop!(State: ignore wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1);
+delegate_noop!(State: ignore wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1);
 delegate_noop!(State: ignore WlSurface);
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);

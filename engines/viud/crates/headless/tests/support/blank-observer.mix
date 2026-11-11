@@ -2,10 +2,14 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- Only the private headless test broker reaches this observer.
 $edges = []
+$inhibitors = []
 subscribe("comp-headless.props.changed")
 on props.changed
   if $event.args.path == "display.blanked" then
     push($edges, $event.args)
+  end
+  if $event.args.path == "display.inhibited" then
+    push($inhibitors, $event.args)
   end
 end
 on observer.start
@@ -14,4 +18,7 @@ on observer.start
 end
 on observer.blanks
   reply(0, json_encode($edges))
+end
+on observer.inhibitors
+  reply(0, json_encode($inhibitors))
 end

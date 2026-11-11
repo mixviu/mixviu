@@ -909,7 +909,11 @@ fn screen_blank_timeout_and_read_only_display_props() {
     ] {
         assert!(screen_off_value(&value).is_err());
     }
-    for path in ["display.blanked", "display.blank_supported"] {
+    for path in [
+        "display.blanked",
+        "display.inhibited",
+        "display.blank_supported",
+    ] {
         assert_eq!(
             validate_set_request(path, &serde_json::json!(true)),
             Err(SetValidationError::ReadOnly)

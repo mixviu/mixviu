@@ -74,6 +74,7 @@ impl Edge {
 
 pub struct BlankPolicy {
     pub blanked: bool,
+    pub inhibited: bool,
     pub supported: bool,
     pub backend: Option<Backend>,
     timeout: Option<u64>,
@@ -87,6 +88,7 @@ impl Default for BlankPolicy {
     fn default() -> Self {
         Self {
             blanked: false,
+            inhibited: false,
             supported: false,
             backend: None,
             timeout: None,
@@ -117,7 +119,7 @@ impl BlankPolicy {
     }
 
     fn deadline(&self) -> Option<Instant> {
-        if self.blanked || self.expired {
+        if self.blanked || self.expired || self.inhibited {
             return None;
         }
         self.last_human
@@ -127,6 +129,17 @@ impl BlankPolicy {
     fn configure(&mut self, timeout: Option<u64>) {
         self.timeout = timeout;
         self.expired = false;
+    }
+
+    pub fn inhibit(&mut self, inhibited: bool, now: Instant) -> bool {
+        if self.inhibited == inhibited {
+            return false;
+        }
+        self.inhibited = inhibited;
+        if !inhibited {
+            self.activity(now);
+        }
+        true
     }
 
     fn activity(&mut self, now: Instant) {
@@ -299,6 +312,21 @@ pub fn configure(lp: &mut Loop, timeout: Option<u64>) {
     service(lp);
 }
 
+pub fn set_inhibited(lp: &mut Loop, inhibited: bool) {
+    if lp
+        .inner
+        .comp
+        .blank
+        .inhibit(inhibited, lp.inner.comp.clock.now())
+    {
+        dispatcher::idle::set_inhibited(&mut lp.state, inhibited);
+        lp.inner
+            .comp
+            .settings_changed("display.inhibited", "wayland.idle_inhibit");
+        service(lp);
+    }
+}
+
 /// Called only by the human funnels. Agent activity cannot move this clock.
 pub fn activity(lp: &mut Loop) {
     lp.inner.comp.blank.activity(lp.inner.comp.clock.now());
@@ -401,6 +429,38 @@ pub fn service(lp: &mut Loop) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inhibition_holds_timer_and_rearms_from_release_with_current_setting() {
+        let mut p = BlankPolicy::default();
+        let now = p.last_human;
+        p.configure(Some(10));
+        assert!(p.inhibit(true, now + Duration::from_secs(9)));
+        assert_eq!(p.deadline(), None);
+        p.configure(Some(3));
+        assert_eq!(p.deadline(), None);
+        assert!(!p.inhibit(true, now + Duration::from_secs(30)));
+        assert!(p.inhibit(false, now + Duration::from_secs(40)));
+        assert_eq!(p.deadline(), Some(now + Duration::from_secs(43)));
+        assert!(!p.inhibit(false, now + Duration::from_secs(42)));
+        assert_eq!(p.deadline(), Some(now + Duration::from_secs(43)));
+    }
+
+    #[test]
+    fn inhibition_never_wakes_bus_blank_and_release_respects_never() {
+        let mut p = BlankPolicy::default();
+        let now = p.last_human;
+        p.configure(Some(1));
+        p.inhibit(true, now);
+        p.blanked = true; // Bus blank is unconditional.
+        assert_eq!(p.deadline(), None);
+        p.inhibit(false, now + Duration::from_secs(20));
+        assert!(p.blanked);
+        p.inhibit(true, now);
+        p.configure(None);
+        p.blanked = false;
+        p.inhibit(false, now + Duration::from_secs(30));
+        assert_eq!(p.deadline(), None);
+    }
     #[test]
     fn arm_rearm_fire_never_and_setting_changes() {
         let mut p = BlankPolicy::default();
