@@ -55,6 +55,7 @@ pub fn resolve(args: &serde_json::Value) -> Result<serde_json::Value, String> {
                 .map(|key| {
                     key.as_str()
                         .and_then(toolkit::keymap::parse_chord)
+                        .filter(|s| !toolkit::keymap::reserved(s.logical_key, s.modifiers))
                         .ok_or("invalid default chord")
                 })
                 .collect::<Result<Vec<_>, _>>()?;
