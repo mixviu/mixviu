@@ -6,6 +6,13 @@
 /.github/                         @markc
 /tools/ci.mix                     @markc
 /tools/ci/                        @markc
+/tools/prefix_gate.mix            @markc
+/tools/prefix_baseline.mix        @markc
+/tools/prefix.conf.mix            @markc
+/tools/prefix-baseline.json       @markc
+/tools/test-support/prefix_gate/  @markc
+/tools/foreign_gate.mix           @markc
+/tools/foreign.conf.mix           @markc
 /deny.toml                        @markc
 
 # mixd and its network personalities

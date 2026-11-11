@@ -96,6 +96,10 @@ jobs:
       - run: target/debug/mix tools/ci.mix viud
       - run: target/debug/mix tools/ci.mix foreign
       - run: target/debug/mix tools/ci.mix prefix
+        env:
+          # On a push the baseline is compared with the pushed range's old
+          # tip (used only when it is an ancestor of HEAD); empty on PRs.
+          PREFIX_GATE_BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
       - run: target/debug/mix tools/ci.mix mix-lint
 
   test:

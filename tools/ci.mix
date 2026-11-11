@@ -186,10 +186,15 @@ fn stage_env()
       exit(1)
     end
   end
-  -- Finding identities and deliberate negative test vectors are metadata,
-  -- not variable consumers. Tool recognisers remain covered by the registry's
-  -- explicit ^tools/.*\.mix$ old-name allowlist (including .conf.mix).
-  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!tools/prefix-baseline.json", ":!tools/test-support/prefix_gate", ":!" + $reg_path]
+  -- Finding identities, the prefix gate's own recognisers and the exact
+  -- prefix-gate fixtures that spell a MIX_ name (first grep) or an old
+  -- spelling (second grep) are metadata, not variable consumers. Every other
+  -- file under tools/test-support/prefix_gate stays in both greps.
+  $gate_files = [":!tools/prefix-baseline.json", ":!tools/prefix_gate.mix", ":!tools/prefix.conf.mix"]
+  $fixtures = ":!tools/test-support/prefix_gate/"
+  $name_fixtures = map(["comment.txt", "digit.txt", "doc-word.txt", "env.txt", "include-data.txt"], fn($f) = $fixtures + $f)
+  $old_fixtures = map(["bare-opt.txt", "cases.conf.mix", "legacy-boundaries.txt", "legacy-names.txt", "recogniser.txt", "wrong-prefix.txt"], fn($f) = $fixtures + $f)
+  $excluded = concat(concat(["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path], $gate_files), $name_fixtures)
   $used = {}
   $prefix_used = {}
   for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
@@ -218,7 +223,8 @@ fn stage_env()
       push($bad, "unlisted prefix " + $n)
     end
   end
-  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!tools/prefix-baseline.json", ":!tools/test-support/prefix_gate", ":!" + $reg_path])), "\n")
+  $old_excluded = concat(concat(["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path], $gate_files), $old_fixtures)
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], $old_excluded)), "\n")
     if $f != "" then
       $ok = false
       for $re in $reg.mixos_allowed ?? []
