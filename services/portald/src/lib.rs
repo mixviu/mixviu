@@ -24,14 +24,13 @@ pub async fn run(
     binding: Binding,
     address: String,
     state_dir: Option<PathBuf>,
-    screencast: Option<screencast::consent::Policy>,
-    screencast_max_framerate: screencast::MaxFramerate,
+    screencast: Option<screencast::Config>,
 ) -> anyhow::Result<()> {
     // The feed registers its command manifest when it starts. Establish the
     // instance's consent surface before spawning it, matching live::serve's
     // installation even if the feed wins the startup race.
-    if let Some(policy) = screencast {
-        screencast::consent::install(screencast::consent::Consent::new(policy));
+    if let Some(config) = screencast {
+        screencast::consent::install(screencast::consent::Consent::new(config.consent));
     }
     let (projections, received) = mpsc::channel(8);
     let status = status::shared();
@@ -61,7 +60,6 @@ pub async fn run(
             state_dir,
             binding,
             screencast,
-            screencast_max_framerate,
             filechooser: Some((chooser, chooser_outcomes)),
         },
         received,

@@ -20,17 +20,31 @@ use tokio::task::JoinHandle;
 use zbus::Message;
 use zbus::zvariant::{OwnedValue, Value};
 
+/// The environment variable, set by the test that spawned this process.
+fn env_value(name: &str) -> Option<String> {
+    paths::env::raw(name).map(|value| value.into_string().unwrap())
+}
+
+/// The production binary with no installed defaults: an empty prefix (no
+/// `env.mx`) and none of portald's settings in the environment.
+fn bare_portald(prefix: &std::path::Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_portald"));
+    command
+        .env(paths::env::PREFIX, prefix)
+        .env_remove(paths::env::PORTALD_CONSENT)
+        .env_remove(paths::env::PORTALD_MAX_FRAMERATE)
+        .env_remove(paths::env::PORTALD_PIPEWIRE_REMOTE)
+        .env_remove(paths::env::PIPEWIRE_REMOTE)
+        .env_remove(paths::env::STATE_DIRECTORY)
+        .stdin(Stdio::null());
+    command
+}
+
 #[cfg(not(feature = "screencast"))]
 #[test]
 fn feature_disabled_binary_refuses_screencast_before_starting() {
-    let binary = std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("portald");
-    let output = Command::new(binary)
+    let prefix = tempfile::tempdir().unwrap();
+    let output = bare_portald(prefix.path())
         .args(["serve", "--instance", "fixture", "--screencast"])
         .output()
         .unwrap();
@@ -40,12 +54,93 @@ fn feature_disabled_binary_refuses_screencast_before_starting() {
     );
 }
 
+/// With `--screencast`, every ScreenCast setting is resolved and checked at
+/// start-up, before the session bus is touched, and a failure names the
+/// variable. The empty prefix has no `env.mx`, so nothing is installed.
+#[cfg(feature = "screencast")]
+#[test]
+fn screencast_settings_are_checked_at_startup_and_named() {
+    let prefix = tempfile::tempdir().unwrap();
+    let run = |env: &[(&str, &str)]| {
+        let mut command = bare_portald(prefix.path());
+        command
+            .args(["serve", "--instance", "fixture", "--screencast"])
+            .env_remove("DBUS_SESSION_BUS_ADDRESS");
+        for (name, value) in env {
+            command.env(name, value);
+        }
+        let output = command.output().unwrap();
+        assert!(!output.status.success());
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    use paths::env::{PORTALD_CONSENT, PORTALD_MAX_FRAMERATE, PORTALD_PIPEWIRE_REMOTE};
+    let unset = |name: &str| format!("--screencast: {name} is not set and has no installed default");
+    let consent = (PORTALD_CONSENT, "allow");
+    let rate = (PORTALD_MAX_FRAMERATE, "30");
+    let remote = (PORTALD_PIPEWIRE_REMOTE, "pipewire-0");
+    let stderr = run(&[]);
+    assert!(stderr.contains(&unset(PORTALD_CONSENT)), "{stderr}");
+    let stderr = run(&[consent]);
+    assert!(stderr.contains(&unset(PORTALD_MAX_FRAMERATE)), "{stderr}");
+    let stderr = run(&[consent, (PORTALD_MAX_FRAMERATE, "0")]);
+    assert!(
+        stderr.contains(&format!("{PORTALD_MAX_FRAMERATE}=\"0\"")),
+        "{stderr}"
+    );
+    let stderr = run(&[(PORTALD_CONSENT, "maybe"), rate]);
+    assert!(
+        stderr.contains(&format!("{PORTALD_CONSENT}=\"maybe\"")),
+        "{stderr}"
+    );
+    // The PipeWire remote is caught here too, not at the first OpenPipeWireRemote.
+    let stderr = run(&[consent, rate]);
+    assert!(stderr.contains(&unset(PORTALD_PIPEWIRE_REMOTE)), "{stderr}");
+    // The standard PIPEWIRE_REMOTE stands in for the installed name.
+    let stderr = run(&[consent, rate, (paths::env::PIPEWIRE_REMOTE, "pipewire-0")]);
+    assert!(stderr.contains("DBUS_SESSION_BUS_ADDRESS is not set"), "{stderr}");
+    // All three present: start-up gets past the ScreenCast checks.
+    let stderr = run(&[consent, rate, remote]);
+    assert!(stderr.contains("DBUS_SESSION_BUS_ADDRESS is not set"), "{stderr}");
+}
+
+/// Settings and FileChooser need no installed defaults: with no `env.mx`, no
+/// `--profile` and no portald setting in the environment, the production
+/// binary serves ReadOne. Runs in both feature configurations.
+#[tokio::test]
+async fn serves_settings_without_any_installed_defaults() -> anyhow::Result<()> {
+    let prefix = tempfile::tempdir()?;
+    let broker = test_broker::Broker::start();
+    let bus = PrivateBus::start()?;
+    let connection = client(&bus).await?;
+    let proxy = portal_proxy(&connection).await?;
+    let mut process = Process(
+        bare_portald(prefix.path())
+            .args(["serve", "--instance", "host"])
+            .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
+            .env(paths::env::NODED_URL, &broker.url)
+            .env_remove("XDG_CONFIG_HOME")
+            .spawn()?,
+    );
+    let value = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(reply) = proxy.call_method("Read", &(NAMESPACE, COLOR_SCHEME)).await {
+                return Ok::<_, anyhow::Error>(reply.body().deserialize::<OwnedValue>()?);
+            }
+            anyhow::ensure!(process.0.try_wait()?.is_none(), "production portald exited");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await??;
+    assert_eq!(innermost(&value), &Value::U32(1), "defaults serve dark");
+    Ok(())
+}
+
 /// Exercise production startup, registration and command dispatch. Each mode
 /// runs in a fresh process because installed consent is intentionally permanent.
 #[test]
 fn startup_help_matches_screencast_dispatch() {
-    const MODE: &str = paths::env::PORTALD_TEST_SCREENCAST;
-    if let Ok(mode) = paths::env::setting(MODE) {
+    const MODE: &str = paths::env::test::TEST_PORTALD_SCREENCAST;
+    if let Some(mode) = env_value(MODE) {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -58,14 +153,16 @@ fn startup_help_matches_screencast_dispatch() {
                         instance: "host".into(),
                         profile: "default".into(),
                     },
-                    paths::env::setting(paths::env::PORTALD_TEST_DBUS).unwrap(),
+                    env_value(paths::env::test::TEST_PORTALD_DBUS).unwrap(),
                     None,
-                    enabled.then_some(portald::screencast::consent::Policy::Prompt),
-                    Default::default(),
+                    enabled.then(|| portald::screencast::Config {
+                        consent: portald::screencast::consent::Policy::Prompt,
+                        max_framerate: "30".parse().unwrap(),
+                    }),
                 ));
                 let caller = bus::native_client::SupervisedClient::connect_options(
                     "portal-startup-test",
-                    &paths::env::setting(paths::env::NODED_URL).unwrap(),
+                    &env_value(paths::env::NODED_URL).unwrap(),
                 )
                 .connect()
                 .await
@@ -163,7 +260,7 @@ fn startup_help_matches_screencast_dispatch() {
             ])
             .env(MODE, mode)
             .env(paths::env::NODED_URL, &broker.url)
-            .env(paths::env::PORTALD_TEST_DBUS, &dbus.address)
+            .env(paths::env::test::TEST_PORTALD_DBUS, &dbus.address)
             .output()
             .unwrap();
         assert!(
@@ -264,7 +361,6 @@ fn spawn_portal(
             state_dir,
             binding: projection("a", 1, "dark").binding,
             screencast: None,
-            screencast_max_framerate: Default::default(),
         },
         received,
         shared.clone(),
@@ -637,21 +733,13 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         let bus = PrivateBus::start()?;
         let connection = client(&bus).await?;
         let proxy = portal_proxy(&connection).await?;
-        let mut command = Command::new(
-            std::env::current_exe()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .join("portald"),
-        );
+        let mut command = Command::new(env!("CARGO_BIN_EXE_portald"));
         command
             .args(["serve", "--instance", "host", "--profile", profile])
             .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
             .env(paths::env::NODED_URL, &broker.url)
             .env("XDG_CONFIG_HOME", &gtk_home)
-            .env_remove("STATE_DIRECTORY")
+            .env_remove(paths::env::STATE_DIRECTORY)
             .stdin(Stdio::null());
         if cache {
             command.arg("--state-dir").arg(dir.path());
@@ -736,20 +824,12 @@ async fn losing_the_session_bus_exits_non_zero_for_the_restart() -> anyhow::Resu
     let connection = client(&bus).await?;
     let proxy = portal_proxy(&connection).await?;
     let mut process = Process(
-        Command::new(
-            std::env::current_exe()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .join("portald"),
-        )
+        Command::new(env!("CARGO_BIN_EXE_portald"))
         .args(["serve", "--instance", "host", "--profile", "default"])
         .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
         .env(paths::env::NODED_URL, &broker.url)
         .env_remove("XDG_CONFIG_HOME")
-        .env_remove("STATE_DIRECTORY")
+        .env_remove(paths::env::STATE_DIRECTORY)
         .stdin(Stdio::null())
         .spawn()?,
     );
@@ -827,7 +907,6 @@ impl NativePortal {
                 state_dir: None,
                 binding,
                 screencast: None,
-                screencast_max_framerate: Default::default(),
             },
             received,
             shared.clone(),

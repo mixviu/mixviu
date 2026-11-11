@@ -91,9 +91,7 @@ fn stage_test($mix)
   -- platform's crates in the cache.
   ensure_mix($mix)
   $abs = realpath($mix)
-  $staging = require("stage_env.mix")
-  $prefix = $staging.create()
-  $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs, MIX_PREFIX: $prefix}
+  $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
@@ -207,8 +205,20 @@ fn stage_env()
       push($bad, "unregistered " + $n)
     end
   end
+  -- A registered standard name (not MIX_*) is used only where code reads it:
+  -- its spelling or its paths::env constant in Rust or Mix source outside
+  -- env_names.rs, which merely declares it.
+  $consts = {}
+  for $m in re_find(read_file("libraries/paths/src/env_names.rs"), "pub const ([A-Z0-9_]+): &str = \"([A-Z0-9_]+)\";")
+    $consts[$m.groups[1]] = $m.groups[0]
+  end
   for $n in sort(keys($listed))
-    if not starts_with($n, "MIX_") and git_grep(["-l", "-F", "-w", $n, "--", "libraries/paths/src/env_names.rs"]) != "" then $used[$n] = true end
+    if not starts_with($n, "MIX_") then
+      $words = ["-e", $n]
+      if has_key($consts, $n) and $consts[$n] != $n then $words = concat($words, ["-e", $consts[$n]]) end
+      $sites = git_grep(concat(["-l", "-F", "-w"], $words, ["--", "*.rs", "*.mix", ":!vendor", ":!libraries/paths/src/env_names.rs"]))
+      if trim($sites) != "" then $used[$n] = true end
+    end
     if not has_key($used, $n) then
       push($bad, "registered but unused " + $n)
     end
@@ -268,8 +278,9 @@ end
 fn stage_foreign($mix)
   ensure_mix($mix)
   run_step(["cargo", "build", "--locked", "-p", "mixd"])
-  run_step([$mix, "tools/foreign_admission_test.mix"])
-  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix), "--elf", realpath("target/debug/mixd")])
+  run_step([$mix, "tools/foreign_admission_test.mix", "--cargo"])
+  -- Both strict binaries: the gate names each one it scanned and fails on fewer.
+  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix), "--elf", realpath("target/debug/mixd"), "--min-elf", "2"])
 end
 
 fn stage_mix_lint($mix)

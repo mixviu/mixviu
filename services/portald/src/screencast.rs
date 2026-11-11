@@ -32,6 +32,15 @@ pub const VERSION: u32 = 5;
 pub const SOURCE_MONITOR: u32 = 1;
 pub const CURSOR_HIDDEN: u32 = 1;
 pub const CURSOR_EMBEDDED: u32 = 2;
+/// What `--screencast` serves with. `portald serve` resolves both from its
+/// flags or the installed settings (`MIX_PORTALD_CONSENT`,
+/// `MIX_PORTALD_MAX_FRAMERATE`) at start-up; there is no built-in default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Config {
+    pub consent: consent::Policy,
+    pub max_framerate: MaxFramerate,
+}
+
 /// A validated frame-rate ceiling offered to consumers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MaxFramerate(u32);
@@ -39,15 +48,6 @@ pub struct MaxFramerate(u32);
 impl MaxFramerate {
     pub fn get(self) -> u32 {
         self.0
-    }
-}
-
-impl Default for MaxFramerate {
-    fn default() -> Self {
-        paths::env::setting(paths::env::PORTALD_MAX_FRAMERATE)
-            .expect("installed portal frame-rate setting")
-            .parse()
-            .expect("valid portal frame-rate setting")
     }
 }
 

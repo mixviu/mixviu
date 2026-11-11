@@ -10,16 +10,23 @@
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
-/// The PipeWire socket, resolved as libpipewire resolves it: an absolute
-/// `PIPEWIRE_REMOTE`, else `PIPEWIRE_REMOTE` (default `pipewire-0`) in
-/// `PIPEWIRE_RUNTIME_DIR`, then `XDG_RUNTIME_DIR`.
-pub fn socket_path() -> anyhow::Result<PathBuf> {
-    let name = match paths::env::raw(paths::env::PIPEWIRE_REMOTE) {
+/// The PipeWire remote name: `PIPEWIRE_REMOTE`, else the installed
+/// `MIX_PORTALD_PIPEWIRE_REMOTE` (`pipewire-0`). `portald serve --screencast`
+/// checks it at start-up, so a missing default fails there, not at first use.
+pub fn name() -> anyhow::Result<String> {
+    match paths::env::raw(paths::env::PIPEWIRE_REMOTE) {
         Some(value) => value
             .into_string()
-            .map_err(|_| anyhow::anyhow!("PIPEWIRE_REMOTE is not UTF-8"))?,
-        None => paths::env::setting(paths::env::PORTALD_PIPEWIRE_REMOTE)?,
-    };
+            .map_err(|_| anyhow::anyhow!("PIPEWIRE_REMOTE is not UTF-8")),
+        None => Ok(paths::env::setting(paths::env::PORTALD_PIPEWIRE_REMOTE)?),
+    }
+}
+
+/// The PipeWire socket, resolved as libpipewire resolves it: an absolute
+/// remote [`name`], else the name in `PIPEWIRE_RUNTIME_DIR`, then
+/// `XDG_RUNTIME_DIR`.
+pub fn socket_path() -> anyhow::Result<PathBuf> {
+    let name = name()?;
     if name.starts_with('/') {
         return Ok(PathBuf::from(name));
     }

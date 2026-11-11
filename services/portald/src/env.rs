@@ -16,7 +16,13 @@ pub fn session_address() -> anyhow::Result<String> {
     Ok(address)
 }
 
-/// The portal cache follows the selected paths state root.
-pub fn state_directory() -> anyhow::Result<PathBuf> {
-    paths::resolve("mix:var/portald").map_err(anyhow::Error::msg)
+/// The first directory systemd provides through `StateDirectory=`. Without
+/// one (and without `--state-dir`) the portal runs cache-less.
+pub fn state_directory() -> Option<PathBuf> {
+    paths::env::raw(paths::env::STATE_DIRECTORY)?
+        .into_string()
+        .ok()?
+        .split(':')
+        .find(|part| !part.is_empty())
+        .map(PathBuf::from)
 }

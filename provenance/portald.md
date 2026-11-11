@@ -12,11 +12,18 @@ dependencies. The protocol implementation moved to `screencast/enabled.rs`;
 FileChooser's shared request/handle and caller identity helpers remain available
 without ScreenCast. A build without the feature refuses `--screencast`.
 
-Settings profile, consent policy, frame-rate ceiling and PipeWire remote name
-come from registered installed defaults. Environment access uses `paths::env`;
-cache paths use the paths state root. The unit uses layout placeholders and an
-explicit per-session cache path, with no systemd implicit state/runtime roots.
-The service account is `mix`. The template manifest includes the unit.
+With `--screencast`, the consent policy, frame-rate ceiling and PipeWire
+remote name come from flags or registered installed defaults
+(`MIX_PORTALD_*`), all checked at start-up; Settings and FileChooser read no
+installed setting and start without `env.mx`. The settings profile defaults
+to `settings::follow::PROFILE`, the profile every settings client follows.
+Environment access uses `paths::env`. The cache directory is `--state-dir`,
+else `STATE_DIRECTORY` as in the source, else none (cache-less). The unit
+uses layout placeholders and passes `--state-dir @{var}/portald`, which
+`units/portald.tmpfiles.conf` creates for the `mix` user (no `StateDirectory=`,
+which is fixed under systemd's state root, and no privileged pre-step). The service
+account is `mix`. The template manifest includes the unit and the tmpfiles
+snippet.
 
 PipeWire 0.10.1 is pinned and admitted only for portald. Its native crates are
 not strict-crate allowlist entries. On the CBC worker, libspa's build script
@@ -63,13 +70,16 @@ in for visual chooser acceptance. Rust FileChooser tests use the test broker.
 
 The restart-recovery Mix script needs a systemd user manager and creates an
 isolated transient unit and private D-Bus. Its authority endpoint is explicitly
-offline, and its layout/defaults live in a temporary prefix. It is exercised
+offline, and it needs no installed defaults. It is exercised
 by tools/portald_check.mix on the worker; it must never be pointed at a
 running desktop/service. No desktop,
 VT, install or production service action is part of this derivation.
 
 The source also patches PipeWire 0.10.1 with Buffer::find_meta_mut, required
 for producer PTS/sequence metadata. The same frozen vendor/pipewire tree is
-retained, with its upstream archive checksum, patch explanation and MIT licence.
-No PipeWire version or feature change is used to replace that patch. The old
-files-spec documentation assertion now checks the imported portal contract page.
+retained, with its upstream archive checksum, the patch itself
+(`vendor/pipewire/mixviu.patch`), the patched file's checksum and the MIT
+licence. No PipeWire version or feature change is used to replace that patch.
+The old files-spec documentation assertion (docs/docs/spec/files/README.md,
+not carried by MixViu) now checks the imported portal page for the same
+served split, including the negative "Nothing here is served" check.

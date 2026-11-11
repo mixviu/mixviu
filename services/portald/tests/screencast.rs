@@ -228,8 +228,10 @@ async fn screencast_contract() {
                 instance: "host".into(),
                 profile: "default".into(),
             },
-            screencast: Some(portald::screencast::consent::Policy::Prompt),
-            screencast_max_framerate: Default::default(),
+            screencast: Some(portald::screencast::Config {
+                consent: portald::screencast::consent::Policy::Prompt,
+                max_framerate: "30".parse().unwrap(),
+            }),
         },
         received,
         status::shared(),

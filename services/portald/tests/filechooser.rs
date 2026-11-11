@@ -332,7 +332,6 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
             state_dir: None,
             binding,
             screencast: None,
-            screencast_max_framerate: Default::default(),
             filechooser: Some((bridge, outcome_rx)),
         },
         received,

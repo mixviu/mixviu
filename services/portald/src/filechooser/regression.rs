@@ -505,8 +505,17 @@ async fn cancel_retry_budget_is_bounded() {
 
 #[test]
 fn spec_header_describes_the_served_provider_window_and_portal() {
+    // The frozen test read docs/docs/spec/files/README.md, which MixViu does
+    // not carry; the portald page states the same split. Line wrapping is
+    // not content, so compare with whitespace collapsed.
     let spec = include_str!("../../../../docs/portald/README.md");
-    assert!(spec.contains("FileChooser version 4"));
-    assert!(spec.contains("files.choose"));
-    assert!(spec.contains("org.freedesktop.portal.Desktop"));
+    let words = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let header = words(spec.split("\n## ").next().unwrap());
+    assert!(header.contains("FileChooser version 4"), "{header}");
+    assert!(header.contains("It owns `org.freedesktop.portal.Desktop`"));
+    let chooser = words(spec.split("\n## File chooser").nth(1).unwrap().split("\n## ").next().unwrap());
+    assert!(chooser.contains("`org.freedesktop.portal.FileChooser`, version 4, is served on the same Desktop object"));
+    assert!(chooser.contains("forward to `files.choose`, served by `dopus --choose-service`"));
+    // The provider and window are served: the old "not served" status is gone.
+    assert!(!words(spec).contains("Nothing here is served"));
 }

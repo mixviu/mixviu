@@ -156,8 +156,9 @@ nothing to capture, for example no compositor or no output with a mode.
 
 Nothing is captured until the request is granted, in this order:
 
-1. **Policy.** `--screencast-consent allow` grants everything. Use it only for
-   headless and test sessions. The default is `prompt`.
+1. **Policy.** `--screencast-consent allow` (or `MIX_PORTALD_CONSENT=allow`)
+   grants everything. Use it only for headless and test sessions. The
+   installed default is `prompt`.
 2. **A standing grant** that covers the caller's app (its process name, as in
    `/proc/<pid>/comm`, so at most 15 bytes). This is how automation shares
    the screen with nobody at the desk. A process name says which app is
@@ -238,15 +239,26 @@ portald serve --instance <name> [--profile default] [--state-dir DIR] [--screenc
 ```
 
 It needs `DBUS_SESSION_BUS_ADDRESS`. `--state-dir` defaults to
-the paths state root (`mix:var/portald`); the unit passes a per-session `--state-dir`. With
-`--screencast` it also needs `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` for the
-compositor, and `PIPEWIRE_RUNTIME_DIR` / `PIPEWIRE_REMOTE` (or
-`XDG_RUNTIME_DIR`) for PipeWire. The binary links the system `libpipewire-0.3`.
+`$STATE_DIRECTORY`; with neither the portal runs cache-less. The unit passes
+`--state-dir @{var}/portald`, which `portald.tmpfiles.conf` creates for the
+`mix` user. Settings and FileChooser read no installed setting, so they start
+without `env.mx`.
+
+With `--screencast` it also needs `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` for
+the compositor, and `PIPEWIRE_RUNTIME_DIR` / `PIPEWIRE_REMOTE` (or
+`XDG_RUNTIME_DIR`) for PipeWire. The consent policy, the frame-rate ceiling
+and the PipeWire remote name come from the flags or the installed settings
+`MIX_PORTALD_CONSENT` (`prompt`), `MIX_PORTALD_MAX_FRAMERATE` (`30`) and
+`MIX_PORTALD_PIPEWIRE_REMOTE` (`pipewire-0`, used when `PIPEWIRE_REMOTE` is
+unset). All three are checked at start-up, and a missing or invalid one stops
+the service with a message naming it. The session environment file can set
+them per session. The binary links the system `libpipewire-0.3`.
 
 `--screencast-max-framerate N` sets the frame-rate ceiling offered to cast
 consumers, from 1 through 120 Hz; invalid values are refused with
-`SCREENCAST_MAX_FRAMERATE`. The default stays 30. A headless desk may pass 60
-in a unit drop-in; its own PipeWire and compositor refresh must support it.
+`SCREENCAST_MAX_FRAMERATE`. A headless desk may set 60 in its session
+environment file or a unit drop-in; its own PipeWire and compositor refresh
+must support it.
 
 ## Status for agents
 

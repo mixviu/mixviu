@@ -9,6 +9,8 @@ Description=MixViu desktop portal (Settings, ScreenCast) for session %i
 Wants=settingsd@%i.service
 After=noded@%i.service noded.service settingsd@%i.service
 PartOf=session@%i.target
+# The cache root may sit on its own mount, as StateDirectory= would order.
+RequiresMountsFor=@{var}/portald
 # Bus downtime must never exhaust restarts: portald exits on bus loss and must keep retrying.
 StartLimitIntervalSec=0
 
@@ -17,9 +19,12 @@ Type=simple
 User=mix
 # Keeps DBUS_SESSION_BUS_ADDRESS: the portal serves the session bus itself.
 EnvironmentFile=@{etc}/session/%i.env
-# Replace StateDirectory's ownership setup at the rendered state root.
-ExecStartPre=+/usr/bin/install -d -o mix -g mix -m 0700 -- @{var}/portald/%i
-ExecStart=@{prefix}/bin/portald serve --instance %H --screencast --state-dir @{var}/portald/%i
+# The appearance cache lives at the rendered state root, in the directory
+# portald.tmpfiles.conf creates for the service user (StateDirectory= would
+# put it under systemd's state root, not the layout's). No privileged
+# pre-step; the cache is partitioned by --instance and profile below it, as
+# it was with StateDirectory=portald.
+ExecStart=@{prefix}/bin/portald serve --instance %H --screencast --state-dir @{var}/portald
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure

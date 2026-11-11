@@ -8,7 +8,6 @@ use crate::appearance::{NAMESPACE, Projection, Values};
 use crate::cache;
 use crate::portal::{self, Portal, PortalSignals};
 use crate::screencast;
-use crate::screencast::consent::Policy;
 #[cfg(feature = "screencast")]
 use crate::screencast::consent::{self, Consent};
 #[cfg(feature = "screencast")]
@@ -30,9 +29,9 @@ pub struct Config {
     pub state_dir: Option<PathBuf>,
     pub binding: Binding,
     /// Also serve `org.freedesktop.portal.ScreenCast` from viud screencopy,
-    /// deciding each Start with this consent policy. `None`: not served.
-    pub screencast: Option<Policy>,
-    pub screencast_max_framerate: screencast::MaxFramerate,
+    /// deciding each Start with this consent policy and offering this
+    /// frame-rate ceiling. `None`: not served.
+    pub screencast: Option<screencast::Config>,
 }
 
 /// The evidence identity of the values held. Ordering within one incarnation
@@ -169,11 +168,11 @@ pub async fn serve(
     let builder = zbus::connection::Builder::address(config.address.as_str())?
         .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?;
     #[cfg(feature = "screencast")]
-    let builder = if let Some(policy) = config.screencast {
-        consent::install(Consent::new(policy));
+    let builder = if let Some(screencast) = config.screencast {
+        consent::install(Consent::new(screencast.consent));
         builder.serve_at(
             portal::OBJECT_PATH,
-            ScreenCast::with_max_framerate(sessions.clone(), config.screencast_max_framerate),
+            ScreenCast::with_max_framerate(sessions.clone(), screencast.max_framerate),
         )?
     } else {
         builder
@@ -293,7 +292,6 @@ mod tests {
             state_dir: Some(dir.path().join("state")),
             binding: projection("inc", 1, "dark").binding,
             screencast: None,
-            screencast_max_framerate: screencast::MaxFramerate::default(),
         };
         let cached = projection("inc", 1, "dark");
         cache::save(config.state_dir.as_deref().unwrap(), &cached).unwrap();

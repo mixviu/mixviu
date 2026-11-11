@@ -21,9 +21,12 @@ enum Command {
     Serve {
         #[arg(long)]
         instance: String,
-        #[arg(long)]
-        profile: Option<String>,
-        /// Holds the validated appearance cache. Defaults to the paths state root.
+        /// The settings profile followed. Defaults to the desktop profile
+        /// every settings client follows.
+        #[arg(long, default_value = settings::follow::PROFILE)]
+        profile: String,
+        /// Holds the validated appearance cache. Defaults to $STATE_DIRECTORY;
+        /// without either the portal runs cache-less.
         #[arg(long)]
         state_dir: Option<PathBuf>,
         /// Also serve org.freedesktop.portal.ScreenCast (needs a compositor
@@ -32,13 +35,44 @@ enum Command {
         screencast: bool,
         /// How screen-share requests are decided: `prompt` asks the person
         /// (or an agent over the Bus); `allow` grants every request, for
-        /// headless and test sessions only.
+        /// headless and test sessions only. Default: MIX_PORTALD_CONSENT.
         #[arg(long)]
         screencast_consent: Option<portald::screencast::consent::Policy>,
         /// Frame-rate ceiling offered to ScreenCast consumers (1..=120).
+        /// Default: MIX_PORTALD_MAX_FRAMERATE.
         #[arg(long)]
         screencast_max_framerate: Option<portald::screencast::MaxFramerate>,
     },
+}
+
+/// A ScreenCast setting from the environment or the installed defaults,
+/// parsed. Every failure names the variable.
+fn screencast_setting<T: std::str::FromStr<Err = String>>(name: &str) -> anyhow::Result<T> {
+    let value = paths::env::setting(name).map_err(|error| anyhow::anyhow!("--screencast: {error}"))?;
+    value
+        .parse()
+        .map_err(|error| anyhow::anyhow!("--screencast: {name}={value:?}: {error}"))
+}
+
+/// Everything `--screencast` needs, resolved and checked before anything
+/// starts. Settings and FileChooser read none of it.
+fn screencast_config(
+    consent: Option<portald::screencast::consent::Policy>,
+    max_framerate: Option<portald::screencast::MaxFramerate>,
+) -> anyhow::Result<portald::screencast::Config> {
+    let consent = match consent {
+        Some(value) => value,
+        None => screencast_setting(paths::env::PORTALD_CONSENT)?,
+    };
+    let max_framerate = match max_framerate {
+        Some(value) => value,
+        None => screencast_setting(paths::env::PORTALD_MAX_FRAMERATE)?,
+    };
+    portald::screencast::remote::name().map_err(|error| anyhow::anyhow!("--screencast: {error}"))?;
+    Ok(portald::screencast::Config {
+        consent,
+        max_framerate,
+    })
 }
 
 fn main() -> anyhow::Result<()> {
@@ -59,31 +93,20 @@ fn main() -> anyhow::Result<()> {
         !screencast || cfg!(feature = "screencast"),
         "built without the screencast feature"
     );
-    let profile = match profile {
-        Some(value) => value,
-        None => paths::env::setting(paths::env::PORTALD_PROFILE)?,
-    };
-    let screencast_consent = match screencast_consent {
-        Some(value) => value,
-        None => paths::env::setting(paths::env::PORTALD_CONSENT)?
-            .parse()
-            .map_err(anyhow::Error::msg)?,
-    };
-    let screencast_max_framerate = match screencast_max_framerate {
-        Some(value) => value,
-        None => paths::env::setting(paths::env::PORTALD_MAX_FRAMERATE)?
-            .parse()
-            .map_err(anyhow::Error::msg)?,
+    let screencast = if screencast {
+        Some(screencast_config(
+            screencast_consent,
+            screencast_max_framerate,
+        )?)
+    } else {
+        None
     };
     let binding = Binding { instance, profile };
     binding
         .validate()
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.message))?;
     let address = portald::env::session_address()?;
-    let state_dir = Some(match state_dir {
-        Some(path) => path,
-        None => portald::env::state_directory()?,
-    });
+    let state_dir = state_dir.or_else(portald::env::state_directory);
     let runtime = tokio::runtime::Builder::new_multi_thread()
         // This I/O daemon needs a small fixed runtime; creating one worker per
         // CPU would make process startup depend on the host's core count.
@@ -94,8 +117,7 @@ fn main() -> anyhow::Result<()> {
         binding,
         address,
         state_dir,
-        screencast.then_some(screencast_consent),
-        screencast_max_framerate,
+        screencast,
     ));
     // A blocking task stuck on a wedged compositor (ScreenCast) must not hold
     // up exit: give the rest a moment, then leave.
@@ -109,13 +131,18 @@ mod tests {
 
     #[test]
     fn screencast_framerate_default_and_range() {
+        // No built-in rate: an absent flag leaves the choice to the installed
+        // MIX_PORTALD_MAX_FRAMERATE, read only with --screencast.
         let Command::Serve {
             screencast_max_framerate,
+            profile,
             ..
         } = Cli::try_parse_from(["portald", "serve", "--instance", "test"])
             .unwrap()
             .command;
-        assert_eq!(screencast_max_framerate.unwrap_or_default().get(), 30);
+        assert_eq!(screencast_max_framerate, None);
+        assert_eq!(profile, settings::follow::PROFILE);
+        assert_eq!("30".parse::<portald::screencast::MaxFramerate>().unwrap().get(), 30);
         for rate in ["1", "60", "120"] {
             assert!(
                 Cli::try_parse_from([

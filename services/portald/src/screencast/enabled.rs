@@ -17,10 +17,7 @@ pub struct ScreenCast {
 }
 
 impl ScreenCast {
-    pub fn new(sessions: Sessions) -> Self {
-        Self::with_max_framerate(sessions, MaxFramerate::default())
-    }
-
+    // No `new` with a default rate: the ceiling is always chosen at start-up.
     pub fn with_max_framerate(sessions: Sessions, max_framerate: MaxFramerate) -> Self {
         Self {
             sessions,

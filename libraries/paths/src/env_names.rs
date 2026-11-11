@@ -1,13 +1,3 @@
-pub const PORTALD_TEST_DBUS: &str = "PORTALD_TEST_DBUS";
-pub const PORTALD_TEST_SCREENCAST: &str = "PORTALD_TEST_SCREENCAST";
-pub const DBUS_SESSION_BUS_ADDRESS: &str = "DBUS_SESSION_BUS_ADDRESS";
-pub const XDG_RUNTIME_DIR: &str = "XDG_RUNTIME_DIR";
-pub const PIPEWIRE_RUNTIME_DIR: &str = "PIPEWIRE_RUNTIME_DIR";
-pub const PIPEWIRE_REMOTE: &str = "PIPEWIRE_REMOTE";
-pub const PORTALD_PIPEWIRE_REMOTE: &str = "MIX_PORTALD_PIPEWIRE_REMOTE";
-pub const PORTALD_MAX_FRAMERATE: &str = "MIX_PORTALD_MAX_FRAMERATE";
-pub const PORTALD_CONSENT: &str = "MIX_PORTALD_CONSENT";
-pub const PORTALD_PROFILE: &str = "MIX_PORTALD_PROFILE";
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Environment names registered in etc/env.conf.mix.
 pub const AGENT_CLI_EXE: &str = "MIX_AGENT_CLI_EXE";
@@ -48,6 +38,9 @@ pub const NODED_SPEC_DIR: &str = "MIX_NODED_SPEC_DIR";
 pub const NODED_SPEC_RELEASE_DIR: &str = "MIX_NODED_SPEC_RELEASE_DIR";
 pub const NODED_SPEC_RELEASE_SHA256: &str = "MIX_NODED_SPEC_RELEASE_SHA256";
 pub const NODED_URL: &str = "MIX_NODED_URL";
+pub const PORTALD_CONSENT: &str = "MIX_PORTALD_CONSENT";
+pub const PORTALD_MAX_FRAMERATE: &str = "MIX_PORTALD_MAX_FRAMERATE";
+pub const PORTALD_PIPEWIRE_REMOTE: &str = "MIX_PORTALD_PIPEWIRE_REMOTE";
 pub const PREFIX: &str = "MIX_PREFIX";
 pub const REMOTE_BIN: &str = "MIX_REMOTE_BIN";
 pub const REMOTE_EXE: &str = "MIX_REMOTE_EXE";
@@ -122,9 +115,16 @@ pub const EXPORTD_COSMIC_HOME: &str = "MIX_EXPORTD_COSMIC_HOME";
 pub const EXPORTD_KDE_HOME: &str = "MIX_EXPORTD_KDE_HOME";
 pub const LIB: &str = "MIX_LIB";
 
+// Standard names other software defines (D-Bus, XDG, PipeWire, systemd),
+// registered for the services that read them.
+pub const DBUS_SESSION_BUS_ADDRESS: &str = "DBUS_SESSION_BUS_ADDRESS";
+pub const PIPEWIRE_REMOTE: &str = "PIPEWIRE_REMOTE";
+pub const PIPEWIRE_RUNTIME_DIR: &str = "PIPEWIRE_RUNTIME_DIR";
+pub const STATE_DIRECTORY: &str = "STATE_DIRECTORY";
+pub const XDG_RUNTIME_DIR: &str = "XDG_RUNTIME_DIR";
+
 /// Names reserved for tests.
 pub mod test {
-pub const TEST_PORTALD_LOG_CAPTURE: &str = "MIX_TEST_PORTALD_LOG_CAPTURE";
 pub const TEST_STRICT_FONT: &str = "MIX_TEST_STRICT_FONT";
 pub const TEST_VIUD_AGENT_SEAT_ALLOW: &str = "MIX_TEST_VIUD_AGENT_SEAT_ALLOW";
 pub const PTY_TIMEOUT_SECS: &str = "MIX_PTY_TIMEOUT_SECS";
@@ -172,6 +172,9 @@ pub const TEST_NATIVE_MAIL_URL: &str = "MIX_TEST_NATIVE_MAIL_URL";
 pub const TEST_NODED_EXE: &str = "MIX_TEST_NODED_EXE";
 pub const TEST_NODED_SHA256: &str = "MIX_TEST_NODED_SHA256";
 pub const TEST_PATH_CACHE: &str = "MIX_TEST_PATH_CACHE";
+pub const TEST_PORTALD_DBUS: &str = "MIX_TEST_PORTALD_DBUS";
+pub const TEST_PORTALD_LOG_CAPTURE: &str = "MIX_TEST_PORTALD_LOG_CAPTURE";
+pub const TEST_PORTALD_SCREENCAST: &str = "MIX_TEST_PORTALD_SCREENCAST";
 pub const TEST_RECENT_BASELINE: &str = "MIX_TEST_RECENT_BASELINE";
 pub const TEST_RESERVE_HOLD_MS: &str = "MIX_TEST_RESERVE_HOLD_MS";
 pub const TEST_RESULT_TORN: &str = "MIX_TEST_RESULT_TORN";

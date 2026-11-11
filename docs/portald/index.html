@@ -364,8 +364,9 @@ nothing to capture, for example no compositor or no output with a mode.</p>
 <h3 id="consent">Consent</h3>
 <p>Nothing is captured until the request is granted, in this order:</p>
 <ol>
-<li><strong>Policy.</strong> <code>--screencast-consent allow</code> grants everything. Use it only for
-headless and test sessions. The default is <code>prompt</code>.</li>
+<li><strong>Policy.</strong> <code>--screencast-consent allow</code> (or <code>MIX_PORTALD_CONSENT=allow</code>)
+grants everything. Use it only for headless and test sessions. The
+installed default is <code>prompt</code>.</li>
 <li><strong>A standing grant</strong> that covers the caller's app (its process name, as in
 <code>/proc/&lt;pid&gt;/comm</code>, so at most 15 bytes). This is how automation shares
 the screen with nobody at the desk. A process name says which app is
@@ -435,14 +436,24 @@ it keeps <code>DBUS_SESSION_BUS_ADDRESS</code>. The unit passes <code>--screenca
     [--screencast-consent prompt|allow] [--screencast-max-framerate 30]
 </code></pre>
 <p>It needs <code>DBUS_SESSION_BUS_ADDRESS</code>. <code>--state-dir</code> defaults to
-the paths state root (<code>mix:var/portald</code>); the unit passes a per-session <code>--state-dir</code>. With
-<code>--screencast</code> it also needs <code>WAYLAND_DISPLAY</code> and <code>XDG_RUNTIME_DIR</code> for the
-compositor, and <code>PIPEWIRE_RUNTIME_DIR</code> / <code>PIPEWIRE_REMOTE</code> (or
-<code>XDG_RUNTIME_DIR</code>) for PipeWire. The binary links the system <code>libpipewire-0.3</code>.</p>
+<code>$STATE_DIRECTORY</code>; with neither the portal runs cache-less. The unit passes
+<code>--state-dir @{var}/portald</code>, which <code>portald.tmpfiles.conf</code> creates for the
+<code>mix</code> user. Settings and FileChooser read no installed setting, so they start
+without <code>env.mx</code>.</p>
+<p>With <code>--screencast</code> it also needs <code>WAYLAND_DISPLAY</code> and <code>XDG_RUNTIME_DIR</code> for
+the compositor, and <code>PIPEWIRE_RUNTIME_DIR</code> / <code>PIPEWIRE_REMOTE</code> (or
+<code>XDG_RUNTIME_DIR</code>) for PipeWire. The consent policy, the frame-rate ceiling
+and the PipeWire remote name come from the flags or the installed settings
+<code>MIX_PORTALD_CONSENT</code> (<code>prompt</code>), <code>MIX_PORTALD_MAX_FRAMERATE</code> (<code>30</code>) and
+<code>MIX_PORTALD_PIPEWIRE_REMOTE</code> (<code>pipewire-0</code>, used when <code>PIPEWIRE_REMOTE</code> is
+unset). All three are checked at start-up, and a missing or invalid one stops
+the service with a message naming it. The session environment file can set
+them per session. The binary links the system <code>libpipewire-0.3</code>.</p>
 <p><code>--screencast-max-framerate N</code> sets the frame-rate ceiling offered to cast
 consumers, from 1 through 120 Hz; invalid values are refused with
-<code>SCREENCAST_MAX_FRAMERATE</code>. The default stays 30. A headless desk may pass 60
-in a unit drop-in; its own PipeWire and compositor refresh must support it.</p>
+<code>SCREENCAST_MAX_FRAMERATE</code>. A headless desk may set 60 in its session
+environment file or a unit drop-in; its own PipeWire and compositor refresh
+must support it.</p>
 <h2 id="status-for-agents">Status for agents</h2>
 <p><code>HELP</code> returns the command manifest. The bus command <code>portald.status</code> is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
