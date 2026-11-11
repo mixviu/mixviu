@@ -33,12 +33,17 @@ fn handle_pad(state: &mut Loop, event: &TabletPadEvent) {
     // human activity and swallow waking edges before mode changes or bindings.
     use world::comp::blank::{self, Edge};
     let edge = match event {
-        TabletPadEvent::Button(e) => pad_button_edge(e.button_number(), e.button_state() == PadButtonState::Pressed),
+        TabletPadEvent::Button(e) => pad_button_edge(
+            e.button_number(),
+            e.button_state() == PadButtonState::Pressed,
+        ),
         TabletPadEvent::Ring(_) | TabletPadEvent::Strip(_) | TabletPadEvent::Dial(_) => Edge::Other,
         _ => return,
     };
     world::comp::injection::note_human_activity(state);
-    if blank::consume(state, edge) { return; }
+    if blank::consume(state, edge) {
+        return;
+    }
     let key = event.device().sysname().to_string();
     match event {
         TabletPadEvent::Button(e) => {
@@ -104,8 +109,11 @@ fn handle_pad(state: &mut Loop, event: &TabletPadEvent) {
 
 fn pad_button_edge(button: u32, pressed: bool) -> world::comp::blank::Edge {
     use world::comp::blank::{Edge, Hold};
-    if pressed { Edge::Press(Hold::PadButton(button)) }
-    else { Edge::Release(Hold::PadButton(button)) }
+    if pressed {
+        Edge::Press(Hold::PadButton(button))
+    } else {
+        Edge::Release(Hold::PadButton(button))
+    }
 }
 
 #[cfg(test)]

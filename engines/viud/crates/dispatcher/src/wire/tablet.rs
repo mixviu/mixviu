@@ -295,9 +295,15 @@ impl TabletState {
             self.revoke_tool(&owner);
         }
         let mut tools: Vec<_> = self.tools.keys().cloned().collect();
-        for owner in self.stroke_owner.iter().chain(self.cursor_owner.iter())
-            .chain(self.emulated_buttons.iter().map(|(owner, _, _)| owner)) {
-            if !tools.contains(owner) { tools.push(owner.clone()); }
+        for owner in self
+            .stroke_owner
+            .iter()
+            .chain(self.cursor_owner.iter())
+            .chain(self.emulated_buttons.iter().map(|(owner, _, _)| owner))
+        {
+            if !tools.contains(owner) {
+                tools.push(owner.clone());
+            }
         }
         for tool in tools {
             self.remove_tool(&tool, 0);
@@ -363,15 +369,29 @@ impl TabletState {
     /// Pad focus stays in place; only its already-forwarded buttons are lifted.
     pub fn cancel_input(&mut self, time: u32) -> (bool, Vec<u32>, Vec<u32>) {
         let tip = self.stroke_owner.is_some() || self.tools.values().any(|t| t.is_down);
-        let mut tool_buttons: BTreeSet<_> = self.tools.values()
-            .flat_map(|t| t.pressed_buttons.iter().copied()).collect();
+        let mut tool_buttons: BTreeSet<_> = self
+            .tools
+            .values()
+            .flat_map(|t| t.pressed_buttons.iter().copied())
+            .collect();
         tool_buttons.extend(self.emulated_buttons.iter().map(|(_, raw, _)| *raw));
-        let pad_buttons: BTreeSet<_> = self.pads.values()
-            .flat_map(|p| p.pressed_buttons.iter().copied()).collect();
+        let pad_buttons: BTreeSet<_> = self
+            .pads
+            .values()
+            .flat_map(|p| p.pressed_buttons.iter().copied())
+            .collect();
         let tools: Vec<_> = self.tools.keys().cloned().collect();
-        for tool in tools { self.tool_proximity_out(&tool, time); }
-        for pad in self.pads.values_mut() { pad.cancel_buttons(time); }
-        (tip, tool_buttons.into_iter().collect(), pad_buttons.into_iter().collect())
+        for tool in tools {
+            self.tool_proximity_out(&tool, time);
+        }
+        for pad in self.pads.values_mut() {
+            pad.cancel_buttons(time);
+        }
+        (
+            tip,
+            tool_buttons.into_iter().collect(),
+            pad_buttons.into_iter().collect(),
+        )
     }
 
     // ── `destroyed` cleanup (called from the Dispatch impls) ────────────────────
@@ -922,8 +942,11 @@ impl TabletState {
             return;
         };
         let Some(wl) = pad.focused_pad() else { return };
-        if pressed { pad.pressed_buttons.insert(button); }
-        else { pad.pressed_buttons.remove(&button); }
+        if pressed {
+            pad.pressed_buttons.insert(button);
+        } else {
+            pad.pressed_buttons.remove(&button);
+        }
         let state = if pressed {
             zwp_tablet_pad_v2::ButtonState::Pressed
         } else {
@@ -1023,7 +1046,9 @@ impl Pad {
     fn cancel_buttons(&mut self, time: u32) {
         let held = std::mem::take(&mut self.pressed_buttons);
         if let Some(wl) = self.focused_pad() {
-            for button in held { wl.button(time, button, zwp_tablet_pad_v2::ButtonState::Released); }
+            for button in held {
+                wl.button(time, button, zwp_tablet_pad_v2::ButtonState::Released);
+            }
         }
     }
     /// The pad resource owned by `surface`'s client.
@@ -1115,7 +1140,11 @@ impl Tool {
                 wl_tool.up();
             }
             for button in buttons {
-                wl_tool.button(smithay::utils::SERIAL_COUNTER.next_serial().into(), button, ButtonState::Released.into());
+                wl_tool.button(
+                    smithay::utils::SERIAL_COUNTER.next_serial().into(),
+                    button,
+                    ButtonState::Released.into(),
+                );
             }
             wl_tool.proximity_out();
             wl_tool.frame(time);
@@ -1126,7 +1155,9 @@ impl Tool {
 
     fn take_contacts(&mut self) -> (bool, Vec<u32>) {
         let down = std::mem::take(&mut self.is_down);
-        let buttons = std::mem::take(&mut self.pressed_buttons).into_iter().collect();
+        let buttons = std::mem::take(&mut self.pressed_buttons)
+            .into_iter()
+            .collect();
         self.pending_pressure = None;
         self.pending_distance = None;
         self.pending_tilt = None;
@@ -1207,8 +1238,11 @@ impl Tool {
         if let Some(focus) = self.focus.clone()
             && let Some(wl_tool) = self.instance_for(&focus)
         {
-            if state == ButtonState::Pressed { self.pressed_buttons.insert(button); }
-            else { self.pressed_buttons.remove(&button); }
+            if state == ButtonState::Pressed {
+                self.pressed_buttons.insert(button);
+            } else {
+                self.pressed_buttons.remove(&button);
+            }
             wl_tool.button(serial.into(), button, state.into());
             wl_tool.frame(time);
         }
@@ -1221,27 +1255,43 @@ mod blank_contact_tests {
     use smithay::backend::input::TabletToolType;
 
     fn descriptor() -> TabletToolDescriptor {
-        TabletToolDescriptor { tool_type: TabletToolType::Pen, hardware_serial: 1,
-            hardware_id_wacom: 2, capabilities: TabletToolCapabilities::empty() }
+        TabletToolDescriptor {
+            tool_type: TabletToolType::Pen,
+            hardware_serial: 1,
+            hardware_id_wacom: 2,
+            capabilities: TabletToolCapabilities::empty(),
+        }
     }
 
     #[test]
     fn blank_cancels_native_and_emulated_tablet_contacts_and_returns_physical_holds() {
         let descriptor = descriptor();
         let mut tablet = TabletState::default();
-        tablet.tools.insert(descriptor.clone(), Tool {
-            is_down: true, pressed_buttons: [331].into(), pending_pressure: Some(0.8),
-            pending_tilt: Some((10.0, 5.0)), ..Default::default()
-        });
+        tablet.tools.insert(
+            descriptor.clone(),
+            Tool {
+                is_down: true,
+                pressed_buttons: [331].into(),
+                pending_pressure: Some(0.8),
+                pending_tilt: Some((10.0, 5.0)),
+                ..Default::default()
+            },
+        );
         tablet.stroke = Stroke::Pointer;
         tablet.stroke_owner = Some(descriptor.clone());
-        tablet.emulated_buttons.push((descriptor.clone(), 332, 0x111));
+        tablet
+            .emulated_buttons
+            .push((descriptor.clone(), 332, 0x111));
         tablet.cursor_owner = Some(descriptor.clone());
         tablet.tool_cursor = true;
         tablet.last_pen_screen = Some((40.0, 50.0).into());
-        tablet.pads.insert("pad".into(), Pad {
-            pressed_buttons: [3, 5].into(), ..Default::default()
-        });
+        tablet.pads.insert(
+            "pad".into(),
+            Pad {
+                pressed_buttons: [3, 5].into(),
+                ..Default::default()
+            },
+        );
 
         assert_eq!(tablet.cancel_input(50), (true, vec![331, 332], vec![3, 5]));
         let tool = &tablet.tools[&descriptor];
