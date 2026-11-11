@@ -5,10 +5,13 @@ use testkit::Harness;
 
 #[test]
 fn inhibitor_child() {
-    let Some(path) = std::env::args().find_map(|a| a.strip_prefix("inhibitor-socket=").map(str::to_owned)) else {
+    let Some(path) =
+        std::env::args().find_map(|a| a.strip_prefix("inhibitor-socket=").map(str::to_owned))
+    else {
         return;
     };
-    let mut client = testkit::client::TestClient::new(std::os::unix::net::UnixStream::connect(path).unwrap());
+    let mut client =
+        testkit::client::TestClient::new(std::os::unix::net::UnixStream::connect(path).unwrap());
     let sync = client.sync();
     while client.state.syncs < sync {
         client.flush();
