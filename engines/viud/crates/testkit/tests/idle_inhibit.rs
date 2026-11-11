@@ -89,21 +89,70 @@ fn disconnect_retires_each_resource_without_an_explicit_destroy() {
 
 #[test]
 fn real_resources_are_counted_individually_and_surface_death_cannot_keep_them_live() {
+    use dispatcher::wire::trait_::wire_trait::WireTrait;
+    use smithay::reexports::calloop::EventLoop;
     use smithay::reexports::wayland_server::Resource;
+    use world::state::{Loader, Loop, Orchestrator};
     let mut h = Harness::new();
     let (surface, xdg, top) = h.mapped_toplevel(64, 48);
+    // TestHost owns the real clients; this renderer-free policy Loop runs the
+    // production visibility reducer against their same registry and windows.
+    let event_loop: EventLoop<'static, Loop> = EventLoop::try_new().unwrap();
+    let kernel = Default::default();
+    let worlds = world::world::manager::WorldManager::new(
+        world::kind::build::base::spatial(
+            world::world::manager::MAIN_WORLD, "main", vec![], &kernel,
+        ),
+        world::kind::build::base::overlay(
+            world::world::manager::KERNEL, "kernel", vec![], &kernel,
+        ),
+        &kernel,
+    );
+    let dh = h.wire.state.output.display_handle.clone();
+    let inner = Orchestrator::new(
+        world::environment::type_::base::Environment {
+            gpu: String::new(), desktop_name: "testkit".into(),
+        },
+        false,
+        Loader {
+            socket_name: "testkit-policy".into(), display_handle: dh.clone(),
+            loop_signal: event_loop.get_signal(),
+        },
+        kernel, worlds,
+    );
+    let mut lp = Loop::new(inner, &dh, None, event_loop.handle());
+    let space = &mut lp.inner.host_space_mut().state;
+    space.map_output(&h.wire.inner.output, (0, 0));
+    for window in h.wire.inner.space.state.elements() {
+        space.map_element(window.clone(), h.wire.inner.space.state.element_location(window).unwrap(), false);
+    }
+    space.refresh();
+    let recompute = |h: &mut Harness, lp: &mut Loop| {
+        std::mem::swap(&mut lp.inner.comp, &mut h.wire.inner.comp);
+        lp.state.inhibitors.surfaces = h.wire.state.inhibitors.surfaces.clone();
+        lp.state.inhibitors.revision = h.wire.state.inhibitors.revision;
+        policy_host::project::service_inhibitors(lp);
+        let inhibited = lp.inner.comp.blank.inhibited;
+        assert_eq!(lp.state.idle_notifier.is_inhibited(), inhibited);
+        std::mem::swap(&mut lp.inner.comp, &mut h.wire.inner.comp);
+        inhibited
+    };
     let a = h.client.inhibit(&surface);
     let b = h.client.inhibit(&surface);
     h.roundtrip();
     assert_eq!(h.wire.state.inhibitors.surfaces.len(), 2);
+    assert!(recompute(&mut h, &mut lp));
     a.destroy();
     h.roundtrip();
     assert_eq!(h.wire.state.inhibitors.surfaces.len(), 1);
+    assert!(recompute(&mut h, &mut lp));
     top.destroy();
     xdg.destroy();
     surface.destroy();
     h.roundtrip();
     assert!(!h.wire.state.inhibitors.surfaces[0].is_alive());
+    assert!(!recompute(&mut h, &mut lp));
+    assert_eq!(h.wire.state.inhibitors.surfaces.len(), 1, "resource still lives");
     b.destroy();
     h.roundtrip();
     assert!(h.wire.state.inhibitors.surfaces.is_empty());
@@ -119,10 +168,12 @@ fn idle_notification_is_held_then_rearmed_on_the_real_calloop() {
     h.roundtrip();
     assert!(h.client.state.idle_events.is_empty());
     dispatcher::idle::set_inhibited(&mut h.wire.state, false);
-    h.roundtrip();
-    assert!(h.client.state.idle_events.is_empty());
-    std::thread::sleep(Duration::from_millis(60));
-    h.roundtrip();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while h.client.state.idle_events.is_empty() {
+        h.roundtrip();
+        assert!(std::time::Instant::now() < deadline, "idle notification did not resume");
+        std::thread::sleep(Duration::from_millis(1));
+    }
     assert_eq!(h.client.state.idle_events, [true]);
     notification.destroy();
 }
