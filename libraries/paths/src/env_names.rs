@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Environment names registered in etc/env.conf.mix.
+pub const AGENT_SESSION: &str = "MIX_AGENT_SESSION";
+pub const MCP_ALLOW_TCP: &str = "MIX_MCP_ALLOW_TCP";
+pub const MCP_TOOL_DEADLINE_SECS: &str = "MIX_MCP_TOOL_DEADLINE_SECS";
+pub const MCP_SCRIPT_DEADLINE_SECS: &str = "MIX_MCP_SCRIPT_DEADLINE_SECS";
+pub const MCP_LOG_FILTER: &str = "MIX_MCP_LOG_FILTER";
+pub const MCP_DOMAINS: &str = "MIX_MCP_DOMAINS";
+pub const MCP_KNOWLEDGE: &str = "MIX_MCP_KNOWLEDGE";
+pub const MCP_INDEXD: &str = "MIX_MCP_INDEXD";
 pub const AGENT_CLI_EXE: &str = "MIX_AGENT_CLI_EXE";
 pub const APP_HOME: &str = "MIX_APP_HOME";
 pub const APPS_HOME: &str = "MIX_APPS_HOME";

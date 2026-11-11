@@ -1,0 +1,29 @@
+#!/usr/bin/env mix
+-- version: 0.1.0
+-- CBC-only verification for the MCP edge adapter.
+fn checked($argv, $env = {})
+  $r = run_argv($argv, {env: $env, timeout: 14400, stdout: "inherit", stderr: "inherit"})
+  if $r.exit_code != 0 then exit($r.exit_code ?? 124) end
+end
+if args()[0] == "resolve" then
+  checked(["cargo", "metadata", "--format-version", "1", "--no-deps"])
+  checked(["cargo", "fmt", "-p", "mix-mcp"])
+  print("DERIVED_DIFF_BEGIN")
+  print(run_argv_must(["git", "diff", "--", "Cargo.lock", "services/mix-mcp"]))
+  print("DERIVED_DIFF_END")
+  checked(["git", "checkout", "-q", "--", "Cargo.lock", "services/mix-mcp"])
+  exit(0)
+end
+checked(["cargo", "build", "--locked", "-p", "mix"])
+$prefix = trim(run_argv_must(["target/debug/mix", "tools/ci.mix", "stage-install"]))
+try
+  $env = {MIX_PREFIX: $prefix, MIX_TEST_MIX_EXE: realpath("target/debug/mix")}
+  checked(["cargo", "test", "--locked", "-p", "mix-mcp", "--no-fail-fast"], $env)
+  checked(["cargo", "tree", "--locked", "-i", "rmcp"])
+  checked(["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"])
+  checked(["target/debug/mix", "tools/ci.mix", "foreign"], $env)
+  checked(["cargo", "build", "--locked", "--release", "-p", "mix-mcp"])
+  print("RELEASE_SIZE " .. to_string(stat("target/release/mix-mcp").size))
+finally
+  checked(["rm", "-rf", "--", $prefix])
+end
