@@ -29,7 +29,7 @@
     {
       "path": "services/agentd/scripts/agentd.mix",
       "source_blob": "ffb002b1bda74d42ba41b990ba9bd7037392305e",
-      "sha256": "c5c8c7cd16925c71a622d38290a9cc171d4fd46429db8024a7fb500059ae7517",
+      "sha256": "b75c99b6e04339652c64b12e1d8e2b1d6c714956c32d6c7da3cdc84f4defa050",
       "changed": true
     },
     {
@@ -47,7 +47,7 @@
     {
       "path": "services/agentd/scripts/lib/awaits.mix",
       "source_blob": "581612ef27617a02090a122aaa1d1c5e2f7db127",
-      "sha256": "d36fc1735870b05d4820f55945c3e0fd86cfed572fdb20aafe4b4f3f383d3c3c",
+      "sha256": "6264aaa36cb0259ec91ee94e16e0eae0c02f8640b1ff0a784558c9799e1d6da2",
       "changed": true
     },
     {
@@ -299,7 +299,7 @@
     {
       "path": "services/releasesd/README.md",
       "source_blob": "b2d569af86636667e96539f1886172aea18cebb6",
-      "sha256": "044eaf484fd31f2d660f5f3ef742fd6884f4162fd637d2f5383d0b94d7d1c654",
+      "sha256": "f8a1f41f882a91f6bc9a1290d41588b061b2ac1e6199378b26675d773003a2f8",
       "changed": false
     },
     {

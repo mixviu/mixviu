@@ -1,5 +1,5 @@
 -- Included handlers share the citizen scope; dynamic source prevents name analysis.
--- lint: ignore-file MIX-W2401, MIX-E1101, MIX-E1102
+-- lint: ignore-file MIX-W2401
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Session outcomes survive pruning and restart. Persist before publishing.
 fn op_view($id)
@@ -336,6 +336,7 @@ fn await_subscribe($service)
     $path = env("TMPDIR", "/tmp") .. "/agentd-handler-" .. uuid() .. ".mix"
     write_file($path, "on " .. json_encode($service .. ".op.done") .. "\n  await_event()\nend\n")
     try
+      source $path
     finally
       run_argv_must(["rm", "-f", $path])
     end
