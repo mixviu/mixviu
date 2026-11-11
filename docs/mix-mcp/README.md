@@ -5,6 +5,11 @@ description: MCP stdio access to the native MixViu Bus.
 
 # mix-mcp
 
+Runtime settings come from the matching installed `env.mx`, generated from
+the repository's environment registry, or explicit registered overrides.
+Paths are resolved by `paths`; no installation path or setting value is
+compiled into this adapter. Script execution uses the prefix's `bin/mix`.
+
 `mix-mcp` is an MCP stdio server for agents. Install the binary at
 `<prefix>/bin/mix-mcp` and register the MCP server as `mix-mcp`.
 It ships in the server prefix archive. Its package, binary and component
@@ -67,7 +72,7 @@ reconnecting.
 
 ## Tools
 
-Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
+Each name below is exposed as `mcp__mix-mcp__<name>` in Claude Code.
 
 - `bus_call`, `bus_list_services`, `bus_node_info`, `bus_list_peers`, `noded_ping`
   (`bus_list_peers` leaves retired mesh members out unless `include_retired: true`)
@@ -143,7 +148,7 @@ rate knowledge after tasks.
 At deployment, remove `trust_weight_graduated` and `trust_weight_skill` from
 `knowledge.conf.mix`, along with any old `skills` or `llm` sections there.
 Remove the retired `skills.conf.mix` and `llm.conf.mix` files from the MCP
-configuration directory (`$MIX_ETC`, normally `~/.config/mixos`). They are
+configuration directory (`$MIX_ETC`, normally `<etc-root>`). They are
 no longer read or generated. No compatibility aliases are provided.
 The `config::store::load_service` loader tolerates unknown keys for
 `KnowledgeSettings`: the retired keys are ignored, not rejected. A fixture test
@@ -160,7 +165,7 @@ existing [indexd filtered delete](../indexd/README.md#purging-retired-cmm-observ
 ### Host indexd from a desk
 
 When a desk cannot reach the host's Bus, select SSH in
-`$MIX_ETC/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
+`$MIX_ETC/knowledge.conf.mix` (normally `<etc-root>/knowledge.conf.mix`):
 
 ```text
 indexd: {
@@ -206,7 +211,7 @@ Mix execution runs in an isolated worker with bounded output.
 ## Logging and tests
 
 Stdout is reserved for MCP. Logs go to stderr, journald and
-`~/.local/log/mixos/mix-mcp.log`. Arguments and results are redacted by
+`<var-root>/log/mix-mcp.log`. Arguments and results are redacted by
 default; `RUST_LOG=mix_mcp=trace` explicitly enables full arguments.
 `--version --json` reports build provenance without starting MCP or the Bus.
 

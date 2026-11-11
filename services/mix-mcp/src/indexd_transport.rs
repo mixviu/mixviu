@@ -110,7 +110,7 @@ impl Transport {
                         && text.is_empty()
                         && error.as_deref() == Some(&format!("Service '{target}' not found"))
                     {
-                        anyhow::bail!("native indexd service is not registered on the MixOS Bus");
+                        anyhow::bail!("native indexd service is not registered on the MixViu Bus");
                     }
                     if rc >= 10 {
                         // Keep raw text and header precedence exactly as Bus call().
@@ -203,20 +203,7 @@ impl Bridge {
     }
 
     fn spawn(&self) -> Result<Session> {
-        let remote_args: Vec<String> = self
-            .settings
-            .ssh_command
-            .iter()
-            .map(|arg| {
-                let data = config::to_conf_mix_string(arg).expect("string is strict data");
-                if arg.starts_with("mix:") {
-                    format!("mixos_path({data})")
-                } else {
-                    data
-                }
-            })
-            .collect();
-        let remote_source = format!("exit(run_stream([{}]))", remote_args.join(", "));
+        let remote_source = format!("exit(run_stream([{}]))", remote_arguments(&self.settings.ssh_command));
         let remote_command = format!("mix -c {}", mix::builtins::shell_quote(&remote_source));
         let mut command = Command::new("ssh");
         command
@@ -324,6 +311,13 @@ impl Bridge {
         }
         unreachable!()
     }
+}
+
+fn remote_arguments(arguments: &[String]) -> String {
+    arguments.iter().map(|arg| {
+        let data = config::to_conf_mix_string(arg).expect("string is strict data");
+        if arg.starts_with("mix:") { format!("mix_path({data})") } else { data }
+    }).collect::<Vec<_>>().join(", ")
 }
 
 #[derive(Deserialize)]
@@ -440,6 +434,21 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_arguments_resolve_with_mixviu_and_preserve_literal_data() {
+        let mix = paths::env::raw(paths::env::test::TEST_MIX_EXE).expect("built test interpreter");
+        let prefix = tempfile::tempdir().unwrap();
+        let literal = "quote'\"; $(untrusted)\nsecond line";
+        let arguments = remote_arguments(&["mix:prefix/bin/indexd".into(), literal.into()]);
+        let result = std::process::Command::new(mix)
+            .args(["-c", &format!("print(json_encode([{arguments}]))")])
+            .env(paths::env::PREFIX, prefix.path())
+            .output().unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        let actual: Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(actual, json!([prefix.path().join("bin/indexd"), literal]));
+    }
 
     fn fake() -> Option<(Transport, tempfile::TempDir)> {
         fake_with_timeout(1)

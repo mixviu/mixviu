@@ -290,7 +290,7 @@ reconnecting.</p>
 }
 </code></pre>
 <h2 id="tools">Tools</h2>
-<p>Each name below is exposed as <code>mcp__mixos__&lt;name&gt;</code> in Claude Code.</p>
+<p>Each name below is exposed as <code>mcp__mix-mcp__&lt;name&gt;</code> in Claude Code.</p>
 <ul>
 <li><code>bus_call</code>, <code>bus_list_services</code>, <code>bus_node_info</code>, <code>bus_list_peers</code>, <code>noded_ping</code>
 (<code>bus_list_peers</code> leaves retired mesh members out unless <code>include_retired: true</code>)</li>
@@ -358,7 +358,7 @@ rate knowledge after tasks.</p>
 <p>At deployment, remove <code>trust_weight_graduated</code> and <code>trust_weight_skill</code> from
 <code>knowledge.conf.mix</code>, along with any old <code>skills</code> or <code>llm</code> sections there.
 Remove the retired <code>skills.conf.mix</code> and <code>llm.conf.mix</code> files from the MCP
-configuration directory (<code>$MIX_ETC</code>, normally <code>~/.config/mixos</code>). They are
+configuration directory (<code>$MIX_ETC</code>, normally <code>&lt;etc-root&gt;</code>). They are
 no longer read or generated. No compatibility aliases are provided.
 The <code>config::store::load_service</code> loader tolerates unknown keys for
 <code>KnowledgeSettings</code>: the retired keys are ignored, not rejected. A fixture test
@@ -372,7 +372,7 @@ chunk while retaining it for audit. To purge old CMM observations, use the
 existing <a href="/indexd/#purging-retired-cmm-observations">indexd filtered delete</a>.</p>
 <h3 id="host-indexd-from-a-desk">Host indexd from a desk</h3>
 <p>When a desk cannot reach the host's Bus, select SSH in
-<code>$MIX_ETC/knowledge.conf.mix</code> (normally <code>~/.config/mixos/knowledge.conf.mix</code>):</p>
+<code>$MIX_ETC/knowledge.conf.mix</code> (normally <code>&lt;etc-root&gt;/knowledge.conf.mix</code>):</p>
 <pre><code class="language-text">indexd: {
     transport: "ssh",
     target: "indexd",
@@ -409,7 +409,7 @@ tools do not invoke mutations; arbitrary <code>bus_call</code> and <code>mix_exe
 Mix execution runs in an isolated worker with bounded output.</p>
 <h2 id="logging-and-tests">Logging and tests</h2>
 <p>Stdout is reserved for MCP. Logs go to stderr, journald and
-<code>~/.local/log/mixos/mix-mcp.log</code>. Arguments and results are redacted by
+<code>&lt;var-root&gt;/log/mix-mcp.log</code>. Arguments and results are redacted by
 default; <code>RUST_LOG=mix_mcp=trace</code> explicitly enables full arguments.
 <code>--version --json</code> reports build provenance without starting MCP or the Bus.</p>
 <p>Package tests cover parameter translation, target guards, output schemas,

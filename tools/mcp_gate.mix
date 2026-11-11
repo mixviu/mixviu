@@ -6,12 +6,18 @@ fn checked($argv, $env = {})
   if $r.exit_code != 0 then exit($r.exit_code ?? 124) end
 end
 if args()[0] == "resolve" then
-  checked(["cargo", "metadata", "--format-version", "1"])
-  checked(["cargo", "fmt", "-p", "mix-mcp"])
-  print("DERIVED_DIFF_BEGIN")
-  print(run_argv_must(["git", "diff", "--", "Cargo.lock", "services/mix-mcp"]))
-  print("DERIVED_DIFF_END")
-  checked(["git", "checkout", "-q", "--", "Cargo.lock", "services/mix-mcp"])
+  try
+    $metadata = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1"], {max_output: 256000000}))
+    print("RESOLVED_PACKAGES " .. to_string(len($metadata.packages)))
+    checked(["cargo", "fmt", "-p", "mix-mcp"])
+    print("DERIVED_DIFF_BEGIN")
+    print(run_argv_must(["git", "diff", "--", "Cargo.lock", "services/mix-mcp"]))
+    print("DERIVED_DIFF_END")
+    checked(["mix", "tools/foreign_gate.mix", "--locked"])
+    checked(["cargo", "check", "--locked", "-p", "mix-mcp", "--all-targets"])
+  finally
+    checked(["git", "checkout", "-q", "--", "Cargo.lock", "services/mix-mcp"])
+  end
   exit(0)
 end
 checked(["cargo", "build", "--locked", "-p", "mix"])
@@ -28,6 +34,12 @@ try
   for $p in $metadata.packages
     if $p.source != nil and not has_key($known, $p.name .. " " .. $p.version) then
       print("ADDED_PACKAGE " .. json_encode({name: $p.name, version: $p.version, license: $p.license}))
+      $inverse = run_argv_must(["cargo", "tree", "--locked", "--workspace", "-i", $p.name .. "@" .. $p.version])
+      if re_match($inverse, '(?m)(lib-mix|mix-shell|mixd|mix) v[0-9]') then
+        print($inverse)
+        raise("STRICT_DEPENDENCY", "new package reaches a shell engine: " .. $p.name)
+      end
+      print("STRICT_ABSENT " .. $p.name .. " " .. $p.version)
     end
   end
   checked(["cargo", "test", "--locked", "-p", "mix-mcp", "--no-fail-fast"], $env)

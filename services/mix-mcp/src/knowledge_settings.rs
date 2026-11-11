@@ -117,10 +117,9 @@ pub struct IndexdSettings {
     pub call_timeout_secs: u64,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexdTransport {
-    #[default]
     Bus,
     Ssh,
 }

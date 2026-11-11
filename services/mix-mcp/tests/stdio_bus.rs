@@ -476,7 +476,7 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
         .unwrap();
     assert!(absent.is_error.unwrap_or(false));
     assert!(
-        format!("{absent:?}").contains("native indexd service is not registered on the MixOS Bus")
+        format!("{absent:?}").contains("native indexd service is not registered on the MixViu Bus")
     );
 
     let workspace = dir.path().join("work~space");

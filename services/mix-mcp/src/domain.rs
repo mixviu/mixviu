@@ -8,7 +8,7 @@
 //! 2. Walk up from path looking for CLAUDE.md, derive domain from relative path
 //!
 //! Examples:
-//!   ~/.mixos/src/crates/foo → "mixviu"  (via settings map)
+//!   ~/Projects/mixviu/libraries/foo → "mixviu"  (via settings map)
 //!   ~/.example/some/deep/path     → "example"      (via settings map)
 //!   ~/.gh/wg-admin/src       → "gh/wg-admin" (via CLAUDE.md walk)
 //!   /tmp/random              → "general"

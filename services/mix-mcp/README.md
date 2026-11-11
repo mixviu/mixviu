@@ -14,13 +14,13 @@ parameter object to the application's execute command.
 
 `clipboard_get {selection?, mime?, primary?, offset?}` reads the local `clipd`.
 `clipboard_set {text, selection?, mime?, primary?, sensitive?}` writes UTF-8 text.
-See the [clipboard manual](../../docs/clipd/README.md) for size limits,
+See the [frozen clipboard manual](https://github.com/markc/mixos/blob/8779f33284b7d3f1178c3d57a699efb9b0867b22/docs/clipd/README.md) for size limits,
 binary encoding and explicit cross-session push.
 
 The skills loop is retired. At deployment, remove `trust_weight_graduated`,
 `trust_weight_skill` and any old `skills`/`llm` sections from `knowledge.conf.mix`,
 and remove the unused `skills.conf.mix` and `llm.conf.mix` files from the MCP
-config directory (`paths::env::ETC`, normally `~/.config/mixos`). The config loader
+config directory (`paths::env::ETC`, normally `<etc-root>`). The config loader
 tolerates unknown keys, but they have no effect; no aliases are provided.
 Generated knowledge defaults omit them. Existing configs are not rewritten.
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! mix-mcp — MCP server bridging Claude Code to the mixos appmesh.
+//! mix-mcp — MCP server bridging Claude Code to the MixViu Bus.
 //!
 //! Register with: `claude mcp add mix-mcp -- <prefix>/bin/mix-mcp`
 //!
@@ -988,7 +988,7 @@ impl MixMcp {
         result.map_err(|e| format!("ERROR: {}", truncate_chars(&e, 4096)))
     }
 
-    /// Call an Bus command on a mixos service and return the response.
+    /// Call an Bus command on a MixViu service and return the response.
     #[tool]
     async fn bus_call(
         &self,
@@ -1017,7 +1017,7 @@ impl MixMcp {
         }
     }
 
-    /// List all services registered on the mixos broker, with build
+    /// List all services registered on the MixViu broker, with build
     /// provenance (version / git_sha / build_time / pid / …) — the
     /// version-discovery surface, so an agent can spot a stale binary.
     #[tool]
@@ -1076,7 +1076,7 @@ impl MixMcp {
         }
     }
 
-    /// Ping the mixos broker to check connectivity.
+    /// Ping the MixViu broker to check connectivity.
     #[tool]
     async fn noded_ping(&self) -> String {
         let noded = match self.noded().await {
@@ -1092,7 +1092,7 @@ impl MixMcp {
         }
     }
 
-    /// Read last N lines from a mixos log file. file="bus" for Bus traffic.
+    /// Read last N lines from a MixViu log file. file="bus" for Bus traffic.
     #[tool]
     async fn log_tail(&self, Parameters(p): Parameters<LogTailParams>) -> Result<String, String> {
         let n = p.lines.unwrap_or(50);
@@ -1107,7 +1107,7 @@ impl MixMcp {
         }
     }
 
-    /// Search a mixos log file for a pattern (case-insensitive).
+    /// Search a MixViu log file for a pattern (case-insensitive).
     #[tool]
     async fn log_search(
         &self,

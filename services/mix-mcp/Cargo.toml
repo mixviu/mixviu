@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "MCP stdio bridge to the MixOS Bus"
+description = "MCP stdio bridge to the MixViu Bus"
 
 [package.metadata.mixviu]
 component = "mix-mcp"
