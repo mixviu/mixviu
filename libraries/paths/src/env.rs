@@ -57,6 +57,7 @@ impl std::error::Error for SettingError {}
 static DEFAULTS: OnceLock<
     std::result::Result<Option<super::env_document::Defaults>, super::env_document::Error>,
 > = OnceLock::new();
+pub(super) const SNAPSHOT_COMMIT: Option<&str> = stamp!(GIT_SHA_FULL);
 
 /// Environment wins, then the installed snapshot's default. Reading is lazy.
 pub fn setting(name: &str) -> std::result::Result<String, SettingError> {
@@ -70,7 +71,7 @@ pub fn setting(name: &str) -> std::result::Result<String, SettingError> {
         let prefix = super::Layout::from_source(&super::Environment::current(), "")
             .and_then(|d| d.try_root(super::Root::Prefix))
             .map_err(super::env_document::Error::Unreadable)?;
-        super::env_document::read(&prefix, stamp!(GIT_SHA_FULL))
+        super::env_document::read(&prefix, SNAPSHOT_COMMIT)
     });
     let defaults = defaults.as_ref().map_err(|e| e.for_name(name))?;
     let value = defaults

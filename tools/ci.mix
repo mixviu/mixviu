@@ -6,6 +6,8 @@
 --   mix tools/ci.mix STAGE [--mix PATH]
 --   STAGE: fmt | env | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
+--   stage-install (not in all): copy built debug binaries to a temporary prefix,
+--   write registry defaults as env.mx (no layout.mx), and print the prefix.
 --
 -- MixViu has four engines: mix, mixd, viu, viud. The `mix` package is built and tested apart from the
 -- rest of the workspace: the workspace build would unify features and ship
