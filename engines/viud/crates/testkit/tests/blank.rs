@@ -149,7 +149,7 @@ fn blank_entry_ends_an_existing_user_binding_repeat_without_client_release() {
 #[test]
 fn blank_entry_never_sends_a_release_for_a_native_table_intercepted_key() {
     let mut h = harness();
-    h.wire.inner.comp.bindings.ensure("kms-live");
+    h.wire.inner.comp.bindings.ensure("headless");
     assert!(!h.key(125 + 8, true, false)); // Left Super.
     assert!(h.key(16 + 8, true, false)); // Super+q is compositor close.
     assert_eq!(h.wire.inner.comp.bindings.take_pending().len(), 1);
