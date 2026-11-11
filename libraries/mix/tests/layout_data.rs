@@ -94,11 +94,11 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
         let lib = mix::run(&format!("mix_path('lib', '', {{tier: '{tier}'}})"))
             .await
             .unwrap();
-        let mix::value::Value::String(lib) = lib else {
+        let mix::value::Value::String(lib) = &lib else {
             panic!("lib root did not return a string")
         };
         assert_eq!(
-            std::path::Path::new(&lib),
+            std::path::Path::new(lib),
             std::path::PathBuf::from(&prefix).join("lib")
         );
         for root in paths::Root::ALL {
