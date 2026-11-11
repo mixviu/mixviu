@@ -320,11 +320,8 @@ fn stage_install()
       run_argv_must(["cp", "--", $file, $prefix .. "/bin/" .. basename($file)])
     end
   end
-  $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
-  for $v in load_data("etc/env.conf.mix").vars
-    if has_key($v, "default") then $defaults[$v.name] = $v.default end
-  end
-  write_file($prefix .. "/env.mx", data_encode($defaults))
+  $env_mx = require("env_mx.mix")
+  $env_mx.write($prefix .. "/env.mx", "etc/env.conf.mix", trim(run_argv_must(["git", "rev-parse", "HEAD"])))
   print($prefix)
 end
 
