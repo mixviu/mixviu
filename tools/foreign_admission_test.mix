@@ -1,0 +1,42 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$admission = require("foreign_admission.mix")
+$entry = {kind: "system", via: "fixture", exit: "fixture", only: ["portal"], by: "Mark", on: "2026-11-12"}
+$policy = {allow: {}, debt: {}, admitted: {native: $entry}, strict: ["shell"]}
+$members = ["portal", "other", "shell"]
+$good = {portal: {native: true}}
+fn assert($ok, $message)
+  if not $ok then raise("TEST_FAILED", $message) end
+end
+fn expect($policy, $members, $closures, $needle)
+  $bad = $admission.check($policy, $members, $closures)
+  if $needle == "" then
+    assert(len($bad) == 0, json_encode($bad))
+  else
+    assert(contains(join($bad, "\n"), $needle), "missing failure: " .. $needle .. " in " .. json_encode($bad))
+  end
+end
+expect($policy, $members, $good, "")
+expect($policy, $members, {portal: {native: true}, other: {native: true}}, "outside only")
+expect($policy, $members, {shell: {native: true}}, "strict shell reaches admitted")
+expect($policy, $members, {}, "stale admitted")
+$p = $policy
+$p.admitted.native.only = ["shell"]
+expect($p, $members, $good, "strict member forbidden in only")
+$p = $policy
+$p.allow.native = {}
+expect($p, $members, $good, "exactly one")
+$p = $policy
+$p.debt.native = {}
+expect($p, $members, $good, "exactly one")
+$p = $policy
+$p.admitted.native.only = []
+expect($p, $members, $good, "nonempty")
+$p = $policy
+$p.admitted.native.only = ["unknown"]
+expect($p, $members, $good, "unknown member")
+for $field in ["kind", "via", "exit", "by", "on"]
+  $p = $policy
+  $p.admitted.native[$field] = ""
+  expect($p, $members, $good, "missing or invalid " .. $field)
+end
+print("foreign admission: 14 cases passed")

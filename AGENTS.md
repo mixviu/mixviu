@@ -49,3 +49,8 @@ Use native Bus and host facilities; do not add parallel brokers/transports.
 Future runtime imports require dependency/licence inspection and provenance.
 The existing source versions/schema names are retained intentionally; rename
 only when the owning compatibility contract and migration have been assessed.
+
+Foreign code has three exclusive policy lists in tools/foreign.conf.mix:
+allow (strict crates may reach it), debt (existing code to remove; only shrinks),
+and admitted (deliberately accepted for named non-strict workspace members).
+The foreign gate rejects other members reaching admitted code and stale entries.
