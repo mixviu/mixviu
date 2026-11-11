@@ -39,4 +39,12 @@ for $field in ["kind", "via", "exit", "by", "on"]
   $p.admitted.native[$field] = ""
   expect($p, $members, $good, "missing or invalid " .. $field)
 end
-print("foreign admission: 14 cases passed")
+$p = $policy
+$p.admitted.native.by = "Someone"
+expect($p, $members, $good, "by Mark")
+$p = $policy
+$p.admitted.native.on = "yesterday"
+expect($p, $members, $good, "YYYY-MM-DD")
+$p = {allow: {native: {}}, debt: {native: {}}}
+expect($p, $members, {}, "exactly one")
+print("foreign admission: 17 cases passed")
