@@ -25,6 +25,7 @@
 pub(crate) mod diagnostics;
 
 pub mod hdr;
+pub mod blank;
 pub(crate) mod late_latch;
 
 use crate::context::render::NativeRenderContext;
@@ -731,6 +732,7 @@ pub fn execute(
         if !ctx_ref.outputs[output_idx].props_applied
             && (*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN))
         {
+            blank::refresh(state, ctx_ref);
             let depth = model::environment::config::base::get().depth;
             let want_bpc: u64 = if depth == 10 { 10 } else { 8 };
             let hdr_active = ctx_ref.outputs[output_idx].hdr_active;
@@ -742,6 +744,7 @@ pub fn execute(
                 &ctx_ref.outputs[output_idx].hdr_caps,
                 hdr_active,
                 want_bpc,
+                ctx_ref.outputs[output_idx].blank.preserved(),
             ) {
                 Ok(o) => {
                     ctx_ref.outputs[output_idx].props_applied = true;
@@ -825,6 +828,7 @@ pub fn execute(
                         &pipe.hdr_caps,
                         false,
                         want_bpc,
+                        pipe.blank.preserved(),
                     );
                     match reset {
                         Ok(o) => {
@@ -870,6 +874,7 @@ pub fn execute(
                         &pipe.hdr_caps,
                         false,
                         want_bpc,
+                        pipe.blank.preserved(),
                     );
                     let tries = ctx_ref.outputs[output_idx].sdr_reset_pending;
                     match retry {

@@ -88,6 +88,7 @@ fn panel_dpms(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>, on: b
         {
             warn!("DPMS-on surface reset failed: {e}");
         }
+        crate::render::execute::blank::refresh(state, ctx_ref);
         drop(ctx);
         // Ungate the executor and kick a repaint.
         *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = false;
@@ -95,6 +96,7 @@ fn panel_dpms(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>, on: b
             .state
             .schedule_redraw(protocols::redraw::schedule::RedrawReason::Output);
     } else {
+        crate::render::execute::blank::release(ctx_ref);
         // Gate the executor before blanking so no stray flip re-powers it.
         *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = true;
         if let Some(o) = ctx_ref.pipe().drm_output.as_ref()

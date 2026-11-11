@@ -45,6 +45,7 @@ pub fn register(
 
             match event {
                 smithay::backend::session::Event::PauseSession => {
+                    crate::render::execute::blank::release(ctx_ref);
                     for pipe in &mut ctx_ref.outputs {
                         crate::render::execute::late_latch::cancel(pipe);
                         pipe.late_latch = Default::default();
@@ -199,6 +200,7 @@ pub fn register(
                     // frame's `housekeeping` so a resume that stalls before it renders
                     // still leaves the space consistent.
                     state.inner.refresh_space();
+                    crate::render::execute::blank::refresh(state, ctx_ref);
                     // Any flip queued before the switch will never deliver a vblank:
                     // forget every pipe's flight so none is wedged out of the render
                     // loop. The schedule is incremental, so this is a plain reset —

@@ -9,7 +9,7 @@
 //!
 //! SAFETY: every commit is preceded by a `TEST_ONLY` atomic commit. If the test
 //! fails (malformed blob, unsupported property, wrong enum) we return an error
-//! and the caller stays SDR — a bad blob can never blank the display.
+//! and the caller stays SDR. Panel blanking owns its CRTC blob separately.
 
 use crate::context::render::OutputPipe;
 use kms::edid::parse::HdrInfo;
@@ -284,13 +284,13 @@ fn enum_value(drm: &DrmDeviceFd, handle: property::Handle, name: &str) -> Result
 /// A property handle by name on a connector or CRTC, or `None` when the object
 /// lacks it. Absence is normal (not every connector exposes `Colorspace` or
 /// `max bpc`, not every CRTC a `DEGAMMA_LUT`) and must not fail the whole pass.
-fn opt_prop<H: ResourceHandle>(drm: &DrmDeviceFd, conn: H, name: &str) -> Option<property::Handle> {
+pub(super) fn opt_prop<H: ResourceHandle>(drm: &DrmDeviceFd, conn: H, name: &str) -> Option<property::Handle> {
     prop_handle(drm, conn, name).ok()
 }
 
 /// The object's CURRENT raw value for `handle` — what the previous owner of the
 /// connector or CRTC left behind. Logged so a stale value is visible as a fact.
-fn current_raw<H: ResourceHandle>(
+pub(super) fn current_raw<H: ResourceHandle>(
     drm: &DrmDeviceFd,
     conn: H,
     handle: property::Handle,
@@ -371,6 +371,7 @@ pub fn apply_connector_props(
     caps: &HdrInfo,
     hdr_active: bool,
     want_bpc: u64,
+    blank: Option<(property::Handle, u64)>,
 ) -> Result<PropOutcome, String> {
     let cs_prop = opt_prop(drm, conn, "Colorspace");
     let meta_prop = opt_prop(drm, conn, "HDR_OUTPUT_METADATA");
@@ -384,14 +385,15 @@ pub fn apply_connector_props(
     };
 
     // CRTC colour pipeline: clear whatever the previous owner loaded.
-    let mut luts: Vec<property::Handle> = Vec::new();
+    let luts = super::blank::connector_color_plan(drm, crtc, blank);
     let mut found: Vec<String> = Vec::new();
     for name in ["DEGAMMA_LUT", "CTM", "GAMMA_LUT"] {
         if let Some(h) = opt_prop(drm, crtc, name) {
             let was = current_raw(drm, crtc, h).unwrap_or(0);
-            if was != 0 {
+            if blank.is_some_and(|(handle, _)| handle == h) {
+                found.push(format!("{name}=blank (owned)"));
+            } else if was != 0 {
                 found.push(format!("{name}=blob({was})"));
-                luts.push(h);
             }
         }
     }
@@ -470,9 +472,12 @@ pub fn apply_connector_props(
             req.add_property(conn, h, property::Value::UnsignedRange(v));
         }
         if with_luts {
-            for h in &luts {
-                req.add_property(crtc, *h, property::Value::Blob(0));
+            for (h, blob) in &luts {
+                req.add_property(crtc, *h, property::Value::Blob(*blob));
             }
+        }
+        if let Some((h, blob)) = blank {
+            req.add_property(crtc, h, property::Value::Blob(blob));
         }
         req
     };
@@ -516,6 +521,7 @@ pub fn apply_connector_props(
     }
     if with_luts {
         outcome.crtc_color = format!("{} -> cleared", outcome.crtc_color);
+        info!("CRTC {crtc:?}: cleared stale colour blobs (including a prior crashed blank owner): {}", outcome.crtc_color);
     }
     // The HDR blob is intentionally leaked for as long as the property references
     // it; it is replaced (or cleared) by the next pass on this connector.
