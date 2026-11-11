@@ -411,6 +411,7 @@ fn process_vblank_inner(
     let Some(idx) = ctx.outputs.iter().position(|p| p.crtc == crtc) else {
         return;
     };
+    crate::render::execute::blank::after_flip(state, &mut ctx, crtc);
 
     // This pipe's flip completed → it is no longer in flight. The re-render below
     // (if it lags the epoch) will now redraw THIS output; other pipes still in

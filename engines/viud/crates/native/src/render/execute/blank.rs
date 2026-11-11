@@ -117,10 +117,13 @@ fn load(surface: &impl Surface) -> Result<(u32, u64), String> {
 
 /// Owns the sticky property and its userspace blob reference. Dropping a pipe
 /// clears the property before freeing its CRTC, including on clean shutdown.
-#[derive(Default)]
 pub struct Blank {
     loaded: Option<Loaded>,
     pub failed: bool,
+    pub pending_check: bool,
+}
+impl Default for Blank {
+    fn default() -> Self { Self { loaded: None, failed: false, pending_check: true } }
 }
 struct Loaded { drm: DrmDeviceFd, crtc: crtc::Handle, prop: u32, blob: u64 }
 impl Drop for Loaded {
@@ -193,6 +196,7 @@ pub fn apply(ctx: &mut NativeRenderContext, on: bool) -> Result<(), String> {
 pub fn release(ctx: &mut NativeRenderContext) {
     for p in &mut ctx.outputs {
         if let Err(e) = p.blank.clear() { warn!("blank release {}: {e}", p.output.name()); }
+        p.blank.pending_check = true;
     }
 }
 
@@ -206,7 +210,11 @@ pub fn retire(pipe: &mut crate::context::render::OutputPipe) {
 pub fn refresh(state: &mut Loop, ctx: &mut NativeRenderContext) {
     if ctx.blank_requested {
         for p in &mut ctx.outputs {
-            if p.drm_output.is_some() && !p.blank.failed
+            // Fresh smithay outputs may not yet have committed their first
+            // modeset. Wait for their first flip rather than recording an
+            // inactive-CRTC rejection as permanent lack of support.
+            let active = ctx.drm_fd.get_crtc(p.crtc).ok().and_then(|c| c.mode()).is_some();
+            if p.drm_output.is_some() && active && !p.blank.failed
                 && let Err(e) = p.blank.apply(&ctx.drm_fd, p.crtc) {
                     p.blank.failed = true;
                     warn!("blank unavailable on {}: {e}", p.output.name());
@@ -214,6 +222,15 @@ pub fn refresh(state: &mut Loop, ctx: &mut NativeRenderContext) {
         }
     }
     world::comp::blank::set_supported(state, supported(ctx));
+}
+
+/// One check after a modeset/resume/hotplug's first completed flip. Normal
+/// vblanks perform no ioctls or property work here.
+pub fn after_flip(state: &mut Loop, ctx: &mut NativeRenderContext, crtc: crtc::Handle) {
+    let Some(idx) = ctx.outputs.iter().position(|p| p.crtc == crtc) else { return; };
+    if !ctx.outputs[idx].blank.pending_check { return; }
+    refresh(state, ctx);
+    ctx.outputs[idx].blank.pending_check = false;
 }
 
 pub fn install(state: &mut Loop, ctx: &Rc<RefCell<NativeRenderContext>>) {

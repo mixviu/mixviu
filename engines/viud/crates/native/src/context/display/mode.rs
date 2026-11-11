@@ -99,6 +99,7 @@ fn set_mode_now(
         .change_current_state(Some(m), None, None, None);
     ctx.outputs[idx].props_applied = false;
     crate::render::execute::blank::refresh(state, ctx);
+    ctx.outputs[idx].blank.pending_check = true;
     Ok(())
 }
 /// Take a pending request (if any) and DEFER it onto a one-shot loop timer, so the
