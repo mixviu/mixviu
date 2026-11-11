@@ -152,6 +152,8 @@ $unit = "portald-restart-" .. to_string(pid()) .. "-" .. to_string(trunc(time())
 $staging = require("../../../tools/stage_env.mix")
 $prefix = $staging.create()
 $prefix_var = filter(load_data("etc/env.conf.mix").vars, fn($v) = ends_with($v.name, "_PREFIX"))[0].name
+$socket_var = filter(load_data("etc/env.conf.mix").vars, fn($v) = ends_with($v.name, "_BUS_SOCKET"))[0].name
+$url_var = filter(load_data("etc/env.conf.mix").vars, fn($v) = ends_with($v.name, "_NODED_URL"))[0].name
 $bus_pid = nil
 $verdict = "FAIL"
 $reason = ""
@@ -166,6 +168,10 @@ try
   end
   push($argv, "--setenv=DBUS_SESSION_BUS_ADDRESS=" .. $address)
   push($argv, "--setenv=" .. $prefix_var .. "=" .. $prefix)
+  -- Authority is deliberately offline in this bus-restart test. Never discover
+  -- a worker's broker while testing the portal's independent D-Bus lifecycle.
+  push($argv, "--setenv=" .. $socket_var .. "=" .. $workdir .. "/absent-broker.sock")
+  push($argv, "--setenv=" .. $url_var .. "=ws://127.0.0.1:0/ws")
   for each $word in ["--", $portald, "serve", "--instance", "test"]
     push($argv, $word)
   end
