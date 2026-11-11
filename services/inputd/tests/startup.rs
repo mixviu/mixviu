@@ -11,10 +11,20 @@ fn executable_logging_needs_no_environment_or_installed_defaults() {
             child.env(paths::env::INPUTD_LOG, "[bad");
         }
         let output = child.output().unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         assert!(String::from_utf8_lossy(&output.stdout).contains("Input broker"));
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert_eq!(stderr.lines().filter(|line| line.contains("ignored invalid")).count(), usize::from(bad));
+        assert_eq!(
+            stderr
+                .lines()
+                .filter(|line| line.contains("ignored invalid"))
+                .count(),
+            usize::from(bad)
+        );
     }
 }
 
@@ -36,12 +46,23 @@ fn unit_directory_is_private_owned_and_idempotent() {
     // that case; root workers exercise the shipped rule unchanged.
     let uid = unsafe { libc::geteuid() };
     let gid = unsafe { libc::getegid() };
-    let rendered = template.replace("@{etc}", "/etc").replace("root root", &format!("{uid} {gid}"));
+    let rendered = template
+        .replace("@{etc}", "/etc")
+        .replace("root root", &format!("{uid} {gid}"));
     std::fs::write(&conf, rendered).unwrap();
     for _ in 0..2 {
         let output = Command::new("/usr/bin/systemd-tmpfiles")
-            .arg("--create").arg("--root").arg(&root).arg(&conf).output().unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            .arg("--create")
+            .arg("--root")
+            .arg(&root)
+            .arg(&conf)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let meta = std::fs::metadata(root.join("etc/inputd")).unwrap();
         assert_eq!(meta.mode() & 0o777, 0o700);
         assert_eq!((meta.uid(), meta.gid()), (uid, gid));

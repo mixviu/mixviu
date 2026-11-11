@@ -342,9 +342,15 @@ mod tests {
         let dir = tempfile::tempdir_in(exe.parent().unwrap()).unwrap();
         let path = dir.path().join("keymap.json");
         let (resolver, _store) = prepare_keymap(path.clone());
-        assert_eq!(resolver.lock().unwrap().physical_rows().to_vec(), default_keymap().physical);
+        assert_eq!(
+            resolver.lock().unwrap().physical_rows().to_vec(),
+            default_keymap().physical
+        );
         assert!(path.is_file());
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         runtime.block_on(async { tokio::task::yield_now().await });
         // Stop before the live Bus or any reader; neither is needed to prove
         // logging, CLI, keymap/resolver and runtime startup headlessly.
@@ -354,9 +360,19 @@ mod tests {
     fn empty_environment_pre_bus_startup_succeeds() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .env_clear()
-            .args(["--exact", "tests::empty_environment_pre_bus_startup_child", "--nocapture"])
-            .output().unwrap();
-        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            .args([
+                "--exact",
+                "tests::empty_environment_pre_bus_startup_child",
+                "--nocapture",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     fn fired(command_name: &str, service: Option<&str>) -> reader::FiredCommand {

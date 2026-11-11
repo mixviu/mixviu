@@ -87,3 +87,15 @@ a real seat remain unverified. No install or desktop action is part of this port
 
 CBC cbc2 job `20261112-070225-65912e13`: 99 daemon tests, 26 core tests,
 14 schema tests passed (139 total), zero ignored or failed; zero doctests.
+
+Round 2 adds optional/invalid logging override tests, empty-environment
+pre-Bus startup through CLI/keymap/resolver/runtime, real executable help
+startup, and scoped tmpfiles ownership/0700/idempotence checks in a synthetic
+root. The atomic-save test now verifies new files and replacements are 0600.
+CBC job `20261112-082710-2857184e` passed 102 daemon unit tests, 2 integration
+tests, 26 core and 14 schema tests (144 total), none ignored or failed.
+The worker refreshed the workspace lockfile offline: zero package changes,
+so the existing committed lockfile remains byte-identical. Test temp roots
+are under the worker target directory; no input device or seat is accessed.
+The actual systemd mount namespace and deployed reader access still need
+installer/desk acceptance; the test does not start a live unit.
