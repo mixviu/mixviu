@@ -25,6 +25,7 @@ native = ["dep:bus", "dep:tokio"]
 cache = ["dep:config", "dep:libc"]
 
 [dependencies]
+action.workspace = true
 bus = { workspace = true, optional = true, features = ["native"] }
 tokio = { workspace = true, optional = true }
 serde.workspace = true

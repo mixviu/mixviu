@@ -344,9 +344,11 @@ fn steps(pending: &mut f32, amount: f32) -> i32 {
 ///
 /// Alt is Meta, as in xterm with `metaSendsEscape`: ESC before the key's
 /// own bytes (Alt+Enter is ESC CR, Alt+Backspace ESC DEL, Ctrl+Alt+x
-/// ESC ^X), except the cursor keys, which carry the xterm modifier
-/// (Alt+Left is CSI 1;3D).
+/// ESC ^X). Desk-owned arrows never reach the PTY.
 pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
+    if toolkit::keymap::reserved(key, modifiers) {
+        return Vec::new();
+    }
     if modifiers.alt {
         if let Some(code) = cursor_code(key) {
             return vec![TerminalKey::Modified { code, modifier: 3 }];

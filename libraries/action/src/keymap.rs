@@ -27,20 +27,22 @@ fn canonical_chord(text: &str) -> String {
     out
 }
 
-fn is_user_fkey(chord: &str) -> bool {
+pub fn reserved(chord: &str) -> bool {
     let key = chord
         .rsplit('+')
         .next()
         .unwrap_or(chord)
         .to_ascii_lowercase();
+    let parts: Vec<_> = chord.split('+').collect();
     matches!(
         key.as_str(),
         "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
-    )
+    ) || (matches!(key.as_str(), "arrowleft" | "arrowright" | "arrowup" | "arrowdown" | "left" | "right" | "up" | "down")
+        && !parts.contains(&"Shift") && (parts.contains(&"Ctrl") || parts.contains(&"Alt")))
 }
 
 fn ensure_not_user_fkey(chord: &str) {
-    assert!(!is_user_fkey(chord), "F1-F12 belong to the user");
+    assert!(!reserved(chord), "F1-F12 belong to the user; Ctrl/Alt+arrow are reserved for the desk");
 }
 
 #[derive(Default)]
@@ -131,6 +133,10 @@ impl Bindings {
         let mut chosen = BTreeMap::new();
         let mut claimed = BTreeSet::new();
         for (action, chords) in overrides {
+            if chords.iter().any(|s| reserved(s)) {
+                notes.push(format!("{action}: F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused; defaults kept"));
+                continue;
+            }
             let Some((&id, _)) = self.current.get_key_value(action.as_str()) else {
                 notes.push(format!("{action}: no such command"));
                 continue;
@@ -228,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn rebind_accepts_user_fkey_override() {
+    fn rebind_refuses_reserved_override() {
         let mut bindings = Bindings::default();
         bindings.add("cmd.user_fkey", Some("Ctrl+O".into()));
 
@@ -237,10 +243,10 @@ mod tests {
 
         let notes = bindings.rebind(&overrides, |text| Some(text.to_string()));
 
-        assert!(notes.is_empty());
+        assert!(notes[0].contains("reserved for the desk"));
         assert_eq!(
             bindings.shortcuts_of("cmd.user_fkey"),
-            vec!["Ctrl+F1".to_string()]
+            vec!["Ctrl+O".to_string()]
         );
     }
 

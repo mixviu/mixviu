@@ -122,9 +122,8 @@ impl<S> Default for Registry<S> {
 /// command on one.
 fn default_chord(id: &str, shortcut: KeyboardShortcut) {
     assert!(
-        !crate::keymap::user_only(shortcut.logical_key),
-        "command {id:?} has a default chord on {}: F1-F12 belong to the user and only \
-         their keymap may bind them (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md)",
+        !crate::keymap::reserved(shortcut.logical_key, shortcut.modifiers),
+        "command {id:?} has a default chord on {}: F1-F12 belong to the user; Ctrl/Alt+arrow are reserved for the desk",
         crate::keymap::chord_text(&shortcut)
     );
 }
@@ -1336,7 +1335,7 @@ mod tests {
                 menu: None,
                 submenu: None,
                 group: 0,
-                shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, key)),
+                shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, key)),
                 icon: None,
                 enabled: always,
                 run: |_| {},
@@ -1344,24 +1343,24 @@ mod tests {
         }
         r.add_shortcuts(
             "equals",
-            [KeyboardShortcut::new(Modifiers::ALT, Key::ArrowLeft)],
+            [KeyboardShortcut::new(Modifiers::ALT | Modifiers::SHIFT, Key::ArrowLeft)],
         );
         let rows =
             serde_json::to_value(r.describe(&Counter::default(), &Strings::new(FTL))).unwrap();
         let golden = [
-            "Ctrl+ArrowLeft",
-            "Ctrl+ArrowRight",
-            "Ctrl+ArrowUp",
-            "Ctrl+ArrowDown",
-            "Ctrl+=",
-            "Ctrl+-",
+            "Ctrl+Shift+ArrowLeft",
+            "Ctrl+Shift+ArrowRight",
+            "Ctrl+Shift+ArrowUp",
+            "Ctrl+Shift+ArrowDown",
+            "Ctrl+Shift+=",
+            "Ctrl+Shift+-",
         ];
         for (row, shortcut) in rows.as_array().unwrap().iter().zip(golden) {
             let id = row["id"].as_str().unwrap();
             let mut expected = serde_json::json!({"id": id, "label": id, "menu": null, "shortcut": shortcut,
                 "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null});
             if id == "equals" {
-                expected["more"] = serde_json::json!(["Alt+ArrowLeft"]);
+                expected["more"] = serde_json::json!(["Alt+Shift+ArrowLeft"]);
             }
             assert_eq!(row, &expected);
         }
@@ -1748,13 +1747,13 @@ mod tests {
                 .collect::<crate::keymap::Overrides>()
         };
         // Reset takes Ctrl+B; Bump keeps Ctrl+U, promoted to its accelerator.
-        let notes = r.rebind(&overrides(&[("count.reset", &["Ctrl+B", "F9"])]));
+        let notes = r.rebind(&overrides(&[("count.reset", &["Ctrl+B", "Insert"])]));
         assert!(notes.is_empty(), "{notes:?}");
         assert_eq!(
             r.shortcuts_of("count.reset"),
             [
                 ctrl(Key::B),
-                KeyboardShortcut::new(Modifiers::NONE, Key::F9)
+                KeyboardShortcut::new(Modifiers::NONE, Key::Insert)
             ]
         );
         assert_eq!(r.get("count.bump").unwrap().shortcut, Some(ctrl(Key::U)));
@@ -1958,29 +1957,14 @@ mod tests {
     }
 
     #[test]
-    fn the_person_may_bind_a_function_key() {
+    fn reserved_overrides_keep_defaults() {
         let mut r = registry();
-        let notes = r.rebind(&BTreeMap::from([(
-            "count.bump".to_owned(),
-            vec!["F5".to_owned(), "Ctrl+Shift+F11".to_owned()],
-        )]));
-        assert!(notes.is_empty(), "{notes:?}");
-        let f5 = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
-        assert_eq!(
-            r.shortcuts_of("count.bump"),
-            [
-                f5,
-                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::F11)
-            ]
-        );
-        assert_eq!(fired_key(&r, &Counter::default(), f5), ["count.bump"]);
-        // Restoring the defaults leaves no function key bound.
-        assert!(r.rebind(&BTreeMap::new()).is_empty());
-        assert!(
-            r.iter()
-                .flat_map(|c| r.shortcuts_of(c.id))
-                .all(|s| !crate::keymap::user_only(s.logical_key))
-        );
+        let before = r.shortcuts_of("count.bump");
+        for text in ["F1", "Shift+F12", "Ctrl+ArrowLeft", "Alt+Right"] {
+            let notes = r.rebind(&BTreeMap::from([("count.bump".into(), vec![text.into()])]));
+            assert!(notes[0].contains("reserved for the desk"));
+            assert_eq!(r.shortcuts_of("count.bump"), before);
+        }
     }
 
     #[test]

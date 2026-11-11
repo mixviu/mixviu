@@ -60,6 +60,9 @@ fn shortcut(
     modifiers: egui::Modifiers,
     alternate: bool,
 ) -> Option<&Value> {
+    if toolkit::keymap::reserved(key, modifiers) {
+        return None;
+    }
     p["shortcuts"].as_array()?.iter().find(|s| {
         s["key"].as_str() == Some(key.name())
             && (s["ctrl"] == true) == modifiers.ctrl
@@ -94,6 +97,20 @@ pub fn validate(value: &Value) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn desk_keys_never_encode_or_dispatch() {
+        for &key in toolkit::keymap::USER_KEYS.iter().chain([
+            egui::Key::ArrowLeft, egui::Key::ArrowRight,
+            egui::Key::ArrowUp, egui::Key::ArrowDown,
+        ].iter()) {
+            for modifiers in [egui::Modifiers::CTRL, egui::Modifiers::ALT, egui::Modifiers::CTRL | egui::Modifiers::ALT] {
+                let forged = serde_json::json!({"shortcuts":[{"key":key.name(),"ctrl":modifiers.ctrl,"alt":modifiers.alt,"command":"forged"}]});
+                assert!(super::shortcut(&forged, key, modifiers, false).is_none());
+                let bytes: Vec<_> = super::input::keys_for(key, modifiers).into_iter().flat_map(super::super::model::encode).collect();
+                assert!(bytes.is_empty());
+            }
+        }
+    }
     use super::*;
 
     #[test]

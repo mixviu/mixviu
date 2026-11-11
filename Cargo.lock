@@ -8309,6 +8309,7 @@ dependencies = [
 name = "settings"
 version = "0.8.0"
 dependencies = [
+ "action",
  "blake3",
  "bus",
  "config",

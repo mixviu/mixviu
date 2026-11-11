@@ -127,7 +127,7 @@ pub fn describe(app: &str) -> Vec<Value> {
         ),
         (
             "ui.key",
-            json!({"key":"egui key name (Enter, Escape, ArrowDown, F1, A, …)","modifiers":"optional [ctrl|shift|alt|command]"}),
+            json!({"key":"egui key name (Enter, Escape, ArrowDown, Tab, A, …). F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused","modifiers":"optional [ctrl|shift|alt|command]"}),
             "Press and release one key with modifiers, one pass each",
             false,
         ),
@@ -2015,7 +2015,20 @@ fn key(args: &Value) -> Result<Job, String> {
             _ => return Err("modifiers are ctrl, shift, alt or command".into()),
         }
     }
+    if crate::keymap::reserved(key, modifiers) {
+        return Err(crate::keymap::RESERVED_MESSAGE.into());
+    }
     Ok(Job::Key { key, modifiers })
+}
+
+#[test]
+fn injected_desk_keys_are_refused() {
+    for name in ["F1", "F12", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] {
+        for modifiers in [serde_json::json!(["ctrl"]), serde_json::json!(["alt"])] {
+            assert!(key(&serde_json::json!({"key":name,"modifiers":modifiers})).err().unwrap().contains("reserved for the desk"));
+        }
+    }
+    assert!(key(&serde_json::json!({"key":"ArrowLeft","modifiers":["ctrl","shift"]})).is_ok());
 }
 
 fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
