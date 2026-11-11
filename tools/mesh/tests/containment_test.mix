@@ -1,0 +1,53 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Offline native execution confinement; synthetic files, no services or keys.
+$w = require("../_lib/desk_worker.mix")
+$t = require("../_lib/targets.mix")
+fn check($ok,$message)
+  if not $ok then raise("CONTAINMENT_TEST",$message) end
+end
+fn refuses($action)
+  try $action(); return false catch $failure return true end
+end
+$target = $t.parse_targets({schema_version:1,project:"example",targets:[{node:"node-a",host:"host-a",kind:"system"}]}).targets[0]
+$native = {node:"node-a",prefix:"/srv/example",mix_bin:"/srv/example/bin/mix"}
+check($t.stdin_job($target,"print(1)",{},"admin",$native.mix_bin,$native).argv[0] == $native.mix_bin,"configured interpreter refused")
+for $other in ["/usr/bin/env","/srv/other/bin/mix","/srv/example/bin/noded","/srv/example/bin/../mix"]
+  check(refuses(fn()=$t.stdin_job($target,"print(1)",{},"admin",$other,$native)),"different interpreter accepted")
+end
+$wrong_node = $native
+$wrong_node.node = "node-b"
+check(refuses(fn()=$t.stdin_job($target,"print(1)",{},"admin",$native.mix_bin,$wrong_node)),"another node configuration accepted")
+$bad_prefix = $native
+$bad_prefix.prefix = "/srv/example/../other"
+$bad_prefix.mix_bin = $bad_prefix.prefix .. "/bin/mix"
+check(refuses(fn()=$t.stdin_job($target,"print(1)",{},"admin",$bad_prefix.mix_bin,$bad_prefix)),"non-normalized prefix accepted")
+
+$is_root = trim(run_argv_must(["id","-u"])) == "0"
+$root = trim(run_argv_must(if $is_root then ["mktemp","-d","/root/mesh-containment-XXXXXX"] else ["mktemp","-d"] end))
+try
+  $prefix = $root .. "/install"
+  mkdir($prefix .. "/bin",{parents:true})
+  for $component in ["mix","noded"]
+    write_new($prefix .. "/bin/" .. $component,"synthetic-native-" .. $component,0o755)
+  end
+  write_new($root .. "/outside","synthetic-outside-native",0o755)
+  check(refuses(fn()=$w.native_binary($root .. "/outside",$prefix,"mix")),"outside-prefix native file accepted")
+  check(refuses(fn()=$w.native_binary($prefix .. "/bin/noded",$prefix,"mix")),"wrong configured component accepted")
+  run_argv_must(["ln","-s",$prefix,$root .. "/alias"])
+  check(refuses(fn()=$w.native_binary($root .. "/alias/bin/mix",$root .. "/alias","mix")),"symlinked install ancestor accepted")
+  if $is_root then
+    for $component in ["mix","noded"]
+      check($w.native_binary($prefix .. "/bin/" .. $component,$prefix,$component) == hash_file($prefix .. "/bin/" .. $component,"sha256"),"configured root-controlled binary refused")
+    end
+    chmod($prefix .. "/bin",0o777)
+    check(refuses(fn()=$w.native_binary($prefix .. "/bin/mix",$prefix,"mix")),"writable native ancestor accepted")
+    chmod($prefix .. "/bin",0o755)
+    print("PASS configured native components, exact interpreter, no symlinks and root-controlled ownership")
+  else
+    check(refuses(fn()=$w.native_binary($prefix .. "/bin/mix",$prefix,"mix")),"user-controlled native install accepted")
+    print("PASS native confinement and user-owned refusal; root-owned success checked on root CBC")
+  end
+finally
+  run_argv_must(["rm","-rf",$root])
+end

@@ -1,0 +1,58 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Hermetic configuration/interpreter checks; no SSH or real hub reads.
+$d = require("../_lib/deploy_lib.mix")
+
+fn check($ok, $message)
+  if not $ok then raise("MESH_LAYOUT_TEST", $message) end
+end
+
+fn layout_refuses($action)
+  try
+    $action()
+    return false
+  catch $message, $error
+    return $error.code == "MESH_LAYOUT"
+  end
+end
+
+if len(args()) > 0 then
+  $settings = $d.node_settings("local")
+  check($d.mix_bin() == env("MESH_EXPECTED_EXE"), "child did not retain its own interpreter identity")
+  check($d.remote_mix("alpha") == "/srv/remote/bin/mix", "explicit remote interpreter lost")
+  check($d.etc_root() == $settings.roots.etc, "local etc override lost")
+  check($d.state_root() == $settings.roots.var, "local var override lost")
+  check($d.local_roots().prefix == $settings.roots.prefix, "local prefix override lost")
+  check(layout_refuses(fn()=$d.remote_mix("missing")), "missing node did not refuse before transport")
+  check(layout_refuses(fn()=$d.remote_mix("relative")), "relative remote interpreter accepted")
+  check(layout_refuses(fn()=$d.remote_mix("unset")), "missing remote interpreter accepted")
+  check(layout_refuses(fn()=$d.checked_roots({prefix:"/srv/fixture",etc:"relative",var:"/srv/fixture/var"})), "relative layout root accepted")
+  $m = require("../_lib/mesh_lib.mix")
+  $probe = $m.installed_noded_version("missing")
+  check($probe.ok == false and contains($probe.detail, "installed noded version probe failed"), "layout failure escaped the read-only readiness finding")
+  print("PASS explicit per-node interpreter, local roots and missing-node refusal without network")
+  exit(0)
+end
+
+$scratch = trim(run_argv_must(["mktemp", "-d"]))
+try
+  $config = $scratch .. "/nodes.conf.mix"
+  $exe = realpath("/proc/self/exe")
+  $alias = $scratch .. "/mix"
+  run_argv_must(["ln", "-s", $exe, $alias])
+  write_file($config, data_encode({nodes:{
+    local:{roots:{prefix:$scratch .. "/prefix",etc:$scratch .. "/etc",var:$scratch .. "/var"}},
+    alpha:{mix_bin:"/srv/remote/bin/mix"},
+    relative:{mix_bin:"bin/mix"},
+    unset:{}
+  }}))
+  $child = run_argv([$alias, realpath($0), "child"], {env:{
+    MESH_HUB:$scratch,
+    MESH_NODES_CONFIG:$config,
+    MESH_EXPECTED_EXE:$exe
+  }, timeout:30})
+  check($child.ok, "fixture child refused: " .. $child.stdout .. $child.stderr)
+  print(trim($child.stdout))
+finally
+  run_argv_must(["rm", "-rf", $scratch])
+end

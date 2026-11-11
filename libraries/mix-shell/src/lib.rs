@@ -874,6 +874,33 @@ pub(crate) fn run_peers_cli(args: &[String]) -> i32 {
     run_component_cli("peers", "peersd", "peers_cli.mix", args)
 }
 
+/// The signer belongs to the containing shell engine, not this library.
+/// Re-enter its leading-argument dispatch so REPL and CLI share one parser.
+pub(crate) fn run_mesh_cli(args: &[String]) -> i32 {
+    if mix::builtins::engine_profile() == "service" {
+        eprintln!("mix mesh: the signer requires the mix shell engine; invoke mix mesh");
+        return 2;
+    }
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(error) => {
+            eprintln!("mix mesh: cannot find this mix binary: {error}");
+            return 1;
+        }
+    };
+    match std::process::Command::new(exe)
+        .arg("mesh")
+        .args(args)
+        .status()
+    {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(error) => {
+            eprintln!("mix mesh: {error}");
+            1
+        }
+    }
+}
+
 /// Run `<prefix>/lib/<component>/<script>` with this same binary, passing
 /// `args` through, and return the script's own exit code.
 fn run_component_cli(name: &str, component: &str, script: &str, args: &[String]) -> i32 {
@@ -912,6 +939,9 @@ fn run_component_cli(name: &str, component: &str, script: &str, args: &[String])
 }
 
 fn run_meta_subcommand(sub_args: &[String]) -> i32 {
+    if sub_args.first().map(String::as_str) == Some("mesh") {
+        return run_mesh_cli(&sub_args[1..]);
+    }
     if sub_args.first().map(String::as_str) == Some("layout") {
         return meta::run_layout(&sub_args[1..]);
     }
@@ -2426,7 +2456,9 @@ pub fn main() -> process::ExitCode {
         // `mix SCRIPT --version` (and `--serve SCRIPT`, `mix -`): the same
         // cold answer for a script. The script is read, never parsed or run.
         let reserved = |s: &str| {
-            matches!(s, "stats" | "lint" | "edit" | "agent" | "peers")
+            // `mesh` is dispatched by the containing mix engine before this
+            // parser; it must never be interpreted as a script-version query.
+            matches!(s, "stats" | "lint" | "edit" | "agent" | "peers" | "mesh")
                 || META_CLI_COMMANDS.contains(&s)
         };
         match script_meta::script_version_request(&args, &reserved) {
