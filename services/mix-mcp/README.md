@@ -29,5 +29,6 @@ argument because indexd cannot scope these queries. Stale-query failures preserv
 statistics with `stale: null` and a `stale_error` message; see the manual for the
 explicit thresholds and the observation purge procedure.
 
-Build and test with `cargo test -p mix-mcp`; the integration test embeds the
-real noded using `test-broker`, with isolated socket, config and home paths.
+Run `mix tools/mcp_gate.mix focused` through CBC to build the test interpreter,
+run tests and collect dependency/release receipts. The integration tests embed
+the real noded using `test-broker`, with isolated socket, config and home paths.

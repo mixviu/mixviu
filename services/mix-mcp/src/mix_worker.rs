@@ -1,18 +1,28 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Run the sibling Mix interpreter with isolated cwd and stdio in an
-//! owned Rust worker. Only the parent speaks MCP. Cancellation terminates the
+//! Isolate the !Send Mix evaluator, process cwd and inherited stdio in an
+//! owned sibling Mix worker. Only the parent speaks MCP. Cancellation terminates the
 //! worker process group; it cannot undo effects already committed through Bus.
+
 
 use std::process::Stdio;
 
 use rmcp::model::CallToolResult;
-
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 const SCRIPT_LIMIT: usize = 256 * 1024;
+
 const OUTPUT_LIMIT: usize = 1024 * 1024;
+pub(crate) const WORKER_ARG: &str = "--internal-mix-worker";
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Request {
+    script: String,
+    cwd: Option<String>,
+}
 
 /// Own descendants as well as the worker. A dropped MCP future must not leave
 /// evaluator threads changing the server's cwd or holding its transport fds.
@@ -87,17 +97,11 @@ async fn execute_inner(
             "script exceeds {SCRIPT_LIMIT} bytes; nothing was started"
         ));
     }
+    let input = serde_json::to_vec(&Request { script, cwd })
+        .map_err(|e| format!("worker request serialization failed: {e}"))?;
     let mut command = tokio::process::Command::new(paths::bin("mix"));
-    if let Some(cwd) = cwd {
-        let expanded = if let Some(rest) = cwd.strip_prefix("~/") {
-            std::path::PathBuf::from(std::env::var_os("HOME").ok_or("HOME is unset")?).join(rest)
-        } else {
-            cwd.into()
-        };
-        command.current_dir(expanded);
-    }
     command
-        .arg("-")
+        .arg(WORKER_ARG)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -117,7 +121,7 @@ async fn execute_inner(
     let stdout = child.stdout.take().ok_or("Mix worker has no stdout")?;
     let stderr = child.stderr.take().ok_or("Mix worker has no stderr")?;
     stdin
-        .write_all(script.as_bytes())
+        .write_all(&input)
         .await
         .map_err(|e| format!("write Mix request: {e}"))?;
     stdin

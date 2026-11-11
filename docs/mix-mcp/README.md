@@ -196,6 +196,10 @@ requires `ssh_host`. When a Bus route is available, select
 `transport: "bus", target: "indexd.host.example.bus"` instead. Presence is
 checked with `indexd.stats` at the configured target, including routed targets.
 
+Logical SSH command entries use the `mix:` scheme and resolve remotely with
+`mix_path`. Update existing command vectors explicitly when moving to MixViu;
+the adapter does not rewrite configuration files.
+
 The installed client domain map retains the frozen project/hub mappings and adds MixViu and its private hub. Custom
 `domains.conf.mix` maps override these defaults. `index_workspace` expands
 only a leading `~` or `~/`, resolves the workspace to an absolute path, and

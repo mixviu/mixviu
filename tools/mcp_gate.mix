@@ -1,38 +1,49 @@
 #!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- CBC-only verification for the MCP edge adapter.
+-- resolve: return lock/fmt changes and check; focused: tests and receipts;
+-- all: the full repository gate followed by receipts; receipts: no test repeat.
+$stages = args()
+if len($stages) != 1 or not contains(["resolve", "focused", "all", "receipts"], $stages[0]) then
+  eprint("usage: mix tools/mcp_gate.mix resolve|focused|all|receipts (on CBC)")
+  exit(64)
+end
+$stage = $stages[0]
 fn checked($argv, $env = {})
   $r = run_argv($argv, {env: $env, timeout: 14400, stdout: "inherit", stderr: "inherit"})
   if $r.exit_code != 0 then exit($r.exit_code ?? 124) end
 end
-if args()[0] == "resolve" then
+if $stage == "resolve" then
   try
     $result = run_argv(["cargo", "metadata", "--format-version", "1"], {max_output: 256000000, timeout: 1800})
     print($result.stderr)
     if $result.exit_code != 0 then exit($result.exit_code ?? 124) end
     $metadata = json_parse($result.stdout)
     print("RESOLVED_PACKAGES " .. to_string(len($metadata.packages)))
-    checked(["cargo", "fmt", "-p", "mix-mcp"])
+    checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "mix-shell", "-p", "mix"])
     print("DERIVED_DIFF_BEGIN")
-    print(run_argv_must(["git", "diff", "--", "Cargo.lock", "services/mix-mcp"]))
+    print(run_argv_must(["git", "diff"]))
     print("DERIVED_DIFF_END")
     checked(["mix", "tools/foreign_gate.mix", "--locked"])
+    checked(["cargo", "check", "--locked", "-p", "mix", "--bin", "mix"])
     checked(["cargo", "check", "--locked", "-p", "mix-mcp", "--all-targets"])
   finally
-    checked(["git", "checkout", "-q", "--", "Cargo.lock", "services/mix-mcp"])
+    checked(["git", "checkout", "-q", "--", "."])
   end
   exit(0)
 end
-if args()[0] == "focused" then
+if $stage == "focused" then
   try
-    checked(["cargo", "fmt", "-p", "mix-mcp"])
+    checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "mix-shell", "-p", "mix"])
     print("FMT_DIFF_BEGIN")
-    print(run_argv_must(["git", "diff", "--", "services/mix-mcp"]))
+    print(run_argv_must(["git", "diff"]))
     print("FMT_DIFF_END")
   finally
-    checked(["git", "checkout", "-q", "--", "services/mix-mcp"])
+    checked(["git", "checkout", "-q", "--", "."])
   end
 end
+if $stage == "all" then checked(["mix", "tools/ci.mix", "all"]) end
 checked(["cargo", "build", "--locked", "-p", "mix"])
 $prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir", "mcp-ci-XXXXXXXX"]))
 try
@@ -64,7 +75,9 @@ try
       print("STRICT_ABSENT " .. $p.name .. " " .. $p.version)
     end
   end
-  checked(["cargo", "test", "--locked", "-p", "mix-mcp", "--no-fail-fast"], $env)
+  if $stage == "focused" then
+    checked(["cargo", "test", "--locked", "-p", "mix-mcp", "--no-fail-fast"], $env)
+  end
   checked(["cargo", "build", "--locked", "--release", "-p", "mix-mcp"])
   print("RELEASE_SIZE " .. to_string(stat("target/release/mix-mcp").size))
 finally

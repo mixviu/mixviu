@@ -35,3 +35,13 @@ No agent configuration is changed by this port.
 client/child-process features confined to dev-dependencies. Dependency and
 verification receipts are recorded in the PR; the source lockfile seeds
 resolution, with unused packages removed by Cargo on CBC.
+The frozen isolated evaluator worker now lives in `mix-shell::script_worker`,
+entered by the sibling `mix` binary's private worker flag. The frozen named
+connection policy is shared through `bus::agent_client`; MCP keeps its original
+connection tests. This avoids ordinary Mix's anonymous/TCP-fallback semantics
+and preserves session attribution, strict Unix failures, lazy local execution,
+return-code mapping and skipped shell hooks. Neither native library imports the
+MCP SDK or any package added by it. Normal Mix invocation keeps its existing
+handler. Additional stdio tests cover attribution and a failed Unix socket
+with TCP explicitly enabled. `adaptation_targets` records these source moves.
+
