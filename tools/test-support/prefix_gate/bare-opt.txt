@@ -1,0 +1,2 @@
+const BAD: &str = "/opt/mix";
+const OTHER: &str = "/opt/mixos";

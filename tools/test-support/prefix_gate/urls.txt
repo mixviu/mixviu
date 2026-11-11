@@ -1,0 +1,1 @@
+const OK: &str = "https://example.org/opt/other http://example.org/etc/mix file:///opt/mix";

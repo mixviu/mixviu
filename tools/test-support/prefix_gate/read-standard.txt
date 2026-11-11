@@ -1,0 +1,14 @@
+fn read() { let _ = std::env::var("HOME"); let _ = std::env::var_os("LC_CTYPE"); let _ = std::env::var("XDG_RUNTIME_DIR"); }
+const VALUE: &str = env!("CARGO_PKG_VERSION");
+const FLAGS: Option<&str> = option_env!("RUSTFLAGS");
+fn more() {
+    for name in ["OLDPWD", "WAYLAND_SOCKET", "XCURSOR_THEME", "XCURSOR_SIZE", "STATE_DIRECTORY", "CARGO", "OUT_DIR", "PROFILE"] { let _ = name; }
+    let _ = std::env::var("OLDPWD");
+    let _ = std::env::var("WAYLAND_SOCKET");
+    let _ = std::env::var("XCURSOR_THEME");
+    let _ = std::env::var("XCURSOR_SIZE");
+    let _ = std::env::var("STATE_DIRECTORY");
+    let _ = std::env::var("CARGO");
+    let _ = std::env::var("OUT_DIR");
+    let _ = std::env::var("PROFILE");
+}

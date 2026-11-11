@@ -1,0 +1,4 @@
+fn read() { let _ = std::env::var("PREFIX_GATE_FAKE_ENV"); let _ = std::env::var_os("PREFIX_GATE_OTHER_ENV"); }
+const VALUE: Option<&str> = option_env!("PREFIX_GATE_THIRD_ENV");
+const OTHER: &str = env!("PREFIX_GATE_FOURTH_ENV");
+fn underscore() { let _ = std::env::var("_PREFIX_GATE_ENV"); }

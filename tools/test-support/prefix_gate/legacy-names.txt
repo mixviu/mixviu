@@ -1,0 +1,1 @@
+const BAD: &str = "MIXOS_OLD COSMIX_OLD cosmix";

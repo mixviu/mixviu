@@ -64,7 +64,7 @@ jobs:
   lint:
     name: mix lint + viud egui-free
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # Prefix baseline ancestry and old-name checks also cover docs-only PRs.
     runs-on: ubuntu-24.04
     # Every job that compiles runs on the target distro (see `test`).
     container:
@@ -82,6 +82,8 @@ jobs:
         run: pacman -Syu --noconfirm --needed git rustup clang pkgconf
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The prefix baseline ratchet requires a real merge base and main.
+          fetch-depth: 0
           persist-credentials: false
       # The container runs as root over a runner-owned checkout.
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"

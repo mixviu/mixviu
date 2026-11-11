@@ -1,0 +1,4 @@
+// Known limitation: the gate does not evaluate a non-literal argument, even
+// when it names a constant. This is a documented miss, not a positive proof.
+const P: &str = "/";
+const BAD: &str = concat!(P, "opt/mix");

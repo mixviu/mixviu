@@ -1,0 +1,62 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Counted baseline arithmetic shared by the gate, updater and selftest.
+fn checked($value)
+  if type($value) != "map" then
+    raise("BASELINE", "baseline must be a map")
+  end
+  for $k in keys($value)
+    $n = $value[$k]
+    if type($n) != "number" or $n < 0 or floor($n) != $n then
+      raise("BASELINE", "invalid count for " .. $k)
+    end
+  end
+  return $value
+end
+
+fn growth($now, $base)
+  checked($now)
+  checked($base)
+  $bad = []
+  for $k in sort(keys($now))
+    if not has_key($base, $k) or $now[$k] > $base[$k] then
+      push($bad, $k)
+    end
+  end
+  return $bad
+end
+
+fn counts($findings)
+  $out = {}
+  for $f in $findings
+    if $f.disabled ?? false then continue end
+    $k = json_encode([$f.file, $f.rule, $f.text])
+    $out[$k] = ($out[$k] ?? 0) + 1
+  end
+  return $out
+end
+
+fn check_base($root)
+  $r = run_argv(["git", "-C", $root, "merge-base", "HEAD", "origin/main"])
+  if not $r.ok or $r.stdout_truncated or trim($r.stdout) == "" then
+    raise("BASELINE_BASE", "cannot find merge base with origin/main: " .. $r.stderr)
+  end
+  $sha = trim($r.stdout)
+  $file = "tools/prefix-baseline.json"
+  $tree = run_argv_must(["git", "-C", $root, "ls-tree", "--name-only", $sha, "--", $file])
+  if trim($tree) == "" then
+    return {base: $sha, introduced: true, growth: []}
+  end
+  $base = checked(json_parse(run_argv_must(["git", "-C", $root, "show", $sha .. ":" .. $file])))
+  $now = checked(json_parse(read_file($root .. "/" .. $file)))
+  return {base: $sha, introduced: false, growth: growth($now, $base)}
+end
+
+fn update($path, $now, $allow_growth)
+  checked($now)
+  $base = is_file($path) ? checked(json_parse(read_file($path))) : {}
+  $bad = growth($now, $base)
+  if not $allow_growth and len($bad) > 0 then
+    raise("BASELINE_GROWTH", "update would add keys or raise counts; --allow-growth is required")
+  end
+  write_file($path, json_encode($now, true) .. "\n")
+end

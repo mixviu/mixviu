@@ -1,23 +1,429 @@
-{cases: [
- {fixture: "concat.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "format.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "byte.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "raw.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "unit.txt", file: "fixture/example.service", rules: ["data-path", "unit-directory"]},
- {fixture: "env.txt", file: "fixture/src/lib.rs", rules: ["rust-env", "rust-mix-token"]},
- {fixture: "comment.txt", file: "fixture/src/lib.rs", rules: []},
- {fixture: "allowed.txt", file: "libraries/paths/src/lib.rs", rules: []},
- {fixture: "escaped.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "nested.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "quoted-comment.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "include.txt", file: "tools/test-support/prefix_gate/caller.rs", rules: ["rust-path", "rust-mix-token"]},
- {fixture: "env.txt", file: "vendor/example/lib.rs", rules: []},
- {fixture: "raw-byte.txt", file: "vendor/example/lib.rs", rules: ["vendor-path"]},
- {fixture: "unicode.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "wrong-constant.txt", file: "libraries/paths/src/lib.rs", rules: ["rust-path"]},
- {fixture: "duplicate.txt", file: "libraries/paths/src/lib.rs", rules: ["rust-path"]},
- {fixture: "format-build.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "concat-char.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "concat-number.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "computed-constant.txt", file: "libraries/paths/src/lib.rs", rules: ["rust-path"]}
-]}
+{
+  "cases": [
+    {
+      "fixture": "concat.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "format.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "byte.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "raw.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "unit.txt",
+      "file": "fixture/example.service",
+      "rules": [
+        "data-path",
+        "unit-directory"
+      ]
+    },
+    {
+      "fixture": "env.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-env",
+        "rust-mix-token"
+      ]
+    },
+    {
+      "fixture": "comment.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path",
+        "rust-path",
+        "rust-path",
+        "rust-path",
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "allowed.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "escaped.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "nested.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "quoted-comment.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "include.txt",
+      "file": "tools/test-support/prefix_gate/caller.rs",
+      "rules": [
+        "rust-path",
+        "rust-mix-token"
+      ]
+    },
+    {
+      "fixture": "env.txt",
+      "file": "vendor/example/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "raw-byte.txt",
+      "file": "vendor/example/lib.rs",
+      "rules": [
+        "vendor-path"
+      ]
+    },
+    {
+      "fixture": "unicode.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "wrong-constant.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "duplicate.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "format-build.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "concat-char.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "concat-number.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "computed-constant.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "doc-word.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "boundaries.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "urls.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "bare-opt.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path",
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "digit.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-env",
+        "rust-mix-token"
+      ]
+    },
+    {
+      "fixture": "legacy-names.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "old-name",
+        "old-name",
+        "old-name"
+      ]
+    },
+    {
+      "fixture": "legacy-boundaries.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "recogniser.txt",
+      "file": "tools/prefix_gate.mix",
+      "rules": []
+    },
+    {
+      "fixture": "deferred.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [],
+      "disabled": [
+        "bare-mixos"
+      ]
+    },
+    {
+      "fixture": "static.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "lifetime.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "static-lifetime.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "wrong-prefix.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "prefix-child.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "wrong-file.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "duplicate-static.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": [
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "read-foreign.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-foreign-env",
+        "rust-foreign-env",
+        "rust-foreign-env",
+        "rust-foreign-env"
+      ]
+    },
+    {
+      "fixture": "read-unknown.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env",
+        "rust-unknown-env",
+        "rust-unknown-env",
+        "rust-unknown-env",
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "read-standard.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "fallbacks.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": [
+        "rust-path",
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "include-rust.txt",
+      "file": "tools/test-support/prefix_gate/caller.rs",
+      "rules": [
+        "rust-path",
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "include-qualified.txt",
+      "file": "tools/test-support/prefix_gate/caller.rs",
+      "rules": [
+        "rust-path",
+        "rust-path"
+      ]
+    },
+    {
+      "fixture": "limitation.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [],
+      "limitation": "non-literal concat arguments are not evaluated"
+    },
+    {
+      "fixture": "directories.txt",
+      "file": "fixture/example.service",
+      "rules": [
+        "unit-directory",
+        "unit-directory",
+        "unit-directory",
+        "unit-directory",
+        "unit-directory"
+      ]
+    },
+    {
+      "fixture": "directory-boundaries.txt",
+      "file": "fixture/example.service",
+      "rules": []
+    },
+    {
+      "fixture": "specifiers.txt",
+      "file": "fixture/example.service",
+      "rules": [
+        "unit-specifier",
+        "unit-specifier",
+        "unit-specifier",
+        "unit-specifier"
+      ]
+    },
+    {
+      "fixture": "specifier-boundaries.txt",
+      "file": "fixture/example.service",
+      "rules": []
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.timer",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.target",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.path",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.mount",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.automount",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.desktop",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.socket",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.slice",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/tmpfiles.d/example.conf",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/sysusers.d/example.conf",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "static-mut.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "known-constant.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-foreign-env"
+      ]
+    },
+    {
+      "fixture": "non-read.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": []
+    }
+  ]
+}

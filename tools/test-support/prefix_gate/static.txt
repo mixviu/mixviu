@@ -1,0 +1,2 @@
+#[allow(dead_code)]
+pub(in crate::example) static DEFAULT_PREFIX: &str = "/opt/mix";

@@ -1,13 +1,161 @@
+-- Exact recogniser exceptions apply throughout the named maintainer-only files.
+-- foreign_env_names classify known project settings as findings, not exemptions.
+-- disabled_rules are computed; enabled:true enforces the deferred rule.
 {
-  prefix_constant: {file: "libraries/paths/src/lib.rs", name: "DEFAULT_PREFIX", reason: "The sole compiled fallback prefix; at most one decoded /opt/mix literal."},
-  exceptions: [
-    {file: "tools/prefix_gate.mix", rule: "old-name", text: "MIXOS_", reason: "The recogniser must spell the forbidden variable prefix."},
-    {file: "tools/prefix_gate.mix", rule: "old-name", text: "COSMIX_", reason: "The recogniser must spell the forbidden variable prefix."},
-    {file: "tools/prefix_gate.mix", rule: "old-name", text: "cosmix", reason: "The recogniser must spell the forbidden old name."},
-    {file: "tools/prefix.conf.mix", rule: "old-name", text: "MIXOS_", reason: "Exact recogniser exceptions must name their matched text."},
-    {file: "tools/prefix.conf.mix", rule: "old-name", text: "COSMIX_", reason: "Exact recogniser exceptions must name their matched text."},
-    {file: "tools/prefix.conf.mix", rule: "old-name", text: "cosmix", reason: "Exact recogniser exceptions must name their matched text."}
+  "prefix_constant": {
+    "file": "libraries/paths/src/lib.rs",
+    "name": "DEFAULT_PREFIX",
+    "reason": "The sole compiled fallback prefix; at most one decoded /opt/mix literal."
+  },
+  "exceptions": [
+    {
+      "file": "tools/prefix_gate.mix",
+      "rule": "old-name",
+      "text": "MIXOS_",
+      "reason": "The recogniser must spell the forbidden variable prefix."
+    },
+    {
+      "file": "tools/prefix_gate.mix",
+      "rule": "old-name",
+      "text": "COSMIX_",
+      "reason": "The recogniser must spell the forbidden variable prefix."
+    },
+    {
+      "file": "tools/prefix_gate.mix",
+      "rule": "old-name",
+      "text": "cosmix",
+      "reason": "The recogniser must spell the forbidden old name."
+    },
+    {
+      "file": "tools/prefix.conf.mix",
+      "rule": "old-name",
+      "text": "MIXOS_",
+      "reason": "Exact recogniser exceptions must name their matched text."
+    },
+    {
+      "file": "tools/prefix.conf.mix",
+      "rule": "old-name",
+      "text": "COSMIX_",
+      "reason": "Exact recogniser exceptions must name their matched text."
+    },
+    {
+      "file": "tools/prefix.conf.mix",
+      "rule": "old-name",
+      "text": "cosmix",
+      "reason": "Exact recogniser exceptions must name their matched text."
+    },
+    {
+      "file": "tools/prefix_gate.mix",
+      "rule": "bare-mixos",
+      "text": "mixos",
+      "reason": "Maintainer-only recogniser and selftest needles must spell the deferred token."
+    },
+    {
+      "file": "tools/prefix.conf.mix",
+      "rule": "bare-mixos",
+      "text": "mixos",
+      "reason": "The deferred rule and its exact exceptions must name the token."
+    }
   ],
-  excluded_files: {"tools/prefix-baseline.json": "Generated finding identities contain the old spellings they track; scanning them would make the baseline recursive."},
-  disabled_rules: [{rule: "bare-mixos", enabled: false, reason: "Mark deferred the domain and app-id rename; do not check the bare mixos token yet."}]
+  "excluded_files": {
+    "tools/prefix-baseline.json": "Generated finding identities contain the old spellings they track; scanning them would make the baseline recursive.",
+    "tools/test-support/prefix_gate/allowed.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/bare-opt.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/boundaries.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/byte.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/cases.conf.mix": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/comment.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/computed-constant.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/concat-char.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/concat-number.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/concat.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/data.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/deferred.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/digit.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/directories.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/directory-boundaries.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/doc-word.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/duplicate-static.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/duplicate.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/escaped.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/fallbacks.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/format-build.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/format.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/include-data.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/include-qualified.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/include-rust.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/include.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/legacy-boundaries.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/legacy-names.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/lifetime.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/limitation.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/nested.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/payload.rs": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/prefix-child.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/quoted-comment.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/raw-byte.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/raw.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/read-foreign.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/read-standard.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/read-unknown.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/recogniser.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/specifier-boundaries.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/specifiers.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/static-lifetime.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/static.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/unicode.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/unit.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/urls.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/wrong-constant.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/wrong-file.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/wrong-prefix.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/static-mut.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/known-constant.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/non-read.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename."
+  },
+  "foreign_env_names": [
+    "MDS_GC_QUIESCENCE_SECS",
+    "COMPOSITOR_ENVIRONMENT",
+    "COMPOSITOR_LOG_LEVEL",
+    "TERM_CWD"
+  ],
+  "standard_env_names": [
+    "HOME",
+    "PATH",
+    "USER",
+    "SHELL",
+    "TERM",
+    "LANG",
+    "LC_*",
+    "XDG_*",
+    "WAYLAND_DISPLAY",
+    "DISPLAY",
+    "DBUS_*",
+    "CARGO_*",
+    "RUST*",
+    "SOURCE_DATE_EPOCH",
+    "TMPDIR",
+    "NO_COLOR",
+    "SSH_*",
+    "NOTIFY_SOCKET",
+    "LISTEN_*",
+    "INVOCATION_ID",
+    "JOURNAL_STREAM",
+    "OLDPWD",
+    "WAYLAND_SOCKET",
+    "XCURSOR_THEME",
+    "XCURSOR_SIZE",
+    "STATE_DIRECTORY",
+    "CARGO",
+    "OUT_DIR",
+    "PROFILE"
+  ],
+  "disabled_rules": [
+    {
+      "rule": "bare-mixos",
+      "enabled": false,
+      "reason": "Mark deferred the domain and app-id rename. Computed and reported as disabled; set enabled:true to enforce it."
+    }
+  ]
 }

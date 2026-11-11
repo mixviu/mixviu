@@ -1,0 +1,1 @@
+const EXAMPLE: &str = "PREFIX_GATE_FAKE_ENV";

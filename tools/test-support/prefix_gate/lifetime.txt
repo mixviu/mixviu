@@ -1,0 +1,2 @@
+#[allow(dead_code)]
+pub(crate) const DEFAULT_PREFIX: &'static str = r#"/opt/mix"#;

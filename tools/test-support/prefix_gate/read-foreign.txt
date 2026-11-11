@@ -1,0 +1,3 @@
+fn read() { let _ = std::env::var("MDS_GC_QUIESCENCE_SECS"); let _ = std::env::var_os("COMPOSITOR_ENVIRONMENT"); }
+const VALUE: Option<&str> = option_env!("COMPOSITOR_LOG_LEVEL");
+const CWD: &str = env!("TERM_CWD");

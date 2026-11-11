@@ -1,0 +1,4 @@
+State=%S/mix
+Runtime=%t/mix/a
+Cache=%C/mixos/cache
+Config=%E/mix/foo.conf

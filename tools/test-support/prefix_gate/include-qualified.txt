@@ -1,0 +1,2 @@
+const ONE: &str = ::include_str!("payload.rs");
+const TWO: &str = core::include_str!("payload.rs");

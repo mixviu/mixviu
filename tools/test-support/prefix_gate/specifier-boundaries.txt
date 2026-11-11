@@ -1,0 +1,4 @@
+State=%S/mixture
+Runtime=%t/mixer
+Cache=%C/mixed
+Config=%E/mixosx

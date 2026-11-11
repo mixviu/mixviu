@@ -1,0 +1,5 @@
+RuntimeDirectory=mix
+StateDirectory=mix/cache
+CacheDirectory=mixos-cache
+LogsDirectory=mixos
+ConfigurationDirectory=mixos/root

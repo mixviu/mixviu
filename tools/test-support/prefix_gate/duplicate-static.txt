@@ -1,0 +1,2 @@
+pub const DEFAULT_PREFIX: &str = "/opt/mix";
+mod other { pub static DEFAULT_PREFIX: &'static str = "/opt/mix"; }

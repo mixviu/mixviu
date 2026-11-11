@@ -1,0 +1,2 @@
+const ENV_NAME: &str = "MDS_GC_QUIESCENCE_SECS";
+fn read() { let _ = std::env::var(ENV_NAME); }

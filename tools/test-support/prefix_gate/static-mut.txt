@@ -1,0 +1,1 @@
+pub(super) static mut DEFAULT_PREFIX: &str = "/opt/mix";

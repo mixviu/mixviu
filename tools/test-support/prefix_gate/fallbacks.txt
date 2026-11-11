@@ -1,0 +1,2 @@
+const RUN: &str = "/tmp/mix-run";
+const HOME: &str = "/root";

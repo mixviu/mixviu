@@ -185,8 +185,10 @@ fn stage_env()
       exit(1)
     end
   end
-  -- Finding identities are generated metadata, not variable consumers.
-  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!tools/prefix-baseline.json", ":!" + $reg_path]
+  -- Finding identities and deliberate negative test vectors are metadata,
+  -- not variable consumers. Tool recognisers remain covered by the registry's
+  -- explicit ^tools/.*\.mix$ old-name allowlist (including .conf.mix).
+  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!tools/prefix-baseline.json", ":!tools/test-support/prefix_gate", ":!" + $reg_path]
   $used = {}
   $prefix_used = {}
   for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
@@ -215,7 +217,7 @@ fn stage_env()
       push($bad, "unlisted prefix " + $n)
     end
   end
-  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!tools/prefix-baseline.json", ":!" + $reg_path])), "\n")
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!tools/prefix-baseline.json", ":!tools/test-support/prefix_gate", ":!" + $reg_path])), "\n")
     if $f != "" then
       $ok = false
       for $re in $reg.mixos_allowed ?? []
@@ -268,6 +270,7 @@ end
 
 fn stage_prefix($mix)
   ensure_mix($mix)
+  run_step([$mix, "tools/prefix_gate.mix", "--check-baseline"])
   run_step([$mix, "tools/prefix_gate.mix", "selftest"])
   run_step([$mix, "tools/prefix_gate.mix"])
 end
