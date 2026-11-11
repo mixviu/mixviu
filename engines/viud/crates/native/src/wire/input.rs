@@ -295,6 +295,10 @@ pub fn register(
             };
             if let Some(device) = touch_device {
                 let Some(key) = crate::wire::input::map::touch_output(state, &device) else {
+                    // Mapping can reject delivery, but a real touch still
+                    // wakes the panel and resets human idle time.
+                    world::comp::injection::note_human_activity(state);
+                    let _ = world::comp::blank::device_input(state, &event);
                     return;
                 };
                 // Entering touch mode: hide + snapshot the shared cursor, then hand
