@@ -4,7 +4,7 @@
 //! Typed configuration structs — one struct per service.
 //!
 //! Every struct derives `Default` with values matching what apps currently
-//! hardcode, so a freshly-materialised `~/.config/mixos/<service>.conf.mix`
+//! hardcode, so a freshly-materialised `<etc-root>/<service>.conf.mix`
 //! is immediately usable.
 
 use std::collections::BTreeMap;
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 /// Entries are checked longest-prefix-first.
 ///
 /// ```text
-/// map: { "~/Projects/mixos": "mixos" }
+/// map: { "/home/user/project": "mixos" }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -265,7 +265,21 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
 }
 
 fn installed<T: serde::de::DeserializeOwned>(name: &str, field: Option<&str>) -> T {
-    let value: serde_json::Value = serde_json::from_str(&paths::env::setting(name).expect("installed MCP setting")).expect("invalid MCP setting JSON");
+    let value: serde_json::Value = serde_json::from_str(&installed_value(name)).expect("invalid MCP setting JSON");
     let value = match field { Some(key) => value.get(key).expect("missing MCP setting field").clone(), None => value };
     serde_json::from_value(value).expect("invalid MCP setting type")
+}
+
+#[cfg(not(test))]
+fn installed_value(name: &str) -> String {
+    paths::env::setting(name).expect("installed MCP setting")
+}
+
+#[cfg(test)]
+fn installed_value(name: &str) -> String {
+    // Unit tests use the shipped registry, without process-global env mutation.
+    let registry = mix::parse_data(include_str!("../../../etc/env.conf.mix")).unwrap();
+    let registry = mix::json::mix_to_json(&registry).unwrap();
+    registry["vars"].as_array().unwrap().iter()
+        .find(|v| v["name"] == name).unwrap()["default"].as_str().unwrap().into()
 }

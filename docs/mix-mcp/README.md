@@ -1,19 +1,19 @@
 ---
 title: mix-mcp
-description: MCP stdio access to the native MixOS Bus.
+description: MCP stdio access to the native MixViu Bus.
 ---
 
 # mix-mcp
 
 `mix-mcp` is an MCP stdio server for agents. Install the binary at
-`<prefix>/bin/mix-mcp` and register the MCP server as `mixos`.
+`<prefix>/bin/mix-mcp` and register the MCP server as `mix-mcp`.
 It ships in the server prefix archive. Its package, binary and component
 are the [single naming exception](../docs/decisions/2026-10-19-mcp-program-name.md).
 
 ## Connection
 
 The server starts without a Bus connection. The first Bus tool connects
-using `libs/bus`. `MIX_NODED_URL` overrides the node configuration URL;
+using `libraries/bus`. `MIX_NODED_URL` overrides the node configuration URL;
 otherwise the native client's node config discovery applies, including
 `MIX_NODE_CONFIG`, `MIX_ETC` and the user/system defaults.
 
@@ -53,7 +53,7 @@ reconnecting.
 ```json
 {
   "mcpServers": {
-    "mixos": {
+    "mix-mcp": {
       "command": "<prefix>/bin/mix-mcp",
       "env": {
         "MIX_NODED_URL": "ws://192.0.2.10:4200/ws",
@@ -130,7 +130,7 @@ optional `domain` argument is recognised but any non-null value is refused
 before connecting: indexd's stats and stale APIs cannot filter by domain.
 Omit `domain` for a global digest; it is never silently ignored or inferred.
 These tools send `indexd.<action>` requests to the configured indexd transport.
-An absent backend returns an explicit tool error. Settings are MixOS strict-data
+An absent backend returns an explicit tool error. Settings are MixViu strict-data
 files: `knowledge.conf.mix` and `domains.conf.mix`.
 
 The knowledge skills loop was retired on 2026-10-27. The six `skills_*` tools,
@@ -193,8 +193,7 @@ requires `ssh_host`. When a Bus route is available, select
 `transport: "bus", target: "indexd.host.example.bus"` instead. Presence is
 checked with `indexd.stats` at the configured target, including routed targets.
 
-The default client domain map expands the user's home for `~/Projects/mixos`
-(`mixos`), `~/.mix` (`mix`), `~/.ns` (`ns`) and `~/.mc` (`mc`). Custom
+The installed client domain map defaults to the project and its private hub. Custom
 `domains.conf.mix` maps override these defaults. `index_workspace` expands
 only a leading `~` or `~/`, resolves the workspace to an absolute path, and
 sends absolute file paths and content to indexd.

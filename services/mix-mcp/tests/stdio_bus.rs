@@ -683,16 +683,59 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
 }
 
 fn stage_defaults(prefix: &std::path::Path) {
+    std::fs::create_dir(prefix.join("bin")).unwrap();
+    let mix = paths::env::raw(paths::env::test::TEST_MIX_EXE).expect("test interpreter required");
+    std::os::unix::fs::symlink(mix, prefix.join("bin/mix")).unwrap();
     let source = include_str!("../../../etc/env.conf.mix");
     let registry = mix::parse_data(source).expect("registry");
     let registry = mix::json::mix_to_json(&registry).unwrap();
     let mut values = serde_json::Map::new();
     values.insert("schema".into(), json!(1));
-    values.insert("commit".into(), json!("fixture"));
+    values.insert("commit".into(), json!(paths::stamp!(GIT_SHA_FULL).unwrap_or("fixture")));
     for entry in registry["vars"].as_array().unwrap() {
         if let Some(value) = entry.get("default") {
             values.insert(entry["name"].as_str().unwrap().into(), value.clone());
         }
     }
     std::fs::write(prefix.join("env.mx"), serde_json::to_string(&values).unwrap()).unwrap();
+}
+
+#[tokio::test]
+async fn stdio_tool_inventory_status_and_bus_contract() {
+    let broker = test_broker::Broker::start();
+    let dir = tempfile::tempdir().unwrap();
+    stage_defaults(dir.path());
+    let config = dir.path().join("node.conf.mix");
+    std::fs::write(&config, "node: \"fixture\"\nnoded: {port: 4200}\n").unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mix-mcp"));
+    command
+        .env(paths::env::NODED_URL, &broker.url)
+        .env(paths::env::BUS_SOCKET, &broker.endpoint)
+        .env(paths::env::BROKER_ACCOUNT, std::env::var("USER").unwrap())
+        .env(paths::env::NODE_CONFIG, &config)
+        .env(paths::env::ETC, dir.path())
+        .env(paths::env::VAR, dir.path())
+        .env(paths::env::PREFIX, dir.path())
+        .env_remove(paths::env::AGENT_SESSION)
+        .env("HOME", dir.path());
+    let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
+    assert_eq!(service.peer_info().unwrap().server_info.name, "mix-mcp");
+    let list = service.list_tools(None).await.unwrap();
+    assert!(list.next_cursor.is_none());
+    let mut actual: Vec<_> = list.tools.iter().map(|tool| tool.name.as_ref()).collect();
+    actual.sort_unstable();
+    let expected: Vec<_> = include_str!("tools.txt").lines().collect();
+    assert_eq!(actual, expected);
+    let request = |name, args: Value| {
+        CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone())
+    };
+    let status = result(service.call_tool(request("mcp_status", json!({}))).await.unwrap());
+    assert_eq!(status["broker_connected"], false);
+    let ping = service.call_tool(request("noded_ping", json!({}))).await.unwrap();
+    assert!(!ping.is_error.unwrap_or(false));
+    assert!(format!("{ping:?}").contains("pong"));
+    let execution = result(service.call_tool(request("mix_execute", json!({"script":"print(6 * 7)"}))).await.unwrap());
+    assert_eq!(execution["stdout"], "42\n");
+    assert_eq!(execution["exit_code"], 0);
+    service.cancel().await.unwrap();
 }

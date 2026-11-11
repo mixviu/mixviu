@@ -6,7 +6,7 @@ generated: by docs/_build/gen-site.mix from services/mix-mcp/CHANGELOG.md; do no
 
 # Changelog
 
-> Mirrored from [`services/mix-mcp/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/mix-mcp/CHANGELOG.md), where releases update it. The component's page is [mix-mcp](README.md). This page describes the current `main` branch of MixOS.
+> Mirrored from [`services/mix-mcp/CHANGELOG.md`](https://github.com/mixviu/mixviu/blob/main/services/mix-mcp/CHANGELOG.md), where releases update it. The component's page is [mix-mcp](README.md). This page describes the current `main` branch of MixViu.
 
 ## Unreleased
 

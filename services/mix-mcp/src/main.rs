@@ -3,7 +3,7 @@
 
 //! mix-mcp — MCP server bridging Claude Code to the mixos appmesh.
 //!
-//! Register with: `claude mcp add mixos -- <prefix>/bin/mix-mcp`
+//! Register with: `claude mcp add mix-mcp -- <prefix>/bin/mix-mcp`
 //!
 //! Broker connection is lazy — the MCP server starts immediately and only
 //! connects to noded on the first tool call, avoiding startup timeouts.
@@ -229,121 +229,6 @@ fn summarize_result(r: &rmcp::model::CallToolResult) -> String {
 }
 
 /// Bus handler that routes Mix `send`/`emit`/`port_exists` to the broker.
-struct McpBusHandler {
-    noded: connection::BrokerConnection,
-}
-
-impl mix::evaluator::BusHandler for McpBusHandler {
-    fn send<'a>(
-        &'a self,
-        target: &'a str,
-        command: &'a str,
-        args: &'a mix::value::Value,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = mix::error::MixResult<(i32, mix::value::Value)>> + 'a>,
-    > {
-        Box::pin(async move {
-            // Fallible since mix 0.21.1 (non-finite numbers have no
-            // JSON representation) — surface as an rc=10 error like any other
-            // call failure, never a silently-mangled payload.
-            let json_args = match mix::json::mix_to_json(args) {
-                Ok(j) => j,
-                Err(e) => {
-                    return Ok((
-                        10,
-                        mix::value::Value::String(format!("send args not JSON-encodable: {e}")),
-                    ));
-                }
-            };
-            // call_typed keeps TRANSPORT failures as `Err` (→ `$rc = -1`,
-            // RC_TRANSPORT) while a peer `rc >= 10` reply preserves its exact
-            // status (→ `$rc = rc`) and a success carries its rc (0 or a
-            // warning 5) — the Mix rc-band contract (was every Err → rc=10,
-            // conflating transport with application error).
-            let noded = self
-                .noded
-                .get()
-                .await
-                .map_err(|e| mix::error::MixError::RuntimeError {
-                    span: None,
-                    msg: format!("mcp send broker unavailable: {e}"),
-                })?;
-            match noded.call_typed(target, command, json_args).await {
-                Ok(bus::native_client::PortReply::Ok { rc, value }) => {
-                    Ok((i32::from(rc), mix::json::json_to_mix(value)))
-                }
-                Ok(bus::native_client::PortReply::AppError { rc, message }) => {
-                    Ok((i32::from(rc), mix::value::Value::String(message)))
-                }
-                Err(e) => Err(mix::error::MixError::RuntimeError {
-                    span: None,
-                    msg: format!("mcp send transport failure: {e}"),
-                }),
-            }
-        })
-    }
-
-    fn emit<'a>(
-        &'a self,
-        target: &'a str,
-        command: &'a str,
-        args: &'a mix::value::Value,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = mix::error::MixResult<()>> + 'a>> {
-        Box::pin(async move {
-            // emit is fire-and-forget but has an error channel — a
-            // non-JSON-encodable payload (non-finite number) raises rather
-            // than emitting a mangled event.
-            let json_args =
-                mix::json::mix_to_json(args).map_err(|e| mix::error::MixError::RuntimeError {
-                    span: None,
-                    msg: format!("emit args not JSON-encodable: {e}"),
-                })?;
-            let noded = self
-                .noded
-                .get()
-                .await
-                .map_err(|e| mix::error::MixError::RuntimeError {
-                    span: None,
-                    msg: format!("mcp emit broker unavailable: {e}"),
-                })?;
-            noded.send(target, command, json_args).await.map_err(|e| {
-                mix::error::MixError::RuntimeError {
-                    span: None,
-                    msg: format!("mcp emit transport failure: {e}; delivery outcome unknown"),
-                }
-            })?;
-            Ok(())
-        })
-    }
-
-    fn port_exists<'a>(
-        &'a self,
-        target: &'a str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = mix::error::MixResult<bool>> + 'a>>
-    {
-        Box::pin(async move {
-            let noded = match self.noded.get().await {
-                Ok(noded) => noded,
-                Err(_) => return Ok(false),
-            };
-            match noded.list_services().await {
-                Ok(services) => Ok(services.iter().any(|s| s == target)),
-                Err(_) => Ok(false),
-            }
-        })
-    }
-
-    fn next_incoming<'a>(
-        &'a self,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Option<mix::evaluator::IncomingEvent>> + 'a>,
-    > {
-        // MCP runs scripts synchronously for tool calls; it does not host
-        // long-lived `on` handlers, so incoming delivery is not supported.
-        Box::pin(async move { None })
-    }
-}
-
 // --- Bus tool params ---
 
 // VERIFY: dedicated Term MCP argument schemas.
@@ -401,7 +286,7 @@ const TERM_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3
 /// Explain how to start the maintained frontend when it is absent.
 fn term_no_frontend() -> String {
     format!(
-        "no MixOS terminal is registered on the Bus (looked for {}) — start one with `mix --gui`",
+        "no MixViu terminal is registered on the Bus (looked for {}) — start one with `mix --gui`",
         TERM_SERVICES
             .iter()
             .map(|name| format!("`{name}`"))
@@ -436,7 +321,7 @@ fn term_unresponsive(candidates: &[&'static str]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "MixOS terminal registered but unresponsive: {names} did not answer INFO within {}s \
+        "MixViu terminal registered but unresponsive: {names} did not answer INFO within {}s \
          (wedged, or shutting down). No other frontend is registered. Nothing was sent.",
         TERM_PROBE_TIMEOUT.as_secs()
     )
@@ -681,7 +566,7 @@ struct AwaitOpParams {
 
 fn await_op_request(session: Option<&str>, p: AwaitOpParams) -> Result<serde_json::Value, String> {
     let session =
-        session.ok_or("await_op requires the agent session setting; run inside an agentd session")?;
+        session.ok_or_else(|| format!("await_op requires {}; run inside an agentd session", paths::env::AGENT_SESSION))?;
     connection::broker_name(Some(session), 0, 0)?;
     if p.service.is_empty()
         || p.op.is_empty()
@@ -920,7 +805,7 @@ impl MixMcp {
             Ok(Ok(_))
         ) {
             return Err(format!(
-                "the broker stopped answering while probing for a MixOS terminal \
+                "the broker stopped answering while probing for a MixViu terminal \
                  ({} registered, none reachable) — this is a Bus problem, not a wedged \
                  terminal. Check noded. Nothing was sent.",
                 candidates.join(", ")
@@ -956,7 +841,7 @@ impl MixMcp {
     // ---- Bus tools ----
 
     /// Read-only tab and active-tab pane listing (ids, active flags, dimensions, pids,
-    /// geometry) from the live MixOS terminal over ABP (`bterm`, else `term`).
+    /// geometry) from the live MixViu terminal over ABP (`bterm`, else `term`).
     /// Also returns the `service` it read and that process's `instance`: pass both
     /// to term_type, because pane ids are per-process and restart at 1.
     /// Sequential reads are not atomic.
@@ -1008,7 +893,7 @@ impl MixMcp {
     }
 
     /// Read-only active screen text, dimensions, cursor, pid and diagnostic timings
-    /// from the live MixOS terminal over ABP (reply bounded to 1 MiB).
+    /// from the live MixViu terminal over ABP (reply bounded to 1 MiB).
     /// The term service is a self-asserted diagnostic surface pending authenticated
     /// per-instance identity (P0-I).
     #[tool]
@@ -1016,7 +901,7 @@ impl MixMcp {
         self.term_request("snapshot", serde_json::json!({})).await
     }
 
-    /// DIAGNOSTIC synthetic input to the live MixOS terminal over ABP, not the
+    /// DIAGNOSTIC synthetic input to the live MixViu terminal over ABP, not the
     /// authenticated input API. The term service is a self-asserted diagnostic surface
     /// pending authenticated per-instance identity (P0-I). Text uses the keyboard
     /// encoder; newline is Enter. JSON request is limited to 8192 bytes.
@@ -1040,7 +925,7 @@ impl MixMcp {
         }
     }
 
-    /// Create, select or close a tab in the live MixOS terminal over ABP; select/close require id.
+    /// Create, select or close a tab in the live MixViu terminal over ABP; select/close require id.
     /// Closing the last tab quits. The term service is a self-asserted diagnostic
     /// surface pending authenticated per-instance identity (P0-I).
     #[tool]
@@ -1051,7 +936,7 @@ impl MixMcp {
         }
     }
 
-    /// Split, select or close the active pane in MixOS Term over ABP.
+    /// Split, select or close the active pane in MixViu Term over ABP.
     /// Split requires dir, select requires id; closing the last pane closes its tab.
     /// The term service is a self-asserted diagnostic surface pending authenticated
     /// per-instance identity (P0-I).
@@ -1855,29 +1740,6 @@ impl MixMcp {
     }
 }
 
-/// Run a Mix script in the internal isolated worker process only.
-async fn run_mix_script(script: &str, cwd: Option<&str>) -> Result<(String, String, i32), String> {
-    // Set working directory if requested
-    if let Some(cwd) = cwd {
-        let expanded = if cwd.starts_with("~/") {
-            if let Ok(home) = std::env::var("HOME") {
-                format!("{}{}", home, &cwd[1..])
-            } else {
-                cwd.to_string()
-            }
-        } else {
-            cwd.to_string()
-        };
-        std::env::set_current_dir(&expanded)
-            .map_err(|e| format!("ERROR: failed to set cwd to {expanded}: {e}"))?;
-    }
-
-    use std::os::unix::process::CommandExt;
-    let mut child = std::process::Command::new(paths::bin("mix"));
-    child.arg("-c").arg(script);
-    Err(format!("start sibling Mix: {}", child.exec()))
-}
-
 fn log_dir() -> PathBuf {
     paths::root(paths::Root::Var).join("log")
 }
@@ -2186,7 +2048,7 @@ fn workspace_path(path: Option<&str>) -> Result<std::path::PathBuf, String> {
 /// The tool deadline setting overrides the 120s default; `0` disables
 /// every deadline (debug escape hatch, exempt tools included).
 fn tool_deadline_secs(tool: &str) -> u64 {
-    const DEFAULT_SECS: u64 = 120;
+
     let long_secs = paths::env::setting(paths::env::MCP_SCRIPT_DEADLINE_SECS).expect("script deadline setting").parse::<u64>().expect("invalid script deadline");
     let base = paths::env::setting(paths::env::MCP_TOOL_DEADLINE_SECS).expect("tool deadline setting").parse::<u64>().expect("invalid tool deadline");
     if base == 0 {
@@ -2228,7 +2090,7 @@ impl ServerHandler for MixMcp {
         )
         .with_server_info(rmcp::model::Implementation::new("mix-mcp", env!("CARGO_PKG_VERSION")))
         .with_instructions(
-            "MixOS Bus (MixOS Agent Bus) bridge with semantic context search and workspace indexing.\n\n\
+            "MixViu Bus (MixViu Agent Bus) bridge with semantic context search and workspace indexing.\n\n\
              Bus tools: bus_call, bus_list_services, bus_node_info, bus_list_peers, noded_ping, await_op.\n\
              Log tools: log_tail, log_search.\n\
              Knowledge tools: context_search, index_workspace, knowledge_digest.\n\
@@ -2433,9 +2295,7 @@ fn main() {
     // fd-starved host still gets an answer. Lazy native registration also
     // publishes this build provenance when the first Bus tool is called.
     buildinfo::exit_on_version!();
-    if std::env::args().nth(1).as_deref() == Some(mix_worker::WORKER_ARG) {
-        std::process::exit(mix_worker::main());
-    }
+    if let Some(commit) = paths::stamp!(GIT_SHA_FULL) { paths::env::register_snapshot(commit); }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -2456,7 +2316,7 @@ async fn async_main() {
         &logging::StatsOpts::default(),
         logging::LogDefaults::daemon("mix-mcp")
             .with_stats(false)
-            .with_filter(paths::env::setting(paths::env::MCP_LOG_FILTER).expect("log filter setting"))
+            .with_filter(&paths::env::setting(paths::env::MCP_LOG_FILTER).expect("log filter setting"))
             .with_rotation(logging::RotationMode::Never)
             .with_log_file(log_dir()),
     )
@@ -2910,7 +2770,7 @@ mod tests {
             "the error must name the frontends in TERM_SERVICES order: {absent}"
         );
         assert!(
-            absent.contains("not registered") || absent.contains("no MixOS terminal is registered")
+            absent.contains("not registered") || absent.contains("no MixViu terminal is registered")
         );
 
         let wedged_one = term_unresponsive(&["bterm"]);

@@ -1,10 +1,10 @@
 # mix-mcp
 
-MCP stdio bridge to the MixOS Bus. See the [manual](../../docs/mix-mcp/README.md)
+MCP stdio bridge to the MixViu Bus. See the [manual](../../docs/mix-mcp/README.md)
 for connection settings and the complete tool list.
 
 Connections require verified Unix ingress whenever a socket candidate exists.
-Only `MIX_MCP_ALLOW_TCP=1` permits plain TCP when all Unix candidates are
+Only `paths::env::MCP_ALLOW_TCP set to 1` permits plain TCP when all Unix candidates are
 missing; existing socket verification failures remain fatal.
 
 Application tools are `app_describe`, `app_actions` and `app_execute`.
@@ -20,7 +20,7 @@ binary encoding and explicit cross-session push.
 The skills loop is retired. At deployment, remove `trust_weight_graduated`,
 `trust_weight_skill` and any old `skills`/`llm` sections from `knowledge.conf.mix`,
 and remove the unused `skills.conf.mix` and `llm.conf.mix` files from the MCP
-config directory (`$MIX_ETC`, normally `~/.config/mixos`). The config loader
+config directory (`paths::env::ETC`, normally `~/.config/mixos`). The config loader
 tolerates unknown keys, but they have no effect; no aliases are provided.
 Generated knowledge defaults omit them. Existing configs are not rewritten.
 

@@ -1,57 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Isolate the !Send Mix evaluator, process cwd and inherited stdio in an
+//! Run the sibling Mix interpreter with isolated cwd and stdio in an
 //! owned Rust worker. Only the parent speaks MCP. Cancellation terminates the
 //! worker process group; it cannot undo effects already committed through Bus.
 
-use std::io::{Read, Write};
+
 use std::process::Stdio;
 
 use rmcp::model::CallToolResult;
-use serde::{Deserialize, Serialize};
+
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 const SCRIPT_LIMIT: usize = 256 * 1024;
-const INPUT_LIMIT: usize = SCRIPT_LIMIT * 6 + 4096;
 const OUTPUT_LIMIT: usize = 1024 * 1024;
-pub(crate) const WORKER_ARG: &str = "--internal-mix-worker";
-
-#[derive(Clone, Default)]
-pub(crate) struct CaptureBuffer(std::sync::Arc<std::sync::Mutex<(Vec<u8>, bool)>>);
-
-impl CaptureBuffer {
-    pub(crate) fn to_string_lossy(&self) -> String {
-        String::from_utf8_lossy(&self.0.lock().unwrap_or_else(|e| e.into_inner()).0).into_owned()
-    }
-
-    pub(crate) fn exceeded(&self) -> bool {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).1
-    }
-}
-
-impl Write for CaptureBuffer {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if bytes.len() > OUTPUT_LIMIT.saturating_sub(state.0.len()) {
-            state.1 = true;
-            return Err(std::io::Error::other("Mix captured output exceeded 1 MiB"));
-        }
-        state.0.extend_from_slice(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Request {
-    script: String,
-    cwd: Option<String>,
-}
 
 /// Own descendants as well as the worker. A dropped MCP future must not leave
 /// evaluator threads changing the server's cwd or holding its transport fds.
@@ -126,12 +88,15 @@ async fn execute_inner(
             "script exceeds {SCRIPT_LIMIT} bytes; nothing was started"
         ));
     }
-    let input = serde_json::to_vec(&Request { script, cwd })
-        .map_err(|e| format!("worker request serialization failed: {e}"))?;
-    let executable = std::env::current_exe().map_err(|e| format!("resolve MCP binary: {e}"))?;
-    let mut command = tokio::process::Command::new(executable);
+    let mut command = tokio::process::Command::new(paths::bin("mix"));
+    if let Some(cwd) = cwd {
+        let expanded = if let Some(rest) = cwd.strip_prefix("~/") {
+            std::path::PathBuf::from(std::env::var_os("HOME").ok_or("HOME is unset")?).join(rest)
+        } else { cwd.into() };
+        command.current_dir(expanded);
+    }
     command
-        .arg(WORKER_ARG)
+        .arg("-")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -151,7 +116,7 @@ async fn execute_inner(
     let stdout = child.stdout.take().ok_or("Mix worker has no stdout")?;
     let stderr = child.stderr.take().ok_or("Mix worker has no stderr")?;
     stdin
-        .write_all(&input)
+        .write_all(script.as_bytes())
         .await
         .map_err(|e| format!("write Mix request: {e}"))?;
     stdin
@@ -178,63 +143,4 @@ async fn execute_inner(
         String::from_utf8_lossy(&stderr).into_owned(),
         status.code().unwrap_or(1),
     ))
-}
-
-/// Internal execution entrypoint, after the side-effect-free --version gate
-/// and before logging/MCP startup. Worker stdout is tool output, never JSON-RPC.
-pub(crate) fn main() -> i32 {
-    let mut input = Vec::new();
-    if let Err(e) = std::io::stdin()
-        .take((INPUT_LIMIT + 1) as u64)
-        .read_to_end(&mut input)
-    {
-        eprintln!("read Mix request: {e}");
-        return 1;
-    }
-    if input.len() > INPUT_LIMIT {
-        eprintln!("Mix request exceeds input limit");
-        return 1;
-    }
-    let request: Request = match serde_json::from_slice(&input) {
-        Ok(request) => request,
-        Err(e) => {
-            eprintln!("invalid Mix worker request: {e}");
-            return 1;
-        }
-    };
-    if request.script.len() > SCRIPT_LIMIT {
-        eprintln!("Mix script exceeds input limit");
-        return 1;
-    }
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(e) => {
-            eprintln!("start Mix runtime: {e}");
-            return 1;
-        }
-    };
-    let result = runtime.block_on(super::run_mix_script(
-        &request.script,
-        request.cwd.as_deref(),
-    ));
-    match result {
-        Ok((stdout, stderr, code)) => {
-            if let Err(e) = std::io::stdout().write_all(stdout.as_bytes()) {
-                eprintln!("write Mix output: {e}");
-                return 1;
-            }
-            if let Err(e) = std::io::stderr().write_all(stderr.as_bytes()) {
-                eprintln!("write Mix stderr: {e}");
-                return 1;
-            }
-            code
-        }
-        Err(error) => {
-            eprintln!("{error}");
-            1
-        }
-    }
 }

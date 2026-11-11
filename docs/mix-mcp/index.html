@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="MCP stdio access to the native MixOS Bus.">
+    <meta name="description" content="MCP stdio access to the native MixViu Bus.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>mix-mcp — MixOS</title>
+    <title>mix-mcp — MixViu</title>
     <link rel="canonical" href="https://mixos.dev/mix-mcp/">
     <link rel="alternate" type="text/markdown" href="/mix-mcp/README.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
@@ -90,7 +90,7 @@
 <button class="menu-toggle" data-sidebar="right"><i data-lucide="menu"></i></button>
 
 <nav class="topnav">
-    <h1><a class="brand" href="/">MixOS &middot; <span>Server &amp; Desktop Systems</span></a></h1>
+    <h1><a class="brand" href="/">MixViu &middot; <span>Server &amp; Desktop Systems</span></a></h1>
 </nav>
 
 <!-- ================= LEFT SIDEBAR: documentation panels ================= -->
@@ -100,7 +100,7 @@
         <div class="carousel-nav">
             <button class="carousel-chevron" data-sidebar="left" data-dir="prev"><i data-lucide="chevron-left"></i></button>
             <div class="carousel-dots">
-                <button class="carousel-dot active" data-sidebar="left" data-panel="0" title="MixOS"></button>
+                <button class="carousel-dot active" data-sidebar="left" data-panel="0" title="MixViu"></button>
             </div>
             <button class="carousel-chevron" data-sidebar="left" data-dir="next"><i data-lucide="chevron-right"></i></button>
         </div>
@@ -109,7 +109,7 @@
         <div class="panel-track">
 
             <div class="panel">
-                <div class="panel-title">MixOS</div>
+                <div class="panel-title">MixViu</div>
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
@@ -222,7 +222,7 @@
                 <div class="panel-title">Links</div>
                 <div class="panel-content">
                     <nav>
-                        <a href="https://github.com/markc/mixos"><i data-lucide="network"></i> markc/mixos</a>
+                        <a href="https://github.com/mixviu/mixviu"><i data-lucide="network"></i> mixviu/mixviu</a>
                         <a href="https://mixos.au/"><i data-lucide="globe"></i> mixos.au</a>
                         <a href="https://mixos.nexus/"><i data-lucide="share-2"></i> mixos.nexus</a>
                         <div class="sidebar-divider"></div>
@@ -240,12 +240,12 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="mix-mcp">mix-mcp</h1>
 <p><code>mix-mcp</code> is an MCP stdio server for agents. Install the binary at
-<code>&lt;prefix&gt;/bin/mix-mcp</code> and register the MCP server as <code>mixos</code>.
+<code>&lt;prefix&gt;/bin/mix-mcp</code> and register the MCP server as <code>mix-mcp</code>.
 It ships in the server prefix archive. Its package, binary and component
 are the <a href="/docs/decisions/2026-10-19-mcp-program-name/">single naming exception</a>.</p>
 <h2 id="connection">Connection</h2>
 <p>The server starts without a Bus connection. The first Bus tool connects
-using <code>libs/bus</code>. <code>MIX_NODED_URL</code> overrides the node configuration URL;
+using <code>libraries/bus</code>. <code>MIX_NODED_URL</code> overrides the node configuration URL;
 otherwise the native client's node config discovery applies, including
 <code>MIX_NODE_CONFIG</code>, <code>MIX_ETC</code> and the user/system defaults.</p>
 <p>The bridge registers under an anonymous name, <code>mcp-&lt;pid&gt;-&lt;nonce&gt;</code>. When an
@@ -278,7 +278,7 @@ is to refuse it and list the candidates tried. Calls are never replayed after
 reconnecting.</p>
 <pre><code class="language-json">{
   "mcpServers": {
-    "mixos": {
+    "mix-mcp": {
       "command": "&lt;prefix&gt;/bin/mix-mcp",
       "env": {
         "MIX_NODED_URL": "ws://192.0.2.10:4200/ws",
@@ -347,7 +347,7 @@ optional <code>domain</code> argument is recognised but any non-null value is re
 before connecting: indexd's stats and stale APIs cannot filter by domain.
 Omit <code>domain</code> for a global digest; it is never silently ignored or inferred.
 These tools send <code>indexd.&lt;action&gt;</code> requests to the configured indexd transport.
-An absent backend returns an explicit tool error. Settings are MixOS strict-data
+An absent backend returns an explicit tool error. Settings are MixViu strict-data
 files: <code>knowledge.conf.mix</code> and <code>domains.conf.mix</code>.</p>
 <p>The knowledge skills loop was retired on 2026-10-27. The six <code>skills_*</code> tools,
 <code>knowledge_brief</code>, skill refinement and graduation to <code>CLAUDE.md</code> are removed
@@ -399,8 +399,7 @@ command above, an empty <code>ssh_host</code> and a 120-second call deadline. SS
 requires <code>ssh_host</code>. When a Bus route is available, select
 <code>transport: "bus", target: "indexd.host.example.bus"</code> instead. Presence is
 checked with <code>indexd.stats</code> at the configured target, including routed targets.</p>
-<p>The default client domain map expands the user's home for <code>~/Projects/mixos</code>
-(<code>mixos</code>), <code>~/.mix</code> (<code>mix</code>), <code>~/.ns</code> (<code>ns</code>) and <code>~/.mc</code> (<code>mc</code>). Custom
+<p>The installed client domain map defaults to the project and its private hub. Custom
 <code>domains.conf.mix</code> maps override these defaults. <code>index_workspace</code> expands
 only a leading <code>~</code> or <code>~/</code>, resolves the workspace to an absolute path, and
 sends absolute file paths and content to indexd.</p>
@@ -422,7 +421,7 @@ It also checks configured knowledge targets, paginated re-indexing and
 absolute file metadata. SSH client tests use a local Mix fake bridge through
 a test-only command hook; no SSH connection or indexd process is required.</p>
         </article>
-        <p class="doc-source"><a href="/mix-mcp/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/mix-mcp/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixViu.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>
