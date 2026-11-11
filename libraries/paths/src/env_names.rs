@@ -1,3 +1,13 @@
+pub const PORTALD_TEST_LOG_CAPTURE: &str = "MIX_TEST_PORTALD_LOG_CAPTURE";
+pub const PORTALD_TEST_DBUS: &str = "PORTALD_TEST_DBUS";
+pub const PORTALD_TEST_SCREENCAST: &str = "PORTALD_TEST_SCREENCAST";
+pub const DBUS_SESSION_BUS_ADDRESS: &str = "DBUS_SESSION_BUS_ADDRESS";
+pub const XDG_RUNTIME_DIR: &str = "XDG_RUNTIME_DIR";
+pub const PIPEWIRE_RUNTIME_DIR: &str = "PIPEWIRE_RUNTIME_DIR";
+pub const PIPEWIRE_REMOTE: &str = "PIPEWIRE_REMOTE";
+pub const PORTALD_MAX_FRAMERATE: &str = "MIX_PORTALD_MAX_FRAMERATE";
+pub const PORTALD_CONSENT: &str = "MIX_PORTALD_CONSENT";
+pub const PORTALD_PROFILE: &str = "MIX_PORTALD_PROFILE";
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Environment names registered in etc/env.conf.mix.
 pub const AGENT_CLI_EXE: &str = "MIX_AGENT_CLI_EXE";

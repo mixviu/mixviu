@@ -16,7 +16,11 @@ foreign: {
     "ring": {reason: "TLS crypto primitives (rustls); audited C and assembly",
       exit: "a pure-Rust rustls crypto provider when one is mature"}
   },
-  admitted: {},
+  admitted: {
+    "pipewire-sys": {kind: "system", via: "pipewire (portald ScreenCast only)", exit: "a pure-Rust PipeWire native-protocol client once one can publish a video stream; until then OS interface", only: ["portald"], by: "Mark", on: "2026-11-12"},
+    "libspa-sys": {kind: "vendored", via: "pipewire (portald ScreenCast only); compiles SPA inline-function shims, runs bindgen", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"},
+    "libspa": {kind: "vendored", via: "pipewire (portald ScreenCast only); compiles upstream tests/pod.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"}
+  },
   debt: {
     -- vendored C/C++
     "libmimalloc-sys": {kind: "vendored", via: "mimalloc (dnsd, maild, monitord, noded, webd)",
