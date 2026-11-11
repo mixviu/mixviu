@@ -99,6 +99,7 @@ fn stage_test($mix)
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
+  run_step([$mix, "tools/mesh/tests/all.mix"])
   for $case in sort(glob("apps/term/*-test.mix"))
     run_step([$mix, $case])
   end

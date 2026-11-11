@@ -1,0 +1,94 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Hermetic per-ceremony layout snapshots. SSH is a private native Mix fixture.
+$d = require("../_lib/deploy_lib.mix")
+fn check($ok,$message)
+  if not $ok then raise("LAYOUT_SNAPSHOT_TEST",$message) end
+end
+fn layout_error($action,$node,$key)
+  try
+    $action()
+  catch $message,$error
+    check($error.code == "MESH_LAYOUT", "layout error has the wrong code")
+    check(contains($message,$node) and contains($message,$key), "layout error omits node or root key")
+    return nil
+  end
+  raise("LAYOUT_SNAPSHOT_TEST","invalid layout was accepted")
+end
+$arguments = args()
+if len($arguments) > 0 then
+  $mode = $arguments[0]
+  if $mode == "absent" then
+    check(deep_eq($d.local_roots(),{prefix:mix_path("prefix","",{tier:"system"}),etc:mix_path("etc","",{tier:"system"}),var:mix_path("var","",{tier:"system"})}),"absent explicit roots differ from actual system layout")
+  elif $mode == "local-error" then
+    layout_error(fn()=$d.local_roots(),"local",$arguments[1])
+  elif $mode == "legacy-error" then
+    layout_error(fn()=$d.remote_roots("unreachable"),"unreachable","roots")
+  elif $mode == "legacy" then
+    check(deep_eq($d.remote_roots("unreachable"),$d.node_settings("unreachable").roots),"complete legacy roots changed")
+    check(read_file(env("MESH_FIXTURE_COUNT")) == "0", "explicit legacy roots attempted SSH")
+  elif $mode == "snapshot" then
+    $original = $d.node_settings("alpha")
+    write_file(env("MESH_NODES_CONFIG"),data_encode({nodes:{local:{roots:{prefix:"/srv/changed",etc:"/srv/changed/etc",var:"/srv/changed/var"}},alpha:{mix_bin:"/srv/changed/bin/mix"}}}))
+    check(deep_eq($d.node_settings("alpha"),$original),"node settings changed after config mutation")
+    check($d.remote_mix("alpha") == $original.mix_bin,"remote interpreter escaped config snapshot")
+    check($d.local_roots().prefix == "/srv/original","local roots escaped config snapshot")
+  elif $mode == "remote-cache" then
+    $first = $d.remote_roots("alpha")
+    check(read_file(env("MESH_FIXTURE_COUNT")) == "1", "first remote root query did not run exactly once")
+    $second = $d.remote_roots("alpha","another-transport")
+    check(deep_eq($first,$second),"remote roots changed inside one ceremony")
+    check(read_file(env("MESH_FIXTURE_COUNT")) == "1", "cached node queried SSH again")
+    $other = $d.remote_roots("beta")
+    check(read_file(env("MESH_FIXTURE_COUNT")) == "2", "different node did not get its own query")
+    check($first.etc != $other.etc,"fixture did not exercise changing actual remote layout")
+  else
+    raise("LAYOUT_SNAPSHOT_TEST","unknown fixture mode")
+  end
+  exit(0)
+end
+
+$exe = realpath("/proc/self/exe")
+$scratch = trim(run_argv_must(["mktemp","-d"]))
+try
+  mkdir($scratch .. "/bin")
+  $counter = $scratch .. "/ssh-count"
+  write_file($counter,"0")
+  $driver = "#!" .. $exe .. chr(10) .. '$path = env("MESH_FIXTURE_COUNT")
+$number = to_number(read_file($path)) + 1
+write_file($path,to_string($number))
+$source = read_file("/dev/stdin")
+$r = run_argv([realpath("/proc/self/exe"),"-"],{stdin:$source,env:{MIX_ETC:"/srv/query-" .. to_string($number)},timeout:10})
+print($r.stdout)
+if not $r.ok then eprint($r.stderr); exit(1) end
+'
+  write_new($scratch .. "/bin/ssh",$driver,0o755)
+  $cases = [{mode:"absent",nodes:{local:{}}}]
+  for $missing in ["prefix","etc","var"]
+    $roots = {prefix:"/srv/original",etc:"/srv/original/etc",var:"/srv/original/var"}
+    $partial = {}
+    for $key in keys($roots)
+      if $key != $missing then $partial[$key] = $roots[$key] end
+    end
+    push($cases,{mode:"local-error",key:$missing,nodes:{local:{roots:$partial}}})
+    $roots[$missing] = "relative"
+    push($cases,{mode:"local-error",key:$missing,nodes:{local:{roots:$roots}}})
+  end
+  for $bad in [nil,[],"invalid",7]
+    push($cases,{mode:"local-error",key:"roots",nodes:{local:{roots:$bad}}})
+  end
+  push($cases,{mode:"legacy-error",nodes:{unreachable:{legacy_defaults:true}}})
+  push($cases,{mode:"legacy",nodes:{unreachable:{legacy_defaults:true,roots:{prefix:"/srv/original",etc:"/srv/original/etc",var:"/srv/original/var"}}}})
+  push($cases,{mode:"snapshot",nodes:{local:{roots:{prefix:"/srv/original",etc:"/srv/original/etc",var:"/srv/original/var"}},alpha:{mix_bin:"/srv/original/bin/mix"}}})
+  push($cases,{mode:"remote-cache",nodes:{alpha:{mix_bin:$exe},beta:{mix_bin:$exe}}})
+  for $case in $cases
+    write_file($counter,"0")
+    $config = $scratch .. "/nodes.conf.mix"
+    write_file($config,data_encode({nodes:$case.nodes}))
+    $child = run_argv([$exe,realpath($0),$case.mode,$case.key ?? ""],{env:{MESH_HUB:$scratch,MESH_NODES_CONFIG:$config,MESH_FIXTURE_COUNT:$counter,PATH:$scratch .. "/bin:" .. env("PATH")},timeout:30})
+    check($child.ok,"fixture " .. $case.mode .. " failed: " .. $child.stdout .. $child.stderr)
+  end
+  print("PASS complete layout validation, actual system roots, zero-SSH legacy roots and immutable per-node query snapshots")
+finally
+  run_argv_must(["rm","-rf",$scratch])
+end
