@@ -14,7 +14,10 @@ use std::path::PathBuf;
 /// `PIPEWIRE_REMOTE`, else `PIPEWIRE_REMOTE` (default `pipewire-0`) in
 /// `PIPEWIRE_RUNTIME_DIR`, then `XDG_RUNTIME_DIR`.
 pub fn socket_path() -> anyhow::Result<PathBuf> {
-    let name = paths::env::setting(paths::env::PIPEWIRE_REMOTE)?;
+    let name = match paths::env::raw(paths::env::PIPEWIRE_REMOTE) {
+        Some(value) => value.into_string().map_err(|_| anyhow::anyhow!("PIPEWIRE_REMOTE is not UTF-8"))?,
+        None => paths::env::setting(paths::env::PORTALD_PIPEWIRE_REMOTE)?,
+    };
     if name.starts_with('/') {
         return Ok(PathBuf::from(name));
     }

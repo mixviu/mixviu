@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 /// The session bus address, required and non-empty.
 pub fn session_address() -> anyhow::Result<String> {
-    let address = paths::env::setting(paths::env::DBUS_SESSION_BUS_ADDRESS)?;
+    let address = paths::env::raw(paths::env::DBUS_SESSION_BUS_ADDRESS)
+        .and_then(|value| value.into_string().ok())
+        .ok_or_else(|| anyhow::anyhow!("DBUS_SESSION_BUS_ADDRESS is not set"))?;
     anyhow::ensure!(
         !address.trim().is_empty(),
         "DBUS_SESSION_BUS_ADDRESS is empty"
