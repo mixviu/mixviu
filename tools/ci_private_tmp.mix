@@ -1,15 +1,19 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Run the unchanged full gate with job-owned, disk-backed scratch space.
+-- Run the unchanged full gate with job-owned tmpfs scratch space.
 -- Shared CBC /tmp can be full, including for tests with literal /tmp paths.
 -- The bind mount exists only in this process's private mount namespace.
 $a = args()
 $mix = realpath("/proc/self/exe")
 if len($a) == 2 and $a[0] == "--child" then
-  run_argv_must(["mount", "--bind", $a[1], "/tmp"])
+  run_argv_must(["mount", "-t", "tmpfs", "-o", "size=8G,mode=1777", "mix-ci", "/tmp"])
   $r = run_argv([$mix, "tools/ci.mix", "all"], {timeout: 14400,
     stdout: "inherit", stderr: "inherit",
-    -- Keep socket fixture paths short; /tmp is already our private bind mount.
+    -- Keep socket fixture paths short and retain normal tmpfs semantics.
     env: {TMPDIR: "/tmp", RUSTC_WRAPPER: "", CARGO_BUILD_JOBS: "2"}})
+  if not $r.ok then
+    $saved = run_argv(["cp", "-a", "/tmp/.", $a[1]], {timeout: 300})
+    if not $saved.ok then eprint("CI_PRIVATE_TMP evidence copy incomplete: " .. $saved.stderr) end
+  end
   exit($r.exit_code ?? 124)
 end
 if len($a) != 0 then raise("USAGE", "ci_private_tmp.mix") end
