@@ -19,3 +19,4 @@ layer = "core"
 contract = "none"
 
 [dependencies]
+paths = { path = "../paths" }

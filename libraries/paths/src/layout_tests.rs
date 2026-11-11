@@ -45,10 +45,10 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
             name: "desk-isolated",
             env: &[
                 ("HOME", "/home/user"),
-                ("MIX_ETC", "/var/lib/mix/desk/etc"),
-                ("MIX_VAR", "/var/lib/mix/desk/var"),
-                ("MIX_RUN", "/run/mix/session/3"),
-                ("MIX_SHARE", "/opt/mix/share"),
+                (env::ETC, "/var/lib/mix/desk/etc"),
+                (env::VAR, "/var/lib/mix/desk/var"),
+                (env::RUN, "/run/mix/session/3"),
+                (env::SHARE, "/opt/mix/share"),
                 ("XDG_RUNTIME_DIR", "/run/mix/session/3/desktop"),
             ],
             system: [
@@ -68,10 +68,10 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
             name: "desk-shared",
             env: &[
                 ("HOME", "/home/user"),
-                ("MIX_ETC", "/var/lib/mix/vt/etc"),
-                ("MIX_VAR", "/var/lib/mix/vt/var"),
-                ("MIX_RUN", "/run/mix/session/4"),
-                ("MIX_SHARE", "/opt/mix/share"),
+                (env::ETC, "/var/lib/mix/vt/etc"),
+                (env::VAR, "/var/lib/mix/vt/var"),
+                (env::RUN, "/run/mix/session/4"),
+                (env::SHARE, "/opt/mix/share"),
                 ("XDG_RUNTIME_DIR", "/run/mix/session/4/desktop"),
                 ("XDG_CONFIG_HOME", "/var/lib/mix/vt/home/config"),
                 ("XDG_DATA_HOME", "/var/lib/mix/vt/home/data"),
@@ -91,7 +91,7 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
         },
         Fixture {
             name: "system-unit",
-            env: &[("MIX_VAR", "/var/lib/mix")],
+            env: &[(env::VAR, "/var/lib/mix")],
             system: ["/etc/mix", "/var/lib/mix", "/run/mix", "/var/cache/mix"],
             user: [
                 "/root/.config/mix",
@@ -160,7 +160,7 @@ fn public_live_environments_match_main_for_both_uids_and_prefixes() {
                     "{}",
                     fixture.name
                 );
-                let share = get("MIX_SHARE").unwrap_or_else(|| Path::new(prefix).join("share"));
+                let share = get(env::SHARE).unwrap_or_else(|| Path::new(prefix).join("share"));
                 assert_eq!(
                     layout.root(Root::Share),
                     share,
