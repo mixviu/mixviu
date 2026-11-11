@@ -32,7 +32,10 @@ Changes from the oracle:
   0700 as `StateDirectoryMode=0700` made it, a symlinked or foreign-owned leaf
   is refused, and no `UMask=` is set, so everything else keeps the manager's
   umask. Desk units retain their session environment file and account contract.
-- Sanitise the recorded build completion fixture's worker, checkout and log.
+- In the recorded build completion fixture, replace the real worker host name
+  (the `worker` field and the host part of the log file name) with an example
+  one; every other field keeps the oracle value. The await test reads only
+  `log`, and only to compare the fixture with itself.
   Use a neutral MCP executable path in the unit fixture.
 - Document lint's inability to analyse the two shared-scope handler files.
   Their dynamic handler loading is unchanged from the oracle.
@@ -61,7 +64,11 @@ real agent CLI, service installation or desktop is used by these tests.
   `mixos/peers.conf.mix`, `mixos/releases.mx`, `mixos/releases`: existing user
   config/state and per-target ownership/lock records. Renaming would hide
   sessions, peers, catalogue entries or installation ownership. Tests and
-  comments retain the same spellings.
+  comments retain the same spellings. The user units' `%E/mixos` and
+  `%S/mixos/...` are these XDG paths, kept consistently across units, script
+  defaults and the registry; they move with the deferred rename.
+- `mixos-light` and `.cache/mixos/cbc-build` in the recorded build completion
+  fixture: oracle values of a captured event, not paths this port uses.
 - MCP server name `mixos` (including reservation errors and test expectations),
   ACP client/agent identity `mixos-agentd`: on-wire compatibility and resume.
 - `mixos-mcp` in explanatory comments/test labels: names the oracle bridge
