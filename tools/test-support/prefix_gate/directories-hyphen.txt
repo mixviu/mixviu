@@ -1,0 +1,2 @@
+RuntimeDirectory=mix-run
+StateDirectory=mixos-state

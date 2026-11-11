@@ -1,0 +1,1 @@
+fn spawn() { let _ = std::process::Command::new("true").env("PREFIX_GATE_I", "1").env_remove("PREFIX_GATE_J").status(); }

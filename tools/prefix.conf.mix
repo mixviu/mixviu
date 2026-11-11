@@ -1,7 +1,14 @@
 -- Exact recogniser exceptions apply throughout the named maintainer-only files.
 -- foreign_env_names classify known project settings as findings, not exemptions.
 -- disabled_rules are computed; enabled:true enforces the deferred rule.
+-- limits: files over max_file_bytes (sources, units, data, fixtures, includes)
+-- and snapshot ELF files over max_snapshot_bytes are findings, never read.
+-- standard_env_names: a trailing * only for namespaces their tools reserve.
 {
+  "limits": {
+    "max_file_bytes": 2097152,
+    "max_snapshot_bytes": 268435456
+  },
   "prefix_constant": {
     "file": "libraries/paths/src/lib.rs",
     "name": "DEFAULT_PREFIX",
@@ -112,7 +119,23 @@
     "tools/test-support/prefix_gate/wrong-prefix.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
     "tools/test-support/prefix_gate/static-mut.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
     "tools/test-support/prefix_gate/known-constant.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
-    "tools/test-support/prefix_gate/non-read.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename."
+    "tools/test-support/prefix_gate/non-read.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/directories-hyphen.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-bare.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-command.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-const.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-group.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-macro.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-mix-forms.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-module.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-not-read.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-std-var-os.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-std-var.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/env-write.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/foreign-only.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/old-decoded.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/paths-colon.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename.",
+    "tools/test-support/prefix_gate/standard-rust.txt": "Selftest input, deliberately contains forbidden spellings; the selftest scans it with an explicit logical filename."
   },
   "foreign_env_names": [
     "MDS_GC_QUIESCENCE_SECS",
@@ -133,7 +156,17 @@
     "DISPLAY",
     "DBUS_*",
     "CARGO_*",
-    "RUST*",
+    "RUSTFLAGS",
+    "RUSTDOCFLAGS",
+    "RUSTC",
+    "RUSTC_WRAPPER",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+    "RUST_LOG",
+    "RUST_BACKTRACE",
+    "RUST_MIN_STACK",
+    "RUST_TEST_THREADS",
+    "RUST_TEST_NOCAPTURE",
     "SOURCE_DATE_EPOCH",
     "TMPDIR",
     "NO_COLOR",

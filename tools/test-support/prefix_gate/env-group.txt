@@ -1,0 +1,2 @@
+use std::env::{self as e, var_os as get};
+fn read() { let _ = get("PREFIX_GATE_E"); let _ = e::var("PREFIX_GATE_F"); }

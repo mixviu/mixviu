@@ -1,0 +1,1 @@
+pub const NAMES: [&str; 1] = ["TERM_CWD"];

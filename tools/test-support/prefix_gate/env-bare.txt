@@ -1,0 +1,2 @@
+use std::env::var;
+fn read() { let _ = var("PREFIX_GATE_D"); }

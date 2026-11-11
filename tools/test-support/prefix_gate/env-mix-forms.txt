@@ -1,0 +1,10 @@
+use std::env::var;
+const LOWER: &str = "MIX_lower_const";
+fn read() {
+    let _ = std::env::var("MIX_lower_a");
+    let _ = std::env::var_os("Mix_Mixed");
+    let _ = var("MIX_lower_b");
+    let _ = std::env::var(LOWER);
+    unsafe { std::env::set_var("mix_lower_c", "1"); }
+    let _ = std::process::Command::new("true").env("MIX_lower_d", "1").env_remove("MIX_lower_e").status();
+}

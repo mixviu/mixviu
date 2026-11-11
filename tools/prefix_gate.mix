@@ -1,16 +1,37 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.2.0
+-- version: 0.3.0
 -- Lexical prefix ratchet; run from the repository root. No runtime evaluation.
 -- Cannot see paths assembled from non-literal pieces (even a constant P in
 -- concat!(P, "opt/mix")), compressed embedded data, generated
 -- OUT_DIR files not in the source tree, or includes with non-literal filenames.
 -- Rust comments contribute path findings, but not MIX-word findings; ordinary/raw
--- strings, byte strings, escapes and literal concat! arguments are decoded.
+-- strings, byte strings, escapes and literal concat! arguments are decoded, and
+-- the decoded values are checked for paths, MIX_ words and old names.
 -- Format macros expose their format literal through the same token scan.
+-- Environment reads: std::env::{var, var_os, set_var, remove_var} through a
+-- path, a `use` alias or a bare imported name, Command .env/.env_remove, env!
+-- and option_env!. The name is a literal, a literal concat!, or a same-file
+-- `const`/`static NAME: &str = "..."`; a constant from another file is not seen.
+-- Input safety: files come from `git ls-files -s -z` split as bytes. Symlinks
+-- (tracked, or swapped into the working tree), non-regular files, files over
+-- limits.max_file_bytes and non-UTF-8 names are findings and are never read.
+-- Names and matched text are printed with control characters escaped.
 -- Baseline identities omit line numbers so unrelated edits do not reset debt.
 -- --json emits ALL findings, even in baseline mode. --strict ignores debt.
+--
+-- Baseline maintenance (see tools/prefix_baseline.mix). The baseline only
+-- shrinks; growth cannot pass CI on a PR or on a push to main, by design.
+-- A file rename or move of baselined debt is accepted as a relocation (same
+-- rule and text, equal count, old key gone in the same change) and printed.
+-- The deferred bare-mixos rule is computed and reported as DISABLED. It is
+-- switched on, once the domain and app-id rename is done, by a PR that sets
+-- enabled:true in tools/prefix.conf.mix with no remaining active bare-mixos
+-- finding (fixed, or an exact reviewed exception): enabling it never needs
+-- baseline growth, and a PR that tried would fail --check-baseline.
 
 $root = dirname(dirname(realpath($0)))
+$scan_root = $root
+$support = $root .. "/tools/test-support/prefix_gate"
 $policy = load_data($root .. "/tools/prefix.conf.mix")
 $baseline = require("prefix_baseline.mix")
 for $e in $policy.exceptions
@@ -23,9 +44,16 @@ for $file in keys($policy.excluded_files)
     raise("POLICY", "excluded file needs a reason: " .. $file)
   end
 end
+$limits = $policy.limits ?? {}
+for $k in ["max_file_bytes", "max_snapshot_bytes"]
+  if type($limits[$k] ?? nil) != "number" or $limits[$k] < 1 or floor($limits[$k]) != $limits[$k] then
+    raise("POLICY", "limits." .. $k .. " must be a positive whole number of bytes")
+  end
+end
 $o = getopt(args(), {json: {}, strict: {}, snapshot: {arg: true}, "check-baseline": {}, "update-baseline": {}, "allow-growth": {}})
 if len($o.errors) > 0 or len($o.rest) > 1 then
   eprint("usage: mix tools/prefix_gate.mix [selftest] [--json] [--strict] [--snapshot DIR] [--check-baseline] [--update-baseline [--allow-growth]]")
+  eprint("  --update-baseline --allow-growth only rewrites the file; CI still refuses growth.")
   exit(1)
 end
 if $o.opts["allow-growth"] and not $o.opts["update-baseline"] then
@@ -53,6 +81,40 @@ for $d in $policy.disabled_rules
     $disabled[$d.rule] = $d.reason
   end
 end
+$env_functions = ["var", "var_os", "set_var", "remove_var"]
+-- Safe rejection before lexing: hex/Unicode escapes, line continuations
+-- and concat! can hide a spelling. Comments may separate a macro and !.
+$rust_prefilter = '/opt/|/(?:etc|run)/mix|/var/(?:lib|cache)/mix|/root|/tmp/mix-run|(?i:mix_)|\b(?:concat|include|include_str|include_bytes|env|option_env|var|var_os|set_var|remove_var|env_remove)\b|\x5c(?:x|u|\r?\n)'
+for $name in $policy.foreign_env_names
+  if not re_match($name, '^[A-Z_][A-Z0-9_]*$') then
+    raise("POLICY", "foreign_env_names must be plain environment names: " .. $name)
+  end
+  $rust_prefilter = $rust_prefilter .. '|\b' .. $name .. '\b'
+end
+
+-- Control characters, C1 controls and bidi overrides would reach CI logs.
+$unsafe_chars = '[\x00-\x1f\x7f-\x9f\x{2028}\x{2029}\x{202a}-\x{202e}\x{2066}-\x{2069}]'
+
+fn shown($s)
+  $s = to_string($s)
+  if not re_match($s, $unsafe_chars) then
+    return $s
+  end
+  $digits = "0123456789abcdef"
+  $out = ""
+  $pos = 0
+  for $m in re_find($s, $unsafe_chars)
+    $n = ord($m.match)
+    $hex = ""
+    while $n > 0 or $hex == ""
+      $hex = slice($digits, $n % 16, $n % 16 + 1) .. $hex
+      $n = floor($n / 16)
+    end
+    $out = $out .. slice($s, $pos, $m.start) .. "\\u{" .. $hex .. "}"
+    $pos = $m.end
+  end
+  return $out .. slice($s, $pos)
+end
 
 fn record_hit($file, $line, $rule, $text)
   global $findings, $disabled_findings
@@ -77,16 +139,17 @@ fn path_hits($file, $line, $text, $scope, $constant = false)
   end
   -- Match complete whitespace-delimited URLs first so /opt/ inside them is
   -- never reconsidered as a path. Rust regex has no lookbehind/lookahead.
-  for $m in re_find($text, '[A-Za-z][A-Za-z0-9+.-]*://[^\s"\x00<>]+|(^|[^\w/])(/opt/[^\s"\x27\x00<>;,)}\]]*|/(?:etc|run|var/(?:lib|cache))/mix(?:os)?(?:/[^\s"\x27\x00<>;,)}\]]*|\b)|/tmp/mix-run(?:/[^\s"\x27\x00<>;,)}\]]*|\b)|/root(?:/[^\s"\x27\x00<>;,)}\]]*|\b))')
+  -- ':' ends a path, so PATH-style lists still match each element.
+  for $m in re_find($text, '[A-Za-z][A-Za-z0-9+.-]*://[^\s"\x00<>]+|(^|[^\w/])(/opt/[^\s"\x27\x00<>;,:)}\]]*|/(?:etc|run|var/(?:lib|cache|run))/mix(?:os)?(?:/[^\s"\x27\x00<>;,:)}\]]*|\b)|/tmp/mix-run(?:/[^\s"\x27\x00<>;,:)}\]]*|\b)|/root(?:/[^\s"\x27\x00<>;,:)}\]]*|\b))')
     if re_match($m.match, '^[A-Za-z][A-Za-z0-9+.-]*://') then
       continue
     end
     $hit = $m.groups[1]
     -- A word boundary alone also permits '-' and '.', which remain part of
-    -- a filename. Require end, slash, whitespace or a string delimiter.
+    -- a filename. Require end, slash, whitespace, ':' or a string delimiter.
     if not starts_with($hit, "/opt/") then
       $after = slice($text, $m.end, $m.end + 1)
-      if $after != "" and not re_match($after, '[\s"\x27\x00<>;,)}\]]') then
+      if $after != "" and not re_match($after, '[\s"\x27\x00<>;,:)}\]]') then
         continue
       end
     end
@@ -103,15 +166,21 @@ fn path_hits($file, $line, $text, $scope, $constant = false)
   end
 end
 
-fn old_hits($file, $line, $text, $line_numbers = true)
-  $pattern = '\b(?:MIXOS_[A-Za-z0-9_]*|COSMIX_[A-Za-z0-9_]*|cosmix)\b'
-  for $m in re_find($text, $pattern)
-    $here = $line_numbers ? $line + len(split(slice($text, 0, $m.start), "\n")) - 1 : $line
-    record_hit($file, $here, "old-name", $m.match)
+fn old_matches($text)
+  $out = []
+  for $m in re_find($text, '\b(?:MIXOS_[A-Za-z0-9_]*|COSMIX_[A-Za-z0-9_]*|cosmix)\b')
+    push($out, {rule: "old-name", match: $m.match, start: $m.start})
   end
   for $m in re_find($text, '\bmixos\b')
+    push($out, {rule: "bare-mixos", match: $m.match, start: $m.start})
+  end
+  return $out
+end
+
+fn old_hits($file, $line, $text, $line_numbers = true)
+  for $m in old_matches($text)
     $here = $line_numbers ? $line + len(split(slice($text, 0, $m.start), "\n")) - 1 : $line
-    record_hit($file, $here, "bare-mixos", $m.match)
+    record_hit($file, $here, $m.rule, $m.match)
   end
 end
 
@@ -253,10 +322,12 @@ fn standard_env($name)
   return false
 end
 
+-- $form is how the name is read: env!, option_env!, var, var_os, set_var,
+-- remove_var, .env or .env_remove.
 fn environment_hit($file, $line, $name, $form)
-  if starts_with($name, "MIX_") then
-    if not starts_with($file, "libraries/paths/") and ($form == "env" or $form == "option_env") then
-      record_hit($file, $line, "rust-env", $form .. "!(" .. $name .. ")")
+  if re_match($name, '^(?i:mix_)') then
+    if not starts_with($file, "libraries/paths/") then
+      record_hit($file, $line, "rust-env", $form .. "(" .. $name .. ")")
     end
     return
   end
@@ -303,18 +374,120 @@ fn literal_expr($ts, $i)
   return $j < len($ts) ? {value: $value, next: $j + 1} : nil
 end
 
+-- Same-file `const|static [mut] NAME: &['static ]str = <literal expr>;`.
+fn rust_constants($ts)
+  $out = {}
+  $n = len($ts)
+  for $k = 0 to $n - 1
+    if $ts[$k].text != "const" and $ts[$k].text != "static" then continue end
+    $j = $k + 1
+    if $j < $n and $ts[$j].text == "mut" then $j = $j + 1 end
+    if $j + 1 >= $n or $ts[$j + 1].text != ":" or not re_match($ts[$j].text, '^[A-Za-z_][A-Za-z0-9_]*$') then continue end
+    $name = $ts[$j].text
+    $j = $j + 2
+    while $j < $n and contains(["&", "'", "static", "str"], $ts[$j].text)
+      $j = $j + 1
+    end
+    if $j < $n and $ts[$j].text == "=" then
+      $v = literal_expr($ts, $j + 1)
+      if $v != nil and $v.next < $n and $ts[$v.next].text == ";" then
+        $out[$name] = $v.value
+      end
+    end
+  end
+  return $out
+end
+
+-- Module names that mean std::env, and bare names imported from it
+-- (local name -> std::env function), from this file's `use std::...` items.
+fn env_imports($ts)
+  $mods = {env: true}
+  $fns = {}
+  $n = len($ts)
+  $k = 0
+  while $k < $n
+    if $ts[$k].text != "use" then
+      $k = $k + 1
+      continue
+    end
+    $items = []
+    $k = $k + 1
+    while $k < $n and $ts[$k].text != ";"
+      push($items, $ts[$k].text)
+      $k = $k + 1
+    end
+    $first = 0
+    while $first < len($items) and $items[$first] == ":"
+      $first = $first + 1
+    end
+    if $first >= len($items) or $items[$first] != "std" then continue end
+    $m = len($items)
+    for $p = 0 to $m - 1
+      if $items[$p] != "env" then continue end
+      $q = $p + 1
+      if $q + 1 < $m and $items[$q] == ":" and $items[$q + 1] == ":" then
+        $q = $q + 2
+        $names = []
+        if $q < $m and $items[$q] == "{" then
+          $q = $q + 1
+          while $q < $m and $items[$q] != "}"
+            $nm = $items[$q]
+            $alias = $nm
+            if $q + 2 < $m and $items[$q + 1] == "as" then
+              $alias = $items[$q + 2]
+              $q = $q + 2
+            end
+            push($names, {name: $nm, alias: $alias})
+            $q = $q + 1
+            if $q < $m and $items[$q] == "," then $q = $q + 1 end
+          end
+        elif $q < $m then
+          $alias = $items[$q]
+          if $q + 2 < $m and $items[$q + 1] == "as" then $alias = $items[$q + 2] end
+          push($names, {name: $items[$q], alias: $alias})
+        end
+        for $x in $names
+          if $x.name == "*" then
+            for $f in $env_functions
+              $fns[$f] = $f
+            end
+          elif $x.name == "self" then
+            $mods[$x.alias == "self" ? "env" : $x.alias] = true
+          elif contains($env_functions, $x.name) then
+            $fns[$x.alias] = $x.name
+          end
+        end
+      elif $q + 1 < $m and $items[$q] == "as" then
+        $mods[$items[$q + 1]] = true
+      end
+    end
+  end
+  return {mods: $mods, fns: $fns}
+end
+
+fn env_name($ts, $j, $consts)
+  $v = literal_expr($ts, $j)
+  if $v != nil then
+    return $v.value
+  end
+  if $j + 1 < len($ts) and has_key($consts, $ts[$j].text) and contains([")", ","], $ts[$j + 1].text) then
+    return $consts[$ts[$j].text]
+  end
+  return nil
+end
+
 fn scan_rust($file, $source)
   global $seen_includes, $scanned_rust, $old_files
   if has_key($scanned_rust, $file) then return end
   $scanned_rust[$file] = true
-  -- Safe rejection before lexing: hex/Unicode escapes, line continuations
-  -- and concat! can hide a spelling. Comments may separate a macro and !.
-  if not re_match($source, '/opt/|/(?:etc|run)/mix|/var/(?:lib|cache)/mix|/root|/tmp/mix-run|MIX_|\b(?:concat|include|include_str|include_bytes|env|option_env|var|var_os)\b|\x5c(?:x|u|\r?\n)') then
+  if not re_match($source, $rust_prefilter) then
     return
   end
   $scope = starts_with($file, "vendor/") ? "vendor" : "rust"
   $ts = rust_tokens($source, $file, $scope)
   $nt = len($ts)
+  $consts = $scope == "rust" ? rust_constants($ts) : {}
+  $imports = $scope == "rust" ? env_imports($ts) : {mods: {}, fns: {}}
   $i = -1
   $skip_next = 0
   for $t in $ts
@@ -327,19 +500,24 @@ fn scan_rust($file, $source)
     if $i + 3 < $nt and contains(["include", "include_str", "include_bytes"], $t.text) and $ts[$i + 1].text == "!" then
       $v = literal_expr($ts, $i + 3)
       if $v != nil then
-        $abs = realpath(starts_with($v.value, "/") ? $v.value : dirname($root .. "/" .. $file) .. "/" .. $v.value)
+        $abs = realpath(starts_with($v.value, "/") ? $v.value : dirname($scan_root .. "/" .. $file) .. "/" .. $v.value)
         if $abs == nil then
           record_hit($file, $t.line, $scope .. "-include", "missing include: " .. $v.value)
           continue
         end
-        if not starts_with($abs, $root .. "/") then
+        if not starts_with($abs, $scan_root .. "/") then
           record_hit($file, $t.line, $scope .. "-include", "include outside repository: " .. $v.value)
           continue
         end
-        $inc = slice($abs, len($root) + 1)
+        $inc = slice($abs, len($scan_root) + 1)
         if not has_key($seen_includes, $inc) then
           $seen_includes[$inc] = true
-          $inc_bytes = read_file_bytes($abs)
+          $read = read_regular($abs, $limits.max_file_bytes)
+          if $read.problem != nil then
+            record_hit($inc, 1, $read.problem.rule, $read.problem.text)
+            continue
+          end
+          $inc_bytes = $read.bytes
           $included = bytes_to_string($inc_bytes, {lossy: true})
           $inc_text = text_data($inc, $inc_bytes, $included)
           if ends_with($inc, ".rs") then
@@ -366,12 +544,23 @@ fn scan_rust($file, $source)
     if $scope == "rust" and $i + 3 < $nt and ($t.text == "env" or $t.text == "option_env") and $ts[$i + 1].text == "!" then
       $v = literal_expr($ts, $i + 3)
       if $v != nil then
-        environment_hit($file, $t.line, $v.value, $t.text)
+        environment_hit($file, $t.line, $v.value, $t.text .. "!")
       end
     end
-    if $scope == "rust" and $i >= 3 and $i + 2 < $nt and ($t.text == "var" or $t.text == "var_os") and $ts[$i - 3].text == "env" and $ts[$i - 2].text == ":" and $ts[$i - 1].text == ":" and $ts[$i + 1].text == "(" then
-      $v = literal_expr($ts, $i + 2)
-      if $v != nil then environment_hit($file, $t.line, $v.value, $t.text) end
+    if $scope == "rust" and $i + 2 < $nt and $ts[$i + 1].text == "(" then
+      $form = nil
+      $prev = $i > 0 ? $ts[$i - 1].text : ""
+      if contains($env_functions, $t.text) and $i >= 3 and $prev == ":" and $ts[$i - 2].text == ":" and has_key($imports.mods, $ts[$i - 3].text) then
+        $form = $t.text
+      elif has_key($imports.fns, $t.text) and $prev != ":" and $prev != "." and $prev != "fn" then
+        $form = $imports.fns[$t.text]
+      elif ($t.text == "env" or $t.text == "env_remove") and $prev == "." then
+        $form = "." .. $t.text
+      end
+      if $form != nil then
+        $name = env_name($ts, $i + 2, $consts)
+        if $name != nil then environment_hit($file, $t.line, $name, $form) end
+      end
     end
     $v = nil
     if $t.literal then
@@ -386,6 +575,16 @@ fn scan_rust($file, $source)
         $constant = $t.literal and prefix_item($ts, $i)
       end
       path_hits($file, $t.line, $text, $scope, $constant)
+      -- Raw source already gave the spellings that appear verbatim; a decoded
+      -- escape or a concat! join can produce one that does not.
+      if contains($text, "MIXOS_") or contains($text, "COSMIX_") or contains($text, "cosmix") or contains($text, "mixos") then
+        $raw = join(map(slice($ts, $i, $v.next), fn($x) = $x.text), " ")
+        for $m in old_matches($text)
+          if not contains($raw, $m.match) then
+            record_hit($file, $t.line, $m.rule, $m.match)
+          end
+        end
+      end
     end
     if $scope == "rust" and contains($text, "MIX_") and not starts_with($file, "libraries/paths/") then
       for $m in re_find($text, '\bMIX_[A-Z0-9_]+\b')
@@ -413,7 +612,7 @@ fn scan_data($file, $source, $scope)
     if $scope == "data" then
       for $m in re_find($s, '^\s*(?:Runtime|State|Cache|Logs|Configuration)Directory\s*=([^#\r\n]*)')
         for $part in re_find($m.groups[0], '[^\s"\x27]+')
-          if $part.match == "mix" or starts_with($part.match, "mix/") or starts_with($part.match, "mixos") then
+          if re_match($part.match, '^mix(?:os)?(?:[-/]|$)') then
             record_hit($file, $line, "unit-directory", trim($m.match))
           end
         end
@@ -428,9 +627,50 @@ fn scan_data($file, $source, $scope)
   end
 end
 
+-- Read a regular file without following a symlink, at most $cap bytes.
+-- Returns {bytes} or {problem: {rule, text}}; never opens anything else.
+fn read_regular($abs, $cap)
+  $st = nil
+  try
+    $st = stat($abs, {follow_symlinks: false})
+  catch $message
+    return {problem: {rule: "file-type", text: "missing or unreadable"}}
+  end
+  if $st.is_symlink then
+    return {problem: {rule: "symlink", text: "symlink"}}
+  end
+  if not $st.is_file then
+    return {problem: {rule: "file-type", text: "not a regular file"}}
+  end
+  -- A symlinked parent directory reaches outside the tree the same way.
+  $real = nil
+  try
+    $real = realpath($abs)
+  catch $message
+    return {problem: {rule: "file-type", text: "missing or unreadable"}}
+  end
+  if $real != $abs then
+    return {problem: {rule: "symlink", text: "symlink"}}
+  end
+  $over = {problem: {rule: "file-size", text: "over " .. to_string($cap) .. " bytes"}}
+  if $st.size > $cap then
+    return $over
+  end
+  $bytes = read_file_bytes($abs, $cap + 1)
+  if bytes_len($bytes) > $cap then
+    return $over
+  end
+  return {bytes: $bytes}
+end
+
 fn scan_file($file)
   global $old_files
-  $bytes = read_file_bytes($root .. "/" .. $file)
+  $read = read_regular($scan_root .. "/" .. $file, $limits.max_file_bytes)
+  if $read.problem != nil then
+    record_hit($file, 1, $read.problem.rule, $read.problem.text)
+    return
+  end
+  $bytes = $read.bytes
   $source = bytes_to_string($bytes, {lossy: true})
   $is_text = text_data($file, $bytes, $source)
   -- Old spellings are forbidden anywhere, including comments and docs.
@@ -447,8 +687,9 @@ fn scan_file($file)
   end
 end
 
+-- Units by suffix; tmpfiles and sysusers by directory or exact file name.
 fn data_file($file)
-  return starts_with($file, "share/") or (starts_with($file, "apps/") and ends_with($file, ".mix")) or re_match($file, '\.(service|socket|slice|timer|target|path|mount|automount|desktop)$|(?:tmpfiles|sysusers)(?:[./]|$)')
+  return starts_with($file, "share/") or (starts_with($file, "apps/") and ends_with($file, ".mix")) or re_match($file, '\.(service|socket|slice|timer|target|path|mount|automount|swap|desktop)$|(^|/)(?:tmpfiles|sysusers)\.d/|(^|/)(?:[^/]+\.)?(?:tmpfiles|sysusers)\.conf$')
 end
 
 fn text_data($file, $bytes, $source)
@@ -461,19 +702,81 @@ fn text_data($file, $bytes, $source)
   end
 end
 
+-- NUL-separated output of $argv as a list of raw byte strings. The output
+-- goes to a private file, so a non-UTF-8 name never reaches a string.
+fn nul_listing($argv)
+  $tmp = trim(run_argv_must(["mktemp", "-d", "/var/tmp/prefix-list-XXXXXX"]))
+  try
+    $r = run_argv($argv, {timeout: 600, stdout: {file: $tmp .. "/list"}})
+    if not $r.ok then
+      raise("CAPTURE", $argv[0] .. " listing failed: " .. $r.stderr)
+    end
+    $raw = read_file_bytes($tmp .. "/list")
+  finally
+    run_argv_must(["rm", "-rf", "--", $tmp])
+  end
+  return filter(bytes_split($raw, 0), fn($b) = bytes_len($b) > 0)
+end
+
+-- {mode, path, bad_name} per `git ls-files -s -z` entry.
+fn parse_entries($pieces)
+  $out = []
+  for $piece in $pieces
+    $tab = bytes_find($piece, 9)
+    if $tab < 0 then
+      raise("CAPTURE", "malformed git ls-files -s entry")
+    end
+    $mode = split(bytes_to_string(slice($piece, 0, $tab)), " ")[0]
+    $name_bytes = slice($piece, $tab + 1)
+    $name = nil
+    try
+      $name = bytes_to_string($name_bytes)
+    catch $message
+      $name = nil
+    end
+    push($out, {mode: $mode, path: $name ?? bytes_to_string($name_bytes, {lossy: true}), bad_name: $name == nil})
+  end
+  return $out
+end
+
+fn scan_tree($dir)
+  global $scan_root
+  $scan_root = $dir
+  $seen = {}
+  for $e in parse_entries(nul_listing(["git", "-C", $dir, "ls-files", "-s", "-z"]))
+    if has_key($seen, $e.path) then continue end
+    $seen[$e.path] = true
+    if $e.bad_name then
+      record_hit($e.path, 1, "file-name", "non-UTF-8 name")
+    elif $e.mode == "120000" then
+      record_hit($e.path, 1, "symlink", "symlink")
+    elif $e.mode == "160000" or has_key($policy.excluded_files, $e.path) then
+      continue
+    else
+      scan_file($e.path)
+    end
+  end
+end
+
 fn identity($f)
   return json_encode([$f.file, $f.rule, $f.text])
 end
 
-fn summary($fs)
+fn finding_line($f)
+  return shown($f.file) .. ":" .. to_string($f.line) .. " " .. $f.rule .. " " .. shown($f.text)
+end
+
+fn summary($fs, $off)
   $counts = {}
   $totals = {}
-  for $f in $fs
+  for $f in concat($fs, $off)
     $p = split($f.file, "/")
     $crate = len($p) > 1 ? join(slice($p, 0, 2), "/") : $p[0]
     $label = ($f.disabled ?? false) ? "DISABLED " .. $f.rule : $f.rule
-    $key = $crate .. " | " .. $label
-    $counts[$key] = ($counts[$key] ?? 0) + 1
+    $key = shown($crate) .. " | " .. $label
+    if not ($f.disabled ?? false) then
+      $counts[$key] = ($counts[$key] ?? 0) + 1
+    end
     $totals[$label] = ($totals[$label] ?? 0) + 1
   end
   print("crate/scope | rule | hits")
@@ -486,18 +789,38 @@ fn summary($fs)
   end
 end
 
-fn selftest()
+-- A selftest fixture: resolved, inside the fixture directory, regular and
+-- within the size limit.
+fn fixture_source($dir, $name)
+  $base = realpath($dir)
+  $abs = realpath($dir .. "/" .. $name)
+  if $base == nil or $abs == nil or not starts_with($abs, $base .. "/") then
+    raise("SELFTEST_FIXTURE", "fixture outside " .. $dir .. ": " .. shown($name))
+  end
+  $read = read_regular($abs, $limits.max_file_bytes)
+  if $read.problem != nil then
+    raise("SELFTEST_FIXTURE", "fixture " .. shown($name) .. ": " .. $read.problem.text)
+  end
+  return bytes_to_string($read.bytes)
+end
+
+fn reset_scan()
   global $findings, $prefix_hits, $seen_includes, $scanned_rust, $disabled_findings, $old_files
-  $cases = load_data($root .. "/tools/test-support/prefix_gate/cases.conf.mix")
+  $findings = []
+  $prefix_hits = 0
+  $seen_includes = {}
+  $scanned_rust = {}
+  $disabled_findings = []
+  $old_files = {}
+end
+
+fn selftest()
+  global $findings, $disabled_findings
+  $cases = load_data($support .. "/cases.conf.mix")
   $deferred_rules = map($policy.disabled_rules, fn($d) = $d.rule)
   for $c in $cases.cases
-    $findings = []
-    $prefix_hits = 0
-    $seen_includes = {}
-    $scanned_rust = {}
-    $disabled_findings = []
-    $old_files = {}
-    $source = read_file($root .. "/tools/test-support/prefix_gate/" .. $c.fixture)
+    reset_scan()
+    $source = fixture_source($support, $c.fixture)
     old_hits($c.file, 1, $source)
     if ends_with($c.file, ".rs") then
       scan_rust($c.file, $source)
@@ -517,8 +840,15 @@ fn selftest()
       if not has_key($disabled, $rule) then push($expected, $rule) end
     end
     if not deep_eq(sort($rules), sort($expected)) then
-      eprint("FAIL " .. $c.fixture .. ": " .. json_encode($findings))
+      eprint("FAIL " .. $c.fixture .. " as " .. $c.file .. ": " .. json_encode($findings))
       exit(1)
+    end
+    if has_key($c, "texts") then
+      $texts = map(filter($findings, fn($f) = not contains($deferred_rules, $f.rule)), fn($f) = $f.text)
+      if not deep_eq(sort($texts), sort($c.texts)) then
+        eprint("FAIL " .. $c.fixture .. " texts: " .. json_encode($findings))
+        exit(1)
+      end
     end
     $expected_disabled = filter($c.disabled ?? [], fn($rule) = has_key($disabled, $rule))
     if has_key($c, "disabled") and not deep_eq(sort(map($disabled_findings, fn($f) = $f.rule)), sort($expected_disabled)) then
@@ -527,7 +857,16 @@ fn selftest()
   end
   comparison_selftest()
   integration_selftest()
-  print("prefix_gate selftest: " .. to_string(len($cases.cases)) .. " cases passed")
+  print("prefix_gate selftest: " .. to_string(len($cases.cases)) .. " cases and the integration checks passed")
+end
+
+fn expect_raise($code, $f)
+  try
+    $f()
+  catch $message, $error
+    return $error.code == $code
+  end
+  return false
 end
 
 fn comparison_selftest()
@@ -537,6 +876,45 @@ fn comparison_selftest()
       raise("SELFTEST", "baseline shrink arithmetic failed")
     end
   end
+  $k1 = json_encode(["x/old.rs", "rust-path", "/opt/a"])
+  $k2 = json_encode(["x/f.rs", "rust-path", "/opt/b"])
+  $moved = json_encode(["y/new.rs", "rust-path", "/opt/a"])
+  $retext = json_encode(["y/new.rs", "rust-path", "/opt/c"])
+  $other = json_encode(["z/two.rs", "rust-path", "/opt/a"])
+  $base = {}
+  $base[$k1] = 1
+  $base[$k2] = 2
+  $now = {}
+  $now[$moved] = 1
+  $now[$k2] = 2
+  $e = $baseline.explained($now, $base)
+  if len($e.growth) != 0 or len($e.relocations) != 1 or $e.relocations[0].from != $k1 or $e.relocations[0].to != $moved then
+    raise("SELFTEST", "a same-rule, same-text, equal-count move was not a relocation")
+  end
+  $now[$moved] = 2
+  if not deep_eq($baseline.explained($now, $base).growth, [$moved]) then
+    raise("SELFTEST", "a relocation with a raised count was accepted")
+  end
+  $now = {}
+  $now[$retext] = 1
+  $now[$k2] = 2
+  if not deep_eq($baseline.explained($now, $base).growth, [$retext]) then
+    raise("SELFTEST", "a re-texted key was accepted as a relocation")
+  end
+  $now = {}
+  $now[$moved] = 1
+  $now[$other] = 1
+  $now[$k2] = 2
+  $e = $baseline.explained($now, $base)
+  if len($e.growth) != 1 or len($e.relocations) != 1 then
+    raise("SELFTEST", "one disappeared key explained two new keys")
+  end
+  $now = {}
+  $now[$k1] = 1
+  $now[$k2] = 3
+  if not deep_eq($baseline.explained($now, $base).growth, [$k2]) then
+    raise("SELFTEST", "a raised count was explained away")
+  end
   $sample = [{file: "a", rule: "x", text: "v"}, {file: "a", rule: "x", text: "v"}, {file: "b", rule: "x", text: "v", disabled: true}]
   $counted = $baseline.counts($sample)
   if len(keys($counted)) != 1 or $counted[json_encode(["a", "x", "v"])] != 2 then
@@ -544,6 +922,10 @@ fn comparison_selftest()
   end
   if not elf_file(chr(127) .. "ELF") or elf_file("text") then
     raise("SELFTEST", "ELF magic classification failed")
+  end
+  $ctl = "a" .. chr(27) .. "[31m\nb" .. chr(155) .. chr(8238)
+  if re_match(shown($ctl), $unsafe_chars) or shown("plain/name.rs") != "plain/name.rs" then
+    raise("SELFTEST", "control characters reached printed output")
   end
 end
 
@@ -559,55 +941,242 @@ fn complete_capture($r, $label)
 end
 
 fn scan_snapshot($dir)
-  $listing = complete_capture(run_argv(["find", "-L", $dir, "-type", "f", "-print0"], {max_output: 64000000}), "find")
-  for $bin in split($listing, chr(0))
-    if $bin != "" and elf_file(bytes_to_string(read_file_bytes($bin, 4), {lossy: true})) then
-      $s = complete_capture(run_argv(["strings", "-a", $bin], {max_output: 268435456}), "strings")
-      $name = slice($bin, len($dir) + 1)
-      scan_data($name, $s, "snapshot")
-      old_hits($name, 1, $s)
+  for $raw in nul_listing(["find", "-P", $dir, "-type", "f", "-print0"])
+    $bin = nil
+    try
+      $bin = bytes_to_string($raw)
+    catch $message
+      record_hit(bytes_to_string($raw, {lossy: true}), 1, "file-name", "non-UTF-8 name")
+      continue
+    end
+    $name = slice($bin, len($dir) + 1)
+    $st = stat($bin, {follow_symlinks: false})
+    if $st.is_symlink or not $st.is_file then
+      continue
+    end
+    if not elf_file(bytes_to_string(read_file_bytes($bin, 4), {lossy: true})) then
+      continue
+    end
+    -- strings reads the whole file: the same regular-file and size checks.
+    $read = read_regular($bin, $limits.max_snapshot_bytes)
+    if $read.problem != nil then
+      record_hit($name, 1, $read.problem.rule, $read.problem.text)
+      continue
+    end
+    $s = complete_capture(run_argv(["strings", "-a", $bin], {max_output: $limits.max_snapshot_bytes}), "strings")
+    scan_data($name, $s, "snapshot")
+    old_hits($name, 1, $s)
+  end
+end
+
+fn git_fixture($repo, $argv)
+  return run_argv_must(concat(["git", "-C", $repo, "-c", "user.name=Gate Fixture", "-c", "user.email=user@example.org", "-c", "commit.gpgsign=false"], $argv))
+end
+
+fn git_commit($repo, $message)
+  git_fixture($repo, ["add", "-A"])
+  git_fixture($repo, ["commit", "-q", "--allow-empty", "-m", $message])
+  return trim(git_fixture($repo, ["rev-parse", "HEAD"]))
+end
+
+fn baseline_selftest($tmp)
+  $path = $tmp .. "/baseline.json"
+  write_file($path, json_encode({b: 2, a: 2}))
+  if not expect_raise("BASELINE_GROWTH", fn() = $baseline.update($path, {a: 3, b: 2}, false)) then
+    raise("SELFTEST", "updater accepted count growth")
+  end
+  $baseline.update($path, {a: 1}, false)
+  if read_file($path) != json_encode({a: 1}, true) .. "\n" then raise("SELFTEST", "unstable baseline output") end
+  $baseline.update($path, {b: 3, a: 2}, true)
+  if read_file($path) != json_encode({a: 2, b: 3}, true) .. "\n" then raise("SELFTEST", "growth override or sorting failed") end
+  $k1 = json_encode(["x/old.rs", "rust-path", "/opt/a"])
+  $k2 = json_encode(["x/f.rs", "rust-path", "/opt/b"])
+  $moved = json_encode(["y/new.rs", "rust-path", "/opt/a"])
+  $grown = json_encode(["x/f.rs", "rust-path", "/opt/new"])
+  $b0 = {}
+  $b0[$k1] = 1
+  $b0[$k2] = 2
+  $b1 = {}
+  $b1[$moved] = 1
+  $b1[$k2] = 2
+  $b2 = {}
+  $b2[$k1] = 1
+  $b2[$k2] = 2
+  $b2[$grown] = 1
+  $file = "/tools/prefix-baseline.json"
+
+  $repo = $tmp .. "/repo"
+  run_argv_must(["git", "init", "-q", "-b", "main", $repo])
+  if not expect_raise("BASELINE_BASE", fn() = $baseline.check_base($repo)) then
+    raise("SELFTEST", "an unborn repository did not fail closed")
+  end
+  $a = git_commit($repo, "fixture base")
+  git_fixture($repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+  mkdir($repo .. "/tools")
+  write_file($repo .. $file, json_encode($b0))
+  -- A push to main of a root commit: merge base is HEAD with no parent.
+  if not expect_raise("BASELINE_BASE", fn() = $baseline.check_base($repo)) then
+    raise("SELFTEST", "merge base HEAD without a parent did not fail closed")
+  end
+  git_fixture($repo, ["checkout", "-q", "-b", "topic"])
+  $b = git_commit($repo, "fixture baseline")
+  $r = $baseline.check_base($repo)
+  if not $r.introduced or $r.base != $a then raise("SELFTEST", "initial introduction was rejected") end
+  git_fixture($repo, ["update-ref", "refs/remotes/origin/main", $b])
+  write_file($repo .. "/other.txt", "unrelated")
+  $c = git_commit($repo, "fixture branch work")
+  $cases = [{now: $b2, growth: [$grown]}, {now: {}, growth: []}, {now: $b1, growth: []}]
+  $raised = {}
+  $raised[$k1] = 1
+  $raised[$k2] = 3
+  push($cases, {now: $raised, growth: [$k2]})
+  for $case in $cases
+    write_file($repo .. $file, json_encode($case.now))
+    $r = $baseline.check_base($repo)
+    if $r.how != "merge base" or $r.base != $b or not deep_eq($r.growth, $case.growth) then
+      raise("SELFTEST", "branch comparison against the merge base failed: " .. json_encode($r))
+    end
+  end
+  write_file($repo .. $file, json_encode($b1))
+  if len($baseline.check_base($repo).relocations) != 1 then raise("SELFTEST", "relocation was not reported") end
+  -- Push to main: the pushed commit grows the baseline and is origin/main.
+  write_file($repo .. $file, json_encode($b2))
+  $c2 = git_commit($repo, "fixture growth")
+  git_fixture($repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+  $r = $baseline.check_base($repo)
+  if $r.how != "first parent" or $r.base != $c or not deep_eq($r.growth, [$grown]) then
+    raise("SELFTEST", "a push to main compared the baseline with itself: " .. json_encode($r))
+  end
+  -- A two-commit push hides growth from HEAD^; github.event.before does not.
+  write_file($repo .. "/other.txt", "more")
+  $d = git_commit($repo, "fixture follow-up")
+  git_fixture($repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+  if len($baseline.check_base($repo).growth) != 0 then raise("SELFTEST", "first-parent fallback changed") end
+  $r = $baseline.check_base($repo, $b)
+  if $r.how != "push range" or not deep_eq($r.growth, [$grown]) then
+    raise("SELFTEST", "the push range base was not used: " .. json_encode($r))
+  end
+  $orphan = trim(git_fixture($repo, ["commit-tree", "HEAD^{tree}", "-m", "orphan"]))
+  for $before in [$orphan, "0000000000000000000000000000000000000000", $d, "not-a-sha"]
+    if $baseline.check_base($repo, $before).how != "first parent" then
+      raise("SELFTEST", "an unusable push range base was used: " .. $before)
     end
   end
 end
 
+fn tree_selftest($tmp)
+  global $limits, $findings, $disabled_findings, $scan_root
+  $repo = $tmp .. "/tree"
+  run_argv_must(["git", "init", "-q", "-b", "main", $repo])
+  write_file($repo .. "/ok.rs", "const P: &str = \"/opt/fixture\";\n")
+  $ctl = "ctl" .. chr(27) .. "[31m\nname.rs"
+  write_file($repo .. "/" .. $ctl, "const P: &str = \"/opt/control\";\n")
+  write_file($repo .. "/big.txt", "/opt/never-read padding padding padding padding padding padding padding padding\n")
+  write_file($repo .. "/swap.rs", "const P: &str = \"/opt/swapped\";\n")
+  run_argv_must(["ln", "-s", "/dev/zero", $repo .. "/evil.rs"])
+  run_argv_must(["mkdir", $repo .. "/linkdir"])
+  write_file($repo .. "/linkdir/inner.rs", "const P: &str = \"/opt/inner\";\n")
+  $first = git_commit($repo, "fixture tree")
+  git_fixture($repo, ["update-index", "--add", "--cacheinfo", "160000," .. $first .. ",submodule"])
+  $patch = 'diff --git "a/bad\377.rs" "b/bad\377.rs"' .. "\nnew file mode 100644\n--- /dev/null\n" .. '+++ "b/bad\377.rs"' .. "\n@@ -0,0 +1 @@\n+x\n"
+  write_file($tmp .. "/name.diff", $patch)
+  git_fixture($repo, ["apply", "--cached", $tmp .. "/name.diff"])
+  -- Working-tree swaps after checkout: a tracked file and a tracked
+  -- directory replaced by symlinks reaching outside the tree.
+  run_argv_must(["rm", "--", $repo .. "/swap.rs"])
+  run_argv_must(["ln", "-s", "/proc/self/environ", $repo .. "/swap.rs"])
+  run_argv_must(["mv", "--", $repo .. "/linkdir", $tmp .. "/outside"])
+  run_argv_must(["ln", "-s", $tmp .. "/outside", $repo .. "/linkdir"])
+  $saved = $limits
+  $saved_root = $scan_root
+  reset_scan()
+  try
+    $limits.max_file_bytes = 64
+    scan_tree($repo)
+  finally
+    $limits = $saved
+    $scan_root = $saved_root
+  end
+  $got = sort(map($findings, fn($f) = $f.rule .. " " .. $f.file))
+  $want = sort(["rust-path ok.rs", "rust-path " .. $ctl, "file-size big.txt", "symlink evil.rs", "symlink swap.rs", "symlink linkdir/inner.rs", "file-name bad" .. chr(65533) .. ".rs"])
+  if not deep_eq($got, $want) then
+    raise("SELFTEST", "tree scan input safety failed: " .. shown(json_encode($got)))
+  end
+  for $f in $findings
+    if re_match(finding_line($f), $unsafe_chars) then
+      raise("SELFTEST", "a control character in a file name reached the output")
+    end
+  end
+end
+
+fn fixture_selftest($tmp)
+  global $limits
+  if not expect_raise("SELFTEST_FIXTURE", fn() = fixture_source($support, "../../../../dev/zero")) then
+    raise("SELFTEST", "fixture path escape was accepted")
+  end
+  $dir = $tmp .. "/fixtures"
+  mkdir($dir)
+  write_file($dir .. "/ok.txt", "fixture")
+  write_file($dir .. "/large.txt", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0")
+  run_argv_must(["ln", "-s", "/dev/zero", $dir .. "/zero.txt"])
+  run_argv_must(["ln", "-s", "../baseline.json", $dir .. "/alias.txt"])
+  if fixture_source($dir, "ok.txt") != "fixture" then raise("SELFTEST", "a contained fixture was refused") end
+  for $bad in ["zero.txt", "alias.txt", "../fixtures/../baseline.json"]
+    if not expect_raise("SELFTEST_FIXTURE", fn() = fixture_source($dir, $bad)) then
+      raise("SELFTEST", "fixture escape or symlink was accepted: " .. $bad)
+    end
+  end
+  $saved = $limits
+  try
+    $limits.max_file_bytes = 64
+    $refused = expect_raise("SELFTEST_FIXTURE", fn() = fixture_source($dir, "large.txt"))
+  finally
+    $limits = $saved
+  end
+  if not $refused then raise("SELFTEST", "an oversize fixture was read") end
+end
+
+fn snapshot_selftest($tmp)
+  global $findings, $disabled_findings, $limits
+  reset_scan()
+  $snap = $tmp .. "/snapshot"
+  mkdir($snap)
+  $elf = $snap .. "/libfixture\n.so"
+  write_file($elf, read_file_bytes("/usr/bin/true"))
+  append_file($elf, chr(0) .. "/opt/fixture" .. chr(0) .. "cosmix" .. chr(0))
+  chmod($elf, 0o644)
+  write_file($snap .. "/text.txt", "/opt/fixture")
+  -- find -P: a symlink to an ELF outside the snapshot is not followed.
+  $outside = $tmp .. "/outside.so"
+  write_file($outside, read_file_bytes("/usr/bin/true"))
+  append_file($outside, chr(0) .. "/opt/outside" .. chr(0))
+  run_argv_must(["ln", "-s", $outside, $snap .. "/link.so"])
+  scan_snapshot($snap)
+  if not deep_eq(sort(map($findings, fn($f) = $f.rule)), ["old-name", "snapshot-path"]) or contains(json_encode($findings), "outside") then
+    raise("SELFTEST", "non-executable ELF snapshot failed: " .. shown(json_encode($findings)))
+  end
+  reset_scan()
+  $saved = $limits
+  try
+    $limits.max_snapshot_bytes = 1024
+    scan_snapshot($snap)
+  finally
+    $limits = $saved
+  end
+  if not deep_eq(map($findings, fn($f) = $f.rule), ["file-size"]) then
+    raise("SELFTEST", "an oversize snapshot ELF reached strings: " .. shown(json_encode($findings)))
+  end
+  reset_scan()
+end
+
 fn integration_selftest()
   global $findings, $disabled_findings, $disabled
-  $tmp = trim(run_argv_must(["mktemp", "-d", "/var/tmp/prefix-selftest-XXXXXX"]))
+  $tmp = realpath(trim(run_argv_must(["mktemp", "-d", "/var/tmp/prefix-selftest-XXXXXX"])))
   try
-    $path = $tmp .. "/baseline.json"
-    write_file($path, json_encode({b: 2, a: 2}))
-    $refused = false
-    try
-      $baseline.update($path, {a: 3, b: 2}, false)
-    catch $message, $error
-      $refused = $error.code == "BASELINE_GROWTH"
-    end
-    if not $refused then raise("SELFTEST", "updater accepted count growth") end
-    $baseline.update($path, {a: 1}, false)
-    if read_file($path) != json_encode({a: 1}, true) .. "\n" then raise("SELFTEST", "unstable baseline output") end
-    $baseline.update($path, {b: 3, a: 2}, true)
-    if read_file($path) != json_encode({a: 2, b: 3}, true) .. "\n" then raise("SELFTEST", "growth override or sorting failed") end
-    $repo = $tmp .. "/repo"
-    run_argv_must(["git", "init", "-q", "-b", "main", $repo])
-    $refused = false
-    try $baseline.check_base($repo) catch $message, $error $refused = $error.code == "BASELINE_BASE" end
-    if not $refused then raise("SELFTEST", "missing merge base did not fail closed") end
-    run_argv_must(["git", "-C", $repo, "-c", "user.name=Gate Fixture", "-c", "user.email=user@example.org", "commit", "-q", "--allow-empty", "-m", "fixture base"])
-    run_argv_must(["git", "-C", $repo, "update-ref", "refs/remotes/origin/main", "HEAD"])
-    mkdir($repo .. "/tools")
-    write_file($repo .. "/tools/prefix-baseline.json", json_encode({a: 2}))
-    if not $baseline.check_base($repo).introduced then raise("SELFTEST", "initial introduction was rejected") end
-    run_argv_must(["git", "-C", $repo, "add", "tools/prefix-baseline.json"])
-    run_argv_must(["git", "-C", $repo, "-c", "user.name=Gate Fixture", "-c", "user.email=user@example.org", "commit", "-q", "-m", "fixture baseline"])
-    run_argv_must(["git", "-C", $repo, "update-ref", "refs/remotes/origin/main", "HEAD"])
-    write_file($repo .. "/tools/prefix-baseline.json", json_encode({a: 2, b: 1}))
-    if not deep_eq($baseline.check_base($repo).growth, ["b"]) then raise("SELFTEST", "base comparison missed added key") end
-    write_file($repo .. "/tools/prefix-baseline.json", json_encode({a: 3}))
-    if not deep_eq($baseline.check_base($repo).growth, ["a"]) then raise("SELFTEST", "base comparison missed count rise") end
-    for $now in [{}, {a: 1}]
-      write_file($repo .. "/tools/prefix-baseline.json", json_encode($now))
-      if len($baseline.check_base($repo).growth) != 0 then raise("SELFTEST", "base comparison rejected shrink") end
-    end
+    baseline_selftest($tmp)
+    tree_selftest($tmp)
+    fixture_selftest($tmp)
+    snapshot_selftest($tmp)
     $findings = []
     $disabled_findings = []
     $saved = $disabled
@@ -620,21 +1189,24 @@ fn integration_selftest()
     if len($findings) != 1 then raise("SELFTEST", "enabling deferred rule failed") end
     $findings = []
     $disabled_findings = []
-    $snap = $tmp .. "/snapshot"
-    mkdir($snap)
-    $elf = $snap .. "/libfixture\n.so"
-    write_file($elf, read_file_bytes("/usr/bin/true"))
-    append_file($elf, chr(0) .. "/opt/fixture" .. chr(0) .. "cosmix" .. chr(0))
-    chmod($elf, 0o644)
-    write_file($snap .. "/text.txt", "/opt/fixture")
-    scan_snapshot($snap)
-    if not deep_eq(sort(map($findings, fn($f) = $f.rule)), ["old-name", "snapshot-path"]) then raise("SELFTEST", "non-executable ELF snapshot failed") end
     for $partial in [{ok: true, stdout_truncated: true, stderr: ""}, {ok: true, stdout_truncated: false, utf8_lossy: true, stderr: ""}]
-      $refused = false
-      try complete_capture($partial, "find") catch $message, $error $refused = $error.code == "CAPTURE" end
-      if not $refused then raise("SELFTEST", "incomplete listing was accepted") end
+      if not expect_raise("CAPTURE", fn() = complete_capture($partial, "find")) then
+        raise("SELFTEST", "incomplete listing was accepted")
+      end
     end
-    $bytes = read_file_bytes($elf)
+    -- The real process path: run_argv's own max_output and lossy flags.
+    $r = run_argv(["printf", "%s", "0123456789"], {max_output: 4})
+    if $r.stdout != "0123" or not expect_raise("CAPTURE", fn() = complete_capture($r, "printf")) then
+      raise("SELFTEST", "a real truncated capture was accepted")
+    end
+    $r = run_argv(["printf", "\\377"])
+    if not expect_raise("CAPTURE", fn() = complete_capture($r, "printf")) then
+      raise("SELFTEST", "a real non-UTF-8 capture was accepted")
+    end
+    if complete_capture(run_argv(["printf", "%s", "0123"], {max_output: 4}), "printf") != "0123" then
+      raise("SELFTEST", "a capture exactly at max_output was refused")
+    end
+    $bytes = read_file_bytes("/usr/bin/true")
     if text_data("share/font.bin", $bytes, bytes_to_string($bytes, {lossy: true})) then raise("SELFTEST", "binary data classified as text") end
   finally
     run_argv_must(["rm", "-rf", "--", $tmp])
@@ -650,11 +1222,15 @@ if len($o.rest) > 0 then
 end
 
 if $o.opts["check-baseline"] then
-  $b = $baseline.check_base($root)
-  for $k in $b.growth
-    eprint("prefix baseline grew relative to merge base: " .. $k)
+  -- GitHub sets PREFIX_GATE_BEFORE to github.event.before on a push.
+  $b = $baseline.check_base($root, env("PREFIX_GATE_BEFORE"))
+  for $m in $b.relocations
+    print("prefix baseline relocation: " .. shown($m.from) .. " -> " .. shown($m.to))
   end
-  print("prefix baseline: base " .. $b.base .. ($b.introduced ? "; initial introduction allowed" : "; shrink-only") .. "; " .. to_string(len($b.growth)) .. " growth entries")
+  for $k in $b.growth
+    eprint("prefix baseline grew relative to " .. $b.how .. ": " .. shown($k))
+  end
+  print("prefix baseline: base " .. $b.base .. " (" .. $b.how .. ")" .. ($b.introduced ? "; initial introduction allowed" : "; shrink-only") .. "; " .. to_string(len($b.relocations)) .. " relocations; " .. to_string(len($b.growth)) .. " growth entries")
   exit(len($b.growth) > 0 ? 1 : 0)
 end
 
@@ -663,17 +1239,17 @@ if $o.opts.snapshot != nil then
   if $dir == nil or not is_dir($dir) then raise("SNAPSHOT", "snapshot directory does not exist") end
   scan_snapshot($dir)
 else
-  $files = split(complete_capture(run_argv(["git", "-C", $root, "ls-files", "-z"], {max_output: 64000000}), "git ls-files"), chr(0))
-  for $file in $files
-    if $file == "" or has_key($policy.excluded_files, $file) then
-      continue
-    end
-    scan_file($file)
-  end
+  scan_tree($root)
 end
 
 if $o.opts["update-baseline"] then
-  $baseline.update($root .. "/tools/prefix-baseline.json", $baseline.counts($findings), $o.opts["allow-growth"])
+  $e = $baseline.update($root .. "/tools/prefix-baseline.json", $baseline.counts($findings), $o.opts["allow-growth"])
+  for $m in $e.relocations
+    print("relocated: " .. shown($m.from) .. " -> " .. shown($m.to))
+  end
+  for $k in $e.growth
+    print("grown (CI will refuse this): " .. shown($k))
+  end
   print("updated tools/prefix-baseline.json")
   exit(0)
 end
@@ -685,13 +1261,13 @@ if not $o.opts.strict and $o.opts.snapshot == nil then
   $failed = false
   for $k in sort(keys($now))
     if $now[$k] > ($base[$k] ?? 0) then
-      eprint("prefix regression: " .. $k)
+      eprint("prefix regression: " .. shown($k))
       $failed = true
     end
   end
   for $k in sort(keys($base))
     if not has_key($now, $k) or $now[$k] < $base[$k] then
-      eprint("stale prefix baseline: " .. $k .. "; shrink the baseline")
+      eprint("stale prefix baseline: " .. shown($k) .. "; shrink the baseline")
       $failed = true
     end
   end
@@ -699,10 +1275,10 @@ end
 if $o.opts.json then
   print(json_encode(concat($findings, $disabled_findings)))
 else
-  summary($o.opts.strict ? concat($findings, $disabled_findings) : $findings)
+  summary($findings, $disabled_findings)
   if $o.opts.snapshot != nil then
     for $f in $findings
-      print($f.file .. ":" .. to_string($f.line) .. " " .. $f.rule .. " " .. $f.text)
+      print(finding_line($f))
     end
   end
 end

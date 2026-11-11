@@ -1,0 +1,2 @@
+const SEARCH: &str = "/usr/bin:/etc/mix:/var/run/mix";
+const SOCKET: &str = "/var/run/mixos/bus.sock";

@@ -33,6 +33,13 @@ decide which are valid before a human sees the PR.
 - `mix lint` diagnostics may only go down: `tools/ci/mix-lint-baseline.json`
   is a ratchet. A PR that fixes lint regenerates it with
   `mix tools/ci.mix mix-lint-baseline`.
+- Prefix and old-name debt may only go down: `tools/prefix-baseline.json`
+  is checked against the base commit (`mix tools/prefix_gate.mix
+  --check-baseline`, on PRs and on pushes to `main`). A PR that fixes debt
+  shrinks it with `mix tools/prefix_gate.mix --update-baseline`; growth never
+  passes CI, and a renamed or moved file keeps its debt as a printed
+  relocation. The deferred `bare-mixos` rule is enabled in
+  `tools/prefix.conf.mix` only once it has no active findings.
 - Build each engine with its own `-p` (`cargo build -p mix`): a
   workspace-wide build unifies features into the shell and is refused.
 - New dependencies must pass `cargo deny` (permissive licences only, no

@@ -1,5 +1,14 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Counted baseline arithmetic shared by the gate, updater and selftest.
+--
+-- Maintenance. The baseline only shrinks: check_base compares the tree's
+-- tools/prefix-baseline.json with the one at the base commit, and any new key
+-- or raised count is growth, which fails CI on a pull request and on a push
+-- to main alike. --update-baseline --allow-growth rewrites the file, but CI
+-- still refuses the result; growth is by design not landable through CI.
+-- A rename or move of baselined debt is a relocation, not growth: a new key
+-- is accepted when a key with the same rule and text and an equal count
+-- disappears in the same change. Every accepted swap is printed.
 fn checked($value)
   if type($value) != "map" then
     raise("BASELINE", "baseline must be a map")
@@ -25,6 +34,55 @@ fn growth($now, $base)
   return $bad
 end
 
+-- [file, rule, text] for a finding key, nil for anything else.
+fn key_parts($k)
+  try
+    $p = json_parse($k)
+    if type($p) == "list" and len($p) == 3 then
+      return $p
+    end
+  catch $message
+    return nil
+  end
+  return nil
+end
+
+-- Growth that is not explained by a relocation, and the relocations used.
+-- Only a NEW key can be a relocation; a raised count is always growth. Each
+-- disappeared key explains at most one new key.
+fn explained($now, $base)
+  $bad = growth($now, $base)
+  $gone = []
+  for $k in sort(keys($base))
+    if not has_key($now, $k) then
+      push($gone, $k)
+    end
+  end
+  $used = {}
+  $left = []
+  $moves = []
+  for $k in $bad
+    $found = nil
+    $kp = has_key($base, $k) ? nil : key_parts($k)
+    if $kp != nil then
+      for $g in $gone
+        $gp = key_parts($g)
+        if not has_key($used, $g) and $gp != nil and $gp[1] == $kp[1] and $gp[2] == $kp[2] and $base[$g] == $now[$k] then
+          $found = $g
+          break
+        end
+      end
+    end
+    if $found == nil then
+      push($left, $k)
+    else
+      $used[$found] = true
+      push($moves, {from: $found, to: $k})
+    end
+  end
+  return {growth: $left, relocations: $moves}
+end
+
 fn counts($findings)
   $out = {}
   for $f in $findings
@@ -35,28 +93,70 @@ fn counts($findings)
   return $out
 end
 
-fn check_base($root)
+fn git_line($root, $argv)
+  $r = run_argv(concat(["git", "-C", $root], $argv))
+  if not $r.ok or $r.stdout_truncated then
+    return nil
+  end
+  $s = trim($r.stdout)
+  return $s == "" ? nil : $s
+end
+
+-- The commit whose baseline the tree must not exceed.
+--   push range: $before (GitHub's github.event.before on a push) when it is a
+--     full object name, not all zeros, not HEAD, and an ancestor of HEAD;
+--   merge base: merge-base HEAD origin/main, for a branch or PR merge ref;
+--   first parent: when that merge base is HEAD itself (a push to main),
+--     HEAD^1. No parent, or no merge base, fails closed.
+fn base_commit($root, $before)
+  $head = git_line($root, ["rev-parse", "--verify", "-q", "HEAD^{commit}"])
+  if $head == nil then
+    raise("BASELINE_BASE", "HEAD is not a commit")
+  end
+  $b = trim($before ?? "")
+  if re_match($b, '^(?:[0-9a-f]{40}|[0-9a-f]{64})$') and not re_match($b, '^0+$') and $b != $head then
+    $r = run_argv(["git", "-C", $root, "merge-base", "--is-ancestor", $b, "HEAD"])
+    if $r.exit_code == 0 then
+      return {sha: $b, how: "push range"}
+    end
+  end
   $r = run_argv(["git", "-C", $root, "merge-base", "HEAD", "origin/main"])
   if not $r.ok or $r.stdout_truncated or trim($r.stdout) == "" then
     raise("BASELINE_BASE", "cannot find merge base with origin/main: " .. $r.stderr)
   end
   $sha = trim($r.stdout)
-  $file = "tools/prefix-baseline.json"
-  $tree = run_argv_must(["git", "-C", $root, "ls-tree", "--name-only", $sha, "--", $file])
-  if trim($tree) == "" then
-    return {base: $sha, introduced: true, growth: []}
+  if $sha != $head then
+    return {sha: $sha, how: "merge base"}
   end
-  $base = checked(json_parse(run_argv_must(["git", "-C", $root, "show", $sha .. ":" .. $file])))
-  $now = checked(json_parse(read_file($root .. "/" .. $file)))
-  return {base: $sha, introduced: false, growth: growth($now, $base)}
+  $parent = git_line($root, ["rev-parse", "--verify", "-q", "HEAD^1^{commit}"])
+  if $parent == nil then
+    raise("BASELINE_BASE", "merge base is HEAD and HEAD has no parent")
+  end
+  return {sha: $parent, how: "first parent"}
 end
 
+fn check_base($root, $before = "")
+  $b = base_commit($root, $before)
+  $file = "tools/prefix-baseline.json"
+  $tree = run_argv_must(["git", "-C", $root, "ls-tree", "--name-only", $b.sha, "--", $file])
+  if trim($tree) == "" then
+    return {base: $b.sha, how: $b.how, introduced: true, growth: [], relocations: []}
+  end
+  $base = checked(json_parse(run_argv_must(["git", "-C", $root, "show", $b.sha .. ":" .. $file])))
+  $now = checked(json_parse(read_file($root .. "/" .. $file)))
+  $e = explained($now, $base)
+  return {base: $b.sha, how: $b.how, introduced: false, growth: $e.growth, relocations: $e.relocations}
+end
+
+-- Writes sorted, stable output. Returns the relocations and the growth it
+-- accepted so the caller prints them into the log.
 fn update($path, $now, $allow_growth)
   checked($now)
   $base = is_file($path) ? checked(json_parse(read_file($path))) : {}
-  $bad = growth($now, $base)
-  if not $allow_growth and len($bad) > 0 then
+  $e = explained($now, $base)
+  if not $allow_growth and len($e.growth) > 0 then
     raise("BASELINE_GROWTH", "update would add keys or raise counts; --allow-growth is required")
   end
   write_file($path, json_encode($now, true) .. "\n")
+  return $e
 end

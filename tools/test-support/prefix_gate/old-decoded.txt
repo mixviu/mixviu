@@ -1,0 +1,3 @@
+const ESCAPED: &str = "\x4dIXOS_X";
+const JOINED: &str = concat!("MI", "XOS_Y");
+const NAME: &str = "\x63osmix";

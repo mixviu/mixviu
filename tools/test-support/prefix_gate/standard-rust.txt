@@ -1,0 +1,1 @@
+fn read() { let _ = std::env::var("RUSTMIX_PREFIX"); let _ = std::env::var("RUST_LOG"); let _ = std::env::var("RUSTC_WRAPPER"); }

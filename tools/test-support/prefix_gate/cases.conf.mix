@@ -425,6 +425,194 @@
       "fixture": "non-read.txt",
       "file": "fixture/src/lib.rs",
       "rules": []
+    },
+    {
+      "fixture": "directories-hyphen.txt",
+      "file": "fixture/example.service",
+      "rules": [
+        "unit-directory",
+        "unit-directory"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.swap",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/example.tmpfiles.conf",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/sysusers.conf",
+      "rules": [
+        "data-path"
+      ]
+    },
+    {
+      "fixture": "data.txt",
+      "file": "docs/sysusers.md",
+      "rules": []
+    },
+    {
+      "fixture": "data.txt",
+      "file": "fixture/tmpfiles.txt",
+      "rules": []
+    },
+    {
+      "fixture": "paths-colon.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-path",
+        "rust-path",
+        "rust-path"
+      ],
+      "texts": [
+        "/etc/mix",
+        "/var/run/mix",
+        "/var/run/mixos/bus.sock"
+      ]
+    },
+    {
+      "fixture": "old-decoded.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "old-name",
+        "old-name",
+        "old-name"
+      ],
+      "texts": [
+        "MIXOS_X",
+        "MIXOS_Y",
+        "cosmix"
+      ]
+    },
+    {
+      "fixture": "standard-rust.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env"
+      ],
+      "texts": [
+        "RUSTMIX_PREFIX"
+      ]
+    },
+    {
+      "fixture": "env-std-var.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "env-std-var-os.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "env-module.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "env-bare.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "env-group.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env",
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "env-write.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env",
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "env-command.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env",
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "env-macro.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env",
+        "rust-unknown-env"
+      ]
+    },
+    {
+      "fixture": "env-const.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-unknown-env",
+        "rust-unknown-env"
+      ],
+      "texts": [
+        "PREFIX_GATE_M",
+        "PREFIX_GATE_N"
+      ]
+    },
+    {
+      "fixture": "env-mix-forms.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-env",
+        "rust-env",
+        "rust-env",
+        "rust-env",
+        "rust-env",
+        "rust-env",
+        "rust-env"
+      ],
+      "texts": [
+        "var(MIX_lower_a)",
+        "var_os(Mix_Mixed)",
+        "var(MIX_lower_b)",
+        "var(MIX_lower_const)",
+        "set_var(mix_lower_c)",
+        ".env(MIX_lower_d)",
+        ".env_remove(MIX_lower_e)"
+      ]
+    },
+    {
+      "fixture": "env-mix-forms.txt",
+      "file": "libraries/paths/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "env-not-read.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": []
+    },
+    {
+      "fixture": "foreign-only.txt",
+      "file": "fixture/src/lib.rs",
+      "rules": [
+        "rust-foreign-env"
+      ]
     }
   ]
 }

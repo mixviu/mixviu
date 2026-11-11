@@ -1,0 +1,2 @@
+use std::env;
+fn read() { let _ = env::var("PREFIX_GATE_C"); }

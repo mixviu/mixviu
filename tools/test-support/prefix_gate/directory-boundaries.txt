@@ -1,1 +1,1 @@
-RuntimeDirectory=mixdata other/mix mix-run
+RuntimeDirectory=mixdata other/mix mixosfoo mixer

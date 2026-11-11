@@ -1,0 +1,2 @@
+fn var(name: &str) -> &str { name }
+fn read(m: &Holder) { let _ = var("PREFIX_GATE_O"); let _ = m.var("PREFIX_GATE_P"); let _ = other::var("PREFIX_GATE_Q"); }

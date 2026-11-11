@@ -1,0 +1,2 @@
+const BUILT: &str = env!("PREFIX_GATE_K");
+const MAYBE: Option<&str> = option_env!("PREFIX_GATE_L");
