@@ -90,7 +90,7 @@ static DEFAULTS: OnceLock<
     std::result::Result<Option<super::env_document::Defaults>, super::env_document::Error>,
 > = OnceLock::new();
 pub(super) static SNAPSHOT: OnceLock<&'static str> = OnceLock::new();
-/// Set when the first installed-default read starts.
+/// Set when the first read of an installed env.mx starts.
 static DEFAULTS_READ: AtomicBool = AtomicBool::new(false);
 static CONFLICT_REPORTED: AtomicBool = AtomicBool::new(false);
 
@@ -156,13 +156,16 @@ pub fn setting_or(
 
 fn installed(name: &str) -> std::result::Result<String, SettingError> {
     let defaults = DEFAULTS.get_or_init(|| {
-        DEFAULTS_READ.store(true, Ordering::SeqCst);
         // The captured process inputs, and the strict rule: a binary that is
         // not installed (a cargo tree) has no installed defaults.
         match super::settings_prefix(super::inputs())
             .map_err(super::env_document::Error::NoPrefix)?
         {
-            Some(prefix) => super::env_document::read(&prefix),
+            Some(prefix) => {
+                // Only a real read can miss a commit check.
+                DEFAULTS_READ.store(true, Ordering::SeqCst);
+                super::env_document::read(&prefix)
+            }
             None => Ok(None),
         }
     });

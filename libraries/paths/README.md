@@ -5,8 +5,11 @@ like `Share`. Existing constructors retain the legacy system tier;
 `Dirs::derived(prefix, env)` and `Dirs::derived_with_layout(prefix, env,
 source)` expose the future prefix-relative system tier: for `etc`, `var`,
 `run` and `cache`, own variable > `MIX_ROOT` > layout > under the prefix;
-`share` and `lib` are installed data, so `MIX_ROOT` does not move them. Both
-refuse a relative or `..`-bearing root and name it (`root etc: ...`).
+`share` and `lib` are installed data, so `MIX_ROOT` does not move them. A
+relative or `..`-bearing value for `etc`, `var`, `run`, `cache` or the prefix
+is refused and named (`root etc: ...`); a relative `MIX_SHARE` or `MIX_LIB` is
+ignored, as it always was. A late or conflicting snapshot registration is
+reported in debug builds only.
 `prefix_from_exe_strict` requires a `bin` parent without changing the legacy
 executable resolver; `/bin/mix` gives the prefix `/` (a rootfs install).
 
