@@ -10,14 +10,16 @@
 //! the silent no-op this whole subcommand exists to refuse.
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 fn repl(script: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .arg("-i")
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

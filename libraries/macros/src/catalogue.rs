@@ -156,7 +156,7 @@ impl Roots {
         Ok((destination, outcome))
     }
     pub fn resolve() -> Option<Self> {
-        Self::resolve_with(|key| std::env::var_os(key).map(PathBuf::from))
+        Self::resolve_with(|key| paths::env::raw(key).map(PathBuf::from))
     }
 
     pub fn resolve_with(get: impl Fn(&str) -> Option<PathBuf>) -> Option<Self> {
@@ -164,7 +164,7 @@ impl Roots {
         let home = get("HOME").and_then(absolute)?;
         let layout = paths::Layout::from_lookup(&get).ok()?;
         Some(Self {
-            builtin: get("MIX_SHARE")
+            builtin: get(paths::env::SHARE)
                 .and_then(absolute)
                 .unwrap_or_else(|| layout.root(paths::Root::Share))
                 .join("macros"),
@@ -172,7 +172,7 @@ impl Roots {
                 .and_then(absolute)
                 .unwrap_or_else(|| home.join(".config"))
                 .join("mix/macros"),
-            mix: get("MIX_EXE")
+            mix: get(paths::env::EXE)
                 .and_then(absolute)
                 .unwrap_or_else(|| layout.root(paths::Root::Prefix).join("bin/mix")),
             home,

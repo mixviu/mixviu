@@ -21,6 +21,8 @@
 //!      (the workspace gate runs it: `cargo test --workspace`)
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs::File;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -103,11 +105,11 @@ impl Citizen {
         }
         cmd.args(["--serve", script.to_str().unwrap(), "--name", SVC])
             .env("HOME", &dir.0)
-            .env("MIX_NODE_CONFIG", node_conf)
-            .env("MIX_ETC", &dir.0)
+            .env(paths::env::NODE_CONFIG, node_conf)
+            .env(paths::env::ETC, &dir.0)
             .env("HONEST_TRACE", dir.0.join("trace"))
-            .env("MIX_STATS", "off")
-            .env_remove("MIX_SESSION_FD")
+            .env(paths::env::STATS, "off")
+            .env_remove(paths::env::SESSION_FD)
             .stdin(Stdio::null())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr));
@@ -287,7 +289,7 @@ end
 "#,
     );
     let mut citizen = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         &dir,
         &node_conf,
         &script,
@@ -343,7 +345,7 @@ end
 "#,
     );
     let _citizen = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         &dir,
         &node_conf,
         &script,
@@ -374,7 +376,7 @@ async fn lookup_reports_transport_failure_and_emit_remains_nonfatal() {
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
     let script = dir.write("svc.mix", SCRIPT);
     let _citizen = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         &dir,
         &node_conf,
         &script,
@@ -415,7 +417,7 @@ async fn uncaught_interruption_text_is_a_reported_serve_error() {
         r#"raise("PROBE_REFUSAL", json_encode({interrupted:false,error:"not a signal"}))"#,
     );
     let mut citizen = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         &dir,
         &node_conf,
         &script,
@@ -449,7 +451,7 @@ async fn sigint_during_stalled_registration_exits_promptly_with_130() {
     let script = dir.write("svc.mix", "-- version: 0.1.0\n");
     let stall = broker.pause();
     let mut citizen = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         &dir,
         &node_conf,
         &script,
@@ -497,7 +499,7 @@ async fn sigint_during_cpu_only_prelude_exits_promptly_with_130() {
         let prelude = "print(\"PRELUDE_READY\")\n$n=0\nwhile true\n$n=$n+1\nend\n";
         dir.write("prelude.mix", if reload { "" } else { prelude });
         let mut citizen = Citizen::spawn_with_prelude(
-            Path::new(env!("CARGO_BIN_EXE_mix")),
+            Path::new(install::exe()),
             &dir,
             &node_conf,
             &script,
@@ -572,7 +574,7 @@ async fn sigint_ends_a_citizen_whose_catch_keeps_computing() {
          end\n",
     );
     let mut citizen = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         &dir,
         &node_conf,
         &script,
@@ -628,7 +630,7 @@ async fn a_handler_waiting_on_a_fifo_does_not_stop_quit() {
         ),
     );
     let mut citizen = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         &dir,
         &node_conf,
         &script,

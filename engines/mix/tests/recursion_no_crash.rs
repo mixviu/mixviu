@@ -7,16 +7,18 @@
 //! binary's configured limit, so a regression that lets the cap leak
 //! shows up as a crashing subprocess here.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 #[test]
 fn runaway_recursion_exits_cleanly_not_crash() {
-    let mix = env!("CARGO_BIN_EXE_mix");
+    let mix = install::exe();
     let src = "function f($n)\n  return f($n + 1)\nend\nprint(f(0))\n";
     let out = Command::new(mix)
         .arg("-c")
         .arg(src)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("spawn mix");
 

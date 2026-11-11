@@ -22,9 +22,9 @@ fn http_serve_stops_on_sigint() {
         "print(http_serve(\"{}\", {{port: 0}}))\n",
         dir.to_string_lossy()
     );
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .args(["-c", &script])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -50,3 +50,6 @@ fn http_serve_stops_on_sigint() {
     }
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[path = "support/install.rs"]
+mod install;

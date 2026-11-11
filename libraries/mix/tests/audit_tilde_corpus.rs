@@ -13,7 +13,7 @@
 //!   -- --ignored --nocapture
 //! ```
 //!
-//! Roots are configured by `MIX_TEST_AUDIT_ROOTS` (colon-separated);
+//! Roots are configured by the test audit-roots environment setting (colon-separated);
 //! defaults to the current MixViu checkout; private and historical trees are not scanned.
 //!
 //! ## Source-text scan, not token walk
@@ -101,7 +101,7 @@ fn audit_tilde_corpus() {
 }
 
 fn audit_roots() -> Vec<PathBuf> {
-    let raw = std::env::var("MIX_TEST_AUDIT_ROOTS").unwrap_or_else(|_| {
+    let raw = paths::env::raw(paths::env::test::TEST_AUDIT_ROOTS).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap_or_else(|_| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .display()

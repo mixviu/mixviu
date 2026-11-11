@@ -2,15 +2,17 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Binary-level classifier and `-c` regression tests for Mix `;`.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 use std::{fs, path::PathBuf};
 
 fn run(body: &str) -> (Option<i32>, String, String) {
-    let mix = env!("CARGO_BIN_EXE_mix");
+    let mix = install::exe();
     let out = Command::new(mix)
         .arg("-c")
         .arg(body)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("spawn mix");
     (

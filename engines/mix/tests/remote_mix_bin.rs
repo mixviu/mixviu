@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The remote mix binary every remote-mix builtin drives: the `mix_bin`
-//! option, else the local `MIX_REMOTE_EXE`, else bare `mix` on PATH.
+//! option, else the local `env::REMOTE_EXE`, else bare `mix` on PATH.
 //!
 //! A fake `ssh` sits first on PATH. It records its argv (the last word is
 //! the remote command string carrying the binary) and runs the shipped
@@ -10,6 +10,8 @@
 
 #![cfg(unix)]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -17,7 +19,7 @@ use std::process::Command;
 
 const FAKE_SSH: &str = r#"#!/bin/sh
 printf '%s\n' "$0" "$@" > "$CAPTURE"
-exec "$MIX_TEST_ACTIVE" -
+exec "$ACTIVE_INTERPRETER" -
 "#;
 
 struct Bed {
@@ -28,7 +30,7 @@ impl Bed {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         let p = dir.path().join("ssh");
-        fs::write(&p, FAKE_SSH).unwrap();
+        fs::write(&p, FAKE_SSH.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE)).unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
         Bed { dir }
     }
@@ -37,18 +39,18 @@ impl Bed {
         self.dir.path().join("ssh-argv")
     }
 
-    /// Run `program` with MIX_REMOTE_EXE set to `env` (or removed).
+    /// Run `program` with env::REMOTE_EXE set to `env` (or removed).
     fn run(&self, program: &str, env: Option<&str>) -> (String, String, bool) {
         let path = format!("{}:/usr/bin:/bin", self.dir.path().display());
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
+        let mut cmd = install::command();
         cmd.arg("-c")
             .arg(program)
             .env("PATH", path)
-            .env("MIX_TEST_ACTIVE", env!("CARGO_BIN_EXE_mix"))
+            .env(paths::env::test::TEST_ACTIVE, install::exe())
             .env("CAPTURE", self.capture());
         match env {
-            Some(v) => cmd.env("MIX_REMOTE_EXE", v),
-            None => cmd.env_remove("MIX_REMOTE_EXE"),
+            Some(v) => cmd.env(paths::env::REMOTE_EXE, v),
+            None => cmd.env_remove(paths::env::REMOTE_EXE),
         };
         let out = cmd.output().expect("spawn mix");
         (
@@ -133,8 +135,8 @@ fn a_bad_value_raises_locally_and_never_reaches_ssh() {
 
     let (out, err, ok) = bed.run(&ssh_mix(""), Some("mix; rm"));
     assert!(!ok, "stdout={out} stderr={err}");
-    assert!(err.contains("MIX_REMOTE_EXE"), "{err}");
-    assert!(!bed.ssh_ran(), "ssh must not run on a bad MIX_REMOTE_EXE");
+    assert!(err.contains(paths::env::REMOTE_EXE), "{err}");
+    assert!(!bed.ssh_ran(), "ssh must not run on a bad remote executable");
 }
 
 #[test]

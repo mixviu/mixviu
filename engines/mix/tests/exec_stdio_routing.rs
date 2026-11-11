@@ -11,6 +11,8 @@
 
 #![cfg(unix)]
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
@@ -55,10 +57,10 @@ fn run_script_with_setup_and_action(
         file.write_all(source.as_bytes())
             .expect("write test script");
     }
-    let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    let mut command = install::command();
     command
         .arg(&path)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -103,9 +105,9 @@ fn run_script_after_stdout_stall(
         file.write_all(source.as_bytes())
             .expect("write test script");
     }
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .arg(&path)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

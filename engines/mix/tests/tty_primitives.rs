@@ -3,12 +3,14 @@
 //! 2026-09-26 entry: the keystroke-recorder primitives — `tty_mode` and
 //! the incremental `stdin_copy`.
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write as _;
 use std::process::{Command, Stdio};
 
 fn mix_bin() -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_mix"));
-    c.env("MIX_STATS", "off");
+    let mut c = install::command();
+    c.env(paths::env::STATS, "off");
     c
 }
 

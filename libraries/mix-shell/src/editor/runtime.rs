@@ -26,7 +26,7 @@ const MAX_CANDIDATES: usize = 4096;
 const MAX_COMPLETION_RESULT_BYTES: usize = 1024 * 1024;
 const MAX_HISTORY_ENTRY_BYTES: usize = 1024 * 1024;
 
-pub const MIX_SUBCOMMANDS: &[&str] = &[
+pub const SUBCOMMANDS: &[&str] = &[
     "edit",
     "vars",
     "aliases",
@@ -85,7 +85,7 @@ impl CompletionSnapshot {
             );
         } else if before[..start].trim() == "mix" {
             candidates.extend(
-                MIX_SUBCOMMANDS
+                SUBCOMMANDS
                     .iter()
                     .filter(|v| v.starts_with(word))
                     .map(|v| (*v).to_owned()),
@@ -621,8 +621,8 @@ impl OwnedEditor {
                 .and_then(|value| value.parse::<u64>().ok())
                 .map_or(std::time::Duration::ZERO, std::time::Duration::from_millis)
         };
-        let admit_delay = delay("MIX_TEST_ADMIT_DELAY_MS");
-        let claim_delay = delay("MIX_TEST_CLAIM_DELAY_MS");
+        let admit_delay = delay(::paths::env::test::TEST_ADMIT_DELAY_MS);
+        let claim_delay = delay(::paths::env::test::TEST_CLAIM_DELAY_MS);
         let worker = std::thread::Builder::new()
             .name("mix-editor".into())
             .spawn(move || {

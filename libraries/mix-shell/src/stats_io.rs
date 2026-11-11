@@ -31,14 +31,14 @@ pub fn stats_setting_enabled(value: Option<&str>) -> bool {
     )
 }
 
-/// Read MIX_STATS once for the process. Front ends consult this before
+/// Read STATS once for the process. Front ends consult this before
 /// allocating a collector, which makes the kill switch skip all event work.
 pub fn stats_enabled() -> bool {
-    *STATS_ENABLED.get_or_init(|| stats_setting_enabled(std::env::var("MIX_STATS").ok().as_deref()))
+    *STATS_ENABLED.get_or_init(|| stats_setting_enabled(crate::env_string(::paths::env::STATS).ok().as_deref()))
 }
 
 fn debug_note(message: impl std::fmt::Display) {
-    if std::env::var("MIX_DEBUG").is_ok() {
+    if crate::env_string(::paths::env::DEBUG).is_ok() {
         eprintln!("mix-stats: {message}");
     }
 }
@@ -71,7 +71,7 @@ pub fn stats_dir() -> Option<PathBuf> {
     if !stats_enabled() {
         return None;
     }
-    if let Ok(xdg) = std::env::var("XDG_STATE_HOME")
+    if let Ok(xdg) = crate::env_string("XDG_STATE_HOME")
         && !xdg.is_empty()
     {
         let path = PathBuf::from(&xdg);
@@ -82,7 +82,7 @@ pub fn stats_dir() -> Option<PathBuf> {
             "XDG_STATE_HOME={xdg:?} is not absolute; using HOME fallback"
         ));
     }
-    let home = std::env::var("HOME").ok().filter(|s| !s.is_empty())?;
+    let home = crate::env_string("HOME").ok().filter(|s| !s.is_empty())?;
     Some(PathBuf::from(home).join(".local/state/mix"))
 }
 
@@ -125,7 +125,8 @@ fn legacy_advisory() {
     if marker.exists() {
         return;
     }
-    let legacy_dir = crate::paths::mix_src().join("_stats");
+    let Some(src) = crate::paths::mix_src() else { return; };
+    let legacy_dir = src.join("_stats");
     if legacy_dir == new_dir {
         return;
     }
@@ -1745,7 +1746,7 @@ fn load_snapshot_from(
 
 pub fn cmd_stats_dispatch(args: &[&str], pending: Option<&mut UsageStats>) -> i32 {
     if !stats_enabled() {
-        println!("Usage statistics — disabled (MIX_STATS)");
+        println!("Usage statistics — disabled ({})", ::paths::env::STATS);
         return 0;
     }
     if args.first().copied() == Some("coverage") {

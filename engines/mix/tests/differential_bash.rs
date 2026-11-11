@@ -21,6 +21,8 @@
 //!     (a random alternative could contain a glob char and go nondeterministic)
 //!   - the `sh` keyword and bare `&`/`;` as separators (covered structurally by P0)
 
+#[path = "support/install.rs"]
+mod install;
 use proptest::prelude::*;
 use std::path::Path;
 use std::process::Command;
@@ -64,7 +66,7 @@ fn stdout_of(program: &str, line: &str) -> Option<Vec<u8>> {
         match Command::new(program)
             .arg("-c")
             .arg(line)
-            .env("MIX_STATS", "off")
+            .env(paths::env::STATS, "off")
             .output()
         {
             Ok(o) => return Some(o.stdout),
@@ -86,7 +88,7 @@ fn stdout_of(program: &str, line: &str) -> Option<Vec<u8>> {
 /// (`[]`), so a bug dropping a lone `''`/`""` argv would slip through.
 fn diff(words: &str) -> (Option<Vec<u8>>, Option<Vec<u8>>, String) {
     let line = format!("{PRINTF} '[%s]' _S_ {words}");
-    let mix = env!("CARGO_BIN_EXE_mix");
+    let mix = install::exe();
     (stdout_of(BASH, &line), stdout_of(mix, &line), line)
 }
 

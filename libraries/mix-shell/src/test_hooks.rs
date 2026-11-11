@@ -13,7 +13,7 @@ pub(crate) fn var(name: &str) -> Option<std::ffi::OsString> {
         // Kept live by every hook lookup, so the linker cannot drop it while
         // the hooks themselves are linked.
         std::hint::black_box(MARKER);
-        std::env::var_os(name)
+        ::paths::env::raw(name)
     }
     #[cfg(not(feature = "test-hooks"))]
     {
@@ -27,13 +27,13 @@ mod tests {
     #[test]
     fn hooks_follow_the_build_feature() {
         // Re-exec so the environment is set before any test threads start.
-        const HOOK: &str = "MIX_TEST_RESULT_TORN";
-        if std::env::var_os(HOOK).is_some() {
+        const HOOK: &str = ::paths::env::test::TEST_RESULT_TORN;
+        if ::paths::env::raw(HOOK).is_some() {
             for name in [
                 HOOK,
-                "MIX_TEST_ADMIT_DELAY_MS",
-                "MIX_TEST_CLAIM_DELAY_MS",
-                "MIX_TEST_RESERVE_HOLD_MS",
+                ::paths::env::test::TEST_ADMIT_DELAY_MS,
+                ::paths::env::test::TEST_CLAIM_DELAY_MS,
+                ::paths::env::test::TEST_RESERVE_HOLD_MS,
             ] {
                 assert_eq!(super::var(name).is_some(), cfg!(feature = "test-hooks"));
             }
@@ -45,9 +45,9 @@ mod tests {
                 "test_hooks::tests::hooks_follow_the_build_feature",
             ])
             .env(HOOK, "1")
-            .env("MIX_TEST_ADMIT_DELAY_MS", "1")
-            .env("MIX_TEST_CLAIM_DELAY_MS", "1")
-            .env("MIX_TEST_RESERVE_HOLD_MS", "1")
+            .env(::paths::env::test::TEST_ADMIT_DELAY_MS, "1")
+            .env(::paths::env::test::TEST_CLAIM_DELAY_MS, "1")
+            .env(::paths::env::test::TEST_RESERVE_HOLD_MS, "1")
             .status()
             .unwrap();
         assert!(status.success());

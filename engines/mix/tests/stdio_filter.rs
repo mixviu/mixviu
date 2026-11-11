@@ -9,6 +9,8 @@
 //! claim a mail filter depends on, so it is tested here against the built
 //! binary with real pipes.
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -22,9 +24,9 @@ const BINARY_INPUT: &[u8] = &[
 ];
 
 fn run_filter(script: &str, stdin_bytes: &[u8]) -> std::process::Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .args(["-c", script])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -142,9 +144,9 @@ fn broken_pipe_raises_and_the_documented_idiom_exits_quietly() {
     // filter cannot report success having written nothing.
     let loud =
         "$i = 0\nwhile $i < 200000\n  write_stdout(\"line \", $i, \"\\n\")\n  $i = $i + 1\nend\n";
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .args(["-c", loud])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -178,9 +180,9 @@ fn broken_pipe_raises_and_the_documented_idiom_exits_quietly() {
         "  $i = $i + 1\n",
         "end\n",
     );
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .args(["-c", quiet])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

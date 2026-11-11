@@ -36,6 +36,7 @@ required-features = ["test-hooks"]
 # The shell's process-level tests (tests/), which run `mix` as built here.
 # Versions match libraries/mix-shell's, so the lock gains no second copy.
 [dev-dependencies]
+paths = { path = "../../libraries/paths" }
 # serde: tests/lint_functions.rs hydrates fixtures with mix::from_value. Test
 # builds only; the shipped shell profile carries no serde.
 mix = { workspace = true, features = ["serde"] }

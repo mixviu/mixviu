@@ -10,6 +10,8 @@
 //! Out-of-process: the contract is about how the CLI sets up the entry, so
 //! the CLI has to run.
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -29,10 +31,10 @@ fn canonical_line(path: &Path) -> String {
 }
 
 fn run_in(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let output = install::command()
         .current_dir(dir)
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("failed to spawn mix binary");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -79,11 +81,11 @@ fn relative_entry_path_survives_a_prelude_override_that_chdirs() {
     std::fs::write(etc.join("prelude.mix"), "chdir(\"/\")\n").unwrap();
     let main = dir.join("main.mix");
     std::fs::write(&main, "print(script_path())\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let output = install::command()
         .current_dir(&dir)
         .arg("main.mix")
-        .env("MIX_STATS", "off")
-        .env("MIX_ETC", &etc)
+        .env(paths::env::STATS, "off")
+        .env(paths::env::ETC, &etc)
         .output()
         .expect("failed to spawn mix binary");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -105,10 +107,10 @@ fn dash_c_has_no_entry_script() {
 #[test]
 fn stdin_has_no_entry_script() {
     let dir = work_dir("stdin");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .current_dir(&dir)
         .arg("-")
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

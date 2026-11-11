@@ -13,6 +13,8 @@
 
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::os::unix::process::ExitStatusExt;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -35,9 +37,9 @@ fn sigterm_backstop_ends_a_script_blocked_in_a_syscall() {
     )
     .unwrap();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .arg(&script)
-        .env("MIX_SIGTERM_BACKSTOP_SECS", "1")
+        .env(paths::env::SIGTERM_BACKSTOP_SECS, "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -102,10 +104,10 @@ fn sigterm_is_graceful_while_a_file_builtin_waits_on_a_fifo() {
             ),
         )
         .unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+        let mut child = install::command()
             .arg(&script)
-            .env("MIX_SIGTERM_BACKSTOP_SECS", "60")
-            .env("MIX_STATS", "off")
+            .env(paths::env::SIGTERM_BACKSTOP_SECS, "60")
+            .env(paths::env::STATS, "off")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -156,14 +158,14 @@ fn file_builtins_still_read_and_write_a_fifo() {
     assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0, "mkfifo");
     let path = fifo.to_str().unwrap().to_string();
     // A writer process feeds the reader script.
-    let writer = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let writer = install::command()
         .args(["-c", &format!("write_file(\"{path}\", \"ping\")")])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .spawn()
         .unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .args(["-c", &format!("print(\"got=\" .. read_file(\"{path}\"))")])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .unwrap();
     let _ = writer.wait_with_output();

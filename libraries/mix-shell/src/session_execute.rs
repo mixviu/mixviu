@@ -599,7 +599,7 @@ impl Drop for SubmitSlot {
 pub(crate) fn reserve_hold() -> Duration {
     static HOLD: OnceLock<Duration> = OnceLock::new();
     *HOLD.get_or_init(|| {
-        crate::test_hooks::var("MIX_TEST_RESERVE_HOLD_MS")
+        crate::test_hooks::var(::paths::env::test::TEST_RESERVE_HOLD_MS)
             .and_then(|value| value.into_string().ok())
             .and_then(|value| value.parse::<u64>().ok())
             .map_or(Duration::ZERO, Duration::from_millis)

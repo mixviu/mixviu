@@ -342,7 +342,10 @@ reinstall, no recompile, no script edits. A runtime lazy-probe decides
 bare-vs-mesh at execution time.</p>
 <p>MixViu locations use <code>mix_path(root[, rel[, opts]])</code>, backed by the shared
 <a href="/paths/">paths resolver</a>. For example,
-<code>mix -c 'print(mix_path("prefix"))'</code> prints the current installation prefix.
+<code>mix -c 'print(mix_prefix())'</code> prints the resolved installation prefix.
+<code>mix_exe()</code> returns the running interpreter's own executable path,
+independently of prefix overrides. <code>mix_path("lib", "module.mix")</code>
+resolves a library path.
 The roots are <code>prefix</code>, <code>share</code>, <code>etc</code>, <code>var</code>, <code>run</code>, <code>cache</code>. Defaults follow
 the process uid. <code>{tier: "system"}</code> or <code>{tier: "user"}</code> selects a tier
 explicitly, for example <code>mix_path("etc", "node.conf.mix", {tier: "system"})</code>.</p>

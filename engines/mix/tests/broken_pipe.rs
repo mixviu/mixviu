@@ -8,9 +8,9 @@ fn builtins_json_closed_pipe_never_panics() {
     use std::io::Read;
     use std::process::{Command, Stdio};
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .args(["builtins", "--json"])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -34,3 +34,6 @@ fn builtins_json_closed_pipe_never_panics() {
     assert!(!stderr.contains("panicked"), "stderr: {stderr}");
     assert!(!stderr.contains("Broken pipe"), "stderr: {stderr}");
 }
+
+#[path = "support/install.rs"]
+mod install;

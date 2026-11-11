@@ -1,0 +1,17 @@
+-- Job-owned staging shared by the gate recipes. No host install is changed.
+fn stage_install()
+  -- Keep binaries on the build filesystem; hardlinks avoid filling worker /tmp.
+  $prefix = realpath(trim(run_argv_must(["mktemp", "-d", "target/debug/mix-stage-XXXXXXXX"])))
+  mkdir($prefix .. "/bin")
+  for $file in sort(glob("target/debug/*"))
+    if is_file($file) and access($file, "x") then
+      run_argv_must(["cp", "--link", "--", $file, $prefix .. "/bin/" .. basename($file)])
+    end
+  end
+  $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
+  for $v in load_data("etc/env.conf.mix").vars
+    if has_key($v, "default") then $defaults[$v.name] = $v.default end
+  end
+  write_file($prefix .. "/env.mx", data_encode($defaults))
+  return $prefix
+end

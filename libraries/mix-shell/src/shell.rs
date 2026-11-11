@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::collections::{HashMap, HashSet};
-use std::env;
 use std::path::Path;
 
 use mix::MixError;
@@ -48,7 +47,7 @@ pub enum InputKind {
 /// idiom. The LEXER still recognizes them as literals everywhere inside Mix
 /// source (`$x = true`, `if $a == nil`); this list only routes line heads.
 /// `nil` has no external binary, so it falls through to the Mix parse anyway.
-pub const MIX_KEYWORDS: &[&str] = &[
+pub const KEYWORDS: &[&str] = &[
     "if", "for", "while", "loop", "function", "fn", "return", "select", "print", "eprint", "die",
     "try", "parse", "export", "alias", "break", "continue", "send", "address", "emit", "source",
     "sh", "label",
@@ -140,7 +139,7 @@ pub fn classify_input_fns(
         .unwrap_or("");
 
     // Mix keywords → Mix (with shell-chain fallback for `false || cmd` etc.)
-    if MIX_KEYWORDS.contains(&first_word) {
+    if KEYWORDS.contains(&first_word) {
         return try_mix_then_external(work);
     }
 
@@ -477,7 +476,7 @@ pub fn is_external_command(name: &str) -> bool {
     }
 
     // Search PATH
-    let path_var = env::var("PATH").unwrap_or_default();
+    let path_var = crate::env_string("PATH").unwrap_or_default();
     for dir in path_var.split(':') {
         let full = format!("{}/{}", dir, name);
         if Path::new(&full).is_file() {

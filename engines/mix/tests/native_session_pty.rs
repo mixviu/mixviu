@@ -11,6 +11,8 @@
 #[path = "support/pty.rs"]
 mod pty;
 
+#[path = "support/install.rs"]
+mod install;
 use ::bus::native_client::session::{ExpectedScope, GrantResult};
 use ::bus::native_client::{NodedClient, UnixConnectOutcome, VerifiedConnection};
 use ::bus::native_session::*;
@@ -42,7 +44,7 @@ fn current_mix() -> &'static std::path::Path {
         .get_or_init(|| {
             // Cargo builds this target before running integration tests. Never
             // search PATH, installed prefixes or guessed target directories.
-            let binary = std::path::PathBuf::from(env!("CARGO_BIN_EXE_mix"));
+            let binary = std::path::PathBuf::from(install::exe());
             assert!(
                 binary.is_absolute() && binary.is_file(),
                 "CURRENT Mix binary unavailable: {}",
@@ -72,7 +74,7 @@ fn current_mix() -> &'static std::path::Path {
             let output = std::process::Command::new(&binary)
                 .args(["--version", "--json"])
                 .env_remove(session_fd::MARKER)
-                .env("MIX_STATS", "off")
+                .env(paths::env::STATS, "off")
                 .output()
                 .expect("cannot execute CURRENT Cargo-built Mix binary");
             assert!(output.status.success(), "Mix provenance probe failed");
@@ -288,7 +290,7 @@ impl Child {
         // spawned FROM the enrolled shell must see neither seed fd nor marker.
         std::fs::write(
             home.path().join(".mixrc"),
-            "print(\"RC_MARKER=[\" .. env(\"MIX_SESSION_FD\") .. \"]\")\n",
+            format!("print(\"RC_MARKER=[\" .. env(\"{}\") .. \"]\")\n", paths::env::SESSION_FD),
         )
         .unwrap();
         let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
@@ -315,23 +317,23 @@ impl Child {
         let env = vec![
             launch.marker(),
             ("HOME".into(), home.path().display().to_string()),
-            ("MIX_SRC".into(), home.path().display().to_string()),
+            (paths::env::SRC.into(), home.path().display().to_string()),
             (
-                "MIX_BIN".into(),
+                paths::env::BIN.into(),
                 current_mix().parent().unwrap().display().to_string(),
             ),
-            ("MIX_NODE_CONFIG".into(), config.display().to_string()),
+            (paths::env::NODE_CONFIG.into(), config.display().to_string()),
             (
-                "MIX_BUS_SOCKET".into(),
+                paths::env::BUS_SOCKET.into(),
                 broker.endpoint.display().to_string(),
             ),
             (
-                "MIX_RUN".into(),
+                paths::env::RUN.into(),
                 home.path().join("run").display().to_string(),
             ),
-            ("MIX_BROKER_ACCOUNT".into(), account),
-            ("MIX_STATS".into(), "off".into()),
-            ("MIX_EDITOR".into(), editor.into()),
+            (paths::env::BROKER_ACCOUNT.into(), account),
+            (paths::env::STATS.into(), "off".into()),
+            (paths::env::EDITOR.into(), editor.into()),
             ("TERM".into(), "xterm-256color".into()),
         ];
         // Same libc PTY pattern as job_control_pty, with the real LaunchFd's
@@ -556,7 +558,7 @@ fn mix_child_bootstrap_proves_end_to_end() {
         let context = child.context();
         let context = serde_json::to_string(&context).unwrap();
         for forbidden in [
-            "MIX_SESSION_FD",
+            paths::env::SESSION_FD,
             "native_session",
             "session_seed",
             "SigningKey",
@@ -576,7 +578,7 @@ fn mix_child_bootstrap_proves_end_to_end() {
         let helper = child.home.path().join("descendant.mix");
         std::fs::write(
             &helper,
-            "print(\"DESCENDANT=[\" .. env(\"MIX_SESSION_FD\") .. \"]\")\n",
+            format!("print(\"DESCENDANT=[\" .. env(\"{}\") .. \"]\")\n", paths::env::SESSION_FD),
         )
         .unwrap();
         child.send(&format!(
@@ -748,7 +750,7 @@ fn valid_handoff_with_broker_down_does_not_delay_first_source() {
         // neither name-service latency nor broker retry delays first source.
         let start = Instant::now();
         let mut child = Child::spawn_with(&broker, &launch, "owned", &[
-            ("MIX_RUN".into(), fallback.path().display().to_string()),
+            (paths::env::RUN.into(), fallback.path().display().to_string()),
         ]);
         drop(launch);
         drop(key);
@@ -845,7 +847,7 @@ fn enrolled_exec_restart_revokes_and_replacement_stays_unbound() {
         assert!(
             !serde_json::to_string(&child.context())
                 .unwrap()
-                .contains("MIX_SESSION_FD")
+                .contains(paths::env::SESSION_FD)
         );
         child.exit();
         parent.revoke_and_verify(&broker).await;
@@ -879,12 +881,12 @@ fn bootstrap_source_boundary_and_builtin_inventory_exclude_seed_state() {
     let output = std::process::Command::new(current_mix())
         .args(["builtins", "--json"])
         .env_remove(session_fd::MARKER)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .unwrap();
     assert!(output.status.success());
     let builtins = String::from_utf8(output.stdout).unwrap();
-    for forbidden in ["MIX_SESSION_FD", "native_session", "session_seed"] {
+    for forbidden in [paths::env::SESSION_FD, "native_session", "session_seed"] {
         assert!(!builtins.contains(forbidden));
     }
 }
@@ -2088,7 +2090,7 @@ fn stage_d_an_abandoned_admission_never_executes_and_its_retry_does_not_re_run()
         // cannot produce.
         let mut f = stage_d_fixture_with(
             "owned",
-            &[("MIX_TEST_ADMIT_DELAY_MS".into(), "2500".into())],
+            &[(paths::env::test::TEST_ADMIT_DELAY_MS.into(), "2500".into())],
         )
         .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
@@ -2142,7 +2144,7 @@ fn stage_d_a_keystroke_during_the_reservation_refuses_the_admission_intact() {
         // Long enough that the human types while the reservation stands.
         let mut f = stage_d_fixture_with(
             "owned",
-            &[("MIX_TEST_RESERVE_HOLD_MS".into(), "1200".into())],
+            &[(paths::env::test::TEST_RESERVE_HOLD_MS.into(), "1200".into())],
         )
         .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
@@ -2393,7 +2395,7 @@ fn stage_d_an_abandoned_reservation_returns_the_prompt_to_the_human() {
     runtime().block_on(async {
         let mut f = stage_d_fixture_with(
             "owned",
-            &[("MIX_TEST_ADMIT_DELAY_MS".into(), "2500".into())],
+            &[(paths::env::test::TEST_ADMIT_DELAY_MS.into(), "2500".into())],
         )
         .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
@@ -2426,7 +2428,7 @@ fn stage_d_a_refused_submission_may_be_retried_under_the_same_id() {
     runtime().block_on(async {
         let mut f = stage_d_fixture_with(
             "owned",
-            &[("MIX_TEST_RESERVE_HOLD_MS".into(), "1200".into())],
+            &[(paths::env::test::TEST_RESERVE_HOLD_MS.into(), "1200".into())],
         )
         .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
@@ -2480,7 +2482,7 @@ fn stage_d_an_undetermined_admission_still_resolves_to_its_real_outcome() {
         // Stall AFTER the claim, past budget + grace, so abandon loses.
         let mut f = stage_d_fixture_with(
             "owned",
-            &[("MIX_TEST_CLAIM_DELAY_MS".into(), "2200".into())],
+            &[(paths::env::test::TEST_CLAIM_DELAY_MS.into(), "2200".into())],
         )
         .await;
         let generation = prompt_generation(&mut f.parent, &f.bound).await;
@@ -2755,12 +2757,12 @@ fn p4_a_task_inherits_only_what_it_was_given() {
             "PATH",
             "LANG",
             "TERM",
-            "MIX_ROOT",
-            "MIX_SRC",
-            "MIX_BIN",
-            "MIX_ETC",
-            "MIX_NODE_CONFIG",
-            "MIX_BROKER_ACCOUNT",
+            paths::env::ROOT,
+            paths::env::SRC,
+            paths::env::BIN,
+            paths::env::ETC,
+            paths::env::NODE_CONFIG,
+            paths::env::BROKER_ACCOUNT,
             "P4_OVERLAY",
         ]
         .into_iter()
@@ -3021,7 +3023,7 @@ fn p4_termination_is_hard_and_the_outcome_names_the_policy() {
             4,
             serde_json::json!({
                 "source": "41 + 1",
-                "env": [["MIX_TEST_RESULT_TORN", "1"]],
+                "env": [[paths::env::test::TEST_RESULT_TORN, "1"]],
                 "timeout_ms": "20000",
             }),
         )

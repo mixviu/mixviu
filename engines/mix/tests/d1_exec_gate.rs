@@ -3,14 +3,16 @@
 //! D1 (TODO-mix 2026-09-24): the `-c`/stdin pre-execution lint gate —
 //! a hard-safe diagnostic (arity, dead mutation, push-assign-back,
 //! literal-type) refuses to run with exit 2 BEFORE any line executes;
-//! `--no-lint` overrides; `--agent`/`MIX_LINT=warn` prints the soft set.
+//! `--no-lint` overrides; `--agent`/`env::LINT=warn` prints the soft set.
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn mix_bin() -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_mix"));
-    c.env("MIX_STATS", "off");
+    let mut c = install::command();
+    c.env(paths::env::STATS, "off");
     c
 }
 

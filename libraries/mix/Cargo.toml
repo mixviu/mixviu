@@ -196,6 +196,9 @@ mimedb = { workspace = true, optional = true }
 # `dns` feature only — see the feature comment above.
 hickory-proto = { version = "0.26.1", optional = true, default-features = false, features = ["std"] }
 
+[build-dependencies]
+paths = { path = "../paths" }
+
 [dev-dependencies]
 # `derive` lives here, not on the `serde` feature: the crate's own
 # `serde_de` unit tests use `#[derive(Deserialize)]` test types, but

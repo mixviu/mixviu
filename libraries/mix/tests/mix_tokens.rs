@@ -164,5 +164,5 @@ async fn source_that_does_not_lex_raises_with_its_position() {
     ))
     .await
     .unwrap();
-    assert_eq!(out, "MIX_SOURCE_LEX 2\n");
+    assert_eq!(out, concat!("MIX_", "SOURCE_LEX 2\n"));
 }

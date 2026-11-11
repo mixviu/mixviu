@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Discovery must describe the same shapes the evaluator implements.
+#[path = "support/install.rs"]
+mod install;
 use serde_json::Value;
 use std::process::Command;
 
 #[test]
 fn builtin_json_exposes_watch_shapes_and_managed_spawn_options() {
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let output = install::command()
         .args(["builtins", "--json"])
         .output()
         .unwrap();
@@ -43,7 +45,7 @@ fn builtin_json_exposes_watch_shapes_and_managed_spawn_options() {
 
 #[test]
 fn builtin_json_exposes_net_and_audio_source_shapes() {
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let output = install::command()
         .args(["builtins", "--json"])
         .output()
         .unwrap();
@@ -79,7 +81,7 @@ fn builtin_json_exposes_net_and_audio_source_shapes() {
 
 #[test]
 fn invalid_net_watch_options_raise_wire_shaped_refusal() {
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let output = install::command()
         .args([
             "-c",
             r#"try
@@ -98,7 +100,7 @@ fn invalid_net_watch_options_raise_wire_shaped_refusal() {
 
 #[test]
 fn invalid_watch_options_raise_wire_shaped_refusal_and_nonzero_exit() {
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let output = install::command()
         .args([
             "-c",
             r#"try

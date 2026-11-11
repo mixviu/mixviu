@@ -180,11 +180,11 @@ const BASE_NAMES: &[&str] = &[
     "PATH",
     "LANG",
     "MIXOS",
-    "MIX_SRC",
-    "MIX_BIN",
-    "MIX_ETC",
-    "MIX_NODE_CONFIG",
-    "MIX_BROKER_ACCOUNT",
+    ::paths::env::SRC,
+    ::paths::env::BIN,
+    ::paths::env::ETC,
+    ::paths::env::NODE_CONFIG,
+    ::paths::env::BROKER_ACCOUNT,
 ];
 
 /// Called once from `main`, before Bus dispatch starts and therefore before any
@@ -194,7 +194,7 @@ pub(crate) fn capture_base_env() {
     let _ = BASE_ENV.get_or_init(|| {
         let mut base: Vec<(String, String)> = BASE_NAMES
             .iter()
-            .filter_map(|name| std::env::var(name).ok().map(|v| ((*name).to_owned(), v)))
+            .filter_map(|name| crate::env_string(name).ok().map(|v| ((*name).to_owned(), v)))
             .collect();
         // Fixed, not inherited: a task has no terminal, and a child that
         // believes it does will emit escapes into a captured pipe.
@@ -780,7 +780,7 @@ fn reap_registered(pid: libc::pid_t) {
 /// THIS one, normally: the interpreter a caller is talking to should be the one
 /// that runs its task. Deriving a path from the install layout instead asks
 /// where a mix OUGHT to be, which fails for any shell not running from
-/// `$MIX_ROOT/bin` — a dev build, a test harness, a relocated tree — with
+/// `$ROOT/bin` — a dev build, a test harness, a relocated tree — with
 /// NOT_FOUND for a binary that is demonstrably running. Where the derived path
 /// happens to exist it is worse than a refusal: the task is evaluated by a
 /// DIFFERENT build than the shell, silently.
@@ -1222,7 +1222,7 @@ fn empty_stream() -> Stream {
 /// What one character costs once JSON has escaped it.
 ///
 /// This is the arithmetic the raw caps got wrong. `serde_json` turns a NUL into
-/// the six bytes ` `, and `from_utf8_lossy` has already turned each invalid
+/// the six bytes `\u0000`, and `from_utf8_lossy` has already turned each invalid
 /// byte into a three-byte replacement character — so a 64 KiB cap counted in RAW
 /// bytes admits a 384 KiB field, and three of those overflow the 256 KiB reply
 /// the surface can actually deliver.
@@ -1605,10 +1605,10 @@ mod tests {
     /// A replaced binary resolves to the REPLACEMENT, not to a derived install.
     #[test]
     fn a_replaced_binary_runs_the_file_that_replaced_it() {
-        let deleted = std::path::PathBuf::from("/opt/example-toolkit/bin/mix (deleted)");
+        let deleted = std::path::PathBuf::from("/srv/fixture/bin/mix (deleted)");
         assert_eq!(
             interpreter_from(Ok(deleted)),
-            std::path::PathBuf::from("/opt/example-toolkit/bin/mix"),
+            std::path::PathBuf::from("/srv/fixture/bin/mix"),
             "the marker must be stripped, naming what the deploy wrote"
         );
         // The specific wrong answer this guards: a derived install path. With
@@ -1618,7 +1618,7 @@ mod tests {
         let derived = crate::paths::mix_path(crate::paths::Dir::Bin).join("mix");
         assert_ne!(
             interpreter_from(Ok(std::path::PathBuf::from(
-                "/opt/example-toolkit/bin/mix (deleted)"
+                "/srv/fixture/bin/mix (deleted)"
             ))),
             derived,
             "a replaced binary must not fall back to a derived install path"

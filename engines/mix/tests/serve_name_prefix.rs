@@ -13,6 +13,8 @@
 //! Run: `cargo test -p mix --test serve_name_prefix`
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs::File;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -66,7 +68,7 @@ struct Citizen {
 impl Citizen {
     fn spawn(dir: &Dir, node_conf: &Path, script: &Path, name: &str) -> Citizen {
         let stderr = File::create(dir.0.join(format!("{name}.stderr"))).unwrap();
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
+        let mut cmd = install::command();
         cmd.args([
             "--no-prelude",
             "--serve",
@@ -75,10 +77,10 @@ impl Citizen {
             name,
         ])
         .env("HOME", &dir.0)
-        .env("MIX_NODE_CONFIG", node_conf)
-        .env("MIX_ETC", &dir.0)
-        .env("MIX_STATS", "off")
-        .env_remove("MIX_SESSION_FD")
+        .env(paths::env::NODE_CONFIG, node_conf)
+        .env(paths::env::ETC, &dir.0)
+        .env(paths::env::STATS, "off")
+        .env_remove(paths::env::SESSION_FD)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));

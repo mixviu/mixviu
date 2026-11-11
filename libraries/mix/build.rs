@@ -34,7 +34,7 @@ fn main() {
         names.into_iter().collect::<Vec<_>>()
     );
     std::fs::write(
-        std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("viu_extensions.rs"),
+        std::path::Path::new(&paths::env::raw("OUT_DIR").ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap()).join("viu_extensions.rs"),
         output,
     )
     .unwrap();

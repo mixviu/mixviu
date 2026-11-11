@@ -7,11 +7,13 @@
 //! or lie. These pin both that the footer appears for `-c` and a file, and
 //! that it names the right line and text.
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::process::Command;
 
 fn mix() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
 }
 
 fn stderr_of(cmd_output: std::process::Output) -> String {

@@ -17,6 +17,8 @@
 
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
@@ -112,9 +114,9 @@ fn sigkill_mid_rewrite_leaves_a_complete_old_or_new_file() {
         }
         let before = inode(&target);
         let mut child = Writer(
-            Command::new(env!("CARGO_BIN_EXE_mix"))
+            install::command()
                 .arg(&script)
-                .env("MIX_STATS", "off")
+                .env(paths::env::STATS, "off")
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::inherit())

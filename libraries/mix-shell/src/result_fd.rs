@@ -84,7 +84,7 @@ impl ResultFd {
         // interpreter handles SIGTERM gracefully and writes a complete error
         // frame, so no amount of signalling produces a partial one. Absent in
         // every ordinary run, and it only ever REMOVES bytes.
-        if crate::test_hooks::var("MIX_TEST_RESULT_TORN").is_some() {
+        if crate::test_hooks::var(::paths::env::test::TEST_RESULT_TORN).is_some() {
             frame.truncate(4 + bytes.len() / 2);
         }
         // SAFETY: validated open above, and this is the sole owner from here.

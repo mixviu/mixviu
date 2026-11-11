@@ -8062,8 +8062,7 @@ impl Evaluator {
     }
 
     /// Load the standard prelude (utility functions).
-    /// Checks the user's config dir for a `prelude.mix` override first —
-    /// `$MIX_ETC`, else `$MIX_ROOT/etc`, else `~/.config/mix` — and
+    /// Checks the shared paths etc root for a `prelude.mix` override first and
     /// falls back to the built-in prelude.
     ///
     /// B10 (TODO-mix 2026-09-24): failures used to be PRINTED and
@@ -8081,13 +8080,9 @@ impl Evaluator {
         // inside requests instead of at the surface.
 
         // Check for user override
-        let (source, override_path) = if let Some(home) = dirs_home() {
-            let etc = std::env::var_os("MIX_ETC")
-                .map(std::path::PathBuf::from)
-                .or_else(|| {
-                    std::env::var_os("MIX_ROOT").map(|r| std::path::PathBuf::from(r).join("etc"))
-                })
-                .unwrap_or_else(|| home.join(".config/mix"));
+        let (source, override_path) = {
+            let etc = paths::try_root(paths::Root::Etc)
+                .map_err(|e| MixError::structured("PRELUDE_FAILED", e))?;
             let user_prelude = etc.join("prelude.mix");
             if user_prelude.exists() {
                 match std::fs::read_to_string(&user_prelude) {
@@ -8105,8 +8100,6 @@ impl Evaluator {
             } else {
                 (BUILTIN_PRELUDE.to_string(), None)
             }
-        } else {
-            (BUILTIN_PRELUDE.to_string(), None)
         };
 
         let mut lexer = crate::lexer::Lexer::new(&source);
@@ -19210,10 +19203,6 @@ fn num_op(left: &Value, right: &Value, op: fn(f64, f64) -> f64) -> MixResult<Val
     Ok(Value::Number(op(l, r)))
 }
 
-fn dirs_home() -> Option<std::path::PathBuf> {
-    std::env::var("HOME").ok().map(std::path::PathBuf::from)
-}
-
 /// Ordering comparison (`<` `>` `<=` `>=`).
 ///
 /// **Numeric-first, with a lexicographic string fallback.** If both
@@ -19484,9 +19473,9 @@ mod fifo_arity_tests {
 mod standing_interrupt_tests {
     use super::{Evaluator, Value};
 
-    const CHILD_ENV: &str = "MIX_TEST_STANDING_INTERRUPT_CHILD";
-    const CASE_ENV: &str = "MIX_TEST_STANDING_INTERRUPT_CASE";
-    const MARKER_ENV: &str = "MIX_TEST_STANDING_INTERRUPT_MARKER";
+    use paths::env::test::TEST_STANDING_INTERRUPT_CHILD as CHILD_ENV;
+    use paths::env::test::TEST_STANDING_INTERRUPT_CASE as CASE_ENV;
+    use paths::env::test::TEST_STANDING_INTERRUPT_MARKER as MARKER_ENV;
     /// How long one case's child may run before it is killed and the test
     /// fails, so a regression fails instead of hanging the suite.
     const CASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
@@ -19548,7 +19537,7 @@ mod standing_interrupt_tests {
 
     #[test]
     fn standing_interrupt_reaches_the_host_through_catch() {
-        if std::env::var_os(CHILD_ENV).is_some() {
+        if paths::env::raw(CHILD_ENV).is_some() {
             return;
         }
         let exe = std::env::current_exe().expect("test binary path");
@@ -19606,14 +19595,14 @@ mod standing_interrupt_tests {
     /// Runs one case in the child process (see the parent test above).
     #[test]
     fn standing_child() {
-        if std::env::var_os(CHILD_ENV).is_none() {
+        if paths::env::raw(CHILD_ENV).is_none() {
             return;
         }
-        let case: usize = std::env::var(CASE_ENV)
+        let case: usize = paths::env::raw(CASE_ENV).ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
             .expect("case index")
             .parse()
             .expect("case index is a number");
-        let marker = std::path::PathBuf::from(std::env::var_os(MARKER_ENV).expect("marker path"));
+        let marker = std::path::PathBuf::from(paths::env::raw(MARKER_ENV).expect("marker path"));
         let (body, expected, repeated) = cases().into_iter().nth(case).expect("case in range");
         block_on(async {
             // One evaluator, whose flag is the process interrupt flag, as in

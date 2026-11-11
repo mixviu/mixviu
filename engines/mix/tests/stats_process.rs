@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -10,11 +12,11 @@ fn temp_root(label: &str) -> PathBuf {
 }
 
 fn command(state: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    let mut command = install::command();
     command
         .env("XDG_STATE_HOME", state)
         .env("HOME", state)
-        .env_remove("MIX_STATS")
+        .env_remove(paths::env::STATS)
         .arg("--no-prelude");
     command
 }
@@ -76,10 +78,10 @@ fn records_c_script_and_stdin_modes_with_basename_only() {
         .unwrap();
     assert!(child.wait().unwrap().success());
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .env("XDG_STATE_HOME", &state)
         .env("HOME", &state)
-        .env_remove("MIX_STATS")
+        .env_remove(paths::env::STATS)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()
@@ -113,12 +115,12 @@ fn disabled_values_create_no_stats_state() {
         let _ = std::fs::remove_dir_all(&state);
         std::fs::create_dir_all(&state).unwrap();
         let output = command(&state)
-            .env("MIX_STATS", value)
+            .env(paths::env::STATS, value)
             .args(["-c", "print(length([1]))"])
             .output()
             .unwrap();
         assert!(output.status.success());
-        assert!(!state.join("mix").exists(), "MIX_STATS={value}");
+        assert!(!state.join("mix").exists(), "statistics setting={value}");
         let _ = std::fs::remove_dir_all(&state);
     }
 }
@@ -128,10 +130,10 @@ fn disabled_repl_stats_command_prints_the_disabled_message() {
     let state = temp_root("disabled-repl");
     let _ = std::fs::remove_dir_all(&state);
     std::fs::create_dir_all(&state).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .env("XDG_STATE_HOME", &state)
         .env("HOME", &state)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -145,7 +147,7 @@ fn disabled_repl_stats_command_prints_the_disabled_message() {
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("Usage statistics — disabled (MIX_STATS)")
+        String::from_utf8_lossy(&output.stdout).contains(&format!("Usage statistics — disabled ({})", paths::env::STATS))
     );
     assert!(!state.join("mix").exists());
     let _ = std::fs::remove_dir_all(&state);
@@ -318,7 +320,7 @@ fn reports_legacy_store_migration_advisory() {
     std::fs::create_dir_all(source.join("_stats")).unwrap();
     std::fs::write(source.join("_stats/current.json"), "{}").unwrap();
     let output = command(&state)
-        .env("MIX_SRC", &source)
+        .env(paths::env::SRC, &source)
         .arg("stats")
         .output()
         .unwrap();
@@ -598,7 +600,7 @@ fn median_run(state: &Path, stats: &str, runs: usize) -> Duration {
         .map(|_| {
             let started = Instant::now();
             let status = command(state)
-                .env("MIX_STATS", stats)
+                .env(paths::env::STATS, stats)
                 .args(["-c", "1"])
                 .stdout(Stdio::null())
                 .status()

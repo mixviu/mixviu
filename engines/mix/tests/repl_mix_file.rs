@@ -5,6 +5,8 @@
 //! where clean scope, positional argv, stdout/stderr routing, and meta-name
 //! precedence meet.
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -39,11 +41,11 @@ fn run_repl(cwd: &Path, input: &str) -> Output {
     let home = cwd.join("home");
     fs::create_dir(&home).expect("create isolated HOME");
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .arg("-i")
         .current_dir(cwd)
         .env("HOME", &home)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

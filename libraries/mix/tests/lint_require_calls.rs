@@ -4,7 +4,7 @@
 //! functions that collide with a mix shell extension (MIX-W2313).
 //! TODO-mix 2026-10-09 and 2026-10-10.
 
-use mix::analyzer::{AnalyzerConfig, Diagnostic, MIX_SHELL_EXTENSIONS, analyze};
+use mix::analyzer::{AnalyzerConfig, Diagnostic, SHELL_EXTENSIONS, analyze};
 use mix::lexer::Lexer;
 use mix::parser::Parser;
 use std::path::{Path, PathBuf};
@@ -135,7 +135,7 @@ fn other_callables_answer_a_missing_member() {
     let src = "$m = require(\"./lib1.mix\")\nfn extra($x)\n  return 1\nend\nprint($m.extra())\naddress svc\n  $m.restart()\nend\n";
     assert_eq!(codes_at(&dir, src), vec![]);
     let cfg = AnalyzerConfig {
-        extensions: MIX_SHELL_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
+        extensions: SHELL_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
         ..AnalyzerConfig::default()
     };
     let found = lint_at(
@@ -376,7 +376,7 @@ fn a_nested_require_resolves_next_to_the_canonical_module() {
 fn a_function_named_after_a_shell_extension_warns() {
     let dir = tree("ext", &[]);
     let cfg = AnalyzerConfig {
-        extensions: MIX_SHELL_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
+        extensions: SHELL_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
         ..AnalyzerConfig::default()
     };
     let src = "fn context($over)\n  return {state_dir: \"/srv\"}\nend\nprint(context(1))\n";
@@ -412,7 +412,7 @@ fn a_module_exporting_context_is_called_through_the_member() {
         )],
     );
     let cfg = AnalyzerConfig {
-        extensions: MIX_SHELL_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
+        extensions: SHELL_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
         ..AnalyzerConfig::default()
     };
     let found = lint_at(

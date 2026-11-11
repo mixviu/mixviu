@@ -33,6 +33,8 @@
 //! that can never exist.
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -110,14 +112,14 @@ fn rows(markdown: &str) -> (Vec<Row>, Vec<String>) {
 }
 
 fn run_probe(src: &str) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         // The table documents the LANGUAGE — several rows are deliberate
         // anti-examples (dead mutation, surplus args) that the D1
         // pre-execution gate would refuse before they can demonstrate the
         // behavior. --no-lint lets the probe show the language, which is
         // what this table pins; the gate gets its own row below.
         .args(["--no-lint", "-c", src])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         // The probes are pure language; no rc, no aliases, no PATH from
         // whoever is running the suite.
         .env_remove("MIXRC")

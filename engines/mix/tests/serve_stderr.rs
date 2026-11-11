@@ -5,10 +5,12 @@
 //! refused registration exited 1 with no output anywhere. The cases here fail
 //! before any broker connection, so the test is hermetic.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn serve(script: &str) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .args(["--serve", script, "--name", "serve-stderr-probe"])
         .output()
         .expect("spawn mix --serve")

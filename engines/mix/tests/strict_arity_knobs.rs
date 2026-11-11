@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A1 step 1 (TODO-mix strict-arity sweep): the strict mode now has three
-//! operator-level knobs — `MIX_STRICT_ARITY=1` env, `$strict_arity = true`
+//! operator-level knobs — `env::STRICT_ARITY=1` env, `$strict_arity = true`
 //! in `~/.mixrc`, and `ssh_mix(…, {strict_arity: true})` — plus a warning
 //! when a mix flag lands AFTER the source and is therefore a script
 //! argument, not a flag. Out-of-process, like script_argv.rs: the contract
 //! is about how the binary is invoked.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn mix_bin() -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_mix"));
-    c.env("MIX_STATS", "off");
+    let mut c = install::command();
+    c.env(paths::env::STATS, "off");
     c
 }
 
@@ -23,7 +25,7 @@ fn env_knob_turns_on_strict_arity() {
     // longer serve — the A2 contract-type check makes e.g. remove(map,
     // key) a TYPE_MISMATCH in every mode.)
     let out = mix_bin()
-        .env("MIX_STRICT_ARITY", "1")
+        .env(paths::env::STRICT_ARITY, "1")
         .args(["--no-lint", "-c", "fn f($x) return 1 end\nprint(f(1, 2))"])
         .output()
         .expect("run mix");
@@ -38,7 +40,7 @@ fn env_knob_turns_on_strict_arity() {
     );
     // Strict is the DEFAULT since 0.103.0 — no flag, no env, still raises.
     let def = mix_bin()
-        .env_remove("MIX_STRICT_ARITY")
+        .env_remove(paths::env::STRICT_ARITY)
         .args(["--no-lint", "-c", "fn f($x) return 1 end\nprint(f(1, 2))"])
         .output()
         .expect("run mix");
@@ -50,7 +52,7 @@ fn env_knob_turns_on_strict_arity() {
     );
     // The escape hatch restores the compatible extra-ignored binding.
     let ok = mix_bin()
-        .env_remove("MIX_STRICT_ARITY")
+        .env_remove(paths::env::STRICT_ARITY)
         .args([
             "--no-lint",
             "--compat-arity",
@@ -74,7 +76,7 @@ fn mixrc_strict_arity_variable_turns_on_strict_mode() {
     std::fs::write(dir.join(".mixrc"), "$strict_arity = true\n").expect("write .mixrc");
     let out = mix_bin()
         .env("HOME", &dir)
-        .env_remove("MIX_STRICT_ARITY")
+        .env_remove(paths::env::STRICT_ARITY)
         .args(["--no-lint", "-ci", "fn f($x) return 1 end\nprint(f(1, 2))"])
         .output()
         .expect("run mix -ci");
@@ -110,7 +112,7 @@ fn surplus_builtin_args_warn_once_in_compat_mode() {
     // (builtin, count) per process — instead of silently ignoring a
     // surplus argument.
     let out = mix_bin()
-        .env_remove("MIX_STRICT_ARITY")
+        .env_remove(paths::env::STRICT_ARITY)
         .args([
             "--no-lint",
             "--compat-arity",
@@ -135,7 +137,7 @@ fn surplus_builtin_args_warn_once_in_compat_mode() {
 #[test]
 fn contract_clean_builtin_calls_do_not_warn() {
     let out = mix_bin()
-        .env_remove("MIX_STRICT_ARITY")
+        .env_remove(paths::env::STRICT_ARITY)
         .args(["--compat-arity", "-c", "print(pop([1, 2]))"])
         .output()
         .expect("run mix");
@@ -155,7 +157,7 @@ fn missing_args_are_not_mislabeled_as_surplus() {
     // the gate would refuse the under-min arity before the runtime mode
     // that this test pins gets a chance to speak.
     let out = mix_bin()
-        .env_remove("MIX_STRICT_ARITY")
+        .env_remove(paths::env::STRICT_ARITY)
         .args(["--no-lint", "--compat-arity", "-c", "print(pop())"])
         .output()
         .expect("run mix");
@@ -176,7 +178,7 @@ fn script_file_mode_flips_with_the_default_and_the_hatch() {
     let script = dir.join("probe.mix");
     std::fs::write(&script, "fn f($x) return 1 end\nprint(f(1, 2))\n").expect("write script");
     let out = mix_bin()
-        .env_remove("MIX_STRICT_ARITY")
+        .env_remove(paths::env::STRICT_ARITY)
         .arg(script.to_str().unwrap())
         .output()
         .expect("run script");
@@ -190,7 +192,7 @@ fn script_file_mode_flips_with_the_default_and_the_hatch() {
         "got: {stderr}"
     );
     let ok = mix_bin()
-        .env_remove("MIX_STRICT_ARITY")
+        .env_remove(paths::env::STRICT_ARITY)
         .arg("--compat-arity")
         .arg(script.to_str().unwrap())
         .output()

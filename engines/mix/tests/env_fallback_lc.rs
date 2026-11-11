@@ -12,15 +12,17 @@
 //! Phase A review (thread 019e691a-…) and recommended subprocess
 //! isolation.
 //!
-//! We invoke the freshly-built `mix` binary via `env!("CARGO_BIN_EXE_mix")`
+//! We invoke the freshly-built `mix` binary via `install::exe()`
 //! with `Command::env(…)`. The child process sees the probe env var from
 //! the start; no in-process env mutation occurs in the parent.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 #[test]
 fn interp_brace_env_fallback_lowercase_head() {
-    let mix_bin = env!("CARGO_BIN_EXE_mix");
+    let mix_bin = install::exe();
     let script = format!(
         "{}/tests/scripts/interp_brace_env_fallback_lc.mix",
         env!("CARGO_MANIFEST_DIR")
@@ -28,7 +30,7 @@ fn interp_brace_env_fallback_lowercase_head() {
 
     let output = Command::new(mix_bin)
         .arg(&script)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env("mix_interp_lowercase_probe", "lowercase_ok")
         .output()
         .expect("failed to spawn mix binary");

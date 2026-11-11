@@ -5,12 +5,14 @@
 //! `mix status` reports real uptime in one-shot mode, and a discarded
 //! pure transform is a visible warning (D3's must_use half).
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn mix(args: &[&str]) -> (String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env_remove("MIXRC")
         .output()
         .expect("run mix");

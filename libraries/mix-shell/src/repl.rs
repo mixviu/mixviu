@@ -74,10 +74,10 @@ fn ensure_output_post_processing(fd: libc::c_int) {
     }
 }
 
-/// Check for the claude-resume flag file in $MIX_SRC.
+/// Check for the claude-resume flag file in $SRC.
 /// Returns the resume command if the flag exists.
 fn check_resume_flag() -> Option<String> {
-    let flag = crate::paths::mix_src().join(RESUME_FLAG);
+    let flag = crate::paths::mix_src()?.join(RESUME_FLAG);
     if flag.exists() {
         std::fs::read_to_string(&flag).ok()
     } else {
@@ -87,7 +87,9 @@ fn check_resume_flag() -> Option<String> {
 
 /// Delete the resume flag file.
 fn clear_resume_flag() {
-    let _ = std::fs::remove_file(crate::paths::mix_src().join(RESUME_FLAG));
+    if let Some(src) = crate::paths::mix_src() {
+        let _ = std::fs::remove_file(src.join(RESUME_FLAG));
+    }
 }
 
 /// exec() into the new Mix binary, preserving args so the new instance
@@ -1288,10 +1290,10 @@ fn build_prompt(eval: &mut Evaluator, rt: &tokio::runtime::Runtime) -> Result<St
         }
     }
 
-    let user = env::var("USER").unwrap_or_else(|_| "mix".to_string());
+    let user = crate::env_string("USER").unwrap_or_else(|_| "mix".to_string());
     let dir = env::current_dir()
         .map(|p| {
-            let home = env::var("HOME").unwrap_or_default();
+            let home = crate::env_string("HOME").unwrap_or_default();
             let path = p.to_string_lossy().to_string();
             if !home.is_empty() && path.starts_with(&home) {
                 format!("~{}", &path[home.len()..])
@@ -1327,7 +1329,7 @@ pub(crate) async fn load_mixrc_async(eval: &mut Evaluator) -> Option<i32> {
     // Treat unset OR empty HOME as "no rc" — `PathBuf::from("").join(".mixrc")`
     // collapses to a relative `.mixrc` and would otherwise auto-source a
     // cwd-local file.
-    let home = env::var_os("HOME").filter(|h| !h.is_empty());
+    let home = ::paths::env::raw("HOME").filter(|h| !h.is_empty());
     let home = home?;
     let rc_path = std::path::PathBuf::from(home).join(".mixrc");
     // stat (following symlinks) rather than `exists()`: sourcing OPENS the
@@ -1371,7 +1373,7 @@ pub(crate) async fn load_mixrc_async(eval: &mut Evaluator) -> Option<i32> {
 
 /// A1 step 1 (TODO-mix strict-arity sweep): `$strict_arity = true` in
 /// ~/.mixrc opts this evaluator into strict arity — the same knob as
-/// `--strict-arity` / `MIX_STRICT_ARITY=1`, settable per-operator without
+/// `--strict-arity` / `STRICT_ARITY=1`, settable per-operator without
 /// a wrapper script.
 fn apply_mixrc_arity(eval: &mut Evaluator) {
     if let Some(mix::value::Value::Bool(true)) = eval.get_global("strict_arity") {
@@ -1485,7 +1487,7 @@ pub fn register_ai_extensions(eval: &mut Evaluator) {
 }
 
 fn which_command(name: &str) -> Option<String> {
-    let path_var = env::var("PATH").unwrap_or_default();
+    let path_var = crate::env_string("PATH").unwrap_or_default();
     for dir in path_var.split(':') {
         let full = format!("{}/{}", dir, name);
         if std::path::Path::new(&full).is_file() {
@@ -1549,7 +1551,7 @@ mod tests {
     }
 
     /// `mix lint` learns the shell's extensions from
-    /// `mix::analyzer::MIX_SHELL_EXTENSIONS`; this pins that list to what
+    /// `mix::analyzer::SHELL_EXTENSIONS`; this pins that list to what
     /// `register_ai_extensions` really registers, so the two cannot drift.
     #[test]
     fn registered_extensions_match_the_lint_list() {
@@ -1557,7 +1559,7 @@ mod tests {
         super::register_ai_extensions(&mut eval);
         let mut registered = eval.extension_names();
         registered.sort();
-        let mut listed: Vec<String> = mix::analyzer::MIX_SHELL_EXTENSIONS
+        let mut listed: Vec<String> = mix::analyzer::SHELL_EXTENSIONS
             .iter()
             .map(|name| name.to_string())
             .collect();

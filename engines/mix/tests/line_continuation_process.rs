@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -40,18 +42,18 @@ impl Drop for TempDir {
 }
 
 fn mix(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix")
 }
 
 fn mix_in(cwd: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .args(args)
         .current_dir(cwd)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix in fixture directory")
 }
@@ -59,11 +61,11 @@ fn mix_in(cwd: &Path, args: &[&str]) -> Output {
 fn repl(cwd: &Path, input: &str) -> Output {
     let home = cwd.join("home");
     fs::create_dir_all(&home).expect("create isolated HOME");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .arg("-i")
         .current_dir(cwd)
         .env("HOME", home)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

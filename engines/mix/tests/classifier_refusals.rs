@@ -5,12 +5,14 @@
 //! piecemeal at exit 0, an unquoted newline is a `;`, and a misrouted
 //! Mix one-liner names itself.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn run(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env_remove("MIXRC")
         .output()
         .expect("run mix");

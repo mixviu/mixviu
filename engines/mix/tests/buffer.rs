@@ -8,16 +8,18 @@
 //! the evaluator + scope, so an out-of-process Mix-source run is the right
 //! test level (a lib-only unit test can't exercise assignment aliasing).
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 #[test]
 fn buffer_reference_semantics_contract() {
-    let mix_bin = env!("CARGO_BIN_EXE_mix");
+    let mix_bin = install::exe();
     let script = format!("{}/tests/scripts/buffer.mix", env!("CARGO_MANIFEST_DIR"));
 
     let output = Command::new(mix_bin)
         .arg(&script)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("failed to spawn mix binary");
 

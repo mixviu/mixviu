@@ -5,6 +5,8 @@
 //! so each fixture writes a sentinel file that must still be absent after
 //! the lint.
 
+#[path = "support/install.rs"]
+mod install;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -13,7 +15,7 @@ use tempfile::TempDir;
 
 /// Run `mix lint` with `args` and return the raw process output.
 fn lint(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .arg("lint")
         .args(args)
         .output()

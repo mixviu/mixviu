@@ -14,6 +14,8 @@
 #[path = "support/pty.rs"]
 mod pty;
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::os::fd::FromRawFd;
 use std::os::unix::process::CommandExt;
@@ -22,7 +24,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 fn command() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    let mut command = install::command();
     pty::guard(&mut command);
     unsafe {
         command.pre_exec(|| {
@@ -156,7 +158,7 @@ fn owned_spawn_group_is_terminated_when_mix_exits_normally() {
     let script = write_script(&dir, &source);
     let status = command()
         .arg(&script)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
@@ -202,7 +204,7 @@ fn owned_spawn_leader_dies_when_mix_is_killed() {
     let script = write_script(&dir, &source);
     let mut child = command()
         .arg(&script)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
@@ -243,7 +245,7 @@ fn plain_spawn_child_survives_mix_exit() {
     let script = write_script(&dir, &source);
     let status = command()
         .arg(&script)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
@@ -263,7 +265,7 @@ fn run_with_stdin(label: &str, source: &str, stdin: Stdio, feed: Option<&[u8]>) 
     let script = write_script(&dir, source);
     let mut child = command()
         .arg(&script)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())

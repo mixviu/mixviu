@@ -2,6 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Process-boundary coverage for the shell/Mix tight-hyphen classifier rule.
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -50,9 +52,9 @@ fn install_command(dir: &Path, name: &str) {
 }
 
 fn run_c(path: &Path, line: &str) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .args(["-c", line])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env("PATH", path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -112,10 +114,10 @@ fn live_left_variable_does_not_change_command_dispatch() {
     // variable must therefore have no effect on the command-head decision.
     install_command(dir.path(), "alpha-beta");
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .arg("-i")
         .env("HOME", home)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env("PATH", dir.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

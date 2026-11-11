@@ -12,6 +12,8 @@
 
 #![cfg(unix)]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
@@ -26,7 +28,7 @@ if [ "$host" = "down" ]; then
   echo "ssh: connect to host down port 22: Connection refused" >&2
   exit 255
 fi
-FAKE_HOST=$host exec "$MIX_TEST_ACTIVE" -
+FAKE_HOST=$host exec "$ACTIVE_INTERPRETER" -
 "#;
 
 struct Bed {
@@ -37,7 +39,7 @@ impl Bed {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
         let ssh = dir.path().join("ssh");
-        fs::write(&ssh, FAKE_SSH).unwrap();
+        fs::write(&ssh, FAKE_SSH.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE)).unwrap();
         fs::set_permissions(&ssh, fs::Permissions::from_mode(0o755)).unwrap();
         Bed { dir }
     }
@@ -52,11 +54,11 @@ impl Bed {
     }
 
     fn run_with_path(&self, program: &str, path: &str) -> (String, String, bool) {
-        let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+        let out = install::command()
             .arg("-c")
             .arg(program)
             .env("PATH", path)
-            .env("MIX_TEST_ACTIVE", env!("CARGO_BIN_EXE_mix"))
+            .env(paths::env::test::TEST_ACTIVE, install::exe())
             .output()
             .expect("spawn mix");
         (

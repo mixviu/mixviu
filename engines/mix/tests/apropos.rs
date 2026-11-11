@@ -6,10 +6,12 @@
 //! `mix what TERM` fall-through (a non-exact name searches instead of the old
 //! bare "unknown").
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn mix() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
 }
 
 fn stdout(args: &[&str]) -> String {

@@ -2,6 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::os::unix::process::CommandExt;
@@ -71,12 +73,12 @@ impl Citizen {
             "--name",
             SVC,
         ])
-        .env("MIX_NODE_CONFIG", node_conf)
-        .env("MIX_ETC", &dir.0)
+        .env(paths::env::NODE_CONFIG, node_conf)
+        .env(paths::env::ETC, &dir.0)
         .env("REL_TRACE", dir.0.join("trace"))
         .env("REL_STATE", dir.0.join("state"))
-        .env("MIX_STATS", "off")
-        .env_remove("MIX_SESSION_FD")
+        .env(paths::env::STATS, "off")
+        .env_remove(paths::env::SESSION_FD)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));
@@ -229,7 +231,7 @@ fn count_switches(pid: u32) -> BTreeMap<String, u64> {
     totals
 }
 
-const MIX_TEST_SCRIPT: &str = r#"
+const SERVICE_SCRIPT: &str = r#"
 $s = {}
 $TRACE = env("REL_TRACE")
 fn tlog($what, $fields)
@@ -286,11 +288,11 @@ async fn test_serve_socket_lifecycle() {
     let dir = Dir::new("sock-life");
     let mut broker = Broker::start();
 
-    let bin_path = std::env::var("MIX_TEST_SOCKET_EXE")
-        .unwrap_or_else(|_| env!("CARGO_BIN_EXE_mix").to_string());
+    let bin_path = paths::env::raw(paths::env::test::TEST_SOCKET_EXE).and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent)
+        .unwrap_or_else(|_| install::exe().to_string());
 
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
-    let script = dir.write("svc.mix", MIX_TEST_SCRIPT);
+    let script = dir.write("svc.mix", SERVICE_SCRIPT);
 
     let mut citizen = Citizen::spawn(Path::new(&bin_path), &dir, &node_conf, &script);
     let c1 = connect(&broker).await;
@@ -353,10 +355,10 @@ async fn test_serve_socket_lifecycle() {
     let median = latencies[latencies.len() / 2];
     let p90 = latencies[(latencies.len() as f64 * 0.9) as usize];
 
-    let mode = std::env::var("MIX_TEST_SOCKET_PROFILE").unwrap_or_else(|_| {
+    let mode = paths::env::raw(paths::env::test::TEST_SOCKET_PROFILE).and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent).unwrap_or_else(|_| {
         assert!(
-            std::env::var_os("MIX_TEST_SOCKET_EXE").is_none(),
-            "binary override requires explicit MIX_TEST_SOCKET_PROFILE"
+            paths::env::raw(paths::env::test::TEST_SOCKET_EXE).is_none(),
+            "binary override requires explicit socket test profile"
         );
         if cfg!(debug_assertions) {
             "debug"

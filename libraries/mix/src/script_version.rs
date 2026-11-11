@@ -299,7 +299,7 @@ mod tests {
             declared("1.2.3", 1)
         );
         assert_eq!(
-            parse_version_header("#!/opt/mix/bin/mix\n  --version:0.3.6  \n"),
+            parse_version_header("#!/srv/fixture/bin/mix\n  --version:0.3.6  \n"),
             declared("0.3.6", 2)
         );
         assert_eq!(

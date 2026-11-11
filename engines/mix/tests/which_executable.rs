@@ -14,6 +14,8 @@
 
 #![cfg(unix)]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -57,10 +59,10 @@ impl Bed {
 
     /// Run `expr` with PATH set to exactly this bed, and return trimmed stdout.
     fn eval(&self, expr: &str) -> String {
-        let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+        let out = install::command()
             .arg("-c")
             .arg(expr)
-            .env("MIX_STATS", "off")
+            .env(paths::env::STATS, "off")
             .env("PATH", &self.dir)
             .output()
             .expect("mix binary must run");
@@ -140,10 +142,10 @@ fn losing_the_execute_bit_changes_the_answer() {
 #[test]
 fn non_string_argument_raises_rather_than_being_coerced() {
     let bed = Bed::new("coerce");
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .arg("-c")
         .arg("which([\"runnable\"])")
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env("PATH", &bed.dir)
         .output()
         .expect("mix binary must run");

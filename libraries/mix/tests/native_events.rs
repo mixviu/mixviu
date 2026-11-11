@@ -466,8 +466,8 @@ async fn idle_serve_pump_has_no_clock_wakeups() {
 /// A real child blocked on a native thread wake, without sleeps or polling.
 #[test]
 fn managed_child_fixture() {
-    if std::env::var_os("MIX_TEST_NATIVE_CHILD_FIXTURE").is_some() {
-        if let Some(path) = std::env::var_os("MIX_TEST_NATIVE_CHILD_ESCAPE") {
+    if paths::env::raw(paths::env::test::TEST_NATIVE_CHILD_FIXTURE).is_some() {
+        if let Some(path) = paths::env::raw(paths::env::test::TEST_NATIVE_CHILD_ESCAPE) {
             use std::io::Write;
             // Join the parent's group after exec, escaping the spawn-time one.
             assert_eq!(
@@ -497,9 +497,10 @@ fn shutdown_reaps_a_managed_leader_that_left_its_process_group() {
             let mut e = Evaluator::new();
             e.set_global("exe", Value::String(std::env::current_exe().unwrap().to_str().unwrap().into()));
             e.set_global("socket", Value::String(socket.to_str().unwrap().into()));
-            exec(&mut e, r#"$pid = spawn([$exe, "--exact", "managed_child_fixture"], {
-                exit_event: true, env: {MIX_TEST_NATIVE_CHILD_FIXTURE: "1", MIX_TEST_NATIVE_CHILD_ESCAPE: $socket}
-            })"#).await.unwrap();
+            exec(&mut e, &r#"$pid = spawn([$exe, "--exact", "managed_child_fixture"], {
+                exit_event: true, env: {@FIXTURE@: "1", @ESCAPE@: $socket}
+            })"#.replace("@FIXTURE@", paths::env::test::TEST_NATIVE_CHILD_FIXTURE)
+                .replace("@ESCAPE@", paths::env::test::TEST_NATIVE_CHILD_ESCAPE)).await.unwrap();
             let pid = e.get_global("pid").unwrap().to_number().unwrap() as i32;
             pid_tx.send(pid).unwrap();
             let (mut ready, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await.unwrap().unwrap();
@@ -627,7 +628,7 @@ async fn overlapping_watches_keep_independent_filters_and_survive_peer_unwatch()
 
 #[test]
 fn shared_fs_registry_fixture() {
-    if std::env::var_os("MIX_TEST_SHARED_FS_FIXTURE").is_none() {
+    if paths::env::raw(paths::env::test::TEST_SHARED_FS_FIXTURE).is_none() {
         return;
     }
     fn inotify_count() -> usize {
@@ -672,7 +673,7 @@ fn all_watch_handles_share_one_inotify_instance_and_worker_pair() {
     // Isolate /proc counts from the other concurrently running native tests.
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "shared_fs_registry_fixture", "--nocapture"])
-        .env("MIX_TEST_SHARED_FS_FIXTURE", "1")
+        .env(paths::env::test::TEST_SHARED_FS_FIXTURE, "1")
         .output()
         .unwrap();
     assert!(
@@ -690,9 +691,9 @@ async fn blocked_child(e: &mut Evaluator) -> i32 {
     );
     exec(
         e,
-        r#"$pid = spawn([$exe, "--exact", "managed_child_fixture"], {
-        exit_event: true, tag: "child:9", env: {MIX_TEST_NATIVE_CHILD_FIXTURE: "1"}
-    })"#,
+        &r#"$pid = spawn([$exe, "--exact", "managed_child_fixture"], {
+        exit_event: true, tag: "child:9", env: {@FIXTURE@: "1"}
+    })"#.replace("@FIXTURE@", paths::env::test::TEST_NATIVE_CHILD_FIXTURE),
     )
     .await
     .unwrap();

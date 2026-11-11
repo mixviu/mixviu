@@ -2,23 +2,25 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Absence stays silent; malformed inherited input is scrubbed before user code.
 #![cfg(target_os = "linux")]
+#[path = "support/install.rs"]
+mod install;
 use std::fs::File;
 use std::io::Write;
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
-const MARKER: &str = "MIX_SESSION_FD";
+const MARKER: &str = paths::env::SESSION_FD;
 fn command() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    let mut command = install::command();
     command
         .args([
             "--no-prelude",
             "-c",
-            "print(\"USER_SOURCE=[\" .. env(\"MIX_SESSION_FD\") .. \"]\")",
+            &format!("print(\"USER_SOURCE=[\" .. env(\"{}\") .. \"]\")", paths::env::SESSION_FD),
         ])
         .env_remove(MARKER)
-        .env("MIX_STATS", "off");
+        .env(paths::env::STATS, "off");
     command
 }
 

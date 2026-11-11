@@ -80,7 +80,7 @@ pub enum ReplEditor {
 }
 impl ReplEditor {
     pub fn new() -> rustyline::Result<Self> {
-        if std::env::var("MIX_EDITOR").as_deref() != Ok("owned")
+        if crate::env_string(::paths::env::EDITOR).as_deref() != Ok("owned")
             || !io::stdin().is_terminal()
             || !io::stdout().is_terminal()
         {

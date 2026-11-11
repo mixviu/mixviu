@@ -19,18 +19,18 @@ pub fn executable(path: &Path) -> bool {
         }
 }
 
-/// An explicit selection fails closed. Otherwise use the first executable
-/// `mix` on PATH, just as a child process would; absence can be skipped.
+/// Tests require the exact interpreter selected by the build job.
 pub fn select() -> Result<Option<PathBuf>, String> {
-    if let Some(path) = std::env::var_os("MIX_TEST_E2E_EXE") {
+    if let Some(path) = paths::env::raw(paths::env::test::TEST_E2E_EXE) {
         let path = PathBuf::from(path);
         if !executable(&path) {
             return Err(format!(
-                "MIX_TEST_E2E_EXE is not an executable file: {}",
+                "{} is not an executable file: {}",
+                paths::env::test::TEST_E2E_EXE,
                 path.display()
             ));
         }
         return path.canonicalize().map(Some).map_err(|e| e.to_string());
     }
-    Err("CBC must set MIX_TEST_E2E_EXE to its exact newly built viu-dopus; installed interpreters are not a substitute".into())
+    Err(format!("Set {} to the staged newly built mix interpreter (tools/ci.mix stage-install)", paths::env::test::TEST_E2E_EXE))
 }

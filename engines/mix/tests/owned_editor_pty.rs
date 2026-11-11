@@ -21,6 +21,8 @@ mod session_state;
 #[path = "../../../libraries/mix-shell/src/test_hooks.rs"]
 mod test_hooks;
 
+#[path = "support/install.rs"]
+mod install;
 use editor::runtime::{CompletionSnapshot, Line, OwnedEditor};
 use editor::{Generation, PromptProfile, Reply};
 use std::fs::{self, File};
@@ -117,7 +119,7 @@ fn same_modes(a: libc::termios, b: libc::termios) {
 #[test]
 fn fixture_editor() {
     let _fixture = fixture_guard();
-    let Ok(scenario) = std::env::var("OWNED_FIXTURE") else {
+    let Ok(scenario) = paths::env::raw("OWNED_FIXTURE").and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent) else {
         return;
     };
     let original = modes(0);
@@ -223,7 +225,7 @@ fn fixture_editor() {
             "must exercise partial output"
         );
         terminal.finish(&layout).unwrap();
-        let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
+        let home = std::path::PathBuf::from(paths::env::raw("HOME").unwrap());
         fs::write(home.join("drain-ready"), "go").unwrap();
         // The bounded restore tests a responsive reader, not whether the
         // parent is scheduled within its 250 ms production drain budget.
@@ -293,7 +295,7 @@ fn fixture_editor() {
         assert!(editor::terminal::OUTPUT_TEARS.load(std::sync::atomic::Ordering::Relaxed) > 0);
         editor.control.shutdown().unwrap();
         fs::write(
-            std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join("backpressure-pass"),
+            std::path::PathBuf::from(paths::env::raw("HOME").unwrap()).join("backpressure-pass"),
             "ok",
         )
         .unwrap();
@@ -415,7 +417,7 @@ fn stop_supervisor(original: libc::termios) {
     unsafe {
         libc::signal(libc::SIGTTOU, libc::SIG_IGN);
     }
-    let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    let mut command = install::command();
     pty::guard(&mut command);
     unsafe {
         command.pre_exec(|| {
@@ -435,7 +437,7 @@ fn stop_supervisor(original: libc::termios) {
     );
     assert!(libc::WIFSTOPPED(status));
     assert_eq!(libc::WSTOPSIG(status), libc::SIGTTIN);
-    let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
+    let home = std::path::PathBuf::from(paths::env::raw("HOME").unwrap());
     fs::write(home.join("nested-pid"), pid.to_string()).unwrap();
     assert_eq!(unsafe { libc::tcsetpgrp(0, pid) }, 0);
     unsafe {
@@ -674,7 +676,7 @@ impl Pty {
         let mut command = Command::new(if fixture.is_some() {
             std::env::current_exe().unwrap()
         } else {
-            env!("CARGO_BIN_EXE_mix").into()
+            install::exe().into()
         });
         pty::guard(&mut command);
         if let Some(scenario) = fixture {
@@ -684,11 +686,11 @@ impl Pty {
         }
         command
             .env("HOME", home.path())
-            .env("MIX_ROOT", home.path())
-            .env("MIX_SRC", home.path())
-            .env("MIX_STATS", "off")
+            .env(paths::env::ROOT, home.path())
+            .env(paths::env::SRC, home.path())
+            .env(paths::env::STATS, "off")
             .env("TERM", "xterm-256color")
-            .env("MIX_EDITOR", if owned { "owned" } else { "rustyline" })
+            .env(paths::env::EDITOR, if owned { "owned" } else { "rustyline" })
             .stdin(slave.try_clone().unwrap())
             .stdout(slave.try_clone().unwrap())
             .stderr(slave.try_clone().unwrap());
@@ -906,7 +908,7 @@ fn foreground_job_ctrl_z_fg_and_nested_editor_stop_preserve_draft() {
     p.send(b"\x03");
     p.prompt();
     // A nested shell group is not orphaned: Ctrl-Z must stop the editor itself.
-    p.send(format!("{}\n", env!("CARGO_BIN_EXE_mix")).as_bytes());
+    p.send(format!("{}\n", install::exe()).as_bytes());
     p.prompt();
     let nested = unsafe { libc::tcgetpgrp(p.master.as_raw_fd()) };
     assert_ne!(nested, p.child.id() as i32);

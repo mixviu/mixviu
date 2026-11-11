@@ -4,6 +4,8 @@
 //! fix, `--json` reports it, `-- lint:` pragmas let a file lint clean on its
 //! own, and the binary's shell extensions are known callables.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn write_temp(name: &str, source: &str) -> std::path::PathBuf {
@@ -15,10 +17,10 @@ fn write_temp(name: &str, source: &str) -> std::path::PathBuf {
 }
 
 fn lint(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .arg("lint")
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix lint");
     (

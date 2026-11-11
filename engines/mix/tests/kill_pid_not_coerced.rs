@@ -17,13 +17,15 @@
 
 #![cfg(unix)]
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn mix(expr: &str) -> (bool, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .arg("-c")
         .arg(expr)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("mix binary must run");
     (

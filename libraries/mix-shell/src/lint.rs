@@ -53,14 +53,29 @@ struct LintSummary {
     denied_warnings: bool,
 }
 
+pub(crate) fn agent_profile_from_env() -> bool {
+    agent_profile(crate::env_string(::paths::env::LINT).ok().as_deref())
+}
+
+fn agent_profile(value: Option<&str>) -> bool {
+    matches!(value, Some("agent" | "error" | "warn" | "1" | "true" | "yes"))
+}
+
+#[test]
+fn agent_profile_accepts_both_historical_value_sets() {
+    for value in ["agent", "error", "warn", "1", "true", "yes"] {
+        assert!(agent_profile(Some(value)));
+    }
+    for value in [None, Some(""), Some("0"), Some("false"), Some("Agent")] {
+        assert!(!agent_profile(value));
+    }
+}
+
 pub fn run_lint(args: &[String], version: &str) -> i32 {
     let mut format = Format::Human;
     let mut format_set = false;
     let mut deny_warnings = false;
-    let mut agent = matches!(
-        std::env::var("MIX_LINT").as_deref(),
-        Ok("agent") | Ok("error")
-    );
+    let mut agent = agent_profile_from_env();
     let mut require_version = false;
     let mut fix = false;
     let mut cfg = AnalyzerConfig::default();
@@ -123,7 +138,7 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
     cfg.agent = agent;
     // This binary registers these in every mode, so a script linted here
     // may call them, and a function named after one is shadowed.
-    cfg.extensions = analyzer::MIX_SHELL_EXTENSIONS
+    cfg.extensions = analyzer::SHELL_EXTENSIONS
         .iter()
         .map(|name| name.to_string())
         .collect();
@@ -471,13 +486,13 @@ fn host_header_diag(source: &str, file: &str, service: &[&'static str]) -> Optio
 /// source; a diagnostic in the hard-safe allowlist (E1201, E1202, E1303,
 /// E1501, E1502, E1203) is a refusal — the source is not run. Returns
 /// `(hard, soft)` diagnostics so the caller prints the hard set before
-/// exit 2 and the soft set only under `--agent`/`MIX_LINT=warn`.
+/// exit 2 and the soft set only under `--agent`/`LINT=warn`.
 pub(crate) fn lint_source_for_execution(source: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
     let mut hard = Vec::new();
     let mut soft = Vec::new();
     // The program runs under this binary, so its extensions are defined.
     let cfg = AnalyzerConfig {
-        extensions: analyzer::MIX_SHELL_EXTENSIONS
+        extensions: analyzer::SHELL_EXTENSIONS
             .iter()
             .map(|name| name.to_string())
             .collect(),

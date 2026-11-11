@@ -102,6 +102,7 @@ tungstenite = "0.29"
 # The S3 fixture uses Term's actual sealed-fd implementation and pinned PTY hook.
 
 [build-dependencies]
+paths = { path = "../paths" }
 # Captures mix HEAD sha + build time for serve-citizen provenance.
 buildinfo.workspace = true
 # Compresses docs/mix into the embedded manual (src/manual.rs).

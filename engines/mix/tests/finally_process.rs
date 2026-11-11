@@ -4,6 +4,8 @@
 //! unwinds `exit()` through cleanup, then each binary entrypoint must consume
 //! the control signal as the exact requested process status.
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -15,10 +17,10 @@ static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 fn run_args(args: &[&str], stdin: Option<&str>) -> Output {
     // Exercise the entrypoint without sourcing the operator's own .mixrc.
     let fixture_home = tempfile::tempdir().expect("temporary home");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .args(args)
         .env("HOME", fixture_home.path())
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(if stdin.is_some() {
             Stdio::piped()
         } else {

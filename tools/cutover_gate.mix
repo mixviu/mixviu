@@ -68,10 +68,13 @@ if $mode == "mixtest" then
   -- Run Mix test scripts with this tree's (debug) mix.
   $b = gate_step(["cargo", "build", "--locked", "-p", "mix"], "6")
   if not $b.ok then exit(1) end
+  $staging = require("test_install.mix")
+  $prefix = $staging.stage_install()
+  $test_mix = $prefix .. "/bin/mix"
   $bad = 0
   for $f in slice(args(), 1)
     print("STEP_BEGIN " .. $f)
-    $r = run_argv(["target/debug/mix", $f], {timeout: 1800, max_output: 64000000, env: {MIX_TEST_MIX_EXE: realpath("target/debug/mix")}})
+    $r = run_argv([$test_mix, $f], {timeout: 1800, max_output: 64000000, env: {MIX_PREFIX: $prefix, MIX_TEST_MIX_EXE: $test_mix}})
     print($r.stdout)
     print($r.stderr)
     print("STEP_RC=" .. to_string($r.exit_code ?? 124) .. " " .. $f)
@@ -116,7 +119,13 @@ $checks = [
 ]
 $test_mix = realpath(".") .. "/target/debug/mix"
 for $argv in $checks
-  $env = if $argv[1] == "test" then {MIX_TEST_E2E_EXE: $test_mix, MIX_TEST_MIX_EXE: $test_mix} else {} end
+  $env = {}
+  if $argv[1] == "test" then
+    $staging = require("test_install.mix")
+    $prefix = $staging.stage_install()
+    $test_mix = $prefix .. "/bin/mix"
+    $env = {MIX_PREFIX: $prefix, MIX_TEST_E2E_EXE: $test_mix, MIX_TEST_MIX_EXE: $test_mix}
+  end
   $r = gate_step($argv, "6", $env)
   if not $r.ok then push($failed, join($argv, " ")) end
   if $argv[1] == "test" then

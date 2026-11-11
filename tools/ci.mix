@@ -90,17 +90,19 @@ fn stage_test($mix)
   -- never an installed one; offline `cargo metadata` tests need every
   -- platform's crates in the cache.
   ensure_mix($mix)
-  $abs = realpath($mix)
-  $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
+  $staging = require("test_install.mix")
+  $prefix = $staging.stage_install()
+  $abs = $prefix .. "/bin/mix"
+  $test_env = {MIX_PREFIX: $prefix, MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
   for $case in sort(glob("apps/term/*-test.mix"))
-    run_step([$mix, $case])
+    run_step([$abs, $case], $test_env)
   end
   for $case in ["apps/monitor/core-test.mix", "apps/monitor/history-test.mix", "apps/monitor/wire-test.mix", "apps/monitor/fetch-test.mix", "apps/screenshot/policy-test.mix"]
     if exists($case) then
-      run_step([$mix, $case])
+      run_step([$abs, $case], $test_env)
     end
   end
 end
@@ -185,7 +187,7 @@ fn stage_env()
       exit(1)
     end
   end
-  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path]
+  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path, ":!*CHANGELOG.md", ":!docs/mix/changelog*"]
   $used = {}
   $prefix_used = {}
   for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
@@ -214,7 +216,7 @@ fn stage_env()
       push($bad, "unlisted prefix " + $n)
     end
   end
-  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path])), "\n")
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path, ":!*CHANGELOG.md", ":!docs/mix/changelog*"])), "\n")
     if $f != "" then
       $ok = false
       for $re in $reg.mixos_allowed ?? []
@@ -310,25 +312,10 @@ fn stage_mix_lint_baseline($mix)
   print("wrote " + $baseline_path)
 end
 
--- Optional staging only. Callers choose when to use this install.
-fn stage_install()
-  $prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir", "mix-stage-XXXXXXXX"]))
-  mkdir($prefix .. "/bin")
-  for $file in sort(glob("target/debug/*"))
-    if is_file($file) and access($file, "x") then
-      run_argv_must(["cp", "--", $file, $prefix .. "/bin/" .. basename($file)])
-    end
-  end
-  $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
-  for $v in load_data("etc/env.conf.mix").vars
-    if has_key($v, "default") then $defaults[$v.name] = $v.default end
-  end
-  write_file($prefix .. "/env.mx", data_encode($defaults))
-  print($prefix)
-end
+$install = require("test_install.mix")
 
 if $stage == "stage-install" then
-  stage_install()
+  print($install.stage_install())
 elif $stage == "fmt" then
   stage_fmt()
 elif $stage == "clippy" then

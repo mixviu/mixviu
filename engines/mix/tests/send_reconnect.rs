@@ -5,15 +5,17 @@
 //!
 //! One failed connect used to latch the in-process client "unavailable":
 //! every later `send` answered `-3` until the script called
-//! `bus_reconnect()`, even after `MIX_NODED_URL` pointed at a live
+//! `bus_reconnect()`, even after `env::NODED_URL` pointed at a live
 //! broker, and a script that outlived a broker restart stayed dead. A
 //! `send` now re-probes (bounded by its `timeout=`) and re-reads the URL.
 //!
 //! The broker is the real embedded noded (`test-broker`). The verified
-//! Unix lane is disabled with a missing `MIX_NODE_CONFIG`, so the probe
+//! Unix lane is disabled with a missing `env::NODE_CONFIG`, so the probe
 //! takes the URL path these tests steer.
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -26,14 +28,14 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn mix(dir: &Path, script: &str) -> Command {
     let path = dir.join("probe.mix");
     std::fs::write(&path, script).unwrap();
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
+    let mut cmd = install::command();
     cmd.arg("--no-prelude")
         .arg(&path)
         .env("HOME", dir)
-        .env("MIX_STATS", "off")
-        .env("MIX_NODE_CONFIG", dir.join("no-such-node.conf.mix"))
-        .env_remove("MIX_NODED_URL")
-        .env_remove("COSMIX_SESSION_FD")
+        .env(paths::env::STATS, "off")
+        .env(paths::env::NODE_CONFIG, dir.join("no-such-node.conf.mix"))
+        .env_remove(paths::env::NODED_URL)
+        .env_remove(paths::env::SESSION_FD)
         .stdin(Stdio::null());
     cmd
 }
@@ -60,15 +62,16 @@ fn a_send_after_a_failed_connect_follows_a_new_url() {
     let broker = Broker::start();
     let dir = tempfile::tempdir().unwrap();
     let script = format!(
-        "export MIX_NODED_URL=\"{dead}\"\n\
+        "export {noded_url}=\"{dead}\"\n\
          send zz-no-such-svc ping timeout=2\n\
          print(\"rc=${{rc}}\")\n\
          print(\"result=${{result}}\")\n\
-         export MIX_NODED_URL=\"{live}\"\n\
+         export {noded_url}=\"{live}\"\n\
          send zz-no-such-svc ping timeout=2\n\
          print(\"rc=${{rc}}\")\n",
         dead = closed_url(),
         live = broker.url,
+        noded_url = paths::env::NODED_URL,
     );
     let out = mix(dir.path(), &script).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -101,7 +104,7 @@ fn a_send_after_a_broker_restart_reconnects() {
     let sent = dir.path().join("sent");
     let go = dir.path().join("go");
     let script = format!(
-        "export MIX_NODED_URL=\"{url}\"\n\
+        "export {noded_url}=\"{url}\"\n\
          send zz-no-such-svc ping timeout=2\n\
          print(\"rc=${{rc}}\")\n\
          write_file({sent:?}, \"1\")\n\
@@ -117,6 +120,7 @@ fn a_send_after_a_broker_restart_reconnects() {
         url = broker.url,
         sent = sent.to_str().unwrap(),
         go = go.to_str().unwrap(),
+        noded_url = paths::env::NODED_URL,
     );
     let child = mix(dir.path(), &script)
         .stdout(Stdio::piped())

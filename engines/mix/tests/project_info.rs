@@ -3,6 +3,8 @@
 //! P5 (TODO-mix 2026-09-24): `project_info()` — read-only workspace
 //! introspection over a synthetic fixture.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 #[test]
@@ -29,10 +31,10 @@ fn project_info_reports_members_excludes_and_toolchain() {
     )
     .expect("write toolchain");
 
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .args(["-c", "print(json_encode(project_info()))"])
-        .env("MIX_ROOT", &root)
-        .env("MIX_STATS", "off")
+        .env(paths::env::ROOT, &root)
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix");
     let stdout = String::from_utf8_lossy(&out.stdout);

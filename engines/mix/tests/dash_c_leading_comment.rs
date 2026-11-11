@@ -17,10 +17,12 @@
 //! all-comment input must still be a clean no-op. Fixing only the first would
 //! turn every stray comment line into a parse error.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn mix() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
 }
 
 fn run(code: &str) -> (String, i32) {

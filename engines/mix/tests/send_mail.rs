@@ -11,6 +11,8 @@
 
 #![cfg(unix)]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -44,9 +46,9 @@ if [ -n "$REMOTE_SENDMAIL_STANDIN" ]; then
     echo "fake ssh: refusing to run a real sendmail" >&2
     exit 99
   fi
-  FAKE_HOST=$host exec "$MIX_TEST_ACTIVE" - < "$SENDMAIL_CAPTURE.rewritten"
+  FAKE_HOST=$host exec "$ACTIVE_INTERPRETER" - < "$SENDMAIL_CAPTURE.rewritten"
 fi
-FAKE_HOST=$host exec "$MIX_TEST_ACTIVE" -
+FAKE_HOST=$host exec "$ACTIVE_INTERPRETER" -
 "#;
 
 struct Bed {
@@ -58,7 +60,7 @@ impl Bed {
         let dir = tempfile::tempdir().expect("tempdir");
         for (name, body) in [("sendmail", FAKE_SENDMAIL), ("ssh", FAKE_SSH)] {
             let p = dir.path().join(name);
-            fs::write(&p, body).unwrap();
+            fs::write(&p, body.replace("ACTIVE_INTERPRETER", paths::env::test::TEST_ACTIVE)).unwrap();
             fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
         }
         Bed { dir }
@@ -78,14 +80,14 @@ impl Bed {
 
     fn run_env(&self, program: &str, fail: bool, extra: &[(&str, &str)]) -> (String, String, bool) {
         let path = format!("{}:/usr/bin:/bin", self.dir.path().display());
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
+        let mut cmd = install::command();
         cmd.arg("-c")
             .arg(program)
             .env("PATH", path)
-            .env("MIX_TEST_ACTIVE", env!("CARGO_BIN_EXE_mix"))
+            .env(paths::env::test::TEST_ACTIVE, install::exe())
             .env("SENDMAIL_CAPTURE", self.capture())
             .env_remove("REMOTE_SENDMAIL_STANDIN")
-            .env_remove("MIX_REMOTE_EXE");
+            .env_remove(paths::env::REMOTE_EXE);
         for (k, v) in extra {
             cmd.env(k, v);
         }

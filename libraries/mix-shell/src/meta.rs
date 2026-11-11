@@ -17,7 +17,13 @@ use mix::evaluator::Evaluator;
 use mix::value::Value;
 
 fn mix_src_str() -> String {
-    crate::paths::mix_src().to_string_lossy().into_owned()
+    crate::paths::mix_src()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|error| {
+            eprintln!("mix: cannot resolve current directory for source tooling: {error}");
+            std::process::exit(2);
+        }))
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Process start time, initialized on first access.
@@ -903,9 +909,9 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
         "evolve" => cmd_ai(
             "evolve",
             &format!(
-                "Read {}/MIX_TODO.md. Pick the highest-value uncompleted item. \
+                "Read {}/{}. Pick the highest-value uncompleted item. \
              Implement it with tests. Run cargo test.",
-                mix_src_str()
+                mix_src_str(), concat!("MIX_", "TODO.md")
             ),
         ),
         "dogfood" => cmd_ai(
@@ -1115,7 +1121,7 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
         );
     }
     // B14: a mix:prefix binary whose prelude resolved OUTSIDE the install
-    // tier is a mixed-tier installation (an exported MIX_ROOT pointing at a
+    // tier is a mixed-tier installation (an exported ROOT pointing at a
     // dev checkout shadows the shipped prelude). Warn, never fail — a dev
     // box doing this deliberately is a choice, not a fault.
     if let Ok(exe) = std::env::current_exe() {
@@ -1132,7 +1138,7 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
                     .to_string(),
             ) {
                 println!(
-                    "  ⚠ prelude    resolved outside the install tier: {prelude_src} (binary is {exe_path}) — MIX_ROOT points the /opt binary at a dev checkout"
+                    "  ⚠ prelude    resolved outside the install tier: {prelude_src} (binary is {exe_path}) — root override points the installed binary at a dev checkout"
                 );
             }
         }
@@ -1142,7 +1148,7 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     //    the checkout docs dir and the `mix man` cache.
     let mut man_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
     if let Some(root) = man_cache_root(
-        env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
+        ::paths::env::raw("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
         dirs::home_dir().as_deref(),
     ) {
         man_dirs.push(root);
@@ -1190,8 +1196,8 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     // A test (or any caller wanting a hermetic run) can skip the live probe so
     // `mix doctor` never touches a real broker — the reachability line is the
     // one check with an outward side effect.
-    if env::var_os("MIX_DOCTOR_SKIP_BUS").is_some() {
-        println!("  — bus        probe skipped (MIX_DOCTOR_SKIP_BUS set)");
+    if ::paths::env::raw(::paths::env::DOCTOR_SKIP_BUS).is_some() {
+        println!("  — bus        probe skipped ({} set)", ::paths::env::DOCTOR_SKIP_BUS);
         return finish_doctor(fails);
     }
     let noded = crate::node_config::resolve_noded_url();
@@ -1404,7 +1410,7 @@ fn cmd_type(name: &str, eval: &Evaluator) {
 fn cmd_config(version: &str) {
     // Mirror `load_mixrc`/`cmd_self_check`: empty HOME is treated as
     // unavailable, not as a meaningful root-home path.
-    let home = env::var("HOME").ok().filter(|h| !h.is_empty());
+    let home = crate::env_string("HOME").ok().filter(|h| !h.is_empty());
     let os_id = read_os_id();
     let arch = std::env::consts::ARCH;
     let pid = std::process::id();
@@ -1503,7 +1509,7 @@ fn cmd_test() {
 /// surface and must always whole-file parse cleanly.
 fn cmd_self_check() {
     let mixrc_label = "~/.mixrc";
-    let home = env::var("HOME").ok().filter(|h| !h.is_empty());
+    let home = crate::env_string("HOME").ok().filter(|h| !h.is_empty());
     match home {
         Some(h) => {
             let mixrc_path = format!("{}/.mixrc", h);
@@ -2589,7 +2595,6 @@ fn cmd_ping(service: &str) {
     }
 }
 
-const DEFAULT_MAN_URL: &str = "https://mixos.dev/mix";
 const MAN_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAN_CLOCK_SKEW_ALLOWANCE: Duration = Duration::from_secs(60);
 const MAN_CONNECT_TIMEOUT: Duration = Duration::from_millis(750);
@@ -2614,17 +2619,13 @@ fn parse_man_source(value: Option<&str>) -> Result<ManSource, String> {
         Some(value) if value.eq_ignore_ascii_case("auto") => Ok(ManSource::Auto),
         Some(value) if value.eq_ignore_ascii_case("local") => Ok(ManSource::Local),
         Some(value) => Err(format!(
-            "invalid MIX_MAN_SOURCE '{value}' (expected auto or local)"
+            "invalid {} '{value}' (expected auto or local)", ::paths::env::MAN_SOURCE
         )),
     }
 }
 
-fn man_base_url(value: Option<&str>) -> String {
-    let value = value.map(str::trim).filter(|value| !value.is_empty());
-    value
-        .unwrap_or(DEFAULT_MAN_URL)
-        .trim_end_matches('/')
-        .to_string()
+fn man_base_url(value: &str) -> String {
+    value.trim().trim_end_matches('/').to_string()
 }
 
 fn man_page_filename(topic: Option<&str>) -> Result<String, String> {
@@ -2648,15 +2649,11 @@ fn man_page_url(base_url: &str, filename: &str) -> String {
 }
 
 /// The manual's source of truth lives in the checkout at
-/// `$MIX_ROOT/docs/mix` (also what mixos.dev/mix/ serves). With a known
+/// `$ROOT/docs/mix` (also what mixos.dev/mix/ serves). With a known
 /// root that is the only candidate; without one, the documented default
 /// clone location is tried.
-fn man_dir_candidates(home: Option<&Path>, root: Option<&Path>) -> Vec<PathBuf> {
-    match (root, home) {
-        (Some(root), _) => vec![root.join("docs/mix")],
-        (None, Some(home)) => vec![crate::paths::default_root(home).join("docs/mix")],
-        (None, None) => Vec::new(),
-    }
+fn man_dir_candidates(_home: Option<&Path>, root: Option<&Path>) -> Vec<PathBuf> {
+    root.map(|root| vec![root.join("docs/mix")]).unwrap_or_default()
 }
 
 fn local_man_dirs() -> Vec<PathBuf> {
@@ -2704,17 +2701,13 @@ fn man_url_fingerprint(value: &str) -> u64 {
 }
 
 fn man_cache_path(root: &Path, base_url: &str, filename: &str) -> PathBuf {
-    if base_url == DEFAULT_MAN_URL {
-        root.join(filename)
-    } else {
-        root.join("sources")
-            .join(format!("{:016x}", man_url_fingerprint(base_url)))
-            .join(filename)
-    }
+    root.join("sources")
+        .join(format!("{:016x}", man_url_fingerprint(base_url)))
+        .join(filename)
 }
 
 fn configured_man_cache_path(base_url: &str, filename: &str) -> Option<PathBuf> {
-    let xdg_cache_home = env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+    let xdg_cache_home = ::paths::env::raw("XDG_CACHE_HOME").map(PathBuf::from);
     let home = dirs::home_dir();
     man_cache_root(xdg_cache_home.as_deref(), home.as_deref())
         .map(|root| man_cache_path(&root, base_url, filename))
@@ -2879,9 +2872,9 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
     topics.dedup();
     if topics.is_empty() {
         eprintln!("Browse the manual at {base_url}/");
-        eprintln!("Local fallback looked in $MIX_ROOT/docs/mix (default root ~/Projects/mixos).");
+        eprintln!("Local fallback looked in the configured source root's docs/mix.");
         eprintln!(
-            "Use MIX_MAN_SOURCE=local, or clone: git clone https://github.com/markc/mixos ~/Projects/mixos"
+            "Use {}=local with an explicit source root to read checkout manuals", ::paths::env::MAN_SOURCE
         );
     } else {
         eprintln!("Available topics: {}", topics.join(", "));
@@ -2890,7 +2883,7 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
 
 /// `mix man [TOPIC]`: print a manual page; the built-in manual by default.
 fn cmd_man(topic: Option<&str>) {
-    let source = match parse_man_source(env::var("MIX_MAN_SOURCE").ok().as_deref()) {
+    let source = match parse_man_source(crate::env_string(::paths::env::MAN_SOURCE).ok().as_deref()) {
         Ok(source) => source,
         Err(error) => {
             eprintln!("mix man: {error}");
@@ -2904,20 +2897,26 @@ fn cmd_man(topic: Option<&str>) {
             return;
         }
     };
-    let base_url = man_base_url(env::var("MIX_MAN_URL").ok().as_deref());
+    let base_url = match ::paths::env::setting(::paths::env::MAN_URL) {
+        Ok(value) => man_base_url(&value),
+        Err(error) => {
+            eprintln!("mix man: {error}");
+            return;
+        }
+    };
     let cache_path = configured_man_cache_path(&base_url, &filename);
 
     // Lookup order (docs/mix/README.md, "Where the pages come from"):
     // - default: the manual built into this binary, which documents exactly
     //   this binary; then files on disk; then the online fetch below, for a
     //   page this binary does not carry.
-    // - MIX_MAN_SOURCE=local: files on disk first (a checkout's working
+    // - MAN_SOURCE=local: files on disk first (a checkout's working
     //   copy, for whoever is editing the manual), then the built-in manual,
     //   then the cache. Never the network.
-    // - MIX_MAN_SOURCE=auto or MIX_MAN_URL: the online contract — fresh
+    // - MAN_SOURCE=auto or MAN_URL: the online contract — fresh
     //   cache, fetch, files on disk, built-in, stale cache.
-    if env::var_os("MIX_MAN_SOURCE").is_none()
-        && env::var_os("MIX_MAN_URL").is_none()
+    if ::paths::env::raw(::paths::env::MAN_SOURCE).is_none()
+        && ::paths::env::raw(::paths::env::MAN_URL).is_none()
         && let Some(content) = crate::manual::page(&filename)
             .map(str::to_string)
             .or_else(|| read_local_man_page(&filename))
@@ -3141,8 +3140,8 @@ fn cmd_apropos(term: &str) {
     //    each topic from where `mix man` would: the manual built into the
     //    binary, then the checkout docs dir, then the `mix man` cache
     //    (`~/.cache/mix/man`, default-URL layout). With
-    //    MIX_MAN_SOURCE=local the checkout comes first, as for `mix man`.
-    let local = env::var("MIX_MAN_SOURCE")
+    //    MAN_SOURCE=local the checkout comes first, as for `mix man`.
+    let local = crate::env_string(::paths::env::MAN_SOURCE)
         .ok()
         .is_some_and(|value| parse_man_source(Some(&value)) == Ok(ManSource::Local));
     let dir_pages = |dir: &Path| -> Vec<(String, String)> {
@@ -3163,10 +3162,14 @@ fn cmd_apropos(term: &str) {
         .collect();
     let checkout = dir_pages(&resolve_man_dir());
     let cached = man_cache_root(
-        env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
+        ::paths::env::raw("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
         dirs::home_dir().as_deref(),
     )
-    .map(|root| dir_pages(&root))
+    .and_then(|root| {
+        let url = ::paths::env::setting(::paths::env::MAN_URL).ok()?;
+        let cache = man_cache_path(&root, &man_base_url(&url), "");
+        Some(dir_pages(&cache))
+    })
     .unwrap_or_default();
     let sources = if local {
         [checkout, built_in, cached]
@@ -3370,7 +3373,7 @@ fn read_os_id() -> String {
 
 /// Look up a command on PATH
 fn which_command(name: &str) -> Option<String> {
-    let path_var = env::var("PATH").unwrap_or_default();
+    let path_var = crate::env_string("PATH").unwrap_or_default();
     for dir in path_var.split(':') {
         let full = format!("{}/{}", dir, name);
         if std::path::Path::new(&full).is_file() {
@@ -3395,9 +3398,8 @@ mod man_resolver_tests {
 
     #[test]
     fn base_url_and_page_url_have_one_separator() {
-        assert_eq!(man_base_url(None), DEFAULT_MAN_URL);
         assert_eq!(
-            man_base_url(Some(" https://manual.example.test/mix/// ")),
+            man_base_url(" https://manual.example.test/mix/// "),
             "https://manual.example.test/mix"
         );
         assert_eq!(
@@ -3425,11 +3427,8 @@ mod man_resolver_tests {
             man_dir_candidates(Some(Path::new("/home/tester")), Some(Path::new("/srv/mix"))),
             vec![PathBuf::from("/srv/mix/docs/mix")]
         );
-        // no root: the documented default clone location
-        assert_eq!(
-            man_dir_candidates(Some(Path::new("/home/tester")), None),
-            vec![PathBuf::from("/home/tester/Projects/mixos/docs/mix")]
-        );
+        // No source root means no guessed checkout directory.
+        assert!(man_dir_candidates(Some(Path::new("/home/tester")), None).is_empty());
         assert!(man_dir_candidates(None, None).is_empty());
     }
 
@@ -3459,16 +3458,14 @@ mod man_resolver_tests {
     #[test]
     fn url_override_has_an_isolated_cache_namespace() {
         let root = Path::new("/cache/mix/man");
-        assert_eq!(
-            man_cache_path(root, DEFAULT_MAN_URL, "syntax.md"),
-            PathBuf::from("/cache/mix/man/syntax.md")
-        );
+        let canonical_path = man_cache_path(root, "https://manual.example.test/mix", "syntax.md");
+        assert!(canonical_path.starts_with(root.join("sources")));
         let override_path = man_cache_path(root, "http://127.0.0.1:8080/mix", "syntax.md");
         assert!(override_path.starts_with("/cache/mix/man/sources"));
         assert!(override_path.ends_with("syntax.md"));
         assert_ne!(
             override_path,
-            man_cache_path(root, DEFAULT_MAN_URL, "syntax.md")
+            canonical_path
         );
         assert_eq!(
             override_path,

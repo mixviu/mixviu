@@ -40,7 +40,7 @@ const FAKE_PACTL: &str = r#"#!/bin/sh
 [ "$LC_ALL" = C ] || exit 65
 [ "$XDG_RUNTIME_DIR" = /nonexistent-mix-audio-runtime ] || exit 66
 printf "Event 'new' on client #9\nEvent 'change' on sink #5\n"
-[ -n "$MIX_TEST_FAKE_PACTL_EXIT" ] && exit "$MIX_TEST_FAKE_PACTL_EXIT"
+[ -n "$@EXIT@" ] && exit "$@EXIT@"
 exec sleep 3600
 "#;
 
@@ -58,13 +58,13 @@ async fn audio_watch_owns_a_subscription_child_and_reports_its_exit() {
     let dir = std::env::temp_dir().join(format!("mix-fake-pactl-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let pactl = dir.join("pactl");
-    std::fs::write(&pactl, FAKE_PACTL).unwrap();
+    std::fs::write(&pactl, FAKE_PACTL.replace("@EXIT@", paths::env::test::TEST_FAKE_PACTL_EXIT)).unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&pactl, std::fs::Permissions::from_mode(0o755)).unwrap();
     let path = format!(
         "{}:{}",
         dir.display(),
-        std::env::var("PATH").unwrap_or_default()
+        paths::env::raw("PATH").ok_or(std::env::VarError::NotPresent).and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode)).unwrap_or_default()
     );
     // SAFETY: the only test in this binary that reads or writes the
     // environment, and no other thread is running yet.
@@ -98,7 +98,7 @@ async fn audio_watch_owns_a_subscription_child_and_reports_its_exit() {
     exec(&mut e, "audio_unwatch($h)").await.unwrap();
 
     // A stream that ends by itself is reported once, as closed.
-    unsafe { std::env::set_var("MIX_TEST_FAKE_PACTL_EXIT", "3") };
+    unsafe { std::env::set_var(paths::env::test::TEST_FAKE_PACTL_EXIT, "3") };
     exec(
         &mut e,
         "$h = audio_watch({runtime_dir: \"/nonexistent-mix-audio-runtime\"})",

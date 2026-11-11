@@ -26,6 +26,8 @@
 //! appear anywhere in the manual.
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process::Command;
@@ -122,9 +124,9 @@ fn keyword_table_lexemes(page: &str) -> BTreeSet<String> {
 
 /// The binary's reserved words, as `mix keywords` prints them.
 fn binary_keywords() -> BTreeSet<String> {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .arg("keywords")
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env_remove("MIXRC")
         .output()
         .expect("run mix keywords");
@@ -259,13 +261,13 @@ fn no_stale_version_stamps_or_banned_citations() {
 /// added, removed or redescribed without regenerating the page fails here.
 #[test]
 fn builtins_page_matches_this_binary() {
-    let mix = env!("CARGO_BIN_EXE_mix");
+    let mix = install::exe();
     let generator =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/_build/gen-builtins-md.mix");
     let out = Command::new(mix)
         .arg(&generator)
         .args(["--mix", mix, "--check"])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env_remove("MIXRC")
         .output()
         .expect("run gen-builtins-md.mix");
@@ -289,19 +291,19 @@ fn builtins_generator_refuses_an_unplaced_category() {
         &fake,
         format!(
             "#!{}\nprint('[{{\"name\":\"x\",\"category\":\"nope\",\"description\":\"d\",\"kind\":\"builtin\"}}]')\n",
-            env!("CARGO_BIN_EXE_mix")
+            install::exe()
         ),
     )
     .unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let generator =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/_build/gen-builtins-md.mix");
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .arg(&generator)
         .arg("--mix")
         .arg(&fake)
         .arg("--check")
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env_remove("MIXRC")
         .output()
         .expect("run gen-builtins-md.mix");
@@ -313,7 +315,7 @@ fn builtins_generator_refuses_an_unplaced_category() {
 }
 
 /// `mix ARGS` in a home with no checkout, no installed share tree and no
-/// cache. `local` rules the network out (MIX_MAN_SOURCE=local); otherwise
+/// cache. `local` rules the network out (env::MAN_SOURCE=local); otherwise
 /// the default order applies, which reaches the built-in manual first.
 fn man_alone(args: &[&str], local: bool) -> std::process::Output {
     man_with_files(args, local, &[])
@@ -331,19 +333,19 @@ fn man_with_files(args: &[&str], local: bool, files: &[(&str, &str)]) -> std::pr
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, body).unwrap();
     }
-    let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    let mut command = install::command();
     command
         .args(args)
         .env("HOME", home.path())
-        .env("MIX_ROOT", &root)
-        .env("MIX_PREFIX", home.path().join("no-prefix"))
+        .env(paths::env::ROOT, &root)
+        .env(paths::env::PREFIX, home.path().join("no-prefix"))
         .env("XDG_CACHE_HOME", home.path().join("no-cache"))
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env_remove("MIXRC")
-        .env_remove("MIX_MAN_URL")
-        .env_remove("MIX_MAN_SOURCE");
+        .env_remove(paths::env::MAN_URL)
+        .env_remove(paths::env::MAN_SOURCE);
     if local {
-        command.env("MIX_MAN_SOURCE", "local");
+        command.env(paths::env::MAN_SOURCE, "local");
     }
     command.output().expect("run mix")
 }

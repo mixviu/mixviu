@@ -36,6 +36,8 @@
 //!      (the workspace gate runs it: `cargo test --workspace`)
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs::File;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -109,12 +111,12 @@ impl Citizen {
             "--name",
             SVC,
         ])
-        .env("MIX_NODE_CONFIG", node_conf)
-        .env("MIX_ETC", &dir.0)
+        .env(paths::env::NODE_CONFIG, node_conf)
+        .env(paths::env::ETC, &dir.0)
         .env("REL_TRACE", dir.0.join("trace"))
         .env("REL_STATE", dir.0.join("state"))
-        .env("MIX_STATS", "off")
-        .env_remove("MIX_SESSION_FD")
+        .env(paths::env::STATS, "off")
+        .env_remove(paths::env::SESSION_FD)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));
@@ -322,7 +324,7 @@ async fn process_watch_streams_while_serving_and_reaps_on_reload_and_shutdown() 
     let _g = lock().await;
     let dir = Dir::new("process-watch");
     let mut broker = Broker::start();
-    let bin = Path::new(env!("CARGO_BIN_EXE_mix"));
+    let bin = Path::new(install::exe());
     let child = dir.write(
         "child.mix",
         r#"
@@ -415,7 +417,7 @@ fn term_ignoring_child_fixture() {
     let mut trace = std::fs::OpenOptions::new()
         .append(true)
         .create(true)
-        .open(std::env::var_os("REL_TRACE").expect("fixture trace"))
+        .open(paths::env::raw("REL_TRACE").expect("fixture trace"))
         .unwrap();
     write_legacy_ready(&mut trace, std::process::id());
     loop {
@@ -559,7 +561,7 @@ fn boot(citizen_script: &Variant, dir: &Dir, broker: &Broker) -> (PathBuf, Citiz
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(broker)));
     let script = dir.write("svc.mix", &script(citizen_script));
     let citizen = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         dir,
         &node_conf,
         &script,
@@ -902,7 +904,7 @@ async fn sigterm_shuts_down_the_child_group_from_prep_and_from_the_dispatching_h
     let node_conf_b = dir.write("node-b.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
     let script_b = dir.0.join("svc-b.mix");
     let mut citizen_b = Citizen::spawn(
-        Path::new(env!("CARGO_BIN_EXE_mix")),
+        Path::new(install::exe()),
         &dir,
         &node_conf_b,
         &script_b,

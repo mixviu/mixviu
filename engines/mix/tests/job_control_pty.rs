@@ -9,6 +9,8 @@
 #![cfg(target_os = "linux")]
 #[path = "support/pty.rs"]
 mod pty;
+#[path = "support/install.rs"]
+mod install;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -20,11 +22,11 @@ use std::time::{Duration, Instant};
 const PROMPT: &str = "P0J> ";
 const LIMIT: Duration = Duration::from_secs(10);
 fn fixture_limit() -> Duration {
-    std::env::var("MIX_PTY_TIMEOUT_SECS").map_or(LIMIT, |value| {
+    paths::env::raw(paths::env::test::PTY_TIMEOUT_SECS).and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent).map_or(LIMIT, |value| {
         let seconds: u64 = value
             .parse()
-            .expect("MIX_PTY_TIMEOUT_SECS must be an integer");
-        assert!(seconds > 0, "MIX_PTY_TIMEOUT_SECS must be positive");
+            .expect("PTY timeout must be an integer");
+        assert!(seconds > 0, "PTY timeout must be positive");
         Duration::from_secs(seconds)
     })
 }
@@ -73,10 +75,10 @@ fn tty_modes(fd: i32) -> libc::termios {
 #[test]
 fn fixture_process() {
     let _fixture = fixture_guard();
-    let Ok(mode) = std::env::var("P0J_MODE") else {
+    let Ok(mode) = paths::env::raw("P0J_MODE").and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent) else {
         return;
     };
-    let report = PathBuf::from(std::env::var_os("P0J_REPORT").unwrap());
+    let report = PathBuf::from(paths::env::raw("P0J_REPORT").unwrap());
     let tty = File::open("/dev/tty").ok();
     let foreground = tty
         .as_ref()
@@ -99,7 +101,7 @@ fn fixture_process() {
         "outer-shell" => {
             // A real same-session parent keeps the nested shell group from
             // being orphaned, and observes its stop rather than a /proc guess.
-            let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+            let mut command = install::command();
             pty::guard(&mut command);
             let mut child = command.spawn().unwrap();
             let pid = child.id() as i32;
@@ -318,15 +320,16 @@ impl Pty {
         }
         // Originals are closed; only CLOEXEC fds and explicit stdio clones remain.
         let executable = home.path().join("mix");
-        fs::copy(env!("CARGO_BIN_EXE_mix"), &executable).unwrap();
+        fs::copy(install::exe(), &executable).unwrap();
         let mut cmd = Command::new(executable);
+        cmd.env(paths::env::PREFIX, install::prefix());
         pty::guard(&mut cmd);
         cmd.args(args)
             .env("HOME", home.path())
             .env("TERM", "xterm-256color")
-            .env("MIX_ROOT", home.path())
-            .env("MIX_SRC", home.path())
-            .env("MIX_STATS", "off")
+            .env(paths::env::ROOT, home.path())
+            .env(paths::env::SRC, home.path())
+            .env(paths::env::STATS, "off")
             .stdin(if redirected {
                 Stdio::null()
             } else {
@@ -743,7 +746,7 @@ fn failed_later_exec_kills_and_reaps_pipeline() {
 fn nested_shell_foreground_and_parent_restoration() {
     let _fixture = fixture_guard();
     let mut p = Pty::interactive();
-    p.send(&format!("{}\n", env!("CARGO_BIN_EXE_mix")));
+    p.send(&format!("{}\n", install::exe()));
     p.until(PROMPT);
     let nested = unsafe { libc::tcgetpgrp(p.master.as_raw_fd()) };
     assert_ne!(nested, p.shell.id() as i32);
@@ -763,7 +766,7 @@ fn nested_shell_foreground_and_parent_restoration() {
 fn background_nested_shell_waits_for_foreground_admission() {
     let _fixture = fixture_guard();
     let mut p = Pty::interactive();
-    p.command(&format!("{} &", env!("CARGO_BIN_EXE_mix")));
+    p.command(&format!("{} &", install::exe()));
     wait_for(|| p.command("jobs").contains("Stopped"));
     p.send("fg\n");
     let entered = p.until(PROMPT);
@@ -985,7 +988,7 @@ fn fixture_path_has_no_shell_metacharacters() {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
     );
-    assert!(Path::new(env!("CARGO_BIN_EXE_mix")).is_absolute());
+    assert!(Path::new(install::exe()).is_absolute());
 }
 
 #[test]
@@ -1186,7 +1189,7 @@ fn ssh_dash_c_has_zero_shell_group_or_terminal_handoff_syscalls() {
 fn run_bounded_ptrace_case(name: &str) -> bool {
     const CASE_LIMIT: Duration = Duration::from_secs(60);
     const CASE_ENV: &str = "P0J_PTRACE_CASE";
-    if std::env::var(CASE_ENV).as_deref() == Ok(name) {
+    if paths::env::raw(CASE_ENV).and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent).as_deref() == Ok(name) {
         return false;
     }
     // Files rather than pipes: diagnostic output must not wedge the child.

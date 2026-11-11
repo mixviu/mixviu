@@ -11,11 +11,13 @@
 //! set-but-empty; a non-empty value wins; the one-arg env(name) is unchanged
 //! ("" for unset); the default is returned verbatim (a number stays numeric).
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 #[test]
 fn env_two_arg_default_contract() {
-    let mix_bin = env!("CARGO_BIN_EXE_mix");
+    let mix_bin = install::exe();
     let script = format!(
         "{}/tests/scripts/env_default.mix",
         env!("CARGO_MANIFEST_DIR")
@@ -23,10 +25,10 @@ fn env_two_arg_default_contract() {
 
     let output = Command::new(mix_bin)
         .arg(&script)
-        .env("MIX_STATS", "off")
-        .env("MIX_TEST_ENV_SET", "real")
-        .env("MIX_TEST_ENV_EMPTY", "")
-        .env_remove("MIX_TEST_ENV_UNSET")
+        .env(paths::env::STATS, "off")
+        .env(paths::env::test::TEST_ENV_SET, "real")
+        .env(paths::env::test::TEST_ENV_EMPTY, "")
+        .env_remove(paths::env::test::TEST_ENV_UNSET)
         .output()
         .expect("failed to spawn mix binary");
 

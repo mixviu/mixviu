@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+#[path = "support/install.rs"]
+mod install;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -19,8 +21,8 @@ fn coverage_ignores_strings_and_comments_and_fails_closed() {
         "-- len([1])\n$x = \"map($f, $xs)\"\nprint(length([1]))\n",
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
-        .env_remove("MIX_STATS")
+    let output = install::command()
+        .env_remove(paths::env::STATS)
         .env("XDG_STATE_HOME", &state)
         .args(["stats", "coverage"])
         .arg(&dir)
@@ -33,8 +35,8 @@ fn coverage_ignores_strings_and_comments_and_fails_closed() {
     assert!(!state.join("mix/runs").exists(), "coverage records no run");
 
     std::fs::write(dir.join("bad.mix"), "if true then\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
-        .env_remove("MIX_STATS")
+    let output = install::command()
+        .env_remove(paths::env::STATS)
         .env("XDG_STATE_HOME", &state)
         .args(["stats", "coverage"])
         .arg(&dir)
@@ -61,8 +63,8 @@ fn coverage_follows_the_user_named_root_symlink_only() {
     std::fs::write(real.join("used.mix"), "print(length([1]))\n").unwrap();
     symlink(&real, &link).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
-        .env_remove("MIX_STATS")
+    let output = install::command()
+        .env_remove(paths::env::STATS)
         .env("XDG_STATE_HOME", &state)
         .args(["stats", "coverage"])
         .arg(&link)

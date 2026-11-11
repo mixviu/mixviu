@@ -116,7 +116,7 @@ impl Completer for MixHelper {
         if !is_first_word {
             let leading = before[..word_start].trim();
             if leading == "mix" {
-                let subcmds = crate::editor::runtime::MIX_SUBCOMMANDS;
+                let subcmds = crate::editor::runtime::SUBCOMMANDS;
                 let matches: Vec<Pair> = subcmds
                     .iter()
                     .filter(|s| s.starts_with(word))
@@ -230,7 +230,7 @@ fn complete_path(word_start: usize, word: &str) -> rustyline::Result<(usize, Vec
         let file_part = &word[slash_pos + 1..];
         // Handle ~ expansion
         let dir_expanded = if let Some(rest) = dir_part.strip_prefix('~') {
-            let home = env::var("HOME").unwrap_or_default();
+            let home = crate::env_string("HOME").unwrap_or_default();
             format!("{}{}", home, rest)
         } else {
             dir_part.to_string()
@@ -270,7 +270,7 @@ fn complete_path(word_start: usize, word: &str) -> rustyline::Result<(usize, Vec
 
 fn scan_path_commands() -> Vec<String> {
     let mut commands = HashSet::new();
-    let path_var = env::var("PATH").unwrap_or_default();
+    let path_var = crate::env_string("PATH").unwrap_or_default();
     for dir in path_var.split(':') {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {

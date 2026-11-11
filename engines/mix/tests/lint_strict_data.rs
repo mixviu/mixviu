@@ -2,6 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `mix lint` must distinguish executable Mix from strict-data files.
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -36,9 +38,9 @@ impl Drop for TempDir {
 }
 
 fn lint(path: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .args(["lint", path.to_str().expect("UTF-8 test path")])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix lint")
 }
@@ -114,9 +116,9 @@ fn assignment_chain_is_a_parse_error_not_a_lint_warning() {
 fn assignment_chain_json_carries_a_position_and_bare_prose() {
     let dir = TempDir::new();
     let path = dir.write("assignment-chain-json.mix", "$ok = true || false\n");
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .args(["lint", "--json", path.to_str().expect("UTF-8 test path")])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix lint --json");
     let stdout = String::from_utf8_lossy(&out.stdout);

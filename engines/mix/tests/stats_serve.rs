@@ -7,6 +7,8 @@
 //! Run: `cargo test -p mix --test stats_serve`
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs::File;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -49,7 +51,7 @@ struct Citizen {
 impl Citizen {
     fn spawn(dir: &Path, node_conf: &Path, script: &Path) -> Citizen {
         let stderr = File::create(dir.join("citizen.stderr")).unwrap();
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
+        let mut cmd = install::command();
         cmd.args([
             "--no-prelude",
             "--serve",
@@ -59,10 +61,10 @@ impl Citizen {
         ])
         .env("HOME", dir)
         .env("XDG_STATE_HOME", dir)
-        .env("MIX_NODE_CONFIG", node_conf)
-        .env("MIX_ETC", dir)
-        .env_remove("MIX_STATS")
-        .env_remove("MIX_SESSION_FD")
+        .env(paths::env::NODE_CONFIG, node_conf)
+        .env(paths::env::ETC, dir)
+        .env_remove(paths::env::STATS)
+        .env_remove(paths::env::SESSION_FD)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));
@@ -175,10 +177,10 @@ async fn serve_generations_each_record_their_counters_once() {
     citizen.terminate();
     broker.stop();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let output = install::command()
         .env("XDG_STATE_HOME", &dir.0)
         .env("HOME", &dir.0)
-        .env_remove("MIX_STATS")
+        .env_remove(paths::env::STATS)
         .args(["stats", "raw"])
         .output()
         .unwrap();

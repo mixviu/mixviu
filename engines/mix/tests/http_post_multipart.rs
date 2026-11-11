@@ -4,6 +4,8 @@
 //! (v0.103.12). Served by a one-shot local listener so the body is
 //! inspected end-to-end without any network beyond loopback.
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
 use std::process::Command;
@@ -48,9 +50,9 @@ fn multipart_body_reaches_the_server_well_formed() {
     let src = format!(
         "print(http_post_multipart(\"http://{addr}/up\", {{f: \"v\"}}, {{u: {{filename: \"a.txt\", content_type: \"text/plain\", data: string_to_bytes(\"hi\")}}}}).status)\n"
     );
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .args(["-c", &src])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix");
     server.join().expect("server thread");

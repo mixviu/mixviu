@@ -2,6 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Schema 3 function metadata must survive CLI aggregation and data rendering.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 #[test]
@@ -22,7 +24,7 @@ fn schema_three_functions_are_attributed_without_execution() {
     std::fs::write(&data, "name: \"demo\"\n").unwrap();
     std::fs::write(&broken, "fn broken(\n").unwrap();
     for format in ["--json", "--data"] {
-        let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+        let out = install::command()
             .args(["lint", format])
             .args([&source, &data, &broken])
             .output()

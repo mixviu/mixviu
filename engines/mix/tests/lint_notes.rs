@@ -7,6 +7,8 @@
 //! note that counted as a warning would stop fleet deploys the day the
 //! deprecation notes ship.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn write_temp(name: &str, source: &str) -> std::path::PathBuf {
@@ -16,10 +18,10 @@ fn write_temp(name: &str, source: &str) -> std::path::PathBuf {
 }
 
 fn lint(args: &[&str]) -> (i32, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .arg("lint")
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix lint");
     (

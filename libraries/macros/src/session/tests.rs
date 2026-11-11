@@ -281,8 +281,8 @@ fn created_file_survives_failed_or_incomplete_rescan() {
 
 #[test]
 fn process_handles_share_the_same_state() {
-    const CHILD: &str = "MIX_TEST_MACRO_SESSION_SHARING";
-    if std::env::var_os(CHILD).is_none() {
+    const CHILD: &str = paths::env::test::TEST_MACRO_SESSION_SHARING;
+    if paths::env::raw(CHILD).is_none() {
         let prefix = tempfile::tempdir().unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -291,7 +291,7 @@ fn process_handles_share_the_same_state() {
                 "--nocapture",
             ])
             .env(CHILD, "1")
-            .env("MIX_PREFIX", prefix.path())
+            .env(paths::env::PREFIX, prefix.path())
             .env("HOME", prefix.path())
             .output()
             .unwrap();
@@ -305,7 +305,7 @@ fn process_handles_share_the_same_state() {
         return;
     }
     assert!(
-        std::env::var_os("MIX_PREFIX").is_some(),
+        paths::env::raw(paths::env::PREFIX).is_some(),
         "session-sharing test needs an explicit prefix"
     );
     let a = Session::for_app("session-sharing-test");
@@ -465,7 +465,7 @@ fn new_creates_in_the_user_app_tier_and_refreshes_list() {
     let roots = Roots::resolve_with(|key| match key {
         "HOME" => Some(dir.path().into()),
         "XDG_CONFIG_HOME" => Some(dir.path().join("xdg")),
-        "MIX_PREFIX" => Some(dir.path().to_owned()),
+        paths::env::PREFIX => Some(dir.path().to_owned()),
         _ => None,
     })
     .unwrap();

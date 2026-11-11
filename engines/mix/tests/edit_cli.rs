@@ -12,6 +12,8 @@
 //! ambiguous, untouched · 3 usage / I/O.
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -30,10 +32,10 @@ fn seed(dir: &Path, name: &str, body: &str) -> PathBuf {
 }
 
 fn edit(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .arg("edit")
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix edit")
 }

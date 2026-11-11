@@ -10,6 +10,8 @@
 //! PRESENT (the script did run and saw `--version`).
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -19,8 +21,8 @@ use sha2::{Digest, Sha256};
 const RAN: &str = "SCRIPT-BODY-RAN";
 
 fn mix() -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_mix"));
-    c.env("MIX_STATS", "off");
+    let mut c = install::command();
+    c.env(paths::env::STATS, "off");
     c
 }
 
@@ -84,7 +86,7 @@ fn assert_version_line(o: &Output, name: &str, version: &str, body: &str) -> Str
 }
 
 const VERSIONED: &str =
-    "#!/opt/mixos/bin/mix\n-- deploy something\n-- version: 1.2.3\nprint(\"SCRIPT-BODY-RAN\")\n";
+    "#!/srv/fixture/bin/mix\n-- deploy something\n-- version: 1.2.3\nprint(\"SCRIPT-BODY-RAN\")\n";
 const UNVERSIONED: &str = "print(\"SCRIPT-BODY-RAN\")\n";
 
 #[test]
@@ -188,7 +190,7 @@ fn serve_version_exits_before_serving() {
     // or hang, so a clean one-line exit proves it stopped before serving.
     let o = mix()
         .args(["--serve", p.to_str().unwrap(), "--version"])
-        .env("MIX_NODED_URL", "ws://127.0.0.1:9/ws")
+        .env(paths::env::NODED_URL, "ws://127.0.0.1:9/ws")
         .output()
         .unwrap();
     assert_version_line(&o, "citizen.mix", "0.2.0", body);
@@ -244,7 +246,7 @@ fn script_version_query_is_cold() {
     let p = write(d.path(), "deploy.mix", VERSIONED);
     let control = mix()
         .args(["--no-prelude", "-c", "print(1)"])
-        .env("MIX_SESSION_FD", "99999")
+        .env(paths::env::SESSION_FD, "99999")
         .output()
         .unwrap();
     assert!(
@@ -253,7 +255,7 @@ fn script_version_query_is_cold() {
     );
     let o = mix()
         .args([p.to_str().unwrap(), "--version"])
-        .env("MIX_SESSION_FD", "99999")
+        .env(paths::env::SESSION_FD, "99999")
         .output()
         .unwrap();
     assert_eq!(
@@ -322,7 +324,7 @@ fn lint(args: &[&str]) -> (i32, String) {
 #[test]
 fn lint_notes_an_unversioned_shebang_or_bin_script() {
     let d = tempfile::tempdir().unwrap();
-    let shebang = write(d.path(), "tool.mix", "#!/opt/mixos/bin/mix\nprint(1)\n");
+    let shebang = write(d.path(), "tool.mix", "#!/srv/fixture/bin/mix\nprint(1)\n");
     let in_bin = write(d.path(), "_bin/deploy.mix", "print(1)\n");
     for p in [&shebang, &in_bin] {
         let (code, out) = lint(&["--deny-warnings", p.to_str().unwrap()]);

@@ -220,7 +220,9 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   access          Ask the kernel whether this process can access path using its effective uid/gid: mode is a non-empty, duplicate-free string of r/w/x/f letters (f = existence and is redundant when combined). Follows symlinks. Unlike inspecting stat().perm, this honours POSIX ACLs. Ordinary absence/denial returns false; malformed input or an unexpected syscall failure raises (v0.45.0).
   is_dir          Test if path is a directory
   is_file         Test if path is a regular file
-  mix_path        Resolve prefix/share/etc/var/run/cache or a logical path. Override > MIX_ROOT > layout.mx > uid/XDG defaults. Optional tier: system or user. Relative paths cannot escape
+  mix_prefix      Return the resolved installation prefix
+  mix_exe         Return the running interpreter's own executable path
+  mix_path        Resolve prefix/share/lib/etc/var/run/cache or a logical path. Override > MIX_ROOT > layout.mx > uid/XDG defaults. Optional tier: system or user. Relative paths cannot escape
   realpath        Canonicalise a path: resolve every symlink + `.`/`..` to the absolute real path (like `readlink -f` / realpath(3)). The path MUST exist. realpath(path) -> string | nil (nil ONLY when a component is missing; a permission/IO/symlink-loop/non-UTF-8 failure RAISES — v0.103.14). NORMALISATION ONLY, not a race-free authorization primitive: canonicalise-then-use is not atomic, so for an exec/open safety check, exec/open the RETURNED canonical path (which has no symlinks to re-traverse), not the original (v0.31.2)
   glob            List files matching a glob pattern (supports ** globstar in v0.2.1)
   ls              List directory entries

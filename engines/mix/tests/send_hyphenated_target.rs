@@ -18,6 +18,8 @@
 //! parse (one form errors out, the other does not).
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::{Command, Output};
 
 /// The exact runtime error the old parse produced. Its ABSENCE is the
@@ -25,9 +27,9 @@ use std::process::{Command, Output};
 const SUBTRACTION_ERROR: &str = "as number";
 
 fn mix(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix")
 }

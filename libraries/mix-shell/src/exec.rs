@@ -334,11 +334,11 @@ pub fn split_on_control_ops(s: &str) -> Vec<(Connector, &str)> {
 /// failed `cd` leaves the env untouched. Returns the shell exit code (0/1).
 pub fn builtin_cd(args: &[String]) -> i32 {
     let target = if args.is_empty() {
-        env::var("HOME").unwrap_or_else(|_| "/".to_string())
+        crate::env_string("HOME").unwrap_or_else(|_| "/".to_string())
     } else {
         let arg = args[0].as_str();
         if arg == "-" {
-            match env::var("OLDPWD") {
+            match crate::env_string("OLDPWD") {
                 Ok(p) => p,
                 Err(_) => {
                     eprintln!("cd: OLDPWD not set");
@@ -346,9 +346,9 @@ pub fn builtin_cd(args: &[String]) -> i32 {
                 }
             }
         } else if arg == "~" {
-            env::var("HOME").unwrap_or_default()
+            crate::env_string("HOME").unwrap_or_default()
         } else if let Some(rest) = arg.strip_prefix("~/") {
-            let home = env::var("HOME").unwrap_or_default();
+            let home = crate::env_string("HOME").unwrap_or_default();
             format!("{}/{}", home, rest)
         } else {
             arg.to_string()
@@ -1782,7 +1782,7 @@ fn expand_braces(tokens: Vec<LiteralToken>) -> Vec<LiteralToken> {
 /// empty, and stamps `quoted`/`op`/`assign`. It NEVER reconsiders structure — the
 /// operator/assign decisions were fixed in phase 1 from literal text alone.
 fn expand(tokens: Vec<LiteralToken>, vars: &dyn ShellVarResolver) -> Vec<Tok> {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = crate::env_string("HOME").unwrap_or_default();
     let mut out: Vec<Tok> = Vec::new();
     for tok in tokens {
         match tok {
@@ -3108,7 +3108,7 @@ mod redirect_tests {
     #[test]
     fn expand_tilde() {
         use SegSource::*;
-        let home = std::env::var("HOME").unwrap_or_default();
+        let home = crate::env_string("HOME").unwrap_or_default();
         let toks = expand(
             vec![word(
                 vec![
@@ -3649,7 +3649,7 @@ mod characterization {
     //     {end, /, space, tab}; otherwise literal ---
     #[test]
     fn tilde_expansion_rule() {
-        let home = std::env::var("HOME").unwrap_or_default();
+        let home = crate::env_string("HOME").unwrap_or_default();
         if home.is_empty() {
             // With HOME unset the tokenizer leaves `~` literal.
             assert_eq!(seg("echo ~", "").args, vec![s("~")]);

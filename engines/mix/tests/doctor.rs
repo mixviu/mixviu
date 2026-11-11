@@ -4,14 +4,16 @@
 //! check lines, and its exit status reflects health (0 when no ✗). The Bus line
 //! is environment-dependent (noded may or may not be up), so it is not asserted.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn doctor() -> std::process::Output {
-    // MIX_DOCTOR_SKIP_BUS keeps the run hermetic — no connection to a real
+    // env::DOCTOR_SKIP_BUS keeps the run hermetic — no connection to a real
     // broker if one happens to be configured on the machine running the suite.
-    Command::new(env!("CARGO_BIN_EXE_mix"))
+    install::command()
         .arg("doctor")
-        .env("MIX_DOCTOR_SKIP_BUS", "1")
+        .env(paths::env::DOCTOR_SKIP_BUS, "1")
         .output()
         .expect("spawn mix doctor")
 }

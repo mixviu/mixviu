@@ -4,6 +4,8 @@
 #[path = "support/pty.rs"]
 mod pty;
 
+#[path = "support/install.rs"]
+mod install;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -68,12 +70,12 @@ impl Shell {
         }
         let master = unsafe { File::from_raw_fd(master) };
         let slave = unsafe { File::from_raw_fd(slave) };
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
+        let mut cmd = install::command();
         pty::guard(&mut cmd);
         cmd.env("HOME", home.path())
-            .env("MIX_STATS", "off")
-            .env("MIX_EDITOR", editor)
-            .env_remove("MIX_SESSION_FD")
+            .env(paths::env::STATS, "off")
+            .env(paths::env::EDITOR, editor)
+            .env_remove(paths::env::SESSION_FD)
             .stdin(slave.try_clone().unwrap())
             .stdout(slave.try_clone().unwrap())
             .stderr(slave);
@@ -256,10 +258,10 @@ fn plain_eof_exits_zero() {
 #[test]
 fn fixture_job() {
     let _fixture = fixture_guard();
-    let Some(report) = std::env::var_os("TERMINAL_JOB_REPORT") else {
+    let Some(report) = paths::env::raw("TERMINAL_JOB_REPORT") else {
         return;
     };
-    if std::env::var("TERMINAL_JOB_IGNORE_HUP").as_deref() == Ok("1") {
+    if paths::env::raw("TERMINAL_JOB_IGNORE_HUP").and_then(|v| v.into_string().ok()).ok_or(std::env::VarError::NotPresent).as_deref() == Ok("1") {
         unsafe { libc::signal(libc::SIGHUP, libc::SIG_IGN) };
     }
     fs::write(report, std::process::id().to_string()).unwrap();
@@ -354,7 +356,7 @@ fn observed_exit_reserves_leader_for_session_cleanup() {
 #[allow(clippy::zombie_processes)]
 fn fixture_parent() {
     let _fixture = fixture_guard();
-    let Some(report) = std::env::var_os("TERMINAL_PARENT_REPORT") else {
+    let Some(report) = paths::env::raw("TERMINAL_PARENT_REPORT") else {
         return;
     };
     // No terminal and no editor: HUP/CONT on an orphaned stopped group cannot

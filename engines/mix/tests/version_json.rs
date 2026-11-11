@@ -4,13 +4,15 @@
 //! The release-B gate compares a recorded 40-hex source_commit against
 //! `git_sha_full`; these pins keep the contract shape stable.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 #[test]
 fn version_json_shape_and_full_sha() {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .args(["--version", "--json"])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix --version --json");
     assert!(out.status.success());
@@ -53,10 +55,10 @@ fn version_json_shape_and_full_sha() {
 /// the JSON answer names the binary (`mix`).
 #[test]
 fn embedded_marker_matches_version_json() {
-    let bin = env!("CARGO_BIN_EXE_mix");
+    let bin = install::exe();
     let out = Command::new(bin)
         .args(["--version", "--json"])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix --version --json");
     let answer: serde_json::Value =
@@ -85,9 +87,9 @@ fn embedded_marker_matches_version_json() {
 
 #[test]
 fn plain_version_line_unchanged() {
-    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let out = install::command()
         .args(["--version"])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("run mix --version");
     let s = String::from_utf8_lossy(&out.stdout);

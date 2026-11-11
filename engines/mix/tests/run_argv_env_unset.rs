@@ -15,15 +15,17 @@
 //! unique sentinel name means no false match on an unrelated inherited
 //! variable (the failure mode of the earlier DISPLAY-based test).
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const SENTINEL: &str = "MIX_TEST_ENV_UNSET_SENTINEL";
+const SENTINEL: &str = paths::env::test::TEST_ENV_UNSET_SENTINEL;
 
 #[test]
 fn env_nil_removes_inherited_sentinel_from_run_argv_family() {
-    let mix_bin = env!("CARGO_BIN_EXE_mix");
+    let mix_bin = install::exe();
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before epoch")
@@ -64,7 +66,7 @@ print("clear-set:" .. $s.ok .. ":" .. $s.stdout)
 
     let output = Command::new(mix_bin)
         .arg(&script_path)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .env(SENTINEL, "inherited")
         .output()
         .expect("failed to spawn mix binary");

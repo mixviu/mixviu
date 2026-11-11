@@ -25,7 +25,7 @@ use std::os::unix::fs::{FileExt, MetadataExt};
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
-const MARKER: &str = "MIX_SESSION_FD";
+use ::paths::env::SESSION_FD as MARKER;
 const SEALS: i32 = libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_WRITE | libc::F_SEAL_SEAL;
 const RPC: Duration = Duration::from_secs(2);
 // BROKER-020: renew every 5s, lease expires 15s after the last renewal.
@@ -123,7 +123,7 @@ fn quarantine_failed_bootstrap() {
 }
 
 fn consume_inner() -> Result<Option<Bootstrap>, &'static str> {
-    let Some(value) = std::env::var_os(MARKER) else {
+    let Some(value) = ::paths::env::raw(MARKER) else {
         return Ok(None);
     };
     // SAFETY: main is still single-threaded; no concurrent environment readers.

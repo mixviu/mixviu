@@ -9,6 +9,8 @@
 
 #![cfg(target_os = "linux")]
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -44,7 +46,8 @@ impl Sandbox {
         std::fs::create_dir_all(root.join("work")).unwrap();
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::set_permissions(root.join("bin"), std::fs::Permissions::from_mode(0o755)).unwrap();
-        std::fs::copy(env!("CARGO_BIN_EXE_mix"), root.join("bin/mix")).unwrap();
+        std::fs::copy(install::exe(), root.join("bin/mix")).unwrap();
+        std::fs::copy(install::prefix().join("env.mx"), root.join("env.mx")).unwrap();
         std::fs::set_permissions(root.join("bin/mix"), std::fs::Permissions::from_mode(0o755))
             .unwrap();
         if is_root() {
@@ -74,9 +77,10 @@ impl Sandbox {
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o644)).unwrap();
         let mut command = Command::new(self.root.join("bin/mix"));
         command
+            .env(paths::env::PREFIX, &self.root)
             .arg(&script)
             .current_dir(self.work())
-            .env("MIX_STATS", "off")
+            .env(paths::env::STATS, "off")
             .env("HOME", self.work())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

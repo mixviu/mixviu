@@ -109,12 +109,12 @@ fn marker_never_owns_stdio() {
 
 #[test]
 fn consume_scrub_helper() {
-    let Ok(expected) = std::env::var("MIX_TEST_BOOTSTRAP_SCRUB") else {
+    let Ok(expected) = crate::env_string(::paths::env::test::TEST_BOOTSTRAP_SCRUB) else {
         return;
     };
     let result = consume();
     assert_eq!(result.is_ok(), expected == "ok");
-    assert!(std::env::var_os(MARKER).is_none());
+    assert!(::paths::env::raw(MARKER).is_none());
     assert_eq!(unsafe { libc::fcntl(64, libc::F_GETFD) }, -1);
     for fd in 0..3 {
         assert!(unsafe { libc::fcntl(fd, libc::F_GETFD) } >= 0);
@@ -141,7 +141,7 @@ fn consume_closes_fd_and_scrubs_marker_on_success_and_failure() {
             ])
             .env(MARKER, marker)
             .env(
-                "MIX_TEST_BOOTSTRAP_SCRUB",
+                ::paths::env::test::TEST_BOOTSTRAP_SCRUB,
                 if valid && marker == "64" {
                     "ok"
                 } else {
@@ -299,6 +299,8 @@ fn resident_uses_configuration_captured_before_thread_start() {
     for forbidden in [
         "std::env::",
         "use std::env",
+        "::paths::env::raw",
+        "crate::env_string",
         "resolve_noded_url()",
         "native_endpoint()",
     ] {
@@ -317,7 +319,7 @@ fn resident_uses_configuration_captured_before_thread_start() {
         .split("fn environment_account")
         .next()
         .unwrap();
-    for forbidden in ["std::env::var", "use std::env", "dirs::"] {
+    for forbidden in ["std::env::var", "use std::env", "dirs::", "::paths::env::raw"] {
         assert!(!resolution.contains(forbidden));
     }
 }

@@ -4,13 +4,15 @@
 //! Before 2026-10-30 both were "", so a stdin loop could not tell a blank line
 //! from EOF and spun forever at EOF. Tested through the real binary's fd 0.
 
+#[path = "support/install.rs"]
+mod install;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn run(script: &str, stdin_bytes: &[u8]) -> std::process::Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = install::command()
         .args(["-c", script])
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

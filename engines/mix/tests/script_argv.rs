@@ -16,6 +16,8 @@
 //! Out-of-process, like env_default.rs — the contract is about how the binary
 //! is invoked, so it has to be invoked.
 
+#[path = "support/install.rs"]
+mod install;
 use std::process::Command;
 
 fn script() -> String {
@@ -26,9 +28,9 @@ fn script() -> String {
 }
 
 fn run(args: &[&str]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let output = install::command()
         .args(args)
-        .env("MIX_STATS", "off")
+        .env(paths::env::STATS, "off")
         .output()
         .expect("failed to spawn mix binary");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
