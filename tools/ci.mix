@@ -91,7 +91,8 @@ fn stage_test($mix)
   -- platform's crates in the cache.
   ensure_mix($mix)
   $abs = realpath($mix)
-  $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
+  $prefix = trim(run_argv_must([$mix, "tools/ci.mix", "stage-install"]))
+  $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs, MIX_PREFIX: $prefix}
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
@@ -205,6 +206,7 @@ fn stage_env()
     end
   end
   for $n in sort(keys($listed))
+    if not starts_with($n, "MIX_") and git_grep(["-l", "-F", "-w", $n, "--", "libraries/paths/src/env_names.rs"]) != "" then $used[$n] = true end
     if not has_key($used, $n) then
       push($bad, "registered but unused " + $n)
     end
