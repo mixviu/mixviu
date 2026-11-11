@@ -26,6 +26,7 @@ default = []
 mix = ["editor-model/mix"]
 
 [dependencies]
+action.workspace = true
 design.workspace = true
 edit.workspace = true
 editor-model.workspace = true

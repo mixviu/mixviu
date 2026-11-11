@@ -28,20 +28,20 @@ fn canonical_chord(text: &str) -> String {
 }
 
 pub fn reserved(chord: &str) -> bool {
-    let key = chord
-        .rsplit('+')
-        .next()
-        .unwrap_or(chord)
-        .to_ascii_lowercase();
     let parts: Vec<_> = chord.split('+').collect();
+    reserved_key(parts.last().unwrap_or(&chord), parts.contains(&"Ctrl"), parts.contains(&"Alt"), parts.contains(&"Shift"))
+}
+
+/// Toolkit-independent admission for physical and injected key events.
+pub fn reserved_key(key: &str, ctrl: bool, alt: bool, shift: bool) -> bool {
+    let key = key.to_ascii_lowercase();
     matches!(
         key.as_str(),
         "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
     ) || (matches!(
         key.as_str(),
         "arrowleft" | "arrowright" | "arrowup" | "arrowdown" | "left" | "right" | "up" | "down"
-    ) && !parts.contains(&"Shift")
-        && (parts.contains(&"Ctrl") || parts.contains(&"Alt")))
+    ) && !shift && (ctrl || alt))
 }
 
 fn ensure_not_user_fkey(chord: &str) {

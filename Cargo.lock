@@ -2246,6 +2246,7 @@ dependencies = [
 name = "editor"
 version = "0.1.2"
 dependencies = [
+ "action",
  "design",
  "edit",
  "editor-model",
