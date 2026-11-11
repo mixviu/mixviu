@@ -140,10 +140,29 @@ fn macro_key_reply(
 mod macro_provenance_tests {
     #[test]
     fn macro_replay_does_not_hide_other_refusals() {
-        for (origin, command, message) in [(false,"ced.ui.key","F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused"),(true,"ced.ui.key","Unknown key"),(true,"ced.execute","F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused")] {
-            let (rc,body,_) = super::macro_key_reply(origin,command,&serde_json::json!({"key":"F1"}),10,message.into(),None);
-            assert_eq!(rc,10);
-            assert_eq!(body,message);
+        for (origin, command, message) in [
+            (
+                false,
+                "ced.ui.key",
+                "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused",
+            ),
+            (true, "ced.ui.key", "Unknown key"),
+            (
+                true,
+                "ced.execute",
+                "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused",
+            ),
+        ] {
+            let (rc, body, _) = super::macro_key_reply(
+                origin,
+                command,
+                &serde_json::json!({"key":"F1"}),
+                10,
+                message.into(),
+                None,
+            );
+            assert_eq!(rc, 10);
+            assert_eq!(body, message);
         }
     }
     #[test]

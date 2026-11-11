@@ -72,12 +72,8 @@ fn stored_reserved_profiles_start_and_keep_valid_settings_without_rewriting() {
         );
         assert_eq!(loaded.values["keymaps.ced.file.save"], json!(["Ctrl+S"]));
         let mut authority = Authority::new(store, loaded).unwrap();
-        let described = settingsd::service::dispatch(
-            &mut authority,
-            "settings.describe",
-            "{}",
-        )
-        .unwrap();
+        let described =
+            settingsd::service::dispatch(&mut authority, "settings.describe", "{}").unwrap();
         assert!(described.is_object());
         for chord in ["F12", "Alt+ArrowLeft", "command+Left"] {
             let refused = registry::apply(
@@ -86,29 +82,49 @@ fn stored_reserved_profiles_start_and_keep_valid_settings_without_rewriting() {
                 &[],
             );
             assert!(refused.is_err(), "new write {chord} accepted");
-            let request=settings::ApplyRequest {
-                binding:binding(),expected_incarnation:authority.accepted.incarnation.clone(),expected_revision:authority.accepted.revision,
-                operation_id:"reserved-write".into(),changes:registry::Values::from([("keymaps.prefs.page.back".into(),json!([chord]))]),reset:vec![],request_digest:None,
+            let request = settings::ApplyRequest {
+                binding: binding(),
+                expected_incarnation: authority.accepted.incarnation.clone(),
+                expected_revision: authority.accepted.revision,
+                operation_id: "reserved-write".into(),
+                changes: registry::Values::from([(
+                    "keymaps.prefs.page.back".into(),
+                    json!([chord]),
+                )]),
+                reset: vec![],
+                request_digest: None,
             };
-            assert_eq!(authority.apply(request).unwrap_err()["status"],"validation_failed");
+            assert_eq!(
+                authority.apply(request).unwrap_err()["status"],
+                "validation_failed"
+            );
         }
     }
 }
 
 #[test]
 fn a_stored_mirror_with_reserved_keys_loads_offline_without_rewriting() {
-    use settingsd::mirror::{self,Cache,Origin};
-    let dir=tempfile::tempdir().unwrap();
-    let mut old=Accepted::initial(binding(),registry::Values::new()).unwrap();
-    old.values.insert("keymaps.prefs.page.back".into(),json!(["Alt+ArrowLeft","Ctrl+B"]));
+    use settingsd::mirror::{self, Cache, Origin};
+    let dir = tempfile::tempdir().unwrap();
+    let mut old = Accepted::initial(binding(), registry::Values::new()).unwrap();
+    old.values.insert(
+        "keymaps.prefs.page.back".into(),
+        json!(["Alt+ArrowLeft", "Ctrl+B"]),
+    );
     old.seal().unwrap();
-    let cache=Cache::of(&old,"authority").unwrap();
-    let bytes=strict::to_string_pretty(&cache).unwrap();
-    std::fs::write(dir.path().join(mirror::CACHE),&bytes).unwrap();
-    let (loaded,origin)=mirror::open(dir.path(),&binding(),"authority",|| anyhow::bail!("offline")).unwrap();
-    assert_eq!(origin,Origin::Cached);
-    assert_eq!(loaded.values["keymaps.prefs.page.back"],json!(["Ctrl+B"]));
-    assert_eq!(std::fs::read_to_string(dir.path().join(mirror::CACHE)).unwrap(),bytes);
+    let cache = Cache::of(&old, "authority").unwrap();
+    let bytes = strict::to_string_pretty(&cache).unwrap();
+    std::fs::write(dir.path().join(mirror::CACHE), &bytes).unwrap();
+    let (loaded, origin) = mirror::open(dir.path(), &binding(), "authority", || {
+        anyhow::bail!("offline")
+    })
+    .unwrap();
+    assert_eq!(origin, Origin::Cached);
+    assert_eq!(loaded.values["keymaps.prefs.page.back"], json!(["Ctrl+B"]));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(mirror::CACHE)).unwrap(),
+        bytes
+    );
     Authority::mirror(&loaded).unwrap();
 }
 

@@ -16,9 +16,7 @@ pub fn canonical_chord(text: &str) -> String {
 pub fn parse_chord(text: &str) -> Option<String> {
     let parts: Vec<_> = text.split('+').collect();
     let (key, mods) = parts.split_last()?;
-    if key.is_empty()
-        || !(key.bytes().all(|b| b.is_ascii_alphanumeric()) || ["=", "-", "/"].contains(key))
-    {
+    if key.is_empty() || key.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return None;
     }
     let mut flags = [false; 4];

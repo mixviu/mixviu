@@ -116,10 +116,10 @@ fn term_bundle_child() {
     let opened = invoke(
         &mut runtime,
         &rx,
-        "term.execute",
-        json!({"id":"terminal.find"}),
+        "term.intent",
+        json!({"id":"terminal","action":"command","value":"terminal.find"}),
     );
-    assert_eq!(opened.reply.unwrap().rc, 0);
+    assert_eq!(opened.model.unwrap()["find_open"],true);
     invoke(
         &mut runtime,
         &rx,
