@@ -11,6 +11,9 @@ use crate::{EditCommand, Event, Motion};
 /// What a key press does, if the editor handles it. `page` is the number of
 /// full rows (the Page Up and Page Down distance).
 pub fn key(key: Key, mods: Modifiers, page: usize) -> Option<Event> {
+    if toolkit::keymap::reserved(key, mods) {
+        return None;
+    }
     let extend = mods.shift;
     let word = mods.command;
     let mv = |to| Some(Event::Command(EditCommand::Move { to, extend }));

@@ -147,6 +147,9 @@ impl Input {
                     .as_str()
                     .and_then(egui::Key::from_name)
                     .ok_or("Unknown native key")?;
+                if toolkit::keymap::reserved(key, modifiers) {
+                    return Err(toolkit::keymap::RESERVED_MESSAGE.into());
+                }
                 for pressed in [true, false] {
                     now.push(egui::Event::Key {
                         key,
@@ -395,5 +398,5 @@ pub(crate) fn consume_chord(ctx: &egui::Context, chord: &str) -> bool {
         key if key.len() == 1 => key.to_ascii_uppercase(),
         key => key.into(),
     };
-    egui::Key::from_name(&name).is_some_and(|key| ctx.input_mut(|i| i.consume_key(modifiers, key)))
+    egui::Key::from_name(&name).is_some_and(|key| !toolkit::keymap::reserved(key, modifiers) && ctx.input_mut(|i| i.consume_key(modifiers, key)))
 }

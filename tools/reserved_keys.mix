@@ -15,6 +15,14 @@ fn inspect_bindings($v,$path,$binding=false)
 end
 for $p in split(trim(run_argv_must(["git","ls-files","apps","share/scenes"])),"\n")
   if ends_with($p,".json") then inspect_bindings(json_parse(read_file($p)),$p) end
+  if ends_with($p,".mix") and not ends_with($p,"-test.mix") then
+    $source=join(filter(split(read_file($p),"\n"),fn($line)=not starts_with($line,"```")),"\n")
+    for $token in mix_tokens($source)
+      if $token.kind=="string" and reserved_chord(substr($token.text,1,len($token.text)-2)) then
+        raise("RESERVED_KEY",$p..":"..to_string($token.line)..": reserved key literal "..$token.text)
+      end
+    end
+  end
 end
 $r=run_argv([args()[0] ?? "mix","apps/term/reserved-test.mix"],{stdout:"inherit",stderr:"inherit"})
 if $r.exit_code!=0 then exit(1) end
