@@ -5696,6 +5696,7 @@ version = "0.1.2"
 dependencies = [
  "decor",
  "dispatcher",
+ "drm-ffi",
  "drivers",
  "frames",
  "graphics",

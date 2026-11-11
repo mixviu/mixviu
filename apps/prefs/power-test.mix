@@ -1,0 +1,21 @@
+-- host: viu
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$n=require("navigation.mix")
+$c=require("core.mix")
+$p=$n.page("power")
+$rows=[]
+for $sec in $p.sections $rows=concat($rows,$sec.rows) end
+$row=filter($rows,fn($r)=$r.id=="screen_off")[0]
+if $row.backend!=nil or $row.key!="power.screen_off_s" then raise("POWER","Screen blank row must be live") end
+$options=map($row.control.options,fn($o)=$o.value)
+if not deep_eq($options,[120,300,600,900,1800,nil]) then raise("POWER","Existing option list changed") end
+$s=$c.initial("example")
+$s.role="authority";$s.stale=false;$s.incarnation="inc";$s.revision="9007199254740993"
+$s.catalog=[{path:"power.screen_off_s",kind:"int",class:"applied",min:1,max:4294967295,step:1,default:nil}]
+$s.values={"power.screen_off_s":nil}
+for $value in $options
+  $request=$c.admitted($s,"power.screen_off_s",$value)
+  if not deep_eq($request.changes["power.screen_off_s"],$value) or $request.expected_revision!=$s.revision then raise("POWER","Blank setting needs exact fenced persistence") end
+  if $value==nil and not contains($request.reset,"power.screen_off_s") then raise("POWER","Never resets to the null default") end
+end
+print("prefs power: live blank row, existing options, never and fenced settings writes pass")

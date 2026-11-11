@@ -65,7 +65,8 @@ impl BlankPolicy {
 
     /// Keep ownership of a waking press through its matching release, even
     /// after a Bus unblank or another blank. Touch motion follows its down.
-    fn swallow(&mut self, edge: Edge) -> bool {
+    /// Policy transition only; backend wake and timer rearming belong to the caller.
+    pub fn consume_edge(&mut self, edge: Edge) -> bool {
         match edge {
             Edge::Press(hold) => {
                 if self.blanked { self.swallowed.insert(hold); }
@@ -122,7 +123,7 @@ pub fn activity(lp: &mut Loop) {
 /// Before regions, bindings, focus changes and client delivery.
 pub fn consume(lp: &mut Loop, edge: Edge) -> bool {
     let wake = lp.inner.comp.blank.blanked;
-    let consumed = lp.inner.comp.blank.swallow(edge);
+    let consumed = lp.inner.comp.blank.consume_edge(edge);
     if wake && let Err(error) = set(lp, false, "input") {
         warn!("panel unblank: {error}");
     }
@@ -210,12 +211,12 @@ mod tests {
     fn waking_press_repeat_release_and_touch_are_owned() {
         for hold in [Hold::Key(30), Hold::Button(272), Hold::Touch(1), Hold::TabletTip, Hold::TabletButton(1)] {
             let mut p = BlankPolicy { blanked: true, ..Default::default() };
-            assert!(p.swallow(Edge::Press(hold)));
+            assert!(p.consume_edge(Edge::Press(hold)));
             p.blanked = false;
-            assert!(p.swallow(Edge::Press(hold)));
-            assert!(p.swallow(Edge::Motion(hold)));
-            assert!(p.swallow(Edge::Release(hold)));
-            assert!(!p.swallow(Edge::Press(hold)));
+            assert!(p.consume_edge(Edge::Press(hold)));
+            assert!(p.consume_edge(Edge::Motion(hold)));
+            assert!(p.consume_edge(Edge::Release(hold)));
+            assert!(!p.consume_edge(Edge::Press(hold)));
         }
     }
 }

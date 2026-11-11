@@ -890,3 +890,17 @@ fn with_event_seq_numbers_a_record_and_changes_nothing_else() {
         }
     );
 }
+#[test]
+fn screen_blank_timeout_and_read_only_display_props() {
+    use super::{screen_off_value, validate_set_request, SetValidationError};
+    assert_eq!(screen_off_value(&serde_json::Value::Null), Ok(None));
+    for seconds in [1_u64, 120, 4294967295] {
+        assert_eq!(screen_off_value(&serde_json::json!(seconds)), Ok(Some(seconds)));
+    }
+    for value in [serde_json::json!(0), serde_json::json!(-1), serde_json::json!(1.5), serde_json::json!(true), serde_json::json!(4294967296_u64)] {
+        assert!(screen_off_value(&value).is_err());
+    }
+    for path in ["display.blanked", "display.blank_supported"] {
+        assert_eq!(validate_set_request(path, &serde_json::json!(true)), Err(SetValidationError::ReadOnly));
+    }
+}

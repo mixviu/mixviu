@@ -214,6 +214,10 @@ fn email_uses_native_registry_admission_and_redacts_credentials() {
 fn settings_fences_appearance_and_navigation_use_the_embedded_native_path() {
     for (name, source) in [
         (
+            "power-test.mix",
+            include_str!("../../../apps/prefs/power-test.mix"),
+        ),
+        (
             "agent-seat-test.mix",
             include_str!("../../../apps/prefs/agent-seat-test.mix"),
         ),

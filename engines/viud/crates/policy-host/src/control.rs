@@ -202,6 +202,12 @@ fn named_window(op: &WindowOp) -> Option<u64> {
 }
 
 fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
+    if let WindowOp::DisplayBlank { on } = op {
+        return Some(match world::comp::blank::set(lp, *on, "bus") {
+            Ok(()) => ControlReply::Body(json!({"blanked": lp.inner.comp.blank.blanked})),
+            Err(reason) => ControlReply::refused("blank_failed", json!({"reason": reason})),
+        });
+    }
     // A session lock refuses every command that names or changes a window, and
     // the workspace switch.
     if let Some(locked) = policy::window::locked_refusal(op, world::comp::session_lock::active(lp))
@@ -209,6 +215,7 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
         return Some(locked);
     }
     match op {
+        WindowOp::DisplayBlank { .. } => unreachable!("display handled before lock gate"),
         WindowOp::TilesGet { output, workspace } => Some(world::comp::geometry::tiles_get(
             &lp.inner.comp,
             &lp.inner.host_space().state,
@@ -1112,6 +1119,21 @@ fn set_leaf(
             "absent",
             "generation applies to windows.s<id>.* paths only",
         )));
+    }
+    if path == "power.screen_off_s" {
+        let wanted = match comp_model::observation::screen_off_value(value) {
+            Ok(value) => value,
+            Err(error) => return Some(ControlReply::Validation(error)),
+        };
+        let old = lp.inner.comp.blank.timeout();
+        world::comp::blank::configure(lp, wanted);
+        return Some(ControlReply::Set {
+            path: path.into(),
+            old: comp_model::observation::prop_opt_u64(old),
+            new: comp_model::observation::prop_opt_u64(wanted),
+            // The port persists this setting through settingsd before admission.
+            persisted: Some(true),
+        });
     }
     if let Some(target) = parse_workspaces_set_path(path) {
         if world::comp::session_lock::active(lp) {

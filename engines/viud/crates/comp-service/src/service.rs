@@ -129,6 +129,7 @@ impl LongReply {
 /// dispatch boundary; the engine applies policy (policy) and executes
 /// its effects before answering.
 pub trait CompEngine {
+    fn screen_off_changed(&mut self, _seconds: Option<u64>) {}
     fn native_chrome_theme(&mut self, _look: &decor::appearance::Look) {}
     fn native_chrome_changed(&mut self) {}
     /// A read snapshot whose volatile leaves cover `scopes`; `None` when the
@@ -214,6 +215,9 @@ impl PortService {
         while let Ok(command) = self.source.try_recv() {
             match command {
                 PortCommand::Chrome(update) => {
+                    if let Some(seconds) = update.screen_off() {
+                        engine.screen_off_changed(seconds);
+                    }
                     if let Some(look) = update.look() {
                         engine.native_chrome_theme(look);
                     }

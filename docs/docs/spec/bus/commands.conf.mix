@@ -646,6 +646,7 @@
     {name:"comp.props.watch", owner:"viud", version:"0.1.11", status:"accepted", class:"query", schema:"pending"},
     {name:"comp.pointer.watch", owner:"viud", version:"0.1.11", status:"accepted", class:"query", schema:"pending"},
     {name:"comp.props.set", owner:"viud", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
+    {name:"comp.display.blank", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.region.select", owner:"viud", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.input.sequence", owner:"viud", version:"0.1.11", status:"accepted", class:"input", schema:"pending"},
     {name:"comp.motion.run", owner:"viud", version:"0.2.0", status:"draft", class:"intent", schema:"pending"},

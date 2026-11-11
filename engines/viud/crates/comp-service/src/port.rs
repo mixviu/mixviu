@@ -1247,6 +1247,30 @@ async fn worker_loop<F, Fut, C>(
                         args: command.args.clone(), body: command.body.clone(), headers: command.headers.clone(),
                     });
                 }
+                if command.command == "comp.props.set"
+                    && matches!(classify(&command.command, &command.args, body_is_malformed(&command.body)), Ok(Request::Set { ref path, .. }) if path == "power.screen_off_s")
+                {
+                    let Ok(permit) = Arc::clone(&responder_permits).try_acquire_owned() else {
+                        queue_reply(&reply_sender, &reply_timeouts, PendingReply::new(command, error("busy")));
+                        continue;
+                    };
+                    let client = Arc::clone(&client);
+                    let ingress = ingress.clone();
+                    let replies = reply_sender.clone();
+                    let timeouts = Arc::clone(&reply_timeouts);
+                    responders.spawn(async move {
+                        let _permit = permit;
+                        let reply = match persist_screen_off(client.as_ref(), &command.args["value"]).await {
+                            Ok(()) => match ingress.request_set_fenced("power.screen_off_s".into(), command.args["value"].clone(), None) {
+                                Ok(admission) => admission.receive().await.map(ControlReply::into_wire).unwrap_or_else(|_| error("busy")),
+                                Err(_) => error("busy"),
+                            },
+                            Err(reason) => ControlReply::refused("settings_unavailable", json!({"reason": reason})).into_wire(),
+                        };
+                        queue_reply(&replies, &timeouts, PendingReply::new(command, reply));
+                    });
+                    continue;
+                }
                 dispatch_incoming(
                     &ingress,
                     &mut responders,
@@ -1283,6 +1307,26 @@ async fn worker_loop<F, Fut, C>(
     fire_task.abort();
     let _ = fire_task.await;
     graceful_client_shutdown(client.as_ref()).await;
+}
+
+/// Persist on the existing supervised Bus connection, off the compositor loop.
+/// Settingsd owns this key just as it owns agent_seat.*. Never silently save a
+/// second copy or apply a write that settingsd has refused.
+async fn persist_screen_off<C: WorkerClient>(client: &C, value: &Value) -> Result<(), String> {
+    let client = client.chrome_client().ok_or("settings connection unavailable")?;
+    let binding = settings::session::binding().map_err(|e| e.message)?;
+    let operation_id = format!("comp-power-{}", random_instance_id()?);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        let current = client.call("settingsd", "settings.get", json!({"binding": binding, "view": "values", "keys": ["power.screen_off_s"]}))
+            .await.map_err(|e| e.to_string())?;
+        let incarnation = current.get("incarnation").and_then(Value::as_str).ok_or("settings incarnation missing")?;
+        let revision = current.get("revision").and_then(Value::as_str).ok_or("settings revision missing")?;
+        client.call("settingsd", "settings.apply", json!({
+            "binding": binding, "expected_incarnation": incarnation, "expected_revision": revision,
+            "operation_id": operation_id, "changes": {"power.screen_off_s": value}, "reset": []
+        })).await.map_err(|e| e.to_string())?;
+        Ok(())
+    }).await.map_err(|_| "settings write outcome unknown; read power.screen_off_s before retrying".to_owned())?
 }
 
 fn classify_connect_error(service: &str, error: SupervisedError) -> ConnectAttemptError {

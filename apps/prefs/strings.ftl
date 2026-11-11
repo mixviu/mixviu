@@ -839,7 +839,6 @@ backend-audio = the MixViu audio service over PipeWire
 backend-osk = a MixViu on-screen keyboard
 backend-hostd-power-profiles = hostd power profiles
 backend-hostd-upower = hostd battery reading (UPower)
-backend-viud-idle = viud screen-off timer (idle and DPMS)
 backend-hostd-suspend = hostd idle and suspend
 store-unread = Reading settings…
 store-disconnected = Not connected to the Bus, so changes cannot be saved.

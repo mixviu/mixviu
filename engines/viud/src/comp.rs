@@ -1022,6 +1022,11 @@ impl Engine<'_> {
 }
 
 impl CompEngine for Engine<'_> {
+    fn screen_off_changed(&mut self, seconds: Option<u64>) {
+        if self.lp.inner.comp.blank.timeout() != seconds {
+            world::comp::blank::configure(self.lp, seconds);
+        }
+    }
     fn native_chrome_theme(&mut self, look: &decor::appearance::Look) {
         world::comp::region::follow(&look.theme);
         if self.lp.inner.comp.set_tile_gap(look.gaps) {

@@ -26,7 +26,7 @@ pub(super) const KEYS: &[K] = &[
     ),
     k(
         "power.screen_off_s",
-        OneOf(&[120, 300, 600, 900, 1800]),
+        Int { min: 1, max: u32::MAX as i64, step: 1 },
         D::Null,
         "viud",
     ),
