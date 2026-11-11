@@ -91,7 +91,8 @@ fn stage_test($mix)
   -- platform's crates in the cache.
   ensure_mix($mix)
   $abs = realpath($mix)
-  $prefix = trim(run_argv_must([$mix, "tools/ci.mix", "stage-install"]))
+  $staging = require("stage_env.mix")
+  $prefix = $staging.create()
   $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs, MIX_PREFIX: $prefix}
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)

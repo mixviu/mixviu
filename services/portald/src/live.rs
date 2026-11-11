@@ -8,7 +8,9 @@ use crate::appearance::{NAMESPACE, Projection, Values};
 use crate::cache;
 use crate::portal::{self, Portal, PortalSignals};
 use crate::screencast;
-use crate::screencast::consent::{self, Consent, Policy};
+use crate::screencast::consent::Policy;
+#[cfg(feature = "screencast")]
+use crate::screencast::consent::{self, Consent};
 #[cfg(feature = "screencast")]
 use crate::screencast::{ScreenCast, session::Sessions};
 use crate::status::{self, Origin, Shared};
@@ -164,16 +166,16 @@ pub async fn serve(
         config.screencast.is_none(),
         "built without the screencast feature"
     );
-    let mut builder = zbus::connection::Builder::address(config.address.as_str())?
+    let builder = zbus::connection::Builder::address(config.address.as_str())?
         .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?;
     #[cfg(feature = "screencast")]
-    if let Some(policy) = config.screencast {
+    let builder = if let Some(policy) = config.screencast {
         consent::install(Consent::new(policy));
-        builder = builder.serve_at(
+        builder.serve_at(
             portal::OBJECT_PATH,
             ScreenCast::with_max_framerate(sessions.clone(), config.screencast_max_framerate),
-        )?;
-    }
+        )?
+    } else { builder };
     let connection = builder.build().await?;
     // Interfaces are exported before the name, and an existing owner is refused
     // rather than queued or replaced.
