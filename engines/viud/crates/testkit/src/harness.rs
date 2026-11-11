@@ -592,6 +592,20 @@ impl Harness {
     pub fn key(&mut self, keycode: u32, pressed: bool, locked: bool) -> bool {
         use smithay::backend::input::KeyState;
         use smithay::utils::SERIAL_COUNTER;
+        // TestHost has no production Loop/backend. Exercise the same policy
+        // gate before xkb/bindings/client delivery, and model a successful
+        // backend-free wake. Production injection owns the timer and CRTC call.
+        let was_blanked = self.wire.inner.comp.blank.blanked;
+        let consumed = self.wire.inner.comp.blank.consume_edge(
+            world::comp::blank::Edge::from_key(keycode, pressed),
+        );
+        if was_blanked {
+            self.wire.inner.comp.blank.blanked = false;
+        }
+        if consumed {
+            self.roundtrip();
+            return true;
+        }
         let keyboard = self
             .wire
             .state
