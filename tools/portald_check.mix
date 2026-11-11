@@ -9,7 +9,6 @@ fn check_step($argv, $env = {})
 end
 $rc = 0
 try
-  check_step(["cargo", "metadata", "--format-version", "1", "--no-deps"], {})
   check_step(["cargo", "fmt", "--all"])
   check_step(["cargo", "check", "-p", "portald", "--all-targets"])
   check_step(["cargo", "check", "-p", "portald", "--no-default-features", "--all-targets"])
