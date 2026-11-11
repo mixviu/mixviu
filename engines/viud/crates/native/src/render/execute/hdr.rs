@@ -284,7 +284,11 @@ fn enum_value(drm: &DrmDeviceFd, handle: property::Handle, name: &str) -> Result
 /// A property handle by name on a connector or CRTC, or `None` when the object
 /// lacks it. Absence is normal (not every connector exposes `Colorspace` or
 /// `max bpc`, not every CRTC a `DEGAMMA_LUT`) and must not fail the whole pass.
-pub(super) fn opt_prop<H: ResourceHandle>(drm: &DrmDeviceFd, conn: H, name: &str) -> Option<property::Handle> {
+pub(super) fn opt_prop<H: ResourceHandle>(
+    drm: &DrmDeviceFd,
+    conn: H,
+    name: &str,
+) -> Option<property::Handle> {
     prop_handle(drm, conn, name).ok()
 }
 
@@ -521,7 +525,10 @@ pub fn apply_connector_props(
     }
     if with_luts {
         outcome.crtc_color = format!("{} -> cleared", outcome.crtc_color);
-        info!("CRTC {crtc:?}: cleared stale colour blobs (including a prior crashed blank owner): {}", outcome.crtc_color);
+        info!(
+            "CRTC {crtc:?}: cleared stale colour blobs (including a prior crashed blank owner): {}",
+            outcome.crtc_color
+        );
     }
     // The HDR blob is intentionally leaked for as long as the property references
     // it; it is replaced (or cleared) by the next pass on this connector.

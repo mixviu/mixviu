@@ -1316,7 +1316,10 @@ async fn worker_loop<F, Fut, C>(
 /// Persist on the existing supervised Bus connection, off the compositor loop.
 /// Settingsd owns this key just as it owns agent_seat.*. Never silently save a
 /// second copy or apply a write that settingsd has refused.
-async fn persist_screen_off<C: WorkerClient + ?Sized>(client: &C, value: &Value) -> Result<(), String> {
+async fn persist_screen_off<C: WorkerClient + ?Sized>(
+    client: &C,
+    value: &Value,
+) -> Result<(), String> {
     let client = client
         .chrome_client()
         .ok_or("settings connection unavailable")?;

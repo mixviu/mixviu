@@ -24,8 +24,8 @@
 
 pub(crate) mod diagnostics;
 
-pub mod hdr;
 pub mod blank;
+pub mod hdr;
 pub(crate) mod late_latch;
 
 use crate::context::render::NativeRenderContext;

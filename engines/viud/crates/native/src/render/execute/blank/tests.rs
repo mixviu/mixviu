@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use super::*;
-use std::{cell::{Cell, RefCell}, collections::BTreeMap};
+use std::{
+    cell::{Cell, RefCell},
+    collections::BTreeMap,
+};
 
 #[derive(Default)]
 struct Fake {
@@ -14,22 +17,36 @@ struct Fake {
 }
 impl Fake {
     fn ctm() -> Self {
-        Self { properties: [("CTM", 1), ("DEGAMMA_LUT", 2), ("GAMMA_LUT", 3)].into(), ..Default::default() }
+        Self {
+            properties: [("CTM", 1), ("DEGAMMA_LUT", 2), ("GAMMA_LUT", 3)].into(),
+            ..Default::default()
+        }
     }
 }
 impl Surface for Fake {
-    fn property(&self, name: &str) -> Option<u32> { self.properties.get(name).copied() }
-    fn value(&self, h: u32) -> Option<u64> { self.values.borrow().get(&h).copied() }
+    fn property(&self, name: &str) -> Option<u32> {
+        self.properties.get(name).copied()
+    }
+    fn value(&self, h: u32) -> Option<u64> {
+        self.values.borrow().get(&h).copied()
+    }
     fn blob(&self, bytes: &mut [u8]) -> Result<u64, String> {
-        self.blobs.borrow_mut().push(bytes.to_vec()); Ok(99)
+        self.blobs.borrow_mut().push(bytes.to_vec());
+        Ok(99)
     }
     fn commit(&self, props: &[(u32, u64)], test: bool) -> Result<(), String> {
         self.commits.borrow_mut().push((test, props.to_vec()));
-        if self.refuse.get() == Some(test) { return Err("refused".into()); }
-        if !test { self.values.borrow_mut().extend(props.iter().copied()); }
+        if self.refuse.get() == Some(test) {
+            return Err("refused".into());
+        }
+        if !test {
+            self.values.borrow_mut().extend(props.iter().copied());
+        }
         Ok(())
     }
-    fn destroy(&self, b: u64) { self.destroyed.borrow_mut().push(b); }
+    fn destroy(&self, b: u64) {
+        self.destroyed.borrow_mut().push(b);
+    }
 }
 
 #[test]
@@ -40,14 +57,18 @@ fn ctm_is_nine_zero_coefficients_and_wins_over_gamma() {
     assert_eq!(f.values.borrow().get(&1), Some(&99));
     assert_eq!(f.values.borrow().get(&2), Some(&0));
     assert_eq!(f.values.borrow().get(&3), Some(&0));
-    assert_eq!(f.commits.borrow().iter().map(|c| c.0).collect::<Vec<_>>(), [true, false]);
+    assert_eq!(
+        f.commits.borrow().iter().map(|c| c.0).collect::<Vec<_>>(),
+        [true, false]
+    );
 }
 
 #[test]
 fn gamma_uses_advertised_lut_size() {
     let f = Fake {
         properties: [("GAMMA_LUT", 3), ("GAMMA_LUT_SIZE", 4)].into(),
-        values: RefCell::new([(4, 256)].into()), ..Default::default()
+        values: RefCell::new([(4, 256)].into()),
+        ..Default::default()
     };
     assert_eq!(load(&f).unwrap(), (3, 99));
     assert_eq!(f.blobs.borrow()[0], vec![0; 256 * 8]);
@@ -57,7 +78,8 @@ fn gamma_uses_advertised_lut_size() {
 fn no_property_or_invalid_gamma_size_never_commits() {
     let mut f = Fake::default();
     assert!(load(&f).is_err());
-    f.properties.extend([("GAMMA_LUT", 3), ("GAMMA_LUT_SIZE", 4)]);
+    f.properties
+        .extend([("GAMMA_LUT", 3), ("GAMMA_LUT_SIZE", 4)]);
     for size in [0, u64::MAX] {
         f.values.borrow_mut().insert(4, size);
         assert!(load(&f).is_err());
@@ -95,7 +117,10 @@ fn pause_shutdown_clear_uses_the_owned_property_then_resume_reloads() {
     assert_eq!(*f.destroyed.borrow(), [blob]);
     load(&f).unwrap();
     assert_eq!(f.values.borrow().get(&h), Some(&99));
-    assert_eq!(f.commits.borrow().iter().map(|c| c.0).collect::<Vec<_>>(), [true, false, true, false, true, false]);
+    assert_eq!(
+        f.commits.borrow().iter().map(|c| c.0).collect::<Vec<_>>(),
+        [true, false, true, false, true, false]
+    );
 }
 
 #[test]
@@ -136,11 +161,15 @@ struct FakeDevice {
 impl AtomicDevice for FakeDevice {
     fn commit(&self, changes: &[Change], test: bool) -> Result<(), String> {
         self.tests.borrow_mut().push(test);
-        if self.refuse.get() == Some(test) { return Err("one CRTC refused".into()); }
+        if self.refuse.get() == Some(test) {
+            return Err("one CRTC refused".into());
+        }
         if !test {
             let mut next = self.values.borrow().clone();
             for change in changes {
-                for (h, v) in &change.props { next.insert((change.crtc.into(), *h), *v); }
+                for (h, v) in &change.props {
+                    next.insert((change.crtc.into(), *h), *v);
+                }
             }
             *self.values.borrow_mut() = next;
         }
@@ -149,10 +178,13 @@ impl AtomicDevice for FakeDevice {
 }
 
 fn two_outputs(value: u64) -> Vec<Change> {
-    [1, 2].into_iter().map(|raw| Change {
-        crtc: std::num::NonZeroU32::new(raw).unwrap().into(),
-        props: vec![(3, value)],
-    }).collect()
+    [1, 2]
+        .into_iter()
+        .map(|raw| Change {
+            crtc: std::num::NonZeroU32::new(raw).unwrap().into(),
+            props: vec![(3, value)],
+        })
+        .collect()
 }
 
 #[test]
@@ -162,7 +194,14 @@ fn two_output_refusal_never_partially_blanks_or_unblanks() {
         f.refuse.set(Some(fail_test));
         assert!(transaction(&f, &two_outputs(99)).is_err());
         assert!(f.values.borrow().is_empty());
-        assert_eq!(f.tests.borrow().as_slice(), if fail_test { &[true][..] } else { &[true, false][..] });
+        assert_eq!(
+            f.tests.borrow().as_slice(),
+            if fail_test {
+                &[true][..]
+            } else {
+                &[true, false][..]
+            }
+        );
         f.tests.borrow_mut().clear();
         f.values.borrow_mut().extend([((1, 3), 99), ((2, 3), 99)]);
         assert!(transaction(&f, &two_outputs(0)).is_err());

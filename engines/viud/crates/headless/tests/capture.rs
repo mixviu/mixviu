@@ -229,8 +229,7 @@ impl SettingsFixture {
     fn start(bus: &Bus) -> Self {
         let state = bus.root.join("settings-fixture.json");
         let child = Command::new(
-            std::env::var_os("MIX_TEST_MIX_EXE")
-                .unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
         )
         .arg("--serve")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/settings-fixture.mix"))
@@ -254,13 +253,19 @@ impl SettingsFixture {
             );
             assert!(output.status.success(), "{output:?}");
             let reply: Value = serde_json::from_str(
-                String::from_utf8_lossy(&output.stdout).lines().last().unwrap(),
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .last()
+                    .unwrap(),
             )
             .unwrap();
             if reply["rc"] == 0 {
                 return fixture;
             }
-            assert!(Instant::now() < deadline, "settings fixture registration: {reply}");
+            assert!(
+                Instant::now() < deadline,
+                "settings fixture registration: {reply}"
+            );
             thread::sleep(Duration::from_millis(20));
         }
     }

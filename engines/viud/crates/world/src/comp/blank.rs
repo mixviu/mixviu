@@ -136,7 +136,9 @@ impl BlankPolicy {
 pub fn set_supported(lp: &mut Loop, supported: bool) {
     if lp.inner.comp.blank.supported != supported {
         lp.inner.comp.blank.supported = supported;
-        lp.inner.comp.settings_changed("display.blank_supported", "backend");
+        lp.inner
+            .comp
+            .settings_changed("display.blank_supported", "backend");
     }
 }
 

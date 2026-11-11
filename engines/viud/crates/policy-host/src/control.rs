@@ -204,8 +204,12 @@ fn named_window(op: &WindowOp) -> Option<u64> {
 fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
     if let WindowOp::DisplayBlank { on } = op {
         return Some(match world::comp::blank::set(lp, *on, "bus") {
-            Ok(()) => ControlReply::Body(serde_json::json!({"blanked": lp.inner.comp.blank.blanked})),
-            Err(reason) => ControlReply::refused("blank_failed", serde_json::json!({"reason": reason})),
+            Ok(()) => {
+                ControlReply::Body(serde_json::json!({"blanked": lp.inner.comp.blank.blanked}))
+            }
+            Err(reason) => {
+                ControlReply::refused("blank_failed", serde_json::json!({"reason": reason}))
+            }
         });
     }
     // A session lock refuses every command that names or changes a window, and
