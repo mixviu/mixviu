@@ -161,7 +161,12 @@ fn json_stdout(output: &Output) -> Value {
 #[test]
 fn mesh_version_flags_exit_before_opening_a_database() {
     for flag in ["--version", "-V"] {
-        let output = run(&strings(&["--secrets-db", "/nonexistent/never-open.db", flag, "--json"]));
+        let output = run(&strings(&[
+            "--secrets-db",
+            "/nonexistent/never-open.db",
+            flag,
+            "--json",
+        ]));
         assert!(output.status.success());
         assert!(output.stderr.is_empty());
         let report = json_stdout(&output);
@@ -338,27 +343,51 @@ fn throwaway_genesis_sign_verify_tamper_and_epoch_floor() {
     let signed_path = dir.path().join("inventory.signed");
     let invoke = |command: &[String]| {
         let mut args = strings(&[
-            "--secrets-db", db.to_str().unwrap(), "--mesh", "example.internal",
+            "--secrets-db",
+            db.to_str().unwrap(),
+            "--mesh",
+            "example.internal",
         ]);
         args.extend_from_slice(command);
         run(&args)
     };
     let created = invoke(&strings(&["genesis"]));
-    assert!(created.status.success(), "{}", String::from_utf8_lossy(&created.stderr));
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
     let public = invoke(&strings(&["pubkey"]));
     assert!(public.status.success());
     let public = String::from_utf8(public.stdout).unwrap();
     std::fs::write(&inventory, authored_text("192.0.2.5")).unwrap();
-    let sign = || invoke(&strings(&[
-        "sign", inventory.to_str().unwrap(), "--out", signed_path.to_str().unwrap(),
-        "--recovery-generation", "0",
-    ]));
+    let sign = || {
+        invoke(&strings(&[
+            "sign",
+            inventory.to_str().unwrap(),
+            "--out",
+            signed_path.to_str().unwrap(),
+            "--recovery-generation",
+            "0",
+        ]))
+    };
     let result = sign();
-    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
-    let verify = || run(&strings(&[
-        "--secrets-db", "/nonexistent/never-read-real-secrets.db",
-        "verify", signed_path.to_str().unwrap(), "--genesis-pub-base64", public.trim(), "--json",
-    ]));
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let verify = || {
+        run(&strings(&[
+            "--secrets-db",
+            "/nonexistent/never-read-real-secrets.db",
+            "verify",
+            signed_path.to_str().unwrap(),
+            "--genesis-pub-base64",
+            public.trim(),
+            "--json",
+        ]))
+    };
     assert!(verify().status.success());
     let original = std::fs::read(&signed_path).unwrap();
     let first = SignedInventory::parse(&original).unwrap();
@@ -373,10 +402,15 @@ fn throwaway_genesis_sign_verify_tamper_and_epoch_floor() {
         last_recovery_generation: 0,
         last_canonical_hash: Some(first.payload.canonical_blake3()),
     };
-    assert!(first.verify(&state).is_ok(), "identical replay is idempotent");
+    assert!(
+        first.verify(&state).is_ok(),
+        "identical replay is idempotent"
+    );
 
     // One byte in the authenticated member address changes, leaving valid JSON.
-    let tampered = String::from_utf8(original).unwrap().replace("192.0.2.5", "192.0.2.6");
+    let tampered = String::from_utf8(original)
+        .unwrap()
+        .replace("192.0.2.5", "192.0.2.6");
     std::fs::write(&signed_path, tampered).unwrap();
     assert!(!verify().status.success());
 
@@ -385,11 +419,18 @@ fn throwaway_genesis_sign_verify_tamper_and_epoch_floor() {
     assert!(sign().status.success());
     let same_epoch = SignedInventory::parse(&std::fs::read(&signed_path).unwrap()).unwrap();
     assert!(same_epoch.verify(&state).is_err());
-    std::fs::write(&inventory, authored_text("192.0.2.6").replace("epoch: 7", "epoch: 8")).unwrap();
+    std::fs::write(
+        &inventory,
+        authored_text("192.0.2.6").replace("epoch: 7", "epoch: 8"),
+    )
+    .unwrap();
     assert!(sign().status.success());
     let higher = SignedInventory::parse(&std::fs::read(&signed_path).unwrap()).unwrap();
     assert!(higher.verify(&state).is_ok());
     state.last_epoch = 8;
     state.last_canonical_hash = Some(higher.payload.canonical_blake3());
-    assert!(first.verify(&state).is_err(), "old signed artifact is now below the floor");
+    assert!(
+        first.verify(&state).is_err(),
+        "old signed artifact is now below the floor"
+    );
 }

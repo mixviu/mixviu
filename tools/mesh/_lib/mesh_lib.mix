@@ -168,7 +168,12 @@ end
 -- Query the binary that the distributor's subsequent restart will execute.
 -- SSH is uniform, join-safe, and avoids a running-vs-staged daemon race.
 function installed_noded_version($node)
-  $result = ssh_exec($node, [$d.remote_bin($node, "noded"), "--version"], {mix_bin: $d.remote_mix($node), timeout: 20})
+  $result = nil
+  try
+    $result = ssh_exec($node, [$d.remote_bin($node, "noded"), "--version"], {mix_bin: $d.remote_mix($node), timeout: 20})
+  catch $layout_error
+    return {ok: false, detail: endpoint_probe_failure($node, "installed noded version probe", {stderr:$layout_error,exit_code:1})}
+  end
   if $result["exit_code"] != 0 then
     return {ok: false, detail: endpoint_probe_failure($node, "installed noded version probe", $result)}
   end

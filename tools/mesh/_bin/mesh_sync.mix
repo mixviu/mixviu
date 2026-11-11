@@ -91,9 +91,14 @@ end
 -- that would turn a transport or permission failure into authority to replace
 -- the trust root.
 fn node_genesis_probe($node, $is_local)
-  $path = ($is_local ? $d.etc_root() : $d.remote_roots($node).etc) .. "/noded/genesis.pub"
   if $is_local then
-    return $m.anchor_read_local($path)
+    return $m.anchor_read_local($d.etc_root() .. "/noded/genesis.pub")
+  end
+  $path = nil
+  try
+    $path = $d.remote_roots($node).etc .. "/noded/genesis.pub"
+  catch $layout_error
+    return {ok: false, value: $layout_error}
   end
   $r = ssh_mix($node, '
 if is_file($path) then

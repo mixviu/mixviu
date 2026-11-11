@@ -27,6 +27,9 @@ if len(args()) > 0 then
   check(layout_refuses(fn()=$d.remote_mix("relative")), "relative remote interpreter accepted")
   check(layout_refuses(fn()=$d.remote_mix("unset")), "missing remote interpreter accepted")
   check(layout_refuses(fn()=$d.checked_roots({prefix:"/srv/fixture",etc:"relative",var:"/srv/fixture/var"})), "relative layout root accepted")
+  $m = require("../_lib/mesh_lib.mix")
+  $probe = $m.installed_noded_version("missing")
+  check($probe.ok == false and contains($probe.detail, "installed noded version probe failed"), "layout failure escaped the read-only readiness finding")
   print("PASS explicit per-node interpreter, local roots and missing-node refusal without network")
   exit(0)
 end
