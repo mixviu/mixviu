@@ -481,8 +481,8 @@ fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
         let reply = observer.request(&bus, "observer.inhibitors");
         assert_eq!(reply["rc"], 0);
         let edges = reply["body"].as_array().unwrap();
-        if edges.len() >= 16 {
-            assert_eq!(edges.len(), 16);
+        if edges.len() >= 14 {
+            assert_eq!(edges.len(), 14);
             for (i, edge) in edges.iter().enumerate() {
                 assert_eq!(edge["old"], i % 2 != 0);
                 assert_eq!(edge["new"], i % 2 == 0);

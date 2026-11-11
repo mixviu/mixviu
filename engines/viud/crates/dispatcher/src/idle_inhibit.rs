@@ -10,7 +10,7 @@ pub struct Inhibitors {
     // One entry per resource, including multiple inhibitors on one surface.
     pub surfaces: Vec<WlSurface>,
     pub revision: u64,
-    pub projected: Option<(u64, u64, u64, bool)>,
+    pub projected: Option<(u64, u64, u64, bool, u64)>,
 }
 
 impl IdleInhibitHandler for Dispatch {

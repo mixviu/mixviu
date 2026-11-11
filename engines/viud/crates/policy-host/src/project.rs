@@ -73,9 +73,10 @@ pub struct Identity {
 pub fn service_inhibitors(lp: &mut Loop) {
     let stamp = (
         lp.state.inhibitors.revision,
-        lp.inner.comp.revision(),
+        lp.inner.comp.content_revision(),
         smithay::desktop::space::membership_revision(),
         world::comp::session_lock::active(lp),
+        world::window::draw::occlude::record::revision(),
     );
     if lp.state.inhibitors.projected == Some(stamp) {
         return;
@@ -102,7 +103,13 @@ pub fn service_inhibitors(lp: &mut Loop) {
         })
     };
     world::comp::blank::set_inhibited(lp, inhibited);
-    lp.state.inhibitors.projected = Some((stamp.0, lp.inner.comp.revision(), stamp.2, stamp.3));
+    lp.state.inhibitors.projected = Some((
+        stamp.0,
+        lp.inner.comp.content_revision(),
+        stamp.2,
+        stamp.3,
+        stamp.4,
+    ));
 }
 
 /// One read snapshot. `scopes` bounds the volatile leaves: `input.seats` is
