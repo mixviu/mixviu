@@ -2,7 +2,6 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The environment portald is started with. The unit passes the session bus
 //! address through `EnvironmentFile=`; portald keeps it.
-use anyhow::Context;
 use std::path::PathBuf;
 
 /// The session bus address, required and non-empty.

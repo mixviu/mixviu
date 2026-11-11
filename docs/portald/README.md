@@ -229,7 +229,7 @@ This is a first cut, scoped to the trusted, unsandboxed session:
 
 The unit is `portald@.service`, owned by `services/portald/units/`. It is part of
 `session@<instance>.target` and wants `noded@<instance>` and
-`settingsd@<instance>`. It runs as `mixos` with the session environment file, so
+`settingsd@<instance>`. It runs as `mix` with the session environment file, so
 it keeps `DBUS_SESSION_BUS_ADDRESS`. The unit passes `--screencast`.
 
 ```text
@@ -283,7 +283,7 @@ zbus probe drives each method's real viewport through `files.ui.*`, including
 save replacement and cancellation. The probe also opens, saves and cancels
 through rfd 0.17.2 (a dev dependency), with external fallbacks unavailable.
 Build on CBC with `cargo build -p portald -p dopus -p viud -p noded -p system --bins --examples`,
-then run `MIX_TEST_BIN=target/debug mix services/portald/tests/chooser_bus_test.mix`.
+then run `mix services/portald/tests/chooser_bus_test.mix --bin target/debug`.
 It is excluded from `tools/mix_tests.mix`, which needs no headless host.
 `tests/portal.rs` runs a private `dbus-daemon` and checks version 2, Read
 and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
