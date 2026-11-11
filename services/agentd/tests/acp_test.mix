@@ -1,0 +1,54 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- ACP client -> stdio facade -> private native Bus -> real agentd -> fixture.
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath(script_path()))
+$mix = env("MIX_TEST_MIX_EXE", realpath("/proc/self/exe"))
+$tmp = "/var/tmp/agent-acp-" .. uuid()
+$bus = nil
+$children = []
+mkdir($tmp .. "/workspace", {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "agent-acp-test", noded: env("MIX_TEST_NODED_EXE", mix_path("prefix", "bin/noded"))})
+  $env = merge($pb.client_env($bus), {MIX_STATS: "off", MIX_ACP_AGENT: "fixture",
+    MIX_TEST_MIX_EXE: $mix, MIX_AGENTD_MCP_DIR: $tmp .. "/mcp", ACP_TEST_DIR: $tmp,
+    ACP_TEST_ADAPTER: $here .. "/../scripts/acp.mix"})
+  $env.ACP_TEST_MCP_DIR = $tmp .. "/mcp"
+  if env("ACP_TEST_DEFAULT_MCP") == "1" then
+    if env("MIX_AGENTD_MCP_DIR") != "" then raise("ACP_TEST", "default test requires no inherited MCP directory") end
+    $env = delete($env, "MIX_AGENTD_MCP_DIR")
+    $client_env = $pb.client_env($bus)
+    $env.ACP_TEST_MCP_DIR = $client_env.MIX_VAR .. "/agentd/mcp"
+  end
+  write_file($tmp .. "/agent.conf.mix", data_encode({max_live: 2, agents: {fixture: {
+    argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", env("ACP_TEST_FIXTURE_MODE", "resume,http")], roots: [$tmp .. "/workspace"], policy: "ask"}}}))
+  for $c in [{name: "notify", script: $here .. "/../../notifyd/scripts/notifyd.mix", env: {MIX_NOTIFYD_STATE: $tmp .. "/notify.json"}},
+    {name: "agent", script: $here .. "/../scripts/agentd.mix", env: {MIX_AGENTD_CONF: $tmp .. "/agent.conf.mix", MIX_AGENTD_DB: $tmp .. "/sessions.db"}}]
+    push($children, spawn([$mix, "--serve", $c.script, "--name", $c.name], {die_with_parent: true,
+      env: merge($env, $c.env), stdout: {file: $tmp .. "/" .. $c.name .. ".log"}, stderr: "stdout"}))
+  end
+  $up = false
+  for $i = 1 to 60
+    send agent agent.agents timeout=0.2
+    if $rc == 0 then $up = true; break end
+    sleep(0.05)
+  end
+  if not $up then raise("ACP_TEST", "agent did not start") end
+  $env.ACP_TEST_AGENT_PID = to_string($children[1])
+  $env.ACP_TEST_AGENTD = $here .. "/../scripts/agentd.mix"
+  $r = run_argv([$mix, "--serve", $here .. "/fixtures/" .. env("ACP_TEST_CLIENT", "acp_client.mix"), "--name", "acp-test-client"], {env: $env, timeout: 45, max_output: 200000})
+  write_file($tmp .. "/client.log", $r.stdout .. $r.stderr)
+  print($r.stdout)
+  print($r.stderr)
+  print("evidence: " .. $tmp)
+  if not $r.ok then raise("ACP_TEST", "ACP lifecycle failed") end
+  $db = sqlopen($tmp .. "/sessions.db", "ro")
+  $rows = sqlexec($db, "SELECT args FROM commands")
+  if contains(json_encode($rows), "acp-test-secret-value") then raise("ACP_TEST", "MCP credential leaked into command log") end
+  print("PASS MCP credentials excluded from native receipts")
+finally
+  for $pid in reverse($children)
+    if process_alive($pid) then $stopped = kill($pid, 15) end
+  end
+  if $bus != nil then $stopped = $pb.stop($bus) end
+end

@@ -1,0 +1,322 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.2.0
+-- daylight: the sun's state for `appearance.mode = auto` (settings key space
+-- v2 §3.3 and §3.4 A1). A `mix --serve` citizen beside the machine's
+-- settings authority, one per machine. Beside a mirror it exits at once
+-- (rc 0): before its first write it asks settings.status, and any role but
+-- `authority` stops it, so a desk never runs a second writer.
+--
+-- It finds the place from `time.zone` (or, while that key is unset, the
+-- zone /etc/localtime names) through share/daylight/zones.mx, computes the
+-- next sunrise or sunset, and arms one local timer for it. Whenever the sun's
+-- state differs from `state.appearance.daylight` it writes the new state
+-- through settings.apply and, in the same revision, clears
+-- `state.appearance.mode_override`: a manual flip holds until the next
+-- sunrise or sunset (or until the zone loses its place, which writes null).
+-- settingsd's resolver turns `auto` into dark or light; every desk follows
+-- that revision by the normal path.
+--
+-- Nothing polls. It reconciles at start and on each broker connection, on
+-- every `time` revision (the retained keys topic, §5.3), when the timer
+-- fires, when /etc/localtime is replaced, and on resume from suspend
+-- (login1 PrepareForSleep(false), heard through `gdbus monitor` where gdbus
+-- and a system bus exist; a watch that dies is restarted at most once a
+-- minute). When no sunrise or sunset falls in the four-day window (a long
+-- polar day or night), or the zone has no place (UTC, Etc/GMT+10: the sun is
+-- unknown, null, which resolves to dark), the timer looks again in a day.
+--
+-- Environment: MIX_NODE_CONFIG (the node identity, the authority's
+-- instance), MIX_DAYLIGHT_INSTANCE (overrides it), MIX_DAYLIGHT_SETTINGSD
+-- (the settingsd service, default `settingsd`), MIX_DAYLIGHT_ZONES (the
+-- zone table), MIX_DAYLIGHT_LOCALTIME (default /etc/localtime),
+-- MIX_DAYLIGHT_RESUME=off (no login1 watch). Test hooks, honoured only
+-- with MIX_TEST=1: MIX_DAYLIGHT_CLOCK_OFFSET (seconds added to the wall
+-- clock, at most 7 days either way, so a test can stand just before an
+-- event), MIX_DAYLIGHT_RESUME_ARGV (a JSON argv run instead of gdbus) and
+-- MIX_DAYLIGHT_RESUME_GUARD (seconds between watch restarts, default 60).
+$sun = require("lib/sun.mix")
+
+$instance = env("MIX_DAYLIGHT_INSTANCE", "")
+if $instance == "" then
+  $node_config = env("MIX_NODE_CONFIG", mix_path("etc") .. "/node.conf.mix")
+  $node = if is_file($node_config) then load_data($node_config).node else nil end
+  if type($node) != "string" or $node == "" then raise("NODE", "daylight needs the native node identity or MIX_DAYLIGHT_INSTANCE") end
+  $instance = $node
+end
+-- Every process on a machine binds the authority's default profile (§5.4);
+-- the topic handler below names that profile.
+$binding = {instance: $instance, profile: "default"}
+$target = env("MIX_DAYLIGHT_SETTINGSD", "settingsd")
+$Z = $sun.load_zones(env("MIX_DAYLIGHT_ZONES", mix_path("share") .. "/daylight/zones.mx"))
+$localtime = env("MIX_DAYLIGHT_LOCALTIME", "/etc/localtime")
+
+$testing = env("MIX_TEST", "") == "1"
+fn test_number($name, $default, $lo, $hi)
+  if not $testing then return $default end
+  $raw = env($name, "")
+  if $raw == "" then return $default end
+  $v = to_number($raw)
+  if $v == nil then raise("CONFIG", $name .. " is not a number: " .. $raw) end
+  return min($hi, max($lo, $v))
+end
+$clock_offset = test_number("MIX_DAYLIGHT_CLOCK_OFFSET", 0, -604800, 604800)
+if $clock_offset != 0 then eprint("daylight: test clock offset " .. to_string($clock_offset) .. " s") end
+$resume_guard = test_number("MIX_DAYLIGHT_RESUME_GUARD", 60, 1, 3600)
+$resume_argv = ["gdbus", "monitor", "--system", "--dest", "org.freedesktop.login1", "--object-path", "/org/freedesktop/login1"]
+if $testing and env("MIX_DAYLIGHT_RESUME_ARGV", "") != "" then $resume_argv = json_parse(env("MIX_DAYLIGHT_RESUME_ARGV", "")) end
+
+fn now()
+  return time() + $clock_offset
+end
+
+-- role: settingsd's answer to settings.status, asked once before the first
+-- write. timer/timer_at: the token and deadline of the one live wake task;
+-- due: the deadline it must reach. topic: the newest time-topic revision
+-- taken, per incarnation.
+$S = {zone_key: nil, zone: nil, zone_from: nil, place: nil, daylight: nil, next: nil, next_kind: nil,
+  role: nil, timer: nil, timer_at: nil, due: nil, tasks_started: 0, topic: nil,
+  written: 0, last_reason: nil, last_error: nil,
+  resume: "off", resumes: 0, resume_started: nil, resume_restarts: 0, resume_pending: false, localtime_watch: false}
+
+fn local_task()
+  if len($event.headers ?? {}) != 0 then raise("ALLOWLIST", "local continuation cannot be called over the Bus") end
+end
+
+fn rpc($command, $b)
+  $wire = json_encode($b)
+  send $target $command body=$wire timeout=6
+  $r = $result
+  if type($r) == "string" and $r != "" then
+    try
+      $r = json_parse($r)
+    catch $m
+      -- A transport failure answers plain text; keep it as the result.
+    end
+  end
+  return {rc: $rc, result: $r}
+end
+
+-- Only the authority's daylight writes. A settingsd that predates roles
+-- (no `role` field) is an authority: mirrors came with roles.
+fn ensure_authority()
+  if $S.role != nil then return nil end
+  $s = rpc("settings.status", {binding: $binding})
+  if $s.rc != 0 or type($s.result) != "map" then raise("SETTINGS", "settings.status refused (rc " .. to_string($s.rc) .. ")") end
+  $S.role = $s.result.role ?? "authority"
+  if $S.role != "authority" then
+    eprint("daylight: settingsd here is a " .. to_string($S.role) .. ", not the authority; daylight runs only beside the authority, exiting")
+    exit(0)
+  end
+end
+
+-- The zone in force: `time.zone` when set, else the host's /etc/localtime.
+fn zone_now()
+  if type($S.zone_key) == "string" and $S.zone_key != "" then
+    $S.zone_from = "time.zone"
+    return $S.zone_key
+  end
+  $S.zone_from = "localtime"
+  try
+    return $sun.zone_of_link(read_link($localtime))
+  catch $m
+    return nil
+  end
+end
+
+fn read_zone_key()
+  $g = rpc("settings.get", {binding: $binding, keys: ["time.zone"]})
+  if $g.rc != 0 then raise("SETTINGS", "settings.get time.zone refused (rc " .. to_string($g.rc) .. ")") end
+  $S.zone_key = $g.result.values["time.zone"]
+end
+
+-- Write the sun's state when it differs from the stored one, clearing the
+-- manual override in the same revision. Fenced on the revision just read; a
+-- conflict (someone else committed in between) re-reads, at most 3 times.
+fn store($want)
+  for $attempt = 1 to 3
+    $g = rpc("settings.get", {binding: $binding, prefix: "state"})
+    if $g.rc != 0 then raise("SETTINGS", "settings.get state refused (rc " .. to_string($g.rc) .. ")") end
+    $have = $g.result.values["state.appearance.daylight"]
+    if $have == $want then return false end
+    $req = {binding: $binding, expected_incarnation: $g.result.incarnation, expected_revision: $g.result.revision,
+      operation_id: "daylight-" .. uuid(), changes: {}, reset: []}
+    if $want == nil then
+      $req.reset = push($req.reset, "state.appearance.daylight")
+    else
+      $req.changes["state.appearance.daylight"] = $want
+    end
+    if $g.result.values["state.appearance.mode_override"] != nil then
+      $req.reset = push($req.reset, "state.appearance.mode_override")
+    end
+    $a = rpc("settings.apply", $req)
+    if $a.rc == 0 then
+      $S.written = $S.written + 1
+      return true
+    end
+    if (($a.result ?? {}).status ?? "") != "conflict" then
+      raise("SETTINGS", "settings.apply refused: " .. json_encode($a.result))
+    end
+  end
+  raise("SETTINGS", "settings.apply kept conflicting")
+end
+
+-- Arm the wake for $at (nil: look again in a day). Mix has no task cancel,
+-- so one task does the waiting: a later deadline is taken up by the live
+-- task when it wakes (it re-reads `due`), and only an earlier one starts a
+-- new task, which supersedes the old: that one exits when it wakes.
+fn arm($at)
+  $S.due = $at ?? (now() + 86400)
+  if $S.timer == nil or $S.due < $S.timer_at then
+    $S.timer = uuid()
+    $S.timer_at = $S.due
+    $S.tasks_started = $S.tasks_started + 1
+    task_start("daylight.wake", json_encode({token: $S.timer}))
+  end
+end
+
+fn reconcile($why)
+  $S.last_reason = $why
+  try
+    ensure_authority()
+    $zone = zone_now()
+    $S.zone = $zone
+    $S.place = if $zone == nil then nil else $Z.zones[$zone] end
+    if $S.place == nil then
+      $S.daylight = nil
+      $S.next = nil
+      $S.next_kind = nil
+    else
+      $s = $sun.at($S.place[0], $S.place[1], now())
+      $S.daylight = $s.daylight
+      $S.next = $s.next
+      $S.next_kind = $s.next_kind
+    end
+    -- Arm before writing, so a refused write still wakes at the next event.
+    arm($S.next)
+    if store($S.daylight) then
+      eprint("daylight: " .. $why .. ": " .. to_string($zone) .. " daylight=" .. to_string($S.daylight))
+    end
+    $S.last_error = nil
+  catch $m, $err
+    $S.last_error = $err.code ?? "DAYLIGHT"
+    eprint("daylight: " .. $why .. ": " .. $m)
+  end
+end
+
+on daylight.wake async
+  local_task()
+  while $S.timer == $event.args.token
+    $wait = $S.due - now()
+    if $wait <= 0 then break end
+    $S.timer_at = $S.due
+    sleep($wait)
+  end
+end
+on daylight.wake
+  local_task()
+  if $S.timer == $event.args.token then
+    $S.timer = nil
+    reconcile("sun")
+  end
+end
+
+on daylight.status desc "the place, the sun's state and the next event daylight.mix has armed"
+  reply(0, json_encode({binding: $binding, role: $S.role, zone: $S.zone, zone_from: $S.zone_from, place: $S.place,
+    daylight: $S.daylight, next: $S.next, next_kind: $S.next_kind, due: $S.due, tasks_started: $S.tasks_started,
+    writes: $S.written, last_reason: $S.last_reason, last_error: $S.last_error,
+    resume: $S.resume, resumes: $S.resumes, resume_restarts: $S.resume_restarts, localtime_watch: $S.localtime_watch,
+    clock_offset: $clock_offset}))
+end
+
+-- The retained time topic: each revision (and the replay at subscribe)
+-- reconciles. Only our binding, and only a newer revision of the same
+-- incarnation (a new incarnation starts over).
+on settingsd.desktop.keys.default.time
+  $a = $event.args
+  if type($a) != "map" or type($a.values) != "map" or type($a.binding) != "map" or not deep_eq($a.binding, $binding) then return end
+  $rev = to_number(to_string($a.revision ?? ""))
+  if $rev == nil then return end
+  if $S.topic != nil and $S.topic.incarnation == $a.incarnation and $rev <= $S.topic.revision then return end
+  $S.topic = {incarnation: $a.incarnation, revision: $rev}
+  $S.zone_key = $a.values["time.zone"]
+  reconcile("time")
+end
+
+on bus.connected
+  try
+    read_zone_key()
+  catch $m
+    eprint("daylight: " .. $m)
+  end
+  reconcile("connected")
+end
+
+on fs.changed
+  if len(keys($event.headers ?? {})) != 0 then return end
+  $hit = $event.args.overflow == true
+  for $c in $event.args.changes ?? []
+    if basename($c.path ?? "") == basename($localtime) or basename($c.old_path ?? "") == basename($localtime) then $hit = true end
+  end
+  if $hit then reconcile("localtime") end
+end
+
+fn start_resume_watch()
+  process_watch($resume_argv, {tag: "login1", env: {MIX_STATS: "off"}})
+  $S.resume = "login1"
+  $S.resume_started = monotonic()
+end
+
+on proc.line
+  if len(keys($event.headers ?? {})) != 0 then return end
+  if ($event.args.tag ?? "") == "login1" and $sun.is_resume_line($event.args.line) then
+    $S.resumes = $S.resumes + 1
+    reconcile("resume")
+  end
+end
+
+-- A dead watch is restarted, at most once per guard interval (60 s), so a
+-- watch that cannot start never spins.
+on proc.watch_exited
+  if len(keys($event.headers ?? {})) != 0 then return end
+  if ($event.args.tag ?? "") == "login1" and not $S.resume_pending then
+    $S.resume = "restarting"
+    $S.resume_pending = true
+    eprint("daylight: the login1 watch exited; restarting it")
+    task_start("daylight.rewatch", json_encode({after: max(0, $S.resume_started + $resume_guard - monotonic())}))
+  end
+end
+on daylight.rewatch async
+  local_task()
+  if $event.args.after > 0 then sleep($event.args.after) end
+end
+on daylight.rewatch
+  local_task()
+  $S.resume_pending = false
+  $S.resume_restarts = $S.resume_restarts + 1
+  try
+    start_resume_watch()
+  catch $m
+    $S.resume = "lost"
+    eprint("daylight: cannot restart the login1 watch: " .. $m)
+  end
+end
+
+subscribe("settingsd.desktop.keys.default.time")
+
+-- /etc/localtime is a symlink that timedated replaces: watch its directory.
+try
+  fs_watch(dirname($localtime), {events: ["created", "deleted", "moved"]})
+  $S.localtime_watch = true
+catch $m
+  eprint("daylight: cannot watch " .. dirname($localtime) .. ": " .. $m)
+end
+
+if env("MIX_DAYLIGHT_RESUME", "on") != "off" then
+  if which($resume_argv[0]) == nil then
+    $S.resume = "unavailable"
+    eprint("daylight: " .. $resume_argv[0] .. " not found; resume from suspend is not heard")
+  else
+    start_resume_watch()
+  end
+end

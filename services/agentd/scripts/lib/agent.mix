@@ -1,0 +1,510 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- agent: the pure half of agentd, the ACP gateway
+-- (docs/docs/decisions/2026-10-30-acp-agent-sessions.md). It holds no
+-- process or Bus state, so every rule here is tested offline:
+--   - configuration and session-argument validation, including the
+--     workspace-root check (realpath, no symlink escape);
+--   - session ids (4-12 lowercase letters or digits, so they fit the
+--     mixos-mcp Bus name mcp-s-<id>-<pid><nonce>);
+--   - ACP JSON-RPC frame builders (client side, protocol v1);
+--   - mapping ACP session/update notifications to Bus topic events;
+--   - permission policy: which option an auto-policy or a timeout picks.
+-- Errors raise USAGE (bad request), UNKNOWN_AGENT, OUTSIDE_ROOTS.
+
+$PROTOCOL_VERSION = 1
+$SESSION_ID_LEN = 10
+$CONTENT_MAX = 1048576
+$DIRS_MAX = 16
+$PATH_MAX = 4096
+$TITLE_MAX = 200
+$OPTIONS_MAX = 8
+
+fn _usage($message)
+  raise("USAGE", $message)
+end
+
+-- Configuration ------------------------------------------------------------
+
+-- conf: {agents: {NAME: {argv: [..], roots: [..], policy?, permission_timeout_s?,
+--   env?: {K: V}, mode?: string, close_on_done?: bool}}, max_live?, log_keep_days?}.
+--   close_on_done is listed only; its behaviour comes later. Returns the normalised conf
+--   or raises USAGE.
+fn check_conf($conf)
+  if type($conf) != "map" or type($conf.agents) != "map" then _usage("conf needs an agents map") end
+  $out = {agents: {}, max_live: $conf.max_live ?? 4, log_keep_days: $conf.log_keep_days ?? 30}
+  if type($out.max_live) != "number" or $out.max_live < 1 or $out.max_live > 32 then
+    _usage("max_live must be 1 to 32")
+  end
+  if type($out.log_keep_days) != "number" or $out.log_keep_days < 1 or $out.log_keep_days > 3650 then
+    _usage("log_keep_days must be 1 to 3650")
+  end
+  for each $name in keys($conf.agents)
+    $a = $conf.agents[$name]
+    if not re_match($name, "^[a-z][a-z0-9_-]{0,31}$") then _usage("agent name " .. $name .. " must match [a-z][a-z0-9_-]{0,31}") end
+    if type($a) != "map" or type($a.argv) != "list" or len($a.argv) == 0 then _usage("agent " .. $name .. " needs a non-empty argv") end
+    for each $arg in $a.argv
+      if type($arg) != "string" then _usage("agent " .. $name .. " argv must be strings") end
+    end
+    if type($a.roots) != "list" or len($a.roots) == 0 then _usage("agent " .. $name .. " needs at least one root") end
+    $roots = []
+    for each $r in $a.roots
+      if type($r) != "string" or not starts_with($r, "/") then _usage("agent " .. $name .. " roots must be absolute paths") end
+      push($roots, $r)
+    end
+    $policy = $a.policy ?? "ask"
+    if not contains(["ask", "allow_once"], $policy) then _usage("agent " .. $name .. " policy must be ask or allow_once") end
+    $timeout = $a.permission_timeout_s ?? 300
+    if type($timeout) != "number" or $timeout < 5 or $timeout > 86400 then _usage("agent " .. $name .. " permission_timeout_s must be 5 to 86400") end
+    $env = $a.env ?? {}
+    if type($env) != "map" then _usage("agent " .. $name .. " env must be a map") end
+    if $a.mode != nil and type($a.mode) != "string" then _usage("agent " .. $name .. " mode must be a string") end
+    if $a.close_on_done != nil and type($a.close_on_done) != "bool" then _usage("agent " .. $name .. " close_on_done must be a bool") end
+    $out.agents[$name] = {argv: $a.argv, roots: $roots, policy: $policy, permission_timeout_s: $timeout, env: $env,
+      mode: $a.mode, close_on_done: $a.close_on_done ?? false}
+  end
+  return $out
+end
+
+-- Roots --------------------------------------------------------------------
+
+-- True when $path resolves (symlinks followed) to a root or below one. A
+-- path that does not exist is refused: realpath cannot prove where it goes.
+fn under_roots($path, $roots)
+  if type($path) != "string" or not starts_with($path, "/") then return false end
+  -- realpath is nil for a path that does not exist.
+  $real = realpath($path)
+  if $real == nil then return false end
+  for each $root in $roots
+    $r = realpath($root)
+    if $r != nil and ($real == $r or starts_with($real, $r .. "/")) then return true end
+  end
+  return false
+end
+
+-- Files (fs/*) --------------------------------------------------------------
+-- An agent may read and write only inside its session's directories (cwd
+-- and additional_dirs, both already under the instance roots). Paths are
+-- resolved first, so a symlink cannot lead out. This confines the ACP
+-- client surface only; the agent's own tools are not confined. The check
+-- and the read or write are separate steps, so an agent that swaps a path
+-- for a symlink in between can still lead one out; doing that takes the
+-- agent's own shell or file tools, which reach the same files directly.
+
+$FS_READ_MAX = 8388608
+
+-- True for a symlink, dangling or not (lstat); false when nothing is there.
+fn _is_link($path)
+  try
+    return stat($path, {follow_symlinks: false}).is_symlink
+  catch $m
+    return false
+  end
+end
+
+-- A missing path counts as inside when its nearest existing ancestor is.
+fn _inside_missing($path, $dirs)
+  $p = dirname($path)
+  while $p != "/" and realpath($p) == nil
+    $p = dirname($p)
+  end
+  return under_roots($p, $dirs)
+end
+
+-- The real path to read, or raises NOT_FOUND / OUTSIDE_ROOTS / USAGE.
+-- NOT_FOUND says "Resource not found" (ACP's -32002 text): Gemini CLI
+-- recognises a missing file by that message, not the code, and treats any
+-- other text as a failed read (its write tool then gives up).
+fn fs_read_target($path, $dirs)
+  if type($path) != "string" or not starts_with($path, "/") then _usage("path must be absolute") end
+  if realpath($path) == nil then
+    -- Missing: "not found" only inside the session, so the answer never
+    -- says whether a path outside it exists.
+    if _inside_missing($path, $dirs) then raise("NOT_FOUND", "Resource not found: " .. $path) end
+    raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
+  end
+  if not under_roots($path, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+  $real = realpath($path)
+  if not is_file($real) then _usage($path .. " is not a file") end
+  if stat($real).size > $FS_READ_MAX then raise("TOO_LARGE", $path .. " is over " .. to_string($FS_READ_MAX) .. " bytes") end
+  return $real
+end
+
+-- The path to write. An existing file (or symlink) must resolve inside the
+-- session's directories; a new file's parent must. Raises like the reader.
+fn fs_write_target($path, $dirs)
+  if type($path) != "string" or not starts_with($path, "/") or ends_with($path, "/") then _usage("path must be an absolute file path") end
+  if realpath($path) != nil or _is_link($path) then
+    if realpath($path) == nil then raise("OUTSIDE_ROOTS", $path .. " is a dangling symlink") end
+    if not under_roots($path, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+    $real = realpath($path)
+    if is_dir($real) then _usage($path .. " is a directory") end
+    return $real
+  end
+  $parent = dirname($path)
+  if realpath($parent) == nil then
+    if _inside_missing($parent, $dirs) then raise("NOT_FOUND", "Resource not found: " .. $parent) end
+    raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
+  end
+  if not under_roots($parent, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+  return realpath($parent) .. "/" .. basename($path)
+end
+
+-- Lines $line (1-based) onward, at most $limit of them; nil means all.
+fn slice_lines($text, $line, $limit)
+  if $line == nil and $limit == nil then return $text end
+  if ($line != nil and (type($line) != "number" or $line < 1)) or ($limit != nil and (type($limit) != "number" or $limit < 0)) then
+    _usage("line must be 1 or more and limit 0 or more")
+  end
+  $all = split($text, "\n")
+  $from = ($line ?? 1) - 1
+  if $from >= len($all) then return "" end
+  $to = if $limit == nil then len($all) else min(len($all), $from + $limit) end
+  return join(slice($all, $from, $to), "\n")
+end
+
+-- Terminals (terminal/*) ---------------------------------------------------
+-- The headless path: agentd runs the command on pipes (no PTY) and keeps a
+-- bounded tail of its output. On a desk this is to move to Term's Bus
+-- commands (decision ruling 5).
+
+$TERM_LINES = 5000
+$TERM_BYTES = 8388608
+$TERM_ARGS_MAX = 256
+$TERM_ENV_MAX = 64
+
+-- Validate terminal/create params. Returns {argv, cwd, env, limit} or
+-- raises USAGE / OUTSIDE_ROOTS.
+fn check_terminal($p, $dirs)
+  if type($p.command) != "string" or $p.command == "" then _usage("command is required") end
+  $args = $p.args ?? []
+  if type($args) != "list" or len($args) > $TERM_ARGS_MAX then _usage("args must be a list of at most " .. to_string($TERM_ARGS_MAX)) end
+  for each $x in $args
+    if type($x) != "string" then _usage("args must be strings") end
+  end
+  $env = {}
+  $list = $p.env ?? []
+  if type($list) != "list" or len($list) > $TERM_ENV_MAX then _usage("env must be a list of at most " .. to_string($TERM_ENV_MAX)) end
+  for each $e in $list
+    if type($e) != "map" or type($e.name) != "string" or type($e.value) != "string" or not re_match($e.name, "^[A-Za-z_][A-Za-z0-9_]*$") then
+      _usage("env entries are {name, value} strings")
+    end
+    $env[$e.name] = $e.value
+  end
+  $cwd = $p.cwd ?? $dirs[0]
+  if type($cwd) != "string" or not starts_with($cwd, "/") then _usage("cwd must be absolute") end
+  if not under_roots($cwd, $dirs) then raise("OUTSIDE_ROOTS", "cwd " .. $cwd .. " is outside the session's directories") end
+  if not is_dir(realpath($cwd)) then _usage("cwd must be a directory") end
+  $limit = $p.outputByteLimit ?? $TERM_BYTES
+  if type($limit) != "number" or $limit < 0 then _usage("outputByteLimit must be 0 or more") end
+  return {argv: concat([$p.command], $args), cwd: realpath($cwd), env: $env, limit: min(floor($limit), $TERM_BYTES)}
+end
+
+-- Terminal query traffic (cursor and device status requests, OSC colour
+-- queries) is dropped: there is no terminal to answer it, and replaying it
+-- to a real terminal later would make that terminal answer.
+fn strip_queries($line)
+  $s = re_replace($line, "\\x1b\\[[0-9;?>]*[nc]", "")
+  return re_replace($s, "\\x1b\\][0-9]+;\\?(\\x07|\\x1b\\\\)", "")
+end
+
+-- Append one line to a terminal's tail {lines, bytes, truncated}, keeping
+-- at most $TERM_LINES lines and $limit bytes, dropping from the front.
+fn tail_add($t, $line, $limit)
+  $line = strip_queries($line)
+  $lines = concat($t.lines, [$line])
+  $bytes = $t.bytes + byte_length($line) + 1
+  $truncated = $t.truncated
+  while len($lines) > 0 and (len($lines) > $TERM_LINES or $bytes > $limit)
+    $bytes = $bytes - byte_length($lines[0]) - 1
+    $lines = slice($lines, 1)
+    $truncated = true
+  end
+  return {lines: $lines, bytes: $bytes, truncated: $truncated}
+end
+
+fn tail_text($t)
+  if len($t.lines) == 0 then return "" end
+  return join($t.lines, "\n") .. "\n"
+end
+
+-- ACP reports a signal by name.
+fn signal_name($n)
+  if $n == nil then return nil end
+  $names = {"1": "SIGHUP", "2": "SIGINT", "3": "SIGQUIT", "4": "SIGILL", "5": "SIGTRAP", "6": "SIGABRT",
+    "7": "SIGBUS", "8": "SIGFPE", "9": "SIGKILL", "10": "SIGUSR1", "11": "SIGSEGV", "12": "SIGUSR2",
+    "13": "SIGPIPE", "14": "SIGALRM", "15": "SIGTERM", "24": "SIGXCPU", "25": "SIGXFSZ"}
+  return $names[to_string($n)] ?? ("SIG" .. to_string($n))
+end
+
+-- Validate agent.session.new arguments against the conf. Returns
+-- {agent, cwd, additional_dirs, mode} or raises.
+fn check_new($conf, $args)
+  if type($args) != "map" then _usage("body must be a map") end
+  if type($args.agent) != "string" then _usage("agent is required") end
+  $a = $conf.agents[$args.agent]
+  if $a == nil then raise("UNKNOWN_AGENT", "no agent " .. $args.agent .. " is configured") end
+  if type($args.cwd) != "string" then _usage("cwd is required") end
+  if not under_roots($args.cwd, $a.roots) then raise("OUTSIDE_ROOTS", "cwd " .. $args.cwd .. " is not under the agent's roots") end
+  $dirs = []
+  $extra = $args.additional_dirs ?? []
+  if type($extra) != "list" or len($extra) > $DIRS_MAX then _usage("additional_dirs must be a list of at most " .. to_string($DIRS_MAX) .. " paths") end
+  for each $d in $extra
+    if type($d) != "string" or len($d) > $PATH_MAX then _usage("each additional dir must be a path of at most " .. to_string($PATH_MAX) .. " bytes") end
+  end
+  for each $d in $extra
+    if not under_roots($d, $a.roots) then raise("OUTSIDE_ROOTS", "additional dir " .. to_string($d) .. " is not under the agent's roots") end
+    push($dirs, realpath($d))
+  end
+  if $args.mode != nil and type($args.mode) != "string" then _usage("mode must be a string") end
+  return {agent: $args.agent, cwd: realpath($args.cwd), additional_dirs: $dirs, mode: $args.mode}
+end
+
+-- Session ids --------------------------------------------------------------
+
+fn valid_session_id($id)
+  return type($id) == "string" and re_match($id, "^[a-z0-9]{4,12}$")
+end
+
+-- A caller-chosen command id (for retries): 1-128 of [A-Za-z0-9._:-].
+fn valid_command_id($id)
+  return type($id) == "string" and re_match($id, "^[A-Za-z0-9._:-]{1,128}$")
+end
+
+-- A fresh id that is not in $taken (a map of id -> anything). Hex from a
+-- v4 uuid: lowercase letters and digits only, as mixos-mcp requires.
+fn mint_session_id($taken)
+  loop
+    $id = slice(replace(uuid(), "-", ""), 0, $SESSION_ID_LEN)
+    if $taken[$id] == nil then return $id end
+  end
+end
+
+-- ACP frames (client -> agent) ---------------------------------------------
+
+fn _frame($id, $method, $params)
+  $f = {jsonrpc: "2.0", method: $method, params: $params}
+  if $id != nil then $f.id = $id end
+  return json_encode($f) .. "\n"
+end
+
+fn initialize_frame($id)
+  return _frame($id, "initialize", {
+    protocolVersion: $PROTOCOL_VERSION,
+    -- fs/* inside the session's directories; terminal/* on pipes (headless).
+    clientCapabilities: {fs: {readTextFile: true, writeTextFile: true}, terminal: true},
+    clientInfo: {name: "mixos-agentd", version: "0.1.0"}})
+end
+
+-- The variables that decide which broker and layout a MixViu program finds
+-- (libs/bus and libs/paths). Some agents (Codex) start MCP servers with a
+-- bare environment, so agentd hands its own values to the bridge: the
+-- bridge then reaches the broker agentd is on, not a default one.
+$BUS_ENV_NAMES = ["MIX_PREFIX", "MIX_ETC", "MIX_VAR", "MIX_RUN", "MIX_CACHE",
+  "MIX_SHARE", "MIX_NODE_CONFIG", "MIX_NODED_URL", "MIX_BUS_SOCKET", "MIX_BROKER_ACCOUNT",
+  "MIX_MCP_ALLOW_TCP", "XDG_RUNTIME_DIR", "HOME"]
+
+fn bus_env_names()
+  return $BUS_ENV_NAMES
+end
+
+-- The mixos-mcp entry every session gets: the bridge registers on the Bus
+-- as mcp-s-<session>-..., so agentd can recognise its agents calling back.
+-- $bus_env: {NAME: value} of the set $BUS_ENV_NAMES from agentd's own env.
+fn mcp_entry($mcp_bin, $session, $bus_env)
+  $env = [{name: "MIX_AGENT_SESSION", value: $session}]
+  for each $n in sort(keys($bus_env ?? {}))
+    if contains($BUS_ENV_NAMES, $n) and type($bus_env[$n]) == "string" and $bus_env[$n] != "" then
+      $env = concat($env, [{name: $n, value: $bus_env[$n]}])
+    end
+  end
+  return {name: "mixos", command: $mcp_bin, args: [], env: $env}
+end
+
+-- How a logged session can come back, from what its agent advertised at
+-- initialize: "resume" (no replay) when offered, else "load" (the agent
+-- replays its history), else nil (not resumable).
+fn resume_via($caps)
+  if type($caps) != "map" then return nil end
+  if type($caps.sessionCapabilities) == "map" then
+    -- ACP advertises it as an object ({}); read false or null as not offered.
+    $r = $caps.sessionCapabilities.resume
+    if $r == true or type($r) == "map" then return "resume" end
+  end
+  if $caps.loadSession == true then return "load" end
+  return nil
+end
+
+-- session/resume or session/load for $acp, with the same mixos-mcp entry
+-- (the agent would otherwise come back without the Bus).
+fn reopen_frame($id, $via, $acp, $cwd, $dirs, $mcp)
+  $p = {sessionId: $acp, cwd: $cwd, mcpServers: [$mcp]}
+  if len($dirs ?? []) > 0 then $p.additionalDirectories = $dirs end
+  return _frame($id, "session/" .. $via, $p)
+end
+
+-- During a load the agent replays the conversation. The log already holds
+-- it, so these kinds are dropped while the load runs; current-state kinds
+-- (mode, commands, config options) are kept and published.
+$REPLAYED_KINDS = ["agent_message_chunk", "user_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan"]
+
+fn is_replayed_kind($kind)
+  return contains($REPLAYED_KINDS, $kind)
+end
+
+fn session_new_frame($id, $cwd, $dirs, $mcp)
+  $p = {cwd: $cwd, mcpServers: [$mcp]}
+  if len($dirs) > 0 then $p.additionalDirectories = $dirs end
+  return _frame($id, "session/new", $p)
+end
+
+-- content: a string (one text block) or a list of ACP content blocks.
+fn prompt_blocks($content)
+  if type($content) == "string" then
+    if $content == "" then _usage("content is empty") end
+    if len($content) > $CONTENT_MAX then _usage("content is over 1 MiB") end
+    return [{type: "text", text: $content}]
+  end
+  if type($content) != "list" or len($content) == 0 then _usage("content must be text or a list of ACP content blocks") end
+  for each $b in $content
+    if type($b) != "map" or type($b.type) != "string" then _usage("each content block needs a type") end
+  end
+  if len(json_encode($content)) > $CONTENT_MAX then _usage("content is over 1 MiB") end
+  return $content
+end
+
+-- A session's title: the first line of the prompt's first text block,
+-- trimmed, at most 120 characters; nil when the prompt has no text.
+fn prompt_title($blocks)
+  for each $b in $blocks
+    if $b.type == "text" and type($b.text) == "string" then
+      $line = trim(split(trim($b.text), "\n")[0])
+      if $line != "" then return slice($line, 0, 120) end
+    end
+  end
+  return nil
+end
+
+fn prompt_frame($id, $acp_session, $blocks)
+  return _frame($id, "session/prompt", {sessionId: $acp_session, prompt: $blocks})
+end
+
+fn cancel_frame($acp_session)
+  return _frame(nil, "session/cancel", {sessionId: $acp_session})
+end
+
+fn set_mode_frame($id, $acp_session, $mode)
+  return _frame($id, "session/set_mode", {sessionId: $acp_session, modeId: $mode})
+end
+
+fn set_option_frame($id, $acp_session, $option, $value)
+  return _frame($id, "session/set_config_option", {sessionId: $acp_session, configId: $option, value: $value})
+end
+
+fn response_frame($id, $result)
+  return json_encode({jsonrpc: "2.0", id: $id, result: $result}) .. "\n"
+end
+
+fn error_frame($id, $code, $message)
+  return json_encode({jsonrpc: "2.0", id: $id, error: {code: $code, message: $message}}) .. "\n"
+end
+
+-- Agent -> client messages -------------------------------------------------
+
+-- Classify one parsed JSON-RPC message from the agent:
+--   {kind: "reply", id, result?, error?}   an answer to one of ours
+--   {kind: "update", acp_session, update}  a session/update notification
+--   {kind: "request", id, method, params}  a request we must answer
+--   {kind: "notification", method, params} anything else without an id
+--   {kind: "invalid"}
+fn classify($m)
+  if type($m) != "map" or $m.jsonrpc != "2.0" then return {kind: "invalid"} end
+  if $m.method == nil then
+    if $m.id == nil then return {kind: "invalid"} end
+    return {kind: "reply", id: $m.id, result: $m.result, error: $m.error}
+  end
+  if $m.id != nil then return {kind: "request", id: $m.id, method: $m.method, params: $m.params ?? {}} end
+  if $m.method == "session/update" and type($m.params) == "map" then
+    return {kind: "update", acp_session: $m.params.sessionId, update: $m.params.update ?? {}}
+  end
+  return {kind: "notification", method: $m.method, params: $m.params ?? {}}
+end
+
+-- One Bus event body for agent.session.updated. kind is the ACP
+-- sessionUpdate discriminator; the update itself rides along unchanged.
+fn update_event($session, $seq, $update)
+  $kind = if type($update) == "map" and type($update.sessionUpdate) == "string" then $update.sessionUpdate else "unknown" end
+  return {session: $session, seq: $seq, kind: $kind, update: $update}
+end
+
+$STOP_REASONS = ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"]
+
+fn stop_reason($result)
+  if type($result) == "map" and contains($STOP_REASONS, $result.stopReason) then return $result.stopReason end
+  return "unknown"
+end
+
+-- Permission policy --------------------------------------------------------
+
+fn _option_of_kind($options, $kind)
+  for each $o in $options ?? []
+    if type($o) == "map" and $o.kind == $kind and type($o.optionId) == "string" then return $o.optionId end
+  end
+  return nil
+end
+
+-- The option an instance policy answers by itself, or nil to ask the human.
+-- allow_once may pick only an allow_once option: never allow_always, which
+-- would widen a shared agent's grants beyond this one request.
+fn auto_answer($policy, $request)
+  if $policy == "allow_once" then return _option_of_kind($request.options, "allow_once") end
+  return nil
+end
+
+-- The answer when nobody answered in time: no answer is never yes.
+fn timeout_answer($request)
+  return _option_of_kind($request.options, "reject_once") ?? _option_of_kind($request.options, "reject_always")
+end
+
+-- The ACP result for a permission request: a chosen option, or cancelled
+-- (the turn was cancelled, or the agent offered no way to decline).
+fn permission_result($option_id)
+  if $option_id == nil then return {outcome: {outcome: "cancelled"}} end
+  return {outcome: {outcome: "selected", optionId: $option_id}}
+end
+
+-- The agent.permission.requested body: the agent's text is bounded, so a
+-- hostile request cannot push a huge payload to every subscriber.
+fn permission_topic($session, $key, $params)
+  $title = if type($params.toolCall) == "map" and type($params.toolCall.title) == "string" then slice($params.toolCall.title, 0, $TITLE_MAX) else nil end
+  $options = []
+  for each $o in $params.options ?? []
+    if len($options) < $OPTIONS_MAX and type($o) == "map" and type($o.optionId) == "string" and $o.kind != "allow_always" then
+      push($options, {optionId: slice($o.optionId, 0, 64), name: slice(to_string($o.name ?? ""), 0, 64), kind: $o.kind})
+    end
+  end
+  return {session: $session, request: slice($key, 0, 64), title: $title, options: $options}
+end
+
+-- Buttons for the notifyd question: one per offered option, at most four
+-- (notifyd's limit), allow_always never offered.
+fn permission_buttons($options)
+  $out = []
+  for each $o in $options ?? []
+    if len($out) < 4 and type($o) == "map" and type($o.optionId) == "string" and $o.kind != "allow_always" then
+      $id = lower(re_replace($o.optionId, "[^a-zA-Z0-9_-]", "-"))
+      if len($id) > 32 then $id = slice($id, 0, 32) end
+      push($out, {id: $id, label: slice($o.name ?? $o.optionId, 0, 32), option: $o.optionId})
+    end
+  end
+  return $out
+end
+-- Accept only this broker's local, owner-authenticated topic publication.
+-- Admitted remote directed messages can also carry broker_service, but
+-- identify their remote broker in broker_peer and are not local outcomes.
+fn local_operation_publication($headers, $service)
+  if type($headers) != "map" then return false end
+  return ($headers.broker_peer ?? "") == "" and $headers.broker_service == $service and $headers.topic == $service .. ".op.done"
+end
+

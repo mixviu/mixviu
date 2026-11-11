@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Headless services: owned loopback brokers, fake agents and HTTP fixtures.
+$g = getopt(args(), {mix: {arg: true}, bin: {arg: true}})
+if len($g.errors) != 0 or $g.opts.mix == nil or $g.opts.bin == nil then
+  raise("USAGE", "mix_services_test.mix --mix EXE --bin DIR")
+end
+$mix = realpath($g.opts.mix)
+$bin = realpath($g.opts.bin)
+$failed = []
+for $svc in ["agentd", "peersd", "releasesd", "daylight"]
+  for $case in sort(glob("services/" .. $svc .. "/tests/*_test.mix"))
+    print("::group::" .. $case)
+    $r = run_argv([$mix, $case], {timeout: 1800, max_output: 16000000,
+      env: {MIX_TEST_MIX_EXE: $mix, MIX_TEST_NODED_EXE: $bin .. "/noded",
+        MIX_TEST_SETTINGSD_EXE: $bin .. "/settingsd", MIX_STATS: "off"}})
+    print($r.stdout .. $r.stderr)
+    print("SERVICE_TEST " .. json_encode({service: $svc, case: $case, rc: $r.exit_code}))
+    print("::endgroup::")
+    if not $r.ok then push($failed, $case) end
+  end
+end
+if len($failed) > 0 then raise("SERVICE_TEST", join($failed, ", ")) end
