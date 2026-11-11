@@ -56,7 +56,7 @@ end
 
 -- {file: {code: count}} for every error and warning diagnostic.
 fn lint_counts($mix)
-  $r = run_argv(concat([$mix, "lint", "--json"], tracked_mix_files()), {timeout: 1800, max_output: 256000000})
+  $r = run_argv(concat([$mix, "lint", "--json"], tracked_mix_files()), {timeout: 1800, max_output: 256000000, env: {MIX_PREFIX: dirname(dirname($mix))}})
   if $r.stdout == "" then
     print("::error::mix lint produced no JSON: " + $r.stderr)
     exit(1)
@@ -91,7 +91,7 @@ fn stage_test($mix)
   -- platform's crates in the cache.
   ensure_mix($mix)
   $staging = require("test_install.mix")
-  $prefix = $staging.stage_install()
+  $prefix = $staging.stage_install($mix)
   $abs = $prefix .. "/bin/mix"
   $test_env = {MIX_PREFIX: $prefix, MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
   run_step(["cargo", "fetch", "--locked"])
@@ -264,12 +264,16 @@ end
 -- and the built shell loads no display, GPU, input or audio library (ldd).
 fn stage_foreign($mix)
   ensure_mix($mix)
-  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix)])
+  $staging = require("test_install.mix")
+  $prefix = $staging.stage_install($mix)
+  run_step([$prefix .. "/bin/mix", "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix)], {MIX_PREFIX: $prefix})
 end
 
 fn stage_mix_lint($mix)
   ensure_mix($mix)
-  $now = lint_counts($mix)
+  $staging = require("test_install.mix")
+  $prefix = $staging.stage_install($mix)
+  $now = lint_counts($prefix .. "/bin/mix")
   $base = {}
   if exists($baseline_path) then
     $base = json_parse(read_file($baseline_path))
@@ -302,8 +306,10 @@ end
 
 fn stage_mix_lint_baseline($mix)
   ensure_mix($mix)
+  $staging = require("test_install.mix")
+  $prefix = $staging.stage_install($mix)
   mkdir("tools/ci")
-  $json = json_encode(lint_counts($mix)) + "\n"
+  $json = json_encode(lint_counts($prefix .. "/bin/mix")) + "\n"
   write_file($baseline_path, $json)
   -- Printed between markers so a CBC run can hand the file back.
   print("== mix-lint baseline begin ==")
