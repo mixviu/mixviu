@@ -184,8 +184,8 @@ fn stage_env()
       exit(1)
     end
     $listed[$v.name] = true
-    if has_key($v, "default") and ($v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
-      print("::error::" .. $v.name .. ": default must be a runtime environment string")
+    if has_key($v, "default") and (not starts_with($v.name, "MIX_") or $v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
+      print("::error::" .. $v.name .. ": default must be a runtime Mix environment string accepted by env.mx")
       exit(1)
     end
   end
