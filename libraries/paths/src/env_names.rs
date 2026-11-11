@@ -202,12 +202,12 @@ pub const TEST_EXPORTD_REAL_KDE: &str = "MIX_TEST_EXPORTD_REAL_KDE";
 }
 
 macro_rules! stamps {
-    (*) => {
-        *
+    ($($id:ident = $name:literal;)*) => {
+        $(pub const $id: &str = $name;)*
         /// Read a build stamp at the consuming crate's compile site.
         #[macro_export]
         macro_rules! stamp {
-            *
+            $(($id) => { option_env!($name) };)*
         }
     };
 }

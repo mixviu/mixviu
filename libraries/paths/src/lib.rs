@@ -259,7 +259,10 @@ impl Dirs {
             .filter(|p| p.is_absolute())
             .or_else(|| settings.get(&Root::Share).cloned())
             .unwrap_or_else(|| prefix.join("share"));
-        let lib = env.lib.clone().filter(|p| p.is_absolute())
+        let lib = env
+            .lib
+            .clone()
+            .filter(|p| p.is_absolute())
             .or_else(|| settings.get(&Root::Lib).cloned())
             .unwrap_or_else(|| prefix.join("lib"));
         Ok(Self {
@@ -278,14 +281,25 @@ impl Dirs {
     /// Per-root overrides win; MIX_ROOT applies to the tier roots, as before.
     pub fn derived(prefix: &Path, env: &Environment) -> Result<Self> {
         absolute(prefix)?;
-        let inputs = Environment { prefix: Some(prefix.into()), ..env.clone() };
+        let inputs = Environment {
+            prefix: Some(prefix.into()),
+            ..env.clone()
+        };
         let mut dirs = Self::from_source(&inputs, "")?;
         if env.uid == 0 {
-            for (root, direct) in [(Root::Etc, &env.etc), (Root::Var, &env.var),
-                (Root::Run, &env.run), (Root::Cache, &env.cache)] {
-                dirs.roots.insert(root, direct.clone()
-                    .or_else(|| env.root.as_ref().map(|p| p.join(root.name())))
-                    .unwrap_or_else(|| prefix.join(root.name())));
+            for (root, direct) in [
+                (Root::Etc, &env.etc),
+                (Root::Var, &env.var),
+                (Root::Run, &env.run),
+                (Root::Cache, &env.cache),
+            ] {
+                dirs.roots.insert(
+                    root,
+                    direct
+                        .clone()
+                        .or_else(|| env.root.as_ref().map(|p| p.join(root.name())))
+                        .unwrap_or_else(|| prefix.join(root.name())),
+                );
             }
         }
         Ok(dirs)
@@ -393,7 +407,9 @@ pub fn prefix_from_exe(exe: &Path) -> Result<PathBuf> {
 }
 /// Installed executable shape check, independent of legacy cargo-tree rules.
 pub fn prefix_from_exe_strict(exe: &Path) -> Result<PathBuf> {
-    let bin = exe.parent().filter(|p| p.file_name().is_some_and(|n| n == "bin"))
+    let bin = exe
+        .parent()
+        .filter(|p| p.file_name().is_some_and(|n| n == "bin"))
         .ok_or("not an installed binary: set the prefix override")?;
     let prefix = bin.parent().ok_or("executable has no prefix parent")?;
     absolute(prefix)?;
@@ -438,26 +454,43 @@ static PROCESS: OnceLock<Result<Layout>> = OnceLock::new();
 static USER: OnceLock<Result<Layout>> = OnceLock::new();
 static SYSTEM: OnceLock<Result<Layout>> = OnceLock::new();
 fn snapshot(tier: Option<Tier>) -> Result<&'static Layout> {
-    let cache = match tier { None => &PROCESS, Some(Tier::User) => &USER, Some(Tier::System) => &SYSTEM };
-    cache.get_or_init(|| {
-        let mut env = INPUTS.get_or_init(Environment::current).clone();
-        if let Some(tier) = tier { env.uid = tier.uid(); }
-        let prefix = Layout::from_source(&env, "")?.try_root(Root::Prefix)?;
-        let source = match read_layout(&prefix).and_then(|s| parse_layout(&s).map(|_| s)) {
-            Ok(s) => s,
-            // User roots remain available when the system layout is broken.
-            Err(_) if env.uid != 0 => String::new(),
-            Err(e) => return Err(e),
-        };
-        Layout::from_source(&env, &source)
-    }).as_ref().map_err(Clone::clone)
+    let cache = match tier {
+        None => &PROCESS,
+        Some(Tier::User) => &USER,
+        Some(Tier::System) => &SYSTEM,
+    };
+    cache
+        .get_or_init(|| {
+            let mut env = INPUTS.get_or_init(Environment::current).clone();
+            if let Some(tier) = tier {
+                env.uid = tier.uid();
+            }
+            let prefix = Layout::from_source(&env, "")?.try_root(Root::Prefix)?;
+            let source = match read_layout(&prefix).and_then(|s| parse_layout(&s).map(|_| s)) {
+                Ok(s) => s,
+                // User roots remain available when the system layout is broken.
+                Err(_) if env.uid != 0 => String::new(),
+                Err(e) => return Err(e),
+            };
+            Layout::from_source(&env, &source)
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 impl Layout {
-    pub fn discover() -> Result<Self> { snapshot(None).cloned() }
-    pub fn for_tier(tier: Tier) -> Result<Self> { snapshot(Some(tier)).cloned() }
+    pub fn discover() -> Result<Self> {
+        snapshot(None).cloned()
+    }
+    pub fn for_tier(tier: Tier) -> Result<Self> {
+        snapshot(Some(tier)).cloned()
+    }
 }
-pub fn try_root(root: Root) -> Result<PathBuf> { snapshot(None)?.try_root(root) }
-pub fn try_system(root: Root) -> Result<PathBuf> { snapshot(Some(Tier::System))?.try_root(root) }
+pub fn try_root(root: Root) -> Result<PathBuf> {
+    snapshot(None)?.try_root(root)
+}
+pub fn try_system(root: Root) -> Result<PathBuf> {
+    snapshot(Some(Tier::System))?.try_root(root)
+}
 /// True when Run matches the uid tier default, ignoring MIX_RUN, MIX_ROOT and layout.mx.
 /// An override equal to that default still counts as default.
 pub fn run_root_is_tier_default(env: &Environment, dirs: &Dirs) -> Result<bool> {
