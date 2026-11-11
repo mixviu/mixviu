@@ -83,7 +83,7 @@ for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/m
 for $f in tracked("share/scenes") place($stage, $f, $f) end
 for $f in tracked("engines/viud/scripts") place($stage, $f, "share/viud/scripts/" .. substr($f, len("engines/viud/scripts/"))) end
 -- Mix services: their scripts install at <prefix>/lib/<service>/.
-for $svc in ["clipd", "notifyd", "exportd", "dlnad"]
+for $svc in ["clipd", "notifyd", "exportd", "dlnad", "agentd", "peersd", "releasesd", "daylight"]
   $base = "services/" .. $svc .. "/scripts/"
   for $f in tracked($base) place($stage, $f, "lib/" .. $svc .. "/" .. substr($f, len($base))) end
 end
