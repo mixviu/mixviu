@@ -1,5 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $p=require("reserved-policy.mix")
+for $text in ["ctrl+left","Control+ArrowLeft","Command+Left","MacCmd+arrowleft"]
+  if $p.canonical_chord($text)!="Ctrl+ArrowLeft" or not $p.reserved_chord($text) then raise("TEST","canonical default policy drift: "..$text) end
+end
+if $p.reserved_chord("command+shift+Left") or $p.canonical_chord("ctrl+Control+Left")!=nil then raise("TEST","canonical modifiers") end
 fn expect_refused($source,$line)
   $refused=false
   try $p.inspect_mix($source,"fixture.mix") catch $message

@@ -35,10 +35,7 @@ pub fn valid_chord(text: &str) -> bool {
     if text.is_empty() || text.len() > MAX_CHORD_BYTES {
         return false;
     }
-    let Some(canonical) = action::keymap::parse_chord(text) else {
-        return false;
-    };
-    let parts: Vec<&str> = canonical.split('+').collect();
+    let parts: Vec<&str> = text.split('+').collect();
     let Some((key, mods)) = parts.split_last() else {
         return false;
     };
@@ -89,15 +86,6 @@ pub fn validate(
             }
             for (n, chord) in chords.iter().enumerate() {
                 if !valid_chord(chord) {
-                    return Err(error(&path, format!("{chord:?} is not a chord")));
-                }
-                if action::keymap::reserved(chord) {
-                    return Err(error(
-                        &path,
-                        "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused",
-                    ));
-                }
-                if !valid_chord(chord) {
                     return Err(error(
                         &path,
                         format!("{chord:?} is not a chord (Ctrl, Alt, Shift, Super, then one key)"),
@@ -110,41 +98,6 @@ pub fn validate(
         }
     }
     Ok(())
-}
-
-/// Compatibility at stored-data boundaries only; never call on new writes.
-pub fn scrub_stored(keymaps: &mut Keymaps) -> Vec<String> {
-    let mut notes = Vec::new();
-    keymaps.retain(|app, overrides| {
-        if app != "comp" {
-            notes.extend(
-                action::keymap::scrub_stored(overrides)
-                    .into_iter()
-                    .map(|n| format!("keymaps.{app}.{n}")),
-            );
-        }
-        !overrides.is_empty()
-    });
-    notes
-}
-
-/// Format-5 flat registry storage. Compositor bindings are desk policy.
-pub fn scrub_values(values: &mut crate::registry::Values) -> Vec<String> {
-    let mut notes = Vec::new();
-    values.retain(|path, value| {
-        if !path.starts_with("keymaps.") || path.starts_with("keymaps.comp.") { return true; }
-        let Some(chords) = value.as_array_mut() else { return true; };
-        let before = chords.len();
-        chords.retain(|chord| {
-            let Some(chord) = chord.as_str() else { return true; };
-            if action::keymap::reserved(chord) {
-                notes.push(format!("{path}: dropped stored reserved chord {chord:?}; command default applies when no valid chord remains"));
-                false
-            } else { true }
-        });
-        before == 0 || !chords.is_empty()
-    });
-    notes
 }
 
 #[cfg(test)]
@@ -200,8 +153,7 @@ mod tests {
                 )]),
             )])
         };
-        assert!(validate(&one("nav.back", &["Alt+ArrowLeft"]), any_app).is_err());
-        assert!(validate(&one("nav.back", &["Ctrl+Shift+ArrowLeft"]), any_app).is_ok());
+        assert!(validate(&one("nav.back", &["Alt+ArrowLeft"]), any_app).is_ok());
         assert!(validate(&one("nav.back", &[]), any_app).is_ok(), "unbound");
         assert!(validate(&one("nav back", &["F1"]), any_app).is_err());
         assert!(validate(&one("nav.back", &["F1", "F1"]), any_app).is_err());

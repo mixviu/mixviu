@@ -104,22 +104,9 @@ impl Cache {
             receipts: Vec::new(),
             content_digest: String::new(),
         };
-        // Read projection only. Cache integrity is checked against the
-        // original bytes before the load boundary reports dropped chords.
-        settings::keymap::scrub_values(&mut accepted.values);
         // Sealed only so the shared checks hold; a mirror never stores it.
         let _ = accepted.seal();
         accepted
-    }
-    fn loaded(mut self) -> anyhow::Result<Self> {
-        let notes = settings::keymap::scrub_values(&mut self.values);
-        if !notes.is_empty() {
-            for note in notes {
-                eprintln!("settingsd: {note}");
-            }
-            self.seal()?;
-        }
-        Ok(self)
     }
     /// The seal check the authority's record has, for this binding and
     /// authority, including the interpretation.
@@ -196,7 +183,7 @@ pub fn open(
                 let mut cache: Cache = strict::from_str(std::str::from_utf8(&bytes)?)?;
                 cache.values = canonical(std::mem::take(&mut cache.values));
                 cache.check(binding, authority)?;
-                cache.loaded()
+                Ok(cache)
             });
             match stored {
                 Ok(cache) => return Ok((cache, Origin::Cached)),
@@ -222,7 +209,6 @@ pub fn open(
     };
     let cache = fetch().map_err(|e| anyhow::anyhow!("mirror cache unavailable: {e}"))?;
     cache.check(binding, authority)?;
-    let cache = cache.loaded()?;
     write_in(&dir, &cache)?;
     Ok((cache, Origin::Rebuilt { refused }))
 }

@@ -89,9 +89,6 @@ pub fn native_id(ctx: &egui::Context, command: &str) -> Option<&'static str> {
     Some(slots()[index])
 }
 pub(crate) fn shortcut(ctx: Option<&egui::Context>, item: &Value) -> Option<String> {
-    if reserved_shortcut(item) {
-        return None;
-    }
     if item.get("shortcut_binding").is_some() {
         item["shortcut_binding"]
             .as_str()
@@ -104,14 +101,6 @@ pub(crate) fn shortcut(ctx: Option<&egui::Context>, item: &Value) -> Option<Stri
         })
     }
 }
-fn reserved_shortcut(item: &Value) -> bool {
-    ["shortcut", "shortcut_binding"].iter().any(|field| {
-        item[*field]
-            .as_str()
-            .and_then(toolkit::keymap::parse_chord)
-            .is_some_and(|key| toolkit::keymap::reserved(key.logical_key, key.modifiers))
-    })
-}
 fn entries(
     value: &Value,
     ids: &mut Vec<String>,
@@ -122,9 +111,6 @@ fn entries(
         .ok_or("menu entries must be a list")?
         .iter()
         .map(|item| {
-            if reserved_shortcut(item) {
-                return Err(toolkit::keymap::RESERVED_MESSAGE.into());
-            }
             if item["separator"] == true {
                 return Ok(Entry::Separator);
             }
@@ -250,22 +236,6 @@ pub fn picked(ctx: &egui::Context) -> Option<Value> {
 }
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn reserved_accelerators_are_refused_in_both_menu_fields() {
-        for field in ["shortcut", "shortcut_binding"] {
-            for chord in ["F2", "Shift+F12", "Ctrl+ArrowLeft", "Alt+Up"] {
-                let mut row = serde_json::json!({"id":"back","enabled":true});
-                row[field] = serde_json::json!(chord);
-                let menus = serde_json::json!([{"label":"View","children":[row.clone()]}]);
-                assert!(
-                    super::validate(&menus)
-                        .unwrap_err()
-                        .contains("reserved for the desk")
-                );
-                assert!(super::shortcut(None, &row).is_none());
-            }
-        }
-    }
     #[test]
     fn scene_native_menu_collapses_and_restores_at_gold_viewport_boundary() {
         fn has_label(shape: &egui::Shape, label: &str) -> bool {

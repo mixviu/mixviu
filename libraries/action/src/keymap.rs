@@ -50,6 +50,8 @@ pub fn parse_chord(text: &str) -> Option<String> {
     Some(out)
 }
 
+/// Shipped-default policy only; user overrides and input are unrestricted.
+/// `inputd_schema::is_user_key` is the physical authority, enforced by viud.
 pub fn reserved(chord: &str) -> bool {
     let Some(chord) = parse_chord(chord) else {
         return false;
@@ -63,43 +65,17 @@ pub fn reserved(chord: &str) -> bool {
     )
 }
 
-/// Load compatibility only. Removing the last obsolete chord restores the
-/// command's default; an explicitly empty list continues to mean unbound.
-pub fn scrub_stored(overrides: &mut Overrides) -> Vec<String> {
-    let mut notes = Vec::new();
-    overrides.retain(|command, chords| {
-        let old_len = chords.len();
-        chords.retain(|chord| {
-            if reserved(chord) {
-                notes.push(format!("{command}: dropped stored reserved chord {chord:?}; command default applies when no valid chord remains"));
-                false
-            } else { true }
-        });
-        old_len == 0 || !chords.is_empty()
-    });
-    notes
-}
-
-/// Toolkit-independent admission for physical and injected key events.
+/// Logical-key adapter for the defaults policy, not an input filter.
 pub fn reserved_key(key: &str, ctrl: bool, alt: bool, shift: bool) -> bool {
     let key = key.to_ascii_lowercase();
-    matches!(
-        key.as_str(),
-        "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
-    ) || (matches!(
-        key.as_str(),
-        "arrowleft" | "arrowright" | "arrowup" | "arrowdown" | "left" | "right" | "up" | "down"
-    ) && !shift
-        && (ctrl || alt))
+    let fkey = key.strip_prefix('f').filter(|n| !n.starts_with('0'))
+        .and_then(|n| n.parse::<u8>().ok()).is_some_and(|n| (1..=12).contains(&n));
+    fkey || (matches!(key.as_str(), "arrowleft" | "arrowright" | "arrowup" | "arrowdown" | "left" | "right" | "up" | "down") && !shift && (ctrl || alt))
 }
 
-fn ensure_not_user_fkey(chord: &str) {
-    assert!(
-        !reserved(chord),
-        "F1-F12 belong to the user; Ctrl/Alt+arrow are reserved for the desk"
-    );
+fn ensure_default_chord(chord: &str) {
+    assert!(!reserved(chord), "F1-F12 belong to the user; Ctrl/Alt+arrow without Shift are reserved in shipped defaults");
 }
-
 #[derive(Default)]
 pub(crate) struct Bindings {
     current: BTreeMap<&'static str, Bound>,
@@ -111,7 +87,7 @@ impl Bindings {
     pub fn add(&mut self, id: &'static str, own: Option<String>) {
         let own = own.map(|s| canonical_chord(&s));
         if let Some(s) = &own {
-            ensure_not_user_fkey(s);
+            ensure_default_chord(s);
         }
         assert!(
             !self.current.contains_key(id),
@@ -139,7 +115,7 @@ impl Bindings {
     pub fn set_shortcut(&mut self, id: &'static str, own: Option<String>) {
         let own = own.map(|s| canonical_chord(&s));
         if let Some(s) = &own {
-            ensure_not_user_fkey(s);
+            ensure_default_chord(s);
         }
         if let Some(s) = &own {
             assert!(
@@ -153,7 +129,7 @@ impl Bindings {
     pub fn add_shortcuts(&mut self, id: &'static str, shortcuts: impl IntoIterator<Item = String>) {
         for s in shortcuts {
             let s = canonical_chord(&s);
-            ensure_not_user_fkey(&s);
+            ensure_default_chord(&s);
             if !self.taken(&s) {
                 self.current.get_mut(id).expect("known command").1.push(s);
             }
@@ -202,10 +178,6 @@ impl Bindings {
                     Some(s) => parsed.push(s),
                 }
             }
-            if chords.iter().chain(parsed.iter()).any(|s| reserved(s)) {
-                notes.push(format!("{action}: F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused; defaults kept"));
-                continue;
-            }
             if !chords.is_empty() && parsed.is_empty() {
                 notes.push(format!(
                     "{action}: no key it names is known; the defaults stay"
@@ -249,13 +221,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn canonical_reserved_alias_keeps_defaults() {
-        let mut bindings = Bindings::default();
-        bindings.add("cmd", Some("Ctrl+O".into()));
-        let overrides = Overrides::from([("cmd".into(), vec!["alias".into()])]);
-        let notes = bindings.rebind(&overrides, |_| Some("Ctrl+ArrowLeft".into()));
-        assert!(notes[0].contains("reserved for the desk"));
-        assert_eq!(bindings.shortcuts_of("cmd"), ["Ctrl+O"]);
+    fn reserved_arrow_defaults_are_rejected_after_normalisation() {
+        for chord in ["ctrl+Left","Control+ArrowLeft","Command+Right","MacCmd+ArrowDown","alt+Up"] {
+            assert!(std::panic::catch_unwind(|| {
+                let mut bindings=Bindings::default();
+                bindings.add("nav.back",Some(chord.into()));
+            }).is_err(),"{chord}");
+        }
+        let mut bindings=Bindings::default();
+        bindings.add("nav.back",Some("ctrl+shift+Left".into()));
+        let notes=bindings.rebind(&Overrides::from([("nav.back".into(),vec!["Alt+ArrowLeft".into()])]),|s|parse_chord(s));
+        assert!(notes.is_empty());
+        assert_eq!(bindings.shortcuts_of("nav.back"),["Alt+ArrowLeft"]);
     }
 
     #[test]
@@ -299,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn rebind_refuses_reserved_override() {
+    fn rebind_accepts_user_fkey_override() {
         let mut bindings = Bindings::default();
         bindings.add("cmd.user_fkey", Some("Ctrl+O".into()));
 
@@ -308,10 +285,10 @@ mod tests {
 
         let notes = bindings.rebind(&overrides, |text| Some(text.to_string()));
 
-        assert!(notes[0].contains("reserved for the desk"));
+        assert!(notes.is_empty());
         assert_eq!(
             bindings.shortcuts_of("cmd.user_fkey"),
-            vec!["Ctrl+O".to_string()]
+            vec!["Ctrl+F1".to_string()]
         );
     }
 

@@ -69,8 +69,8 @@ $paste=$a.invoke($s,"edit.paste",{},$n)
 check(not $paste.effects[0].supplied,"menu paste still requests native clipboard read")
 $paste=$a.invoke($s,"edit.paste",{clipboard_handle:"vt-1",primary:true},$n)
 check($paste.effects[0].primary and $paste.effects[0].handle=="vt-1" and not $paste.effects[0].supplied,"primary read carries its captured pane without supplying or retargeting text")
-$rebound=$s;$rebound.bindings={"tab.new":{shortcut:"Insert",keys:["Insert","Ctrl+N"]},"edit.copy":{shortcut:nil,keys:[]}}
-check(deep_eq(filter($a.terminal_shortcuts($rebound),fn($key)=$key.command=="tab.new"),[{command:"tab.new",key:"Insert",ctrl:false,shift:false,alt:false,enabled:true,repeat:false,normal_screen_only:false},{command:"tab.new",key:"N",ctrl:true,shift:false,alt:false,enabled:true,repeat:false,normal_screen_only:false}]),"all resolved live key bindings reach terminal input")
+$rebound=$s;$rebound.bindings={"tab.new":{shortcut:"F2",keys:["F2","Ctrl+N"]},"edit.copy":{shortcut:nil,keys:[]}}
+check(deep_eq(filter($a.terminal_shortcuts($rebound),fn($key)=$key.command=="tab.new"),[{command:"tab.new",key:"F2",ctrl:false,shift:false,alt:false,enabled:true,repeat:false,normal_screen_only:false},{command:"tab.new",key:"N",ctrl:true,shift:false,alt:false,enabled:true,repeat:false,normal_screen_only:false}]),"all resolved live key bindings reach terminal input")
 check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="view.zoom_reset" and $key.repeat),"gold font actions repeat")
 check(any($a.terminal_shortcuts($s),fn($key)=starts_with($key.command,"scroll.") and $key.repeat and $key.normal_screen_only),"scrollback chords belong to normal screen")
 check(any($a.terminal_shortcuts($s),fn($key)=$key.command=="pane.next" and $key.key=="Tab" and not $key.ctrl and not $key.repeat),"plain Tab cycles a split without autorepeat")

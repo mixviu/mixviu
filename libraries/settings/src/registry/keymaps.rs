@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! §2.10 `keymaps.*`. Applications refuse desk-owned chords, including
-//! overrides. The compositor separately refuses bare F1–F12 (`user_keys`).
+//! §2.10 `keymaps.*`. `keymaps.comp.*` are the compositor's bindings, where
+//! a bare F1–F12 is refused (`user_keys`).
 use super::{DefaultValue as D, Domain::*, KeyDef as K, Kind::*};
 
 pub(super) const KEYS: &[K] = &[

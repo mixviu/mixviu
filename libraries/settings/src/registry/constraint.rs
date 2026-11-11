@@ -78,7 +78,7 @@ pub const CONSTRAINTS: &[Constraint] = &[
     },
     Constraint {
         id: "user_keys",
-        text: "apps refuse F1-F12 and Ctrl/Alt+arrow without Shift; the compositor refuses bare F1-F12",
+        text: "keymaps.comp.* only: the compositor never binds a bare F1-F12 (any case), the user's keys",
         check: Some(user_keys),
         write_only: false,
     },
@@ -252,27 +252,16 @@ pub fn bare_function_key(chord: &str) -> bool {
 /// written at all: the grammar has no sided modifiers.
 fn user_keys(values: &Values) -> Vec<Diagnostic> {
     bindings(values)
+        .get("comp")
         .into_iter()
-        .flat_map(|(app, list)| {
-            list.into_iter().filter_map(move |(chord, path)| {
-                if app == "comp" {
-                    bare_function_key(chord).then(|| {
-                        refuse(
-                            "user_keys",
-                            path,
-                            format!("{chord} is the user's key: bind it with a modifier"),
-                        )
-                    })
-                } else {
-                    action::keymap::reserved(chord).then(|| {
-                        refuse(
-                            "user_keys",
-                            path,
-                            "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused",
-                        )
-                    })
-                }
-            })
+        .flatten()
+        .filter(|(chord, _)| bare_function_key(chord))
+        .map(|(chord, path)| {
+            refuse(
+                "user_keys",
+                path,
+                format!("{chord} is the user's key: bind it with a modifier"),
+            )
         })
         .collect()
 }

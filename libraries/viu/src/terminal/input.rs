@@ -344,11 +344,9 @@ fn steps(pending: &mut f32, amount: f32) -> i32 {
 ///
 /// Alt is Meta, as in xterm with `metaSendsEscape`: ESC before the key's
 /// own bytes (Alt+Enter is ESC CR, Alt+Backspace ESC DEL, Ctrl+Alt+x
-/// ESC ^X). Desk-owned arrows never reach the PTY.
+/// ESC ^X). Cursor keys carry the complete xterm modifier bits. Physical
+/// user-key interception belongs to inputd/viud, never this encoder.
 pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
-    if toolkit::keymap::reserved(key, modifiers) {
-        return Vec::new();
-    }
     if let Some(code) = cursor_code(key).filter(|_| {
         matches!(
             key,
@@ -393,11 +391,14 @@ pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
 mod arrow_bytes_tests {
     use super::*;
     #[test]
-    fn allowed_arrow_modifiers_have_exact_xterm_bytes() {
+    fn arrow_modifiers_two_through_eight_have_exact_xterm_bytes() {
         for (modifiers, number) in [
             (Modifiers::SHIFT, 2),
+            (Modifiers::ALT, 3),
             (Modifiers::ALT | Modifiers::SHIFT, 4),
+            (Modifiers::CTRL, 5),
             (Modifiers::CTRL | Modifiers::SHIFT, 6),
+            (Modifiers::CTRL | Modifiers::ALT, 7),
             (Modifiers::CTRL | Modifiers::ALT | Modifiers::SHIFT, 8),
         ] {
             for (key, suffix) in [

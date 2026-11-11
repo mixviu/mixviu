@@ -1,6 +1,23 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Static structures only: prose containing chord names is not a binding.
+-- Shipped-default policy only. inputd_schema::is_user_key is the physical authority.
+fn canonical_chord($text)
+  $parts=split($text,"+");$key=$parts[len($parts)-1]
+  if $key=="" or re_match($key,"\\s") then return nil end
+  $flags={ctrl:false,alt:false,shift:false,super:false}
+  for $part in slice($parts,0,len($parts)-1)
+    $mod=lower($part)
+    if contains(["control","command","maccmd"],$mod) then $mod="ctrl" end
+    if not has_key($flags,$mod) or $flags[$mod] then return nil end
+    $flags[$mod]=true
+  end
+  $aliases={left:"ArrowLeft",arrowleft:"ArrowLeft",right:"ArrowRight",arrowright:"ArrowRight",up:"ArrowUp",arrowup:"ArrowUp",down:"ArrowDown",arrowdown:"ArrowDown"}
+  $key=$aliases[lower($key)] ?? $key
+  return (if $flags.ctrl then "Ctrl+" else "" end)..(if $flags.alt then "Alt+" else "" end)..(if $flags.shift then "Shift+" else "" end)..(if $flags.super then "Super+" else "" end)..$key
+end
 fn reserved_chord($text)
+  $text=canonical_chord($text)
+  if $text==nil then return false end
   $parts=map(split($text,"+"),fn($p)=lower($p));$key=$parts[len($parts)-1]
   return re_match($key,"^f([1-9]|1[0-2])$") or (contains(["left","right","up","down","arrowleft","arrowright","arrowup","arrowdown"],$key) and not contains($parts,"shift") and any($parts,fn($p)=contains(["ctrl","control","command","maccmd","alt"],$p)))
 end
@@ -12,7 +29,7 @@ fn inspect_bindings($v,$path,$binding=false)
       $mods=$v.modifiers ?? []
       if type($mods)!="list" then $mods=[] end
       $mods=map($mods,fn($m)=lower($m))
-      $chord=(if $v.ctrl==true or any($mods,fn($m)=contains(["ctrl","control","command","maccmd"],$m)) then "Ctrl+" else "" end)..(if $v.alt==true or contains($mods,"alt") then "Alt+" else "" end)..(if $v.shift==true or contains($mods,"shift") then "Shift+" else "" end)..$v.key
+      $chord=(if $v.ctrl==true or $v.command==true or $v.mac_cmd==true or any($mods,fn($m)=contains(["ctrl","control","command","maccmd"],$m)) then "Ctrl+" else "" end)..(if $v.alt==true or contains($mods,"alt") then "Alt+" else "" end)..(if $v.shift==true or contains($mods,"shift") then "Shift+" else "" end)..$v.key
       if reserved_chord($chord) then raise("RESERVED_KEY",$path..": reserved binding "..$chord) end
     end
     for $k in keys($v)

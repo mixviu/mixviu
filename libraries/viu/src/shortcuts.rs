@@ -112,9 +112,6 @@ pub fn pressed(ctx: &egui::Context, actions: &serde_json::Value) -> Vec<serde_js
                 }
                 _ => return true,
             };
-            if toolkit::keymap::reserved(key, modifiers) {
-                return false;
-            }
             if let Some(action) = actions.as_array().into_iter().flatten().find(|action| {
                 action["shortcut"]
                     .as_str()
@@ -165,7 +162,7 @@ fn take(ctx: &egui::Context, chord: &egui::KeyboardShortcut) -> bool {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn reserved_defaults_and_overrides_explain_the_refusal() {
+    fn reserved_defaults_are_refused_but_user_overrides_take_effect() {
         use serde_json::json;
         for defaults in [
             json!([{"id":"x","shortcut":"F5"}]),
@@ -179,14 +176,8 @@ mod tests {
             &json!({"defaults":[{"id":"x","shortcut":"Ctrl+O"}],"overrides":{"x":["F5"]}}),
         )
         .unwrap();
-        assert_eq!(result["bindings"]["x"]["shortcut"], "Ctrl+O");
-        assert!(
-            result["notes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|n| n.as_str().unwrap().contains("reserved"))
-        );
+        assert_eq!(result["bindings"]["x"]["shortcut"], "F5");
+        assert_eq!(result["notes"],json!([]));
     }
     #[test]
     fn secondary_defaults_survive_profile_changes_and_restore() {
@@ -236,6 +227,18 @@ mod tests {
         ctx.run_ui(egui::RawInput { events:vec![event(egui::Key::B),event(egui::Key::A)], ..Default::default() },|ui| {
             assert_eq!(super::pressed(ui.ctx(),&serde_json::json!([{"id":"a","shortcut":"A","enabled":true},{"id":"b","shortcut":"B","enabled":true}])),vec![serde_json::json!("b"),serde_json::json!("a")]);
         }).drop_without_applying_deltas();
+    }
+    #[test]
+    fn user_override_keys_dispatch_without_a_defaults_filter() {
+        let ctx=egui::Context::default();
+        for text in ["F5","Command+ArrowLeft","Alt+Up"] {
+            let resolved=super::resolve(&serde_json::json!({"defaults":[{"id":"x","shortcut":"Ctrl+O"}],"overrides":{"x":[text]}})).unwrap();
+            let shortcut=resolved["bindings"]["x"]["shortcut"].as_str().unwrap();
+            let chord=toolkit::keymap::parse_chord(shortcut).unwrap();
+            ctx.run_ui(egui::RawInput { events:vec![egui::Event::Key{key:chord.logical_key,physical_key:None,pressed:true,repeat:false,modifiers:chord.modifiers}],..Default::default() },|ui| {
+                assert_eq!(super::pressed(ui.ctx(),&serde_json::json!([{"id":"x","shortcut":shortcut,"enabled":true}])),vec![serde_json::json!("x")]);
+            }).drop_without_applying_deltas();
+        }
     }
     #[test]
     fn shift_delete_never_falls_through_to_delete() {

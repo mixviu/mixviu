@@ -2249,7 +2249,6 @@ dependencies = [
 name = "editor"
 version = "0.1.2"
 dependencies = [
- "action",
  "design",
  "edit",
  "editor-model",
@@ -8321,7 +8320,6 @@ dependencies = [
 name = "settings"
 version = "0.8.0"
 dependencies = [
- "action",
  "blake3",
  "bus",
  "config",

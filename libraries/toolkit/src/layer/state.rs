@@ -731,9 +731,6 @@ impl<P: LayerProgram + 'static> State<P> {
             let at = self.held.iter().position(|(c, _)| *c == code);
             at.map(|at| self.held.remove(at).1)
         };
-        if logical.is_some_and(|key| crate::keymap::reserved(key, modifiers)) {
-            return;
-        }
         if let Some(key) = logical {
             self.push_to(
                 &focus,

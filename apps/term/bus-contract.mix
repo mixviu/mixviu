@@ -408,7 +408,7 @@ $catalogue = {
       },
       {
         "args": {
-          "key": "egui key name (Enter, Escape, ArrowDown, Tab, A, …). F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused",
+          "key": "egui key name (Enter, Escape, ArrowDown, Tab, A, …)",
           "modifiers": "optional [ctrl|shift|alt|command]",
           "viewport": "optional owned window name (for example macro-editor or compose-2), honoured by every drive command; omitted for the app window"
         },

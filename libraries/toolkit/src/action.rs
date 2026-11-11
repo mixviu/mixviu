@@ -115,8 +115,8 @@ impl<S> Default for Registry<S> {
     }
 }
 
-/// Refuse desk-owned chords on application commands, including overrides.
-/// F1–F12 and Ctrl/Alt+arrow without Shift belong to the desk.
+/// Refuse reserved chords in shipped defaults only; user overrides remain unrestricted.
+/// Shipped app shortcuts may not claim F1–F12 or Ctrl/Alt+arrow without Shift.
 fn default_chord(id: &str, shortcut: KeyboardShortcut) {
     assert!(
         !crate::keymap::reserved(shortcut.logical_key, shortcut.modifiers),
@@ -1750,19 +1750,19 @@ mod tests {
                 .collect::<crate::keymap::Overrides>()
         };
         // Reset takes Ctrl+B; Bump keeps Ctrl+U, promoted to its accelerator.
-        let notes = r.rebind(&overrides(&[("count.reset", &["Ctrl+B", "Insert"])]));
+        let notes = r.rebind(&overrides(&[("count.reset", &["Ctrl+B", "F9"])]));
         assert!(notes.is_empty(), "{notes:?}");
         assert_eq!(
             r.shortcuts_of("count.reset"),
             [
                 ctrl(Key::B),
-                KeyboardShortcut::new(Modifiers::NONE, Key::Insert)
+                KeyboardShortcut::new(Modifiers::NONE, Key::F9)
             ]
         );
         assert_eq!(r.get("count.bump").unwrap().shortcut, Some(ctrl(Key::U)));
         assert_eq!(fired_key(&r, &s, ctrl(Key::B)), ["count.reset"]);
         let d = r.describe(&s, &Strings::new(FTL));
-        assert_eq!(d[1].more.len(), 1, "Insert is reported");
+        assert_eq!(d[1].more.len(), 1, "F9 is reported");
         // Unbinding, unknown commands and keys, a chord claimed twice.
         let notes = r.rebind(&overrides(&[
             ("count.bump", &[]),
@@ -1960,14 +1960,29 @@ mod tests {
     }
 
     #[test]
-    fn reserved_overrides_keep_defaults() {
+    fn the_person_may_bind_a_function_key() {
         let mut r = registry();
-        let before = r.shortcuts_of("count.bump");
-        for text in ["F1", "Shift+F12", "Ctrl+ArrowLeft", "Alt+Right"] {
-            let notes = r.rebind(&BTreeMap::from([("count.bump".into(), vec![text.into()])]));
-            assert!(notes[0].contains("reserved for the desk"));
-            assert_eq!(r.shortcuts_of("count.bump"), before);
-        }
+        let notes = r.rebind(&BTreeMap::from([(
+            "count.bump".to_owned(),
+            vec!["F5".to_owned(), "Ctrl+Shift+F11".to_owned()],
+        )]));
+        assert!(notes.is_empty(), "{notes:?}");
+        let f5 = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
+        assert_eq!(
+            r.shortcuts_of("count.bump"),
+            [
+                f5,
+                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::F11)
+            ]
+        );
+        assert_eq!(fired_key(&r, &Counter::default(), f5), ["count.bump"]);
+        // Restoring the defaults leaves no function key bound.
+        assert!(r.rebind(&BTreeMap::new()).is_empty());
+        assert!(
+            r.iter()
+                .flat_map(|c| r.shortcuts_of(c.id))
+                .all(|s| !crate::keymap::user_only(s.logical_key))
+        );
     }
 
     #[test]

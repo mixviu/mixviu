@@ -147,9 +147,6 @@ impl Input {
                     .as_str()
                     .and_then(egui::Key::from_name)
                     .ok_or("Unknown native key")?;
-                if toolkit::keymap::reserved(key, modifiers) {
-                    return Err(toolkit::keymap::RESERVED_MESSAGE.into());
-                }
                 for pressed in [true, false] {
                     now.push(egui::Event::Key {
                         key,
@@ -328,32 +325,24 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
-    fn injected_desk_keys_are_refused_without_partial_input() {
-        let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
-        let mut input = Input::default();
-        for args in [
-            json!({"key":"F1"}),
-            json!({"key":"ArrowLeft","ctrl":true}),
-            json!({"key":"ArrowUp","alt":true}),
-        ] {
-            assert!(
-                input
-                    .queue("key", &args, &mut view)
-                    .unwrap_err()
-                    .contains("reserved")
-            );
-            assert!(input.now.is_empty() && input.later.is_empty());
+    fn injected_keys_pass_through_without_app_policy_filtering() {
+        let mut view=SceneView::new("---
+scene: 1
+name: input
+citizen: input
+---
+```mix
+{root:{widget:\"text\",text:\"Input\"}}
+```
+").unwrap();
+        for args in [json!({"key":"F1"}),json!({"key":"F12","ctrl":true}),json!({"key":"ArrowLeft","ctrl":true}),json!({"key":"ArrowUp","alt":true})] {
+            let mut input=Input::default();
+            input.queue("key",&args,&mut view).unwrap();
+            assert_eq!(input.now.len(),3);
+            assert!(matches!(&input.now[1],egui::Event::Key{pressed:true,..}));
+            assert!(matches!(&input.now[2],egui::Event::Key{pressed:false,..}));
         }
-        input
-            .queue(
-                "key",
-                &json!({"key":"ArrowLeft","ctrl":true,"shift":true}),
-                &mut view,
-            )
-            .unwrap();
-        assert!(!input.now.is_empty());
-    }
-    #[test]
+    }    #[test]
     fn malformed_gestures_do_not_queue_partial_native_input() {
         let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
         let mut input = Input::default();
@@ -402,7 +391,6 @@ mod tests {
 /// Application-authored shortcuts use native key consumption before widgets.
 pub(crate) fn consume_chord(ctx: &egui::Context, chord: &str) -> bool {
     toolkit::keymap::parse_chord(chord).is_some_and(|chord| {
-        !toolkit::keymap::reserved(chord.logical_key, chord.modifiers)
-            && ctx.input_mut(|i| i.consume_key(chord.modifiers, chord.logical_key))
+        ctx.input_mut(|i| i.consume_key(chord.modifiers, chord.logical_key))
     })
 }

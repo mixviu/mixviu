@@ -125,13 +125,7 @@ impl Record {
         if retired_app {
             eprintln!("settingsd: dropping retired apps.busviewer settings during profile upgrade");
         }
-        let notes = settings::keymap::scrub_stored(&mut self.desktop.keymaps);
-        let keys_changed = !notes.is_empty();
-        for note in notes {
-            eprintln!("settingsd: {note}");
-        }
-        let reset =
-            self.desktop.email.reset_legacy_composer_family() || retired_app || keys_changed;
+        let reset = self.desktop.email.reset_legacy_composer_family() || retired_app;
         let resolved = v1::resolve_with_embedded(&self.desktop, &self.embedded_source);
         let repin = resolved.is_err()
             && self.desktop.appearance.source.is_none()

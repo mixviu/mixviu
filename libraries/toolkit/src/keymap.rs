@@ -12,29 +12,14 @@
 pub use ::action::keymap::Overrides;
 use egui::{Key, KeyboardShortcut, Modifiers};
 
-/// The function keys F1–F12. They belong to the person: no app binds one by
-/// default or override, with or without modifiers.
-pub const USER_KEYS: [Key; 12] = [
-    Key::F1,
-    Key::F2,
-    Key::F3,
-    Key::F4,
-    Key::F5,
-    Key::F6,
-    Key::F7,
-    Key::F8,
-    Key::F9,
-    Key::F10,
-    Key::F11,
-    Key::F12,
-];
-
-/// Whether `key` is one of the person's function keys ([`USER_KEYS`]).
+/// Logical F-key classification for default-table checks only. The physical
+/// authority is `inputd_schema::is_user_key`; no second physical list lives here.
 pub fn user_only(key: Key) -> bool {
-    USER_KEYS.contains(&key)
+    ::action::keymap::reserved_key(key.name(), false, false, false)
 }
 
-/// Desk-owned keys are refused at every application input boundary.
+/// Shipped-default policy only. Physical interception belongs to
+/// `inputd_schema::is_user_key`; overrides and input remain unrestricted.
 pub fn reserved(key: Key, modifiers: Modifiers) -> bool {
     ::action::keymap::reserved_key(
         key.name(),
@@ -43,9 +28,6 @@ pub fn reserved(key: Key, modifiers: Modifiers) -> bool {
         modifiers.shift,
     )
 }
-
-pub const RESERVED_MESSAGE: &str =
-    "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused";
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
@@ -114,7 +96,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn text_and_native_reservation_agree() {
+    fn text_and_logical_defaults_policy_agree() {
         for (text, key, modifiers) in [
             ("f1", Key::F1, Modifiers::NONE),
             ("ctrl+left", Key::ArrowLeft, Modifiers::CTRL),
