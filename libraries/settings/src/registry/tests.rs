@@ -765,8 +765,10 @@ fn the_compositor_never_binds_a_bare_function_key() {
         );
     }
     set(&[("keymaps.comp.window.close", json!(["Super+F4", "F13"]))]).unwrap();
-    // An app's own keymap is the person's: a bare F-key is theirs to bind.
-    set(&[("keymaps.dopus.nav.back", json!(["F2"]))]).unwrap();
+    // Application overrides cannot claim the desk's keys.
+    for chord in ["F2", "Ctrl+F1", "Alt+ArrowLeft", "Ctrl+Up"] {
+        assert!(set(&[("keymaps.dopus.nav.back", json!([chord]))]).is_err());
+    }
     assert!(!constraint::bare_function_key("F01"));
     assert!(!constraint::bare_function_key("Ctrl+F1"));
 }

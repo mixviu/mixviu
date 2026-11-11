@@ -36,7 +36,7 @@ pub fn user_only(key: Key) -> bool {
 
 /// Desk-owned keys are refused at every application input boundary.
 pub fn reserved(key: Key, modifiers: Modifiers) -> bool {
-    ::action::keymap::reserved(&chord_text(&KeyboardShortcut::new(modifiers, key)))
+    ::action::keymap::reserved_key(key.name(), modifiers.ctrl || modifiers.command || modifiers.mac_cmd, modifiers.alt, modifiers.shift)
 }
 
 pub const RESERVED_MESSAGE: &str =
