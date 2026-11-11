@@ -61,3 +61,6 @@ permissions (subprocesses drop uid when run as root), routing and CLI.
 No test opens an input device or needs a seat. Real kernel grabs, uinput
 creation/injection, VT switching, live Bus delivery and viud forwarding on
 a real seat remain unverified. No install or desktop action is part of this port.
+
+CBC cbc2 job `20261112-070225-65912e13`: 99 daemon tests, 26 core tests,
+14 schema tests passed (139 total), zero ignored or failed; zero doctests.

@@ -76,9 +76,9 @@ fn main() -> anyhow::Result<()> {
     buildinfo::exit_on_version!();
     let filter = match tracing_subscriber::EnvFilter::try_from_default_env() {
         Ok(filter) => filter,
-        Err(_) => tracing_subscriber::EnvFilter::try_new(paths::env::setting(
-            paths::env::INPUTD_LOG,
-        )?)?,
+        Err(_) => {
+            tracing_subscriber::EnvFilter::try_new(paths::env::setting(paths::env::INPUTD_LOG)?)?
+        }
     };
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
