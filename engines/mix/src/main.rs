@@ -6,6 +6,8 @@
 
 use std::process::ExitCode;
 
+mod mesh;
+
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -18,5 +20,15 @@ const _: () = assert!(
 );
 
 fn main() -> ExitCode {
+    let mut args = std::env::args_os().skip(1);
+    if args.next().as_deref() == Some(std::ffi::OsStr::new("mesh")) {
+        return match mesh::run(args.collect()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("Error: {error:?}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     mix_shell::main()
 }

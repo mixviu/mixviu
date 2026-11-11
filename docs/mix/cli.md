@@ -609,30 +609,41 @@ In a script the nearest equivalent is [`replace()`](strings.md) — but it is
 **silent** when the needle is absent, returning the input unchanged, so a
 script doing this has to check the result itself.
 
+## Signed mesh inventories
+
+`mix mesh COMMAND [args…]` runs the inventory signer from both the OS shell
+and the Mix prompt. Use `mix mesh --help` for `sign`, `verify`, `pubkey`
+and the key-management commands. `--version` and `-V` report the containing
+`mix` engine's provenance. Help and version exit 0; invalid arguments exit 2.
+The service engine refuses signer commands and directs callers to `mix`.
+
+The literal name `mesh` is reserved before script lookup: run a file named
+`mesh` with `mix ./mesh [args…]`. The earlier Bus service listing remains
+available through the existing `mix ports` diagnostic.
+
 ## Ecosystem — probe the Bus mesh
 
 These query the local [noded](bus.md) broker for its registered Bus service
 roster (the mesh is TCP noded — `ws://<wg-ip>:4200/ws` — resolved the same way
-the [`send`](bus.md) keyword resolves a target). All three fail fast with a 5 s
+the [`send`](bus.md) keyword resolves a target). Both fail fast with a 5 s
 timeout so a stale broker address can't hang a diagnostic.
 
 ```
-mix mesh          mesh status + the full list of services the local noded knows
 mix ports         the registered Bus ports/services with a count
 mix ping SERVICE  is SERVICE reachable? (`noded` itself is always the local broker)
 ```
 
 ```mix
-mix mesh
+mix ports
 ```
 
 ```text
-Bus mesh active via local noded (ws://192.0.2.10:4200/ws)
+Bus ports via local noded (ws://192.0.2.10:4200/ws)
   dnsd
   indexd
   log
   webd
-4 service(s) registered
+4 port(s)
 ```
 
 ```mix
@@ -648,7 +659,7 @@ nope: not found
 ```
 
 When no broker is running the same commands degrade to a clean one-line message
-(`No mesh — local noded not reachable (...)`) rather than an error.
+(`No Bus ports active (...)`) rather than an error.
 
 There is also a small **orchestration** group: `mix deploy SVC`
 (`systemctl --user restart mix-SVC`), `mix health [SVC]` (probe Bus unix
@@ -1143,7 +1154,7 @@ back.
 - [shell-mode](shell-mode.md) — the alias/classifier layer behind `mix aliases` and `mix reload`
 - [invocation](invocation.md) — the `mix -c` / `mix -` / `--serve` entry points around this command
 - [keywords](keywords.md) · [operators](operators.md) · [math](math.md) — topics readable via `mix man TOPIC`
-- [Bus messaging](bus.md) — the `send`/`emit`/`address` mesh `mix mesh`/`ports`/`ping` probe
+- [Bus messaging](bus.md) — the `send`/`emit`/`address` mesh and `mix ports`/`ping` probes
 - [builtins index](builtins.md) — the full builtin catalogue behind `mix builtins`
 - The public repo: [github.com/markc/mixos](https://github.com/markc/mixos)
 
