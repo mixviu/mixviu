@@ -65,7 +65,9 @@ pub struct Update {
 }
 impl Update {
     pub(crate) fn screen_off(&self) -> Option<Option<u64>> {
-        (self.live.load(Ordering::Acquire) == self.generation).then_some(self.screen_off).flatten()
+        (self.live.load(Ordering::Acquire) == self.generation)
+            .then_some(self.screen_off)
+            .flatten()
     }
     pub(crate) fn look(&self) -> Option<&decor::appearance::Look> {
         (self.live.load(Ordering::Acquire) == self.generation).then_some(())?;
@@ -133,7 +135,13 @@ pub(crate) async fn run(
         let mut screen_off = None;
         let pending = consumer.pending().cloned();
         if let Some(update) = &pending {
-            screen_off = Some(update.snapshot().values.get("power.screen_off_s").and_then(Value::as_u64));
+            screen_off = Some(
+                update
+                    .snapshot()
+                    .values
+                    .get("power.screen_off_s")
+                    .and_then(Value::as_u64),
+            );
             use settings::view::View;
             let policy = settings::view::AgentSeat::of(&update.snapshot().values);
             agent_seat = Some(comp_model::agent_seat::Policy {

@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- CBC only. Tests own private brokers and headless compositors, never a desk.
+fn blank_check($argv, $environment = {})
+  print("STEP_BEGIN " .. join($argv, " "))
+  $r = run_argv($argv, {timeout: 7200, max_output: 64000000, env: merge({CARGO_BUILD_JOBS: "6"}, $environment)})
+  print($r.stdout)
+  print($r.stderr)
+  print("STEP_RC=" .. to_string($r.exit_code ?? 124))
+  if not $r.ok then raise("BLANK_GATE", "step failed") end
+end
+blank_check(["cargo", "check", "--locked", "-p", "viud", "--features", "backend-all", "--all-targets"])
+blank_check(["cargo", "test", "--locked", "-p", "native", "blank"])
+blank_check(["cargo", "test", "--locked", "-p", "world", "comp::blank"])
+blank_check(["cargo", "test", "--locked", "-p", "comp-model", "-p", "comp-service"])
+blank_check(["cargo", "test", "--locked", "-p", "testkit", "--test", "blank"])
+blank_check(["cargo", "test", "--locked", "-p", "lib-viu", "--test", "prefs_parity"])
+blank_check(["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"])
+blank_check(["cargo", "build", "--locked", "-p", "noded", "--bin", "noded"])
+blank_check(["cargo", "build", "--locked", "-p", "testkit", "--bin", "testkit-input-probe"])
+blank_check(["cargo", "build", "--locked", "-p", "viud", "--features", "backend-headless"])
+blank_check(["cargo", "test", "--locked", "-p", "headless", "--test", "capture", "blank", "--", "--ignored", "--nocapture", "--test-threads=1"], {MIX_TEST_MIX_EXE: realpath("target/debug/mix")})
+print("BLANK_GATE_OK")

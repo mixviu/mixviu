@@ -1308,9 +1308,25 @@ macro_rules! volatile {
 use PatternSegment::{Literal as L, OutputKey as O, SeatKey as K, SourceKey as C, SurfaceKey as S};
 
 pub static DESCRIPTORS: &[DescribeEntry] = &[
-    descriptor!(&[L("display"), L("blanked")], Bool, "Whether display blank is requested; capture and client callbacks remain unchanged"),
-    descriptor!(&[L("display"), L("blank_supported")], Bool, "Whether every active output supports CRTC blanking"),
-    DescribeEntry { persistence: Some("settingsd"), ..descriptor!(&[L("power"), L("screen_off_s")], Number, "Positive whole seconds since human input before blanking; null means never", mutable) },
+    descriptor!(
+        &[L("display"), L("blanked")],
+        Bool,
+        "Whether display blank is requested; capture and client callbacks remain unchanged"
+    ),
+    descriptor!(
+        &[L("display"), L("blank_supported")],
+        Bool,
+        "Whether every active output supports CRTC blanking"
+    ),
+    DescribeEntry {
+        persistence: Some("settingsd"),
+        ..descriptor!(
+            &[L("power"), L("screen_off_s")],
+            Number,
+            "Positive whole seconds since human input before blanking; null means never",
+            mutable
+        )
+    },
     volatile!(
         [L("input"), L("seats"), K, L("name")],
         String,

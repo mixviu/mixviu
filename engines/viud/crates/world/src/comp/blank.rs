@@ -2,26 +2,56 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Panel blank policy. Rendering, captures and client pacing never read this state.
 
-use std::{cell::Cell, collections::BTreeSet, rc::Rc, time::{Duration, Instant}};
-use smithay::reexports::calloop::{RegistrationToken, timer::{Timer, TimeoutAction}};
-use smithay::backend::input::{InputBackend, InputEvent, KeyboardKeyEvent, PointerButtonEvent,
-    KeyState, ButtonState, TouchEvent, TabletToolButtonEvent, TabletToolTipEvent, TabletToolTipState};
 use crate::state::Loop;
+use smithay::backend::input::{
+    ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerButtonEvent,
+    TabletToolButtonEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
+};
+use smithay::reexports::calloop::{
+    RegistrationToken,
+    timer::{TimeoutAction, Timer},
+};
+use std::{
+    cell::Cell,
+    collections::BTreeSet,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 pub type Backend = Rc<dyn Fn(bool) -> Result<(), String>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Hold { Key(u32), Button(u32), Touch(i32), TabletButton(u32), TabletTip }
+pub enum Hold {
+    Key(u32),
+    Button(u32),
+    Touch(i32),
+    TabletButton(u32),
+    TabletTip,
+}
 
 #[derive(Clone, Copy, Debug)]
-pub enum Edge { Press(Hold), Release(Hold), Motion(Hold), Other, CancelTouch }
+pub enum Edge {
+    Press(Hold),
+    Release(Hold),
+    Motion(Hold),
+    Other,
+    CancelTouch,
+}
 
 impl Edge {
     pub fn from_key(code: u32, pressed: bool) -> Self {
-        if pressed { Self::Press(Hold::Key(code)) } else { Self::Release(Hold::Key(code)) }
+        if pressed {
+            Self::Press(Hold::Key(code))
+        } else {
+            Self::Release(Hold::Key(code))
+        }
     }
     pub fn from_button(code: u32, pressed: bool) -> Self {
-        if pressed { Self::Press(Hold::Button(code)) } else { Self::Release(Hold::Button(code)) }
+        if pressed {
+            Self::Press(Hold::Button(code))
+        } else {
+            Self::Release(Hold::Button(code))
+        }
     }
 }
 
@@ -38,19 +68,36 @@ pub struct BlankPolicy {
 
 impl Default for BlankPolicy {
     fn default() -> Self {
-        Self { blanked: false, supported: false, backend: None, timeout: None,
-            last_human: Instant::now(), expired: false, swallowed: BTreeSet::new(), armed: None }
+        Self {
+            blanked: false,
+            supported: false,
+            backend: None,
+            timeout: None,
+            last_human: Instant::now(),
+            expired: false,
+            swallowed: BTreeSet::new(),
+            armed: None,
+        }
     }
 }
 
 impl BlankPolicy {
-    pub fn timeout(&self) -> Option<u64> { self.timeout }
-    pub fn blanked(&self) -> bool { self.blanked }
-    pub fn supported(&self) -> bool { self.supported }
+    pub fn timeout(&self) -> Option<u64> {
+        self.timeout
+    }
+    pub fn blanked(&self) -> bool {
+        self.blanked
+    }
+    pub fn supported(&self) -> bool {
+        self.supported
+    }
 
     fn deadline(&self) -> Option<Instant> {
-        if self.blanked || self.expired { return None; }
-        self.last_human.checked_add(Duration::from_secs(self.timeout?))
+        if self.blanked || self.expired {
+            return None;
+        }
+        self.last_human
+            .checked_add(Duration::from_secs(self.timeout?))
     }
 
     fn configure(&mut self, timeout: Option<u64>) {
@@ -69,7 +116,9 @@ impl BlankPolicy {
     pub fn consume_edge(&mut self, edge: Edge) -> bool {
         match edge {
             Edge::Press(hold) => {
-                if self.blanked { self.swallowed.insert(hold); }
+                if self.blanked {
+                    self.swallowed.insert(hold);
+                }
                 self.blanked || self.swallowed.contains(&hold)
             }
             Edge::Release(hold) => self.swallowed.remove(&hold) || self.blanked,
@@ -87,7 +136,7 @@ impl BlankPolicy {
 pub fn set_supported(lp: &mut Loop, supported: bool) {
     if lp.inner.comp.blank.supported != supported {
         lp.inner.comp.blank.supported = supported;
-        lp.inner.comp.settings_changed("display", "backend");
+        lp.inner.comp.settings_changed("display.blank_supported", "backend");
     }
 }
 
@@ -99,10 +148,13 @@ pub fn set(lp: &mut Loop, on: bool, cause: &'static str) -> Result<(), String> {
             set_supported(lp, false);
             return Err(error);
         }
+        if on {
+            set_supported(lp, true);
+        }
     }
     if lp.inner.comp.blank.blanked != on {
         lp.inner.comp.blank.blanked = on;
-        lp.inner.comp.settings_changed("display", cause);
+        lp.inner.comp.settings_changed("display.blanked", cause);
     }
     service(lp);
     Ok(())
@@ -134,11 +186,19 @@ pub fn device_input<I: InputBackend>(lp: &mut Loop, event: &InputEvent<I>) -> bo
     let edge = match event {
         InputEvent::Keyboard { event } => {
             let hold = Hold::Key(event.key_code().raw());
-            if event.state() == KeyState::Pressed { Edge::Press(hold) } else { Edge::Release(hold) }
+            if event.state() == KeyState::Pressed {
+                Edge::Press(hold)
+            } else {
+                Edge::Release(hold)
+            }
         }
         InputEvent::PointerButton { event } => {
             let hold = Hold::Button(event.button_code());
-            if event.state() == ButtonState::Pressed { Edge::Press(hold) } else { Edge::Release(hold) }
+            if event.state() == ButtonState::Pressed {
+                Edge::Press(hold)
+            } else {
+                Edge::Release(hold)
+            }
         }
         InputEvent::TouchDown { event } => Edge::Press(Hold::Touch(event.slot().into())),
         InputEvent::TouchUp { event } => Edge::Release(Hold::Touch(event.slot().into())),
@@ -146,13 +206,22 @@ pub fn device_input<I: InputBackend>(lp: &mut Loop, event: &InputEvent<I>) -> bo
         InputEvent::TouchCancel { .. } => Edge::CancelTouch,
         InputEvent::TabletToolButton { event } => {
             let hold = Hold::TabletButton(event.button());
-            if event.button_state() == ButtonState::Pressed { Edge::Press(hold) } else { Edge::Release(hold) }
+            if event.button_state() == ButtonState::Pressed {
+                Edge::Press(hold)
+            } else {
+                Edge::Release(hold)
+            }
         }
         InputEvent::TabletToolTip { event } => {
-            if event.tip_state() == TabletToolTipState::Down { Edge::Press(Hold::TabletTip) }
-            else { Edge::Release(Hold::TabletTip) }
+            if event.tip_state() == TabletToolTipState::Down {
+                Edge::Press(Hold::TabletTip)
+            } else {
+                Edge::Release(Hold::TabletTip)
+            }
         }
-        InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. } | InputEvent::Special(_) => return false,
+        InputEvent::DeviceAdded { .. }
+        | InputEvent::DeviceRemoved { .. }
+        | InputEvent::Special(_) => return false,
         _ => Edge::Other,
     };
     consume(lp, edge)
@@ -164,19 +233,33 @@ pub fn device_input<I: InputBackend>(lp: &mut Loop, event: &InputEvent<I>) -> bo
 pub fn service(lp: &mut Loop) {
     let deadline = lp.inner.comp.blank.deadline();
     let policy = &mut lp.inner.comp.blank;
-    if policy.armed.as_ref().is_some_and(|(_, at, fired)| !fired.get() && Some(*at) == deadline) { return; }
-    if let Some((token, _, fired)) = policy.armed.take() && !fired.get() {
+    if policy
+        .armed
+        .as_ref()
+        .is_some_and(|(_, at, fired)| !fired.get() && Some(*at) == deadline)
+    {
+        return;
+    }
+    if let Some((token, _, fired)) = policy.armed.take()
+        && !fired.get()
+    {
         lp.loop_handle.remove(token);
     }
-    let Some(at) = deadline else { return; };
+    let Some(at) = deadline else {
+        return;
+    };
     let fired = Rc::new(Cell::new(false));
     let flag = fired.clone();
-    match lp.loop_handle.insert_source(Timer::from_deadline(at), move |_, _, lp| {
-        flag.set(true);
-        lp.inner.comp.blank.expired = true;
-        if let Err(error) = set(lp, true, "idle") { warn!("idle panel blank: {error}"); }
-        TimeoutAction::Drop
-    }) {
+    match lp
+        .loop_handle
+        .insert_source(Timer::from_deadline(at), move |_, _, lp| {
+            flag.set(true);
+            lp.inner.comp.blank.expired = true;
+            if let Err(error) = set(lp, true, "idle") {
+                warn!("idle panel blank: {error}");
+            }
+            TimeoutAction::Drop
+        }) {
         Ok(token) => lp.inner.comp.blank.armed = Some((token, at, fired)),
         Err(error) => warn!("panel blank timer: {error}"),
     }
@@ -209,8 +292,17 @@ mod tests {
     }
     #[test]
     fn waking_press_repeat_release_and_touch_are_owned() {
-        for hold in [Hold::Key(30), Hold::Button(272), Hold::Touch(1), Hold::TabletTip, Hold::TabletButton(1)] {
-            let mut p = BlankPolicy { blanked: true, ..Default::default() };
+        for hold in [
+            Hold::Key(30),
+            Hold::Button(272),
+            Hold::Touch(1),
+            Hold::TabletTip,
+            Hold::TabletButton(1),
+        ] {
+            let mut p = BlankPolicy {
+                blanked: true,
+                ..Default::default()
+            };
             assert!(p.consume_edge(Edge::Press(hold)));
             p.blanked = false;
             assert!(p.consume_edge(Edge::Press(hold)));

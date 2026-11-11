@@ -153,8 +153,7 @@ struct BlankObserver(std::process::Child);
 impl BlankObserver {
     fn start(bus: &Bus) -> Self {
         let child = Command::new(
-            std::env::var_os("MIX_TEST_MIX_EXE")
-                .unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
         )
         .arg("--serve")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/blank-observer.mix"))
@@ -190,7 +189,9 @@ impl BlankObserver {
         assert!(output.status.success(), "{output:?}");
         let text = String::from_utf8_lossy(&output.stdout);
         let mut reply: Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
-        if reply["rc"] == 0 && let Some(body) = reply["body"].as_str() {
+        if reply["rc"] == 0
+            && let Some(body) = reply["body"].as_str()
+        {
             reply["body"] = serde_json::from_str(body).unwrap();
         }
         reply

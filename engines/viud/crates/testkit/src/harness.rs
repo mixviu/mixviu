@@ -596,9 +596,12 @@ impl Harness {
         // gate before xkb/bindings/client delivery, and model a successful
         // backend-free wake. Production injection owns the timer and CRTC call.
         let was_blanked = self.wire.inner.comp.blank.blanked;
-        let consumed = self.wire.inner.comp.blank.consume_edge(
-            world::comp::blank::Edge::from_key(keycode, pressed),
-        );
+        let consumed = self
+            .wire
+            .inner
+            .comp
+            .blank
+            .consume_edge(world::comp::blank::Edge::from_key(keycode, pressed));
         if was_blanked {
             self.wire.inner.comp.blank.blanked = false;
         }

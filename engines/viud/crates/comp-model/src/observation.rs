@@ -1287,9 +1287,20 @@ pub fn known_read_only_path(path: &str) -> bool {
 
 /// Positive whole seconds, or null for never. Shared by ingress and host.
 pub fn screen_off_value(value: &Value) -> Result<Option<u64>, SetValidationError> {
-    if value.is_null() { return Ok(None); }
-    value.as_u64().filter(|seconds| (1..=u64::from(u32::MAX)).contains(seconds)).map(Some)
-        .ok_or_else(|| invalid_value("power.screen_off_s", "positive integer or null", "1..=4294967295|null"))
+    if value.is_null() {
+        return Ok(None);
+    }
+    value
+        .as_u64()
+        .filter(|seconds| (1..=u64::from(u32::MAX)).contains(seconds))
+        .map(Some)
+        .ok_or_else(|| {
+            invalid_value(
+                "power.screen_off_s",
+                "positive integer or null",
+                "1..=4294967295|null",
+            )
+        })
 }
 
 #[cfg(test)]

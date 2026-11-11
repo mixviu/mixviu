@@ -493,7 +493,11 @@ fn targeted_human_button(
     pressed: bool,
     time: u32,
 ) {
-    if swallow_blank(lp, SeatKind::Human, world::comp::blank::Edge::from_button(button, pressed)) {
+    if swallow_blank(
+        lp,
+        SeatKind::Human,
+        world::comp::blank::Edge::from_button(button, pressed),
+    ) {
         return;
     }
     let Some(pointer) = lp.state.seat.seat.get_pointer() else {
@@ -1175,7 +1179,11 @@ fn agent_target(lp: &Loop, surface: &WlSurface) -> Option<AgentTarget> {
 // ── delivery ─────────────────────────────────────────────────────────────────
 
 fn inject_button(lp: &mut Loop, seat: SeatKind, button: u32, pressed: bool, time: u32) {
-    if swallow_blank(lp, seat, world::comp::blank::Edge::from_button(button, pressed)) {
+    if swallow_blank(
+        lp,
+        seat,
+        world::comp::blank::Edge::from_button(button, pressed),
+    ) {
         return;
     }
     // A region selection takes the human seat's buttons.
@@ -1335,7 +1343,11 @@ fn inject_key(
     pressed: bool,
     time: u32,
 ) -> (bool, Option<(u64, u64)>) {
-    if swallow_blank(lp, seat, world::comp::blank::Edge::from_key(keycode.raw(), pressed)) {
+    if swallow_blank(
+        lp,
+        seat,
+        world::comp::blank::Edge::from_key(keycode.raw(), pressed),
+    ) {
         return (true, None);
     }
     // A region selection takes the human seat's keys: handled, no target.

@@ -25,7 +25,10 @@ fn waking_key_press_repeat_and_release_reach_no_client_then_next_key_does() {
     h.wire.inner.comp.blank.blanked = true;
     assert!(h.key(EV_A + 8, true, false));
     assert!(!h.comp().blank.blanked);
-    assert!(h.key(EV_A + 8, true, false), "repeat belongs to waking press");
+    assert!(
+        h.key(EV_A + 8, true, false),
+        "repeat belongs to waking press"
+    );
     assert!(h.key(EV_A + 8, false, false));
     assert!(h.client.state.keys.is_empty(), "{:?}", h.client.state.keys);
     assert!(h.wire.inner.comp.bindings.take_comp_fires().is_empty());

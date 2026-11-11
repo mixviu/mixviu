@@ -1923,10 +1923,17 @@ fn placement_visual_validation_and_resets() {
 #[test]
 fn display_blank_requires_a_boolean_and_no_extra_arguments() {
     for on in [true, false] {
-        assert_eq!(parse_window_command("comp.display.blank", &json!({"on": on})).unwrap(),
-            WindowCommand::Op(WindowOp::DisplayBlank { on }));
+        assert_eq!(
+            parse_window_command("comp.display.blank", &json!({"on": on})).unwrap(),
+            WindowCommand::Op(WindowOp::DisplayBlank { on })
+        );
     }
-    for args in [json!({}), json!({"on": null}), json!({"on": 1}), json!({"on": true, "extra": true})] {
+    for args in [
+        json!({}),
+        json!({"on": null}),
+        json!({"on": 1}),
+        json!({"on": true, "extra": true}),
+    ] {
         assert!(parse_window_command("comp.display.blank", &args).is_err());
     }
 }

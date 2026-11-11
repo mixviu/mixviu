@@ -1169,16 +1169,23 @@ fn info_and_windows_list_bodies_are_comps() {
 }
 #[test]
 fn display_watch_reports_both_edges_with_their_cause() {
+    use crate::observation::{PendingPropChanges, PropValue};
     let mut before = fixture();
     for (on, cause) in [(true, "idle"), (false, "bus")] {
         let mut after = before.clone();
         after.display.blanked = on;
         let mut pending = PendingPropChanges::default();
         crate::diff::collect_snapshot_diff(&before, &after, cause, &mut pending);
-        assert_eq!(pending.get("display.blanked"), Some(&(PropValue::Bool(!on), PropValue::Bool(on), cause)));
+        assert_eq!(
+            pending.get("display.blanked"),
+            Some(&(PropValue::Bool(!on), PropValue::Bool(on), cause))
+        );
         assert_eq!(after.select(&["display", "blanked"]), Some(json!(on)));
         before = after;
     }
     assert_eq!(before.select(&["power", "screen_off_s"]), Some(Value::Null));
-    assert_eq!(before.select(&["display", "blank_supported"]), Some(json!(false)));
+    assert_eq!(
+        before.select(&["display", "blank_supported"]),
+        Some(json!(false))
+    );
 }

@@ -61,7 +61,9 @@ pub enum StatsTarget {
 #[derive(Clone, Debug, PartialEq)]
 pub enum WindowOp {
     /// Panel colour-pipeline state; never changes the desktop scene.
-    DisplayBlank { on: bool },
+    DisplayBlank {
+        on: bool,
+    },
     PlaceAs {
         id: u64,
         generation: u64,
@@ -791,7 +793,9 @@ pub fn parse_window_command(
     match command_name {
         "comp.display.blank" => {
             let object = args_object(args, &empty, &["on"])?;
-            let on = object.get("on").and_then(Value::as_bool)
+            let on = object
+                .get("on")
+                .and_then(Value::as_bool)
                 .ok_or_else(|| invalid_argument("on", "bool", "required: true|false"))?;
             Ok(WindowCommand::Op(WindowOp::DisplayBlank { on }))
         }
