@@ -702,8 +702,14 @@ fn c8_a_chord_binds_one_action_per_app() {
 #[test]
 fn c8_is_enforced_on_write_and_a_stored_conflict_still_loads() {
     let stored = Values::from([
-        ("keymaps.dopus.nav.back".into(), json!(["Ctrl+Shift+ArrowLeft"])),
-        ("keymaps.dopus.nav.parent".into(), json!(["Ctrl+Shift+ArrowLeft"])),
+        (
+            "keymaps.dopus.nav.back".into(),
+            json!(["Ctrl+Shift+ArrowLeft"]),
+        ),
+        (
+            "keymaps.dopus.nav.parent".into(),
+            json!(["Ctrl+Shift+ArrowLeft"]),
+        ),
     ]);
     validate(&stored).expect("a stored conflict never bricks the profile");
     let found = constraint::conflicts(&stored);
@@ -721,7 +727,10 @@ fn c8_is_enforced_on_write_and_a_stored_conflict_still_loads() {
     // A write that adds a conflict is refused.
     let worse = apply(
         &stored,
-        &BTreeMap::from([("keymaps.dopus.nav.home".into(), json!(["Ctrl+Shift+ArrowLeft"]))]),
+        &BTreeMap::from([(
+            "keymaps.dopus.nav.home".into(),
+            json!(["Ctrl+Shift+ArrowLeft"]),
+        )]),
         &[],
     );
     assert_eq!(codes(worse)[0].0, "constraint_failed");
