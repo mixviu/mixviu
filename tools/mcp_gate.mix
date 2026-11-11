@@ -56,7 +56,6 @@ try
   write_file($prefix .. "/env.mx", data_encode($defaults))
   $env = {MIX_PREFIX: $prefix, MIX_TEST_MIX_EXE: realpath("target/debug/mix")}
   checked(["cargo", "tree", "--locked", "-i", "rmcp"])
-  checked(["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"])
   checked(["target/debug/mix", "tools/ci.mix", "foreign"], $env)
   $base_sha = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
   print("BASELINE_SHA " .. $base_sha)
@@ -82,6 +81,7 @@ try
   checked(["target/debug/mix", "tools/foreign_gate.mix", "--locked", "--elf", realpath("target/release/mix")], $env)
   checked(["cargo", "build", "--locked", "--release", "-p", "mix-mcp"])
   print("RELEASE_SIZE " .. to_string(stat("target/release/mix-mcp").size))
+  checked(["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"])
 finally
   checked(["rm", "-rf", "--", $prefix])
 end

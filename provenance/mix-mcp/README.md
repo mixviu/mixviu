@@ -13,9 +13,9 @@ Adaptations: crate/binary/server/log identity; existing MixViu shared crates;
 registered environment constants and installed settings; paths-root logging;
 logical indexd paths; sibling `paths::bin("mix")` script execution; cleaned
 manual and helper; all source tests retained, plus a committed 29-name tool
-inventory and stdio status/Bus/execution test. Source embedded evaluator and
-its internal worker entrypoint are replaced by the sibling interpreter as
-required by the brief; the process-group cancellation and byte bounds remain.
+inventory and stdio status/Bus/execution test. The frozen evaluator worker
+moves into the sibling Mix binary; process-group cancellation and byte bounds
+remain unchanged.
 
 Runtime defaults moved to the registry retain ranking, transport, deadline
 and logging values. The domain map retains all four frozen entries and adds MixViu and its hub. As prescribed
@@ -32,9 +32,9 @@ and translate legacy environment overrides to their registered current names.
 No agent configuration is changed by this port.
 
 `rmcp = "=3.1.2"` is crate-local, with the original server feature set and
-client/child-process features confined to dev-dependencies. Dependency and
-verification receipts are recorded in the PR; the source lockfile seeds
-resolution, with unused packages removed by Cargo on CBC.
+client/child-process features confined to dev-dependencies. The source lockfile
+seeds resolution, with unused packages removed by Cargo on CBC.
+
 The frozen isolated evaluator worker now lives in `mix-shell::script_worker`,
 entered by the sibling `mix` binary's private worker flag. The frozen named
 connection policy is shared through `bus::agent_client`; MCP keeps its original
@@ -44,4 +44,13 @@ return-code mapping and skipped shell hooks. Neither native library imports the
 MCP SDK or any package added by it. Normal Mix invocation keeps its existing
 handler. Additional stdio tests cover attribution and a failed Unix socket
 with TCP explicitly enabled. `adaptation_targets` records these source moves.
+
+Verification remains incomplete. CBC's foreign gate passes, and the inverse
+`rmcp` tree contains only `mix-mcp`. The required `cargo deny` check rejects
+the authorised pin for RUSTSEC-2026-0457, RUSTSEC-2026-0461 and
+RUSTSEC-2026-0462; bans, licences and sources pass. These advisories concern
+OAuth and Streamable HTTP features outside this stdio adapter's feature set,
+but the crate-level advisory gate still fails. No advisory exception or pin
+change has been made. The focused job stops there, before tests and release
+size measurement; the final full gate has not run.
 
