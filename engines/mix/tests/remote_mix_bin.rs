@@ -15,7 +15,6 @@ mod install;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::Command;
 
 const FAKE_SSH: &str = r#"#!/bin/sh
 printf '%s\n' "$0" "$@" > "$CAPTURE"

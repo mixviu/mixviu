@@ -18,7 +18,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 fn script() -> String {
     format!(

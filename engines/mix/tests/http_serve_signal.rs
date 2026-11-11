@@ -10,7 +10,7 @@
 #[cfg(unix)]
 #[test]
 fn http_serve_stops_on_sigint() {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     use std::time::{Duration, Instant};
 
     let dir = std::env::temp_dir().join(format!("mix-http-sig-{}", std::process::id()));

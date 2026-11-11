@@ -7,7 +7,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 fn temp_prefix(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("mix-agent-sub-{}-{}", name, std::process::id()));

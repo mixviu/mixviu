@@ -7,7 +7,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 fn serve(script: &str) -> std::process::Output {
     install::command()

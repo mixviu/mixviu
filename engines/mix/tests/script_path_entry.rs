@@ -14,7 +14,7 @@
 mod install;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 fn work_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(

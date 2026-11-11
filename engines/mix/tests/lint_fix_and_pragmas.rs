@@ -6,7 +6,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 fn write_temp(name: &str, source: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("mix_lint_fix_{}", std::process::id()));

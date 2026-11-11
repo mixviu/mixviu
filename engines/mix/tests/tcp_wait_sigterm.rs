@@ -12,7 +12,7 @@
 mod install;
 use std::io::{BufRead, BufReader};
 use std::os::unix::process::ExitStatusExt;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 /// Run `script`, wait for it to print "ready", send SIGTERM, and require a

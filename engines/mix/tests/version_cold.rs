@@ -20,7 +20,7 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::{Command, Output};
+use std::process::Output;
 
 const MARKER: &str = paths::env::SESSION_FD;
 

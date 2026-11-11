@@ -16,7 +16,7 @@
 #[path = "support/install.rs"]
 mod install;
 use std::os::unix::process::ExitStatusExt;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 #[test]

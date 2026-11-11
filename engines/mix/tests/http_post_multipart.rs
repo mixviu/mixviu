@@ -8,7 +8,6 @@
 mod install;
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
-use std::process::Command;
 
 #[test]
 fn multipart_body_reaches_the_server_well_formed() {

@@ -3,7 +3,6 @@ mod install;
 use std::io::Read;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
-use std::process::Command;
 
 fn refuses(command: &str) {
     let root = tempfile::tempdir().unwrap();

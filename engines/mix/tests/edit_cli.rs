@@ -16,7 +16,7 @@
 mod install;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 fn workdir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("mix-edit-{}-{}", tag, std::process::id()));

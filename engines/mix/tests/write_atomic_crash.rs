@@ -22,7 +22,7 @@ mod install;
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SIZE: usize = 16 * 1024 * 1024;

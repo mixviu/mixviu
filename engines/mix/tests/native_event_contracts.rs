@@ -4,7 +4,6 @@
 #[path = "support/install.rs"]
 mod install;
 use serde_json::Value;
-use std::process::Command;
 
 #[test]
 fn builtin_json_exposes_watch_shapes_and_managed_spawn_options() {

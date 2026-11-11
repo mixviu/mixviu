@@ -12,7 +12,7 @@
 #[path = "support/install.rs"]
 mod install;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 /// The input a filter has to survive: NUL, high bytes, a lone 0xFF/0xFE
 /// pair, a TRUNCATED two-byte UTF-8 sequence (0xC3 0x28), an embedded

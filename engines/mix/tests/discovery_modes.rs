@@ -7,7 +7,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 fn mix(args: &[&str]) -> (String, String) {
     let out = install::command()

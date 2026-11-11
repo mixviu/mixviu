@@ -20,7 +20,7 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::{Command, Output};
+use std::process::Output;
 
 /// The exact runtime error the old parse produced. Its ABSENCE is the
 /// broker-free half of the gate.

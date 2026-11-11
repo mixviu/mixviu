@@ -6,7 +6,7 @@
 #[test]
 fn builtins_json_closed_pipe_never_panics() {
     use std::io::Read;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
     let mut child = install::command()
         .args(["builtins", "--json"])

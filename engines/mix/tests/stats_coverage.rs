@@ -3,7 +3,6 @@
 #[path = "support/install.rs"]
 mod install;
 use std::path::PathBuf;
-use std::process::Command;
 
 fn fixture(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!("mix-stats-coverage-{}-{label}", std::process::id()))

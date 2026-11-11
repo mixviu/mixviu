@@ -7,7 +7,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 fn run(args: &[&str]) -> (i32, String, String) {
     let out = install::command()

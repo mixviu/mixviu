@@ -4,7 +4,6 @@
 
 #[path = "support/install.rs"]
 mod install;
-use std::process::Command;
 
 #[test]
 fn schema_three_functions_are_attributed_without_execution() {

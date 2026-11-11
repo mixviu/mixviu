@@ -42,8 +42,10 @@ pub fn prefix() -> &'static Path {
                 let mix::value::Value::Map(entry) = entry else {
                     panic!("registry entry")
                 };
-                if let (Some(mix::value::Value::String(name)), Some(mix::value::Value::String(value))) =
-                    (entry.get("name"), entry.get("default"))
+                if let (
+                    Some(mix::value::Value::String(name)),
+                    Some(mix::value::Value::String(value)),
+                ) = (entry.get("name"), entry.get("default"))
                 {
                     defaults.insert(name.clone(), value.clone().into());
                 }

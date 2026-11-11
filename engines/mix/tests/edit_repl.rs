@@ -14,7 +14,7 @@
 mod install;
 use std::fs;
 use std::io::Write;
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 fn repl(script: &str) -> Output {
     let mut child = install::command()
