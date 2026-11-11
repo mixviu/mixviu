@@ -119,7 +119,9 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     );
     for source in ["mix_prefix('extra')", "mix_exe('extra')"] {
         let tokens = mix::lexer::Lexer::new(source).tokenize().unwrap();
-        let statements = mix::parser::Parser::new(tokens, source).parse_program().unwrap();
+        let statements = mix::parser::Parser::new(tokens, source)
+            .parse_program()
+            .unwrap();
         let mut strict = mix::evaluator::Evaluator::new();
         strict.set_arity_mode(mix::evaluator::ArityMode::Strict);
         assert!(

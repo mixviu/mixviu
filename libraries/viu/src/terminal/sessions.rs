@@ -849,9 +849,14 @@ mod tests {
                 .unwrap();
             let prefix = home.path().join("prefix");
             std::fs::create_dir_all(prefix.join("bin")).unwrap();
-            let mix = paths::env::raw(paths::env::test::TEST_MIX_EXE)
-                .expect("set MIX_TEST_MIX_EXE to the staged interpreter from tools/ci.mix stage-install");
-            let installed = std::path::Path::new(&mix).parent().unwrap().parent().unwrap();
+            let mix = paths::env::raw(paths::env::test::TEST_MIX_EXE).expect(
+                "set MIX_TEST_MIX_EXE to the staged interpreter from tools/ci.mix stage-install",
+            );
+            let installed = std::path::Path::new(&mix)
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap();
             std::fs::copy(installed.join("env.mx"), prefix.join("env.mx"))
                 .expect("test interpreter must come from a staged install with env.mx");
             std::os::unix::fs::symlink(&mix, prefix.join("bin/mix")).unwrap();
