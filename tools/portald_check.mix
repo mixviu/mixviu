@@ -20,9 +20,9 @@ try
   $elf = run_argv_must(["ldd", "target/debug/portald"])
   print($elf)
   if contains($elf, "libpipewire") then raise("FEATURE_LEAK", "feature-disabled portald links PipeWire") end
-  check_step(["/opt/mixos/bin/mix", "services/portald/tests/restart_recovery_test.mix"], $env)
+  check_step([realpath("/proc/self/exe"), "services/portald/tests/restart_recovery_test.mix"], $env)
   check_step(["cargo", "tree", "--locked", "-i", "pipewire-sys"])
-  check_step(["/opt/mixos/bin/mix", "tools/foreign_gate.mix", "--locked"])
+  check_step([realpath("/proc/self/exe"), "tools/foreign_gate.mix", "--locked"])
 catch $message
   print($message)
   $rc = 1
