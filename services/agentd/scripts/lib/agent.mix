@@ -507,4 +507,3 @@ fn local_operation_publication($headers, $service)
   if type($headers) != "map" then return false end
   return ($headers.broker_peer ?? "") == "" and $headers.broker_service == $service and $headers.topic == $service .. ".op.done"
 end
-

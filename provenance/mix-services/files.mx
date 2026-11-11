@@ -1,0 +1,354 @@
+{
+  "schema": 1,
+  "source": "8779f33284b7d3f1178c3d57a699efb9b0867b22",
+  "files": [
+    {
+      "path": "services/agentd/component.mx",
+      "source_blob": "ca16ebf5a367ed2151ac7bf18216f9e84047b64a",
+      "sha256": "ec7607dad05113fffc1df0e892048c7a3eb6974c602ec114c2ed398be4bcc552",
+      "changed": false
+    },
+    {
+      "path": "services/agentd/scripts/acp.mix",
+      "source_blob": "d630b7004c55ab7b1002527ece70618cda3acf79",
+      "sha256": "27eb40fea0eaf33c7ea9ae7bd43e34f4841a537df4ba48005b653e892cfe665e",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/scripts/acp_worker.mix",
+      "source_blob": "9258d5238f2c16cbf2f369eef86aee4dfdca3f1c",
+      "sha256": "61bf05074fa24309bfbaf1819b5cd7763935ee0562cb3ab65098e0515683c3ae",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/scripts/agent_cli.mix",
+      "source_blob": "78ae8ceeee42744993ab286c59d99dd7f2ffb55f",
+      "sha256": "81ec07138416fc030447b1457e2be6ce18464a289cd694b61b3856295172c0e8",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/scripts/agentd.mix",
+      "source_blob": "ffb002b1bda74d42ba41b990ba9bd7037392305e",
+      "sha256": "c5c8c7cd16925c71a622d38290a9cc171d4fd46429db8024a7fb500059ae7517",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/scripts/lib/acp.mix",
+      "source_blob": "0f83583442ac529215cdd87e4022d610b6df3456",
+      "sha256": "3113ae1a1abaab47a37a0ba7bbb12d875b74f3533743c8d1ad8e5c9ba64d4979",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/scripts/lib/agent.mix",
+      "source_blob": "f95923e34fa7bd12b7891a6b94bc644b6cff0a27",
+      "sha256": "0c83c614ac5f7842943101ffcf8ca3e20f2f1177b03365b61dcd1b10b7bf1b7a",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/scripts/lib/awaits.mix",
+      "source_blob": "581612ef27617a02090a122aaa1d1c5e2f7db127",
+      "sha256": "d36fc1735870b05d4820f55945c3e0fd86cfed572fdb20aafe4b4f3f383d3c3c",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/scripts/lib/log.mix",
+      "source_blob": "c026e55f05a69e7e5a5e4e5c433c06082ced7243",
+      "sha256": "4568679d6b6a3e7752b5604b371e4efb4d08992e50ca383db45cc6627d77b29f",
+      "changed": false
+    },
+    {
+      "path": "services/agentd/tests/acp_default_test.mix",
+      "source_blob": "f4393e035b99539395b7bea8ef71eeefb0d97d93",
+      "sha256": "4575ddce6873b588f5ee6a8817a417ef651316eff518d14c3cc34c6b2bf1bece",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/acp_failure_test.mix",
+      "source_blob": "a21768077297278b18934339d8dc7104035b460d",
+      "sha256": "7dd780a0442dc9fcd8b15cf6365ef8404637444cbf57c267ea90595cf6623b12",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/acp_files_test.mix",
+      "source_blob": "ff5fa233c49cfc98e2cb8c43947b72911d6e50bb",
+      "sha256": "6119b7de97ae8da130c45f4f3e911de2ec60e0a08a96a9dc18204d73ea08a316",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/acp_load_test.mix",
+      "source_blob": "7b8515bd2fe56c98d0dedd2d5541ef7765cf3c96",
+      "sha256": "457f583b68af8c8dc6bd875aa1fbcf4fd85a6a53d18601cd06461101f33665ca",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/acp_recording_test.mix",
+      "source_blob": "4f078332d04e4e3af945fe01acf29ab29a223dcd",
+      "sha256": "8a66aea766eeedcc8b98ea715ec6a4c9482bad530a765a688c090d20b0c3df37",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/acp_test.mix",
+      "source_blob": "03fa016218e525cbcb2f49ad777b3b05588713a5",
+      "sha256": "770c955e287a90973f58ba9a2836ee0fe863362d6031f4bb6d47aa39091b48ce",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/agent_cli_test.mix",
+      "source_blob": "c5ffc9e5ba657a6b95b0cbea276ae750233614b7",
+      "sha256": "84c6280a1690703b7103f13a1cea1f92ed014cd5b768fdab086e48dcf82cfa5e",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/agent_test.mix",
+      "source_blob": "4694c70ca5b94defc470364ea71e0883948256ff",
+      "sha256": "7c105afbd6ae0276fc4ee41b330901cf515e09c86c2a77564c737972222c8cae",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/agentd_await_test.mix",
+      "source_blob": "a0027a8d6499ae6a2dd082a224fb71dcd65bfa4a",
+      "sha256": "4f8e762ed0a3be7f580c234a01838c6ed238f6c44c22caf63b62605243670a2b",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/agentd_resume_test.mix",
+      "source_blob": "0c85dee4c3c68fc03886a1eb67ce8be5d136afea",
+      "sha256": "21a42607b4e529d834d2660fc777df64d99b5c76fa6b6db8810cb9d936fde008",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/agentd_test.mix",
+      "source_blob": "99a4999bb0f1d844118342d9bcd7e3ab55dcfbd5",
+      "sha256": "648e8932206f0a1ccfcb5cc7676fbf4af55bb40b5338ca669b8bef6dd9ea130b",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/fixtures/acp_client.mix",
+      "source_blob": "316cc6f4ed079780ea6531e972811293aa65ea8e",
+      "sha256": "f2742f8af330feaa01e36a0093d2d7333674976bca9c09beab920f6db2b22ec2",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/fixtures/acp_failure_client.mix",
+      "source_blob": "17411c0a2246278480a79e932f53553cccc0b3d2",
+      "sha256": "e69da8e76848f9d14cbb5712a53982142a0a331632408bc480508c145e43e284",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/fixtures/acp_load_client.mix",
+      "source_blob": "637720c6f4c969abf697355ed5cb8d91fc2e7b84",
+      "sha256": "144c8e58c2c89f694ede482d6d25715e4c5b74a9e230b4c8f2f5dd09d7b02561",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/fixtures/acp_recording.json",
+      "source_blob": "dae2dcb04a4ace07eb266aa3cbacbcd1170b4943",
+      "sha256": "584e7f6165b5ef16df75ae28a604e4684f95ebef2a37c08a774310adb08c4878",
+      "changed": false
+    },
+    {
+      "path": "services/agentd/tests/fixtures/acp_recording_client.mix",
+      "source_blob": "52c4bd80cd577fd43ea6eb45d0f54f233954d511",
+      "sha256": "e8c943d2ac793653a22000c71d8e10df73d8e8304a09dd66cdcb3d25c8c27bff",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/fixtures/agent_listener.mix",
+      "source_blob": "8ec42920a6f95fe1e568735474393c54c7b54e74",
+      "sha256": "e883ad8f9c1475397210551d0c8d9fdef1737687dfd08a158a0ace9d920ff7fa",
+      "changed": false
+    },
+    {
+      "path": "services/agentd/tests/fixtures/await_listener.mix",
+      "source_blob": "1c8e12ba17df60fc4296696cf63d4adec6ba4b1b",
+      "sha256": "5bd63121442bb33f983986d9485f1fd37584ff7b5064a174914637401fc3ee39",
+      "changed": false
+    },
+    {
+      "path": "services/agentd/tests/fixtures/buildd-done-47b2f6cef23b.json",
+      "source_blob": "54febcb39c1eca1ebba52ced343d1eb726b185c5",
+      "sha256": "78f5cbf41d935494a99627fde5f917e0abd2bb186876f03c2b69d3d2970a0ebc",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/fixtures/fake_acp_agent.mix",
+      "source_blob": "04dc3aada812f9c33ecbd1f55260382d60b3dc6f",
+      "sha256": "b823d1b411455f76828e42c6ef0e6a7805aaacc2503aa23dbff19318ffa375c3",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/tests/fixtures/fake_op.mix",
+      "source_blob": "1a30af54bcd3833d638bff3323b508ce6d2a1bf8",
+      "sha256": "665e43f227cdbf106068ac609ee5ab2d5f9850f81d857cd3a56c260b2ec3789e",
+      "changed": false
+    },
+    {
+      "path": "services/agentd/tests/fixtures/impostor.mix",
+      "source_blob": "f736ddba612b2de806442ab1011aa44f37094d25",
+      "sha256": "faee8bee509cea077fbd49866b8cd3c987f3fdf6a68f1f7d7e6d0745446c2556",
+      "changed": false
+    },
+    {
+      "path": "services/agentd/tests/log_test.mix",
+      "source_blob": "895cb233bd758f6971e16d4f7bacbe501825031f",
+      "sha256": "36345087f9a725d8291b13868834131dc4aa11add0b9082e6a4c06d31193f7cb",
+      "changed": false
+    },
+    {
+      "path": "services/agentd/units/agentd.service",
+      "source_blob": "a47e32873154ca0a4f8e5abb421142b2f0ee5b77",
+      "sha256": "660cb169f81f1c9cdfe0e52c701342d653c5586bc46557e77ba42bb0c7fdd4ab",
+      "changed": true
+    },
+    {
+      "path": "services/agentd/units/agentd@.service",
+      "source_blob": "fdb9e6b4077b3abdecf5c8207e14474ed87d58b4",
+      "sha256": "b9bb3401f656cda86343796335169a385f98a9b7a51f269d56c79c1365176288",
+      "changed": true
+    },
+    {
+      "path": "services/daylight/component.mx",
+      "source_blob": "69448e01d3d5e5e377fcf6427c0e3750931c23ca",
+      "sha256": "348a2dd74d1c4a30552c7ea010ebe241ad7657d938be0aa17f6f99339a0f6e9c",
+      "changed": false
+    },
+    {
+      "path": "services/daylight/scripts/daylight.mix",
+      "source_blob": "95e2f5bcea9f738014aea63af333e433a29737fe",
+      "sha256": "df5b6e12ad72636a7b9955a2e9b4140382bd4083f577645c6255044b29e0203b",
+      "changed": true
+    },
+    {
+      "path": "services/daylight/scripts/lib/sun.mix",
+      "source_blob": "07041a867e34308d101cb54921446b7b064bee98",
+      "sha256": "bae43ccf5c2ec71fe705e3033593c5b58bbf8037fa2aebd3070bceb6d3308a22",
+      "changed": false
+    },
+    {
+      "path": "services/daylight/tests/daylight_test.mix",
+      "source_blob": "4763d86aaa738fb1d4bfa0921b2cde4f952e6bf5",
+      "sha256": "74d9e784204ffb61f29bc6cc88a82167738af1e13ddede55501c8eb5151e75dc",
+      "changed": true
+    },
+    {
+      "path": "services/daylight/tests/fixtures/fake_settingsd.mix",
+      "source_blob": "5be72c0298d0790ebf75c1938931d3d70f46d6fd",
+      "sha256": "17d41c0f9e1e705b0200fa1d3d9cca2613c00e0fa4d42eea5aba6ea79840e071",
+      "changed": false
+    },
+    {
+      "path": "services/daylight/tools/zones_from_tzdb.mix",
+      "source_blob": "52a0f4859ae3db76b33c0593c527969f9dc6bfb4",
+      "sha256": "77e7c43ac1bf138467bd8c260e8d97a709e4081b47368769fd4077062850348c",
+      "changed": false
+    },
+    {
+      "path": "services/daylight/units/daylight.service",
+      "source_blob": "1b25a57932b109f8fbfa4763ce96cf0677db3954",
+      "sha256": "049580f4593ac4591504159f71169d59b72cb492c5016a5e1a57a69aea643c71",
+      "changed": true
+    },
+    {
+      "path": "services/peersd/component.mx",
+      "source_blob": "df57d8d7b7d1f2f64e5074836d0e827911d207af",
+      "sha256": "eb671cbf0f04bed293c7efce99f41752ebe9f601040392058f5e76903ab174e1",
+      "changed": false
+    },
+    {
+      "path": "services/peersd/scripts/claude_code_hook.mix",
+      "source_blob": "c12c3f249d65b5e08851adfeeb72922be84def5d",
+      "sha256": "6281aee29a227c5e0371ca4992b64806541752e1c87dd1bd4f374728571791ea",
+      "changed": true
+    },
+    {
+      "path": "services/peersd/scripts/lib/target.mix",
+      "source_blob": "ec552134c589e32e92bd3760f79c62e75d6e0c99",
+      "sha256": "8f9663870c5b8c1a49f88276954323a019e4b79034320da72cc20dd248e45d09",
+      "changed": false
+    },
+    {
+      "path": "services/peersd/scripts/peers_cli.mix",
+      "source_blob": "2f70d128a087c8da0487f2ec009dc62565658408",
+      "sha256": "a3b7116c3a645280fa87688ce460e65a2ccb98eb541194477d0f96f39a9fb4c5",
+      "changed": false
+    },
+    {
+      "path": "services/peersd/scripts/peersd.mix",
+      "source_blob": "a83599dfff3bef3ed69770651451cc4df27f6329",
+      "sha256": "9ee073c0fedeeb6f1c0425694f5b83a76138aea787c89cf1c182bb94243fe5ff",
+      "changed": false
+    },
+    {
+      "path": "services/peersd/tests/peers_federation_test.mix",
+      "source_blob": "86cbca7290366eb064ddd12b7c1b697f29a326ff",
+      "sha256": "216e83a037631ddd821b968b935bbbf784ee252c9acf03226d19aa3be88e5f88",
+      "changed": true
+    },
+    {
+      "path": "services/peersd/tests/peersd_test.mix",
+      "source_blob": "50bc2c58c26a2f86f66e10e280ffd63472b61162",
+      "sha256": "daf3feaa04599b48bb0df2494f8d0f7b31952b7628babd860c217f98be8abbcb",
+      "changed": true
+    },
+    {
+      "path": "services/peersd/units/peersd.service",
+      "source_blob": "916787ce22b1aa2e4949f889d4dedbcbf2d2f1dc",
+      "sha256": "8c00e4c98b6193e7328768f215de5b971e237c18204f5ebc6e02c9cbc095a9f2",
+      "changed": true
+    },
+    {
+      "path": "services/releasesd/README.md",
+      "source_blob": "b2d569af86636667e96539f1886172aea18cebb6",
+      "sha256": "044eaf484fd31f2d660f5f3ef742fd6884f4162fd637d2f5383d0b94d7d1c654",
+      "changed": false
+    },
+    {
+      "path": "services/releasesd/component.mx",
+      "source_blob": "e1b7b05c5d400b064bda6842f8ecd5dd9424a573",
+      "sha256": "91688f89463be0f54b4e8846b52ad9be3ce9f94607a3ffcbd6ec5b1722f57fbd",
+      "changed": false
+    },
+    {
+      "path": "services/releasesd/scripts/lib/releases.mix",
+      "source_blob": "0fbf9338f4ee5a3ff25245c6da9734d87e5cdbd9",
+      "sha256": "5ed91dbdf8a42532329c401eb318837cf9380b2c1a82e14e2cbbae56f12c773a",
+      "changed": true
+    },
+    {
+      "path": "services/releasesd/scripts/lib/tags.mix",
+      "source_blob": "aa338ecdf347c7d6832170152bbc917140439c85",
+      "sha256": "fdebecebe9fa30fbfd055264d83e6964b1b957fbcb10f10fd571da4a013be5b6",
+      "changed": false
+    },
+    {
+      "path": "services/releasesd/scripts/releases.mix",
+      "source_blob": "365f5f51d5bc77d9c28733898f028b8011aef1f7",
+      "sha256": "c9d9d6dcb8ceb2cb4c10f156d230e88befb8f6c6bec03884e0b6119299255dda",
+      "changed": false
+    },
+    {
+      "path": "services/releasesd/scripts/releasesd.mix",
+      "source_blob": "5fdab39039b02a234a2d21e49c4bdde49032bfe5",
+      "sha256": "530c046a39d776de5255c7711c10c0a024ffb91bbe9bb5bad017b0fa058ee4f5",
+      "changed": false
+    },
+    {
+      "path": "services/releasesd/tests/releases_test.mix",
+      "source_blob": "0e2045ed487501d73523f9e06030d3459d100fa5",
+      "sha256": "b41f070db4dc067a9345c10fd031a0880ba2762f637feb95f4130daefe287178",
+      "changed": true
+    },
+    {
+      "path": "services/releasesd/tests/releasesd_test.mix",
+      "source_blob": "096dd7021a7fb4ea432159657de64b18f9a4ea9a",
+      "sha256": "ddea84aa8acc8275c8efe1280dad948fc2fb6ac5bd6c66ca0ed8d54443909470",
+      "changed": true
+    },
+    {
+      "path": "services/releasesd/units/releasesd@.service",
+      "source_blob": "99293d85dc2d85afecba6d68772f98dd40bbdc70",
+      "sha256": "b17977fa65cd4cec910cd730628a8637a63e6acb3790f0a06d28652e3b34cad6",
+      "changed": true
+    }
+  ]
+}
