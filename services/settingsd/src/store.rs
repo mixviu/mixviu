@@ -310,6 +310,7 @@ impl Stored {
     /// upgraded and migrated in memory. `text` is the record as stored,
     /// whose digest the migration receipt carries.
     pub fn servable(self, text: &str) -> anyhow::Result<Accepted> {
+        self.check(&self.identity().binding)?;
         let accepted = match self {
             Self::Current(record) => record.with_stored_keys()?,
             Self::Format4(record) => crate::migration::plan(*record, text)?.accepted,
@@ -327,7 +328,9 @@ impl Stored {
                 encode(&record)
             }
             Self::Format4(mut record) => {
-                for note in settings::keymap::scrub_stored(&mut record.desktop.keymaps) { eprintln!("settingsd: {note}"); }
+                for note in settings::keymap::scrub_stored(&mut record.desktop.keymaps) {
+                    eprintln!("settingsd: {note}");
+                }
                 record.binding = to.clone();
                 record.seal()?;
                 record.check(to)?;
@@ -343,7 +346,9 @@ impl Accepted {
         self.check(&self.binding)?;
         let notes = settings::keymap::scrub_values(&mut self.values);
         if !notes.is_empty() {
-            for note in notes { eprintln!("settingsd: {note}"); }
+            for note in notes {
+                eprintln!("settingsd: {note}");
+            }
             self.effective()?;
             self.seal()?;
         }

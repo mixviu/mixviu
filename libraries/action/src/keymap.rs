@@ -16,22 +16,30 @@ pub fn canonical_chord(text: &str) -> String {
 pub fn parse_chord(text: &str) -> Option<String> {
     let parts: Vec<_> = text.split('+').collect();
     let (key, mods) = parts.split_last()?;
-    if key.is_empty() || !(key.bytes().all(|b| b.is_ascii_alphanumeric()) || ["=", "-", "/"].contains(key)) {
+    if key.is_empty()
+        || !(key.bytes().all(|b| b.is_ascii_alphanumeric()) || ["=", "-", "/"].contains(key))
+    {
         return None;
     }
     let mut flags = [false; 4];
     for m in mods {
         let index = match m.to_ascii_lowercase().as_str() {
             "ctrl" | "control" | "command" | "maccmd" => 0,
-            "alt" => 1, "shift" => 2, "super" => 3,
+            "alt" => 1,
+            "shift" => 2,
+            "super" => 3,
             _ => return None,
         };
-        if flags[index] { return None; }
+        if flags[index] {
+            return None;
+        }
         flags[index] = true;
     }
     let mut out = String::new();
     for (i, name) in ["Ctrl+", "Alt+", "Shift+", "Super+"].iter().enumerate() {
-        if flags[i] { out.push_str(name); }
+        if flags[i] {
+            out.push_str(name);
+        }
     }
     let lower = key.to_ascii_lowercase();
     out.push_str(match lower.as_str() {
@@ -45,7 +53,9 @@ pub fn parse_chord(text: &str) -> Option<String> {
 }
 
 pub fn reserved(chord: &str) -> bool {
-    let Some(chord) = parse_chord(chord) else { return false; };
+    let Some(chord) = parse_chord(chord) else {
+        return false;
+    };
     let parts: Vec<_> = chord.split('+').collect();
     reserved_key(
         parts.last().expect("key present"),

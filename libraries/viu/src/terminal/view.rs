@@ -241,12 +241,38 @@ mod tests {
                     "find submission reached the PTY input queue"
                 );
                 if opt_in {
-                    let events=frame(true,1,vec![key(true,egui::Modifiers::SHIFT),key(false,egui::Modifiers::SHIFT),key(true,egui::Modifiers::NONE)],egui::Modifiers::NONE);
-                    let submits:Vec<_>=events.iter().filter(|e|e.id=="find" && e.action=="submit").collect();
-                    assert_eq!(submits.len(),1);
-                    assert_eq!(submits[0].value,json!({"shift":true}));
-                    assert_eq!(ctx.input(|i| i.events.iter().filter(|e| matches!(e,egui::Event::Key{key:egui::Key::Enter,..})).count()),2,"unrelated Enter events must survive");
-                    assert_eq!(ctx.memory(|m|m.focused()),Some(field));
+                    let events = frame(
+                        true,
+                        1,
+                        vec![
+                            key(true, egui::Modifiers::SHIFT),
+                            key(false, egui::Modifiers::SHIFT),
+                            key(true, egui::Modifiers::NONE),
+                        ],
+                        egui::Modifiers::NONE,
+                    );
+                    let submits: Vec<_> = events
+                        .iter()
+                        .filter(|e| e.id == "find" && e.action == "submit")
+                        .collect();
+                    assert_eq!(submits.len(), 1);
+                    assert_eq!(submits[0].value, json!({"shift":true}));
+                    assert_eq!(
+                        ctx.input(|i| i
+                            .events
+                            .iter()
+                            .filter(|e| matches!(
+                                e,
+                                egui::Event::Key {
+                                    key: egui::Key::Enter,
+                                    ..
+                                }
+                            ))
+                            .count()),
+                        2,
+                        "unrelated Enter events must survive"
+                    );
+                    assert_eq!(ctx.memory(|m| m.focused()), Some(field));
                     assert!(super::pointer_order_tests::read(&receiver).is_empty());
                 }
                 frame(

@@ -330,12 +330,27 @@ mod tests {
     #[test]
     fn injected_desk_keys_are_refused_without_partial_input() {
         let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
-        let mut input=Input::default();
-        for args in [json!({"key":"F1"}),json!({"key":"ArrowLeft","ctrl":true}),json!({"key":"ArrowUp","alt":true})] {
-            assert!(input.queue("key",&args,&mut view).unwrap_err().contains("reserved"));
+        let mut input = Input::default();
+        for args in [
+            json!({"key":"F1"}),
+            json!({"key":"ArrowLeft","ctrl":true}),
+            json!({"key":"ArrowUp","alt":true}),
+        ] {
+            assert!(
+                input
+                    .queue("key", &args, &mut view)
+                    .unwrap_err()
+                    .contains("reserved")
+            );
             assert!(input.now.is_empty() && input.later.is_empty());
         }
-        input.queue("key",&json!({"key":"ArrowLeft","ctrl":true,"shift":true}),&mut view).unwrap();
+        input
+            .queue(
+                "key",
+                &json!({"key":"ArrowLeft","ctrl":true,"shift":true}),
+                &mut view,
+            )
+            .unwrap();
         assert!(!input.now.is_empty());
     }
     #[test]
@@ -386,31 +401,8 @@ mod tests {
 }
 /// Application-authored shortcuts use native key consumption before widgets.
 pub(crate) fn consume_chord(ctx: &egui::Context, chord: &str) -> bool {
-    let parts: Vec<_> = chord.split('+').collect();
-    let Some((key, mods)) = parts.split_last() else {
-        return false;
-    };
-    let mut modifiers = egui::Modifiers::default();
-    for modifier in mods {
-        match *modifier {
-            "Ctrl" => {
-                modifiers.ctrl = true;
-                modifiers.command = true;
-            }
-            "Shift" => modifiers.shift = true,
-            "Alt" => modifiers.alt = true,
-            _ => return false,
-        }
-    }
-    let name = match *key {
-        "=" => "Equals".into(),
-        "-" => "Minus".into(),
-        "/" => "Slash".into(),
-        key if key.len() == 1 => key.to_ascii_uppercase(),
-        key => key.into(),
-    };
-    egui::Key::from_name(&name).is_some_and(|key| {
-        !toolkit::keymap::reserved(key, modifiers)
-            && ctx.input_mut(|i| i.consume_key(modifiers, key))
+    toolkit::keymap::parse_chord(chord).is_some_and(|chord| {
+        !toolkit::keymap::reserved(chord.logical_key, chord.modifiers)
+            && ctx.input_mut(|i| i.consume_key(chord.modifiers, chord.logical_key))
     })
 }

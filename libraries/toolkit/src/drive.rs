@@ -2023,6 +2023,7 @@ fn key(args: &Value) -> Result<Job, String> {
 
 #[test]
 fn injected_desk_keys_are_refused() {
+    assert!(key(&serde_json::json!({"key":"F1"})).err().unwrap().contains("reserved"));
     for name in [
         "F1",
         "F12",

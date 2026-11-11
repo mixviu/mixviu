@@ -564,7 +564,21 @@ pub fn draw(
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let focused = ui.memory(|m| m.focused());
-                let submit_event = ui.input(|i| i.events.iter().find(|e| matches!(e, egui::Event::Key { key: egui::Key::Enter, pressed: true, .. })).cloned());
+                let submit_event = ui.input(|i| {
+                    i.events
+                        .iter()
+                        .find(|e| {
+                            matches!(
+                                e,
+                                egui::Event::Key {
+                                    key: egui::Key::Enter,
+                                    pressed: true,
+                                    ..
+                                }
+                            )
+                        })
+                        .cloned()
+                });
                 let field = toolkit::field::search(ui, &mut pattern, "Find", 220.0);
                 let marker = Id::unique((id, "focus-instance"));
                 if !ui.is_sizing_pass()
@@ -580,8 +594,12 @@ pub fn draw(
                         // TextEdit submits the first Enter it sees while it
                         // owns focus. Consume that press only, never the rest
                         // of this frame's Enter presses or releases.
-                        let Some(event @ egui::Event::Key { modifiers, .. }) = submit_event else { return; };
-                        if focused != Some(field.id) { return; }
+                        let Some(event @ egui::Event::Key { modifiers, .. }) = submit_event else {
+                            return;
+                        };
+                        if focused != Some(field.id) {
+                            return;
+                        }
                         let shift = modifiers.shift;
                         ui.input_mut(|input| {
                             if let Some(index) = input.events.iter().position(|e| e == &event) {

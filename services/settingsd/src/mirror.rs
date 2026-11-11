@@ -112,9 +112,11 @@ impl Cache {
         accepted
     }
     fn loaded(mut self) -> anyhow::Result<Self> {
-        let notes=settings::keymap::scrub_values(&mut self.values);
+        let notes = settings::keymap::scrub_values(&mut self.values);
         if !notes.is_empty() {
-            for note in notes { eprintln!("settingsd: {note}"); }
+            for note in notes {
+                eprintln!("settingsd: {note}");
+            }
             self.seal()?;
         }
         Ok(self)
@@ -220,7 +222,7 @@ pub fn open(
     };
     let cache = fetch().map_err(|e| anyhow::anyhow!("mirror cache unavailable: {e}"))?;
     cache.check(binding, authority)?;
-    let cache=cache.loaded()?;
+    let cache = cache.loaded()?;
     write_in(&dir, &cache)?;
     Ok((cache, Origin::Rebuilt { refused }))
 }

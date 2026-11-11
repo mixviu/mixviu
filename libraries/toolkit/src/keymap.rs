@@ -76,7 +76,9 @@ pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
         "/" => Key::Slash,
         "" => return None,
         one if one.chars().count() == 1 => Key::from_name(&one.to_ascii_uppercase())?,
-        name => *Key::ALL.iter().find(|key| key.name().eq_ignore_ascii_case(name))?,
+        name => *Key::ALL
+            .iter()
+            .find(|key| key.name().eq_ignore_ascii_case(name))?,
     };
     Some(KeyboardShortcut::new(modifiers, key))
 }
@@ -115,25 +117,43 @@ mod tests {
 
     #[test]
     fn text_and_native_reservation_agree() {
-        for (text,key,modifiers) in [
-            ("f1",Key::F1,Modifiers::NONE),
-            ("ctrl+left",Key::ArrowLeft,Modifiers::CTRL),
-            ("Control+ARROWLEFT",Key::ArrowLeft,Modifiers::CTRL),
-            ("Command+Right",Key::ArrowRight,Modifiers::COMMAND),
-            ("MacCmd+Down",Key::ArrowDown,Modifiers::MAC_CMD),
-            ("alt+Up",Key::ArrowUp,Modifiers::ALT),
-            ("ctrl+shift+Left",Key::ArrowLeft,Modifiers::CTRL | Modifiers::SHIFT),
-            ("Alt+Shift+Right",Key::ArrowRight,Modifiers::ALT | Modifiers::SHIFT),
-            ("F13",Key::F13,Modifiers::NONE),
+        for (text, key, modifiers) in [
+            ("f1", Key::F1, Modifiers::NONE),
+            ("ctrl+left", Key::ArrowLeft, Modifiers::CTRL),
+            ("Control+ARROWLEFT", Key::ArrowLeft, Modifiers::CTRL),
+            ("Command+Right", Key::ArrowRight, Modifiers::COMMAND),
+            ("MacCmd+Down", Key::ArrowDown, Modifiers::MAC_CMD),
+            ("alt+Up", Key::ArrowUp, Modifiers::ALT),
+            (
+                "ctrl+shift+Left",
+                Key::ArrowLeft,
+                Modifiers::CTRL | Modifiers::SHIFT,
+            ),
+            (
+                "Alt+Shift+Right",
+                Key::ArrowRight,
+                Modifiers::ALT | Modifiers::SHIFT,
+            ),
+            ("F13", Key::F13, Modifiers::NONE),
         ] {
-            let parsed=parse_chord(text).expect(text);
-            assert_eq!(parsed.logical_key,key);
-            assert_eq!(::action::keymap::reserved(text), reserved(key,modifiers),"{text}");
-            assert_eq!(reserved(parsed.logical_key,parsed.modifiers),reserved(key,modifiers),"{text}");
+            let parsed = parse_chord(text).expect(text);
+            assert_eq!(parsed.logical_key, key);
+            assert_eq!(
+                ::action::keymap::reserved(text),
+                reserved(key, modifiers),
+                "{text}"
+            );
+            assert_eq!(
+                reserved(parsed.logical_key, parsed.modifiers),
+                reserved(key, modifiers),
+                "{text}"
+            );
         }
         // egui/XKB collapses keypad arrows into Arrow*. These spellings
         // are not keys at either textual injection boundary.
-        for name in ["KP_Left","NumpadLeft","F01","Function3"] { assert!(parse_chord(name).is_none(),"{name}"); }
+        for name in ["KP_Left", "NumpadLeft", "F01", "Function3"] {
+            assert!(parse_chord(name).is_none(), "{name}");
+        }
     }
 
     #[test]

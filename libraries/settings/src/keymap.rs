@@ -35,7 +35,9 @@ pub fn valid_chord(text: &str) -> bool {
     if text.is_empty() || text.len() > MAX_CHORD_BYTES {
         return false;
     }
-    let Some(canonical) = action::keymap::parse_chord(text) else { return false; };
+    let Some(canonical) = action::keymap::parse_chord(text) else {
+        return false;
+    };
     let parts: Vec<&str> = canonical.split('+').collect();
     let Some((key, mods)) = parts.split_last() else {
         return false;
@@ -115,7 +117,11 @@ pub fn scrub_stored(keymaps: &mut Keymaps) -> Vec<String> {
     let mut notes = Vec::new();
     keymaps.retain(|app, overrides| {
         if app != "comp" {
-            notes.extend(action::keymap::scrub_stored(overrides).into_iter().map(|n| format!("keymaps.{app}.{n}")));
+            notes.extend(
+                action::keymap::scrub_stored(overrides)
+                    .into_iter()
+                    .map(|n| format!("keymaps.{app}.{n}")),
+            );
         }
         !overrides.is_empty()
     });

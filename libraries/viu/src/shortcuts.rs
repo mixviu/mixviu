@@ -26,9 +26,14 @@ pub fn resolve(args: &serde_json::Value) -> Result<serde_json::Value, String> {
             .transpose()?;
         if let Some(chord) = shortcut {
             if toolkit::keymap::reserved(chord.logical_key, chord.modifiers) {
-                return Err(format!("{id}: reserved default chord {}", toolkit::keymap::chord_text(&chord)));
+                return Err(format!(
+                    "{id}: reserved default chord {}",
+                    toolkit::keymap::chord_text(&chord)
+                ));
             }
-            if chords.contains(&chord) { return Err("duplicate default chord".into()); }
+            if chords.contains(&chord) {
+                return Err("duplicate default chord".into());
+            }
             chords.push(chord);
         }
         registry.add(toolkit::Action {
@@ -53,11 +58,15 @@ pub fn resolve(args: &serde_json::Value) -> Result<serde_json::Value, String> {
             let extra = keys
                 .iter()
                 .map(|key| {
-                    let chord = key.as_str()
+                    let chord = key
+                        .as_str()
                         .and_then(toolkit::keymap::parse_chord)
                         .ok_or_else(|| "invalid default chord".to_string())?;
                     if toolkit::keymap::reserved(chord.logical_key, chord.modifiers) {
-                        return Err(format!("{id}: reserved default chord {}", toolkit::keymap::chord_text(&chord)));
+                        return Err(format!(
+                            "{id}: reserved default chord {}",
+                            toolkit::keymap::chord_text(&chord)
+                        ));
                     }
                     Ok(chord)
                 })
@@ -158,13 +167,26 @@ mod tests {
     #[test]
     fn reserved_defaults_and_overrides_explain_the_refusal() {
         use serde_json::json;
-        for defaults in [json!([{"id":"x","shortcut":"F5"}]), json!([{"id":"x","keys":["F5"]}]), json!([{"id":"x","shortcut":"Backspace","keys":["Backspace","Alt+Up"]}])] {
-            let error=super::resolve(&json!({"defaults":defaults,"overrides":{}})).unwrap_err();
+        for defaults in [
+            json!([{"id":"x","shortcut":"F5"}]),
+            json!([{"id":"x","keys":["F5"]}]),
+            json!([{"id":"x","shortcut":"Backspace","keys":["Backspace","Alt+Up"]}]),
+        ] {
+            let error = super::resolve(&json!({"defaults":defaults,"overrides":{}})).unwrap_err();
             assert!(error.contains("reserved"), "{error}");
         }
-        let result=super::resolve(&json!({"defaults":[{"id":"x","shortcut":"Ctrl+O"}],"overrides":{"x":["F5"]}})).unwrap();
-        assert_eq!(result["bindings"]["x"]["shortcut"],"Ctrl+O");
-        assert!(result["notes"].as_array().unwrap().iter().any(|n| n.as_str().unwrap().contains("reserved")));
+        let result = super::resolve(
+            &json!({"defaults":[{"id":"x","shortcut":"Ctrl+O"}],"overrides":{"x":["F5"]}}),
+        )
+        .unwrap();
+        assert_eq!(result["bindings"]["x"]["shortcut"], "Ctrl+O");
+        assert!(
+            result["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|n| n.as_str().unwrap().contains("reserved"))
+        );
     }
     #[test]
     fn secondary_defaults_survive_profile_changes_and_restore() {
