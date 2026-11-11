@@ -58,7 +58,12 @@ pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
         "/" => Key::Slash,
         "" => return None,
         one if one.chars().count() == 1 => Key::from_name(&one.to_ascii_uppercase())?,
-        name => Key::from_name(name).or_else(|| Key::ALL.iter().find(|key| key.name().eq_ignore_ascii_case(name)).copied())?,
+        name => Key::from_name(name).or_else(|| {
+            Key::ALL
+                .iter()
+                .find(|key| key.name().eq_ignore_ascii_case(name))
+                .copied()
+        })?,
     };
     Some(KeyboardShortcut::new(modifiers, key))
 }

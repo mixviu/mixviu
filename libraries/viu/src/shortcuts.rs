@@ -177,7 +177,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result["bindings"]["x"]["shortcut"], "F5");
-        assert_eq!(result["notes"],json!([]));
+        assert_eq!(result["notes"], json!([]));
     }
     #[test]
     fn secondary_defaults_survive_profile_changes_and_restore() {
@@ -230,14 +230,33 @@ mod tests {
     }
     #[test]
     fn user_override_keys_dispatch_without_a_defaults_filter() {
-        let ctx=egui::Context::default();
-        for text in ["F5","Command+ArrowLeft","Alt+Up"] {
+        let ctx = egui::Context::default();
+        for text in ["F5", "Command+ArrowLeft", "Alt+Up"] {
             let resolved=super::resolve(&serde_json::json!({"defaults":[{"id":"x","shortcut":"Ctrl+O"}],"overrides":{"x":[text]}})).unwrap();
-            let shortcut=resolved["bindings"]["x"]["shortcut"].as_str().unwrap();
-            let chord=toolkit::keymap::parse_chord(shortcut).unwrap();
-            ctx.run_ui(egui::RawInput { events:vec![egui::Event::Key{key:chord.logical_key,physical_key:None,pressed:true,repeat:false,modifiers:chord.modifiers}],..Default::default() },|ui| {
-                assert_eq!(super::pressed(ui.ctx(),&serde_json::json!([{"id":"x","shortcut":shortcut,"enabled":true}])),vec![serde_json::json!("x")]);
-            }).drop_without_applying_deltas();
+            let shortcut = resolved["bindings"]["x"]["shortcut"].as_str().unwrap();
+            let chord = toolkit::keymap::parse_chord(shortcut).unwrap();
+            ctx.run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::Key {
+                        key: chord.logical_key,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: chord.modifiers,
+                    }],
+                    ..Default::default()
+                },
+                |ui| {
+                    assert_eq!(
+                        super::pressed(
+                            ui.ctx(),
+                            &serde_json::json!([{"id":"x","shortcut":shortcut,"enabled":true}])
+                        ),
+                        vec![serde_json::json!("x")]
+                    );
+                },
+            )
+            .drop_without_applying_deltas();
         }
     }
     #[test]

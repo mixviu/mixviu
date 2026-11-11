@@ -326,7 +326,8 @@ mod tests {
     use serde_json::json;
     #[test]
     fn injected_keys_pass_through_without_app_policy_filtering() {
-        let mut view=SceneView::new("---
+        let mut view = SceneView::new(
+            "---
 scene: 1
 name: input
 citizen: input
@@ -334,15 +335,29 @@ citizen: input
 ```mix
 {root:{widget:\"text\",text:\"Input\"}}
 ```
-").unwrap();
-        for args in [json!({"key":"F1"}),json!({"key":"F12","ctrl":true}),json!({"key":"ArrowLeft","ctrl":true}),json!({"key":"ArrowUp","alt":true})] {
-            let mut input=Input::default();
-            input.queue("key",&args,&mut view).unwrap();
-            assert_eq!(input.now.len(),3);
-            assert!(matches!(&input.now[1],egui::Event::Key{pressed:true,..}));
-            assert!(matches!(&input.now[2],egui::Event::Key{pressed:false,..}));
+",
+        )
+        .unwrap();
+        for args in [
+            json!({"key":"F1"}),
+            json!({"key":"F12","ctrl":true}),
+            json!({"key":"ArrowLeft","ctrl":true}),
+            json!({"key":"ArrowUp","alt":true}),
+        ] {
+            let mut input = Input::default();
+            input.queue("key", &args, &mut view).unwrap();
+            assert_eq!(input.now.len(), 3);
+            assert!(matches!(
+                &input.now[1],
+                egui::Event::Key { pressed: true, .. }
+            ));
+            assert!(matches!(
+                &input.now[2],
+                egui::Event::Key { pressed: false, .. }
+            ));
         }
-    }    #[test]
+    }
+    #[test]
     fn malformed_gestures_do_not_queue_partial_native_input() {
         let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
         let mut input = Input::default();
@@ -390,7 +405,6 @@ citizen: input
 }
 /// Application-authored shortcuts use native key consumption before widgets.
 pub(crate) fn consume_chord(ctx: &egui::Context, chord: &str) -> bool {
-    toolkit::keymap::parse_chord(chord).is_some_and(|chord| {
-        ctx.input_mut(|i| i.consume_key(chord.modifiers, chord.logical_key))
-    })
+    toolkit::keymap::parse_chord(chord)
+        .is_some_and(|chord| ctx.input_mut(|i| i.consume_key(chord.modifiers, chord.logical_key)))
 }

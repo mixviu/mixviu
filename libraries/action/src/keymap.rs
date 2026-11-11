@@ -68,13 +68,23 @@ pub fn reserved(chord: &str) -> bool {
 /// Logical-key adapter for the defaults policy, not an input filter.
 pub fn reserved_key(key: &str, ctrl: bool, alt: bool, shift: bool) -> bool {
     let key = key.to_ascii_lowercase();
-    let fkey = key.strip_prefix('f').filter(|n| !n.starts_with('0'))
-        .and_then(|n| n.parse::<u8>().ok()).is_some_and(|n| (1..=12).contains(&n));
-    fkey || (matches!(key.as_str(), "arrowleft" | "arrowright" | "arrowup" | "arrowdown" | "left" | "right" | "up" | "down") && !shift && (ctrl || alt))
+    let fkey = key
+        .strip_prefix('f')
+        .filter(|n| !n.starts_with('0'))
+        .and_then(|n| n.parse::<u8>().ok())
+        .is_some_and(|n| (1..=12).contains(&n));
+    fkey || (matches!(
+        key.as_str(),
+        "arrowleft" | "arrowright" | "arrowup" | "arrowdown" | "left" | "right" | "up" | "down"
+    ) && !shift
+        && (ctrl || alt))
 }
 
 fn ensure_default_chord(chord: &str) {
-    assert!(!reserved(chord), "F1-F12 belong to the user; Ctrl/Alt+arrow without Shift are reserved in shipped defaults");
+    assert!(
+        !reserved(chord),
+        "F1-F12 belong to the user; Ctrl/Alt+arrow without Shift are reserved in shipped defaults"
+    );
 }
 #[derive(Default)]
 pub(crate) struct Bindings {
@@ -222,17 +232,30 @@ mod tests {
 
     #[test]
     fn reserved_arrow_defaults_are_rejected_after_normalisation() {
-        for chord in ["ctrl+Left","Control+ArrowLeft","Command+Right","MacCmd+ArrowDown","alt+Up"] {
-            assert!(std::panic::catch_unwind(|| {
-                let mut bindings=Bindings::default();
-                bindings.add("nav.back",Some(chord.into()));
-            }).is_err(),"{chord}");
+        for chord in [
+            "ctrl+Left",
+            "Control+ArrowLeft",
+            "Command+Right",
+            "MacCmd+ArrowDown",
+            "alt+Up",
+        ] {
+            assert!(
+                std::panic::catch_unwind(|| {
+                    let mut bindings = Bindings::default();
+                    bindings.add("nav.back", Some(chord.into()));
+                })
+                .is_err(),
+                "{chord}"
+            );
         }
-        let mut bindings=Bindings::default();
-        bindings.add("nav.back",Some("ctrl+shift+Left".into()));
-        let notes=bindings.rebind(&Overrides::from([("nav.back".into(),vec!["Alt+ArrowLeft".into()])]),|s|parse_chord(s));
+        let mut bindings = Bindings::default();
+        bindings.add("nav.back", Some("ctrl+shift+Left".into()));
+        let notes = bindings.rebind(
+            &Overrides::from([("nav.back".into(), vec!["Alt+ArrowLeft".into()])]),
+            |s| parse_chord(s),
+        );
         assert!(notes.is_empty());
-        assert_eq!(bindings.shortcuts_of("nav.back"),["Alt+ArrowLeft"]);
+        assert_eq!(bindings.shortcuts_of("nav.back"), ["Alt+ArrowLeft"]);
     }
 
     #[test]

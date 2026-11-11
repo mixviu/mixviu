@@ -2020,8 +2020,13 @@ fn key(args: &Value) -> Result<Job, String> {
 
 #[test]
 fn injected_keys_are_not_filtered_by_the_defaults_policy() {
-    for args in [serde_json::json!({"key":"F1"}),serde_json::json!({"key":"F12","modifiers":["ctrl"]}),serde_json::json!({"key":"ArrowLeft","modifiers":["ctrl"]}),serde_json::json!({"key":"ArrowUp","modifiers":["alt"]})] {
-        assert!(key(&args).is_ok(),"{args}");
+    for args in [
+        serde_json::json!({"key":"F1"}),
+        serde_json::json!({"key":"F12","modifiers":["ctrl"]}),
+        serde_json::json!({"key":"ArrowLeft","modifiers":["ctrl"]}),
+        serde_json::json!({"key":"ArrowUp","modifiers":["alt"]}),
+    ] {
+        assert!(key(&args).is_ok(), "{args}");
     }
 }
 
