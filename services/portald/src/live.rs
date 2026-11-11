@@ -7,8 +7,8 @@
 use crate::appearance::{NAMESPACE, Projection, Values};
 use crate::cache;
 use crate::portal::{self, Portal, PortalSignals};
-use crate::screencast::consent::{self, Consent, Policy};
 use crate::screencast;
+use crate::screencast::consent::{self, Consent, Policy};
 #[cfg(feature = "screencast")]
 use crate::screencast::{ScreenCast, session::Sessions};
 use crate::status::{self, Origin, Shared};
@@ -160,7 +160,10 @@ pub async fn serve(
     #[cfg(feature = "screencast")]
     let sessions = Sessions::default();
     #[cfg(not(feature = "screencast"))]
-    anyhow::ensure!(config.screencast.is_none(), "built without the screencast feature");
+    anyhow::ensure!(
+        config.screencast.is_none(),
+        "built without the screencast feature"
+    );
     let mut builder = zbus::connection::Builder::address(config.address.as_str())?
         .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?;
     #[cfg(feature = "screencast")]

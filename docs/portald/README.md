@@ -5,9 +5,9 @@ description: How portald serves XDG Settings, FileChooser v4 and ScreenCast on t
 
 # The desktop portal
 
-Applications on MixOS ask the desktop for its appearance (dark or light mode,
+Applications on MixViu ask the desktop for its appearance (dark or light mode,
 contrast and accent colour) through the XDG Settings portal, and for a screen
-to share through the XDG ScreenCast portal. `portald` is the MixOS
+to share through the XDG ScreenCast portal. `portald` is the MixViu
 implementation of these interfaces and FileChooser version 4. It owns `org.freedesktop.portal.Desktop` on the session
 bus, answers the `org.freedesktop.appearance` namespace and, when started with
 `--screencast`, serves monitor sources from the compositor.
@@ -238,7 +238,7 @@ portald serve --instance <name> [--profile default] [--state-dir DIR] [--screenc
 ```
 
 It needs `DBUS_SESSION_BUS_ADDRESS`. `--state-dir` defaults to
-`$STATE_DIRECTORY`, which systemd sets from `StateDirectory=portald`. With
+the paths state root (`mix:var/portald`); the unit passes a per-session `--state-dir`. With
 `--screencast` it also needs `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` for the
 compositor, and `PIPEWIRE_RUNTIME_DIR` / `PIPEWIRE_REMOTE` (or
 `XDG_RUNTIME_DIR`) for PipeWire. The binary links the system `libpipewire-0.3`.
@@ -260,7 +260,7 @@ while disconnected. It is registered in
 ## Tests
 
 The source is
-[`services/portald`](https://github.com/markc/mixos/tree/main/services/portald).
+[`services/portald`](https://github.com/mixviu/mixviu/tree/main/services/portald).
 
 ```text
 cargo test --locked -p portald

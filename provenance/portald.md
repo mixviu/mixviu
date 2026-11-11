@@ -65,3 +65,9 @@ The restart-recovery Mix script needs a systemd user manager and creates an
 isolated transient unit and private D-Bus. It is retained for explicit worker
 execution; it must never be pointed at a running desktop/service. No desktop,
 VT, install or production service action is part of this derivation.
+
+The source also patches PipeWire 0.10.1 with Buffer::find_meta_mut, required
+for producer PTS/sequence metadata. The same frozen vendor/pipewire tree is
+retained, with its upstream archive checksum, patch explanation and MIT licence.
+No PipeWire version or feature change is used to replace that patch. The old
+files-spec documentation assertion now checks the imported portal contract page.

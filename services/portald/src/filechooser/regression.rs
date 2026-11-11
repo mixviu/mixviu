@@ -505,9 +505,8 @@ async fn cancel_retry_budget_is_bounded() {
 
 #[test]
 fn spec_header_describes_the_served_provider_window_and_portal() {
-    let spec = include_str!("../../../../docs/docs/spec/files/README.md");
-    let header = spec.split("\n\n").nth(1).unwrap();
-    assert!(header.contains("DOpus serves the files provider and chooser"));
-    assert!(header.contains("window; portald serves FileChooser v4"));
-    assert!(!header.contains("Nothing\nhere is served"));
+    let spec = include_str!("../../../../docs/portald/README.md");
+    assert!(spec.contains("FileChooser version 4"));
+    assert!(spec.contains("files.choose"));
+    assert!(spec.contains("org.freedesktop.portal.Desktop"));
 }
