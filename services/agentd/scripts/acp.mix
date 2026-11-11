@@ -11,7 +11,7 @@ $operations = {initialize: "initialize", "session/new": "new", "session/load": "
   "session/set_mode": "mode", "session/set_config_option": "option"}
 $name = "acp-" .. $connection
 $child = spawn([$mix, "--serve", dirname(script_path()) .. "/acp_worker.mix", "--name", $name],
-  {die_with_parent: true, env: {MIX_ACP_CONNECTION: $connection, MIX_STATS: "off"}, stdout: "inherit", stderr: "inherit"})
+  {die_with_parent: true, env: {MIX_AGENTD_ACP_CONNECTION: $connection, MIX_STATS: "off"}, stdout: "inherit", stderr: "inherit"})
 try
   $up = false
   for $i = 1 to 50

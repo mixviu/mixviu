@@ -11,25 +11,25 @@
     {
       "path": "services/agentd/scripts/acp.mix",
       "source_blob": "d630b7004c55ab7b1002527ece70618cda3acf79",
-      "sha256": "27eb40fea0eaf33c7ea9ae7bd43e34f4841a537df4ba48005b653e892cfe665e",
+      "sha256": "c3fcb9940f9558799f014129cdc057ca8f9da54e38a2e05beccccda5a2368ab8",
       "changed": true
     },
     {
       "path": "services/agentd/scripts/acp_worker.mix",
       "source_blob": "9258d5238f2c16cbf2f369eef86aee4dfdca3f1c",
-      "sha256": "61bf05074fa24309bfbaf1819b5cd7763935ee0562cb3ab65098e0515683c3ae",
+      "sha256": "36d415738ae7e2326dc7710f47f9153e7a2d30397a031d76ee2b102649151caa",
       "changed": true
     },
     {
       "path": "services/agentd/scripts/agent_cli.mix",
       "source_blob": "78ae8ceeee42744993ab286c59d99dd7f2ffb55f",
-      "sha256": "81ec07138416fc030447b1457e2be6ce18464a289cd694b61b3856295172c0e8",
+      "sha256": "59bdd38ba231cf4e3dd04f97c2ceea566d9070ef70e997e50682a7e02258c9b1",
       "changed": true
     },
     {
       "path": "services/agentd/scripts/agentd.mix",
       "source_blob": "ffb002b1bda74d42ba41b990ba9bd7037392305e",
-      "sha256": "b75c99b6e04339652c64b12e1d8e2b1d6c714956c32d6c7da3cdc84f4defa050",
+      "sha256": "c83bc0d699bc64791bffc304fb781353dfe02bec9049fd8645bab555dc06dff9",
       "changed": true
     },
     {
@@ -41,7 +41,7 @@
     {
       "path": "services/agentd/scripts/lib/agent.mix",
       "source_blob": "f95923e34fa7bd12b7891a6b94bc644b6cff0a27",
-      "sha256": "dff08069bcebfb9afbc20b77e6622d9f688825def4d622339f9a89dd8382f935",
+      "sha256": "cabc75ef12cd9304a2afce59e3f41f1eb769ea93977975bcb31d799afdde7f57",
       "changed": true
     },
     {
@@ -89,37 +89,37 @@
     {
       "path": "services/agentd/tests/acp_test.mix",
       "source_blob": "03fa016218e525cbcb2f49ad777b3b05588713a5",
-      "sha256": "770c955e287a90973f58ba9a2836ee0fe863362d6031f4bb6d47aa39091b48ce",
+      "sha256": "673fdedf385576a9c3bf0bca8d90572acbc4698a5b107c8f51d8efb3d3d88095",
       "changed": true
     },
     {
       "path": "services/agentd/tests/agent_cli_test.mix",
       "source_blob": "c5ffc9e5ba657a6b95b0cbea276ae750233614b7",
-      "sha256": "84c6280a1690703b7103f13a1cea1f92ed014cd5b768fdab086e48dcf82cfa5e",
+      "sha256": "80a3b08c8549d4c40f26683d544021471bb87326cd0b8cd590fe67e3f43b0534",
       "changed": true
     },
     {
       "path": "services/agentd/tests/agent_test.mix",
       "source_blob": "4694c70ca5b94defc470364ea71e0883948256ff",
-      "sha256": "7c105afbd6ae0276fc4ee41b330901cf515e09c86c2a77564c737972222c8cae",
+      "sha256": "d7e78d9b792c7844c78462ab11cd3e028f3e36c4e81ac8782bec01ded520bfba",
       "changed": true
     },
     {
       "path": "services/agentd/tests/agentd_await_test.mix",
       "source_blob": "a0027a8d6499ae6a2dd082a224fb71dcd65bfa4a",
-      "sha256": "4f8e762ed0a3be7f580c234a01838c6ed238f6c44c22caf63b62605243670a2b",
+      "sha256": "1cdd4543201cacad8c315f126ca2bfec467c959c7b49d0e6aaaa61444ca1bbd9",
       "changed": true
     },
     {
       "path": "services/agentd/tests/agentd_resume_test.mix",
       "source_blob": "0c85dee4c3c68fc03886a1eb67ce8be5d136afea",
-      "sha256": "21a42607b4e529d834d2660fc777df64d99b5c76fa6b6db8810cb9d936fde008",
+      "sha256": "0ea19cdbcf9eaee372719e5eb7a06e3ae1d202eafadd48804a5d494cd84dbc28",
       "changed": true
     },
     {
       "path": "services/agentd/tests/agentd_test.mix",
       "source_blob": "99a4999bb0f1d844118342d9bcd7e3ab55dcfbd5",
-      "sha256": "648e8932206f0a1ccfcb5cc7676fbf4af55bb40b5338ca669b8bef6dd9ea130b",
+      "sha256": "3f15064d31e0d0351c8e995e420f55d7793e4d81da0dec88f4b4496cade02147",
       "changed": true
     },
     {
@@ -131,7 +131,7 @@
     {
       "path": "services/agentd/tests/fixtures/acp_failure_client.mix",
       "source_blob": "17411c0a2246278480a79e932f53553cccc0b3d2",
-      "sha256": "e69da8e76848f9d14cbb5712a53982142a0a331632408bc480508c145e43e284",
+      "sha256": "8af932511485876bf550295c84df33eae7b33707143a6c2f5e46abba55c961f1",
       "changed": true
     },
     {
@@ -173,7 +173,7 @@
     {
       "path": "services/agentd/tests/fixtures/fake_acp_agent.mix",
       "source_blob": "04dc3aada812f9c33ecbd1f55260382d60b3dc6f",
-      "sha256": "b823d1b411455f76828e42c6ef0e6a7805aaacc2503aa23dbff19318ffa375c3",
+      "sha256": "ba5943379ae24ebac8992bdb8ff00835c069d52e50ff415bcfe841ad8b2874dc",
       "changed": true
     },
     {
@@ -215,7 +215,7 @@
     {
       "path": "services/daylight/scripts/daylight.mix",
       "source_blob": "95e2f5bcea9f738014aea63af333e433a29737fe",
-      "sha256": "df5b6e12ad72636a7b9955a2e9b4140382bd4083f577645c6255044b29e0203b",
+      "sha256": "020fc7334012362e50b2b429542b164d99f7f14e589851bf30549dff068fe312",
       "changed": true
     },
     {
@@ -227,7 +227,7 @@
     {
       "path": "services/daylight/tests/daylight_test.mix",
       "source_blob": "4763d86aaa738fb1d4bfa0921b2cde4f952e6bf5",
-      "sha256": "74d9e784204ffb61f29bc6cc88a82167738af1e13ddede55501c8eb5151e75dc",
+      "sha256": "317e09ac926cfb396eb31d552e4f2c46b5d93ed975cde2c252104c97ca120fbb",
       "changed": true
     },
     {
@@ -311,7 +311,7 @@
     {
       "path": "services/releasesd/scripts/lib/releases.mix",
       "source_blob": "0fbf9338f4ee5a3ff25245c6da9734d87e5cdbd9",
-      "sha256": "d1abfa4b912191b5feef42088d2b64f966e1cf0b6d6b427cfccfacc3b56d2254",
+      "sha256": "32cacc28b4f090c3f663e54f0abf655cae63499aed30bb75e1ad2eadb6abc31f",
       "changed": true
     },
     {
@@ -341,7 +341,7 @@
     {
       "path": "services/releasesd/tests/releasesd_test.mix",
       "source_blob": "096dd7021a7fb4ea432159657de64b18f9a4ea9a",
-      "sha256": "ddea84aa8acc8275c8efe1280dad948fc2fb6ac5bd6c66ca0ed8d54443909470",
+      "sha256": "008b9eed3e549b8000fed73ecc74b774fd04ecc9e110791d567f95cec0550312",
       "changed": true
     },
     {

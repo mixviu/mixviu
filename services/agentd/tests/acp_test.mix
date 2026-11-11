@@ -10,7 +10,7 @@ $children = []
 mkdir($tmp .. "/workspace", {parents: true})
 try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "agent-acp-test", noded: env("MIX_TEST_NODED_EXE", mix_path("prefix", "bin/noded"))})
-  $env = merge($pb.client_env($bus), {MIX_STATS: "off", MIX_ACP_AGENT: "fixture",
+  $env = merge($pb.client_env($bus), {MIX_STATS: "off", MIX_AGENTD_ACP_AGENT: "fixture",
     MIX_TEST_MIX_EXE: $mix, MIX_AGENTD_MCP_DIR: $tmp .. "/mcp", ACP_TEST_DIR: $tmp,
     ACP_TEST_ADAPTER: $here .. "/../scripts/acp.mix"})
   $env.ACP_TEST_MCP_DIR = $tmp .. "/mcp"

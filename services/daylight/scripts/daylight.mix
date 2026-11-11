@@ -27,31 +27,31 @@
 -- unknown, null, which resolves to dark), the timer looks again in a day.
 --
 -- Environment: MIX_NODE_CONFIG (the node identity, the authority's
--- instance), MIX_DAYLIGHT_INSTANCE (overrides it), MIX_DAYLIGHT_SETTINGSD
+-- instance), MIX_SETTINGS_INSTANCE (overrides it), MIX_SETTINGS_SERVICE
 -- (the settingsd service, default `settingsd`), MIX_DAYLIGHT_ZONES (the
 -- zone table), MIX_DAYLIGHT_LOCALTIME (default /etc/localtime),
 -- MIX_DAYLIGHT_RESUME=off (no login1 watch). Test hooks, honoured only
--- with MIX_TEST=1: MIX_DAYLIGHT_CLOCK_OFFSET (seconds added to the wall
+-- with MIX_TEST_DAYLIGHT=1: MIX_TEST_DAYLIGHT_CLOCK_OFFSET (seconds added to the wall
 -- clock, at most 7 days either way, so a test can stand just before an
--- event), MIX_DAYLIGHT_RESUME_ARGV (a JSON argv run instead of gdbus) and
--- MIX_DAYLIGHT_RESUME_GUARD (seconds between watch restarts, default 60).
+-- event), MIX_TEST_DAYLIGHT_RESUME_ARGV (a JSON argv run instead of gdbus) and
+-- MIX_TEST_DAYLIGHT_RESUME_GUARD (seconds between watch restarts, default 60).
 $sun = require("lib/sun.mix")
 
-$instance = env("MIX_DAYLIGHT_INSTANCE", "")
+$instance = env("MIX_SETTINGS_INSTANCE", "")
 if $instance == "" then
   $node_config = env("MIX_NODE_CONFIG", mix_path("etc") .. "/node.conf.mix")
   $node = if is_file($node_config) then load_data($node_config).node else nil end
-  if type($node) != "string" or $node == "" then raise("NODE", "daylight needs the native node identity or MIX_DAYLIGHT_INSTANCE") end
+  if type($node) != "string" or $node == "" then raise("NODE", "daylight needs the native node identity or MIX_SETTINGS_INSTANCE") end
   $instance = $node
 end
 -- Every process on a machine binds the authority's default profile (§5.4);
 -- the topic handler below names that profile.
 $binding = {instance: $instance, profile: "default"}
-$target = env("MIX_DAYLIGHT_SETTINGSD", "settingsd")
+$target = env("MIX_SETTINGS_SERVICE", "settingsd")
 $Z = $sun.load_zones(env("MIX_DAYLIGHT_ZONES", mix_path("share") .. "/daylight/zones.mx"))
 $localtime = env("MIX_DAYLIGHT_LOCALTIME", "/etc/localtime")
 
-$testing = env("MIX_TEST", "") == "1"
+$testing = env("MIX_TEST_DAYLIGHT", "") == "1"
 fn test_number($name, $default, $lo, $hi)
   if not $testing then return $default end
   $raw = env($name, "")
@@ -60,11 +60,11 @@ fn test_number($name, $default, $lo, $hi)
   if $v == nil then raise("CONFIG", $name .. " is not a number: " .. $raw) end
   return min($hi, max($lo, $v))
 end
-$clock_offset = test_number("MIX_DAYLIGHT_CLOCK_OFFSET", 0, -604800, 604800)
+$clock_offset = test_number("MIX_TEST_DAYLIGHT_CLOCK_OFFSET", 0, -604800, 604800)
 if $clock_offset != 0 then eprint("daylight: test clock offset " .. to_string($clock_offset) .. " s") end
-$resume_guard = test_number("MIX_DAYLIGHT_RESUME_GUARD", 60, 1, 3600)
+$resume_guard = test_number("MIX_TEST_DAYLIGHT_RESUME_GUARD", 60, 1, 3600)
 $resume_argv = ["gdbus", "monitor", "--system", "--dest", "org.freedesktop.login1", "--object-path", "/org/freedesktop/login1"]
-if $testing and env("MIX_DAYLIGHT_RESUME_ARGV", "") != "" then $resume_argv = json_parse(env("MIX_DAYLIGHT_RESUME_ARGV", "")) end
+if $testing and env("MIX_TEST_DAYLIGHT_RESUME_ARGV", "") != "" then $resume_argv = json_parse(env("MIX_TEST_DAYLIGHT_RESUME_ARGV", "")) end
 
 fn now()
   return time() + $clock_offset

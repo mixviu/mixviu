@@ -153,7 +153,7 @@ try
   citizen($here .. "/fixtures/fake_op.mix", "ops", merge($env, {FAKE_OPS: $tmp .. "/ops.json"}))
   citizen($here .. "/fixtures/await_listener.mix", "awaitlisten", merge($env, {AWAIT_EVENTS: $tmp .. "/topics"}))
   $agent_env = merge($env, {MIX_AGENTD_CONF: $tmp .. "/conf.mix", MIX_AGENTD_DB: $tmp .. "/sessions.db",
-    MIX_AGENTD_MCP: "/bin/true", MIX_AGENTD_CLOSE_GRACE_S: "0.3"})
+    MIX_AGENTD_MCP_EXE: "/bin/true", MIX_AGENTD_CLOSE_GRACE_S: "0.3"})
   citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
   check("agentd answers", up())
   sleep(0.3)
@@ -179,7 +179,7 @@ try
   check("verified non-agent delivery exactly once", len(outcomes($s)) == 1 and len(topics("agent.await.fired", "await", $aid)) == 1 and len(topics("agent.await.delivered", "await", $aid)) == 1)
   close_session($s)
 
-  if env("MIX_TEST_AUTH_OPS") == "1" then
+  if env("MIX_TEST_AGENTD_AUTH_OPS") == "1" then
     $s = start("resumer")
     $aid = register($s, "auth-no-query", {})
     prompt($s, "wait")

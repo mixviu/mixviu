@@ -2,9 +2,9 @@
 -- version: 0.1.0
 -- ACP v1 face for native agentd; all durable effects use native receipts.
 $a = require("lib/acp.mix")
-$TARGET = env("MIX_ACP_SERVICE", "agent")
-$AGENT = env("MIX_ACP_AGENT", "codex")
-$CONNECTION = env("MIX_ACP_CONNECTION")
+$TARGET = env("MIX_AGENTD_ACP_SERVICE", "agent")
+$AGENT = env("MIX_AGENTD_ACP_AGENT", "codex")
+$CONNECTION = env("MIX_AGENTD_ACP_CONNECTION")
 $S = {sessions: {}, requests: {}, permissions: {}, sets: {}}
 
 fn body()

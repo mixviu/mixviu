@@ -146,29 +146,29 @@ fn _github_token()
 end
 
 -- The context: paths, catalogue, token and arch. $over overrides any key.
--- Environment: MIX_RELEASES_ROOT (~/.local), MIX_RELEASES_VIEW (the root
+-- Environment: MIX_RELEASESD_ROOT (~/.local), MIX_RELEASESD_VIEW (the root
 -- as the apps will see it, for installs into a container; default the root),
--- MIX_RELEASES_SHARE (<root>/share), MIX_RELEASES_BIN (<root>/bin),
--- MIX_RELEASES_CATALOGUE ($XDG_CONFIG_HOME/mixos/releases.mx),
--- MIX_RELEASES_STATE ($XDG_STATE_HOME/mixos/releases), MIX_RELEASES_API
+-- MIX_RELEASESD_SHARE (<root>/share), MIX_RELEASESD_BIN (<root>/bin),
+-- MIX_RELEASESD_CATALOGUE ($XDG_CONFIG_HOME/mixos/releases.mx),
+-- MIX_RELEASESD_STATE ($XDG_STATE_HOME/mixos/releases), MIX_RELEASESD_API
 -- (https://api.github.com; tests point it at a local server), GITHUB_TOKEN.
 -- (Not named context(): `mix --serve` has a builtin of that name, and it
 -- wins even over a module member call; see TODO-mix.)
 fn new_context($over)
   $home = env("HOME")
-  $root = $over.root ?? _env_or("MIX_RELEASES_ROOT", $home .. "/.local")
+  $root = $over.root ?? _env_or("MIX_RELEASESD_ROOT", $home .. "/.local")
   $config_home = _env_or("XDG_CONFIG_HOME", $home .. "/.config")
   $state_home = _env_or("XDG_STATE_HOME", $home .. "/.local/state")
   $arch = platform().arch
   $ctx = {
     root: $root,
     opt_dir: $root .. "/opt",
-    view_opt: ($over.view ?? _env_or("MIX_RELEASES_VIEW", $root)) .. "/opt",
-    share_dir: $over.share ?? _env_or("MIX_RELEASES_SHARE", $root .. "/share"),
-    bin_dir: $over.bin ?? _env_or("MIX_RELEASES_BIN", $root .. "/bin"),
-    state_dir: $over.state ?? _env_or("MIX_RELEASES_STATE", $state_home .. "/mixos/releases"),
-    catalogue_path: $over.catalogue ?? _env_or("MIX_RELEASES_CATALOGUE", $config_home .. "/mixos/releases.mx"),
-    api: $over.api ?? _env_or("MIX_RELEASES_API", "https://api.github.com"),
+    view_opt: ($over.view ?? _env_or("MIX_RELEASESD_VIEW", $root)) .. "/opt",
+    share_dir: $over.share ?? _env_or("MIX_RELEASESD_SHARE", $root .. "/share"),
+    bin_dir: $over.bin ?? _env_or("MIX_RELEASESD_BIN", $root .. "/bin"),
+    state_dir: $over.state ?? _env_or("MIX_RELEASESD_STATE", $state_home .. "/mixos/releases"),
+    catalogue_path: $over.catalogue ?? _env_or("MIX_RELEASESD_CATALOGUE", $config_home .. "/mixos/releases.mx"),
+    api: $over.api ?? _env_or("MIX_RELEASESD_API", "https://api.github.com"),
     arch: $arch,
     arch_re: if $arch == "x86_64" then "(x86_64|amd64|x64)" elif $arch == "aarch64" then "(aarch64|arm64)" else $arch end,
     token: if $over.offline then nil else _github_token() end

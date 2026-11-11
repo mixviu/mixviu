@@ -313,7 +313,7 @@ end
 -- as mcp-s-<session>-..., so agentd can recognise its agents calling back.
 -- $bus_env: {NAME: value} of the set $BUS_ENV_NAMES from agentd's own env.
 fn mcp_entry($mcp_bin, $session, $bus_env)
-  $env = [{name: "MIX_AGENT_SESSION", value: $session}]
+  $env = [{name: "MIX_AGENTD_SESSION", value: $session}]
   for each $n in sort(keys($bus_env ?? {}))
     if contains($BUS_ENV_NAMES, $n) and type($bus_env[$n]) == "string" and $bus_env[$n] != "" then
       $env = concat($env, [{name: $n, value: $bus_env[$n]}])

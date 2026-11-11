@@ -97,7 +97,7 @@ end
 
 $CONF_FILE = env("MIX_AGENTD_CONF", mix_path("etc", "agent.conf.mix"))
 $CONF = $a.check_conf(load_data($CONF_FILE))
-$MCP_BIN = env("MIX_AGENTD_MCP", mix_path("prefix", "bin/mix-mcp"))
+$MCP_BIN = env("MIX_AGENTD_MCP_EXE", mix_path("prefix", "bin/mix-mcp"))
 $BUS_ENV = {}
 for each $n in $a.bus_env_names()
   if env($n) != "" then $BUS_ENV[$n] = env($n) end
@@ -317,7 +317,7 @@ end
 fn spawn_agent($id, $req, $parent, $sender, $created_at, $seq, $reopen)
   $c = $CONF.agents[$req.agent]
   $env = $c.env
-  $env.MIX_AGENT_SESSION = $id
+  $env.MIX_AGENTD_SESSION = $id
   -- lint: ignore MIX-E1102
   $watch = process_watch($c.argv, {stdin: "pipe", overflow: "block", max_line: $MAX_LINE,
     stderr: "lines", tag: $id, cwd: $req.cwd, env: $env})

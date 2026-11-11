@@ -5,7 +5,7 @@
 -- text back. Prompt text drives it:
 --   PERMISSION  ask session/request_permission first; echo the answer
 --   BIG         stream one 2 MiB text chunk (framing past 64 KiB lines)
---   MCP         echo the MIX_AGENT_SESSION its mixos-mcp entry carries
+--   MCP         echo the MIX_AGENTD_SESSION its mixos-mcp entry carries
 --   SLOW        hold the turn open until the next frame (a cancel lands)
 --   LATE        like SLOW, then ask permission after the cancel; echo it
 --   FSREAD P    fs/read_text_file P (whole file); echo read:<text> or err:<code>
@@ -37,7 +37,7 @@ fn session_mcp($params)
   $mcp = "-"
   for each $s in $params.mcpServers ?? []
     for each $e in $s.env ?? []
-      if $e.name == "MIX_AGENT_SESSION" then $mcp = $e.value end
+      if $e.name == "MIX_AGENTD_SESSION" then $mcp = $e.value end
     end
   end
   return $mcp

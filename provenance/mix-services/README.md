@@ -14,6 +14,13 @@ Changes from the oracle:
 
 - Replace old environment names with registered `MIX_*` names, including
   `MIX_TEST_MIX_EXE`, `MIX_TEST_NODED_EXE`, `MIX_TEST_SETTINGSD_EXE`.
+- The round-two naming audit reuses `MIX_SETTINGS_INSTANCE` and
+  `MIX_SETTINGS_SERVICE` for daylight instead of adding aliases. The remaining
+  28 additions have matching constants in `paths::env` (22 runtime, six test).
+  Agentd-specific settings use `MIX_AGENTD_*`, including the MCP child's
+  `MIX_AGENTD_SESSION`; releasesd uses `MIX_RELEASESD_*`; daylight fault
+  injection uses `MIX_TEST_DAYLIGHT*`. The forwarded `MIX_MCP_ALLOW_TCP`
+  belongs to the MCP edge. Registry-only constants add no Rust reader.
 - Replace path calls with `mix_path`; child interpreters use the running
   interpreter (`/proc/self/exe`), with test executable overrides where needed.
   The agent CLI no longer accepts a separate child interpreter override.

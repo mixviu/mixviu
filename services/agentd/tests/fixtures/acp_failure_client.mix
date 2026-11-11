@@ -46,7 +46,7 @@ fn crash_waiting_agent()
   for $line in split(trim($r.stdout), "\n")
     if $line != "" then
       $path = "/proc/" .. $line .. "/environ"
-      if is_file($path) and contains(split(read_file($path), "\0"), "MIX_AGENT_SESSION=" .. $S.sid) then
+      if is_file($path) and contains(split(read_file($path), "\0"), "MIX_AGENTD_SESSION=" .. $S.sid) then
         $stopped = kill(to_number($line), 9)
         $found = true
       end

@@ -100,11 +100,11 @@ end
 
 -- send --wait, run as a one-shot citizen ---------------------------------
 -- The plain process starts `mix --serve <this file>` with the request in
--- MIX_AGENT_CLI_WAIT; the citizen subscribes, sends the prompt, streams
+-- MIX_AGENTD_CLI_WAIT; the citizen subscribes, sends the prompt, streams
 -- the turn's text to stdout and exits with the turn's code.
 
-if env("MIX_AGENT_CLI_WAIT") != "" then
-  $W = json_parse(env("MIX_AGENT_CLI_WAIT"))
+if env("MIX_AGENTD_CLI_WAIT") != "" then
+  $W = json_parse(env("MIX_AGENTD_CLI_WAIT"))
   $S = {seq: $W.since, turn_seen: false, done: false}
   subscribe("agent.session.updated")
   subscribe("agent.session.ended")
@@ -300,7 +300,7 @@ else
       $req = json_encode({session: $rest[0], body: $body, since: $since, timeout: $timeout})
       $mix = realpath("/proc/self/exe")
       exit(run_stream([$mix, "--serve", script_path(), "--name", "agent-cli-" .. slice(replace(uuid(), "-", ""), 0, 10)],
-        {env: {MIX_AGENT_CLI_WAIT: $req}}))
+        {env: {MIX_AGENTD_CLI_WAIT: $req}}))
     end
   elif $cmd == "read" then
     if len($rest) != 1 then usage("read takes one SESSION") end

@@ -16,7 +16,7 @@
 -- - Against tests/fixtures/fake_settingsd.mix: beside a mirror daylight exits
 --   without writing; a write retries through conflicts; a resume line from a
 --   (fake) watch reconciles and a dead watch restarts no faster than its guard;
---   the clock-offset hook needs MIX_TEST=1, is clamped and must be numeric.
+--   the clock-offset hook needs MIX_TEST_DAYLIGHT=1, is clamped and must be numeric.
 -- Every instant is written in explicit UTC ("...Z"), so the result does not
 -- depend on the runner's TZ.
 -- Run from the checkout root: mix services/daylight/tests/daylight_test.mix
@@ -216,7 +216,7 @@ end
 
 fn start_daylight($extra)
   return spawn([$mix, "--serve", $scripts .. "/daylight.mix", "--name", "daylight"],
-    {detach: true, env: merge(merge($env, {MIX_DAYLIGHT_INSTANCE: "dltest", MIX_DAYLIGHT_ZONES: $zones_path,
+    {detach: true, env: merge(merge($env, {MIX_SETTINGS_INSTANCE: "dltest", MIX_DAYLIGHT_ZONES: $zones_path,
       MIX_DAYLIGHT_LOCALTIME: $tmp .. "/etc/localtime", MIX_DAYLIGHT_RESUME: "off", MIX_STATS: "off"}), $extra),
     stdout: {file: $tmp .. "/daylight.log", append: true}, stderr: "stdout"})
 end
@@ -337,9 +337,9 @@ try
   stop_all([$dl])
   apply({"time.zone": $A}, [])
   $offset = $nextB - time() - 6
-  $dl = start_daylight({MIX_TEST: "1", MIX_DAYLIGHT_CLOCK_OFFSET: to_string($offset)})
+  $dl = start_daylight({MIX_TEST_DAYLIGHT: "1", MIX_TEST_DAYLIGHT_CLOCK_OFFSET: to_string($offset)})
   $ws = wait_status(fn($x) = $x.zone == $A, 10)
-  check("the clock offset is honoured under MIX_TEST=1 and reported", $ws.ok and abs($ws.s.clock_offset - $offset) < 1)
+  check("the clock offset is honoured under MIX_TEST_DAYLIGHT=1 and reported", $ws.ok and abs($ws.s.clock_offset - $offset) < 1)
   $armedA = $ws.s.due
   apply({"state.appearance.mode_override": if $wantB then "dark" else "light" end, "time.zone": $B}, [])
   $ws = wait_status(fn($x) = $x.zone == $B, 10)
@@ -355,13 +355,13 @@ try
   $dl = nil
 
   -- The clock offset outside tests, clamped, and malformed.
-  $dl = start_daylight({MIX_DAYLIGHT_CLOCK_OFFSET: "3600"})
-  check("without MIX_TEST the clock offset is ignored", wait_status(fn($x) = $x.zone != nil, 10).s.clock_offset == 0)
+  $dl = start_daylight({MIX_TEST_DAYLIGHT_CLOCK_OFFSET: "3600"})
+  check("without MIX_TEST_DAYLIGHT the clock offset is ignored", wait_status(fn($x) = $x.zone != nil, 10).s.clock_offset == 0)
   stop_all([$dl])
-  $dl = start_daylight({MIX_TEST: "1", MIX_DAYLIGHT_CLOCK_OFFSET: "100000000"})
+  $dl = start_daylight({MIX_TEST_DAYLIGHT: "1", MIX_TEST_DAYLIGHT_CLOCK_OFFSET: "100000000"})
   check("an offset is clamped to 7 days", wait_status(fn($x) = $x.zone != nil, 10).s.clock_offset == 604800)
   stop_all([$dl])
-  $dl = start_daylight({MIX_TEST: "1", MIX_DAYLIGHT_CLOCK_OFFSET: "soon"})
+  $dl = start_daylight({MIX_TEST_DAYLIGHT: "1", MIX_TEST_DAYLIGHT_CLOCK_OFFSET: "soon"})
   check("a non-numeric offset stops the citizen", exited($dl, 10))
   $dl = nil
   stop_all([$sd])
@@ -381,7 +381,7 @@ try
   end
   check("the fake settingsd answers", $up)
   remove($tmp .. "/fake.log")
-  $dl = start_daylight({MIX_DAYLIGHT_SETTINGSD: "fakesd"})
+  $dl = start_daylight({MIX_SETTINGS_SERVICE: "fakesd"})
   check("beside a mirror daylight exits", exited($dl, 15))
   check("having asked settings.status and written nothing", contains(fake_log(), "status") and not any(fake_log(), fn($l) = starts_with($l, "apply")))
   check("and says why", contains(read_file($tmp .. "/daylight.log"), "runs only beside the authority"))
@@ -397,8 +397,8 @@ try
   -- The resume watch is a fake child: it prints logind's resume line and
   -- exits at once, so it is restarted each time its guard (2 s) allows.
   $resume_child = [$mix, "-c", "print(\"/org/freedesktop/login1: org.freedesktop.login1.Manager.PrepareForSleep (false,)\")"]
-  $dl = start_daylight({MIX_DAYLIGHT_SETTINGSD: "fakesd", MIX_TEST: "1", MIX_DAYLIGHT_RESUME: "on",
-    MIX_DAYLIGHT_RESUME_ARGV: json_encode($resume_child), MIX_DAYLIGHT_RESUME_GUARD: "2"})
+  $dl = start_daylight({MIX_SETTINGS_SERVICE: "fakesd", MIX_TEST_DAYLIGHT: "1", MIX_DAYLIGHT_RESUME: "on",
+    MIX_TEST_DAYLIGHT_RESUME_ARGV: json_encode($resume_child), MIX_TEST_DAYLIGHT_RESUME_GUARD: "2"})
   $ws = wait_status(fn($x) = $x.writes >= 1, 15)
   $applies = filter(fake_log(), fn($l) = starts_with($l, "apply"))
   -- (Later applies come from the real settingsd's retained time topic, still
