@@ -452,9 +452,5 @@ pub fn install(state: &mut Loop, ctx: &Rc<RefCell<NativeRenderContext>>) {
     }));
 }
 
-pub fn shutdown(ctx: &Rc<RefCell<NativeRenderContext>>) {
-    release(&mut ctx.borrow_mut());
-}
-
 #[cfg(test)]
 mod tests;
