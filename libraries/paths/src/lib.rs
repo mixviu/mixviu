@@ -278,7 +278,9 @@ impl Dirs {
         })
     }
     /// Future system rule, without reading layout.mx. User roots retain XDG.
-    /// Per-root overrides win; MIX_ROOT applies to the tier roots, as before.
+    /// Per-root overrides win. MIX_ROOT moves etc, var, run and cache, as
+    /// before; share and lib are installed data and follow the prefix unless
+    /// their own variable is set.
     pub fn derived(prefix: &Path, env: &Environment) -> Result<Self> {
         absolute(prefix)?;
         let inputs = Environment {
@@ -468,8 +470,9 @@ fn snapshot(tier: Option<Tier>) -> Result<&'static Layout> {
             let prefix = Layout::from_source(&env, "")?.try_root(Root::Prefix)?;
             let source = match read_layout(&prefix).and_then(|s| parse_layout(&s).map(|_| s)) {
                 Ok(s) => s,
-                // User roots remain available when the system layout is broken.
-                Err(_) if env.uid != 0 => String::new(),
+                // Only the explicit user tier survives a broken layout; the
+                // process tier keeps the start-up error it always raised.
+                Err(_) if tier == Some(Tier::User) => String::new(),
                 Err(e) => return Err(e),
             };
             Layout::from_source(&env, &source)

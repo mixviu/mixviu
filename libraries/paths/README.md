@@ -3,6 +3,8 @@
 Dependency-free MixViu roots and `mix:` paths. `Root::Lib` follows the prefix,
 like `Share`. Existing constructors retain the legacy system tier;
 `Dirs::derived(prefix, env)` exposes the future prefix-relative system tier.
+`MIX_ROOT` moves `etc`, `var`, `run` and `cache`; `share` and `lib` are
+installed data and follow the prefix unless their own variable is set.
 `prefix_from_exe_strict` requires a `bin` parent without changing the legacy
 executable resolver.
 

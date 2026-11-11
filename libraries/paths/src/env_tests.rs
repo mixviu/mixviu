@@ -161,7 +161,8 @@ fn registry_names_and_scope_match_constants_and_literals_are_unique() {
         }
     }
     assert_eq!(actual, expected);
-    assert!(counts.values().all(|n| *n == 1), "{counts:?}");
+    let repeated: BTreeMap<_, _> = counts.into_iter().filter(|(_, n)| *n > 1).collect();
+    assert!(repeated.is_empty(), "names spelled more than once: {repeated:?}");
 }
 
 #[test]
@@ -255,6 +256,58 @@ fn defaults_schema_bounds_and_snapshot_errors() {
     assert!(parse(&" ".repeat(65537), None).is_err());
 }
 
+/// `tools/ci.mix stage-install` writes env.mx with Mix's `data_encode`:
+/// one braced line, double-quoted keys and values, comma separated,
+/// backslash escapes. The reader must accept exactly that shape.
+#[test]
+fn defaults_accept_the_shape_data_encode_writes() {
+    use env_document::parse;
+    let commit = "0".repeat(40);
+    let source = format!(
+        concat!(
+            "{{\"schema\": 1, \"commit\": \"{}\", \"{}\": \"comp\", ",
+            "\"{}\": \"mix:run/hostd/hostd.sock\", \"{}\": \"it's \\\"q\\\" \\\\ ok\"}}"
+        ),
+        commit,
+        env::COMP_SERVICE,
+        env::HOSTD_SOCKET,
+        env::INSTANCE
+    );
+    let defaults = parse(&source, Some(&commit)).unwrap();
+    assert_eq!(defaults.values[env::COMP_SERVICE], "comp");
+    assert_eq!(
+        defaults.values[env::HOSTD_SOCKET],
+        "mix:run/hostd/hostd.sock"
+    );
+    assert_eq!(defaults.values[env::INSTANCE], "it's \"q\" \\ ok");
+    assert_eq!(defaults.values.len(), 3);
+}
+
+/// A root reference cannot climb out of its root, so an env.mx default
+/// cannot name a path outside the install's roots.
+#[test]
+fn root_references_cannot_escape_their_root() {
+    let dirs = Dirs::derived(
+        Path::new("/srv/fixture"),
+        &Environment {
+            uid: 0,
+            ..Environment::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        dirs.resolve_path("mix:run/hostd/hostd.sock").unwrap(),
+        Path::new("/srv/fixture/run/hostd/hostd.sock")
+    );
+    assert_eq!(
+        dirs.resolve_path("mix:run/a/../b").unwrap(),
+        Path::new("/srv/fixture/run/b")
+    );
+    for escape in ["mix:run/..", "mix:run/../../etc/passwd", "mix:etc//abs"] {
+        assert!(dirs.resolve_path(escape).is_err(), "{escape}");
+    }
+}
+
 #[test]
 fn independent_tiers_and_lazy_settings_in_child() {
     if std::env::var_os(env::test::TEST_PATH_CACHE).as_deref()
@@ -275,6 +328,10 @@ fn independent_tiers_and_lazy_settings_in_child() {
         let user = Layout::for_tier(Tier::User).unwrap();
         assert_eq!(user.root(Root::Etc), Path::new("/home/user/.config/mix"));
         assert!(Layout::for_tier(Tier::System).is_err());
+        // The process tier stays strict for a non-root uid too: a service
+        // account must not drift to XDG paths behind a broken layout.
+        assert!(Layout::discover().is_err());
+        assert!(try_root(Root::Etc).is_err());
         return;
     }
     let prefix = std::env::temp_dir().join(format!("paths-independent-{}", std::process::id()));

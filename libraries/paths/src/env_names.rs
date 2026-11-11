@@ -207,7 +207,7 @@ macro_rules! stamps {
         /// Read a build stamp at the consuming crate's compile site.
         #[macro_export]
         macro_rules! stamp {
-            $(($id) => { option_env!($name) };)*
+            $(($id) => { ::core::option_env!($name) };)*
         }
     };
 }
