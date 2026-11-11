@@ -1,0 +1,48 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure policy checks shared by the gate and its negative fixtures.
+fn check($policy, $members, $closures)
+  $bad = []
+  $allow = $policy.allow ?? {}
+  $debt = $policy.debt ?? {}
+  $admitted = $policy.admitted ?? {}
+  $strict = $policy.strict ?? []
+  for $name in unique(concat(keys($allow), keys($debt), keys($admitted)))
+    $lists = 0
+    for $list in [$allow, $debt, $admitted]
+      if has_key($list, $name) then $lists = $lists + 1 end
+    end
+    if $lists != 1 then push($bad, $name .. ": must appear in exactly one policy list") end
+  end
+  for $name in keys($admitted)
+    $entry = $admitted[$name]
+    for $field in ["kind", "via", "exit", "by", "on"]
+      if type($entry[$field]) != "string" or $entry[$field] == "" then
+        push($bad, $name .. ": missing or invalid " .. $field)
+      end
+    end
+    if not contains(["system", "vendored"], $entry.kind) then
+      push($bad, $name .. ": invalid kind")
+    end
+    if type($entry.only) != "list" or len($entry.only) == 0 then
+      push($bad, $name .. ": only must be a nonempty member list")
+      continue
+    end
+    for $member in $entry.only
+      if not contains($members, $member) then push($bad, $name .. ": unknown member " .. to_string($member)) end
+      if contains($strict, $member) then push($bad, $name .. ": strict member forbidden in only: " .. $member) end
+    end
+    $used = false
+    for $member in $members
+      if ($closures[$member] ?? {})[$name] == true then
+        $used = true
+        if contains($strict, $member) then
+          push($bad, "strict " .. $member .. " reaches admitted " .. $name)
+        elif not contains($entry.only, $member) then
+          push($bad, $member .. " reaches admitted " .. $name .. " outside only")
+        end
+      end
+    end
+    if not $used then push($bad, $name .. ": stale admitted entry (no member uses it)") end
+  end
+  return $bad
+end
