@@ -157,10 +157,7 @@ on term.info
 end
 on viu.session
   if not $event.args.state.lost and $event.args.state.error==nil and $state.font_fence.incarnation==$event.args.state.incarnation and $state.font_fence.revision!=nil and $event.args.state.revision!=nil and $settings.session_older($event.args.state.revision,$state.font_fence.revision) then return end
-  $state.look.appearance=$event.args.appearance
-  $state.settings_lost=$event.args.state.lost
-  $state.settings_connected=not $event.args.state.lost and $event.args.state.incarnation!=nil and $event.args.state.error==nil
-  if not $event.args.state.lost then $state.look.values=$event.args.state.values end
+  $state=$core.accept_look($state,$event.args)
   $configured=$native("clipboard.configure","",{read_allowed:$state.look.values["terminal.clipboard.osc52_read"]==true})
   $state.font_binding=$event.args.state.binding
   if $state.settings_connected then $state.font_fence={binding:$state.font_binding,incarnation:$event.args.state.incarnation,revision:$event.args.state.revision} end
