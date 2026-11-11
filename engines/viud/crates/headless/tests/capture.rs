@@ -217,6 +217,65 @@ impl Drop for BlankObserver {
     }
 }
 
+/// Fenced settings adapter fixture. Accepted values are written beneath the
+/// owned broker root; real settingsd's durability is outside this test.
+struct SettingsFixture {
+    child: std::process::Child,
+    state: PathBuf,
+}
+
+impl SettingsFixture {
+    fn start(bus: &Bus) -> Self {
+        let state = bus.root.join("settings-fixture.json");
+        let child = Command::new(
+            std::env::var_os("MIX_TEST_MIX_EXE")
+                .unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+        )
+        .arg("--serve")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/settings-fixture.mix"))
+        .args(["--name", "settingsd"])
+        .env("MIX_NODED_URL", &bus.url)
+        .env("MIX_RUN", bus.root.join("run"))
+        .env("MIX_ETC", bus.root.join("etc"))
+        .env("MIX_VAR", bus.root.join("var"))
+        .env("MIX_NODE_CONFIG", bus.root.join("etc/node.conf.mix"))
+        .env("MIX_TEST_SETTINGS_STATE", &state)
+        .spawn()
+        .expect("start isolated settings fixture");
+        let fixture = Self { child, state };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let output = helper(
+                "call",
+                &bus.root,
+                &["settings.fixture", "{}", "settingsd"],
+                Some(&bus.url),
+            );
+            assert!(output.status.success(), "{output:?}");
+            let reply: Value = serde_json::from_str(
+                String::from_utf8_lossy(&output.stdout).lines().last().unwrap(),
+            )
+            .unwrap();
+            if reply["rc"] == 0 {
+                return fixture;
+            }
+            assert!(Instant::now() < deadline, "settings fixture registration: {reply}");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn accepted(&self) -> Value {
+        serde_json::from_slice(&fs::read(&self.state).unwrap()).unwrap()
+    }
+}
+
+impl Drop for SettingsFixture {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 #[test]
 #[ignore = "needs a GPU render node and built viud, noded and native Mix"]
 fn blank_preserves_capture_callbacks_and_agent_input_and_watch_reports_both_edges() {
@@ -283,6 +342,7 @@ fn blank_preserves_capture_callbacks_and_agent_input_and_watch_reports_both_edge
 #[ignore = "needs a GPU render node and built viud, noded and native Mix"]
 fn continuous_agent_input_does_not_postpone_the_idle_blank_timer() {
     let bus = Bus::start("blank-idle");
+    let settings = SettingsFixture::start(&bus);
     let mut process = process::spawn(1, None, "blank-idle", Some(&bus.url));
     let mut pattern = Pattern::new(connect(&mut process));
     pattern.wait_callback(0);
@@ -292,6 +352,9 @@ fn continuous_agent_input_does_not_postpone_the_idle_blank_timer() {
         "comp.props.set",
         json!({"path":"power.screen_off_s","value":3}),
     );
+    let accepted = settings.accepted();
+    assert_eq!(accepted["values"]["power.screen_off_s"], 3);
+    assert_eq!(accepted["operations"].as_array().unwrap().len(), 1);
     assert_eq!(
         bus.call("comp.props.get", json!({"path":"display.blanked"})),
         false,
@@ -320,6 +383,9 @@ fn continuous_agent_input_does_not_postpone_the_idle_blank_timer() {
         "comp.props.set",
         json!({"path":"power.screen_off_s","value":null}),
     );
+    let accepted = settings.accepted();
+    assert!(accepted["values"]["power.screen_off_s"].is_null());
+    assert_eq!(accepted["operations"].as_array().unwrap().len(), 2);
     bus.call("comp.display.blank", json!({"on":false}));
 }
 
