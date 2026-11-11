@@ -97,7 +97,7 @@ try
     write_file($tmp .. "/badlabels.mx", data_encode({schema:1,categories:$labels,apps:[]}))
     refuses("catalogue: invalid category labels", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/badlabels.mx"))
   end
-  check("catalogue: missing file follows MixViu itself",
+  check("catalogue: missing file follows MixOS itself",
     deep_eq(map($r.load_catalogue($tmp .. "/absent.mx"), fn($a) = $a.name), ["mixos-desktop", "mixos-server"]))
   write_file($tmp .. "/bad1.mx", "{schema: 2, apps: []}\n")
   refuses("catalogue: wrong schema", "CATALOGUE", fn() = $r.load_catalogue($tmp .. "/bad1.mx"))
