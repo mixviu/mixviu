@@ -718,8 +718,5 @@
   "[\"tools/p2_rehearsal.mix\",\"old-name\",\"MIXOS_RUN\"]": 2,
   "[\"tools/p2_rehearsal.mix\",\"old-name\",\"MIXOS_TEST_MIX\"]": 2,
   "[\"tools/p2_rehearsal.mix\",\"old-name\",\"MIXOS_VAR\"]": 1,
-  "[\"tools/p2_rehearsal.mix\",\"old-name\",\"MIXOS_VT\"]": 1,
-  "[\"tools/prefix_gate.mix\",\"old-name\",\"COSMIX_\"]": 3,
-  "[\"tools/prefix_gate.mix\",\"old-name\",\"MIXOS_\"]": 3,
-  "[\"tools/prefix_gate.mix\",\"old-name\",\"cosmix\"]": 2
+  "[\"tools/p2_rehearsal.mix\",\"old-name\",\"MIXOS_VT\"]": 1
 }

@@ -1,6 +1,13 @@
 {
   prefix_constant: {file: "libraries/paths/src/lib.rs", name: "DEFAULT_PREFIX", reason: "The sole compiled fallback prefix; at most one decoded /opt/mix literal."},
-  exceptions: [],
+  exceptions: [
+    {file: "tools/prefix_gate.mix", rule: "old-name", text: "MIXOS_", reason: "The recogniser must spell the forbidden variable prefix."},
+    {file: "tools/prefix_gate.mix", rule: "old-name", text: "COSMIX_", reason: "The recogniser must spell the forbidden variable prefix."},
+    {file: "tools/prefix_gate.mix", rule: "old-name", text: "cosmix", reason: "The recogniser must spell the forbidden old name."},
+    {file: "tools/prefix.conf.mix", rule: "old-name", text: "MIXOS_", reason: "Exact recogniser exceptions must name their matched text."},
+    {file: "tools/prefix.conf.mix", rule: "old-name", text: "COSMIX_", reason: "Exact recogniser exceptions must name their matched text."},
+    {file: "tools/prefix.conf.mix", rule: "old-name", text: "cosmix", reason: "Exact recogniser exceptions must name their matched text."}
+  ],
   excluded_files: {"tools/prefix-baseline.json": "Generated finding identities contain the old spellings they track; scanning them would make the baseline recursive."},
   disabled_rules: [{rule: "bare-mixos", enabled: false, reason: "Mark deferred the domain and app-id rename; do not check the bare mixos token yet."}]
 }

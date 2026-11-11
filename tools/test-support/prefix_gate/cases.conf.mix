@@ -17,5 +17,6 @@
  {fixture: "wrong-constant.txt", file: "libraries/paths/src/lib.rs", rules: ["rust-path"]},
  {fixture: "duplicate.txt", file: "libraries/paths/src/lib.rs", rules: ["rust-path"]},
  {fixture: "format-build.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
- {fixture: "concat-char.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]}
+ {fixture: "concat-char.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "concat-number.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]}
 ]}
