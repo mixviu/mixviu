@@ -19,16 +19,23 @@ for $svc in ["agentd", "peersd", "releasesd", "daylight"]
     $argv = if $svc == "releasesd" and uid() == 0 then
       ["runuser", "-u", "nobody", "--", $mix, $case]
     else [$mix, $case] end
+    -- The built noded authenticates <svc>.op.done publishers, so the await
+    -- test's authenticated-operation branch runs too.
     $r = run_argv($argv, {timeout: 1800, max_output: 16000000,
       env: {MIX_TEST_MIX_EXE: $mix, MIX_TEST_NODED_EXE: $bin .. "/noded",
-        MIX_TEST_SETTINGSD_EXE: $bin .. "/settingsd", MIX_STATS: "off", TZ: "UTC"}})
+        MIX_TEST_SETTINGSD_EXE: $bin .. "/settingsd", MIX_TEST_AGENTD_AUTH_OPS: "1",
+        MIX_STATS: "off", TZ: "UTC"}})
     print($r.stdout .. $r.stderr)
-    $passed_checks = $passed_checks + len(filter(lines($r.stdout), fn($line) = starts_with($line, "PASS ")))
-    $failed_checks = $failed_checks + len(filter(lines($r.stdout), fn($line) = starts_with($line, "FAIL ")))
+    $case_passed = len(filter(lines($r.stdout), fn($line) = starts_with($line, "PASS ")))
+    $case_failed = len(filter(lines($r.stdout), fn($line) = starts_with($line, "FAIL ")))
+    $passed_checks = $passed_checks + $case_passed
+    $failed_checks = $failed_checks + $case_failed
     $scripts = $scripts + 1
-    print("SERVICE_TEST " .. json_encode({service: $svc, case: $case, rc: $r.exit_code}))
+    print("SERVICE_TEST " .. json_encode({service: $svc, case: $case, rc: $r.exit_code,
+      passed: $case_passed, failed: $case_failed}))
     print("::endgroup::")
-    if not $r.ok then push($failed, $case) end
+    -- A script that prints FAIL but exits 0 still fails the stage.
+    if not $r.ok or $case_failed > 0 then push($failed, $case) end
   end
   print("SERVICE_TOTAL " .. json_encode({service: $svc, scripts: $scripts,
     passed: $passed_checks, failed: $failed_checks}))
