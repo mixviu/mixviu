@@ -94,7 +94,7 @@
 {"class":"stored","default":true,"domains":["system"],"kind":"bool","label":"settings-sound-output-amplify","page":"system/sound","path":"sound.output.amplify","since":"1.0.0"}
 {"class":"stored","default":false,"domains":["system"],"kind":"bool","label":"settings-sound-input-amplify","page":"system/sound","path":"sound.input.amplify","since":"1.0.0"}
 {"class":"applied","default":"balanced","domains":["system"],"kind":"enum","label":"settings-power-profile","owner":"hostd","page":"system/power","path":"power.profile","since":"1.0.0","variants":["battery","balanced","performance"]}
-{"class":"applied","default":null,"domains":["system"],"kind":"int","label":"settings-power-screen-off-s","owner":"viud","page":"system/power","path":"power.screen_off_s","since":"1.0.0","values":[120,300,600,900,1800]}
+{"class":"applied","default":null,"domains":["system"],"kind":"int","label":"settings-power-screen-off-s","max":4294967295,"min":1,"owner":"viud","page":"system/power","path":"power.screen_off_s","since":"1.0.0","step":1}
 {"class":"applied","default":null,"domains":["system"],"kind":"int","label":"settings-power-suspend-ac-s","max":7200,"min":900,"owner":"hostd","page":"system/power","path":"power.suspend_ac_s","since":"1.0.0","step":300}
 {"class":"applied","default":null,"domains":["system"],"kind":"int","label":"settings-power-suspend-battery-s","max":7200,"min":900,"owner":"hostd","page":"system/power","path":"power.suspend_battery_s","since":"1.0.0","step":300}
 {"class":"live","kind":"catalogue","label":"settings-power-battery","owner":"hostd","page":"system/power","path":"power.battery","read":null,"since":"1.0.0","type":"records","write":null}

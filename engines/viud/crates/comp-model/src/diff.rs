@@ -20,6 +20,27 @@ pub fn collect_snapshot_diff(
     cause: &'static str,
     pending: &mut PendingPropChanges,
 ) {
+    queue_prop_change(
+        pending,
+        "display.blanked".into(),
+        PropValue::Bool(old.display.blanked),
+        PropValue::Bool(new.display.blanked),
+        cause,
+    );
+    queue_prop_change(
+        pending,
+        "display.blank_supported".into(),
+        PropValue::Bool(old.display.blank_supported),
+        PropValue::Bool(new.display.blank_supported),
+        cause,
+    );
+    queue_prop_change(
+        pending,
+        "power.screen_off_s".into(),
+        prop_opt_u64(old.power.screen_off_s),
+        prop_opt_u64(new.power.screen_off_s),
+        cause,
+    );
     for leaf in crate::tiling::TilingConfig::LEAVES {
         queue_prop_change(
             pending,

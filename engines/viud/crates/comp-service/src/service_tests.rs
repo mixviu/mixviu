@@ -25,6 +25,8 @@ struct FakeEngine {
 
 fn snapshot(context: &PortContext) -> CompSnapshot {
     CompSnapshot {
+        display: Default::default(),
+        power: Default::default(),
         tiling: Default::default(),
         session: None,
         occlusion: Default::default(),

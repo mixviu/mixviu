@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The `comp.*` catalogue: 48 commands in three families and 14 topics.
+//! The `comp.*` catalogue: 49 commands in three families and 14 topics.
 
 pub use crate::observation::{
     CORNER_CLICKED_TOPIC_SUFFIX, CORNER_CLICKED_V2_TOPIC_SUFFIX, CORNER_ENTERED_TOPIC_SUFFIX,
@@ -84,6 +84,7 @@ pub fn command_class(command: &str) -> Option<CommandClass> {
         | "comp.input.key"
         | "comp.input.release_all" => Input,
         "comp.props.set"
+        | "comp.display.blank"
         | "comp.region.select"
         | "comp.motion.run"
         | "comp.panel.hold"
@@ -157,9 +158,10 @@ pub const DIRECT_COMMANDS: &[&str] = &[
     "comp.workspaces.list",
 ];
 
-/// The 21 window-family commands (`{id, generation}`-addressed, plus the
+/// The 22 window-family commands (`{id, generation}`-addressed, plus the
 /// workspace switch, count and rename).
 pub const WINDOW_COMMANDS: &[&str] = &[
+    "comp.display.blank",
     "comp.window.place_as",
     "comp.window.tile_key",
     "comp.window.maximize",
@@ -240,7 +242,7 @@ mod tests {
             counts,
             std::collections::BTreeMap::from([
                 ("read", 16),
-                ("window", 24),
+                ("window", 25),
                 ("input", 6),
                 ("capture", 1),
                 ("debug", 1)
@@ -252,10 +254,10 @@ mod tests {
     #[test]
     fn the_surface_is_48_commands_and_14_topics() {
         assert_eq!(DIRECT_COMMANDS.len(), 22);
-        assert_eq!(WINDOW_COMMANDS.len(), 21);
+        assert_eq!(WINDOW_COMMANDS.len(), 22);
         assert_eq!(INPUT_COMMANDS.len(), 5);
         let commands = all_commands().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(commands.len(), 48, "no command is in two families");
+        assert_eq!(commands.len(), 49, "no command is in two families");
         assert!(commands.iter().all(|command| command.starts_with("comp.")));
         assert!(
             READ_COMMANDS

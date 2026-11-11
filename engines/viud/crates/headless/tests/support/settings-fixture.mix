@@ -1,0 +1,52 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Adapter fixture on an owned private Bus; this is not settingsd durability
+-- coverage. Every accepted power write is fenced and recorded on disk.
+$state = {incarnation: "headless-settings-fixture", revision: 1, binding: nil,
+  values: {"power.screen_off_s": nil}, operations: []}
+$file = env("MIX_TEST_SETTINGS_STATE")
+if $file == "" then raise("FIXTURE", "isolated state file is required") end
+write_file($file, json_encode($state))
+on settings.fixture
+  reply(0, json_encode($state))
+end
+on settings.get
+  $a = $event.args
+  if $a.view != "values" or not deep_eq($a.keys, ["power.screen_off_s"]) then
+    reply(10, json_encode({error: "fixture_view_unsupported"}))
+    return
+  end
+  if $state.binding == nil then $state.binding = $a.binding end
+  if not deep_eq($a.binding, $state.binding) then
+    reply(10, json_encode({error: "binding_mismatch"}))
+    return
+  end
+  reply(0, json_encode({incarnation: $state.incarnation,
+    revision: to_string($state.revision), values: $state.values}))
+end
+on settings.apply
+  $a = $event.args
+  if (not deep_eq($a.binding, $state.binding) or
+      $a.expected_incarnation != $state.incarnation or
+      $a.expected_revision != to_string($state.revision)) then
+    reply(10, json_encode({error: "stale_binding"}))
+    return
+  end
+  if (type($a.operation_id) != "string" or not starts_with($a.operation_id, "comp-power-") or
+      not deep_eq(keys($a.changes), ["power.screen_off_s"]) or
+      not deep_eq($a.reset, [])) then
+    reply(10, json_encode({error: "invalid_operation"}))
+    return
+  end
+  $value = $a.changes["power.screen_off_s"]
+  if $value != nil and (type($value) != "number" or $value <= 0 or floor($value) != $value) then
+    reply(10, json_encode({error: "invalid_timeout"}))
+    return
+  end
+  $state.values["power.screen_off_s"] = $value
+  $state.operations = push($state.operations, $a)
+  $state.revision = $state.revision + 1
+  write_file($file, json_encode($state))
+  reply(0, json_encode({status: "current", receipt: {operation_id: $a.operation_id,
+    incarnation: $state.incarnation, revision: to_string($state.revision), outcome: "changed"}}))
+end

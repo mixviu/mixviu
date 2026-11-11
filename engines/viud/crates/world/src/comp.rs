@@ -22,6 +22,7 @@
 
 pub mod band;
 pub mod bindings;
+pub mod blank;
 pub mod causes;
 pub mod clock;
 pub mod corners;
@@ -230,6 +231,7 @@ pub struct CompState {
     pub bindings: bindings::Bindings,
     /// The session lock's policy state.
     pub lock: session_lock::LockPolicy,
+    pub blank: blank::BlankPolicy,
     /// Presentation statistics.
     pub presentation: presentation::Presentation,
     /// The `props.changed` cause per source.

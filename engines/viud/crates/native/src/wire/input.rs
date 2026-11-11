@@ -29,6 +29,21 @@ fn handle_pad(state: &mut Loop, event: &TabletPadEvent) {
     // Local scope so the input-crate `EventTrait::device`/`TabletPadEventTrait::time`
     // don't collide with smithay's `Event::device` used by the touch code above.
     use smithay::reexports::input::event::{EventTrait, tablet_pad::TabletPadEventTrait};
+    // Special pad events bypass the generic lifecycle input funnel. Account for
+    // human activity and swallow waking edges before mode changes or bindings.
+    use world::comp::blank::{self, Edge};
+    let edge = match event {
+        TabletPadEvent::Button(e) => pad_button_edge(
+            e.button_number(),
+            e.button_state() == PadButtonState::Pressed,
+        ),
+        TabletPadEvent::Ring(_) | TabletPadEvent::Strip(_) | TabletPadEvent::Dial(_) => Edge::Other,
+        _ => return,
+    };
+    world::comp::injection::note_human_activity(state);
+    if blank::consume(state, edge) {
+        return;
+    }
     let key = event.device().sysname().to_string();
     match event {
         TabletPadEvent::Button(e) => {
@@ -89,6 +104,40 @@ fn handle_pad(state: &mut Loop, event: &TabletPadEvent) {
             }
         }
         _ => {}
+    }
+}
+
+fn pad_button_edge(button: u32, pressed: bool) -> world::comp::blank::Edge {
+    use world::comp::blank::{Edge, Hold};
+    if pressed {
+        Edge::Press(Hold::PadButton(button))
+    } else {
+        Edge::Release(Hold::PadButton(button))
+    }
+}
+
+#[cfg(test)]
+mod pad_blank_tests {
+    use super::pad_button_edge;
+    use world::comp::blank::{BlankPolicy, Edge};
+
+    #[test]
+    fn waking_pad_button_and_its_release_do_not_pass_to_bindings() {
+        let mut policy = BlankPolicy::default();
+        policy.blanked = true;
+        assert!(policy.consume_edge(pad_button_edge(3, true)));
+        policy.blanked = false;
+        assert!(policy.consume_edge(pad_button_edge(3, false)));
+        assert!(!policy.consume_edge(pad_button_edge(3, true)));
+    }
+
+    #[test]
+    fn waking_pad_ring_strip_or_dial_does_not_reach_its_action() {
+        let mut policy = BlankPolicy::default();
+        policy.blanked = true;
+        assert!(policy.consume_edge(Edge::Other));
+        policy.blanked = false;
+        assert!(!policy.consume_edge(Edge::Other));
     }
 }
 
@@ -246,6 +295,10 @@ pub fn register(
             };
             if let Some(device) = touch_device {
                 let Some(key) = crate::wire::input::map::touch_output(state, &device) else {
+                    // Mapping can reject delivery, but a real touch still
+                    // wakes the panel and resets human idle time.
+                    world::comp::injection::note_human_activity(state);
+                    let _ = world::comp::blank::device_input(state, &event);
                     return;
                 };
                 // Entering touch mode: hide + snapshot the shared cursor, then hand
