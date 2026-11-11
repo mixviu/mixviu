@@ -1,0 +1,1 @@
+const DATA: &[u8] = include_bytes!("include-data.txt");

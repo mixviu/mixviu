@@ -1,0 +1,20 @@
+{cases: [
+ {fixture: "concat.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "format.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "byte.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "raw.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "unit.txt", file: "fixture/example.service", rules: ["data-path", "unit-directory"]},
+ {fixture: "env.txt", file: "fixture/src/lib.rs", rules: ["rust-env", "rust-mix-token"]},
+ {fixture: "comment.txt", file: "fixture/src/lib.rs", rules: []},
+ {fixture: "allowed.txt", file: "libraries/paths/src/lib.rs", rules: []},
+ {fixture: "escaped.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "nested.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "quoted-comment.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "include.txt", file: "tools/test-support/prefix_gate/caller.rs", rules: ["rust-path"]},
+ {fixture: "raw-byte.txt", file: "vendor/example/lib.rs", rules: ["vendor-path"]},
+ {fixture: "unicode.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "wrong-constant.txt", file: "libraries/paths/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "duplicate.txt", file: "libraries/paths/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "format-build.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]},
+ {fixture: "concat-char.txt", file: "fixture/src/lib.rs", rules: ["rust-path"]}
+]}

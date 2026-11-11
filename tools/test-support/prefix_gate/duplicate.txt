@@ -1,0 +1,2 @@
+pub const DEFAULT_PREFIX: &str = "/opt/mix";
+pub const DEFAULT_PREFIX: &str = "/opt/mix";

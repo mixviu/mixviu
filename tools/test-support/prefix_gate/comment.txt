@@ -1,0 +1,4 @@
+// /opt/other /etc/mix MIX_PREFIX
+/* outer /run/mix /* nested /opt/other */ /var/lib/mix */
+/// prose mentioning a MIX_PREFIX is not a token in code.
+const OK: &str = "/srv/example";

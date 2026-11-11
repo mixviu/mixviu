@@ -1,0 +1,402 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Lexical prefix ratchet; run from the repository root. No runtime evaluation.
+-- Cannot see paths computed at runtime, compressed embedded data, generated
+-- OUT_DIR files not in the source tree, or includes with non-literal filenames.
+-- Rust comments (including nested block comments) are skipped; ordinary/raw
+-- strings, byte strings, escapes and literal concat! arguments are decoded.
+-- Format macros expose their format literal through the same token scan.
+-- Baseline identities omit line numbers so unrelated edits do not reset debt.
+-- --json emits ALL findings, even in baseline mode. --strict ignores debt.
+
+$root = dirname(dirname(realpath($0)))
+$policy = load_data($root .. "/tools/prefix.conf.mix")
+for $e in $policy.exceptions
+  if trim($e.file ?? "") == "" or trim($e.rule ?? "") == "" or $e.text == nil or trim($e.reason ?? "") == "" then
+    raise("POLICY", "every exception needs an exact file, rule, text and reason")
+  end
+end
+for $file in keys($policy.excluded_files)
+  if trim($policy.excluded_files[$file]) == "" then
+    raise("POLICY", "excluded file needs a reason: " .. $file)
+  end
+end
+$o = getopt(args(), {json: {}, strict: {}, snapshot: {arg: true}})
+if len($o.errors) > 0 or len($o.rest) > 1 then
+  eprint("usage: mix tools/prefix_gate.mix [selftest] [--json] [--strict] [--snapshot DIR]")
+  exit(1)
+end
+$findings = []
+$seen_includes = {}
+$prefix_hits = 0
+$rust_patterns = {}
+
+fn record_hit($file, $line, $rule, $text)
+  global $findings
+  for $e in $policy.exceptions
+    if $e.file == $file and $e.rule == $rule and $e.text == $text then
+      return
+    end
+  end
+  push($findings, {file: $file, line: $line, rule: $rule, text: $text})
+end
+
+fn path_hits($file, $line, $text, $scope, $constant = false)
+  global $prefix_hits
+  for $m in re_find($text, '/opt/[^\s"\x00<>;,)}\]]*|/(?:etc|run)/mix(?:os)?[^\s"\x00<>;,)}\]]*|/var/(?:lib|cache)/mix(?:os)?[^\s"\x00<>;,)}\]]*')
+    if $constant and $scope == "rust" and $file == $policy.prefix_constant.file and $text == "/opt/mix" then
+      $prefix_hits = $prefix_hits + 1
+      if $prefix_hits == 1 then
+        continue
+      end
+    end
+    if $scope == "snapshot" and $m.match == "/opt/mix" then
+      continue
+    end
+    record_hit($file, $line, $scope .. "-path", $m.match)
+  end
+end
+
+fn old_hits($file, $line, $text, $snapshot = false)
+  $pattern = $snapshot ? 'MIXOS_[A-Za-z0-9_]*|COSMIX_[A-Za-z0-9_]*' : 'MIXOS_[A-Za-z0-9_]*|COSMIX_[A-Za-z0-9_]*|cosmix'
+  for $m in re_find($text, $pattern)
+    record_hit($file, $line + len(split(slice($text, 0, $m.start), "\n")) - 1, "old-name", $m.match)
+  end
+end
+
+fn decode_rust($s)
+  if starts_with($s, "b") then
+    $s = slice($s, 1)
+  end
+  if starts_with($s, "r") then
+    $q = index_of($s, '"')
+    return slice($s, $q + 1, len($s) - $q)
+  end
+  $s = slice($s, 1, -1)
+  $out = ""
+  $pos = 0
+  for $m in re_find($s, '\x5c(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F_]+\}|\r?\n\s*|.)')
+    $out = $out .. slice($s, $pos, $m.start)
+    $e = slice($m.match, 1)
+    if starts_with($e, "x") then
+      $out = $out .. chr(hex_number(slice($e, 1)))
+    elif starts_with($e, "u{") then
+      $out = $out .. chr(hex_number(replace(slice($e, 2, -1), "_", "")))
+    elif $e == "n" then
+      $out = $out .. "\n"
+    elif $e == "r" then
+      $out = $out .. "\r"
+    elif $e == "t" then
+      $out = $out .. "\t"
+    elif $e == "0" then
+      $out = $out .. chr(0)
+    elif not starts_with($e, "\n") and not starts_with($e, "\r") then
+      $out = $out .. $e
+    end
+    $pos = $m.end
+  end
+  return $out .. slice($s, $pos)
+end
+
+fn hex_number($s)
+  $n = 0
+  for $c in split(lower($s), "")
+    if $c != "" then
+      $n = $n * 16 + index_of("0123456789abcdef", $c)
+    end
+  end
+  return $n
+end
+
+fn rust_tokens($source)
+  global $rust_patterns
+  -- Longest raw delimiter first. Rust permits up to 255 hashes.
+  $max_hash = 0
+  for $m in re_find($source, 'b?r(#{0,255})"')
+    $max_hash = max($max_hash, len($m.groups[0]))
+  end
+  $cache_key = to_string($max_hash)
+  if not has_key($rust_patterns, $cache_key) then
+  $raw = []
+  $hashes = ""
+  for $n = 0 to $max_hash
+    push($raw, 'b?r' .. $hashes .. '"(?s:.*?)"' .. $hashes)
+    $hashes = $hashes .. "#"
+  end
+  $rust_patterns[$cache_key] = join(reverse($raw), "|") .. '|//[^\n]*|/\*|\*/|b?"(?:\x5c(?s:.)|[^"\x5c])*"|b?\x27(?:\x5c(?:u\{[^}]*\}|x..|.)|[^\x27\x5c])\x27|[A-Za-z_][A-Za-z0-9_]*|[^\s]|\s+'
+  end
+  $out = []
+  $skip_until = 0
+  $line = 1
+  for $m in re_find($source, $rust_patterns[$cache_key])
+    $s = $m.match
+    $here = $line
+    $line = $line + len(split($s, "\n")) - 1
+    if $m.start < $skip_until then
+      if $m.end > $skip_until then
+        -- A quote or // inside a block comment must not consume real code
+        -- after its closing delimiter. Re-lex that suffix at the boundary.
+        $tail = rust_tokens(slice($source, $skip_until))
+        $base_line = len(split(slice($source, 0, $skip_until), "\n")) - 1
+        for $t in $tail
+          $t.line = $t.line + $base_line
+          push($out, $t)
+        end
+        return $out
+      end
+      continue
+    end
+    if $s == "/*" then
+      $depth = 1
+      $skip_until = len($source)
+      for $mark in re_find(slice($source, $m.end), '/\*|\*/')
+        $depth = $depth + ($mark.match == "/*" ? 1 : -1)
+        if $depth == 0 then
+          $skip_until = $m.end + $mark.end
+          break
+        end
+      end
+    elif not starts_with($s, "//") and not re_match($s, '^\s+$') then
+      $literal = re_match($s, '^(?:b?["\x27]|b?r#*")') and len($s) > 1
+      push($out, {text: $s, line: $here, literal: $literal, value: $literal ? decode_rust($s) : $s})
+    end
+  end
+  return $out
+end
+
+-- Evaluate only literal expressions and nested concat!, never Rust code.
+fn literal_expr($ts, $i)
+  if $i >= len($ts) then
+    return nil
+  end
+  if $ts[$i].literal then
+    return {value: $ts[$i].value, next: $i + 1}
+  end
+  if $i + 2 >= len($ts) or $ts[$i].text != "concat" or $ts[$i + 1].text != "!" or $ts[$i + 2].text != "(" then
+    return nil
+  end
+  $j = $i + 3
+  $value = ""
+  while $j < len($ts) and $ts[$j].text != ")"
+    $v = literal_expr($ts, $j)
+    if $v == nil then
+      return nil
+    end
+    $value = $value .. $v.value
+    $j = $v.next
+    if $j < len($ts) and $ts[$j].text == "," then
+      $j = $j + 1
+    elif $j >= len($ts) or $ts[$j].text != ")" then
+      return nil
+    end
+  end
+  return $j < len($ts) ? {value: $value, next: $j + 1} : nil
+end
+
+fn scan_rust($file, $source)
+  global $seen_includes
+  -- Safe rejection before lexing: hex/Unicode escapes, line continuations
+  -- and concat! can hide a spelling. Comments may separate a macro and !.
+  if not re_match($source, '/opt/|/(?:etc|run)/mix|/var/(?:lib|cache)/mix|MIX_|\bconcat\b|\binclude_(?:str|bytes)\b|\x5c(?:x|u|\r?\n)') then
+    return
+  end
+  $ts = rust_tokens($source)
+  $nt = len($ts)
+  $scope = starts_with($file, "vendor/") ? "vendor" : "rust"
+  $i = -1
+  $skip_next = 0
+  for $t in $ts
+    $i = $i + 1
+    if $i < $skip_next then
+      continue
+    end
+    if $i + 3 < $nt and contains(["include_str", "include_bytes"], $t.text) and $ts[$i + 1].text == "!" then
+      $v = literal_expr($ts, $i + 3)
+      if $v != nil then
+        $abs = realpath(dirname($root .. "/" .. $file) .. "/" .. $v.value)
+        if $abs == nil then
+          record_hit($file, $t.line, $scope .. "-include", "missing include: " .. $v.value)
+          continue
+        end
+        if not starts_with($abs, $root .. "/") then
+          record_hit($file, $t.line, $scope .. "-include", "include outside repository: " .. $v.value)
+          continue
+        end
+        $inc = slice($abs, len($root) + 1)
+        if not has_key($seen_includes, $inc) then
+          $seen_includes[$inc] = true
+          scan_data($inc, bytes_to_string(read_file_bytes($abs), {lossy: true}), $scope)
+        end
+      end
+    end
+    if $i + 3 < $nt and contains(["env", "option_env"], $t.text) and $ts[$i + 1].text == "!" and not starts_with($file, "libraries/paths/") then
+      $v = literal_expr($ts, $i + 3)
+      if $v != nil and starts_with($v.value, "MIX_") then
+        record_hit($file, $t.line, "rust-env", $t.text .. "!(" .. $v.value .. ")")
+      end
+    end
+    $v = nil
+    if $t.literal then
+      $v = {value: $t.value, next: $i + 1}
+    elif $t.text == "concat" then
+      $v = literal_expr($ts, $i)
+    end
+    $text = $v != nil ? $v.value : $t.text
+    if $v != nil then
+      $constant = false
+      if $file == $policy.prefix_constant.file and $text == "/opt/mix" then
+        $before = map(slice($ts, max(0, $i - 6), $i), fn($x) = $x.text)
+        $constant = deep_eq($before, ["const", $policy.prefix_constant.name, ":", "&", "str", "="])
+      end
+      path_hits($file, $t.line, $text, $scope, $constant)
+    end
+    if $scope == "rust" and not starts_with($file, "libraries/paths/") then
+      for $m in re_find($text, '\bMIX_[A-Z][A-Z0-9_]*\b')
+        record_hit($file, $t.line, "rust-mix-token", $m.match)
+      end
+    end
+    $skip_next = $v != nil ? $v.next : $i + 1
+  end
+end
+
+fn scan_data($file, $source, $scope)
+  $line = 0
+  for $s in split($source, "\n")
+    $line = $line + 1
+    path_hits($file, $line, $s, $scope)
+    if $scope == "data" then
+      for $m in re_find($s, '^\s*(?:Runtime|State|Cache|Logs|Configuration)Directory\s*=.*\bmix(?:os)?(?:[/:][^\s]*)?(?:\s|$)')
+        record_hit($file, $line, "unit-directory", trim($m.match))
+      end
+    end
+  end
+end
+
+fn scan_file($file)
+  $source = bytes_to_string(read_file_bytes($root .. "/" .. $file), {lossy: true})
+  -- Old spellings are forbidden anywhere, including comments and docs.
+  for $m in re_find($source, 'MIXOS_[A-Za-z0-9_]*|COSMIX_[A-Za-z0-9_]*|cosmix')
+    record_hit($file, len(split(slice($source, 0, $m.start), "\n")), "old-name", $m.match)
+  end
+  if ends_with($file, ".rs") then
+    scan_rust($file, $source)
+  elif starts_with($file, "share/") or (starts_with($file, "apps/") and ends_with($file, ".mix")) or re_match($file, '\.(service|socket|slice|desktop)$|(?:tmpfiles|sysusers)(?:[./]|$)') then
+    scan_data($file, $source, "data")
+  end
+end
+
+fn identity($f)
+  return json_encode([$f.file, $f.rule, $f.text])
+end
+
+fn summary($fs)
+  $counts = {}
+  $totals = {}
+  for $f in $fs
+    $p = split($f.file, "/")
+    $crate = len($p) > 1 ? join(slice($p, 0, 2), "/") : $p[0]
+    $key = $crate .. " | " .. $f.rule
+    $counts[$key] = ($counts[$key] ?? 0) + 1
+    $totals[$f.rule] = ($totals[$f.rule] ?? 0) + 1
+  end
+  print("crate/scope | rule | hits")
+  print("--- | --- | ---")
+  for $k in sort(keys($counts))
+    print($k .. " | " .. to_string($counts[$k]))
+  end
+  for $k in sort(keys($totals))
+    print("TOTAL | " .. $k .. " | " .. to_string($totals[$k]))
+  end
+end
+
+fn selftest()
+  global $findings, $prefix_hits, $seen_includes
+  $cases = load_data($root .. "/tools/test-support/prefix_gate/cases.conf.mix")
+  for $c in $cases.cases
+    $findings = []
+    $prefix_hits = 0
+    $seen_includes = {}
+    $source = read_file($root .. "/tools/test-support/prefix_gate/" .. $c.fixture)
+    if ends_with($c.file, ".rs") then
+      scan_rust($c.file, $source)
+    else
+      scan_data($c.file, $source, "data")
+    end
+    $rules = map($findings, fn($f) = $f.rule)
+    if not deep_eq(sort($rules), sort($c.rules)) then
+      eprint("FAIL " .. $c.fixture .. ": " .. json_encode($findings))
+      exit(1)
+    end
+  end
+  print("prefix_gate selftest: " .. to_string(len($cases.cases)) .. " cases passed")
+end
+
+if len($o.rest) > 0 then
+  if $o.rest[0] != "selftest" then
+    exit(1)
+  end
+  selftest()
+  exit(0)
+end
+
+if $o.opts.snapshot != nil then
+  $dir = realpath($o.opts.snapshot)
+  $r = run_argv(["find", "-L", $dir, "-type", "f", "-executable", "-print"], {max_output: 64000000})
+  if not $r.ok then
+    raise("SNAPSHOT", $r.stderr)
+  end
+  for $bin in split(trim($r.stdout), "\n")
+    if $bin != "" then
+      $r = run_argv(["strings", "-a", $bin], {max_output: 268435456})
+      if not $r.ok or $r.stdout_truncated then
+        raise("SNAPSHOT", "strings failed or truncated: " .. $bin)
+      end
+      $s = $r.stdout
+      $name = slice($bin, len($dir) + 1)
+      scan_data($name, $s, "snapshot")
+      old_hits($name, 1, $s, true)
+    end
+  end
+else
+  $files = split(trim(run_argv_must(["git", "-C", $root, "ls-files"])), "\n")
+  for $file in $files
+    if has_key($policy.excluded_files, $file) then
+      continue
+    end
+    scan_file($file)
+  end
+end
+
+$failed = len($findings) > 0
+if not $o.opts.strict and $o.opts.snapshot == nil then
+  $base = json_parse(read_file($root .. "/tools/prefix-baseline.json"))
+  $now = {}
+  for $f in $findings
+    $k = identity($f)
+    $now[$k] = ($now[$k] ?? 0) + 1
+  end
+  $failed = false
+  for $k in sort(keys($now))
+    if $now[$k] > ($base[$k] ?? 0) then
+      eprint("prefix regression: " .. $k)
+      $failed = true
+    end
+  end
+  for $k in sort(keys($base))
+    if ($now[$k] ?? 0) < $base[$k] then
+      eprint("stale prefix baseline: " .. $k .. "; shrink the baseline")
+      $failed = true
+    end
+  end
+end
+if $o.opts.json then
+  print(json_encode($findings))
+else
+  summary($findings)
+  if $o.opts.snapshot != nil then
+    for $f in $findings
+      print($f.file .. ":" .. to_string($f.line) .. " " .. $f.rule .. " " .. $f.text)
+    end
+  end
+end
+exit($failed ? 1 : 0)

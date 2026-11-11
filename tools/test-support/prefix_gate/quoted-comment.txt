@@ -1,0 +1,1 @@
+/* " and // /* nested */ end */ const BAD: &str = "/opt/other";

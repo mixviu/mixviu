@@ -1,0 +1,1 @@
+fn bad() { let _ = format!("/opt/{}", "other"); }

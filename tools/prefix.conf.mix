@@ -1,0 +1,6 @@
+{
+  prefix_constant: {file: "libraries/paths/src/lib.rs", name: "DEFAULT_PREFIX", reason: "The sole compiled fallback prefix; at most one decoded /opt/mix literal."},
+  exceptions: [],
+  excluded_files: {"tools/prefix-baseline.json": "Generated finding identities contain the old spellings they track; scanning them would make the baseline recursive."},
+  disabled_rules: [{rule: "bare-mixos", enabled: false, reason: "Mark deferred the domain and app-id rename; do not check the bare mixos token yet."}]
+}

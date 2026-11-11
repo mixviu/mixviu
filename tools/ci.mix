@@ -4,7 +4,7 @@
 -- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
 --
 --   mix tools/ci.mix STAGE [--mix PATH]
---   STAGE: fmt | env | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
+--   STAGE: fmt | env | prefix | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
 --   stage-install (not in all): copy built debug binaries to a temporary prefix,
 --   write registry defaults as env.mx (no layout.mx), and print the prefix.
@@ -19,7 +19,7 @@
 
 $o = getopt(args(), {mix: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|foreign|test|mix-lint|mix-lint-baseline|release-mix|all [--mix PATH]")
+  eprint("usage: mix tools/ci.mix fmt|env|prefix|mix-hygiene|clippy|viud|foreign|test|mix-lint|mix-lint-baseline|release-mix|all [--mix PATH]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -185,7 +185,8 @@ fn stage_env()
       exit(1)
     end
   end
-  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path]
+  -- Finding identities are generated metadata, not variable consumers.
+  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!tools/prefix-baseline.json", ":!" + $reg_path]
   $used = {}
   $prefix_used = {}
   for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
@@ -214,7 +215,7 @@ fn stage_env()
       push($bad, "unlisted prefix " + $n)
     end
   end
-  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path])), "\n")
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!tools/prefix-baseline.json", ":!" + $reg_path])), "\n")
     if $f != "" then
       $ok = false
       for $re in $reg.mixos_allowed ?? []
@@ -263,6 +264,12 @@ end
 fn stage_foreign($mix)
   ensure_mix($mix)
   run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix)])
+end
+
+fn stage_prefix($mix)
+  ensure_mix($mix)
+  run_step([$mix, "tools/prefix_gate.mix", "selftest"])
+  run_step([$mix, "tools/prefix_gate.mix"])
 end
 
 fn stage_mix_lint($mix)
@@ -343,6 +350,8 @@ elif $stage == "viud" then
   stage_viud_egui_free()
 elif $stage == "foreign" then
   stage_foreign($mix)
+elif $stage == "prefix" then
+  stage_prefix($mix)
 elif $stage == "env" then
   stage_env()
 elif $stage == "mix-lint" then
@@ -355,6 +364,7 @@ elif $stage == "all" then
   stage_clippy()
   stage_viud_egui_free()
   stage_foreign($mix)
+  stage_prefix($mix)
   stage_test($mix)
   stage_mix_lint($mix)
 else

@@ -1,0 +1,1 @@
+const BAD: &str = concat!("/op", "t/", "other");
