@@ -1,4 +1,3 @@
-pub const PORTALD_TEST_LOG_CAPTURE: &str = "MIX_TEST_PORTALD_LOG_CAPTURE";
 pub const PORTALD_TEST_DBUS: &str = "PORTALD_TEST_DBUS";
 pub const PORTALD_TEST_SCREENCAST: &str = "PORTALD_TEST_SCREENCAST";
 pub const DBUS_SESSION_BUS_ADDRESS: &str = "DBUS_SESSION_BUS_ADDRESS";
@@ -125,6 +124,7 @@ pub const LIB: &str = "MIX_LIB";
 
 /// Names reserved for tests.
 pub mod test {
+pub const TEST_PORTALD_LOG_CAPTURE: &str = "MIX_TEST_PORTALD_LOG_CAPTURE";
 pub const TEST_STRICT_FONT: &str = "MIX_TEST_STRICT_FONT";
 pub const TEST_VIUD_AGENT_SEAT_ALLOW: &str = "MIX_TEST_VIUD_AGENT_SEAT_ALLOW";
 pub const PTY_TIMEOUT_SECS: &str = "MIX_PTY_TIMEOUT_SECS";
