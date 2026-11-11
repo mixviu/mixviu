@@ -101,30 +101,38 @@ fn real_resources_are_counted_individually_and_surface_death_cannot_keep_them_li
     let kernel = Default::default();
     let worlds = world::world::manager::WorldManager::new(
         world::kind::build::base::spatial(
-            world::world::manager::MAIN_WORLD, "main", vec![], &kernel,
+            world::world::manager::MAIN_WORLD,
+            "main",
+            vec![],
+            &kernel,
         ),
-        world::kind::build::base::overlay(
-            world::world::manager::KERNEL, "kernel", vec![], &kernel,
-        ),
+        world::kind::build::base::overlay(world::world::manager::KERNEL, "kernel", vec![], &kernel),
         &kernel,
     );
     let dh = h.wire.state.output.display_handle.clone();
     let inner = Orchestrator::new(
         world::environment::type_::base::Environment {
-            gpu: String::new(), desktop_name: "testkit".into(),
+            gpu: String::new(),
+            desktop_name: "testkit".into(),
         },
         false,
         Loader {
-            socket_name: "testkit-policy".into(), display_handle: dh.clone(),
+            socket_name: "testkit-policy".into(),
+            display_handle: dh.clone(),
             loop_signal: event_loop.get_signal(),
         },
-        kernel, worlds,
+        kernel,
+        worlds,
     );
     let mut lp = Loop::new(inner, &dh, None, event_loop.handle());
     let space = &mut lp.inner.host_space_mut().state;
     space.map_output(&h.wire.inner.output, (0, 0));
     for window in h.wire.inner.space.state.elements() {
-        space.map_element(window.clone(), h.wire.inner.space.state.element_location(window).unwrap(), false);
+        space.map_element(
+            window.clone(),
+            h.wire.inner.space.state.element_location(window).unwrap(),
+            false,
+        );
     }
     space.refresh();
     let recompute = |h: &mut Harness, lp: &mut Loop| {
@@ -152,7 +160,11 @@ fn real_resources_are_counted_individually_and_surface_death_cannot_keep_them_li
     h.roundtrip();
     assert!(!h.wire.state.inhibitors.surfaces[0].is_alive());
     assert!(!recompute(&mut h, &mut lp));
-    assert_eq!(h.wire.state.inhibitors.surfaces.len(), 1, "resource still lives");
+    assert_eq!(
+        h.wire.state.inhibitors.surfaces.len(),
+        1,
+        "resource still lives"
+    );
     b.destroy();
     h.roundtrip();
     assert!(h.wire.state.inhibitors.surfaces.is_empty());
@@ -171,7 +183,10 @@ fn idle_notification_is_held_then_rearmed_on_the_real_calloop() {
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     while h.client.state.idle_events.is_empty() {
         h.roundtrip();
-        assert!(std::time::Instant::now() < deadline, "idle notification did not resume");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "idle notification did not resume"
+        );
         std::thread::sleep(Duration::from_millis(1));
     }
     assert_eq!(h.client.state.idle_events, [true]);
