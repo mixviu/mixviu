@@ -30,6 +30,7 @@ fn request($s)
 end
 fn intent($s,$a,$native)
   $s=sync($s)
+  if $a.action=="submit" then $a.action=if $a.value.shift then "prev" else "next" end end
   if not $s.find.open then return $s end
   if $a.action=="close" then
     $s.find.open=false;$s.find.result=nil;$s.layout.focus_serial=$s.layout.focus_serial+1

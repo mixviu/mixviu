@@ -219,6 +219,9 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
                 .is_some_and(|items| items.iter().any(|i| i["id"] == *payload))
     } else {
         (action == "edit" && validate(kind, payload).is_ok())
+            || (action == "submit"
+                && current["submit_modifiers"] == true
+                && payload["shift"].is_boolean())
             || ["next", "prev", "replace", "replace-all", "close"].contains(&action)
     };
     if valid {
@@ -571,7 +574,18 @@ pub fn draw(
                         .data_mut(|d| d.insert_temp(marker, value["instance"].clone()));
                 }
                 if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    emit(events, "next", Value::Null);
+                    if value["submit_modifiers"] == true {
+                        let shift = ui.input(|i| i.modifiers.shift);
+                        ui.input_mut(|input| {
+                            input.events.retain(|event| {
+                                !matches!(event, egui::Event::Key { key: egui::Key::Enter, .. })
+                            });
+                        });
+                        field.request_focus();
+                        emit(events, "submit", json!({"shift":shift}));
+                    } else {
+                        emit(events, "next", Value::Null);
+                    }
                 }
                 for (action, label) in [("prev", "Previous"), ("next", "Next")] {
                     if ui.button(label).clicked() {

@@ -5,16 +5,21 @@ $commands=[["cargo","fmt","-p","lib-viu","--","--check"],["cargo","test","--lock
 $bootstrap_argv=["cargo","test","--locked","-p","lib-viu","--lib","startup::"]
 $host_argv=["cargo","build","--locked","-p","viu","--bin","viu"]
 $fixtures=[ ["cargo","build","--locked","-p","mix","--bin","mix"], ["cargo","build","--locked","-p","mixd","--bin","mixd"] ]
-$targets.check(concat($commands,[$bootstrap_argv,$host_argv],$fixtures))
 $prepare=contains(args(),"--prepare")
+$target_dir=$targets.check(concat($commands,[$bootstrap_argv,$host_argv],$fixtures),$prepare)
+$bootstrap_argv=$targets.prepare_command($bootstrap_argv,$prepare)
+$host_argv=$targets.prepare_command($host_argv,$prepare)
 $rc=0
 try
   -- Session tests must use this source tree, never an installed fallback.
   for $fixture in $fixtures
-    $r=run_argv($fixture,{timeout:1800,max_output:16000000});print($r)
+    $r=run_argv($targets.prepare_command($fixture,$prepare),{timeout:1800,max_output:16000000});print($r)
     if not $r.ok then exit($r.exit_code ?? 1) end
   end
-  $test_env={MIX_TEST_MIX_EXE:realpath("target/debug/mix"),MIX_TEST_E2E_EXE:realpath("target/debug/mix")}
+  $mix_path=path_join($target_dir,"debug/mix")
+  $mix_exe=realpath($mix_path)
+  if $mix_exe==nil or not is_file($mix_exe) then raise("TERM_FIXTURE","missing built Mix test interpreter: "..$mix_path) end
+  $test_env={MIX_TEST_MIX_EXE:$mix_exe,MIX_TEST_E2E_EXE:$mix_exe}
   $mix_tests=run_argv(["/opt/mixos/bin/mix","apps/term/core-test.mix"]);print($mix_tests)
   if not $mix_tests.ok then exit($mix_tests.exit_code ?? 1) end
   $wire_tests=run_argv(["/opt/mixos/bin/mix","apps/term/wire-test.mix"]);print($wire_tests)
@@ -61,7 +66,7 @@ try
     $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
     $artifact="/build/term-artifacts/"..$sha
     mkdir($artifact,{parents:true})
-    copy("target/debug/viu",$artifact.."/viu")
+    copy(path_join($target_dir,"debug/viu"),$artifact.."/viu")
     write_file($artifact.."/viu.json",json_encode({source:$sha,profile:"debug",sha256:hash_file($artifact.."/viu","sha256")}))
     print({artifact:$artifact,profile:"debug",acceptance:false})
   end
