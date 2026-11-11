@@ -465,7 +465,7 @@ pub enum Key {
     PageDown,
     Control(char),
     /// A cursor key with xterm modifiers: CSI 1 ; `modifier` `code`, e.g.
-    /// Alt+Left is `code` b'D' with `modifier` 3.
+    /// Modified navigation keys (desk-owned arrows are refused at input).
     Modified {
         code: u8,
         modifier: u8,

@@ -85,6 +85,9 @@ pub fn validate(
                 return Err(error(&path, format!("At most {MAX_CHORDS} chords")));
             }
             for (n, chord) in chords.iter().enumerate() {
+                if action::keymap::reserved(chord) {
+                    return Err(error(&path, "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused"));
+                }
                 if !valid_chord(chord) {
                     return Err(error(
                         &path,
@@ -153,7 +156,8 @@ mod tests {
                 )]),
             )])
         };
-        assert!(validate(&one("nav.back", &["Alt+ArrowLeft"]), any_app).is_ok());
+        assert!(validate(&one("nav.back", &["Alt+ArrowLeft"]), any_app).is_err());
+        assert!(validate(&one("nav.back", &["Ctrl+Shift+ArrowLeft"]), any_app).is_ok());
         assert!(validate(&one("nav.back", &[]), any_app).is_ok(), "unbound");
         assert!(validate(&one("nav back", &["F1"]), any_app).is_err());
         assert!(validate(&one("nav.back", &["F1", "F1"]), any_app).is_err());

@@ -13,8 +13,7 @@ pub use ::action::keymap::Overrides;
 use egui::{Key, KeyboardShortcut, Modifiers};
 
 /// The function keys F1–F12. They belong to the person: no app binds one by
-/// default, with or without modifiers; only the person's own bindings may
-/// (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md).
+/// default or override, with or without modifiers.
 pub const USER_KEYS: [Key; 12] = [
     Key::F1,
     Key::F2,
@@ -34,6 +33,13 @@ pub const USER_KEYS: [Key; 12] = [
 pub fn user_only(key: Key) -> bool {
     USER_KEYS.contains(&key)
 }
+
+/// Desk-owned keys are refused at every application input boundary.
+pub fn reserved(key: Key, modifiers: Modifiers) -> bool {
+    ::action::keymap::reserved(&chord_text(&KeyboardShortcut::new(modifiers, key)))
+}
+
+pub const RESERVED_MESSAGE: &str = "F1–F12 and Ctrl/Alt+arrow are reserved for the desk and are refused";
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {

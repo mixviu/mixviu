@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Shipped data and generated terminal bindings must respect desk ownership.
+fn reserved_chord($text)
+  $parts=split($text,"+");$key=lower($parts[len($parts)-1])
+  return re_match($key,"^f([1-9]|1[0-2])$") or (contains(["left","right","up","down","arrowleft","arrowright","arrowup","arrowdown"],$key) and not contains($parts,"Shift") and (contains($parts,"Ctrl") or contains($parts,"Alt")))
+end
+fn inspect_bindings($v,$path,$binding=false)
+  if type($v)=="map" then
+    for $k in keys($v) inspect_bindings($v[$k],$path.."."..$k,contains(["shortcut","shortcuts","keys","key"],$k)) end
+  elif type($v)=="list" then
+    for $item in $v inspect_bindings($item,$path,$binding) end
+  elif $binding and type($v)=="string" and reserved_chord($v) then
+    raise("RESERVED_KEY",$path..": reserved binding "..$v)
+  end
+end
+for $p in split(trim(run_argv_must(["git","ls-files","apps","share/scenes"])),"\n")
+  if ends_with($p,".json") then inspect_bindings(json_parse(read_file($p)),$p) end
+end
+$r=run_argv([args()[0] ?? "mix","apps/term/reserved-test.mix"],{stdout:"inherit",stderr:"inherit"})
+if $r.exit_code!=0 then exit(1) end
+print("reserved app bindings: clean")

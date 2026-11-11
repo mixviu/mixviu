@@ -25,7 +25,7 @@ pub fn resolve(args: &serde_json::Value) -> Result<serde_json::Value, String> {
             .map(|s| toolkit::keymap::parse_chord(s).ok_or("invalid default chord"))
             .transpose()?;
         if let Some(chord) = shortcut {
-            if toolkit::keymap::user_only(chord.logical_key) || chords.contains(&chord) {
+            if toolkit::keymap::reserved(chord.logical_key, chord.modifiers) || chords.contains(&chord) {
                 return Err("invalid or duplicate default chord".into());
             }
             chords.push(chord);
@@ -99,6 +99,9 @@ pub fn pressed(ctx: &egui::Context, actions: &serde_json::Value) -> Vec<serde_js
                 }
                 _ => return true,
             };
+            if toolkit::keymap::reserved(key, modifiers) {
+                return false;
+            }
             if let Some(action) = actions.as_array().into_iter().flatten().find(|action| {
                 action["shortcut"]
                     .as_str()
@@ -150,12 +153,12 @@ fn take(ctx: &egui::Context, chord: &egui::KeyboardShortcut) -> bool {
 mod tests {
     #[test]
     fn secondary_defaults_survive_profile_changes_and_restore() {
-        let defaults = serde_json::json!([{"id":"parent","shortcut":"Backspace","keys":["Backspace","Alt+ArrowUp"]}]);
+        let defaults = serde_json::json!([{"id":"parent","shortcut":"Backspace","keys":["Backspace","Ctrl+Shift+ArrowUp"]}]);
         let original =
             super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{}})).unwrap();
         assert_eq!(
             original["bindings"]["parent"]["keys"],
-            serde_json::json!(["Backspace", "Alt+ArrowUp"])
+            serde_json::json!(["Backspace", "Ctrl+Shift+ArrowUp"])
         );
         let changed = super::resolve(
             &serde_json::json!({"defaults":defaults,"overrides":{"parent":["Ctrl+U"]}}),
@@ -172,11 +175,11 @@ mod tests {
     #[test]
     fn user_bindings_claim_defaults_and_restore_without_losing_extra_keys() {
         let defaults = serde_json::json!([{"id":"view.b","shortcut":"Ctrl+B"},{"id":"view.a","shortcut":"Ctrl+A"}]);
-        let result = super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{"view.b":["Ctrl+A","F2"],"view.a":[]}})).unwrap();
+        let result = super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{"view.b":["Ctrl+A","Insert"],"view.a":[]}})).unwrap();
         assert_eq!(result["bindings"]["view.a"]["keys"], serde_json::json!([]));
         assert_eq!(
             result["bindings"]["view.b"]["keys"],
-            serde_json::json!(["Ctrl+A", "F2"])
+            serde_json::json!(["Ctrl+A", "Insert"])
         );
         let restored =
             super::resolve(&serde_json::json!({"defaults":defaults,"overrides":{}})).unwrap();
