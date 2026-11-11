@@ -4,7 +4,7 @@
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath(script_path()))
 $mix = env("MIX_TEST_MIX_EXE", realpath("/proc/self/exe"))
-$tmp = "/var/tmp/agent-acp-" .. uuid()
+$tmp = env("TMPDIR", "/tmp") .. "/agent-acp-" .. uuid()
 $bus = nil
 $children = []
 mkdir($tmp .. "/workspace", {parents: true})

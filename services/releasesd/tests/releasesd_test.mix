@@ -14,7 +14,7 @@ $citizen = realpath($here .. "/../scripts/releasesd.mix")
 $noded = env("MIX_TEST_NODED_EXE", mix_path("prefix", "bin/noded"))
 $a = args()
 if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
-$tmp = "/var/tmp/releasesd-test." .. uuid()
+$tmp = env("TMPDIR", "/tmp") .. "/releasesd-test." .. uuid()
 $results = []
 $pids = []
 

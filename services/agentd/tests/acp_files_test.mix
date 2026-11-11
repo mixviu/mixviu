@@ -4,7 +4,7 @@
 $a = require("../scripts/lib/acp.mix")
 $log = require("../scripts/lib/log.mix")
 if len(args()) == 0 then
-  $dir = "/var/tmp/agent-acp-files-" .. uuid()
+  $dir = env("TMPDIR", "/tmp") .. "/agent-acp-files-" .. uuid()
   $r = run_argv([env("MIX_TEST_MIX_EXE", realpath("/proc/self/exe")), script_path(), "child"],
     {env: {MIX_AGENTD_MCP_DIR: $dir .. "/mcp", ACP_TEST_DIR: $dir}, timeout: 10})
   print($r.stdout)

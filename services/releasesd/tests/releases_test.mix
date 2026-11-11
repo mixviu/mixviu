@@ -12,7 +12,7 @@
 -- failure.
 
 $r = require("../scripts/lib/releases.mix")
-$tmp = "/var/tmp/releases-test." .. uuid()
+$tmp = env("TMPDIR", "/tmp") .. "/releases-test." .. uuid()
 $results = []
 
 fn check($name, $ok)
