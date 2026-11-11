@@ -3,9 +3,8 @@
 
 //! Typed configuration structs — one struct per service.
 //!
-//! Every struct derives `Default` with values matching what apps currently
-//! hardcode, so a freshly-materialised `<etc-root>/<service>.conf.mix`
-//! is immediately usable.
+//! Initial values come from the installed environment registry. Existing
+//! configuration files retain their schema and override those values.
 
 use std::collections::BTreeMap;
 use std::path::Path;

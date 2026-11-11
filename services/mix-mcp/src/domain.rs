@@ -88,7 +88,7 @@ mod tests {
         let home = PathBuf::from("/home/user");
 
         assert_eq!(
-            path_to_domain(&PathBuf::from("/home/user/.mixos"), &home),
+            path_to_domain(&PathBuf::from("/home/user/.mixviu"), &home),
             "mixviu"
         );
         assert_eq!(

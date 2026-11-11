@@ -144,3 +144,23 @@ async fn execute_inner(
         status.code().unwrap_or(1),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn oversized_script_is_rejected_before_starting_the_interpreter() {
+        let error = execute_inner("x".repeat(SCRIPT_LIMIT + 1), None).await.unwrap_err();
+        assert!(error.contains("nothing was started"));
+    }
+
+    #[tokio::test]
+    async fn output_bounds_accept_the_limit_and_reject_one_extra_byte() {
+        let exact = vec![b'x'; OUTPUT_LIMIT];
+        assert_eq!(bounded_read(exact.as_slice()).await.unwrap().len(), OUTPUT_LIMIT);
+        let extra = vec![b'x'; OUTPUT_LIMIT + 1];
+        let error = bounded_read(extra.as_slice()).await.unwrap_err();
+        assert!(error.contains("effects may already have occurred"));
+    }
+}

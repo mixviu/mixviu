@@ -6,7 +6,7 @@ fn checked($argv, $env = {})
   if $r.exit_code != 0 then exit($r.exit_code ?? 124) end
 end
 if args()[0] == "resolve" then
-  checked(["cargo", "metadata", "--format-version", "1", "--no-deps"])
+  checked(["cargo", "metadata", "--format-version", "1"])
   checked(["cargo", "fmt", "-p", "mix-mcp"])
   print("DERIVED_DIFF_BEGIN")
   print(run_argv_must(["git", "diff", "--", "Cargo.lock", "services/mix-mcp"]))
