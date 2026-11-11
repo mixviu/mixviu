@@ -11,7 +11,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>The desktop portal — MixOS</title>
+    <title>The desktop portal — MixViu</title>
     <link rel="canonical" href="https://mixos.dev/portald/">
     <link rel="alternate" type="text/markdown" href="/portald/README.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
@@ -90,7 +90,7 @@
 <button class="menu-toggle" data-sidebar="right"><i data-lucide="menu"></i></button>
 
 <nav class="topnav">
-    <h1><a class="brand" href="/">MixOS &middot; <span>Server &amp; Desktop Systems</span></a></h1>
+    <h1><a class="brand" href="/">MixViu &middot; <span>Server &amp; Desktop Systems</span></a></h1>
 </nav>
 
 <!-- ================= LEFT SIDEBAR: documentation panels ================= -->
@@ -100,7 +100,7 @@
         <div class="carousel-nav">
             <button class="carousel-chevron" data-sidebar="left" data-dir="prev"><i data-lucide="chevron-left"></i></button>
             <div class="carousel-dots">
-                <button class="carousel-dot active" data-sidebar="left" data-panel="0" title="MixOS"></button>
+                <button class="carousel-dot active" data-sidebar="left" data-panel="0" title="MixViu"></button>
             </div>
             <button class="carousel-chevron" data-sidebar="left" data-dir="next"><i data-lucide="chevron-right"></i></button>
         </div>
@@ -109,7 +109,7 @@
         <div class="panel-track">
 
             <div class="panel">
-                <div class="panel-title">MixOS</div>
+                <div class="panel-title">MixViu</div>
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
@@ -243,9 +243,9 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="the-desktop-portal">The desktop portal</h1>
-<p>Applications on MixOS ask the desktop for its appearance (dark or light mode,
+<p>Applications on MixViu ask the desktop for its appearance (dark or light mode,
 contrast and accent colour) through the XDG Settings portal, and for a screen
-to share through the XDG ScreenCast portal. <code>portald</code> is the MixOS
+to share through the XDG ScreenCast portal. <code>portald</code> is the MixViu
 implementation of these interfaces and FileChooser version 4. It owns <code>org.freedesktop.portal.Desktop</code> on the session
 bus, answers the <code>org.freedesktop.appearance</code> namespace and, when started with
 <code>--screencast</code>, serves monitor sources from the compositor.</p>
@@ -435,7 +435,7 @@ it keeps <code>DBUS_SESSION_BUS_ADDRESS</code>. The unit passes <code>--screenca
     [--screencast-consent prompt|allow] [--screencast-max-framerate 30]
 </code></pre>
 <p>It needs <code>DBUS_SESSION_BUS_ADDRESS</code>. <code>--state-dir</code> defaults to
-<code>$STATE_DIRECTORY</code>, which systemd sets from <code>StateDirectory=portald</code>. With
+the paths state root (<code>mix:var/portald</code>); the unit passes a per-session <code>--state-dir</code>. With
 <code>--screencast</code> it also needs <code>WAYLAND_DISPLAY</code> and <code>XDG_RUNTIME_DIR</code> for the
 compositor, and <code>PIPEWIRE_RUNTIME_DIR</code> / <code>PIPEWIRE_REMOTE</code> (or
 <code>XDG_RUNTIME_DIR</code>) for PipeWire. The binary links the system <code>libpipewire-0.3</code>.</p>
@@ -452,7 +452,7 @@ while disconnected. It is registered in
 <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
 <h2 id="tests">Tests</h2>
 <p>The source is
-<a href="https://github.com/markc/mixos/tree/main/services/portald"><code>services/portald</code></a>.</p>
+<a href="https://github.com/mixviu/mixviu/tree/main/services/portald"><code>services/portald</code></a>.</p>
 <pre><code class="language-text">cargo test --locked -p portald
 </code></pre>
 <p>Unit tests cover value mapping, iterative matching and acceptance.
@@ -505,7 +505,7 @@ remote.</li>
 <p>The contract, with its status, is in <a href="/docs/spec/portal/">docs/docs/spec/portal</a>.</p>
 <p>When the export gate removes accent-color, SettingChanged sends (-1, -1, -1), the portal specification\u0027s out-of-range unset sentinel. A returning accent sends its actual RGB tuple.</p>
         </article>
-        <p class="doc-source"><a href="/portald/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/portald/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixViu.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>
