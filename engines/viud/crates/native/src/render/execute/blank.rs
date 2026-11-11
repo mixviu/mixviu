@@ -32,12 +32,16 @@ trait Surface {
 }
 
 struct DrmSurface<'a> { drm: &'a DrmDeviceFd, crtc: crtc::Handle }
+fn drm_handle(raw: u32) -> property::Handle {
+    // Raw handles originate exclusively from opt_prop's NonZeroU32 handles.
+    std::num::NonZeroU32::new(raw).expect("DRM property handle is nonzero").into()
+}
 impl Surface for DrmSurface<'_> {
     fn property(&self, name: &str) -> Option<u32> {
         opt_prop(self.drm, self.crtc, name).map(u32::from)
     }
     fn value(&self, handle: u32) -> Option<u64> {
-        current_raw(self.drm, self.crtc, handle.into())
+        current_raw(self.drm, self.crtc, drm_handle(handle))
     }
     fn blob(&self, bytes: &mut [u8]) -> Result<u64, String> {
         drm_ffi::mode::create_property_blob(self.drm.as_fd(), bytes)
@@ -46,7 +50,7 @@ impl Surface for DrmSurface<'_> {
     fn commit(&self, props: &[(u32, u64)], test: bool) -> Result<(), String> {
         let mut req = AtomicModeReq::new();
         for (handle, value) in props {
-            req.add_property(self.crtc, (*handle).into(), property::Value::Blob(*value));
+            req.add_property(self.crtc, drm_handle(*handle), property::Value::Blob(*value));
         }
         let flags = AtomicCommitFlags::ALLOW_MODESET
             | if test { AtomicCommitFlags::TEST_ONLY } else { AtomicCommitFlags::empty() };
@@ -95,7 +99,7 @@ fn color_plan(surface: &impl Surface, owned: Option<(u32, u64)>) -> Vec<(u32, u6
 /// selected property; every other stale colour property goes back to identity.
 pub(super) fn connector_color_plan(drm: &DrmDeviceFd, crtc: crtc::Handle, owned: Option<(property::Handle, u64)>) -> Vec<(property::Handle, u64)> {
     color_plan(&DrmSurface { drm, crtc }, owned.map(|(h, b)| (h.into(), b)))
-        .into_iter().map(|(h, b)| (h.into(), b)).collect()
+        .into_iter().map(|(h, b)| (drm_handle(h), b)).collect()
 }
 
 fn load(surface: &impl Surface) -> Result<(u32, u64), String> {
@@ -131,7 +135,7 @@ impl Drop for Loaded {
 }
 impl Blank {
     pub fn preserved(&self) -> Option<(property::Handle, u64)> {
-        self.loaded.as_ref().map(|l| (l.prop.into(), l.blob))
+        self.loaded.as_ref().map(|l| (drm_handle(l.prop), l.blob))
     }
     fn clear(&mut self) -> Result<(), String> {
         if let Some(l) = self.loaded.as_ref() {
