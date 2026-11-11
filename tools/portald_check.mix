@@ -17,6 +17,9 @@ try
   $env = {MIX_PREFIX: $prefix, RUSTC_WRAPPER: ""}
   check_step(["cargo", "test", "--locked", "-p", "portald", "--no-fail-fast"], $env)
   check_step(["cargo", "test", "--locked", "-p", "portald", "--no-default-features", "--no-fail-fast"], $env)
+  $elf = run_argv_must(["ldd", "target/debug/portald"])
+  print($elf)
+  if contains($elf, "libpipewire") then raise("FEATURE_LEAK", "feature-disabled portald links PipeWire") end
   check_step(["/opt/mixos/bin/mix", "services/portald/tests/restart_recovery_test.mix"], $env)
   check_step(["cargo", "tree", "--locked", "-i", "pipewire-sys"])
   check_step(["/opt/mixos/bin/mix", "tools/foreign_gate.mix", "--locked"])
