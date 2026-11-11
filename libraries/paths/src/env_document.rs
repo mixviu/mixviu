@@ -40,7 +40,7 @@ pub(super) struct Defaults {
     pub values: BTreeMap<String, String>,
 }
 
-pub(super) fn read(prefix: &Path, stamp: Option<&str>) -> Result<Option<Defaults>, Error> {
+pub(super) fn read(prefix: &Path) -> Result<Option<Defaults>, Error> {
     let file = match std::fs::File::open(prefix.join("env.mx")) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -51,7 +51,7 @@ pub(super) fn read(prefix: &Path, stamp: Option<&str>) -> Result<Option<Defaults
         .read_to_end(&mut bytes)
         .map_err(|e| Error::Unreadable(e.to_string()))?;
     let source = std::str::from_utf8(&bytes).map_err(|e| Error::Malformed(e.to_string()))?;
-    parse(source, stamp).map(Some)
+    parse(source, super::env::SNAPSHOT.get().copied()).map(Some)
 }
 pub(super) fn parse(source: &str, stamp: Option<&str>) -> Result<Defaults, Error> {
     if source.len() > 65536 {
@@ -140,13 +140,13 @@ pub(super) fn parse(source: &str, stamp: Option<&str>) -> Result<Defaults, Error
         .remove("commit")
         .filter(|s| !s.is_empty())
         .ok_or_else(|| Error::Malformed("missing commit".into()))?;
-    if let Some(expected) = stamp.filter(|s| !s.is_empty() && *s != "unknown") {
-        if expected != commit {
-            return Err(Error::SnapshotMismatch {
-                expected: expected.into(),
-                actual: commit,
-            });
-        }
+    if let Some(expected) = stamp
+        && expected != commit
+    {
+        return Err(Error::SnapshotMismatch {
+            expected: expected.into(),
+            actual: commit,
+        });
     }
     values.remove("schema");
     Ok(Defaults { values })

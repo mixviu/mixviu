@@ -196,6 +196,8 @@ fn json_str(s: &str) -> String {
 /// variables so a crate without [`emit`] in its `build.rs` still compiles;
 /// its provenance degrades to `"unknown"` / `false`, which is itself the
 /// "no build.rs wired" signal.
+/// A known full SHA also registers the process snapshot with paths. Expand
+/// this unconditionally at startup, before reading installed settings.
 #[macro_export]
 macro_rules! build_info {
     () => {{
@@ -207,14 +209,18 @@ macro_rules! build_info {
         static MIX_BUILDINFO_MARKER: ::core::option::Option<&str> =
             $crate::paths::stamp!(BUILDINFO_MARKER);
         let _ = ::core::hint::black_box(&MIX_BUILDINFO_MARKER);
-        $crate::BuildInfo {
+        let info = $crate::BuildInfo {
             pkg: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),
             git_sha: $crate::paths::stamp!(GIT_SHA).unwrap_or("unknown"),
             git_sha_full: $crate::paths::stamp!(GIT_SHA_FULL).unwrap_or("unknown"),
             git_dirty: matches!($crate::paths::stamp!(GIT_DIRTY), Some("1") | Some("true")),
             build_time: $crate::paths::stamp!(BUILD_TIME).unwrap_or("unknown"),
+        };
+        if info.git_sha_full != "unknown" {
+            $crate::paths::env::register_snapshot(info.git_sha_full);
         }
+        info
     }};
 }
 

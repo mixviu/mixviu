@@ -8,6 +8,11 @@ fn installed_settings_success_errors_and_override_precedence() {
         .and_then(|s| s.into_string().ok())
         .and_then(|s| s.strip_prefix("setting-").map(str::to_owned))
     {
+        if mode != "unregistered" {
+            env::register_snapshot("fixture-snapshot");
+            env::register_snapshot("fixture-snapshot");
+            env::register_snapshot("ignored-later-snapshot");
+        }
         // This succeeds even when the file is missing, unreadable or malformed.
         assert_eq!(env::setting(env::COMP_SERVICE).unwrap(), "override");
         let result = env::setting(env::NODED_SERVICE);
@@ -34,10 +39,15 @@ fn installed_settings_success_errors_and_override_precedence() {
                 result,
                 Err(env::SettingError::UnknownSchema { .. })
             )),
-            "mismatch" => assert!(matches!(
+            "mismatch" => assert_eq!(
                 result,
-                Err(env::SettingError::SnapshotMismatch { .. })
-            )),
+                Err(env::SettingError::SnapshotMismatch {
+                    name: env::NODED_SERVICE.into(),
+                    expected: "fixture-snapshot".into(),
+                    actual: "another-snapshot".into(),
+                })
+            ),
+            "unregistered" => assert_eq!(result.unwrap(), "installed"),
             "unreadable" => assert!(matches!(result, Err(env::SettingError::Unreadable { .. }))),
             _ => panic!("unexpected mode"),
         }
@@ -50,13 +60,14 @@ fn installed_settings_success_errors_and_override_precedence() {
         "schema",
         "mismatch",
         "unreadable",
+        "unregistered",
     ] {
         let prefix =
             std::env::temp_dir().join(format!("paths-setting-{}-{mode}", std::process::id()));
         std::fs::create_dir_all(&prefix).unwrap();
-        let stamp = env::SNAPSHOT_COMMIT.unwrap_or("unstamped");
+        let stamp = "fixture-snapshot";
         let source = match mode {
-            "good" | "nonutf" => format!(
+            "good" | "nonutf" | "unregistered" => format!(
                 "{{schema: 1, commit: '{stamp}', {}: 'installed', {}: 'mix:run/hostd/hostd.sock'}}",
                 env::NODED_SERVICE,
                 env::HOSTD_SOCKET
