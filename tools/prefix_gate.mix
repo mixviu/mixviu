@@ -43,6 +43,9 @@ end
 
 fn path_hits($file, $line, $text, $scope, $constant = false)
   global $prefix_hits
+  if not contains($text, "/opt/") and not contains($text, "/etc/mix") and not contains($text, "/run/mix") and not contains($text, "/var/lib/mix") and not contains($text, "/var/cache/mix") then
+    return
+  end
   for $m in re_find($text, '/opt/[^\s"\x00<>;,)}\]]*|/(?:etc|run)/mix(?:os)?[^\s"\x00<>;,)}\]]*|/var/(?:lib|cache)/mix(?:os)?[^\s"\x00<>;,)}\]]*')
     if $constant and $scope == "rust" and $file == $policy.prefix_constant.file and $text == "/opt/mix" then
       $prefix_hits = $prefix_hits + 1
@@ -156,8 +159,10 @@ fn rust_tokens($source)
           break
         end
       end
-    elif not starts_with($s, "//") and not re_match($s, '^\s+$') then
-      $literal = re_match($s, '^(?:b?["\x27]|b?r#*")') and len($s) > 1
+    elif not starts_with($s, "//") and trim($s) != "" then
+      -- At this point the lexer has already separated strings, characters,
+      -- identifiers and punctuation. Avoid compiling a regex per token.
+      $literal = contains($s, '"') or (len($s) > 1 and (starts_with($s, "'") or starts_with($s, "b'")))
       push($out, {text: $s, line: $here, literal: $literal, value: $literal ? decode_rust($s) : $s})
     end
   end
@@ -214,7 +219,7 @@ fn scan_rust($file, $source)
     if $i < $skip_next then
       continue
     end
-    if $i + 3 < $nt and contains(["include_str", "include_bytes"], $t.text) and $ts[$i + 1].text == "!" then
+    if $i + 3 < $nt and ($t.text == "include_str" or $t.text == "include_bytes") and $ts[$i + 1].text == "!" then
       $v = literal_expr($ts, $i + 3)
       if $v != nil then
         $abs = realpath(dirname($root .. "/" .. $file) .. "/" .. $v.value)
@@ -239,7 +244,7 @@ fn scan_rust($file, $source)
         end
       end
     end
-    if $scope == "rust" and $i + 3 < $nt and contains(["env", "option_env"], $t.text) and $ts[$i + 1].text == "!" and not starts_with($file, "libraries/paths/") then
+    if $scope == "rust" and $i + 3 < $nt and ($t.text == "env" or $t.text == "option_env") and $ts[$i + 1].text == "!" and not starts_with($file, "libraries/paths/") then
       $v = literal_expr($ts, $i + 3)
       if $v != nil and starts_with($v.value, "MIX_") then
         record_hit($file, $t.line, "rust-env", $t.text .. "!(" .. $v.value .. ")")
@@ -260,7 +265,7 @@ fn scan_rust($file, $source)
       end
       path_hits($file, $t.line, $text, $scope, $constant)
     end
-    if $scope == "rust" and not starts_with($file, "libraries/paths/") then
+    if $scope == "rust" and contains($text, "MIX_") and not starts_with($file, "libraries/paths/") then
       for $m in re_find($text, '\bMIX_[A-Z][A-Z0-9_]*\b')
         record_hit($file, $t.line, "rust-mix-token", $m.match)
       end
