@@ -1,25 +1,100 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 use std::collections::BTreeSet;
+use std::ffi::{OsStr, OsString};
+use std::os::unix::ffi::OsStringExt;
+use std::process::{Command, Output};
+
+const STAMP: &str = "0123456789abcdef0123456789abcdef01234567";
+const OTHER: &str = "fedcba9876543210fedcba9876543210fedcba98";
+
+/// The mode a child run of this test binary was started in, if any.
+fn child_mode(prefix: &str) -> Option<String> {
+    std::env::var_os(env::test::TEST_PATH_CACHE)?
+        .into_string()
+        .ok()?
+        .strip_prefix(prefix)
+        .map(str::to_owned)
+}
+
+/// Run one test of `exe` alone, with a cleared environment plus `vars`.
+fn child(exe: &Path, test: &str, mode: &str, vars: &[(&str, &OsStr)]) -> Output {
+    let mut cmd = Command::new(exe);
+    cmd.env_clear()
+        .env("HOME", "/home/user")
+        .env(env::test::TEST_PATH_CACHE, mode)
+        .args(["--exact", test, "--nocapture"]);
+    for (key, value) in vars {
+        cmd.env(key, value);
+    }
+    cmd.output().unwrap()
+}
+
+fn assert_passed(output: &Output, label: &str) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("test result: ok. 1 passed"),
+        "{label}: {stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The registry's installed default for `name`.
+fn registry_default(name: &str) -> String {
+    let registry = include_str!("../../../etc/env.conf.mix");
+    let line = registry
+        .lines()
+        .find(|l| l.contains(&format!("name: {name:?}")))
+        .unwrap();
+    let value = line.split("default: ").nth(1).unwrap();
+    let value = value.split(',').next().unwrap();
+    value
+        .trim_matches(|c: char| !c.is_ascii_alphanumeric())
+        .into()
+}
 
 #[test]
 fn installed_settings_success_errors_and_override_precedence() {
-    if let Some(mode) = std::env::var_os(env::test::TEST_PATH_CACHE)
-        .and_then(|s| s.into_string().ok())
-        .and_then(|s| s.strip_prefix("setting-").map(str::to_owned))
-    {
+    const TEST: &str = "env_tests::installed_settings_success_errors_and_override_precedence";
+    if let Some(mode) = child_mode("setting-") {
         if mode != "unregistered" {
-            env::register_snapshot("fixture-snapshot");
-            env::register_snapshot("fixture-snapshot");
+            env::register_snapshot(STAMP);
+            env::register_snapshot(STAMP);
+            // Two conflicting values: reported once, in debug builds.
+            env::register_snapshot(OTHER);
             env::register_snapshot("ignored-later-snapshot");
         }
-        // This succeeds even when the file is missing, unreadable or malformed.
+        // These succeed even when the file is missing, unreadable or malformed.
         assert_eq!(env::setting(env::COMP_SERVICE).unwrap(), "override");
+        assert_eq!(
+            env::setting_or(env::COMP_SERVICE, || unreachable!()).unwrap(),
+            "override"
+        );
+        assert_eq!(
+            env::setting(env::VT),
+            Err(env::SettingError::NotUtf8 {
+                name: env::VT.into()
+            })
+        );
+        assert_eq!(
+            env::setting_or(env::NODED_SERVICE, || Some("middle".into())).unwrap(),
+            "middle"
+        );
         let result = env::setting(env::NODED_SERVICE);
         match mode.as_str() {
             "good" => {
                 let prefix = PathBuf::from(std::env::var_os(env::PREFIX).unwrap());
                 assert_eq!(result.unwrap(), "installed");
+                assert_eq!(
+                    env::setting_or(env::NODED_SERVICE, || None).unwrap(),
+                    "installed"
+                );
+                assert_eq!(
+                    env::setting_or(env::DEBUG, || None),
+                    Err(env::SettingError::NotSet {
+                        name: env::DEBUG.into()
+                    })
+                );
                 assert_eq!(
                     env::setting(env::HOSTD_SOCKET).unwrap(),
                     prefix.join("run/hostd/hostd.sock").to_str().unwrap()
@@ -32,9 +107,10 @@ fn installed_settings_success_errors_and_override_precedence() {
                 assert_eq!(result.unwrap(), "installed");
                 assert!(matches!(
                     env::setting(env::HOSTD_SOCKET),
-                    Err(env::SettingError::Malformed { .. })
+                    Err(env::SettingError::Layout { .. })
                 ));
             }
+            "noprefix" => assert!(matches!(result, Err(env::SettingError::NoPrefix { .. }))),
             "schema" => assert!(matches!(
                 result,
                 Err(env::SettingError::UnknownSchema { .. })
@@ -43,20 +119,28 @@ fn installed_settings_success_errors_and_override_precedence() {
                 result,
                 Err(env::SettingError::SnapshotMismatch {
                     name: env::NODED_SERVICE.into(),
-                    expected: "fixture-snapshot".into(),
-                    actual: "another-snapshot".into(),
+                    expected: STAMP.into(),
+                    actual: OTHER.into(),
                 })
             ),
-            "unregistered" => assert_eq!(result.unwrap(), "installed"),
+            "unregistered" => {
+                assert_eq!(result.unwrap(), "installed");
+                // The read above skipped the commit check, so a registration
+                // now could check nothing: a debug build refuses it.
+                let late = std::panic::catch_unwind(|| env::register_snapshot(STAMP));
+                assert_eq!(late.is_err(), cfg!(debug_assertions));
+            }
             "unreadable" => assert!(matches!(result, Err(env::SettingError::Unreadable { .. }))),
             _ => panic!("unexpected mode"),
         }
         return;
     }
+    let exe = std::env::current_exe().unwrap();
     for mode in [
         "good",
         "nonutf",
         "malformed",
+        "noprefix",
         "schema",
         "mismatch",
         "unreadable",
@@ -65,15 +149,14 @@ fn installed_settings_success_errors_and_override_precedence() {
         let prefix =
             std::env::temp_dir().join(format!("paths-setting-{}-{mode}", std::process::id()));
         std::fs::create_dir_all(&prefix).unwrap();
-        let stamp = "fixture-snapshot";
         let source = match mode {
             "good" | "nonutf" | "unregistered" => format!(
-                "{{schema: 1, commit: '{stamp}', {}: 'installed', {}: 'mix:run/hostd/hostd.sock'}}",
+                "{{schema: 1, commit: '{STAMP}', {}: 'installed', {}: 'mix:run/hostd/hostd.sock'}}",
                 env::NODED_SERVICE,
                 env::HOSTD_SOCKET
             ),
-            "schema" => "schema: 9\ncommit: 'fixture'".into(),
-            "mismatch" => "schema: 1\ncommit: 'another-snapshot'".into(),
+            "schema" => format!("schema: 9\ncommit: '{STAMP}'"),
+            "mismatch" => format!("schema: 1\ncommit: '{OTHER}'"),
             _ => "bad".into(),
         };
         if mode == "unreadable" {
@@ -81,35 +164,113 @@ fn installed_settings_success_errors_and_override_precedence() {
         } else {
             std::fs::write(prefix.join("env.mx"), source).unwrap();
         }
-        use std::os::unix::ffi::OsStringExt;
         let run = if mode == "nonutf" {
-            PathBuf::from(std::ffi::OsString::from_vec(
-                b"/srv/fixture/nonutf-\xff".to_vec(),
-            ))
+            OsString::from_vec(b"/srv/fixture/nonutf-\xff".to_vec())
         } else {
-            prefix.join("run")
+            prefix.join("run").into()
         };
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .env_clear()
-            .env("HOME", "/home/user")
-            .env(env::PREFIX, &prefix)
-            .env(env::RUN, run)
-            .env(env::COMP_SERVICE, "override")
-            .env(env::test::TEST_PATH_CACHE, format!("setting-{mode}"))
-            .args([
-                "--exact",
-                "env_tests::installed_settings_success_errors_and_override_precedence",
-            ])
-            .output()
-            .unwrap();
-        std::fs::remove_dir_all(prefix).unwrap();
-        assert!(
-            output.status.success(),
-            "{mode}: {}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
+        let prefix_var: OsString = if mode == "noprefix" {
+            "relative/prefix".into()
+        } else {
+            prefix.clone().into()
+        };
+        let not_utf8 = OsString::from_vec(b"\xff".to_vec());
+        let output = child(
+            &exe,
+            TEST,
+            &format!("setting-{mode}"),
+            &[
+                (env::PREFIX, prefix_var.as_os_str()),
+                (env::RUN, run.as_os_str()),
+                (env::COMP_SERVICE, OsStr::new("override")),
+                (env::VT, not_utf8.as_os_str()),
+            ],
         );
+        std::fs::remove_dir_all(prefix).unwrap();
+        assert_passed(&output, mode);
+        let conflicts = String::from_utf8_lossy(&output.stderr)
+            .matches("conflicting build snapshot")
+            .count();
+        let expected = usize::from(mode != "unregistered" && cfg!(debug_assertions));
+        assert_eq!(conflicts, expected, "{mode}");
     }
+}
+
+/// Installed defaults follow the strict prefix rule. A copy of this test
+/// binary in `<prefix>/bin` finds `<prefix>/env.mx` from its own location,
+/// with no prefix override; the cargo-tree original has no installed
+/// defaults at all, so it cannot read a host install's env.mx. The
+/// `stage-smoke` stage of tools/ci.mix runs the same child against a real
+/// `stage-install`.
+#[test]
+fn staged_install_resolves_installed_defaults() {
+    const TEST: &str = "env_tests::staged_install_resolves_installed_defaults";
+    let default = registry_default(env::NODED_SERVICE);
+    if let Some(commit) = child_mode("staged:") {
+        assert_eq!(env::raw(env::PREFIX), None);
+        env::register_snapshot(Box::leak(commit.into_boxed_str()));
+        assert_eq!(env::setting(env::NODED_SERVICE).unwrap(), default);
+        return;
+    }
+    if child_mode("cargo-tree").is_some() {
+        assert_eq!(env::raw(env::PREFIX), None);
+        assert_eq!(
+            env::setting(env::NODED_SERVICE),
+            Err(env::SettingError::NotSet {
+                name: env::NODED_SERVICE.into()
+            })
+        );
+        return;
+    }
+    let exe = std::env::current_exe().unwrap();
+    // Stage beside the test binary, inside the cargo tree, never in /tmp.
+    let prefix = exe
+        .parent()
+        .unwrap()
+        .join(format!("paths-stage-{}", std::process::id()));
+    std::fs::create_dir_all(prefix.join("bin")).unwrap();
+    let staged = prefix.join("bin").join("paths-staged");
+    std::fs::hard_link(&exe, &staged)
+        .or_else(|_| std::fs::copy(&exe, &staged).map(drop))
+        .unwrap();
+    std::fs::write(
+        prefix.join("env.mx"),
+        format!(
+            "{{schema: 1, commit: '{STAMP}', {}: '{default}'}}",
+            env::NODED_SERVICE
+        ),
+    )
+    .unwrap();
+    let staged_out = child(&staged, TEST, &format!("staged:{STAMP}"), &[]);
+    let tree_out = child(&exe, TEST, "cargo-tree", &[]);
+    std::fs::remove_dir_all(&prefix).unwrap();
+    assert_passed(&staged_out, "staged");
+    assert_passed(&tree_out, "cargo tree");
+}
+
+#[test]
+fn settings_prefix_is_the_override_or_the_strict_rule() {
+    let with = |prefix: Option<&str>, exe: Option<&str>| Environment {
+        prefix: prefix.map(PathBuf::from),
+        exe: exe.map(PathBuf::from),
+        ..Environment::default()
+    };
+    assert_eq!(
+        settings_prefix(&with(Some("/srv/fixture"), Some("/srv/other/bin/mix"))).unwrap(),
+        Some(PathBuf::from("/srv/fixture"))
+    );
+    assert_eq!(
+        settings_prefix(&with(None, Some("/srv/fixture/bin/mix"))).unwrap(),
+        Some(PathBuf::from("/srv/fixture"))
+    );
+    for tree in [
+        "/srv/fixture/target/debug/mix",
+        "/srv/fixture/target/debug/deps/paths-0123",
+    ] {
+        assert_eq!(settings_prefix(&with(None, Some(tree))).unwrap(), None);
+    }
+    assert_eq!(settings_prefix(&with(None, None)).unwrap(), None);
+    assert!(settings_prefix(&with(Some("relative"), None)).is_err());
 }
 
 #[test]
@@ -175,6 +336,11 @@ fn strict_prefix_and_derived_roots_preserve_legacy_entry_point() {
         prefix_from_exe_strict(&prefix.join("bin/mix")).unwrap(),
         prefix
     );
+    // The rootfs-install case.
+    assert_eq!(
+        prefix_from_exe_strict(Path::new("/bin/mix")).unwrap(),
+        Path::new("/")
+    );
     assert!(prefix_from_exe_strict(&prefix.join("debug/mix")).is_err());
     assert_eq!(prefix_from_exe(&prefix.join("debug/mix")).unwrap(), prefix);
     let env = Environment::default();
@@ -212,6 +378,84 @@ fn strict_prefix_and_derived_roots_preserve_legacy_entry_point() {
     );
 }
 
+/// Revision 4: own variable > MIX_ROOT > layout > under the prefix; share
+/// and lib skip MIX_ROOT; the user tier keeps XDG below the layout.
+#[test]
+fn derived_with_layout_has_the_full_precedence() {
+    let prefix = Path::new("/srv/fixture/install");
+    let layout = "etc: '/srv/fixture/layout/etc'\nvar: '/srv/fixture/layout/var'\nshare: '/srv/fixture/layout/share'";
+    let system = Environment {
+        uid: 0,
+        ..Environment::default()
+    };
+    let roots = |env: &Environment| {
+        let dirs = Dirs::derived_with_layout(prefix, env, layout).unwrap();
+        [Root::Etc, Root::Var, Root::Run, Root::Share, Root::Lib].map(|r| dirs.root(r))
+    };
+    let p = |s: &str| PathBuf::from(s);
+    assert_eq!(
+        roots(&system),
+        [
+            p("/srv/fixture/layout/etc"),
+            p("/srv/fixture/layout/var"),
+            prefix.join("run"),
+            p("/srv/fixture/layout/share"),
+            prefix.join("lib"),
+        ]
+    );
+    let rooted = Environment {
+        root: Some("/srv/fixture/root".into()),
+        ..system.clone()
+    };
+    assert_eq!(
+        roots(&rooted),
+        [
+            p("/srv/fixture/root/etc"),
+            p("/srv/fixture/root/var"),
+            p("/srv/fixture/root/run"),
+            p("/srv/fixture/layout/share"),
+            prefix.join("lib"),
+        ]
+    );
+    let own = Environment {
+        etc: Some("/srv/fixture/own/etc".into()),
+        share: Some("/srv/fixture/own/share".into()),
+        lib: Some("/srv/fixture/own/lib".into()),
+        ..rooted.clone()
+    };
+    assert_eq!(
+        roots(&own),
+        [
+            p("/srv/fixture/own/etc"),
+            p("/srv/fixture/root/var"),
+            p("/srv/fixture/root/run"),
+            p("/srv/fixture/own/share"),
+            p("/srv/fixture/own/lib"),
+        ]
+    );
+    let user = Environment {
+        uid: 1000,
+        home: Some("/home/user".into()),
+        xdg_runtime_dir: Some("/run/user/1000".into()),
+        ..Environment::default()
+    };
+    assert_eq!(
+        roots(&user),
+        [
+            p("/srv/fixture/layout/etc"),
+            p("/srv/fixture/layout/var"),
+            p("/run/user/1000/mix"),
+            p("/srv/fixture/layout/share"),
+            prefix.join("lib"),
+        ]
+    );
+    assert_eq!(
+        Dirs::derived(prefix, &system).unwrap(),
+        Dirs::derived_with_layout(prefix, &system, "").unwrap()
+    );
+    assert!(Dirs::derived_with_layout(prefix, &system, "etc: broken(").is_err());
+}
+
 #[test]
 fn no_home_user_retains_root_home_fallback() {
     let dirs = Dirs::resolve(&Environment {
@@ -226,33 +470,43 @@ fn no_home_user_retains_root_home_fallback() {
 fn defaults_schema_bounds_and_snapshot_errors() {
     use env_document::{Error, parse};
     let source = format!(
-        "{{schema: 1, commit: 'abc', {}: 'mix:run/hostd/hostd.sock'}}",
+        "{{schema: 1, commit: '{STAMP}', {}: 'mix:run/hostd/hostd.sock'}}",
         env::HOSTD_SOCKET
     );
-    let defaults = parse(&source, Some("abc")).unwrap();
+    let defaults = parse(&source, Some(STAMP)).unwrap();
     assert_eq!(
         defaults.values[env::HOSTD_SOCKET],
         "mix:run/hostd/hostd.sock"
     );
     assert!(matches!(
-        parse(&source, Some("def")),
+        parse(&source, Some(OTHER)),
         Err(Error::SnapshotMismatch { .. })
     ));
     assert!(parse(&source, None).is_ok());
     assert!(matches!(
-        parse("schema: 2\ncommit: 'abc'", None),
+        parse(&format!("schema: 2\ncommit: '{STAMP}'"), None),
         Err(Error::UnknownSchema(_))
     ));
+    let newline = format!("{}: 'a\nb'", env::COMP_SERVICE);
+    let escaped = format!("{}: \"a\\nb\"", env::COMP_SERVICE);
     for bad in [
-        "schema: 1",
-        "schema: 1\ncommit: 'a'\ncommit: 'b'",
-        "{schema: 1; commit: 'a'}",
-        "schema: '1'\ncommit: 'a'",
-        "{schema: 1, commit: 'a'",
-        "schema: 1\ncommit: run('x')",
+        "schema: 1".to_owned(),
+        format!("schema: 1\ncommit: '{STAMP}'\ncommit: '{STAMP}'"),
+        format!("{{schema: 1; commit: '{STAMP}'}}"),
+        format!("schema: '1'\ncommit: '{STAMP}'"),
+        format!("{{schema: 1, commit: '{STAMP}'"),
+        "schema: 1\ncommit: run('x')".to_owned(),
+        // The commit is a full lower-case object id.
+        "schema: 1\ncommit: 'abc'".to_owned(),
+        format!("schema: 1\ncommit: '{}'", STAMP.to_uppercase()),
+        format!("schema: 1\ncommit: '{STAMP}0'"),
+        // No byte order mark, and no newline in a value, raw or escaped.
+        format!("\u{feff}schema: 1\ncommit: '{STAMP}'"),
+        format!("schema: 1\ncommit: '{STAMP}'\n{newline}"),
+        format!("schema: 1\ncommit: '{STAMP}'\n{escaped}"),
     ] {
         assert!(
-            matches!(parse(bad, None), Err(Error::Malformed(_))),
+            matches!(parse(&bad, None), Err(Error::Malformed(_))),
             "{bad}"
         );
     }
@@ -312,81 +566,119 @@ fn root_references_cannot_escape_their_root() {
 }
 
 /// `derived` refuses a relative or `..`-bearing root from any override, for
-/// both tiers, instead of handing back a root that resolves against the cwd.
+/// both tiers, naming the root, instead of handing back a root that
+/// resolves against the cwd. Every input is an explicit environment.
 #[test]
-fn derived_refuses_relative_and_parent_overrides() {
+fn derived_refuses_relative_and_parent_overrides_naming_the_root() {
     let prefix = Path::new("/srv/fixture");
     for uid in [0, 1000] {
-        let base = Environment {
-            uid,
-            home: Some("/home/user".into()),
-            ..Environment::default()
+        let with = |key: &str, value: &str| {
+            Environment::from_lookup(
+                |k| {
+                    if k == key {
+                        Some(PathBuf::from(value))
+                    } else if k == "HOME" {
+                        Some(PathBuf::from("/home/user"))
+                    } else {
+                        None
+                    }
+                },
+                uid,
+                None,
+            )
         };
-        assert!(Dirs::derived(prefix, &base).is_ok());
-        for bad in ["relative/etc", "/srv/fixture/../elsewhere"] {
-            let etc = Environment {
-                etc: Some(bad.into()),
-                ..base.clone()
-            };
-            assert!(Dirs::derived(prefix, &etc).is_err(), "etc {bad} uid {uid}");
-            let root = Environment {
-                root: Some(bad.into()),
-                ..base.clone()
-            };
-            assert!(
-                Dirs::derived(prefix, &root).is_err(),
-                "root {bad} uid {uid}"
-            );
+        assert!(Dirs::derived(prefix, &with("unused", "")).is_ok());
+        let parent = "/srv/fixture/../elsewhere";
+        for root in Root::ALL.into_iter().filter(|r| *r != Root::Prefix) {
+            let err = Dirs::derived(prefix, &with(root.env_var(), parent)).unwrap_err();
+            assert!(err.starts_with(&format!("root {}: ", root.name())), "{err}");
+        }
+        for root in [Root::Etc, Root::Var, Root::Run, Root::Cache] {
+            let err = Dirs::derived(prefix, &with(root.env_var(), "relative/x")).unwrap_err();
+            assert!(err.starts_with(&format!("root {}: ", root.name())), "{err}");
+        }
+        // A relative share or lib override is ignored, as it always was.
+        for root in [Root::Share, Root::Lib] {
+            let dirs = Dirs::derived(prefix, &with(root.env_var(), "relative/x")).unwrap();
+            assert_eq!(dirs.root(root), prefix.join(root.name()));
+        }
+        // MIX_ROOT moves etc first, so etc is the root named.
+        for bad in [parent, "relative/x"] {
+            let err = Dirs::derived(prefix, &with(ROOT_VAR, bad)).unwrap_err();
+            assert!(err.starts_with("root etc: "), "{err}");
+        }
+        for bad in ["relative", "/srv/fixture/../install"] {
+            let err = Dirs::derived(Path::new(bad), &with("unused", "")).unwrap_err();
+            assert!(err.starts_with("root prefix: "), "{err}");
         }
     }
-    assert!(Dirs::derived(Path::new("relative"), &Environment::default()).is_err());
 }
 
 #[test]
-fn independent_tiers_and_lazy_settings_in_child() {
-    if std::env::var_os(env::test::TEST_PATH_CACHE).as_deref()
-        == Some(std::ffi::OsStr::new("settings"))
-    {
+fn layout_is_read_once_and_only_a_parse_error_spares_the_user_tier() {
+    const TEST: &str = "env_tests::layout_is_read_once_and_only_a_parse_error_spares_the_user_tier";
+    if let Some(mode) = child_mode("layout-") {
         let prefix = PathBuf::from(std::env::var_os(env::PREFIX).unwrap());
-        assert_eq!(env::raw(env::NODED_SERVICE), None);
-        assert!(matches!(
-            env::setting(env::NODED_SERVICE),
-            Err(env::SettingError::NotSet { .. })
-        ));
-        // Missing env.mx is cached too: later file creation cannot change it.
-        std::fs::write(prefix.join("env.mx"), "schema: 99").unwrap();
-        assert!(matches!(
-            env::setting(env::NODED_SERVICE),
-            Err(env::SettingError::NotSet { .. })
-        ));
-        let user = Layout::for_tier(Tier::User).unwrap();
-        assert_eq!(user.root(Root::Etc), Path::new("/home/user/.config/mix"));
-        assert!(Layout::for_tier(Tier::System).is_err());
-        // The process tier stays strict for a non-root uid too: a service
-        // account must not drift to XDG paths behind a broken layout.
-        assert!(Layout::discover().is_err());
-        assert!(try_root(Root::Etc).is_err());
+        match mode.as_str() {
+            "broken" => {
+                assert_eq!(env::raw(env::NODED_SERVICE), None);
+                assert!(matches!(
+                    env::setting(env::NODED_SERVICE),
+                    Err(env::SettingError::NotSet { .. })
+                ));
+                // Missing env.mx is cached too: later file creation cannot change it.
+                std::fs::write(prefix.join("env.mx"), "schema: 99").unwrap();
+                assert!(matches!(
+                    env::setting(env::NODED_SERVICE),
+                    Err(env::SettingError::NotSet { .. })
+                ));
+                let user = Layout::for_tier(Tier::User).unwrap();
+                assert_eq!(user.root(Root::Etc), Path::new("/home/user/.config/mix"));
+                assert!(Layout::for_tier(Tier::System).is_err());
+                // The process tier stays strict for a non-root uid too: a
+                // service account must not drift to XDG paths behind a
+                // broken layout.
+                assert!(Layout::discover().is_err());
+                assert!(try_root(Root::Etc).is_err());
+            }
+            "unreadable" => {
+                // Read errors are not parse errors: every tier fails.
+                assert!(Layout::for_tier(Tier::User).is_err());
+                assert!(Layout::for_tier(Tier::System).is_err());
+                assert!(Layout::discover().is_err());
+            }
+            "once" => {
+                let etc = Path::new("/srv/fixture/layout/etc");
+                assert_eq!(Layout::discover().unwrap().root(Root::Etc), etc);
+                std::fs::write(prefix.join("layout.mx"), "etc: '/srv/fixture/other'").unwrap();
+                assert_eq!(Layout::for_tier(Tier::System).unwrap().root(Root::Etc), etc);
+                assert_eq!(Layout::for_tier(Tier::User).unwrap().root(Root::Etc), etc);
+            }
+            _ => panic!("unexpected mode"),
+        }
         return;
     }
-    let prefix = std::env::temp_dir().join(format!("paths-independent-{}", std::process::id()));
-    std::fs::create_dir_all(&prefix).unwrap();
-    std::fs::write(prefix.join("layout.mx"), "etc: broken(").unwrap();
-    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
-    cmd.env_clear()
-        .env("HOME", "/home/user")
-        .env(env::PREFIX, &prefix)
-        .env(env::test::TEST_PATH_CACHE, "settings")
-        .env(env::NODED_SERVICE, "")
-        .args([
-            "--exact",
-            "env_tests::independent_tiers_and_lazy_settings_in_child",
-        ]);
-    let out = cmd.output().unwrap();
-    std::fs::remove_dir_all(prefix).unwrap();
-    assert!(
-        out.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let exe = std::env::current_exe().unwrap();
+    for mode in ["broken", "unreadable", "once"] {
+        let prefix =
+            std::env::temp_dir().join(format!("paths-layout-{}-{mode}", std::process::id()));
+        std::fs::create_dir_all(&prefix).unwrap();
+        let layout = prefix.join("layout.mx");
+        match mode {
+            "broken" => std::fs::write(&layout, "etc: broken(").unwrap(),
+            "unreadable" => std::fs::create_dir(&layout).unwrap(),
+            _ => std::fs::write(&layout, "etc: '/srv/fixture/layout/etc'").unwrap(),
+        }
+        let output = child(
+            &exe,
+            TEST,
+            &format!("layout-{mode}"),
+            &[
+                (env::PREFIX, prefix.as_os_str()),
+                (env::NODED_SERVICE, OsStr::new("")),
+            ],
+        );
+        std::fs::remove_dir_all(&prefix).unwrap();
+        assert_passed(&output, mode);
+    }
 }

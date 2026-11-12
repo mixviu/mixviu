@@ -127,7 +127,7 @@ pub fn describe(app: &str) -> Vec<Value> {
         ),
         (
             "ui.key",
-            json!({"key":"egui key name (Enter, Escape, ArrowDown, F1, A, …)","modifiers":"optional [ctrl|shift|alt|command]"}),
+            json!({"key":"egui key name (Enter, Escape, ArrowDown, Tab, A, …)","modifiers":"optional [ctrl|shift|alt|command]"}),
             "Press and release one key with modifiers, one pass each",
             false,
         ),
@@ -2016,6 +2016,18 @@ fn key(args: &Value) -> Result<Job, String> {
         }
     }
     Ok(Job::Key { key, modifiers })
+}
+
+#[test]
+fn injected_keys_are_not_filtered_by_the_defaults_policy() {
+    for args in [
+        serde_json::json!({"key":"F1"}),
+        serde_json::json!({"key":"F12","modifiers":["ctrl"]}),
+        serde_json::json!({"key":"ArrowLeft","modifiers":["ctrl"]}),
+        serde_json::json!({"key":"ArrowUp","modifiers":["alt"]}),
+    ] {
+        assert!(key(&args).is_ok(), "{args}");
+    }
 }
 
 fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
