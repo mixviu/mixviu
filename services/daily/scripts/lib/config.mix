@@ -52,10 +52,32 @@ fn check($c)
       hint_chars: {type: "number", min: 1, max: 4000},
       title_chars: {type: "number", min: 1, max: 1000}}},
     benchmarks: {type: "map", schema: {dir: {required: false, type: "string"}}},
-    publish: {type: "map", schema: {mode: {type: "string", enum: ["hold", "auto_after", "auto"]}}}
+    publish: {type: "map", schema: {mode: {type: "string", enum: ["hold", "auto_after", "auto"]}}},
+    notify: {type: "map", schema: {
+      via: {type: "string", enum: ["bus", "argv", "none"]},
+      target: {required: false, type: "string", nonblank: true},
+      argv: {required: false, type: "list", min_length: 1, items: {type: "string", nonblank: true}},
+      env: {required: false, type: "map"}}}
   })
   if not re_match($c.cut.tag_prefix, "^[A-Za-z0-9._-]+/$") then raise("CONFIG", "cut.tag_prefix must look like daily/") end
+  if $c.notify.via == "bus" and $c.notify.target == nil then raise("CONFIG", "notify.via bus needs notify.target") end
+  if $c.notify.via == "argv" and $c.notify.argv == nil then raise("CONFIG", "notify.via argv needs notify.argv") end
   return $c
+end
+
+-- The configuration as a reply may show it: every subprocess environment
+-- value and every key that names a credential is replaced.
+$SECRET_KEY = "(token|secret|password|passwd|credential|api_?key|private)"
+fn redacted($v, $key = "")
+  if type($v) == "map" then
+    $out = {}
+    for $k in keys($v)
+      $out[$k] = if $key == "env" or re_match(lower($k), $SECRET_KEY) then "<redacted>" else redacted($v[$k], $k) end
+    end
+    return $out
+  end
+  if type($v) == "list" then return map($v, fn($x) = redacted($x, $key)) end
+  return $v
 end
 
 -- {config, media, sources}: sources names the files that were merged.

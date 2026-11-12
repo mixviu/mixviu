@@ -1,0 +1,29 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Tell Mark a stage failed, once per failure (brief section 20). Config notify:
+--   {via: "bus", target: "notifyd"}   notify.send on the Bus (the desk's notifications)
+--   {via: "argv", argv: [...]}        a program given the JSON payload on stdin
+--   {via: "none"}                     record only
+-- A notification failure is recorded beside the stage failure; it never
+-- replaces or hides it.
+
+fn payload($stage, $date, $code, $message, $resume)
+  return {summary: "MixViu daily: " .. $stage .. " failed for " .. $date,
+    body: $code .. ": " .. $message .. "\nResume: " .. $resume,
+    source: "daily", app: "MixViu daily", urgency: "critical"}
+end
+
+-- {sent, via, at, error?}
+fn send_failure($config, $p)
+  $n = $config.notify
+  $at = now_iso()
+  if $n.via == "none" then return {sent: false, via: "none", at: $at} end
+  if $n.via == "argv" then
+    $r = run_argv($n.argv, {stdin: json_encode($p), timeout: 30, env: $n.env ?? {}})
+    return if $r.ok then {sent: true, via: "argv", at: $at} else {sent: false, via: "argv", at: $at, error: "notifier exited " .. to_string($r.exit_code ?? -1)} end
+  end
+  $target = $n.target
+  $wire = json_encode($p)
+  send $target notify.send body=$wire timeout=10
+  return if $rc >= 0 and $rc < 10 then {sent: true, via: "bus", at: $at} else {sent: false, via: "bus", at: $at, error: "notify.send rc " .. to_string($rc)} end
+end

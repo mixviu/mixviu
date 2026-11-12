@@ -30,7 +30,7 @@ mix services/daily/scripts/daily-cli.mix status --date 2026-12-01
 | id | params | does |
 |---|---|---|
 | `run` | `date?`, `dry_run?`, `sha?` | stages in order from `manifest.build`; stops at the first failure or unbuilt stage |
-| `resume` | `date?`, `dry_run?` | continues from the first stage that is not `ok` |
+| `resume` | `date?`, `dry_run?`, `sha?` | continues from the first stage that is not `ok` (`sha` for a missing cut) |
 | `manifest.build` | `date?`, `dry_run?`, `sha?` | stage 1 alone |
 | `status` | `date?` | the day's `status.json` |
 | `config.show` | | merged configuration and its sources |
@@ -40,7 +40,14 @@ tag is cut from `repo.ref` when it is today, or from `sha` otherwise; an
 existing tag is reused, and a different `sha` is refused (`CUT_CONFLICT`).
 `dry_run` writes the artefacts but fetches, tags and pushes nothing, and
 marks the window `provisional`. A refused action returns rc 10 with
-`{error_code, message}`; a failed stage adds a `resume` hint.
+`{error_code, message}`; a failed stage adds a `resume` hint. `config.show`
+replaces every subprocess environment value and credential-named key with
+`<redacted>`.
+
+A failed stage notifies once (config `notify`: `notify.send` to the desk's
+`notifyd` by default, a program given the JSON payload on stdin, or none):
+the same stage failing with the same code again is not re-sent, and a dry
+run notifies nobody. The outcome is recorded in `status.json`.
 
 ## Configuration
 
@@ -54,9 +61,17 @@ default.
 ## Artefacts
 
 `<hub>/media/runs/YYYY-MM-DD/` (mode 0700): `manifest.json`, `status.json`
-and `log.jsonl`. A rerun for the same window writes byte-identical
-`manifest.json` and leaves an unchanged file untouched. The schema is
+and `log.jsonl`, plus `diagnostics.log` (0600) holding raw git/gh stderr
+from failures, which never enters replies, status or the log. A rerun with
+the same inputs (git window, gh answers, benchmarks, config) writes
+byte-identical `manifest.json` and leaves an unchanged file untouched; the
+stage's `inputs` in `status.json` carry hashes of each, so a changed PR
+title at the same cut tags shows up there. The schema is
 `media/schemas/manifest.v1.json`; it is checked before the file is written.
+
+git is called with validated object ids after `--end-of-options`, and
+commit text is read one commit at a time, NUL-framed with a fixed field
+count, so commit text cannot become a git option.
 
 PRs are matched to first-parent commits by their merge commit (gh), or by
 a squash subject's `(#N)` when gh is off. Squash merges (this repository's

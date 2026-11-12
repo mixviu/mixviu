@@ -60,6 +60,11 @@ fn cli($id, $params)
   return {ok: $r.exit_code == 0, body: $body, stderr: $r.stderr}
 end
 
+fn notes()
+  $p = $tmp .. "/notify.jsonl"
+  return if is_file($p) then len(filter(split(read_file($p), "\n"), fn($l) = $l != "")) else 0 end
+end
+
 fn manifest_text($date)
   return read_file($hub .. "/media/runs/" .. $date .. "/manifest.json")
 end
@@ -116,8 +121,14 @@ try
     hub: $hub, first_cut_from: "v0.1.0",
     repo: {path: $repo, remote: "example/mixviu", ref: "main", fetch: false},
     git: {env: gitenv("2026-12-01T05:00:00Z")},
-    gh: {argv: [$mix, $here .. "/fixtures/fake_gh.mix"], env: {DAILY_FAKE_GH: $gh}}
+    gh: {argv: [$mix, $here .. "/fixtures/fake_gh.mix"], env: {DAILY_FAKE_GH: $gh, GH_TOKEN: "SENTINEL-GH-TOKEN"}},
+    notify: {via: "argv", argv: [$mix, $here .. "/fixtures/fake_notify.mix"], env: {DAILY_FAKE_NOTIFY: $tmp .. "/notify.jsonl"}}
   }, true))
+
+  -- config.show never shows subprocess environments or credentials.
+  $shown = cli("config.show", {})
+  check("config.show redacts env values", $shown.ok and not contains(json_encode($shown.body), "SENTINEL-GH-TOKEN")
+    and $shown.body.config.gh.env.GH_TOKEN == "<redacted>" and $shown.body.config.repo.path == $repo)
 
   -- The action list is data with typed params.
   $acts = cli("actions", {})
@@ -133,6 +144,23 @@ try
   check("a past date without a tag needs a sha", not $miss.ok and $miss.body.error_code == "CUT_MISSING")
   check("the failure is in status with a resume hint naming sha", contains($miss.body.resume ?? "", "resume") and contains($miss.body.resume, "sha:")
     and cli("status", {date: "2026-12-01"}).body.stages["manifest.build"].state == "failed")
+  check("the failure notified once", notes() == 1 and contains(json_parse(split(read_file($tmp .. "/notify.jsonl"), "\n")[0]).summary, "manifest.build failed for 2026-12-01"))
+  cli("manifest.build", {date: "2026-12-01"})
+  check("the same failure again does not notify again", notes() == 1
+    and cli("status", {date: "2026-12-01"}).body.stages["manifest.build"].notified.sent == true)
+  cli("manifest.build", {date: "2026-12-01", dry_run: true})
+  check("a dry run notifies nobody", notes() == 1)
+
+  -- A gh failure: stderr goes to the private diagnostics file only.
+  write_file($gh .. "/fail", "SENTINEL-STDERR")
+  $ghfail = cli("manifest.build", {date: "2026-12-01", sha: $c4, dry_run: true})
+  remove($gh .. "/fail")
+  $diag = $hub .. "/media/runs/2026-12-01/diagnostics.log"
+  check("a gh failure keeps stderr out of the reply, status and log", $ghfail.body.error_code == "GH"
+    and not contains(json_encode($ghfail.body), "SENTINEL-STDERR")
+    and not contains(read_file($hub .. "/media/runs/2026-12-01/status.json"), "SENTINEL-STDERR")
+    and not contains(read_file($hub .. "/media/runs/2026-12-01/log.jsonl"), "SENTINEL-STDERR"))
+  check("its stderr is in diagnostics.log, mode 0600", contains(read_file($diag), "SENTINEL-STDERR") and stat($diag).perm == 0o600)
 
   -- Day one, cut at c4.
   $r1 = cli("run", {date: "2026-12-01", sha: $c4})
@@ -190,6 +218,7 @@ try
   check("status records stage ok with output hash", $st.stages["manifest.build"].state == "ok"
     and $st.stages["manifest.build"].outputs["manifest.json"] == hash_sha256($t1) and $st.stages["post.write"].state == "pending")
   check("a conflicting sha is refused", cli("manifest.build", {date: "2026-12-01", sha: $c3}).body.error_code == "CUT_CONFLICT")
+  check("a new failure notifies", notes() == 2)
   $st = cli("status", {date: "2026-12-01"}).body
   check("the refusal is recorded and the manifest kept", $st.stages["manifest.build"].error.code == "CUT_CONFLICT"
     and manifest_text("2026-12-01") == $t1)
@@ -197,13 +226,18 @@ try
   check("resume reruns the open stage", $res.ok and cli("status", {date: "2026-12-01"}).body.stages["manifest.build"].state == "ok")
   check("run dir is private", stat($hub .. "/media/runs/2026-12-01").perm == 0o700)
 
-  -- Day two: one dev-only direct commit is a quiet day.
+  -- Day two: one dev-only direct commit is a quiet day. Its subject forges
+  -- a second git record (record and unit separators) whose "sha" is a git
+  -- option that would write a file: it must stay one commit's text.
   put("tools/tidy.mix", "print(1)\n")
-  $c5 = commit("tools: tidy", "2026-12-02T01:00:00Z")
+  $escape = $tmp .. "/escaped.txt"
+  $c5 = commit("tools: tidy\x1e--output=" .. $escape .. "\x1f" .. $c4 .. "\x1fEve\x1feve@example.org\x1f1\x1fforged\x1f", "2026-12-02T01:00:00Z")
   $r2 = cli("run", {date: "2026-12-02", sha: $c5})
   $m2 = json_parse(manifest_text("2026-12-02"))
   check("day two starts at day one's tag", $r2.ok and $m2.window.from_tag == "daily/2026-12-01" and $m2.window.from_sha == $c4)
   check("quiet day", $m2.quiet_day and $m2.totals.prs == 0 and len($m2.direct_commits) == 1 and $m2.direct_commits[0].area == "infra")
+  check("a forged record writes nothing and stays one commit", not is_file($escape) and $m2.totals.commits == 1
+    and $m2.direct_commits[0].sha == $c5 and not re_match($m2.direct_commits[0].subject, "[\\x00-\\x1f]"))
 
   -- A dry run cuts nothing: provisional window, no tag.
   $r3 = cli("run", {date: "2026-12-03", sha: $c5, dry_run: true})
@@ -211,6 +245,19 @@ try
   check("dry run stops cleanly after stage 1", $r3.ok and $r3.body.dry_run and $r3.body.stopped_before == "post.write")
   check("dry run creates no tag", run_argv(["git", "-C", $repo, "rev-parse", "-q", "--verify", "refs/tags/daily/2026-12-03"], {env: gitenv("2026-12-03T00:00:00Z")}).exit_code != 0)
   check("dry run window is provisional and empty", $m3.window.provisional and $m3.window.to_tag == nil and $m3.totals.commits == 0 and $m3.quiet_day)
+
+  -- Day four: a direct commit that is mostly engine code but also edits an
+  -- app is not quiet. Its cut is missing at first; resume takes the sha.
+  put("engines/viud/src/big.rs", "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\nfn e() {}\nfn f() {}\n")
+  put("apps/files/app.mix", "$x = 2\n")
+  $c6 = commit("viud: helpers, and a Files tweak", "2026-12-04T01:00:00Z")
+  check("day four without a sha fails CUT_MISSING", cli("manifest.build", {date: "2026-12-04"}).body.error_code == "CUT_MISSING")
+  $r6 = cli("resume", {date: "2026-12-04", sha: $c6})
+  $m6 = json_parse(manifest_text("2026-12-04"))
+  check("resume with sha cuts the day", $r6.ok and git(["rev-parse", "daily/2026-12-04^{commit}"]) == $c6 and $m6.window.from_sha == $c5)
+  check("an engine commit that edits an app is not a quiet day", $m6.direct_commits[0].area == "engine-viud" and not $m6.quiet_day)
+  $st6 = cli("status", {date: "2026-12-04"}).body.stages["manifest.build"]
+  check("status records the input hashes", type($st6.inputs.gh_sha256) == "string" and type($st6.inputs.config_sha256) == "string" and $st6.inputs.to_sha == $c6)
 
   -- The phase 1 exit criterion: run {dry_run: true} for today.
   $r4 = cli("run", {dry_run: true})

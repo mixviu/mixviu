@@ -209,6 +209,7 @@ fn build($env, $params, $today)
   $direct = []
   $used = {}
   $people = {}
+  $direct_user = false
   $commits = if $from.sha == $to.sha then [] else $git.window($g, $from.sha, $to.sha) end
   for $cm in $commits
     $base = if len($cm.parents) == 0 then $EMPTY_TREE else $cm.parents[0] end
@@ -227,6 +228,9 @@ fn build($env, $params, $today)
       end
     end
     if $pr == nil then
+      -- Quiet means no direct commit touches a user-facing file at all,
+      -- whatever its dominant area (a viud commit can also edit an app).
+      if any($files, fn($f) = $areas.classify($t, $f.path).audience == "user") then $direct_user = true end
       $who = $u.untrusted_line($cm.author, 80)
       $people["git:" .. $who] = true
       push($direct, {id: "c-" .. $u.short($cm.sha), sha: $cm.sha, subject: $u.untrusted_line($cm.subject, $c.manifest.title_chars),
@@ -275,7 +279,8 @@ fn build($env, $params, $today)
     if contains($a.id, "/") then $touched[split($a.id, "/")[0]] = true end
   end
   $tasks = []
-  for $i in $gh.closed_tasks($c, $since)
+  $issues = $gh.closed_tasks($c, $since)
+  for $i in $issues
     if type($i.closedAt) != "string" then continue end
     $at = $u.iso_epoch($i.closedAt)
     if $at <= $fs.time or $at > $ts.time then continue end
@@ -283,9 +288,15 @@ fn build($env, $params, $today)
     if len($m) > 0 then push($tasks, $m[0].match) end
   end
   $wt = stat_of($window_files)
-  $count = if $from.sha == $to.sha then 0 else to_number(trim($git.must($g, ["rev-list", "--count", $from.sha .. ".." .. $to.sha]))) end
-  $quiet = len($list) == 0 and not any($direct, fn($d) = $d.audience == "user")
-  return {manifest: {
+  $count = if $from.sha == $to.sha then 0 else to_number(trim($git.must($g, ["rev-list", "--count", "--end-of-options", $git.oid($from.sha) .. ".." .. $git.oid($to.sha)]))) end
+  $quiet = len($list) == 0 and not $direct_user
+  $bench = benchmarks($c)
+  -- What the manifest was built from beyond the git window: a rerun with
+  -- the same window but edited PRs, tasks or benchmarks shows a new hash.
+  $inputs = {from_sha: $fs.sha, to_sha: $ts.sha,
+    gh_sha256: hash_sha256(json_encode({prs: $prs, issues: $issues})),
+    benchmarks_sha256: hash_sha256(json_encode($bench))}
+  return {inputs: $inputs, manifest: {
     schema: "mixviu.daily.manifest/1",
     date: $date,
     repo: {remote: $c.repo.remote, branch: $c.repo.branch},
@@ -298,7 +309,7 @@ fn build($env, $params, $today)
     direct_commits: $direct,
     tutorials: tutorials($g, $from.sha, $to.sha, $touched),
     tasks_closed: sort(unique($tasks)),
-    benchmarks: benchmarks($c),
+    benchmarks: $bench,
     quiet_day: $quiet,
     sources: {areas: $area_table.source, prs: if $prs == nil then "subject" else "gh" end},
     untrusted_fields: $UNTRUSTED

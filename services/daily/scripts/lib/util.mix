@@ -102,9 +102,7 @@ end
 -- instructions to a later model, and bound it.
 fn untrusted_text($s, $n)
   if type($s) != "string" then return "" end
-  $t = re_replace($s, "\r", "")
-  $t = visible($t)
-  $t = re_replace($t, "(?s)```.*?(```|$)", "")
+  $t = visible(re_replace($s, "\r", ""))
   $t = re_replace($t, "(?s)<[^>]*>", "")
   $t = re_replace($t, "!\\[[^\\]]*\\]\\([^)]*\\)", "")
   $t = re_replace($t, "\\[([^\\]]*)\\]\\([^)]*\\)", "$1")
@@ -125,13 +123,19 @@ end
 fn untrusted_line($s, $n)
   if type($s) != "string" then return "" end
   $t = collapse(re_replace(visible($s), "[`<>{}\\[\\]*]", ""))
-  return clip(trim(re_replace($t, "^#+\\s*", "")), $n)
+  -- A heading needs its space: "#31 repros" keeps its issue number.
+  return clip(trim(re_replace($t, "^#+[ \t]+", "")), $n)
 end
 
--- Text a reader of the rendered Markdown sees: HTML comments removed.
+-- Contributor text as declarations may be read from it: control characters
+-- (record separators included) become spaces, fenced code is dropped (a
+-- Task: line in an example is not a declaration), then HTML comments,
+-- closed or not, are removed as GitHub hides them.
 fn visible($s)
   if type($s) != "string" then return "" end
-  return re_replace($s, "(?s)<!--.*?(-->|$)", "")
+  $t = re_replace($s, "[\\x00-\\x08\\x0b-\\x1f\\x7f]", " ")
+  $t = re_replace($t, "(?s)```.*?(```|$)", "")
+  return re_replace($t, "(?s)<!--.*?(-->|$)", "")
 end
 
 fn short($sha)

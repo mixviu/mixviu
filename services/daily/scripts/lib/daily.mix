@@ -8,6 +8,7 @@ $cfg = require("config.mix")
 $runs = require("runs.mix")
 $manifest = require("manifest.mix")
 $schema = require("jsonschema.mix")
+$notify = require("notify.mix")
 
 $DATE = "^[0-9]{4}-[0-1][0-9]-[0-3][0-9]$"
 $P_DATE = {type: "string", pattern: $DATE, description: "Cut date YYYY-MM-DD in config timezone; default today"}
@@ -79,7 +80,7 @@ fn stage_manifest($e, $date, $params)
   $schema.check(json_parse(read_file($e.media .. "/schemas/manifest.v1.json")), $m, "manifest")
   $text = $u.json_file($m)
   $sha = $runs.put($c, $date, "manifest.json", $text)
-  return {manifest: $m, sha256: $sha, cut: $built.cut}
+  return {manifest: $m, sha256: $sha, cut: $built.cut, inputs: $built.inputs}
 end
 
 -- How to continue after a failed stage. A missing cut needs the commit.
@@ -107,13 +108,14 @@ fn run_stages($e, $date, $params, $from_stage)
           dry_run: $s.dry_run, run_dir: $d}}
       end
       $t0 = now_iso()
+      $prev = $s.stages[$st] ?? {}
       $s.stages[$st] = {state: "running", started: $t0}
       $runs.write_status($c, $date, $s)
       $runs.log_event($c, $date, {stage: $st, event: "start", dry_run: $s.dry_run})
       try
         $r = stage_manifest($e, $date, $params)
         $s.stages[$st] = {state: "ok", started: $t0, ended: now_iso(),
-          inputs: {from_sha: $r.manifest.window.from_sha, to_sha: $r.manifest.window.to_sha, config_sources: $e.sources},
+          inputs: merge($r.inputs, {config_sources: $e.sources, config_sha256: hash_sha256(json_encode($c))}),
           outputs: {"manifest.json": $r.sha256},
           cut: {tag: $r.cut.tag, created: $r.cut.created, provisional: $r.cut.provisional}}
         $runs.write_status($c, $date, $s)
@@ -121,11 +123,25 @@ fn run_stages($e, $date, $params, $from_stage)
         push($done, {stage: $st, manifest_sha256: $r.sha256, quiet_day: $r.manifest.quiet_day, totals: $r.manifest.totals,
           window: $r.manifest.window})
       catch $msg, $err
-        $s.stages[$st] = {state: "failed", started: $t0, ended: now_iso(), error: {code: $err.code ?? "ERROR", message: $msg}}
+        $code = $err.code ?? "ERROR"
+        $hint = resume_hint($code, $date)
+        -- Raw subprocess stderr stays in the private run directory.
+        if type($err.details) == "map" and type($err.details.stderr) == "string" then
+          $runs.diagnose($c, $date, $st, $code, $err.details.stderr)
+        end
+        $s.stages[$st] = {state: "failed", started: $t0, ended: now_iso(), error: {code: $code, message: $msg}}
+        -- Once per failure: the same stage failing the same way again is
+        -- already in front of Mark. A dry run tells nobody.
+        if $prev.state == "failed" and ($prev.error ?? {}).code == $code and ($prev.notified ?? {}).sent == true then
+          $s.stages[$st].notified = $prev.notified
+        elif $s.dry_run then
+          $s.stages[$st].notified = {sent: false, via: "dry_run"}
+        else
+          $s.stages[$st].notified = $notify.send_failure($c, $notify.payload($st, $date, $code, $msg, $hint))
+        end
         $runs.write_status($c, $date, $s)
-        $runs.log_event($c, $date, {stage: $st, event: "failed", code: $err.code ?? "ERROR", message: $msg})
-        return {rc: 10, body: {error_code: $err.code ?? "ERROR", message: $msg, stage: $st, date: $date,
-          resume: resume_hint($err.code ?? "ERROR", $date)}}
+        $runs.log_event($c, $date, {stage: $st, event: "failed", code: $code, message: $msg, notified: $s.stages[$st].notified})
+        return {rc: 10, body: {error_code: $code, message: $msg, stage: $st, date: $date, resume: $hint}}
       end
     end
     return {rc: 0, body: {date: $date, completed: $done, dry_run: $s.dry_run, run_dir: $d}}
@@ -137,7 +153,7 @@ end
 fn dispatch($id, $params)
   if $id == "config.show" then
     $e = load_env()
-    return {rc: 0, body: {config: $e.config, media: $e.media, sources: $e.sources}}
+    return {rc: 0, body: {config: $cfg.redacted($e.config), media: $e.media, sources: $e.sources}}
   end
   $e = load_env()
   $date = date_of($e.config, $params)

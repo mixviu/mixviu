@@ -10,6 +10,11 @@ if $dir == "" then
 end
 $a = args()
 append_file($dir .. "/calls.jsonl", json_encode($a) .. "\n")
+-- A planted failure whose stderr carries a secret-looking line.
+if is_file($dir .. "/fail") then
+  eprint("gh: token=" .. trim(read_file($dir .. "/fail")))
+  exit(1)
+end
 if len($a) >= 2 and $a[1] == "list" and ($a[0] == "pr" or $a[0] == "issue") then
   print(read_file($dir .. "/" .. $a[0] .. ".json"))
   exit(0)

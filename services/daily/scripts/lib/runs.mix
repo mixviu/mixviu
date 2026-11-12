@@ -52,6 +52,14 @@ fn log_event($config, $date, $event)
   append_file(dir($config, $date) .. "/log.jsonl", json_encode($e) .. "\n")
 end
 
+-- Raw subprocess diagnostics (stderr) for a failed stage: kept 0600 in the
+-- run directory, never in replies, status.json or log.jsonl.
+fn diagnose($config, $date, $stage, $code, $text)
+  $p = dir($config, $date) .. "/diagnostics.log"
+  if not is_file($p) then write_new($p, "", 0o600) end
+  append_file($p, "=== " .. now_iso() .. " " .. $stage .. " " .. $code .. "\n" .. $text .. "\n")
+end
+
 -- Write an artefact only when its bytes change; returns its sha256.
 fn put($config, $date, $name, $text)
   $p = dir($config, $date) .. "/" .. $name
