@@ -67,6 +67,7 @@ impl Authority {
     /// Stage with the revision that last changed each topic given (a mirror
     /// adopting its authority's stamps). Returns the topics that moved.
     pub fn stage_with(&mut self, changed_at: Option<&BTreeMap<String, Revision>>) -> Vec<String> {
+        self.palettes.clear();
         let contents = self.contents();
         let revision = self.accepted.revision;
         self.board.stage(revision, contents, changed_at)
@@ -170,7 +171,20 @@ impl Authority {
     /// mode from `design::palette`, tagged with the record's identity. A
     /// mirror answers from its cache with the same code, so no palette
     /// crosses the wire between them.
-    pub fn palette(&self, request: &settings::PaletteRequest) -> Result<Value, Value> {
+    pub fn palette(&mut self, request: &settings::PaletteRequest) -> Result<Value, Value> {
+        self.palette_with(request, settings::resolve::values::palette)
+    }
+
+    fn palette_with(
+        &mut self,
+        request: &settings::PaletteRequest,
+        mut resolve: impl FnMut(
+            &settings::registry::Values,
+            &str,
+            Option<settings::resolve::values::Mode>,
+        )
+            -> Result<serde_json::Map<String, Value>, Vec<settings::Diagnostic>>,
+    ) -> Result<Value, Value> {
         if request.binding != self.accepted.binding {
             return Err(json!({"status":"wrong_target","binding":self.accepted.binding}));
         }
@@ -180,12 +194,30 @@ impl Authority {
                 || json!({"status":"validation_failed","path":"mode","message":"Unknown mode"}),
             )?),
         };
-        let palette = settings::resolve::values::palette(
-            &self.accepted.values,
-            &self.accepted.embedded_source,
-            mode,
-        )
-        .map_err(|d| json!({"status":"validation_failed","diagnostics":d}))?;
+        let mut palette = serde_json::Map::new();
+        for each in [
+            settings::resolve::values::Mode::Dark,
+            settings::resolve::values::Mode::Light,
+        ] {
+            if mode.is_some_and(|mode| mode != each) {
+                continue;
+            }
+            if !self.palettes.contains_key(each.name()) {
+                let mut resolved = resolve(
+                    &self.accepted.values,
+                    &self.accepted.embedded_source,
+                    Some(each),
+                )
+                .map_err(|d| json!({"status":"validation_failed","diagnostics":d}))?;
+                let value = resolved.remove(each.name()).ok_or_else(|| {
+                    json!({"status":"validation_failed","message":"Resolved palette mode missing"})
+                })?;
+                // Keep the completed work before the service sends the reply.
+                // Client-side timeouts do not cancel this blocking dispatch.
+                self.palettes.insert(each.name().into(), value);
+            }
+            palette.insert(each.name().into(), self.palettes[each.name()].clone());
+        }
         Ok(json!({
             "status": "current",
             "binding": self.accepted.binding,
@@ -219,5 +251,171 @@ impl Authority {
     /// The record a mirror caches, sealed under this authority's `node`.
     pub fn cache(&self, node: &str) -> anyhow::Result<crate::mirror::Cache> {
         crate::mirror::Cache::of(&self.accepted, node)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Store;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[test]
+    fn palette_reuse_is_per_mode_and_cleared_by_a_new_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let binding = settings::Binding {
+            instance: "fixture".into(),
+            profile: "default".into(),
+        };
+        let (store, accepted) =
+            Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
+        let mut authority = Authority::new(store, accepted).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let mut resolve =
+            |values: &settings::registry::Values,
+             _: &str,
+             mode: Option<settings::resolve::values::Mode>| {
+                calls.set(calls.get() + 1);
+                let mode = mode.unwrap().name();
+                Ok(serde_json::Map::from_iter([(
+                    mode.into(),
+                    json!({"contrast":values.get("appearance.contrast").cloned().unwrap_or(json!("normal"))}),
+                )]))
+            };
+        let mut request = settings::PaletteRequest {
+            binding: binding.clone(),
+            mode: None,
+        };
+        let before = authority.palette_with(&request, &mut resolve).unwrap();
+        assert_eq!(calls.get(), 2, "both modes compiled once");
+        request.mode = Some("light".into());
+        assert_eq!(
+            authority.palette_with(&request, &mut resolve).unwrap()["palette"]["light"],
+            before["palette"]["light"]
+        );
+        request.mode = Some("auto".into());
+        assert!(authority.palette_with(&request, &mut resolve).is_err());
+        request.mode = Some("dark".into());
+        request.binding.profile = "other".into();
+        assert!(authority.palette_with(&request, &mut resolve).is_err());
+        assert_eq!(
+            calls.get(),
+            2,
+            "cached data never bypasses request validation"
+        );
+        request.binding = binding.clone();
+        authority
+            .apply(settings::ApplyRequest {
+                binding,
+                expected_incarnation: authority.accepted.incarnation.clone(),
+                expected_revision: authority.accepted.revision,
+                operation_id: "contrast-change".into(),
+                changes: BTreeMap::from([("appearance.contrast".into(), json!("high"))]),
+                reset: vec![],
+                request_digest: None,
+            })
+            .unwrap();
+        let after = authority.palette_with(&request, &mut resolve).unwrap();
+        assert_ne!(before["revision"], after["revision"]);
+        assert_eq!(after["palette"]["dark"]["contrast"], "high");
+        assert_eq!(calls.get(), 3);
+        request.mode = None;
+        let both = authority.palette_with(&request, &mut resolve).unwrap();
+        assert_eq!(both["palette"]["light"]["contrast"], "high");
+        assert_eq!(calls.get(), 4, "only the other mode remained to compile");
+    }
+
+    #[test]
+    fn a_palette_compile_failure_is_not_retained() {
+        let dir = tempfile::tempdir().unwrap();
+        let binding = settings::Binding {
+            instance: "fixture".into(),
+            profile: "default".into(),
+        };
+        let (store, accepted) =
+            Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
+        let mut authority = Authority::new(store, accepted).unwrap();
+        let request = settings::PaletteRequest {
+            binding,
+            mode: Some("dark".into()),
+        };
+        assert!(
+            authority
+                .palette_with(&request, |_, _, _| Err(vec![settings::Diagnostic::new(
+                    "fixture", "palette", "failed"
+                )]))
+                .is_err()
+        );
+        let answer = authority
+            .palette_with(&request, |_, _, _| {
+                Ok(serde_json::Map::from_iter([(
+                    "dark".into(),
+                    json!({"accent":"#123456ff"}),
+                )]))
+            })
+            .unwrap();
+        assert_eq!(answer["palette"]["dark"]["accent"], "#123456ff");
+    }
+
+    // Force the first requester to leave while compilation is in progress.
+    // The authority still finishes that dispatch, as service::handle does.
+    // A fresh read of the same accepted record must reuse the completed work,
+    // rather than starting another compile that can miss the same deadline.
+    #[tokio::test]
+    async fn a_completed_palette_survives_an_abandoned_reply() {
+        let dir = tempfile::tempdir().unwrap();
+        let binding = settings::Binding {
+            instance: "fixture".into(),
+            profile: "default".into(),
+        };
+        let (store, accepted) =
+            Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
+        let mut authority = Authority::new(store, accepted).unwrap();
+        let request = settings::PaletteRequest {
+            binding,
+            mode: Some("dark".into()),
+        };
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let first = request.clone();
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (release, held) = std::sync::mpsc::channel();
+        let (reply, caller) = tokio::sync::oneshot::channel();
+        let task = tokio::task::spawn_blocking(move || {
+            let mut entered = Some(entered);
+            let answer = authority.palette_with(&first, |_, _, _| {
+                counted.fetch_add(1, Ordering::SeqCst);
+                entered.take().unwrap().send(()).unwrap();
+                held.recv().unwrap();
+                Ok(serde_json::Map::from_iter([(
+                    "dark".into(),
+                    json!({"accent":"#123456ff"}),
+                )]))
+            });
+            assert!(reply.send(answer).is_err(), "the first caller has left");
+            authority
+        });
+        started.await.unwrap();
+        drop(caller);
+        release.send(()).unwrap();
+        let mut authority = task.await.unwrap();
+        let answer = authority
+            .palette_with(&request, |_, _, _| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(serde_json::Map::from_iter([(
+                    "dark".into(),
+                    json!({"accent":"#123456ff"}),
+                )]))
+            })
+            .unwrap();
+        assert_eq!(answer["palette"]["dark"]["accent"], "#123456ff");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "a retry must not compile the same palette again"
+        );
     }
 }

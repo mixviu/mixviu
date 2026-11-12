@@ -9,24 +9,9 @@
 
 serial_tests: [
   {
-    package: "editor-model",
-    target: "editor_model",
-    reason: "highlight::tests::cold_seek_is_time_sliced asserts a wall-clock frame budget; failed in the parallel lab (frame 450 took 56 ms, 2026-11-12)"
-  },
-  {
     package: "mix",
     target: "native_session_pty",
     reason: "p4 tests assert pgrep -f 'sleep 600' finds nothing on the whole machine (tests/native_session_pty.rs:3317, :3378); PTY timing; red when another job runs the suite (2026-11-12)"
-  },
-  {
-    package: "lib-viu",
-    target: "backdrop",
-    reason: "backdrop_colours_modes_outputs_and_refusals_use_mix reads app.model right after the reply, so a model update that lands after it shows the previous mode (left fit, right centre, tests/backdrop.rs:239); 4 failures sequentially on 2026-11-07, 1 in the pool on a loaded cbc2 (2026-11-13). Make the test wait for the model of its own request, then delete this entry"
-  },
-  {
-    package: "portald",
-    target: "portal",
-    reason: "native_recovers_when_broker_returns_after_the_initial_attempt_budget and native_startup_live_change_and_settingsd_restart_without_broker_reconnect hit their deadline under load (cbc3 2026-11-12 without the pool; the pool on a loaded cbc2, 2026-11-13). Give the deadlines a measured margin or wait on observable state, then delete this entry"
   },
   {
     package: "mix",

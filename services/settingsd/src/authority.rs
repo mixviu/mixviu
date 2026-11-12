@@ -28,6 +28,15 @@ pub struct Authority {
     /// as `snapshot.effective`. Never serialised; it is not part of the sealed
     /// `Snapshot` or `Effective`. Rebuilt wherever `snapshot` is rebuilt.
     accents: Accents,
+    /// Completed palette work for this accepted record, bounded to dark/light.
+    /// A caller abandoning its reply must not make the next read recompile it.
+    /// Cleared with the publication board whenever the accepted record changes.
+    /// Two invariants keep it fresh: palette compilation is a pure function of
+    /// (`accepted.values`, `accepted.embedded_source`, mode), and every path
+    /// that replaces `accepted` goes through `stage_with`, which clears this
+    /// map. A palette input read from elsewhere (a file, ambient state) needs
+    /// its own invalidation here.
+    pub(crate) palettes: std::collections::BTreeMap<String, Value>,
 }
 impl Authority {
     pub fn new(store: Store, accepted: Accepted) -> anyhow::Result<Self> {
@@ -55,6 +64,7 @@ impl Authority {
             board: Default::default(),
             stale,
             accents,
+            palettes: Default::default(),
         };
         serving.stage();
         Ok(serving)
