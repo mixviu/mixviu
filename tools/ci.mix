@@ -243,7 +243,26 @@ fn stage_env()
       push($bad, "unregistered " + $n)
     end
   end
+  -- A registered standard name (not MIX_*) counts as used where code reads it
+  -- through its read form: `paths::env::IDENT` in Rust (IDENT is the constant
+  -- in env_names.rs whose value is the name) or `env("NAME"` in Mix. A bare
+  -- mention in a comment or string does not count; a comment quoting the
+  -- read form itself still does (the same residue the MIX_ grep accepts).
+  -- Searched outside vendor/, provenance/, env_names.rs and the registry.
+  $consts = {}
+  for $m in re_find(read_file("libraries/paths/src/env_names.rs"), "pub(?:\\(crate\\))? const ([A-Z0-9_]+):\\s*&(?:'static )?str\\s*=\\s*\"([^\"]+)\"")
+    $consts[$m.groups[1]] = $m.groups[0]
+  end
+  $outside = ["--", ":!vendor", ":!provenance", ":!libraries/paths/src/env_names.rs", ":!etc/env.conf.mix"]
   for $n in sort(keys($listed))
+    if not starts_with($n, "MIX_") then
+      $rs = ""
+      if has_key($consts, $n) then
+        $rs = git_grep(concat(["-l", "-F", "-e", "paths::env::" + $consts[$n]], concat($outside, ["*.rs"])))
+      end
+      $mx = git_grep(concat(["-l", "-F", "-e", "env(\"" + $n + "\""], concat($outside, ["*.mix"])))
+      if trim($rs) != "" or trim($mx) != "" then $used[$n] = true end
+    end
     if not has_key($used, $n) then
       push($bad, "registered but unused " + $n)
     end
