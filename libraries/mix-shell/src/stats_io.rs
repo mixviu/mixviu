@@ -2525,7 +2525,13 @@ mod tests {
         let day = days_ago(7);
         record(&dir, &run_on("a", &day, "len"), &day);
         let legacy = dir.join("current.json");
-        fs::write(&legacy, weekly_doc("2026-W02", &[run_on("b", "2026-01-06", "upper")]).to_json().to_string()).unwrap();
+        fs::write(
+            &legacy,
+            weekly_doc("2026-W02", &[run_on("b", "2026-01-06", "upper")])
+                .to_json()
+                .to_string(),
+        )
+        .unwrap();
         let bounds = legacy_bounds_path(&dir, &legacy);
         let cache = cache_path(&dir, &day);
         assert!(!cache.exists());
@@ -2628,16 +2634,27 @@ mod tests {
         cache_settled_day(&dir, &day);
         let cache = cache_path(&dir, &day);
         assert!(cache.exists());
-        let cached_id = read_cache_header(&cache, CacheKind::RawAggregate).unwrap().0.id;
+        let cached_id = read_cache_header(&cache, CacheKind::RawAggregate)
+            .unwrap()
+            .0
+            .id;
         record(&dir, &run_on("b", &day, "len"), &day);
-        assert_ne!(cached_id, FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap()));
+        assert_ne!(
+            cached_id,
+            FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap())
+        );
         let snapshot = all_caching(&dir);
         assert_eq!(len_count(&snapshot), 2);
         assert_eq!(snapshot.sessions.len(), 2);
         cache_settled_day(&dir, &day);
         assert!(cache.exists());
-        assert_eq!(read_cache_header(&cache, CacheKind::RawAggregate).unwrap().0.id,
-            FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap()));
+        assert_eq!(
+            read_cache_header(&cache, CacheKind::RawAggregate)
+                .unwrap()
+                .0
+                .id,
+            FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap())
+        );
         assert_eq!(len_count(&all(&dir)), 2, "the refreshed entry is exact");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2650,10 +2667,16 @@ mod tests {
         cache_settled_day(&dir, &day);
         let cache = cache_path(&dir, &day);
         assert!(cache.exists());
-        let cached_id = read_cache_header(&cache, CacheKind::RawAggregate).unwrap().0.id;
+        let cached_id = read_cache_header(&cache, CacheKind::RawAggregate)
+            .unwrap()
+            .0
+            .id;
         // A run whose clock went back writes today's record into the old day.
         record(&dir, &today_run("len"), &day);
-        assert_ne!(cached_id, FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap()));
+        assert_ne!(
+            cached_id,
+            FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap())
+        );
         let snapshot = all(&dir);
         assert_eq!(len_count(&snapshot), 2);
         assert_eq!(snapshot.sessions.len(), 2);
