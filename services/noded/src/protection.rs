@@ -3,6 +3,8 @@
 
 //! Broker-owned observation classification. Never deserialised from a header.
 use bus::wire::BusMessage;
+use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum TrafficClass {
@@ -51,43 +53,77 @@ impl TrafficClass {
 /// Overflow conservatively protects unknown responses during this cache horizon.
 #[derive(Default)]
 pub(crate) struct ResponseProtection {
-    entries: std::collections::HashMap<String, std::time::Instant>,
-    overflow_until: Option<std::time::Instant>,
+    entries: std::collections::HashMap<Arc<str>, Instant>,
+    /// `entries` in deadline order, one element for each. A full cache drops
+    /// its expired entries from the front instead of scanning all of them on
+    /// every completion, which cost a pass over 65,536 entries per protected
+    /// reply once a broker had completed that many inside the horizon.
+    expiry: std::collections::BTreeSet<(Instant, Arc<str>)>,
+    overflow_until: Option<Instant>,
 }
 impl ResponseProtection {
     #[cfg(test)]
     pub(crate) fn expire_for_test(&mut self) {
-        let past = std::time::Instant::now() - Self::HORIZON;
-        for deadline in self.entries.values_mut() {
-            *deadline = past;
+        let past = Instant::now() - Self::HORIZON;
+        let ids: Vec<Arc<str>> = self.entries.keys().cloned().collect();
+        for id in ids {
+            self.insert(&id, past);
         }
         self.overflow_until = None;
     }
     const HORIZON: std::time::Duration = std::time::Duration::from_secs(15 * 60);
     const LIMIT: usize = 65_536;
     pub(crate) fn retain(&mut self, id: &str, class: TrafficClass) {
+        self.retain_at(id, class, Instant::now());
+    }
+    pub(crate) fn class(&self, id: &str) -> TrafficClass {
+        self.class_at(id, Instant::now())
+    }
+
+    fn retain_at(&mut self, id: &str, class: TrafficClass, now: Instant) {
         if !class.protected() {
             return;
         }
-        let now = std::time::Instant::now();
         if self.entries.len() >= Self::LIMIT {
-            self.entries.retain(|_, deadline| *deadline > now);
+            self.drop_expired(now);
         }
         let deadline = now + Self::HORIZON;
         if self.entries.len() < Self::LIMIT || self.entries.contains_key(id) {
-            self.entries.insert(id.to_owned(), deadline);
+            self.insert(id, deadline);
         } else {
             self.overflow_until = Some(deadline);
         }
     }
-    pub(crate) fn class(&self, id: &str) -> TrafficClass {
-        let now = std::time::Instant::now();
+
+    fn class_at(&self, id: &str, now: Instant) -> TrafficClass {
         if self.entries.get(id).is_some_and(|until| *until > now)
             || self.overflow_until.is_some_and(|until| until > now)
         {
             TrafficClass::NativeSession
         } else {
             TrafficClass::Legacy
+        }
+    }
+
+    /// Add `id`, or move it to a new deadline. Keeps `expiry` exact.
+    fn insert(&mut self, id: &str, deadline: Instant) {
+        let id: Arc<str> = Arc::from(id);
+        if let Some(previous) = self.entries.insert(id.clone(), deadline) {
+            self.expiry.remove(&(previous, id.clone()));
+        }
+        self.expiry.insert((deadline, id));
+    }
+
+    /// Remove every entry whose deadline has passed: exactly the entries a
+    /// scan for `deadline > now` would have discarded.
+    fn drop_expired(&mut self, now: Instant) {
+        while self
+            .expiry
+            .first()
+            .is_some_and(|(deadline, _)| *deadline <= now)
+        {
+            let (_, id) = self.expiry.pop_first().expect("first exists");
+            self.entries.remove(&id);
         }
     }
 }
@@ -100,7 +136,7 @@ mod tests {
         let mut history = ResponseProtection::default();
         let future = std::time::Instant::now() + ResponseProtection::HORIZON;
         for id in 0..ResponseProtection::LIMIT {
-            history.entries.insert(id.to_string(), future);
+            history.insert(&id.to_string(), future);
         }
         history.retain("overflow", TrafficClass::NativeSession);
         assert_eq!(history.entries.len(), ResponseProtection::LIMIT);
@@ -109,10 +145,219 @@ mod tests {
         history.overflow_until = Some(std::time::Instant::now());
         assert_eq!(history.class("unknown"), TrafficClass::Legacy);
         assert!(history.class("0").protected());
-        history
-            .entries
-            .insert("0".into(), std::time::Instant::now());
+        history.insert("0", std::time::Instant::now());
         assert_eq!(history.class("0"), TrafficClass::Legacy);
+    }
+
+    /// The scan this cache used to make, kept as the oracle: at the limit it
+    /// visited every entry on every protected completion.
+    #[derive(Default)]
+    struct Scanning {
+        entries: std::collections::HashMap<String, Instant>,
+        overflow_until: Option<Instant>,
+    }
+    impl Scanning {
+        fn retain_at(&mut self, id: &str, class: TrafficClass, now: Instant) {
+            if !class.protected() {
+                return;
+            }
+            if self.entries.len() >= ResponseProtection::LIMIT {
+                self.entries.retain(|_, deadline| *deadline > now);
+            }
+            let deadline = now + ResponseProtection::HORIZON;
+            if self.entries.len() < ResponseProtection::LIMIT || self.entries.contains_key(id) {
+                self.entries.insert(id.to_owned(), deadline);
+            } else {
+                self.overflow_until = Some(deadline);
+            }
+        }
+        fn class_at(&self, id: &str, now: Instant) -> TrafficClass {
+            if self.entries.get(id).is_some_and(|until| *until > now)
+                || self.overflow_until.is_some_and(|until| until > now)
+            {
+                TrafficClass::NativeSession
+            } else {
+                TrafficClass::Legacy
+            }
+        }
+    }
+
+    /// Same classification, same contents and same overflow as the scan, for
+    /// a run that fills the cache, overflows it, repeats ids, lets entries
+    /// expire a few at a time at the limit, and then lets everything expire.
+    #[test]
+    fn ordered_expiry_matches_the_scan_it_replaces() {
+        let mut indexed = ResponseProtection::default();
+        let mut scanning = Scanning::default();
+        let mut now = Instant::now();
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut random = move |below: u64| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 33) % below
+        };
+        let limit = ResponseProtection::LIMIT as u64;
+        let check = |indexed: &ResponseProtection, scanning: &Scanning, now, probe: &str| {
+            assert_eq!(indexed.class_at(probe, now), scanning.class_at(probe, now));
+            assert_eq!(indexed.overflow_until, scanning.overflow_until);
+            assert_eq!(indexed.entries.len(), scanning.entries.len());
+            assert_eq!(indexed.expiry.len(), indexed.entries.len());
+        };
+        // Full comparison: every id and deadline, and the index exactly in
+        // step with the map. Overflow can mask a wrong per-id answer from
+        // `class`, so this compares the stored state directly.
+        let same = |indexed: &ResponseProtection, scanning: &Scanning| {
+            assert_eq!(indexed.entries.len(), scanning.entries.len());
+            for (id, deadline) in &scanning.entries {
+                assert_eq!(indexed.entries.get(id.as_str()), Some(deadline), "{id}");
+            }
+            assert_eq!(indexed.overflow_until, scanning.overflow_until);
+            let index: std::collections::BTreeSet<(Instant, Arc<str>)> = indexed
+                .entries
+                .iter()
+                .map(|(id, deadline)| (*deadline, id.clone()))
+                .collect();
+            assert_eq!(index, indexed.expiry);
+        };
+        let started = now;
+        // Phase 1: fill 10 ms apart, with some repeated ids and unprotected
+        // completions, until the cache is full, then 2,000 steps more, which
+        // overflow. That is about 790 s, so nothing expires yet. Each step at
+        // the limit costs the oracle a full scan, so the overfull part stays
+        // short to keep the test quick.
+        let mut last_step = u64::MAX;
+        for step in 0.. {
+            if step == last_step {
+                break;
+            }
+            now += std::time::Duration::from_millis(10);
+            let id = if random(10) == 0 {
+                format!("noded-{}", random(step + 1))
+            } else {
+                format!("noded-{step}")
+            };
+            let class = if random(20) == 0 {
+                TrafficClass::Legacy
+            } else {
+                TrafficClass::NativeSession
+            };
+            indexed.retain_at(&id, class, now);
+            scanning.retain_at(&id, class, now);
+            if step % 97 == 0 {
+                check(
+                    &indexed,
+                    &scanning,
+                    now,
+                    &format!("noded-{}", random(step + 1)),
+                );
+            }
+            if last_step == u64::MAX && indexed.entries.len() == ResponseProtection::LIMIT {
+                last_step = step + 2_001;
+            }
+        }
+        assert!(now - started < ResponseProtection::HORIZON);
+        assert_eq!(indexed.entries.len(), ResponseProtection::LIMIT);
+        assert!(indexed.overflow_until.is_some());
+        same(&indexed, &scanning);
+        // Phase 2: stay at the limit while the oldest entries expire, at most
+        // one per step, slower than new completions arrive.
+        now = started + ResponseProtection::HORIZON + std::time::Duration::from_millis(200);
+        for step in 0..600 {
+            now += std::time::Duration::from_millis(random(8));
+            let id = if random(4) == 0 {
+                format!("late-{}", random(step + 1))
+            } else {
+                format!("late-{step}")
+            };
+            indexed.retain_at(&id, TrafficClass::NativeSession, now);
+            scanning.retain_at(&id, TrafficClass::NativeSession, now);
+            check(
+                &indexed,
+                &scanning,
+                now,
+                &format!("noded-{}", random(limit)),
+            );
+            check(&indexed, &scanning, now, &format!("late-{step}"));
+            if step % 100 == 0 {
+                same(&indexed, &scanning);
+            }
+        }
+        same(&indexed, &scanning);
+        // Phase 3: everything is past its deadline; one completion clears it.
+        now += ResponseProtection::HORIZON * 2;
+        check(&indexed, &scanning, now, "noded-1");
+        indexed.retain_at("fresh", TrafficClass::NativeSession, now);
+        scanning.retain_at("fresh", TrafficClass::NativeSession, now);
+        check(&indexed, &scanning, now, "fresh");
+        same(&indexed, &scanning);
+        assert_eq!(indexed.entries.len(), 1);
+        assert_eq!(indexed.class_at("noded-1", now), TrafficClass::Legacy);
+        assert!(indexed.class_at("fresh", now).protected());
+    }
+
+    /// The edges the long run reaches only by chance, each checked against
+    /// the scan: equal deadlines, an entry expiring exactly now, an id that
+    /// is already stored arriving at capacity, and `expire_for_test`.
+    #[test]
+    fn ordered_expiry_edges_match_the_scan() {
+        let limit = ResponseProtection::LIMIT;
+        let start = Instant::now();
+        let fill = |indexed: &mut ResponseProtection, scanning: &mut Scanning| {
+            // Pairs of ids share a deadline.
+            for n in 0..limit {
+                let at = start + std::time::Duration::from_millis((n / 2) as u64);
+                indexed.retain_at(&format!("id-{n}"), TrafficClass::NativeSession, at);
+                scanning.retain_at(&format!("id-{n}"), TrafficClass::NativeSession, at);
+            }
+        };
+
+        // Exactly at a deadline the entry has expired (`deadline > now` keeps
+        // it, so `deadline <= now` drops it), and both ids sharing it go.
+        let (mut indexed, mut scanning) = (ResponseProtection::default(), Scanning::default());
+        fill(&mut indexed, &mut scanning);
+        let exact = start + ResponseProtection::HORIZON;
+        assert_eq!(indexed.class_at("id-0", exact), TrafficClass::Legacy);
+        assert!(indexed.class_at("id-2", exact).protected());
+        indexed.retain_at("next", TrafficClass::NativeSession, exact);
+        scanning.retain_at("next", TrafficClass::NativeSession, exact);
+        assert!(!indexed.entries.contains_key("id-0"));
+        assert!(!indexed.entries.contains_key("id-1"));
+        assert!(indexed.entries.contains_key("id-2"));
+        assert_eq!(indexed.entries.len(), scanning.entries.len());
+        assert_eq!(indexed.expiry.len(), indexed.entries.len());
+        assert_eq!(indexed.overflow_until, None);
+
+        // At capacity with nothing expired: a new id overflows, a stored id
+        // moves to its new deadline without overflow.
+        let (mut indexed, mut scanning) = (ResponseProtection::default(), Scanning::default());
+        fill(&mut indexed, &mut scanning);
+        let soon = start + std::time::Duration::from_secs(60);
+        indexed.retain_at("id-7", TrafficClass::NativeSession, soon);
+        scanning.retain_at("id-7", TrafficClass::NativeSession, soon);
+        assert_eq!(indexed.overflow_until, None);
+        assert_eq!(
+            indexed.entries.get("id-7"),
+            Some(&(soon + ResponseProtection::HORIZON))
+        );
+        assert_eq!(indexed.expiry.len(), limit);
+        indexed.retain_at("new", TrafficClass::NativeSession, soon);
+        scanning.retain_at("new", TrafficClass::NativeSession, soon);
+        assert_eq!(indexed.overflow_until, scanning.overflow_until);
+        assert!(indexed.overflow_until.is_some());
+        assert!(!indexed.entries.contains_key("new"));
+        assert!(indexed.class_at("never-seen", soon).protected());
+        assert_eq!(indexed.entries.len(), scanning.entries.len());
+
+        // expire_for_test leaves the index in step and every id legacy.
+        indexed.expire_for_test();
+        let now = Instant::now();
+        assert_eq!(indexed.expiry.len(), indexed.entries.len());
+        assert!(indexed.expiry.iter().all(|(deadline, _)| *deadline <= now));
+        assert_eq!(indexed.class_at("id-7", now), TrafficClass::Legacy);
+        indexed.retain_at("after", TrafficClass::NativeSession, now);
+        assert_eq!(indexed.entries.len(), 1);
+        assert_eq!(indexed.expiry.len(), 1);
     }
     #[test]
     fn classification_is_broker_owned_and_monotonic() {
