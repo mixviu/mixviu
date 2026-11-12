@@ -19,6 +19,9 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
+/// Bound on the authority's graceful deregistration before closing its client.
+pub const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
+
 pub const COMMANDS: &[&str] = &[
     "settings.describe",
     "settings.get",
@@ -580,13 +583,25 @@ pub async fn serve(
 /// The production authority loop with an explicit broker endpoint. This also
 /// lets native integration tests isolate the broker without process-global env.
 pub async fn serve_at(root: PathBuf, binding: Binding, noded_url: String) -> anyhow::Result<()> {
+    serve_at_until(root, binding, noded_url, std::future::pending()).await
+}
+
+/// Embedded authority lifetime with the same draining shutdown as SIGTERM.
+/// A stop finishes the current blocking dispatch before releasing its Store;
+/// aborting the outer future cannot cancel a spawn_blocking closure holding it.
+pub async fn serve_at_until(
+    root: PathBuf,
+    binding: Binding,
+    noded_url: String,
+    shutdown: impl std::future::Future<Output = ()> + Send,
+) -> anyhow::Result<()> {
     let opened = root.clone();
     let authority = tokio::task::spawn_blocking(move || {
         let (store, accepted) = Store::open(&opened, &binding)?;
         Authority::new(store, accepted)
     })
     .await??;
-    run(authority, root, noded_url).await
+    run(authority, root, noded_url, shutdown).await
 }
 
 /// A mirror of `node`'s authority, serving its sealed cache. With no cache
@@ -619,7 +634,7 @@ pub async fn serve_mirror_at(
         Authority::mirror(&cache)
     })
     .await??;
-    run(authority, root, noded_url).await
+    run(authority, root, noded_url, std::future::pending()).await
 }
 
 /// The authority's record for a mirror starting with no cache: an attach
@@ -668,7 +683,13 @@ async fn first_cache(
     fetched?
 }
 
-async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyhow::Result<()> {
+async fn run(
+    mut authority: Authority,
+    root: PathBuf,
+    noded_url: String,
+    shutdown: impl std::future::Future<Output = ()> + Send,
+) -> anyhow::Result<()> {
+    tokio::pin!(shutdown);
     let build = buildinfo::build_info!();
     let provenance = bus::RegisterProvenance::from_parts(
         build.pkg,
@@ -711,6 +732,10 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
     loop {
         let mirror_retry = ctx.mirrors.next_retry();
         tokio::select! {
+            // Polled only between commands: an in-flight dispatch runs to
+            // completion first, with no time bound (as for SIGTERM), so the
+            // Store is never released under a blocked dispatch.
+            _ = &mut shutdown => break,
             changed = state.changed() => {
                 if changed.is_err() { break; }
                 let now = *state.borrow_and_update();
@@ -777,7 +802,7 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
         }
     }
     stopping(&authority, &ctx).await;
-    let _ = tokio::time::timeout(Duration::from_secs(3), client.deregister()).await;
+    let _ = tokio::time::timeout(DEREGISTER_TIMEOUT, client.deregister()).await;
     Ok(())
 }
 
@@ -901,6 +926,8 @@ async fn handle(
     ctx: &mut Ctx,
     command: IncomingCommand,
 ) -> anyhow::Result<Authority> {
+    let started = std::time::Instant::now();
+    tracing::debug!(command = %command.command, id = ?command.id, from = %command.from, "settings request received");
     let name = command.command.as_str();
     let mirror = matches!(authority.role, Role::Mirror { .. });
     if mirror && WRITES.contains(&name) {
@@ -990,6 +1017,7 @@ async fn handle(
             })
             .await?;
             authority = taken;
+            tracing::debug!(command = %command.command, id = ?command.id, elapsed_us = started.elapsed().as_micros(), "settings dispatch completed");
             if authority.accepted.revision != previous_revision {
                 ctx.retry = PublicationRetry::default();
             }
@@ -1028,6 +1056,7 @@ async fn handle(
     if let Err(error) = ctx.client.respond(&command, rc, &body).await {
         tracing::warn!(%error, "settings reply unavailable; operation receipt retained");
     }
+    tracing::debug!(command = %command.command, id = ?command.id, elapsed_us = started.elapsed().as_micros(), "settings response sent");
     // A mirror attached at the revision it holds is pushed now: harmless
     // when the answer arrives, the catch-up when it was lost.
     if name == MIRROR_ATTACH && rc == 0 {

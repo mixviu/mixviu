@@ -554,7 +554,7 @@ impl Merger {
 }
 
 /// Which file, exactly: taken from the `fstat` of the descriptor that was
-/// read, so a same-length replacement or a reused inode does not match.
+/// read. Equality alone cannot detect a rewrite within one timestamp tick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FileId {
     dev: u64,
@@ -565,6 +565,16 @@ struct FileId {
 }
 
 impl FileId {
+    fn predates_cache(self, verified_before_ns: u64) -> bool {
+        // As in git, clocks must agree and never step back past a cached verification; a backward step can trust a same-tick rewrite.
+        // Both mtime and ctime must be safely outside the cache's tick.
+        // Allow two seconds for coarse filesystem timestamps (including FAT).
+        // Checking ctime also catches rewrites which restore an old mtime.
+        verified_before_ns != 0
+            && i128::from(self.mtime_ns.max(self.ctime_ns)) + 2_000_000_000
+                < i128::from(verified_before_ns)
+    }
+
     fn of(meta: &fs::Metadata) -> Self {
         Self {
             dev: meta.dev(),
@@ -883,6 +893,9 @@ fn read_cache_header(path: &Path, kind: CacheKind) -> Option<(CacheHeader, BufRe
     reader.read_until(b'\n', &mut line).ok()?;
     let value: serde_json::Value = serde_json::from_slice(line.trim_ascii()).ok()?;
     let id = FileId::from_json(value.get("id")?)?;
+    if !id.predates_cache(value.get("verified_before_ns")?.as_u64()?) {
+        return None;
+    }
     let bounds = DateBounds::from_json(value.get("dates")?)?;
     let payload = match (kind, value.get("payload")) {
         (CacheKind::LegacyBounds, _) => None,
@@ -913,7 +926,33 @@ fn read_cache_body(mut reader: BufReader<File>) -> Option<UsageStats> {
     Some(stats)
 }
 
-fn write_cache(dir: &Path, day: &str, raw: &RawDay) -> Result<(), String> {
+// Test-only seam: a test thread may advance the verification clock.
+#[cfg(test)]
+thread_local! {
+    static VERIFICATION_TIME_OVERRIDE_NS: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+// Capture before opening the source: a slow read or cache write must not age
+// a racy identity into a trusted one. Old headers without this field miss.
+fn verification_time_ns() -> u64 {
+    #[cfg(test)]
+    if let Some(now) = VERIFICATION_TIME_OVERRIDE_NS.get() {
+        return now;
+    }
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|time| u64::try_from(time.as_nanos()).ok())
+        .unwrap_or(0)
+}
+
+fn write_cache(dir: &Path, day: &str, raw: &RawDay, verified_before_ns: u64) -> Result<(), String> {
+    if !raw.id.predates_cache(verified_before_ns) {
+        debug_note(format!(
+            "cache for {day} not written: recent change or timestamp in the future"
+        ));
+        return Ok(());
+    }
     let payload = raw
         .payload
         .map_or(serde_json::Value::Null, |(first, last)| {
@@ -924,6 +963,7 @@ fn write_cache(dir: &Path, day: &str, raw: &RawDay) -> Result<(), String> {
         "id": raw.id.to_json(),
         "dates": raw.bounds.to_json(),
         "payload": payload,
+        "verified_before_ns": verified_before_ns,
     });
     let mut bytes = serde_json::to_vec(&header).map_err(|e| e.to_string())?;
     bytes.push(b'\n');
@@ -935,13 +975,13 @@ fn write_cache(dir: &Path, day: &str, raw: &RawDay) -> Result<(), String> {
 
 /// A raw day's contribution to a window, with every op applied. The cache
 /// is used only when its header names exactly the file as it is now (device,
-/// inode, length, mtime and ctime). Its date bounds then decide whether the
-/// day can touch the window at all, and its aggregate is used unless an op
-/// covers some of its records but not all (judged by payload ends, as for a
-/// single record); then the raw file is read record by record. Without a
-/// usable cache the raw file is read; with `may_cache`, a stable read of a
-/// day before today refreshes the cache. A day that cannot be read counts
-/// nothing.
+/// inode, length, mtime and ctime), outside the racy timestamp window. Its
+/// date bounds then decide whether the day can touch the window at all. Its
+/// aggregate is used unless an op covers some records but not all (judged by
+/// payload ends, as for a single record); then the raw file is read record
+/// by record. Without a usable cache the raw file is read. With `may_cache`,
+/// a stable, settled read of a day before today refreshes the cache. A day
+/// that cannot be read counts nothing.
 fn day_records(
     dir: &Path,
     day: &str,
@@ -950,6 +990,7 @@ fn day_records(
     window: &StatsWindow,
     may_cache: bool,
 ) -> UsageStats {
+    let verified_before_ns = verification_time_ns();
     let current = match fs::metadata(path) {
         Ok(meta) if meta.is_file() => FileId::of(&meta),
         Ok(_) | Err(_) => {
@@ -990,7 +1031,7 @@ fn day_records(
     };
     if may_cache
         && raw.stable
-        && let Err(error) = write_cache(dir, day, &raw)
+        && let Err(error) = write_cache(dir, day, &raw, verified_before_ns)
     {
         debug_note(format!("cache for {day} not written: {error}"));
     }
@@ -1131,6 +1172,7 @@ fn read_legacy_source(
     may_cache: bool,
     force: bool,
 ) -> Option<(FileId, Option<UsageStats>)> {
+    let verified_before_ns = verification_time_ns();
     let mut file = File::open(path).ok()?;
     let id = FileId::of(&file.metadata().ok()?);
     let bounds_path = legacy_bounds_path(dir, path);
@@ -1158,8 +1200,15 @@ fn read_legacy_source(
         return Some((id, None));
     }
     if may_cache {
-        let header =
-            serde_json::json!({"id": id.to_json(), "dates": DateBounds::of(&document).to_json()});
+        if !id.predates_cache(verified_before_ns) {
+            debug_note(format!(
+                "legacy bounds for {} not cached: recent change or timestamp in the future",
+                path.display()
+            ));
+            return Some((id, Some(document)));
+        }
+        let header = serde_json::json!({"id": id.to_json(), "dates": DateBounds::of(&document).to_json(),
+                "verified_before_ns": verified_before_ns});
         let mut bytes = header.to_string().into_bytes();
         bytes.push(b'\n');
         let written = bounds_path
@@ -2274,7 +2323,11 @@ mod tests {
             for index in 0..20 {
                 record(&dir, &run_on(&format!("{day}-{index}"), &day, "len"), &day);
             }
+            cache_settled_day(&dir, &day);
+            assert!(cache_path(&dir, &day).exists());
         }
+        // A full report over the seeded history, as a smoke pass: the caches
+        // above come from cache_settled_day, not from this call.
         all_caching(&dir);
         let legacy = run_on("legacy", "2026-01-05", "len");
         fs::write(dir.join("current.json"), legacy.to_json().to_string()).unwrap();
@@ -2432,7 +2485,8 @@ mod tests {
         aggregate.sessions.push(session("cached-2", &day));
         let old_format = format!(
             "{}\n{}\n",
-            serde_json::json!({"day": day, "id": id.to_json(), "dates": [day, day]}),
+            serde_json::json!({"day": day, "id": id.to_json(), "dates": [day, day],
+                "verified_before_ns": verification_time_ns() + 3_000_000_000}),
             record_json(&aggregate)
         );
         write_cache_value(&dir, &day, &old_format);
@@ -2456,12 +2510,93 @@ mod tests {
         fs::write(cache_path(dir, day), value).unwrap();
     }
 
+    // Model a settled source without sleeps or changing its identity.
+    fn cache_settled_day(dir: &Path, day: &str) {
+        let raw = read_raw_day(day, &run_path(dir, day), None).unwrap();
+        write_cache(dir, day, &raw, verification_time_ns() + 3_000_000_000).unwrap();
+    }
+
+    #[test]
+    fn a_report_writes_caches_for_settled_sources() {
+        struct RestoreClock;
+        impl Drop for RestoreClock {
+            fn drop(&mut self) {
+                VERIFICATION_TIME_OVERRIDE_NS.set(None);
+            }
+        }
+        let dir = temp_dir("settled-report");
+        let day = days_ago(7);
+        record(&dir, &run_on("a", &day, "len"), &day);
+        let legacy = dir.join("current.json");
+        fs::write(
+            &legacy,
+            weekly_doc("2026-W02", &[run_on("b", "2026-01-06", "upper")])
+                .to_json()
+                .to_string(),
+        )
+        .unwrap();
+        let bounds = legacy_bounds_path(&dir, &legacy);
+        let cache = cache_path(&dir, &day);
+        assert!(!cache.exists());
+        assert!(!bounds.exists());
+        // Advance this test thread's verification clock, not filesystem time.
+        VERIFICATION_TIME_OVERRIDE_NS.set(Some(verification_time_ns() + 3_000_000_000));
+        let _restore = RestoreClock;
+        let snapshot = all_caching(&dir);
+        assert_eq!(len_count(&snapshot), 1);
+        assert_eq!(snapshot.counters.builtins.get("upper"), Some(&1));
+        assert!(cache.exists());
+        assert!(bounds.exists());
+        assert!(read_cache_header(&cache, CacheKind::RawAggregate).is_some());
+        assert!(read_cache_header(&bounds, CacheKind::LegacyBounds).is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_source_with_a_future_mtime_does_not_write_a_cache() {
+        let dir = temp_dir("future-cache");
+        let day = days_ago(7);
+        record(&dir, &run_on("a", &day, "len"), &day);
+        let legacy = dir.join("current.json");
+        fs::write(
+            &legacy,
+            weekly_doc("2026-W02", &[run_on("b", "2026-01-06", "upper")])
+                .to_json()
+                .to_string(),
+        )
+        .unwrap();
+        for path in [run_path(&dir, &day), legacy.clone()] {
+            File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(std::time::SystemTime::now() + Duration::from_secs(3600))
+                .unwrap();
+        }
+        for _ in 0..2 {
+            assert_eq!(len_count(&all_caching(&dir)), 1);
+            assert!(!cache_path(&dir, &day).exists());
+            assert!(!legacy_bounds_path(&dir, &legacy).exists());
+        }
+        let id = FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap());
+        assert!(
+            !FileId {
+                mtime_ns: -3_000_000_000,
+                ctime_ns: -3_000_000_000,
+                ..id
+            }
+            .predates_cache(0)
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn the_cache_is_used_only_while_it_matches_the_raw_file() {
         let dir = temp_dir("cache");
         let day = days_ago(5);
         record(&dir, &run_on("a", &day, "len"), &day);
         record(&dir, &run_on("b", &day, "len"), &day);
+        cache_settled_day(&dir, &day);
         assert_eq!(len_count(&all_caching(&dir)), 2);
         assert!(cache_path(&dir, &day).exists());
 
@@ -2472,12 +2607,15 @@ mod tests {
         let header = serde_json::json!({
             "day": day, "id": id.to_json(), "dates": [day, day],
             "payload": [ends[0], ends[ends.len() - 1]],
+            "verified_before_ns": verification_time_ns() + 3_000_000_000,
         });
         let forged = format!(
             "{header}\n{}\n",
             record_json(&run_on("forged", &day, "upper"))
         );
         write_cache_value(&dir, &day, &forged);
+        // This test exercises a trusted, older identity. A fresh cache of a
+        // just-written file is deliberately unverified within the same tick.
         assert_eq!(all(&dir).counters.builtins.get("upper"), Some(&1));
 
         // ...and corrupt, prefix-only or header-only entries are ignored.
@@ -2496,11 +2634,30 @@ mod tests {
         let dir = temp_dir("late");
         let day = days_ago(3);
         record(&dir, &run_on("a", &day, "len"), &day);
-        all_caching(&dir);
+        cache_settled_day(&dir, &day);
+        let cache = cache_path(&dir, &day);
+        assert!(cache.exists());
+        let cached_id = read_cache_header(&cache, CacheKind::RawAggregate)
+            .unwrap()
+            .0
+            .id;
         record(&dir, &run_on("b", &day, "len"), &day);
+        assert_ne!(
+            cached_id,
+            FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap())
+        );
         let snapshot = all_caching(&dir);
         assert_eq!(len_count(&snapshot), 2);
         assert_eq!(snapshot.sessions.len(), 2);
+        cache_settled_day(&dir, &day);
+        assert!(cache.exists());
+        assert_eq!(
+            read_cache_header(&cache, CacheKind::RawAggregate)
+                .unwrap()
+                .0
+                .id,
+            FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap())
+        );
         assert_eq!(len_count(&all(&dir)), 2, "the refreshed entry is exact");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2510,9 +2667,19 @@ mod tests {
         let dir = temp_dir("rollback");
         let day = days_ago(9);
         record(&dir, &run_on("a", &day, "len"), &day);
-        all_caching(&dir);
+        cache_settled_day(&dir, &day);
+        let cache = cache_path(&dir, &day);
+        assert!(cache.exists());
+        let cached_id = read_cache_header(&cache, CacheKind::RawAggregate)
+            .unwrap()
+            .0
+            .id;
         // A run whose clock went back writes today's record into the old day.
         record(&dir, &today_run("len"), &day);
+        assert_ne!(
+            cached_id,
+            FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap())
+        );
         let snapshot = all(&dir);
         assert_eq!(len_count(&snapshot), 2);
         assert_eq!(snapshot.sessions.len(), 2);
@@ -2614,17 +2781,28 @@ mod tests {
         let dir = temp_dir("ops");
         let old = days_ago(3);
         record(&dir, &run_on("a", &old, "len"), &old);
-        all_caching(&dir);
+        cache_settled_day(&dir, &old);
+        let cache = cache_path(&dir, &old);
+        assert!(cache.exists());
+        // A cache-only session id proves Coverage::All uses the cached body.
+        let text = fs::read_to_string(&cache).unwrap();
+        let (header, body) = text.split_once('\n').unwrap();
+        let mut body: serde_json::Value = serde_json::from_str(body).unwrap();
+        body["sessions"][0]["id"] = "cached-a".into();
+        fs::write(&cache, format!("{header}\n{body}\n")).unwrap();
         append_op(&dir, OpKind::Clear("len".into())).unwrap();
         // The op covers the whole cached file, so it applies to the entry.
-        assert_eq!(len_count(&all_caching(&dir)), 0);
+        let snapshot = all_caching(&dir);
+        assert_eq!(len_count(&snapshot), 0);
+        assert_eq!(snapshot.sessions[0].id, "cached-a");
 
         // A day whose records straddle an op is read record by record.
         let split = days_ago(4);
         record(&dir, &run_on("b", &split, "upper"), &split);
         append_op(&dir, OpKind::Clear("upper".into())).unwrap();
         record(&dir, &run_on("c", &split, "upper"), &split);
-        all_caching(&dir);
+        cache_settled_day(&dir, &split);
+        assert!(cache_path(&dir, &split).exists());
         let snapshot = all_caching(&dir);
         assert_eq!(snapshot.counters.builtins.get("upper"), Some(&1));
         assert_eq!(snapshot.sessions.len(), 3, "a clear keeps the runs");
@@ -2903,6 +3081,7 @@ mod tests {
         );
         append_op(&dir, OpKind::Clear("upper".into())).unwrap();
         record(&dir, &run_on("d", &past, "upper"), &past);
+        cache_settled_day(&dir, &past);
         for _ in 0..2 {
             let snapshot = all_caching(&dir);
             assert_eq!(
@@ -2982,6 +3161,7 @@ mod tests {
         let dir = temp_dir("bucket-dates");
         // Written into 2026-01-05 (week 2) but dated 2026-01-12 (week 3).
         record(&dir, &run_on("moved", "2026-01-12", "len"), "2026-01-05");
+        cache_settled_day(&dir, "2026-01-05");
         for caching in [true, true, false] {
             let week3 = load_snapshot_from(
                 &dir,
@@ -3044,6 +3224,7 @@ mod tests {
         let dir = temp_dir("same-length");
         let day = days_ago(7);
         record(&dir, &run_on("a", &day, "len"), &day);
+        cache_settled_day(&dir, &day);
         assert_eq!(len_count(&all_caching(&dir)), 1);
         let path = run_path(&dir, &day);
         let mtime = fs::metadata(&path).unwrap().modified().unwrap();
@@ -3057,6 +3238,26 @@ mod tests {
             .unwrap()
             .set_modified(mtime)
             .unwrap();
+        // Model a filesystem tick in which even ctime did not advance.
+        // ctime cannot be set through file APIs, so give the cached identity
+        // the post-write ctime. All other identity fields must already match.
+        let cache = cache_path(&dir, &day);
+        let text = fs::read_to_string(&cache).unwrap();
+        let (header, body) = text.split_once('\n').unwrap();
+        let mut header: serde_json::Value = serde_json::from_str(header).unwrap();
+        let before = FileId::from_json(&header["id"]).unwrap();
+        let after = FileId::of(&fs::metadata(&path).unwrap());
+        assert_eq!(
+            FileId {
+                ctime_ns: after.ctime_ns,
+                ..before
+            },
+            after
+        );
+        header["id"]["ctime_ns"] = after.ctime_ns.into();
+        // Even a cache write delayed beyond the tick must remain unverified.
+        header["verified_before_ns"] = u64::try_from(after.ctime_ns).unwrap().into();
+        fs::write(&cache, format!("{header}\n{body}")).unwrap();
         let snapshot = all(&dir);
         assert_eq!(len_count(&snapshot), 0);
         assert_eq!(snapshot.counters.builtins.get("abs"), Some(&1));
