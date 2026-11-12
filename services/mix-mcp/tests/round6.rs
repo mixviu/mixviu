@@ -14,19 +14,17 @@ async fn invalid_layout_keeps_discovery_and_returns_log_errors() -> anyhow::Resu
         }
         let stderr = dir.path().join("stderr");
         let mut command = Command::new(env!("CARGO_BIN_EXE_mix-mcp"));
-        command
-            .env_clear()
-            .env("HOME", dir.path())
-            .env(
-                paths::env::PREFIX,
-                if malformed {
-                    dir.path().as_os_str()
-                } else {
-                    std::ffi::OsStr::new("relative")
-                },
-            )
-;
-        let (transport, _) = TokioChildProcess::builder(command).stderr(std::fs::File::create(&stderr)?).spawn()?;
+        command.env_clear().env("HOME", dir.path()).env(
+            paths::env::PREFIX,
+            if malformed {
+                dir.path().as_os_str()
+            } else {
+                std::ffi::OsStr::new("relative")
+            },
+        );
+        let (transport, _) = TokioChildProcess::builder(command)
+            .stderr(std::fs::File::create(&stderr)?)
+            .spawn()?;
         let service = ().serve(transport).await?;
         let tools = service.list_all_tools().await?;
         let mut names: Vec<_> = tools.iter().map(|t| t.name.as_ref()).collect();
