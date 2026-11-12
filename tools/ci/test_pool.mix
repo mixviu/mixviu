@@ -1,5 +1,5 @@
 #!/usr/bin/env mix
--- version: 0.3.0
+-- version: 0.4.0
 -- tools/ci/test_pool.mix: `cargo test` with the test binaries run in
 -- parallel. Called by tools/ci.mix in place of `cargo test`.
 --
@@ -17,8 +17,13 @@
 --    runs nothing. Doc-tests reach the runner too and are skipped there
 --    (through a runner rustdoc would run every merged doc-test in one
 --    process; see test_record.mix).
--- 2. Replay. Every recorded invocation runs from a pool of N (default 8)
---    with exactly the recorded argv, cwd and environment. Values go in the
+-- 2. Replay. Every recorded invocation runs from a pool of N with exactly
+--    the recorded argv, cwd and environment. N defaults to half the cores
+--    `nproc` reports (it honours affinity and cgroup limits), at least 1 and
+--    at most 8, or TEST_POOL_JOBS, or --jobs. Each binary runs its own tests
+--    on every core, so 8 at a time suits a 16-core CBC worker; on a 4-vCPU
+--    hosted runner 8 at a time made the pool slower than one at a time
+--    (1150 s) and timing tests failed (2026-11-12). Values go in the
 --    environment block (Mix's env option with clear_env), never in argv;
 --    only cargo's hyphenated CARGO_BIN_EXE_<bin> paths (name of that form,
 --    value under the target directory), whose names Mix refuses, are set
@@ -55,7 +60,18 @@ if len($o.errors) > 0 or len($o.rest) == 0 then
   eprint("usage: mix tools/ci/test_pool.mix [--jobs N] [--serial FILE] -- CARGO_TEST_ARGS...")
   exit(64)
 end
-$jobs = to_number($o.opts.jobs ?? "8")
+fn default_jobs()
+  $n = run_argv(["nproc"])
+  $cores = if $n.ok then to_number(trim($n.stdout)) else nil end
+  if $cores == nil or $cores < 1 then return 1 end
+  return max(1, min(8, floor($cores / 2)))
+end
+$jobs_text = $o.opts.jobs ?? env("TEST_POOL_JOBS", "")
+$jobs = if $jobs_text != "" then to_number($jobs_text) else default_jobs() end
+if $jobs == nil or $jobs < 1 or $jobs != floor($jobs) then
+  eprint("test_pool: --jobs / TEST_POOL_JOBS must be a whole number >= 1, got '" .. $jobs_text .. "'")
+  exit(64)
+end
 $cargo_args = $o.rest
 
 -- Refuse what the pool cannot reproduce faithfully, up front.
