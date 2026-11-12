@@ -69,6 +69,7 @@ try
     if not has_key($known, $p.name .. " " .. $p.version) then
       print("ADDED_PACKAGE " .. json_encode({name: $p.name, version: $p.version, license: $p.license}))
       $inverse = run_argv_must(["cargo", "tree", "--locked", "--workspace", "-i", $p.name .. "@" .. $p.version])
+      print($inverse)
       if re_match($inverse, '(?m)(lib-mix|mix-shell|mixd|mix) v[0-9]') then
         print($inverse)
         raise("STRICT_DEPENDENCY", "shell engine reaches a new package: " .. $p.name)
