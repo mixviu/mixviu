@@ -1718,37 +1718,95 @@ fn apply_cas_group(state_root: &Path, blobs_root: &Path, group: &str) {
     }
 }
 
-/// Resolve a group name to its gid (`getgrnam`); `None` when the group
-/// does not exist on this host.
-fn group_gid(name: &str) -> Option<u32> {
-    let c = std::ffi::CString::new(name).ok()?;
-    // SAFETY: getgrnam returns a pointer to libc-owned storage valid
-    // until the next group call; the gid is copied out immediately.
-    unsafe {
-        let gr = libc::getgrnam(c.as_ptr());
-        if gr.is_null() {
-            None
-        } else {
-            Some((*gr).gr_gid)
+/// One reentrant group-database lookup (`getgrnam_r`/`getgrgid_r`): the
+/// result lives in `buf`, owned here, and `read` copies what it needs out
+/// before `buf` is dropped. `getgrnam`/`getgrgid` share one static result
+/// per process, so two threads looking groups up at once can read a torn
+/// entry (seen in the test pool: a store directory came back with another
+/// line's gid). The buffer grows on ERANGE, up to 1 MiB.
+fn lookup_group<T>(
+    call: impl Fn(
+        *mut libc::group,
+        *mut libc::c_char,
+        libc::size_t,
+        *mut *mut libc::group,
+    ) -> libc::c_int,
+    read: impl FnOnce(&libc::group) -> T,
+) -> Option<T> {
+    let mut len: usize = 1024;
+    loop {
+        let mut buf: Vec<libc::c_char> = vec![0; len];
+        // SAFETY: an all-zero `group` is a valid out-parameter; the call
+        // fills it with pointers into `buf`.
+        let mut grp: libc::group = unsafe { std::mem::zeroed() };
+        let mut out: *mut libc::group = std::ptr::null_mut();
+        let rc = call(&mut grp, buf.as_mut_ptr(), len, &mut out);
+        if rc == libc::ERANGE && len < (1 << 20) {
+            len *= 2;
+            continue;
         }
+        if rc != 0 || out.is_null() {
+            return None;
+        }
+        // `grp` and `buf`, which its strings point into, are both alive.
+        return Some(read(&grp));
     }
 }
 
-/// Resolve a gid to its group name (`getgrgid`); `None` on failure.
+/// Resolve a group name to its gid (`getgrnam_r`); `None` when the group
+/// does not exist on this host.
+fn group_gid(name: &str) -> Option<u32> {
+    let c = std::ffi::CString::new(name).ok()?;
+    lookup_group(
+        // SAFETY: valid C string and out-parameters sized by `len`.
+        |grp, buf, len, out| unsafe { libc::getgrnam_r(c.as_ptr(), grp, buf, len, out) },
+        |g| g.gr_gid,
+    )
+}
+
+/// Resolve a gid to its group name (`getgrgid_r`); `None` on failure.
 /// Test-side twin of [`group_gid`].
 #[cfg(test)]
 fn gid_group(gid: u32) -> Option<String> {
-    // SAFETY: as group_gid — the name is copied out immediately.
-    unsafe {
-        let gr = libc::getgrgid(gid);
-        if gr.is_null() {
-            return None;
+    lookup_group(
+        // SAFETY: out-parameters sized by `len`.
+        |grp, buf, len, out| unsafe { libc::getgrgid_r(gid, grp, buf, len, out) },
+        // SAFETY: `gr_name` points into the live lookup buffer.
+        |g| unsafe { std::ffi::CStr::from_ptr(g.gr_name) }
+            .to_string_lossy()
+            .into_owned(),
+    )
+}
+
+#[cfg(test)]
+mod group_lookup_tests {
+    use super::{gid_group, group_gid};
+
+    /// Many threads resolving groups at once each get their own answer:
+    /// with getgrnam/getgrgid they shared one static result.
+    #[test]
+    fn concurrent_group_lookups_do_not_tear() {
+        // SAFETY: getgid is a pure syscall.
+        let gid = unsafe { libc::getgid() };
+        let Some(name) = gid_group(gid) else {
+            eprintln!("skipping: no group name for this process's gid");
+            return;
+        };
+        let threads: Vec<_> = (0..16)
+            .map(|_| {
+                let name = name.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..2_000 {
+                        assert_eq!(group_gid(&name), Some(gid));
+                        assert_eq!(gid_group(gid).as_deref(), Some(name.as_str()));
+                        assert_eq!(group_gid("no-such-group-mixviu-test"), None);
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
         }
-        Some(
-            std::ffi::CStr::from_ptr((*gr).gr_name)
-                .to_string_lossy()
-                .into_owned(),
-        )
     }
 }
 
