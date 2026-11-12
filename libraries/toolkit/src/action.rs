@@ -1939,6 +1939,25 @@ mod tests {
     }
 
     #[test]
+    fn every_logical_default_uses_the_shared_policy_at_both_registry_entries() {
+        for &key in Key::ALL {
+            for bits in 0..16 {
+                let modifiers=Modifiers { shift:bits&1!=0,alt:bits&2!=0,ctrl:bits&4!=0,command:bits&4!=0,mac_cmd:bits&8!=0 };
+                let chord=KeyboardShortcut::new(modifiers,key);
+                let refused=crate::keymap::reserved(key,modifiers);
+                for extra in [false,true] {
+                    let result=std::panic::catch_unwind(|| {
+                        let mut registry=Registry::<Counter>::new();
+                        if extra { registry.add(on("x",KeyboardShortcut::new(Modifiers::NONE,Key::A))); registry.add_shortcuts("x",[chord]); }
+                        else { registry.add(on("x",chord)); }
+                    });
+                    assert_eq!(result.is_err(),refused,"{key:?} {modifiers:?} extra={extra}");
+                }
+            }
+        }
+    }
+
+    #[test]
     #[should_panic(expected = "F1-F12 belong to the user")]
     fn a_default_ctrl_function_key_is_refused() {
         let ctrl_f5 = KeyboardShortcut::new(Modifiers::COMMAND, Key::F5);

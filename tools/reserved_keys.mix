@@ -1,4 +1,12 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Reads tracked apps/, share/scenes/ and libraries/ JSON binding structures
+-- and non-test Mix literal binding structures/if-elif key guards, plus the
+-- generated terminal defaults. Does not evaluate variable-built Mix data,
+-- inspect other roots, or parse Rust tables. Rust defaults use the mandatory
+-- action::Bindings add/set_shortcut/add_shortcuts and toolkit::Registry
+-- add/add_shortcuts guards; data-authored native defaults use shortcuts::resolve.
+-- Their registration/refusal tests and shipped table constructors run in the
+-- full workspace CI tests. This checker is a defaults policy, never input admission.
 $policy=require("reserved-policy.mix")
 $files=filter(split(trim(run_argv_must(["git","ls-files","apps","share/scenes","libraries"])),"\n"),fn($p)=$p!="")
 if len($files)==0 then raise("RESERVED_KEY","no shipped files found; run from repository root") end

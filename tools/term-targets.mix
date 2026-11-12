@@ -9,6 +9,7 @@ fn prepare_command($argv,$prepare)
   return $out
 end
 fn validate_targets($commands,$metadata)
+  if len($commands)==0 then raise("TERM_TARGET","terminal gate requires at least one command") end
   $packages={}
   for $p in $metadata.packages
     if contains($metadata.workspace_members,$p.id) then $packages[$p.name]=$p end

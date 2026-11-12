@@ -81,6 +81,7 @@ pub fn reserved_key(key: &str, ctrl: bool, alt: bool, shift: bool) -> bool {
 }
 
 fn ensure_default_chord(chord: &str) {
+    assert!(parse_chord(chord).is_some(), "invalid default chord {chord:?}");
     assert!(
         !reserved(chord),
         "F1-F12 belong to the user; Ctrl/Alt+arrow without Shift are reserved in shipped defaults"
@@ -229,6 +230,22 @@ impl Bindings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn malformed_defaults_are_refused_at_every_registration_entry() {
+        for text in ["Meta+F1","Ctrl+Foo+F1","Ctrl+","Ctrl+Ctrl+A"] {
+            for entry in 0..3 {
+                assert!(std::panic::catch_unwind(|| {
+                    let mut bindings=Bindings::default();
+                    if entry==0 { bindings.add("x",Some(text.into())); }
+                    else {
+                        bindings.add("x",None);
+                        if entry==1 { bindings.set_shortcut("x",Some(text.into())); }
+                        else { bindings.add_shortcuts("x",[text.into()]); }
+                    }
+                }).is_err(),"{text} entry {entry}");
+            }
+        }
+    }
 
     #[test]
     fn reserved_arrow_defaults_are_rejected_after_normalisation() {

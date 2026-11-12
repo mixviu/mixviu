@@ -162,6 +162,12 @@ fn take(ctx: &egui::Context, chord: &egui::KeyboardShortcut) -> bool {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn unknown_default_keys_are_errors_in_both_fields() {
+        for item in [serde_json::json!({"id":"x","shortcut":"Meta+F1"}),serde_json::json!({"id":"x","keys":["Ctrl+NoSuchKey"]})] {
+            assert!(super::resolve(&serde_json::json!({"defaults":[item],"overrides":{}})).unwrap_err().contains("invalid default chord"));
+        }
+    }
+    #[test]
     fn reserved_defaults_are_refused_but_user_overrides_take_effect() {
         use serde_json::json;
         for defaults in [

@@ -563,7 +563,6 @@ pub fn draw(
     let add = |ui: &mut Ui| {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let focused = ui.memory(|m| m.focused());
                 let submit_event = ui.input(|i| {
                     i.events
                         .iter()
@@ -589,17 +588,12 @@ pub fn draw(
                     ui.ctx()
                         .data_mut(|d| d.insert_temp(marker, value["instance"].clone()));
                 }
-                if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    if value["submit_modifiers"] == true {
+                let mut handled = false;
+                if value["submit_modifiers"] == true && (field.has_focus() || field.lost_focus()) {
                         // TextEdit submits the first Enter it sees while it
                         // owns focus. Consume that press only, never the rest
                         // of this frame's Enter presses or releases.
-                        let Some(event @ egui::Event::Key { modifiers, .. }) = submit_event else {
-                            return;
-                        };
-                        if focused != Some(field.id) {
-                            return;
-                        }
+                        if let Some(event @ egui::Event::Key { modifiers, .. }) = submit_event {
                         let shift = modifiers.shift;
                         ui.input_mut(|input| {
                             if let Some(index) = input.events.iter().position(|e| e == &event) {
@@ -608,9 +602,12 @@ pub fn draw(
                         });
                         field.request_focus();
                         emit(events, "submit", json!({"shift":shift}));
-                    } else {
-                        emit(events, "next", Value::Null);
+                        handled = true;
                     }
+                }
+                if !handled && value["submit_modifiers"] != true && field.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    emit(events, "next", Value::Null);
                 }
                 for (action, label) in [("prev", "Previous"), ("next", "Next")] {
                     if ui.button(label).clicked() {
