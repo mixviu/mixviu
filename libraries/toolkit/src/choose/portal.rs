@@ -137,6 +137,8 @@ pub(super) async fn session(
         cancel,
         #[cfg(test)]
         0,
+        #[cfg(test)]
+        None,
     )
     .await
 }
@@ -146,6 +148,7 @@ async fn session_inner(
     request: &Request,
     cancel: &mut watch::Receiver<bool>,
     #[cfg(test)] mut break_stream: u8,
+    #[cfg(test)] mut stream_rebuilt: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> Result<Option<Outcome>> {
     let dbus = tokio::time::timeout(IO_BOUND, zbus::fdo::DBusProxy::new(connection)).await??;
     if !tokio::time::timeout(IO_BOUND, dbus.name_has_owner(DESKTOP.try_into()?)).await?? {
@@ -267,6 +270,10 @@ async fn session_inner(
                             if let Ok(Ok(stream)) = tokio::time::timeout(IO_BOUND,
                                 MessageStream::for_match_rule(rule.clone(), connection, Some(8))).await {
                                 responses = stream;
+                                #[cfg(test)]
+                                if let Some(ready) = stream_rebuilt.take() {
+                                    let _ = ready.send(());
+                                }
                                 continue;
                             }
                         }
@@ -362,6 +369,7 @@ pub(super) async fn session_broken_stream(
     request: &Request,
     cancel: &mut watch::Receiver<bool>,
     breaks: u8,
+    stream_rebuilt: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> Result<Option<Outcome>> {
-    session_inner(connection, request, cancel, breaks).await
+    session_inner(connection, request, cancel, breaks, stream_rebuilt).await
 }

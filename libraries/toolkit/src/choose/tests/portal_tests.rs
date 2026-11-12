@@ -531,19 +531,24 @@ async fn portal_dead_response_stream_is_rebuilt_once_before_close_recovery() {
     let (server, mut calls, closed) = serve(&address, None).await;
     let client = connection(&address).await;
     let (_tx, mut cancel) = watch::channel(false);
+    let (rebuilt_tx, rebuilt) = tokio::sync::oneshot::channel();
+    // Six bounded discovery/subscription operations, the method acknowledgement,
+    // a possible owner sweep and the rebuilt subscription: nine IO_BOUNDs.
+    // Reserve one more IO_BOUND plus five seconds for scheduling on busy workers.
+    let budget = IO_BOUND * 10 + Duration::from_secs(5);
     let task = tokio::spawn(async move {
-        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 1)
+        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 1, Some(rebuilt_tx))
             .await
             .unwrap()
     });
-    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv())
+    let call = tokio::time::timeout(budget, calls.recv())
         .await
         .unwrap()
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::timeout(budget, rebuilt).await.unwrap().unwrap();
     emit(&server, &call.owner, &call.path, 1).await;
     assert_eq!(
-        tokio::time::timeout(Duration::from_secs(5), task)
+        tokio::time::timeout(budget, task)
             .await
             .unwrap()
             .unwrap(),
@@ -559,7 +564,7 @@ async fn portal_recovery_close_of_an_ended_request_falls_through() {
     let client = connection(&address).await;
     let (_tx, mut cancel) = watch::channel(false);
     let task = tokio::spawn(async move {
-        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2).await
+        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2, None).await
     });
     let _call = tokio::time::timeout(Duration::from_secs(5), calls.recv())
         .await
@@ -664,7 +669,7 @@ async fn portal_version_get_does_not_wait_for_unrelated_get_all() {
     let client = connection(&address).await;
     let (_tx, mut cancel) = watch::channel(false);
     let task = tokio::spawn(async move {
-        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2).await
+        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2, None).await
     });
     let call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await;
     let result = tokio::time::timeout(Duration::from_secs(8), task).await;
