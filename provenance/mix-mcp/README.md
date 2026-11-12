@@ -51,49 +51,41 @@ MCP SDK or any package added by it. Normal Mix invocation keeps its existing
 handler. Additional stdio tests cover attribution and a failed Unix socket
 with TCP explicitly enabled. `adaptation_targets` records these source moves.
 
-Verification remains incomplete. At source commit
-`109f3efca2b3e0b2f0c4a2eed4321b0c0a3ec339`, CBC passes all 65 adapter tests
-(59 unit, six stdio), with none ignored. Worker formatting is unchanged. Both
-debug and release Mix pass the foreign gate; release Mix has no test-hook
-marker. The inverse `rmcp` tree contains only `mix-mcp`, and none of the seven
-added lock packages reaches a strict engine. The release adapter is 6,094,608
-bytes. Package licences are confirmed by Cargo metadata.
+Verification receipts are recorded in the PR. The suite retains the 59 source
+unit tests and six stdio tests, including the exact 29-tool inventory, native
+Bus, sibling execution, attribution and failed-Unix/no-TCP-downgrade checks.
+A separate stdio regression covers rejection of an empty session override.
+The SDK update leaves the existing stdio tests and inventory unchanged.
 
-The required `cargo deny` check rejects the authorised pin for
-RUSTSEC-2026-0457, RUSTSEC-2026-0461 and RUSTSEC-2026-0462; bans, licences and
-sources pass. These advisories concern OAuth and Streamable HTTP features
-outside this stdio adapter's feature set, but the crate-level advisory gate
-still fails. No advisory exception or pin change has been made. The final full
-gate has not run. The empty-session compatibility difference above remains an
-open decision because a presence-preserving reader would exceed the brief's
-permitted `paths` edits.
+The 3.1.2 checkpoint was blocked by three RustSec advisories. The approved
+3.9.0 candidate uses only stdio features and adds no advisory exception.
+Its dependency delta is const-oid 0.10.3 (Apache-2.0 OR MIT), process-wrap
+9.1.1 to 10.0.1 (Apache-2.0 OR MIT), rmcp 3.1.2 to 3.9.0 (Apache-2.0),
+and rmcp-macros 3.5.1 to 3.9.0 (Apache-2.0). Other shared versions stay pinned.
 
+The new const-oid edge cannot be removed through adapter features: rmcp
+unconditionally enables sha2 defaults, which enable sha2/oid and digest/oid.
+There is no newer stable rmcp pin at the registry audit. Round 4 accepts only
+const-oid beyond the adapter, conditional on unchanged existing engine
+versions, a pure-Rust dependency-free crate with no build script, release
+size/startup evidence and the foreign/ELF gates. Both digest and sha2 already
+come from the RustCrypto publisher organisation; registry trusted-publishing
+records identify RustCrypto/formats, RustCrypto/traits and RustCrypto/hashes
+respectively for const-oid, digest and sha2.
 
-## Round 3: dependency-isolation stop
+CBC-only tools: mcp_sdk_audit.mix prints licences, inverse and feature trees,
+crate build-script/dependency checks and cargo-deny results; mcp_cost.mix
+compares the merged main engine graphs, builds before/after release Mix,
+measures 101 alternating fresh-process startup samples for each snapshot,
+and checks the final ELF. File caches remain warm; every sample starts a
+new process with a cleared environment and its own staged installed defaults.
+The median growth limit is 1 ms. mcp_gate.mix runs focused tests, release
+receipts or the full repository gate; temporary test files use a private
+cleaned directory outside the worker build tree and /tmp.
 
-The approved candidate compiles on CBC. Resolve job
-`20261112-100430-22ef7d43-a1` passed (including the foreign gate, 16 listed
-foreign crates, no policy change) and supplied the applied lock/fmt patch.
-Compared with the 3.1.2 closure, resolution adds const-oid 0.10.3 and updates
-process-wrap 9.1.1 to 10.0.1, rmcp 3.1.2 to 3.9.0, and rmcp-macros 3.5.1
-to 3.9.0. Existing shared package versions remain locked.
-
-The exact-source audit at `d820ad5d7dad` then failed:
-`20261112-101225-50ff9ff4-a1`, BUILD_RC=1, STRICT_DEPENDENCY const-oid.
-Cargo metadata reports its licence as Apache-2.0 OR MIT. The workspace inverse
-tree contains both rmcp/mix-mcp and this second path:
-
-```text
-const-oid 0.10.3 <- digest 0.11.3 <- sha2 0.11.0 <- sha-crypt 0.6.0
-  <- lib-mix <- mix / mix-shell / mixd
-```
-
-Workspace feature unification makes this new package reachable beyond the
-adapter. This violates the approved isolation condition even though shared
-versions did not change and the foreign gate passed. Work stops here under
-the explicit round-3 instruction; the remaining licence/graph/advisory checks,
-66-test candidate suite, final full gate and new release-size receipt have not
-run. The previous 65-test/size receipts above cover 3.1.2 only.
-The new separate empty-session stdio regression is committed but unrun; the
-existing stdio tests and 29-name fixture remain unmodified in round 3.
-No ready PR, merge, install or running-adapter change was made.
+Security remains the frozen adapter's surface: arbitrary Mix/Bus execution
+with the caller account's permissions, bounded scripts/output and cancellation
+without rollback. Inherited log_tail/log_search paths are unconfined (including
+absolute and parent paths); path confinement and traversal/symlink coverage
+are listed for follow-up in the PR. No install or live configuration change
+is part of this port.
