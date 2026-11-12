@@ -732,6 +732,9 @@ async fn run(
     loop {
         let mirror_retry = ctx.mirrors.next_retry();
         tokio::select! {
+            // Polled only between commands: an in-flight dispatch runs to
+            // completion first, with no time bound (as for SIGTERM), so the
+            // Store is never released under a blocked dispatch.
             _ = &mut shutdown => break,
             changed = state.changed() => {
                 if changed.is_err() { break; }

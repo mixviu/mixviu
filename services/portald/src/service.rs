@@ -86,7 +86,7 @@ async fn call(client: &SupervisedClient, command: &str, body: Value) -> Result<V
     tracing::debug!(
         command,
         elapsed_us = started.elapsed().as_micros(),
-        ok = result.is_ok(),
+        transport_ok = result.is_ok(),
         "appearance request answered"
     );
     let reply = result.map_err(|error| fault(command, error.to_string()))?;

@@ -31,6 +31,11 @@ pub struct Authority {
     /// Completed palette work for this accepted record, bounded to dark/light.
     /// A caller abandoning its reply must not make the next read recompile it.
     /// Cleared with the publication board whenever the accepted record changes.
+    /// Two invariants keep it fresh: palette compilation is a pure function of
+    /// (`accepted.values`, `accepted.embedded_source`, mode), and every path
+    /// that replaces `accepted` goes through `stage_with`, which clears this
+    /// map. A palette input read from elsewhere (a file, ambient state) needs
+    /// its own invalidation here.
     pub(crate) palettes: std::collections::BTreeMap<String, Value>,
 }
 impl Authority {
