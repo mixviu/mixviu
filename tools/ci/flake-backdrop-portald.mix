@@ -1,0 +1,42 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Manual CBC regression soak. Invoke through cbc-build at a pushed commit.
+-- No retry: the first failing process ends the run.
+fn checked($argv)
+  $r = run_argv($argv, {timeout: 900, max_output: 16000000})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then raise("CHECK_FAILED", json_encode($r)) end
+  return $r.stdout
+end
+
+$built = checked(["cargo", "test", "--locked", "-p", "lib-viu", "--test", "backdrop", "-p", "portald", "--test", "portal", "--no-run", "--message-format=json"])
+$binaries = {}
+for $line in split($built, "\n")
+  if starts_with($line, "{") then
+    $event = json_parse($line)
+    if $event.reason == "compiler-artifact" and $event.executable != nil then
+      $binaries[$event.target.name] = $event.executable
+    end
+  end
+end
+$cases = [
+  {binary: "backdrop", test: "backdrop_colours_modes_outputs_and_refusals_use_mix"},
+  {binary: "portal", test: "native_recovers_when_broker_returns_after_the_initial_attempt_budget"},
+  {binary: "portal", test: "native_startup_live_change_and_settingsd_restart_without_broker_reconnect"}
+]
+for $case in $cases
+  $argv = [$binaries[$case.binary], "--exact", $case.test, "--nocapture"]
+  for $iteration = 1 to 30
+    print("SOAK " .. $case.test .. " " .. to_string($iteration))
+    checked($argv)
+  end
+  $jobs = []
+  for $copy = 1 to 8 push($jobs, $argv) end
+  print("LOAD " .. $case.test .. " 8 concurrent copies")
+  for $r in run_parallel($jobs, {max: 8, timeout: 180})
+    print($r.stdout)
+    print($r.stderr)
+    print("elapsed_ms=" .. to_string($r.duration_ms))
+    if not $r.ok then raise("LOAD_FAILED", json_encode($r)) end
+  end
+end
