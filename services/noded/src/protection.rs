@@ -221,10 +221,16 @@ mod tests {
             assert_eq!(index, indexed.expiry);
         };
         let started = now;
-        // Phase 1: fill past the limit 10 ms apart (874 s in all, so nothing
-        // expires yet), with some repeated ids and unprotected completions.
-        // About 75,000 distinct protected ids: the last 9,000 overflow.
-        for step in 0..limit + limit / 3 {
+        // Phase 1: fill 10 ms apart, with some repeated ids and unprotected
+        // completions, until the cache is full, then 2,000 steps more, which
+        // overflow. That is about 790 s, so nothing expires yet. Each step at
+        // the limit costs the oracle a full scan, so the overfull part stays
+        // short to keep the test quick.
+        let mut last_step = u64::MAX;
+        for step in 0.. {
+            if step == last_step {
+                break;
+            }
             now += std::time::Duration::from_millis(10);
             let id = if random(10) == 0 {
                 format!("noded-{}", random(step + 1))
@@ -246,14 +252,18 @@ mod tests {
                     &format!("noded-{}", random(step + 1)),
                 );
             }
+            if last_step == u64::MAX && indexed.entries.len() == ResponseProtection::LIMIT {
+                last_step = step + 2_001;
+            }
         }
+        assert!(now - started < ResponseProtection::HORIZON);
         assert_eq!(indexed.entries.len(), ResponseProtection::LIMIT);
         assert!(indexed.overflow_until.is_some());
         same(&indexed, &scanning);
-        // Phase 2: stay at the limit while the oldest entries expire one or
-        // two at a time, slower than new completions arrive.
+        // Phase 2: stay at the limit while the oldest entries expire, at most
+        // one per step, slower than new completions arrive.
         now = started + ResponseProtection::HORIZON + std::time::Duration::from_millis(200);
-        for step in 0..1_500 {
+        for step in 0..600 {
             now += std::time::Duration::from_millis(random(8));
             let id = if random(4) == 0 {
                 format!("late-{}", random(step + 1))
@@ -269,7 +279,7 @@ mod tests {
                 &format!("noded-{}", random(limit)),
             );
             check(&indexed, &scanning, now, &format!("late-{step}"));
-            if step % 250 == 0 {
+            if step % 100 == 0 {
                 same(&indexed, &scanning);
             }
         }
