@@ -19,15 +19,22 @@
 --
 -- --budget N exits 1 when any sampled process exceeds N wake-ups a second.
 --
---   mix idle_profile.mix --fixture [--no-strace] [--out FILE]
+--   mix idle_profile.mix --fixture [--no-strace | --strace-only] [--out FILE]
+--                        [--keep DIR] [--test-bin PATH --noded PATH]
 --
 -- Run from the repository root on a build worker. Builds noded in release
 -- and runs the `profile` test of services/noded/tests/efficiency.rs: five
 -- brokers in a signed fixture mesh, the first measured through idle,
--- registration churn, a local burst, a mesh burst, a flapping peer and idle
--- again. A second run under strace supplies the system-call columns (its CPU
--- figures are discarded). Prints one table; --out saves the rows as JSON so
--- two runs can be compared. NODED_PROFILE_* settings pass through.
+-- registration churn, local and mesh bursts, a flapping peer, requests
+-- nobody answers, and idle again. A second, smaller run under strace
+-- supplies the system-call column (a rate while idle, a count per message
+-- under load; its CPU figures are discarded). Prints one table; --out saves
+-- the rows as JSON so two runs can be compared. NODED_PROFILE_* settings
+-- pass through.
+--
+-- A worker without strace: pass --no-strace --keep DIR there, copy DIR to a
+-- host that has it, and run `--fixture --strace-only --test-bin
+-- DIR/efficiency --noded DIR/noded` on that host. Nothing is built.
 
 fn fail($message)
   eprint("idle_profile: " .. $message)
@@ -139,24 +146,40 @@ fn strace_window($pid, $seconds)
   }
 end
 
--- One `profile` run; returns its PROFILE rows in phase order.
-fn fixture_rows($strace)
+-- One `profile` run; returns {rows, test_bin} or nil. A traced broker runs
+-- about a hundred times slower, so that run uses a tenth of each workload
+-- unless the caller set one.
+fn fixture_run($g, $strace)
   $env = {}
-  if $strace then $env.NODED_PROFILE_STRACE = "1" end
-  $r = run_argv(["cargo", "test", "--locked", "--release", "-p", "noded", "--test", "efficiency",
-    "--", "--ignored", "--nocapture", "--exact", "profile"],
-    {timeout: 3600, env: $env, stderr: "stdout", max_output: 64000000})
+  if $strace then
+    $env.NODED_PROFILE_STRACE = "1"
+    for $pair in [["CALLS", "20000"], ["REGISTRATIONS", "200"], ["UNANSWERED", "5000"], ["IDLE_SECS", "10"]]
+      $name = "NODED_PROFILE_" .. $pair[0]
+      if env($name) == "" then $env[$name] = $pair[1] end
+    end
+  end
+  $test_args = ["--ignored", "--nocapture", "--exact", "profile"]
+  if $g.opts["test-bin"] != nil then
+    $env.NODED_PROFILE_BIN = $g.opts.noded
+    $argv = concat([$g.opts["test-bin"]], $test_args)
+  else
+    $argv = concat(["cargo", "test", "--locked", "--release", "-p", "noded", "--test", "efficiency", "--"], $test_args)
+  end
+  $r = run_argv($argv, {timeout: 3600, env: $env, stderr: "stdout", max_output: 64000000})
   $rows = []
+  $test_bin = nil
   for $line in lines($r.stdout)
     -- The test harness may print its own text before the marker on a line.
     $at = re_find($line, "PROFILE \\{")
     if len($at) > 0 then push($rows, json_parse(substr($line, $at[0].start + 8))) end
+    $ran = re_find($line, "Running tests/efficiency\\.rs \\(([^)]+)\\)")
+    if len($ran) > 0 then $test_bin = $ran[0].groups[0] end
   end
   if not $r.ok or len($rows) == 0 then
     print($r.stdout)
     return nil
   end
-  return $rows
+  return {rows: $rows, test_bin: $test_bin}
 end
 
 fn cell($value, $pattern)
@@ -164,34 +187,65 @@ fn cell($value, $pattern)
   return fmt($pattern, $value)
 end
 
+-- System calls: a rate while idle, a count per message under load.
+fn syscall_cell($row)
+  if $row.syscalls == nil then return "-" end
+  if $row.messages > 0 then return fmt("%.1f/msg", $row.syscalls / $row.messages) end
+  return fmt("%.1f/s", $row.syscalls_per_s)
+end
+
 fn fixture($g)
-  $rows = fixture_rows(false)
-  if $rows == nil then fail("the profile run failed") end
-  $traced = if $g.opts["no-strace"] then nil else fixture_rows(true) end
-  if $traced == nil and not $g.opts["no-strace"] then
-    eprint("idle_profile: the strace run failed; system-call columns are empty")
+  $prebuilt = $g.opts["test-bin"] != nil
+  if $prebuilt and $g.opts.noded == nil then fail("--test-bin needs --noded PATH") end
+  $rows = nil
+  if not $g.opts["strace-only"] then
+    $plain = fixture_run($g, false)
+    if $plain == nil then fail("the profile run failed") end
+    $rows = $plain.rows
+    if $g.opts.keep != nil then
+      if $plain.test_bin == nil then fail("--keep: cargo did not name the test binary") end
+      mkdir($g.opts.keep)
+      copy($plain.test_bin, $g.opts.keep .. "/efficiency")
+      copy("target/release/noded", $g.opts.keep .. "/noded")
+      print("kept: " .. $g.opts.keep .. "/efficiency and " .. $g.opts.keep .. "/noded")
+    end
   end
-  if $traced != nil then
-    for $i = 0 to len($rows) - 1
-      for $t in $traced
-        if $t.phase == $rows[$i].phase then
-          $rows[$i].syscalls_per_s = $t.syscalls_per_s
-          $rows[$i].top_syscalls = $t.top_syscalls
+  if not $g.opts["no-strace"] then
+    $traced = fixture_run($g, true)
+    if $traced == nil then
+      eprint("idle_profile: the strace run failed; system-call columns are empty")
+    elif $rows == nil then
+      -- Only the system-call columns of a traced run mean anything.
+      $rows = map($traced.rows, fn($t) = {phase: $t.phase, messages: $t.messages, syscalls: $t.syscalls,
+        syscalls_per_s: $t.syscalls_per_s, top_syscalls: $t.top_syscalls})
+    else
+      for $i = 0 to len($rows) - 1
+        for $t in $traced.rows
+          if $t.phase == $rows[$i].phase then
+            $rows[$i].syscalls = $t.syscalls
+            $rows[$i].syscalls_per_s = $t.syscalls_per_s
+            $rows[$i].syscall_messages = $t.messages
+            $rows[$i].top_syscalls = $t.top_syscalls
+          end
         end
       end
     end
   end
-  print(fmt("%-12s %8s %7s %9s %10s %11s %9s %7s %9s %9s", "phase", "seconds", "cpu %", "cpu ms",
-    "wake-ups/s", "syscalls/s", "rss kB", "threads", "messages", "us/msg"))
+  if $rows == nil then fail("nothing was measured") end
+  $layout = "%-13s %7s %7s %8s %10s %11s %8s %7s %8s %7s"
+  print(fmt($layout, "phase", "seconds", "cpu %", "cpu ms", "wake-ups/s", "syscalls", "rss kB", "threads",
+    "messages", "us/msg"))
   for $row in $rows
-    print(fmt("%-12s %8s %7s %9s %10s %11s %9s %7s %9s %9s", $row.phase, cell($row.seconds, "%.1f"),
-      cell($row.cpu_percent, "%.2f"), cell($row.cpu_ms, "%.0f"), cell($row.wakeups_per_s, "%.1f"),
-      cell($row.syscalls_per_s, "%.1f"), cell($row.rss_kb, "%d"), cell($row.threads, "%d"),
-      cell($row.messages, "%d"), cell($row.cpu_us_per_message, "%.1f")))
+    $calls = $row
+    if $row.syscall_messages != nil then $calls = merge($row, {messages: $row.syscall_messages}) end
+    print(fmt($layout, $row.phase, cell($row.seconds, "%.1f"), cell($row.cpu_percent, "%.2f"),
+      cell($row.cpu_ms, "%.0f"), cell($row.wakeups_per_s, "%.1f"), syscall_cell($calls),
+      cell($row.rss_kb, "%d"), cell($row.threads, "%d"), cell($row.messages, "%d"),
+      cell($row.cpu_us_per_message, "%.1f")))
   end
   for $row in $rows
     if $row.top_syscalls != nil then
-      print(fmt("%-12s top syscalls: %s", $row.phase, join($row.top_syscalls, ", ")))
+      print(fmt("%-13s top syscalls: %s", $row.phase, join($row.top_syscalls, ", ")))
     end
   end
   for $row in $rows print("ROW " .. json_encode($row)) end
@@ -199,7 +253,8 @@ fn fixture($g)
 end
 
 $g = getopt(args(), {pid: {arg: true}, seconds: {arg: true}, strace: {}, json: {}, budget: {arg: true},
-  fixture: {}, "no-strace": {}, out: {arg: true}})
+  fixture: {}, "no-strace": {}, "strace-only": {}, out: {arg: true}, "test-bin": {arg: true},
+  noded: {arg: true}, keep: {arg: true}})
 if len($g.errors) > 0 then fail(join($g.errors, "; ")) end
 if $g.opts.fixture then
   fixture($g)
