@@ -153,7 +153,8 @@ if $retry_report != "" then
     elif $cp.outside != nil then
       $retry.why = "strict: " .. $cp.outside .. " is outside every package"
     else
-      $retry = {on: true, why: "one retry, not for " .. join(sort(keys($cp.pkgs)), ", "), pkgs: $cp.pkgs}
+      $touched = sort(keys($cp.pkgs))
+      $retry = {on: true, why: (if len($touched) == 0 then "one retry (the change touches no package)" else "one retry, not for " .. join($touched, ", ") end), pkgs: $cp.pkgs}
     end
   end
 end
