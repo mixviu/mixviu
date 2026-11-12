@@ -44,8 +44,8 @@ marks the window `provisional`. A refused action returns rc 10 with
 replaces every subprocess environment value and credential-named key with
 `<redacted>`.
 
-A failed stage notifies once (config `notify`: `notify.send` to the desk's
-`notifyd` by default, a program given the JSON payload on stdin, or none):
+A failed stage notifies once (config `notify`: `notify.send` to notifyd,
+Bus name `notify`, by default, a program given the JSON payload on stdin, or none):
 the same stage failing with the same code again is not re-sent, and a dry
 run notifies nobody. The outcome is recorded in `status.json`.
 

@@ -65,19 +65,45 @@ fn check($c)
   return $c
 end
 
--- The configuration as a reply may show it: every subprocess environment
--- value and every key that names a credential is replaced.
-$SECRET_KEY = "(token|secret|password|passwd|credential|api_?key|private)"
-fn redacted($v, $key = "")
+-- The configuration as a reply may show it: an allowlist, not a denylist.
+-- Only keys the public defaults declare are shown; any other key (a
+-- provider setting an override adds) is "<redacted>", and so is every
+-- subprocess environment value, every argv element after the program, and
+-- every key whose name (separators ignored) suggests a credential.
+$SECRET_KEY = "(token|secret|passw|credential|apikey|accesskey|authoriz|auth$|privatekey|cookie|bearer)"
+$HIDDEN = "<redacted>"
+fn secret_name($k)
+  return re_match(lower(re_replace($k, "[-_. ]", "")), $SECRET_KEY)
+end
+
+fn redacted($v, $shape, $key = "")
+  if $key == "env" and type($v) == "map" then return map_values($v) end
+  if $key == "argv" and type($v) == "list" then
+    $out = []
+    for $i = 0 to len($v) - 1 push($out, if $i == 0 then $v[0] else $HIDDEN end) end
+    return $out
+  end
   if type($v) == "map" then
     $out = {}
     for $k in keys($v)
-      $out[$k] = if $key == "env" or re_match(lower($k), $SECRET_KEY) then "<redacted>" else redacted($v[$k], $k) end
+      $known = type($shape) == "map" and has_key($shape, $k)
+      $out[$k] = if not $known or secret_name($k) then $HIDDEN else redacted($v[$k], $shape[$k], $k) end
     end
     return $out
   end
-  if type($v) == "list" then return map($v, fn($x) = redacted($x, $key)) end
+  if type($v) == "list" then return map($v, fn($x) = redacted($x, if type($shape) == "list" and len($shape) > 0 then $shape[0] else nil end, $key)) end
   return $v
+end
+
+fn map_values($m)
+  $out = {}
+  for $k in keys($m) $out[$k] = $HIDDEN end
+  return $out
+end
+
+-- What config.show returns.
+fn safe_view($loaded)
+  return redacted($loaded.config, $loaded.defaults)
 end
 
 -- {config, media, sources}: sources names the files that were merged.
@@ -86,6 +112,7 @@ fn load()
   $defaults_path = $media .. "/config.default.conf.mix"
   if not is_file($defaults_path) then raise("CONFIG", "missing " .. $defaults_path) end
   $c = load_data($defaults_path)
+  $defaults = $c
   $sources = [$defaults_path]
   $hub_env = env("MIX_DAILY_HUB", "")
   $named = env("MIX_DAILY_CONFIG", "")
@@ -101,5 +128,5 @@ fn load()
   $c.hub = $u.expand_home($c.hub)
   $c.repo.path = $u.expand_home($c.repo.path)
   if $c.benchmarks.dir != nil then $c.benchmarks.dir = $u.expand_home($c.benchmarks.dir) end
-  return {config: check($c), media: $media, sources: $sources}
+  return {config: check($c), defaults: $defaults, media: $media, sources: $sources}
 end

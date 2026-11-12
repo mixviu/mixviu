@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- Tell Mark a stage failed, once per failure (brief section 20). Config notify:
---   {via: "bus", target: "notifyd"}   notify.send on the Bus (the desk's notifications)
+--   {via: "bus", target: "notify"}    notify.send to notifyd (its Bus name is "notify")
 --   {via: "argv", argv: [...]}        a program given the JSON payload on stdin
 --   {via: "none"}                     record only
 -- A notification failure is recorded beside the stage failure; it never

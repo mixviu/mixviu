@@ -23,7 +23,7 @@ $ACTIONS = [
     description: "Continue a day's run from its first stage that is not ok",
     params: {date: $P_DATE, dry_run: $P_DRY, sha: $P_SHA}},
   {id: "manifest.build", label: "Build the manifest", read_only: false, enabled: true,
-    description: "Stage 1: cut tag and manifest.json for one date; reruns are byte-identical",
+    description: "Stage 1: cut tag and manifest.json for one date; a rerun with unchanged inputs is byte-identical",
     params: {date: $P_DATE, dry_run: $P_DRY, sha: $P_SHA}},
   {id: "status", label: "Show a day's status", read_only: true, enabled: true,
     description: "status.json for one date", params: {date: $P_DATE}},
@@ -153,7 +153,7 @@ end
 fn dispatch($id, $params)
   if $id == "config.show" then
     $e = load_env()
-    return {rc: 0, body: {config: $cfg.redacted($e.config), media: $e.media, sources: $e.sources}}
+    return {rc: 0, body: {config: $cfg.safe_view($e), media: $e.media, sources: $e.sources}}
   end
   $e = load_env()
   $date = date_of($e.config, $params)

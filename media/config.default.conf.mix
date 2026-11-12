@@ -52,7 +52,8 @@
   },
   agents_txt: {sign: true, key: "secrets/agents-txt.key"},
   tasks: {authority: "github", lease_hours: 48, renew_hours: 24, max_active_claims: 1},
-  -- Stage failures: notify.send to the desk's notifyd ("bus"), a program
-  -- given the JSON payload on stdin ("argv", with argv: [...]), or "none".
-  notify: {via: "bus", target: "notifyd"}
+  -- Stage failures: notify.send to the desk's notifyd, Bus name "notify"
+  -- ("bus"), a program given the JSON payload on stdin ("argv", with
+  -- argv: [...]), or "none".
+  notify: {via: "bus", target: "notify", argv: nil, env: nil}
 }

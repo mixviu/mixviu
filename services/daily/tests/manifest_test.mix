@@ -122,13 +122,28 @@ try
     repo: {path: $repo, remote: "example/mixviu", ref: "main", fetch: false},
     git: {env: gitenv("2026-12-01T05:00:00Z")},
     gh: {argv: [$mix, $here .. "/fixtures/fake_gh.mix"], env: {DAILY_FAKE_GH: $gh, GH_TOKEN: "SENTINEL-GH-TOKEN"}},
-    notify: {via: "argv", argv: [$mix, $here .. "/fixtures/fake_notify.mix"], env: {DAILY_FAKE_NOTIFY: $tmp .. "/notify.jsonl"}}
+    notify: {via: "argv", argv: [$mix, $here .. "/fixtures/fake_notify.mix"], env: {DAILY_FAKE_NOTIFY: $tmp .. "/notify.jsonl"}},
+    llm: {provider: "claude-code", "api-key": "SENTINEL-A", authorization: "SENTINEL-B", access_key: "SENTINEL-C",
+      api_key: "SENTINEL-D", vendor: {nested: "SENTINEL-E"}}
   }, true))
 
-  -- config.show never shows subprocess environments or credentials.
+  -- config.show is an allowlisted view: no environments, argv beyond the
+  -- program, unknown keys or credential-named keys.
   $shown = cli("config.show", {})
-  check("config.show redacts env values", $shown.ok and not contains(json_encode($shown.body), "SENTINEL-GH-TOKEN")
-    and $shown.body.config.gh.env.GH_TOKEN == "<redacted>" and $shown.body.config.repo.path == $repo)
+  $shown_text = json_encode($shown.body)
+  check("config.show hides env values, argv and unknown or credential keys", $shown.ok
+    and not re_match($shown_text, "SENTINEL-") and $shown.body.config.gh.env.GH_TOKEN == "<redacted>"
+    and $shown.body.config.gh.argv[0] == $mix and $shown.body.config.gh.argv[1] == "<redacted>"
+    and $shown.body.config.llm["api-key"] == "<redacted>" and $shown.body.config.llm.vendor == "<redacted>")
+  check("config.show still shows the declared settings", $shown.body.config.repo.path == $repo
+    and $shown.body.config.llm.provider == "claude-code" and $shown.body.config.tasks.authority == "github"
+    and $shown.body.config.capture.session == "desk-capture" and $shown.body.config.notify.via == "argv")
+
+  -- The default notification goes to the name notifyd's unit serves.
+  $unit = read_file($here .. "/../../notifyd/units/notifyd@.service")
+  $served = re_find($unit, "--name ([A-Za-z0-9_.-]+)")
+  check("default notify target is notifyd's Bus name", len($served) == 1
+    and load_data($media .. "/config.default.conf.mix").notify.target == $served[0].groups[0])
 
   -- The action list is data with typed params.
   $acts = cli("actions", {})
