@@ -239,7 +239,20 @@ fn stage_env()
       push($bad, "unregistered " + $n)
     end
   end
+  -- A registered standard name (not MIX_*) is used only where code reads it:
+  -- its spelling or its paths::env constant in Rust or Mix source outside
+  -- env_names.rs, which merely declares it, and outside the registry itself.
+  $consts = {}
+  for $m in re_find(read_file("libraries/paths/src/env_names.rs"), "pub const ([A-Z0-9_]+): &str = \"([A-Z0-9_]+)\";")
+    $consts[$m.groups[1]] = $m.groups[0]
+  end
   for $n in sort(keys($listed))
+    if not starts_with($n, "MIX_") then
+      $words = ["-e", $n]
+      if has_key($consts, $n) and $consts[$n] != $n then $words = concat($words, ["-e", $consts[$n]]) end
+      $sites = git_grep(concat(["-l", "-F", "-w"], $words, ["--", "*.rs", "*.mix", ":!vendor", ":!libraries/paths/src/env_names.rs", ":!etc/env.conf.mix"]))
+      if trim($sites) != "" then $used[$n] = true end
+    end
     if not has_key($used, $n) then
       push($bad, "registered but unused " + $n)
     end
