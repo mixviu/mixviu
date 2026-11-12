@@ -1,22 +1,47 @@
 #!/usr/bin/env mix
--- version: 0.1.0
--- tools/ci/test_record.mix: a cargo test runner that records instead of
--- running. tools/ci/test_pool.mix sets it as CARGO_TARGET_<TRIPLE>_RUNNER,
--- so `cargo test` calls `mix test_record.mix OUT TEST_BINARY ARGS...` once
--- per test binary, in cargo's order, with cargo's exact working directory
--- and environment. Each call appends one JSON line to OUT: the argv, the
--- working directory and the whole environment (read from
--- /proc/self/environ: Mix has no environ() yet; see the hub's TODO-mix).
--- The pool then replays the lines in parallel.
+-- version: 0.2.0
+-- tools/ci/test_record.mix: the test runner tools/ci/test_pool.mix sets as
+-- CARGO_TARGET_<TRIPLE>_RUNNER. Cargo calls
+--   mix test_record.mix OUT TARGET_DIR PROGRAM ARGS...
+-- once per program it would run, with its exact working directory and
+-- environment.
+--
+-- - A test binary cargo built (any file under TARGET_DIR: deps/ for unit and
+--   integration tests, examples/ for test-mode examples) is recorded, not run: one JSON line appended to OUT with the argv, the
+--   working directory and the whole environment. The pool replays them.
+-- - Anything else is run for real, with its output and exit status passed
+--   straight through. Since doctest cross-compilation was stabilised, cargo
+--   sends rustdoc's doc-test executables through the runner too. rustdoc
+--   builds them in its own temporary directory, outside TARGET_DIR, and
+--   recording them would skip the doc-tests silently.
+--
+-- The environment is read from /proc/self/environ (Linux; Mix has no
+-- environ() yet, see the hub's TODO-mix) and must be UTF-8.
 
 $a = args()
-if len($a) < 2 then
-  eprint("usage: test_record.mix OUT TEST_BINARY [ARGS...]")
+if len($a) < 3 then
+  eprint("usage: test_record.mix OUT TARGET_DIR PROGRAM [ARGS...]")
   exit(64)
 end
+$out = $a[0]
+$target_dir = $a[1]
+$argv = slice($a, 2, len($a))
+$program = realpath($argv[0]) ?? $argv[0]
+$is_test_binary = starts_with($program, $target_dir .. "/")
+
+if not $is_test_binary then
+  -- A doc-test (or any other program): run it as cargo would have.
+  $r = run_argv($argv, {timeout: 3600, stdout: "inherit", stderr: "inherit"})
+  if $r.timed_out then
+    eprint("test_record: " .. $argv[0] .. " timed out after 3600 s")
+    exit(124)
+  end
+  exit($r.exit_code ?? 1)
+end
+
 $env = {}
 for $kv in split(read_file("/proc/self/environ"), chr(0))
   $p = split_once($kv, "=")
   if $p != nil then $env[$p[0]] = $p[1] end
 end
-append_file($a[0], json_encode({argv: slice($a, 1, len($a)), cwd: realpath("."), env: $env}) .. "\n")
+append_file($out, json_encode({argv: $argv, cwd: realpath("."), env: $env}) .. "\n")
