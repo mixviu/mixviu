@@ -51,7 +51,7 @@ end
 fn ch_key($s,$a)
   if $a.ctrl and $a.key=="R" then return ch_scan($s) end
   if $a.alt and $a.key=="Home" then return ch_go($s,$s.home) end
-  if $a.alt and contains(["ArrowLeft","ArrowRight"],$a.key) then
+  if $a.ctrl and $a.shift and not $a.alt and contains(["ArrowLeft","ArrowRight"],$a.key) then
     $from=if $a.key=="ArrowLeft" then "back" else "forward" end;$to=if $from=="back" then "forward" else "back" end
     if len($s[$from] ?? [])>0 then
       $history=$s[$from];$target=$history[len($history)-1];$s[$from]=slice($history,0,len($history)-1);$s[$to]=concat($s[$to] ?? [],[$s.folder]);return ch_go($s,$target,false)
@@ -61,7 +61,7 @@ fn ch_key($s,$a)
   if $a.ctrl and $a.key=="L" then $s.focus={id:"location",selection:[0,len($s.location)]};return $s end
   if $a.ctrl and $a.key=="H" then $s.hidden=not $s.hidden;return ch_scan($s) end
   if $a.key=="Escape" then return ch_effect($s,"cancel",{request:$s.id}) end
-  if $a.key=="Backspace" or ($a.alt and $a.key=="ArrowUp") then return ch_go($s,viu_files("parent",{path:$s.folder})) end
+  if $a.key=="Backspace" or ($a.ctrl and $a.shift and not $a.alt and $a.key=="ArrowUp") then return ch_go($s,viu_files("parent",{path:$s.folder})) end
   if $a.key=="Enter" then
     $row=filter($s.rows,fn($r)=contains($s.selected,$r.key))[0]
     if $row!=nil and $row.dir then return ch_go($s,$row.key) end
