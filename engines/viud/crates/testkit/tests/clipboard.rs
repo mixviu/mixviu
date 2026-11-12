@@ -7,6 +7,7 @@
 
 use testkit::Harness;
 use testkit::clipboard::ClipboardRead;
+use std::time::{Duration, Instant};
 
 const TEXT: &str = "text/plain;charset=utf-8";
 const PRIMARY: usize = 0;
@@ -74,16 +75,28 @@ fn a_copy_survives_its_source_going_away() {
     let (copier, ..) = h.mapped_toplevel(64, 48);
     h.focus_keyboard(&copier);
     let source = h.client.set_selection(PRIMARY, &[TEXT], b"bravo");
-    // Let the capture read the copy while its owner is alive.
-    for _ in 0..20 {
+    // Capture is read by a worker: pumping for a fixed 40 ms does not prove
+    // that it ran. Keep the source alive until its bytes have been admitted.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.wire.state.clipboard.capture.is_empty() {
+        assert!(Instant::now() < deadline, "the copy was not captured");
         h.pump();
-        std::thread::sleep(std::time::Duration::from_millis(2));
+        std::thread::sleep(Duration::from_millis(2));
     }
     source.destroy();
     h.roundtrip();
     let served = h.client.state.clipboard.served.len();
     h.focus_keyboard_client(b, &paster);
     h.roundtrip_client(b);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !h.extra_clients[b]
+        .selection_mimes(PRIMARY)
+        .is_some_and(|mimes| mimes.iter().any(|mime| mime == TEXT))
+    {
+        assert!(Instant::now() < deadline, "the persisted copy was not offered");
+        h.pump();
+        std::thread::sleep(Duration::from_millis(2));
+    }
     let mut read = h.extra_clients[b].receive(PRIMARY, TEXT);
     assert_eq!(finish(&mut h, &mut read), b"bravo");
     assert_eq!(
