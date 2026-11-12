@@ -344,6 +344,36 @@ impl PendingResponseTable {
             })
             .collect()
     }
+
+    /// Remove every pending entry whose responder is `responder_tx`, which
+    /// is closing. No reply can complete such an entry afterwards:
+    /// [`Self::take_response`] accepts a reply only from the exact responder
+    /// connection, and a service re-registered under the same name is a
+    /// different connection. Without this, a caller that stays connected
+    /// kept one entry per unanswered request for its whole life. The caller
+    /// is told nothing, as before: its own deadline still decides.
+    async fn reclaim_for_responder(&self, responder_tx: &mpsc::Sender<String>) -> usize {
+        let mut map = self.map.write().await;
+        let ids: Vec<String> = map
+            .iter()
+            .filter(|(_, p)| p.responder_tx.same_channel(responder_tx))
+            .map(|(bid, _)| bid.clone())
+            .collect();
+        for bid in &ids {
+            if let Some(p) = map.remove(bid) {
+                self.protection
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .retain(bid, p.traffic_class);
+            }
+        }
+        ids.len()
+    }
+
+    #[cfg(test)]
+    async fn len(&self) -> usize {
+        self.map.read().await.len()
+    }
 }
 
 #[derive(Clone)]
@@ -3127,6 +3157,16 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             "in-flight request abandoned on session drop (§14 B3 churn instrumentation)"
         );
     }
+    // After the caller-side drain above, so a request this connection sent
+    // to itself is still reported there as before.
+    let reclaimed = state.pending_responses.reclaim_for_responder(&tx).await;
+    if reclaimed > 0 {
+        tracing::debug!(
+            reclaimed,
+            peer = %peer_label,
+            "reclaimed pending requests addressed to a closed responder"
+        );
+    }
 
     // SPEC 02 §4.2: observation is connection-owned, never retained across a
     // reconnect. This also purges every queued event before the socket writer
@@ -5307,6 +5347,39 @@ mod tests {
 
         // Table is now empty; a re-drain of a drained channel is a no-op.
         assert!(table.drain_for_channel(&tx_a).await.is_empty());
+    }
+
+    /// A closing responder takes its unanswerable entries with it; a live
+    /// responder's entries, and a reply from the right connection, are
+    /// untouched.
+    #[tokio::test]
+    async fn reclaim_for_responder_removes_only_that_responders_entries() {
+        use super::PendingResponseTable;
+        use bus::wire::BusMessage;
+        use tokio::sync::mpsc;
+
+        let table = PendingResponseTable::new();
+        let (caller, _caller_rx) = mpsc::channel::<String>(4);
+        let (gone, _gone_rx) = mpsc::channel::<String>(4);
+        let (live, _live_rx) = mpsc::channel::<String>(4);
+        let mut ids = Vec::new();
+        for (index, responder) in [&gone, &gone, &live].into_iter().enumerate() {
+            let mut m = BusMessage::new();
+            m.set("id", &format!("c{index}"));
+            ids.push(
+                table
+                    .register(&mut m, &caller, Some("caller"), responder)
+                    .await
+                    .unwrap(),
+            );
+        }
+        assert_eq!(table.reclaim_for_responder(&gone).await, 2);
+        assert_eq!(table.len().await, 1);
+        assert!(table.take_response(&ids[0], &gone).await.is_none());
+        assert_eq!(table.reclaim_for_responder(&gone).await, 0);
+        let answered = table.take_response(&ids[2], &live).await.unwrap();
+        assert_eq!(answered.caller_id, "c2");
+        assert_eq!(table.len().await, 0);
     }
 
     /// SPEC 13 §9a B1 self-check (2-c-1a): a `0.0.0.0`/`::`/unparseable bind is
