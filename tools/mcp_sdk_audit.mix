@@ -11,7 +11,7 @@ $current_lock = read_file("Cargo.lock")
 $old = nil
 $graphs = {}
 try
-  write_file($manifest, replace($current_manifest, "=3.9.0", "=3.1.2"))
+  write_file($manifest, capture(["git", "show", "3f924fae:services/mix-mcp/Cargo.toml"] ))
   write_file("Cargo.lock", capture(["git", "show", "3f924fae:Cargo.lock"]))
   $old = json_parse(capture(["cargo", "metadata", "--locked", "--format-version", "1"]))
   for $engine in ["mix", "mix-shell", "mixd"]
