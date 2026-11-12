@@ -99,8 +99,16 @@ mod tests {
     #[test]
     fn find_bar_submit_keeps_focus_and_never_reaches_pty() {
         for opt_in in [false, true] {
-            for (shift, released, first_frame) in [(false, false, false), (true, false, false), (true, true, false), (false, false, true), (true, false, true)] {
-                if first_frame && !opt_in { continue; }
+            for (shift, released, first_frame) in [
+                (false, false, false),
+                (true, false, false),
+                (true, true, false),
+                (false, false, true),
+                (true, false, true),
+            ] {
+                if first_frame && !opt_in {
+                    continue;
+                }
                 let sessions = Sessions::fixture();
                 let receiver = sessions
                     .get("vt-1")
@@ -161,8 +169,12 @@ mod tests {
                 for _ in 0..2 {
                     frame(false, 1, vec![], egui::Modifiers::NONE);
                 }
-                let previous_field = if first_frame { None } else {
-                    for _ in 0..2 { frame(true, 1, vec![], egui::Modifiers::NONE); }
+                let previous_field = if first_frame {
+                    None
+                } else {
+                    for _ in 0..2 {
+                        frame(true, 1, vec![], egui::Modifiers::NONE);
+                    }
                     ctx.memory(|m| m.focused())
                 };
                 let modifiers = egui::Modifiers {
@@ -174,14 +186,21 @@ mod tests {
                     input.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
                 }
                 let events = frame(true, 1, input, modifiers);
-                let field=ctx.memory(|m|m.focused());
-                if let Some(previous)=previous_field { if opt_in { assert_eq!(field,Some(previous)); } }
+                let field = ctx.memory(|m| m.focused());
+                if let Some(previous) = previous_field {
+                    if opt_in {
+                        assert_eq!(field, Some(previous));
+                    }
+                }
                 let actions: Vec<_> = events.iter().filter(|e| e.id == "find").collect();
                 assert_eq!(actions.len(), 1, "{events:?}");
                 assert_eq!(actions[0].action, if opt_in { "submit" } else { "next" });
                 if opt_in {
                     assert_eq!(actions[0].value, json!({"shift":shift}));
-                    assert!(field.is_some(),"first-frame submission must retain the find field focus");
+                    assert!(
+                        field.is_some(),
+                        "first-frame submission must retain the find field focus"
+                    );
                     let control = Widget::new("find", "search-bar", "Find", bar.clone());
                     assert!(control.actions().contains(&"submit"));
                     assert!(control.validate_action("submit", &actions[0].value).is_ok());

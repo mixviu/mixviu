@@ -590,10 +590,10 @@ pub fn draw(
                 }
                 let mut handled = false;
                 if value["submit_modifiers"] == true && (field.has_focus() || field.lost_focus()) {
-                        // TextEdit submits the first Enter it sees while it
-                        // owns focus. Consume that press only, never the rest
-                        // of this frame's Enter presses or releases.
-                        if let Some(event @ egui::Event::Key { modifiers, .. }) = submit_event {
+                    // TextEdit submits the first Enter it sees while it
+                    // owns focus. Consume that press only, never the rest
+                    // of this frame's Enter presses or releases.
+                    if let Some(event @ egui::Event::Key { modifiers, .. }) = submit_event {
                         let shift = modifiers.shift;
                         ui.input_mut(|input| {
                             if let Some(index) = input.events.iter().position(|e| e == &event) {
@@ -605,8 +605,11 @@ pub fn draw(
                         handled = true;
                     }
                 }
-                if !handled && value["submit_modifiers"] != true && field.lost_focus()
-                    && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if !handled
+                    && value["submit_modifiers"] != true
+                    && field.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                {
                     emit(events, "next", Value::Null);
                 }
                 for (action, label) in [("prev", "Previous"), ("next", "Next")] {

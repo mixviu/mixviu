@@ -364,7 +364,7 @@ pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
     if modifiers.alt {
         // Arrows were handled above; this is only the legacy Home/End path.
         if matches!(key, Key::Home | Key::End) {
-            let code=cursor_code(key).expect("Home/End cursor code");
+            let code = cursor_code(key).expect("Home/End cursor code");
             return vec![TerminalKey::Modified {
                 code,
                 modifier: if modifiers.shift { 4 } else { 3 },
