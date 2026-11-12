@@ -11,9 +11,16 @@ if len($stages) != 1 or not contains(["resolve", "focused", "all", "receipts"], 
 end
 $stage = $stages[0]
 fn checked($argv, $env = {})
-  mkdir("target/mcp-tmp")
-  $env.TMPDIR = realpath("target/mcp-tmp")
-  $r = run_argv($argv, {env: $env, timeout: 14400, stdout: "inherit", stderr: "inherit"})
+  -- A /build ancestor deliberately marks scripts for version lint. Keep test
+  -- fixtures outside it, and outside the worker's /tmp, without waiving lint.
+  $scratch = trim(run_argv_must(["mktemp", "-d", "/var/tmp/mcp-tests-XXXXXXXX"]))
+  $env.TMPDIR = $scratch
+  $r = nil
+  try
+    $r = run_argv($argv, {env: $env, timeout: 14400, stdout: "inherit", stderr: "inherit"})
+  finally
+    run_argv_must(["rm", "-rf", "--", $scratch])
+  end
   if $r.exit_code != 0 then exit($r.exit_code ?? 124) end
 end
 if $stage == "resolve" then
