@@ -1,0 +1,22 @@
+#!/usr/bin/env mix
+-- version: 0.1.0
+-- tools/ci/test_record.mix: a cargo test runner that records instead of
+-- running. tools/ci/test_pool.mix sets it as CARGO_TARGET_<TRIPLE>_RUNNER,
+-- so `cargo test` calls `mix test_record.mix OUT TEST_BINARY ARGS...` once
+-- per test binary, in cargo's order, with cargo's exact working directory
+-- and environment. Each call appends one JSON line to OUT: the argv, the
+-- working directory and the whole environment (read from
+-- /proc/self/environ: Mix has no environ() yet; see the hub's TODO-mix).
+-- The pool then replays the lines in parallel.
+
+$a = args()
+if len($a) < 2 then
+  eprint("usage: test_record.mix OUT TEST_BINARY [ARGS...]")
+  exit(64)
+end
+$env = {}
+for $kv in split(read_file("/proc/self/environ"), chr(0))
+  $p = split_once($kv, "=")
+  if $p != nil then $env[$p[0]] = $p[1] end
+end
+append_file($a[0], json_encode({argv: slice($a, 1, len($a)), cwd: realpath("."), env: $env}) .. "\n")
