@@ -223,7 +223,12 @@ mod tests {
             indexed.retain_at(&id, class, now);
             scanning.retain_at(&id, class, now);
             if step % 97 == 0 {
-                check(&indexed, &scanning, now, &format!("noded-{}", random(step + 1)));
+                check(
+                    &indexed,
+                    &scanning,
+                    now,
+                    &format!("noded-{}", random(step + 1)),
+                );
             }
         }
         assert_eq!(indexed.entries.len(), ResponseProtection::LIMIT);
@@ -240,7 +245,12 @@ mod tests {
             };
             indexed.retain_at(&id, TrafficClass::NativeSession, now);
             scanning.retain_at(&id, TrafficClass::NativeSession, now);
-            check(&indexed, &scanning, now, &format!("noded-{}", random(limit)));
+            check(
+                &indexed,
+                &scanning,
+                now,
+                &format!("noded-{}", random(limit)),
+            );
             check(&indexed, &scanning, now, &format!("late-{step}"));
         }
         // Phase 3: everything is past its deadline; one completion clears it.
