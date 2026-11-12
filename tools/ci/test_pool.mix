@@ -14,8 +14,9 @@
 --    and builds everything it normally would (examples included), then calls
 --    the recorder once per test binary, in its own order, with its own
 --    working directory and environment; the recorder writes those down and
---    runs nothing. Cargo then runs the doc-tests itself (they do not go
---    through a runner), with --no-fail-fast, as it always does.
+--    runs nothing. Cargo then runs the doc-tests with --no-fail-fast, as it
+--    always does; they also reach the runner, which runs them for real
+--    (it records only programs under the target directory).
 -- 2. Replay. Every recorded invocation runs from a pool of N (default 8)
 --    with exactly the recorded argv, cwd and environment (clear_env).
 -- 3. Binaries in tools/ci/serial-tests.conf.mix run alone afterwards; an
@@ -59,7 +60,12 @@ $serial = if exists($serial_path) then load_data($serial_path).serial_tests ?? [
 $root = realpath(".")
 $mix_exe = realpath("/proc/self/exe")
 $recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
-if contains($mix_exe .. $recorder .. $root, " ") then refuse("a space in the mix, recorder or checkout path breaks cargo's runner setting") end
+-- The recorder records programs under the target directory (cargo's test
+-- binaries) and runs anything else, i.e. rustdoc's doc-test executables.
+$meta_target = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps"], {timeout: 600, max_output: 64000000})).target_directory
+mkdir($meta_target)
+$target_dir = realpath($meta_target)
+if contains($mix_exe .. $recorder .. $root .. $target_dir, " ") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
 $host = re_find(run_argv_must(["rustc", "-vV"]), "(?m)^host: (\\S+)$")[0].groups[0]
 $runner_var = "CARGO_TARGET_" .. upper(replace(replace($host, "-", "_"), ".", "_")) .. "_RUNNER"
 if env($runner_var) != "" then refuse($runner_var .. " is already set; the pool cannot record through it") end
@@ -87,7 +93,7 @@ try
   -- recorded environment is untouched (CARGO_TERM_COLOR is passed on to tests).
   $t_build = monotonic()
   $record_env = {}
-  $record_env[$runner_var] = $mix_exe .. " " .. $recorder .. " " .. $rec
+  $record_env[$runner_var] = $mix_exe .. " " .. $recorder .. " " .. $rec .. " " .. $target_dir
   $b = run_argv(concat(["cargo", "test", "--no-fail-fast", "--color", "never"], $cargo_args),
     {timeout: 14400, env: $record_env, stdout: "capture", stderr: "capture", max_output: 256000000})
   $record_s = monotonic() - $t_build
