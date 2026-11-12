@@ -344,12 +344,31 @@ fn steps(pending: &mut f32, amount: f32) -> i32 {
 ///
 /// Alt is Meta, as in xterm with `metaSendsEscape`: ESC before the key's
 /// own bytes (Alt+Enter is ESC CR, Alt+Backspace ESC DEL, Ctrl+Alt+x
-/// ESC ^X), except the cursor keys, which carry the xterm modifier
-/// (Alt+Left is CSI 1;3D).
+/// ESC ^X). Cursor keys carry the complete xterm modifier bits. Physical
+/// user-key interception belongs to inputd/viud, never this encoder.
 pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
+    if let Some(code) = cursor_code(key).filter(|_| {
+        matches!(
+            key,
+            Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight
+        )
+    }) {
+        let modifier = 1
+            + u8::from(modifiers.shift)
+            + 2 * u8::from(modifiers.alt)
+            + 4 * u8::from(modifiers.ctrl || modifiers.command || modifiers.mac_cmd);
+        if modifier > 1 {
+            return vec![TerminalKey::Modified { code, modifier }];
+        }
+    }
     if modifiers.alt {
-        if let Some(code) = cursor_code(key) {
-            return vec![TerminalKey::Modified { code, modifier: 3 }];
+        // Arrows were handled above; this is only the legacy Home/End path.
+        if matches!(key, Key::Home | Key::End) {
+            let code = cursor_code(key).expect("Home/End cursor code");
+            return vec![TerminalKey::Modified {
+                code,
+                modifier: if modifiers.shift { 4 } else { 3 },
+            }];
         }
         let plain = Modifiers {
             alt: false,
@@ -368,6 +387,40 @@ pub fn keys_for(key: Key, modifiers: Modifiers) -> Vec<TerminalKey> {
             .collect();
     }
     named_key(key).into_iter().collect()
+}
+
+#[cfg(test)]
+mod arrow_bytes_tests {
+    use super::*;
+    #[test]
+    fn arrow_modifiers_two_through_eight_have_exact_xterm_bytes() {
+        for (modifiers, number) in [
+            (Modifiers::SHIFT, 2),
+            (Modifiers::ALT, 3),
+            (Modifiers::ALT | Modifiers::SHIFT, 4),
+            (Modifiers::CTRL, 5),
+            (Modifiers::CTRL | Modifiers::SHIFT, 6),
+            (Modifiers::CTRL | Modifiers::ALT, 7),
+            (Modifiers::CTRL | Modifiers::ALT | Modifiers::SHIFT, 8),
+        ] {
+            for (key, suffix) in [
+                (Key::ArrowUp, 'A'),
+                (Key::ArrowDown, 'B'),
+                (Key::ArrowRight, 'C'),
+                (Key::ArrowLeft, 'D'),
+            ] {
+                let bytes = keys_for(key, modifiers)
+                    .into_iter()
+                    .flat_map(super::super::model::encode)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    bytes,
+                    format!("\x1b[1;{number}{suffix}").as_bytes(),
+                    "{key:?} {modifiers:?}"
+                );
+            }
+        }
+    }
 }
 
 /// The character whose control code a Ctrl+punctuation key sends, as

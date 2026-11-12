@@ -27,7 +27,7 @@ fn framed($s)
   $model.terminal.properties.shortcuts=$actions.terminal_shortcuts($s)
   $model.terminal.properties.search=$find.request($s)
   $model.find_open=($s.find.open ?? false) and not $s.closed
-  $model.find_bar={id:"terminal-find",kind:"search-bar",label:"Find terminal output",initial:merge($s.find ?? $find.initial(),{replace:false,replacement:""}),properties:{}}
+  $model.find_bar={id:"terminal-find",kind:"search-bar",label:"Find terminal output",initial:merge($s.find ?? $find.initial(),{replace:false,replacement:"",submit_modifiers:true}),properties:{}}
   $model.find_status={id:"terminal-find-status",kind:"label",label:"Search result",initial:if $model.find_open then $find.message($s) else "" end,properties:{weak:true}}
   $model.show_paste_notice=$s.notice!=nil and not $s.closed
   $font=$s.font ?? {}; $model.show_font_notice=$font.unsaved==true and not $s.closed

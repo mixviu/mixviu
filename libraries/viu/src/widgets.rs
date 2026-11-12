@@ -680,7 +680,11 @@ impl Widget {
             return vec!["edit"];
         }
         if self.kind == "search-bar" {
-            return vec!["edit", "next", "prev", "replace", "replace-all", "close"];
+            let mut actions = vec!["edit", "next", "prev", "replace", "replace-all", "close"];
+            if self.initial["submit_modifiers"] == true {
+                actions.push("submit");
+            }
+            return actions;
         }
         if self.kind == "mark" || self.kind == "status-line" {
             return vec![];
@@ -776,6 +780,9 @@ impl Widget {
         }
         if !self.actions().contains(&action) {
             return Err("unsupported widget action".into());
+        }
+        if self.kind == "search-bar" && action == "submit" {
+            return crate::editor_controls::admit(&self.kind, &self.initial, action, value);
         }
         if matches!(self.kind.as_str(), "field" | "multiline" | "editor")
             && action == "cancel"

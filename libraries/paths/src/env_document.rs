@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, io::Read, path::Path};
 
 #[derive(Debug, Clone)]
 pub(super) enum Error {
+    NoPrefix(String),
     Unreadable(String),
     Malformed(String),
     UnknownSchema(String),
@@ -15,6 +16,10 @@ impl Error {
         use super::env::SettingError as E;
         let name = name.into();
         match self {
+            Self::NoPrefix(detail) => E::NoPrefix {
+                name,
+                detail: detail.clone(),
+            },
             Self::Unreadable(detail) => E::Unreadable {
                 name,
                 detail: detail.clone(),
@@ -56,6 +61,9 @@ pub(super) fn read(prefix: &Path) -> Result<Option<Defaults>, Error> {
 pub(super) fn parse(source: &str, stamp: Option<&str>) -> Result<Defaults, Error> {
     if source.len() > 65536 {
         return Err(Error::Malformed("exceeds 64 KiB".into()));
+    }
+    if source.starts_with('\u{feff}') {
+        return Err(Error::Malformed("starts with a byte order mark".into()));
     }
     let mut p = Reader {
         chars: source.chars().peekable(),
@@ -111,7 +119,11 @@ pub(super) fn parse(source: &str, stamp: Option<&str>) -> Result<Defaults, Error
             }
             n
         } else {
-            p.string().map_err(Error::Malformed)?
+            let value = p.string().map_err(Error::Malformed)?;
+            if value.contains(['\n', '\r']) {
+                return Err(Error::Malformed(format!("{key} contains a newline")));
+            }
+            value
         };
         if key != "schema"
             && key != "commit"
@@ -138,8 +150,16 @@ pub(super) fn parse(source: &str, stamp: Option<&str>) -> Result<Defaults, Error
     }
     let commit = values
         .remove("commit")
-        .filter(|s| !s.is_empty())
         .ok_or_else(|| Error::Malformed("missing commit".into()))?;
+    if commit.len() != 40
+        || !commit
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err(Error::Malformed(
+            "commit must be 40 lower-case hex digits".into(),
+        ));
+    }
     if let Some(expected) = stamp
         && expected != commit
     {

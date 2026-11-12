@@ -2,9 +2,10 @@
 -- Build the generic native Wayland IME fixture on CBC only.
 $targets=require("term-targets.mix")
 $commands=[["cargo","fmt","-p","lib-viu","--","--check"],["cargo","build","--locked","-p","lib-viu","--example","terminal_ime_driver"]]
-$targets.check($commands)
 $prepare=contains(args(),"--prepare");$rc=0
+$target_dir=nil
 try
+  $target_dir=$targets.check($commands,$prepare)
   for $command in $commands
     if $prepare and $command[1]=="fmt" then $command=["cargo","fmt","-p","lib-viu"] end
     if $prepare and $command[1]=="build" then $command=filter($command,fn($arg)=$arg!="--locked") end
@@ -12,14 +13,14 @@ try
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end
   if $rc==0 then
-    $r=run_argv(["/opt/mixos/bin/mix","tools/foreign_gate.mix","--locked"],{timeout:1800,max_output:16000000});print($r)
+    $r=run_argv($targets.prepare_command(["/opt/mixos/bin/mix","tools/foreign_gate.mix","--locked"],$prepare),{timeout:1800,max_output:16000000});print($r)
     if not $r.ok then $rc=$r.exit_code ?? 124 end
   end
   if $rc==0 then
     $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
     $dir="/build/term-ime-artifacts/"..$sha
     mkdir($dir,{parents:true})
-    copy("target/debug/examples/terminal_ime_driver",$dir.."/terminal_ime_driver")
+    copy(path_join($target_dir,"debug/examples/terminal_ime_driver"),$dir.."/terminal_ime_driver")
     $receipt={source:$sha,profile:"debug",purpose:"owned native input-method fixture only",sha256:hash_file($dir.."/terminal_ime_driver","sha256")}
     write_file($dir.."/receipt.json",json_encode($receipt));print({artifact:$dir,receipt:$receipt})
   end
