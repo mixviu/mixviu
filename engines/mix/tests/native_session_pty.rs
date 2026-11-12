@@ -1457,7 +1457,10 @@ async fn prompt_generation_after(parent: &mut Parent, record: &SessionRecord, be
         if snapshot["phase"] == "prompt-ready" && generation > before {
             return generation;
         }
-        assert!(Instant::now() < deadline, "expected a ready prompt after {before}: {value}");
+        assert!(
+            Instant::now() < deadline,
+            "expected a ready prompt after {before}: {value}"
+        );
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
 }
