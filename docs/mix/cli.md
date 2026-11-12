@@ -849,6 +849,10 @@ accepted now and executed at some later prompt, because a caller cannot know
 what the shell will be doing then — and a snapshot is information, never an
 execution permit.
 
+After a `prompt-ready` read, a `STALE_GENERATION` or `BUSY` refusal is retryable
+with a refreshed prompt generation and the same request id once the empty
+primary prompt is ready again.
+
 The admitted line is **visibly echoed before it runs**, through the editor's own
 terminal, naming the principal and the command id:
 
