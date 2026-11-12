@@ -57,13 +57,15 @@
 -- an empty selection fails the step. Ends with the slowest binaries.
 --
 -- Retry once (merge gate only). Strict unless TEST_POOL_RETRY_REPORT names
--- a report file; the hosted and nightly runs never set it, so main and gold
--- stay strict. With it set, and TEST_POOL_CHANGED_PATHS_FILE listing the
+-- a report file, and always strict under GitHub Actions (GITHUB_ACTIONS=true),
+-- so the hosted post-merge and nightly runs, and with them gold, never retry.
+-- Neither control reaches the test binaries. With it set, and TEST_POOL_CHANGED_PATHS_FILE listing the
 -- change's paths (one per line, relative to the workspace root), a run in
 -- which exactly one test binary failed, and nothing else (no doc-test or
 -- build failure), re-runs that binary once, alone. If it passes, the step
 -- passes with a `::warning::FLAKY:` line and a JSON line appended to the
--- report. No retry when the binary belongs to a package the change touches,
+-- report. No retry when the binary belongs to a package the change touches
+-- (or one that depends on a touched package through a path dependency),
 -- when a changed path lies outside every package (other than *.md), or
 -- when the report already holds an entry (one retry per run, shared by
 -- every step that uses the same report).
@@ -121,12 +123,19 @@ $metadata = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "
 $meta_target = $metadata.target_directory
 
 -- Retry-once policy (see header). Decided before anything runs.
+-- The packages a change touches: the package holding each changed path
+-- (longest manifest directory), then every package that depends on one of
+-- those through a path dependency of any kind (normal, dev, build), to a
+-- fixed point. A change to libraries/bus thus marks every crate testing
+-- against bus. `outside` is the first changed path in no package (*.md
+-- excepted), which keeps the whole run strict.
 fn changed_packages($metadata, $paths)
-  $root = $metadata.workspace_root
-  $dirs = filter(map($metadata.packages, fn($p) = {name: $p.name, dir: dirname($p.manifest_path)}), fn($d) = $d.dir != $root)
+  $ws = $metadata.workspace_root
+  $dirs = filter(map($metadata.packages, fn($p) = {name: $p.name, dir: dirname($p.manifest_path),
+    deps: map(filter($p.dependencies, fn($d) = $d.path != nil), fn($d) = $d.path)}), fn($d) = $d.dir != $ws)
   $pkgs = {}
   for $path in $paths
-    $abs = path_join($root, $path)
+    $abs = path_join($ws, $path)
     $best = nil
     for $d in $dirs
       if starts_with($abs, $d.dir .. "/") and ($best == nil or len($d.dir) > len($best.dir)) then $best = $d end
@@ -137,11 +146,29 @@ fn changed_packages($metadata, $paths)
       return {pkgs: $pkgs, outside: $path}
     end
   end
+  $touched_dirs = {}
+  for $d in $dirs
+    if has_key($pkgs, $d.name) then $touched_dirs[$d.dir] = true end
+  end
+  $grew = true
+  while $grew
+    $grew = false
+    for $d in $dirs
+      if not has_key($pkgs, $d.name) and len(filter($d.deps, fn($p) = has_key($touched_dirs, $p))) > 0 then
+        $pkgs[$d.name] = true
+        $touched_dirs[$d.dir] = true
+        $grew = true
+      end
+    end
+  end
   return {pkgs: $pkgs, outside: nil}
 end
 $retry_report = env("TEST_POOL_RETRY_REPORT", "")
 $retry = {on: false, why: "strict (TEST_POOL_RETRY_REPORT unset)", pkgs: {}}
-if $retry_report != "" then
+-- A hosted Actions run never retries, whatever it sets: main and gold stay strict.
+if $retry_report != "" and env("GITHUB_ACTIONS") == "true" then
+  $retry.why = "strict: GITHUB_ACTIONS is set (hosted runs never retry)"
+elif $retry_report != "" then
   $paths_file = env("TEST_POOL_CHANGED_PATHS_FILE", "")
   if $paths_file == "" or not is_file($paths_file) then
     $retry.why = "strict: TEST_POOL_CHANGED_PATHS_FILE is missing"
@@ -237,7 +264,9 @@ try
     -- The recorder's own runner variable is not part of cargo's environment.
     $env = {}
     for $k in keys($e)
-      if $k != $runner_var then $env[$k] = $e[$k] end
+      -- Nor are the retry controls: a retry-enabled run must give each test
+      -- binary the same environment as a strict one.
+      if $k != $runner_var and $k != "TEST_POOL_RETRY_REPORT" and $k != "TEST_POOL_CHANGED_PATHS_FILE" then $env[$k] = $e[$k] end
     end
     $pkg = $env.CARGO_PKG_NAME ?? "?"
     $selected_pkgs[$pkg] = true
@@ -346,7 +375,8 @@ try
           $out = $first.stdout ?? ""
           append_file($retry_report, json_encode({key: $j.key, label: $j.label, first_rc: $first.exit_code, first_timed_out: $first.timed_out,
             cargo_args: $cargo_args, first_tail: substr($out, max(0, len($out) - 4000), 4000)}) .. "\n")
-          print("::warning::FLAKY: " .. $j.key .. " failed beside other binaries (" .. $failed[0] .. ") and passed alone; recorded for a fix")
+          $where = if $i < len($pool) then "beside other binaries" else "alone (serial list)" end
+          print("::warning::FLAKY: " .. $j.key .. " failed " .. $where .. " (" .. $failed[0] .. ") and passed when run again alone; recorded for a fix")
           $failed = []
         else
           print("::error::test_pool: " .. $j.key .. " failed again alone (rc " .. to_string($again.exit_code ?? 124) .. ")")
