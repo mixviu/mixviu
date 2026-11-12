@@ -1100,7 +1100,7 @@ impl MixMcp {
     #[tool]
     async fn log_tail(&self, Parameters(p): Parameters<LogTailParams>) -> Result<String, String> {
         let n = p.lines.unwrap_or(50);
-        let path = resolve_log_path(&p.file);
+        let path = resolve_log_path(&p.file)?;
         match std::fs::read_to_string(&path) {
             Ok(content) => {
                 let all: Vec<&str> = content.lines().collect();
@@ -1118,7 +1118,7 @@ impl MixMcp {
         Parameters(p): Parameters<LogSearchParams>,
     ) -> Result<String, String> {
         let max = p.limit.unwrap_or(20);
-        let path = resolve_log_path(&p.file);
+        let path = resolve_log_path(&p.file)?;
         let pat = p.pattern.to_lowercase();
         match std::fs::read_to_string(&path) {
             Ok(content) => {
@@ -1189,6 +1189,7 @@ impl MixMcp {
 
         let limit = p.limit.unwrap_or(3);
         let search_all = p.domain.as_deref() == Some("all");
+        let detected = match crate::domain::detect_domain_cwd() { Ok(d) => d, Err(e) => return format!("ERROR: {e:#}") };
         let domain = if search_all {
             None
         } else {
@@ -1197,7 +1198,7 @@ impl MixMcp {
                 .filter(|d| !d.is_empty())
                 .map(|d| d.to_string())
                 .or_else(|| {
-                    let d = crate::domain::detect_domain_cwd();
+                    let d = detected;
                     if d == "general" { None } else { Some(d) }
                 })
         };
@@ -1443,7 +1444,7 @@ impl MixMcp {
         if let Err(e) = crate::knowledge_settings::load_domains() {
             return format!("ERROR: {e:#}");
         }
-        let domain = crate::domain::detect_domain(workspace_path);
+        let domain = match crate::domain::detect_domain(workspace_path) { Ok(d) => d, Err(e) => return format!("ERROR: {e:#}") };
 
         let mut indexd = match self.indexd().await {
             Ok(c) => c,
@@ -1751,18 +1752,18 @@ impl MixMcp {
     }
 }
 
-fn log_dir() -> PathBuf {
-    paths::root(paths::Root::Var).join("log")
+fn log_dir() -> Result<PathBuf, String> {
+    paths::try_root(paths::Root::Var).map(|p| p.join("log"))
 }
 
-fn resolve_log_path(name: &str) -> PathBuf {
-    let dir = log_dir();
+fn resolve_log_path(name: &str) -> Result<PathBuf, String> {
+    let dir = log_dir()?;
     if name == "bus" {
-        return dir.join("bus.log");
+        return Ok(dir.join("bus.log"));
     }
     let exact = dir.join(name);
     if exact.exists() {
-        return exact;
+        return Ok(exact);
     }
     if let Ok(entries) = std::fs::read_dir(&dir) {
         let mut m: Vec<PathBuf> = entries
@@ -1776,10 +1777,10 @@ fn resolve_log_path(name: &str) -> PathBuf {
             .collect();
         m.sort();
         if let Some(latest) = m.last() {
-            return latest.clone();
+            return Ok(latest.clone());
         }
     }
-    dir.join(name)
+    Ok(dir.join(name))
 }
 
 // ---- Knowledge base helpers ----
@@ -2347,9 +2348,7 @@ async fn async_main() {
     // -f`), AND the persistent `the paths var root under log/mix-mcp.log` file
     // the server's own log_tail/log_search tools read. Stats off — this
     // arc is logging-only.
-    let _log = logging::init(
-        &logging::LogOpts::default(),
-        &logging::StatsOpts::default(),
+    let defaults =
         logging::LogDefaults::daemon("mix-mcp")
             .with_stats(false)
             .with_filter(
@@ -2358,10 +2357,18 @@ async fn async_main() {
                     .filter(|v| tracing_subscriber::EnvFilter::try_new(v).is_ok())
                     .unwrap_or_else(|| "info,mix_mcp=debug".into()),
             )
-            .with_rotation(logging::RotationMode::Never)
-            .with_log_file(log_dir()),
-    )
-    .ok();
+            .with_rotation(logging::RotationMode::Never);
+    let defaults = match log_dir() {
+        Ok(dir) => defaults.with_log_file(dir),
+        Err(e) => {
+            eprintln!("mix-mcp: file logging disabled: {e}");
+            defaults
+        }
+    };
+    let _log = match logging::init(&logging::LogOpts::default(), &logging::StatsOpts::default(), defaults) {
+        Ok(log) => Some(log),
+        Err(e) => { eprintln!("mix-mcp: logging initialization failed: {e}"); None }
+    };
 
     tracing::info!(
         target: "mix_mcp",

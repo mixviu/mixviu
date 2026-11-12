@@ -292,7 +292,7 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
 }
 
 fn installed_json(name: &str) -> anyhow::Result<serde_json::Value> {
-    let path = paths::root(paths::Root::Prefix).join("env.mx");
+    let path = paths::try_root(paths::Root::Prefix).map_err(|e| anyhow::anyhow!("{name} in <prefix>/env.mx: {e}"))?.join("env.mx");
     let text = paths::env::setting(name)
         .map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))?;
     serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))
@@ -334,7 +334,7 @@ fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
     service: &str,
     mut value: serde_json::Value,
 ) -> anyhow::Result<T> {
-    let file = config::store::config_dir()
+    let file = paths::try_root(paths::Root::Etc).map_err(anyhow::Error::msg)?
         .join(service)
         .join(format!("{service}.conf.mix"));
     if file.exists() {
@@ -345,41 +345,56 @@ fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
     }
     let result: T = serde_json::from_value(value)?;
     if !file.exists() {
-        config::store::save_service(&result, service)?;
+        std::fs::create_dir_all(file.parent().ok_or_else(|| anyhow::anyhow!("missing config directory"))?)?;
+        std::fs::write(&file, config::to_conf_mix_string(&result)?)?;
     }
     Ok(result)
+}
+
+fn setting_error(name: &str, error: impl std::fmt::Display) -> anyhow::Error {
+    let location = match paths::try_root(paths::Root::Prefix) {
+        Ok(p) => p.join("env.mx").display().to_string(),
+        Err(e) => format!("<prefix>/env.mx (layout error: {e})"),
+    };
+    anyhow::anyhow!("{name} in {location}: {error}")
 }
 
 pub fn load_knowledge() -> anyhow::Result<KnowledgeSettings> {
     let mut value = installed_json(paths::env::MCP_KNOWLEDGE)?;
     let indexd = installed_json(paths::env::MCP_INDEXD)?;
-    let error = |e| {
-        anyhow::anyhow!(
-            "{} / {} in {}: {e}",
-            paths::env::MCP_KNOWLEDGE,
-            paths::env::MCP_INDEXD,
-            paths::root(paths::Root::Prefix).join("env.mx").display()
-        )
-    };
-    required(&serde_json::to_value(IndexdSettings::default())?, &indexd).map_err(error)?;
-    let object = value
-        .as_object_mut()
-        .ok_or_else(|| error(anyhow::anyhow!("expected knowledge object")))?;
+    required(&serde_json::to_value(IndexdSettings::default())?, &indexd)
+        .map_err(|e| setting_error(paths::env::MCP_INDEXD, e))?;
+    let _: IndexdSettings = serde_json::from_value(indexd.clone())
+        .map_err(|e| setting_error(paths::env::MCP_INDEXD, e))?;
+    let object = value.as_object_mut()
+        .ok_or_else(|| setting_error(paths::env::MCP_KNOWLEDGE, "expected knowledge object"))?;
     object.insert("indexd".into(), indexd);
-    required(&serde_json::to_value(KnowledgeSettings::default())?, &value).map_err(error)?;
-    let _: KnowledgeSettings =
-        serde_json::from_value(value.clone()).map_err(|e| error(e.into()))?;
+    required(&serde_json::to_value(KnowledgeSettings::default())?, &value)
+        .map_err(|e| setting_error(paths::env::MCP_KNOWLEDGE, e))?;
+    let _: KnowledgeSettings = serde_json::from_value(value.clone())
+        .map_err(|e| setting_error(paths::env::MCP_KNOWLEDGE, e))?;
     load("knowledge", value)
 }
 
 pub fn load_domains() -> anyhow::Result<DomainsSettings> {
     let map = installed_json(paths::env::MCP_DOMAINS)?;
-    let _: BTreeMap<String, String> = serde_json::from_value(map.clone()).map_err(|e| {
-        anyhow::anyhow!(
-            "{} in {}: {e}",
-            paths::env::MCP_DOMAINS,
-            paths::root(paths::Root::Prefix).join("env.mx").display()
-        )
-    })?;
+    let _: BTreeMap<String, String> = serde_json::from_value(map.clone())
+        .map_err(|e| setting_error(paths::env::MCP_DOMAINS, e))?;
     load("domains", serde_json::json!({"map": map}))
+}
+
+#[cfg(test)]
+mod read_path_tests {
+    #[test]
+    fn production_settings_reads_use_only_validated_loaders() {
+        for (name, source) in [
+            ("main", include_str!("main.rs")),
+            ("domain", include_str!("domain.rs")),
+            ("indexd_client", include_str!("indexd_client.rs")),
+            ("knowledge_settings", include_str!("knowledge_settings.rs")),
+        ] {
+            let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+            assert!(!production.contains("load_service"), "{name} bypasses validated loaders");
+        }
+    }
 }

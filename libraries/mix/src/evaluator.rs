@@ -15175,7 +15175,7 @@ impl Evaluator {
                         // non-payload send argument — fall through to the
                         // sync builtin unchanged (which refuses recv on
                         // subscribed handles deterministically).
-                        if let Some(result) = builtins::call_builtin(name, eval_args.clone())
+                        if let Some(result) = self.call_policy_builtin(name, eval_args.clone())
                             .map_err(|e| self.snapshot_builtin_error(name, e))?
                         {
                             // Knob D: cap the produced collection (covers
@@ -16427,6 +16427,15 @@ impl Evaluator {
     /// denied` runtime error otherwise. Call only for names that resolve
     /// to a builtin/HOF — user functions are never gated. Cloning the
     /// `Option<Rc>` is free when no policy is set.
+    fn call_policy_builtin(&self, name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
+        if name == "has_builtin" && args.len() == 1 {
+            if let Value::String(target) = &args[0] {
+                if self.check_capability(target).is_err() { return Ok(Some(Value::Bool(false))); }
+            }
+        }
+        builtins::call_builtin(name, args)
+    }
+
     pub(crate) fn check_capability(&self, name: &str) -> MixResult<()> {
         let policy = { self.globals.borrow().capability_policy.clone() };
         match policy {
@@ -16565,7 +16574,7 @@ impl Evaluator {
         self.check_capability(name)?;
         self.check_builtin_arity(name, args.len())?;
         self.check_builtin_args(name, &args, !self.ctx.arity_strict)?;
-        builtins::call_builtin(name, args)?
+        self.call_policy_builtin(name, args)?
             .ok_or_else(|| self.runtime_err("unavailable row builtin"))
     }
     pub(crate) fn bulk_checkpoint(&mut self) -> MixResult<()> {
@@ -17557,7 +17566,7 @@ impl Evaluator {
                     for arg in args {
                         eval_args.push(self.eval_expr(arg).await?);
                     }
-                    let result = match builtins::call_builtin(name, eval_args)? {
+                    let result = match self.call_policy_builtin(name, eval_args)? {
                         Some(r) => r,
                         None => {
                             let hint = crate::analyzer::undefined_function_hint(

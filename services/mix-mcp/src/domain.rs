@@ -19,24 +19,23 @@ use std::path::Path;
 ///
 /// Tries config-based prefix matching first, then falls back to walking
 /// up the directory tree looking for CLAUDE.md.
-pub fn detect_domain(pwd: &Path) -> String {
+pub fn detect_domain(pwd: &Path) -> anyhow::Result<String> {
     // Try settings-based resolution first
-    if let Ok(domains) = crate::knowledge_settings::load_domains()
-        && let Some(domain) = domains.resolve(pwd)
+    if let Some(domain) = crate::knowledge_settings::load_domains()?.resolve(pwd)
     {
-        return domain;
+        return Ok(domain);
     }
 
     // Fallback: walk up looking for CLAUDE.md
     let home = match directories::BaseDirs::new() {
         Some(b) => b.home_dir().to_path_buf(),
-        None => return "general".into(),
+        None => return Ok("general".into()),
     };
 
     let mut dir = pwd.to_path_buf();
     loop {
         if dir.join("CLAUDE.md").exists() {
-            return path_to_domain(&dir, &home);
+            return Ok(path_to_domain(&dir, &home));
         }
         if !dir.pop() || dir == home || dir.as_os_str().is_empty() {
             break;
@@ -47,10 +46,10 @@ pub fn detect_domain(pwd: &Path) -> String {
 }
 
 /// Detect domain from the current working directory.
-pub fn detect_domain_cwd() -> String {
+pub fn detect_domain_cwd() -> anyhow::Result<String> {
     match std::env::current_dir() {
         Ok(pwd) => detect_domain(&pwd),
-        Err(_) => "general".into(),
+        Err(e) => Err(e.into()),
     }
 }
 
