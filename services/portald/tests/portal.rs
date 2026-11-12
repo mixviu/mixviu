@@ -969,8 +969,9 @@ fn authority_store(root: &std::path::Path, mode: &str) -> anyhow::Result<()> {
 async fn wait_source(portal: &NativePortal, revision: u64, after: u64) -> anyhow::Result<()> {
     let expected = revision.to_string();
     // Transport may be at its cap when the broker returns, followed by an
-    // authority retry at its own cap. Allow two bounded reads (values/palette)
-    // and 10 s for scheduling/registration/D-Bus on a loaded debug worker.
+    // authority retry at its own cap. Allow one bounded subscription and one
+    // appearance read, plus 10 s for scheduling/registration/D-Bus on a loaded
+    // debug worker (the read bounds values and palette together).
     let budget = bus::native_client::RECONNECT_BACKOFF_MAX
         + portald::service::RETRY_MAX
         + portald::service::FETCH_TIMEOUT * 2
