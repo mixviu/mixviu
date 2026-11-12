@@ -20,8 +20,10 @@ for $line in split($built, "\n")
   end
 end
 $cases = [
+  {binary: "backdrop", test: "view_reply_survives_native_model_and_job_sends"},
   {binary: "backdrop", test: "backdrop_colours_modes_outputs_and_refusals_use_mix"},
   {binary: "backdrop", test: "decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage"},
+  {binary: "backdrop", test: "slideshow_next_skips_failed_entries_and_keeps_source_document"},
   {binary: "portal", test: "native_recovers_when_broker_returns_after_the_initial_attempt_budget"},
   {binary: "portal", test: "native_startup_live_change_and_settingsd_restart_without_broker_reconnect"}
 ]

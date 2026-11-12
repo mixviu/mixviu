@@ -1016,9 +1016,8 @@ async fn wait_absent(
     // Observe broker removal, allowing the authority's shutdown bound and a
     // retry at cap before scheduling margin. stop() aborts rather than gracefully
     // deregistering, so this also covers delayed transport-close observation.
-    let budget = settingsd::service::DEREGISTER_TIMEOUT
-        + portald::service::RETRY_MAX
-        + SCHEDULING_MARGIN;
+    let budget =
+        settingsd::service::DEREGISTER_TIMEOUT + portald::service::RETRY_MAX + SCHEDULING_MARGIN;
     tokio::time::timeout(budget, async {
         while client
             .list_services()

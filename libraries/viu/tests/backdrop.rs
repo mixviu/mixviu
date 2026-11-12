@@ -318,8 +318,8 @@ fn decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage(
     app.wait_model(|model| {
         model["serial"] == body["active"]
             && model["values"]["root"]["handle"]
-            .as_str()
-            .is_some_and(|h| h != handle)
+                .as_str()
+                .is_some_and(|h| h != handle)
     });
     assert_ne!(app.model["values"]["root"]["handle"], handle);
     assert_eq!(pixels.decoded.rgba.get_pixel(0, 0).0, [12, 34, 56, 255]);
