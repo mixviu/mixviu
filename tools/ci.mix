@@ -102,6 +102,7 @@ fn stage_test($mix)
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
+  run_step(["cargo", "test", "--locked", "-p", "portald", "--no-default-features", "--no-fail-fast"], $test_env)
   stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
   for $case in sort(glob("apps/term/*-test.mix"))
@@ -209,8 +210,8 @@ fn stage_env()
       exit(1)
     end
     $listed[$v.name] = true
-    if has_key($v, "default") and ($v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
-      print("::error::" .. $v.name .. ": default must be a runtime environment string")
+    if has_key($v, "default") and (not starts_with($v.name, "MIX_") or $v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
+      print("::error::" .. $v.name .. ": default must be a runtime Mix environment string accepted by env.mx")
       exit(1)
     end
   end
@@ -323,12 +324,15 @@ fn stage_viud_egui_free()
   print("viud: no egui/toolkit crates in its normal dependency tree")
 end
 
--- Foreign code (tools/foreign.conf.mix): every C-building crate is allowed or
--- debt, the strict mix crates reach allow entries only and no desktop crate,
+-- Foreign code (tools/foreign.conf.mix): every C-building crate is in allow,
+-- debt or admitted, the strict mix crates reach allow entries only and no desktop crate,
 -- and the built shell loads no display, GPU, input or audio library (ldd).
 fn stage_foreign($mix)
   ensure_mix($mix)
-  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix)])
+  run_step(["cargo", "build", "--locked", "-p", "mixd"])
+  run_step([$mix, "tools/foreign_admission_test.mix", "--cargo"])
+  -- Both strict binaries: the gate names each one it scanned and fails on fewer.
+  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix), "--elf", realpath("target/debug/mixd"), "--min-elf", "2"])
 end
 
 fn stage_mix_lint($mix)
