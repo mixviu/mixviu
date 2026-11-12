@@ -50,13 +50,21 @@ if $stage == "resolve" then
   exit(0)
 end
 if $stage == "focused" then
+  -- The focused gate fails on unformatted source: the diff is printed as
+  -- evidence and the checkout restored, then a non-empty diff is an error.
+  $fmt_diff = ""
   try
     checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "paths", "-p", "mix-shell", "-p", "mix"])
+    $fmt_diff = run_argv_must(["git", "diff"])
     print("FMT_DIFF_BEGIN")
-    print(run_argv_must(["git", "diff"]))
+    print($fmt_diff)
     print("FMT_DIFF_END")
   finally
     checked(["git", "checkout", "-q", "--", "."])
+  end
+  if trim($fmt_diff) != "" then
+    eprint("mcp_gate: cargo fmt changed files (diff above); apply it and rerun")
+    exit(1)
   end
 end
 if $stage == "all" then checked(["mix", "tools/ci.mix", "all"]) end
