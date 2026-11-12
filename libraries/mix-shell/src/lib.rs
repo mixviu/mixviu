@@ -477,6 +477,8 @@ async fn shutdown_signal() -> i32 {
 /// forces it out. Must exceed the slowest graceful path: `--serve` spends up
 /// to `DEREGISTER_GRACE` (5 s) + `CLASSC_DRAIN_GRACE` (5 s) + the owned-spawn
 /// `SWEEP_GRACE` (2 s). `MIX_SIGTERM_BACKSTOP_SECS` overrides it.
+/// Mark's ruling, 2026-11-12: keep the installed setting default and this
+/// silent safety fallback when the setting is unavailable or cannot parse.
 const SIGTERM_BACKSTOP_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
 
 fn sigterm_backstop_grace(value: Option<&str>) -> std::time::Duration {
@@ -484,6 +486,49 @@ fn sigterm_backstop_grace(value: Option<&str>) -> std::time::Duration {
         .and_then(|s| s.parse::<u64>().ok())
         .map(std::time::Duration::from_secs)
         .unwrap_or(SIGTERM_BACKSTOP_GRACE)
+}
+
+fn configured_sigterm_backstop_grace() -> std::time::Duration {
+    sigterm_backstop_grace(::paths::env::setting(::paths::env::SIGTERM_BACKSTOP_SECS).ok().as_deref())
+}
+
+#[test]
+fn sigterm_backstop_reads_environment_installed_and_missing_settings() {
+    const CHILD: &str = "BACKSTOP_SETTING_CHILD";
+    const TEST: &str = "sigterm_backstop_reads_environment_installed_and_missing_settings";
+    if let Some(mode) = ::paths::env::os(CHILD) {
+        let expected = match mode.to_str().unwrap() {
+            "environment" => 3,
+            "installed" => 4,
+            "bare" | "invalid" | "unreadable" => 15,
+            other => panic!("unknown fixture {other}"),
+        };
+        assert_eq!(configured_sigterm_backstop_grace(), std::time::Duration::from_secs(expected));
+        return;
+    }
+    let exe = std::env::current_exe().unwrap();
+    for mode in ["environment", "installed", "bare", "invalid", "unreadable"] {
+        let prefix = tempfile::tempdir_in(exe.parent().unwrap()).unwrap();
+        if mode != "bare" {
+            let data = if mode == "unreadable" {
+                "invalid data".to_owned()
+            } else {
+                serde_json::json!({"schema": 1, "commit": "fixture", ::paths::env::SIGTERM_BACKSTOP_SECS: "4"}).to_string()
+            };
+            std::fs::write(prefix.path().join("env.mx"), data).unwrap();
+        }
+        let mut command = std::process::Command::new(&exe);
+        command.args(["--exact", TEST, "--nocapture"])
+            .env(CHILD, mode).env(::paths::env::PREFIX, prefix.path())
+            .env_remove(::paths::env::ROOT).env_remove(::paths::env::SIGTERM_BACKSTOP_SECS);
+        if mode == "environment" {
+            command.env(::paths::env::SIGTERM_BACKSTOP_SECS, "3");
+        } else if mode == "invalid" {
+            command.env(::paths::env::SIGTERM_BACKSTOP_SECS, "bad");
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"), "{mode}: {}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    }
 }
 
 #[test]
@@ -627,10 +672,7 @@ fn arm_sigterm_backstop() {
         } {
             eprintln!("mix: failed to record SIGTERM: {error}");
         }
-        let grace = sigterm_backstop_grace(
-            ::paths::env::raw(::paths::env::SIGTERM_BACKSTOP_SECS)
-                .and_then(|value| value.into_string().ok()).as_deref(),
-        );
+        let grace = configured_sigterm_backstop_grace();
         let mut signals = match signal_hook::iterator::Signals::new([libc::SIGTERM]) {
             Ok(s) => s,
             Err(e) => {

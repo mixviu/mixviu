@@ -4,15 +4,17 @@ include!("env_names.rs");
 
 use std::{ffi::OsString, sync::OnceLock};
 
-/// Process environment with exactly std::env::var_os semantics, including empty values.
-/// This never reads installed configuration.
-pub fn os(name: &str) -> Option<OsString> {
-    std::env::var_os(name)
-}
-
 /// An empty override is unset, just as in Environment.
 pub fn raw(name: &str) -> Option<OsString> {
-    os(name).filter(|v| !v.is_empty())
+    std::env::var_os(name).filter(|v| !v.is_empty())
+}
+
+/// The process environment exactly as it is: a value set to the empty
+/// string is returned as empty. For names that are not MixViu settings
+/// (`PATH`, `HOME`, a script's own variables) and for the few settings where
+/// presence alone, or an empty value, means something.
+pub fn os(name: &str) -> Option<OsString> {
+    std::env::var_os(name)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
