@@ -249,7 +249,14 @@ fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
         let state = app.state();
         assert_eq!(state["active"], body["active"]);
         assert!(state["pending"].is_null());
-        assert_eq!(state["config"]["outputs"]["HEADLESS-2"]["fit"], mode);
+        assert_eq!(state["config"]["outputs"]["HEADLESS-2"]["image"], image);
+        // The canonical document omits fit for the default fill mode.
+        assert_eq!(
+            state["config"]["outputs"]["HEADLESS-2"]["fit"]
+                .as_str()
+                .unwrap_or("fill"),
+            mode
+        );
         assert_eq!(state["config"]["default"]["colour"], "#1234ab");
         // Calls::finish answers inside the evaluator; the callback's model
         // reaches Runtime::drain only after the callback returns. Its global
