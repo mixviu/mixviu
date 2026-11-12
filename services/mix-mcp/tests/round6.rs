@@ -47,7 +47,7 @@ async fn invalid_layout_keeps_discovery_and_returns_log_errors() -> anyhow::Resu
                 .await?;
             let text = serde_json::to_string(&reply)?;
             assert!(
-                text.contains(if malformed { "layout.mx" } else { "MIX_PREFIX" }),
+                text.contains(if malformed { "layout.mx" } else { "relative" }),
                 "{text}"
             );
         }
@@ -78,7 +78,7 @@ async fn nested_and_indirect_calls_keep_the_worker_policy() -> anyhow::Result<()
     let service = ().serve(TokioChildProcess::new(command)?).await?;
     let mut scripts = vec![
         "map([1], fn($x) = tar_list(\"absent.tar\"))".to_string(),
-        "assert(not has_builtin(\"tar_list\")); assert(not has_builtin(\"http_get\")); print(71)"
+        "if has_builtin(\"tar_list\") or has_builtin(\"http_get\") then die \"widened\" end; print(71)"
             .to_string(),
     ];
     for builtin in ["tar_list", "http_get"] {

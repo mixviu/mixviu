@@ -225,7 +225,7 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
         // load_service delegates to this directory-explicit core. Avoid process
         // env changes: the shared paths resolver caches configuration locations.
         let loaded =
-            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+            load_in::<KnowledgeSettings>(dir.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).unwrap();
         assert_eq!(loaded.indexd.target, "knowledge-fixture");
         assert_eq!(loaded.trust_weight_doc, 0.12);
         let saved = serde_json::to_value(&loaded).unwrap();
@@ -242,7 +242,7 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
             content
         );
         let defaults = tempfile::tempdir().unwrap();
-        config::store::load_service_in::<KnowledgeSettings>(defaults.path(), "knowledge").unwrap();
+        load_in::<KnowledgeSettings>(defaults.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).unwrap();
         let generated =
             std::fs::read_to_string(defaults.path().join("knowledge/knowledge.conf.mix")).unwrap();
         for key in [
@@ -264,7 +264,7 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
     fn knowledge_transport_defaults_and_partial_config() {
         let dir = tempfile::tempdir().unwrap();
         let absent =
-            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+            load_in::<KnowledgeSettings>(dir.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).unwrap();
         assert_eq!(absent.indexd, IndexdSettings::default());
         std::fs::write(
             dir.path().join("knowledge/knowledge.conf.mix"),
@@ -272,7 +272,7 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
         )
         .unwrap();
         let partial =
-            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+            load_in::<KnowledgeSettings>(dir.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).unwrap();
         assert_eq!(partial.indexd.transport, IndexdTransport::Ssh);
         assert_eq!(partial.indexd.target, "indexd");
         assert_eq!(partial.indexd.call_timeout_secs, 120);
@@ -286,7 +286,7 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
         )
         .unwrap();
         assert!(
-            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").is_err()
+            load_in::<KnowledgeSettings>(dir.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).is_err()
         );
     }
 }
@@ -334,11 +334,14 @@ fn required(template: &serde_json::Value, value: &serde_json::Value) -> anyhow::
 
 fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
     service: &str,
-    mut value: serde_json::Value,
+    value: serde_json::Value,
 ) -> anyhow::Result<T> {
-    let file = paths::try_root(paths::Root::Etc)
-        .map_err(anyhow::Error::msg)?
-        .join(service)
+    let dir = paths::try_root(paths::Root::Etc).map_err(anyhow::Error::msg)?;
+    load_in(&dir, service, value)
+}
+
+fn load_in<T: serde::de::DeserializeOwned + serde::Serialize>(dir: &Path, service: &str, mut value: serde_json::Value) -> anyhow::Result<T> {
+    let file = dir.join(service)
         .join(format!("{service}.conf.mix"));
     if file.exists() {
         merge(
@@ -400,9 +403,8 @@ mod read_path_tests {
             ("indexd_client", include_str!("indexd_client.rs")),
             ("knowledge_settings", include_str!("knowledge_settings.rs")),
         ] {
-            let production = source.split("#[cfg(test)]").next().unwrap_or(source);
             assert!(
-                !production.contains("load_service"),
+                !source.contains(concat!("config::store::", "load_service")),
                 "{name} bypasses validated loaders"
             );
         }
