@@ -84,7 +84,7 @@ for $line in lines($b.stdout)
 end
 
 -- 2-4. Run: the pool (with doc-tests as one more job), then the serial list.
-$doc = {argv: concat(["cargo", "test", "--doc"], $cargo_args), timeout: 7200, max_output: 64000000,
+$doc = {argv: concat(["cargo", "test", "--doc"], $cargo_args), env: {}, timeout: 7200, max_output: 64000000,
         stdout: "capture", stderr: "stdout", label: "doc-tests", key: "doc-tests", tmp: nil}
 fn run_spec($jobs)
   return map($jobs, fn($j) = {argv: $j.argv, cwd: $j.cwd, env: $j.env, timeout: $j.timeout, max_output: $j.max_output, stdout: $j.stdout, stderr: $j.stderr})
