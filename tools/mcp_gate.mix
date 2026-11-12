@@ -14,6 +14,9 @@ fn checked($argv, $env = {})
   -- A /build ancestor deliberately marks scripts for version lint. Keep test
   -- fixtures outside it, and outside the worker's /tmp, without waiving lint.
   $scratch = trim(run_argv_must(["mktemp", "-d", "/var/tmp/mcp-tests-XXXXXXXX"]))
+  -- Native fixtures require traversable ancestors (BUS-013); their own
+  -- credential files retain their individual permissions.
+  run_argv_must(["chmod", "755", $scratch])
   $env.TMPDIR = $scratch
   $r = nil
   try
