@@ -3052,16 +3052,30 @@ mod tests {
         assert_eq!(len_count(&all_caching(&dir)), 1);
         let path = run_path(&dir, &day);
         let mtime = fs::metadata(&path).unwrap().modified().unwrap();
+        let before = FileId::of(&fs::metadata(&path).unwrap());
         let rewritten = fs::read_to_string(&path)
             .unwrap()
             .replace("\"len\"", "\"abs\"");
-        fs::write(&path, rewritten).unwrap();
-        File::options()
-            .write(true)
-            .open(&path)
-            .unwrap()
-            .set_modified(mtime)
-            .unwrap();
+        // CBC filesystems can assign both writes the same ctime tick. This
+        // fixture tests ctime invalidation, so establish a changed ctime while
+        // keeping the inode, length and restored mtime identical.
+        let started = std::time::Instant::now();
+        loop {
+            fs::write(&path, &rewritten).unwrap();
+            File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(mtime)
+                .unwrap();
+            let after = FileId::of(&fs::metadata(&path).unwrap());
+            assert_eq!((before.ino, before.len, before.mtime_ns), (after.ino, after.len, after.mtime_ns));
+            if after.ctime_ns != before.ctime_ns {
+                break;
+            }
+            assert!(started.elapsed() < std::time::Duration::from_secs(1), "filesystem did not advance ctime");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
         let snapshot = all(&dir);
         assert_eq!(len_count(&snapshot), 0);
         assert_eq!(snapshot.counters.builtins.get("abs"), Some(&1));
