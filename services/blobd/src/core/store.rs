@@ -1772,9 +1772,11 @@ fn gid_group(gid: u32) -> Option<String> {
         // SAFETY: out-parameters sized by `len`.
         |grp, buf, len, out| unsafe { libc::getgrgid_r(gid, grp, buf, len, out) },
         // SAFETY: `gr_name` points into the live lookup buffer.
-        |g| unsafe { std::ffi::CStr::from_ptr(g.gr_name) }
-            .to_string_lossy()
-            .into_owned(),
+        |g| {
+            unsafe { std::ffi::CStr::from_ptr(g.gr_name) }
+                .to_string_lossy()
+                .into_owned()
+        },
     )
 }
 
