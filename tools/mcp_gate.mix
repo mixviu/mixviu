@@ -45,7 +45,7 @@ if $stage == "focused" then
 end
 if $stage == "all" then checked(["mix", "tools/ci.mix", "all"]) end
 checked(["cargo", "build", "--locked", "-p", "mix"])
-$prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir", "mcp-ci-XXXXXXXX"]))
+$prefix = trim(run_argv_must(["mktemp", "-d", "target/mcp-ci-XXXXXXXX"]))
 try
   mkdir($prefix .. "/bin")
   checked(["ln", "-s", realpath("target/debug/mix"), $prefix .. "/bin/mix"])

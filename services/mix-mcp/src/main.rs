@@ -1144,7 +1144,7 @@ impl MixMcp {
         &self,
         Parameters(p): Parameters<AwaitOpParams>,
     ) -> rmcp::model::CallToolResult {
-        let session = paths::env::raw(connection::AGENT_SESSION_ENV)
+        let session = paths::env::os(connection::AGENT_SESSION_ENV)
             .map(|s| s.to_string_lossy().into_owned());
         let args = match await_op_request(session.as_deref(), p) {
             Ok(args) => args,

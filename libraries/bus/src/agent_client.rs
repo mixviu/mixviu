@@ -175,7 +175,7 @@ impl BrokerConnection {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let session = paths::env::raw(AGENT_SESSION_ENV).map(|v| v.to_string_lossy().into_owned());
+        let session = paths::env::os(AGENT_SESSION_ENV).map(|v| v.to_string_lossy().into_owned());
         Self::new(
             broker_name(session.as_deref(), std::process::id(), nonce),
             provenance,

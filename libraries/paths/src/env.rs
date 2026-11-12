@@ -9,6 +9,14 @@ pub fn raw(name: &str) -> Option<OsString> {
     std::env::var_os(name).filter(|v| !v.is_empty())
 }
 
+/// The process environment exactly as it is: a value set to the empty
+/// string is returned as empty. For names that are not MixViu settings
+/// (`PATH`, `HOME`, a script's own variables) and for the few settings where
+/// presence alone, or an empty value, means something.
+pub fn os(name: &str) -> Option<OsString> {
+    std::env::var_os(name)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingError {
     NotSet {
