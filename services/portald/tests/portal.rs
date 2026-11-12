@@ -74,7 +74,8 @@ fn screencast_settings_are_checked_at_startup_and_named() {
         String::from_utf8_lossy(&output.stderr).into_owned()
     };
     use paths::env::{PORTALD_CONSENT, PORTALD_MAX_FRAMERATE, PORTALD_PIPEWIRE_REMOTE};
-    let unset = |name: &str| format!("--screencast: {name} is not set and has no installed default");
+    let unset =
+        |name: &str| format!("--screencast: {name} is not set and has no installed default");
     let consent = (PORTALD_CONSENT, "allow");
     let rate = (PORTALD_MAX_FRAMERATE, "30");
     let remote = (PORTALD_PIPEWIRE_REMOTE, "pipewire-0");
@@ -97,10 +98,16 @@ fn screencast_settings_are_checked_at_startup_and_named() {
     assert!(stderr.contains(&unset(PORTALD_PIPEWIRE_REMOTE)), "{stderr}");
     // The standard PIPEWIRE_REMOTE stands in for the installed name.
     let stderr = run(&[consent, rate, (paths::env::PIPEWIRE_REMOTE, "pipewire-0")]);
-    assert!(stderr.contains("DBUS_SESSION_BUS_ADDRESS is not set"), "{stderr}");
+    assert!(
+        stderr.contains("DBUS_SESSION_BUS_ADDRESS is not set"),
+        "{stderr}"
+    );
     // All three present: start-up gets past the ScreenCast checks.
     let stderr = run(&[consent, rate, remote]);
-    assert!(stderr.contains("DBUS_SESSION_BUS_ADDRESS is not set"), "{stderr}");
+    assert!(
+        stderr.contains("DBUS_SESSION_BUS_ADDRESS is not set"),
+        "{stderr}"
+    );
 }
 
 /// Settings and FileChooser need no installed defaults: with no `env.mx`, no
@@ -825,13 +832,13 @@ async fn losing_the_session_bus_exits_non_zero_for_the_restart() -> anyhow::Resu
     let proxy = portal_proxy(&connection).await?;
     let mut process = Process(
         Command::new(env!("CARGO_BIN_EXE_portald"))
-        .args(["serve", "--instance", "host", "--profile", "default"])
-        .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
-        .env(paths::env::NODED_URL, &broker.url)
-        .env_remove("XDG_CONFIG_HOME")
-        .env_remove(paths::env::STATE_DIRECTORY)
-        .stdin(Stdio::null())
-        .spawn()?,
+            .args(["serve", "--instance", "host", "--profile", "default"])
+            .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
+            .env(paths::env::NODED_URL, &broker.url)
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove(paths::env::STATE_DIRECTORY)
+            .stdin(Stdio::null())
+            .spawn()?,
     );
     let value = tokio::time::timeout(Duration::from_secs(5), async {
         loop {

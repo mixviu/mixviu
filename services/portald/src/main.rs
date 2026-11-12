@@ -48,7 +48,8 @@ enum Command {
 /// A ScreenCast setting from the environment or the installed defaults,
 /// parsed. Every failure names the variable.
 fn screencast_setting<T: std::str::FromStr<Err = String>>(name: &str) -> anyhow::Result<T> {
-    let value = paths::env::setting(name).map_err(|error| anyhow::anyhow!("--screencast: {error}"))?;
+    let value =
+        paths::env::setting(name).map_err(|error| anyhow::anyhow!("--screencast: {error}"))?;
     value
         .parse()
         .map_err(|error| anyhow::anyhow!("--screencast: {name}={value:?}: {error}"))
@@ -68,7 +69,8 @@ fn screencast_config(
         Some(value) => value,
         None => screencast_setting(paths::env::PORTALD_MAX_FRAMERATE)?,
     };
-    portald::screencast::remote::name().map_err(|error| anyhow::anyhow!("--screencast: {error}"))?;
+    portald::screencast::remote::name()
+        .map_err(|error| anyhow::anyhow!("--screencast: {error}"))?;
     Ok(portald::screencast::Config {
         consent,
         max_framerate,
@@ -113,12 +115,7 @@ fn main() -> anyhow::Result<()> {
         .worker_threads(2)
         .enable_all()
         .build()?;
-    let result = runtime.block_on(portald::run(
-        binding,
-        address,
-        state_dir,
-        screencast,
-    ));
+    let result = runtime.block_on(portald::run(binding, address, state_dir, screencast));
     // A blocking task stuck on a wedged compositor (ScreenCast) must not hold
     // up exit: give the rest a moment, then leave.
     runtime.shutdown_timeout(std::time::Duration::from_secs(2));
@@ -142,7 +139,12 @@ mod tests {
             .command;
         assert_eq!(screencast_max_framerate, None);
         assert_eq!(profile, settings::follow::PROFILE);
-        assert_eq!("30".parse::<portald::screencast::MaxFramerate>().unwrap().get(), 30);
+        assert_eq!(
+            "30".parse::<portald::screencast::MaxFramerate>()
+                .unwrap()
+                .get(),
+            30
+        );
         for rate in ["1", "60", "120"] {
             assert!(
                 Cli::try_parse_from([
