@@ -1,0 +1,72 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix")
+$layout=require("model.mix")
+fn assert($ok,$message)
+  if not $ok then raise("TEST",$message) end
+end
+$s={look:{appearance:{scheme:"studio",mode:"dark"},values:{"window.decorations":"csd"}},choice:{},bindings:{},effective:{},closed:false,layout:$layout.open_tab($layout.initial(),{handle:"vt-test",pid:1},nil)}
+$v=$core.framed($s)
+assert($v.window_title=="Terminal","gold native title")
+assert($v.frame.icon=="icon:file-terminal","gold FileTerminal frame icon")
+assert(not $v.window_close,"initial window remains open")
+assert($v.frame.status_visible==false,"gold terminal has no status footer")
+assert($v.tabs.initial.selected=="1" and $v.terminal.initial=="vt-test","live tab and native surface")
+assert(not $v.show_paste_notice and not $v.show_font_notice,"no notice rows without a refusal")
+$s.look.values["accessibility.text_scale"]=1.25
+$v=$core.framed($s)
+assert($v.terminal.properties.text_scale==1.25,"global text scale before resolved appearance arrives")
+$s.look.appearance.text_scale=1.5
+$s.look.values["apps.term.text_scale"]=1.5
+$v=$core.framed($s)
+assert($v.appearance.text_scale==1.5 and $v.terminal.properties.text_scale==1.5,"app override scales frame and terminal together")
+assert($v.terminal.initial=="vt-test" and $v.terminal.properties.focused_handle=="vt-test","scale retains native owner")
+$s.look.appearance.text_scale=1
+$v=$core.framed($s)
+assert($v.terminal.properties.text_scale==1,"resolved scale takes precedence over stale raw global values")
+$s.notice="A paste is still being read";$s.font={unsaved:true};$v=$core.framed($s)
+assert($v.show_paste_notice and $v.show_font_notice,"paste and unsaved zoom each have their own notice row")
+assert($v.paste_notice.initial=="A paste is still being read" and $v.font_notice.initial=="Zoom is not saved","gold notice labels and warning tone")
+$s.look.appearance.mode="light"
+$s.look.values["window.decorations"]="ssd"
+$s.closed=true
+$v=$core.framed($s)
+assert($v.appearance.mode=="light","live appearance")
+assert($v.window_settings["window.decorations"]=="ssd","live decoration")
+assert($v.window_close,"Mix owns close")
+$s.drain_close=true;$v=$core.framed($s)
+assert(not $v.window_close and $v.layout_hidden,"bounded final-event drain hides removed sessions before host exit")
+assert(len($v.values["gold-menu"])==6 and len($v.values["gold-toolbar"])==4,"gold menus and standard tail")
+$s.settings_lost=true;$v=$core.framed($s)
+assert($v.window_settings["window.decorations"]==nil and $v.window_settings["window.header_seamless"],"authority loss uses gold default window policy with the terminal seamless band")
+assert($v.terminal.initial=="vt-test","authority loss retains the existing PTY")
+$s.settings_lost=false;$s.settings_connected=false;$v=$core.framed($s)
+assert($v.window_settings["window.decorations"]=="ssd","transient read failure retains accepted window policy")
+$s.settings_connected=true;$s.look.values["window.decorations"]="csd";$v=$core.framed($s)
+assert($v.window_settings["window.decorations"]=="csd","authority recovery reapplies live window policy")
+print("term frame model: 21 checks passed")
+
+-- Oracle: MixOS 8779f33 libs/settings/src/terminal.rs defaults_round_trip.
+$defaults={font_family:nil,font_size:14.667,text_scale:1,font_weight:400,padding:8,border_width:1,focus_ring:"accent",focus_strength:0.25,cursor_blink:false,cursor:"underline",scroll_speed:40,copy_on_select:false}
+$explicit={"terminal.font.family":"Example Mono","terminal.font.size":18,"terminal.font.weight":700,"terminal.padding":16,"terminal.border.width":3,"terminal.focus.ring":"neutral","terminal.focus.strength":0,"terminal.cursor.blink":true,"terminal.cursor.shape":"bar","terminal.scroll.speed":80,"terminal.mouse.copy_on_select":true}
+$expected={font_family:"Example Mono",font_size:18,text_scale:1,font_weight:700,padding:16,border_width:3,focus_ring:"neutral",focus_strength:0,cursor_blink:true,cursor:"bar",scroll_speed:80,copy_on_select:true}
+fn appearance_is($s,$expected)
+  $v=$core.framed($s)
+  for $key in keys($expected)
+    assert(deep_eq($v.terminal.properties[$key],$expected[$key]),"oracle terminal property: "..$key)
+  end
+  assert($v.terminal.initial=="vt-defaults","settings changes retain the session")
+end
+$s={look:{appearance:{},values:{}},choice:{},bindings:{},effective:{},closed:false,layout:$layout.open_tab($layout.initial(),{handle:"vt-defaults",pid:2},nil)}
+appearance_is($s,$defaults)
+$s.look.values={"appearance.mono_family":"Session Mono"}
+assert($core.framed($s).terminal.properties.font_family=="Session Mono","absent family follows session mono family")
+$session=require("../../libraries/viu/mix/session.mix")
+$follow=$session.session_new("test");$s.look.values={}
+for $phase in ["absent","explicit","transient","lost","recovered","reset"]
+  if $phase=="absent" or $phase=="lost" then $follow=$session.session_answer($follow,10,nil,nil)
+  elif $phase=="transient" then $follow=$session.session_answer($follow,20,nil,"offline")
+  else $follow=$session.session_answer($follow,0,{incarnation:"test",revision:if $phase=="reset" then "2" else "1" end,values:if $phase=="reset" then {} else $explicit end},nil) end
+  $s=$core.accept_look($s,{appearance:{},state:$follow})
+  appearance_is($s,if contains(["absent","reset"],$phase) then $defaults else $expected end)
+end
+print("term default appearance: 92 checks passed (absent, explicit, transient failure, loss, recovery, reset, family)")

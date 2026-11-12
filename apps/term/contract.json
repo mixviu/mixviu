@@ -1,0 +1,568 @@
+{
+  "commands": [
+    "term.session",
+    "term.tabs",
+    "term.panes",
+    "term.tab.new",
+    "term.tab.select",
+    "term.tab.close",
+    "term.tab.title",
+    "term.tab.move",
+    "term.pane.split",
+    "term.pane.select",
+    "term.pane.close",
+    "term.snapshot",
+    "term.type",
+    "term.scroll",
+    "term.props.watch",
+    "term.ping",
+    "app.quit",
+    "term.execute",
+    "term.actions",
+    "term.dialog",
+    "term.show",
+    "HELP",
+    "app.describe",
+    "INFO",
+    "info",
+    "help",
+    "term.info",
+    "term.macros.list",
+    "term.macros.reload",
+    "term.macros.run",
+    "term.macros.status",
+    "term.macros.output",
+    "term.macros.stop",
+    "term.macros.new",
+    "term.macros.get",
+    "term.macros.put",
+    "term.macros.remove",
+    "term.macros.move",
+    "term.macros.copy",
+    "term.debug",
+    "term.debug.recent",
+    "term.debug.set",
+    "term.ui.tree",
+    "term.ui.click",
+    "term.ui.pointer",
+    "term.ui.scroll",
+    "term.ui.key",
+    "term.ui.type",
+    "term.ui.menu",
+    "term.ui.menu.list",
+    "term.ui.menu.open",
+    "term.ui.menu.close",
+    "term.ui.menu.popup",
+    "term.ui.menu.form",
+    "term.ui.titlebar.form",
+    "term.ui.capture",
+    "term.window",
+    "term.window.state"
+  ],
+  "host": {
+    "startup": "startup.mix",
+    "authored_discovery": true,
+    "command_descriptors": [
+      {
+        "args": [],
+        "description": "List every command",
+        "name": "HELP",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Describe the service commands",
+        "name": "app.describe",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Read terminal diagnostics and usage",
+        "name": "INFO",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Read terminal diagnostics and usage",
+        "name": "info",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "List every command",
+        "name": "help",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Read terminal identity and diagnostics",
+        "name": "term.info",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Read terminal identity and diagnostics",
+        "name": "term.session",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "term.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)",
+        "name": "term.tabs",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "term.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)",
+        "name": "term.tab.new",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.tab.select {\"id\":<integer>}: select tab",
+        "name": "term.tab.select",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.tab.close {\"id\":<integer>}: close tab; last tab quits",
+        "name": "term.tab.close",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title",
+        "name": "term.tab.title",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved",
+        "name": "term.tab.move",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)",
+        "name": "term.panes",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "term.pane.split {\"dir\":\"h|horizontal|v|vertical\"}",
+        "name": "term.pane.split",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.pane.close {}: close active pane; last pane closes tab",
+        "name": "term.pane.close",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.pane.select {\"id\":<integer>}: select pane in active tab",
+        "name": "term.pane.select",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings",
+        "name": "term.snapshot",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "term.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching",
+        "name": "term.scroll",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.",
+        "name": "term.type",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "term.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this command to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.",
+        "name": "term.props.watch",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "List the last macro catalogue, scanning first if needed",
+        "name": "term.macros.list",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Rescan the macro catalogue",
+        "name": "term.macros.reload",
+        "read_only": false
+      },
+      {
+        "args": [
+          "id",
+          "target"
+        ],
+        "description": "Start a macro by id; answers acceptance, not completion",
+        "name": "term.macros.run",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "Read the current or last macro run status",
+        "name": "term.macros.status",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Read the retained 64 KiB output tail",
+        "name": "term.macros.output",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Request termination of the current macro process group",
+        "name": "term.macros.stop",
+        "read_only": false
+      },
+      {
+        "args": [
+          "title"
+        ],
+        "description": "Create a user per-app macro without opening an editor",
+        "name": "term.macros.new",
+        "read_only": false
+      },
+      {
+        "args": [
+          "id"
+        ],
+        "description": "Read macro text (at most 256 KiB)",
+        "name": "term.macros.get",
+        "read_only": true
+      },
+      {
+        "args": [
+          "id",
+          "text"
+        ],
+        "description": "Save a user macro; JSON envelope cap 1544 KiB, decoded text cap 256 KiB",
+        "name": "term.macros.put",
+        "read_only": false
+      },
+      {
+        "args": [
+          "id"
+        ],
+        "description": "Delete a user macro",
+        "name": "term.macros.remove",
+        "read_only": false
+      },
+      {
+        "args": [
+          "destination",
+          "id",
+          "tier"
+        ],
+        "description": "Move a user macro between user tiers",
+        "name": "term.macros.move",
+        "read_only": false
+      },
+      {
+        "args": [
+          "id"
+        ],
+        "description": "Copy a built-in macro into its user tier",
+        "name": "term.macros.copy",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "Read live debug state",
+        "name": "term.debug",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Pull recent events; seq is newest, next is the paging cursor",
+        "name": "term.debug.recent",
+        "read_only": true
+      },
+      {
+        "args": [
+          "level?",
+          "on?"
+        ],
+        "description": "Set level or on shorthand; exactly one required",
+        "name": "term.debug.set",
+        "read_only": false
+      },
+      {
+        "args": [
+          "exact",
+          "label",
+          "role",
+          "viewport"
+        ],
+        "description": "The widget tree from AccessKit, depth first: id (decimal text), role, label, value, placeholder, rect (points), enabled, focused, selected, checked, children",
+        "name": "term.ui.tree",
+        "read_only": true
+      },
+      {
+        "args": [
+          "button",
+          "double",
+          "id",
+          "label",
+          "trace",
+          "viewport"
+        ],
+        "description": "Move to a node's centre, then press and release there in one pass; a label names a control before a tooltip or label that repeats it; answers with the resulting menu and focus",
+        "name": "term.ui.click",
+        "read_only": false
+      },
+      {
+        "args": [
+          "action",
+          "button",
+          "viewport",
+          "x",
+          "y"
+        ],
+        "description": "One pointer event at a point in window coordinates (points)",
+        "name": "term.ui.pointer",
+        "read_only": false
+      },
+      {
+        "args": [
+          "dx",
+          "dy",
+          "viewport",
+          "x",
+          "y"
+        ],
+        "description": "Move to a point and scroll by dx, dy points",
+        "name": "term.ui.scroll",
+        "read_only": false
+      },
+      {
+        "args": [
+          "key",
+          "modifiers",
+          "viewport"
+        ],
+        "description": "Press and release one key with modifiers, one pass each",
+        "name": "term.ui.key",
+        "read_only": false
+      },
+      {
+        "args": [
+          "text",
+          "viewport"
+        ],
+        "description": "Type text into the focused widget. A multi-line field takes it verbatim; elsewhere a newline presses Enter",
+        "name": "term.ui.type",
+        "read_only": false
+      },
+      {
+        "args": [
+          "viewport"
+        ],
+        "description": "The open menu and its highlighted path",
+        "name": "term.ui.menu",
+        "read_only": true
+      },
+      {
+        "args": [
+          "viewport"
+        ],
+        "description": "Every menu: titles, then rows with command id, label, shortcut, enabled, tick and submenu rows",
+        "name": "term.ui.menu.list",
+        "read_only": true
+      },
+      {
+        "args": [
+          "menu",
+          "path",
+          "viewport"
+        ],
+        "description": "Open a menu, and submenus within it, by label; answers the open menu and path",
+        "name": "term.ui.menu.open",
+        "read_only": false
+      },
+      {
+        "args": [
+          "viewport"
+        ],
+        "description": "Close every open menu; answers whether one was open",
+        "name": "term.ui.menu.close",
+        "read_only": false
+      },
+      {
+        "args": [
+          "side",
+          "viewport",
+          "x"
+        ],
+        "description": "Open the vertical menu at the top of the window content in any menu form",
+        "name": "term.ui.menu.popup",
+        "read_only": false
+      },
+      {
+        "args": [
+          "viewport"
+        ],
+        "description": "The selected menu style and side, the effective form after resolving decorations and the app's own drive registration, whether the app is hosted, and the Bus service it matched",
+        "name": "term.ui.menu.form",
+        "read_only": true
+      },
+      {
+        "args": [
+          "viewport"
+        ],
+        "description": "Effective Action Bar placement and title band alignments, matching live drive service, and revisioned hosted icon items",
+        "name": "term.ui.titlebar.form",
+        "read_only": true
+      },
+      {
+        "args": [
+          "name",
+          "viewport"
+        ],
+        "description": "Screenshot the window to a new PNG in $XDG_RUNTIME_DIR/<app>/captures and answer with its path",
+        "name": "term.ui.capture",
+        "read_only": true
+      },
+      {
+        "args": [
+          "action",
+          "viewport"
+        ],
+        "description": "Send a window command, as the caption buttons do (focus is refused: call <app>.show, which raises and focuses through the compositor)",
+        "name": "term.window",
+        "read_only": false
+      },
+      {
+        "args": [
+          "viewport"
+        ],
+        "description": "Window size, maximized, minimized, focused and pixels per point",
+        "name": "term.window.state",
+        "read_only": true
+      },
+      {
+        "args": [
+          "answer",
+          "open"
+        ],
+        "description": "Read or answer the open dialog",
+        "name": "term.dialog",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "List window actions",
+        "name": "term.actions",
+        "read_only": true
+      },
+      {
+        "args": [
+          "id",
+          "pane",
+          "tab"
+        ],
+        "description": "Execute a window action",
+        "name": "term.execute",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "Restore and focus the existing window",
+        "name": "term.show",
+        "read_only": false
+      }
+    ],
+    "command_namespace": "term",
+    "commands": [
+      "term.session",
+      "term.tabs",
+      "term.panes",
+      "term.tab.new",
+      "term.tab.select",
+      "term.tab.close",
+      "term.tab.title",
+      "term.tab.move",
+      "term.pane.split",
+      "term.pane.select",
+      "term.pane.close",
+      "term.snapshot",
+      "term.type",
+      "term.scroll",
+      "term.props.watch",
+      "term.ping",
+      "app.quit",
+      "term.execute",
+      "term.actions",
+      "term.dialog",
+      "term.show",
+      "HELP",
+      "app.describe",
+      "INFO",
+      "info",
+      "help",
+      "term.info",
+      "term.macros.list",
+      "term.macros.reload",
+      "term.macros.run",
+      "term.macros.status",
+      "term.macros.output",
+      "term.macros.stop",
+      "term.macros.new",
+      "term.macros.get",
+      "term.macros.put",
+      "term.macros.remove",
+      "term.macros.move",
+      "term.macros.copy",
+      "term.debug",
+      "term.debug.recent",
+      "term.debug.set",
+      "term.ui.tree",
+      "term.ui.click",
+      "term.ui.pointer",
+      "term.ui.scroll",
+      "term.ui.key",
+      "term.ui.type",
+      "term.ui.menu",
+      "term.ui.menu.list",
+      "term.ui.menu.open",
+      "term.ui.menu.close",
+      "term.ui.menu.popup",
+      "term.ui.menu.form",
+      "term.ui.titlebar.form",
+      "term.ui.capture",
+      "term.window",
+      "term.window.state"
+    ],
+    "follow_settings": true,
+    "frame": "gold",
+    "macros": true,
+    "native_drive": true,
+    "native_selection": true,
+    "native_macros": true,
+    "registration_pid_fallback": true,
+    "service": "term",
+    "size": [
+      900,
+      560
+    ],
+    "text_replies": true,
+    "preserve_request_body": true,
+    "title": "Terminal",
+    "unknown_reply": "unknown command; use HELP",
+    "unknown_handler": "term.unknown.request",
+    "window_app_id": "dev.mixos.term"
+  }
+}

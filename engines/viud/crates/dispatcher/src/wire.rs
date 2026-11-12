@@ -163,6 +163,12 @@ pub fn new_dispatch(
         presentation: crate::wayland::presentation::factory::new::<Dispatch>(display_handle),
         viewporter: crate::wayland::viewporter::factory::new::<Dispatch>(display_handle),
         fractional: crate::wayland::fractional::factory::new::<Dispatch>(display_handle),
+        inhibitors: {
+            smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Dispatch>(
+                display_handle,
+            );
+            Default::default()
+        },
         idle_notifier: smithay::wayland::idle_notify::IdleNotifierState::new(
             display_handle,
             idle_timers,

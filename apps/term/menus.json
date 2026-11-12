@@ -1,0 +1,473 @@
+[
+  {
+    "rows": [
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "tab.new",
+        "label": "New Tab",
+        "shortcut": "Ctrl+Shift+T"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "tab.close",
+        "label": "Close Tab",
+        "shortcut": "Ctrl+Shift+W"
+      },
+      {
+        "separator": true
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "app.quit",
+        "label": "Quit",
+        "shortcut": "Ctrl+Shift+Q"
+      }
+    ],
+    "title": "File"
+  },
+  {
+    "rows": [
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "edit.copy",
+        "label": "Copy",
+        "shortcut": "Ctrl+Shift+C"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "edit.paste",
+        "label": "Paste",
+        "shortcut": "Ctrl+Shift+V"
+      }
+    ],
+    "title": "Edit"
+  },
+  {
+    "rows": [
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "view.zoom_in",
+        "label": "Zoom In",
+        "shortcut": "Ctrl+Equals"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "view.zoom_out",
+        "label": "Zoom Out",
+        "shortcut": "Ctrl+Minus"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "view.zoom_reset",
+        "label": "Actual Size",
+        "shortcut": "Ctrl+0"
+      },
+      {
+        "separator": true
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "scroll.page_up",
+        "label": "Scroll Up a Page",
+        "shortcut": "Shift+PageUp"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "scroll.page_down",
+        "label": "Scroll Down a Page",
+        "shortcut": "Shift+PageDown"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "scroll.top",
+        "label": "Scroll to Top",
+        "shortcut": "Shift+Home"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "scroll.bottom",
+        "label": "Scroll to Bottom",
+        "shortcut": "Shift+End"
+      },
+      {
+        "separator": true
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": null,
+        "label": "Theme",
+        "shortcut": null,
+        "submenu": [
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.ocean",
+            "label": "Ocean",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.crimson",
+            "label": "Crimson",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.stone",
+            "label": "Stone",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.forest",
+            "label": "Forest",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.sunset",
+            "label": "Sunset",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.mono",
+            "label": "Mono",
+            "shortcut": null
+          },
+          {
+            "separator": true
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.pro",
+            "label": "Pro",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.studio",
+            "label": "Studio",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.classic",
+            "label": "Classic",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.breeze",
+            "label": "Breeze",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.adwaita",
+            "label": "Adwaita",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.theme.mixos",
+            "label": "MixOS",
+            "shortcut": null
+          },
+          {
+            "separator": true
+          },
+          {
+            "checked": true,
+            "enabled": true,
+            "id": "view.theme.session",
+            "label": "Session theme",
+            "shortcut": null
+          },
+          {
+            "separator": true
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.mode.light",
+            "label": "Light",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.mode.dark",
+            "label": "Dark",
+            "shortcut": null
+          },
+          {
+            "checked": true,
+            "enabled": true,
+            "id": "view.mode.session",
+            "label": "Session mode",
+            "shortcut": null
+          },
+          {
+            "separator": true
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.style.own",
+            "label": "Scheme's own style",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.style.plain",
+            "label": "Plain style",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.style.pro",
+            "label": "Pro style",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.style.studio",
+            "label": "Studio style",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.style.classic",
+            "label": "Classic style",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.style.breeze",
+            "label": "Breeze style",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.style.adwaita",
+            "label": "Adwaita style",
+            "shortcut": null
+          },
+          {
+            "checked": true,
+            "enabled": true,
+            "id": "view.style.session",
+            "label": "Session style",
+            "shortcut": null
+          },
+          {
+            "separator": true
+          },
+          {
+            "checked": true,
+            "enabled": true,
+            "id": "view.decorations.auto",
+            "label": "Automatic title bar",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.decorations.csd",
+            "label": "App title bar (CSD)",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.decorations.ssd",
+            "label": "System title bar (SSD)",
+            "shortcut": null
+          },
+          {
+            "checked": true,
+            "enabled": true,
+            "id": "view.captions.auto",
+            "label": "Style default captions",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.captions.left",
+            "label": "Captions left",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.captions.center",
+            "label": "Captions centre",
+            "shortcut": null
+          },
+          {
+            "checked": false,
+            "enabled": true,
+            "id": "view.captions.right",
+            "label": "Captions right",
+            "shortcut": null
+          }
+        ]
+      }
+    ],
+    "title": "View"
+  },
+  {
+    "rows": [
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "pane.split_right",
+        "label": "Split Right",
+        "shortcut": "Ctrl+Shift+E"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "pane.split_down",
+        "label": "Split Down",
+        "shortcut": "Ctrl+Shift+O"
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "pane.close",
+        "label": "Close Pane",
+        "shortcut": "Ctrl+Shift+X"
+      },
+      {
+        "separator": true
+      },
+      {
+        "checked": null,
+        "enabled": false,
+        "id": "pane.next",
+        "label": "Next Pane",
+        "shortcut": "Ctrl+Tab"
+      },
+      {
+        "checked": null,
+        "enabled": false,
+        "id": "pane.prev",
+        "label": "Previous Pane",
+        "shortcut": "Ctrl+Shift+Tab"
+      },
+      {
+        "separator": true
+      },
+      {
+        "checked": null,
+        "enabled": false,
+        "id": "pane.focus_left",
+        "label": "Focus Pane Left",
+        "shortcut": "Ctrl+Shift+Left"
+      },
+      {
+        "checked": null,
+        "enabled": false,
+        "id": "pane.focus_right",
+        "label": "Focus Pane Right",
+        "shortcut": "Ctrl+Shift+Right"
+      },
+      {
+        "checked": null,
+        "enabled": false,
+        "id": "pane.focus_up",
+        "label": "Focus Pane Above",
+        "shortcut": "Ctrl+Shift+Up"
+      },
+      {
+        "checked": null,
+        "enabled": false,
+        "id": "pane.focus_down",
+        "label": "Focus Pane Below",
+        "shortcut": "Ctrl+Shift+Down"
+      }
+    ],
+    "title": "Pane"
+  },
+  {
+    "rows": [
+      {
+        "checked": null,
+        "enabled": false,
+        "id": "tab.next",
+        "label": "Next Tab",
+        "shortcut": "Ctrl+PageDown"
+      },
+      {
+        "checked": null,
+        "enabled": false,
+        "id": "tab.prev",
+        "label": "Previous Tab",
+        "shortcut": "Ctrl+PageUp"
+      }
+    ],
+    "title": "Tabs"
+  },
+  {
+    "rows": [
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "help.macros",
+        "label": "Macros",
+        "shortcut": null
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "help.keys",
+        "label": "Keyboard Shortcuts",
+        "shortcut": null
+      },
+      {
+        "separator": true
+      },
+      {
+        "checked": null,
+        "enabled": true,
+        "id": "help.about",
+        "label": "About",
+        "shortcut": null
+      }
+    ],
+    "title": "Help"
+  }
+]

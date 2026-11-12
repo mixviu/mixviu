@@ -686,6 +686,17 @@ pub struct BindingState {
 }
 
 impl BindingState {
+    /// Whether this key's press was taken by the compositor table.
+    pub fn is_intercepted(&self, keycode: u32) -> bool {
+        self.intercepted.contains(&keycode)
+    }
+
+    /// Clear release ownership at an explicit synthetic input boundary.
+    pub fn reset_holds(&mut self) {
+        self.intercepted.clear();
+        self.bus_key_pressed = None;
+    }
+
     pub fn for_profile(profile: BindingProfile, enabled: bool) -> Self {
         let table = match profile {
             BindingProfile::Nested => BindingTable::nested_defaults(),

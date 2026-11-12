@@ -235,3 +235,9 @@ that the source retains its Move payload.
 - `is_inhibited` is an `Arc<AtomicBool>` that each armed timer captures, so an expiring timer decides from it and never touches the loop's data. The closure's test is factored out as `fires(ignore_inhibitor, inhibited, is_idle_already)`, unchanged in meaning.
 - Everything else is upstream: per-`wl_seat` notifications, `idled`/`resumed`, `notify_activity`, v2 `get_input_idle_notification` ignoring inhibitors, and a destroyed notification's timer left to fire on a dead resource (harmless, as upstream).
 - Guard: `wayland::idle_notify::compd_idle_timer_tests::` covers three things. A timer armed on an `EventLoop<()>` (a loop with no state at all) fires exactly once. A disarmed one never fires. `fires` holds under an inhibitor, ignores it for input-idle notifications, and idles only once.
+# Idle inhibitor resource teardown
+
+`wayland/idle_inhibit/inhibitor.rs` calls `uninhibit` from resource destruction
+rather than the destroy request. Explicit destroy and client disconnect each
+release exactly one inhibitor, including multiple inhibitors on one surface.
+

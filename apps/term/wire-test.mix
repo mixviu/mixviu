@@ -1,0 +1,62 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$wire=require("wire.mix")
+fn check($ok,$message)
+  if not $ok then raise("TEST",$message) end
+end
+check($wire.type_args({text:"x"})=="term.type requires pane or tab","no active-pane fallback")
+for $args in [{text:"x",pane:1.5},{text:"x",tab:-1},{text:"x",pane:true},{text:"x",pane:1,instance:"2"},{text:"x",pane:1,extra:true},{text:"x",pane:1,request_id:1}]
+  check($wire.type_args($args)!=nil,"mistyped and unknown arguments refused")
+end
+check($wire.type_args({text:"x",pane:1,instance:2})==nil,"explicit pane and instance")
+check($wire.type_args({text:"",tab:1})==nil,"empty input allowed")
+$a={text:"x",pane:1,request_id:"r1"}
+$history=$wire.remember([],"term.type",$a,0,"original")
+check($wire.replay($history,"term.type",$a).body=="original","replay has original result")
+check($wire.replay($history,"term.type",{text:"y",pane:1,request_id:"r1"}).rc==10,"changed payload conflicts")
+check($wire.replay($history,"term.tab.new",$a).rc==10,"changed command conflicts")
+$conflict="request_id already used by a different request; retries must resend the identical command and body"
+check($wire.replay($history,"term.type",{text:"y",pane:1,request_id:"r1"}).body==$conflict,"gold payload conflict text")
+check($wire.replay($history,"term.tab.new",$a).body==$conflict,"gold command conflict text")
+for $i=2 to 129
+  $history=$wire.remember($history,"term.type",{text:"x",pane:1,request_id:to_string($i)},0,"saved")
+end
+check(len($history)==128,"replay budget")
+check($wire.replay($history,"term.type",$a)==nil,"FIFO eviction")
+check(deep_eq($wire.decode("term.tabs","").args,{}),"empty no-argument envelope")
+check($wire.decode("term.type","").error=="body must be a JSON object: EOF while parsing a value at line 1 column 0","empty required envelope parser error")
+check($wire.decode("term.tabs"," ").error=="body must be a JSON object: EOF while parsing a value at line 1 column 1","whitespace is not empty")
+for $body in ["null","[]","42","true",'"text"']
+  check($wire.decode("term.tabs",$body).error=="body must be a JSON object","non-object JSON refused")
+end
+check($wire.decode("term.tabs",'{"x":}').error=="body must be a JSON object: expected value at line 1 column 6","malformed JSON location preserved")
+check($wire.decode("term.type",'{"pane":99,"pane":1,"text":""}').args.pane==1,"duplicate keys follow gold last value")
+check(deep_eq($wire.decode("INFO","malformed").args,{}),"bare diagnostics ignore body like gold")
+check($wire.decode("term.info","malformed").error!=nil,"namespaced diagnostics validate body")
+$boundary=repeat(" ",8190).."{}"
+check($wire.decode("term.tabs",$boundary).error==nil,"8192 original bytes accepted")
+check($wire.decode("term.tabs"," "..$boundary).error=="request exceeds 8192 bytes","8193 whitespace bytes refused before parsing")
+check($wire.decode("term.type",repeat("中",2731)).error=="request exceeds 8192 bytes","original multibyte budget precedes parse")
+check($wire.field_arguments("term.type",{pane:nil,text:3},{})=="text must be a string","required field validation precedes optional target type")
+check($wire.field_arguments("term.type",{pane:nil,text:""},{})=="invalid-argument: pane must be a non-negative integer (u64)","null target is present and mistyped, not missing")
+$float={kind:"float",text:"1.0",safe:false,signed:false}
+$huge={kind:"u64",text:"18446744073709551615",safe:false,signed:false}
+check(deep_eq($wire.action_targets({tab:1,pane:2},{tab:{kind:"u64",text:"1",safe:true},pane:{kind:"u64",text:"2",safe:true}}),{tab:1,pane:2}),"valid action selectors retain their exact targets")
+check(deep_eq($wire.action_targets({tab:json_parse($huge.text)},{tab:$huge}),{tab:$huge.text}),"large unsigned action target must not become active-tab fallback")
+check(deep_eq($wire.action_targets({tab:1},{tab:$float}),{}),"Gold ignores floating action selectors")
+check(deep_eq($wire.action_targets({tab:"2",pane:-1},{pane:{kind:"i64",text:"-1",safe:true}}),{}),"Gold ignores string and negative action selectors")
+check($wire.field_arguments("term.tab.select",{id:1},{id:$float})=="id must be a non-negative integer (u64)","JSON floating integer stays a float")
+check($wire.field_arguments("term.tab.select",{id:json_parse($huge.text)},{id:$huge})==nil,"unsigned maximum is valid before state lookup")
+check($wire.field_arguments("term.tab.move",{id:1,index:json_parse($huge.text)},{index:$huge})==nil,"gold index accepts unsigned maximum")
+check($wire.materialise({id:json_parse($huge.text)},{id:$huge}).id=="18446744073709551615","large selector keeps exact decimal text")
+check($wire.field_arguments("term.scroll",{lines:1},{lines:$float})=="invalid-argument: lines must be a signed integer (i64)","scroll refuses JSON float")
+check($wire.field_arguments("term.scroll",{lines:json_parse($huge.text)},{lines:$huge})=="invalid-argument: lines must be a signed integer (i64)","scroll refuses unsigned value beyond i64")
+$a={pane:1,text:"",request_id:"numeric"}
+$history=$wire.remember_fields([],"term.type",$a,{pane:{kind:"u64",text:"1"}},0,"once")
+check($wire.replay_fields($history,"term.type",$a,{pane:$float}).rc==10,"integer and float retry identities conflict before validation")
+check($wire.replay_fields($history,"term.type",$a,{pane:{kind:"u64",text:"1"}}).body=="once","same typed numeric retry replays")
+check($wire.replay_fields($history,"term.type",{pane:["json-number","u64","1"],text:"",request_id:"numeric"},{}).rc==10,"caller-shaped tags cannot collide with numeric retry metadata")
+check($wire.unknown("term.nope",repeat(" ",8191).."{}")=="request exceeds 8192 bytes","own unknown body limit precedes command lookup")
+check($wire.unknown("NOPE",repeat("中",2731))=="request exceeds 8192 bytes","bare unknown applies original UTF-8 byte budget")
+check($wire.unknown("other.nope",repeat(" ",8191).."{}")=="unknown command; use HELP","foreign namespace refusal precedes body budget")
+check($wire.unknown("term.nope","malformed")=="unknown command; use HELP","own unknown name precedes JSON parsing")
+print("term wire: selector and replay checks passed")

@@ -161,6 +161,8 @@ fn policy(bundle: &Bundle, args: &[String]) -> Result<serde_json::Value, String>
 
 #[derive(Default, Debug, PartialEq)]
 pub struct Options {
+    pub title: Option<String>,
+    pub app_id: Option<String>,
     pub service: Option<String>,
     pub comp: Option<String>,
     pub url: Option<String>,
@@ -183,16 +185,21 @@ pub fn parse(args: &[String]) -> Result<Options, String> {
             out.args.extend(args.cloned());
             break;
         }
-        if matches!(arg.as_str(), "--service" | "--comp" | "--noded-url") {
+        if matches!(
+            arg.as_str(),
+            "--service" | "--comp" | "--noded-url" | "--title" | "--app-id"
+        ) {
             let value = args
                 .next()
                 .filter(|v| !v.is_empty())
                 .ok_or_else(|| format!("{arg} needs a value"))?
                 .clone();
-            if arg != "--noded-url" && !service_name(&value) {
+            if !matches!(arg.as_str(), "--noded-url" | "--title") && !service_name(&value) {
                 return Err("invalid service name".into());
             }
             match arg.as_str() {
+                "--title" => out.title = Some(value),
+                "--app-id" => out.app_id = Some(value),
                 "--service" => out.service = Some(value),
                 "--comp" => out.comp = Some(value),
                 _ => out.url = Some(value),
@@ -203,11 +210,39 @@ pub fn parse(args: &[String]) -> Result<Options, String> {
     }
     Ok(out)
 }
+pub fn app_id(bundle: &Bundle) -> String {
+    if let Some(app_id) = &bundle.manifest.app_id {
+        return app_id.clone();
+    }
+    if let Some(app_id) = &bundle.manifest.window_app_id {
+        return app_id.clone();
+    }
+    bundle
+        .manifest
+        .bus_surface
+        .as_ref()
+        .and_then(|s| s["app_id"].as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            format!(
+                "mixviu.{}",
+                if bundle.manifest.command_namespace.is_some() {
+                    &bundle.manifest.service
+                } else {
+                    bundle.manifest.app()
+                }
+            )
+        })
+}
 pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     let options = parse(args)?;
     let mut bundle = Bundle::load(root, &options.args)?;
     if !bundle.manifest.allow_native_overrides
-        && (options.service.is_some() || options.comp.is_some() || options.url.is_some())
+        && (options.service.is_some()
+            || options.comp.is_some()
+            || options.url.is_some()
+            || options.title.is_some()
+            || options.app_id.is_some())
     {
         return Err("this launch variant runs alone, without native service overrides".into());
     }
@@ -248,6 +283,12 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
         }
     }
     bundle.manifest.bus_url = options.url;
+    if let Some(title) = options.title {
+        bundle.manifest.title = title;
+    }
+    if let Some(app_id) = options.app_id {
+        bundle.manifest.app_id = Some(app_id);
+    }
     let comp = options
         .comp
         .unwrap_or_else(|| std::env::var("MIX_COMP_SERVICE").unwrap_or_else(|_| "comp".into()));
@@ -255,6 +296,8 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     plan["comp"] = serde_json::json!(comp);
     bundle.launch = plan.clone();
     bundle.launch_plan = plan.clone();
+    plan["app_id"] = serde_json::json!(app_id(&bundle));
+    plan["title"] = serde_json::json!(bundle.manifest.title);
     let launch = serde_json::to_string(&plan).unwrap();
 
     bundle.program.source = format!(
@@ -266,10 +309,38 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
     );
     bundle.program.scene = bundle.manifest.service.clone();
     bundle.program.citizen = bundle.manifest.service.clone();
+    if let Some(startup) = &mut bundle.startup {
+        startup.scene = bundle.manifest.service.clone();
+        startup.citizen = bundle.manifest.service.clone();
+    }
     Ok(bundle)
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn term_comparison_identity_keeps_the_canonical_bundle_namespace() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+        let bundle = super::load(
+            &root,
+            &[
+                "--service",
+                "term-mix",
+                "--app-id",
+                "mixviu.term-mix",
+                "--title",
+                "Term (Mix)",
+                "--headless",
+            ]
+            .map(String::from),
+        )
+        .unwrap();
+        assert_eq!(bundle.manifest.service, "term-mix");
+        assert_eq!(bundle.manifest.app(), "term");
+        assert_eq!(super::app_id(&bundle), "mixviu.term-mix");
+        assert_eq!(bundle.manifest.title, "Term (Mix)");
+        assert!(bundle.program.source.contains("mixviu.term-mix"));
+        assert!(!bundle.startup.unwrap().source.contains("--service"));
+    }
     #[test]
     fn workshop_launch_policy_is_mix_owned_and_forwards_macro_before_activation() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
@@ -346,7 +417,25 @@ mod tests {
         assert_eq!(bundle.manifest.app(), "monitor");
         assert_eq!(bundle.manifest.service, "monitor.test");
         assert!(bundle.program.source.contains("comp-test"));
+        assert_eq!(super::app_id(&bundle), "dev.mixos.monitor");
+        assert!(bundle.program.source.contains("dev.mixos.monitor"));
         assert!(bundle.program.source.contains("peer"));
         assert!(!bundle.program.source.contains("\\\"--service\\\""));
+        let mut plain = bundle;
+        plain.manifest.bus_surface = None;
+        assert_eq!(super::app_id(&plain), "mixviu.monitor");
+    }
+    #[test]
+    fn explicit_window_app_id_survives_service_override() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
+        let mut bundle = super::load(&root, &["--service".into(), "term.other".into()]).unwrap();
+        assert_eq!(super::app_id(&bundle), "dev.mixos.term");
+        assert!(bundle.program.source.contains("dev.mixos.term"));
+        bundle.manifest.window_app_id = None;
+        assert_eq!(super::app_id(&bundle), "mixviu.term.other");
+        bundle.manifest.bus_surface = Some(serde_json::json!({"app_id":"example.terminal"}));
+        assert_eq!(super::app_id(&bundle), "example.terminal");
+        bundle.manifest.service = "term.third".into();
+        assert_eq!(super::app_id(&bundle), "example.terminal");
     }
 }

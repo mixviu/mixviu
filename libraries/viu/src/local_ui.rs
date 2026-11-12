@@ -59,7 +59,10 @@ impl BusHandler for Backend {
         a: &'a Value,
     ) -> BusFuture<'a, MixResult<(i32, Value, Value)>> {
         Box::pin(async move {
-            if t == "viu-local" && c.starts_with("native.") {
+            if t == "viu-local"
+                && c.starts_with("native.")
+                && !matches!(c, "native.send" | "native.send.batch")
+            {
                 let mut args = crate::runtime::to_json(a)?;
                 if let Some(body) = args.get("body") {
                     args = body.clone();

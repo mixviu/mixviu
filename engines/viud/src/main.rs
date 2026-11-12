@@ -682,6 +682,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // keyboard (once `service` enters the lock, focus is gone).
         policy_host::input::release_keys_for_lock(state);
         world::comp::session_lock::service(state);
+        policy_host::project::service_inhibitors(state);
+        world::comp::blank::service(state);
         // The exclusive-keyboard latch, with or without a Bus port.
         world::comp::latch::service(state);
         // A window that left fullscreen gets its band back.
@@ -806,6 +808,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // display and has programmed its own mode, so there is nothing of ours to put back.
     //
     // `try_borrow` because panicking here would replace one bad exit with another.
+    if let Err(error) = world::comp::blank::set(&mut state, false, "shutdown") {
+        warn!("panel unblank at shutdown: {error}");
+    }
     slots::sdnotify::stopping();
     #[cfg(feature = "backend-native")]
     if let Some(drm_restore) = drm_restore.as_ref() {

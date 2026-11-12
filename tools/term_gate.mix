@@ -1,0 +1,74 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run on a CBC worker through cbc-build, never on the client machine.
+$targets=require("term-targets.mix")
+$commands=[["cargo","fmt","-p","lib-viu","--","--check"],["cargo","test","--locked","-p","lib-viu","--test","term_bundle"],["cargo","test","--locked","-p","lib-viu","--test","runtime","--test","calls","--test","timers"],["cargo","test","--locked","-p","lib-viu","--lib","terminal::"],["cargo","test","--locked","-p","lib-viu","--lib","launch::"],["cargo","test","--locked","-p","lib-viu","--lib","native_registration::"],["cargo","test","--locked","-p","lib-viu","--lib","native_menu::"],["cargo","test","--locked","-p","lib-viu","--lib","window_frame::title_tests::"],["cargo","test","--locked","-p","lib-viu","--lib","native_bus::tests::"],["cargo","test","--locked","-p","lib-viu","--lib","app_host::tests::"],["cargo","test","--locked","-p","lib-viu","--lib","input::tests::"],["cargo","test","--locked","-p","lib-viu","--lib","editor_controls::"],["cargo","test","--locked","-p","lib-viu","--lib","rich::tests::"]]
+$bootstrap_argv=["cargo","test","--locked","-p","lib-viu","--lib","startup::"]
+$host_argv=["cargo","build","--locked","-p","viu","--bin","viu"]
+$fixtures=[ ["cargo","build","--locked","-p","mix","--bin","mix"], ["cargo","build","--locked","-p","mixd","--bin","mixd"] ]
+$targets.check(concat($commands,[$bootstrap_argv,$host_argv],$fixtures))
+$prepare=contains(args(),"--prepare")
+$rc=0
+try
+  -- Session tests must use this source tree, never an installed fallback.
+  for $fixture in $fixtures
+    $r=run_argv($fixture,{timeout:1800,max_output:16000000});print($r)
+    if not $r.ok then exit($r.exit_code ?? 1) end
+  end
+  $test_env={MIX_TEST_MIX_EXE:realpath("target/debug/mix"),MIX_TEST_E2E_EXE:realpath("target/debug/mix")}
+  $mix_tests=run_argv(["/opt/mixos/bin/mix","apps/term/core-test.mix"]);print($mix_tests)
+  if not $mix_tests.ok then exit($mix_tests.exit_code ?? 1) end
+  $wire_tests=run_argv(["/opt/mixos/bin/mix","apps/term/wire-test.mix"]);print($wire_tests)
+  if not $wire_tests.ok then exit($wire_tests.exit_code ?? 1) end
+  $model_tests=run_argv(["/opt/mixos/bin/mix","apps/term/model-test.mix"]);print($model_tests)
+  if not $model_tests.ok then exit($model_tests.exit_code ?? 1) end
+  $layout_tests=run_argv(["/opt/mixos/bin/mix","apps/term/protected-layout-test.mix"]);print($layout_tests)
+  if not $layout_tests.ok then exit($layout_tests.exit_code ?? 1) end
+  $bus_tests=run_argv(["/opt/mixos/bin/mix","apps/term/bus-test.mix"]);print($bus_tests)
+  if not $bus_tests.ok then exit($bus_tests.exit_code ?? 1) end
+  $actions_tests=run_argv(["/opt/mixos/bin/mix","apps/term/actions-test.mix"]);print($actions_tests)
+  if not $actions_tests.ok then exit($actions_tests.exit_code ?? 1) end
+  $font_tests=run_argv(["/opt/mixos/bin/mix","apps/term/font-persistence-test.mix"]);print($font_tests)
+  if not $font_tests.ok then exit($font_tests.exit_code ?? 1) end
+  $clipboard_tests=run_argv(["/opt/mixos/bin/mix","apps/term/clipboard-test.mix"]);print($clipboard_tests)
+  if not $clipboard_tests.ok then exit($clipboard_tests.exit_code ?? 1) end
+  $show_tests=run_argv(["/opt/mixos/bin/mix","apps/term/show-test.mix"]);print($show_tests)
+  if not $show_tests.ok then exit($show_tests.exit_code ?? 1) end
+  $discovery_tests=run_argv(["/opt/mixos/bin/mix","apps/term/discovery-test.mix"]);print($discovery_tests)
+  if not $discovery_tests.ok then exit($discovery_tests.exit_code ?? 1) end
+  $find_tests=run_argv(["/opt/mixos/bin/mix","apps/term/find-test.mix"]);print($find_tests)
+  if not $find_tests.ok then exit($find_tests.exit_code ?? 1) end
+  $notify_tests=run_argv(["/opt/mixos/bin/mix","apps/term/notifications-test.mix"]);print($notify_tests)
+  if not $notify_tests.ok then exit($notify_tests.exit_code ?? 1) end
+  $startup_tests=run_argv(["/opt/mixos/bin/mix","apps/term/startup-policy-test.mix"]);print($startup_tests)
+  if not $startup_tests.ok then exit($startup_tests.exit_code ?? 1) end
+  $bootstrap_tests=run_argv($bootstrap_argv,{timeout:1800,max_output:16000000,env:$test_env});print($bootstrap_tests)
+  if not $bootstrap_tests.ok then exit($bootstrap_tests.exit_code ?? 1) end
+  for $argv in $commands
+    if $prepare and $argv[1]=="fmt" then $argv=["cargo","fmt","-p","lib-viu"] end
+    if $prepare and $argv[1]=="test" then $argv=filter($argv,fn($v)=$v!="--locked") end
+    $r=run_argv($argv,{timeout:1800,max_output:16000000,env:$test_env});print($r)
+    if not $r.ok then $rc=$r.exit_code ?? 124;break end
+  end
+  if $rc==0 then
+    $foreign=run_argv(["/opt/mixos/bin/mix","tools/foreign_gate.mix","--locked"],{timeout:1800,max_output:16000000});print($foreign)
+    if not $foreign.ok then $rc=$foreign.exit_code ?? 124 end
+  end
+  if $rc==0 then
+    $host=run_argv($host_argv,{timeout:1800,max_output:16000000});print($host)
+    if not $host.ok then $rc=$host.exit_code ?? 124 end
+  end
+  if $rc==0 then
+    $sha=trim(run_argv_must(["git","rev-parse","HEAD"]))
+    $artifact="/build/term-artifacts/"..$sha
+    mkdir($artifact,{parents:true})
+    copy("target/debug/viu",$artifact.."/viu")
+    write_file($artifact.."/viu.json",json_encode({source:$sha,profile:"debug",sha256:hash_file($artifact.."/viu","sha256")}))
+    print({artifact:$artifact,profile:"debug",acceptance:false})
+  end
+finally
+  print("TERM_PATCH_BEGIN")
+  print(run_argv_must(["git","diff","--binary"]))
+  print("TERM_PATCH_END")
+  print(run_argv_must(["git","checkout","-q","--","."]))
+end
+exit($rc)

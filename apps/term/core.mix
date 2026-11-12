@@ -1,0 +1,39 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+$layout=require("model.mix")
+$actions=require("actions.mix")
+$controls=require("controls.mix")
+$find=require("find.mix")
+$notifications=require("notifications.mix")
+fn accept_look($s,$args)
+  $s.look.appearance=$args.appearance
+  $s.settings_lost=$args.state.lost
+  $s.settings_connected=not $args.state.lost and $args.state.incarnation!=nil and $args.state.error==nil
+  -- Gold retains the last accepted terminal profile during authority loss.
+  if not $args.state.lost then $s.look.values=$args.state.values end
+  return $s
+end
+fn framed($s)
+  $s=$find.sync($s)
+  $model={window_close:$s.closed and not ($s.drain_close ?? false) and not $notifications.pending($s.notifications),layout_hidden:$s.closed,values:{}};$look=$s.look.values
+  if $s.headless ?? false then return $model end
+  $tabs=$s.layout.tabs;$active=$tabs[$s.layout.active]
+  $selected=if $active==nil then "" else to_string($active.id) end
+  $items=map($tabs,fn($t)={id:to_string($t.id),name:$t.title,meta:"",dirty:false})
+  $model.tabs={id:"tabs",kind:"document-tabs",label:"Terminal tabs",initial:{items:$items,selected:$selected,body:"canvas",split_markers:true},properties:{}}
+  $handle=if $active==nil then "closed" else $s.layout.panes[to_string($active.active_pane)].handle end
+  $tree=if $active==nil then "closed" else $layout.surface_tree($s.layout,$active.tree) end
+  $model.terminal={id:"terminal",kind:"terminal",label:"Terminal",initial:$tree,properties:{focus_serial:$s.layout.focus_serial,focused_handle:$handle,font_family:$look["terminal.font.family"] ?? $look["appearance.mono_family"],font_size:$s.font_current ?? (($look["terminal.font.size"] ?? 14.667)+($s.zoom ?? 0)),text_scale:$s.look.appearance.text_scale ?? $look["accessibility.text_scale"] ?? 1,font_weight:$look["terminal.font.weight"] ?? 400,padding:$look["terminal.padding"] ?? 8,border_width:$look["terminal.border.width"] ?? 1,show_focus:$active!=nil and len($layout.leaves($active.tree))>1,focus_ring:$look["terminal.focus.ring"] ?? "accent",focus_strength:$look["terminal.focus.strength"] ?? 0.25,cursor_blink:$look["terminal.cursor.blink"] ?? false,cursor:$look["terminal.cursor.shape"] ?? "underline",scroll_speed:$look["terminal.scroll.speed"] ?? 40,copy_on_select:$look["terminal.mouse.copy_on_select"] ?? false,wheel_zoom:{increase:"view.zoom_in",decrease:"view.zoom_out"}}}
+  $model.terminal.properties.shortcuts=$actions.terminal_shortcuts($s)
+  $model.terminal.properties.search=$find.request($s)
+  $model.find_open=($s.find.open ?? false) and not $s.closed
+  $model.find_bar={id:"terminal-find",kind:"search-bar",label:"Find terminal output",initial:merge($s.find ?? $find.initial(),{replace:false,replacement:""}),properties:{}}
+  $model.find_status={id:"terminal-find-status",kind:"label",label:"Search result",initial:if $model.find_open then $find.message($s) else "" end,properties:{weak:true}}
+  $model.show_paste_notice=$s.notice!=nil and not $s.closed
+  $font=$s.font ?? {}; $model.show_font_notice=$font.unsaved==true and not $s.closed
+  $model.paste_notice={id:"paste-notice-text",kind:"label",label:"Clipboard notice",initial:$s.notice ?? "",properties:{tone:"warning"}}
+  $model.font_notice={id:"font-notice-text",kind:"label",label:"Font notice",initial:"Zoom is not saved",properties:{tone:"warning"}}
+  $model.native_overlays=$controls.overlays($s,$s.version ?? "")
+  $window=if $s.settings_lost ?? false then {} else $s.look.values end
+  return $frame.apply($model,{icon:"file-terminal",title:$s.window_title ?? "Terminal",native_title:$s.window_title ?? "Terminal",menus:$actions.menus($s),toolbar:$actions.toolbar($s),status:"",status_visible:false,appearance:$s.look.appearance,window:merge($window,{"window.header_seamless":true})})
+end

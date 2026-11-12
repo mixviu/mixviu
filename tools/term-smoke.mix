@@ -1,0 +1,8 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run only on CBC: build the actual native path before the explicit smoke.
+for $cmd in [["cargo", "build", "--locked", "-p", "mix"],
+  ["cargo", "build", "--locked", "-p", "mixd", "-p", "viu"],
+  ["cargo", "test", "--locked", "-p", "lib-viu", "--test", "term_host", "--", "--ignored", "--nocapture"]]
+  $r=run_argv($cmd,{timeout:14400,stdout:"inherit",stderr:"inherit"})
+  if $r.exit_code!=0 then exit($r.exit_code ?? 1) end
+end

@@ -1,0 +1,203 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- foreign_gate.mix — which crates compile foreign (C, C++, assembly) code.
+-- version: 0.2.0
+--
+-- A package "builds foreign code" when it has a build-dependency on a native
+-- build helper (cc, cmake, bindgen, pkg-config, system-deps, vcpkg, nasm-rs).
+-- A `links` key without such a helper is metadata only (rayon-core sets one)
+-- and is not counted.
+--
+-- Policy: tools/foreign.conf.mix.
+--   1. Every foreign package in the locked workspace resolve is listed in
+--      `allow` (accepted, with a reason and an exit path) or `debt` (present
+--      today, to be removed). A new foreign crate fails the gate.
+--   2. The `strict` crates (the `mix` shell and its library) may reach only
+--      `allow` entries in their normal and build closure, in both the default
+--      and --all-features modes.
+--   3. A `debt` entry no longer in the resolve is reported, so the list only
+--      shrinks.
+--   4. The `strict` crates reach no desktop-only crate (`strict_forbid`,
+--      pure Rust included: egui, winit, wgpu, smithay, wayland-*, …).
+--   5. Each `--elf BIN` (a built strict binary) loads no library, direct or
+--      transitive (ldd), in `strict_forbid_so` (libwayland, libX11, libEGL,
+--      …). This catches what a per-package closure cannot: workspace feature
+--      unification.
+-- Ported from cosmix check-no-gui.mix and check-no-gui-elf.mix.
+--
+-- Usage: mix tools/foreign_gate.mix [--list] [--locked] [--offline] [--elf BIN]...
+-- --list prints every foreign package and which strict crates reach it, then
+-- exits 0. Run from the repo root. Exit 0 clean, 1 a violation, 2 setup failed.
+
+$root = dirname(dirname(realpath($0)))
+$policy_path = $root .. "/tools/foreign.conf.mix"
+$pass = []
+$list = false
+$elf_bins = []
+$av = args()
+$i = 0
+while $i < len($av)
+  $a = $av[$i]
+  $i = $i + 1
+  if $a == "--locked" or $a == "--offline" then
+    push($pass, $a)
+  elif $a == "--list" then
+    $list = true
+  elif $a == "--elf" and $i < len($av) then
+    push($elf_bins, $av[$i])
+    $i = $i + 1
+  else
+    eprint("foreign_gate: unknown argument " .. $a)
+    exit(2)
+  end
+end
+
+$policy = load_data($policy_path).foreign
+$allow = $policy.allow ?? {}
+$debt = $policy.debt ?? {}
+$strict = $policy.strict ?? []
+$forbid = $policy.strict_forbid ?? []
+-- Named, per-crate exceptions to the strict allowlist: decisions pending for
+-- the project lead, recorded so they cannot grow silently.
+$strict_exceptions = $policy.strict_exceptions ?? {}
+$forbid_so = $policy.strict_forbid_so ?? []
+-- MixOS ships Linux binaries only; other targets (android, haiku, macOS)
+-- never compile here.
+$TARGET = env("FOREIGN_GATE_TARGET", "x86_64-unknown-linux-gnu")
+$HELPERS = ["cc", "cmake", "bindgen", "pkg-config", "system-deps", "vcpkg", "nasm-rs"]
+
+$meta = run_argv(concat(["cargo", "metadata", "--format-version", "1", "--filter-platform", $TARGET, "--manifest-path", $root .. "/Cargo.toml"], $pass), {timeout: 900, max_output: 268435456})
+if not $meta.ok then
+  eprint("foreign_gate: cargo metadata failed\n" .. $meta.stderr)
+  exit(2)
+end
+$doc = json_parse($meta.stdout)
+
+-- Use the resolved graph, not the manifests: a manifest also lists optional
+-- build-dependencies that no enabled feature turns on (signal-hook's cc).
+$names_by_id = {}
+for each $p in $doc.packages
+  $names_by_id[$p.id] = $p.name
+end
+$pure_when = $policy.pure_when ?? {}
+$foreign = {}
+for each $node in $doc.resolve.nodes
+  -- Some crates always declare cc but skip it under a feature (blake3 `pure`).
+  $pf = $pure_when[$names_by_id[$node.id]]
+  if $pf != nil and contains($node.features, $pf) then
+    continue
+  end
+  for each $dep in $node.deps
+    $dep_name = $names_by_id[$dep.pkg]
+    if contains($HELPERS, $dep_name) then
+      for each $k in $dep.dep_kinds
+        if $k.kind == "build" then
+          $foreign[$names_by_id[$node.id]] = $dep_name
+        end
+      end
+    end
+  end
+end
+
+$members = map(filter($doc.packages, fn($p) = contains($doc.workspace_members, $p.id)), fn($p) = $p.name)
+
+fn closure($crate, $mode)
+  $argv = concat(["cargo", "tree", "-p", $crate, "-e", "normal,build", "--target", $TARGET, "--prefix", "none", "-f", "{p}",
+    "--manifest-path", $root .. "/Cargo.toml"], $mode, $pass)
+  $r = run_argv($argv, {timeout: 900, max_output: 268435456})
+  if not $r.ok then
+    eprint("foreign_gate: cargo tree -p " .. $crate .. " failed\n" .. $r.stderr)
+    exit(2)
+  end
+  $names = {}
+  for each $line in split($r.stdout, "\n")
+    $n = trim($line)
+    if $n != "" then
+      $names[split($n, " ")[0]] = true
+    end
+  end
+  return $names
+end
+
+$fail = []
+$reach = {}
+for each $c in $strict
+  if not contains($members, $c) then
+    push($fail, "strict crate " .. $c .. " is not a workspace member")
+    continue
+  end
+  for each $mode in [[], ["--all-features"]]
+    $label = len($mode) == 0 ? "default" : "all-features"
+    $names = closure($c, $mode)
+    for each $f in keys($foreign)
+      if $names[$f] == true then
+        $reach[$f] = ($reach[$f] ?? "") .. " " .. $c .. "(" .. $label .. ")"
+        if $allow[$f] == nil and not contains($strict_exceptions[$c] ?? [], $f) then
+          push($fail, "strict " .. $c .. " (" .. $label .. ") reaches foreign " .. $f .. " (not in allow)")
+        end
+      end
+    end
+    -- Tier 2: nothing desktop-only in the shell, even pure Rust.
+    for each $n in keys($names)
+      for each $p in $forbid
+        if $n == $p or (ends_with($p, "*") and starts_with($n, slice($p, 0, len($p) - 1))) then
+          push($fail, "strict " .. $c .. " (" .. $label .. ") reaches desktop-only " .. $n)
+        end
+      end
+    end
+  end
+end
+
+-- ELF layer: the BUILT binary needs no display, GPU, input or audio library.
+-- Catches what the per-package closure cannot see (workspace feature
+-- unification, a links= edge, a stray build script).
+for each $bin in $elf_bins
+  if not is_file($bin) then
+    eprint("foreign_gate: --elf " .. $bin .. " does not exist")
+    exit(2)
+  end
+  -- ldd, not readelf -d: a GUI library usually arrives through another
+  -- library (weston needs libwayland only via libweston). Only our own built
+  -- binaries are passed here, so running the loader on them is safe.
+  $re = run_argv(["ldd", $bin], {timeout: 60})
+  if not $re.ok then
+    eprint("foreign_gate: ldd failed on " .. $bin .. "\n" .. $re.stderr)
+    exit(2)
+  end
+  for each $m in re_find($re.stdout, "(?m)^\\s+(\\S+)")
+    $so = basename($m.groups[0])
+    for each $p in $forbid_so
+      if starts_with($so, $p) then
+        push($fail, "ELF " .. basename($bin) .. " needs " .. $so)
+      end
+    end
+  end
+end
+
+if $list then
+  for each $f in sort(keys($foreign))
+    $status = $allow[$f] != nil ? "allow" : ($debt[$f] != nil ? "debt" : "UNLISTED")
+    print($f .. "  via " .. $foreign[$f] .. "  " .. $status .. "  strict:" .. ($reach[$f] ?? " none"))
+  end
+  exit(0)
+end
+
+for each $f in sort(keys($foreign))
+  if $allow[$f] == nil and $debt[$f] == nil then
+    push($fail, "foreign crate " .. $f .. " (builds with " .. $foreign[$f] .. ") is in neither allow nor debt")
+  end
+end
+for each $f in sort(keys($debt))
+  if $foreign[$f] == nil then
+    print("note: debt entry " .. $f .. " is gone from the resolve; remove it from tools/foreign.conf.mix")
+  end
+end
+
+if len($fail) > 0 then
+  for each $f in $fail
+    print("FAIL " .. $f)
+  end
+  exit(1)
+end
+print("foreign_gate: " .. to_string(len(keys($foreign))) .. " foreign crate(s), all listed; strict " ..
+  join($strict, ", ") .. " clean")

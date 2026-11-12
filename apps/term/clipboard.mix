@@ -1,0 +1,41 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gold shell.rs clipboard completion policy; window work stays native.
+fn intent_action($kind,$active)
+  if $kind=="copy" then return "edit.copy" end
+  if $kind=="paste" then return "edit.paste" end
+  if $kind=="cut" and $active then return "pane.close" end
+  return nil
+end
+fn notice($reason)
+  if $reason=="Empty" then return nil end
+  if $reason=="TooLarge" then return "Paste exceeds 16 MiB limit" end
+  if $reason=="TimedOut" then return "The clipboard did not answer in time" end
+  if $reason=="Busy" then return "A paste is still being read" end
+  if $reason=="NoFocus" then return "Not copied: click in the terminal first, then copy again" end
+  return "The clipboard could not be read"
+end
+fn apply_text($s,$handle,$text,$native)
+  if not any(values($s.layout.panes),fn($p)=$p.handle==$handle) then return $s end
+  try
+    $result=$native("paste",$handle,{text:$text})
+    $s.notice=nil
+  catch $message $s.notice=$message end
+  return $s
+end
+fn completed($s,$answer,$native)
+  if $answer.kind=="copy" then
+    $message=notice($answer.reason)
+    if $message!=nil then $s.notice=$message end
+    return $s
+  end
+  $handle=$s.pastes[$answer.id]
+  if $handle==nil then return $s end
+  $s.pastes=delete($s.pastes,$answer.id)
+  if $answer.reason!=nil then
+    $message=notice($answer.reason)
+    if $message!=nil then $s.notice=$message end
+  else
+    $s=apply_text($s,$handle,$answer.text,$native)
+  end
+  return $s
+end

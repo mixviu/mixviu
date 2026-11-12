@@ -10,6 +10,7 @@ pub const KINDS: &[&str] = &[
     "macro-menu",
     "notice-bar",
     "diagnostic-list",
+    "command-search",
     "document-tabs",
     "search-bar",
     "form-fields",
@@ -34,6 +35,7 @@ pub const KINDS: &[&str] = &[
     "field",
     "multiline",
     "editor",
+    "terminal",
     "markdown",
     "checkbox",
     "toggle",
@@ -430,6 +432,7 @@ impl Widget {
             return crate::rich::validate(&self.kind, value);
         }
         if [
+            "command-search",
             "document-tabs",
             "search-bar",
             "form-fields",
@@ -518,6 +521,7 @@ impl Widget {
             "image-canvas" => return crate::image_view::validate_canvas(value),
             "composition" => return crate::composition::validate(value),
             "tree-table" => return crate::tree_table::validate(value),
+            "terminal" => return crate::terminal::view::validate(value),
             "icon" => {
                 value["name"]
                     .as_str()
@@ -660,6 +664,9 @@ impl Widget {
         }
         if self.kind == "diagnostic-list" {
             return vec!["goto"];
+        }
+        if self.kind == "command-search" {
+            return vec!["command", "close"];
         }
         if self.kind == "document-tabs" {
             return vec!["select", "close"];
@@ -811,6 +818,7 @@ impl Widget {
             return Err("DISABLED".into());
         }
         if [
+            "command-search",
             "document-tabs",
             "search-bar",
             "form-fields",
@@ -946,8 +954,13 @@ pub struct Widgets {
     rasters: Option<crate::raster::Rasters>,
     compositions: BTreeMap<String, crate::composition::Composition>,
     visible_compositions: BTreeSet<String>,
+    terminals: crate::terminal::sessions::Sessions,
+    terminal_views: crate::terminal::view::Views,
 }
 impl Widgets {
+    pub fn set_terminals(&mut self, terminals: crate::terminal::sessions::Sessions) {
+        self.terminals = terminals;
+    }
     pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
         self.rasters = Some(rasters);
     }
@@ -977,6 +990,7 @@ impl Widgets {
     /// retained after finish_frame for automation until the next begin_frame.
     pub fn begin_frame(&mut self) {
         self.visible_compositions.clear();
+        self.terminal_views.begin_frame();
         self.geometry.clear();
         self.text_input_active = false;
         self.focus_error = None;
@@ -1058,6 +1072,7 @@ impl Widgets {
     pub fn finish_frame(&mut self) -> Result<(), String> {
         self.compositions
             .retain(|id, _| self.visible_compositions.contains(id));
+        self.terminal_views.finish_frame();
         self.images.finish();
         if let Some(images) = &mut self.canvases {
             images.finish();
@@ -1113,8 +1128,8 @@ impl Widgets {
         }
         let mut changed = None;
         let response = match widget.kind.as_str() {
-            "document-tabs" | "search-bar" | "form-fields" | "header-form" | "macro-menu"
-            | "diagnostic-list" | "notice-bar" => {
+            "command-search" | "document-tabs" | "search-bar" | "form-fields" | "header-form"
+            | "macro-menu" | "diagnostic-list" | "notice-bar" => {
                 crate::editor_controls::draw(ui, id, &widget.kind, value, events)
             }
             "widget-row" => {
@@ -1502,6 +1517,13 @@ impl Widgets {
                     });
                 }
                 r
+            }
+            "terminal" => {
+                let response = self
+                    .terminal_views
+                    .draw(ui, widget, value, &self.terminals, events);
+                self.text_input_active |= response.has_focus();
+                response
             }
             "markdown" => self.documents.show_preview(ui, widget, value),
             "editor" if widget.properties["native_document"] == true => {

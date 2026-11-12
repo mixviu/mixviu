@@ -1,0 +1,52 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Exercise the containing mix engine's real dispatch with throwaway custody.
+$exe = realpath("/proc/self/exe")
+$scratch = trim(run_argv_must(["mktemp", "-d"]))
+chmod($scratch, 0o700)
+fn check($ok, $message)
+  if not $ok then raise("MESH_DISPATCH_TEST", $message) end
+end
+fn invoke($exe, $db, $arguments)
+  return run_argv(concat([$exe,"mesh","--secrets-db",$db,"--mesh","example.org"],$arguments))
+end
+try
+  $db = $scratch .. "/secrets.db"
+  $authored = $scratch .. "/inventory.mix"
+  $signed = $scratch .. "/inventory.signed"
+  write_file($authored, data_encode({inventory:{
+    schema_version:1, mesh:"example.org", subnet:"192.0.2.0/24", epoch:1,
+    hub:["node-a"], unsigned:true,
+    members:[{name:"node-a",mesh_ip:"192.0.2.5",bus:true,noded_port:4300,
+      status:"active",credentials:[],last_touched_epoch:1}]
+  }}))
+  $genesis = invoke($exe,$db,["genesis"])
+  check($genesis.ok,"throwaway genesis creation failed")
+  check(is_file($db),"genesis did not create the temporary database")
+  $public = invoke($exe,$db,["pubkey"])
+  check($public.ok and trim($public.stdout) != "","throwaway public key lookup failed")
+  $sign = invoke($exe,$db,["sign",$authored,"--out",$signed,"--recovery-generation","0"])
+  check($sign.ok and is_file($signed),"fixture signing failed")
+  $verify_args = ["verify",$signed,"--genesis-pub-base64",trim($public.stdout),"--json"]
+  $no_db = $scratch .. "/must-not-be-opened/secrets.db"
+  $verify = invoke($exe,$no_db,$verify_args)
+  check($verify.ok,"fixture verification failed")
+  $report = json_parse($verify.stdout)
+  check($report.ok == true and $report.epoch == 1,"verification report disagrees with fixture")
+  $original = read_file($signed)
+  $tampered = replace_must($original,"192.0.2.5","192.0.2.6",{count:1})
+  check(byte_length($original) == byte_length($tampered),"tampering changed the envelope size")
+  $differences = 0
+  for $i = 0 to len($original) - 1
+    if substr($original,$i,1) != substr($tampered,$i,1) then $differences = $differences + 1 end
+  end
+  check($differences == 1,"tampering must change exactly one byte")
+  write_file($signed,$tampered)
+  $rejected = invoke($exe,$no_db,$verify_args)
+  check($rejected.exit_code == 1,"tampered fixture verification did not exit 1")
+  $failure = json_parse($rejected.stdout)
+  check($failure.ok == false and $failure.error.code == "verification_failed","tampered fixture did not fail authentication")
+  check(not exists($no_db),"public-key verification touched a secrets database")
+finally
+  run_argv_must(["rm","-rf",$scratch])
+end
+print("PASS real mix mesh dispatch: throwaway genesis, sign, verify, tamper refusal")

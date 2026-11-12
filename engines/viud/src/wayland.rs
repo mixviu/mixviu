@@ -61,6 +61,7 @@ pub fn register(
             let client = WaylandClientSession {
                 compositor_state: CompositorClientState::default(),
                 proprietary: false,
+                agent_clients: Default::default(),
                 // proprietary,
             };
 

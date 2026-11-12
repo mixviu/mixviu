@@ -117,6 +117,8 @@ pub struct CompSnapshot {
     pub bindings: BindingsSnapshot,
     pub input: InputSnapshot,
     pub tiling: crate::tiling::TilingConfig,
+    pub display: DisplaySnapshot,
+    pub power: PowerSnapshot,
     #[cfg(feature = "xwayland")]
     pub xwayland: XwaylandSnapshot,
     /// Observed linux-dmabuf import outcomes (volatile; filled only in read
@@ -125,6 +127,18 @@ pub struct CompSnapshot {
     pub port: PortSnapshot,
     #[serde(skip)]
     pub full_tree: FullTreeCache,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct DisplaySnapshot {
+    pub blanked: bool,
+    pub inhibited: bool,
+    pub blank_supported: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct PowerSnapshot {
+    pub screen_off_s: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -596,6 +610,8 @@ impl CompSnapshot {
             "bindings" => self.bindings.select(tail),
             "input" => self.input.select(tail),
             "tiling" => select_serialised(&self.tiling, tail),
+            "display" => self.display.select(tail),
+            "power" => self.power.select(tail),
             #[cfg(feature = "xwayland")]
             "xwayland" => self.xwayland.select(tail),
             "dmabuf" => self.dmabuf.select(tail),
@@ -622,6 +638,8 @@ impl CompSnapshot {
             "bindings" => self.bindings.node_kind(tail),
             "input" => self.input.node_kind(tail),
             "tiling" => serialised_node_kind(&self.tiling, tail),
+            "display" => self.display.node_kind(tail),
+            "power" => self.power.node_kind(tail),
             #[cfg(feature = "xwayland")]
             "xwayland" => self.xwayland.node_kind(tail),
             "dmabuf" => self.dmabuf.node_kind(tail),
@@ -757,6 +775,8 @@ flat_snapshot!(
     failures
 );
 flat_snapshot!(DmabufLedgerSnapshot, accepted, failed, failures);
+flat_snapshot!(DisplaySnapshot, blanked, inhibited, blank_supported);
+flat_snapshot!(PowerSnapshot, screen_off_s);
 flat_snapshot!(OutputWorkspaceSnapshot, current);
 
 impl WorkspacesSnapshot {
@@ -1289,6 +1309,30 @@ macro_rules! volatile {
 use PatternSegment::{Literal as L, OutputKey as O, SeatKey as K, SourceKey as C, SurfaceKey as S};
 
 pub static DESCRIPTORS: &[DescribeEntry] = &[
+    descriptor!(
+        &[L("display"), L("inhibited")],
+        Bool,
+        "Whether a live visible surface inhibits idle blanking and idle notifications"
+    ),
+    descriptor!(
+        &[L("display"), L("blanked")],
+        Bool,
+        "Whether display blank is requested; capture and client callbacks remain unchanged"
+    ),
+    descriptor!(
+        &[L("display"), L("blank_supported")],
+        Bool,
+        "Whether every active output supports CRTC blanking"
+    ),
+    DescribeEntry {
+        persistence: Some("settingsd"),
+        ..descriptor!(
+            &[L("power"), L("screen_off_s")],
+            Number,
+            "Positive whole seconds since human input before blanking; null means never",
+            mutable
+        )
+    },
     volatile!(
         [L("input"), L("seats"), K, L("name")],
         String,

@@ -1049,6 +1049,9 @@ pub fn validate_window_band_value(
 /// leaf family. Value validation is repeated by the service arms;
 /// state-dependent checks (does the window exist) belong to the service.
 pub fn validate_set_request(path: &str, value: &Value) -> Result<(), SetValidationError> {
+    if path == "power.screen_off_s" {
+        return screen_off_value(value).map(|_| ());
+    }
     #[cfg(feature = "xwayland")]
     if path == "xwayland.enabled" {
         return if value.is_boolean() {
@@ -1250,6 +1253,7 @@ pub fn known_read_only_path(path: &str) -> bool {
         "bindings",
         "dmabuf",
         "port",
+        "display",
     ];
     #[cfg(feature = "xwayland")]
     if path == "xwayland"
@@ -1279,6 +1283,24 @@ pub fn known_read_only_path(path: &str) -> bool {
         || ROOTS
             .iter()
             .any(|root| path == *root || path.starts_with(&format!("{root}.")))
+}
+
+/// Positive whole seconds, or null for never. Shared by ingress and host.
+pub fn screen_off_value(value: &Value) -> Result<Option<u64>, SetValidationError> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    value
+        .as_u64()
+        .filter(|seconds| (1..=u64::from(u32::MAX)).contains(seconds))
+        .map(Some)
+        .ok_or_else(|| {
+            invalid_value(
+                "power.screen_off_s",
+                "positive integer or null",
+                "1..=4294967295|null",
+            )
+        })
 }
 
 #[cfg(test)]

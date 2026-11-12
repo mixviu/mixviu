@@ -26,6 +26,7 @@
 --   share/mixviu/libraries/viu/mix/   the Viu Mix library the apps require
 --   share/mixviu/units/               unit templates (@{prefix} placeholders)
 --   share/mixviu/{LICENSE-*,NOTICE}, share/mixviu/BUNDLE.conf.mix (manifest)
+--   bin/term-mix, share/applications/mixviu.term-mix.desktop
 --   share/scenes/, share/viud/scripts/
 --   lib/{clipd,notifyd,exportd,dlnad}/   the Mix services
 --   share/icons/, share/assets/, share/wallpapers/, share/layout/, share/daylight/
@@ -74,6 +75,10 @@ for $f in tracked("apps")
   end
 end
 for $f in tracked("libraries/viu/mix") place($stage, $f, "share/mixviu/" .. $f) end
+-- Term uses the same app/library layout as every bundled Mix app.
+place($stage, "apps/term/term-mix.mix", "bin/term-mix")
+chmod($stage .. "/bin/term-mix", 0o755)
+place($stage, "apps/term/mixviu.term-mix.desktop", "share/applications/mixviu.term-mix.desktop")
 for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/mixviu/" .. $f) end
 for $f in tracked("share/scenes") place($stage, $f, $f) end
 for $f in tracked("engines/viud/scripts") place($stage, $f, "share/viud/scripts/" .. substr($f, len("engines/viud/scripts/"))) end
@@ -212,7 +217,7 @@ for $p in $files
 end
 write_file($stage .. "/share/mixviu/BUNDLE.conf.mix", data_encode({schema: 1, source: $sha, prefix: "/opt/mix", apps: $apps, files: $rows}, true) .. "\n")
 mkdir(dirname($out), {parents: true})
-run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "--mtime=@" .. $when, "-C", $stage, "-cf", $out, "share", "lib"], {timeout: 600})
+run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "--mtime=@" .. $when, "-C", $stage, "-cf", $out, "bin", "share", "lib"], {timeout: 600})
 $tops = {}
 for $r in $rows
   $parts = split($r.path, "/")

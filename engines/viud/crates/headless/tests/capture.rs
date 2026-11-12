@@ -146,6 +146,413 @@ fn ppm(
     (dims[0], dims[1], parts.next().unwrap().to_vec())
 }
 
+/// This observer only connects to the broker owned by this test. It records
+/// actual props.watch publications, rather than sampling props.get.
+struct BlankObserver(std::process::Child);
+
+impl BlankObserver {
+    fn start(bus: &Bus) -> Self {
+        let child = Command::new(
+            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+        )
+        .arg("--serve")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/blank-observer.mix"))
+        .args(["--name", "blank-observer"])
+        .env("MIX_NODED_URL", &bus.url)
+        .env("MIX_RUN", bus.root.join("run"))
+        .env("MIX_ETC", bus.root.join("etc"))
+        .env("MIX_VAR", bus.root.join("var"))
+        .env("MIX_NODE_CONFIG", bus.root.join("etc/node.conf.mix"))
+        .spawn()
+        .expect("start blank observer on private broker");
+        let observer = Self(child);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let reply = observer.request(bus, "observer.blanks");
+            if reply["rc"] == 0 {
+                break;
+            }
+            assert!(Instant::now() < deadline, "observer registration: {reply}");
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(observer.request(bus, "observer.start")["rc"], 0);
+        observer
+    }
+
+    fn request(&self, bus: &Bus, command: &str) -> Value {
+        let output = helper(
+            "call",
+            &bus.root,
+            &[command, "{}", "blank-observer"],
+            Some(&bus.url),
+        );
+        assert!(output.status.success(), "{output:?}");
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut reply: Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+        if reply["rc"] == 0
+            && let Some(body) = reply["body"].as_str()
+        {
+            reply["body"] = serde_json::from_str(body).unwrap();
+        }
+        reply
+    }
+
+    fn wait_edges(&self, bus: &Bus, count: usize) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let reply = self.request(bus, "observer.blanks");
+            assert_eq!(reply["rc"], 0, "{reply}");
+            if reply["body"].as_array().unwrap().len() >= count {
+                return reply["body"].clone();
+            }
+            assert!(Instant::now() < deadline, "missing blank edges: {reply}");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+impl Drop for BlankObserver {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Fenced settings adapter fixture. Accepted values are written beneath the
+/// owned broker root; real settingsd's durability is outside this test.
+struct SettingsFixture {
+    child: std::process::Child,
+    state: PathBuf,
+}
+
+impl SettingsFixture {
+    fn start(bus: &Bus) -> Self {
+        let state = bus.root.join("settings-fixture.json");
+        let child = Command::new(
+            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+        )
+        .arg("--serve")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/settings-fixture.mix"))
+        .args(["--name", "settingsd"])
+        .env("MIX_NODED_URL", &bus.url)
+        .env("MIX_RUN", bus.root.join("run"))
+        .env("MIX_ETC", bus.root.join("etc"))
+        .env("MIX_VAR", bus.root.join("var"))
+        .env("MIX_NODE_CONFIG", bus.root.join("etc/node.conf.mix"))
+        .env("MIX_TEST_SETTINGS_STATE", &state)
+        .spawn()
+        .expect("start isolated settings fixture");
+        let fixture = Self { child, state };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let output = helper(
+                "call",
+                &bus.root,
+                &["settings.fixture", "{}", "settingsd"],
+                Some(&bus.url),
+            );
+            assert!(output.status.success(), "{output:?}");
+            let reply: Value = serde_json::from_str(
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .last()
+                    .unwrap(),
+            )
+            .unwrap();
+            if reply["rc"] == 0 {
+                return fixture;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "settings fixture registration: {reply}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn accepted(&self) -> Value {
+        serde_json::from_slice(&fs::read(&self.state).unwrap()).unwrap()
+    }
+}
+
+impl Drop for SettingsFixture {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+#[ignore = "needs a GPU render node and built viud, noded and native Mix"]
+fn blank_preserves_capture_callbacks_and_agent_input_and_watch_reports_both_edges() {
+    let bus = Bus::start("blank");
+    let mut process = process::spawn(1, None, "blank", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    // Headless has no CRTC. It still exposes the policy state without
+    // pretending that it can blank a physical output.
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blank_supported"})),
+        false
+    );
+    let observer = BlankObserver::start(&bus);
+    let before = ppm(&bus, &process, "blank-before", None);
+    assert!(before.2.iter().any(|channel| *channel != 0));
+    bus.call("comp.display.blank", json!({"on":true}));
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        true
+    );
+    let edges = observer.wait_edges(&bus, 1);
+    assert_eq!(edges[0]["old"], false);
+    assert_eq!(edges[0]["new"], true);
+    assert_eq!(edges[0]["cause"], "bus");
+    assert_eq!(ppm(&bus, &process, "blank-during", None), before);
+
+    // A callback-only commit and a damaged commit must both keep getting
+    // callbacks. This catches reusing session_lock's empty visible set.
+    for damage in [false, true, false] {
+        let callbacks = pattern.state.callbacks;
+        pattern.commit(damage);
+        pattern.wait_callback(callbacks);
+    }
+    let row = bus.window();
+    let keys = pattern.state.keys;
+    bus.call(
+        "comp.input.key",
+        json!({"seat":"agent","window":target(&row),"key":"a"}),
+    );
+    pump_patterns(&mut [&mut pattern]);
+    assert_eq!(pattern.state.keys, keys + 2);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        true,
+        "agent input must not wake the human display"
+    );
+    assert_eq!(ppm(&bus, &process, "blank-after-agent", None), before);
+    bus.call("comp.display.blank", json!({"on":false}));
+    let edges = observer.wait_edges(&bus, 2);
+    assert_eq!(edges.as_array().unwrap().len(), 2);
+    assert_eq!(edges[1]["old"], true);
+    assert_eq!(edges[1]["new"], false);
+    assert_eq!(edges[1]["cause"], "bus");
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        false
+    );
+    assert_eq!(ppm(&bus, &process, "blank-after", None), before);
+}
+
+#[test]
+#[ignore = "needs a GPU render node and built viud, noded and native Mix"]
+fn continuous_agent_input_does_not_postpone_the_idle_blank_timer() {
+    let bus = Bus::start("blank-idle");
+    let settings = SettingsFixture::start(&bus);
+    let mut process = process::spawn(1, None, "blank-idle", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let row = bus.window();
+    bus.call(
+        "comp.props.set",
+        json!({"path":"power.screen_off_s","value":3}),
+    );
+    let accepted = settings.accepted();
+    assert_eq!(accepted["values"]["power.screen_off_s"], 3);
+    assert_eq!(accepted["operations"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        false,
+        "positive control: timer starts armed rather than already fired"
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut commands = 0;
+    loop {
+        bus.call(
+            "comp.input.key",
+            json!({"seat":"agent","window":target(&row),"key":"a"}),
+        );
+        commands += 1;
+        pump_patterns(&mut [&mut pattern]);
+        if bus.call("comp.props.get", json!({"path":"display.blanked"})) == true {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "continuous agent input postponed the human idle deadline"
+        );
+    }
+    assert!(commands >= 2, "exercise input while the timer is armed");
+    assert_eq!(pattern.state.keys, commands * 2);
+    bus.call(
+        "comp.props.set",
+        json!({"path":"power.screen_off_s","value":null}),
+    );
+    let accepted = settings.accepted();
+    assert!(accepted["values"]["power.screen_off_s"].is_null());
+    assert_eq!(accepted["operations"].as_array().unwrap().len(), 2);
+    bus.call("comp.display.blank", json!({"on":false}));
+}
+
+fn wait_inhibited(bus: &Bus, expected: bool) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if bus.call("comp.props.get", json!({"path":"display.inhibited"})) == expected {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "inhibited never became {expected}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+#[ignore = "needs a render node and built viud/noded/Mix"]
+fn idle_inhibitor_holds_both_timers_then_rearms_from_release() {
+    let bus = Bus::start("inhibit-timers");
+    let _settings = SettingsFixture::start(&bus);
+    let mut process = process::spawn(1, None, "inhibit-timers", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let inhibitor = pattern.inhibit();
+    wait_inhibited(&bus, true);
+    pattern.idle_notification(100);
+    bus.call(
+        "comp.props.set",
+        json!({"path":"power.screen_off_s","value":2}),
+    );
+    bus.call(
+        "comp.props.set",
+        json!({"path":"power.screen_off_s","value":1}),
+    );
+    let until = Instant::now() + Duration::from_millis(1200);
+    while Instant::now() < until {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(pattern.state.idled, 0);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        false
+    );
+    inhibitor.destroy();
+    pattern.pump();
+    wait_inhibited(&bus, false);
+    let released = Instant::now();
+    while released.elapsed() < Duration::from_millis(250) {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(pattern.state.idled, 1);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        false
+    );
+    loop {
+        if bus.call("comp.props.get", json!({"path":"display.blanked"})) == true {
+            break;
+        }
+        assert!(
+            released.elapsed() < Duration::from_secs(3),
+            "blank did not rearm"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(released.elapsed() >= Duration::from_millis(900));
+}
+
+#[test]
+#[ignore = "needs a render node and built viud/noded/Mix"]
+fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
+    let bus = Bus::start("inhibit");
+    let mut process = process::spawn(1, None, "inhibit", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let observer = BlankObserver::start(&bus);
+    wait_inhibited(&bus, false);
+    let a = pattern.inhibit();
+    wait_inhibited(&bus, true);
+    let row = bus.window();
+    bus.call("comp.window.minimize", target(&row));
+    wait_inhibited(&bus, false);
+    bus.call("comp.window.restore", target(&row));
+    wait_inhibited(&bus, true);
+    let lock = pattern.lock_session();
+    wait_inhibited(&bus, false);
+    lock.unlock_and_destroy();
+    pattern.pump();
+    wait_inhibited(&bus, true);
+    bus.call(
+        "comp.window.send_to_workspace",
+        place_args(&row, json!({"index":2})),
+    );
+    wait_inhibited(&bus, false);
+    bus.call("comp.workspace.switch", json!({"index":2}));
+    wait_inhibited(&bus, true);
+    bus.call("comp.workspace.switch", json!({"index":1}));
+    wait_inhibited(&bus, false);
+    bus.call(
+        "comp.window.send_to_workspace",
+        place_args(&row, json!({"index":1})),
+    );
+    wait_inhibited(&bus, true);
+    bus.call("comp.display.blank", json!({"on":true}));
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        true
+    );
+    let b = pattern.inhibit();
+    wait_inhibited(&bus, true);
+    assert_eq!(
+        bus.call("comp.props.get", json!({"path":"display.blanked"})),
+        true
+    );
+    bus.call("comp.display.blank", json!({"on":false}));
+    a.destroy();
+    pattern.pump();
+    wait_inhibited(&bus, true);
+    b.destroy();
+    pattern.pump();
+    wait_inhibited(&bus, false);
+    let _c = pattern.inhibit();
+    wait_inhibited(&bus, true);
+    pattern.unmap();
+    wait_inhibited(&bus, false);
+    // Disconnect with a live resource, then positively prove a new client
+    // can hold and release inhibition without the old resource remaining.
+    drop(pattern);
+    let mut next = Pattern::new(connect(&mut process));
+    next.wait_callback(0);
+    let _d = next.inhibit();
+    wait_inhibited(&bus, true);
+    drop(next);
+    wait_inhibited(&bus, false);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let reply = observer.request(&bus, "observer.inhibitors");
+        assert_eq!(reply["rc"], 0);
+        let edges = reply["body"].as_array().unwrap();
+        if edges.len() >= 14 {
+            assert_eq!(edges.len(), 14);
+            for (i, edge) in edges.iter().enumerate() {
+                assert_eq!(edge["old"], i % 2 != 0);
+                assert_eq!(edge["new"], i % 2 == 0);
+                assert_eq!(edge["cause"], "wayland.idle_inhibit");
+            }
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "missing inhibitor edges: {reply}"
+        );
+    }
+}
+
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn review_z_overlap_and_workspace_move_deliver_to_top_window() {

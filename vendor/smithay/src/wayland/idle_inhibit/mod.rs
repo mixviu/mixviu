@@ -122,8 +122,7 @@ pub trait IdleInhibitHandler {
 
     /// Stop inhibition for the provided surface.
     ///
-    /// This function is only called when a client explicitly removes the session
-    /// inhibition. It is up to the compositor to ignore inhibiting surfaces which
-    /// are invisible or dead.
+    /// Called when the inhibitor resource is destroyed, including disconnect.
+    /// The compositor must ignore inhibiting surfaces which are invisible or dead.
     fn uninhibit(&mut self, surface: WlSurface);
 }

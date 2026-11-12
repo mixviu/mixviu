@@ -393,6 +393,10 @@ fn no_fires() -> FireReceiver {
 }
 
 struct FakeClient {
+    power_writes: Arc<AtomicUsize>,
+    power_values: Arc<Mutex<Vec<Value>>>,
+    power_fail: Arc<AtomicBool>,
+    responses: Arc<Mutex<Vec<(String, u8, String)>>>,
     sent: SentMessages,
     incoming: Mutex<Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>>>,
     states: watch::Sender<ConnState>,
@@ -420,6 +424,10 @@ impl FakeClient {
         let (states, _) = watch::channel(initial_state);
         (
             Self {
+                power_writes: Arc::new(AtomicUsize::new(0)),
+                power_values: Arc::new(Mutex::new(Vec::new())),
+                power_fail: Arc::new(AtomicBool::new(false)),
+                responses: Arc::new(Mutex::new(Vec::new())),
                 sent: Arc::new(Mutex::new(Vec::new())),
                 incoming: Mutex::new(Some(incoming)),
                 states: states.clone(),
@@ -440,6 +448,15 @@ impl FakeClient {
 }
 
 impl WorkerClient for FakeClient {
+    fn persist_screen_off<'a>(&'a self, value: &'a Value) -> WorkerFuture<'a, Result<(), String>> {
+        self.power_writes.fetch_add(1, Ordering::AcqRel);
+        self.power_values.lock().unwrap().push(value.clone());
+        Box::pin(future::ready(if self.power_fail.load(Ordering::Acquire) {
+            Err("fixture storage refusal".into())
+        } else {
+            Ok(())
+        }))
+    }
     fn incoming(&self) -> Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>> {
         self.incoming
             .lock()
@@ -457,9 +474,14 @@ impl WorkerClient for FakeClient {
 
     fn respond_parts<'a>(
         &'a self,
-        _reply: &'a PendingReply,
+        reply: &'a PendingReply,
     ) -> WorkerFuture<'a, Result<(), String>> {
         self.responses_started.fetch_add(1, Ordering::AcqRel);
+        self.responses.lock().unwrap().push((
+            reply.command.to_string(),
+            reply.rc,
+            reply.body.to_string(),
+        ));
         if self.hang_replies {
             Box::pin(future::pending())
         } else {
@@ -889,6 +911,134 @@ fn local_set_command(id: usize, path: &str, value: Value) -> bus::IncomingComman
         .headers
         .insert("broker_origin".into(), "local".into());
     command
+}
+
+#[tokio::test]
+async fn worker_rejects_topic_and_invalid_power_writes_before_persistence() {
+    let (ingress, source, _) = test_ingress();
+    let direct = ingress.clone();
+    let broker = Arc::new(AtomicU8::new(BROKER_RETRYING));
+    let (stop, shutdown) = watch::channel(false);
+    let (client, commands, _) = FakeClient::new(ConnState::Connected, false);
+    let writes = Arc::clone(&client.power_writes);
+    let values = Arc::clone(&client.power_values);
+    let fail = Arc::clone(&client.power_fail);
+    let replies = Arc::clone(&client.responses);
+    let responses = Arc::clone(&client.responses_started);
+    let mut client = Some(client);
+    let (publish_timeouts, observations, lost_count) = test_observation_args();
+    let worker = tokio::spawn(worker_loop(
+        "comp-security".into(),
+        ingress,
+        Arc::clone(&broker),
+        Arc::new(AtomicU64::new(0)),
+        publish_timeouts,
+        observations,
+        Arc::new(tokio::sync::Notify::new()),
+        lost_count,
+        no_fires(),
+        shutdown,
+        move || future::ready(Ok(client.take().unwrap())),
+    ));
+    wait_for_broker(&broker, BROKER_CONNECTED).await;
+    let mut topic = local_set_command(1, "power.screen_off_s", json!(1));
+    topic
+        .headers
+        .insert("topic".into(), "attacker.events".into());
+    commands.send(topic).unwrap();
+    commands
+        .send(local_set_command(2, "power.screen_off_s", json!(0)))
+        .unwrap();
+    commands.send(command("comp.ping", 3)).unwrap();
+    wait_for_counter(&responses, 2, "invalid write and ping answered").await;
+    assert_eq!(writes.load(Ordering::Acquire), 0);
+    assert!(matches!(source.try_recv(), Err(mpsc::TryRecvError::Empty)));
+
+    // A full engine queue refuses admission without a ghost durable write.
+    let mut held = Vec::new();
+    for _ in 0..PORT_QUEUE_CAPACITY {
+        held.push(
+            direct
+                .request_set("input.corners.enabled".into(), json!(true))
+                .unwrap(),
+        );
+    }
+    commands
+        .send(local_set_command(4, "power.screen_off_s", json!(30)))
+        .unwrap();
+    wait_for_counter(&responses, 3, "full queue refuses power set").await;
+    assert_eq!(writes.load(Ordering::Acquire), 0);
+    for _ in 0..PORT_QUEUE_CAPACITY {
+        drop(source.try_recv().unwrap());
+    }
+    drop(held);
+
+    // Admission and runtime mutation precede persistence. Even reversed
+    // engine reply readiness cannot reorder the two durable settings writes.
+    commands
+        .send(local_set_command(5, "power.screen_off_s", json!(30)))
+        .unwrap();
+    commands
+        .send(local_set_command(6, "power.screen_off_s", json!(60)))
+        .unwrap();
+    let PortCommand::Set(mut first) = next_port_command(&source).await else {
+        panic!("power set");
+    };
+    let PortCommand::Set(mut second) = next_port_command(&source).await else {
+        panic!("second power set");
+    };
+    let accepted = |seconds| ControlReply::Set {
+        path: "power.screen_off_s".into(),
+        old: PropValue::Null(()),
+        new: PropValue::U64(seconds),
+        persisted: Some(false),
+    };
+    second.reply.take().unwrap().send(accepted(60)).unwrap();
+    commands.send(command("comp.ping", 7)).unwrap();
+    wait_for_counter(&responses, 4, "ping while power waits for predecessor").await;
+    assert_eq!(writes.load(Ordering::Acquire), 0);
+    first.reply.take().unwrap().send(accepted(30)).unwrap();
+    wait_for_counter(&responses, 6, "both persisted writes answered").await;
+    assert_eq!(*values.lock().unwrap(), vec![json!(30), json!(60)]);
+
+    // A persistence failure is an accepted runtime change with an honest
+    // persisted:false result, matching the existing xwayland set contract.
+    fail.store(true, Ordering::Release);
+    commands
+        .send(local_set_command(8, "power.screen_off_s", json!(90)))
+        .unwrap();
+    let PortCommand::Set(mut failed) = next_port_command(&source).await else {
+        panic!("power set");
+    };
+    failed.reply.take().unwrap().send(accepted(90)).unwrap();
+    wait_for_counter(&responses, 7, "storage failure answered").await;
+    let (_, rc, body) = replies.lock().unwrap().last().unwrap().clone();
+    assert_eq!(rc, 0);
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["persisted"],
+        false
+    );
+    assert_eq!(writes.load(Ordering::Acquire), 3);
+
+    commands
+        .send(local_set_command(9, "power.screen_off_s", json!(120)))
+        .unwrap();
+    let PortCommand::Set(mut refused) = next_port_command(&source).await else {
+        panic!("power set");
+    };
+    refused
+        .reply
+        .take()
+        .unwrap()
+        .send(ControlReply::Busy)
+        .unwrap();
+    wait_for_counter(&responses, 8, "engine refusal answered").await;
+    assert_eq!(writes.load(Ordering::Acquire), 3);
+    stop.send(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), worker)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 /// Mesh law (2026-09-15): being on the mesh is the whole authorization.

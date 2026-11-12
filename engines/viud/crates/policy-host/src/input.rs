@@ -493,6 +493,13 @@ fn targeted_human_button(
     pressed: bool,
     time: u32,
 ) {
+    if swallow_blank(
+        lp,
+        SeatKind::Human,
+        world::comp::blank::Edge::injected_button(button, pressed),
+    ) {
+        return;
+    }
     let Some(pointer) = lp.state.seat.seat.get_pointer() else {
         return;
     };
@@ -543,6 +550,9 @@ fn move_human_pointer(
     corners: bool,
     time: u32,
 ) -> Result<(), ControlReply> {
+    if swallow_blank(lp, SeatKind::Human, world::comp::blank::Edge::Other) {
+        return Ok(());
+    }
     let moved = match target {
         PointerMoveTarget::Relative { dx, dy } => Moved::By(*dx, *dy),
         PointerMoveTarget::Output { output, x, y } => {
@@ -1097,11 +1107,38 @@ fn require_agent_seat(lp: &Loop, surface: &WlSurface) -> Result<(), ControlReply
         return Ok(());
     }
     let window = record_of(lp, surface).map(|id| root_of(lp, id).0);
+    // X11 windows: no setting changes this, so name none.
+    if surface.client().is_some_and(|client| {
+        client
+            .get_data::<smithay::xwayland::XWaylandClientData>()
+            .is_some()
+    }) {
+        return Err(ControlReply::refused(
+            "seat_unavailable",
+            json!({
+                "seat": "agent", "window": window, "setting": null, "settings": [],
+                "reason": "X11 windows (Xwayland) never receive the agent seat"
+            }),
+        ));
+    }
+    let executable = surface.client().and_then(|client| {
+        let pid = client
+            .get_credentials(&lp.state.output.display_handle)
+            .ok()?
+            .pid;
+        std::fs::read_link(format!("/proc/{pid}/exe")).ok()
+    });
+    let name = executable
+        .as_ref()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .map(|name| name.strip_suffix(" (deleted)").unwrap_or(name));
+    let settings = comp_model::agent_seat::refusal_settings(name);
     Err(ControlReply::refused(
         "seat_unavailable",
         json!({
-            "seat": "agent", "window": window, "setting": "agent_seat.allow",
-            "reason": "Enable the executable in agent_seat.allow (remove it from agent_seat.deny), then restart the app"
+            "seat": "agent", "window": window, "setting": settings[0], "settings": settings,
+            "reason": "Change the named agent seat settings, then restart the app"
         }),
     ))
 }
@@ -1142,6 +1179,13 @@ fn agent_target(lp: &Loop, surface: &WlSurface) -> Option<AgentTarget> {
 // ── delivery ─────────────────────────────────────────────────────────────────
 
 fn inject_button(lp: &mut Loop, seat: SeatKind, button: u32, pressed: bool, time: u32) {
+    if swallow_blank(
+        lp,
+        seat,
+        world::comp::blank::Edge::injected_button(button, pressed),
+    ) {
+        return;
+    }
     // A region selection takes the human seat's buttons.
     if seat == SeatKind::Human && world::comp::region::button(lp, button, pressed) {
         injected(lp, seat);
@@ -1182,6 +1226,9 @@ fn inject_scroll(
     v120: (Option<i32>, Option<i32>),
     time: u32,
 ) {
+    if swallow_blank(lp, seat, world::comp::blank::Edge::Other) {
+        return;
+    }
     injected(lp, seat);
     let source = match source {
         ScrollSource::Wheel => AxisSource::Wheel,
@@ -1296,6 +1343,13 @@ fn inject_key(
     pressed: bool,
     time: u32,
 ) -> (bool, Option<(u64, u64)>) {
+    if swallow_blank(
+        lp,
+        seat,
+        world::comp::blank::Edge::injected_key(keycode.raw(), pressed),
+    ) {
+        return (true, None);
+    }
     // A region selection takes the human seat's keys: handled, no target.
     if seat == SeatKind::Human && world::comp::region::key(lp, keycode.raw(), pressed) {
         injected(lp, seat);
@@ -1370,6 +1424,9 @@ fn release_injected(lp: &mut Loop, seat: SeatKind) {
     let holds = lp.inner.comp.injection.holds_mut(seat).take_all();
     let time = now_ms(lp);
     release_holds(lp, seat, holds, time);
+    if seat == SeatKind::Human {
+        lp.inner.comp.blank.clear_injected_holds();
+    }
     if seat == SeatKind::Agent {
         dismiss_agent_popups(lp);
     }
@@ -1430,6 +1487,14 @@ fn release_holds(lp: &mut Loop, seat: SeatKind, holds: Vec<Hold>, time: u32) {
 /// One injected event went through a seat: counted for a
 /// sequence's yield and recorded as that seat's activity (an injected human
 /// event counts as human input).
+fn swallow_blank(lp: &mut Loop, seat: SeatKind, edge: world::comp::blank::Edge) -> bool {
+    if seat == SeatKind::Human && world::comp::blank::consume(lp, edge) {
+        injected(lp, seat);
+        return true;
+    }
+    false
+}
+
 fn injected(lp: &mut Loop, seat: SeatKind) {
     let injection = &mut lp.inner.comp.injection;
     injection.events = injection.events.wrapping_add(1);

@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- A bounded batch runs outside the app evaluator; broker latency never holds
+-- the terminal owner. Failed deliveries leave sequence gaps as in gold.
+$bus=require("bus.mix")
+on events.publish
+  $delivered=0
+  for $note in slice($event.args.events,0,256)
+    try
+      $published=publish($bus.change_topic($event.args.service ?? "term",$note.topic),json_encode($note.body),{command:strip_prefix($note.topic,"term."),retain:false})
+      if $published==0 then $delivered=$delivered+1 end
+    catch $message
+      -- Best effort; the next successful event retains its later revision.
+    end
+  end
+  reply(0,json_encode({delivered:$delivered}))
+end

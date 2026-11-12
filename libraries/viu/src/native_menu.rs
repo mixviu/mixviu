@@ -203,9 +203,14 @@ pub fn draw(ui: &mut egui::Ui, value: &Value, compact: bool, mark: Option<&str>)
                     egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::Vec2::ZERO),
                 )
             } else if compact {
-                let response = ui.add(toolkit::button::IconButton::new(
-                    crate::icons::Icon::from_name("menu").unwrap(),
-                ));
+                let strings = toolkit::Strings::new("");
+                let label = toolkit::action::label_text(&strings, "window-menu");
+                let response = ui.add(
+                    toolkit::button::IconButton::new(
+                        crate::icons::Icon::from_name("menu").unwrap(),
+                    )
+                    .tooltip(label),
+                );
                 if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
                     || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary))
                 {
@@ -231,6 +236,56 @@ pub fn picked(ctx: &egui::Context) -> Option<Value> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn scene_native_menu_collapses_and_restores_at_gold_viewport_boundary() {
+        fn has_label(shape: &egui::Shape, label: &str) -> bool {
+            match shape {
+                egui::Shape::Text(text) => text.galley.job.text == label,
+                egui::Shape::Vec(shapes) => shapes.iter().any(|shape| has_label(shape, label)),
+                _ => false,
+            }
+        }
+        let ctx = egui::Context::default();
+        crate::appearance::install(&ctx);
+        let menus = serde_json::json!([{"label":"File","children":[{"id":"file.refresh","label":"Refresh","enabled":true}]}]);
+        let widget = crate::widgets::Widget::new("menu", "menubar", "", menus.clone());
+        let mut menu = super::NativeMenu;
+        for (width, bar) in [
+            (900.0, true),
+            (450.0, false),
+            (639.0, false),
+            (640.0, true),
+            (900.0, true),
+        ] {
+            for _ in 0..2 {
+                let out = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 560.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        menu.draw(ui, &widget, &menus, &mut vec![]);
+                    },
+                );
+                assert_eq!(
+                    out.shapes
+                        .iter()
+                        .any(|shape| has_label(&shape.shape, "File")),
+                    bar,
+                    "viewport width {width}"
+                );
+                assert_eq!(
+                    super::application_id(&ctx, super::command_slot(0).unwrap()).as_deref(),
+                    Some("file.refresh")
+                );
+                out.drop_without_applying_deltas();
+            }
+        }
+    }
+
     #[test]
     fn hosted_tail_commands_keep_their_owned_identity_across_menu_frames() {
         let ctx = egui::Context::default();

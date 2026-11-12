@@ -34,8 +34,7 @@ pub fn note_human_activity(dispatch: &mut Dispatch) {
     }
 }
 
-/// Hold (or release) idle for notifications that honour inhibitors. Nothing
-/// inhibits yet (viud serves no idle-inhibit protocol); kept for when one does.
+/// Hold (or release) idle for notifications that honour inhibitors.
 pub fn set_inhibited(dispatch: &mut Dispatch, inhibited: bool) {
     dispatch.idle_notifier.set_is_inhibited(inhibited);
 }

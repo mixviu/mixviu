@@ -7,6 +7,8 @@ use std::path::{Component, Path, PathBuf};
 #[serde(default, deny_unknown_fields)]
 pub struct Manifest {
     pub behaviour: String,
+    /// Optional authored launch policy, evaluated before creating native owners.
+    pub startup: Option<String>,
     pub service: String,
     pub title: String,
     pub help: Option<String>,
@@ -20,6 +22,7 @@ pub struct Manifest {
     pub follow_settings: bool,
     pub macros: bool,
     pub native_drive: bool,
+    pub native_selection: bool,
     pub max_string_bytes: Option<usize>,
     pub app_id: Option<String>,
     pub drive: Option<String>,
@@ -52,6 +55,16 @@ pub struct Manifest {
     /// Preserve applications whose gold HELP puts UI before debug commands.
     pub native_debug_after_ui: bool,
     pub activation: Option<String>,
+    /// Discovery replies are owned by the authored behaviour instead of the SDK.
+    pub authored_discovery: bool,
+    pub window_app_id: Option<String>,
+    pub command_namespace: Option<String>,
+    pub text_replies: bool,
+    pub preserve_request_body: bool,
+    pub unknown_reply: Option<serde_json::Value>,
+    pub unknown_handler: Option<String>,
+    /// Retry a refused initial registration once as service-PID.
+    pub registration_pid_fallback: bool,
     pub unknown_command: Option<String>,
     pub notice_command: Option<String>,
     pub launch: Option<String>,
@@ -72,6 +85,7 @@ impl Default for Manifest {
     fn default() -> Self {
         Self {
             behaviour: "app.mix".into(),
+            startup: None,
             service: "viu-app".into(),
             title: "Viu".into(),
             help: None,
@@ -85,6 +99,7 @@ impl Default for Manifest {
             follow_settings: false,
             macros: false,
             native_drive: false,
+            native_selection: false,
             max_string_bytes: None,
             app_id: None,
             drive: None,
@@ -106,6 +121,14 @@ impl Default for Manifest {
             native_debug: false,
             native_debug_after_ui: false,
             activation: None,
+            authored_discovery: false,
+            window_app_id: None,
+            command_namespace: None,
+            text_replies: false,
+            preserve_request_body: false,
+            unknown_reply: None,
+            unknown_handler: None,
+            registration_pid_fallback: false,
             unknown_command: None,
             notice_command: None,
             launch: None,
@@ -144,6 +167,7 @@ pub struct Bundle {
     pub program: crate::runtime::Program,
     pub launch: serde_json::Value,
     pub launch_plan: serde_json::Value,
+    pub startup: Option<crate::runtime::Program>,
 }
 impl Bundle {
     pub fn load(root: &Path, args: &[String]) -> Result<Self, String> {
@@ -300,13 +324,45 @@ impl Bundle {
             return Err("behaviour escapes bundle".into());
         }
         // JSON is valid Mix data except null (arguments are strings only).
-        let source = format!(
-            "$app_args = json_parse({})\n{}",
+        let args_source = format!(
+            "$app_args = json_parse({})\n",
             serde_json::to_string(&serde_json::to_string(args).unwrap())
                 .unwrap()
                 .replace("${", "\\${"),
+        );
+        let source = format!(
+            "{args_source}$app_startup = json_parse(\"{{}}\")\n{}",
             std::fs::read_to_string(&path).map_err(|e| e.to_string())?
         );
+        let startup = manifest
+            .startup
+            .as_ref()
+            .map(|name| {
+                let relative = Path::new(name);
+                if relative
+                    .components()
+                    .any(|c| !matches!(c, Component::Normal(_)))
+                {
+                    return Err("startup must be bundle-relative".to_owned());
+                }
+                let path = root
+                    .join(relative)
+                    .canonicalize()
+                    .map_err(|e| e.to_string())?;
+                if !path.starts_with(&root) {
+                    return Err("startup escapes bundle".into());
+                }
+                Ok(crate::runtime::Program {
+                    source: format!(
+                        "{args_source}{}",
+                        std::fs::read_to_string(&path).map_err(|e| e.to_string())?
+                    ),
+                    path,
+                    scene: manifest.service.clone(),
+                    citizen: manifest.service.clone(),
+                })
+            })
+            .transpose()?;
         let scene = std::fs::read_to_string(root.join("scene.mix")).map_err(|e| e.to_string())?;
         let program = crate::runtime::Program {
             path,
@@ -321,7 +377,20 @@ impl Bundle {
             program,
             launch: serde_json::json!({}),
             launch_plan: serde_json::json!({}),
+            startup,
         })
+    }
+    pub(crate) fn startup_context(&mut self, value: &serde_json::Value) {
+        self.program.source = self.program.source.replacen(
+            "$app_startup = json_parse(\"{}\")",
+            &format!(
+                "$app_startup = json_parse({})",
+                serde_json::to_string(&value.to_string())
+                    .unwrap()
+                    .replace("${", "\\${")
+            ),
+            1,
+        );
     }
 }
 
@@ -342,6 +411,7 @@ mod tests {
         );
         for host in [
             serde_json::json!({"behaviour":"../app.mix"}),
+            serde_json::json!({"startup":"../startup.mix"}),
             serde_json::json!({"tick_ms":1}),
             serde_json::json!({"size":[0,100]}),
             serde_json::json!({"reply_timeout_secs":0}),

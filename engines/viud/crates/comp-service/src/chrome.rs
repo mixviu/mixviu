@@ -59,10 +59,16 @@ pub struct Update {
     live: Arc<AtomicU64>,
     theme: Option<decor::appearance::Look>,
     agent_seat: Option<comp_model::agent_seat::Policy>,
+    screen_off: Option<Option<u64>>,
     services: BTreeSet<String>,
     bars: BTreeMap<String, Value>,
 }
 impl Update {
+    pub(crate) fn screen_off(&self) -> Option<Option<u64>> {
+        (self.live.load(Ordering::Acquire) == self.generation)
+            .then_some(self.screen_off)
+            .flatten()
+    }
     pub(crate) fn look(&self) -> Option<&decor::appearance::Look> {
         (self.live.load(Ordering::Acquire) == self.generation).then_some(())?;
         self.theme.as_ref()
@@ -74,7 +80,7 @@ impl Update {
         }
         let mut changed = self.theme.is_some();
         if let Some(policy) = self.agent_seat {
-            comp_model::agent_seat::install(policy);
+            changed |= comp_model::agent_seat::install(policy);
         }
         if let Some(look) = self.theme {
             decor::window::install(look.chrome(look.window_style));
@@ -126,8 +132,16 @@ pub(crate) async fn run(
         }
         let mut theme = None;
         let mut agent_seat = None;
+        let mut screen_off = None;
         let pending = consumer.pending().cloned();
         if let Some(update) = &pending {
+            screen_off = Some(
+                update
+                    .snapshot()
+                    .values
+                    .get("power.screen_off_s")
+                    .and_then(Value::as_u64),
+            );
             use settings::view::View;
             let policy = settings::view::AgentSeat::of(&update.snapshot().values);
             agent_seat = Some(comp_model::agent_seat::Policy {
@@ -185,6 +199,7 @@ pub(crate) async fn run(
                     live: live.clone(),
                     theme,
                     agent_seat,
+                    screen_off,
                     services: services.clone(),
                     bars,
                 })
@@ -231,6 +246,7 @@ mod tests {
                 live: Arc::new(AtomicU64::new(2)),
                 theme: None,
                 agent_seat: None,
+                screen_off: None,
                 services: BTreeSet::from(["unexpected".into()]),
                 bars: BTreeMap::new()
             }

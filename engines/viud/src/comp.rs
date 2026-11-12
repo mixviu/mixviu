@@ -503,6 +503,7 @@ impl Bus {
         // The renderer's occlusion decisions since the last pass, as row
         // changes for the edge pass below (F6).
         world::comp::occlusion::service(lp);
+        policy_host::project::service_inhibitors(lp);
         {
             let hover = policy_host::chrome::hover(lp);
             if hover != self.chrome_hover {
@@ -567,6 +568,7 @@ impl Bus {
         // ...and the hidden stamps, so a window a command hid this pass is out of
         // the hit driver before the next input dispatch (E5).
         world::comp::visibility::sync_hidden(lp);
+        policy_host::project::service_inhibitors(lp);
         // What the port's commands and the chords changed this pass reaches the
         // topics NOW, with its noted causes. The pass above ran before them,
         // so observers see the applied control before its next frame. This
@@ -1022,6 +1024,11 @@ impl Engine<'_> {
 }
 
 impl CompEngine for Engine<'_> {
+    fn screen_off_changed(&mut self, seconds: Option<u64>) {
+        if self.lp.inner.comp.blank.timeout() != seconds {
+            world::comp::blank::configure(self.lp, seconds);
+        }
+    }
     fn native_chrome_theme(&mut self, look: &decor::appearance::Look) {
         world::comp::region::follow(&look.theme);
         if self.lp.inner.comp.set_tile_gap(look.gaps) {

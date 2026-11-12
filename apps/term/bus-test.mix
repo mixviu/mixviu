@@ -1,0 +1,91 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$b=require("bus.mix");$m=require("model.mix");$w=require("wire.mix")
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+fn native($op,$handle,$a)
+  if $op=="state" then return {pid:42,title:"osc",cols:80,rows:24,exited:false,geometry:{x:0,y:0,w:100,h:80}} end
+  if $op=="create" then return {handle:"vt-9",pid:43} end
+  if $op=="snapshot" then return "cols=80 rows=24" end
+  if $op=="session" then return {diagnostic:"native identity unavailable; panes are graphics-only"} end
+  return {}
+end
+$n=fn($op,$handle,$a)=native($op,$handle,$a)
+$s={layout:$m.open_tab($m.initial(),{handle:"vt-1",pid:42},nil),identity:{instance:7,pid:40},replies:[],look:{values:{}},closed:false,event_revision:0}
+$out=$b.dispatch($s,"term.type",{text:"wrong",request_id:"retry"},$n)
+check($out.rc==10 and len($out.state.replies)==0,"validation never consumes replay ID")
+$out=$b.dispatch($out.state,"term.type",{pane:1,text:"x",request_id:"retry"},$n);$s=$out.state
+check($out.rc==0 and contains($out.body,"tab=1 pane=1 revision=1"),"type resolves explicit pane")
+$conflict=$b.dispatch($s,"term.type",{text:"mistyped retry",request_id:"retry"},$n)
+check($conflict.rc==10 and $conflict.body=="request_id already used by a different request; retries must resend the identical command and body" and deep_eq($conflict.state,$s),"recorded ID has gold conflict reply before validation and preserves state")
+$out=$b.dispatch($s,"term.tab.new",{title:"pinned",request_id:"open"},$n);$s=$out.state
+check($out.rc==0 and len($s.layout.tabs)==2 and $s.layout.tabs[1].title=="pinned","new tab owns supplied native session")
+$out=$b.dispatch($s,"term.tab.new",{request_id:"open",title:"pinned"},$n)
+check(len($out.state.layout.tabs)==2,"request key order does not reopen a tab")
+$out=$b.dispatch($s,"term.snapshot",{pane:1},$n)
+check(starts_with($out.body,"tab=1 pane=1 revision=2 ") and $out.state.layout.active==1,"read selector preserves focus")
+$out=$b.dispatch($s,"term.type",{pane:1,tab:2,text:"x",request_id:"fixed"},$n)
+check($out.rc==10 and len($out.state.replies)==2,"membership validation remains retryable")
+$out=$b.dispatch($s,"term.panes",{tab:1},$n)
+check($out.rc==0 and contains($out.body,"x=0 y=0 w=100 h=80 tab=1 revision=2 instance=7 pid=40"),"native geometry and process identity reported")
+for $args in [{contents:1},{scrollback_lines:10001},{pane:nil}]
+  check($w.arguments("term.snapshot",$args)!=nil,"snapshot refuses invalid optional fields")
+end
+check($w.arguments("term.scroll",{page:1})==nil and $w.arguments("term.scroll",{to:"top",lines:1})!=nil,"one scroll mode required")
+check($w.arguments("term.type",{pane:1,text:repeat("𝐀",2100)})!=nil,"envelope bound uses UTF-8 bytes")
+$before_raw=$s
+for $body in ['{"pane":1,"text":,"request_id":"raw-retry"}',repeat(" ",8193),"[]"]
+  $refused=$b.dispatch_raw($s,"term.type","term.type",$body,$n)
+  check($refused.rc==10 and deep_eq($refused.state,$s),"raw parse and budget refusals leave state and replay untouched")
+end
+$raw=$b.dispatch_raw($s,"term.type","term.type",'{"pane":99,"pane":1,"text":"","request_id":"raw-retry"}',$n)
+check($raw.rc==0 and len($raw.state.replies)==len($s.replies)+1,"corrected raw request executes with last duplicate key")
+$raw_replay=$b.dispatch_raw($raw.state,"term.type","term.type",'{"request_id":"raw-retry","text":"","pane":1}',$n)
+check($raw_replay.rc==0 and $raw_replay.body==$raw.body and deep_eq($raw_replay.state,$raw.state),"raw retry compares parsed arguments without duplicate mutation")
+$raw=$b.dispatch_raw($s,"term.tabs","term.tabs",repeat(" ",8190).."{}",$n)
+check($raw.rc==0 and deep_eq($s,$before_raw),"full original envelope budget is accepted without mutating caller state")
+$out=$b.dispatch($s,"term.props.watch",{},$n)
+check($out.rc==0 and $out.state.layout.watching and json_parse($out.body).revision==$out.state.layout.event_revision,"watch returns the current event sequence")
+$alternate=$s;$alternate.service="term-42"
+$alternate=$b.dispatch($alternate,"term.props.watch",{},$n)
+check(deep_eq(json_parse($alternate.body).topics,["term-42.tabs.changed","term-42.pane.changed","term-42.title.changed"]),"watch reports the actual fallback service topics")
+check($b.change_topic("term-42","term.pane.changed")=="term-42.pane.changed" and $b.change_topic("term-42","terminal.pane.changed")=="terminal.pane.changed","publication uses the same exact namespace boundary as watch")
+$watched=$out.state
+$out=$b.dispatch($watched,"term.pane.split",{dir:"v",request_id:"event-split"},$n)
+check($out.rc==0 and len($out.state.layout.events)>=2,"watched mutation queues identity-bearing changes")
+$replay=$b.dispatch($out.state,"term.pane.split",{dir:"v",request_id:"event-split"},$n)
+check(len($replay.state.layout.events)==len($out.state.layout.events),"replay never duplicates change events")
+$closing=$b.shut($watched,$n)
+check($closing.closed and len($closing.layout.tabs)==0 and any($closing.layout.events,fn($e)=$e.topic=="term.tabs.changed" and $e.body.kind=="removed"),"quit retains final removal records for bounded drain")
+$status=$b.dispatch($s,"term.session",{},$n)
+check($status.rc==0 and json_parse($status.body).diagnostic=="native identity unavailable; panes are graphics-only","session diagnostics retain gold's unavailable reply")
+-- Gold keeps TERM and history capacity on existing shells; new sessions use
+-- the latest terminal profile for both tab and split creation.
+fn profile_native($op,$handle,$a)
+  if $op=="create" then
+    check(type($a.pane_id)=="number" and $a.pane_id>0,"Mix forwards its logical pane identity to the native issuer")
+    check($a.term=="vt100" and $a.scrollback==17 and contains([nil,"/tmp"],$a.cwd),"new PTY receives current terminal profile and requested cwd")
+    return {handle:"vt-profile",pid:44}
+  end
+  return native($op,$handle,$a)
+end
+$profile=$s;$profile.look.values={"terminal.env.term":"vt100","terminal.scrollback.lines":17}
+$profile_native=fn($op,$handle,$a)=profile_native($op,$handle,$a)
+for $command in ["term.tab.new","term.pane.split"]
+  $out=$b.dispatch($profile,$command,if $command=="term.tab.new" then {cwd:"/tmp"} else {dir:"v"} end,$profile_native)
+  check($out.rc==0 and $out.state.layout.panes["1"].handle=="vt-1","profile updates configure only newly created sessions")
+end
+fn startup_native($op,$handle,$a)
+  if $op=="create" then
+    check($a.term=="vt220" and $a.scrollback==23,"new sessions retain startup config until a live profile supplies a value")
+    return {handle:"vt-startup",pid:45}
+  end
+  return native($op,$handle,$a)
+end
+$seeded=$s;$seeded.startup={TERM:"vt220",scrollback:23}
+for $command in ["term.tab.new","term.pane.split"]
+  $out=$b.dispatch($seeded,$command,if $command=="term.pane.split" then {dir:"h"} else {} end,fn($op,$handle,$a)=startup_native($op,$handle,$a))
+  check($out.rc==0,"startup config creates a later tab and split")
+end
+$profile.startup=$seeded.startup
+$out=$b.dispatch($profile,"term.tab.new",{},$profile_native)
+check($out.rc==0,"live profile takes precedence over startup defaults")
+print("term dispatch: live targets, replay, native metadata and validation checks passed")

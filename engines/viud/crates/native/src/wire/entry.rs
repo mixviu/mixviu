@@ -247,8 +247,10 @@ pub fn wire(
     );
 
     let ctx_rc = Rc::new(RefCell::new(NativeRenderContext {
+        blank_requested: false,
         display_handle: _loop.inner.loader.display_handle.clone(),
         outputs: vec![crate::context::render::OutputPipe {
+            blank: Default::default(),
             crtc: display.pipe,
             mode: display.mode,
             output: display.output.clone(),
@@ -285,6 +287,8 @@ pub fn wire(
         drm_fd: display.drm_fd.clone(),
         watchdog: None,
     }));
+
+    crate::render::execute::blank::install(_loop, &ctx_rc);
 
     // wlr-screencopy: advertised by the backend that services
     // the copies (`render::execute` → `screencopy::service`, after each

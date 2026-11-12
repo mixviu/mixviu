@@ -15,6 +15,7 @@ struct Entry {
     held: bool,
     close: Arc<AtomicBool>,
     deferred: Arc<AtomicBool>,
+    success_body: Option<Value>,
 }
 #[derive(Default)]
 struct State {
@@ -45,11 +46,28 @@ impl Calls {
     pub fn begin(&self, reply: Reply, close: Arc<AtomicBool>) -> Result<String, Reply> {
         self.begin_with_retention(reply, close, Arc::new(AtomicBool::new(false)))
     }
+    pub fn begin_with_success_body(
+        &self,
+        reply: Reply,
+        close: Arc<AtomicBool>,
+        success_body: Option<Value>,
+    ) -> Result<String, Reply> {
+        self.begin_full(reply, close, Arc::new(AtomicBool::new(false)), success_body)
+    }
     pub fn begin_with_retention(
         &self,
         reply: Reply,
         close: Arc<AtomicBool>,
         deferred: Arc<AtomicBool>,
+    ) -> Result<String, Reply> {
+        self.begin_full(reply, close, deferred, None)
+    }
+    pub fn begin_full(
+        &self,
+        reply: Reply,
+        close: Arc<AtomicBool>,
+        deferred: Arc<AtomicBool>,
+        success_body: Option<Value>,
     ) -> Result<String, Reply> {
         let mut state = self.0.lock().unwrap();
         state.entries.retain(|_, e| !e.reply.is_closed());
@@ -65,6 +83,7 @@ impl Calls {
                 held: false,
                 close,
                 deferred,
+                success_body,
             },
         );
         Ok(token)
@@ -75,6 +94,11 @@ impl Calls {
             if close && rc == 0 {
                 e.close.store(true, Ordering::Release);
             }
+            let body = if rc == 0 {
+                e.success_body.unwrap_or(body)
+            } else {
+                body
+            };
             e.reply.send((rc, body)).is_ok()
         } else {
             false

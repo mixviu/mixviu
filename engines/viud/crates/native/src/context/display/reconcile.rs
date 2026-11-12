@@ -122,6 +122,7 @@ fn bring_up(
         .state
         .redraw
         .release(&world::state::output_key(&ctx.pipe().output));
+    crate::render::execute::blank::retire(ctx.pipe_mut());
     ctx.pipe_mut().drm_output = None;
     // Built against the `Output` this pipe will actually keep — `build` sizes the
     // primary plane from it to pass the atomic test.
@@ -365,6 +366,7 @@ fn add_output(
         ctx.outputs.len() + 1,
     );
     ctx.outputs.push(crate::context::render::OutputPipe {
+        blank: Default::default(),
         crtc: built.crtc,
         mode,
         output,
@@ -400,6 +402,7 @@ fn add_output(
 /// no monitor is connected (the `outputs` non-empty invariant). Secondary pipes
 /// are left to the reconciliation prune step.
 fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
+    crate::render::execute::blank::retire(ctx.pipe_mut());
     crate::render::execute::late_latch::cancel(ctx.pipe_mut());
     state
         .state
@@ -491,7 +494,8 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     let mut i = 1;
     while i < ctx.outputs.len() {
         if !drive_handles.contains(&ctx.outputs[i].connector) {
-            let removed = ctx.outputs.remove(i);
+            let mut removed = ctx.outputs.remove(i);
+            crate::render::execute::blank::retire(&mut removed);
             crate::render::execute::hdr::publish(&removed.output.name(), None);
             state
                 .state
@@ -642,6 +646,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = false;
     }
     write_snapshots(state, &ctx);
+    crate::render::execute::blank::refresh(state, &mut ctx);
     // Keys of pipes that are actually SCANNING OUT. A dark anchor is still mapped in
     // the Space (it must be), so Space membership alone cannot answer "is this
     // monitor real" — every liveness check below keys off this instead.

@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Lab client scene runtime. The evaluator is created and retained on its worker.
+/// Register this engine's existing build stamp before any startup mode reads settings.
+pub fn register_build_snapshot() {
+    let _ = buildinfo::build_info!();
+}
+
 pub mod annotation;
 pub mod app_facilities;
 pub mod app_host;
@@ -35,6 +40,7 @@ pub mod native_bus;
 mod native_events;
 pub mod native_menu;
 mod native_primitives;
+mod native_registration;
 mod native_theme;
 pub mod navigation_list;
 pub mod raster;
@@ -48,7 +54,9 @@ pub mod rich;
 pub mod runtime;
 pub mod session;
 mod shortcuts;
+mod startup;
 pub mod templates;
+pub mod terminal;
 pub mod thumbnail;
 pub mod timers;
 pub mod tree_table;

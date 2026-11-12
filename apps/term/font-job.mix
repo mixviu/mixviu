@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- One native settings request per existing Viu job; the app owns ordering.
+on font.request
+  try
+    if $event.args.kind=="read" then
+      send "settingsd" "settings.get" body={binding:$event.args.binding,view:"values"}
+    else
+      send "settingsd" "settings.apply" body=$event.args.body
+    end
+    reply(0,json_encode({rc:$rc,body:$reply}))
+  catch $message
+    reply(0,json_encode({rc:20,body:{error:$message}}))
+  end
+end

@@ -60,6 +60,10 @@ pub enum StatsTarget {
 /// window is named; only `restore` may name none (most recently minimised).
 #[derive(Clone, Debug, PartialEq)]
 pub enum WindowOp {
+    /// Panel colour-pipeline state; never changes the desktop scene.
+    DisplayBlank {
+        on: bool,
+    },
     PlaceAs {
         id: u64,
         generation: u64,
@@ -787,6 +791,14 @@ pub fn parse_window_command(
 ) -> Result<WindowCommand, ControlReply> {
     let empty = serde_json::Map::new();
     match command_name {
+        "comp.display.blank" => {
+            let object = args_object(args, &empty, &["on"])?;
+            let on = object
+                .get("on")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| invalid_argument("on", "bool", "required: true|false"))?;
+            Ok(WindowCommand::Op(WindowOp::DisplayBlank { on }))
+        }
         "comp.window.place_as" => {
             let object = args_object(
                 args,

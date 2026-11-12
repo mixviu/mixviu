@@ -5,6 +5,110 @@ use egui::{Rect, Ui, ViewportCommand as Command, pos2, vec2};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+/// Root close runs through the app's Mix policy, with the native drive reply.
+/// Named viewports keep the drive layer's ownership and argument validation.
+pub(crate) fn root_close_reply(
+    ctx: &egui::Context,
+    app: &str,
+    command: &str,
+    args: &Value,
+) -> Option<Value> {
+    if command != format!("{app}.window")
+        || args["action"] != "close"
+        || args.get("viewport").is_some()
+    {
+        return None;
+    }
+    let mut body = toolkit::drive::window_state(ctx);
+    body["requested"] = json!("close");
+    Some(body)
+}
+
+/// Viewport commands request another repaint, even when their value is unchanged.
+pub(crate) fn set_title(ctx: &egui::Context, title: &str) {
+    let key = egui::Id::unique((ctx.viewport_id(), "viu-native-title"));
+    let changed = ctx.data_mut(|data| {
+        let previous = data.get_temp_mut_or_default::<Option<String>>(key);
+        if previous.as_deref() == Some(title) {
+            false
+        } else {
+            *previous = Some(title.to_owned());
+            true
+        }
+    });
+    if changed {
+        ctx.send_viewport_cmd(Command::Title(title.to_owned()));
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    #[test]
+    fn root_close_keeps_native_readback_and_named_viewports_keep_drive_ownership() {
+        let ctx = egui::Context::default();
+        let output = ctx.run_ui(Default::default(), |ui| {
+            let mut expected = toolkit::drive::window_state(ui.ctx());
+            expected["requested"] = serde_json::json!("close");
+            assert_eq!(
+                super::root_close_reply(
+                    ui.ctx(),
+                    "term",
+                    "term.window",
+                    &serde_json::json!({"action":"close"}),
+                ),
+                Some(expected),
+            );
+            for (command, args) in [
+                (
+                    "term.window",
+                    serde_json::json!({"action":"close","viewport":"macro-editor"}),
+                ),
+                (
+                    "term.window",
+                    serde_json::json!({"action":"close","viewport":null}),
+                ),
+                (
+                    "term.window",
+                    serde_json::json!({"action":"close","viewport":7}),
+                ),
+                ("term.window", serde_json::json!({"action":"minimize"})),
+                ("other.window", serde_json::json!({"action":"close"})),
+            ] {
+                assert!(super::root_close_reply(ui.ctx(), "term", command, &args).is_none());
+            }
+        });
+        output.drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn stable_native_title_does_not_rearm_idle_frames_and_changes_are_delivered() {
+        let ctx = egui::Context::default();
+        for (title, expected) in [
+            ("Terminal", true),
+            ("Terminal", false),
+            ("Renamed", true),
+            ("Renamed", false),
+            ("Terminal", true),
+        ] {
+            let output = ctx.run_ui(Default::default(), |ui| super::set_title(ui.ctx(), title));
+            let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|cmd| matches!(cmd, egui::ViewportCommand::Title(_)))
+                    .count(),
+                usize::from(expected)
+            );
+            if expected {
+                assert!(commands.iter().any(
+                    |cmd| matches!(cmd, egui::ViewportCommand::Title(value) if value == title)
+                ));
+            }
+            output.drop_without_applying_deltas();
+        }
+    }
+}
+
 pub fn is_client(settings: &Value) -> bool {
     design::decorations::resolve_with_actions(
         settings["window.decorations"]

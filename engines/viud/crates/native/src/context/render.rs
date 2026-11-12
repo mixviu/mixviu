@@ -25,6 +25,7 @@ use world::state::StateDRMBinding;
 /// `pipe`; multi-monitor turns that into a collection, one entry per lit CRTC. The
 /// per-pipe field semantics are unchanged from the single-output era.
 pub struct OutputPipe {
+    pub blank: crate::render::execute::blank::Blank,
     /// The CRTC driving this output — the key that routes a per-CRTC VBlank event
     /// (`wire.frame`) back to the pipe that flipped.
     pub crtc: smithay::reexports::drm::control::crtc::Handle,
@@ -152,6 +153,7 @@ pub struct OwedFrames {
 }
 
 pub struct NativeRenderContext {
+    pub blank_requested: bool,
     pub display_handle: DisplayHandle,
     /// The lit outputs, one [`OutputPipe`] per driven CRTC. Invariant: NON-EMPTY —
     /// there is always at least one entry (in the single-output / dark eras its

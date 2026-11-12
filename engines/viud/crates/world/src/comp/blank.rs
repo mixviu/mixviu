@@ -1,0 +1,508 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Panel blank policy. Rendering, captures and client pacing never read this state.
+
+use crate::state::Loop;
+use smithay::backend::input::{
+    ButtonState, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerButtonEvent,
+    TabletToolButtonEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
+};
+use smithay::reexports::calloop::{
+    RegistrationToken,
+    timer::{TimeoutAction, Timer},
+};
+use std::{
+    cell::Cell,
+    collections::BTreeSet,
+    rc::Rc,
+    time::{Duration, Instant},
+};
+
+pub type Backend = Rc<dyn Fn(bool) -> Result<(), String>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Hold {
+    Key(u32),
+    Button(u32),
+    InjectedKey(u32),
+    InjectedButton(u32),
+    Touch(i32),
+    TabletButton(u32),
+    PadButton(u32),
+    TabletTip,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Edge {
+    Press(Hold),
+    Release(Hold),
+    Motion(Hold),
+    Other,
+    CancelTouch,
+}
+
+impl Edge {
+    pub fn injected_key(code: u32, pressed: bool) -> Self {
+        if pressed {
+            Self::Press(Hold::InjectedKey(code))
+        } else {
+            Self::Release(Hold::InjectedKey(code))
+        }
+    }
+    pub fn injected_button(code: u32, pressed: bool) -> Self {
+        if pressed {
+            Self::Press(Hold::InjectedButton(code))
+        } else {
+            Self::Release(Hold::InjectedButton(code))
+        }
+    }
+    pub fn from_key(code: u32, pressed: bool) -> Self {
+        if pressed {
+            Self::Press(Hold::Key(code))
+        } else {
+            Self::Release(Hold::Key(code))
+        }
+    }
+    pub fn from_button(code: u32, pressed: bool) -> Self {
+        if pressed {
+            Self::Press(Hold::Button(code))
+        } else {
+            Self::Release(Hold::Button(code))
+        }
+    }
+}
+
+pub struct BlankPolicy {
+    pub blanked: bool,
+    pub inhibited: bool,
+    pub supported: bool,
+    pub backend: Option<Backend>,
+    timeout: Option<u64>,
+    last_human: Instant,
+    expired: bool,
+    swallowed: BTreeSet<Hold>,
+    armed: Option<(RegistrationToken, Instant, Rc<Cell<bool>>)>,
+}
+
+impl Default for BlankPolicy {
+    fn default() -> Self {
+        Self {
+            blanked: false,
+            inhibited: false,
+            supported: false,
+            backend: None,
+            timeout: None,
+            last_human: Instant::now(),
+            expired: false,
+            swallowed: BTreeSet::new(),
+            armed: None,
+        }
+    }
+}
+
+impl BlankPolicy {
+    /// ReleaseAll also ends consumed injected presses, which never entered
+    /// the seat's pressed set or injection's ordinary hold ledger.
+    pub fn clear_injected_holds(&mut self) {
+        self.swallowed
+            .retain(|hold| !matches!(hold, Hold::InjectedKey(_) | Hold::InjectedButton(_)));
+    }
+
+    pub fn timeout(&self) -> Option<u64> {
+        self.timeout
+    }
+    pub fn blanked(&self) -> bool {
+        self.blanked
+    }
+    pub fn supported(&self) -> bool {
+        self.supported
+    }
+
+    fn deadline(&self) -> Option<Instant> {
+        if self.blanked || self.expired || self.inhibited {
+            return None;
+        }
+        self.last_human
+            .checked_add(Duration::from_secs(self.timeout?))
+    }
+
+    fn configure(&mut self, timeout: Option<u64>) {
+        self.timeout = timeout;
+        self.expired = false;
+    }
+
+    pub fn inhibit(&mut self, inhibited: bool, now: Instant) -> bool {
+        if self.inhibited == inhibited {
+            return false;
+        }
+        self.inhibited = inhibited;
+        if !inhibited {
+            self.activity(now);
+        }
+        true
+    }
+
+    fn activity(&mut self, now: Instant) {
+        self.last_human = now;
+        self.expired = false;
+    }
+
+    /// Keep ownership of a waking press through its matching release, even
+    /// after a Bus unblank or another blank. Touch motion follows its down.
+    /// Policy transition only; backend wake and timer rearming belong to the caller.
+    pub fn consume_edge(&mut self, edge: Edge) -> bool {
+        match edge {
+            Edge::Press(hold) => {
+                if self.blanked {
+                    self.swallowed.insert(hold);
+                }
+                self.blanked || self.swallowed.contains(&hold)
+            }
+            Edge::Release(hold) => self.swallowed.remove(&hold) || self.blanked,
+            Edge::Motion(hold) => self.blanked || self.swallowed.contains(&hold),
+            Edge::CancelTouch => {
+                let had = self.swallowed.iter().any(|h| matches!(h, Hold::Touch(_)));
+                self.swallowed.retain(|h| !matches!(h, Hold::Touch(_)));
+                had || self.blanked
+            }
+            Edge::Other => self.blanked,
+        }
+    }
+}
+
+pub fn set_supported(lp: &mut Loop, supported: bool) {
+    if lp.inner.comp.blank.supported != supported {
+        lp.inner.comp.blank.supported = supported;
+        lp.inner
+            .comp
+            .settings_changed("display.blank_supported", "backend");
+    }
+}
+
+/// End pre-blank human holds before hiding the panel. Clients receive the
+/// release of presses they saw; compositor-owned keys only update xkb. Own
+/// the later physical repeats/releases so the event that wakes is consumed.
+/// The agent seat and its injected holds are deliberately untouched.
+pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::CompState) {
+    use smithay::backend::input::{ButtonState, KeyState};
+    use smithay::input::{keyboard::FilterResult, pointer::ButtonEvent};
+    use smithay::utils::SERIAL_COUNTER;
+
+    let time = crate::seat::event_time_ms();
+    let (tip, tool_buttons, pad_buttons) = state.tablet.cancel_input(time);
+    // Pointer aliases of tablet holds have their own physical tip/button
+    // release above. Never give them a second mouse-button release latch.
+    let tablet_pointer_buttons = state.tablet.take_revoked_buttons();
+    if tip {
+        comp.blank.swallowed.insert(Hold::TabletTip);
+    }
+    for button in tool_buttons {
+        comp.blank.swallowed.insert(Hold::TabletButton(button));
+    }
+    for button in pad_buttons {
+        comp.blank.swallowed.insert(Hold::PadButton(button));
+    }
+    if let Some(keyboard) = state.seat.seat.get_keyboard() {
+        for code in keyboard.pressed_keys() {
+            let intercepted = comp.bindings.user.is_swallowed(code.raw())
+                || comp
+                    .bindings
+                    .state()
+                    .is_some_and(|table| table.is_intercepted(code.raw()));
+            let hold = if comp
+                .injection
+                .human
+                .owners_of(policy::agent::Hold::Key(code.raw()))
+                > 0
+            {
+                Hold::InjectedKey(code.raw())
+            } else {
+                Hold::Key(code.raw())
+            };
+            comp.blank.swallowed.insert(hold);
+            keyboard.input::<(), _>(
+                state,
+                code,
+                KeyState::Released,
+                SERIAL_COUNTER.next_serial(),
+                time,
+                |_, _, _| {
+                    if intercepted {
+                        FilterResult::Intercept(())
+                    } else {
+                        FilterResult::Forward
+                    }
+                },
+            );
+        }
+    }
+    if let Some(pointer) = state.seat.seat.get_pointer() {
+        for button in pointer.current_pressed() {
+            if comp
+                .injection
+                .human
+                .owners_of(policy::agent::Hold::Button(button))
+                > 0
+            {
+                comp.blank.swallowed.insert(Hold::InjectedButton(button));
+            } else if !tablet_pointer_buttons.contains(&button) {
+                comp.blank.swallowed.insert(Hold::Button(button));
+            }
+            pointer.button(
+                state,
+                &ButtonEvent {
+                    serial: SERIAL_COUNTER.next_serial(),
+                    time,
+                    button,
+                    state: ButtonState::Released,
+                },
+            );
+        }
+        pointer.frame(state);
+    }
+    if let Some(touch) = state.seat.seat.get_touch() {
+        touch.cancel(state);
+    }
+    // The same pointer holds were just released above. Discard tablet
+    // emulation's deferred releases rather than delivering them twice.
+    if state.tablet.take_revoked_cursor() {
+        state.seat.pointer_status = smithay::input::pointer::CursorImageStatus::default_named();
+    }
+    comp.bindings.reset_holds();
+    let _ = comp.injection.human.take_all();
+}
+
+/// Synchronous native commit, then logical publication. Backends without a
+/// CRTC have no callback: they retain policy state and leave pixels alone.
+pub fn set(lp: &mut Loop, on: bool, cause: &'static str) -> Result<(), String> {
+    if let Some(backend) = lp.inner.comp.blank.backend.clone() {
+        if let Err(error) = backend(on) {
+            set_supported(lp, false);
+            return Err(error);
+        }
+        if on {
+            set_supported(lp, true);
+        }
+    }
+    if lp.inner.comp.blank.blanked != on {
+        if on {
+            release_human(&mut lp.state, &mut lp.inner.comp);
+            for contact in &lp.inner.touch.contacts {
+                lp.inner
+                    .comp
+                    .blank
+                    .swallowed
+                    .insert(Hold::Touch(contact.slot));
+            }
+            lp.inner.touch.reset();
+            if let Some(registry) = lp.inner.surface_mut().registry.as_mut() {
+                registry.release_all_modifiers();
+            }
+        }
+        lp.inner.comp.blank.blanked = on;
+        lp.inner.comp.settings_changed("display.blanked", cause);
+    }
+    service(lp);
+    Ok(())
+}
+
+pub fn configure(lp: &mut Loop, timeout: Option<u64>) {
+    lp.inner.comp.blank.configure(timeout);
+    lp.inner.comp.settings_changed("power", "props.set");
+    service(lp);
+}
+
+pub fn set_inhibited(lp: &mut Loop, inhibited: bool) {
+    if lp
+        .inner
+        .comp
+        .blank
+        .inhibit(inhibited, lp.inner.comp.clock.now())
+    {
+        dispatcher::idle::set_inhibited(&mut lp.state, inhibited);
+        lp.inner
+            .comp
+            .settings_changed("display.inhibited", "wayland.idle_inhibit");
+        service(lp);
+    }
+}
+
+/// Called only by the human funnels. Agent activity cannot move this clock.
+pub fn activity(lp: &mut Loop) {
+    lp.inner.comp.blank.activity(lp.inner.comp.clock.now());
+    service(lp);
+}
+
+/// Before regions, bindings, focus changes and client delivery.
+pub fn consume(lp: &mut Loop, edge: Edge) -> bool {
+    let wake = lp.inner.comp.blank.blanked;
+    let consumed = lp.inner.comp.blank.consume_edge(edge);
+    if wake && let Err(error) = set(lp, false, "input") {
+        warn!("panel unblank: {error}");
+    }
+    consumed
+}
+
+pub fn device_input<I: InputBackend>(lp: &mut Loop, event: &InputEvent<I>) -> bool {
+    let edge = match event {
+        InputEvent::Keyboard { event } => {
+            let hold = Hold::Key(event.key_code().raw());
+            if event.state() == KeyState::Pressed {
+                Edge::Press(hold)
+            } else {
+                Edge::Release(hold)
+            }
+        }
+        InputEvent::PointerButton { event } => {
+            let hold = Hold::Button(event.button_code());
+            if event.state() == ButtonState::Pressed {
+                Edge::Press(hold)
+            } else {
+                Edge::Release(hold)
+            }
+        }
+        InputEvent::TouchDown { event } => Edge::Press(Hold::Touch(event.slot().into())),
+        InputEvent::TouchUp { event } => Edge::Release(Hold::Touch(event.slot().into())),
+        InputEvent::TouchMotion { event } => Edge::Motion(Hold::Touch(event.slot().into())),
+        InputEvent::TouchCancel { .. } => Edge::CancelTouch,
+        InputEvent::TabletToolButton { event } => {
+            let hold = Hold::TabletButton(event.button());
+            if event.button_state() == ButtonState::Pressed {
+                Edge::Press(hold)
+            } else {
+                Edge::Release(hold)
+            }
+        }
+        InputEvent::TabletToolTip { event } => {
+            if event.tip_state() == TabletToolTipState::Down {
+                Edge::Press(Hold::TabletTip)
+            } else {
+                Edge::Release(Hold::TabletTip)
+            }
+        }
+        InputEvent::DeviceAdded { .. }
+        | InputEvent::DeviceRemoved { .. }
+        | InputEvent::Special(_) => return false,
+        _ => Edge::Other,
+    };
+    consume(lp, edge)
+}
+
+/// The compositor's own one-shot, not an idle-protocol client or a polling
+/// timer. Unchanged deadlines do no work. A refused idle commit is attempted
+/// once, until human activity or a setting change arms another deadline.
+pub fn service(lp: &mut Loop) {
+    let deadline = lp.inner.comp.blank.deadline();
+    let policy = &mut lp.inner.comp.blank;
+    if policy
+        .armed
+        .as_ref()
+        .is_some_and(|(_, at, fired)| !fired.get() && Some(*at) == deadline)
+    {
+        return;
+    }
+    if let Some((token, _, fired)) = policy.armed.take()
+        && !fired.get()
+    {
+        lp.loop_handle.remove(token);
+    }
+    let Some(at) = deadline else {
+        return;
+    };
+    let fired = Rc::new(Cell::new(false));
+    let flag = fired.clone();
+    match lp
+        .loop_handle
+        .insert_source(Timer::from_deadline(at), move |_, _, lp| {
+            flag.set(true);
+            lp.inner.comp.blank.expired = true;
+            if let Err(error) = set(lp, true, "idle") {
+                warn!("idle panel blank: {error}");
+            }
+            TimeoutAction::Drop
+        }) {
+        Ok(token) => lp.inner.comp.blank.armed = Some((token, at, fired)),
+        Err(error) => warn!("panel blank timer: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn inhibition_holds_timer_and_rearms_from_release_with_current_setting() {
+        let mut p = BlankPolicy::default();
+        let now = p.last_human;
+        p.configure(Some(10));
+        assert!(p.inhibit(true, now + Duration::from_secs(9)));
+        assert_eq!(p.deadline(), None);
+        p.configure(Some(3));
+        assert_eq!(p.deadline(), None);
+        assert!(!p.inhibit(true, now + Duration::from_secs(30)));
+        assert!(p.inhibit(false, now + Duration::from_secs(40)));
+        assert_eq!(p.deadline(), Some(now + Duration::from_secs(43)));
+        assert!(!p.inhibit(false, now + Duration::from_secs(42)));
+        assert_eq!(p.deadline(), Some(now + Duration::from_secs(43)));
+    }
+
+    #[test]
+    fn inhibition_never_wakes_bus_blank_and_release_respects_never() {
+        let mut p = BlankPolicy::default();
+        let now = p.last_human;
+        p.configure(Some(1));
+        p.inhibit(true, now);
+        p.blanked = true; // Bus blank is unconditional.
+        assert_eq!(p.deadline(), None);
+        p.inhibit(false, now + Duration::from_secs(20));
+        assert!(p.blanked);
+        p.inhibit(true, now);
+        p.configure(None);
+        p.blanked = false;
+        p.inhibit(false, now + Duration::from_secs(30));
+        assert_eq!(p.deadline(), None);
+    }
+    #[test]
+    fn arm_rearm_fire_never_and_setting_changes() {
+        let mut p = BlankPolicy::default();
+        let now = p.last_human;
+        assert_eq!(p.deadline(), None);
+        p.configure(Some(10));
+        assert_eq!(p.deadline(), Some(now + Duration::from_secs(10)));
+        p.activity(now + Duration::from_secs(4));
+        assert_eq!(p.deadline(), Some(now + Duration::from_secs(14)));
+        p.configure(Some(3));
+        assert_eq!(p.deadline(), Some(now + Duration::from_secs(7)));
+        p.expired = true;
+        assert_eq!(p.deadline(), None); // refused fire never loops
+        p.blanked = true;
+        p.configure(Some(2));
+        assert_eq!(p.deadline(), None); // settings do not wake
+        p.blanked = false;
+        p.activity(now + Duration::from_secs(20));
+        assert_eq!(p.deadline(), Some(now + Duration::from_secs(22)));
+        p.configure(None);
+        assert_eq!(p.deadline(), None);
+    }
+    #[test]
+    fn waking_press_repeat_release_and_touch_are_owned() {
+        for hold in [
+            Hold::Key(30),
+            Hold::Button(272),
+            Hold::Touch(1),
+            Hold::TabletTip,
+            Hold::TabletButton(1),
+            Hold::PadButton(1),
+        ] {
+            let mut p = BlankPolicy {
+                blanked: true,
+                ..Default::default()
+            };
+            assert!(p.consume_edge(Edge::Press(hold)));
+            p.blanked = false;
+            assert!(p.consume_edge(Edge::Press(hold)));
+            assert!(p.consume_edge(Edge::Motion(hold)));
+            assert!(p.consume_edge(Edge::Release(hold)));
+            assert!(!p.consume_edge(Edge::Press(hold)));
+        }
+    }
+}

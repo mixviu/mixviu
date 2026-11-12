@@ -90,6 +90,15 @@ pub struct KeyEdge {
 }
 
 impl Bindings {
+    /// Synthetic human-seat releases ended every held binding and repeat.
+    pub fn reset_holds(&mut self) {
+        self.user.reset();
+        if let Some(state) = self.state.as_mut() {
+            state.reset_holds();
+        }
+        self.last_edge = None;
+    }
+
     /// Build the table for `profile` once (`bindings.profile`).
     pub fn ensure(&mut self, profile: &str) {
         if self.state.is_none() {
@@ -326,7 +335,7 @@ fn arm_repeat(lp: &mut Loop, token: u64) {
     let armed = lp.loop_handle.insert_source(
         Timer::from_duration(REPEAT_DELAY),
         move |_, _, lp: &mut Loop| {
-            if super::session_lock::active(lp) {
+            if super::session_lock::active(lp) || lp.inner.comp.blank.blanked {
                 return TimeoutAction::Drop;
             }
             let bindings = &mut lp.inner.comp.bindings;
