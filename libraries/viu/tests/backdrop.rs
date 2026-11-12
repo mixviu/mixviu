@@ -264,6 +264,7 @@ fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
         app.wait_model(|model| {
             model["serial"] == body["active"]
                 && model["surfaces"]["HEADLESS-2"]["values"]["root"]["fit"] == mode
+                && model["surfaces"]["HEADLESS-2"]["values"]["root"]["handle"].is_string()
         });
         assert_eq!(app.model["values"]["root"]["colour"], json!([18, 52, 171]));
         assert_eq!(
@@ -299,6 +300,12 @@ fn decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage(
         .as_str()
         .unwrap()
         .to_owned();
+    // viu_raster(load) synchronously inserts pixels into the shared Rasters
+    // store before decode-job can return its handle. Only then can the job
+    // completion commit and publish this model serial. Commit detaches the
+    // handle before closing its scope, so it stays live until replacement;
+    // this fixture issues no replacement before get. No raster delivery lane
+    // remains to settle after the serial-keyed model wait.
     let pixels = app.rasters.get(&handle).unwrap();
     let before = app.state();
     assert_eq!(before["active"], body["active"]);
