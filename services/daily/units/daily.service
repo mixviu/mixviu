@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# The daily media pipeline's Bus citizen. A user unit: it reads the
+# maintainer's hub (MIX_DAILY_HUB, default ~/.viu), a checkout of the
+# repository and the gh login, so it runs as that user, not a dynamic one.
+[Unit]
+Description=MixViu daily media pipeline
+Wants=noded.service
+After=noded.service
+
+[Service]
+Type=simple
+Environment=MIX_DAILY_MEDIA=@{share}/daily/media
+Environment=MIX_STATS=off
+ExecStart=@{prefix}/bin/mix --serve @{share}/daily/scripts/daily.mix --name daily
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

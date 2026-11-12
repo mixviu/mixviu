@@ -1,0 +1,34 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- GitHub reads through gh(1) by argv (config gh.argv). Read-only: list
+-- merged PRs and closed task issues. A full page is refused, not truncated.
+
+fn call($config, $args)
+  $gh = $config.gh
+  $r = run_argv(concat($gh.argv, $args), {env: $gh.env, timeout: $gh.timeout_s, max_output: 67108864})
+  if not $r.ok or $r.stdout_truncated then
+    raise("GH", "gh " .. $args[0] .. " " .. $args[1] .. " failed (rc " .. to_string($r.exit_code ?? -1) .. "): " .. trim($r.stderr ?? ""))
+  end
+  $v = json_parse($r.stdout)
+  if type($v) != "list" then raise("GH", "gh " .. $args[0] .. " " .. $args[1] .. " did not return a JSON list") end
+  if len($v) >= $config.gh.limit then raise("GH_LIMIT", "gh returned a full page of " .. to_string($config.gh.limit) .. "; raise gh.limit") end
+  return $v
+end
+
+-- Merged PRs into the configured branch since $since (YYYY-MM-DD), or nil
+-- when gh is disabled (the manifest then reads PR numbers from subjects).
+fn merged_prs($config, $since)
+  if not $config.gh.enabled then return nil end
+  return call($config, ["pr", "list", "-R", $config.repo.remote, "--state", "merged",
+    "--base", $config.repo.branch, "--search", "merged:>=" .. $since,
+    "--limit", to_string($config.gh.limit),
+    "--json", "number,title,body,labels,author,mergeCommit,url,mergedAt"])
+end
+
+fn closed_tasks($config, $since)
+  if not $config.gh.enabled then return [] end
+  return call($config, ["issue", "list", "-R", $config.repo.remote, "--state", "closed",
+    "--label", $config.gh.task_label, "--search", "closed:>=" .. $since,
+    "--limit", to_string($config.gh.limit),
+    "--json", "number,title,body,closedAt,url"])
+end

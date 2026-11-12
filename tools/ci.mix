@@ -108,6 +108,10 @@ fn stage_test($mix)
       run_step([$mix, $case])
     end
   end
+  -- The daily pipeline: a fixture repository and fake gh, then the citizen
+  -- on a private broker (noded is built by the workspace tests above).
+  run_step([$mix, "services/daily/tests/manifest_test.mix"], $test_env)
+  run_step([$mix, "services/daily/tests/serve_test.mix"], merge($test_env, {MIX_TEST_NODED_EXE: realpath("target/debug/noded") ?? "target/debug/noded"}))
 end
 
 -- Both normal binaries and opt-in fault-injection binaries are exercised.

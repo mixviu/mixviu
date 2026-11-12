@@ -1,0 +1,137 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- git by argv, always `git -C <repo>`. $g is {path, env, timeout}.
+
+fn ctx($config)
+  return {path: $config.repo.path, env: $config.git.env, timeout: $config.git.timeout_s}
+end
+
+fn raw($g, $args, $max = 33554432)
+  return run_argv(concat(["git", "-C", $g.path], $args), {env: $g.env, timeout: $g.timeout, max_output: $max})
+end
+
+fn must($g, $args, $max = 33554432)
+  $r = raw($g, $args, $max)
+  if not $r.ok or $r.stdout_truncated then
+    raise("GIT", "git " .. join($args, " ") .. " failed: " .. trim($r.stderr ?? ""))
+  end
+  return $r.stdout
+end
+
+-- The commit a ref names, or nil when it does not resolve.
+fn commit($g, $ref)
+  $r = raw($g, ["rev-parse", "-q", "--verify", "--end-of-options", $ref .. "^{commit}"])
+  if not $r.ok then return nil end
+  return trim($r.stdout)
+end
+
+fn tags($g, $prefix)
+  $out = []
+  for $t in lines(must($g, ["tag", "--list", $prefix .. "*"]))
+    if $t != "" then push($out, $t) end
+  end
+  return sort($out)
+end
+
+-- {sha, time (epoch), iso} for one commit.
+fn stamp($g, $sha)
+  $f = split(trim(must($g, ["show", "-s", "--format=%H%x1f%ct%x1f%cI", $sha])), "\x1f")
+  return {sha: $f[0], time: to_number($f[1]), iso: $f[2]}
+end
+
+-- First-parent commits in (from, to], oldest first.
+fn window($g, $from, $to)
+  $fmt = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%ct%x1f%s%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1d)%x1e"
+  $out = []
+  for $rec in split(must($g, ["log", "--first-parent", "--reverse", "--no-color", $fmt, $from .. ".." .. $to]), "\x1e")
+    $rec = re_replace($rec, "^\\s+", "")
+    if $rec == "" then continue end
+    $f = split($rec, "\x1f")
+    $co = []
+    for $c in split($f[6] ?? "", "\x1d")
+      if trim($c) != "" then push($co, trim($c)) end
+    end
+    push($out, {sha: $f[0], parents: filter(split($f[1], " "), fn($p) = $p != ""),
+      author: $f[2], email: $f[3], time: to_number($f[4]), subject: $f[5], coauthors: $co})
+  end
+  return $out
+end
+
+-- Commits a first-parent commit brings in: itself, plus a merge's side branch.
+fn brought($g, $c)
+  if len($c.parents) < 2 then return [$c.sha] end
+  $out = []
+  for $s in lines(must($g, ["rev-list", "--reverse", $c.parents[0] .. ".." .. $c.sha]))
+    if $s != "" then push($out, $s) end
+  end
+  return $out
+end
+
+-- [{path, ins, del, binary}] between two commits, renames as delete + add.
+fn numstat($g, $a, $b, $paths = [])
+  $args = concat(["diff", "--numstat", "--no-renames", "--no-color", "-z", $a, $b, "--"], $paths)
+  $out = []
+  for $rec in split(must($g, $args), "\x00")
+    if $rec == "" then continue end
+    $f = split($rec, "\t")
+    if len($f) < 3 then continue end
+    $bin = $f[0] == "-"
+    push($out, {path: $f[2], ins: if $bin then 0 else to_number($f[0]) end, del: if $bin then 0 else to_number($f[1]) end, binary: $bin})
+  end
+  return sort_by($out, fn($x) = $x.path)
+end
+
+-- {path: "A"|"M"|"D"|...} between two commits.
+fn name_status($g, $a, $b, $paths = [])
+  $f = split(must($g, concat(["diff", "--name-status", "--no-renames", "--no-color", "-z", $a, $b, "--"], $paths)), "\x00")
+  $out = {}
+  $i = 0
+  while $i + 1 < len($f)
+    if $f[$i] == "" then break end
+    $out[$f[$i + 1]] = substr($f[$i], 0, 1)
+    $i = $i + 2
+  end
+  return $out
+end
+
+-- Added-line hunks of one diff: [{file, start, count, lines}] (lines are the added text).
+fn hunks($g, $a, $b)
+  $out = []
+  $file = nil
+  $cur = nil
+  for $l in lines(must($g, ["diff", "-U0", "--no-renames", "--no-color", "--no-ext-diff", $a, $b]))
+    if starts_with($l, "diff --git ") then
+      if $cur != nil then push($out, $cur) end
+      $cur = nil
+      $file = nil
+    elif starts_with($l, "+++ ") then
+      $file = if $l == "+++ /dev/null" then nil else slice($l, 6) end
+    elif starts_with($l, "@@ ") then
+      if $cur != nil then push($out, $cur) end
+      $cur = nil
+      $m = re_find($l, "^@@ -[0-9]+(?:,[0-9]+)? \\+([0-9]+)(?:,([0-9]+))? @@")
+      if len($m) == 1 and $file != nil then
+        $count = if $m[0].groups[1] == nil or $m[0].groups[1] == "" then 1 else to_number($m[0].groups[1]) end
+        if $count > 0 then $cur = {file: $file, start: to_number($m[0].groups[0]), count: $count, lines: []} end
+      end
+    elif $cur != nil and starts_with($l, "+") then
+      $t = $cur.lines
+      push($t, slice($l, 1))
+      $cur.lines = $t
+    end
+  end
+  if $cur != nil then push($out, $cur) end
+  return $out
+end
+
+fn show_file($g, $sha, $path)
+  $r = raw($g, ["show", $sha .. ":" .. $path], 4194304)
+  if not $r.ok then return nil end
+  return $r.stdout
+end
+
+fn ls_tree($g, $sha, $dir)
+  $r = raw($g, ["ls-tree", "-r", "--name-only", "-z", $sha, "--", $dir])
+  if not $r.ok then return [] end
+  return sort(filter(split($r.stdout, "\x00"), fn($p) = $p != ""))
+end

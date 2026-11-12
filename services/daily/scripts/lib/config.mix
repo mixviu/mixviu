@@ -1,0 +1,83 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Configuration: the public defaults (media/config.default.conf.mix) with the
+-- hub's file deep-merged over them. Both are strict data, never executed.
+--
+--   MIX_DAILY_MEDIA   the media/ directory (default: the checkout's, ../../../media
+--                     from the entry script)
+--   MIX_DAILY_HUB     the private hub (default: the defaults' hub, ~/.viu)
+--   MIX_DAILY_CONFIG  the override file (default: <hub>/media/config.conf.mix;
+--                     an explicitly named file must exist)
+$u = require("util.mix")
+-- script_path() is the entry script (scripts/daily.mix or daily-cli.mix),
+-- not this module, so the checkout default is three levels up from it.
+$here = dirname(script_path())
+
+fn media_dir()
+  $m = env("MIX_DAILY_MEDIA", "")
+  if $m == "" then $m = $here .. "/../../../media" end
+  $r = realpath($u.expand_home($m))
+  if $r == nil or not is_dir($r) then raise("CONFIG", "no media directory at " .. $m .. " (set MIX_DAILY_MEDIA)") end
+  return $r
+end
+
+fn check($c)
+  $c = validate($c, {
+    schema: {type: "number", enum: [1]},
+    timezone: {type: "string", nonblank: true},
+    first_cut_from: {type: "string", nonblank: true},
+    hub: {type: "string", nonblank: true},
+    repo: {type: "map", schema: {
+      path: {type: "string", nonblank: true},
+      remote: {type: "string", nonblank: true},
+      branch: {type: "string", nonblank: true},
+      ref: {type: "string", nonblank: true},
+      remote_name: {type: "string", nonblank: true},
+      fetch: {type: "bool"}}},
+    cut: {type: "map", schema: {
+      tag_prefix: {type: "string", nonblank: true},
+      create_tags: {type: "bool"},
+      push_tags: {type: "bool"}}},
+    git: {type: "map", schema: {env: {type: "map"}, timeout_s: {type: "number", min: 1}}},
+    gh: {type: "map", schema: {
+      enabled: {type: "bool"},
+      argv: {type: "list", min_length: 1, items: {type: "string", nonblank: true}},
+      env: {type: "map"},
+      timeout_s: {type: "number", min: 1},
+      limit: {type: "number", min: 1, max: 1000},
+      task_label: {type: "string", nonblank: true}}},
+    manifest: {type: "map", schema: {
+      max_hunks: {type: "number", min: 0, max: 10},
+      max_hunk_lines: {type: "number", min: 1, max: 400},
+      hint_chars: {type: "number", min: 1, max: 4000},
+      title_chars: {type: "number", min: 1, max: 1000}}},
+    benchmarks: {type: "map", schema: {dir: {required: false, type: "string"}}},
+    publish: {type: "map", schema: {mode: {type: "string", enum: ["hold", "auto_after", "auto"]}}}
+  })
+  if not re_match($c.cut.tag_prefix, "^[A-Za-z0-9._-]+/$") then raise("CONFIG", "cut.tag_prefix must look like daily/") end
+  return $c
+end
+
+-- {config, media, sources}: sources names the files that were merged.
+fn load()
+  $media = media_dir()
+  $defaults_path = $media .. "/config.default.conf.mix"
+  if not is_file($defaults_path) then raise("CONFIG", "missing " .. $defaults_path) end
+  $c = load_data($defaults_path)
+  $sources = [$defaults_path]
+  $hub_env = env("MIX_DAILY_HUB", "")
+  $named = env("MIX_DAILY_CONFIG", "")
+  $hub = $u.expand_home(if $hub_env != "" then $hub_env else $c.hub end)
+  $over_path = if $named != "" then $u.expand_home($named) else $hub .. "/media/config.conf.mix" end
+  if is_file($over_path) then
+    $c = $u.deep_merge($c, load_data($over_path))
+    push($sources, $over_path)
+  elif $named != "" then
+    raise("CONFIG", "MIX_DAILY_CONFIG names a missing file: " .. $named)
+  end
+  if $hub_env != "" then $c.hub = $hub_env end
+  $c.hub = $u.expand_home($c.hub)
+  $c.repo.path = $u.expand_home($c.repo.path)
+  if $c.benchmarks.dir != nil then $c.benchmarks.dir = $u.expand_home($c.benchmarks.dir) end
+  return {config: check($c), media: $media, sources: $sources}
+end

@@ -1,0 +1,67 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- <hub>/media/runs/YYYY-MM-DD/: one day's artefacts, status.json and log.jsonl.
+-- The directory is 0700: logs and prompts may hold untrusted text.
+$u = require("util.mix")
+
+$STAGES = ["manifest.build", "post.write", "script.write", "tts.render", "visuals.render", "screencast.record", "video.assemble", "review"]
+
+fn dir($config, $date)
+  return $config.hub .. "/media/runs/" .. $date
+end
+
+fn ensure($config, $date)
+  $d = dir($config, $date)
+  if not is_dir($d) then mkdir($d, {parents: true}) end
+  chmod($d, 0o700)
+  return $d
+end
+
+-- Exclusive per-day lock between processes (the service and a --local CLI
+-- run). A second concurrent run for the same day is refused, not queued.
+fn lock($d)
+  if not flock($d .. "/.lock", {wait: 0}) then raise("BUSY", "another daily run holds " .. $d) end
+  return $d .. "/.lock"
+end
+
+fn unlock($path)
+  funlock($path)
+end
+
+fn blank($date)
+  $stages = {}
+  for $s in $STAGES $stages[$s] = {state: "pending"} end
+  return {schema: "mixviu.daily.status/1", date: $date, stages: $stages}
+end
+
+fn read_status($config, $date)
+  $p = dir($config, $date) .. "/status.json"
+  if not is_file($p) then return blank($date) end
+  $s = json_parse(read_file($p))
+  if type($s) != "map" or $s.schema != "mixviu.daily.status/1" then raise("STATUS", "unreadable status at " .. $p) end
+  return $s
+end
+
+fn write_status($config, $date, $s)
+  $s.updated = now_iso()
+  write_atomic(dir($config, $date) .. "/status.json", $u.json_file($s), {mode: 0o600})
+end
+
+fn log_event($config, $date, $event)
+  $e = merge({t: now_iso()}, $event)
+  append_file(dir($config, $date) .. "/log.jsonl", json_encode($e) .. "\n")
+end
+
+-- Write an artefact only when its bytes change; returns its sha256.
+fn put($config, $date, $name, $text)
+  $p = dir($config, $date) .. "/" .. $name
+  if not (is_file($p) and read_file($p) == $text) then write_atomic($p, $text, {mode: 0o600}) end
+  return hash_sha256($text)
+end
+
+fn first_open($s)
+  for $st in $STAGES
+    if ($s.stages[$st] ?? {}).state != "ok" then return $st end
+  end
+  return nil
+end
