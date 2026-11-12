@@ -5,7 +5,6 @@
 //! agent seat is offered on the primary seat, and an unfocused client cannot
 //! take the clipboard.
 
-use std::time::{Duration, Instant};
 use testkit::Harness;
 use testkit::clipboard::ClipboardRead;
 
@@ -15,14 +14,11 @@ const AGENT: usize = 1;
 
 /// Pump until the paste's pipe closes, and return what it carried.
 fn finish(h: &mut Harness, read: &mut ClipboardRead) -> Vec<u8> {
-    for _ in 0..400 {
-        h.pump();
-        if read.poll() {
-            return read.bytes().to_vec();
-        }
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-    panic!("the paste never finished");
+    assert!(
+        h.pump_until(|_| read.poll()),
+        "paste never reached EOF; bytes so far: {:?}", read.bytes()
+    );
+    read.bytes().to_vec()
 }
 
 /// The main client (copying) and one extra client (pasting), both with data
@@ -77,29 +73,17 @@ fn a_copy_survives_its_source_going_away() {
     let source = h.client.set_selection(PRIMARY, &[TEXT], b"bravo");
     // Capture is read by a worker: pumping for a fixed 40 ms does not prove
     // that it ran. Keep the source alive until its bytes have been admitted.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while h.wire.state.clipboard.capture.is_empty() {
-        assert!(Instant::now() < deadline, "the copy was not captured");
-        h.pump();
-        std::thread::sleep(Duration::from_millis(2));
-    }
+    assert!(h.pump_until(|h| !h.wire.state.clipboard.capture.is_empty()),
+        "copy was not captured; capture empty: {}", h.wire.state.clipboard.capture.is_empty());
     source.destroy();
     h.roundtrip();
     let served = h.client.state.clipboard.served.len();
     h.focus_keyboard_client(b, &paster);
     h.roundtrip_client(b);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !h.extra_clients[b]
+    assert!(h.pump_until(|h| h.extra_clients[b]
         .selection_mimes(PRIMARY)
-        .is_some_and(|mimes| mimes.iter().any(|mime| mime == TEXT))
-    {
-        assert!(
-            Instant::now() < deadline,
-            "the persisted copy was not offered"
-        );
-        h.pump();
-        std::thread::sleep(Duration::from_millis(2));
-    }
+        .is_some_and(|mimes| mimes.iter().any(|mime| mime == TEXT))),
+        "persisted copy was not offered; mimes: {:?}", h.extra_clients[b].selection_mimes(PRIMARY));
     let mut read = h.extra_clients[b].receive(PRIMARY, TEXT);
     assert_eq!(finish(&mut h, &mut read), b"bravo");
     assert_eq!(
@@ -137,16 +121,9 @@ fn an_agent_seat_copy_is_offered_on_the_primary_seat() {
     // And it survives that client's source going away, like any copy, once the
     // capture has the bytes (as for a primary-seat copy: a source destroyed while
     // its capture is still in flight leaves nothing to persist).
-    for _ in 0..400 {
-        if !h.wire.state.clipboard.capture.is_empty() {
-            break;
-        }
-        h.pump();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
     assert!(
-        !h.wire.state.clipboard.capture.is_empty(),
-        "the capture finished"
+        h.pump_until(|h| !h.wire.state.clipboard.capture.is_empty()),
+        "agent copy was not captured; capture empty: {}", h.wire.state.clipboard.capture.is_empty()
     );
     source.destroy();
     h.roundtrip();
