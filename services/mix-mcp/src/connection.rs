@@ -182,7 +182,7 @@ mod tests {
         ];
         for value in [None, Some(""), Some("0"), Some("true")] {
             let error = tcp_permission(value, paths.clone()).unwrap_err();
-            assert!(error.contains("TCP opt-in setting =1"));
+            assert!(error.contains("MIX_MCP_ALLOW_TCP=1"));
             for path in &paths {
                 assert!(error.contains(&path.display().to_string()));
             }

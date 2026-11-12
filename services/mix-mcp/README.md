@@ -54,7 +54,7 @@ The evaluator uses the committed frozen builtin inventory in
 `libraries/mix-shell/src/mcp_builtins.txt`, derived from the two builtin
 registries and feature-gated dispatch arms at `8779f33`. Only core plus
 json, regex, toml, datetime, url and crypto calls are admitted. Shell-only
-extensions such as `tar_list`, HTTP and SQLite calls are refused. Core
+extensions such as `tar_list`, feature-gated HTTP client and SQLite calls are refused. Core
 process and file-write builtins were already in the original surface.
 
 Log-filter and deadline overrides use the exact process environment and

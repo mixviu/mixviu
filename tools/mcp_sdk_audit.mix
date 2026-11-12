@@ -6,6 +6,8 @@ fn capture($argv)
   return run_argv_must($argv, {timeout: 1800, max_output: 256000000})
 end
 $base = trim(capture(["git", "merge-base", "HEAD", "origin/main"]))
+-- Immutable 3.1.2 audit evidence, intentionally distinct from moving main.
+-- Engine-graph acceptance is always checked against main by mcp_cost.mix.
 $old = toml_parse(capture(["git", "show", "3f924fae:Cargo.lock"]))
 $main = toml_parse(capture(["git", "show", $base .. ":Cargo.lock"]))
 $known = {}

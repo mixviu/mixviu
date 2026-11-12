@@ -131,7 +131,6 @@ hostname
 html_escape
 http_recv
 http_serve
-http_stream
 hypot
 index_of
 ini_parse
@@ -295,8 +294,6 @@ tail
 take
 tan
 task_start
-tcp_on
-tcp_unwatch
 template
 time
 timer_once
@@ -308,10 +305,8 @@ trim
 trunc
 tty_mode
 type
-udp_on
 udp_recv
 udp_send
-udp_unwatch
 uid
 unique
 unique_by
@@ -334,6 +329,4 @@ write_file
 write_new
 write_stderr
 write_stdout
-ws_on
-ws_unwatch
 zip

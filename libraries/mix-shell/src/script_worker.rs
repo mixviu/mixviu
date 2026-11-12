@@ -19,7 +19,7 @@ struct McpBuiltins;
 #[test]
 fn frozen_worker_inventory_excludes_shell_extensions() {
     use mix::evaluator::CapabilityPolicy;
-    assert_eq!(include_str!("mcp_builtins.txt").lines().count(), 339);
+    assert_eq!(include_str!("mcp_builtins.txt").lines().count(), 332);
     for name in [
         "json_parse",
         "re_match",
@@ -33,8 +33,10 @@ fn frozen_worker_inventory_excludes_shell_extensions() {
     for name in [
         "tar_list",
         "http_get",
+        "http_stream",
         "sqlopen",
         "ws_connect",
+        "ws_on",
         "future_builtin",
     ] {
         assert!(McpBuiltins.check_builtin(name).is_err(), "{name}");

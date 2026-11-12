@@ -17,8 +17,9 @@ inventory and stdio status/Bus/execution test. The frozen evaluator worker
 moves into the sibling Mix binary; process-group cancellation and byte bounds
 remain unchanged.
 
-Runtime defaults moved to the registry retain ranking, transport, deadline
-and logging values. The domain map retains all four frozen entries and adds MixViu and its hub. As prescribed
+Installed data defaults retain ranking and transport values. Code-behaviour
+overrides (logging and deadlines) use raw environment reads and the original
+code fallbacks; configuration data is read fallibly only at tool use. The domain map retains all four frozen entries and adds MixViu and its hub. As prescribed
 by `paths::env::os`, an empty agent session override remains present and
 is rejected, preserving the source policy. Malformed agent session IDs refuse
 the Bus. The exact presence-preserving reader is shared with the paths follow-up. No compatibility reads of retired names.
@@ -42,7 +43,7 @@ are confined to dev-dependencies. `ServerInfo` is renamed to its SDK replacement
 seeds resolution, with unused packages removed by Cargo on CBC.
 
 The frozen isolated evaluator worker now lives in `mix-shell::script_worker`,
-entered by the sibling `mix` binary's private worker flag. The frozen named
+entered by the sibling `mix` binary's public worker protocol flag (not an authority boundary). The frozen named
 connection policy is shared through `bus::agent_client`; MCP keeps its original
 connection tests. This avoids ordinary Mix's anonymous/TCP-fallback semantics
 and preserves session attribution, strict Unix failures, lazy local execution,
