@@ -583,13 +583,25 @@ pub async fn serve(
 /// The production authority loop with an explicit broker endpoint. This also
 /// lets native integration tests isolate the broker without process-global env.
 pub async fn serve_at(root: PathBuf, binding: Binding, noded_url: String) -> anyhow::Result<()> {
+    serve_at_until(root, binding, noded_url, std::future::pending()).await
+}
+
+/// Embedded authority lifetime with the same draining shutdown as SIGTERM.
+/// A stop finishes the current blocking dispatch before releasing its Store;
+/// aborting the outer future cannot cancel a spawn_blocking closure holding it.
+pub async fn serve_at_until(
+    root: PathBuf,
+    binding: Binding,
+    noded_url: String,
+    shutdown: impl std::future::Future<Output = ()> + Send,
+) -> anyhow::Result<()> {
     let opened = root.clone();
     let authority = tokio::task::spawn_blocking(move || {
         let (store, accepted) = Store::open(&opened, &binding)?;
         Authority::new(store, accepted)
     })
     .await??;
-    run(authority, root, noded_url).await
+    run(authority, root, noded_url, shutdown).await
 }
 
 /// A mirror of `node`'s authority, serving its sealed cache. With no cache
@@ -622,7 +634,7 @@ pub async fn serve_mirror_at(
         Authority::mirror(&cache)
     })
     .await??;
-    run(authority, root, noded_url).await
+    run(authority, root, noded_url, std::future::pending()).await
 }
 
 /// The authority's record for a mirror starting with no cache: an attach
@@ -671,7 +683,13 @@ async fn first_cache(
     fetched?
 }
 
-async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyhow::Result<()> {
+async fn run(
+    mut authority: Authority,
+    root: PathBuf,
+    noded_url: String,
+    shutdown: impl std::future::Future<Output = ()> + Send,
+) -> anyhow::Result<()> {
+    tokio::pin!(shutdown);
     let build = buildinfo::build_info!();
     let provenance = bus::RegisterProvenance::from_parts(
         build.pkg,
@@ -714,6 +732,7 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
     loop {
         let mirror_retry = ctx.mirrors.next_retry();
         tokio::select! {
+            _ = &mut shutdown => break,
             changed = state.changed() => {
                 if changed.is_err() { break; }
                 let now = *state.borrow_and_update();

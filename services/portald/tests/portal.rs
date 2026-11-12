@@ -934,22 +934,30 @@ impl Drop for NativePortal {
     }
 }
 
-struct AuthorityTask(JoinHandle<anyhow::Result<()>>);
+struct AuthorityTask(
+    JoinHandle<anyhow::Result<()>>,
+    Option<tokio::sync::oneshot::Sender<()>>,
+);
 impl AuthorityTask {
     fn start(root: &std::path::Path, url: &str) -> Self {
         let root = root.to_owned();
         let url = url.to_owned();
+        let (stop, stopped) = tokio::sync::oneshot::channel();
         Self(tokio::spawn(async move {
-            let result = settingsd::service::serve_at(root, projection("a", 1, "dark").binding, url).await;
+            let result = settingsd::service::serve_at_until(root, projection("a", 1, "dark").binding, url, async { let _ = stopped.await; }).await;
             if let Err(error) = &result {
                 tracing::error!(%error, "native authority exited");
             }
             result
-        }))
+        }), Some(stop))
     }
     async fn stop(&mut self) {
-        self.0.abort();
-        let _ = (&mut self.0).await;
+        if let Some(stop) = self.1.take() {
+            let _ = stop.send(());
+        }
+        // A process stop releases its Store. Aborting just this async task can
+        // leave a blocking palette dispatch holding the lock during restart.
+        (&mut self.0).await.unwrap().unwrap();
     }
 }
 impl Drop for AuthorityTask {
@@ -1023,8 +1031,8 @@ async fn wait_absent(
     service: &str,
 ) -> anyhow::Result<()> {
     // Observe broker removal, allowing the authority's shutdown bound and a
-    // retry at cap before scheduling margin. stop() aborts rather than gracefully
-    // deregistering, so this also covers delayed transport-close observation.
+    // retry at cap before scheduling margin. The authority drains its current
+    // blocking dispatch and deregisters before stop() returns.
     let budget =
         settingsd::service::DEREGISTER_TIMEOUT + portald::service::RETRY_MAX + SCHEDULING_MARGIN;
     tokio::time::timeout(budget, async {
