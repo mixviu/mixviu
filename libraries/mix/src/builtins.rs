@@ -31177,16 +31177,14 @@ mod ssh_helpers_tests {
             }
             let exe = std::env::current_exe().unwrap();
             for mode in ["staged", "missing", "nonunicode"] {
-                let root = Scratch(
-                    exe.parent().unwrap().join(format!(
+                let root = Scratch(exe.parent().unwrap().join(format!(
                         "remote-registry-{}-{mode}-{}",
                         std::process::id(),
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
                             .as_nanos()
-                    )),
-                );
+                    )));
                 std::fs::create_dir(&root.0).unwrap();
                 if mode == "staged" {
                     std::fs::write(

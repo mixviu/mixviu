@@ -216,9 +216,14 @@ fn binary_alone_starts_a_real_repl_evaluates_and_exits() {
         }
         // The editor clears buffered input between reads. Act like a user:
         // submit one line only after each prompt has entered bracketed mode.
-        let prompts = transcript.windows(8).filter(|bytes| *bytes == b"\x1b[?2004h").count();
+        let prompts = transcript
+            .windows(8)
+            .filter(|bytes| *bytes == b"\x1b[?2004h")
+            .count();
         if phase == 0 && prompts >= 1 {
-            master.write_all(b"print(\"BARE_\" .. \"REPL_OK\")\n").unwrap();
+            master
+                .write_all(b"print(\"BARE_\" .. \"REPL_OK\")\n")
+                .unwrap();
             phase = 1;
         } else if phase == 1 && prompts >= 2 {
             master.write_all(b"exit\n").unwrap();
