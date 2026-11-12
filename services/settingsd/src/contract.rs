@@ -170,7 +170,19 @@ impl Authority {
     /// mode from `design::palette`, tagged with the record's identity. A
     /// mirror answers from its cache with the same code, so no palette
     /// crosses the wire between them.
-    pub fn palette(&self, request: &settings::PaletteRequest) -> Result<Value, Value> {
+    pub fn palette(&mut self, request: &settings::PaletteRequest) -> Result<Value, Value> {
+        self.palette_with(request, settings::resolve::values::palette)
+    }
+
+    fn palette_with(
+        &mut self,
+        request: &settings::PaletteRequest,
+        mut resolve: impl FnMut(
+            &settings::registry::Values,
+            &str,
+            Option<settings::resolve::values::Mode>,
+        ) -> Result<serde_json::Map<String, Value>, Vec<settings::Diagnostic>>,
+    ) -> Result<Value, Value> {
         if request.binding != self.accepted.binding {
             return Err(json!({"status":"wrong_target","binding":self.accepted.binding}));
         }
@@ -180,7 +192,7 @@ impl Authority {
                 || json!({"status":"validation_failed","path":"mode","message":"Unknown mode"}),
             )?),
         };
-        let palette = settings::resolve::values::palette(
+        let palette = resolve(
             &self.accepted.values,
             &self.accepted.embedded_source,
             mode,
@@ -219,5 +231,52 @@ impl Authority {
     /// The record a mirror caches, sealed under this authority's `node`.
     pub fn cache(&self, node: &str) -> anyhow::Result<crate::mirror::Cache> {
         crate::mirror::Cache::of(&self.accepted, node)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Store;
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+
+    // Force the first requester to leave while compilation is in progress.
+    // The authority still finishes that dispatch, as service::handle does.
+    // A fresh read of the same accepted record must reuse the completed work,
+    // rather than starting another compile that can miss the same deadline.
+    #[tokio::test]
+    async fn a_completed_palette_survives_an_abandoned_reply() {
+        let dir = tempfile::tempdir().unwrap();
+        let binding = settings::Binding { instance: "fixture".into(), profile: "default".into() };
+        let (store, accepted) = Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
+        let mut authority = Authority::new(store, accepted).unwrap();
+        let request = settings::PaletteRequest { binding, mode: Some("dark".into()) };
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let first = request.clone();
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (release, held) = std::sync::mpsc::channel();
+        let (reply, caller) = tokio::sync::oneshot::channel();
+        let task = tokio::task::spawn_blocking(move || {
+            let mut entered = Some(entered);
+            let answer = authority.palette_with(&first, |_, _, _| {
+                counted.fetch_add(1, Ordering::SeqCst);
+                entered.take().unwrap().send(()).unwrap();
+                held.recv().unwrap();
+                Ok(serde_json::Map::from_iter([("dark".into(), json!({"accent":"#123456ff"}))]))
+            });
+            assert!(reply.send(answer).is_err(), "the first caller has left");
+            authority
+        });
+        started.await.unwrap();
+        drop(caller);
+        release.send(()).unwrap();
+        let mut authority = task.await.unwrap();
+        let answer = authority.palette_with(&request, |_, _, _| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(serde_json::Map::from_iter([("dark".into(), json!({"accent":"#123456ff"}))]))
+        }).unwrap();
+        assert_eq!(answer["palette"]["dark"]["accent"], "#123456ff");
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "a retry must not compile the same palette again");
     }
 }
