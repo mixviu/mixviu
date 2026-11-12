@@ -82,14 +82,22 @@ fn harness(mut chooser: FileChooser) -> Harness<'static, State> {
 }
 
 fn settle(h: &mut Harness<'_, State>) {
-    for _ in 0..200 {
-        h.run();
+    // A directory worker can request another repaint during any frame. Drive
+    // frames explicitly: egui's default four-frame visual settling budget is
+    // unrelated to completion of filesystem work. Allow the same five-second
+    // worker budget as the recv_timeout used below.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        h.run_steps(1);
         if h.state().0.pending.is_none() {
             return;
         }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "chooser worker did not settle"
+        );
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    panic!("chooser worker did not settle");
 }
 
 fn parse(value: serde_json::Value) -> ChooseRequest {
@@ -251,7 +259,6 @@ fn filter_menu_selects_inserted_current_filter_then_reloads() {
         .click();
     h.run();
     h.get_by_label("Markdown").click();
-    h.run();
     settle(&mut h);
     assert_eq!(
         h.state()
