@@ -565,14 +565,12 @@ struct FileId {
 }
 
 impl FileId {
-    fn predates_cache(self, cached: std::time::SystemTime) -> bool {
-        let Ok(cached) = cached.duration_since(std::time::UNIX_EPOCH) else {
-            return false;
-        };
+    fn predates_cache(self, verified_before_ns: u64) -> bool {
         // Both mtime and ctime must be safely outside the cache's tick.
         // Allow two seconds for coarse filesystem timestamps (including FAT).
         // Checking ctime also catches rewrites which restore an old mtime.
-        i128::from(self.mtime_ns.max(self.ctime_ns)) + 2_000_000_000 < cached.as_nanos() as i128
+        i128::from(self.mtime_ns.max(self.ctime_ns)) + 2_000_000_000
+            < i128::from(verified_before_ns)
     }
 
     fn of(meta: &fs::Metadata) -> Self {
@@ -893,7 +891,7 @@ fn read_cache_header(path: &Path, kind: CacheKind) -> Option<(CacheHeader, BufRe
     reader.read_until(b'\n', &mut line).ok()?;
     let value: serde_json::Value = serde_json::from_slice(line.trim_ascii()).ok()?;
     let id = FileId::from_json(value.get("id")?)?;
-    if !id.predates_cache(reader.get_ref().metadata().ok()?.modified().ok()?) {
+    if !id.predates_cache(value.get("verified_before_ns")?.as_u64()?) {
         return None;
     }
     let bounds = DateBounds::from_json(value.get("dates")?)?;
@@ -926,7 +924,17 @@ fn read_cache_body(mut reader: BufReader<File>) -> Option<UsageStats> {
     Some(stats)
 }
 
-fn write_cache(dir: &Path, day: &str, raw: &RawDay) -> Result<(), String> {
+// Capture before opening the source: a slow read or cache write must not age
+// a racy identity into a trusted one. Old headers without this field miss.
+fn verification_time_ns() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|time| u64::try_from(time.as_nanos()).ok())
+        .unwrap_or(0)
+}
+
+fn write_cache(dir: &Path, day: &str, raw: &RawDay, verified_before_ns: u64) -> Result<(), String> {
     let payload = raw
         .payload
         .map_or(serde_json::Value::Null, |(first, last)| {
@@ -937,6 +945,7 @@ fn write_cache(dir: &Path, day: &str, raw: &RawDay) -> Result<(), String> {
         "id": raw.id.to_json(),
         "dates": raw.bounds.to_json(),
         "payload": payload,
+        "verified_before_ns": verified_before_ns,
     });
     let mut bytes = serde_json::to_vec(&header).map_err(|e| e.to_string())?;
     bytes.push(b'\n');
@@ -964,6 +973,7 @@ fn day_records(
     window: &StatsWindow,
     may_cache: bool,
 ) -> UsageStats {
+    let verified_before_ns = verification_time_ns();
     let current = match fs::metadata(path) {
         Ok(meta) if meta.is_file() => FileId::of(&meta),
         Ok(_) | Err(_) => {
@@ -1004,7 +1014,7 @@ fn day_records(
     };
     if may_cache
         && raw.stable
-        && let Err(error) = write_cache(dir, day, &raw)
+        && let Err(error) = write_cache(dir, day, &raw, verified_before_ns)
     {
         debug_note(format!("cache for {day} not written: {error}"));
     }
@@ -1145,6 +1155,7 @@ fn read_legacy_source(
     may_cache: bool,
     force: bool,
 ) -> Option<(FileId, Option<UsageStats>)> {
+    let verified_before_ns = verification_time_ns();
     let mut file = File::open(path).ok()?;
     let id = FileId::of(&file.metadata().ok()?);
     let bounds_path = legacy_bounds_path(dir, path);
@@ -1173,7 +1184,8 @@ fn read_legacy_source(
     }
     if may_cache {
         let header =
-            serde_json::json!({"id": id.to_json(), "dates": DateBounds::of(&document).to_json()});
+            serde_json::json!({"id": id.to_json(), "dates": DateBounds::of(&document).to_json(),
+                "verified_before_ns": verified_before_ns});
         let mut bytes = header.to_string().into_bytes();
         bytes.push(b'\n');
         let written = bounds_path
@@ -2486,6 +2498,7 @@ mod tests {
         let header = serde_json::json!({
             "day": day, "id": id.to_json(), "dates": [day, day],
             "payload": [ends[0], ends[ends.len() - 1]],
+            "verified_before_ns": verification_time_ns() + 3_000_000_000,
         });
         let forged = format!(
             "{header}\n{}\n",
@@ -2494,12 +2507,6 @@ mod tests {
         write_cache_value(&dir, &day, &forged);
         // This test exercises a trusted, older identity. A fresh cache of a
         // just-written file is deliberately unverified within the same tick.
-        File::options()
-            .write(true)
-            .open(cache_path(&dir, &day))
-            .unwrap()
-            .set_modified(std::time::SystemTime::now() + Duration::from_secs(3))
-            .unwrap();
         assert_eq!(all(&dir).counters.builtins.get("upper"), Some(&1));
 
         // ...and corrupt, prefix-only or header-only entries are ignored.
@@ -3096,12 +3103,14 @@ mod tests {
             after
         );
         header["id"]["ctime_ns"] = after.ctime_ns.into();
+        // Even a cache write delayed beyond the tick must remain unverified.
+        header["verified_before_ns"] = u64::try_from(after.ctime_ns).unwrap().into();
         fs::write(&cache, format!("{header}\n{body}")).unwrap();
         File::options()
             .write(true)
             .open(&cache)
             .unwrap()
-            .set_modified(mtime)
+            .set_modified(mtime + Duration::from_secs(3))
             .unwrap();
         let snapshot = all(&dir);
         assert_eq!(len_count(&snapshot), 0);
