@@ -46,7 +46,7 @@ async fn invalid_layout_keeps_discovery_and_returns_log_errors() -> anyhow::Resu
                 .await?;
             let text = serde_json::to_string(&reply)?;
             assert!(
-                text.contains(if malformed { "layout.mx" } else { "relative" }),
+                text.contains(if malformed { "unknown MixViu root" } else { "relative" }),
                 "{text}"
             );
         }
