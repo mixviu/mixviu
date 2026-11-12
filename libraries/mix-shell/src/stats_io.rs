@@ -938,7 +938,9 @@ fn verification_time_ns() -> u64 {
 
 fn write_cache(dir: &Path, day: &str, raw: &RawDay, verified_before_ns: u64) -> Result<(), String> {
     if !raw.id.predates_cache(verified_before_ns) {
-        debug_note(format!("cache for {day} not written: recent change or timestamp in the future"));
+        debug_note(format!(
+            "cache for {day} not written: recent change or timestamp in the future"
+        ));
         return Ok(());
     }
     let payload = raw
@@ -967,10 +969,9 @@ fn write_cache(dir: &Path, day: &str, raw: &RawDay, verified_before_ns: u64) -> 
 /// date bounds then decide whether the day can touch the window at all. Its
 /// aggregate is used unless an op covers some records but not all (judged by
 /// payload ends, as for a single record); then the raw file is read record
-/// by record. Without a usable cache the raw file is read; with `may_cache`,
-/// a stable read of a
-/// day before today refreshes the cache. A day that cannot be read counts
-/// nothing.
+/// by record. Without a usable cache the raw file is read. With `may_cache`,
+/// a stable, settled read of a day before today refreshes the cache. A day
+/// that cannot be read counts nothing.
 fn day_records(
     dir: &Path,
     day: &str,
@@ -1190,7 +1191,10 @@ fn read_legacy_source(
     }
     if may_cache {
         if !id.predates_cache(verified_before_ns) {
-            debug_note(format!("legacy bounds for {} not cached: recent change or timestamp in the future", path.display()));
+            debug_note(format!(
+                "legacy bounds for {} not cached: recent change or timestamp in the future",
+                path.display()
+            ));
             return Some((id, Some(document)));
         }
         let header = serde_json::json!({"id": id.to_json(), "dates": DateBounds::of(&document).to_json(),
@@ -2504,10 +2508,20 @@ mod tests {
         let day = days_ago(7);
         record(&dir, &run_on("a", &day, "len"), &day);
         let legacy = dir.join("current.json");
-        fs::write(&legacy, weekly_doc("2026-W02", &[run_on("b", "2026-01-06", "upper")]).to_json().to_string()).unwrap();
+        fs::write(
+            &legacy,
+            weekly_doc("2026-W02", &[run_on("b", "2026-01-06", "upper")])
+                .to_json()
+                .to_string(),
+        )
+        .unwrap();
         for path in [run_path(&dir, &day), legacy.clone()] {
-            File::options().write(true).open(path).unwrap()
-                .set_modified(std::time::SystemTime::now() + Duration::from_secs(3600)).unwrap();
+            File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(std::time::SystemTime::now() + Duration::from_secs(3600))
+                .unwrap();
         }
         for _ in 0..2 {
             assert_eq!(len_count(&all_caching(&dir)), 1);
@@ -2515,7 +2529,14 @@ mod tests {
             assert!(!legacy_bounds_path(&dir, &legacy).exists());
         }
         let id = FileId::of(&fs::metadata(run_path(&dir, &day)).unwrap());
-        assert!(!FileId { mtime_ns: -3_000_000_000, ctime_ns: -3_000_000_000, ..id }.predates_cache(0));
+        assert!(
+            !FileId {
+                mtime_ns: -3_000_000_000,
+                ctime_ns: -3_000_000_000,
+                ..id
+            }
+            .predates_cache(0)
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
