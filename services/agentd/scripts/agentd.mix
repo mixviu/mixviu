@@ -1,0 +1,1231 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- agentd: coding agents as Bus sessions, over ACP (Agent Client Protocol).
+-- Bus callers start and drive sessions; agentd runs each agent as a child
+-- on a two-way pipe, speaks ACP v1 to it, republishes its updates on Bus
+-- topics, asks the human through notifyd when the agent wants permission,
+-- and gives every session mixos-mcp so the agent can use the Bus in turn.
+-- Decision: docs/docs/decisions/2026-10-30-acp-agent-sessions.md. The pure
+-- rules are lib/agent.mix; this file is the Bus surface and the pipes.
+--
+-- Run: mix --serve agentd.mix --name agent        (Bus service "agent")
+-- Needs mix with process_watch stdin pipes (0.117.x, main 75eac3915+).
+--
+-- Commands (bodies are JSON objects):
+--   agent.agents                                   configured agents
+--   agent.session.new {agent, cwd, mode?, additional_dirs?} -> {session}
+--   agent.session.prompt {session, content}        -> {session, turn}
+--   agent.session.cancel {session}                 cancel the running turn
+--   agent.session.close {session}                  end the agent
+--   agent.session.resume {session}                 bring an ended session back
+--   agent.session.set {session, mode} | {session, option, value}
+--   agent.session.list                             live and recent sessions
+--   agent.session.read {session, since?, limit?}   logged events after seq
+--   agent.permission.respond {session, request, option}
+--   agent.session.await {session, service, op, deadline_s?, note?, suspend?, id?}
+--   agent.await.list {session?}; agent.await.cancel {await}
+--   Topics: agent.await.fired, agent.await.delivered, agent.await.failed,
+--   agent.session.suspended {session, awaits}. Waiting sessions hold no process.
+-- The acting commands (new, prompt, cancel, close, set, respond, session.await) take an
+-- optional id (1-128 of [A-Za-z0-9._:-]), scoped to the session ("new" for
+-- agent.session.new): an accepted (rc 0) command keeps its first reply and
+-- never runs again. Refusals can be retried. A first run cut off before it
+-- replied (agentd stopped) answers COMMAND_INTERRUPTED.
+-- Topics (inner command = topic): agent.session.updated {session, seq, kind,
+--   update?, stop?}, agent.session.ended {session, exit_code, signal},
+--   agent.permission.requested {session, request, title, options}.
+-- Replies: rc 0 JSON; rc 10 bad request (USAGE, OUTSIDE_ROOTS, UNKNOWN_AGENT);
+-- rc 14 UNKNOWN_SESSION; rc 15 AGENT_RUNNING, not ready, COMMAND_INTERRUPTED
+-- or AGENT_NOT_RESUMABLE; rc 16 AGENT_LIMIT or AGENT_DEPTH; rc 17 AGENT_SELF.
+-- Errors use {error_code, message}.
+--
+-- Conf: $MIX_AGENTD_CONF, else <etc>/agent.conf.mix (strict data):
+--   agents: {claude: {argv: [...], roots: ["/home/user/src"],
+--     policy: "ask", permission_timeout_s: 300}}, max_live: 4,
+--   log_keep_days: 30
+-- Log: $MIX_AGENTD_DB, else <var>/agentd/sessions.db (lib/log.mix). Every
+-- event and acting command is written there before it is published or run.
+
+$a = require("lib/agent.mix")
+$log = require("lib/log.mix")
+$acp = require("lib/acp.mix")
+
+-- The stdin pipe builtins are new in mix 0.117.x (main 75eac3915). Refuse a
+-- mix without them with a clear message rather than a fault on first use.
+if not has_builtin("process_write") then
+  eprint("agentd: this mix has no process_write (needs process_watch stdin pipes, main 75eac3915+)")
+  exit(1)
+end
+
+-- The only two call sites of those builtins (process_watch is called once,
+-- in agent.session.new, with the same pragma). The pragmas keep repo lint
+-- clean under the last released mix (N-1), which does not know them yet;
+-- once a release carries them, lint notes the pragmas as stale (MIX-D3019).
+fn pipe_write($watch, $frame)
+  -- lint: ignore MIX-E1102
+  return process_write($watch, $frame)
+end
+
+-- A terminal: a watch on pipes, no stdin, stdout and stderr in one tail.
+fn term_watch($argv, $cwd, $env, $tag)
+  -- lint: ignore MIX-E1102
+  return process_watch($argv, {stderr: "lines", tag: $tag, cwd: $cwd, env: $env})
+end
+
+fn term_stop($watch)
+  -- lint: ignore MIX-E1102
+  return process_unwatch($watch)
+end
+
+-- End a session's agent: close its stdin, and stop it if it is still
+-- running after the close grace (Gemini CLI does not exit at stdin EOF).
+-- Every path that ends an agent goes through here.
+fn end_agent($id)
+  pipe_close($S.sessions[$id].watch)
+  $token = uuid()
+  $S.sessions[$id].closing = $token
+  task_start("agent.close_grace", json_encode({session: $id, token: $token}))
+end
+
+fn pipe_close($watch)
+  -- lint: ignore MIX-E1102
+  return process_close_stdin($watch)
+end
+
+$CONF_FILE = env("MIX_AGENTD_CONF", mix_path("etc", "agent.conf.mix"))
+$CONF = $a.check_conf(load_data($CONF_FILE))
+$MCP_BIN = env("MIX_AGENTD_MCP_EXE", mix_path("prefix", "bin/mix-mcp"))
+$BUS_ENV = {}
+for each $n in $a.bus_env_names()
+  if env($n) != "" then $BUS_ENV[$n] = env($n) end
+end
+$MAX_LINE = 16777216
+$READ_LIMIT = 2000
+$READ_BYTES = 33554432
+$TOPIC_MAX = 262144
+$SETS_MAX = 8
+$ENDED_KEPT = 32
+
+$DB = $log.open(env("MIX_AGENTD_DB", mix_path("var", "agentd/sessions.db")))
+$restart_ended = $log.recover($DB, time())
+for each $id in $restart_ended
+  eprint("agentd: " .. $id .. ": ended in the log (agentd restarted)")
+end
+$log.expire($DB, time() - $CONF.log_keep_days * 86400)
+
+-- One map holds everything; handlers run one at a time, so it is the only
+-- copy. sessions[id] = {id, agent, cwd, parent, sender, watch, acp, status,
+-- seq, turn, queued, pending: {rpc -> {kind}}, perms: {key -> {..}},
+-- created_at}. status: starting | ready | running | waiting | ended. Events live in
+-- the log, not here. cmd is the acting command being answered, if any.
+-- terms[tid] = {session, watch, tail: {lines, bytes, truncated}, limit,
+-- exit: nil | {exitCode, signal}, waiters: [rpc ids]}; tid = "t<n>".
+$S = {sessions: {}, rpc: 0, notify: {}, cmd: nil, terms: {}, term_seq: 0,
+  await_services: {}, await_deadline: nil, await_clock: nil, await_timer: nil}
+
+subscribe("notify.changed")
+
+fn body()
+  if type($event.args) == "map" then return $event.args end
+  return {}
+end
+
+-- Reply: retain accepted commands as receipts; discard refusals.
+-- The marker is cleared first: if the receipt cannot be written the row
+-- keeps no rc (a retry gets COMMAND_INTERRUPTED), and no later reply can
+-- land on it.
+fn answer($rc, $json)
+  $cmd = $S.cmd
+  $S.cmd = nil
+  if $cmd != nil then
+    if $rc == 0 then
+      $log.command_done($DB, $cmd.scope, $cmd.id, $rc, $json)
+    else
+      $log.command_drop($DB, $cmd.scope, $cmd.id)
+    end
+  end
+  reply($rc, $json)
+end
+
+fn fail($code, $message)
+  $rc = 10
+  if $code == "UNKNOWN_SESSION" then $rc = 14
+  elif contains(["AGENT_RUNNING", "AGENT_NOT_READY", "COMMAND_INTERRUPTED", "AGENT_NOT_RESUMABLE"], $code) then $rc = 15
+  elif contains(["AGENT_LIMIT", "AGENT_DEPTH"], $code) then $rc = 16
+  elif $code == "AGENT_SELF" then $rc = 17
+  end
+  answer($rc, json_encode({error_code: $code, message: $message}))
+end
+
+-- The broker-owned sender: from on local delivery, broker_service on mesh.
+fn sender()
+  $h = $event.headers ?? {}
+  return $h.from ?? $h.broker_service ?? ""
+end
+
+-- The agentd session a sender belongs to (its mixos-mcp bridge), or nil.
+fn sender_session($from)
+  $m = re_find($from, "^mcp-s-([a-z0-9]{4,12})-")
+  if len($m) == 0 then return nil end
+  return $m[0].groups[0]
+end
+
+-- Start an acting command: log it before it runs. $scope is the session
+-- id ("new" for agent.session.new); a command naming no session agentd
+-- has had is not logged (it can only be refused, and nothing would ever
+-- expire its row). Returns false when it must not run,
+-- having replied already: a retry gets its first receipt.
+fn begin($command, $scope)
+  $S.cmd = nil
+  $id = body().id
+  if $id != nil and not $a.valid_command_id($id) then
+    fail("USAGE", "id must be 1-128 of [A-Za-z0-9._:-]")
+    return false
+  end
+  if $scope != "new" and not ($a.valid_session_id($scope) and ($S.sessions[$scope] != nil or $log.known($DB, $scope))) then
+    return true
+  end
+  if $id != nil then
+    $row = $log.command_get($DB, $scope, $id)
+    if $row != nil then
+      if $row.command != $command then
+        fail("USAGE", "id " .. $id .. " was used for " .. $row.command)
+      elif $row.rc == nil then
+        fail("COMMAND_INTERRUPTED", "command " .. $id .. " was cut off before it replied; it is not run again")
+      else
+        reply($row.rc, $row.receipt)
+      end
+      return false
+    end
+  else
+    $id = "auto-" .. uuid()
+  end
+  $log.command_begin($DB, $scope, $id, $command, sender(), json_encode(body()), time())
+  $S.cmd = {scope: $scope, id: $id}
+  return true
+end
+
+fn live_count()
+  $n = 0
+  for each $id in keys($S.sessions)
+    if not contains(["ended", "waiting"], $S.sessions[$id].status) then $n = $n + 1 end
+  end
+  return $n
+end
+
+fn next_rpc()
+  $S.rpc = $S.rpc + 1
+  return $S.rpc
+end
+
+fn write_frame($id, $frame)
+  if not pipe_write($S.sessions[$id].watch, $frame) then
+    eprint("agentd: " .. $id .. ": stdin refused a frame (closed or full)")
+    return false
+  end
+  return true
+end
+
+-- Log, then publish, one event. seq is strictly increasing per session.
+fn emit_event($id, $fields)
+  $S.sessions[$id].seq = $S.sessions[$id].seq + 1
+  $e = $fields
+  if $e.turn == nil then $e.turn = $S.sessions[$id].turn end
+  if $e.request == nil then $e.request = $S.sessions[$id].request end
+  if $e.origin == nil then $e.origin = $S.sessions[$id].origin end
+  $e.session = $id
+  $e.seq = $S.sessions[$id].seq
+  $e.at = time()
+  $wire = json_encode($e)
+  -- The agent has already said it: an event the log cannot take (disk
+  -- full) is still published, and the gap is reported. A command, by
+  -- contrast, is refused when its log row cannot be written.
+  try
+    $log.append($DB, $id, $e.seq, $e.kind, $wire, $e.at)
+  catch $m
+    eprint("agentd: " .. $id .. ": seq " .. to_string($e.seq) .. " not logged: " .. $m)
+  end
+  -- Topics are notifications: a large event goes out as a marker, and the
+  -- watcher reads the whole event back with agent.session.read.
+  if len($wire) > $TOPIC_MAX then
+    $wire = json_encode({session: $id, seq: $e.seq, kind: $e.kind, at: $e.at, truncated: true, bytes: len($wire)})
+  end
+  $rc = publish("agent.session.updated", $wire, {command: "agent.session.updated"})
+  if $rc != 0 then eprint("agentd: " .. $id .. ": publish seq " .. to_string($e.seq) .. " refused rc " .. to_string($rc)) end
+end
+
+-- The same row shape as log.view: ended_at (epoch seconds) and the exit
+-- fields are nil while the session is live.
+fn view($s)
+  return {session: $s.id, agent: $s.agent, cwd: $s.cwd, parent: $s.parent, status: $s.status,
+    awaits: len(sqlexec($DB, "SELECT id FROM awaits WHERE session = ? AND state = 'pending'", [$s.id])),
+    seq: $s.seq, turn: $s.turn, created_at: $s.created_at, ended_at: $s.ended_at,
+    title: $s.title, mcp_ref: $s.mcp_ref, open_permissions: len(keys($s.perms)),
+    permission_requests: sort(keys($s.perms)),
+    permissions: map(sort(keys($s.perms)), fn($k) = $s.perms[$k].card),
+    exit_code: $s.exit_code, signal: $s.signal, end_reason: $s.end_reason}
+end
+
+-- Look up the session a command names; replies the refusal itself.
+fn session_for($args, $acting)
+  $id = $args.session
+  if not $a.valid_session_id($id) or $S.sessions[$id] == nil then
+    fail("UNKNOWN_SESSION", "no session " .. to_string($id))
+    return nil
+  end
+  if $acting and sender_session(sender()) == $id then
+    fail("AGENT_SELF", "a session's own agent cannot act on that session")
+    return nil
+  end
+  return $id
+end
+
+-- Drop old ended sessions so the map stays bounded (the log keeps them for
+-- log_keep_days), and expire the log; a session the log drops leaves
+-- memory too, so it is neither listed nor acted on afterwards.
+fn prune()
+  for each $k in $log.expire($DB, time() - $CONF.log_keep_days * 86400)
+    $S.sessions = delete($S.sessions, $k)
+  end
+  $ended = filter(keys($S.sessions), fn($k) = $S.sessions[$k].status == "ended")
+  if len($ended) > $ENDED_KEPT then
+    $ended = sort_by($ended, fn($k) = $S.sessions[$k].created_at)
+    for each $k in slice($ended, 0, len($ended) - $ENDED_KEPT)
+      $S.sessions = delete($S.sessions, $k)
+    end
+  end
+end
+
+-- Commands -----------------------------------------------------------------
+
+on agent.agents desc "configured agents: name, argv[0], roots, policy"
+  $out = []
+  for each $name in keys($CONF.agents)
+    $c = $CONF.agents[$name]
+    push($out, {agent: $name, program: $c.argv[0], roots: $c.roots, policy: $c.policy,
+      mode: $c.mode, close_on_done: $c.close_on_done})
+  end
+  reply(0, json_encode({agents: $out, live: live_count(), max_live: $CONF.max_live}))
+end
+
+-- Start the agent process for session $id and send initialize. $req is
+-- {agent, cwd, additional_dirs, mode}; $seq is the last logged seq (0 for
+-- a new session); $reopen is nil, or {via, acp, prior} for a resume.
+fn spawn_agent($id, $req, $parent, $sender, $created_at, $seq, $reopen)
+  $c = $CONF.agents[$req.agent]
+  $env = $c.env
+  $env.MIX_AGENTD_SESSION = $id
+  -- lint: ignore MIX-E1102
+  $watch = process_watch($c.argv, {stdin: "pipe", overflow: "block", max_line: $MAX_LINE,
+    stderr: "lines", tag: $id, cwd: $req.cwd, env: $env})
+  $S.sessions[$id] = {id: $id, agent: $req.agent, cwd: $req.cwd, dirs: $req.additional_dirs,
+    mode: $req.mode ?? $c.mode, options: if $reopen != nil then $reopen.prior.options ?? {} else {} end,
+    parent: $parent, sender: $sender, watch: $watch, acp: nil,
+    status: "starting", seq: $seq, turn: nil, queued: nil, pending: {}, perms: {},
+    set_seq: 0, stored_sets: {},
+    mcp_ref: $req.mcp_ref, extra_mcp: $req.mcp ?? [], request: nil, origin: nil, queued_request: nil,
+    created_at: $created_at, stderr_tail: [], reopen: $reopen, replaying: false}
+  $rpc = next_rpc()
+  $S.sessions[$id].pending[to_string($rpc)] = {kind: "initialize"}
+  write_frame($id, $a.initialize_frame($rpc))
+end
+
+on agent.session.new desc "start an agent session {agent, cwd, mode?, additional_dirs?}; replies {session} at once"
+  $from = sender()
+  $parent = sender_session($from)
+  if not begin("agent.session.new", "new") then
+    -- answered: a retry, or a bad id
+  elif $parent != nil and $S.sessions[$parent] != nil and $S.sessions[$parent].parent != nil then
+    fail("AGENT_DEPTH", "a child session cannot start sessions")
+  elif live_count() >= $CONF.max_live then
+    fail("AGENT_LIMIT", "already " .. to_string(live_count()) .. " live sessions (max " .. to_string($CONF.max_live) .. ")")
+  else
+    $id = nil
+    $logged = false
+    try
+      $req = $a.check_new($CONF, body())
+      $req.mcp_ref = body().mcp_ref
+      $req.mcp = $acp.read_mcp($req.mcp_ref)
+      $c = $CONF.agents[$req.agent]
+      $id = $a.mint_session_id($S.sessions)
+      while $log.known($DB, $id)
+        $id = $a.mint_session_id($S.sessions)
+      end
+      -- The log row comes first: no agent runs that the log does not have.
+      $row = {id: $id, agent: $req.agent, cwd: $req.cwd, parent: $parent, sender: $from, created_at: now_iso()}
+      $log.session_started($DB, $row)
+      $logged = true
+      $req.mcp_ref = $acp.retain_mcp($req.mcp_ref, $id, $req.mcp)
+      $log.session_mcp($DB, $id, $req.mcp_ref)
+      $log.command_link($DB, "new", $S.cmd.id, $id)
+      spawn_agent($id, $req, $parent, $from, $row.created_at, 0, nil)
+      prune()
+      answer(0, json_encode({session: $id, status: "starting"}))
+    catch $m, $err
+      if $logged and $S.sessions[$id] == nil then
+        -- Logged but never started: end it in the log.
+        try
+          $log.session_ended($DB, $id, nil, nil, "spawn_failed", time())
+          op_finished($id)
+        catch $m2
+          eprint("agentd: " .. $id .. ": could not end the unstarted session in the log: " .. $m2)
+        end
+      elif $S.sessions[$id] != nil and $S.sessions[$id].status != "ended" then
+        -- Started, then something failed: no caller holds the session, so end it.
+        end_agent($id)
+      end
+      fail($err.code ?? "USAGE", $m)
+    end
+  end
+end
+
+on agent.session.resume desc "bring back an ended session {session}: same id and log, the agent resumes (or loads) its own history; replies {session, via} at once"
+  $id = nil
+  -- "" fails valid_session_id, so a missing session is UNKNOWN_SESSION.
+  if begin("agent.session.resume", body().session) then $id = body().session ?? "" end
+  if $id != nil then
+    $from = sender()
+    $parent = sender_session($from)
+    $row = if $a.valid_session_id($id) then $log.session_row($DB, $id) else nil end
+    if $row == nil then
+      fail("UNKNOWN_SESSION", "no session " .. to_string($id))
+    elif $parent == $id then
+      fail("AGENT_SELF", "a session's own agent cannot act on that session")
+    elif $parent != nil and $S.sessions[$parent] != nil and $S.sessions[$parent].parent != nil then
+      fail("AGENT_DEPTH", "a child session cannot resume sessions")
+    elif not contains(["ended", "waiting"], $row.status) or ($S.sessions[$id] != nil and not contains(["ended", "waiting"], $S.sessions[$id].status)) then
+      fail("USAGE", "session " .. $id .. " is live")
+    elif live_count() >= $CONF.max_live then
+      fail("AGENT_LIMIT", "already " .. to_string(live_count()) .. " live sessions (max " .. to_string($CONF.max_live) .. ")")
+    else
+      $via = $a.resume_via($row.caps)
+      if $via == nil or type($row.acp) != "string" then
+        fail("AGENT_NOT_RESUMABLE", "the agent of session " .. $id .. " offers neither session/resume nor session/load")
+      else
+        try
+          -- The current conf decides: the agent must still exist and the
+          -- directories must still lie under its roots.
+          $req = $a.check_new($CONF, {agent: $row.agent, cwd: $row.cwd, additional_dirs: $row.dirs ?? [], mode: $row.mode})
+          $req.mcp_ref = body().mcp_ref ?? $row.mcp_ref
+          $req.mcp = $acp.read_mcp($req.mcp_ref)
+          $req.mcp_ref = $acp.retain_mcp($req.mcp_ref, $id, $req.mcp)
+          $log.session_resumed($DB, $id)
+          spawn_agent($id, $req, $row.parent, $row.sender, $row.created_at, $log.last_seq($DB, $id),
+            {via: $via, acp: $row.acp, prior: $row, done: false})
+          $log.session_mcp($DB, $id, $req.mcp_ref)
+          $S.sessions[$id].title = $row.title
+          answer(0, json_encode({session: $id, status: "starting", via: $via}))
+        catch $m, $err
+          if $S.sessions[$id] == nil or $S.sessions[$id].status == "ended" then
+            try
+              $log.session_restore($DB, $row)
+            catch $m2
+              eprint("agentd: " .. $id .. ": could not restore the ended row: " .. $m2)
+            end
+          elif not $S.sessions[$id].reopen.done then
+            -- Started, then the reply failed: end it, and the exit restores
+            -- the ended row (as agent.session.new does).
+            end_agent($id)
+          end
+          fail($err.code ?? "USAGE", $m)
+        end
+      end
+    end
+  end
+end
+
+-- Settings sent to the agent and not yet answered.
+fn sets_out($id)
+  $p = $S.sessions[$id].pending
+  return len(filter(keys($p), fn($k) = $p[$k].kind == "set"))
+end
+
+-- Separate mode from option names, including an option named "mode".
+fn setting_key($set)
+  return if $set.mode != nil then "mode" else "option:" .. $set.option end
+end
+
+-- Write one setting: {mode} or {option, value}.
+fn write_set($id, $set)
+  $rpc = next_rpc()
+  $S.sessions[$id].set_seq = $S.sessions[$id].set_seq + 1
+  $S.sessions[$id].pending[to_string($rpc)] = {kind: "set", setting: $set, number: $S.sessions[$id].set_seq}
+  $acp = $S.sessions[$id].acp
+  $frame = if $set.mode != nil then $a.set_mode_frame($rpc, $acp, $set.mode)
+    else $a.set_option_frame($rpc, $acp, $set.option, $set.value) end
+  if write_frame($id, $frame) then return true end
+  -- Never written, so never answered: it must not hold a prompt back.
+  $S.sessions[$id].pending = delete($S.sessions[$id].pending, to_string($rpc))
+  return false
+end
+
+-- A queued prompt runs once every setting before it has been answered, so
+-- a model or mode chosen first applies to the turn.
+fn run_queued($id)
+  $s = $S.sessions[$id]
+  if await_flush($id) then return end
+  if $s.status == "ready" and $s.queued != nil and sets_out($id) == 0 then
+    $S.sessions[$id].queued = nil
+    $S.sessions[$id].next_request = $s.queued_request
+    $S.sessions[$id].next_origin = "user"
+    $started = start_turn($id, $s.queued)
+    if $started == nil then
+      emit_event($id, {kind: "error", during: "prompt", request: $s.queued_request,
+        error: {code: -32603, message: "queued prompt could not be written to the agent"}})
+    end
+  end
+end
+
+-- The session is ready: stop dropping replay, send the settings queued
+-- while it started, then a queued prompt.
+fn session_ready($id)
+  $S.sessions[$id].status = "ready"
+  $S.sessions[$id].replaying = false
+  -- Restore accepted settings (or the initial mode) before settings queued
+  -- during startup, and before the prompt. Newer queued settings win.
+  $queued_keys = {}
+  for each $set in $S.sessions[$id].queued_sets ?? []
+    $queued_keys[setting_key($set)] = true
+  end
+  $restore = []
+  if $S.sessions[$id].mode != nil and $queued_keys.mode == nil then push($restore, {mode: $S.sessions[$id].mode}) end
+  for each $option in sort(keys($S.sessions[$id].options))
+    if $queued_keys["option:" .. $option] == nil then
+      push($restore, {option: $option, value: $S.sessions[$id].options[$option]})
+    end
+  end
+  $S.sessions[$id].queued_sets = concat($restore, $S.sessions[$id].queued_sets ?? [])
+  $sets = $S.sessions[$id].queued_sets ?? []
+  $S.sessions[$id].queued_sets = []
+  for each $set in $sets
+    write_set($id, $set)
+  end
+  run_queued($id)
+end
+
+-- The load settle: re-armed while replay keeps arriving, at most
+-- $SETTLE_MAX times, then the session is ready either way.
+$SETTLE_S = to_number(env("MIX_AGENTD_SETTLE_S", "1"))
+$SETTLE_MAX = 30
+
+fn load_settle_arm($id, $round)
+  $token = uuid()
+  $S.sessions[$id].settling = $token
+  task_start("agent.load_settle", json_encode({session: $id, token: $token, round: $round}))
+end
+
+on agent.load_settle async
+  sleep($SETTLE_S)
+end
+
+on agent.load_settle
+  $id = to_string(body().session)
+  $s = $S.sessions[$id]
+  if $s != nil and $s.status == "starting" and $s.settling != nil and $s.settling == body().token then
+    $round = body().round ?? 0
+    if time() - ($s.last_replay ?? 0) < $SETTLE_S and $round < $SETTLE_MAX then
+      load_settle_arm($id, $round + 1)
+    else
+      session_ready($id)
+    end
+  end
+end
+
+$TITLE_PENDING = {}
+
+fn persist_title($id)
+  $title = $TITLE_PENDING[$id]
+  if $title == nil then return end
+  try
+    $log.session_title($DB, $id, $title)
+    $TITLE_PENDING[$id] = nil
+  catch $m
+    eprint("agentd: " .. $id .. ": title not logged: " .. $m)
+    task_start("agent.title_retry", json_encode({session: $id}))
+  end
+end
+
+on agent.title_retry async
+  sleep(1)
+end
+
+on agent.title_retry
+  persist_title(to_string(body().session))
+end
+
+fn start_turn($id, $blocks)
+  $rpc = next_rpc()
+  $request = $S.sessions[$id].next_request
+  $origin = $S.sessions[$id].next_origin ?? "user"
+  $S.sessions[$id].next_request = nil
+  $S.sessions[$id].next_origin = nil
+  $S.sessions[$id].pending[to_string($rpc)] = {kind: "prompt", request: $request, origin: $origin}
+  $S.sessions[$id].request = $request
+  $S.sessions[$id].origin = $origin
+  $S.sessions[$id].turn = $rpc
+  $S.sessions[$id].status = "running"
+  $S.sessions[$id].cancelling = false
+  $S.sessions[$id].replaying = false
+  if not write_frame($id, $a.prompt_frame($rpc, $S.sessions[$id].acp, $blocks)) then
+    $S.sessions[$id].pending = delete($S.sessions[$id].pending, to_string($rpc))
+    $S.sessions[$id].turn = nil
+    $S.sessions[$id].status = "ready"
+    return nil
+  end
+  -- The prompt is part of the transcript: a reader sees what was asked.
+  emit_event($id, {kind: "prompt", turn: $rpc, content: $blocks})
+  if $S.sessions[$id].title == nil then
+    $title = $a.prompt_title($blocks)
+    if $title != nil then
+      $S.sessions[$id].title = $title
+      $TITLE_PENDING[$id] = $title
+      persist_title($id)
+    end
+  end
+  return $rpc
+end
+
+on agent.session.prompt desc "send a prompt {session, content}; replies {session, turn}, the turn's events follow on agent.session.updated"
+  $id = nil
+  if begin("agent.session.prompt", body().session) then $id = session_for(body(), true) end
+  if $id != nil then
+    $s = $S.sessions[$id]
+    try
+      $blocks = $a.prompt_blocks(body().content)
+      if $s.status == "running" or $s.queued != nil then
+        fail("AGENT_RUNNING", "session " .. $id .. " already has a turn running")
+      elif $s.status == "ended" then
+        fail("AGENT_NOT_READY", "session " .. $id .. " has ended")
+      elif $s.status == "waiting" then
+        if live_count() >= $CONF.max_live then
+          fail("AGENT_LIMIT", "no live slot for the waiting session")
+        else
+          await_reopen($id)
+          $S.sessions[$id].queued = $blocks
+          $S.sessions[$id].queued_request = $S.cmd.id
+          answer(0, json_encode({session: $id, turn: nil, request: $S.cmd.id, queued: true}))
+        end
+      elif $s.status == "starting" or sets_out($id) > 0 or await_has_outbox($id) then
+        -- Sent once the session is ready and its settings are answered.
+        $S.sessions[$id].queued = $blocks
+        $S.sessions[$id].queued_request = $S.cmd.id
+        answer(0, json_encode({session: $id, turn: nil, request: $S.cmd.id, queued: true}))
+        run_queued($id)
+      else
+        $S.sessions[$id].next_request = $S.cmd.id
+        $S.sessions[$id].next_origin = "user"
+        $turn = start_turn($id, $blocks)
+        if $turn == nil then
+          fail("AGENT_NOT_READY", "session " .. $id .. " did not accept the prompt (its stdin is closed or full)")
+        else
+          answer(0, json_encode({session: $id, turn: $turn}))
+        end
+      end
+    catch $m, $err
+      fail($err.code ?? "USAGE", $m)
+    end
+  end
+end
+
+-- Answer every open permission request of a session with one outcome.
+fn settle_all_permissions($id, $outcome_option)
+  for each $key in keys($S.sessions[$id].perms)
+    $p = $S.sessions[$id].perms[$key]
+    write_frame($id, $a.response_frame($p.rpc, $a.permission_result($outcome_option)))
+    emit_event($id, {kind: "permission_answered", request: $key, option: $outcome_option})
+    if $p.notify != nil then
+      send notify notify.close body=json_encode({id: $p.notify}) timeout=5
+      $S.notify = delete($S.notify, to_string($p.notify))
+    end
+  end
+  $S.sessions[$id].perms = {}
+end
+
+on agent.session.cancel desc "cancel the running turn {session}; pending permission requests are answered cancelled"
+  $id = nil
+  if begin("agent.session.cancel", body().session) then $id = session_for(body(), true) end
+  if $id != nil then
+    $s = $S.sessions[$id]
+    $was_queued = $s.queued != nil
+    if $s.queued != nil then
+      $S.sessions[$id].queued = nil
+      emit_event($id, {kind: "stop", request: $s.queued_request, origin: "user", stop: "cancelled"})
+    end
+    if $s.status != "running" then
+      answer(0, json_encode({session: $id, cancelled: $was_queued}))
+      await_suspend($id)
+    else
+      -- ACP: a cancel must answer every pending permission request cancelled.
+      settle_all_permissions($id, nil)
+      $S.sessions[$id].cancelling = true
+      write_frame($id, $a.cancel_frame($s.acp))
+      answer(0, json_encode({session: $id, cancelled: true}))
+    end
+  end
+end
+
+on agent.session.close desc "end the agent {session}: stdin closes, the process is reaped"
+  $id = nil
+  if begin("agent.session.close", body().session) then $id = session_for(body(), true) end
+  if $id != nil then
+    if $S.sessions[$id].status != "ended" then op_close($id) end
+    answer(0, json_encode({session: $id, status: $S.sessions[$id].status}))
+  end
+end
+
+on agent.session.set desc "set {session, mode} or {session, option, value} (model and the rest are config options)"
+  $id = nil
+  if begin("agent.session.set", body().session) then $id = session_for(body(), true) end
+  if $id != nil then
+    $s = $S.sessions[$id]
+    $args = body()
+    $sets = sets_out($id) + len($s.queued_sets ?? [])
+    $set = nil
+    if type($args.mode) == "string" then $set = {mode: $args.mode}
+    elif type($args.option) == "string" and $args.value != nil then $set = {option: $args.option, value: $args.value} end
+    if contains(["ended", "waiting"], $s.status) then
+      fail("AGENT_NOT_READY", "session " .. $id .. " is " .. $s.status)
+    elif $set == nil then
+      fail("USAGE", "set needs mode, or option and value")
+    elif $sets >= $SETS_MAX then
+      fail("AGENT_RUNNING", "session " .. $id .. " already has " .. to_string($sets) .. " settings waiting for the agent")
+    else
+      $out = if $set.mode != nil then {session: $id, mode: $set.mode} else {session: $id, option: $set.option} end
+      $set.request = $S.cmd.id
+      $out.request = $S.cmd.id
+      if $s.status == "starting" then
+        -- Sent once the session is ready, before a queued prompt.
+        $S.sessions[$id].queued_sets = push($s.queued_sets ?? [], $set)
+        $out.queued = true
+      else
+        write_set($id, $set)
+      end
+      answer(0, json_encode($out))
+    end
+  end
+end
+
+on agent.session.list desc "live and recently ended sessions (ended ones from the log too)"
+  $out = []
+  for each $id in keys($S.sessions)
+    push($out, view($S.sessions[$id]))
+  end
+  $out = concat($out, $log.recent($DB, $ENDED_KEPT, $S.sessions))
+  reply(0, json_encode({sessions: $out}))
+end
+
+on agent.session.read desc "a session and its logged events after seq {session, since?, limit?}; more: true means read again from next"
+  -- Not an acting command: its refusals are never anyone's receipt.
+  $S.cmd = nil
+  $args = body()
+  $id = $args.session
+  $since = $args.since ?? 0
+  $limit = $args.limit ?? $READ_LIMIT
+  $live = if $a.valid_session_id($id) then $S.sessions[$id] else nil end
+  $v = if $live != nil then view($live) elif $a.valid_session_id($id) then $log.view($DB, $id) else nil end
+  if $v == nil then
+    fail("UNKNOWN_SESSION", "no session " .. to_string($id))
+  elif type($since) != "number" or $since < 0 or type($limit) != "number" or $limit < 1 or $limit > $READ_LIMIT then
+    fail("USAGE", "since must be a seq (0 or more) and limit 1 to " .. to_string($READ_LIMIT))
+  else
+    $r = $log.read($DB, $id, $since, floor($limit), $READ_BYTES)
+    reply(0, json_encode({session: $v, events: $r.events, more: $r.more, next: $r.next,
+      stderr_tail: if $live != nil then $live.stderr_tail else [] end}))
+  end
+end
+
+fn answer_permission($id, $key, $option)
+  $p = $S.sessions[$id].perms[$key]
+  write_frame($id, $a.response_frame($p.rpc, $a.permission_result($option)))
+  $S.sessions[$id].perms = delete($S.sessions[$id].perms, $key)
+  if $p.notify != nil then $S.notify = delete($S.notify, to_string($p.notify)) end
+  emit_event($id, {kind: "permission_answered", request: $key, option: $option})
+end
+
+on agent.permission.respond desc "answer a permission request {session, request, option}"
+  $id = nil
+  if begin("agent.permission.respond", body().session) then $id = session_for(body(), true) end
+  if $id != nil then
+    $key = to_string(body().request)
+    $p = $S.sessions[$id].perms[$key]
+    if $p == nil then
+      fail("UNKNOWN_SESSION", "no open permission request " .. $key .. " on " .. $id)
+    elif body().cancelled == true then
+      if $p.notify != nil then send notify notify.close body=json_encode({id: $p.notify}) timeout=5 end
+      answer_permission($id, $key, nil)
+      answer(0, json_encode({session: $id, request: $key, cancelled: true}))
+    elif not contains(map($p.options, fn($o) = $o.optionId), body().option) then
+      fail("USAGE", "option must be one the agent offered")
+    elif filter($p.options, fn($o) = $o.optionId == body().option)[0].kind == "allow_always" then
+      fail("USAGE", "allow_always is never answered through agentd")
+    else
+      if $p.notify != nil then send notify notify.close body=json_encode({id: $p.notify}) timeout=5 end
+      answer_permission($id, $key, body().option)
+      answer(0, json_encode({session: $id, request: $key, option: body().option}))
+    end
+  end
+end
+
+-- The agent's side -----------------------------------------------------------
+
+fn on_reply($id, $msg)
+  $key = to_string($msg.id)
+  $p = $S.sessions[$id].pending[$key]
+  if $p == nil then return nil end
+  $S.sessions[$id].pending = delete($S.sessions[$id].pending, $key)
+  if $msg.error != nil then
+    emit_event($id, {kind: "error", during: $p.kind, turn: $msg.id,
+      request: if $p.kind == "set" then $p.setting.request else $p.request end, error: $msg.error})
+    if $p.kind == "reopen" then
+      -- The agent would not take its session back (pruned history, or an
+      -- id format it no longer knows). The exit restores the ended row.
+      $S.sessions[$id].reopen.error = $msg.error
+      end_agent($id)
+    elif $p.kind == "initialize" or $p.kind == "new" then
+      -- No session to work with: end the agent.
+      end_agent($id)
+    elif $p.kind == "prompt" then
+      $S.sessions[$id].status = "ready"
+      $S.sessions[$id].turn = nil
+      $S.sessions[$id].request = nil
+      $S.sessions[$id].origin = nil
+      await_stopped($id, false)
+    elif $p.kind == "set" then
+      -- A refused setting still releases the prompt waiting behind it; the
+      -- error event says what was refused.
+      run_queued($id)
+    end
+    return nil
+  end
+  -- A reply without a result map must not fault the handler.
+  $res = if type($msg.result) == "map" then $msg.result else {} end
+  if $p.kind == "initialize" then
+    $S.sessions[$id].caps = $res.agentCapabilities
+    $S.sessions[$id].agent_info = $res.agentInfo
+    $rpc = next_rpc()
+    $s = $S.sessions[$id]
+    $mcp = $a.mcp_entry($MCP_BIN, $id, $BUS_ENV)
+    $extra_mcp = $s.extra_mcp
+    for $server in $extra_mcp
+      if $server.type == "http" and ($res.agentCapabilities.mcpCapabilities ?? {}).http != true then
+        emit_event($id, {kind: "error", during: "new", error: {message: "agent does not support HTTP MCP attachments"}})
+        end_agent($id)
+        return nil
+      end
+    end
+    if $s.reopen != nil then
+      $S.sessions[$id].pending[to_string($rpc)] = {kind: "reopen"}
+      $S.sessions[$id].replaying = $s.reopen.via == "load"
+      $frame = json_parse($a.reopen_frame($rpc, $s.reopen.via, $s.reopen.acp, $s.cwd, $s.dirs, $mcp))
+      $frame.params.mcpServers = concat($frame.params.mcpServers, $extra_mcp)
+      write_frame($id, json_encode($frame) .. "\n")
+    else
+      $S.sessions[$id].pending[to_string($rpc)] = {kind: "new"}
+      $frame = json_parse($a.session_new_frame($rpc, $s.cwd, $s.dirs, $mcp))
+      $frame.params.mcpServers = concat($frame.params.mcpServers, $extra_mcp)
+      write_frame($id, json_encode($frame) .. "\n")
+    end
+    emit_event($id, {kind: "initialized", agent_info: $res.agentInfo, protocol: $res.protocolVersion})
+  elif $p.kind == "reopen" then
+    $S.sessions[$id].acp = $S.sessions[$id].reopen.acp
+    $S.sessions[$id].reopen.done = true
+    $log.session_agent($DB, $id, $S.sessions[$id].acp, $S.sessions[$id].dirs, $S.sessions[$id].caps, $S.sessions[$id].agent_info)
+    emit_event($id, {kind: "resumed", via: $S.sessions[$id].reopen.via, agent_info: $S.sessions[$id].agent_info,
+      capabilities: $S.sessions[$id].caps, modes: $res.modes, config_options: $res.configOptions, models: $res.models})
+    if $S.sessions[$id].reopen.via == "load" then
+      -- Gemini CLI answers session/load first and replays after. The session
+      -- stays "starting" (prompts queue) until the replay has been quiet
+      -- for a moment (agent.load_settle), so no replay lands in a new turn.
+      $S.sessions[$id].last_replay = time()
+      load_settle_arm($id, 0)
+    else
+      session_ready($id)
+    end
+  elif $p.kind == "new" and type($res.sessionId) != "string" then
+    emit_event($id, {kind: "error", during: "new", error: {message: "session/new returned no sessionId"}})
+    end_agent($id)
+  elif $p.kind == "new" then
+    $S.sessions[$id].acp = $res.sessionId
+    $log.session_agent($DB, $id, $res.sessionId, $S.sessions[$id].dirs, $S.sessions[$id].caps, $S.sessions[$id].agent_info)
+    emit_event($id, {kind: "ready", modes: $res.modes, config_options: $res.configOptions,
+      models: $res.models})
+    session_ready($id)
+  elif $p.kind == "prompt" then
+    $S.sessions[$id].status = "ready"
+    $S.sessions[$id].turn = nil
+    emit_event($id, {kind: "stop", turn: $msg.id, request: $p.request, origin: $p.origin, stop: $a.stop_reason($msg.result)})
+    $S.sessions[$id].request = nil
+    await_stopped($id, true)
+  elif $p.kind == "set" then
+    emit_event($id, {kind: "setting_result", request: $p.setting.request, result: $res})
+    -- Only an ACP success makes a setting durable; an error above leaves
+    -- the last accepted value intact. Replies can arrive out of order;
+    -- retain the newest accepted send for each key independently.
+    $key = setting_key($p.setting)
+    if $p.number > ($S.sessions[$id].stored_sets[$key] ?? 0) then
+      $log.session_set($DB, $id, $p.setting)
+      $S.sessions[$id].stored_sets[$key] = $p.number
+    end
+    -- The reply carries the options as the agent now has them; a watcher's
+    -- picker follows it even when the agent sends no update of its own.
+    if type($res.configOptions) == "list" then
+      emit_event($id, {kind: "config_option_update", update: {sessionUpdate: "config_option_update", configOptions: $res.configOptions}})
+    end
+    run_queued($id)
+  end
+end
+
+fn ask_human($id, $key, $params)
+  $c = $CONF.agents[$S.sessions[$id].agent]
+  $buttons = $a.permission_buttons($params.options)
+  $title = (if type($params.toolCall) == "map" then $params.toolCall.title else nil end) ?? "a tool call"
+  $req = {summary: slice($S.sessions[$id].agent .. " wants: " .. $title, 0, 120),
+    body: slice("Session " .. $id .. " in " .. $S.sessions[$id].cwd, 0, 500),
+    app: "agentd", source: "agent." .. $id,
+    actions: map($buttons, fn($b) = {id: $b.id, label: $b.label}),
+    timeout_ms: $c.permission_timeout_s * 1000, request_id: $id .. "-" .. $key}
+  send notify notify.send body=json_encode($req) timeout=5
+  if $rc == 0 and type($result) == "map" and $result.id != nil then
+    $S.sessions[$id].perms[$key].notify = $result.id
+    $S.sessions[$id].perms[$key].buttons = $buttons
+    $S.notify[to_string($result.id)] = {session: $id, request: $key}
+  else
+    -- No human reachable: no answer is never yes.
+    eprint("agentd: " .. $id .. ": notifyd unavailable (rc " .. to_string($rc) .. "); rejecting")
+    answer_permission($id, $key, $a.timeout_answer($params))
+  end
+end
+
+fn on_request($id, $msg)
+  if $msg.method == "session/request_permission" then
+    $key = to_string($msg.id)
+    if $S.sessions[$id].cancelling == true or $S.sessions[$id].status != "running" then
+      -- The turn was cancelled (or is over): nobody is asked.
+      write_frame($id, $a.response_frame($msg.id, $a.permission_result(nil)))
+      return nil
+    end
+    $card = $a.permission_topic($id, $key, $msg.params)
+    $card.asked_at = time()
+    $card.expires_at = time() + $CONF.agents[$S.sessions[$id].agent].permission_timeout_s
+    $S.sessions[$id].perms[$key] = {rpc: $msg.id, options: $msg.params.options ?? [], notify: nil, card: $card}
+    publish("agent.permission.requested", json_encode($card),
+      {command: "agent.permission.requested"})
+    $auto = $a.auto_answer($CONF.agents[$S.sessions[$id].agent].policy, $msg.params)
+    if $auto != nil then
+      answer_permission($id, $key, $auto)
+    else
+      ask_human($id, $key, $msg.params)
+    end
+  elif $msg.method == "fs/read_text_file" or $msg.method == "fs/write_text_file" then
+    serve_fs($id, $msg)
+  elif starts_with(to_string($msg.method), "terminal/") then
+    serve_terminal($id, $msg)
+  else
+    write_frame($id, $a.error_frame($msg.id, -32601, "agentd does not serve " .. to_string($msg.method)))
+  end
+end
+
+-- JSON-RPC error codes for the fs refusals: ACP's resource-not-found, else
+-- invalid params; anything unexpected is an internal error.
+fn fs_error_code($code)
+  if $code == "NOT_FOUND" then return -32002 end
+  if contains(["OUTSIDE_ROOTS", "USAGE", "TOO_LARGE"], $code) then return -32602 end
+  return -32603
+end
+
+-- fs/read_text_file and fs/write_text_file, inside the session's cwd and
+-- additional_dirs only. Each one is an event, so the log shows what the
+-- agent touched through agentd.
+fn serve_fs($id, $msg)
+  $s = $S.sessions[$id]
+  if $s == nil then return nil end
+  $p = if type($msg.params) == "map" then $msg.params else {} end
+  $dirs = concat([$s.cwd], $s.dirs ?? [])
+  try
+    if $p.sessionId != $s.acp then raise("USAGE", "sessionId is not this session's") end
+    if $msg.method == "fs/read_text_file" then
+      $real = $a.fs_read_target($p.path, $dirs)
+      $text = $a.slice_lines(read_file($real), $p.line, $p.limit)
+      write_frame($id, $a.response_frame($msg.id, {content: $text}))
+      emit_event($id, {kind: "fs_read", path: $real, bytes: len($text)})
+    else
+      if type($p.content) != "string" then raise("USAGE", "content must be a string") end
+      $target = $a.fs_write_target($p.path, $dirs)
+      write_file($target, $p.content)
+      write_frame($id, $a.response_frame($msg.id, {}))
+      emit_event($id, {kind: "fs_write", path: $target, bytes: len($p.content)})
+    end
+  catch $m, $err
+    write_frame($id, $a.error_frame($msg.id, fs_error_code($err.code), $m))
+    emit_event($id, {kind: "fs_refused", method: $msg.method, path: slice(to_string($p.path), 0, 4096), error_code: $err.code ?? "IO"})
+  end
+end
+
+-- terminal/* on the headless path: pipes, no PTY, a bounded output tail.
+$TERMS_MAX = 8
+
+fn term_exit_result($t)
+  return {exitCode: $t.exit.exitCode, signal: $t.exit.signal}
+end
+
+-- A terminal ended (by itself, or stopped here): answer its waiters.
+fn term_exited($tid, $exit_code, $signal)
+  $t = $S.terms[$tid]
+  if $t == nil or $t.exit != nil then return nil end
+  $S.terms[$tid].exit = {exitCode: $exit_code, signal: $signal}
+  for each $rpc in $t.waiters
+    write_frame($t.session, $a.response_frame($rpc, term_exit_result($S.terms[$tid])))
+  end
+  $S.terms[$tid].waiters = []
+  emit_event($t.session, {kind: "terminal_exited", terminal: $tid, exit_code: $exit_code, signal: $signal})
+end
+
+-- Stop a running terminal: TERM, then KILL (process_unwatch). No event
+-- follows from the watch, so the exit is recorded here, as SIGTERM even
+-- when KILL was needed. An exit already queued but not yet delivered when
+-- the kill runs is discarded with it, and also reads as SIGTERM.
+fn term_kill($tid)
+  $t = $S.terms[$tid]
+  if $t != nil and $t.exit == nil then
+    term_stop($t.watch)
+    term_exited($tid, nil, "SIGTERM")
+  end
+end
+
+fn term_release($tid)
+  term_kill($tid)
+  $S.terms = delete($S.terms, $tid)
+end
+
+fn serve_terminal($id, $msg)
+  $s = $S.sessions[$id]
+  if $s == nil then return nil end
+  $p = if type($msg.params) == "map" then $msg.params else {} end
+  try
+    if $p.sessionId != $s.acp then raise("USAGE", "sessionId is not this session's") end
+    if $msg.method == "terminal/create" then
+      $mine = filter(keys($S.terms), fn($k) = $S.terms[$k].session == $id)
+      if len($mine) >= $TERMS_MAX then raise("USAGE", "already " .. to_string($TERMS_MAX) .. " terminals; release one") end
+      $req = $a.check_terminal($p, concat([$s.cwd], $s.dirs ?? []))
+      $S.term_seq = $S.term_seq + 1
+      $tid = "t" .. to_string($S.term_seq)
+      $env = merge($CONF.agents[$s.agent].env, $req.env)
+      $watch = term_watch($req.argv, $req.cwd, $env, "term:" .. $tid)
+      $S.terms[$tid] = {session: $id, watch: $watch, tail: {lines: [], bytes: 0, truncated: false},
+        limit: $req.limit, exit: nil, waiters: []}
+      write_frame($id, $a.response_frame($msg.id, {terminalId: $tid}))
+      emit_event($id, {kind: "terminal_created", terminal: $tid, argv: $req.argv, cwd: $req.cwd})
+    else
+      $tid = to_string($p.terminalId)
+      $t = $S.terms[$tid]
+      if $t == nil or $t.session != $id then raise("NOT_FOUND", "Resource not found: terminal " .. $tid) end
+      if $msg.method == "terminal/output" then
+        $out = {output: $a.tail_text($t.tail), truncated: $t.tail.truncated}
+        if $t.exit != nil then $out.exitStatus = term_exit_result($t) end
+        write_frame($id, $a.response_frame($msg.id, $out))
+      elif $msg.method == "terminal/wait_for_exit" then
+        if $t.exit != nil then
+          write_frame($id, $a.response_frame($msg.id, term_exit_result($t)))
+        else
+          -- Answered when the command ends (term_exited).
+          $S.terms[$tid].waiters = concat($t.waiters, [$msg.id])
+        end
+      elif $msg.method == "terminal/kill" then
+        term_kill($tid)
+        write_frame($id, $a.response_frame($msg.id, {}))
+      elif $msg.method == "terminal/release" then
+        term_release($tid)
+        write_frame($id, $a.response_frame($msg.id, {}))
+      else
+        raise("NO_METHOD", "agentd does not serve " .. $msg.method)
+      end
+    end
+  catch $m, $err
+    $code = if $err.code == "NO_METHOD" then -32601 else fs_error_code($err.code) end
+    write_frame($id, $a.error_frame($msg.id, $code, $m))
+  end
+end
+
+fn term_tid($tag)
+  if type($tag) == "string" and starts_with($tag, "term:") then return slice($tag, 5) end
+  return nil
+end
+
+on proc.overflow
+  $tid = term_tid($event.args.tag)
+  if $tid != nil and $S.terms[$tid] != nil then $S.terms[$tid].tail.truncated = true end
+end
+
+on proc.line
+  $tid = term_tid($event.args.tag)
+  if $tid != nil then
+    if $S.terms[$tid] != nil then
+      $S.terms[$tid].tail = $a.tail_add($S.terms[$tid].tail, $event.args.line, $S.terms[$tid].limit)
+    end
+    return nil
+  end
+  $id = $event.args.tag
+  if $S.sessions[$id] != nil then
+    if $event.args.stream == "stderr" then
+      $tail = concat($S.sessions[$id].stderr_tail, [slice($event.args.line, 0, 400)])
+      if len($tail) > 20 then $tail = slice($tail, len($tail) - 20) end
+      $S.sessions[$id].stderr_tail = $tail
+    else
+      $msg = nil
+      try
+        $msg = json_parse($event.args.line)
+      catch $m
+        $msg = nil
+      end
+      $c = $a.classify($msg)
+      if $c.kind == "reply" then
+        on_reply($id, $c)
+      elif $c.kind == "update" then
+        $ev = $a.update_event($id, 0, $c.update)
+        -- A load replays history the log already holds: drop that part.
+        if $S.sessions[$id].replaying and $a.is_replayed_kind($ev.kind) then
+          $S.sessions[$id].last_replay = time()
+        else
+          emit_event($id, $ev)
+        end
+      elif $c.kind == "request" then
+        on_request($id, $c)
+      elif $c.kind == "invalid" then
+        emit_event($id, {kind: "protocol_error", line: slice($event.args.line, 0, 200)})
+      end
+    end
+  end
+end
+
+-- The close grace: the async entry waits, then the plain entry acts on
+-- current state. Only the close that started it can act (the token), so a
+-- session that exited, or was resumed, in the meantime is left alone.
+$CLOSE_GRACE_S = to_number(env("MIX_AGENTD_CLOSE_GRACE_S", "10"))
+
+on agent.close_grace async
+  sleep($CLOSE_GRACE_S)
+end
+
+on agent.close_grace
+  $id = to_string(body().session)
+  $s = $S.sessions[$id]
+  if $s != nil and $s.status != "ended" and $s.closing != nil and $s.closing == body().token then
+    eprint("agentd: " .. $id .. ": the agent did not exit " .. to_string($CLOSE_GRACE_S) .. " s after close; stopping it")
+    term_stop($s.watch)
+    session_exited($id, nil, 15, "CLOSE_TIMEOUT")
+  end
+end
+
+-- The agent of session $id is gone (it exited, or close stopped it).
+fn session_exited($id, $exit_code, $signal, $error_code)
+  if $S.sessions[$id] != nil and not contains(["ended", "waiting"], $S.sessions[$id].status) then
+    if $S.sessions[$id].explicit_close then $error_code = "caller_closed" end
+    -- The agent is gone: so are its terminals.
+    for each $k in filter(keys($S.terms), fn($k) = $S.terms[$k].session == $id)
+      term_release($k)
+    end
+    for each $key in keys($S.sessions[$id].perms)
+      $p = $S.sessions[$id].perms[$key]
+      if $p.notify != nil then
+        send notify notify.close body=json_encode({id: $p.notify}) timeout=5
+        $S.notify = delete($S.notify, to_string($p.notify))
+      end
+      emit_event($id, {kind: "permission_answered", request: $key, option: nil})
+    end
+    $S.sessions[$id].perms = {}
+    $failed_reopen = $S.sessions[$id].reopen != nil and not $S.sessions[$id].reopen.done
+    if not $S.sessions[$id].explicit_close and not $failed_reopen then
+      await_crashed($id)
+      if $S.sessions[$id].suspending or len(await_pending($id)) > 0 or await_suspending_outbox($id) then
+        await_waiting($id, nil)
+        await_drain()
+        return
+      end
+    elif $failed_reopen then
+      await_fail($id, "reopen_failed")
+    end
+    $S.sessions[$id].status = "ended"
+    $S.sessions[$id].turn = nil
+    await_end($id)
+    $reopen = $S.sessions[$id].reopen
+    if $reopen != nil and not $reopen.done and not $S.sessions[$id].explicit_close then
+      -- A failed reopen restores an ended conversation's prior row; a
+      -- waiting session instead records its first final failure below.
+      $S.sessions[$id].replaying = false
+      emit_event($id, {kind: "resume_failed", via: $reopen.via, error: $reopen.error,
+        error_code: if $reopen.error != nil then "AGENT_NOT_RESUMABLE" else ($error_code ?? "AGENT_EXITED") end})
+      $prior = $reopen.prior
+      if $prior.status == "waiting" then
+        -- This is the first final end, unlike a failed manual reopen of an
+        -- already-ended conversation whose operation outcome stays final.
+        $error_code = "reopen_failed"
+        $prior.end_reason = $error_code
+        $prior.ended_at = time()
+        $prior.exit_code = $exit_code
+        $prior.signal = $signal
+      end
+      $log.session_restore($DB, $prior)
+      $S.sessions[$id].ended_at = $prior.ended_at
+      $S.sessions[$id].exit_code = $prior.exit_code
+      $S.sessions[$id].signal = $prior.signal
+      $S.sessions[$id].end_reason = $prior.end_reason
+    else
+      $at = time()
+      $log.session_ended($DB, $id, $exit_code, $signal, $error_code, $at)
+      $S.sessions[$id].ended_at = $at
+      $S.sessions[$id].exit_code = $exit_code
+      $S.sessions[$id].signal = $signal
+      $S.sessions[$id].end_reason = $error_code
+    end
+    prune()
+    publish("agent.session.ended", json_encode({session: $id, exit_code: $exit_code,
+      signal: $signal, error_code: $error_code}), {command: "agent.session.ended"})
+    op_finished($id)
+    await_drain()
+  end
+end
+
+on proc.watch_exited
+  $tid = term_tid($event.args.tag)
+  if $tid != nil then
+    term_exited($tid, $event.args.exit_code, $a.signal_name($event.args.signal))
+    return nil
+  end
+  session_exited($event.args.tag, $event.args.exit_code, $event.args.signal, $event.args.error_code)
+end
+
+-- notifyd answers. answered: a button; closed: dismissed, expired or
+-- withdrawn, which is never yes.
+fn notify_settled($record, $answered)
+  $link = $S.notify[to_string($record.id)]
+  if $link == nil then return nil end
+  $id = $link.session
+  $key = $link.request
+  if $S.sessions[$id] == nil or $S.sessions[$id].perms[$key] == nil then return nil end
+  $p = $S.sessions[$id].perms[$key]
+  $option = nil
+  if $answered and $record.outcome != nil then
+    for each $b in $p.buttons ?? []
+      if $b.id == $record.outcome.action then $option = $b.option end
+    end
+  end
+  if $option == nil then $option = $a.timeout_answer({options: $p.options}) end
+  answer_permission($id, $key, $option)
+end
+
+on notification.answered
+  notify_settled(body(), true)
+end
+
+on notification.closed
+  notify_settled(body(), false)
+end
+
+-- The await handlers share the citizen scope, so they are included, not required.
+-- lint: ignore MIX-W2401
+include "lib/awaits.mix"
+for each $id in $restart_ended
+  publish("agent.session.ended", json_encode({session: $id, error_code: "agentd_restart"}), {command: "agent.session.ended"})
+  op_finished($id)
+end

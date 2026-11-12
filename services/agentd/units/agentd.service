@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# agentd in a user's own session (a user unit, `systemctl --user`): the
+# `agent` Bus service for that user's ACP agents, always running. Console
+# desks use agentd@.service instead.
+# The user cannot write <etc> or <var>, so the conf and the session log live
+# in the user's XDG dirs: ~/.config/mixos/agent.conf.mix and
+# ~/.local/state/mixos/agentd/sessions.db.
+[Unit]
+Description=MixViu agent sessions (agentd)
+Documentation=https://mixos.dev/agentd/
+# The broker is the system noded.service, which a user unit cannot order
+# after or want; `mix --serve` is supervised and keeps retrying until the
+# broker answers. The After= covers a user-manager noded where there is one.
+After=noded.service
+# No conf, no agents: skip rather than fail and restart.
+ConditionPathExists=%E/mixos/agent.conf.mix
+
+[Service]
+Type=simple
+Environment=MIX_AGENTD_CONF=%E/mixos/agent.conf.mix
+Environment=MIX_AGENTD_DB=%S/mixos/agentd/sessions.db
+# What StateDirectory=mixos/agentd with StateDirectoryMode=0700 gave: the
+# parents are created as the manager's umask allows, the leaf is the user's
+# and 0700. A leaf that is a symlink or belongs to another uid is refused,
+# not chmod'ed. No UMask=: files the service and its agents write keep the
+# manager's umask, as before.
+ExecStartPre=/usr/bin/mkdir -p %S/mixos/agentd
+ExecStartPre=/usr/bin/test ! -L %S/mixos/agentd
+ExecStartPre=/usr/bin/test -O %S/mixos/agentd
+ExecStartPre=/usr/bin/chmod 0700 %S/mixos/agentd
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/agentd/agentd.mix --name agent
+# Agents are children of agentd; stopping the unit ends every session. The
+# whole group gets SIGTERM at once, so agentd's close grace does not run:
+# the log marks the sessions ended at the next start and notifyd times out
+# any question still open.
+KillMode=control-group
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

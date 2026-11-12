@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run the unchanged full gate with job-owned tmpfs scratch space.
+-- Shared CBC /tmp can be full, including for tests with literal /tmp paths.
+-- The bind mount exists only in this process's private mount namespace.
+
+-- On failure only the Mix service tests' own scratch directories are kept as
+-- evidence, never the rest of the private /tmp.
+$evidence_prefixes = ["agentd-test.", "agentd-await-test.", "agentd-resume-test.",
+  "agent-cli-test.", "agent-test-", "agent-log-test-", "agent-acp-",
+  "peersd-test.", "peers-fed-test.", "releases-test.", "releasesd-test.",
+  "daylight-test."]
+
+fn is_evidence($name, $prefixes)
+  for $p in $prefixes
+    if starts_with($name, $p) then return true end
+  end
+  return false
+end
+
+$a = args()
+$mix = realpath("/proc/self/exe")
+if len($a) == 2 and $a[0] == "--child" then
+  run_argv_must(["mount", "-t", "tmpfs", "-o", "size=8G,mode=1777", "mix-ci", "/tmp"])
+  $r = run_argv([$mix, "tools/ci.mix", "all"], {timeout: 14400,
+    stdout: "inherit", stderr: "inherit",
+    -- Keep socket fixture paths short and retain normal tmpfs semantics.
+    env: {TMPDIR: "/tmp", RUSTC_WRAPPER: "", CARGO_BUILD_JOBS: "2"}})
+  if not $r.ok then
+    for $name in ls("/tmp")
+      if is_evidence($name, $evidence_prefixes) then
+        -- cp -a copies a symlink as a symlink; it never follows one out of /tmp.
+        $saved = run_argv(["cp", "-a", "--", "/tmp/" .. $name, $a[1] .. "/"], {timeout: 300})
+        if not $saved.ok then eprint("CI_PRIVATE_TMP evidence copy incomplete: " .. $name .. ": " .. $saved.stderr) end
+      end
+    end
+  end
+  exit($r.exit_code ?? 124)
+end
+if len($a) != 0 then raise("USAGE", "ci_private_tmp.mix") end
+$tmp = "/var/tmp/mix-ci-" .. uuid()
+-- Owner-only from creation; mkdir without -p refuses a name that already exists.
+run_argv_must(["mkdir", "-m", "0700", "--", $tmp])
+print("CI_PRIVATE_TMP " .. $tmp)
+$r = run_argv(["unshare", "--mount", "--propagation", "private", $mix,
+  script_path(), "--child", $tmp], {timeout: 15000, stdout: "inherit", stderr: "inherit"})
+if $r.ok then remove_dir($tmp) else print("CI_PRIVATE_TMP retained: " .. $tmp) end
+exit($r.exit_code ?? 124)
