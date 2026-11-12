@@ -500,20 +500,22 @@ fn sigterm_backstop_reads_environment_installed_and_missing_settings() {
         let expected = match mode.to_str().unwrap() {
             "environment" => 3,
             "installed" => 4,
-            "bare" | "invalid" | "unreadable" => 15,
+            "bare" | "invalid" | "malformed" | "unreadable" => 15,
             other => panic!("unknown fixture {other}"),
         };
         assert_eq!(configured_sigterm_backstop_grace(), std::time::Duration::from_secs(expected));
         return;
     }
     let exe = std::env::current_exe().unwrap();
-    for mode in ["environment", "installed", "bare", "invalid", "unreadable"] {
+    for mode in ["environment", "installed", "bare", "invalid", "malformed", "unreadable"] {
         let prefix = tempfile::tempdir_in(exe.parent().unwrap()).unwrap();
-        if mode != "bare" {
-            let data = if mode == "unreadable" {
+        if mode == "unreadable" {
+            std::fs::create_dir(prefix.path().join("env.mx")).unwrap();
+        } else if mode != "bare" {
+            let data = if mode == "malformed" {
                 "invalid data".to_owned()
             } else {
-                serde_json::json!({"schema": 1, "commit": "fixture", ::paths::env::SIGTERM_BACKSTOP_SECS: "4"}).to_string()
+                serde_json::json!({"schema": 1, "commit": "fixture", (::paths::env::SIGTERM_BACKSTOP_SECS): "4"}).to_string()
             };
             std::fs::write(prefix.path().join("env.mx"), data).unwrap();
         }
