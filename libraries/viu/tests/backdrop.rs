@@ -296,7 +296,11 @@ fn decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage(
     app.png("fixture.png", [90, 80, 70, 255]);
     let rx = app.request("backdrop.set", doc);
     assert_eq!(app.wait(rx).0, 0);
-    app.wait_model(|model| model["values"]["root"]["handle"].as_str().is_some_and(|h| h != handle));
+    app.wait_model(|model| {
+        model["values"]["root"]["handle"]
+            .as_str()
+            .is_some_and(|h| h != handle)
+    });
     assert_ne!(app.model["values"]["root"]["handle"], handle);
     assert_eq!(pixels.decoded.rgba.get_pixel(0, 0).0, [12, 34, 56, 255]);
     assert!(app.call("backdrop.state", json!({})).1["error"].is_null());

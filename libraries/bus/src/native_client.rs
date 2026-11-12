@@ -12,8 +12,8 @@ pub(crate) mod unix;
 
 pub use crate::PortReply;
 pub use crate::client::{
-    ConnState, MAX_INITIAL_ATTEMPTS, SubscriptionRegistry, SupervisedClient, SupervisedError,
-    RECONNECT_BACKOFF_MAX, initial_connect_backoff_budget,
+    ConnState, MAX_INITIAL_ATTEMPTS, RECONNECT_BACKOFF_MAX, SubscriptionRegistry, SupervisedClient,
+    SupervisedError, initial_connect_backoff_budget,
 };
 pub use bounded::{
     BoundedIncomingEvent, BoundedIncomingInjector, BoundedIncomingReceiver,

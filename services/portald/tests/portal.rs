@@ -2,6 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Contract tests against a private dbus-daemon: the Settings interface on the
 //! wire, changed-only signals, the startup budget and single ownership.
+use anyhow::Context;
 use futures_util::{Stream, StreamExt};
 use portald::appearance::{ACCENT_COLOR, COLOR_SCHEME, CONTRAST, NAMESPACE};
 use portald::appearance::{PROJECTION_SCHEMA, Projection};
@@ -10,7 +11,6 @@ use portald::portal::{BUS_NAME, INTERFACE, OBJECT_PATH};
 use portald::status::{self, Shared};
 use settings::Binding;
 use settings::Revision;
-use anyhow::Context;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -990,8 +990,16 @@ async fn wait_source(portal: &NativePortal, revision: u64, after: u64) -> anyhow
         }
     })
     .await
-    .with_context(|| format!("waiting for source revision {revision}, accepted > {after}, budget {budget:?}: {}", status::report(&portal.shared)))??;
-    eprintln!("source revision {revision}, accepted > {after}: {:?}", started.elapsed());
+    .with_context(|| {
+        format!(
+            "waiting for source revision {revision}, accepted > {after}, budget {budget:?}: {}",
+            status::report(&portal.shared)
+        )
+    })??;
+    eprintln!(
+        "source revision {revision}, accepted > {after}: {:?}",
+        started.elapsed()
+    );
     Ok(())
 }
 
@@ -1010,7 +1018,8 @@ async fn wait_absent(
         }
         Ok::<_, anyhow::Error>(())
     })
-    .await.context("waiting for settingsd deregistration")?
+    .await
+    .context("waiting for settingsd deregistration")?
 }
 
 /// The projection the real authority answers now, read as portald reads it:
@@ -1098,7 +1107,8 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
     assert_eq!(changes[0], (COLOR_SCHEME, Value::U32(1)));
     for (expected_key, expected_value) in changes {
         let message = tokio::time::timeout(Duration::from_secs(5), signals.next())
-            .await.context("waiting for live SettingChanged signal")?
+            .await
+            .context("waiting for live SettingChanged signal")?
             .ok_or_else(|| anyhow::anyhow!("signal stream ended"))?;
         assert_eq!(
             message.header().sender().map(|s| s.as_str()),
@@ -1156,9 +1166,21 @@ async fn native_recovers_when_broker_returns_after_the_initial_attempt_budget() 
         bus::native_client::initial_connect_backoff_budget() + Duration::from_secs(10),
         SupervisedClient::connect_options("initial-budget-probe", &url).connect(),
     )
-    .await.context("waiting for eager initial attempt budget")?;
-    let error = initial.err().expect("offline broker must refuse eager connect");
-    assert!(matches!(error, bus::native_client::SupervisedError::InitialConnectFailed { attempts: bus::native_client::MAX_INITIAL_ATTEMPTS, .. }), "{error:?}");
+    .await
+    .context("waiting for eager initial attempt budget")?;
+    let error = initial
+        .err()
+        .expect("offline broker must refuse eager connect");
+    assert!(
+        matches!(
+            error,
+            bus::native_client::SupervisedError::InitialConnectFailed {
+                attempts: bus::native_client::MAX_INITIAL_ATTEMPTS,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
     assert!(
         !portal.feed.is_finished(),
         "feed must survive initial broker failure"
