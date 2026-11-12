@@ -3057,6 +3057,24 @@ mod tests {
             .unwrap()
             .set_modified(mtime)
             .unwrap();
+        // Model a filesystem tick in which even ctime did not advance.
+        // ctime cannot be set through file APIs, so give the cached identity
+        // the post-write ctime. All other identity fields must already match.
+        let cache = cache_path(&dir, &day);
+        let text = fs::read_to_string(&cache).unwrap();
+        let (header, body) = text.split_once('\n').unwrap();
+        let mut header: serde_json::Value = serde_json::from_str(header).unwrap();
+        let before = FileId::from_json(&header["id"]).unwrap();
+        let after = FileId::of(&fs::metadata(&path).unwrap());
+        assert_eq!(FileId { ctime_ns: after.ctime_ns, ..before }, after);
+        header["id"]["ctime_ns"] = after.ctime_ns.into();
+        fs::write(&cache, format!("{header}\n{body}")).unwrap();
+        File::options()
+            .write(true)
+            .open(&cache)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
         let snapshot = all(&dir);
         assert_eq!(len_count(&snapshot), 0);
         assert_eq!(snapshot.counters.builtins.get("abs"), Some(&1));
