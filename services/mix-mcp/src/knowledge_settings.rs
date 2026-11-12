@@ -151,9 +151,15 @@ mod tests {
     #[test]
     fn explicit_domain_map_replaces_defaults_but_indexd_inherits_fields() {
         let mut value = serde_json::json!({"map":{"old":"old"}, "indexd":{"target":"indexd", "call_timeout_secs":120}});
-        merge(&mut value, serde_json::json!({"map":{"custom":"custom"}, "indexd":{"target":"custom-index"}}));
+        merge(
+            &mut value,
+            serde_json::json!({"map":{"custom":"custom"}, "indexd":{"target":"custom-index"}}),
+        );
         assert_eq!(value["map"], serde_json::json!({"custom":"custom"}));
-        assert_eq!(value["indexd"], serde_json::json!({"target":"custom-index", "call_timeout_secs":120}));
+        assert_eq!(
+            value["indexd"],
+            serde_json::json!({"target":"custom-index", "call_timeout_secs":120})
+        );
     }
 
     #[test]
