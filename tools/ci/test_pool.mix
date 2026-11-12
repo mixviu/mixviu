@@ -90,7 +90,7 @@ $target_dir = realpath($meta_target)
 if re_match($mix_exe .. $recorder .. $root .. $target_dir, "\\s") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
 -- Brackets break the Running-line match; `=` makes `env --` read a program
 -- path under the target directory as an assignment.
-if re_match($root .. $target_dir, "[()=]") then refuse("a bracket or '=' in the checkout or target path is not supported") end
+if re_match($root .. $target_dir .. $meta_target, "[()=]") then refuse("a bracket or '=' in the checkout or target path is not supported") end
 $host = re_find(run_argv_must(["rustc", "-vV"]), "(?m)^host: (\\S+)$")[0].groups[0]
 $runner_var = "CARGO_TARGET_" .. upper(replace(replace($host, "-", "_"), ".", "_")) .. "_RUNNER"
 if env($runner_var) != "" then refuse($runner_var .. " is already set; the pool cannot record through it") end
