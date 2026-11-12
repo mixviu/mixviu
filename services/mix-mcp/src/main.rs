@@ -1144,8 +1144,8 @@ impl MixMcp {
         &self,
         Parameters(p): Parameters<AwaitOpParams>,
     ) -> rmcp::model::CallToolResult {
-        let session = paths::env::os(connection::AGENT_SESSION_ENV)
-            .map(|s| s.to_string_lossy().into_owned());
+        let session =
+            paths::env::os(connection::AGENT_SESSION_ENV).map(|s| s.to_string_lossy().into_owned());
         let args = match await_op_request(session.as_deref(), p) {
             Ok(args) => args,
             Err(error) => return tool_output::failure(error),
@@ -2094,8 +2094,8 @@ fn tool_requires_completion(tool: &str) -> bool {
 // (`tool_deadline_secs`). `list_tools`/`get_tool` reproduce the macro's
 // bodies verbatim (rmcp 3.1.2 tool_handler expansion).
 impl ServerHandler for MixMcp {
-    fn get_info(&self) -> rmcp::model::ServerInfo {
-        rmcp::model::ServerInfo::new(
+    fn get_info(&self) -> rmcp::model::ServerConfig {
+        rmcp::model::ServerConfig::new(
             rmcp::model::ServerCapabilities::builder().enable_tools().build(),
         )
         .with_server_info(rmcp::model::Implementation::new("mix-mcp", env!("CARGO_PKG_VERSION")))
