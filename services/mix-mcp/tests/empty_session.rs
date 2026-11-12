@@ -14,7 +14,7 @@ async fn empty_session_override_refuses_bus() {
         .env("HOME", dir.path());
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
     let reply = service
-        .call_tool(CallToolRequestParams::new("bus_status"))
+        .call_tool(CallToolRequestParams::new("bus_list_services"))
         .await
         .unwrap();
     let text = serde_json::to_string(&reply).unwrap();
