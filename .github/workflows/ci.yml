@@ -1,19 +1,31 @@
 # CI for mixviu. The gate recipe lives in tools/ci.mix (run by the mix built
-# from this tree), so agents run the identical gate on CBC before a PR.
-# The required check is `ci-ok`. Changes here are Tier 2 (CODEOWNERS).
+# from this tree). The full recipe gates every PR once, on CBC, through the
+# merge gate (`gate-ok`); here, PRs get the fast jobs (fmt, lint), and the
+# full clippy + test leg runs on main after every merge and nightly, on a
+# clean hosted machine. A gold is built only from a main commit whose run
+# here is green. The required check is `ci-ok` (a skipped job counts as
+# passed). Changes here are Tier 2 (CODEOWNERS).
 name: ci
 
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # Nightly, 16:00 UTC (02:00 AEST): main on a clean machine even on a day
+    # with no merges, so a change in the toolchain or system libraries
+    # shows up before a gold.
+    - cron: "0 16 * * *"
   workflow_dispatch:
 
 permissions: {}
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push replaces a PR's run. On main every commit keeps its own run:
+  # a gold needs a finished green run at its exact commit, and merges come
+  # faster than the test leg.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,6 +39,8 @@ env:
 
 jobs:
   changes:
+    # Nightly and manual runs test main as it is; there is no diff to filter.
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -98,7 +112,13 @@ jobs:
   test:
     name: clippy + test
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # Not per PR: the CBC merge gate runs the same recipe against current
+    # main before a PR merges. Here it runs after each code merge to main,
+    # nightly and on demand (`changes` is skipped for the last two).
+    if: >-
+      always() && !cancelled() &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && needs.changes.outputs.code == 'true'))
     runs-on: ubuntu-24.04
     # Arch, like the CBC workers and the desks: viud's libinput needs >= 1.26
     # (tablet dial API), newer than Ubuntu 24.04 ships.

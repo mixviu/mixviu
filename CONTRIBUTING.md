@@ -9,11 +9,16 @@ written in Mix. Most new work is Mix; Rust is for engine primitives.
    settled before code is written. This applies to AI agents too.
 2. Branch from `main`: `fix/…`, `feat/…`, `docs/…`, `infra/…`. One
    checkpoint per PR (one app, widget or engine change). Small PRs.
-3. Run the gate: `mix tools/ci.mix all` (or the stages you touched), plus a
-   smoke run of what you changed.
+3. Check what you changed: formatting, clippy and the tests of the crates
+   you touched (`mix tools/ci.mix` stages, or `cargo test -p` for those
+   crates), plus a smoke run. The full `mix tools/ci.mix all` runs once per
+   PR, in the merge gate; a PR that changes `tools/ci.mix` runs it once
+   before review as well.
 4. Open a PR with the template filled in: risk tier, how tested (run /
    observed / not tested), how to undo, author and reviewers.
-5. CI (`ci-ok`, `security-ok`) must pass. A maintainer who is not the
+5. CI (`ci-ok`, `security-ok`) and the merge gate (`gate-ok`) must pass.
+   On a PR, `ci-ok` covers the fast jobs; the full clippy + test leg runs
+   on `main` after the merge and nightly. A maintainer who is not the
    author approves; Tier 2 paths also need the code owner (`REVIEW.md`).
 6. Squash-merge, with a PR title that reads as a commit message.
 
