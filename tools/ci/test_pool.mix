@@ -33,7 +33,7 @@ end
 $jobs = to_number($o.opts.jobs ?? "8")
 $cargo_args = $o.rest
 $serial_path = $o.opts.serial ?? "tools/ci/serial-tests.conf.mix"
-$serial = if exists($serial_path) then load_data($serial_path).serial_tests else [] end
+$serial = if exists($serial_path) then load_data($serial_path).serial_tests ?? [] else [] end
 $cargo = trim(run_argv_must(["which", "cargo"]))
 $root = realpath(".")
 
