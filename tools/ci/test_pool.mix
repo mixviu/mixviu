@@ -62,7 +62,7 @@ if len($o.errors) > 0 or len($o.rest) == 0 then
   exit(64)
 end
 fn default_jobs()
-  $n = run_argv(["nproc"])
+  $n = run_argv(["nproc"], {timeout: 10})
   $cores = if $n.ok then to_number(trim($n.stdout)) else nil end
   if $cores == nil or $cores < 1 then
     print("::warning::test_pool: nproc gave no core count; running one binary at a time (set TEST_POOL_JOBS)")
