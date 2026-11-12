@@ -2066,7 +2066,8 @@ fn tool_deadline_secs(tool: &str) -> u64 {
 fn deadline_override(value: Option<std::ffi::OsString>) -> u64 {
     value
         .and_then(|v| v.into_string().ok())
-        .and_then(|v| v.parse::<u64>().ok()).unwrap_or(120)
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(120)
 }
 
 #[test]
@@ -2092,8 +2093,12 @@ fn deadline_for(tool: &str, base: u64) -> u64 {
         // these get a deadline too.
         "docs_feedback" | "journal_feedback" | "memory_feedback" => 0,
         // Owned process worker; long because scripts are legitimately slow.
-        "mix_execute" => base.max(paths::env::raw(paths::env::MCP_SCRIPT_DEADLINE_SECS)
-            .and_then(|v| v.into_string().ok()).and_then(|v| v.parse::<u64>().ok()).unwrap_or(600)),
+        "mix_execute" => base.max(
+            paths::env::raw(paths::env::MCP_SCRIPT_DEADLINE_SECS)
+                .and_then(|v| v.into_string().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(600),
+        ),
         "await_op" => base,
         _ => base,
     }
@@ -2348,7 +2353,8 @@ async fn async_main() {
         logging::LogDefaults::daemon("mix-mcp")
             .with_stats(false)
             .with_filter(
-                &paths::env::raw(paths::env::MCP_LOG_FILTER).and_then(|v| v.into_string().ok())
+                &paths::env::raw(paths::env::MCP_LOG_FILTER)
+                    .and_then(|v| v.into_string().ok())
                     .filter(|v| tracing_subscriber::EnvFilter::try_new(v).is_ok())
                     .unwrap_or_else(|| "info,mix_mcp=debug".into()),
             )

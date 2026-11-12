@@ -277,58 +277,89 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
     }
 }
 
-
 fn installed_json(name: &str) -> anyhow::Result<serde_json::Value> {
     let path = paths::root(paths::Root::Prefix).join("env.mx");
     let text = paths::env::setting(name)
         .map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))?;
-    serde_json::from_str(&text)
-        .map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))
+    serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))
 }
 
 fn merge(base: &mut serde_json::Value, overlay: serde_json::Value) {
     if let (Some(a), Some(b)) = (base.as_object_mut(), overlay.as_object()) {
         for (key, value) in b {
-            if let Some(old) = a.get_mut(key) { merge(old, value.clone()); }
-            else { a.insert(key.clone(), value.clone()); }
+            if let Some(old) = a.get_mut(key) {
+                merge(old, value.clone());
+            } else {
+                a.insert(key.clone(), value.clone());
+            }
         }
-    } else { *base = overlay; }
+    } else {
+        *base = overlay;
+    }
 }
 
 fn required(template: &serde_json::Value, value: &serde_json::Value) -> anyhow::Result<()> {
     if let Some(fields) = template.as_object() {
         for (key, child) in fields {
-            let v = value.get(key).ok_or_else(|| anyhow::anyhow!("missing field {key}"))?;
+            let v = value
+                .get(key)
+                .ok_or_else(|| anyhow::anyhow!("missing field {key}"))?;
             required(child, v)?;
         }
     }
     Ok(())
 }
 
-fn load<T: serde::de::DeserializeOwned + serde::Serialize>(service: &str, mut value: serde_json::Value) -> anyhow::Result<T> {
-    let file = config::store::config_dir().join(service).join(format!("{service}.conf.mix"));
+fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
+    service: &str,
+    mut value: serde_json::Value,
+) -> anyhow::Result<T> {
+    let file = config::store::config_dir()
+        .join(service)
+        .join(format!("{service}.conf.mix"));
     if file.exists() {
-        merge(&mut value, config::store::load_conf_mix_path::<serde_json::Value>(&file)?);
+        merge(
+            &mut value,
+            config::store::load_conf_mix_path::<serde_json::Value>(&file)?,
+        );
     }
     let result: T = serde_json::from_value(value)?;
-    if !file.exists() { config::store::save_service(&result, service)?; }
+    if !file.exists() {
+        config::store::save_service(&result, service)?;
+    }
     Ok(result)
 }
 
 pub fn load_knowledge() -> anyhow::Result<KnowledgeSettings> {
     let mut value = installed_json(paths::env::MCP_KNOWLEDGE)?;
     let indexd = installed_json(paths::env::MCP_INDEXD)?;
-    let error = |e| anyhow::anyhow!("{} / {} in {}: {e}", paths::env::MCP_KNOWLEDGE, paths::env::MCP_INDEXD, paths::root(paths::Root::Prefix).join("env.mx").display());
+    let error = |e| {
+        anyhow::anyhow!(
+            "{} / {} in {}: {e}",
+            paths::env::MCP_KNOWLEDGE,
+            paths::env::MCP_INDEXD,
+            paths::root(paths::Root::Prefix).join("env.mx").display()
+        )
+    };
     required(&serde_json::to_value(IndexdSettings::default())?, &indexd).map_err(error)?;
-    let object = value.as_object_mut().ok_or_else(|| error(anyhow::anyhow!("expected knowledge object")))?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| error(anyhow::anyhow!("expected knowledge object")))?;
     object.insert("indexd".into(), indexd);
     required(&serde_json::to_value(KnowledgeSettings::default())?, &value).map_err(error)?;
-    let _: KnowledgeSettings = serde_json::from_value(value.clone()).map_err(|e| error(e.into()))?;
+    let _: KnowledgeSettings =
+        serde_json::from_value(value.clone()).map_err(|e| error(e.into()))?;
     load("knowledge", value)
 }
 
 pub fn load_domains() -> anyhow::Result<DomainsSettings> {
     let map = installed_json(paths::env::MCP_DOMAINS)?;
-    let _: BTreeMap<String, String> = serde_json::from_value(map.clone()).map_err(|e| anyhow::anyhow!("{} in {}: {e}", paths::env::MCP_DOMAINS, paths::root(paths::Root::Prefix).join("env.mx").display()))?;
+    let _: BTreeMap<String, String> = serde_json::from_value(map.clone()).map_err(|e| {
+        anyhow::anyhow!(
+            "{} in {}: {e}",
+            paths::env::MCP_DOMAINS,
+            paths::root(paths::Root::Prefix).join("env.mx").display()
+        )
+    })?;
     load("domains", serde_json::json!({"map": map}))
 }
