@@ -204,6 +204,22 @@ mod tests {
             assert_eq!(indexed.entries.len(), scanning.entries.len());
             assert_eq!(indexed.expiry.len(), indexed.entries.len());
         };
+        // Full comparison: every id and deadline, and the index exactly in
+        // step with the map. Overflow can mask a wrong per-id answer from
+        // `class`, so this compares the stored state directly.
+        let same = |indexed: &ResponseProtection, scanning: &Scanning| {
+            assert_eq!(indexed.entries.len(), scanning.entries.len());
+            for (id, deadline) in &scanning.entries {
+                assert_eq!(indexed.entries.get(id.as_str()), Some(deadline), "{id}");
+            }
+            assert_eq!(indexed.overflow_until, scanning.overflow_until);
+            let index: std::collections::BTreeSet<(Instant, Arc<str>)> = indexed
+                .entries
+                .iter()
+                .map(|(id, deadline)| (*deadline, id.clone()))
+                .collect();
+            assert_eq!(index, indexed.expiry);
+        };
         let started = now;
         // Phase 1: fill past the limit 10 ms apart (874 s in all, so nothing
         // expires yet), with some repeated ids and unprotected completions.
@@ -233,6 +249,7 @@ mod tests {
         }
         assert_eq!(indexed.entries.len(), ResponseProtection::LIMIT);
         assert!(indexed.overflow_until.is_some());
+        same(&indexed, &scanning);
         // Phase 2: stay at the limit while the oldest entries expire one or
         // two at a time, slower than new completions arrive.
         now = started + ResponseProtection::HORIZON + std::time::Duration::from_millis(200);
@@ -252,16 +269,85 @@ mod tests {
                 &format!("noded-{}", random(limit)),
             );
             check(&indexed, &scanning, now, &format!("late-{step}"));
+            if step % 250 == 0 {
+                same(&indexed, &scanning);
+            }
         }
+        same(&indexed, &scanning);
         // Phase 3: everything is past its deadline; one completion clears it.
         now += ResponseProtection::HORIZON * 2;
         check(&indexed, &scanning, now, "noded-1");
         indexed.retain_at("fresh", TrafficClass::NativeSession, now);
         scanning.retain_at("fresh", TrafficClass::NativeSession, now);
         check(&indexed, &scanning, now, "fresh");
+        same(&indexed, &scanning);
         assert_eq!(indexed.entries.len(), 1);
         assert_eq!(indexed.class_at("noded-1", now), TrafficClass::Legacy);
         assert!(indexed.class_at("fresh", now).protected());
+    }
+
+    /// The edges the long run reaches only by chance, each checked against
+    /// the scan: equal deadlines, an entry expiring exactly now, an id that
+    /// is already stored arriving at capacity, and `expire_for_test`.
+    #[test]
+    fn ordered_expiry_edges_match_the_scan() {
+        let limit = ResponseProtection::LIMIT;
+        let start = Instant::now();
+        let fill = |indexed: &mut ResponseProtection, scanning: &mut Scanning| {
+            // Pairs of ids share a deadline.
+            for n in 0..limit {
+                let at = start + std::time::Duration::from_millis((n / 2) as u64);
+                indexed.retain_at(&format!("id-{n}"), TrafficClass::NativeSession, at);
+                scanning.retain_at(&format!("id-{n}"), TrafficClass::NativeSession, at);
+            }
+        };
+
+        // Exactly at a deadline the entry has expired (`deadline > now` keeps
+        // it, so `deadline <= now` drops it), and both ids sharing it go.
+        let (mut indexed, mut scanning) = (ResponseProtection::default(), Scanning::default());
+        fill(&mut indexed, &mut scanning);
+        let exact = start + ResponseProtection::HORIZON;
+        assert_eq!(indexed.class_at("id-0", exact), TrafficClass::Legacy);
+        assert!(indexed.class_at("id-2", exact).protected());
+        indexed.retain_at("next", TrafficClass::NativeSession, exact);
+        scanning.retain_at("next", TrafficClass::NativeSession, exact);
+        assert!(!indexed.entries.contains_key("id-0"));
+        assert!(!indexed.entries.contains_key("id-1"));
+        assert!(indexed.entries.contains_key("id-2"));
+        assert_eq!(indexed.entries.len(), scanning.entries.len());
+        assert_eq!(indexed.expiry.len(), indexed.entries.len());
+        assert_eq!(indexed.overflow_until, None);
+
+        // At capacity with nothing expired: a new id overflows, a stored id
+        // moves to its new deadline without overflow.
+        let (mut indexed, mut scanning) = (ResponseProtection::default(), Scanning::default());
+        fill(&mut indexed, &mut scanning);
+        let soon = start + std::time::Duration::from_secs(60);
+        indexed.retain_at("id-7", TrafficClass::NativeSession, soon);
+        scanning.retain_at("id-7", TrafficClass::NativeSession, soon);
+        assert_eq!(indexed.overflow_until, None);
+        assert_eq!(
+            indexed.entries.get("id-7"),
+            Some(&(soon + ResponseProtection::HORIZON))
+        );
+        assert_eq!(indexed.expiry.len(), limit);
+        indexed.retain_at("new", TrafficClass::NativeSession, soon);
+        scanning.retain_at("new", TrafficClass::NativeSession, soon);
+        assert_eq!(indexed.overflow_until, scanning.overflow_until);
+        assert!(indexed.overflow_until.is_some());
+        assert!(!indexed.entries.contains_key("new"));
+        assert!(indexed.class_at("never-seen", soon).protected());
+        assert_eq!(indexed.entries.len(), scanning.entries.len());
+
+        // expire_for_test leaves the index in step and every id legacy.
+        indexed.expire_for_test();
+        let now = Instant::now();
+        assert_eq!(indexed.expiry.len(), indexed.entries.len());
+        assert!(indexed.expiry.iter().all(|(deadline, _)| *deadline <= now));
+        assert_eq!(indexed.class_at("id-7", now), TrafficClass::Legacy);
+        indexed.retain_at("after", TrafficClass::NativeSession, now);
+        assert_eq!(indexed.entries.len(), 1);
+        assert_eq!(indexed.expiry.len(), 1);
     }
     #[test]
     fn classification_is_broker_owned_and_monotonic() {
