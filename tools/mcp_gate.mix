@@ -13,6 +13,9 @@ $stage = $stages[0]
 if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") then
   raise("CBC_ONLY", "run this helper through the native CBC build service")
 end
+if trim(run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"])) != "" then
+  raise("DIRTY_CHECKOUT", "CBC verification requires a clean tracked checkout")
+end
 fn checked($argv, $env = {})
   -- A /build ancestor marks scripts for version lint. Narrow PTY fixtures
   -- also need a short path for the unchanged 50-column PTY fixture.
