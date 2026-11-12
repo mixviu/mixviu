@@ -1332,6 +1332,10 @@ async fn slow_nightly_local_alias_retry_runs_sieve_and_transmits_vacation() -> R
 }
 
 async fn wait_queue_empty(built: &BuiltMaild) -> Result<()> {
+    // delivery_worker polls every 30 seconds. Allow two polls plus a scheduling
+    // margin, as a local retry can enqueue a vacation reply for the next pass.
+    // A terminal receipt (and even a stored DSN) precedes mark_delivered, so
+    // neither is a barrier for retiring the queue payload.
     timeout(Duration::from_secs(65), async {
         loop {
             if maild::smtp::queue::list(&built.app_state.db.conn, 10)
@@ -1343,7 +1347,8 @@ async fn wait_queue_empty(built: &BuiltMaild) -> Result<()> {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
     })
-    .await??;
+    .await
+    .map_err(|_| anyhow::anyhow!("delivery worker did not retire the queue within 65 seconds"))??;
     Ok(())
 }
 
@@ -1406,6 +1411,7 @@ async fn dangling_alias_targets_do_not_block_inbound_submission_or_bounces() -> 
         }
     })
     .await??;
+    wait_queue_empty(&built).await?;
     built
         .app_state
         .db
@@ -1422,11 +1428,6 @@ async fn dangling_alias_targets_do_not_block_inbound_submission_or_bounces() -> 
     .unwrap_err()
     .to_string();
     assert!(error.contains("no remaining local targets"), "{error}");
-    assert!(
-        maild::smtp::queue::list(&built.app_state.db.conn, 10)
-            .await?
-            .is_empty()
-    );
     Ok(())
 }
 
@@ -1656,7 +1657,7 @@ async fn unsupported_smtputf8_peer_bounces_through_real_queue() -> Result<()> {
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    assert!(maild::smtp::queue::list(&db.conn, 10).await?.is_empty());
+    wait_queue_empty(&built).await?;
     Ok(())
 }
 
