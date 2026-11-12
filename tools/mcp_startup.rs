@@ -34,6 +34,11 @@ fn main() {
     }
     let before = samples[0][50];
     let after = samples[1][50];
-    println!("STARTUP before_median_ns={before} after_median_ns={after} samples=101 alternating=true");
-    assert!(after <= before + 1_000_000, "median startup grew by more than 1 ms");
+    println!(
+        "STARTUP before_median_ns={before} after_median_ns={after} samples=101 alternating=true"
+    );
+    assert!(
+        after <= before + 1_000_000,
+        "median startup grew by more than 1 ms"
+    );
 }
