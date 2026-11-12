@@ -11,6 +11,8 @@ if len($stages) != 1 or not contains(["resolve", "focused", "all", "receipts"], 
 end
 $stage = $stages[0]
 fn checked($argv, $env = {})
+  mkdir("target/mcp-tmp")
+  $env.TMPDIR = realpath("target/mcp-tmp")
   $r = run_argv($argv, {env: $env, timeout: 14400, stdout: "inherit", stderr: "inherit"})
   if $r.exit_code != 0 then exit($r.exit_code ?? 124) end
 end
@@ -21,7 +23,7 @@ if $stage == "resolve" then
     if $result.exit_code != 0 then exit($result.exit_code ?? 124) end
     $metadata = json_parse($result.stdout)
     print("RESOLVED_PACKAGES " .. to_string(len($metadata.packages)))
-    checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "mix-shell", "-p", "mix"])
+    checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "paths", "-p", "mix-shell", "-p", "mix"])
     print("DERIVED_DIFF_BEGIN")
     print(run_argv_must(["git", "diff"]))
     print("DERIVED_DIFF_END")

@@ -23,7 +23,7 @@ paths = { path = "../../libraries/paths" }
 anyhow.workspace = true
 directories.workspace = true
 glob.workspace = true
-rmcp = { version = "=3.9.0", features = ["server", "transport-io", "macros", "schemars"] }
+rmcp = { version = "=3.9.0", default-features = false, features = ["server", "transport-io", "macros", "schemars"] }
 bus = { workspace = true, features = ["native"] }
 buildinfo.workspace = true
 config.workspace = true
@@ -38,7 +38,7 @@ chrono.workspace = true
 libc.workspace = true
 
 [dev-dependencies]
-rmcp = { version = "=3.9.0", features = ["client", "transport-child-process"] }
+rmcp = { version = "=3.9.0", default-features = false, features = ["client", "transport-child-process"] }
 test-broker = { path = "../../libraries/test-broker" }
 tempfile.workspace = true
 
