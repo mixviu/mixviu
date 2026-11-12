@@ -19,6 +19,9 @@ fn checked($argv, $env = {})
   -- credential files retain their individual permissions.
   run_argv_must(["chmod", "755", $scratch])
   $env.TMPDIR = $scratch
+  -- A persistent compiler-cache server can retain this per-step TMPDIR
+  -- after cleanup. Keep CBC verification independent of that daemon.
+  $env.RUSTC_WRAPPER = ""
   $r = nil
   try
     $r = run_argv($argv, {env: $env, timeout: 14400, stdout: "inherit", stderr: "inherit"})

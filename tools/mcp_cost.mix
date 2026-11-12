@@ -3,7 +3,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- CBC only, under its checkout lock; leave the worker at the admitted commit.
 fn checked($argv)
-  $r = run_argv($argv, {timeout: 14400, stdout: "inherit", stderr: "inherit", env: {TMPDIR: $tmp}})
+  $r = run_argv($argv, {timeout: 14400, stdout: "inherit", stderr: "inherit", env: {TMPDIR: $tmp, RUSTC_WRAPPER: ""}})
   if not $r.ok then raise("COST_STEP", json_encode($r)) end
 end
 fn graph($metadata, $name)
