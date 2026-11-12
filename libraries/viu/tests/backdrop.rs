@@ -166,14 +166,25 @@ impl App {
         loop {
             self.pump();
             if let Ok(reply) = rx.try_recv() {
-                // Let the completed callback's model reach the native owner.
-                for _ in 0..3 {
-                    self.pump();
-                }
                 return reply;
             }
             assert!(Instant::now() < end, "deferred native reply timed out");
         }
+    }
+    fn wait_model(&mut self, ready: impl Fn(&Value) -> bool) {
+        let end = Instant::now() + Duration::from_secs(10);
+        while !ready(&self.model) {
+            self.pump();
+            assert!(Instant::now() < end, "model timed out: {}", self.model);
+        }
+    }
+    fn state(&mut self) -> Value {
+        // Read application state through the same request/reply lane as set.
+        // Clients query this state; app.model is the host's asynchronous mirror.
+        let rx = self.request("backdrop.state", json!({}));
+        let (rc, body) = self.wait(rx);
+        assert_eq!(rc, 0, "{body}");
+        body
     }
     fn call(&mut self, command: &str, args: Value) -> (u8, Value) {
         // Query/immediate refusal completions go through the same Calls owner
@@ -235,6 +246,26 @@ fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
         let rx=app.request("backdrop.set",json!({"schema":1,"default":{"colour":"#1234ab"},"outputs":{"HEADLESS-2":{"image":image,"fit":mode}}}));
         let (rc, body) = app.wait(rx);
         assert_eq!(rc, 0, "{body}");
+        let state = app.state();
+        assert_eq!(state["active"], body["active"]);
+        assert!(state["pending"].is_null());
+        assert_eq!(state["config"]["outputs"]["HEADLESS-2"]["image"], image);
+        // The canonical document omits fit for the default fill mode.
+        assert_eq!(
+            state["config"]["outputs"]["HEADLESS-2"]["fit"]
+                .as_str()
+                .unwrap_or("fill"),
+            mode
+        );
+        assert_eq!(state["config"]["default"]["colour"], "#1234ab");
+        // Calls::finish answers inside the evaluator; the callback's model
+        // reaches Runtime::drain only after the callback returns. Its global
+        // serial covers both the default and named output values below.
+        app.wait_model(|model| {
+            model["serial"] == body["active"]
+                && model["surfaces"]["HEADLESS-2"]["values"]["root"]["fit"] == mode
+                && model["surfaces"]["HEADLESS-2"]["values"]["root"]["handle"].is_string()
+        });
         assert_eq!(app.model["values"]["root"]["colour"], json!([18, 52, 171]));
         assert_eq!(
             app.model["surfaces"]["HEADLESS-2"]["values"]["root"]["fit"],
@@ -242,7 +273,7 @@ fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
         );
         assert!(app.model["surfaces"]["HEADLESS-2"]["values"]["root"]["handle"].is_string());
     }
-    let before = app.call("backdrop.state", json!({})).1;
+    let before = app.state();
     let (rc, body) = app.call(
         "backdrop.set",
         json!({"schema":1,"default":{"slideshow":{}}}),
@@ -250,7 +281,7 @@ fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
     assert_eq!(rc, 10);
     assert_eq!(body["error_code"], "ARGUMENT");
     assert!(!body["message"].as_str().unwrap().is_empty());
-    let after = app.call("backdrop.state", json!({})).1;
+    let after = app.state();
     assert_eq!(after["active"], before["active"]);
     assert_eq!(after["config"], before["config"]);
 }
@@ -260,13 +291,24 @@ fn decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage(
     let image = app.png("fixture.png", [12, 34, 56, 255]);
     let doc = json!({"schema":1,"default":{"image":image}});
     let rx = app.request("backdrop.set", doc.clone());
-    assert_eq!(app.wait(rx).0, 0);
+    let (rc, body) = app.wait(rx);
+    assert_eq!(rc, 0, "{body}");
+    app.wait_model(|model| {
+        model["serial"] == body["active"] && model["values"]["root"]["handle"].is_string()
+    });
     let handle = app.model["values"]["root"]["handle"]
         .as_str()
         .unwrap()
         .to_owned();
+    // viu_raster(load) synchronously inserts pixels into the shared Rasters
+    // store before decode-job can return its handle. Only then can the job
+    // completion commit and publish this model serial. Commit detaches the
+    // handle before closing its scope, so it stays live until replacement;
+    // this fixture issues no replacement before get. No raster delivery lane
+    // remains to settle after the serial-keyed model wait.
     let pixels = app.rasters.get(&handle).unwrap();
-    let before = app.call("backdrop.state", json!({})).1;
+    let before = app.state();
+    assert_eq!(before["active"], body["active"]);
     let stored = std::fs::read(app.directory.path().join("backdrop.mx")).unwrap();
     let rx = app.request(
         "backdrop.set",
@@ -275,7 +317,7 @@ fn decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage(
     let (rc, body) = app.wait(rx);
     assert_eq!(rc, 10);
     assert_eq!(body["error_code"], "IMAGE");
-    let after = app.call("backdrop.state", json!({})).1;
+    let after = app.state();
     assert_eq!(after["active"], before["active"]);
     assert_eq!(after["config"], before["config"]);
     assert!(!after["error"].is_null());
@@ -285,10 +327,19 @@ fn decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage(
     );
     app.png("fixture.png", [90, 80, 70, 255]);
     let rx = app.request("backdrop.set", doc);
-    assert_eq!(app.wait(rx).0, 0);
+    let (rc, body) = app.wait(rx);
+    assert_eq!(rc, 0, "{body}");
+    app.wait_model(|model| {
+        model["serial"] == body["active"]
+            && model["values"]["root"]["handle"]
+                .as_str()
+                .is_some_and(|h| h != handle)
+    });
     assert_ne!(app.model["values"]["root"]["handle"], handle);
     assert_eq!(pixels.decoded.rgba.get_pixel(0, 0).0, [12, 34, 56, 255]);
-    assert!(app.call("backdrop.state", json!({})).1["error"].is_null());
+    let after = app.state();
+    assert_eq!(after["active"], body["active"]);
+    assert!(after["error"].is_null());
 }
 #[test]
 fn slideshow_next_skips_failed_entries_and_keeps_source_document() {
