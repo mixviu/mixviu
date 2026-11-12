@@ -11,9 +11,10 @@ if len($stages) != 1 or not contains(["resolve", "focused", "all", "receipts"], 
 end
 $stage = $stages[0]
 fn checked($argv, $env = {})
-  -- A /build ancestor deliberately marks scripts for version lint. Keep test
-  -- fixtures outside it, and outside the worker's /tmp, without waiving lint.
-  $scratch = trim(run_argv_must(["mktemp", "-d", "/var/tmp/mcp-tests-XXXXXXXX"]))
+  -- A /build ancestor marks scripts for version lint. Narrow PTY fixtures
+  -- also need a short path. This CBC-only root is unique, cleaned below,
+  -- and outside both the build tree and the worker's /tmp.
+  $scratch = trim(run_argv_must(["mktemp", "-d", "/mXXXX"]))
   -- Native fixtures require traversable ancestors (BUS-013); their own
   -- credential files retain their individual permissions.
   run_argv_must(["chmod", "755", $scratch])
