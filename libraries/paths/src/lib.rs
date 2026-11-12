@@ -277,17 +277,23 @@ impl Dirs {
             ]),
         })
     }
-    /// Future system rule, without reading layout.mx. User roots retain XDG.
-    /// Per-root overrides win. MIX_ROOT moves etc, var, run and cache, as
-    /// before; share and lib are installed data and follow the prefix unless
-    /// their own variable is set.
+    /// Future system rule with no layout file. See derived_with_layout.
     pub fn derived(prefix: &Path, env: &Environment) -> Result<Self> {
-        absolute(prefix)?;
+        Self::derived_with_layout(prefix, env, "")
+    }
+    /// Future system rule. layout.mx is an optional override, so for etc,
+    /// var, run and cache: own variable > MIX_ROOT > layout > under the
+    /// prefix. share and lib are installed data: own variable > layout >
+    /// under the prefix (MIX_ROOT does not move them). User roots keep XDG
+    /// below the same overrides and layout.
+    pub fn derived_with_layout(prefix: &Path, env: &Environment, source: &str) -> Result<Self> {
+        absolute(prefix).map_err(|e| format!("root prefix: {e}"))?;
+        let settings = parse_layout(source)?;
         let inputs = Environment {
             prefix: Some(prefix.into()),
             ..env.clone()
         };
-        let mut dirs = Self::from_source(&inputs, "")?;
+        let mut dirs = Self::from_source(&inputs, source)?;
         if env.uid == 0 {
             for (root, direct) in [
                 (Root::Etc, &env.etc),
@@ -300,14 +306,17 @@ impl Dirs {
                     direct
                         .clone()
                         .or_else(|| env.root.as_ref().map(|p| p.join(root.name())))
+                        .or_else(|| settings.get(&root).cloned())
                         .unwrap_or_else(|| prefix.join(root.name())),
                 );
             }
         }
         // Unlike the legacy rule, this constructor refuses a relative or
-        // `..`-bearing root from any override rather than passing it on.
-        for path in dirs.roots.values() {
-            absolute(path)?;
+        // `..`-bearing root from any override, for every root of either
+        // tier (the user tier's XDG roots included), rather than passing it
+        // on. A relative share or lib override is ignored, as in from_source.
+        for (root, path) in &dirs.roots {
+            absolute(path).map_err(|e| format!("root {}: {e}", root.name()))?;
         }
         Ok(dirs)
     }
@@ -413,6 +422,8 @@ pub fn prefix_from_exe(exe: &Path) -> Result<PathBuf> {
     Ok(prefix)
 }
 /// Installed executable shape check, independent of legacy cargo-tree rules.
+/// `/bin/mix` gives the prefix `/`: the rootfs-install case, where the
+/// binary is the system's own and the roots are `/share`, `/etc` and so on.
 pub fn prefix_from_exe_strict(exe: &Path) -> Result<PathBuf> {
     let bin = exe
         .parent()
@@ -455,11 +466,40 @@ fn read_layout(prefix: &Path) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| "layout.mx is not UTF-8".into())
 }
 
-// Capture environment once, but resolve each tier independently on first use.
+// Capture environment once, read layout.mx once, and resolve each tier
+// independently on first use.
 static INPUTS: OnceLock<Environment> = OnceLock::new();
+/// The layout text and its parse result, or the prefix or read error.
+static LAYOUT_FILE: OnceLock<Result<(String, Result<()>)>> = OnceLock::new();
 static PROCESS: OnceLock<Result<Layout>> = OnceLock::new();
 static USER: OnceLock<Result<Layout>> = OnceLock::new();
 static SYSTEM: OnceLock<Result<Layout>> = OnceLock::new();
+pub(crate) fn inputs() -> &'static Environment {
+    INPUTS.get_or_init(Environment::current)
+}
+/// The prefix whose env.mx holds installed defaults: the prefix override,
+/// else the strict installed-binary rule. A binary outside a `bin`
+/// directory (a cargo tree) has none, so it never reads a host install's
+/// defaults.
+pub(crate) fn settings_prefix(env: &Environment) -> Result<Option<PathBuf>> {
+    match (&env.prefix, &env.exe) {
+        (Some(prefix), _) => absolute(prefix).map(|()| Some(prefix.clone())),
+        (None, Some(exe)) => Ok(prefix_from_exe_strict(exe).ok()),
+        (None, None) => Ok(None),
+    }
+}
+fn layout_file() -> Result<&'static (String, Result<()>)> {
+    LAYOUT_FILE
+        .get_or_init(|| {
+            // The prefix does not depend on the uid, so every tier shares it.
+            let prefix = Layout::from_source(inputs(), "")?.try_root(Root::Prefix)?;
+            let source = read_layout(&prefix)?;
+            let parsed = parse_layout(&source).map(drop);
+            Ok((source, parsed))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
 fn snapshot(tier: Option<Tier>) -> Result<&'static Layout> {
     let cache = match tier {
         None => &PROCESS,
@@ -468,19 +508,22 @@ fn snapshot(tier: Option<Tier>) -> Result<&'static Layout> {
     };
     cache
         .get_or_init(|| {
-            let mut env = INPUTS.get_or_init(Environment::current).clone();
+            let mut env = inputs().clone();
             if let Some(tier) = tier {
                 env.uid = tier.uid();
             }
-            let prefix = Layout::from_source(&env, "")?.try_root(Root::Prefix)?;
-            let source = match read_layout(&prefix).and_then(|s| parse_layout(&s).map(|_| s)) {
-                Ok(s) => s,
-                // Only the explicit user tier survives a broken layout; the
-                // process tier keeps the start-up error it always raised.
-                Err(_) if tier == Some(Tier::User) => String::new(),
-                Err(e) => return Err(e),
+            let (source, parsed) = layout_file()?;
+            let source = match parsed {
+                Ok(()) => source.as_str(),
+                // Only the explicit user tier survives a layout that was read
+                // but does not parse (an absent file reads as empty). A read
+                // error (permissions, I/O, size, non-UTF-8) fails every tier,
+                // and the process tier keeps the start-up error it always
+                // raised.
+                Err(_) if tier == Some(Tier::User) => "",
+                Err(e) => return Err(e.clone()),
             };
-            Layout::from_source(&env, &source)
+            Layout::from_source(&env, source)
         })
         .as_ref()
         .map_err(Clone::clone)
