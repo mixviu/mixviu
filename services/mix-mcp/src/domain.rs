@@ -21,8 +21,7 @@ use std::path::Path;
 /// up the directory tree looking for CLAUDE.md.
 pub fn detect_domain(pwd: &Path) -> anyhow::Result<String> {
     // Try settings-based resolution first
-    if let Some(domain) = crate::knowledge_settings::load_domains()?.resolve(pwd)
-    {
+    if let Some(domain) = crate::knowledge_settings::load_domains()?.resolve(pwd) {
         return Ok(domain);
     }
 
@@ -42,7 +41,7 @@ pub fn detect_domain(pwd: &Path) -> anyhow::Result<String> {
         }
     }
 
-    "general".into()
+    Ok("general".into())
 }
 
 /// Detect domain from the current working directory.

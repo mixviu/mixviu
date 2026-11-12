@@ -15175,7 +15175,8 @@ impl Evaluator {
                         // non-payload send argument — fall through to the
                         // sync builtin unchanged (which refuses recv on
                         // subscribed handles deterministically).
-                        if let Some(result) = self.call_policy_builtin(name, eval_args.clone())
+                        if let Some(result) = self
+                            .call_policy_builtin(name, eval_args.clone())
                             .map_err(|e| self.snapshot_builtin_error(name, e))?
                         {
                             // Knob D: cap the produced collection (covers
@@ -16430,7 +16431,9 @@ impl Evaluator {
     fn call_policy_builtin(&self, name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         if name == "has_builtin" && args.len() == 1 {
             if let Value::String(target) = &args[0] {
-                if self.check_capability(target).is_err() { return Ok(Some(Value::Bool(false))); }
+                if self.check_capability(target).is_err() {
+                    return Ok(Some(Value::Bool(false)));
+                }
             }
         }
         builtins::call_builtin(name, args)

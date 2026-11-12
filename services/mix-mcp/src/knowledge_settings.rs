@@ -292,7 +292,9 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
 }
 
 fn installed_json(name: &str) -> anyhow::Result<serde_json::Value> {
-    let path = paths::try_root(paths::Root::Prefix).map_err(|e| anyhow::anyhow!("{name} in <prefix>/env.mx: {e}"))?.join("env.mx");
+    let path = paths::try_root(paths::Root::Prefix)
+        .map_err(|e| anyhow::anyhow!("{name} in <prefix>/env.mx: {e}"))?
+        .join("env.mx");
     let text = paths::env::setting(name)
         .map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))?;
     serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))
@@ -334,7 +336,8 @@ fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
     service: &str,
     mut value: serde_json::Value,
 ) -> anyhow::Result<T> {
-    let file = paths::try_root(paths::Root::Etc).map_err(anyhow::Error::msg)?
+    let file = paths::try_root(paths::Root::Etc)
+        .map_err(anyhow::Error::msg)?
         .join(service)
         .join(format!("{service}.conf.mix"));
     if file.exists() {
@@ -345,7 +348,10 @@ fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
     }
     let result: T = serde_json::from_value(value)?;
     if !file.exists() {
-        std::fs::create_dir_all(file.parent().ok_or_else(|| anyhow::anyhow!("missing config directory"))?)?;
+        std::fs::create_dir_all(
+            file.parent()
+                .ok_or_else(|| anyhow::anyhow!("missing config directory"))?,
+        )?;
         std::fs::write(&file, config::to_conf_mix_string(&result)?)?;
     }
     Ok(result)
@@ -366,7 +372,8 @@ pub fn load_knowledge() -> anyhow::Result<KnowledgeSettings> {
         .map_err(|e| setting_error(paths::env::MCP_INDEXD, e))?;
     let _: IndexdSettings = serde_json::from_value(indexd.clone())
         .map_err(|e| setting_error(paths::env::MCP_INDEXD, e))?;
-    let object = value.as_object_mut()
+    let object = value
+        .as_object_mut()
         .ok_or_else(|| setting_error(paths::env::MCP_KNOWLEDGE, "expected knowledge object"))?;
     object.insert("indexd".into(), indexd);
     required(&serde_json::to_value(KnowledgeSettings::default())?, &value)
@@ -394,7 +401,10 @@ mod read_path_tests {
             ("knowledge_settings", include_str!("knowledge_settings.rs")),
         ] {
             let production = source.split("#[cfg(test)]").next().unwrap_or(source);
-            assert!(!production.contains("load_service"), "{name} bypasses validated loaders");
+            assert!(
+                !production.contains("load_service"),
+                "{name} bypasses validated loaders"
+            );
         }
     }
 }

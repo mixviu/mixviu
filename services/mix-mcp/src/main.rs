@@ -1189,7 +1189,10 @@ impl MixMcp {
 
         let limit = p.limit.unwrap_or(3);
         let search_all = p.domain.as_deref() == Some("all");
-        let detected = match crate::domain::detect_domain_cwd() { Ok(d) => d, Err(e) => return format!("ERROR: {e:#}") };
+        let detected = match crate::domain::detect_domain_cwd() {
+            Ok(d) => d,
+            Err(e) => return format!("ERROR: {e:#}"),
+        };
         let domain = if search_all {
             None
         } else {
@@ -1444,7 +1447,10 @@ impl MixMcp {
         if let Err(e) = crate::knowledge_settings::load_domains() {
             return format!("ERROR: {e:#}");
         }
-        let domain = match crate::domain::detect_domain(workspace_path) { Ok(d) => d, Err(e) => return format!("ERROR: {e:#}") };
+        let domain = match crate::domain::detect_domain(workspace_path) {
+            Ok(d) => d,
+            Err(e) => return format!("ERROR: {e:#}"),
+        };
 
         let mut indexd = match self.indexd().await {
             Ok(c) => c,
@@ -2348,16 +2354,15 @@ async fn async_main() {
     // -f`), AND the persistent `the paths var root under log/mix-mcp.log` file
     // the server's own log_tail/log_search tools read. Stats off — this
     // arc is logging-only.
-    let defaults =
-        logging::LogDefaults::daemon("mix-mcp")
-            .with_stats(false)
-            .with_filter(
-                &paths::env::raw(paths::env::MCP_LOG_FILTER)
-                    .and_then(|v| v.into_string().ok())
-                    .filter(|v| tracing_subscriber::EnvFilter::try_new(v).is_ok())
-                    .unwrap_or_else(|| "info,mix_mcp=debug".into()),
-            )
-            .with_rotation(logging::RotationMode::Never);
+    let defaults = logging::LogDefaults::daemon("mix-mcp")
+        .with_stats(false)
+        .with_filter(
+            &paths::env::raw(paths::env::MCP_LOG_FILTER)
+                .and_then(|v| v.into_string().ok())
+                .filter(|v| tracing_subscriber::EnvFilter::try_new(v).is_ok())
+                .unwrap_or_else(|| "info,mix_mcp=debug".into()),
+        )
+        .with_rotation(logging::RotationMode::Never);
     let defaults = match log_dir() {
         Ok(dir) => defaults.with_log_file(dir),
         Err(e) => {
@@ -2365,9 +2370,16 @@ async fn async_main() {
             defaults
         }
     };
-    let _log = match logging::init(&logging::LogOpts::default(), &logging::StatsOpts::default(), defaults) {
+    let _log = match logging::init(
+        &logging::LogOpts::default(),
+        &logging::StatsOpts::default(),
+        defaults,
+    ) {
         Ok(log) => Some(log),
-        Err(e) => { eprintln!("mix-mcp: logging initialization failed: {e}"); None }
+        Err(e) => {
+            eprintln!("mix-mcp: logging initialization failed: {e}");
+            None
+        }
     };
 
     tracing::info!(
