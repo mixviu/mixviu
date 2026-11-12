@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# The daily cut time (config cut_time and timezone; keep them in step).
+[Unit]
+Description=MixViu daily cut at 03:00 Australia/Brisbane
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Australia/Brisbane
+Persistent=true
+Unit=daily-run.service
+
+[Install]
+WantedBy=timers.target

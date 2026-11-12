@@ -1,0 +1,147 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Small pure helpers for the daily pipeline: maps, paths, globs, time, text.
+
+-- Maps merge key by key; any other value in $over replaces the one in $base.
+fn deep_merge($base, $over)
+  if type($base) != "map" or type($over) != "map" then return $over end
+  $out = $base
+  for $k in keys($over)
+    $out[$k] = if has_key($base, $k) then deep_merge($base[$k], $over[$k]) else $over[$k] end
+  end
+  return $out
+end
+
+fn expand_home($p)
+  if type($p) != "string" then return $p end
+  -- Single quotes: a double-quoted "~/" is itself expanded at parse time.
+  if $p == '~' then return env("HOME") end
+  if starts_with($p, '~/') then return env("HOME") .. slice($p, 1) end
+  return $p
+end
+
+-- A path glob as an anchored regex: `**/` and `**` cross directories,
+-- `*` and `?` stay inside one path segment. Everything else is literal.
+fn glob_regex($glob)
+  $out = "^"
+  $i = 0
+  $n = len($glob)
+  while $i < $n
+    $c = substr($glob, $i, 1)
+    if $c == "*" then
+      if substr($glob, $i, 3) == "**/" then
+        $out = $out .. "(?:.*/)?"
+        $i = $i + 3
+        continue
+      end
+      if substr($glob, $i, 2) == "**" then
+        $out = $out .. ".*"
+        $i = $i + 2
+        continue
+      end
+      $out = $out .. "[^/]*"
+    elif $c == "?" then
+      $out = $out .. "[^/]"
+    elif contains(".+()[]{}|^$\\", $c) then
+      $out = $out .. "\\" .. $c
+    else
+      $out = $out .. $c
+    end
+    $i = $i + 1
+  end
+  return $out .. "$"
+end
+
+fn glob_match($path, $glob)
+  return re_match($path, glob_regex($glob))
+end
+
+fn is_date($s)
+  if type($s) != "string" or not re_match($s, "^[0-9]{4}-[0-1][0-9]-[0-3][0-9]$") then return false end
+  try
+    return date_format(date_parse($s), "%Y-%m-%d", {utc: true}) == $s
+  catch $m
+    return false
+  end
+end
+
+-- ISO 8601 (2026-12-01T03:00:00Z, ...+10:00, fractional seconds) -> epoch seconds.
+fn iso_epoch($s)
+  $m = re_find($s, "^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})$")
+  if len($m) != 1 then raise("TIME_FORMAT", "not an ISO 8601 time: " .. to_string($s)) end
+  $g = $m[0].groups
+  $t = date_parse($g[0]) + to_number($g[1]) * 3600 + to_number($g[2]) * 60 + to_number($g[3])
+  if $g[4] != "Z" then
+    $z = replace($g[4], ":", "")
+    $off = to_number(substr($z, 1, 2)) * 3600 + to_number(substr($z, 3, 2)) * 60
+    $t = if starts_with($z, "-") then $t + $off else $t - $off end
+  end
+  return $t
+end
+
+-- Today's date in an IANA zone, through date(1) by argv.
+fn today($tz)
+  $r = run_argv(["date", "+%Y-%m-%d"], {env: {TZ: $tz}, timeout: 10})
+  if not $r.ok then raise("TIME_ZONE", "cannot read the date in " .. to_string($tz)) end
+  $d = trim($r.stdout)
+  if not is_date($d) then raise("TIME_ZONE", "date(1) returned " .. $d) end
+  return $d
+end
+
+fn collapse($s)
+  return trim(re_replace($s, "\\s+", " "))
+end
+
+fn clip($s, $n)
+  if len($s) <= $n then return $s end
+  return trim(substr($s, 0, $n - 1)) .. "…"
+end
+
+-- Contributor text (PR titles and bodies, commit subjects) is untrusted data.
+-- Keep the first prose paragraph, drop markup that could pass for structure or
+-- instructions to a later model, and bound it.
+fn untrusted_text($s, $n)
+  if type($s) != "string" then return "" end
+  $t = visible(re_replace($s, "\r", ""))
+  $t = re_replace($t, "(?s)<[^>]*>", "")
+  $t = re_replace($t, "!\\[[^\\]]*\\]\\([^)]*\\)", "")
+  $t = re_replace($t, "\\[([^\\]]*)\\]\\([^)]*\\)", "$1")
+  $para = ""
+  for $p in re_split($t, "\n[ \t]*\n")
+    -- A paragraph of headings only is a template label, not prose.
+    if re_match(trim($p), "^(#[^\n]*(\n|$))+$") then continue end
+    $q = collapse(re_replace($p, "(?m)^[ \t]*(#+|>+|[-*+][ \t]|[0-9]+\\.[ \t])[ \t]*", ""))
+    $q = trim(re_replace($q, "[`*~|{}\\[\\]<>]", ""))
+    if $q != "" then
+      $para = $q
+      break
+    end
+  end
+  return clip($para, $n)
+end
+
+fn untrusted_line($s, $n)
+  if type($s) != "string" then return "" end
+  $t = collapse(re_replace(visible($s), "[`<>{}\\[\\]*]", ""))
+  -- A heading needs its space: "#31 repros" keeps its issue number.
+  return clip(trim(re_replace($t, "^#+[ \t]+", "")), $n)
+end
+
+-- Contributor text as declarations may be read from it: control characters
+-- (record separators included) become spaces, fenced code is dropped (a
+-- Task: line in an example is not a declaration), then HTML comments,
+-- closed or not, are removed as GitHub hides them.
+fn visible($s)
+  if type($s) != "string" then return "" end
+  $t = re_replace($s, "[\\x00-\\x08\\x0b-\\x1f\\x7f]", " ")
+  $t = re_replace($t, "(?s)```.*?(```|$)", "")
+  return re_replace($t, "(?s)<!--.*?(-->|$)", "")
+end
+
+fn short($sha)
+  return slice($sha, 0, 12)
+end
+
+fn json_file($v)
+  return json_encode($v, true) .. "\n"
+end

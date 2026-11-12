@@ -1,0 +1,39 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Path globs -> areas for the daily manifest (services/daily). First match
+-- wins, so order is priority. `**` crosses directories, `*` and `?` do not.
+-- split_by "apps/*" makes one area per app: apps/term, apps/email, ...
+-- audience is "user" (what you can do) or "dev" (how it is built).
+{
+  schema: 1,
+  fallback: {id: "other", title: "Other", audience: "dev"},
+  areas: [
+    {id: "engine-mix", title: "mix (shell)", audience: "dev",
+      globs: ["engines/mix/**", "libraries/mix/**", "libraries/mix-shell/**"]},
+    {id: "engine-mixd", title: "mixd (headless host)", audience: "dev",
+      globs: ["engines/mixd/**"]},
+    {id: "engine-viud", title: "viud (compositor)", audience: "dev",
+      globs: ["engines/viud/**"]},
+    {id: "engine-viu", title: "viu (toolkit)", audience: "dev",
+      globs: ["engines/viu/**", "libraries/viu/**", "libraries/toolkit/**", "libraries/ui/**", "libraries/scene/**"]},
+    {id: "shell", title: "Quoin shell", audience: "user",
+      globs: ["share/scenes/**", "share/layout/**"]},
+    {id: "apps", title: "Apps", audience: "user", split_by: "apps/*",
+      globs: ["apps/**"]},
+    {id: "services", title: "Services", audience: "user", split_by: "services/*",
+      globs: ["services/**"]},
+    {id: "media", title: "Daily media", audience: "dev",
+      globs: ["media/**", "site/**"]},
+    {id: "libraries", title: "Libraries", audience: "dev",
+      globs: ["libraries/**"]},
+    {id: "assets", title: "Themes and assets", audience: "user",
+      globs: ["share/**"]},
+    {id: "docs", title: "Docs", audience: "user",
+      globs: ["docs/**", "*.md"]},
+    {id: "tests", title: "Tests", audience: "dev",
+      globs: ["tests/**"]},
+    {id: "infra", title: "Build and CI", audience: "dev",
+      globs: [".github/**", "tools/**", "etc/**", "Cargo.toml", "Cargo.lock", "deny.toml", "rust-toolchain.toml", ".gitignore", ".gitleaks*"]},
+    {id: "provenance", title: "Provenance and licences", audience: "dev",
+      globs: ["provenance/**", "vendor/**", "NOTICE", "REUSE.toml", "LICENSE-*"]}
+  ]
+}

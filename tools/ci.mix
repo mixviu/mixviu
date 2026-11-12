@@ -100,9 +100,12 @@ fn stage_test($mix)
   run_step([$mix, "tools/term-targets-test.mix"])
   $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
   run_step(["cargo", "fetch", "--locked"])
-  run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
-  run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
-  run_step(["cargo", "test", "--locked", "-p", "portald", "--no-default-features", "--no-fail-fast"], $test_env)
+  -- The test binaries run in parallel (tools/ci/test_pool.mix, which adds
+  -- --no-fail-fast); a short serial list (tools/ci/serial-tests.conf.mix)
+  -- runs alone afterwards.
+  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "mix", "--features", "test-hooks"], $test_env)
+  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "--workspace", "--exclude", "mix"], $test_env)
+  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "portald", "--no-default-features"], $test_env)
   stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
   for $case in sort(glob("apps/term/*-test.mix"))
@@ -113,6 +116,10 @@ fn stage_test($mix)
       run_step([$mix, $case])
     end
   end
+  -- The daily pipeline: a fixture repository and fake gh, then the citizen
+  -- on a private broker (noded is built by the workspace tests above).
+  run_step([$mix, "services/daily/tests/manifest_test.mix"], $test_env)
+  run_step([$mix, "services/daily/tests/serve_test.mix"], merge($test_env, {MIX_TEST_NODED_EXE: realpath("target/debug/noded") ?? "target/debug/noded"}))
 end
 
 fn stage_mix_services($mix)

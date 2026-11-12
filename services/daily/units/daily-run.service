@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# One daily cut: daily.execute {id: "run"} over the Bus, the same execute
+# Mark and agents call. Started by daily-run.timer.
+[Unit]
+Description=MixViu daily cut and pipeline run
+Requires=daily.service
+After=daily.service
+
+[Service]
+Type=oneshot
+Environment=MIX_STATS=off
+ExecStart=@{prefix}/bin/mix @{share}/daily/scripts/daily-cli.mix run --timeout 7200
+TimeoutStartSec=7300

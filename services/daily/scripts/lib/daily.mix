@@ -1,0 +1,192 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- The daily action registry and its one execute. The Bus service
+-- (scripts/daily.mix), the CLI (scripts/daily-cli.mix) and the timer all
+-- end here: actions() is data, execute(id, params) -> {rc, body}.
+$u = require("util.mix")
+$cfg = require("config.mix")
+$runs = require("runs.mix")
+$manifest = require("manifest.mix")
+$schema = require("jsonschema.mix")
+$notify = require("notify.mix")
+
+$DATE = "^[0-9]{4}-[0-1][0-9]-[0-3][0-9]$"
+$P_DATE = {type: "string", pattern: $DATE, description: "Cut date YYYY-MM-DD in config timezone; default today"}
+$P_DRY = {type: "boolean", description: "Write artefacts, but create, push and publish nothing"}
+$P_SHA = {type: "string", pattern: "^[0-9a-f]{7,40}$", description: "Commit to cut when the date has no tag yet"}
+
+$ACTIONS = [
+  {id: "run", label: "Run the daily pipeline", read_only: false, enabled: true,
+    description: "Stages in order from manifest.build; stops at the first failure or unbuilt stage",
+    params: {date: $P_DATE, dry_run: $P_DRY, sha: $P_SHA}},
+  {id: "resume", label: "Resume from the first open stage", read_only: false, enabled: true,
+    description: "Continue a day's run from its first stage that is not ok",
+    params: {date: $P_DATE, dry_run: $P_DRY, sha: $P_SHA}},
+  {id: "manifest.build", label: "Build the manifest", read_only: false, enabled: true,
+    description: "Stage 1: cut tag and manifest.json for one date; a rerun with unchanged inputs is byte-identical",
+    params: {date: $P_DATE, dry_run: $P_DRY, sha: $P_SHA}},
+  {id: "status", label: "Show a day's status", read_only: true, enabled: true,
+    description: "status.json for one date", params: {date: $P_DATE}},
+  {id: "config.show", label: "Show effective configuration", read_only: true, enabled: true,
+    description: "Merged configuration and the files it came from", params: {}},
+  {id: "post.write", label: "Write the post", read_only: false, enabled: false, reason: "not built yet (phase 2)", params: {date: $P_DATE}},
+  {id: "script.write", label: "Write the video script", read_only: false, enabled: false, reason: "not built yet (phase 3)", params: {date: $P_DATE}},
+  {id: "tts.render", label: "Render narration", read_only: false, enabled: false, reason: "not built yet (phase 3)", params: {date: $P_DATE}},
+  {id: "visuals.render", label: "Render visuals", read_only: false, enabled: false, reason: "not built yet (phase 3)", params: {date: $P_DATE}},
+  {id: "screencast.record", label: "Record screencasts", read_only: false, enabled: false, reason: "not built yet (phase 4)", params: {date: $P_DATE}},
+  {id: "video.assemble", label: "Assemble the video", read_only: false, enabled: false, reason: "not built yet (phase 3)", params: {date: $P_DATE}},
+  {id: "publish.approve", label: "Approve and publish", read_only: false, enabled: false, reason: "not built yet (phase 2)", params: {date: $P_DATE}},
+  {id: "publish.reject", label: "Reject a day", read_only: false, enabled: false, reason: "not built yet (phase 2)", params: {date: $P_DATE}}
+]
+
+fn actions()
+  return $ACTIONS
+end
+
+fn spec($id)
+  for $a in $ACTIONS
+    if $a.id == $id then return $a end
+  end
+  return nil
+end
+
+fn refused($code, $msg)
+  return {rc: 10, body: {error_code: $code, message: $msg}}
+end
+
+fn check_params($a, $params)
+  $props = {}
+  for $k in keys($a.params) $props[$k] = delete($a.params[$k], "description") end
+  $e = $schema.errors({type: "object", additionalProperties: false, properties: $props}, $params)
+  if len($e) > 0 then raise("INVALID_ARGUMENT", join($e, "; ")) end
+end
+
+fn load_env()
+  return $cfg.load()
+end
+
+fn date_of($c, $params)
+  $d = $params.date ?? $u.today($c.timezone)
+  if not $u.is_date($d) then raise("INVALID_ARGUMENT", "date is not a calendar date: " .. $d) end
+  return $d
+end
+
+-- Stage 1. Writes manifest.json (only when its bytes change) and records the stage.
+fn stage_manifest($e, $date, $params)
+  $c = $e.config
+  $today = $u.today($c.timezone)
+  $built = $manifest.build($e, {date: $date, dry_run: $params.dry_run == true, sha: $params.sha}, $today)
+  $m = $built.manifest
+  $schema.check(json_parse(read_file($e.media .. "/schemas/manifest.v1.json")), $m, "manifest")
+  $text = $u.json_file($m)
+  $sha = $runs.put($c, $date, "manifest.json", $text)
+  return {manifest: $m, sha256: $sha, cut: $built.cut, inputs: $built.inputs}
+end
+
+-- How to continue after a failed stage. A missing cut needs the commit.
+fn resume_hint($code, $date)
+  $p = "date: \"" .. $date .. "\"" .. (if $code == "CUT_MISSING" then ", sha: \"<commit to cut>\"" else "" end)
+  return "daily.execute {id: \"resume\", params: {" .. $p .. "}}"
+end
+
+fn run_stages($e, $date, $params, $from_stage)
+  $c = $e.config
+  $d = $runs.ensure($c, $date)
+  $lock = $runs.lock($d)
+  try
+    $s = $runs.read_status($c, $date)
+    $s.dry_run = $params.dry_run == true
+    $start = index_of($runs.STAGES, $from_stage)
+    $done = []
+    for $i = $start to len($runs.STAGES) - 1
+      $st = $runs.STAGES[$i]
+      if $st != "manifest.build" then
+        $s.stages[$st] = {state: "pending"}
+        $runs.write_status($c, $date, $s)
+        $runs.log_event($c, $date, {stage: $st, event: "stop", reason: "NOT_IMPLEMENTED"})
+        return {rc: 0, body: {date: $date, completed: $done, stopped_before: $st, reason: "NOT_IMPLEMENTED",
+          dry_run: $s.dry_run, run_dir: $d}}
+      end
+      $t0 = now_iso()
+      $prev = $s.stages[$st] ?? {}
+      $s.stages[$st] = {state: "running", started: $t0}
+      $runs.write_status($c, $date, $s)
+      $runs.log_event($c, $date, {stage: $st, event: "start", dry_run: $s.dry_run})
+      try
+        $r = stage_manifest($e, $date, $params)
+        $s.stages[$st] = {state: "ok", started: $t0, ended: now_iso(),
+          inputs: merge($r.inputs, {config_sources: $e.sources, config_sha256: hash_sha256(json_encode($c))}),
+          outputs: {"manifest.json": $r.sha256},
+          cut: {tag: $r.cut.tag, created: $r.cut.created, provisional: $r.cut.provisional}}
+        $runs.write_status($c, $date, $s)
+        $runs.log_event($c, $date, {stage: $st, event: "ok", manifest_sha256: $r.sha256, quiet_day: $r.manifest.quiet_day})
+        push($done, {stage: $st, manifest_sha256: $r.sha256, quiet_day: $r.manifest.quiet_day, totals: $r.manifest.totals,
+          window: $r.manifest.window})
+      catch $msg, $err
+        $code = $err.code ?? "ERROR"
+        $hint = resume_hint($code, $date)
+        -- Raw subprocess stderr stays in the private run directory.
+        if type($err.details) == "map" and type($err.details.stderr) == "string" then
+          $runs.diagnose($c, $date, $st, $code, $err.details.stderr)
+        end
+        $s.stages[$st] = {state: "failed", started: $t0, ended: now_iso(), error: {code: $code, message: $msg}}
+        -- Once per failure: the same stage failing the same way again is
+        -- already in front of Mark. A dry run tells nobody.
+        if $prev.state == "failed" and ($prev.error ?? {}).code == $code and ($prev.notified ?? {}).sent == true then
+          $s.stages[$st].notified = $prev.notified
+        elif $s.dry_run then
+          $s.stages[$st].notified = {sent: false, via: "dry_run"}
+        else
+          $s.stages[$st].notified = $notify.send_failure($c, $notify.payload($st, $date, $code, $msg, $hint))
+        end
+        $runs.write_status($c, $date, $s)
+        $runs.log_event($c, $date, {stage: $st, event: "failed", code: $code, message: $msg, notified: $s.stages[$st].notified})
+        return {rc: 10, body: {error_code: $code, message: $msg, stage: $st, date: $date, resume: $hint}}
+      end
+    end
+    return {rc: 0, body: {date: $date, completed: $done, dry_run: $s.dry_run, run_dir: $d}}
+  finally
+    $runs.unlock($lock)
+  end
+end
+
+fn dispatch($id, $params)
+  if $id == "config.show" then
+    $e = load_env()
+    return {rc: 0, body: {config: $cfg.safe_view($e), media: $e.media, sources: $e.sources}}
+  end
+  $e = load_env()
+  $date = date_of($e.config, $params)
+  if $id == "status" then
+    return {rc: 0, body: $runs.read_status($e.config, $date)}
+  end
+  if $id == "run" or $id == "manifest.build" then
+    $r = run_stages($e, $date, $params, "manifest.build")
+    if $id == "manifest.build" and $r.rc == 0 then
+      $r.body = {date: $date, completed: $r.body.completed, dry_run: $r.body.dry_run, run_dir: $r.body.run_dir}
+    end
+    return $r
+  end
+  if $id == "resume" then
+    $open = $runs.first_open($runs.read_status($e.config, $date))
+    if $open == nil then return {rc: 0, body: {date: $date, completed: [], message: "every stage is ok"}} end
+    return run_stages($e, $date, $params, $open)
+  end
+  return refused("NOT_IMPLEMENTED", $id .. " is not built yet")
+end
+
+-- The single entry point. Never raises: errors come back as {rc: 10, body}.
+fn execute($id, $params = nil)
+  try
+    if type($id) != "string" or trim($id) == "" then return refused("INVALID_ARGUMENT", "id is required") end
+    $a = spec($id)
+    if $a == nil then return refused("UNKNOWN_ACTION", "unknown action " .. $id) end
+    $p = $params ?? {}
+    if type($p) != "map" then return refused("INVALID_ARGUMENT", "params must be an object") end
+    check_params($a, $p)
+    if not $a.enabled then return refused("NOT_IMPLEMENTED", $id .. ": " .. $a.reason) end
+    return dispatch($id, $p)
+  catch $msg, $err
+    return refused($err.code ?? "ERROR", $msg)
+  end
+end
