@@ -74,7 +74,7 @@ fn ensure_output_post_processing(fd: libc::c_int) {
     }
 }
 
-/// Check for the claude-resume flag file in $SRC.
+/// Check for the claude-resume flag file in $MIX_SRC.
 /// Returns the resume command if the flag exists.
 fn check_resume_flag() -> Option<String> {
     let flag = crate::paths::mix_src()?.join(RESUME_FLAG);
@@ -1338,7 +1338,7 @@ pub(crate) async fn load_mixrc_async(eval: &mut Evaluator) -> Option<i32> {
     // Treat unset OR empty HOME as "no rc" — `PathBuf::from("").join(".mixrc")`
     // collapses to a relative `.mixrc` and would otherwise auto-source a
     // cwd-local file.
-    let home = ::paths::env::raw("HOME").filter(|h| !h.is_empty());
+    let home = ::paths::env::os("HOME").filter(|h| !h.is_empty());
     let home = home?;
     let rc_path = std::path::PathBuf::from(home).join(".mixrc");
     // stat (following symlinks) rather than `exists()`: sourcing OPENS the
@@ -1382,7 +1382,7 @@ pub(crate) async fn load_mixrc_async(eval: &mut Evaluator) -> Option<i32> {
 
 /// A1 step 1 (TODO-mix strict-arity sweep): `$strict_arity = true` in
 /// ~/.mixrc opts this evaluator into strict arity — the same knob as
-/// `--strict-arity` / `STRICT_ARITY=1`, settable per-operator without
+/// `--strict-arity` / `MIX_STRICT_ARITY=1`, settable per-operator without
 /// a wrapper script.
 fn apply_mixrc_arity(eval: &mut Evaluator) {
     if let Some(mix::value::Value::Bool(true)) = eval.get_global("strict_arity") {
@@ -1560,7 +1560,7 @@ mod tests {
     }
 
     /// `mix lint` learns the shell's extensions from
-    /// `mix::analyzer::SHELL_EXTENSIONS`; this pins that list to what
+    /// `mix::analyzer::MIX_SHELL_EXTENSIONS`; this pins that list to what
     /// `register_ai_extensions` really registers, so the two cannot drift.
     #[test]
     fn registered_extensions_match_the_lint_list() {
@@ -1568,7 +1568,7 @@ mod tests {
         super::register_ai_extensions(&mut eval);
         let mut registered = eval.extension_names();
         registered.sort();
-        let mut listed: Vec<String> = mix::analyzer::SHELL_EXTENSIONS
+        let mut listed: Vec<String> = mix::analyzer::MIX_SHELL_EXTENSIONS
             .iter()
             .map(|name| name.to_string())
             .collect();

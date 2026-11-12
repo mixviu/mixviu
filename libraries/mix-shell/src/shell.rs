@@ -47,7 +47,7 @@ pub enum InputKind {
 /// idiom. The LEXER still recognizes them as literals everywhere inside Mix
 /// source (`$x = true`, `if $a == nil`); this list only routes line heads.
 /// `nil` has no external binary, so it falls through to the Mix parse anyway.
-pub const KEYWORDS: &[&str] = &[
+pub const MIX_KEYWORDS: &[&str] = &[
     "if", "for", "while", "loop", "function", "fn", "return", "select", "print", "eprint", "die",
     "try", "parse", "export", "alias", "break", "continue", "send", "address", "emit", "source",
     "sh", "label",
@@ -139,7 +139,7 @@ pub fn classify_input_fns(
         .unwrap_or("");
 
     // Mix keywords → Mix (with shell-chain fallback for `false || cmd` etc.)
-    if KEYWORDS.contains(&first_word) {
+    if MIX_KEYWORDS.contains(&first_word) {
         return try_mix_then_external(work);
     }
 

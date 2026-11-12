@@ -105,7 +105,7 @@ if $mode == "lint" then
 end
 if $mode != "gate" then raise("USAGE", "cutover_gate.mix gate|lock|fmt|builtins|lint DIR...") end
 
-$checks = [
+$build_checks = [
   ["cargo", "fmt", "--all", "--", "--check"],
   ["cargo", "clippy", "--locked", "--workspace", "--exclude", "mix", "--all-targets"],
   ["cargo", "clippy", "--locked", "-p", "mix", "--all-targets"],
@@ -113,17 +113,22 @@ $checks = [
   ["cargo", "build", "--locked", "-p", "mixd"],
   -- Tests that start a real interpreter get the one built from this tree,
   -- never an installed one (tools/ci.mix does the same).
-  ["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"],
+  ["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"]
+]
+for $argv in $build_checks
+  $r = gate_step($argv, "6")
+  if not $r.ok then push($failed, join($argv, " ")) end
+end
+$staging = require("test_install.mix")
+$prefix = $staging.stage_install()
+$checks = [
   ["cargo", "test", "--locked", "-p", "mix", "--no-fail-fast"],
   ["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"]
 ]
-$test_mix = realpath(".") .. "/target/debug/mix"
+$test_mix = $prefix .. "/bin/mix"
 for $argv in $checks
   $env = {}
   if $argv[1] == "test" then
-    $staging = require("test_install.mix")
-    $prefix = $staging.stage_install()
-    $test_mix = $prefix .. "/bin/mix"
     $env = {MIX_PREFIX: $prefix, MIX_TEST_E2E_EXE: $test_mix, MIX_TEST_MIX_EXE: $test_mix}
   end
   $r = gate_step($argv, "6", $env)
@@ -141,6 +146,7 @@ for $argv in $checks
     end
   end
 end
+run_argv_must(["rm", "-rf", "--", $prefix])
 print("TEST_TOTALS " .. json_encode($totals))
 
 -- viud is egui-free by construction (default features).

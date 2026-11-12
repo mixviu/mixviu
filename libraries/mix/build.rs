@@ -35,7 +35,7 @@ fn main() {
     );
     std::fs::write(
         std::path::Path::new(
-            &paths::env::raw("OUT_DIR")
+            &paths::env::os("OUT_DIR")
                 .ok_or(std::env::VarError::NotPresent)
                 .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
                 .unwrap(),

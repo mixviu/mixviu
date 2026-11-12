@@ -31,7 +31,7 @@ pub fn stats_setting_enabled(value: Option<&str>) -> bool {
     )
 }
 
-/// Read STATS once for the process. Front ends consult this before
+/// Read MIX_STATS once for the process. Front ends consult this before
 /// allocating a collector, which makes the kill switch skip all event work.
 pub fn stats_enabled() -> bool {
     *STATS_ENABLED.get_or_init(|| {

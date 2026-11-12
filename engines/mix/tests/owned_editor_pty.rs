@@ -119,7 +119,7 @@ fn same_modes(a: libc::termios, b: libc::termios) {
 #[test]
 fn fixture_editor() {
     let _fixture = fixture_guard();
-    let Ok(scenario) = paths::env::raw("OWNED_FIXTURE")
+    let Ok(scenario) = paths::env::os("OWNED_FIXTURE")
         .and_then(|v| v.into_string().ok())
         .ok_or(std::env::VarError::NotPresent)
     else {
@@ -228,7 +228,7 @@ fn fixture_editor() {
             "must exercise partial output"
         );
         terminal.finish(&layout).unwrap();
-        let home = std::path::PathBuf::from(paths::env::raw("HOME").unwrap());
+        let home = std::path::PathBuf::from(paths::env::os("HOME").unwrap());
         fs::write(home.join("drain-ready"), "go").unwrap();
         // The bounded restore tests a responsive reader, not whether the
         // parent is scheduled within its 250 ms production drain budget.
@@ -298,7 +298,7 @@ fn fixture_editor() {
         assert!(editor::terminal::OUTPUT_TEARS.load(std::sync::atomic::Ordering::Relaxed) > 0);
         editor.control.shutdown().unwrap();
         fs::write(
-            std::path::PathBuf::from(paths::env::raw("HOME").unwrap()).join("backpressure-pass"),
+            std::path::PathBuf::from(paths::env::os("HOME").unwrap()).join("backpressure-pass"),
             "ok",
         )
         .unwrap();
@@ -440,7 +440,7 @@ fn stop_supervisor(original: libc::termios) {
     );
     assert!(libc::WIFSTOPPED(status));
     assert_eq!(libc::WSTOPSIG(status), libc::SIGTTIN);
-    let home = std::path::PathBuf::from(paths::env::raw("HOME").unwrap());
+    let home = std::path::PathBuf::from(paths::env::os("HOME").unwrap());
     fs::write(home.join("nested-pid"), pid.to_string()).unwrap();
     assert_eq!(unsafe { libc::tcsetpgrp(0, pid) }, 0);
     unsafe {

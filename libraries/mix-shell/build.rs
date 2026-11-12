@@ -3,13 +3,10 @@
 use std::path::{Path, PathBuf};
 
 fn main() {
-    if ::paths::env::raw("CARGO_FEATURE_TEST_HOOKS").is_some() {
+    if ::paths::env::os("CARGO_FEATURE_TEST_HOOKS").is_some() {
         assert_eq!(
-            ::paths::env::raw("PROFILE")
-                .map(|s| s.to_string_lossy().into_owned())
-                .ok_or(())
-                .as_deref(),
-            Ok("debug"),
+            ::paths::env::os("PROFILE").as_deref(),
+            Some(std::ffi::OsStr::new("debug")),
             "test-hooks is forbidden outside the debug test profile"
         );
     }
@@ -22,7 +19,7 @@ fn main() {
 /// `u32 LE name length, name, u32 LE body length, body`.
 fn pack_manual() {
     let dir =
-        PathBuf::from(::paths::env::raw("CARGO_MANIFEST_DIR").unwrap()).join("../../docs/mix");
+        PathBuf::from(::paths::env::os("CARGO_MANIFEST_DIR").unwrap()).join("../../docs/mix");
     println!("cargo:rerun-if-changed={}", dir.display());
     let mut names: Vec<String> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
@@ -44,6 +41,6 @@ fn pack_manual() {
         &packed,
         structured_zstd::encoding::CompressionLevel::Best,
     );
-    let out = Path::new(&::paths::env::raw("OUT_DIR").unwrap()).join("manual.zst");
+    let out = Path::new(&::paths::env::os("OUT_DIR").unwrap()).join("manual.zst");
     std::fs::write(&out, compressed).unwrap_or_else(|e| panic!("write {}: {e}", out.display()));
 }

@@ -288,7 +288,7 @@ async fn test_serve_socket_lifecycle() {
     let dir = Dir::new("sock-life");
     let mut broker = Broker::start();
 
-    let bin_path = paths::env::raw(paths::env::test::TEST_SOCKET_EXE)
+    let bin_path = paths::env::os(paths::env::test::TEST_SOCKET_EXE)
         .and_then(|v| v.into_string().ok())
         .ok_or(std::env::VarError::NotPresent)
         .unwrap_or_else(|_| install::exe().to_string());
@@ -357,12 +357,12 @@ async fn test_serve_socket_lifecycle() {
     let median = latencies[latencies.len() / 2];
     let p90 = latencies[(latencies.len() as f64 * 0.9) as usize];
 
-    let mode = paths::env::raw(paths::env::test::TEST_SOCKET_PROFILE)
+    let mode = paths::env::os(paths::env::test::TEST_SOCKET_PROFILE)
         .and_then(|v| v.into_string().ok())
         .ok_or(std::env::VarError::NotPresent)
         .unwrap_or_else(|_| {
             assert!(
-                paths::env::raw(paths::env::test::TEST_SOCKET_EXE).is_none(),
+                paths::env::os(paths::env::test::TEST_SOCKET_EXE).is_none(),
                 "binary override requires explicit socket test profile"
             );
             if cfg!(debug_assertions) {

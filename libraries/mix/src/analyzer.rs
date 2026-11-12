@@ -111,7 +111,7 @@ pub struct Fix {
 /// this list). An extension beats a user function of the same name at a
 /// bareword call site, so lint must know them: a call to one is defined,
 /// and a function named after one is flagged (MIX-W2313).
-pub const SHELL_EXTENSIONS: &[&str] = &["ai", "ai_diagnose", "context"];
+pub const MIX_SHELL_EXTENSIONS: &[&str] = &["ai", "ai_diagnose", "context"];
 
 /// Analyzer inputs beyond the AST.
 #[derive(Debug, Clone, Default)]
@@ -132,7 +132,7 @@ pub struct AnalyzerConfig {
     /// before.
     pub suppress_name_checks: bool,
     /// Extension functions the host evaluator registers (`mix lint` passes
-    /// [`SHELL_EXTENSIONS`]). Calls to them are defined, and a function
+    /// [`MIX_SHELL_EXTENSIONS`]). Calls to them are defined, and a function
     /// definition of the same name gets MIX-W2313, since the extension wins
     /// a bareword call.
     pub extensions: Vec<String>,
@@ -149,7 +149,7 @@ pub struct AnalyzerConfig {
     /// unaffected, so an embedder that does not set it loses nothing it
     /// had before.
     pub source: Option<String>,
-    /// `--agent` (or the agent lint profile): the agentic-first lint profile
+    /// `--agent` (or `MIX_LINT=agent`): the agentic-first lint profile
     /// (D2, TODO-mix 2026-09-24). Promotes D3015/W2201/W2302 to errors
     /// and enables the agent-only rules in [`check_agent_rules`] — the
     /// failure classes a model driving Mix as an actuator must see at
@@ -2801,7 +2801,7 @@ const REFLEX_SURPLUS_HINTS: &[(&str, usize, &str)] = &[
 /// Whether `head` names an executable on this host's PATH — the B2 gate:
 /// only a real shell reflex fires, a prose string never does.
 fn on_path(head: &str) -> bool {
-    let Ok(path) = paths::env::raw("PATH")
+    let Ok(path) = paths::env::os("PATH")
         .ok_or(std::env::VarError::NotPresent)
         .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
     else {

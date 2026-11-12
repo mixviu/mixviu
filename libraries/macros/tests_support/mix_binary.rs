@@ -21,7 +21,7 @@ pub fn executable(path: &Path) -> bool {
 
 /// Tests require the exact interpreter selected by the build job.
 pub fn select() -> Result<Option<PathBuf>, String> {
-    if let Some(path) = paths::env::raw(paths::env::test::TEST_E2E_EXE) {
+    if let Some(path) = paths::env::os(paths::env::test::TEST_E2E_EXE) {
         let path = PathBuf::from(path);
         if !executable(&path) {
             return Err(format!(

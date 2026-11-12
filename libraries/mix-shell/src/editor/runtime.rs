@@ -26,7 +26,7 @@ const MAX_CANDIDATES: usize = 4096;
 const MAX_COMPLETION_RESULT_BYTES: usize = 1024 * 1024;
 const MAX_HISTORY_ENTRY_BYTES: usize = 1024 * 1024;
 
-pub const SUBCOMMANDS: &[&str] = &[
+pub const MIX_SUBCOMMANDS: &[&str] = &[
     "edit",
     "vars",
     "aliases",
@@ -85,7 +85,7 @@ impl CompletionSnapshot {
             );
         } else if before[..start].trim() == "mix" {
             candidates.extend(
-                SUBCOMMANDS
+                MIX_SUBCOMMANDS
                     .iter()
                     .filter(|v| v.starts_with(word))
                     .map(|v| (*v).to_owned()),

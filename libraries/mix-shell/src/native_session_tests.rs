@@ -114,7 +114,7 @@ fn consume_scrub_helper() {
     };
     let result = consume();
     assert_eq!(result.is_ok(), expected == "ok");
-    assert!(::paths::env::raw(MARKER).is_none());
+    assert!(::paths::env::os(MARKER).is_none());
     assert_eq!(unsafe { libc::fcntl(64, libc::F_GETFD) }, -1);
     for fd in 0..3 {
         assert!(unsafe { libc::fcntl(fd, libc::F_GETFD) } >= 0);
@@ -128,6 +128,7 @@ fn consume_closes_fd_and_scrubs_marker_on_success_and_failure() {
         (false, "64"),
         (true, "65"),
         (true, "bogus"),
+        (true, ""),
         (true, "0"),
     ] {
         let file = memfd(descriptor(), 1, if valid { SEALS } else { 0 }, false);
@@ -300,6 +301,7 @@ fn resident_uses_configuration_captured_before_thread_start() {
         "std::env::",
         "use std::env",
         "::paths::env::raw",
+        "::paths::env::os",
         "crate::env_string",
         "resolve_noded_url()",
         "native_endpoint()",
@@ -324,6 +326,7 @@ fn resident_uses_configuration_captured_before_thread_start() {
         "use std::env",
         "dirs::",
         "::paths::env::raw",
+        "::paths::env::os",
     ] {
         assert!(!resolution.contains(forbidden));
     }

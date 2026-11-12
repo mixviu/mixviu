@@ -417,7 +417,7 @@ fn term_ignoring_child_fixture() {
     let mut trace = std::fs::OpenOptions::new()
         .append(true)
         .create(true)
-        .open(paths::env::raw("REL_TRACE").expect("fixture trace"))
+        .open(paths::env::os("REL_TRACE").expect("fixture trace"))
         .unwrap();
     write_legacy_ready(&mut trace, std::process::id());
     loop {

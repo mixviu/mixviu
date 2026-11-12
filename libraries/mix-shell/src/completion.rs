@@ -116,7 +116,7 @@ impl Completer for MixHelper {
         if !is_first_word {
             let leading = before[..word_start].trim();
             if leading == "mix" {
-                let subcmds = crate::editor::runtime::SUBCOMMANDS;
+                let subcmds = crate::editor::runtime::MIX_SUBCOMMANDS;
                 let matches: Vec<Pair> = subcmds
                     .iter()
                     .filter(|s| s.starts_with(word))

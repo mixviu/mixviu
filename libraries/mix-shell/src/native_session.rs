@@ -123,7 +123,7 @@ fn quarantine_failed_bootstrap() {
 }
 
 fn consume_inner() -> Result<Option<Bootstrap>, &'static str> {
-    let Some(value) = ::paths::env::raw(MARKER) else {
+    let Some(value) = ::paths::env::os(MARKER) else {
         return Ok(None);
     };
     // SAFETY: main is still single-threaded; no concurrent environment readers.

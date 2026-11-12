@@ -156,7 +156,7 @@ impl Roots {
         Ok((destination, outcome))
     }
     pub fn resolve() -> Option<Self> {
-        Self::resolve_with(|key| paths::env::raw(key).map(PathBuf::from))
+        Self::resolve_with(|key| paths::env::os(key).map(PathBuf::from))
     }
 
     pub fn resolve_with(get: impl Fn(&str) -> Option<PathBuf>) -> Option<Self> {

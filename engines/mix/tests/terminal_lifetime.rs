@@ -258,10 +258,10 @@ fn plain_eof_exits_zero() {
 #[test]
 fn fixture_job() {
     let _fixture = fixture_guard();
-    let Some(report) = paths::env::raw("TERMINAL_JOB_REPORT") else {
+    let Some(report) = paths::env::os("TERMINAL_JOB_REPORT") else {
         return;
     };
-    if paths::env::raw("TERMINAL_JOB_IGNORE_HUP")
+    if paths::env::os("TERMINAL_JOB_IGNORE_HUP")
         .and_then(|v| v.into_string().ok())
         .ok_or(std::env::VarError::NotPresent)
         .as_deref()
@@ -361,7 +361,7 @@ fn observed_exit_reserves_leader_for_session_cleanup() {
 #[allow(clippy::zombie_processes)]
 fn fixture_parent() {
     let _fixture = fixture_guard();
-    let Some(report) = paths::env::raw("TERMINAL_PARENT_REPORT") else {
+    let Some(report) = paths::env::os("TERMINAL_PARENT_REPORT") else {
         return;
     };
     // No terminal and no editor: HUP/CONT on an orphaned stopped group cannot

@@ -116,7 +116,9 @@ bare-vs-mesh at execution time.
 
 MixViu locations use `mix_path(root[, rel[, opts]])`, backed by the shared
 paths resolver (manual not included in this source tree). For example,
-`mix -c 'print(mix_prefix())'` prints the resolved installation prefix.\n`mix_exe()` returns the running interpreter's own executable path, independently\nof prefix overrides. `mix_path("lib", "module.mix")` resolves a library path.
+`mix -c 'print(mix_prefix())'` prints the resolved installation prefix.
+`mix_exe()` returns the running interpreter's own executable path, independently
+of prefix overrides. `mix_path("lib", "module.mix")` resolves a library path.
 The roots are `prefix`, `share`, `etc`, `var`, `run`, `cache`. Defaults follow
 the process uid. `{tier: "system"}` or `{tier: "user"}` selects a tier
 explicitly, for example `mix_path("etc", "node.conf.mix", {tier: "system"})`.

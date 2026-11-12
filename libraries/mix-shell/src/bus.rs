@@ -638,7 +638,7 @@ impl MixBusHandler {
     /// `timeout=`, which bounds the attempt, so a script that sent before
     /// its broker listened, or that outlived a broker restart, recovers on
     /// its next send without `bus_reconnect()`. The probe re-reads
-    /// `NODED_URL` and the node config. A failed retry leaves the
+    /// `MIX_NODED_URL` and the node config. A failed retry leaves the
     /// latch as it was. Every other form keeps the zero-cost latch.
     async fn noded_access_with(&self, retry: bool) -> Result<std::sync::Arc<Lane>, MeshErr> {
         self.reconcile_native_attachment().await;
@@ -726,7 +726,7 @@ impl MixBusHandler {
         // local broker socket, a broker running as another account, a
         // cross-node target — all of those are ordinary, and all of them
         // must keep working exactly as they did.
-        let pid_pin = ::paths::env::raw(::paths::env::NODED_EXPECTED_SERVER_PID);
+        let pid_pin = ::paths::env::os(::paths::env::NODED_EXPECTED_SERVER_PID);
         match Self::verified_options() {
             Some((options, url)) => {
                 Self::probe_with_pin(&url, pid_pin.as_deref(), Some(options)).await
@@ -3227,7 +3227,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn a_reconnect_during_a_retry_probe_makes_it_start_over() {
         // The retry probes without the lock. A bus_reconnect() that lands
-        // meanwhile (the script re-pointed NODED_URL) must not be
+        // meanwhile (the script re-pointed MIX_NODED_URL) must not be
         // answered from the stale probe: the send starts over and dials
         // the new configuration.
         let old = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

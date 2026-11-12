@@ -347,6 +347,9 @@ fn independent_tiers_and_lazy_settings_in_child() {
     if std::env::var_os(env::test::TEST_PATH_CACHE).as_deref()
         == Some(std::ffi::OsStr::new("settings"))
     {
+        assert_eq!(env::os(env::test::TEST_ENV_EMPTY).as_deref(), Some(std::ffi::OsStr::new("")));
+        assert_eq!(env::raw(env::test::TEST_ENV_EMPTY), None);
+        assert_eq!(env::os(env::test::TEST_ENV_UNSET), None);
         let prefix = PathBuf::from(std::env::var_os(env::PREFIX).unwrap());
         assert_eq!(env::raw(env::NODED_SERVICE), None);
         assert!(matches!(
@@ -376,6 +379,8 @@ fn independent_tiers_and_lazy_settings_in_child() {
         .env("HOME", "/home/user")
         .env(env::PREFIX, &prefix)
         .env(env::test::TEST_PATH_CACHE, "settings")
+        .env(env::test::TEST_ENV_EMPTY, "")
+        .env_remove(env::test::TEST_ENV_UNSET)
         .env(env::NODED_SERVICE, "")
         .args([
             "--exact",

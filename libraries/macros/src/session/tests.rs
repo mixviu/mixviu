@@ -282,7 +282,7 @@ fn created_file_survives_failed_or_incomplete_rescan() {
 #[test]
 fn process_handles_share_the_same_state() {
     const CHILD: &str = paths::env::test::TEST_MACRO_SESSION_SHARING;
-    if paths::env::raw(CHILD).is_none() {
+    if paths::env::os(CHILD).is_none() {
         let prefix = tempfile::tempdir().unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -305,7 +305,7 @@ fn process_handles_share_the_same_state() {
         return;
     }
     assert!(
-        paths::env::raw(paths::env::PREFIX).is_some(),
+        paths::env::os(paths::env::PREFIX).is_some(),
         "session-sharing test needs an explicit prefix"
     );
     let a = Session::for_app("session-sharing-test");

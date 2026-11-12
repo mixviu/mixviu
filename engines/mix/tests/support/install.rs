@@ -5,6 +5,9 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 pub fn prefix() -> &'static Path {
+    // Shared for this integration-test executable. Static fixture directories
+    // remain under target/debug as CBC job artefacts; binaries are hardlinks,
+    // so retaining them does not copy shell images into worker scratch space.
     static PREFIX: OnceLock<tempfile::TempDir> = OnceLock::new();
     PREFIX
         .get_or_init(|| {
@@ -24,10 +27,13 @@ pub fn prefix() -> &'static Path {
                 .iter()
                 .find_map(|marker| {
                     let info: serde_json::Value = serde_json::from_str(marker).ok()?;
-                    (info["component"] == "mix-shell")
-                        .then(|| info["git_sha_full"].as_str().unwrap().to_owned())
+                    if info["component"] == "mix-shell" {
+                        info["git_sha_full"].as_str().filter(|sha| !sha.is_empty()).map(str::to_owned)
+                    } else {
+                        None
+                    }
                 })
-                .expect("built shell provenance");
+                .unwrap_or_else(|| "unknown".into());
             let mut defaults = serde_json::Map::new();
             defaults.insert("schema".into(), 1.into());
             defaults.insert("commit".into(), commit.into());

@@ -9,7 +9,9 @@ installed data and follow the prefix unless their own variable is set.
 executable resolver.
 
 `env` owns the registered variable names (`env::test` for test names).
-`env::raw` treats empty overrides as unset. `env::setting` reads an override
+`env::os` is a plain process-environment read: empty and non-Unicode values
+are preserved, with no configuration lookup. `env::raw` treats empty
+overrides as unset. `env::setting` reads an override
 first, otherwise a lazy process-wide `env.mx` snapshot under the prefix.
 The bounded flat map requires `schema: 1`, `commit: '<sha>'`, and quoted
 string settings. `mix:` values resolve through the process roots.

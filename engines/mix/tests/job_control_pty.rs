@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 const PROMPT: &str = "P0J> ";
 const LIMIT: Duration = Duration::from_secs(10);
 fn fixture_limit() -> Duration {
-    paths::env::raw(paths::env::test::PTY_TIMEOUT_SECS)
+    paths::env::os(paths::env::test::PTY_TIMEOUT_SECS)
         .and_then(|v| v.into_string().ok())
         .ok_or(std::env::VarError::NotPresent)
         .map_or(LIMIT, |value| {
@@ -76,13 +76,13 @@ fn tty_modes(fd: i32) -> libc::termios {
 #[test]
 fn fixture_process() {
     let _fixture = fixture_guard();
-    let Ok(mode) = paths::env::raw("P0J_MODE")
+    let Ok(mode) = paths::env::os("P0J_MODE")
         .and_then(|v| v.into_string().ok())
         .ok_or(std::env::VarError::NotPresent)
     else {
         return;
     };
-    let report = PathBuf::from(paths::env::raw("P0J_REPORT").unwrap());
+    let report = PathBuf::from(paths::env::os("P0J_REPORT").unwrap());
     let tty = File::open("/dev/tty").ok();
     let foreground = tty
         .as_ref()
@@ -1193,7 +1193,7 @@ fn ssh_dash_c_has_zero_shell_group_or_terminal_handoff_syscalls() {
 fn run_bounded_ptrace_case(name: &str) -> bool {
     const CASE_LIMIT: Duration = Duration::from_secs(60);
     const CASE_ENV: &str = "P0J_PTRACE_CASE";
-    if paths::env::raw(CASE_ENV)
+    if paths::env::os(CASE_ENV)
         .and_then(|v| v.into_string().ok())
         .ok_or(std::env::VarError::NotPresent)
         .as_deref()

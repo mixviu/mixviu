@@ -181,7 +181,6 @@ const BASE_NAMES: &[&str] = &[
     "LANG",
     "MIXOS",
     ::paths::env::PREFIX,
-    ::paths::env::ROOT,
     ::paths::env::SRC,
     ::paths::env::BIN,
     ::paths::env::ETC,
@@ -786,7 +785,7 @@ fn reap_registered(pid: libc::pid_t) {
 /// THIS one, normally: the interpreter a caller is talking to should be the one
 /// that runs its task. Deriving a path from the install layout instead asks
 /// where a mix OUGHT to be, which fails for any shell not running from
-/// `$ROOT/bin` — a dev build, a test harness, a relocated tree — with
+/// `$MIX_ROOT/bin` — a dev build, a test harness, a relocated tree — with
 /// NOT_FOUND for a binary that is demonstrably running. Where the derived path
 /// happens to exist it is worse than a refusal: the task is evaluated by a
 /// DIFFERENT build than the shell, silently.

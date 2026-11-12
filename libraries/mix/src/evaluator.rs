@@ -5963,7 +5963,7 @@ impl ShellVarResolver for Evaluator {
         if let Some(val) = self.scope.get_value(name) {
             Some(val.to_mix_string())
         } else {
-            paths::env::raw(name).and_then(|v| v.into_string().ok())
+            paths::env::os(name).and_then(|v| v.into_string().ok())
         }
     }
 
@@ -8062,8 +8062,10 @@ impl Evaluator {
     }
 
     /// Load the standard prelude (utility functions).
-    /// Checks the shared paths etc root for a `prelude.mix` override first and
-    /// falls back to the built-in prelude.
+    /// Checks the shared paths user-tier etc root for a `prelude.mix` override
+    /// first (MIX_ETC, MIX_ROOT, layout and XDG/HOME) and falls back to the
+    /// built-in prelude if the directory cannot be resolved. Resolver errors
+    /// must not prevent an otherwise usable interpreter from starting.
     ///
     /// B10 (TODO-mix 2026-09-24): failures used to be PRINTED and
     /// suppressed — a configured prelude that failed to parse or raised
@@ -8080,10 +8082,25 @@ impl Evaluator {
         // inside requests instead of at the surface.
 
         // Check for user override
-        let (source, override_path) = {
-            let etc = paths::try_root(paths::Root::Etc)
-                .map_err(|e| MixError::structured("PRELUDE_FAILED", e))?;
-            let user_prelude = etc.join("prelude.mix");
+        let user_prelude = paths::env::os("HOME")
+            .and_then(|home| home.into_string().ok())
+            .and_then(|home| {
+                if home.is_empty() {
+                    // Main honoured HOME='' as a relative user config root.
+                    // Environment::current normally filters empty inputs; retain
+                    // this value explicitly while letting paths own every rule.
+                    let mut inputs = paths::Environment::current();
+                    inputs.home = Some(std::path::PathBuf::new());
+                    inputs.uid = paths::Tier::User.uid();
+                    paths::Layout::from_environment(&inputs)
+                        .or_else(|_| paths::Layout::from_source(&inputs, ""))
+                        .ok()
+                } else {
+                    paths::Layout::for_tier(paths::Tier::User).ok()
+                }
+            })
+            .and_then(|layout| layout.path(paths::Root::Etc, "prelude.mix").ok());
+        let (source, override_path) = if let Some(user_prelude) = user_prelude {
             if user_prelude.exists() {
                 match std::fs::read_to_string(&user_prelude) {
                     Ok(s) => (s, Some(user_prelude)),
@@ -8100,6 +8117,8 @@ impl Evaluator {
             } else {
                 (BUILTIN_PRELUDE.to_string(), None)
             }
+        } else {
+            (BUILTIN_PRELUDE.to_string(), None)
         };
 
         let mut lexer = crate::lexer::Lexer::new(&source);
@@ -8569,7 +8588,7 @@ impl Evaluator {
                             .get_value(base)
                             .map(|v| v.into_value())
                             .or_else(|| {
-                                paths::env::raw(base)
+                                paths::env::os(base)
                                     .and_then(|v| v.into_string().ok())
                                     .map(Value::String)
                             }) {
@@ -11112,7 +11131,7 @@ impl Evaluator {
                                     .get_value(head)
                                     .map(|v| v.into_value())
                                     .or_else(|| {
-                                        paths::env::raw(head)
+                                        paths::env::os(head)
                                             .and_then(|v| v.into_string().ok())
                                             .map(Value::String)
                                     })
@@ -11144,7 +11163,7 @@ impl Evaluator {
                         StringPart::CommandSub(_) => return None,
                         StringPart::EnvVar(name) => {
                             result.push_str(
-                                &paths::env::raw(name)
+                                &paths::env::os(name)
                                     .and_then(|v| v.into_string().ok())
                                     .unwrap_or_default(),
                             );
@@ -14015,7 +14034,7 @@ impl Evaluator {
                             }
                             StringPart::EnvVar(name) => {
                                 result.push_str(
-                                    &paths::env::raw(name)
+                                    &paths::env::os(name)
                                         .and_then(|v| v.into_string().ok())
                                         .unwrap_or_default(),
                                 );
@@ -19552,7 +19571,7 @@ mod standing_interrupt_tests {
 
     #[test]
     fn standing_interrupt_reaches_the_host_through_catch() {
-        if paths::env::raw(CHILD_ENV).is_some() {
+        if paths::env::os(CHILD_ENV).is_some() {
             return;
         }
         let exe = std::env::current_exe().expect("test binary path");
@@ -19610,16 +19629,16 @@ mod standing_interrupt_tests {
     /// Runs one case in the child process (see the parent test above).
     #[test]
     fn standing_child() {
-        if paths::env::raw(CHILD_ENV).is_none() {
+        if paths::env::os(CHILD_ENV).is_none() {
             return;
         }
-        let case: usize = paths::env::raw(CASE_ENV)
+        let case: usize = paths::env::os(CASE_ENV)
             .ok_or(std::env::VarError::NotPresent)
             .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
             .expect("case index")
             .parse()
             .expect("case index is a number");
-        let marker = std::path::PathBuf::from(paths::env::raw(MARKER_ENV).expect("marker path"));
+        let marker = std::path::PathBuf::from(paths::env::os(MARKER_ENV).expect("marker path"));
         let (body, expected, repeated) = cases().into_iter().nth(case).expect("case in range");
         block_on(async {
             // One evaluator, whose flag is the process interrupt flag, as in

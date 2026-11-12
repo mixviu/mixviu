@@ -4,9 +4,15 @@ include!("env_names.rs");
 
 use std::{ffi::OsString, sync::OnceLock};
 
+/// Process environment with exactly std::env::var_os semantics, including empty values.
+/// This never reads installed configuration.
+pub fn os(name: &str) -> Option<OsString> {
+    std::env::var_os(name)
+}
+
 /// An empty override is unset, just as in Environment.
 pub fn raw(name: &str) -> Option<OsString> {
-    std::env::var_os(name).filter(|v| !v.is_empty())
+    os(name).filter(|v| !v.is_empty())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

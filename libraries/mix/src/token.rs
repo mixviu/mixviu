@@ -11,7 +11,7 @@ pub enum StringPart {
     /// `Variable` because `Variable` walks Mix scope first then falls
     /// back to the process env then nil (see spec 04 §"String
     /// interpolation details"); `EnvVar` reads the process environment
-    /// through `paths::env::raw` and returns an empty string if
+    /// through `paths::env::os` and returns an empty string if
     /// unset (matches the `env()` builtin's `unwrap_or_default`
     /// semantics).
     EnvVar(String),

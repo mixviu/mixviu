@@ -210,7 +210,7 @@ static STRICT_ARITY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 /// after the source gets nothing. Warn when a trailing script argument
 /// exactly matches one of these, instead of leaving the knob silently
 /// unset.
-const KNOWN_FLAGS: &[&str] = &[
+const KNOWN_MIX_FLAGS: &[&str] = &[
     "--strict-arity",
     "--compat-arity",
     "--no-lint",
@@ -228,7 +228,7 @@ const KNOWN_FLAGS: &[&str] = &[
 
 fn warn_trailing_flag_args(script_args: &[String]) {
     for a in script_args {
-        if KNOWN_FLAGS.contains(&a.as_str()) {
+        if KNOWN_MIX_FLAGS.contains(&a.as_str()) {
             eprintln!(
                 "mix: warning: '{a}' after the source is a script argument, not a flag — \
                  mix flags go BEFORE the script/-c source"
@@ -241,7 +241,7 @@ fn warn_trailing_flag_args(script_args: &[String]) {
 /// diagnostic (arity, dead mutation, push-assign-back, literal-type) is
 /// statically provable — the script would raise or corrupt a target
 /// anyway — so the gate refuses with exit 2 BEFORE any line runs. The
-/// soft diagnostics print to stderr only under `--agent`/`LINT=warn`.
+/// soft diagnostics print to stderr only under `--agent`/`MIX_LINT=warn`.
 /// `--no-lint` skips the whole gate. Returns the exit code when refused.
 fn exec_lint_gate(source: &str, no_lint: bool, agent_mode: bool) -> Option<i32> {
     if no_lint {
@@ -299,9 +299,9 @@ fn engine_handoff(source: &str, filename: &str, args: &[String]) -> Option<i32> 
 /// shell build installed as `mixd`) and refuses instead of re-executing.
 pub use ::paths::env::ENGINE_HANDOFF as ENGINE_HANDOFF_ENV;
 
-/// Read a non-empty environment value through the shared environment boundary.
+/// Read the process environment with std::env::var semantics, including empty values.
 pub(crate) fn env_string(name: &str) -> Result<String, std::env::VarError> {
-    ::paths::env::raw(name)
+    ::paths::env::os(name)
         .ok_or(std::env::VarError::NotPresent)?
         .into_string()
         .map_err(std::env::VarError::NotUnicode)
@@ -321,7 +321,7 @@ fn find_mixd() -> Option<std::path::PathBuf> {
         .and_then(|exe| exe.parent().map(|dir| dir.join("mixd")))
         .filter(&not_self);
     beside.or_else(|| {
-        ::paths::env::raw("PATH").and_then(|paths| {
+        ::paths::env::os("PATH").and_then(|paths| {
             env::split_paths(&paths)
                 .map(|dir| dir.join("mixd"))
                 .find(&not_self)
@@ -332,7 +332,7 @@ fn find_mixd() -> Option<std::path::PathBuf> {
 /// A shell-profile binary reached through a handoff: the installed `mixd`
 /// is not the service engine. Refuse rather than hand off again.
 fn refuse_repeat_handoff(what: &str) -> Option<i32> {
-    ::paths::env::raw(ENGINE_HANDOFF_ENV)?;
+    ::paths::env::os(ENGINE_HANDOFF_ENV)?;
     eprintln!(
         "mix: {what}: handed off to a shell-profile binary ({}); the installed mixd is \
          not the service engine",
@@ -476,7 +476,23 @@ async fn shutdown_signal() -> i32 {
 /// Longest a non-interactive mix may outlive a SIGTERM before the backstop
 /// forces it out. Must exceed the slowest graceful path: `--serve` spends up
 /// to `DEREGISTER_GRACE` (5 s) + `CLASSC_DRAIN_GRACE` (5 s) + the owned-spawn
-/// `SWEEP_GRACE` (2 s). `SIGTERM_BACKSTOP_SECS` overrides it.
+/// `SWEEP_GRACE` (2 s). `MIX_SIGTERM_BACKSTOP_SECS` overrides it.
+const SIGTERM_BACKSTOP_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
+
+fn sigterm_backstop_grace(value: Option<&str>) -> std::time::Duration {
+    value.and_then(|s| s.parse::<u64>().ok())
+        .map(std::time::Duration::from_secs)
+        .unwrap_or(SIGTERM_BACKSTOP_GRACE)
+}
+
+#[test]
+fn sigterm_backstop_keeps_builtin_grace_without_a_usable_override() {
+    for value in [None, Some(""), Some("abc"), Some("-1"), Some("18446744073709551616")] {
+        assert_eq!(sigterm_backstop_grace(value), std::time::Duration::from_secs(15));
+    }
+    assert_eq!(sigterm_backstop_grace(Some("0")), std::time::Duration::ZERO);
+    assert_eq!(sigterm_backstop_grace(Some("60")), std::time::Duration::from_secs(60));
+}
 
 // The evaluator consumes its cooperative flag before returning an error.
 // Keep the actual CLI signal separate from both that flag and error prose.
@@ -598,16 +614,10 @@ fn arm_sigterm_backstop() {
         } {
             eprintln!("mix: failed to record SIGTERM: {error}");
         }
-        let grace = ::paths::env::setting(::paths::env::SIGTERM_BACKSTOP_SECS)
-            .and_then(|s| s.parse::<u64>().map_err(|error| ::paths::env::SettingError::Malformed {
-                name: ::paths::env::SIGTERM_BACKSTOP_SECS.into(),
-                detail: error.to_string(),
-            }))
-            .map(std::time::Duration::from_secs)
-            .unwrap_or_else(|error| {
-                eprintln!("mix: {error}");
-                std::process::exit(2);
-            });
+        let grace = sigterm_backstop_grace(
+            ::paths::env::raw(::paths::env::SIGTERM_BACKSTOP_SECS)
+                .and_then(|value| value.into_string().ok()).as_deref(),
+        );
         let mut signals = match signal_hook::iterator::Signals::new([libc::SIGTERM]) {
             Ok(s) => s,
             Err(e) => {
@@ -690,7 +700,7 @@ fn print_help() {
     // for the full function remit rather than duplicating it here.
     print!("{}", meta::help_overview_string(VERSION));
     println!(
-        "  --gui [args...]  Launch a fresh Term frontend (terminal executable override supported); Bus window reuse deferred until authenticated per-user identity (P0-I)."
+        "  --gui [args...]  Launch a fresh Term frontend (MIX_TERM_EXE overrides); Bus window reuse deferred until authenticated per-user identity (P0-I)."
     );
 }
 
@@ -711,7 +721,7 @@ fn resolve_term(
         });
     }
     // The Term frontend is searched in the development, installed
-    // and PATH tiers. An explicit TERM_EXE still overrides them.
+    // and PATH tiers. An explicit MIX_TERM_EXE still overrides them.
     for name in TERM_FRONTENDS {
         if let Some(root) = &mixos
             && let Some(path) = lookup(&Path::new(root).join("bin").join(name))
@@ -793,8 +803,8 @@ fn run_gui() -> i32 {
     // instance over Bus is deferred until authenticated per-user identity
     // (P0-I) exists; do not guess an instance or fake a Bus request here.
     let frontend = match resolve_term(
-        ::paths::env::raw(::paths::env::TERM_EXE),
-        ::paths::env::raw(::paths::env::ROOT),
+        ::paths::env::os(::paths::env::TERM_EXE),
+        ::paths::env::os(::paths::env::ROOT),
         || ::paths::bin(""),
         term_lookup,
     ) {
@@ -829,7 +839,7 @@ fn run_gui() -> i32 {
     // directory. Stamp the invoking cwd as TERM_CWD so the frontend's child
     // shell starts there, but never override an explicit TERM_CWD a caller
     // (a desktop launcher targeting a project) already set.
-    if ::paths::env::raw("TERM_CWD").is_none()
+    if ::paths::env::os("TERM_CWD").is_none()
         && let Ok(cwd) = env::current_dir()
     {
         command.env("TERM_CWD", cwd);
@@ -2446,7 +2456,7 @@ pub fn main() -> process::ExitCode {
     // engine: the installed `mixd` is a shell-profile build. Refuse before
     // argv is interpreted (the handoff's leading `run` is not a filename).
     if mix::builtins::engine_profile() != "service"
-        && ::paths::env::raw(ENGINE_HANDOFF_ENV).is_some()
+        && ::paths::env::os(ENGINE_HANDOFF_ENV).is_some()
     {
         eprintln!(
             "mix: handed off to a shell-profile binary ({}); the installed mixd is not the \
@@ -2582,7 +2592,7 @@ fn real_main() -> i32 {
     let _ = stats_io::stats_enabled();
     let args: Vec<String> = process_args();
 
-    // A1 step 1 (TODO-mix strict-arity sweep): `STRICT_ARITY=1` is the
+    // A1 step 1 (TODO-mix strict-arity sweep): `MIX_STRICT_ARITY=1` is the
     // env-level equivalent of `--strict-arity` — the knob scripts and
     // supervisors set ahead of the step-3 default flip. Read it BEFORE the
     // arg loop so a trailing flag warning can't race the mode decision.
@@ -2602,7 +2612,7 @@ fn real_main() -> i32 {
     let mut no_prelude = false;
     let mut interactive_rc = false;
     let mut no_lint = false;
-    // D1 (0.103.4): --agent or LINT=warn prints the gate's SOFT
+    // D1 (0.103.4): --agent or MIX_LINT=warn prints the gate's SOFT
     // diagnostics to stderr (the hard set refuses regardless).
     let mut agent_mode = lint::agent_profile_from_env();
     let mut result_fd: Option<crate::result_fd::ResultFd> = None;

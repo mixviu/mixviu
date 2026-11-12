@@ -466,8 +466,8 @@ async fn idle_serve_pump_has_no_clock_wakeups() {
 /// A real child blocked on a native thread wake, without sleeps or polling.
 #[test]
 fn managed_child_fixture() {
-    if paths::env::raw(paths::env::test::TEST_NATIVE_CHILD_FIXTURE).is_some() {
-        if let Some(path) = paths::env::raw(paths::env::test::TEST_NATIVE_CHILD_ESCAPE) {
+    if paths::env::os(paths::env::test::TEST_NATIVE_CHILD_FIXTURE).is_some() {
+        if let Some(path) = paths::env::os(paths::env::test::TEST_NATIVE_CHILD_ESCAPE) {
             use std::io::Write;
             // Join the parent's group after exec, escaping the spawn-time one.
             assert_eq!(
@@ -649,7 +649,7 @@ async fn overlapping_watches_keep_independent_filters_and_survive_peer_unwatch()
 
 #[test]
 fn shared_fs_registry_fixture() {
-    if paths::env::raw(paths::env::test::TEST_SHARED_FS_FIXTURE).is_none() {
+    if paths::env::os(paths::env::test::TEST_SHARED_FS_FIXTURE).is_none() {
         return;
     }
     fn inotify_count() -> usize {

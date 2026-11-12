@@ -313,7 +313,7 @@ async fn export_denied_without_process_capability() {
         "got: {err}"
     );
     assert!(
-        paths::env::raw(paths::env::test::TEST_EVAL_SAFETY)
+        paths::env::os(paths::env::test::TEST_EVAL_SAFETY)
             .ok_or(std::env::VarError::NotPresent)
             .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
             .is_err(),

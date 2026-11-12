@@ -29,7 +29,7 @@
 //!    block, or it's a top-level assignment that comes after an interp
 //!    site. Env-fallback may fire on that earlier site; manual review
 //!    required.
-//!  - `env-name-exists-now` — `paths::env::raw(head)` returns Unicode
+//!  - `env-name-exists-now` — `paths::env::os(head)` returns Unicode
 //!    in the audit process env. Env-fallback fires; confirm intent.
 //!  - `common-env-shaped` — UPPERCASE_WITH_UNDERSCORES naming
 //!    convention but env not currently set. Likely env-fallback
@@ -117,7 +117,7 @@ fn audit_interp_corpus() {
 }
 
 fn audit_roots() -> Vec<PathBuf> {
-    let raw = paths::env::raw(paths::env::test::TEST_AUDIT_ROOTS)
+    let raw = paths::env::os(paths::env::test::TEST_AUDIT_ROOTS)
         .ok_or(std::env::VarError::NotPresent)
         .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
         .unwrap_or_else(|_| {
@@ -291,9 +291,9 @@ fn classify(
     if any_assign.contains(&site.head) {
         return Category::ScopeAssignedNotProvenDominating;
     }
-    if paths::env::raw(&site.head)
+    if paths::env::os(&site.head)
         .and_then(|v| v.into_string().ok())
-        .is_some()
+        .is_some_and(|v| !v.is_empty())
     {
         return Category::EnvNameExistsNow;
     }

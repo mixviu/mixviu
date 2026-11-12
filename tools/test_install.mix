@@ -11,10 +11,17 @@ fn stage_install($mix = "target/debug/mix")
   if $mix != "target/debug/mix" then
     run_argv_must(["cp", "--reflink=auto", "--remove-destination", "--", $mix, $prefix .. "/bin/mix"])
   end
-  $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
+  -- Version is a registry-independent path. Use this binary's stamp, even if
+  -- HEAD has moved since it was built or the source came from a tarball.
+  $stamp = json_parse(run_argv_must([$prefix .. "/bin/mix", "--version", "--json"]))
+  if type($stamp.git_sha_full) != "string" or $stamp.git_sha_full == "" then
+    raise("STAGE_PROVENANCE", "the staged mix has no git_sha_full build stamp")
+  end
+  $defaults = {schema: 1, commit: $stamp.git_sha_full}
   for $v in load_data("etc/env.conf.mix").vars
     if has_key($v, "default") then $defaults[$v.name] = $v.default end
   end
-  write_file($prefix .. "/env.mx", data_encode($defaults))
+  -- Same flat JSON shape as engines/mix/tests/support/install.rs.
+  write_file($prefix .. "/env.mx", json_encode($defaults))
   return $prefix
 end

@@ -13,7 +13,7 @@ pub(crate) fn var(name: &str) -> Option<std::ffi::OsString> {
         // Kept live by every hook lookup, so the linker cannot drop it while
         // the hooks themselves are linked.
         std::hint::black_box(MARKER);
-        ::paths::env::raw(name)
+        ::paths::env::os(name)
     }
     #[cfg(not(feature = "test-hooks"))]
     {
@@ -28,7 +28,7 @@ mod tests {
     fn hooks_follow_the_build_feature() {
         // Re-exec so the environment is set before any test threads start.
         const HOOK: &str = ::paths::env::test::TEST_RESULT_TORN;
-        if ::paths::env::raw(HOOK).is_some() {
+        if ::paths::env::os(HOOK).is_some() {
             for name in [
                 HOOK,
                 ::paths::env::test::TEST_ADMIT_DELAY_MS,

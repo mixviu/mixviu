@@ -242,7 +242,7 @@ impl ShellHandler for ReplShellHandler {
             .unwrap_or("");
 
         // Mix keyword → Mix (with shell-chain fallback for `false || cmd`).
-        if shell::KEYWORDS.contains(&first_word) {
+        if shell::MIX_KEYWORDS.contains(&first_word) {
             return Self::mix_or_chain(work, trimmed);
         }
 

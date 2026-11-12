@@ -68,7 +68,7 @@ async fn audio_watch_owns_a_subscription_child_and_reports_its_exit() {
     let path = format!(
         "{}:{}",
         dir.display(),
-        paths::env::raw("PATH")
+        paths::env::os("PATH")
             .ok_or(std::env::VarError::NotPresent)
             .and_then(|v| v.into_string().map_err(std::env::VarError::NotUnicode))
             .unwrap_or_default()

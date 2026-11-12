@@ -537,7 +537,7 @@ fn descendant_fixture(detached: bool) {
         return;
     }
     if detached
-        && !paths::env::raw("PATH")
+        && !paths::env::os("PATH")
             .is_some_and(|paths| std::env::split_paths(&paths).any(|p| p.join("setsid").is_file()))
     {
         eprintln!("skip: setsid absent");

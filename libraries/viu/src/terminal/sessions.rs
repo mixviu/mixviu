@@ -825,6 +825,14 @@ mod tests {
     fn lazy_owner_issues_the_first_real_mix_shell_and_revokes_on_close() {
         const CHILD: &str = "VIU_TERM_OWNER_CHILD";
         if std::env::var_os(CHILD).is_none() {
+            let Some(mix) = paths::env::os(paths::env::test::TEST_MIX_EXE) else {
+                eprintln!("skip real Mix owner fixture: set {} to a staged interpreter", paths::env::test::TEST_MIX_EXE);
+                return;
+            };
+            use std::os::unix::fs::PermissionsExt;
+            let selected = std::path::Path::new(&mix);
+            assert!(selected.is_file() && selected.metadata().unwrap().permissions().mode() & 0o111 != 0,
+                "{} is not an executable file: {}", paths::env::test::TEST_MIX_EXE, selected.display());
             let broker = test_broker::Broker::start();
             let home = tempfile::tempdir().unwrap();
             let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
@@ -849,9 +857,6 @@ mod tests {
                 .unwrap();
             let prefix = home.path().join("prefix");
             std::fs::create_dir_all(prefix.join("bin")).unwrap();
-            let mix = paths::env::raw(paths::env::test::TEST_MIX_EXE).expect(
-                "set MIX_TEST_MIX_EXE to the staged interpreter from tools/ci.mix stage-install",
-            );
             let installed = std::path::Path::new(&mix)
                 .parent()
                 .unwrap()

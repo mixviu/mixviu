@@ -188,7 +188,7 @@ fn stage_env()
       exit(1)
     end
   end
-  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path, ":!*CHANGELOG.md", ":!docs/mix/changelog*"]
+  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path, ":!libraries/mix-shell/CHANGELOG.md", ":!libraries/mix/CHANGELOG.md", ":!docs/mix/changelog.md", ":!docs/mix/changelog/index.html"]
   $used = {}
   $prefix_used = {}
   for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
@@ -217,7 +217,7 @@ fn stage_env()
       push($bad, "unlisted prefix " + $n)
     end
   end
-  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path, ":!*CHANGELOG.md", ":!docs/mix/changelog*"])), "\n")
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path, ":!libraries/mix-shell/CHANGELOG.md", ":!libraries/mix/CHANGELOG.md", ":!docs/mix/changelog.md", ":!docs/mix/changelog/index.html"])), "\n")
     if $f != "" then
       $ok = false
       for $re in $reg.mixos_allowed ?? []

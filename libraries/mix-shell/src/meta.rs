@@ -16,16 +16,10 @@ use mix::builtins_hof::HOFS;
 use mix::evaluator::Evaluator;
 use mix::value::Value;
 
-fn mix_src_str() -> String {
+fn mix_src_str() -> Result<String, String> {
     crate::paths::mix_src()
-        .unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|error| {
-                eprintln!("mix: cannot resolve current directory for source tooling: {error}");
-                std::process::exit(2);
-            })
-        })
-        .to_string_lossy()
-        .into_owned()
+        .map(|path| path.to_string_lossy().into_owned())
+        .ok_or_else(|| "no source checkout; set MIX_SRC".into())
 }
 
 /// Process start time, initialized on first access.
@@ -755,9 +749,20 @@ fn layout_defaults(args: &[String]) -> Result<std::collections::BTreeMap<String,
 }
 
 pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String> {
+    match dispatch_inner(args, eval, version) {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("mix: {error}");
+            mark_missed();
+            None
+        }
+    }
+}
+
+fn dispatch_inner(args: &[&str], eval: &Evaluator, version: &str) -> Result<Option<String>, String> {
     if args.is_empty() {
         cmd_status(eval, version);
-        return None;
+        return Ok(None);
     }
 
     match args[0] {
@@ -779,9 +784,9 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             }
         }
         "config" => cmd_config(version),
-        "build" => return cmd_build(),
+        "build" => return Ok(cmd_build()),
         "clean" => cmd_clean(),
-        "update" => return cmd_update(),
+        "update" => return Ok(cmd_update()),
         "test" => cmd_test(),
         "self" => {
             if args.len() >= 2 && args[1] == "check" {
@@ -865,7 +870,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
                     &format!(
                         "Fix this issue in the Mix language project at {}/crates/mix/: {}. \
                      Read the relevant source, write a fix and test, then run cargo test.",
-                        mix_src_str(),
+                        mix_src_str()?,
                         desc
                     ),
                 );
@@ -881,7 +886,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
                     &format!(
                         "Implement this feature in the Mix language at {}/crates/mix/: {}. \
                      Write tests first, then implement. Run cargo test when done.",
-                        mix_src_str(),
+                        mix_src_str()?,
                         desc
                     ),
                 );
@@ -892,7 +897,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Review recent changes in {}. Run git log --oneline -10 and \
              git diff HEAD~1 to see what changed. Provide a code review.",
-                mix_src_str()
+                mix_src_str()?
             ),
         ),
         "explain" => {
@@ -908,7 +913,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
                         "Explain how the '{}' builtin works in the Mix language. \
                      Read {}/crates/mix/src/builtins.rs and evaluator.rs.",
                         args[1],
-                        mix_src_str()
+                        mix_src_str()?
                     ),
                 );
             }
@@ -916,10 +921,9 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
         "evolve" => cmd_ai(
             "evolve",
             &format!(
-                "Read {}/{}. Pick the highest-value uncompleted item. \
+                "Read {}/MIX_TODO.md. Pick the highest-value uncompleted item. \
              Implement it with tests. Run cargo test.",
-                mix_src_str(),
-                concat!("MIX_", "TODO.md")
+                mix_src_str()?
             ),
         ),
         "dogfood" => cmd_ai(
@@ -927,7 +931,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Write 5 practical Mix scripts that test real-world usage patterns. \
              Run them in {}/ and report any awkward syntax or missing features.",
-                mix_src_str()
+                mix_src_str()?
             ),
         ),
         "fuzz" => cmd_ai(
@@ -935,7 +939,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Generate random Mix code to fuzz-test the parser and evaluator. \
              Try edge cases. Report any crashes or panics found. Work in {}/.",
-                mix_src_str()
+                mix_src_str()?
             ),
         ),
         "teach" => cmd_ai(
@@ -943,8 +947,8 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             &format!(
                 "Read recent git history in {}. Create a tutorial .mix script \
              demonstrating the newest features. Save it to {}/examples/.",
-                mix_src_str(),
-                mix_src_str()
+                mix_src_str()?,
+                mix_src_str()?
             ),
         ),
 
@@ -1024,7 +1028,7 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
             cmd_help_overview();
         }
     }
-    None
+    Ok(None)
 }
 
 /// `mix` (no args) or `mix status`: status overview
@@ -1129,24 +1133,24 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
         );
     }
     // B14: a mix:prefix binary whose prelude resolved OUTSIDE the install
-    // tier is a mixed-tier installation (an exported ROOT pointing at a
+    // tier is a mixed-tier installation (an exported MIX_ROOT pointing at a
     // dev checkout shadows the shipped prelude). Warn, never fail — a dev
     // box doing this deliberately is a choice, not a fault.
     if let Ok(exe) = std::env::current_exe() {
         let exe_path = exe.to_string_lossy().into_owned();
-        if exe_path.starts_with(
+        if let Ok(prelude_src) = mix_src_str()
+            && exe_path.starts_with(
             &::paths::root(::paths::Root::Prefix)
                 .to_string_lossy()
                 .to_string(),
         ) {
-            let prelude_src = mix_src_str();
             if !prelude_src.starts_with(
                 &::paths::root(::paths::Root::Prefix)
                     .to_string_lossy()
                     .to_string(),
             ) {
                 println!(
-                    "  ⚠ prelude    resolved outside the install tier: {prelude_src} (binary is {exe_path}) — root override points the installed binary at a dev checkout"
+                    "  ⚠ prelude    resolved outside the install tier: {prelude_src} (binary is {exe_path}) — MIX_ROOT points the installed binary at a dev checkout"
                 );
             }
         }
@@ -1156,7 +1160,7 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     //    the checkout docs dir and the `mix man` cache.
     let mut man_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
     if let Some(root) = man_cache_root(
-        ::paths::env::raw("XDG_CACHE_HOME")
+        ::paths::env::os("XDG_CACHE_HOME")
             .map(PathBuf::from)
             .as_deref(),
         dirs::home_dir().as_deref(),
@@ -1206,7 +1210,7 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     // A test (or any caller wanting a hermetic run) can skip the live probe so
     // `mix doctor` never touches a real broker — the reachability line is the
     // one check with an outward side effect.
-    if ::paths::env::raw(::paths::env::DOCTOR_SKIP_BUS).is_some() {
+    if ::paths::env::os(::paths::env::DOCTOR_SKIP_BUS).is_some() {
         println!(
             "  — bus        probe skipped ({} set)",
             ::paths::env::DOCTOR_SKIP_BUS
@@ -1386,7 +1390,7 @@ fn cmd_type(name: &str, eval: &Evaluator) {
     }
 
     // Keyword
-    if KEYWORDS.contains(&name) {
+    if MIX_KEYWORDS.contains(&name) {
         println!("{} is a keyword", name);
         return;
     }
@@ -1433,7 +1437,10 @@ fn cmd_config(version: &str) {
         Some(h) => println!("home:     {}", h),
         None => println!("home:     <unavailable: HOME unset>"),
     }
-    println!("prelude:  {}/crates/mix/std/prelude.mix", mix_src_str());
+    match mix_src_str() {
+        Ok(source) => println!("prelude:  {source}/crates/mix/std/prelude.mix"),
+        Err(error) => println!("prelude:  <{error}>"),
+    }
     match &home {
         Some(h) => {
             let rc = format!("{}/.mixrc", h);
@@ -1531,8 +1538,13 @@ fn cmd_self_check() {
         None => eprintln!("{}: skipped (HOME unset)", mixrc_label),
     }
     let prelude_label = "std/prelude.mix";
-    let prelude_path = format!("{}/crates/mix/std/prelude.mix", mix_src_str());
-    check_pure_mix(&prelude_path, prelude_label);
+    match mix_src_str() {
+        Ok(source) => check_pure_mix(&format!("{source}/crates/mix/std/prelude.mix"), prelude_label),
+        Err(error) => {
+            eprintln!("{prelude_label}: {error}");
+            mark_missed();
+        }
+    }
 }
 
 fn check_pure_mix(path: &str, label: &str) {
@@ -2294,10 +2306,19 @@ fn cmd_claude_port(action: &str) {
                 return;
             }
 
+            let source = match mix_src_str() {
+                Ok(source) => source,
+                Err(error) => {
+                    eprintln!("mix claude-start: {error}");
+                    mark_missed();
+                    return;
+                }
+            };
+
             // Find mixos-claude binary
             let candidates = [
-                format!("{}/target/release/mixos-claude", mix_src_str()),
-                format!("{}/target/debug/mixos-claude", mix_src_str()),
+                format!("{source}/target/release/mixos-claude"),
+                format!("{source}/target/debug/mixos-claude"),
                 "mixos-claude".to_string(),
             ];
 
@@ -2330,7 +2351,7 @@ fn cmd_claude_port(action: &str) {
                     eprintln!("mixos-claude binary not found");
                     eprintln!(
                         "Build it: cd {} && cargo build -p mixos-claude --release",
-                        mix_src_str()
+                        source
                     );
                 }
             }
@@ -2609,7 +2630,7 @@ struct CachedManPage {
 }
 
 fn parse_man_source(value: Option<&str>) -> Result<ManSource, String> {
-    match value.map(str::trim).filter(|value| !value.is_empty()) {
+    match value.map(str::trim) {
         None => Ok(ManSource::Auto),
         Some(value) if value.eq_ignore_ascii_case("auto") => Ok(ManSource::Auto),
         Some(value) if value.eq_ignore_ascii_case("local") => Ok(ManSource::Local),
@@ -2645,9 +2666,8 @@ fn man_page_url(base_url: &str, filename: &str) -> String {
 }
 
 /// The manual's source of truth lives in the checkout at
-/// `$ROOT/docs/mix` (also what mixos.dev/mix/ serves). With a known
-/// root that is the only candidate; without one, the documented default
-/// clone location is tried.
+/// `$MIX_ROOT/docs/mix` (also what mixos.dev/mix/ serves). With a known
+/// root that is the only candidate; without one no checkout path is guessed.
 fn man_dir_candidates(_home: Option<&Path>, root: Option<&Path>) -> Vec<PathBuf> {
     root.map(|root| vec![root.join("docs/mix")])
         .unwrap_or_default()
@@ -2703,11 +2723,23 @@ fn man_cache_path(root: &Path, base_url: &str, filename: &str) -> PathBuf {
         .join(filename)
 }
 
-fn configured_man_cache_path(base_url: &str, filename: &str) -> Option<PathBuf> {
-    let xdg_cache_home = ::paths::env::raw("XDG_CACHE_HOME").map(PathBuf::from);
+fn man_cache_candidates(root: &Path, base_url: Option<&str>, filename: &str) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(base_url) = base_url {
+        candidates.push(man_cache_path(root, base_url, filename));
+    }
+    // Existing offline manuals predate URL-keyed caches. Keep them usable even
+    // when this install has no env.mx and therefore no default MIX_MAN_URL.
+    candidates.push(root.join(filename));
+    candidates
+}
+
+fn configured_man_cache_paths(base_url: Option<&str>, filename: &str) -> Vec<PathBuf> {
+    let xdg_cache_home = ::paths::env::os("XDG_CACHE_HOME").map(PathBuf::from);
     let home = dirs::home_dir();
     man_cache_root(xdg_cache_home.as_deref(), home.as_deref())
-        .map(|root| man_cache_path(&root, base_url, filename))
+        .map(|root| man_cache_candidates(&root, base_url, filename))
+        .unwrap_or_default()
 }
 
 fn cache_is_fresh(modified: SystemTime, now: SystemTime, ttl: Duration) -> bool {
@@ -2873,8 +2905,7 @@ fn print_man_not_found(topic: Option<&str>, base_url: Option<&str>) {
         }
         eprintln!("Local fallback looked in the configured source root's docs/mix.");
         eprintln!(
-            "Use {}=local with an explicit source root to read checkout manuals",
-            ::paths::env::MAN_SOURCE
+            "Use MIX_MAN_SOURCE=local and set MIX_SRC to a checkout; clone: git clone https://github.com/markc/mixos"
         );
     } else {
         eprintln!("Available topics: {}", topics.join(", "));
@@ -2902,13 +2933,13 @@ fn cmd_man(topic: Option<&str>) {
     // - default: the manual built into this binary, which documents exactly
     //   this binary; then files on disk; then the online fetch below, for a
     //   page this binary does not carry.
-    // - MAN_SOURCE=local: files on disk first (a checkout's working
+    // - MIX_MAN_SOURCE=local: files on disk first (a checkout's working
     //   copy, for whoever is editing the manual), then the built-in manual,
     //   then the cache. Never the network.
-    // - MAN_SOURCE=auto or MAN_URL: the online contract — fresh
+    // - MIX_MAN_SOURCE=auto or MIX_MAN_URL: the online contract — fresh
     //   cache, fetch, files on disk, built-in, stale cache.
-    if ::paths::env::raw(::paths::env::MAN_SOURCE).is_none()
-        && ::paths::env::raw(::paths::env::MAN_URL).is_none()
+    if ::paths::env::os(::paths::env::MAN_SOURCE).is_none()
+        && ::paths::env::os(::paths::env::MAN_URL).is_none()
         && let Some(content) = crate::manual::page(&filename)
             .map(str::to_string)
             .or_else(|| read_local_man_page(&filename))
@@ -2929,38 +2960,33 @@ fn cmd_man(topic: Option<&str>) {
     }
 
     // Installed settings are needed only once local/built-in lookup is exhausted.
-    let base_url = match ::paths::env::setting(::paths::env::MAN_URL) {
-        Ok(value) => man_base_url(&value),
-        Err(error) => {
-            eprintln!("mix man: {error}");
-            print_man_not_found(topic, None);
-            return;
-        }
-    };
-    let cache_path = configured_man_cache_path(&base_url, &filename);
+    let base_url = ::paths::env::setting(::paths::env::MAN_URL).map(|value| man_base_url(&value));
+    let cache_paths = configured_man_cache_paths(base_url.as_ref().ok().map(String::as_str), &filename);
+    let cached = cache_paths.iter().find_map(|path| read_cached_man_page(path));
 
     if source == ManSource::Local {
-        if let Some(cached) = cache_path.as_deref().and_then(read_cached_man_page) {
+        if let Some(cached) = cached {
             print!("{}", cached.content);
             return;
         }
-        print_man_not_found(topic, Some(&base_url));
+        print_man_not_found(topic, base_url.as_ref().ok().map(String::as_str));
         return;
     }
 
-    let cached = cache_path.as_deref().and_then(read_cached_man_page);
     if let Some(cached) = cached.as_ref().filter(|cached| cached.fresh) {
         print!("{}", cached.content);
         return;
     }
 
-    let url = man_page_url(&base_url, &filename);
-    if let Ok(content) = fetch_man_page(&url) {
-        if let Some(path) = cache_path.as_deref() {
-            let _ = write_cached_man_page(path, &content);
+    if let Ok(base_url) = &base_url {
+        let url = man_page_url(base_url, &filename);
+        if let Ok(content) = fetch_man_page(&url) {
+            if let Some(path) = cache_paths.first() {
+                let _ = write_cached_man_page(path, &content);
+            }
+            print!("{content}");
+            return;
         }
-        print!("{content}");
-        return;
     }
 
     if let Some(content) = read_local_man_page(&filename) {
@@ -2976,7 +3002,10 @@ fn cmd_man(topic: Option<&str>) {
         return;
     }
 
-    print_man_not_found(topic, Some(&base_url));
+    if let Err(error) = &base_url {
+        eprintln!("mix man: cannot fetch online manual: {error}; set MIX_MAN_URL or install its default in <prefix>/env.mx");
+    }
+    print_man_not_found(topic, base_url.as_ref().ok().map(String::as_str));
 }
 
 /// `mix help` (and `mix --help`): the markdown-friendly capability-discovery
@@ -3146,7 +3175,7 @@ fn cmd_apropos(term: &str) {
     //    each topic from where `mix man` would: the manual built into the
     //    binary, then the checkout docs dir, then the `mix man` cache
     //    (`~/.cache/mix/man`, default-URL layout). With
-    //    MAN_SOURCE=local the checkout comes first, as for `mix man`.
+    //    MIX_MAN_SOURCE=local the checkout comes first, as for `mix man`.
     let local = crate::env_string(::paths::env::MAN_SOURCE)
         .ok()
         .is_some_and(|value| parse_man_source(Some(&value)) == Ok(ManSource::Local));
@@ -3168,15 +3197,14 @@ fn cmd_apropos(term: &str) {
         .collect();
     let checkout = dir_pages(&resolve_man_dir());
     let cached = man_cache_root(
-        ::paths::env::raw("XDG_CACHE_HOME")
+        ::paths::env::os("XDG_CACHE_HOME")
             .map(PathBuf::from)
             .as_deref(),
         dirs::home_dir().as_deref(),
     )
-    .and_then(|root| {
-        let url = ::paths::env::setting(::paths::env::MAN_URL).ok()?;
-        let cache = man_cache_path(&root, &man_base_url(&url), "");
-        Some(dir_pages(&cache))
+    .map(|root| {
+        let url = ::paths::env::setting(::paths::env::MAN_URL).ok().map(|value| man_base_url(&value));
+        man_cache_candidates(&root, url.as_deref(), "").iter().flat_map(|path| dir_pages(path)).collect()
     })
     .unwrap_or_default();
     let sources = if local {
@@ -3398,7 +3426,7 @@ mod man_resolver_tests {
     #[test]
     fn source_override_accepts_auto_and_local_only() {
         assert_eq!(parse_man_source(None), Ok(ManSource::Auto));
-        assert_eq!(parse_man_source(Some("")), Ok(ManSource::Auto));
+        assert!(parse_man_source(Some("")).is_err());
         assert_eq!(parse_man_source(Some(" AUTO ")), Ok(ManSource::Auto));
         assert_eq!(parse_man_source(Some("Local")), Ok(ManSource::Local));
         assert!(parse_man_source(Some("online")).is_err());
@@ -3466,6 +3494,8 @@ mod man_resolver_tests {
     #[test]
     fn url_override_has_an_isolated_cache_namespace() {
         let root = Path::new("/cache/mix/man");
+        assert_eq!(man_cache_path(root, "a", "syntax.md"),
+            PathBuf::from("/cache/mix/man/sources/af63dc4c8601ec8c/syntax.md"));
         let canonical_path = man_cache_path(root, "https://manual.example.test/mix", "syntax.md");
         assert!(canonical_path.starts_with(root.join("sources")));
         let override_path = man_cache_path(root, "http://127.0.0.1:8080/mix", "syntax.md");
@@ -3476,6 +3506,20 @@ mod man_resolver_tests {
             override_path,
             man_cache_path(root, "http://127.0.0.1:8080/mix", "syntax.md")
         );
+    }
+
+    #[test]
+    fn old_flat_manual_cache_survives_an_unknown_url_or_a_missing_keyed_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let flat = dir.path().join("custom.md");
+        std::fs::write(&flat, "# custom\n\n## Cached offline heading\n").unwrap();
+        for url in [None, Some("https://manual.example.test/mix")] {
+            let candidates = man_cache_candidates(dir.path(), url, "custom.md");
+            assert_eq!(candidates.last(), Some(&flat));
+            let page = candidates.iter().find_map(|path| read_cached_man_page(path)).unwrap();
+            assert!(page.content.contains("Cached offline heading"));
+        }
+        assert_eq!(man_cache_candidates(dir.path(), None, "custom.md"), vec![flat]);
     }
 
     #[test]

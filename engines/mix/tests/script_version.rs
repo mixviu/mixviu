@@ -85,6 +85,8 @@ fn assert_version_line(o: &Output, name: &str, version: &str, body: &str) -> Str
     line.to_string()
 }
 
+// Recognition checks the interpreter basename, not an installed path. The
+// fixture need not exist and never selects the executable running this test.
 const VERSIONED: &str =
     "#!/srv/fixture/bin/mix\n-- deploy something\n-- version: 1.2.3\nprint(\"SCRIPT-BODY-RAN\")\n";
 const UNVERSIONED: &str = "print(\"SCRIPT-BODY-RAN\")\n";

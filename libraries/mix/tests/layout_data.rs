@@ -38,10 +38,40 @@ async fn layout_reader_and_load_data_share_a_grammar() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn prelude_keeps_the_user_config_override_without_an_installed_registry() {
+    use paths::env::test::TEST_LAYOUT_FRONT_DOOR as CHILD;
+    const TEST: &str = "prelude_keeps_the_user_config_override_without_an_installed_registry";
+    if paths::env::os(CHILD).is_none() {
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        }
+        let exe = std::env::current_exe().unwrap();
+        let root = Scratch(exe.parent().unwrap().join(format!("user-prelude-{}", std::process::id())));
+        std::fs::create_dir_all(root.0.join(".config/mix")).unwrap();
+        std::fs::write(root.0.join(".config/mix/prelude.mix"), "$user_prelude_marker = 71\n").unwrap();
+        for empty_home in [false, true] {
+            let home = if empty_home { std::path::Path::new("") } else { root.0.as_path() };
+            let output = std::process::Command::new(&exe).args(["--exact", TEST, "--nocapture"])
+                .current_dir(&root.0)
+                .env(CHILD, "1").env("HOME", home).env(paths::env::PREFIX, &root.0)
+                .env_remove("XDG_CONFIG_HOME").env_remove(paths::env::ETC).env_remove(paths::env::ROOT)
+                .output().unwrap();
+            assert!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                "empty HOME={empty_home}: {}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        }
+        return;
+    }
+    let mut evaluator = mix::evaluator::Evaluator::new();
+    evaluator.load_prelude().await.unwrap();
+    assert_eq!(evaluator.get_global("user_prelude_marker"), Some(mix::value::Value::Number(71.0)));
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     use paths::env::test::TEST_LAYOUT_FRONT_DOOR as CHILD;
     const TEST: &str = "mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names";
-    if paths::env::raw(CHILD).is_none() {
+    if paths::env::os(CHILD).is_none() {
         struct Scratch(std::path::PathBuf);
         impl Drop for Scratch {
             fn drop(&mut self) {
@@ -84,23 +114,23 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     // Self-location is never used: the child received every path input before
     // the process-global resolver was first called.
     let prefix =
-        paths::env::raw(paths::env::PREFIX).expect("front-door test needs an explicit prefix");
+        paths::env::os(paths::env::PREFIX).expect("front-door test needs an explicit prefix");
     let evaluator = mix::evaluator::Evaluator::new();
     use mix::evaluator::ShellVarResolver;
-    assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_EMPTY), None);
+    assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_EMPTY).as_deref(), Some(""));
     assert_eq!(evaluator.resolve(paths::env::test::TEST_ENV_UNSET), None);
     assert_eq!(
         evaluator.resolve(paths::env::test::TEST_ENV_SET).as_deref(),
         Some("present")
     );
-    for name in [
-        paths::env::test::TEST_ENV_EMPTY,
-        paths::env::test::TEST_ENV_UNSET,
+    for (name, expected) in [
+        (paths::env::test::TEST_ENV_EMPTY, ""),
+        (paths::env::test::TEST_ENV_UNSET, "fallback"),
     ] {
         let source = format!("\"${{{name} ?? 'fallback'}}\"");
         assert_eq!(
             mix::run(&source).await.unwrap(),
-            mix::value::Value::String("fallback".into())
+            mix::value::Value::String(expected.into())
         );
         assert_eq!(
             mix::run(&format!("env('{name}', 'fallback')"))
