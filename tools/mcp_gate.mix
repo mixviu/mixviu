@@ -81,11 +81,15 @@ try
       print("ADDED_PACKAGE " .. json_encode({name: $p.name, version: $p.version, license: $p.license}))
       $inverse = run_argv_must(["cargo", "tree", "--locked", "--workspace", "-i", $p.name .. "@" .. $p.version])
       print($inverse)
-      if re_match($inverse, '(?m)(lib-mix|mix-shell|mixd|mix) v[0-9]') and ($p.name != "const-oid" or $p.version != "0.10.3") then
-        print($inverse)
-        raise("STRICT_DEPENDENCY", "shell engine reaches a new package: " .. $p.name)
+      if re_match($inverse, '(?m)(lib-mix|mix-shell|mixd|mix) v[0-9]') then
+        if $p.name == "const-oid" and $p.version == "0.10.3" then
+          print("STRICT_EXCEPTION " .. $p.name .. " " .. $p.version)
+        else
+          raise("STRICT_DEPENDENCY", "shell engine reaches a new package: " .. $p.name)
+        end
+      else
+        print("STRICT_ABSENT " .. $p.name .. " " .. $p.version)
       end
-      print("STRICT_ABSENT " .. $p.name .. " " .. $p.version)
     end
   end
   if $stage == "focused" then
