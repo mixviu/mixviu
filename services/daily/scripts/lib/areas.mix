@@ -1,0 +1,80 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- media/areas.conf.mix: ordered path globs -> areas, first match wins.
+$u = require("util.mix")
+
+fn check($a)
+  $a = validate($a, {
+    schema: {type: "number", enum: [1]},
+    fallback: {type: "map", schema: {id: {type: "string", nonblank: true}, title: {type: "string", nonblank: true}, audience: {enum: ["user", "dev"]}}},
+    areas: {type: "list", min_length: 1, items: {type: "map", schema: {
+      id: {type: "string", nonblank: true},
+      title: {type: "string", nonblank: true},
+      audience: {enum: ["user", "dev"]},
+      split_by: {required: false, type: "string"},
+      globs: {type: "list", min_length: 1, items: {type: "string", nonblank: true}}}}}
+  })
+  $rules = []
+  for $a2 in $a.areas
+    $r = $a2
+    $r.regexes = map($a2.globs, fn($g) = $u.glob_regex($g))
+    if $a2.split_by != nil then
+      if not ends_with($a2.split_by, "/*") then raise("AREAS", "split_by must end in /*: " .. $a2.split_by) end
+      $r.split_prefix = slice($a2.split_by, 0, len($a2.split_by) - 1)
+    end
+    push($rules, $r)
+  end
+  return {rules: $rules, fallback: $a.fallback}
+end
+
+-- The area table: the repo's own at the cut, else the service's copy.
+-- {table, source} where source is "repo:<sha>" or the file path.
+fn load($git, $g, $sha, $media)
+  $text = $git.show_file($g, $sha, "media/areas.conf.mix")
+  if $text != nil then return {table: check(data_parse($text)), source: "repo"} end
+  return {table: check(load_data($media .. "/areas.conf.mix")), source: "service"}
+end
+
+-- {id, title, audience} for one path.
+fn classify($t, $path)
+  for $r in $t.rules
+    if any($r.regexes, fn($x) = re_match($path, $x)) then
+      if $r.split_prefix != nil and starts_with($path, $r.split_prefix) then
+        $rest = slice($path, len($r.split_prefix))
+        $seg = split($rest, "/")[0]
+        if contains($rest, "/") and $seg != "" then
+          return {id: $r.split_prefix .. $seg, title: $r.title .. ": " .. $seg, audience: $r.audience}
+        end
+      end
+      return {id: $r.id, title: $r.title, audience: $r.audience}
+    end
+  end
+  return {id: $t.fallback.id, title: $t.fallback.title, audience: $t.fallback.audience}
+end
+
+-- The dominant area of a file list (weight = changed lines, at least 1 per
+-- file). Ties go to the area named first in the table, then by id.
+fn dominant($t, $files)
+  if len($files) == 0 then return classify($t, "") end
+  $w = {}
+  $info = {}
+  for $f in $files
+    $a = classify($t, $f.path)
+    $info[$a.id] = $a
+    $w[$a.id] = ($w[$a.id] ?? 0) + max(1, $f.ins + $f.del)
+  end
+  $best = nil
+  for $id in sort(keys($w))
+    if $best == nil or $w[$id] > $w[$best] or ($w[$id] == $w[$best] and rank($t, $id) < rank($t, $best)) then $best = $id end
+  end
+  return $info[$best]
+end
+
+fn rank($t, $id)
+  $i = 0
+  for $r in $t.rules
+    if $r.id == $id or ($r.split_prefix != nil and starts_with($id, $r.split_prefix)) then return $i end
+    $i = $i + 1
+  end
+  return $i
+end

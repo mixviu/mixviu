@@ -1,0 +1,31 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- daily: the daily media pipeline as a Bus citizen.
+--   mix --serve scripts/daily.mix --name daily
+-- daily.actions lists the actions as data; daily.execute {id, params} runs
+-- one. Configuration: see lib/config.mix (MIX_DAILY_MEDIA, MIX_DAILY_HUB,
+-- MIX_DAILY_CONFIG). Contributor text is data here, never instructions.
+$daily = require("lib/daily.mix")
+
+-- Fail at start, not on the first request, when configuration is broken.
+$daily.load_env()
+
+on daily.actions desc "list the daily pipeline's actions, with typed params"
+  reply(0, json_encode({schema: "mixviu.daily.actions/1", actions: $daily.actions()}))
+end
+
+on daily.execute desc "run one action: {id, params}"
+  $a = $event.args
+  if type($a) != "map" then
+    reply(10, json_encode({error_code: "INVALID_ARGUMENT", message: "JSON object {id, params} required"}))
+    return
+  end
+  for $k in keys($a)
+    if not contains(["id", "params"], $k) then
+      reply(10, json_encode({error_code: "INVALID_ARGUMENT", message: "unknown field " .. $k}))
+      return
+    end
+  end
+  $out = $daily.execute($a.id, $a.params)
+  reply($out.rc, json_encode($out.body))
+end
