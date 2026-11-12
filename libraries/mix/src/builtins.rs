@@ -27951,6 +27951,10 @@ pub(crate) mod socket_sources {
         /// reads, TCP_SEND_TIMEOUT with the bytes written, handle retired.
         #[test]
         fn blocking_deadline_send_bounds_the_whole_payload() {
+            // The blocking send observes the process-wide Ctrl-C flag.
+            // Keep tests that deliberately arm it out of this timeout probe.
+            let _interrupt = crate::interrupt::TEST_LOCK.lock().unwrap();
+            crate::interrupt::_test_clear();
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
             let id = tcp_client_handle(port);
