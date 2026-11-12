@@ -966,6 +966,11 @@ fn authority_store(root: &std::path::Path, mode: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+// Round 1's worst source wait under eight concurrent copies was 10.095 s.
+// Policy caps cover the backoff itself; reserve another 10 s for scheduling,
+// registration and D-Bus delivery rather than treating that sample as a cap.
+const SCHEDULING_MARGIN: Duration = Duration::from_secs(10);
+
 async fn wait_source(portal: &NativePortal, revision: u64, after: u64) -> anyhow::Result<()> {
     let expected = revision.to_string();
     // Transport may be at its cap when the broker returns, followed by an
@@ -975,7 +980,7 @@ async fn wait_source(portal: &NativePortal, revision: u64, after: u64) -> anyhow
     let budget = bus::native_client::RECONNECT_BACKOFF_MAX
         + portald::service::RETRY_MAX
         + portald::service::FETCH_TIMEOUT * 2
-        + Duration::from_secs(10);
+        + SCHEDULING_MARGIN;
     let started = Instant::now();
     tokio::time::timeout(budget, async {
         loop {
@@ -1008,7 +1013,13 @@ async fn wait_absent(
     client: &bus::native_client::NodedClient,
     service: &str,
 ) -> anyhow::Result<()> {
-    tokio::time::timeout(Duration::from_secs(5), async {
+    // Observe broker removal, allowing the authority's shutdown bound and a
+    // retry at cap before scheduling margin. stop() aborts rather than gracefully
+    // deregistering, so this also covers delayed transport-close observation.
+    let budget = settingsd::service::DEREGISTER_TIMEOUT
+        + portald::service::RETRY_MAX
+        + SCHEDULING_MARGIN;
+    tokio::time::timeout(budget, async {
         while client
             .list_services()
             .await?
@@ -1107,7 +1118,9 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
     );
     assert_eq!(changes[0], (COLOR_SCHEME, Value::U32(1)));
     for (expected_key, expected_value) in changes {
-        let message = tokio::time::timeout(Duration::from_secs(5), signals.next())
+        // wait_source already observed adoption. live::serve emits these signals
+        // immediately after adopt, so only D-Bus delivery/scheduling remains.
+        let message = tokio::time::timeout(SCHEDULING_MARGIN, signals.next())
             .await
             .context("waiting for live SettingChanged signal")?
             .ok_or_else(|| anyhow::anyhow!("signal stream ended"))?;
@@ -1162,9 +1175,9 @@ async fn native_recovers_when_broker_returns_after_the_initial_attempt_budget() 
     assert_eq!(read_one_color(&proxy).await?, 1);
     // An eager client exhausts all five attempts against this exact endpoint.
     let initial = tokio::time::timeout(
-        // Four full-jitter waits: 250 + 500 + 1000 + 2000 ms, plus
-        // 10 s for five refused local dials and scheduling under load.
-        bus::native_client::initial_connect_backoff_budget() + Duration::from_secs(10),
+        // Full-jitter maxima: 250 + 500 + 1000 + 2000 ms, plus
+        // margin for five refused local dials and scheduling under load.
+        bus::native_client::initial_connect_backoff_budget() + SCHEDULING_MARGIN,
         SupervisedClient::connect_options("initial-budget-probe", &url).connect(),
     )
     .await

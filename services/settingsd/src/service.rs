@@ -19,6 +19,9 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
+/// Bound on the authority's graceful deregistration before closing its client.
+pub const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
+
 pub const COMMANDS: &[&str] = &[
     "settings.describe",
     "settings.get",
@@ -777,7 +780,7 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
         }
     }
     stopping(&authority, &ctx).await;
-    let _ = tokio::time::timeout(Duration::from_secs(3), client.deregister()).await;
+    let _ = tokio::time::timeout(DEREGISTER_TIMEOUT, client.deregister()).await;
     Ok(())
 }
 
