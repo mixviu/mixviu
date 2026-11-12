@@ -40,7 +40,7 @@ fn stage($label, $commit)
     if has_key($v, "default") then $defaults[$v.name] = $v.default end
   end
   write_file($prefix .. "/env.mx", data_encode($defaults))
-  print("MIX_SIZE " .. $label .. " " .. to_string(stat($prefix .. "/bin/mix").size))
+  print("SHELL_SIZE " .. $label .. " " .. to_string(stat($prefix .. "/bin/mix").size))
 end
 $head = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
 $base = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
