@@ -37,7 +37,7 @@ if $stage == "resolve" then
 end
 if $stage == "focused" then
   try
-    checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "mix-shell", "-p", "mix"])
+    checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "paths", "-p", "mix-shell", "-p", "mix"])
     print("FMT_DIFF_BEGIN")
     print(run_argv_must(["git", "diff"]))
     print("FMT_DIFF_END")
@@ -47,7 +47,7 @@ if $stage == "focused" then
 end
 if $stage == "all" then checked(["mix", "tools/ci.mix", "all"]) end
 checked(["cargo", "build", "--locked", "-p", "mix"])
-$prefix = trim(run_argv_must(["mktemp", "-d", "target/mcp-ci-XXXXXXXX"]))
+$prefix = realpath(trim(run_argv_must(["mktemp", "-d", "target/mcp-ci-XXXXXXXX"])))
 try
   mkdir($prefix .. "/bin")
   checked(["ln", "-s", realpath("target/debug/mix"), $prefix .. "/bin/mix"])
