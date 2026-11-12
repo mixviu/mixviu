@@ -1446,6 +1446,22 @@ async fn prompt_generation(parent: &mut Parent, record: &SessionRecord) -> u64 {
     counter(&phase(parent, record, "prompt-ready").await["status"]["snapshot"]["prompt_generation"])
 }
 
+/// A PTY write does not synchronise with the editor consuming Enter. Require
+/// the next activated prompt, rather than accepting the previous ready one.
+async fn prompt_generation_after(parent: &mut Parent, record: &SessionRecord, before: u64) -> u64 {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let value = status(parent, record).await;
+        let snapshot = &value["status"]["snapshot"];
+        let generation = counter(&snapshot["prompt_generation"]);
+        if snapshot["phase"] == "prompt-ready" && generation > before {
+            return generation;
+        }
+        assert!(Instant::now() < deadline, "expected a ready prompt after {before}: {value}");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
 /// Wait for the admitted evaluation to publish its outcome. The shell answers
 /// `running` until the evaluator owner records the result; that transition is
 /// the only thing being waited for here.
@@ -2454,8 +2470,9 @@ fn stage_d_a_refused_submission_may_be_retried_under_the_same_id() {
 
         // Clear the stray byte, then retry THE SAME request id. The contract
         // that refusal states is that this is a real submission, not a replay.
+        let before_enter = prompt_generation(&mut f.parent, &f.bound).await;
         f.child.send("\x08\n");
-        let generation = prompt_generation(&mut f.parent, &f.bound).await;
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, before_enter).await;
         let retry = execute_request(&f.bound, 1, generation, "print(\"RETRY_RAN\")");
         let accepted = execute_call(&mut f.parent, &f.bound, "shell.execute", retry)
             .await

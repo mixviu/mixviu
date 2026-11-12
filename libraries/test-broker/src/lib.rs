@@ -99,9 +99,14 @@ impl Broker {
 
     pub fn with_grant_limit(grant_limit: usize) -> Self {
         use std::os::unix::fs::PermissionsExt;
-        let root =
-            std::env::temp_dir().join(format!("term-native-{:032x}", rand::random::<u128>()));
-        std::fs::create_dir(&root).unwrap();
+        // This is shared Unix ingress, not private scratch space. TMPDIR may
+        // have 0700 ancestors, symlinks or a path longer than sockaddr_un.
+        // BUS-013 deliberately rejects private ancestors; never widen a job's
+        // directory. Keep this short endpoint under the system sticky root,
+        // independently of TMPDIR. Other test scratch files still honour it.
+        let root = PathBuf::from("/tmp").join(format!("term-native-{:032x}", rand::random::<u128>()));
+        std::fs::create_dir(&root)
+            .unwrap_or_else(|error| panic!("create native fixture directory {}: {error}", root.display()));
         // BUS-013 requires user-traversable, broker-owned ancestors. A 0700
         // directory deliberately disables noded's native profile; TCP readiness
         // alone cannot establish that a native-session fixture is usable.
