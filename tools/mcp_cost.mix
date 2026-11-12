@@ -1,0 +1,79 @@
+#!/usr/bin/env mix
+-- version: 0.1.0
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC only, under its checkout lock; leave the worker at the admitted commit.
+fn checked($argv)
+  $r = run_argv($argv, {timeout: 14400, stdout: "inherit", stderr: "inherit", env: {TMPDIR: $tmp}})
+  if not $r.ok then raise("COST_STEP", json_encode($r)) end
+end
+fn graph($metadata, $name)
+  $nodes = {}
+  $labels = {}
+  $todo = []
+  for $p in $metadata.packages
+    $labels[$p.id] = $p.name .. "@" .. $p.version
+    if $p.name == $name then push($todo, $p.id) end
+  end
+  for $n in $metadata.resolve.nodes $nodes[$n.id] = $n.dependencies end
+  $seen = {}
+  $i = 0
+  while $i < len($todo)
+    $id = $todo[$i]
+    $i = $i + 1
+    if not has_key($seen, $labels[$id]) then
+      $seen[$labels[$id]] = true
+      for $dep in $nodes[$id] push($todo, $dep) end
+    end
+  end
+  return $seen
+end
+fn metadata()
+  return json_parse(run_argv_must(["cargo", "metadata", "--locked", "--format-version", "1"], {max_output: 256000000}))
+end
+fn stage($label, $commit)
+  $prefix = $root .. "/" .. $label
+  mkdir($prefix .. "/bin")
+  checked(["cargo", "build", "--locked", "--release", "-p", "mix"])
+  checked(["cp", "target/release/mix", $prefix .. "/bin/mix"])
+  $defaults = {schema: 1, commit: $commit}
+  for $v in load_data("etc/env.conf.mix").vars
+    if has_key($v, "default") then $defaults[$v.name] = $v.default end
+  end
+  write_file($prefix .. "/env.mx", data_encode($defaults))
+  print("MIX_SIZE " .. $label .. " " .. to_string(stat($prefix .. "/bin/mix").size))
+end
+$head = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+$base = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
+mkdir("target/mcp-cost/tmp")
+$root = realpath("target/mcp-cost")
+$tmp = $root .. "/tmp"
+$before = nil
+-- Compile the benchmark before checking out main (which does not have it).
+checked(["rustc", "--edition=2024", "-O", "tools/mcp_startup.rs", "-o", $root .. "/startup"])
+try
+  checked(["git", "checkout", "-q", $base])
+  print("COST_BASE " .. $base)
+  $before = metadata()
+  stage("before", $base)
+finally
+  checked(["git", "checkout", "-q", $head])
+end
+$after = metadata()
+for $engine in ["mix", "mix-shell", "mixd"]
+  $old = graph($before, $engine)
+  $new = graph($after, $engine)
+  for $key in sort(keys($new))
+    if not has_key($old, $key) then
+      print("ENGINE_ADDED " .. $engine .. " " .. $key)
+      if $key != "const-oid@0.10.3" then raise("ENGINE_GRAPH_CHANGED", $key) end
+    end
+  end
+  for $key in sort(keys($old))
+    if not has_key($new, $key) then raise("ENGINE_PACKAGE_REMOVED", $engine .. " " .. $key) end
+  end
+  print("ENGINE_VERSIONS_UNCHANGED " .. $engine)
+end
+stage("after", $head)
+checked([$root .. "/startup", $root .. "/before", $root .. "/after"])
+checked(["ldd", "target/release/mix"])
+checked(["mix", "tools/foreign_gate.mix", "--locked", "--elf", realpath("target/release/mix")])

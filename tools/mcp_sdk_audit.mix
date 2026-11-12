@@ -1,50 +1,38 @@
 #!/usr/bin/env mix
--- version: 0.1.0
+-- version: 0.2.0
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- CBC only: compare the approved SDK update with the frozen 3.1.2 closure.
+-- CBC only. mcp_cost.mix separately checks exact main engine graphs.
 fn capture($argv)
   return run_argv_must($argv, {timeout: 1800, max_output: 256000000})
 end
-$manifest = "services/mix-mcp/Cargo.toml"
-$current_manifest = read_file($manifest)
-$current_lock = read_file("Cargo.lock")
-$old = nil
-$graphs = {}
-try
-  write_file($manifest, capture(["git", "show", "3f924fae:services/mix-mcp/Cargo.toml"] ))
-  write_file("Cargo.lock", capture(["git", "show", "3f924fae:Cargo.lock"]))
-  $old = json_parse(capture(["cargo", "metadata", "--locked", "--format-version", "1"]))
-  for $engine in ["mix", "mix-shell", "mixd"]
-    $graphs[$engine] = capture(["cargo", "tree", "--locked", "-p", $engine, "--prefix", "none"])
-  end
-finally
-  write_file($manifest, $current_manifest)
-  write_file("Cargo.lock", $current_lock)
-end
-$now = json_parse(capture(["cargo", "metadata", "--locked", "--format-version", "1"]))
+$base = trim(capture(["git", "merge-base", "HEAD", "origin/main"]))
+$old = toml_parse(capture(["git", "show", "3f924fae:Cargo.lock"]))
+$main = toml_parse(capture(["git", "show", $base .. ":Cargo.lock"]))
 $known = {}
-for $p in $old.packages $known[$p.name .. "@" .. $p.version] = true end
+for $p in concat($old.package, $main.package) $known[$p.name .. "@" .. $p.version] = true end
+$now = json_parse(capture(["cargo", "metadata", "--locked", "--format-version", "1"]))
 for $p in $now.packages
   if not has_key($known, $p.name .. "@" .. $p.version) then
     print("SDK_DELTA " .. json_encode({name: $p.name, version: $p.version, license: $p.license}))
     $inverse = capture(["cargo", "tree", "--locked", "--workspace", "-i", $p.name .. "@" .. $p.version])
     print($inverse)
-    if re_match($inverse, '(?m)(lib-mix|mix-shell|mixd|mix) v[0-9]') then
+    if re_match($inverse, '(?m)(lib-mix|mix-shell|mixd|mix) v[0-9]') and ($p.name != "const-oid" or $p.version != "0.10.3") then
       raise("STRICT_DEPENDENCY", $p.name)
     end
   end
-end
-for $p in $old.packages
-  $present = false
-  for $n in $now.packages
-    if $n.name == $p.name and $n.version == $p.version then $present = true end
+  if $p.name == "const-oid" and $p.version == "0.10.3" then
+    print("CONST_OID_LICENSE " .. $p.license)
+    print("CONST_OID_REPOSITORY " .. $p.repository)
+    print("CONST_OID_NO_BUILD_RS " .. to_string(not exists(dirname($p.manifest_path) .. "/build.rs")))
+    if exists(dirname($p.manifest_path) .. "/build.rs") then raise("BUILD_SCRIPT", $p.name) end
+    for $t in $p.targets
+      if contains($t.kind, "custom-build") then raise("BUILD_SCRIPT", $p.name) end
+    end
+    $tree = capture(["cargo", "tree", "--locked", "-p", "const-oid@0.10.3"])
+    print($tree)
+    if len(split(trim($tree), "\n")) != 1 then raise("CONST_OID_DEPENDENCIES", $tree) end
+    print(capture(["cargo", "tree", "--locked", "--workspace", "-e", "features", "-i", "const-oid@0.10.3"]))
   end
-  if not $present then print("SDK_REMOVED " .. $p.name .. "@" .. $p.version .. " " .. ($p.license ?? "workspace")) end
-end
-for $engine in keys($graphs)
-  $new_graph = capture(["cargo", "tree", "--locked", "-p", $engine, "--prefix", "none"])
-  if $new_graph != $graphs[$engine] then raise("ENGINE_GRAPH_CHANGED", $engine) end
-  print("ENGINE_GRAPH_UNCHANGED " .. $engine)
 end
 print(capture(["cargo", "tree", "--locked", "-p", "mix-mcp", "-e", "features"]))
 print(capture(["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"]))
