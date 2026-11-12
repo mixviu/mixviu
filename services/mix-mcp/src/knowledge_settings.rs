@@ -222,10 +222,14 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
             )
             .unwrap();
         }
-        // load_service delegates to this directory-explicit core. Avoid process
+        // Exercise the production directory-explicit core. Avoid process
         // env changes: the shared paths resolver caches configuration locations.
-        let loaded =
-            load_in::<KnowledgeSettings>(dir.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).unwrap();
+        let loaded = load_in::<KnowledgeSettings>(
+            dir.path(),
+            "knowledge",
+            serde_json::to_value(KnowledgeSettings::default()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(loaded.indexd.target, "knowledge-fixture");
         assert_eq!(loaded.trust_weight_doc, 0.12);
         let saved = serde_json::to_value(&loaded).unwrap();
@@ -242,7 +246,12 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
             content
         );
         let defaults = tempfile::tempdir().unwrap();
-        load_in::<KnowledgeSettings>(defaults.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).unwrap();
+        load_in::<KnowledgeSettings>(
+            defaults.path(),
+            "knowledge",
+            serde_json::to_value(KnowledgeSettings::default()).unwrap(),
+        )
+        .unwrap();
         let generated =
             std::fs::read_to_string(defaults.path().join("knowledge/knowledge.conf.mix")).unwrap();
         for key in [
@@ -263,16 +272,24 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
     #[test]
     fn knowledge_transport_defaults_and_partial_config() {
         let dir = tempfile::tempdir().unwrap();
-        let absent =
-            load_in::<KnowledgeSettings>(dir.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).unwrap();
+        let absent = load_in::<KnowledgeSettings>(
+            dir.path(),
+            "knowledge",
+            serde_json::to_value(KnowledgeSettings::default()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(absent.indexd, IndexdSettings::default());
         std::fs::write(
             dir.path().join("knowledge/knowledge.conf.mix"),
             "indexd: {transport: \"ssh\", ssh_host: \"user@host.example\"}\n",
         )
         .unwrap();
-        let partial =
-            load_in::<KnowledgeSettings>(dir.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).unwrap();
+        let partial = load_in::<KnowledgeSettings>(
+            dir.path(),
+            "knowledge",
+            serde_json::to_value(KnowledgeSettings::default()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(partial.indexd.transport, IndexdTransport::Ssh);
         assert_eq!(partial.indexd.target, "indexd");
         assert_eq!(partial.indexd.call_timeout_secs, 120);
@@ -286,7 +303,12 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
         )
         .unwrap();
         assert!(
-            load_in::<KnowledgeSettings>(dir.path(), "knowledge", serde_json::to_value(KnowledgeSettings::default()).unwrap()).is_err()
+            load_in::<KnowledgeSettings>(
+                dir.path(),
+                "knowledge",
+                serde_json::to_value(KnowledgeSettings::default()).unwrap()
+            )
+            .is_err()
         );
     }
 }
@@ -340,9 +362,12 @@ fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
     load_in(&dir, service, value)
 }
 
-fn load_in<T: serde::de::DeserializeOwned + serde::Serialize>(dir: &Path, service: &str, mut value: serde_json::Value) -> anyhow::Result<T> {
-    let file = dir.join(service)
-        .join(format!("{service}.conf.mix"));
+fn load_in<T: serde::de::DeserializeOwned + serde::Serialize>(
+    dir: &Path,
+    service: &str,
+    mut value: serde_json::Value,
+) -> anyhow::Result<T> {
+    let file = dir.join(service).join(format!("{service}.conf.mix"));
     if file.exists() {
         merge(
             &mut value,
