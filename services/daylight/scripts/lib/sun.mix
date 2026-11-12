@@ -1,0 +1,144 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- sun.mix: sunrise and sunset for a place, and the zone table. Pure: no
+-- clock, no Bus, no files except load_zones().
+--
+-- The maths is the standard sunrise equation (solar mean anomaly, equation
+-- of the centre, ecliptic longitude, declination, hour angle at a solar
+-- altitude of -0.833 degrees for refraction and the solar disc), good to a
+-- minute or two away from the poles. Times are Unix seconds (UTC), so the
+-- zone's offset never enters it: the zone only picks the place.
+
+fn rad($d)
+  return $d * pi() / 180
+end
+
+fn deg($r)
+  return $r * 180 / pi()
+end
+
+fn wrap360($d)
+  return $d - 360 * floor($d / 360)
+end
+
+fn julian($t)
+  return $t / 86400 + 2440587.5
+end
+
+fn unix($j)
+  return ($j - 2440587.5) * 86400
+end
+
+-- The solar day n (days since J2000 at the place's solar noon) whose noon
+-- lies nearest to Unix time $t at longitude $lon (degrees, east positive).
+fn day_of($lon, $t)
+  return round(julian($t) - 2451545.0 - 0.0008 + $lon / 360)
+end
+
+-- One solar day's events: {transit, rise, set, polar} where polar is nil on
+-- an ordinary day, "day" when the sun never sets and "night" when it never
+-- rises (rise and set are nil then).
+fn day_events($lat, $lon, $n)
+  $mean = $n + 0.0008 - $lon / 360
+  $m = wrap360(357.5291 + 0.98560028 * $mean)
+  $mr = rad($m)
+  $c = 1.9148 * sin($mr) + 0.0200 * sin(2 * $mr) + 0.0003 * sin(3 * $mr)
+  $l = rad(wrap360($m + $c + 180 + 102.9372))
+  $transit = 2451545.0 + $mean + 0.0053 * sin($mr) - 0.0069 * sin(2 * $l)
+  $sin_d = sin($l) * sin(rad(23.4397))
+  $cos_d = cos(asin($sin_d))
+  -- At the poles cos(latitude) is 0 and the hour angle divides by it:
+  -- clamp a hair inside them (Antarctica/South_Pole-style places stay polar).
+  $phi = rad(min(89.9999, max(-89.9999, $lat)))
+  $cos_w = (sin(rad(-0.833)) - sin($phi) * $sin_d) / (cos($phi) * $cos_d)
+  if $cos_w < -1 then
+    return {transit: unix($transit), rise: nil, set: nil, polar: "day"}
+  end
+  if $cos_w > 1 then
+    return {transit: unix($transit), rise: nil, set: nil, polar: "night"}
+  end
+  $w = deg(acos($cos_w)) / 360
+  return {transit: unix($transit), rise: unix($transit - $w), set: unix($transit + $w), polar: nil}
+end
+
+-- Whether the sun is up at the start (solar midnight) and the end of a
+-- solar day: an ordinary day starts and ends dark, a polar day is light
+-- throughout and a polar night dark.
+fn starts_light($d)
+  return $d.polar == "day"
+end
+
+-- The events of solar days $from..$to, sorted. Besides each ordinary day's
+-- sunrise and sunset, a day whose start state differs from the previous
+-- day's end state gets a transition at its start (solar midnight): entering
+-- a polar day is a sunrise there, entering a polar night or the first
+-- ordinary day after a polar day is a sunset there. So the list alternates
+-- sunrise and sunset across polar boundaries too.
+fn events($lat, $lon, $from, $to)
+  $out = []
+  $prev = day_events($lat, $lon, $from - 1)
+  for $n = $from to $to
+    $d = day_events($lat, $lon, $n)
+    if starts_light($d) != starts_light($prev) then
+      push($out, {t: $d.transit - 43200, kind: if starts_light($d) then "sunrise" else "sunset" end})
+    end
+    if $d.rise != nil then
+      push($out, {t: $d.rise, kind: "sunrise"})
+      push($out, {t: $d.set, kind: "sunset"})
+    end
+    $prev = $d
+  end
+  return sort_by($out, fn($e) = $e.t)
+end
+
+-- The sun at Unix time $t: {daylight, next, next_kind, polar}.
+-- daylight comes from the last event at or before $t in a four-solar-day
+-- window (the day before $t's day to two days after); with none, from the
+-- state the window's first day began in. Light from sunrise until sunset:
+-- dark at or after sunset. next is the first later event that changes the
+-- state (a sunset while light, a sunrise while dark), or nil when none falls
+-- in the window (a long polar day or night: the caller looks again within a
+-- day). polar is $t's own solar day's polar state, or nil.
+fn at($lat, $lon, $t)
+  $n0 = day_of($lon, $t)
+  $list = events($lat, $lon, $n0 - 1, $n0 + 2)
+  $last = nil
+  for $e in $list
+    if $e.t <= $t then $last = $e end
+  end
+  $daylight = if $last != nil then $last.kind == "sunrise" else starts_light(day_events($lat, $lon, $n0 - 1)) end
+  $want = if $daylight then "sunset" else "sunrise" end
+  $next = nil
+  for $e in $list
+    if $next == nil and $e.t > $t and $e.kind == $want then $next = $e end
+  end
+  return {daylight: $daylight, next: if $next == nil then nil else $next.t end,
+    next_kind: if $next == nil then nil else $next.kind end, polar: day_events($lat, $lon, $n0).polar}
+end
+
+-- True for the gdbus monitor line logind's PrepareForSleep(false) prints
+-- on resume, e.g.
+-- "/org/freedesktop/login1: org.freedesktop.login1.Manager.PrepareForSleep (false,)".
+fn is_resume_line($line)
+  return type($line) == "string" and contains($line, "org.freedesktop.login1.Manager.PrepareForSleep (false")
+end
+
+-- The zone table (share/daylight/zones.mx): {schema: 1, source, version,
+-- zones: {"Area/City": [lat, lon]}}. Raises on a malformed table: a citizen
+-- without its places must not start.
+fn load_zones($path)
+  if not is_file($path) then raise("ZONES", "zone table missing: " .. $path) end
+  $t = load_data($path)
+  if type($t) != "map" or $t.schema != 1 or type($t.zones) != "map" then raise("ZONES", "zone table malformed: " .. $path) end
+  return $t
+end
+
+-- The IANA zone name a /etc/localtime symlink target names, or nil.
+fn zone_of_link($target)
+  $at = index_of($target, "zoneinfo/")
+  if $at < 0 then return nil end
+  $z = slice($target, $at + 9)
+  if starts_with($z, "posix/") then $z = slice($z, 6) end
+  if starts_with($z, "right/") then $z = slice($z, 6) end
+  return if $z == "" then nil else $z end
+end

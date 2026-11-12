@@ -1,0 +1,346 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- agent_cli: the command-line front end to agentd (`mix agent ...`).
+-- Every command is one Bus call to agentd, except `send --wait`, which
+-- watches the turn's topics until it stops: it runs itself as a one-shot
+-- Bus citizen (subscriptions need the serve pump) and never polls.
+--
+--   mix agent agents                         configured agents
+--   mix agent list                           live and recent sessions
+--   mix agent start AGENT [--cwd DIR] [--dir DIR]... [--mode M] [--id ID]
+--   mix agent send SESSION TEXT... [--wait] [--timeout S] [--id ID]
+--   mix agent read SESSION [--since N] [--json]
+--   mix agent cancel|close|resume SESSION [--id ID]
+--   mix agent set SESSION --mode M | --option NAME --value V
+--   mix agent answer SESSION REQUEST OPTION   answer a permission question
+--
+-- Exit codes: 0 done; 1 refused, failed, or a turn that stopped other than
+-- end_turn; 2 the turn is waiting on a human (a permission question; answer
+-- it, then `send` or `read` again); 64 usage; 124 --wait timed out.
+
+$USAGE = "usage: mix agent agents | list | start AGENT [--cwd DIR] [--dir DIR]... [--mode M] [--id ID]
+       | send SESSION TEXT... [--wait] [--timeout S] [--id ID] | read SESSION [--since N] [--json]
+       | cancel SESSION | close SESSION | resume SESSION   (--id ID: a retry with the same id is not run twice)
+       | set SESSION (--mode M | --option NAME --value V) | answer SESSION REQUEST OPTION"
+
+fn usage($why)
+  if $why != nil then eprint("mix agent: " .. $why) end
+  eprint($USAGE)
+  exit(64)
+end
+
+fn decode($v)
+  if type($v) == "string" then
+    try
+      return json_parse($v)
+    catch $m
+    end
+  end
+  return $v
+end
+
+-- Print one line of `read` output. A reader that stops early (`| head`) is
+-- not an error.
+fn out($line)
+  try
+    print($line)
+  catch $m, $e
+    if $e.code == "IO_BROKEN_PIPE" then exit(0) end
+    raise($e.code, $m)
+  end
+end
+
+-- One call to agentd. Returns {rc, v}.
+fn call($command, $body, $timeout)
+  $b = json_encode($body)
+  send agent $command body=$b timeout=$timeout
+  return {rc: $rc, v: decode($result)}
+end
+
+-- Print a refusal and exit 1, or return the reply.
+fn must($r)
+  if $r.rc != 0 then
+    if type($r.v) == "map" and $r.v.error_code != nil then
+      eprint("mix agent: " .. $r.v.error_code .. ": " .. to_string($r.v.message))
+    else
+      eprint("mix agent: agentd answered rc " .. to_string($r.rc) .. ": " .. to_string($r.v))
+    end
+    exit(1)
+  end
+  return $r.v
+end
+
+-- One event as a line: seq, kind, and the part a person wants to see.
+fn event_line($e)
+  $u = $e.update
+  $d = ""
+  if type($u) == "map" and type($u.content) == "map" and type($u.content.text) == "string" then
+    $d = $u.content.text
+  elif type($u) == "map" and type($u.title) == "string" then
+    $d = $u.title .. (if $u.status != nil then " [" .. to_string($u.status) .. "]" else "" end)
+  elif $e.kind == "stop" then
+    $d = to_string($e.stop)
+  elif $e.kind == "prompt" and type($e.content) == "list" then
+    $d = join(map(filter($e.content, fn($b) = type($b) == "map" and $b.type == "text"), fn($b) = to_string($b.text)), "")
+  elif $e.kind == "permission_answered" then
+    $d = "request " .. to_string($e.request) .. ": " .. to_string($e.option)
+  elif $e.path != nil then
+    $d = to_string($e.path)
+  elif $e.error != nil then
+    $d = to_string($e.error.message ?? $e.error)
+  end
+  return "[" .. to_string($e.seq) .. "] " .. $e.kind .. (if $d != "" then " " .. replace($d, "\n", "\n    ") else "" end)
+end
+
+fn stop_code($stop)
+  if $stop == "end_turn" then return 0 end
+  return 1
+end
+
+-- send --wait, run as a one-shot citizen ---------------------------------
+-- The plain process starts `mix --serve <this file>` with the request in
+-- MIX_AGENTD_CLI_WAIT; the citizen subscribes, sends the prompt, streams
+-- the turn's text to stdout and exits with the turn's code.
+
+if env("MIX_AGENTD_CLI_WAIT") != "" then
+  $W = json_parse(env("MIX_AGENTD_CLI_WAIT"))
+  $S = {seq: $W.since, turn_seen: false, done: false}
+  subscribe("agent.session.updated")
+  subscribe("agent.session.ended")
+  subscribe("agent.permission.requested")
+
+  fn finish($code)
+    if not $S.done then
+      $S.done = true
+      exit($code)
+    end
+  end
+
+  -- An event of our session, once each, in seq order as delivered.
+  -- Print one event of our session and act on it. Callers keep the order:
+  -- $S.seq is the highest seq shown with no gap before it.
+  fn act($e)
+    $S.seq = $e.seq
+    if $e.kind == "agent_message_chunk" and type($e.update) == "map" and type($e.update.content) == "map" then
+      print_raw(to_string($e.update.content.text ?? ""))
+    elif $e.kind == "stop" then
+      print("")
+      if $e.stop != "end_turn" then eprint("mix agent: the turn stopped: " .. to_string($e.stop)) end
+      finish(stop_code($e.stop))
+    elif $e.kind == "error" then
+      eprint("mix agent: " .. event_line($e))
+      if $e.during == "prompt" then finish(1) end
+    end
+  end
+
+  -- Read back everything after $S.seq from the log (paged) and act on it.
+  -- Returns the session view of the last page, or nil.
+  fn read_on()
+    $view = nil
+    $more = true
+    while $more and not $S.done
+      $r = call("agent.session.read", {session: $W.session, since: $S.seq}, 10)
+      if $r.rc != 0 then return nil end
+      for each $e in $r.v.events ?? []
+        if not $S.done and $e.seq > $S.seq then act($e) end
+      end
+      $view = $r.v.session
+      $more = $r.v.more == true
+    end
+    return $view
+  end
+
+  -- A live event: act on it in order; a gap (an event published before the
+  -- subscriptions took effect, or a truncated marker) is read back first.
+  fn show($e)
+    if type($e) != "map" or $e.session != $W.session or ($e.seq ?? 0) <= $S.seq then return nil end
+    if $e.truncated == true or $e.seq > $S.seq + 1 then
+      read_on()
+    else
+      act($e)
+    end
+  end
+
+  -- Exit 2 only for a question still open: agentd publishes every request,
+  -- including ones an allow_once policy or a timeout answers at once.
+  fn waiting_on_human($view)
+    if $view == nil or ($view.open_permissions ?? 0) == 0 then return false end
+    print("")
+    for each $req in $view.permission_requests ?? []
+      eprint("mix agent: waiting on a human: answer with: mix agent answer " .. $W.session .. " " .. to_string($req) .. " OPTION")
+    end
+    if len($view.permission_requests ?? []) == 0 then
+      eprint("mix agent: waiting on a human: a permission question is open (mix agent read " .. $W.session .. ")")
+    end
+    finish(2)
+    return true
+  end
+
+  -- The once-off catch-up after the subscriptions have settled: a turn
+  -- whose only events came before them is read back here.
+  fn catch_up()
+    $view = read_on()
+    if $S.done or $view == nil then return nil end
+    if waiting_on_human($view) then return nil end
+    if $view.status == "ended" then
+      eprint("mix agent: the session ended")
+      finish(1)
+    end
+  end
+
+  on agent.session.updated
+    $e = if type($event.args) == "map" then $event.args else {} end
+    if $e.session == $W.session then show($e) end
+  end
+
+  on agent.permission.requested
+    $p = if type($event.args) == "map" then $event.args else {} end
+    if $p.session == $W.session and not $S.done then
+      $view = read_on()
+      if not $S.done then waiting_on_human($view) end
+    end
+  end
+
+  on agent.session.ended
+    $p = if type($event.args) == "map" then $event.args else {} end
+    if $p.session == $W.session then
+      eprint("mix agent: the session ended")
+      finish(1)
+    end
+  end
+
+  on agent.cli.catch_up async
+    sleep(3)
+  end
+  on agent.cli.catch_up
+    catch_up()
+  end
+
+  on agent.cli.timeout async
+    sleep($W.timeout)
+  end
+  on agent.cli.timeout
+    -- A short --timeout can fire before the catch-up: read back once first.
+    catch_up()
+    if $S.done then return nil end
+    print("")
+    eprint("mix agent: no stop within " .. to_string($W.timeout) .. " s; the turn goes on (mix agent read " .. $W.session .. ")")
+    finish(124)
+  end
+
+  $r = call("agent.session.prompt", $W.body, 10)
+  if $r.rc != 0 then
+    must($r)
+  end
+  task_start("agent.cli.catch_up", "{}")
+  task_start("agent.cli.timeout", "{}")
+else
+  -- The plain command line -------------------------------------------------
+  $argv = args()
+  if len($argv) == 0 then usage(nil) end
+  $cmd = $argv[0]
+  $g = getopt(slice($argv, 1), {cwd: {arg: true}, dir: {arg: true}, mode: {arg: true}, wait: {}, timeout: {arg: true},
+    id: {arg: true}, since: {arg: true}, json: {}, option: {arg: true}, value: {arg: true}})
+  if len($g.errors) > 0 then usage(join($g.errors, "; ")) end
+  $o = $g.opts
+  $rest = $g.rest
+
+  if $cmd == "agents" then
+    $v = must(call("agent.agents", {}, 10))
+    for each $x in $v.agents
+      print($x.agent .. "  " .. $x.program .. "  policy=" .. $x.policy .. "  roots=" .. join($x.roots, ",") ..
+        "  mode=" .. to_string($x.mode ?? "-") .. "  close_on_done=" .. to_string($x.close_on_done ?? false))
+    end
+    print(to_string($v.live) .. " live of " .. to_string($v.max_live))
+  elif $cmd == "list" then
+    $v = must(call("agent.session.list", {}, 10))
+    for each $s in sort_by($v.sessions, fn($x) = to_string($x.created_at))
+      print($s.session .. "  " .. $s.status .. "  " .. $s.agent .. "  seq=" .. to_string($s.seq) .. "  " .. $s.cwd)
+    end
+  elif $cmd == "start" then
+    if len($rest) != 1 then usage("start takes one AGENT") end
+    $body = {agent: $rest[0], cwd: realpath($o.cwd ?? cwd()) ?? ($o.cwd ?? cwd())}
+    -- --dir may repeat; getopt keeps the last, so collect them from argv.
+    $dirs = []
+    for $i = 1 to len($argv) - 1
+      if $argv[$i] == "--dir" and $i + 1 < len($argv) then $dirs = concat($dirs, [$argv[$i + 1]]) end
+      if starts_with($argv[$i], "--dir=") then $dirs = concat($dirs, [slice($argv[$i], 6)]) end
+    end
+    if len($dirs) > 0 then $body.additional_dirs = $dirs end
+    if $o.mode != nil then $body.mode = $o.mode end
+    if $o.id != nil then $body.id = $o.id end
+    $v = must(call("agent.session.new", $body, 30))
+    print($v.session)
+  elif $cmd == "send" then
+    if len($rest) < 2 then usage("send takes SESSION and TEXT") end
+    $body = {session: $rest[0], content: join(slice($rest, 1), " ")}
+    if $o.id != nil then $body.id = $o.id end
+    if not $o.wait then
+      $v = must(call("agent.session.prompt", $body, 30))
+      print(if $v.queued == true then "queued" else "turn " .. to_string($v.turn) end)
+    else
+      $timeout = to_number($o.timeout ?? "600")
+      if $timeout == nil or $timeout < 1 then usage("--timeout must be a number of seconds") end
+      -- The seq before the prompt: only what follows belongs to this turn.
+      $pre = must(call("agent.session.read", {session: $rest[0], since: 999999999}, 10)).session
+      if ($pre.open_permissions ?? 0) > 0 then
+        -- A question from the turn already running: it waits on a human
+        -- whatever this prompt would do.
+        for each $req in $pre.permission_requests ?? []
+          eprint("mix agent: waiting on a human: answer with: mix agent answer " .. $rest[0] .. " " .. to_string($req) .. " OPTION")
+        end
+        exit(2)
+      end
+      if $pre.status == "ended" then
+        eprint("mix agent: session " .. $rest[0] .. " has ended (mix agent resume " .. $rest[0] .. ")")
+        exit(1)
+      end
+      $since = $pre.seq
+      $req = json_encode({session: $rest[0], body: $body, since: $since, timeout: $timeout})
+      $mix = realpath("/proc/self/exe")
+      exit(run_stream([$mix, "--serve", script_path(), "--name", "agent-cli-" .. slice(replace(uuid(), "-", ""), 0, 10)],
+        {env: {MIX_AGENTD_CLI_WAIT: $req}}))
+    end
+  elif $cmd == "read" then
+    if len($rest) != 1 then usage("read takes one SESSION") end
+    $since = to_number($o.since ?? "0")
+    $more = true
+    while $more
+      $v = must(call("agent.session.read", {session: $rest[0], since: $since}, 30))
+      for each $e in $v.events
+        out(if $o.json then json_encode($e) else event_line($e) end)
+      end
+      $more = $v.more == true
+      $since = $v.next
+    end
+    if not $o.json then
+      $s = $v.session
+      out("-- " .. $s.session .. " " .. $s.status .. " (" .. $s.agent .. "), seq " .. to_string($s.seq) ..
+        (if ($s.open_permissions ?? 0) > 0 then ", " .. to_string($s.open_permissions) .. " permission question(s) open" else "" end))
+    end
+  elif contains(["cancel", "close", "resume"], $cmd) then
+    if len($rest) != 1 then usage($cmd .. " takes one SESSION") end
+    $body = {session: $rest[0]}
+    if $o.id != nil then $body.id = $o.id end
+    $v = must(call("agent.session." .. $cmd, $body, 30))
+    print(json_encode($v))
+  elif $cmd == "set" then
+    if len($rest) != 1 then usage("set takes one SESSION") end
+    $body = {session: $rest[0]}
+    if $o.mode != nil then
+      $body.mode = $o.mode
+    elif $o.option != nil and $o.value != nil then
+      $body.option = $o.option
+      $body.value = $o.value
+    else
+      usage("set needs --mode, or --option and --value")
+    end
+    print(json_encode(must(call("agent.session.set", $body, 10))))
+  elif $cmd == "answer" then
+    if len($rest) != 3 then usage("answer takes SESSION REQUEST OPTION") end
+    print(json_encode(must(call("agent.permission.respond", {session: $rest[0], request: $rest[1], option: $rest[2]}, 10))))
+  else
+    usage("unknown command " .. $cmd)
+  end
+end

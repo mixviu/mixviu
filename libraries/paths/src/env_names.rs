@@ -1,15 +1,27 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Environment names registered in etc/env.conf.mix.
+pub const AGENTD_ACP_AGENT: &str = "MIX_AGENTD_ACP_AGENT";
+pub const AGENTD_ACP_CONNECTION: &str = "MIX_AGENTD_ACP_CONNECTION";
+pub const AGENTD_ACP_SERVICE: &str = "MIX_AGENTD_ACP_SERVICE";
+pub const AGENTD_CLI_WAIT: &str = "MIX_AGENTD_CLI_WAIT";
+pub const AGENTD_CLOSE_GRACE_S: &str = "MIX_AGENTD_CLOSE_GRACE_S";
+pub const AGENTD_CONF: &str = "MIX_AGENTD_CONF";
+pub const AGENTD_DB: &str = "MIX_AGENTD_DB";
+pub const AGENTD_MCP_DIR: &str = "MIX_AGENTD_MCP_DIR";
+pub const AGENTD_MCP_EXE: &str = "MIX_AGENTD_MCP_EXE";
+pub const AGENTD_SESSION: &str = "MIX_AGENTD_SESSION";
+pub const AGENTD_SETTLE_S: &str = "MIX_AGENTD_SETTLE_S";
 pub const AGENT_CLI_EXE: &str = "MIX_AGENT_CLI_EXE";
 pub const APP_HOME: &str = "MIX_APP_HOME";
 pub const APPS_HOME: &str = "MIX_APPS_HOME";
 pub const BIN: &str = "MIX_BIN";
 pub const BROKER_ACCOUNT: &str = "MIX_BROKER_ACCOUNT";
-
-
 pub const BUS_SOCKET: &str = "MIX_BUS_SOCKET";
 pub const CACHE: &str = "MIX_CACHE";
 pub const COMP_SERVICE: &str = "MIX_COMP_SERVICE";
+pub const DAYLIGHT_LOCALTIME: &str = "MIX_DAYLIGHT_LOCALTIME";
+pub const DAYLIGHT_RESUME: &str = "MIX_DAYLIGHT_RESUME";
+pub const DAYLIGHT_ZONES: &str = "MIX_DAYLIGHT_ZONES";
 pub const DEBUG: &str = "MIX_DEBUG";
 pub const DECORATIONS: &str = "MIX_DECORATIONS";
 pub const DOCTOR_SKIP_BUS: &str = "MIX_DOCTOR_SKIP_BUS";
@@ -19,11 +31,10 @@ pub const EDITOR: &str = "MIX_EDITOR";
 pub const ENGINE_HANDOFF: &str = "MIX_ENGINE_HANDOFF";
 pub const ETC: &str = "MIX_ETC";
 pub const EXE: &str = "MIX_EXE";
-
-
-
 pub const INDEXD_SEARCH: &str = "MIX_INDEXD_SEARCH";
+pub const INPUTD_LOG: &str = "MIX_INPUTD_LOG";
 pub const INSTANCE: &str = "MIX_INSTANCE";
+pub const LIB: &str = "MIX_LIB";
 pub const LINT: &str = "MIX_LINT";
 pub const MACRO_APP: &str = "MIX_MACRO_APP";
 pub const MACRO_ID: &str = "MIX_MACRO_ID";
@@ -32,6 +43,7 @@ pub const MACRO_TARGET: &str = "MIX_MACRO_TARGET";
 pub const MACRO_TIER: &str = "MIX_MACRO_TIER";
 pub const MAN_SOURCE: &str = "MIX_MAN_SOURCE";
 pub const MAN_URL: &str = "MIX_MAN_URL";
+pub const MCP_ALLOW_TCP: &str = "MIX_MCP_ALLOW_TCP";
 pub const NODE_CONFIG: &str = "MIX_NODE_CONFIG";
 pub const NODED_EXPECTED_SERVER_PID: &str = "MIX_NODED_EXPECTED_SERVER_PID";
 pub const NODED_SPEC_DIR: &str = "MIX_NODED_SPEC_DIR";
@@ -42,6 +54,13 @@ pub const PORTALD_CONSENT: &str = "MIX_PORTALD_CONSENT";
 pub const PORTALD_MAX_FRAMERATE: &str = "MIX_PORTALD_MAX_FRAMERATE";
 pub const PORTALD_PIPEWIRE_REMOTE: &str = "MIX_PORTALD_PIPEWIRE_REMOTE";
 pub const PREFIX: &str = "MIX_PREFIX";
+pub const RELEASESD_API: &str = "MIX_RELEASESD_API";
+pub const RELEASESD_BIN: &str = "MIX_RELEASESD_BIN";
+pub const RELEASESD_CATALOGUE: &str = "MIX_RELEASESD_CATALOGUE";
+pub const RELEASESD_ROOT: &str = "MIX_RELEASESD_ROOT";
+pub const RELEASESD_SHARE: &str = "MIX_RELEASESD_SHARE";
+pub const RELEASESD_STATE: &str = "MIX_RELEASESD_STATE";
+pub const RELEASESD_VIEW: &str = "MIX_RELEASESD_VIEW";
 pub const REMOTE_BIN: &str = "MIX_REMOTE_BIN";
 pub const REMOTE_EXE: &str = "MIX_REMOTE_EXE";
 pub const ROOT: &str = "MIX_ROOT";
@@ -113,7 +132,6 @@ pub const NOTIFYD_STATE: &str = "MIX_NOTIFYD_STATE";
 pub const SETTINGS_SERVICE: &str = "MIX_SETTINGS_SERVICE";
 pub const EXPORTD_COSMIC_HOME: &str = "MIX_EXPORTD_COSMIC_HOME";
 pub const EXPORTD_KDE_HOME: &str = "MIX_EXPORTD_KDE_HOME";
-pub const LIB: &str = "MIX_LIB";
 
 // Standard names other software defines (D-Bus, XDG, PipeWire, systemd),
 // registered for the services that read them.
@@ -130,11 +148,16 @@ pub const TEST_VIUD_AGENT_SEAT_ALLOW: &str = "MIX_TEST_VIUD_AGENT_SEAT_ALLOW";
 pub const PTY_TIMEOUT_SECS: &str = "MIX_PTY_TIMEOUT_SECS";
 pub const TEST_ACTIVE: &str = "MIX_TEST_ACTIVE";
 pub const TEST_ADMIT_DELAY_MS: &str = "MIX_TEST_ADMIT_DELAY_MS";
+pub const TEST_AGENTD_AUTH_OPS: &str = "MIX_TEST_AGENTD_AUTH_OPS";
 pub const TEST_AUDIT_ROOTS: &str = "MIX_TEST_AUDIT_ROOTS";
 pub const TEST_BIN: &str = "MIX_TEST_BIN";
 pub const TEST_BOOTSTRAP_SCRUB: &str = "MIX_TEST_BOOTSTRAP_SCRUB";
 pub const TEST_CLAIM_DELAY_MS: &str = "MIX_TEST_CLAIM_DELAY_MS";
 pub const TEST_COALESCE_UNBOUND_XYZ: &str = "MIX_TEST_COALESCE_UNBOUND_XYZ";
+pub const TEST_DAYLIGHT: &str = "MIX_TEST_DAYLIGHT";
+pub const TEST_DAYLIGHT_CLOCK_OFFSET: &str = "MIX_TEST_DAYLIGHT_CLOCK_OFFSET";
+pub const TEST_DAYLIGHT_RESUME_ARGV: &str = "MIX_TEST_DAYLIGHT_RESUME_ARGV";
+pub const TEST_DAYLIGHT_RESUME_GUARD: &str = "MIX_TEST_DAYLIGHT_RESUME_GUARD";
 pub const TEST_DEBUG_COST_CHILD: &str = "MIX_TEST_DEBUG_COST_CHILD";
 pub const TEST_DEBUG_FACADE_CHILD: &str = "MIX_TEST_DEBUG_FACADE_CHILD";
 pub const TEST_DEBUG_INFO: &str = "MIX_TEST_DEBUG_INFO";
@@ -188,6 +211,7 @@ pub const TEST_SESSION_FIXTURE_NAME: &str = "MIX_TEST_SESSION_FIXTURE_NAME";
 pub const TEST_SESSION_FIXTURE_PROOF: &str = "MIX_TEST_SESSION_FIXTURE_PROOF";
 pub const TEST_SESSION_FIXTURE_SELECTOR: &str = "MIX_TEST_SESSION_FIXTURE_SELECTOR";
 pub const TEST_SESSION_UID: &str = "MIX_TEST_SESSION_UID";
+pub const TEST_SETTINGSD_EXE: &str = "MIX_TEST_SETTINGSD_EXE";
 pub const TEST_SETTINGS_STATE: &str = "MIX_TEST_SETTINGS_STATE";
 pub const TEST_SHARED_FS_FIXTURE: &str = "MIX_TEST_SHARED_FS_FIXTURE";
 pub const TEST_SOCKET_EXE: &str = "MIX_TEST_SOCKET_EXE";

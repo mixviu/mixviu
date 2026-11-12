@@ -1,0 +1,252 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- log: agentd's durable session log, one SQLite file through sqlexec
+-- (decision ruling 11, durable intent). agentd writes here before it acts
+-- or publishes:
+--   - sessions: one row per session, kept after the session ends;
+--   - events: every mapped update, append-only, keyed (session, seq);
+--   - commands: every accepted acting command with its receipt, keyed
+--     (scope, id). scope is the session id, or "new" for agent.session.new.
+--     A retry with the same id gets the first receipt and never re-runs.
+-- Every function takes the handle from open(); none holds state.
+
+$SCHEMA = [
+  "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, agent TEXT NOT NULL, cwd TEXT NOT NULL, parent TEXT, sender TEXT, created_at TEXT NOT NULL, status TEXT NOT NULL, ended_at REAL, exit_code INTEGER, signal INTEGER, end_reason TEXT)",
+  "CREATE INDEX IF NOT EXISTS sessions_ended ON sessions(ended_at)",
+  "CREATE TABLE IF NOT EXISTS events (session TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, at REAL NOT NULL, body TEXT NOT NULL, PRIMARY KEY (session, seq))",
+  "CREATE TABLE IF NOT EXISTS commands (scope TEXT NOT NULL, id TEXT NOT NULL, command TEXT NOT NULL, sender TEXT, at REAL NOT NULL, args TEXT, rc INTEGER, receipt TEXT, session TEXT, PRIMARY KEY (scope, id))",
+  "CREATE INDEX IF NOT EXISTS commands_at ON commands(at)",
+  "CREATE TABLE IF NOT EXISTS awaits (id TEXT PRIMARY KEY, session TEXT NOT NULL, service TEXT NOT NULL, op TEXT NOT NULL, deadline REAL, note TEXT, suspend INTEGER NOT NULL, state TEXT NOT NULL, created REAL NOT NULL, fired REAL, outcome TEXT, delivered REAL, redeliveries INTEGER NOT NULL DEFAULT 0, reason TEXT)",
+  "CREATE INDEX IF NOT EXISTS awaits_pending ON awaits(state, deadline)",
+  "CREATE TABLE IF NOT EXISTS await_outbox (id TEXT PRIMARY KEY, await_id TEXT NOT NULL, session TEXT NOT NULL, fired REAL NOT NULL, outcome TEXT NOT NULL, inflight INTEGER NOT NULL DEFAULT 0, redeliveries INTEGER NOT NULL DEFAULT 0)",
+  "CREATE INDEX IF NOT EXISTS await_outbox_fifo ON await_outbox(fired)"
+]
+
+-- Columns added after the first schema: what a resume needs (the agent's
+-- own session id, the extra directories, what the agent advertised) and the
+-- title (the first prompt's first line), and accepted settings. Added
+-- to an older file in place; each is NULL until written.
+$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT", "mode TEXT", "options TEXT", "op_outcome TEXT", "mcp_ref TEXT"]
+$attachments = require("acp.mix")
+
+fn session_mcp($h, $id, $ref)
+  sqlexec($h, "UPDATE sessions SET mcp_ref = ? WHERE id = ?", [$ref, $id])
+end
+
+-- Open (creating) the log. WAL with synchronous=NORMAL: a commit is not
+-- an fsync, so streamed chunks stay cheap; a power cut can lose the last
+-- commits but never corrupts the file.
+-- The log holds prompts and agent output: the file is created 0600 before
+-- SQLite opens it (an empty file is an empty database), and SQLite gives
+-- its -wal and -shm files the same mode.
+fn open($path)
+  if $path != ":memory:" then
+    mkdir(dirname($path), {parents: true})
+    if not is_file($path) then
+      write_file($path, "")
+      chmod($path, 0o600)
+    end
+  end
+  $h = sqlopen($path, "rwc")
+  sqlexec($h, "PRAGMA synchronous=NORMAL")
+  for each $sql in $SCHEMA
+    sqlexec($h, $sql)
+  end
+  $have = map(sqlexec($h, "PRAGMA table_info(sessions)"), fn($r) = $r.name)
+  for each $col in $SESSION_COLUMNS
+    if not contains($have, before($col, " ")) then sqlexec($h, "ALTER TABLE sessions ADD COLUMN " .. $col) end
+  end
+  -- Before rc-0-only receipts, refusals were durable too. Permit their
+  -- retries after upgrade, retaining successes and interrupted intents.
+  sqlexec($h, "DELETE FROM commands WHERE rc IS NOT NULL AND rc <> 0")
+  return $h
+end
+
+fn known($h, $id)
+  return len(sqlexec($h, "SELECT 1 AS x FROM sessions WHERE id = ?", [$id])) > 0
+end
+
+fn session_started($h, $s)
+  sqlexec($h, "INSERT INTO sessions (id, agent, cwd, parent, sender, created_at, status) VALUES (?, ?, ?, ?, ?, ?, 'live')",
+    [$s.id, $s.agent, $s.cwd, $s.parent, $s.sender, $s.created_at])
+end
+
+-- What the agent said at initialize and session/new: needed to resume.
+fn session_agent($h, $id, $acp, $dirs, $caps, $agent_info)
+  sqlexec($h, "UPDATE sessions SET acp = ?, dirs = ?, caps = ?, agent_info = ? WHERE id = ?",
+    [$acp, json_encode($dirs ?? []), json_encode($caps), json_encode($agent_info), $id])
+end
+
+-- Called only after the agent accepts a setting.
+fn session_set($h, $id, $set)
+  if $set.mode != nil then
+    sqlexec($h, "UPDATE sessions SET mode = ? WHERE id = ?", [$set.mode, $id])
+  else
+    $options = session_row($h, $id).options ?? {}
+    $options[$set.option] = $set.value
+    sqlexec($h, "UPDATE sessions SET options = ? WHERE id = ?", [json_encode($options), $id])
+  end
+end
+
+-- The first prompt names the session; a later prompt never renames it.
+fn session_title($h, $id, $title)
+  sqlexec($h, "UPDATE sessions SET title = ? WHERE id = ? AND title IS NULL", [$title, $id])
+end
+
+-- The stored row of a session, decoded, or nil.
+fn session_row($h, $id)
+  $rows = sqlexec($h, "SELECT * FROM sessions WHERE id = ?", [$id])
+  if len($rows) == 0 then return nil end
+  $r = $rows[0]
+  for each $k in ["dirs", "caps", "agent_info", "options"]
+    $r[$k] = if type($r[$k]) == "string" then json_parse($r[$k]) else nil end
+  end
+  return $r
+end
+
+-- A resume makes an ended session live again (expiry skips it).
+fn session_resumed($h, $id)
+  sqlexec($h, "UPDATE sessions SET status = 'live', ended_at = NULL, exit_code = NULL, signal = NULL, end_reason = NULL WHERE id = ?", [$id])
+end
+
+-- A failed resume puts back the row as it was before it.
+fn session_restore($h, $row)
+  sqlexec($h, "UPDATE sessions SET status = 'ended', ended_at = ?, exit_code = ?, signal = ?, end_reason = ? WHERE id = ?",
+    [$row.ended_at, $row.exit_code, $row.signal, $row.end_reason, $row.id])
+end
+
+fn session_ended($h, $id, $exit_code, $signal, $reason, $at)
+  sqlexec($h, "UPDATE sessions SET status = 'ended', ended_at = ?, exit_code = ?, signal = ?, end_reason = ? WHERE id = ? AND status != 'ended'",
+    [$at, $exit_code, $signal, $reason, $id])
+end
+
+fn last_seq($h, $id)
+  return sqlexec($h, "SELECT max(seq) AS m FROM events WHERE session = ?", [$id])[0].m ?? 0
+end
+
+-- Append one event. $wire is the event's JSON text, written as is.
+fn append($h, $id, $seq, $kind, $wire, $at)
+  sqlexec($h, "INSERT INTO events (session, seq, kind, at, body) VALUES (?, ?, ?, ?, ?)",
+    [$id, $seq, $kind, $at, $wire])
+end
+
+-- Events after $since in seq order: at most $limit, and stopping before
+-- $max_bytes of JSON (one event always fits, however large).
+-- Returns {events, more, next}: next is the since for the following read.
+-- Two passes: sizes first, then only the bodies that fit, so a read never
+-- loads more than about $max_bytes of event text.
+fn read($h, $id, $since, $limit, $max_bytes)
+  $sizes = sqlexec($h, "SELECT seq, length(CAST(body AS BLOB)) AS n FROM events WHERE session = ? AND seq > ? ORDER BY seq LIMIT ?",
+    [$id, $since, $limit + 1])
+  $count = 0
+  $bytes = 0
+  $next = $since
+  $more = false
+  for each $r in $sizes
+    if $count >= $limit or ($count > 0 and $bytes + $r.n > $max_bytes) then
+      $more = true
+      break
+    end
+    $count = $count + 1
+    $bytes = $bytes + $r.n
+    $next = $r.seq
+  end
+  $out = []
+  if $count > 0 then
+    -- at (epoch seconds) is the stored column: events logged before the
+    -- wire carried it get it too.
+    for each $r in sqlexec($h, "SELECT body, at FROM events WHERE session = ? AND seq > ? AND seq <= ? ORDER BY seq", [$id, $since, $next])
+      $e = json_parse($r.body)
+      if type($e) == "map" then $e.at = $r.at end
+      $out = concat($out, [$e])
+    end
+  end
+  return {events: $out, more: $more, next: $next}
+end
+
+-- The view of a session that is only in the log (agentd restarted or
+-- dropped it from memory). Same shape as agentd's live view.
+fn view($h, $id)
+  $rows = sqlexec($h, "SELECT * FROM sessions WHERE id = ?", [$id])
+  if len($rows) == 0 then return nil end
+  $r = $rows[0]
+  return {session: $r.id, agent: $r.agent, cwd: $r.cwd, parent: $r.parent, status: $r.status,
+    awaits: len(sqlexec($h, "SELECT id FROM awaits WHERE session = ? AND state = 'pending'", [$id])),
+    seq: last_seq($h, $id), turn: nil, created_at: $r.created_at, ended_at: $r.ended_at,
+    title: $r.title, mcp_ref: $r.mcp_ref, open_permissions: 0, permission_requests: [], permissions: [],
+    exit_code: $r.exit_code, signal: $r.signal, end_reason: $r.end_reason}
+end
+
+-- Ended sessions, newest first, leaving out the ids in $skip (a map).
+fn recent($h, $limit, $skip)
+  $out = []
+  for each $r in sqlexec($h, "SELECT id FROM sessions WHERE status IN ('ended', 'waiting') ORDER BY ended_at DESC LIMIT ?", [$limit])
+    if $skip[$r.id] == nil then $out = concat($out, [view($h, $r.id)]) end
+  end
+  return $out
+end
+
+-- After a restart no agent from before is running (agentd owned their
+-- process groups). End their sessions in the log, each with a last event.
+-- A suspending await or an outbox is an obligation to resume: leave that
+-- row untouched for agentd to reload and log as suspended, never ended.
+-- Returns the ids ended.
+fn recover($h, $at)
+  $ids = map(sqlexec($h, "SELECT id FROM sessions s WHERE status NOT IN ('ended', 'waiting') AND NOT EXISTS (SELECT 1 FROM awaits a WHERE a.session = s.id AND a.state = 'pending' AND a.suspend = 1) AND NOT EXISTS (SELECT 1 FROM await_outbox o WHERE o.session = s.id)"), fn($r) = $r.id)
+  for each $id in $ids
+    $seq = last_seq($h, $id) + 1
+    append($h, $id, $seq, "ended", json_encode({kind: "ended", session: $id, seq: $seq, reason: "agentd_restart"}), $at)
+    session_ended($h, $id, nil, nil, "agentd_restart", $at)
+  end
+  return $ids
+end
+
+-- Commands -----------------------------------------------------------------
+
+fn command_get($h, $scope, $id)
+  $rows = sqlexec($h, "SELECT command, rc, receipt FROM commands WHERE scope = ? AND id = ?", [$scope, $id])
+  if len($rows) == 0 then return nil end
+  return $rows[0]
+end
+
+fn command_begin($h, $scope, $id, $command, $sender, $args, $at)
+  sqlexec($h, "INSERT INTO commands (scope, id, command, sender, at, args) VALUES (?, ?, ?, ?, ?, ?)",
+    [$scope, $id, $command, $sender, $at, $args])
+end
+
+-- A "new" command's receipt lives as long as the session it created.
+fn command_link($h, $scope, $id, $session)
+  sqlexec($h, "UPDATE commands SET session = ? WHERE scope = ? AND id = ?", [$session, $scope, $id])
+end
+
+fn command_done($h, $scope, $id, $rc, $receipt)
+  sqlexec($h, "UPDATE commands SET rc = ?, receipt = ? WHERE scope = ? AND id = ?", [$rc, $receipt, $scope, $id])
+end
+
+fn command_drop($h, $scope, $id)
+  sqlexec($h, "DELETE FROM commands WHERE scope = ? AND id = ?", [$scope, $id])
+end
+
+-- Retention: drop sessions that ended before $cutoff (epoch seconds), with
+-- their events, their commands and the "new" command that created them.
+-- A "new" command that created no session (refused) goes once it is older
+-- than $cutoff. Returns the ids of the sessions dropped.
+fn expire($h, $cutoff)
+  $ids = map(sqlexec($h, "SELECT id FROM sessions WHERE status = 'ended' AND ended_at < ?", [$cutoff]), fn($r) = $r.id)
+  for each $id in $ids
+    $ref = session_row($h, $id).mcp_ref
+    if $ref != nil and len(sqlexec($h, "SELECT id FROM sessions WHERE mcp_ref = ? AND id <> ?", [$ref, $id])) == 0 then
+      $attachments.remove_mcp($ref)
+    end
+    sqlexec($h, "DELETE FROM events WHERE session = ?", [$id])
+    sqlexec($h, "DELETE FROM await_outbox WHERE session = ?", [$id])
+    sqlexec($h, "DELETE FROM awaits WHERE session = ?", [$id])
+    sqlexec($h, "DELETE FROM commands WHERE scope = ? OR (scope = 'new' AND session = ?)", [$id, $id])
+    sqlexec($h, "DELETE FROM sessions WHERE id = ?", [$id])
+  end
+  sqlexec($h, "DELETE FROM commands WHERE scope = 'new' AND session IS NULL AND at < ?", [$cutoff])
+  -- Rows whose session is gone from the log (none should exist).
+  sqlexec($h, "DELETE FROM commands WHERE scope != 'new' AND at < ? AND scope NOT IN (SELECT id FROM sessions)", [$cutoff])
+  return $ids
+end
