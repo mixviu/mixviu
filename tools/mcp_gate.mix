@@ -10,6 +10,9 @@ if len($stages) != 1 or not contains(["resolve", "focused", "all", "receipts"], 
   exit(64)
 end
 $stage = $stages[0]
+if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") then
+  raise("CBC_ONLY", "run this helper through the native CBC build service")
+end
 fn checked($argv, $env = {})
   -- A /build ancestor marks scripts for version lint. Narrow PTY fixtures
   -- also need a short path. This CBC-only root is unique, cleaned below,

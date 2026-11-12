@@ -1202,11 +1202,14 @@ impl MixMcp {
                 })
         };
 
+        if let Err(e) = crate::knowledge_settings::load_domains() {
+            return tool_output::failure(format!("{e:#}"));
+        }
         // Load knowledge settings for trust weighting + journal decay
-        let k = config::store::load_service::<crate::knowledge_settings::KnowledgeSettings>(
-            "knowledge",
-        )
-        .unwrap_or_default();
+        let k = match crate::knowledge_settings::load_knowledge() {
+            Ok(k) => k,
+            Err(e) => return tool_output::failure(format!("{e:#}")),
+        };
 
         let mut result = serde_json::json!({
             "domain": domain.as_deref().unwrap_or("all"),
@@ -1437,6 +1440,9 @@ impl MixMcp {
         };
         let workspace_path = workspace.as_path();
 
+        if let Err(e) = crate::knowledge_settings::load_domains() {
+            return format!("ERROR: {e:#}");
+        }
         let domain = crate::domain::detect_domain(workspace_path);
 
         let mut indexd = match self.indexd().await {
@@ -2053,14 +2059,26 @@ fn workspace_path(path: Option<&str>) -> Result<std::path::PathBuf, String> {
 /// The tool deadline setting overrides the 120s default; `0` disables
 /// every deadline (debug escape hatch, exempt tools included).
 fn tool_deadline_secs(tool: &str) -> u64 {
-    let long_secs = paths::env::setting(paths::env::MCP_SCRIPT_DEADLINE_SECS)
-        .expect("script deadline setting")
-        .parse::<u64>()
-        .expect("invalid script deadline");
-    let base = paths::env::setting(paths::env::MCP_TOOL_DEADLINE_SECS)
-        .expect("tool deadline setting")
-        .parse::<u64>()
-        .expect("invalid tool deadline");
+    let base = deadline_override(paths::env::raw(paths::env::MCP_TOOL_DEADLINE_SECS));
+    deadline_for(tool, base)
+}
+
+fn deadline_override(value: Option<std::ffi::OsString>) -> u64 {
+    value
+        .and_then(|v| v.into_string().ok())
+        .and_then(|v| v.parse::<u64>().ok()).unwrap_or(120)
+}
+
+#[test]
+fn malformed_deadline_keeps_original_fallback() {
+    use std::ffi::OsString;
+    assert_eq!(deadline_override(None), 120);
+    assert_eq!(deadline_override(Some(OsString::from("junk"))), 120);
+    assert_eq!(deadline_override(Some(OsString::from("0"))), 0);
+    assert_eq!(deadline_override(Some(OsString::from("17"))), 17);
+}
+
+fn deadline_for(tool: &str, base: u64) -> u64 {
     if base == 0 {
         return 0;
     }
@@ -2074,7 +2092,8 @@ fn tool_deadline_secs(tool: &str) -> u64 {
         // these get a deadline too.
         "docs_feedback" | "journal_feedback" | "memory_feedback" => 0,
         // Owned process worker; long because scripts are legitimately slow.
-        "mix_execute" => base.max(long_secs),
+        "mix_execute" => base.max(paths::env::raw(paths::env::MCP_SCRIPT_DEADLINE_SECS)
+            .and_then(|v| v.into_string().ok()).and_then(|v| v.parse::<u64>().ok()).unwrap_or(600)),
         "await_op" => base,
         _ => base,
     }
@@ -2329,12 +2348,14 @@ async fn async_main() {
         logging::LogDefaults::daemon("mix-mcp")
             .with_stats(false)
             .with_filter(
-                &paths::env::setting(paths::env::MCP_LOG_FILTER).expect("log filter setting"),
+                &paths::env::raw(paths::env::MCP_LOG_FILTER).and_then(|v| v.into_string().ok())
+                    .filter(|v| tracing_subscriber::EnvFilter::try_new(v).is_ok())
+                    .unwrap_or_else(|| "info,mix_mcp=debug".into()),
             )
             .with_rotation(logging::RotationMode::Never)
             .with_log_file(log_dir()),
     )
-    .expect("logging init failed");
+    .ok();
 
     tracing::info!(
         target: "mix_mcp",

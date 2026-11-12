@@ -22,7 +22,7 @@ use std::path::Path;
 pub fn detect_domain(pwd: &Path) -> String {
     // Try settings-based resolution first
     if let Ok(domains) =
-        config::store::load_service::<crate::knowledge_settings::DomainsSettings>("domains")
+        crate::knowledge_settings::load_domains()
         && let Some(domain) = domains.resolve(pwd)
     {
         return domain;

@@ -83,7 +83,7 @@ pub fn tcp_permission(value: Option<&str>, paths: Vec<std::path::PathBuf>) -> Re
         Ok(())
     } else {
         Err(format!(
-            "{}; TCP requires the MCP TCP opt-in setting =1",
+            "{}; TCP requires MIX_MCP_ALLOW_TCP=1",
             ConnectError::CandidatesMissing(paths)
         ))
     }

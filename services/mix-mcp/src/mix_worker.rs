@@ -98,7 +98,7 @@ async fn execute_inner(
     }
     let input = serde_json::to_vec(&Request { script, cwd })
         .map_err(|e| format!("worker request serialization failed: {e}"))?;
-    let mut command = tokio::process::Command::new(paths::bin("mix"));
+    let mut command = tokio::process::Command::new(std::env::current_exe().map_err(|e| format!("resolve adapter executable: {e}"))?.with_file_name("mix"));
     command
         .arg(WORKER_ARG)
         .stdin(Stdio::piped())

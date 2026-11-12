@@ -11,9 +11,7 @@ pub struct IndexdClient {
 
 impl IndexdClient {
     pub async fn from_config() -> Result<Self> {
-        let settings = config::store::load_service::<crate::knowledge_settings::KnowledgeSettings>(
-            "knowledge",
-        )?;
+        let settings = crate::knowledge_settings::load_knowledge()?;
         let mut client = Self {
             transport: super::indexd_transport::Transport::connect(settings.indexd).await?,
         };

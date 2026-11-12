@@ -11,6 +11,31 @@ pub const ARG: &str = "--internal-mix-worker";
 const SCRIPT_LIMIT: usize = 256 * 1024;
 const INPUT_LIMIT: usize = SCRIPT_LIMIT * 6 + 4096;
 const OUTPUT_LIMIT: usize = 1024 * 1024;
+
+// Frozen 8779f33 builtin registries, excluding feature-gated arms outside
+// json/regex/toml/datetime/url/crypto. Cargo's workspace feature union must
+// never widen the evaluator used by the MCP adapter.
+struct McpBuiltins;
+#[test]
+fn frozen_worker_inventory_excludes_shell_extensions() {
+    use mix::evaluator::CapabilityPolicy;
+    assert_eq!(include_str!("mcp_builtins.txt").lines().count(), 339);
+    for name in ["json_parse", "re_match", "toml_parse", "date_parse", "run_argv", "write_file"] {
+        assert!(McpBuiltins.check_builtin(name).is_ok(), "{name}");
+    }
+    for name in ["tar_list", "http_get", "sqlopen", "ws_connect", "future_builtin"] {
+        assert!(McpBuiltins.check_builtin(name).is_err(), "{name}");
+    }
+}
+impl mix::evaluator::CapabilityPolicy for McpBuiltins {
+    fn check_builtin(&self, name: &str) -> Result<(), String> {
+        if include_str!("mcp_builtins.txt").lines().any(|n| n == name) {
+            Ok(())
+        } else {
+            Err(format!("{name} is outside the frozen MCP builtin surface"))
+        }
+    }
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Request {
@@ -181,16 +206,16 @@ async fn run_mix_script(script: &str, cwd: Option<&str>) -> Result<(String, Stri
     // Set working directory if requested
     if let Some(cwd) = cwd {
         let expanded = if cwd.starts_with("~/") {
-            if let Ok(home) = std::env::var("HOME") {
-                format!("{}{}", home, &cwd[1..])
+            if let Some(home) = paths::env::os("HOME") {
+                std::path::PathBuf::from(home).join(&cwd[2..])
             } else {
-                cwd.to_string()
+                std::path::PathBuf::from(cwd)
             }
         } else {
-            cwd.to_string()
+            std::path::PathBuf::from(cwd)
         };
         std::env::set_current_dir(&expanded)
-            .map_err(|e| format!("ERROR: failed to set cwd to {expanded}: {e}"))?;
+            .map_err(|e| format!("ERROR: failed to set cwd to {}: {e}", expanded.display()))?;
     }
 
     // Parse
@@ -208,6 +233,7 @@ async fn run_mix_script(script: &str, cwd: Option<&str>) -> Result<(String, Stri
     let stderr = CaptureBuffer::default();
     let mut eval =
         mix::evaluator::Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
+    eval.set_capability_policy(std::rc::Rc::new(McpBuiltins));
 
     // Native connection is lazy even inside the worker. Pure local scripts
     // need no broker; the first send/emit/port_exists acquires an owned client.

@@ -27,9 +27,15 @@ pub struct DomainsSettings {
 
 impl Default for DomainsSettings {
     fn default() -> Self {
-        Self {
-            map: installed(paths::env::MCP_DOMAINS, None),
-        }
+        let map = BTreeMap::from([
+            ("~/Projects/mixos".into(), "mixos".into()),
+            ("~/Projects/mixviu".into(), "mixviu".into()),
+            ("~/.viu".into(), "viu".into()),
+            ("~/.mix".into(), "mix".into()),
+            ("~/.ns".into(), "ns".into()),
+            ("~/.mc".into(), "mc".into()),
+        ]);
+        Self { map }
     }
 }
 
@@ -95,23 +101,14 @@ impl Default for KnowledgeSettings {
     fn default() -> Self {
         Self {
             indexd: IndexdSettings::default(),
-            trust_weight_spec: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_spec")),
-            trust_weight_doc: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_doc")),
-            trust_weight_notes: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_notes")),
-            trust_weight_plan: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_plan")),
-            trust_weight_journal: installed(
-                paths::env::MCP_KNOWLEDGE,
-                Some("trust_weight_journal"),
-            ),
-            trust_weight_memory: installed(paths::env::MCP_KNOWLEDGE, Some("trust_weight_memory")),
-            journal_decay_per_month: installed(
-                paths::env::MCP_KNOWLEDGE,
-                Some("journal_decay_per_month"),
-            ),
-            journal_max_age_days: installed(
-                paths::env::MCP_KNOWLEDGE,
-                Some("journal_max_age_days"),
-            ),
+            trust_weight_spec: 0.10,
+            trust_weight_doc: 0.08,
+            trust_weight_notes: 0.06,
+            trust_weight_plan: 0.04,
+            trust_weight_journal: 0.0,
+            trust_weight_memory: 0.01,
+            journal_decay_per_month: 0.02,
+            journal_max_age_days: 180,
         }
     }
 }
@@ -138,11 +135,11 @@ pub enum IndexdTransport {
 impl Default for IndexdSettings {
     fn default() -> Self {
         Self {
-            transport: installed(paths::env::MCP_INDEXD, Some("transport")),
-            target: installed(paths::env::MCP_INDEXD, Some("target")),
-            ssh_host: installed(paths::env::MCP_INDEXD, Some("ssh_host")),
-            ssh_command: installed(paths::env::MCP_INDEXD, Some("ssh_command")),
-            call_timeout_secs: installed(paths::env::MCP_INDEXD, Some("call_timeout_secs")),
+            transport: IndexdTransport::Bus,
+            target: "indexd".into(),
+            ssh_host: String::new(),
+            ssh_command: vec!["mix:prefix/bin/indexd".into(), "bridge".into()],
+            call_timeout_secs: 120,
         }
     }
 }
@@ -280,33 +277,58 @@ llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
     }
 }
 
-fn installed<T: serde::de::DeserializeOwned>(name: &str, field: Option<&str>) -> T {
-    let value: serde_json::Value =
-        serde_json::from_str(&installed_value(name)).expect("invalid MCP setting JSON");
-    let value = match field {
-        Some(key) => value.get(key).expect("missing MCP setting field").clone(),
-        None => value,
-    };
-    serde_json::from_value(value).expect("invalid MCP setting type")
+
+fn installed_json(name: &str) -> anyhow::Result<serde_json::Value> {
+    let path = paths::root(paths::Root::Prefix).join("env.mx");
+    let text = paths::env::setting(name)
+        .map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))?;
+    serde_json::from_str(&text)
+        .map_err(|e| anyhow::anyhow!("{name} in {}: {e}", path.display()))
 }
 
-#[cfg(not(test))]
-fn installed_value(name: &str) -> String {
-    paths::env::setting(name).expect("installed MCP setting")
+fn merge(base: &mut serde_json::Value, overlay: serde_json::Value) {
+    if let (Some(a), Some(b)) = (base.as_object_mut(), overlay.as_object()) {
+        for (key, value) in b {
+            if let Some(old) = a.get_mut(key) { merge(old, value.clone()); }
+            else { a.insert(key.clone(), value.clone()); }
+        }
+    } else { *base = overlay; }
 }
 
-#[cfg(test)]
-fn installed_value(name: &str) -> String {
-    // Unit tests use the shipped registry, without process-global env mutation.
-    let registry = mix::parse_data(include_str!("../../../etc/env.conf.mix")).unwrap();
-    let registry = mix::json::mix_to_json(&registry).unwrap();
-    registry["vars"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|v| v["name"] == name)
-        .unwrap()["default"]
-        .as_str()
-        .unwrap()
-        .into()
+fn required(template: &serde_json::Value, value: &serde_json::Value) -> anyhow::Result<()> {
+    if let Some(fields) = template.as_object() {
+        for (key, child) in fields {
+            let v = value.get(key).ok_or_else(|| anyhow::anyhow!("missing field {key}"))?;
+            required(child, v)?;
+        }
+    }
+    Ok(())
+}
+
+fn load<T: serde::de::DeserializeOwned + serde::Serialize>(service: &str, mut value: serde_json::Value) -> anyhow::Result<T> {
+    let file = config::store::config_dir().join(service).join(format!("{service}.conf.mix"));
+    if file.exists() {
+        merge(&mut value, config::store::load_conf_mix_path::<serde_json::Value>(&file)?);
+    }
+    let result: T = serde_json::from_value(value)?;
+    if !file.exists() { config::store::save_service(&result, service)?; }
+    Ok(result)
+}
+
+pub fn load_knowledge() -> anyhow::Result<KnowledgeSettings> {
+    let mut value = installed_json(paths::env::MCP_KNOWLEDGE)?;
+    let indexd = installed_json(paths::env::MCP_INDEXD)?;
+    let error = |e| anyhow::anyhow!("{} / {} in {}: {e}", paths::env::MCP_KNOWLEDGE, paths::env::MCP_INDEXD, paths::root(paths::Root::Prefix).join("env.mx").display());
+    required(&serde_json::to_value(IndexdSettings::default())?, &indexd).map_err(error)?;
+    let object = value.as_object_mut().ok_or_else(|| error(anyhow::anyhow!("expected knowledge object")))?;
+    object.insert("indexd".into(), indexd);
+    required(&serde_json::to_value(KnowledgeSettings::default())?, &value).map_err(error)?;
+    let _: KnowledgeSettings = serde_json::from_value(value.clone()).map_err(|e| error(e.into()))?;
+    load("knowledge", value)
+}
+
+pub fn load_domains() -> anyhow::Result<DomainsSettings> {
+    let map = installed_json(paths::env::MCP_DOMAINS)?;
+    let _: BTreeMap<String, String> = serde_json::from_value(map.clone()).map_err(|e| anyhow::anyhow!("{} in {}: {e}", paths::env::MCP_DOMAINS, paths::root(paths::Root::Prefix).join("env.mx").display()))?;
+    load("domains", serde_json::json!({"map": map}))
 }

@@ -2,6 +2,9 @@
 -- version: 0.1.0
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- CBC only, under its checkout lock; leave the worker at the admitted commit.
+if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") then
+  raise("CBC_ONLY", "run this helper through the native CBC build service")
+end
 fn checked($argv)
   $r = run_argv($argv, {timeout: 14400, stdout: "inherit", stderr: "inherit", env: {TMPDIR: $tmp, RUSTC_WRAPPER: ""}})
   if not $r.ok then raise("COST_STEP", json_encode($r)) end
@@ -44,9 +47,10 @@ fn stage($label, $commit)
 end
 $head = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
 $base = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
-mkdir("target/mcp-cost/tmp")
-$root = realpath("target/mcp-cost")
+$root = realpath(trim(run_argv_must(["mktemp", "-d", "target/mcp-cost-XXXXXXXX"])))
 $tmp = $root .. "/tmp"
+mkdir($tmp)
+try
 $before = nil
 try
   checked(["git", "checkout", "-q", $base])
@@ -75,3 +79,7 @@ stage("after", $head)
 checked(["mix", "tools/mcp_startup.mix", $root .. "/before", $root .. "/after"])
 checked(["ldd", "target/release/mix"])
 checked(["mix", "tools/foreign_gate.mix", "--locked", "--elf", realpath("target/release/mix")])
+
+finally
+  run_argv_must(["rm", "-rf", "--", $root])
+end
