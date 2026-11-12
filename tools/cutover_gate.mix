@@ -44,19 +44,38 @@ fn env_mx_probe($prefix)
   $staged = load_data($prefix .. "/env.mx")
   print("ENV_MX_COMMIT binary=" .. $stamp .. " env.mx=" .. to_string($staged.commit))
   if $staged.commit != $stamp then push($bad, "env.mx commit " .. to_string($staged.commit) .. " is not the binaries' " .. $stamp) end
-  $vars = filter(load_data("etc/env.conf.mix").vars, fn($v) = has_key($v, "default") and not starts_with($v.default, "mix:"))
+  -- The staged file holds exactly the registry's defaults, each with its value.
+  $all = filter(load_data("etc/env.conf.mix").vars, fn($v) = has_key($v, "default"))
+  $want = {}
+  for $v in $all $want[$v.name] = $v.default end
+  for $k in keys($staged)
+    if $k != "schema" and $k != "commit" and not has_key($want, $k) then push($bad, "env.mx carries " .. $k .. ", which has no registry default") end
+  end
+  for $k in keys($want)
+    if not has_key($staged, $k) then
+      push($bad, "env.mx lacks " .. $k)
+    elif $staged[$k] != $want[$k] then
+      push($bad, "env.mx has " .. $k .. "=" .. to_string($staged[$k]) .. ", the registry says " .. $want[$k])
+    end
+  end
+  -- Every plain default resolves through the binary to its registry value
+  -- (a `mix:` default names another setting; the file check above covers it).
+  $vars = filter($all, fn($v) = not starts_with($v.default, "mix:"))
   if len($vars) == 0 then
     push($bad, "the registry has no plain default to probe")
     return $bad
   end
-  $name = $vars[0].name
-  $with = run_argv([$mix, "layout", "setting", $name], {clear_env: true})
-  print("ENV_MX_SETTING " .. $name .. " rc=" .. to_string($with.exit_code) .. " out=" .. trim($with.stdout) .. " err=" .. trim($with.stderr))
-  if not $with.ok or trim($with.stdout) != $vars[0].default then push($bad, "env.mx did not supply " .. $name .. "=" .. $vars[0].default) end
+  for $v in $vars
+    $with = run_argv([$mix, "layout", "setting", $v.name], {clear_env: true})
+    print("ENV_MX_SETTING " .. $v.name .. " rc=" .. to_string($with.exit_code) .. " out=" .. trim($with.stdout) .. " err=" .. trim($with.stderr))
+    if not $with.ok or $with.stdout != $v.default .. "\n" then push($bad, "env.mx did not supply " .. $v.name .. "=" .. $v.default) end
+  end
   remove($prefix .. "/env.mx")
-  $without = run_argv([$mix, "layout", "setting", $name], {clear_env: true})
-  print("ENV_MX_ABSENT " .. $name .. " rc=" .. to_string($without.exit_code) .. " out=" .. trim($without.stdout) .. " err=" .. trim($without.stderr))
-  if $without.ok or not contains($without.stderr, $name .. " is not set and has no installed default") then push($bad, "without env.mx " .. $name .. " was not refused") end
+  for $v in $vars
+    $without = run_argv([$mix, "layout", "setting", $v.name], {clear_env: true})
+    print("ENV_MX_ABSENT " .. $v.name .. " rc=" .. to_string($without.exit_code) .. " out=" .. trim($without.stdout) .. " err=" .. trim($without.stderr))
+    if $without.ok or not contains($without.stderr, $v.name .. " is not set and has no installed default") then push($bad, "without env.mx " .. $v.name .. " was not refused") end
+  end
   return $bad
 end
 
@@ -111,6 +130,8 @@ if $mode == "env-mx" then
     $env_mx = require("env_mx.mix")
     $env_mx.write($dir .. "/env.mx", "etc/env.conf.mix", trim(run_argv_must(["git", "rev-parse", "HEAD"])))
     $bad = env_mx_probe($dir)
+  catch $msg
+    push($bad, "env.mx check raised: " .. $msg)
   finally
     remove_dir($dir)
   end
