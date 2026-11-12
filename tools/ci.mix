@@ -102,6 +102,7 @@ fn stage_test($mix)
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
+  run_step(["cargo", "test", "--locked", "-p", "portald", "--no-default-features", "--no-fail-fast"], $test_env)
   stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
   for $case in sort(glob("apps/term/*-test.mix"))
@@ -205,8 +206,8 @@ fn stage_env()
       exit(1)
     end
     $listed[$v.name] = true
-    if has_key($v, "default") and ($v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
-      print("::error::" .. $v.name .. ": default must be a runtime environment string")
+    if has_key($v, "default") and (not starts_with($v.name, "MIX_") or $v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
+      print("::error::" .. $v.name .. ": default must be a runtime Mix environment string accepted by env.mx")
       exit(1)
     end
   end
@@ -239,7 +240,26 @@ fn stage_env()
       push($bad, "unregistered " + $n)
     end
   end
+  -- A registered standard name (not MIX_*) counts as used where code reads it
+  -- through its read form: `paths::env::IDENT` in Rust (IDENT is the constant
+  -- in env_names.rs whose value is the name) or `env("NAME"` in Mix. A bare
+  -- mention in a comment or string does not count; a comment quoting the
+  -- read form itself still does (the same residue the MIX_ grep accepts).
+  -- Searched outside vendor/, provenance/, env_names.rs and the registry.
+  $consts = {}
+  for $m in re_find(read_file("libraries/paths/src/env_names.rs"), "pub(?:\\(crate\\))? const ([A-Z0-9_]+):\\s*&(?:'static )?str\\s*=\\s*\"([^\"]+)\"")
+    $consts[$m.groups[1]] = $m.groups[0]
+  end
+  $outside = ["--", ":!vendor", ":!provenance", ":!libraries/paths/src/env_names.rs", ":!etc/env.conf.mix"]
   for $n in sort(keys($listed))
+    if not starts_with($n, "MIX_") then
+      $rs = ""
+      if has_key($consts, $n) then
+        $rs = git_grep(concat(["-l", "-F", "-e", "paths::env::" + $consts[$n]], concat($outside, ["*.rs"])))
+      end
+      $mx = git_grep(concat(["-l", "-F", "-e", "env(\"" + $n + "\""], concat($outside, ["*.mix"])))
+      if trim($rs) != "" or trim($mx) != "" then $used[$n] = true end
+    end
     if not has_key($used, $n) then
       push($bad, "registered but unused " + $n)
     end
@@ -300,12 +320,15 @@ fn stage_viud_egui_free()
   print("viud: no egui/toolkit crates in its normal dependency tree")
 end
 
--- Foreign code (tools/foreign.conf.mix): every C-building crate is allowed or
--- debt, the strict mix crates reach allow entries only and no desktop crate,
+-- Foreign code (tools/foreign.conf.mix): every C-building crate is in allow,
+-- debt or admitted, the strict mix crates reach allow entries only and no desktop crate,
 -- and the built shell loads no display, GPU, input or audio library (ldd).
 fn stage_foreign($mix)
   ensure_mix($mix)
-  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix)])
+  run_step(["cargo", "build", "--locked", "-p", "mixd"])
+  run_step([$mix, "tools/foreign_admission_test.mix", "--cargo"])
+  -- Both strict binaries: the gate names each one it scanned and fails on fewer.
+  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix), "--elf", realpath("target/debug/mixd"), "--min-elf", "2"])
 end
 
 fn stage_mix_lint($mix)
