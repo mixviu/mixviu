@@ -83,7 +83,12 @@ async fn call(client: &SupervisedClient, command: &str, body: Value) -> Result<V
     let started = std::time::Instant::now();
     tracing::debug!(command, "appearance request started");
     let result = client.call_typed(SOURCE, command, body).await;
-    tracing::debug!(command, elapsed_us = started.elapsed().as_micros(), ok = result.is_ok(), "appearance request answered");
+    tracing::debug!(
+        command,
+        elapsed_us = started.elapsed().as_micros(),
+        ok = result.is_ok(),
+        "appearance request answered"
+    );
     let reply = result.map_err(|error| fault(command, error.to_string()))?;
     let value = match reply {
         PortReply::Ok { rc: 0, value } => value,

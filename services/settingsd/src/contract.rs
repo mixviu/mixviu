@@ -182,7 +182,8 @@ impl Authority {
             &settings::registry::Values,
             &str,
             Option<settings::resolve::values::Mode>,
-        ) -> Result<serde_json::Map<String, Value>, Vec<settings::Diagnostic>>,
+        )
+            -> Result<serde_json::Map<String, Value>, Vec<settings::Diagnostic>>,
     ) -> Result<Value, Value> {
         if request.binding != self.accepted.binding {
             return Err(json!({"status":"wrong_target","binding":self.accepted.binding}));
@@ -194,7 +195,10 @@ impl Authority {
             )?),
         };
         let mut palette = serde_json::Map::new();
-        for each in [settings::resolve::values::Mode::Dark, settings::resolve::values::Mode::Light] {
+        for each in [
+            settings::resolve::values::Mode::Dark,
+            settings::resolve::values::Mode::Light,
+        ] {
             if mode.is_some_and(|mode| mode != each) {
                 continue;
             }
@@ -254,41 +258,66 @@ impl Authority {
 mod tests {
     use super::*;
     use crate::store::Store;
-    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     #[test]
     fn palette_reuse_is_per_mode_and_cleared_by_a_new_record() {
         let dir = tempfile::tempdir().unwrap();
-        let binding = settings::Binding { instance: "fixture".into(), profile: "default".into() };
-        let (store, accepted) = Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
+        let binding = settings::Binding {
+            instance: "fixture".into(),
+            profile: "default".into(),
+        };
+        let (store, accepted) =
+            Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
         let mut authority = Authority::new(store, accepted).unwrap();
         let calls = std::cell::Cell::new(0);
-        let mut resolve = |values: &settings::registry::Values, _: &str, mode: Option<settings::resolve::values::Mode>| {
-            calls.set(calls.get() + 1);
-            let mode = mode.unwrap().name();
-            Ok(serde_json::Map::from_iter([(mode.into(), json!({"contrast":values.get("appearance.contrast").cloned().unwrap_or(json!("normal"))}))]))
+        let mut resolve =
+            |values: &settings::registry::Values,
+             _: &str,
+             mode: Option<settings::resolve::values::Mode>| {
+                calls.set(calls.get() + 1);
+                let mode = mode.unwrap().name();
+                Ok(serde_json::Map::from_iter([(
+                    mode.into(),
+                    json!({"contrast":values.get("appearance.contrast").cloned().unwrap_or(json!("normal"))}),
+                )]))
+            };
+        let mut request = settings::PaletteRequest {
+            binding: binding.clone(),
+            mode: None,
         };
-        let mut request = settings::PaletteRequest { binding: binding.clone(), mode: None };
         let before = authority.palette_with(&request, &mut resolve).unwrap();
         assert_eq!(calls.get(), 2, "both modes compiled once");
         request.mode = Some("light".into());
-        assert_eq!(authority.palette_with(&request, &mut resolve).unwrap()["palette"]["light"], before["palette"]["light"]);
+        assert_eq!(
+            authority.palette_with(&request, &mut resolve).unwrap()["palette"]["light"],
+            before["palette"]["light"]
+        );
         request.mode = Some("auto".into());
         assert!(authority.palette_with(&request, &mut resolve).is_err());
         request.mode = Some("dark".into());
         request.binding.profile = "other".into();
         assert!(authority.palette_with(&request, &mut resolve).is_err());
-        assert_eq!(calls.get(), 2, "cached data never bypasses request validation");
+        assert_eq!(
+            calls.get(),
+            2,
+            "cached data never bypasses request validation"
+        );
         request.binding = binding.clone();
-        authority.apply(settings::ApplyRequest {
-            binding,
-            expected_incarnation: authority.accepted.incarnation.clone(),
-            expected_revision: authority.accepted.revision,
-            operation_id: "contrast-change".into(),
-            changes: BTreeMap::from([("appearance.contrast".into(), json!("high"))]),
-            reset: vec![],
-            request_digest: None,
-        }).unwrap();
+        authority
+            .apply(settings::ApplyRequest {
+                binding,
+                expected_incarnation: authority.accepted.incarnation.clone(),
+                expected_revision: authority.accepted.revision,
+                operation_id: "contrast-change".into(),
+                changes: BTreeMap::from([("appearance.contrast".into(), json!("high"))]),
+                reset: vec![],
+                request_digest: None,
+            })
+            .unwrap();
         let after = authority.palette_with(&request, &mut resolve).unwrap();
         assert_ne!(before["revision"], after["revision"]);
         assert_eq!(after["palette"]["dark"]["contrast"], "high");
@@ -302,12 +331,32 @@ mod tests {
     #[test]
     fn a_palette_compile_failure_is_not_retained() {
         let dir = tempfile::tempdir().unwrap();
-        let binding = settings::Binding { instance: "fixture".into(), profile: "default".into() };
-        let (store, accepted) = Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
+        let binding = settings::Binding {
+            instance: "fixture".into(),
+            profile: "default".into(),
+        };
+        let (store, accepted) =
+            Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
         let mut authority = Authority::new(store, accepted).unwrap();
-        let request = settings::PaletteRequest { binding, mode: Some("dark".into()) };
-        assert!(authority.palette_with(&request, |_, _, _| Err(vec![settings::Diagnostic::new("fixture", "palette", "failed")])).is_err());
-        let answer = authority.palette_with(&request, |_, _, _| Ok(serde_json::Map::from_iter([("dark".into(), json!({"accent":"#123456ff"}))]))).unwrap();
+        let request = settings::PaletteRequest {
+            binding,
+            mode: Some("dark".into()),
+        };
+        assert!(
+            authority
+                .palette_with(&request, |_, _, _| Err(vec![settings::Diagnostic::new(
+                    "fixture", "palette", "failed"
+                )]))
+                .is_err()
+        );
+        let answer = authority
+            .palette_with(&request, |_, _, _| {
+                Ok(serde_json::Map::from_iter([(
+                    "dark".into(),
+                    json!({"accent":"#123456ff"}),
+                )]))
+            })
+            .unwrap();
         assert_eq!(answer["palette"]["dark"]["accent"], "#123456ff");
     }
 
@@ -318,10 +367,17 @@ mod tests {
     #[tokio::test]
     async fn a_completed_palette_survives_an_abandoned_reply() {
         let dir = tempfile::tempdir().unwrap();
-        let binding = settings::Binding { instance: "fixture".into(), profile: "default".into() };
-        let (store, accepted) = Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
+        let binding = settings::Binding {
+            instance: "fixture".into(),
+            profile: "default".into(),
+        };
+        let (store, accepted) =
+            Store::create(dir.path(), binding.clone(), Default::default()).unwrap();
         let mut authority = Authority::new(store, accepted).unwrap();
-        let request = settings::PaletteRequest { binding, mode: Some("dark".into()) };
+        let request = settings::PaletteRequest {
+            binding,
+            mode: Some("dark".into()),
+        };
         let calls = Arc::new(AtomicUsize::new(0));
         let counted = calls.clone();
         let first = request.clone();
@@ -334,7 +390,10 @@ mod tests {
                 counted.fetch_add(1, Ordering::SeqCst);
                 entered.take().unwrap().send(()).unwrap();
                 held.recv().unwrap();
-                Ok(serde_json::Map::from_iter([("dark".into(), json!({"accent":"#123456ff"}))]))
+                Ok(serde_json::Map::from_iter([(
+                    "dark".into(),
+                    json!({"accent":"#123456ff"}),
+                )]))
             });
             assert!(reply.send(answer).is_err(), "the first caller has left");
             authority
@@ -343,11 +402,20 @@ mod tests {
         drop(caller);
         release.send(()).unwrap();
         let mut authority = task.await.unwrap();
-        let answer = authority.palette_with(&request, |_, _, _| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok(serde_json::Map::from_iter([("dark".into(), json!({"accent":"#123456ff"}))]))
-        }).unwrap();
+        let answer = authority
+            .palette_with(&request, |_, _, _| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(serde_json::Map::from_iter([(
+                    "dark".into(),
+                    json!({"accent":"#123456ff"}),
+                )]))
+            })
+            .unwrap();
         assert_eq!(answer["palette"]["dark"]["accent"], "#123456ff");
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "a retry must not compile the same palette again");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "a retry must not compile the same palette again"
+        );
     }
 }

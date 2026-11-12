@@ -943,13 +943,24 @@ impl AuthorityTask {
         let root = root.to_owned();
         let url = url.to_owned();
         let (stop, stopped) = tokio::sync::oneshot::channel();
-        Self(tokio::spawn(async move {
-            let result = settingsd::service::serve_at_until(root, projection("a", 1, "dark").binding, url, async { let _ = stopped.await; }).await;
-            if let Err(error) = &result {
-                tracing::error!(%error, "native authority exited");
-            }
-            result
-        }), Some(stop))
+        Self(
+            tokio::spawn(async move {
+                let result = settingsd::service::serve_at_until(
+                    root,
+                    projection("a", 1, "dark").binding,
+                    url,
+                    async {
+                        let _ = stopped.await;
+                    },
+                )
+                .await;
+                if let Err(error) = &result {
+                    tracing::error!(%error, "native authority exited");
+                }
+                result
+            }),
+            Some(stop),
+        )
     }
     async fn stop(&mut self) {
         if let Some(stop) = self.1.take() {
