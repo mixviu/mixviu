@@ -3,7 +3,7 @@
 //! Tests-only embedding of the real noded, with no broker source refactor.
 //! Keep module paths pointed at production sources: no simulated session RPCs.
 //! Fixture clients omit environment/system candidates when their socket is absent.
-// This crate has no tests of its own ([lib] test = false), but
+// The library disables unit tests ([lib] test = false), but
 // `cargo build --all-targets` still builds its lib-test target. Under cfg(test)
 // the embedded noded and session_fd sources compile their own test modules,
 // which need noded's dev-dependencies. Build that target as an empty crate.
@@ -64,7 +64,7 @@ pub fn trace_to_stderr() {
 pub struct Broker {
     pub endpoint: PathBuf,
     pub url: String,
-    root: PathBuf,
+    root: FixtureDirectory,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     worker: Option<std::thread::JoinHandle<()>>,
     pause: Option<tokio::sync::mpsc::UnboundedSender<PauseRequest>>,
@@ -73,6 +73,14 @@ pub struct Broker {
     /// fixture needs the citizen's cached broker URL to come back at the
     /// SAME address). `None` binds an ephemeral port — the race-free default.
     tcp_port: Option<u16>,
+}
+
+/// Own cleanup from the moment mkdir succeeds, including constructor unwinds.
+struct FixtureDirectory(PathBuf);
+impl Drop for FixtureDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 type PauseRequest = (
@@ -98,6 +106,7 @@ impl Broker {
     }
 
     pub fn with_grant_limit(grant_limit: usize) -> Self {
+        use std::os::unix::fs::DirBuilderExt;
         use std::os::unix::fs::PermissionsExt;
         // This is shared Unix ingress, not private scratch space. TMPDIR may
         // have 0700 ancestors, symlinks or a path longer than sockaddr_un.
@@ -106,18 +115,21 @@ impl Broker {
         // independently of TMPDIR. Other test scratch files still honour it.
         let root =
             PathBuf::from("/tmp").join(format!("term-native-{:032x}", rand::random::<u128>()));
-        std::fs::create_dir(&root).unwrap_or_else(|error| {
+        // Start private even with umask 000; only publish traversal once owned.
+        // create (not create_dir_all) fails closed on an existing path.
+        std::fs::DirBuilder::new().mode(0o700).create(&root).unwrap_or_else(|error| {
             panic!(
                 "create native fixture directory {}: {error}",
                 root.display()
             )
         });
+        let root = FixtureDirectory(root);
         // BUS-013 requires user-traversable, broker-owned ancestors. A 0700
         // directory deliberately disables noded's native profile; TCP readiness
         // alone cannot establish that a native-session fixture is usable.
-        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&root.0, std::fs::Permissions::from_mode(0o755)).unwrap();
         let mut broker = Self {
-            endpoint: root.join("bus.sock"),
+            endpoint: root.0.join("bus.sock"),
             root,
             url: String::new(),
             stop: None,
@@ -300,6 +312,6 @@ impl Broker {
 impl Drop for Broker {
     fn drop(&mut self) {
         self.stop();
-        let _ = std::fs::remove_dir_all(&self.root);
+        // The directory guard drops after the worker and sockets stop.
     }
 }

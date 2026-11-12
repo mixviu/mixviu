@@ -1453,9 +1453,11 @@ async fn prompt_generation_after(parent: &mut Parent, record: &SessionRecord, be
     loop {
         let value = status(parent, record).await;
         let snapshot = &value["status"]["snapshot"];
-        let generation = counter(&snapshot["prompt_generation"]);
-        if snapshot["phase"] == "prompt-ready" && generation > before {
-            return generation;
+        if snapshot["phase"] == "prompt-ready" {
+            let generation = counter(&snapshot["prompt_generation"]);
+            if generation > before {
+                return generation;
+            }
         }
         assert!(
             Instant::now() < deadline,
@@ -1665,10 +1667,11 @@ fn stage_d_refuses_every_ineligible_prompt_state_without_discarding_anything() {
             "a refused submission must not have executed: {typed}"
         );
 
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
         // A continuation prompt. Admission is empty-PRIMARY-prompt only.
         f.child.send("if true then\n");
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        let continuation = prompt_generation_now(&mut f.parent, &f.bound).await;
+        let continuation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
+        assert_eq!(status(&mut f.parent, &f.bound).await["status"]["snapshot"]["continuation"], true);
         let busy = execute_call(
             &mut f.parent,
             &f.bound,
@@ -1683,7 +1686,7 @@ fn stage_d_refuses_every_ineligible_prompt_state_without_discarding_anything() {
         assert!(!continued.contains("STOLEN"), "{continued}");
 
         // A running evaluation. `sleep` holds the shell in a foreground child.
-        let generation = prompt_generation(&mut f.parent, &f.bound).await;
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, continuation).await;
         f.child.send("run_stream([\"sleep\", \"2\"])\n");
         tokio::time::sleep(Duration::from_millis(400)).await;
         let busy = execute_call(
@@ -1698,12 +1701,13 @@ fn stage_d_refuses_every_ineligible_prompt_state_without_discarding_anything() {
             busy.contains("BUSY") || busy.contains("STALE_GENERATION"),
             "a running evaluation must refuse: {busy}"
         );
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
         f.child.send("print(\"SLEPT\")\n");
         let slept = f.child.until("SLEPT\r\n");
         assert!(!slept.contains("STOLEN"), "{slept}");
 
         // A malformed or over-long submission never reaches the prompt at all.
-        let generation = prompt_generation(&mut f.parent, &f.bound).await;
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
         let mut malformed = execute_request(&f.bound, 4, generation, "print(1)");
         malformed["detach"] = serde_json::json!(true);
         let error = execute_call(&mut f.parent, &f.bound, "shell.execute", malformed)
@@ -1728,13 +1732,6 @@ fn stage_d_refuses_every_ineligible_prompt_state_without_discarding_anything() {
         assert!(error.contains("UNKNOWN_OUTCOME"), "{error}");
         teardown(f).await;
     });
-}
-
-/// Reads the current prompt generation without insisting the shell is idle
-/// first: a continuation prompt is `prompt-ready` too, and the refusal under
-/// test is the one that happens when the generation is RIGHT.
-async fn prompt_generation_now(parent: &mut Parent, record: &SessionRecord) -> u64 {
-    counter(&status(parent, record).await["status"]["snapshot"]["prompt_generation"])
 }
 
 /// J-8 on the live shell: a cancel resolves the exact operation, reports what
@@ -2206,7 +2203,7 @@ fn stage_d_a_keystroke_during_the_reservation_refuses_the_admission_intact() {
 
         // And the completed-line case still refuses, with its own exact code:
         // the human's line consumed the generation the caller named.
-        let generation = prompt_generation(&mut f.parent, &f.bound).await;
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
         let submitting = tokio::spawn({
             let name = f.bound.name.clone();
             let client = f.parent.connection.clone();
@@ -2361,7 +2358,7 @@ fn stage_d_paste_and_search_drafts_are_preserved_with_exact_refusals() {
         assert!(!pane.contains("STOLEN"), "{pane}");
 
         // A reverse history search in progress.
-        let generation = prompt_generation(&mut f.parent, &f.bound).await;
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
         f.child.send("\x12PASTED");
         tokio::time::sleep(Duration::from_millis(300)).await;
         let error = execute_call(
@@ -2375,14 +2372,14 @@ fn stage_d_paste_and_search_drafts_are_preserved_with_exact_refusals() {
         assert_eq!(error, r#"{"error_code":"BUSY"}"#, "search: {error}");
         // Leaving the search restores the recalled line, which still runs.
         f.child.send("\x07\n");
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
         f.child.send("print(\"SEARCH_DONE\")\n");
         let pane = f.child.until("SEARCH_DONE\r\n");
         assert!(!pane.contains("STOLEN"), "{pane}");
 
         // And the empty/whitespace submission, which would otherwise be
         // announced on the pane and burn a generation to run nothing.
-        let generation = prompt_generation(&mut f.parent, &f.bound).await;
+        let generation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
         for blank in ["", "   ", "\n\t "] {
             let error = execute_call(
                 &mut f.parent,
