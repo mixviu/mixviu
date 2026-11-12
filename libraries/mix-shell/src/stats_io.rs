@@ -3069,11 +3069,17 @@ mod tests {
                 .set_modified(mtime)
                 .unwrap();
             let after = FileId::of(&fs::metadata(&path).unwrap());
-            assert_eq!((before.ino, before.len, before.mtime_ns), (after.ino, after.len, after.mtime_ns));
+            assert_eq!(
+                (before.ino, before.len, before.mtime_ns),
+                (after.ino, after.len, after.mtime_ns)
+            );
             if after.ctime_ns != before.ctime_ns {
                 break;
             }
-            assert!(started.elapsed() < std::time::Duration::from_secs(1), "filesystem did not advance ctime");
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(1),
+                "filesystem did not advance ctime"
+            );
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         let snapshot = all(&dir);
