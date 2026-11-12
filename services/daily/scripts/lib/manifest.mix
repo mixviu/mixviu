@@ -1,0 +1,317 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Stage 1, manifest.build: the day's one source of truth. The window runs
+-- from the previous daily/* cut tag (or config first_cut_from) to this
+-- date's cut. Output is a function of the repository, GitHub's answers and
+-- config only: no clocks, no host names, sorted keys.
+$u = require("util.mix")
+$git = require("git.mix")
+$gh = require("gh.mix")
+$areas = require("areas.mix")
+
+$EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+$UNTRUSTED = ["changes[].title", "changes[].summary_hint", "changes[].author", "changes[].agent", "changes[].labels", "direct_commits[].subject", "direct_commits[].author", "direct_commits[].agent"]
+
+-- {tag, sha, created, provisional}: find or make this date's cut.
+fn cut($c, $g, $date, $params, $today)
+  $tag = $c.cut.tag_prefix .. $date
+  $have = $git.commit($g, "refs/tags/" .. $tag)
+  if $have != nil then
+    if $params.sha != nil and $git.commit($g, $params.sha) != $have then
+      raise("CUT_CONFLICT", "tag " .. $tag .. " already marks " .. $u.short($have) .. ", not " .. $params.sha)
+    end
+    return {tag: $tag, sha: $have, created: false, provisional: false}
+  end
+  $sha = nil
+  if $params.sha != nil then
+    $sha = $git.commit($g, $params.sha)
+    if $sha == nil then raise("CUT_MISSING", "sha does not name a commit: " .. $params.sha) end
+  elif $date == $today then
+    $sha = $git.commit($g, $c.repo.ref)
+    if $sha == nil then raise("CUT_MISSING", "repo.ref does not resolve: " .. $c.repo.ref) end
+  else
+    raise("CUT_MISSING", "no tag " .. $tag .. " and " .. $date .. " is not today (" .. $today .. "); pass params.sha to cut it")
+  end
+  if $params.dry_run or not $c.cut.create_tags then
+    return {tag: nil, sha: $sha, created: false, provisional: true}
+  end
+  $git.must($g, ["tag", "-a", "-m", "MixViu daily cut " .. $date, $tag, $sha])
+  if $c.cut.push_tags then
+    $git.must($g, ["push", "--quiet", $c.repo.remote_name, "refs/tags/" .. $tag])
+  end
+  return {tag: $tag, sha: $sha, created: true, provisional: false}
+end
+
+-- The previous cut: the newest daily/* tag named before this date's.
+fn previous($c, $g, $date)
+  $mine = $c.cut.tag_prefix .. $date
+  $prev = nil
+  for $t in $git.tags($g, $c.cut.tag_prefix)
+    if $t < $mine and $u.is_date(slice($t, len($c.cut.tag_prefix))) then $prev = $t end
+  end
+  if $prev != nil then return {tag: $prev, sha: $git.commit($g, "refs/tags/" .. $prev)} end
+  $sha = $git.commit($g, $c.first_cut_from)
+  if $sha == nil then raise("FIRST_CUT_MISSING", "no earlier daily tag and first_cut_from does not resolve: " .. $c.first_cut_from) end
+  return {tag: nil, sha: $sha, ref: $c.first_cut_from}
+end
+
+fn excluded($path)
+  return $path == "Cargo.lock" or ends_with($path, ".lock") or starts_with($path, "vendor/") or starts_with($path, "provenance/") or ends_with($path, "-baseline.json")
+end
+
+-- Up to max_hunks added-line hunks worth a diff card, best first.
+fn highlights($c, $g, $base, $sha)
+  $cands = []
+  for $h in $git.hunks($g, $base, $sha)
+    if excluded($h.file) then continue end
+    $text = join($h.lines, "\n")
+    $rank = 4
+    $reason = "largest addition"
+    if re_match($h.file, "(^|/)(actions\\.(mix|json)|bus-contract\\.mix)$") then
+      $rank = 0
+      $reason = "new action definition"
+    elif starts_with($h.file, "share/scenes/") or re_match($h.file, "(^|/)scene[^/]*\\.(mix|json)$") then
+      $rank = 1
+      $reason = "scene document"
+    elif (ends_with($h.file, ".mix") and re_match($text, "(?m)^\\s*on [A-Za-z@][A-Za-z0-9_.@-]*")) or (ends_with($h.file, ".rs") and re_match($text, "(?m)^\\s*pub (fn|struct|enum|trait|mod) ")) then
+      $rank = 2
+      $reason = "public interface"
+    elif re_match($h.file, "(^|/)tests?/|[_-]test\\.(mix|rs)$") then
+      $rank = 3
+      $reason = "test addition"
+    end
+    push($cands, {file: $h.file, start: $h.start, count: $h.count, rank: $rank, reason: $reason})
+  end
+  $cands = sort_by($cands, fn($x) = $x.rank * 1000000 + (999999 - min($x.count, 999999)))
+  $out = []
+  for $x in slice($cands, 0, $c.manifest.max_hunks)
+    push($out, {file: $x.file, start: $x.start, end: $x.start + min($x.count, $c.manifest.max_hunk_lines) - 1, reason: $x.reason})
+  end
+  return $out
+end
+
+-- The agent a change declares: the PR template's "Agent / model:" line,
+-- else the first model trailer (a Co-authored-by with a noreply address
+-- that is not a [bot] account: the PR author app is not the model, and a
+-- human co-author is not an agent). nil when nothing is declared.
+fn agent_of($commit, $body)
+  if type($body) == "string" then
+    $m = re_find($u.visible($body), "(?mi)^[ \t]*[-*]?[ \t]*agent[ \t]*/[ \t]*model:[ \t]*([^\n]*\\S)")
+    if len($m) > 0 then return $u.untrusted_line($m[0].groups[0], 80) end
+  end
+  for $co in $commit.coauthors
+    $parts = re_find($co, "^(.*?)\\s*<([^>]*)>\\s*$")
+    if len($parts) != 1 then continue end
+    $name = trim($parts[0].groups[0])
+    $mail = lower($parts[0].groups[1])
+    -- users.noreply.github.com is a human co-author added in the web UI.
+    if $name != "" and not ends_with($name, "[bot]") and contains($mail, "noreply") and not ends_with($mail, "users.noreply.github.com") then return $u.untrusted_line($name, 80) end
+  end
+  return nil
+end
+
+-- The fields a change takes from its PR record (gh, or the subject fallback).
+fn pr_fields($c, $pr, $login)
+  return {
+    title: $u.untrusted_line($pr.title, $c.manifest.title_chars),
+    url: $pr.url, author: $login,
+    labels: sort(map(filter($pr.labels ?? [], fn($l) = type($l) == "map" and type($l.name) == "string"), fn($l) = $u.untrusted_line($l.name, 60))),
+    task: task_of($pr.body),
+    summary_hint: $u.untrusted_text($pr.body, $c.manifest.hint_chars)
+  }
+end
+
+fn task_of($body)
+  if type($body) != "string" then return nil end
+  $m = re_find($u.visible($body), "(?m)^\\s*Task:\\s*(T-[0-9]{4,})\\b")
+  return if len($m) == 0 then nil else $m[0].groups[0] end
+end
+
+fn stat_of($files)
+  return {files: len($files), insertions: reduce($files, 0, fn($a, $f) = $a + $f.ins), deletions: reduce($files, 0, fn($a, $f) = $a + $f.del)}
+end
+
+-- tutorial meta lives between `-- tutorial-meta` and `-- end-tutorial-meta`
+-- as `$meta = {...}` in strict-data form, so it is read without running it.
+fn tutorial_meta($text)
+  $m = re_find($text, "(?s)--[ \t]*tutorial-meta[^\n]*\n(.*?)\n[ \t]*--[ \t]*end-tutorial-meta")
+  if len($m) == 0 then return nil end
+  $body = re_replace($m[0].groups[0], "^\\s*\\$meta\\s*=\\s*", "")
+  try
+    $v = data_parse($body)
+    return if type($v) == "map" then $v else nil end
+  catch $msg
+    return nil
+  end
+end
+
+fn tutorials($g, $from, $to, $touched)
+  $new = []
+  $changed = []
+  $ns = $git.name_status($g, $from, $to, ["media/tutorials"])
+  for $p in sort(keys($ns))
+    $id = re_find($p, "^media/tutorials/([A-Za-z0-9._-]+)\\.mix$")
+    if len($id) != 1 then continue end
+    if $ns[$p] == "A" then push($new, $id[0].groups[0]) elif $ns[$p] == "M" then push($changed, $id[0].groups[0]) end
+  end
+  $rerecord = []
+  for $p in $git.ls_tree($g, $to, "media/tutorials")
+    $id = re_find($p, "^media/tutorials/([A-Za-z0-9._-]+)\\.mix$")
+    if len($id) != 1 then continue end
+    $tid = $id[0].groups[0]
+    if contains($new, $tid) or contains($changed, $tid) then continue end
+    $meta = tutorial_meta($git.show_file($g, $to, $p) ?? "")
+    if $meta == nil or type($meta.covers) != "list" then continue end
+    if any($meta.covers, fn($a) = type($a) == "string" and $touched[$a] == true) then push($rerecord, $tid) end
+  end
+  return {new: $new, changed: $changed, rerecord: $rerecord}
+end
+
+fn benchmarks($c)
+  $dir = $c.benchmarks.dir
+  if $dir == nil then return [] end
+  if not is_dir($dir) then raise("BENCHMARKS", "benchmarks.dir is not a directory: " .. $dir) end
+  $out = []
+  for $p in sort(glob($dir .. "/*.json"))
+    push($out, {file: basename($p), data: json_parse(read_file($p))})
+  end
+  return $out
+end
+
+-- Build the manifest map. $env is {config, media}; $params {date, dry_run, sha}.
+fn build($env, $params, $today)
+  $c = $env.config
+  $g = $git.ctx($c)
+  if not is_dir($g.path) then raise("REPO", "repo.path is not a directory: " .. $g.path) end
+  $date = $params.date
+  if $c.repo.fetch and not $params.dry_run then
+    $git.must($g, ["fetch", "--quiet", $c.repo.remote_name, $c.repo.branch])
+  end
+  $to = cut($c, $g, $date, $params, $today)
+  $from = previous($c, $g, $date)
+  if $from.sha != $to.sha and not $git.raw($g, ["merge-base", "--is-ancestor", $from.sha, $to.sha]).ok then
+    raise("WINDOW", "the previous cut " .. $u.short($from.sha) .. " is not an ancestor of " .. $u.short($to.sha))
+  end
+  $fs = $git.stamp($g, $from.sha)
+  $ts = $git.stamp($g, $to.sha)
+  $area_table = $areas.load($git, $g, $to.sha, $env.media)
+  $t = $area_table.table
+
+  $since = date_format($fs.time - 86400, "%Y-%m-%d", {utc: true})
+  $prs = $gh.merged_prs($c, $since)
+  $by_oid = {}
+  for $p in $prs ?? []
+    if $p.mergeCommit != nil and type($p.mergeCommit.oid) == "string" then $by_oid[$p.mergeCommit.oid] = $p end
+  end
+
+  $changes = {}
+  $order = []
+  $direct = []
+  $used = {}
+  $people = {}
+  $direct_user = false
+  $commits = if $from.sha == $to.sha then [] else $git.window($g, $from.sha, $to.sha) end
+  for $cm in $commits
+    $base = if len($cm.parents) == 0 then $EMPTY_TREE else $cm.parents[0] end
+    $files = $git.numstat($g, $base, $cm.sha)
+    $area = $areas.dominant($t, $files)
+    $used[$area.id] = {title: $area.title, audience: $area.audience}
+    $pr = $by_oid[$cm.sha]
+    $source = "gh"
+    -- The subject fallback is the offline path only: with gh on, gh decides.
+    if $pr == nil and $prs == nil then
+      $num = re_find($cm.subject, "\\(#([0-9]+)\\)\\s*$")
+      if len($num) == 1 then
+        $source = "subject"
+        $pr = {number: to_number($num[0].groups[0]), title: trim(re_replace($cm.subject, "\\s*\\(#[0-9]+\\)\\s*$", "")),
+          url: "https://github.com/" .. $c.repo.remote .. "/pull/" .. $num[0].groups[0], body: "", labels: [], author: nil}
+      end
+    end
+    if $pr == nil then
+      -- Quiet means no direct commit touches a user-facing file at all,
+      -- whatever its dominant area (a viud commit can also edit an app).
+      if any($files, fn($f) = $areas.classify($t, $f.path).audience == "user") then $direct_user = true end
+      $who = $u.untrusted_line($cm.author, 80)
+      $people["git:" .. $who] = true
+      push($direct, {id: "c-" .. $u.short($cm.sha), sha: $cm.sha, subject: $u.untrusted_line($cm.subject, $c.manifest.title_chars),
+        author: $who, agent: agent_of($cm, nil), area: $area.id, audience: $area.audience, stat: stat_of($files)})
+      continue
+    end
+    $id = "pr-" .. to_string($pr.number)
+    $login = if type($pr.author) == "map" and type($pr.author.login) == "string" then $u.untrusted_line($pr.author.login, 80) else $u.untrusted_line($cm.author, 80) end
+    $people[(if type($pr.author) == "map" then "gh:" else "git:" end) .. $login] = true
+    $brought = map($git.brought($g, $cm), fn($s) = $u.short($s))
+    if $changes[$id] != nil then
+      -- A PR that reached main as more than one first-parent commit.
+      $ch = $changes[$id]
+      $ch.commits = concat($ch.commits, $brought)
+      $ch.files_raw = concat($ch.files_raw, $files)
+      $ch.highlight_hunks = slice(concat($ch.highlight_hunks, highlights($c, $g, $base, $cm.sha)), 0, $c.manifest.max_hunks)
+      $changes[$id] = $ch
+      continue
+    end
+    push($order, $id)
+    $changes[$id] = {
+      id: $id, kind: "pr", number: $pr.number,
+      agent: agent_of($cm, $pr.body), area: $area.id, audience: $area.audience,
+      commits: $brought, files_raw: $files, highlight_hunks: highlights($c, $g, $base, $cm.sha)
+    }
+    $changes[$id] = merge($changes[$id], merge(pr_fields($c, $pr, $login), {source: $source}))
+  end
+  $list = []
+  for $id in $order
+    $ch = $changes[$id]
+    $ch.stat = stat_of($ch.files_raw)
+    if len($ch.commits) > len(unique($ch.commits)) then $ch.commits = unique($ch.commits) end
+    $area = $areas.dominant($t, $ch.files_raw)
+    $ch.area = $area.id
+    $ch.audience = $area.audience
+    $used[$area.id] = {title: $area.title, audience: $area.audience}
+    $ch = delete($ch, "files_raw")
+    push($list, $ch)
+  end
+
+  $window_files = if $from.sha == $to.sha then [] else $git.numstat($g, $from.sha, $to.sha) end
+  $touched = {}
+  for $f in $window_files
+    $a = $areas.classify($t, $f.path)
+    $touched[$a.id] = true
+    if contains($a.id, "/") then $touched[split($a.id, "/")[0]] = true end
+  end
+  $tasks = []
+  $issues = $gh.closed_tasks($c, $since)
+  for $i in $issues
+    if type($i.closedAt) != "string" then continue end
+    $at = $u.iso_epoch($i.closedAt)
+    if $at <= $fs.time or $at > $ts.time then continue end
+    $m = re_find($u.visible(($i.title ?? "") .. "\n" .. ($i.body ?? "")),"\\bT-[0-9]{4,}\\b")
+    if len($m) > 0 then push($tasks, $m[0].match) end
+  end
+  $wt = stat_of($window_files)
+  $count = if $from.sha == $to.sha then 0 else to_number(trim($git.must($g, ["rev-list", "--count", "--end-of-options", $git.oid($from.sha) .. ".." .. $git.oid($to.sha)]))) end
+  $quiet = len($list) == 0 and not $direct_user
+  $bench = benchmarks($c)
+  -- What the manifest was built from beyond the git window: a rerun with
+  -- the same window but edited PRs, tasks or benchmarks shows a new hash.
+  $inputs = {from_sha: $fs.sha, to_sha: $ts.sha,
+    gh_sha256: hash_sha256(json_encode({prs: $prs, issues: $issues})),
+    benchmarks_sha256: hash_sha256(json_encode($bench))}
+  return {inputs: $inputs, manifest: {
+    schema: "mixviu.daily.manifest/1",
+    date: $date,
+    repo: {remote: $c.repo.remote, branch: $c.repo.branch},
+    window: {from_tag: $from.tag, from_ref: $from.ref, to_tag: $to.tag, provisional: $to.provisional,
+      from_sha: $fs.sha, to_sha: $ts.sha, from_time: $fs.iso, to_time: $ts.iso},
+    totals: {commits: $count, prs: len($list), files: $wt.files, insertions: $wt.insertions,
+      deletions: $wt.deletions, contributors: len(keys($people))},
+    areas: $used,
+    changes: $list,
+    direct_commits: $direct,
+    tutorials: tutorials($g, $from.sha, $to.sha, $touched),
+    tasks_closed: sort(unique($tasks)),
+    benchmarks: $bench,
+    quiet_day: $quiet,
+    sources: {areas: $area_table.source, prs: if $prs == nil then "subject" else "gh" end},
+    untrusted_fields: $UNTRUSTED
+  }, cut: $to}
+end

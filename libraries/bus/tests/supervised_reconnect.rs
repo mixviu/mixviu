@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use bus::native_client::BoundedIncomingEvent;
 use bus::{BusMessage, ConnState, Connection, SupervisedClient, SupervisedError};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Notify};
 use tokio_tungstenite::tungstenite::Message;
@@ -897,16 +897,17 @@ async fn reconnect_registration_rejection_is_terminal_when_opted_in() {
     assert!(s.open_connections <= 1);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn cold_start_is_prompt_generation_zero_and_all_outbound_paths_fail_fast() {
     let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/ws", reserved.local_addr().unwrap());
-    drop(reserved);
-    let began = std::time::Instant::now();
+    // start() is synchronous. On this current-thread runtime the supervisor
+    // cannot run until we yield; each outbound future must finish on its
+    // first poll, without awaiting a connection, retry or timeout. Keep the
+    // listener reserved so no unrelated broker can accept this client.
     let client = SupervisedClient::connect_options("cold", &url)
         .bounded_incoming(2)
         .start();
-    assert!(began.elapsed() < Duration::from_millis(100));
     assert_eq!(client.state(), ConnState::Connecting);
     assert_eq!(client.connection_generation(), 0);
     assert!(client.incoming().is_none());
@@ -915,18 +916,18 @@ async fn cold_start_is_prompt_generation_zero_and_all_outbound_paths_fail_fast()
     assert!(matches!(
         client
             .call("noded", "noded.list", serde_json::Value::Null)
-            .await,
-        Err(SupervisedError::Disconnected)
+            .now_or_never(),
+        Some(Err(SupervisedError::Disconnected))
     ));
     assert!(matches!(
-        client.subscribe_topic("world.cold").await,
-        Err(SupervisedError::Disconnected)
+        client.subscribe_topic("world.cold").now_or_never(),
+        Some(Err(SupervisedError::Disconnected))
     ));
     assert!(matches!(
         client
             .respond_parts_shutdown_synth(0, "caller", "ping", Some("1"), 16, "stop")
-            .await,
-        Err(SupervisedError::Disconnected)
+            .now_or_never(),
+        Some(Err(SupervisedError::Disconnected))
     ));
     assert!(client.registration_rejection().is_none());
     assert!(client.subscription_registry().is_empty());

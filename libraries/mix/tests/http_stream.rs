@@ -349,8 +349,13 @@ async fn whole_call_cap_still_bounds_a_healthy_stream() {
 
 #[tokio::test]
 async fn cancellation_drops_a_blocked_response() {
-    let (url, task) = server(|mut socket| {
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let (url, task) = server(move |mut socket| {
+        socket
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
         sse_headers(&mut socket);
+        ready_tx.send(()).unwrap();
         let mut byte = [0];
         assert_eq!(socket.read(&mut byte).unwrap(), 0);
     });
@@ -360,11 +365,24 @@ async fn cancellation_drops_a_blocked_response() {
                          nil, nil, {{timeout: 0, idle_timeout: 10}})
     "#
     );
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), run(&source))
-            .await
-            .is_err()
-    );
+    {
+        let response = run(&source);
+        tokio::pin!(response);
+        // Drive the request until the server has read it and sent headers.
+        // Cancelling from startup can close the socket mid-request under load.
+        tokio::select! {
+            result = &mut response => panic!("blocked response completed: {result:?}"),
+            ready = tokio::time::timeout(Duration::from_secs(10), ready_rx) => {
+                ready.expect("server did not send headers").unwrap();
+            }
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut response)
+                .await
+                .is_err()
+        );
+        // Drop the still-blocked evaluator before asking the server to verify EOF.
+    }
     join(task).await;
 }
 

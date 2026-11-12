@@ -2,6 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Contract tests against a private dbus-daemon: the Settings interface on the
 //! wire, changed-only signals, the startup budget and single ownership.
+use anyhow::Context;
 use futures_util::{Stream, StreamExt};
 use portald::appearance::{ACCENT_COLOR, COLOR_SCHEME, CONTRAST, NAMESPACE};
 use portald::appearance::{PROJECTION_SCHEMA, Projection};
@@ -898,6 +899,11 @@ struct NativePortal {
 }
 impl NativePortal {
     fn start(bus: &PrivateBus, url: &str) -> Self {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter("portald::service=debug,settingsd::service=debug")
+            .with_ansi(false)
+            .with_test_writer()
+            .try_init();
         let (projections, received) = mpsc::channel(8);
         let shared = status::shared();
         let binding = projection("a", 1, "dark").binding;
@@ -928,18 +934,41 @@ impl Drop for NativePortal {
     }
 }
 
-struct AuthorityTask(JoinHandle<anyhow::Result<()>>);
+struct AuthorityTask(
+    JoinHandle<anyhow::Result<()>>,
+    Option<tokio::sync::oneshot::Sender<()>>,
+);
 impl AuthorityTask {
     fn start(root: &std::path::Path, url: &str) -> Self {
-        Self(tokio::spawn(settingsd::service::serve_at(
-            root.to_owned(),
-            projection("a", 1, "dark").binding,
-            url.into(),
-        )))
+        let root = root.to_owned();
+        let url = url.to_owned();
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        Self(
+            tokio::spawn(async move {
+                let result = settingsd::service::serve_at_until(
+                    root,
+                    projection("a", 1, "dark").binding,
+                    url,
+                    async {
+                        let _ = stopped.await;
+                    },
+                )
+                .await;
+                if let Err(error) = &result {
+                    tracing::error!(%error, "native authority exited");
+                }
+                result
+            }),
+            Some(stop),
+        )
     }
     async fn stop(&mut self) {
-        self.0.abort();
-        let _ = (&mut self.0).await;
+        if let Some(stop) = self.1.take() {
+            let _ = stop.send(());
+        }
+        // A process stop releases its Store. Aborting just this async task can
+        // leave a blocking palette dispatch holding the lock during restart.
+        (&mut self.0).await.unwrap().unwrap();
     }
 }
 impl Drop for AuthorityTask {
@@ -965,9 +994,23 @@ fn authority_store(root: &std::path::Path, mode: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+// Round 1's worst source wait under eight concurrent copies was 10.095 s.
+// Policy caps cover the backoff itself; reserve another 10 s for scheduling,
+// registration and D-Bus delivery rather than treating that sample as a cap.
+const SCHEDULING_MARGIN: Duration = Duration::from_secs(10);
+
 async fn wait_source(portal: &NativePortal, revision: u64, after: u64) -> anyhow::Result<()> {
     let expected = revision.to_string();
-    tokio::time::timeout(Duration::from_secs(45), async {
+    // Transport may be at its cap when the broker returns, followed by an
+    // authority retry at its own cap. Allow one bounded subscription and one
+    // appearance read, plus 10 s for scheduling/registration/D-Bus on a loaded
+    // debug worker (the read bounds values and palette together).
+    let budget = bus::native_client::RECONNECT_BACKOFF_MAX
+        + portald::service::RETRY_MAX
+        + portald::service::FETCH_TIMEOUT * 2
+        + SCHEDULING_MARGIN;
+    let started = Instant::now();
+    tokio::time::timeout(budget, async {
         loop {
             let report = status::report(&portal.shared);
             if report["portal"]["revision"] == expected
@@ -976,17 +1019,34 @@ async fn wait_source(portal: &NativePortal, revision: u64, after: u64) -> anyhow
                 return Ok::<_, anyhow::Error>(());
             }
             anyhow::ensure!(!portal.feed.is_finished(), "native feed exited: {report}");
+            anyhow::ensure!(!portal.live.is_finished(), "portal exited: {report}");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
-    .await?
+    .await
+    .with_context(|| {
+        format!(
+            "waiting for source revision {revision}, accepted > {after}, budget {budget:?}: {}",
+            status::report(&portal.shared)
+        )
+    })??;
+    eprintln!(
+        "source revision {revision}, accepted > {after}: {:?}",
+        started.elapsed()
+    );
+    Ok(())
 }
 
 async fn wait_absent(
     client: &bus::native_client::NodedClient,
     service: &str,
 ) -> anyhow::Result<()> {
-    tokio::time::timeout(Duration::from_secs(5), async {
+    // Observe broker removal, allowing the authority's shutdown bound and a
+    // retry at cap before scheduling margin. The authority drains its current
+    // blocking dispatch and deregisters before stop() returns.
+    let budget =
+        settingsd::service::DEREGISTER_TIMEOUT + portald::service::RETRY_MAX + SCHEDULING_MARGIN;
+    tokio::time::timeout(budget, async {
         while client
             .list_services()
             .await?
@@ -997,7 +1057,8 @@ async fn wait_absent(
         }
         Ok::<_, anyhow::Error>(())
     })
-    .await?
+    .await
+    .context("waiting for settingsd deregistration")?
 }
 
 /// The projection the real authority answers now, read as portald reads it:
@@ -1084,8 +1145,11 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
     );
     assert_eq!(changes[0], (COLOR_SCHEME, Value::U32(1)));
     for (expected_key, expected_value) in changes {
-        let message = tokio::time::timeout(Duration::from_secs(5), signals.next())
-            .await?
+        // wait_source already observed adoption. live::serve emits these signals
+        // immediately after adopt, so only D-Bus delivery/scheduling remains.
+        let message = tokio::time::timeout(SCHEDULING_MARGIN, signals.next())
+            .await
+            .context("waiting for live SettingChanged signal")?
             .ok_or_else(|| anyhow::anyhow!("signal stream ended"))?;
         assert_eq!(
             message.header().sender().map(|s| s.as_str()),
@@ -1138,12 +1202,26 @@ async fn native_recovers_when_broker_returns_after_the_initial_attempt_budget() 
     assert_eq!(read_one_color(&proxy).await?, 1);
     // An eager client exhausts all five attempts against this exact endpoint.
     let initial = tokio::time::timeout(
-        Duration::from_secs(10),
+        // Full-jitter maxima: 250 + 500 + 1000 + 2000 ms, plus
+        // margin for five refused local dials and scheduling under load.
+        bus::native_client::initial_connect_backoff_budget() + SCHEDULING_MARGIN,
         SupervisedClient::connect_options("initial-budget-probe", &url).connect(),
     )
-    .await?;
-    assert!(initial.is_err());
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    .await
+    .context("waiting for eager initial attempt budget")?;
+    let error = initial
+        .err()
+        .expect("offline broker must refuse eager connect");
+    assert!(
+        matches!(
+            error,
+            bus::native_client::SupervisedError::InitialConnectFailed {
+                attempts: bus::native_client::MAX_INITIAL_ATTEMPTS,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
     assert!(
         !portal.feed.is_finished(),
         "feed must survive initial broker failure"

@@ -1,0 +1,59 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Anonymous defaults for the daily media pipeline (services/daily).
+-- The real configuration lives in the private hub, <hub>/media/config.conf.mix
+-- (or the file named by MIX_DAILY_CONFIG), and is deep-merged over this one:
+-- maps merge key by key, every other value replaces. A leading ~/ expands to
+-- the service user's home. Keys for later phases are listed so the shape is
+-- settled; Phase 1 reads only hub, repo, cut, first_cut_from, timezone, git,
+-- gh, manifest and benchmarks.
+{
+  schema: 1,
+  timezone: "Australia/Brisbane",
+  cut_time: "03:00",
+  -- The window's start for the first cut, when no daily/* tag exists yet.
+  first_cut_from: "v0.1.0",
+  hub: "\~/.viu",
+  repo: {
+    path: "\~/Projects/mixviu",
+    remote: "mixviu/mixviu",
+    branch: "main",
+    -- The ref a new cut tags. fetch: true runs `git fetch <remote_name> <branch>` first.
+    ref: "refs/remotes/origin/main",
+    remote_name: "origin",
+    fetch: true
+  },
+  cut: {
+    tag_prefix: "daily/",
+    create_tags: true,
+    -- Pushing daily/* tags to the public remote is off until Mark turns it on.
+    push_tags: false
+  },
+  -- Extra environment for every git call (tests isolate git from the host).
+  git: {env: {}, timeout_s: 120},
+  gh: {
+    enabled: true,
+    argv: ["gh"],
+    env: {},
+    timeout_s: 120,
+    limit: 200,
+    task_label: "task"
+  },
+  manifest: {max_hunks: 3, max_hunk_lines: 40, hint_chars: 500, title_chars: 200},
+  -- A directory of CI benchmark JSON files; nil means none (no performance claims).
+  benchmarks: {dir: nil},
+  llm: {provider: "claude-code", timeout_s: 600, max_retries: 2},
+  tts: {engine: nil, voice: nil, sample_rate: 48000},
+  video: {width: 2560, height: 1440, fps: 30, daily_seconds: [180, 600], weekly_seconds: [900, 1200]},
+  capture: {session: "desk-capture", require_marker: "/etc/mixviu-capture-session"},
+  publish: {
+    mode: "hold",
+    site: {root: "/srv/mixviu.ai", base_url: "https://mixviu.ai"},
+    youtube: {enabled: false, privacy: "private", playlist_daily: nil, playlist_weekly: nil}
+  },
+  agents_txt: {sign: true, key: "secrets/agents-txt.key"},
+  tasks: {authority: "github", lease_hours: 48, renew_hours: 24, max_active_claims: 1},
+  -- Stage failures: notify.send to the desk's notifyd, Bus name "notify"
+  -- ("bus"), a program given the JSON payload on stdin ("argv", with
+  -- argv: [...]), or "none".
+  notify: {via: "bus", target: "notify", argv: nil, env: nil}
+}
