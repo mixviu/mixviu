@@ -8,19 +8,23 @@
 //! wakes for real timers and real I/O only.
 //!
 //! `profile` is ignored and prints one `PROFILE {json}` line per phase (idle,
-//! registration churn, a local burst, a mesh burst, a flapping peer, idle
-//! again):
+//! registration churn, two local bursts, a mesh burst, a flapping peer, three
+//! rounds of requests nobody answers, idle again):
 //!
 //! ```text
 //! cargo test --release -p noded --test efficiency -- --ignored --nocapture profile
 //! ```
 //!
 //! It reads `NODED_PROFILE_PEERS` (default 4, at most 4),
-//! `NODED_PROFILE_IDLE_SECS` (10), `NODED_PROFILE_CALLS` (20000),
-//! `NODED_PROFILE_REGISTRATIONS` (200) and `NODED_PROFILE_FLAPS` (5).
+//! `NODED_PROFILE_IDLE_SECS` (20), `NODED_PROFILE_CALLS` (200000),
+//! `NODED_PROFILE_REGISTRATIONS` (2000), `NODED_PROFILE_FLAPS` (5) and
+//! `NODED_PROFILE_UNANSWERED` (50000 a round).
 //! `NODED_PROFILE_STRACE=1` runs the measured broker under `strace` and adds
 //! its system calls per phase; the CPU figures of that run mean nothing.
-//! `scripts/idle_profile.mix` takes the same idle numbers from a live process.
+//! `NODED_PROFILE_BIN` names the broker to run instead of the one cargo
+//! built, so a prebuilt test binary can be run on a host that has strace.
+//! `scripts/idle_profile.mix` drives both runs and takes the same idle
+//! numbers from a live process.
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use bus::native_client::{
     BrokerAccount, NodedClient, UnixConnectOptions, UnixConnectOutcome, VerifiedConnection,
@@ -70,10 +74,10 @@ impl Node {
             command
                 .args(["-f", "-ttt", "-o"])
                 .arg(self.root.join("strace.log"))
-                .arg(env!("CARGO_BIN_EXE_noded"));
+                .arg(noded_bin());
             command
         } else {
-            Command::new(env!("CARGO_BIN_EXE_noded"))
+            Command::new(noded_bin())
         };
         let child = command
             .args(["serve", "--no-monitor", "--no-log"])
@@ -113,6 +117,13 @@ impl Node {
         let _ = child.kill();
         let _ = child.wait();
     }
+}
+
+/// The broker under test: the one cargo built beside this test, unless
+/// `NODED_PROFILE_BIN` names another (a prebuilt pair run on another host).
+fn noded_bin() -> PathBuf {
+    std::env::var_os("NODED_PROFILE_BIN")
+        .map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_noded")), PathBuf::from)
 }
 
 struct Mesh {
@@ -452,6 +463,7 @@ impl Phase {
             "messages": self.messages,
             "cpu_us_per_message":
                 (self.messages > 0).then(|| (cpu_ms * 1000.0 / self.messages as f64 * 10.0).round() / 10.0),
+            "syscalls": syscalls.map(|calls| calls.values().sum::<u64>()),
             "syscalls_per_s": syscalls
                 .map(|calls| (calls.values().sum::<u64>() as f64 / seconds * 10.0).round() / 10.0),
             "top_syscalls": syscalls.map(|_| top.iter().take(6)
@@ -518,12 +530,16 @@ async fn idle_broker_stays_within_its_wakeup_budget() {
 #[ignore = "a measurement, not a gate: run it by name with --nocapture"]
 async fn profile() {
     let peers = setting("NODED_PROFILE_PEERS", 4) as usize;
-    let idle_secs = setting("NODED_PROFILE_IDLE_SECS", 10);
-    let calls = setting("NODED_PROFILE_CALLS", 20_000);
-    let registrations = setting("NODED_PROFILE_REGISTRATIONS", 200);
+    let idle_secs = setting("NODED_PROFILE_IDLE_SECS", 20);
+    let calls = setting("NODED_PROFILE_CALLS", 200_000);
+    let registrations = setting("NODED_PROFILE_REGISTRATIONS", 2_000);
     let flaps = setting("NODED_PROFILE_FLAPS", 5);
+    let unanswered = setting("NODED_PROFILE_UNANSWERED", 50_000);
     let strace = std::env::var_os("NODED_PROFILE_STRACE").is_some();
     const CALLERS: u64 = 8;
+    // Under the broker's 256-message connection queue, so every request is
+    // delivered and waits for an answer instead of being refused.
+    const UNANSWERED_BATCH: u64 = 100;
 
     tokio::time::timeout(Duration::from_secs(900), async {
         let mut mesh = Mesh::start(peers + 1, strace);
@@ -556,8 +572,11 @@ async fn profile() {
         for index in 0..CALLERS {
             burst_callers.push(connect(&mesh.nodes[0], &format!("burst-{index}")).await);
         }
+        // The repeated local burst separates memory an allocator keeps after
+        // a burst (level after the second) from memory that grows per burst.
         for (name, target) in [
             ("local-burst", "echo".to_owned()),
+            ("local-again", "echo".to_owned()),
             ("mesh-burst", format!("echo.{}.bus", mesh.nodes[1].name)),
         ] {
             let burst = Phase::run(name, pid, async {
@@ -615,6 +634,41 @@ async fn profile() {
             after: sample(pid),
             wall: (wall_start, epoch()),
         });
+
+        // Requests nobody answers, from a caller that stays connected, to a
+        // service that then goes away. Three equal rounds: memory that the
+        // broker cannot reclaim climbs by the same step each time.
+        for name in ["unanswered-1", "unanswered-2", "unanswered-3"] {
+            let round = Phase::run(name, pid, async {
+                let void = connect(&mesh.nodes[0], "void").await;
+                let mut sent = 0;
+                while sent < unanswered {
+                    let batch: Vec<_> = (0..UNANSWERED_BATCH)
+                        .map(|index| {
+                            let caller = links.callers[0].clone();
+                            tokio::spawn(async move {
+                                let _ = tokio::time::timeout(
+                                    Duration::from_millis(5),
+                                    caller
+                                        .client()
+                                        .call("void", "void.wait", json!({"n": index})),
+                                )
+                                .await;
+                            })
+                        })
+                        .collect();
+                    for task in batch {
+                        task.await.unwrap();
+                    }
+                    sent += UNANSWERED_BATCH;
+                }
+                void.client().close().await;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                sent
+            })
+            .await;
+            phases.push(round);
+        }
 
         phases.push(idle("idle-after").await);
 
