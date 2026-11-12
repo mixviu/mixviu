@@ -31,6 +31,7 @@ pub const EXE: &str = "MIX_EXE";
 
 
 pub const INDEXD_SEARCH: &str = "MIX_INDEXD_SEARCH";
+pub const INPUTD_LOG: &str = "MIX_INPUTD_LOG";
 pub const INSTANCE: &str = "MIX_INSTANCE";
 pub const LINT: &str = "MIX_LINT";
 pub const MACRO_APP: &str = "MIX_MACRO_APP";
