@@ -1723,7 +1723,9 @@ fn apply_cas_group(state_root: &Path, blobs_root: &Path, group: &str) {
 /// before `buf` is dropped. `getgrnam`/`getgrgid` share one static result
 /// per process, so two threads looking groups up at once can read a torn
 /// entry (seen in the test pool: a store directory came back with another
-/// line's gid). The buffer grows on ERANGE, up to 1 MiB.
+/// line's gid). The buffer doubles on ERANGE with no application limit, as
+/// the old call had none; only a size that would overflow, or an allocation
+/// that fails, stops it.
 fn lookup_group<T>(
     call: impl Fn(
         *mut libc::group,
@@ -1735,15 +1737,26 @@ fn lookup_group<T>(
 ) -> Option<T> {
     let mut len: usize = 1024;
     loop {
-        let mut buf: Vec<libc::c_char> = vec![0; len];
+        // Checked: an allocation that fails ends the lookup instead of
+        // aborting the process.
+        let mut buf: Vec<libc::c_char> = Vec::new();
+        if buf.try_reserve_exact(len).is_err() {
+            return None;
+        }
+        buf.resize(len, 0);
         // SAFETY: an all-zero `group` is a valid out-parameter; the call
         // fills it with pointers into `buf`.
         let mut grp: libc::group = unsafe { std::mem::zeroed() };
         let mut out: *mut libc::group = std::ptr::null_mut();
         let rc = call(&mut grp, buf.as_mut_ptr(), len, &mut out);
-        if rc == libc::ERANGE && len < (1 << 20) {
-            len *= 2;
-            continue;
+        if rc == libc::ERANGE {
+            match len.checked_mul(2) {
+                Some(next) => {
+                    len = next;
+                    continue;
+                }
+                None => return None,
+            }
         }
         if rc != 0 || out.is_null() {
             return None;
@@ -1794,11 +1807,12 @@ mod group_lookup_tests {
             eprintln!("skipping: no group name for this process's gid");
             return;
         };
-        let threads: Vec<_> = (0..16)
+        // Kept small: lookups may go to a network NSS backend on some hosts.
+        let threads: Vec<_> = (0..8)
             .map(|_| {
                 let name = name.clone();
                 std::thread::spawn(move || {
-                    for _ in 0..2_000 {
+                    for _ in 0..200 {
                         assert_eq!(group_gid(&name), Some(gid));
                         assert_eq!(gid_group(gid).as_deref(), Some(name.as_str()));
                         assert_eq!(group_gid("no-such-group-mixviu-test"), None);
