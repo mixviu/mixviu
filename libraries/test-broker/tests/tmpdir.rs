@@ -14,7 +14,11 @@ fn fixture_ignores_private_tmpdir() {
         assert!(!broker.endpoint.starts_with(std::env::temp_dir()));
         let endpoint = broker.endpoint.clone();
         let directory_mode = || {
-            std::fs::metadata(endpoint.parent().unwrap()).unwrap().permissions().mode() & 0o777
+            std::fs::metadata(endpoint.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777
         };
         assert_eq!(directory_mode(), 0o755);
         assert!(endpoint.exists());
@@ -37,20 +41,20 @@ fn fixture_ignores_private_tmpdir() {
     std::fs::create_dir(&scratch).unwrap();
     std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o700)).unwrap();
     for mask in ["077", "000"] {
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "fixture_ignores_private_tmpdir", "--nocapture"])
-        .env(CHILD, mask)
-        .env("TMPDIR", &scratch)
-        .output()
-        .unwrap();
-    let mode = std::fs::metadata(&scratch).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o700, "the job's permissions must remain private");
-    assert!(
-        output.status.success(),
-        "native fixture failed under private long TMPDIR and umask {mask}: {}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "fixture_ignores_private_tmpdir", "--nocapture"])
+            .env(CHILD, mask)
+            .env("TMPDIR", &scratch)
+            .output()
+            .unwrap();
+        let mode = std::fs::metadata(&scratch).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "the job's permissions must remain private");
+        assert!(
+            output.status.success(),
+            "native fixture failed under private long TMPDIR and umask {mask}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     std::fs::remove_dir(&scratch).unwrap();
 }

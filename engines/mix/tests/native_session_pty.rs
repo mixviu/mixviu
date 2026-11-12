@@ -1671,7 +1671,10 @@ fn stage_d_refuses_every_ineligible_prompt_state_without_discarding_anything() {
         // A continuation prompt. Admission is empty-PRIMARY-prompt only.
         f.child.send("if true then\n");
         let continuation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
-        assert_eq!(status(&mut f.parent, &f.bound).await["status"]["snapshot"]["continuation"], true);
+        assert_eq!(
+            status(&mut f.parent, &f.bound).await["status"]["snapshot"]["continuation"],
+            true
+        );
         let busy = execute_call(
             &mut f.parent,
             &f.bound,

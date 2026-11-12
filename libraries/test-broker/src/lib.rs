@@ -117,12 +117,15 @@ impl Broker {
             PathBuf::from("/tmp").join(format!("term-native-{:032x}", rand::random::<u128>()));
         // Start private even with umask 000; only publish traversal once owned.
         // create (not create_dir_all) fails closed on an existing path.
-        std::fs::DirBuilder::new().mode(0o700).create(&root).unwrap_or_else(|error| {
-            panic!(
-                "create native fixture directory {}: {error}",
-                root.display()
-            )
-        });
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&root)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "create native fixture directory {}: {error}",
+                    root.display()
+                )
+            });
         let root = FixtureDirectory(root);
         // BUS-013 requires user-traversable, broker-owned ancestors. A 0700
         // directory deliberately disables noded's native profile; TCP readiness
