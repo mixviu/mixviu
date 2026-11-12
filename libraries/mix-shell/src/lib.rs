@@ -489,7 +489,11 @@ fn sigterm_backstop_grace(value: Option<&str>) -> std::time::Duration {
 }
 
 fn configured_sigterm_backstop_grace() -> std::time::Duration {
-    sigterm_backstop_grace(::paths::env::setting(::paths::env::SIGTERM_BACKSTOP_SECS).ok().as_deref())
+    sigterm_backstop_grace(
+        ::paths::env::setting(::paths::env::SIGTERM_BACKSTOP_SECS)
+            .ok()
+            .as_deref(),
+    )
 }
 
 #[test]
@@ -503,11 +507,21 @@ fn sigterm_backstop_reads_environment_installed_and_missing_settings() {
             "bare" | "invalid" | "malformed" | "unreadable" => 15,
             other => panic!("unknown fixture {other}"),
         };
-        assert_eq!(configured_sigterm_backstop_grace(), std::time::Duration::from_secs(expected));
+        assert_eq!(
+            configured_sigterm_backstop_grace(),
+            std::time::Duration::from_secs(expected)
+        );
         return;
     }
     let exe = std::env::current_exe().unwrap();
-    for mode in ["environment", "installed", "bare", "invalid", "malformed", "unreadable"] {
+    for mode in [
+        "environment",
+        "installed",
+        "bare",
+        "invalid",
+        "malformed",
+        "unreadable",
+    ] {
         let prefix = tempfile::tempdir_in(exe.parent().unwrap()).unwrap();
         if mode == "unreadable" {
             std::fs::create_dir(prefix.path().join("env.mx")).unwrap();
@@ -520,16 +534,24 @@ fn sigterm_backstop_reads_environment_installed_and_missing_settings() {
             std::fs::write(prefix.path().join("env.mx"), data).unwrap();
         }
         let mut command = std::process::Command::new(&exe);
-        command.args(["--exact", TEST, "--nocapture"])
-            .env(CHILD, mode).env(::paths::env::PREFIX, prefix.path())
-            .env_remove(::paths::env::ROOT).env_remove(::paths::env::SIGTERM_BACKSTOP_SECS);
+        command
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD, mode)
+            .env(::paths::env::PREFIX, prefix.path())
+            .env_remove(::paths::env::ROOT)
+            .env_remove(::paths::env::SIGTERM_BACKSTOP_SECS);
         if mode == "environment" {
             command.env(::paths::env::SIGTERM_BACKSTOP_SECS, "3");
         } else if mode == "invalid" {
             command.env(::paths::env::SIGTERM_BACKSTOP_SECS, "bad");
         }
         let output = command.output().unwrap();
-        assert!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"), "{mode}: {}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "{mode}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
