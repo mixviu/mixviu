@@ -926,13 +926,14 @@ fn read_cache_body(mut reader: BufReader<File>) -> Option<UsageStats> {
     Some(stats)
 }
 
-// Capture before opening the source: a slow read or cache write must not age
-// a racy identity into a trusted one. Old headers without this field miss.
+// Test-only seam: a test thread may advance the verification clock.
 #[cfg(test)]
 thread_local! {
     static VERIFICATION_TIME_OVERRIDE_NS: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
+// Capture before opening the source: a slow read or cache write must not age
+// a racy identity into a trusted one. Old headers without this field miss.
 fn verification_time_ns() -> u64 {
     #[cfg(test)]
     if let Some(now) = VERIFICATION_TIME_OVERRIDE_NS.get() {
@@ -2325,6 +2326,8 @@ mod tests {
             cache_settled_day(&dir, &day);
             assert!(cache_path(&dir, &day).exists());
         }
+        // A full report over the seeded history, as a smoke pass: the caches
+        // above come from cache_settled_day, not from this call.
         all_caching(&dir);
         let legacy = run_on("legacy", "2026-01-05", "len");
         fs::write(dir.join("current.json"), legacy.to_json().to_string()).unwrap();
