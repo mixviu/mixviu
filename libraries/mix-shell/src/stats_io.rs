@@ -554,7 +554,7 @@ impl Merger {
 }
 
 /// Which file, exactly: taken from the `fstat` of the descriptor that was
-/// read, so a same-length replacement or a reused inode does not match.
+/// read. Equality alone cannot detect a rewrite within one timestamp tick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FileId {
     dev: u64,
@@ -565,6 +565,17 @@ struct FileId {
 }
 
 impl FileId {
+    fn predates_cache(self, cached: std::time::SystemTime) -> bool {
+        let Ok(cached) = cached.duration_since(std::time::UNIX_EPOCH) else {
+            return false;
+        };
+        // Both mtime and ctime must be safely outside the cache's tick.
+        // Allow two seconds for coarse filesystem timestamps (including FAT).
+        // Checking ctime also catches rewrites which restore an old mtime.
+        i128::from(self.mtime_ns.max(self.ctime_ns)) + 2_000_000_000
+            < cached.as_nanos() as i128
+    }
+
     fn of(meta: &fs::Metadata) -> Self {
         Self {
             dev: meta.dev(),
@@ -883,6 +894,9 @@ fn read_cache_header(path: &Path, kind: CacheKind) -> Option<(CacheHeader, BufRe
     reader.read_until(b'\n', &mut line).ok()?;
     let value: serde_json::Value = serde_json::from_slice(line.trim_ascii()).ok()?;
     let id = FileId::from_json(value.get("id")?)?;
+    if !id.predates_cache(reader.get_ref().metadata().ok()?.modified().ok()?) {
+        return None;
+    }
     let bounds = DateBounds::from_json(value.get("dates")?)?;
     let payload = match (kind, value.get("payload")) {
         (CacheKind::LegacyBounds, _) => None,
@@ -935,7 +949,8 @@ fn write_cache(dir: &Path, day: &str, raw: &RawDay) -> Result<(), String> {
 
 /// A raw day's contribution to a window, with every op applied. The cache
 /// is used only when its header names exactly the file as it is now (device,
-/// inode, length, mtime and ctime). Its date bounds then decide whether the
+/// inode, length, mtime and ctime), outside the racy timestamp window. Its
+/// date bounds then decide whether the
 /// day can touch the window at all, and its aggregate is used unless an op
 /// covers some of its records but not all (judged by payload ends, as for a
 /// single record); then the raw file is read record by record. Without a
@@ -2478,6 +2493,14 @@ mod tests {
             record_json(&run_on("forged", &day, "upper"))
         );
         write_cache_value(&dir, &day, &forged);
+        // This test exercises a trusted, older identity. A fresh cache of a
+        // just-written file is deliberately unverified within the same tick.
+        File::options()
+            .write(true)
+            .open(cache_path(&dir, &day))
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + Duration::from_secs(3))
+            .unwrap();
         assert_eq!(all(&dir).counters.builtins.get("upper"), Some(&1));
 
         // ...and corrupt, prefix-only or header-only entries are ignored.
