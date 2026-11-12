@@ -1723,7 +1723,9 @@ fn apply_cas_group(state_root: &Path, blobs_root: &Path, group: &str) {
 /// before `buf` is dropped. `getgrnam`/`getgrgid` share one static result
 /// per process, so two threads looking groups up at once can read a torn
 /// entry (seen in the test pool: a store directory came back with another
-/// line's gid). The buffer grows on ERANGE, up to 1 MiB.
+/// line's gid). The buffer doubles on ERANGE with no application limit, as
+/// the old call had none; only a size that would overflow, or an allocation
+/// that fails, stops it.
 fn lookup_group<T>(
     call: impl Fn(
         *mut libc::group,
@@ -1735,15 +1737,26 @@ fn lookup_group<T>(
 ) -> Option<T> {
     let mut len: usize = 1024;
     loop {
-        let mut buf: Vec<libc::c_char> = vec![0; len];
+        // Checked: an allocation that fails ends the lookup instead of
+        // aborting the process.
+        let mut buf: Vec<libc::c_char> = Vec::new();
+        if buf.try_reserve_exact(len).is_err() {
+            return None;
+        }
+        buf.resize(len, 0);
         // SAFETY: an all-zero `group` is a valid out-parameter; the call
         // fills it with pointers into `buf`.
         let mut grp: libc::group = unsafe { std::mem::zeroed() };
         let mut out: *mut libc::group = std::ptr::null_mut();
         let rc = call(&mut grp, buf.as_mut_ptr(), len, &mut out);
-        if rc == libc::ERANGE && len < (1 << 20) {
-            len *= 2;
-            continue;
+        if rc == libc::ERANGE {
+            match len.checked_mul(2) {
+                Some(next) => {
+                    len = next;
+                    continue;
+                }
+                None => return None,
+            }
         }
         if rc != 0 || out.is_null() {
             return None;
@@ -1784,23 +1797,31 @@ fn gid_group(gid: u32) -> Option<String> {
 mod group_lookup_tests {
     use super::{gid_group, group_gid};
 
-    /// Many threads resolving groups at once each get their own answer:
-    /// with getgrnam/getgrgid they shared one static result.
+    /// Many threads resolving DIFFERENT groups at once each get their own
+    /// answer. With getgrnam/getgrgid they shared one static result, so a
+    /// thread could read another thread's group; with every thread on the
+    /// same group that tear would be invisible, hence distinct groups.
     #[test]
     fn concurrent_group_lookups_do_not_tear() {
-        // SAFETY: getgid is a pure syscall.
-        let gid = unsafe { libc::getgid() };
-        let Some(name) = gid_group(gid) else {
-            eprintln!("skipping: no group name for this process's gid");
+        // Up to eight real groups from the low system range, found with the
+        // lookup under test before any thread starts.
+        let groups: Vec<(u32, String)> = (0..1000)
+            .filter_map(|gid| gid_group(gid).map(|name| (gid, name)))
+            .take(8)
+            .collect();
+        if groups.len() < 2 {
+            eprintln!("skipping: fewer than two named groups below gid 1000");
             return;
-        };
-        let threads: Vec<_> = (0..16)
-            .map(|_| {
-                let name = name.clone();
+        }
+        // Kept small: lookups may go to a network NSS backend on some hosts.
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                let groups = groups.clone();
                 std::thread::spawn(move || {
-                    for _ in 0..2_000 {
-                        assert_eq!(group_gid(&name), Some(gid));
-                        assert_eq!(gid_group(gid).as_deref(), Some(name.as_str()));
+                    for round in 0..200 {
+                        let (gid, name) = &groups[(t + round) % groups.len()];
+                        assert_eq!(group_gid(name), Some(*gid), "{name}");
+                        assert_eq!(gid_group(*gid).as_deref(), Some(name.as_str()), "{gid}");
                         assert_eq!(group_gid("no-such-group-mixviu-test"), None);
                     }
                 })
