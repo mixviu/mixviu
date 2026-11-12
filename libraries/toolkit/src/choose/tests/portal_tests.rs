@@ -537,21 +537,27 @@ async fn portal_dead_response_stream_is_rebuilt_once_before_close_recovery() {
     // Reserve one more IO_BOUND plus five seconds for scheduling on busy workers.
     let budget = IO_BOUND * 10 + Duration::from_secs(5);
     let task = tokio::spawn(async move {
-        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 1, Some(rebuilt_tx))
-            .await
-            .unwrap()
+        portal::session_broken_stream(
+            &client,
+            &request("{}").unwrap(),
+            &mut cancel,
+            1,
+            Some(rebuilt_tx),
+        )
+        .await
+        .unwrap()
     });
     let call = tokio::time::timeout(budget, calls.recv())
         .await
         .unwrap()
         .unwrap();
-    tokio::time::timeout(budget, rebuilt).await.unwrap().unwrap();
+    tokio::time::timeout(budget, rebuilt)
+        .await
+        .unwrap()
+        .unwrap();
     emit(&server, &call.owner, &call.path, 1).await;
     assert_eq!(
-        tokio::time::timeout(budget, task)
-            .await
-            .unwrap()
-            .unwrap(),
+        tokio::time::timeout(budget, task).await.unwrap().unwrap(),
         Some(Outcome::Cancelled)
     );
     assert_eq!(closed.load(Ordering::SeqCst), 0);

@@ -92,7 +92,10 @@ fn settle(h: &mut Harness<'_, State>) {
         if h.state().0.pending.is_none() {
             return;
         }
-        assert!(std::time::Instant::now() < deadline, "chooser worker did not settle");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "chooser worker did not settle"
+        );
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 }
