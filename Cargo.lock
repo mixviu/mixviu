@@ -5559,6 +5559,7 @@ name = "mixtrayd"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "buildinfo",
  "bus",
  "futures",
  "notify",
@@ -8772,7 +8773,7 @@ dependencies = [
 [[package]]
 name = "spamlite"
 version = "0.9.6"
-source = "git+https://github.com/markc/spamlite?rev=e4cda94713f696414550f414feaea4e8d6c4355e#e4cda94713f696414550f414feaea4e8d6c4355e"
+source = "git+https://github.com/markc/spamlite?rev=a4d8202a4d78bbcd1fd737b617bca3591d4e096d#a4d8202a4d78bbcd1fd737b617bca3591d4e096d"
 dependencies = [
  "mail-parser",
  "nanohtml2text",

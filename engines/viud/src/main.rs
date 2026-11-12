@@ -35,7 +35,14 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 static WORLD_DIVERGENCE_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Register this engine's build stamp before any startup mode reads settings,
+/// as mix, mixd and viu do.
+fn register_build_snapshot() {
+    let _ = buildinfo::build_info!();
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    register_build_snapshot();
     comp_service::chrome::enable();
     world::comp::corners::enable_panel_input();
     // Answer `--version`/`-V` (and `--version --json`) as
