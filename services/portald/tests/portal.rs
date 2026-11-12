@@ -10,6 +10,7 @@ use portald::portal::{BUS_NAME, INTERFACE, OBJECT_PATH};
 use portald::status::{self, Shared};
 use settings::Binding;
 use settings::Revision;
+use anyhow::Context;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -967,7 +968,15 @@ fn authority_store(root: &std::path::Path, mode: &str) -> anyhow::Result<()> {
 
 async fn wait_source(portal: &NativePortal, revision: u64, after: u64) -> anyhow::Result<()> {
     let expected = revision.to_string();
-    tokio::time::timeout(Duration::from_secs(45), async {
+    // Transport may be at its cap when the broker returns, followed by an
+    // authority retry at its own cap. Allow two bounded reads (values/palette)
+    // and 10 s for scheduling/registration/D-Bus on a loaded debug worker.
+    let budget = bus::native_client::RECONNECT_BACKOFF_MAX
+        + portald::service::RETRY_MAX
+        + portald::service::FETCH_TIMEOUT * 2
+        + Duration::from_secs(10);
+    let started = Instant::now();
+    tokio::time::timeout(budget, async {
         loop {
             let report = status::report(&portal.shared);
             if report["portal"]["revision"] == expected
@@ -976,10 +985,14 @@ async fn wait_source(portal: &NativePortal, revision: u64, after: u64) -> anyhow
                 return Ok::<_, anyhow::Error>(());
             }
             anyhow::ensure!(!portal.feed.is_finished(), "native feed exited: {report}");
+            anyhow::ensure!(!portal.live.is_finished(), "portal exited: {report}");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
-    .await?
+    .await
+    .with_context(|| format!("waiting for source revision {revision}, accepted > {after}, budget {budget:?}: {}", status::report(&portal.shared)))??;
+    eprintln!("source revision {revision}, accepted > {after}: {:?}", started.elapsed());
+    Ok(())
 }
 
 async fn wait_absent(
@@ -997,7 +1010,7 @@ async fn wait_absent(
         }
         Ok::<_, anyhow::Error>(())
     })
-    .await?
+    .await.context("waiting for settingsd deregistration")?
 }
 
 /// The projection the real authority answers now, read as portald reads it:
@@ -1085,7 +1098,7 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
     assert_eq!(changes[0], (COLOR_SCHEME, Value::U32(1)));
     for (expected_key, expected_value) in changes {
         let message = tokio::time::timeout(Duration::from_secs(5), signals.next())
-            .await?
+            .await.context("waiting for live SettingChanged signal")?
             .ok_or_else(|| anyhow::anyhow!("signal stream ended"))?;
         assert_eq!(
             message.header().sender().map(|s| s.as_str()),
@@ -1138,12 +1151,14 @@ async fn native_recovers_when_broker_returns_after_the_initial_attempt_budget() 
     assert_eq!(read_one_color(&proxy).await?, 1);
     // An eager client exhausts all five attempts against this exact endpoint.
     let initial = tokio::time::timeout(
-        Duration::from_secs(10),
+        // Four full-jitter waits: 250 + 500 + 1000 + 2000 ms, plus
+        // 10 s for five refused local dials and scheduling under load.
+        bus::native_client::initial_connect_backoff_budget() + Duration::from_secs(10),
         SupervisedClient::connect_options("initial-budget-probe", &url).connect(),
     )
-    .await?;
-    assert!(initial.is_err());
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    .await.context("waiting for eager initial attempt budget")?;
+    let error = initial.err().expect("offline broker must refuse eager connect");
+    assert!(matches!(error, bus::native_client::SupervisedError::InitialConnectFailed { attempts: bus::native_client::MAX_INITIAL_ATTEMPTS, .. }), "{error:?}");
     assert!(
         !portal.feed.is_finished(),
         "feed must survive initial broker failure"

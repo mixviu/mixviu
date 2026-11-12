@@ -30,4 +30,5 @@ pub use locate::{DEFAULT_NODED_URL, node_config_path, noded_url, url_from_node_c
 pub use supervised::{
     ConnState, MAX_INITIAL_ATTEMPTS, SubscriptionRegistry, SupervisedClient,
     SupervisedConnectOptions, SupervisedDelivery,
+    RECONNECT_BACKOFF_MAX, initial_connect_backoff_budget,
 };

@@ -166,13 +166,16 @@ impl App {
         loop {
             self.pump();
             if let Ok(reply) = rx.try_recv() {
-                // Let the completed callback's model reach the native owner.
-                for _ in 0..3 {
-                    self.pump();
-                }
                 return reply;
             }
             assert!(Instant::now() < end, "deferred native reply timed out");
+        }
+    }
+    fn wait_model(&mut self, ready: impl Fn(&Value) -> bool) {
+        let end = Instant::now() + Duration::from_secs(10);
+        while !ready(&self.model) {
+            self.pump();
+            assert!(Instant::now() < end, "model timed out: {}", self.model);
         }
     }
     fn call(&mut self, command: &str, args: Value) -> (u8, Value) {
@@ -235,6 +238,12 @@ fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
         let rx=app.request("backdrop.set",json!({"schema":1,"default":{"colour":"#1234ab"},"outputs":{"HEADLESS-2":{"image":image,"fit":mode}}}));
         let (rc, body) = app.wait(rx);
         assert_eq!(rc, 0, "{body}");
+        // Calls::finish answers inside the evaluator; the callback's model
+        // reaches Runtime::drain only after the callback returns.
+        app.wait_model(|model| {
+            model["serial"] == body["active"]
+                && model["surfaces"]["HEADLESS-2"]["values"]["root"]["fit"] == mode
+        });
         assert_eq!(app.model["values"]["root"]["colour"], json!([18, 52, 171]));
         assert_eq!(
             app.model["surfaces"]["HEADLESS-2"]["values"]["root"]["fit"],
@@ -261,6 +270,7 @@ fn decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage(
     let doc = json!({"schema":1,"default":{"image":image}});
     let rx = app.request("backdrop.set", doc.clone());
     assert_eq!(app.wait(rx).0, 0);
+    app.wait_model(|model| model["values"]["root"]["handle"].is_string());
     let handle = app.model["values"]["root"]["handle"]
         .as_str()
         .unwrap()
@@ -286,6 +296,7 @@ fn decode_refusal_and_replaced_source_preserve_transactional_pixels_and_storage(
     app.png("fixture.png", [90, 80, 70, 255]);
     let rx = app.request("backdrop.set", doc);
     assert_eq!(app.wait(rx).0, 0);
+    app.wait_model(|model| model["values"]["root"]["handle"].as_str().is_some_and(|h| h != handle));
     assert_ne!(app.model["values"]["root"]["handle"], handle);
     assert_eq!(pixels.decoded.rgba.get_pixel(0, 0).0, [12, 34, 56, 255]);
     assert!(app.call("backdrop.state", json!({})).1["error"].is_null());

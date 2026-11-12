@@ -38,7 +38,8 @@ pub const FETCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
 /// The first retry after a failed subscribe or read, doubling to [`RETRY_MAX`].
 const RETRY_FIRST: Duration = Duration::from_millis(250);
-const RETRY_MAX: Duration = Duration::from_secs(30);
+/// Maximum delay before repeating a failed authority read or subscription.
+pub const RETRY_MAX: Duration = Duration::from_secs(30);
 
 pub fn manifest() -> Vec<bus::CommandDescriptor> {
     manifest_for_screencast(crate::screencast::consent::installed().is_some())
