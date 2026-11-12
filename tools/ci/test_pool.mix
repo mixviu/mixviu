@@ -1,5 +1,5 @@
 #!/usr/bin/env mix
--- version: 0.1.0
+-- version: 0.2.0
 -- tools/ci/test_pool.mix: `cargo test` with the test binaries run in
 -- parallel. Called by tools/ci.mix in place of `cargo test`.
 --
@@ -9,20 +9,25 @@
 -- binary run in parallel. On a 16-core worker the 464 workspace binaries
 -- took 887 s that way and 195 s eight at a time (lab, cbc4, 2026-11-12).
 --
--- 1. `cargo test --no-run --message-format=json CARGO_TEST_ARGS` builds and
---    lists every test executable (compile errors go to stderr as usual).
--- 2. The executables run from a pool of N (default 8), each with the working
---    directory and runtime variables cargo gives it. The environment is
---    otherwise the caller's, as under `cargo test` (a per-binary TMPDIR
---    inside the checkout changed what some tests observe, so there is none).
--- 3. Binaries listed in tools/ci/serial-tests.conf.mix run alone afterwards.
--- 4. Doc-tests run as `cargo test --doc` with the same arguments, only when
---    the selection has a library (cargo refuses --doc otherwise; plain
---    `cargo test` skips them silently).
+-- 1. Record. `cargo test --no-fail-fast --tests CARGO_TEST_ARGS` runs with
+--    tools/ci/test_record.mix as its test runner: cargo builds, then calls
+--    the recorder once per test binary, in its own order, with its own
+--    working directory and environment; the recorder writes those down and
+--    runs nothing. `--tests` is cargo's default selection without the
+--    doc-tests, so the pool runs exactly what cargo would.
+-- 2. Replay. Every recorded invocation runs from a pool of N (default 8)
+--    with exactly the recorded argv, cwd and environment (clear_env).
+-- 3. Binaries in tools/ci/serial-tests.conf.mix run alone afterwards; an
+--    entry that matches no binary is an error.
+-- 4. Doc-tests: `cargo test --doc --no-fail-fast CARGO_TEST_ARGS`, after
+--    the binaries, as under cargo. A selection without a library (cargo
+--    says "no library targets found") has none, as under plain cargo test.
 --
--- Output is printed per binary in cargo's order, with cargo's "Running" and
--- "test result:" lines, so logs and test-count parsers read as before.
--- Ends with the slowest binaries. Exit 1 if anything failed.
+-- Output is printed per binary in cargo's order with cargo's "Running"
+-- labels and "test result:" lines, so logs and test-count parsers read as
+-- before. Any result that is not ok (non-zero exit, crash, timeout even
+-- when the leader exited 0, spawn failure) fails the step, as does finding
+-- no test binaries at all. Ends with the slowest binaries.
 
 $o = getopt(args(), {jobs: {arg: true}, serial: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) == 0 then
@@ -32,69 +37,103 @@ end
 $jobs = to_number($o.opts.jobs ?? "8")
 $cargo_args = $o.rest
 $serial_path = $o.opts.serial ?? "tools/ci/serial-tests.conf.mix"
-$serial = if exists($serial_path) then load_data($serial_path).serial_tests else [] end
-$cargo = trim(run_argv_must(["which", "cargo"]))
+$serial = if exists($serial_path) then load_data($serial_path).serial_tests ?? [] else [] end
 $root = realpath(".")
+$mix_exe = realpath("/proc/self/exe")
+$recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
+$host = re_find(run_argv_must(["rustc", "-vV"]), "(?m)^host: (\\S+)$")[0].groups[0]
+$runner_var = "CARGO_TARGET_" .. upper(replace(replace($host, "-", "_"), ".", "_")) .. "_RUNNER"
+if env($runner_var) != "" then
+  print("::error::" .. $runner_var .. " is already set; the pool cannot record through it")
+  exit(1)
+end
+$rec_dir = path_join($root, "target/test-pool-" .. to_string(pid()))
+mkdir($rec_dir)
+$rec = path_join($rec_dir, "runs.jsonl")
+write_file($rec, "")
 
--- 1. Build and list.
+-- 1. Record (builds as cargo test would).
 $t_build = monotonic()
-$b = run_argv(concat(["cargo", "test", "--no-run", "--message-format=json"], $cargo_args), {timeout: 14400, stderr: "inherit", max_output: 512000000})
-if $b.exit_code != 0 then
-  print("::error::test build failed (rc " .. to_string($b.exit_code) .. "): cargo test --no-run " .. join($cargo_args, " "))
+$record_env = {}
+$record_env[$runner_var] = $mix_exe .. " " .. $recorder .. " " .. $rec
+-- `--tests` stands for cargo's default targets minus the doc-tests; when the
+-- caller already picked targets, their choice stands unchanged.
+$target_flags = ["--lib", "--bin", "--bins", "--test", "--tests", "--example", "--examples", "--bench", "--benches", "--all-targets", "--doc"]
+$picks_targets = len(filter($cargo_args, fn($a) = contains($target_flags, split($a, "=")[0]))) > 0
+if contains($cargo_args, "--doc") then
+  print("::error::test_pool runs doc-tests itself; do not pass --doc")
+  exit(64)
+end
+$select = if $picks_targets then [] else ["--tests"] end
+$b = run_argv(concat(concat(["cargo", "test", "--no-fail-fast"], $select), $cargo_args),
+  {timeout: 14400, env: $record_env, stdout: "capture", stderr: "capture", max_output: 256000000})
+print($b.stderr)
+if not $b.ok then
+  print($b.stdout)
+  print("::error::test build or record failed (rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. "): cargo test --tests " .. join($cargo_args, " "))
   exit(1)
 end
 $build_s = monotonic() - $t_build
+$runs = map(filter(lines(read_file($rec)), fn($l) = trim($l) != ""), fn($l) = json_parse($l))
+$labels = map(filter(lines($b.stderr), fn($l) = re_match($l, "^\\s+Running ")), fn($l) = trim(re_replace($l, "^\\s+Running ", "")))
+if len($runs) == 0 then
+  print("::error::cargo test --tests " .. join($cargo_args, " ") .. " ran no test binaries; refusing to pass an empty selection")
+  exit(1)
+end
+if len($labels) != len($runs) then
+  print("::error::cargo printed " .. to_string(len($labels)) .. " Running lines for " .. to_string(len($runs)) .. " recorded runs")
+  exit(1)
+end
 
 $pool = []
 $alone = []
-$has_lib = false
-for $line in lines($b.stdout)
-  if not starts_with($line, "{") then continue end
-  $m = json_parse($line)
-  if $m.reason != "compiler-artifact" or $m.executable == nil then continue end
-  if not ($m.profile.test ?? false) then continue end
-  $is_lib = contains($m.target.kind, "lib") or contains($m.target.kind, "rlib")
-  if $is_lib then $has_lib = true end
-  $dir = dirname($m.manifest_path)
-  -- package_id is ".../dir#name@ver", or ".../name#ver" when they agree.
-  $pid = re_find($m.package_id, "#(?:([A-Za-z0-9_.-]+)@)?([0-9][^ ]*)$")
-  $pkg = basename($dir)
-  $ver = "0.0.0"
-  if len($pid) > 0 then
-    $pkg = $pid[0].groups[0] ?? $pkg
-    $ver = $pid[0].groups[1]
+$matched = {}
+for $i = 0 to len($runs) - 1
+  $r = $runs[$i]
+  $e = $r.env
+  -- The recorder's own runner variable is not part of cargo's environment.
+  $env = {}
+  for $k in keys($e)
+    if $k != $runner_var then $env[$k] = $e[$k] end
   end
-  $src = replace($m.target.src_path, $dir .. "/", "")
-  $job = {
-    argv: [$m.executable], cwd: $dir, timeout: 3600, max_output: 16000000,
-    stdout: "capture", stderr: "stdout",
-    env: {CARGO: $cargo, CARGO_MANIFEST_DIR: $dir, CARGO_PKG_NAME: $pkg, CARGO_PKG_VERSION: $ver,
-          CARGO_CRATE_NAME: replace($m.target.name, "-", "_")},
-    label: (if $is_lib then "unittests " else "" end) .. $src .. " (" .. replace($m.executable, $root .. "/", "") .. ")",
-    key: $pkg .. "/" .. $m.target.name
-  }
-  $is_serial = len(filter($serial, fn($s) = $s.package == $pkg and $s.target == $m.target.name)) > 0
-  if $is_serial then push($alone, $job) else push($pool, $job) end
+  $pkg = $env.CARGO_PKG_NAME ?? "?"
+  $target = re_replace(basename($r.argv[0]), "-[0-9a-f]{16}$", "")
+  $key = $pkg .. "/" .. $target
+  $job = {argv: $r.argv, cwd: $r.cwd, env: $env, clear_env: true, timeout: 3600, max_output: 64000000,
+          stdout: "capture", stderr: "stdout", label: $labels[$i], key: $key}
+  $hit = filter($serial, fn($s) = $s.package == $pkg and $s.target == $target)
+  if len($hit) > 0 then
+    $matched[$key] = true
+    push($alone, $job)
+  else
+    push($pool, $job)
+  end
+end
+$unmatched = filter($serial, fn($s) = not has_key($matched, $s.package .. "/" .. $s.target))
+for $s in $unmatched
+  print("::error::" .. $serial_path .. ": " .. $s.package .. "/" .. $s.target .. " matches no test binary in this selection")
 end
 
--- 2-4. Run: the pool (with doc-tests as one more job when there is a
--- library), then the serial list one at a time.
-$pool_jobs = $pool
-if $has_lib then
-  push($pool_jobs, {argv: concat(["cargo", "test", "--doc"], $cargo_args), cwd: $root, env: {},
-    timeout: 7200, max_output: 64000000, stdout: "capture", stderr: "stdout", label: "doc-tests", key: "doc-tests"})
-end
 fn run_spec($jobs)
-  return map($jobs, fn($j) = {argv: $j.argv, cwd: $j.cwd, env: $j.env, timeout: $j.timeout, max_output: $j.max_output, stdout: $j.stdout, stderr: $j.stderr})
+  return map($jobs, fn($j) = {argv: $j.argv, cwd: $j.cwd, env: $j.env, clear_env: $j.clear_env, timeout: $j.timeout,
+    max_output: $j.max_output, stdout: $j.stdout, stderr: $j.stderr})
 end
+
+-- 2-3. Replay: the pool, then the serial list one at a time.
 $t_run = monotonic()
-$pool_rs = run_parallel(run_spec($pool_jobs), {max: $jobs})
+$pool_rs = run_parallel(run_spec($pool), {max: $jobs})
 $pool_s = monotonic() - $t_run
 $t_alone = monotonic()
 $alone_rs = run_parallel(run_spec($alone), {max: 1})
 $alone_s = monotonic() - $t_alone
 
-$all = concat($pool_jobs, $alone)
+-- 4. Doc-tests, after the binaries, as under cargo.
+$t_doc = monotonic()
+$d = run_argv(concat(["cargo", "test", "--doc", "--no-fail-fast"], $cargo_args), {timeout: 7200, stderr: "stdout", max_output: 64000000})
+$doc_s = monotonic() - $t_doc
+$no_lib = not $d.ok and re_match($d.stdout, "error: no library targets found in package") and not re_match($d.stdout, "test result: FAILED|error\\[E")
+
+$all = concat($pool, $alone)
 $rs = concat($pool_rs, $alone_rs)
 $failed = []
 $timing = []
@@ -103,18 +142,31 @@ for $i = 0 to len($all) - 1
   $r = $rs[$i]
   print("     Running " .. $j.label)
   print($r.stdout)
-  if $r.exit_code != 0 then
-    push($failed, $j.key .. " (rc " .. to_string($r.exit_code ?? 124) .. (if $r.timed_out then ", timed out" else "" end) .. ")")
+  if $r.stdout_truncated then print("::warning::" .. $j.key .. ": output over 64 MB was truncated in this log") end
+  -- `ok` is false for a non-zero exit, a timeout (even when the leader
+  -- exited 0 while a descendant held its output open), and a spawn failure.
+  if not $r.ok then
+    push($failed, $j.key .. " (rc " .. to_string($r.exit_code ?? 124) .. (if $r.timed_out then ", timed out" else "" end)
+      .. (if $r.error != nil then ", " .. to_string($r.error) else "" end) .. ")")
   end
   push($timing, {key: $j.key, s: $r.duration_ms / 1000})
 end
+print("   Doc-tests")
+print($d.stdout)
+if $no_lib then
+  print("(no library in this selection: no doc-tests, as under cargo test)")
+elif not $d.ok then
+  push($failed, "doc-tests (rc " .. to_string($d.exit_code ?? 124) .. (if $d.timed_out then ", timed out" else "" end) .. ")")
+end
 
-print(fmt("test_pool: %d jobs; build %.0f s, pool %.0f s (%d at a time), serial %.0f s (%d alone)",
-  len($all), $build_s, $pool_s, $jobs, $alone_s, len($alone)))
+print(fmt("test_pool: %d binaries; build+record %.0f s, pool %.0f s (%d at a time), serial %.0f s (%d alone), doc-tests %.0f s",
+  len($all), $build_s, $pool_s, $jobs, $alone_s, len($alone), $doc_s))
 for $t in slice(reverse(sort_by($timing, fn($t) = $t.s)), 0, 10)
   print(fmt("  %7.1f s  %s", $t.s, $t.key))
 end
-if len($failed) > 0 then
+$cleanup = run_argv(["rm", "-rf", $rec_dir])
+if not $cleanup.ok then print("::warning::could not remove " .. $rec_dir) end
+if len($failed) > 0 or len($unmatched) > 0 then
   for $f in $failed
     print("::error::test binary failed: " .. $f)
   end
