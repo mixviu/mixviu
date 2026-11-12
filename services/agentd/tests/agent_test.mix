@@ -1,0 +1,212 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- agent_test: agentd's pure library, offline: conf and session-argument
+-- validation, the workspace-root check (symlink escape included), session
+-- ids, ACP frames, message classification and permission policy.
+-- Run from the checkout root: mix services/agentd/tests/agent_test.mix
+-- Prints PASS/FAIL per check; exits 1 on any failure.
+
+$a = require("../scripts/lib/agent.mix")
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+check("local authenticated operation publication accepted", $a.local_operation_publication({broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("empty peer local publication accepted", $a.local_operation_publication({broker_peer: "", broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("same-named remote service rejected", not $a.local_operation_publication({broker_peer: "remote", broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("remote directed command rejected", not $a.local_operation_publication({broker_peer: "remote", broker_service: "ops", command: "ops.op.done"}, "ops"))
+check("direct command fallback is not publication", not $a.local_operation_publication({broker_service: "ops", command: "ops.op.done"}, "ops"))
+check("different topic rejected", not $a.local_operation_publication({broker_service: "ops", topic: "other.op.done"}, "ops"))
+check("different owner rejected", not $a.local_operation_publication({broker_service: "other", topic: "ops.op.done"}, "ops"))
+check("missing headers rejected", not $a.local_operation_publication(nil, "ops"))
+
+fn refuses($name, $code, $f)
+  try
+    $f()
+    check($name .. " (expected " .. $code .. ", nothing raised)", false)
+  catch $msg, $err
+    check($name, $err.code == $code)
+    if $err.code != $code then print("     got " .. to_string($err.code) .. ": " .. $msg) end
+  end
+end
+
+-- A private tree: root/ws is inside, outside/ is not, root/escape links out.
+$tmp = "/tmp/agent-test-" .. to_string(pid())
+mkdir($tmp .. "/root/ws/sub", {parents: true})
+mkdir($tmp .. "/outside", {parents: true})
+run_argv_must(["ln", "-s", $tmp .. "/outside", $tmp .. "/root/escape"])
+
+$conf = $a.check_conf({agents: {fake: {argv: ["mix", "fake.mix"], roots: [$tmp .. "/root"]}}})
+
+-- Conf.
+check("conf defaults: ask, 300 s, max_live 4",
+  $conf.agents.fake.policy == "ask" and $conf.agents.fake.permission_timeout_s == 300 and $conf.max_live == 4)
+refuses("conf without agents", "USAGE", fn() = $a.check_conf({}))
+refuses("agent without argv", "USAGE", fn() = $a.check_conf({agents: {x: {roots: ["/tmp"]}}}))
+refuses("agent without roots", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"]}}}))
+refuses("relative root", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["tmp"]}}}))
+refuses("allow_always policy", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], policy: "allow_always"}}}))
+refuses("bad agent name", "USAGE", fn() = $a.check_conf({agents: {"Bad Name": {argv: ["a"], roots: ["/tmp"]}}}))
+
+$configured = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], mode: "plan", close_on_done: true}}})
+check("instance mode and close_on_done are preserved", $configured.agents.x.mode == "plan" and $configured.agents.x.close_on_done == true)
+check("instance settings default to no mode and no auto-close", $conf.agents.fake.mode == nil and $conf.agents.fake.close_on_done == false)
+refuses("instance mode must be string", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], mode: 1}}}))
+refuses("instance close_on_done must be bool", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], close_on_done: "true"}}}))
+
+-- Roots.
+check("root itself is inside", $a.under_roots($tmp .. "/root", [$tmp .. "/root"]))
+check("subdirectory is inside", $a.under_roots($tmp .. "/root/ws/sub", [$tmp .. "/root"]))
+check("sibling is outside", not $a.under_roots($tmp .. "/outside", [$tmp .. "/root"]))
+check("symlink out of the root is outside", not $a.under_roots($tmp .. "/root/escape", [$tmp .. "/root"]))
+check("dot-dot out of the root is outside", not $a.under_roots($tmp .. "/root/ws/../../outside", [$tmp .. "/root"]))
+
+-- Files (fs/*): the session's directories are root/ws.
+$dirs = [$tmp .. "/root/ws"]
+write_file($tmp .. "/root/ws/a.txt", "l1\nl2\nl3")
+write_file($tmp .. "/outside/secret", "s")
+symlink($tmp .. "/outside/secret", $tmp .. "/root/ws/link")
+symlink($tmp .. "/outside/none", $tmp .. "/root/ws/dangling")
+check("read target inside", $a.fs_read_target($tmp .. "/root/ws/a.txt", $dirs) == realpath($tmp .. "/root/ws/a.txt"))
+refuses("read of a missing file", "NOT_FOUND", fn() = $a.fs_read_target($tmp .. "/root/ws/none", $dirs))
+refuses("read outside", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/outside/secret", $dirs))
+refuses("a missing file outside says outside, not missing", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/outside/nothing", $dirs))
+refuses("a missing directory outside says outside", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/outside/no/x", $dirs))
+refuses("read through a symlink out", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/root/ws/link", $dirs))
+refuses("read of a relative path", "USAGE", fn() = $a.fs_read_target("a.txt", $dirs))
+refuses("read of a directory", "USAGE", fn() = $a.fs_read_target($tmp .. "/root/ws/sub", $dirs))
+check("write target for a new file", $a.fs_write_target($tmp .. "/root/ws/sub/new.txt", $dirs) == realpath($tmp .. "/root/ws/sub") .. "/new.txt")
+check("write target for an existing file", $a.fs_write_target($tmp .. "/root/ws/a.txt", $dirs) == realpath($tmp .. "/root/ws/a.txt"))
+refuses("write through a symlink out", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/link", $dirs))
+refuses("write through a dangling symlink", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/dangling", $dirs))
+refuses("write with dot-dot out", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/../../outside/x", $dirs))
+refuses("write into a missing directory", "NOT_FOUND", fn() = $a.fs_write_target($tmp .. "/root/ws/no/x", $dirs))
+refuses("write two missing levels down is still not found", "NOT_FOUND", fn() = $a.fs_write_target($tmp .. "/root/ws/no/deeper/x", $dirs))
+refuses("read two missing levels down is still not found", "NOT_FOUND", fn() = $a.fs_read_target($tmp .. "/root/ws/no/deeper/x", $dirs))
+refuses("missing levels via dot-dot out stay outside", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/../../outside/no/x", $dirs))
+refuses("write to a directory", "USAGE", fn() = $a.fs_write_target($tmp .. "/root/ws/sub", $dirs))
+check("slice_lines: all", $a.slice_lines("l1\nl2\nl3", nil, nil) == "l1\nl2\nl3")
+check("slice_lines: line 2, limit 1", $a.slice_lines("l1\nl2\nl3", 2, 1) == "l2")
+check("slice_lines: from line 2", $a.slice_lines("l1\nl2\nl3", 2, nil) == "l2\nl3")
+check("slice_lines: past the end", $a.slice_lines("l1", 5, nil) == "")
+refuses("slice_lines: line 0", "USAGE", fn() = $a.slice_lines("x", 0, nil))
+
+-- Terminals.
+$tc = $a.check_terminal({command: "echo", args: ["hi"], env: [{name: "X", value: "1"}], outputByteLimit: 99999999}, $dirs)
+check("terminal: argv, default cwd, env map, limit capped at 8 MiB",
+  deep_eq($tc.argv, ["echo", "hi"]) and $tc.cwd == realpath($tmp .. "/root/ws") and $tc.env.X == "1" and $tc.limit == 8388608)
+refuses("terminal without a command", "USAGE", fn() = $a.check_terminal({}, $dirs))
+refuses("terminal cwd outside", "OUTSIDE_ROOTS", fn() = $a.check_terminal({command: "true", cwd: $tmp .. "/outside"}, $dirs))
+refuses("terminal env with a bad name", "USAGE", fn() = $a.check_terminal({command: "true", env: [{name: "A=B", value: "x"}]}, $dirs))
+refuses("terminal args not strings", "USAGE", fn() = $a.check_terminal({command: "true", args: [1]}, $dirs))
+refuses("terminal cwd that is a file", "USAGE", fn() = $a.check_terminal({command: "true", cwd: $tmp .. "/root/ws/a.txt"}, $dirs))
+check("query traffic is stripped", $a.strip_queries("a" .. chr(27) .. "[6nb" .. chr(27) .. "]11;?" .. chr(7) .. "c") == "abc")
+$tl = {lines: [], bytes: 0, truncated: false}
+for each $x in ["one", "two", "three"]
+  $tl = $a.tail_add($tl, $x, 8)
+end
+check("tail keeps the newest lines within the byte limit", deep_eq($tl.lines, ["three"]) and $tl.truncated and $a.tail_text($tl) == "three\n")
+$tl = $a.tail_add({lines: [], bytes: 0, truncated: false}, "ok", 100)
+check("tail under the limit is not truncated", not $tl.truncated and $a.tail_text($tl) == "ok\n")
+check("resume_via prefers resume, then load, else nil",
+  $a.resume_via({sessionCapabilities: {resume: {}}, loadSession: true}) == "resume" and
+  $a.resume_via({loadSession: true}) == "load" and
+  $a.resume_via({loadSession: true, sessionCapabilities: {resume: false}}) == "load" and $a.resume_via({loadSession: false}) == nil and $a.resume_via(nil) == nil)
+$rf = json_parse(trim($a.reopen_frame(9, "load", "acp-1", "/w", ["/w2"], $a.mcp_entry("/bin/mcp", "abcd1234ef", {}))))
+check("reopen frame: method, sessionId, mcp entry, dirs",
+  $rf.method == "session/load" and $rf.params.sessionId == "acp-1" and $rf.params.mcpServers[0].env[0].value == "abcd1234ef" and
+  deep_eq($rf.params.additionalDirectories, ["/w2"]))
+check("replayed kinds drop history, keep current state",
+  $a.is_replayed_kind("agent_message_chunk") and $a.is_replayed_kind("tool_call") and
+  not $a.is_replayed_kind("current_mode_update") and not $a.is_replayed_kind("available_commands_update"))
+check("signal names", $a.signal_name(15) == "SIGTERM" and $a.signal_name(11) == "SIGSEGV" and $a.signal_name(64) == "SIG64" and $a.signal_name(nil) == nil)
+check("a root-name prefix is not inside", not $a.under_roots($tmp .. "/rootx", [$tmp .. "/root"]))
+check("missing path is outside", not $a.under_roots($tmp .. "/root/nope", [$tmp .. "/root"]))
+check("relative path is outside", not $a.under_roots("root/ws", [$tmp .. "/root"]))
+
+-- session.new arguments.
+$ok = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: [$tmp .. "/root/ws/sub"]})
+check("valid new resolves cwd and dirs", $ok.cwd == realpath($tmp .. "/root/ws") and len($ok.additional_dirs) == 1)
+refuses("unknown agent", "UNKNOWN_AGENT", fn() = $a.check_new($conf, {agent: "nope", cwd: $tmp .. "/root/ws"}))
+refuses("cwd outside roots", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/outside"}))
+refuses("cwd through an escaping symlink", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/escape"}))
+refuses("additional dir outside roots", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: [$tmp .. "/outside"]}))
+refuses("missing cwd", "USAGE", fn() = $a.check_new($conf, {agent: "fake"}))
+refuses("17 additional dirs", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: map(range(0, 17), fn($i) = $tmp .. "/root/ws")}))
+refuses("additional dirs that are not a list", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: "x"}))
+refuses("an over-long additional dir", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: [repeat("a", 4097)]}))
+
+-- Session ids.
+$taken = {}
+$distinct = true
+for $i = 1 to 50
+  $id = $a.mint_session_id($taken)
+  if not $a.valid_session_id($id) or $taken[$id] != nil then $distinct = false end
+  $taken[$id] = true
+end
+check("50 minted ids are valid and distinct", $distinct)
+check("session ids refuse dashes and capitals", not $a.valid_session_id("ab-cd") and not $a.valid_session_id("ABCD"))
+check("session ids fit mixos-mcp's 4-12", not $a.valid_session_id("abc") and not $a.valid_session_id("abcdefghijklm"))
+
+-- Frames.
+$init = json_parse(trim($a.initialize_frame(1)))
+check("initialize is protocol 1 with fs and terminal on",
+  $init.method == "initialize" and $init.params.protocolVersion == 1 and $init.params.clientCapabilities.terminal == true and
+  $init.params.clientCapabilities.fs.readTextFile == true and $init.params.clientCapabilities.fs.writeTextFile == true)
+$new = json_parse(trim($a.session_new_frame(2, "/w", [], $a.mcp_entry("/srv/fixture/bin/mix-mcp", "abcd1234ef", {MIX_NODED_URL: "ws://192.0.2.1:9000", PATH: "/x", MIX_RUN: ""}))))
+check("session/new carries the mixos-mcp entry and session env",
+  $new.params.mcpServers[0].env[0].name == "MIX_AGENTD_SESSION" and $new.params.mcpServers[0].env[0].value == "abcd1234ef")
+check("the mcp entry passes set Bus discovery vars only (not PATH, not empty)",
+  len($new.params.mcpServers[0].env) == 2 and $new.params.mcpServers[0].env[1].name == "MIX_NODED_URL")
+check("session/new omits empty additionalDirectories", $new.params.additionalDirectories == nil)
+check("frames end in exactly one newline", ends_with($a.cancel_frame("s"), "}\n"))
+check("cancel is a notification (no id)", json_parse(trim($a.cancel_frame("s"))).id == nil)
+check("text content becomes one text block", $a.prompt_blocks("hi")[0].type == "text")
+refuses("empty content", "USAGE", fn() = $a.prompt_blocks(""))
+refuses("content over 1 MiB", "USAGE", fn() = $a.prompt_blocks(repeat("x", 1048577)))
+refuses("block without a type", "USAGE", fn() = $a.prompt_blocks([{text: "x"}]))
+check("a title is the first text block's first line, trimmed",
+  $a.prompt_title([{type: "image", data: "x"}, {type: "text", text: "  \n Fix the corner \nthen test"}]) == "Fix the corner")
+check("a title is at most 120 characters", len($a.prompt_title($a.prompt_blocks(repeat("é", 300)))) == 120)
+check("a mixed UTF-8 title cuts by character", $a.prompt_title($a.prompt_blocks("abc" .. repeat("é🙂", 60))) == "abc" .. repeat("é🙂", 58) .. "é")
+check("a prompt with no text has no title", $a.prompt_title([{type: "image", data: "x"}, {type: "text", text: " \n "}]) == nil)
+
+-- Classification.
+check("reply", $a.classify({jsonrpc: "2.0", id: 3, result: {}}).kind == "reply")
+check("update", $a.classify({jsonrpc: "2.0", method: "session/update", params: {sessionId: "s", update: {sessionUpdate: "plan"}}}).kind == "update")
+check("agent request", $a.classify({jsonrpc: "2.0", id: 9, method: "session/request_permission", params: {}}).kind == "request")
+check("not JSON-RPC 2.0 is invalid", $a.classify({id: 1, result: {}}).kind == "invalid")
+check("update event keeps the discriminator", $a.update_event("s1", 7, {sessionUpdate: "tool_call", toolCallId: "t"}).kind == "tool_call")
+check("known stop reason", $a.stop_reason({stopReason: "cancelled"}) == "cancelled")
+check("unknown stop reason", $a.stop_reason({stopReason: "weird"}) == "unknown")
+
+-- Permission policy.
+$req = {options: [
+  {optionId: "a1", name: "Allow", kind: "allow_once"},
+  {optionId: "a2", name: "Always", kind: "allow_always"},
+  {optionId: "r1", name: "Reject", kind: "reject_once"}]}
+check("ask policy never answers by itself", $a.auto_answer("ask", $req) == nil)
+check("allow_once policy picks allow_once", $a.auto_answer("allow_once", $req) == "a1")
+check("allow_once policy never picks allow_always",
+  $a.auto_answer("allow_once", {options: [{optionId: "a2", kind: "allow_always"}]}) == nil)
+check("timeout picks reject_once", $a.timeout_answer($req) == "r1")
+check("timeout falls back to reject_always",
+  $a.timeout_answer({options: [{optionId: "ra", kind: "reject_always"}]}) == "ra")
+check("timeout with no reject option cancels",
+  $a.permission_result($a.timeout_answer({options: [{optionId: "a1", kind: "allow_once"}]})).outcome.outcome == "cancelled")
+check("selected result carries the option id", $a.permission_result("r1").outcome.optionId == "r1")
+$huge = {toolCall: {title: repeat("t", 100000)}, options: map(range(0, 50), fn($i) = {optionId: repeat("o", 1000), name: repeat("n", 1000), kind: "allow_once"})}
+$topic = $a.permission_topic("s1", "901", $huge)
+check("permission topic bounds title, options and their text",
+  len($topic.title) == 200 and len($topic.options) == 8 and len($topic.options[0].optionId) == 64 and len(json_encode($topic)) < 4096)
+check("permission topic tolerates a missing toolCall", $a.permission_topic("s1", "1", {options: []}).title == nil)
+$buttons = $a.permission_buttons($req.options)
+check("buttons drop allow_always", len($buttons) == 2 and $buttons[0].option == "a1" and $buttons[1].option == "r1")
+
+run_argv_must(["rm", "-rf", $tmp])
+$failed = len(filter($results, fn($r) = not $r.ok))
+print(to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")
+if $failed > 0 then exit(1) end

@@ -1,0 +1,31 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- A bundled manifest must render after its repository sources are gone.
+$layout = require("../share/layout/files.mix")
+$tmp = env("TMPDIR", "/tmp") .. "/mix-service-bundle-" .. uuid()
+$repo = dirname(dirname(script_path()))
+$roots = {prefix: "/srv/fixture", etc: "/srv/fixture/etc", var: "/srv/fixture/var",
+  run: "/srv/fixture/run", cache: "/srv/fixture/cache", share: "/srv/fixture/share"}
+try
+  mkdir($tmp .. "/source", {parents: true})
+  $entries = []
+  for $svc in ["agentd", "peersd", "releasesd", "daylight"]
+    for $file in sort(glob($repo .. "/services/" .. $svc .. "/units/*"))
+      copy($file, $tmp .. "/source/" .. basename($file))
+      push($entries, {source: basename($file), kind: "unit",
+        target: "@{prefix}/share/" .. $svc .. "/units/" .. basename($file)})
+    end
+  end
+  write_file($tmp .. "/source/templates.mx", data_encode({schema: 1, files: $entries}, true))
+  $layout.bundle($tmp .. "/source", $tmp .. "/installed")
+  remove_dir($tmp .. "/source")
+  $rendered = $layout.plan($tmp .. "/installed", $roots)
+  if len($rendered) != 5 then raise("BUNDLE", "expected five installed units") end
+  for $unit in $rendered
+    if not contains($unit.text, "ExecStart=/srv/fixture/bin/mix --serve /srv/fixture/lib/") or contains($unit.text, "@{") then
+      raise("BUNDLE", "unresolved installed unit " .. $unit.path)
+    end
+  end
+  print("PASS five bundled service units render without repository sources")
+finally
+  remove_dir($tmp)
+end

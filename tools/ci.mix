@@ -4,7 +4,7 @@
 -- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
 --
 --   mix tools/ci.mix STAGE [--mix PATH]
---   STAGE: fmt | env | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
+--   STAGE: fmt | env | mix-services | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
 --   stage-install [--dir DIR] (not in all): copy the built debug engine and
 --   service binaries, by name, into DIR/bin (default target/stage-install,
@@ -23,7 +23,7 @@
 
 $o = getopt(args(), {mix: {arg: true}, dir: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|foreign|test|stage-smoke|mix-lint|mix-lint-baseline|release-mix|stage-install|all [--mix PATH] [--dir DIR]")
+  eprint("usage: mix tools/ci.mix fmt|env|mix-services|mix-hygiene|clippy|viud|foreign|test|stage-smoke|mix-lint|mix-lint-baseline|release-mix|stage-install|all [--mix PATH] [--dir DIR]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -102,6 +102,7 @@ fn stage_test($mix)
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
   run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
+  stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
   for $case in sort(glob("apps/term/*-test.mix"))
     run_step([$mix, $case])
@@ -115,6 +116,22 @@ fn stage_test($mix)
   -- on a private broker (noded is built by the workspace tests above).
   run_step([$mix, "services/daily/tests/manifest_test.mix"], $test_env)
   run_step([$mix, "services/daily/tests/serve_test.mix"], merge($test_env, {MIX_TEST_NODED_EXE: realpath("target/debug/noded") ?? "target/debug/noded"}))
+end
+
+fn stage_mix_services($mix)
+  ensure_mix($mix)
+  run_step(["cargo", "build", "--locked", "-p", "mixd", "-p", "noded", "-p", "settingsd"])
+  -- noded and settingsd are where that build put them: the workspace target
+  -- directory's dev-profile output, not wherever --mix happens to live.
+  $meta = json_parse(run_argv_must(["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"]))
+  $bin = $meta.target_directory .. "/debug"
+  for $exe in ["noded", "settingsd"]
+    if not is_file($bin .. "/" .. $exe) then
+      print("::error::mix-services: " .. $exe .. " was not built in " .. $bin)
+      exit(1)
+    end
+  end
+  run_step([$mix, "tools/mix_services_test.mix", "--mix", realpath($mix), "--bin", $bin])
 end
 
 -- Both normal binaries and opt-in fault-injection binaries are exercised.
@@ -502,6 +519,8 @@ elif $stage == "clippy" then
   stage_clippy()
 elif $stage == "test" then
   stage_test($mix)
+elif $stage == "mix-services" then
+  stage_mix_services($mix)
 elif $stage == "mix-hygiene" then
   stage_mix_hygiene()
 elif $stage == "release-mix" then
