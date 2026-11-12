@@ -18,9 +18,10 @@
 --    (through a runner rustdoc would run every merged doc-test in one
 --    process; see test_record.mix).
 -- 2. Replay. Every recorded invocation runs from a pool of N (default 8)
---    with exactly the recorded argv, cwd and environment, started through
---    `env -i NAME=VALUE...` (cargo's names include hyphens, which Mix's own
---    env option refuses).
+--    with exactly the recorded argv, cwd and environment. Values go in the
+--    environment block (Mix's env option with clear_env), never in argv;
+--    only cargo's hyphenated CARGO_BIN_EXE_<bin> paths, whose names Mix
+--    refuses, are set through `env --`.
 -- 3. Binaries in tools/ci/serial-tests.conf.mix run alone afterwards; an
 --    entry for a selected package that matches none of its binaries is an
 --    error.
@@ -84,6 +85,9 @@ $meta_target = json_parse(run_argv_must(["cargo", "metadata", "--format-version"
 mkdir($meta_target)
 $target_dir = realpath($meta_target)
 if re_match($mix_exe .. $recorder .. $root .. $target_dir, "\\s") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
+-- Brackets break the Running-line match; `=` makes `env --` read a program
+-- path under the target directory as an assignment.
+if re_match($root .. $target_dir, "[()=]") then refuse("a bracket or '=' in the checkout or target path is not supported") end
 $host = re_find(run_argv_must(["rustc", "-vV"]), "(?m)^host: (\\S+)$")[0].groups[0]
 $runner_var = "CARGO_TARGET_" .. upper(replace(replace($host, "-", "_"), ".", "_")) .. "_RUNNER"
 if env($runner_var) != "" then refuse($runner_var .. " is already set; the pool cannot record through it") end
@@ -98,8 +102,8 @@ write_file($rec, "")
 chmod($rec, 0o600)
 
 fn run_spec($jobs)
-  return map($jobs, fn($j) = {argv: $j.argv, cwd: $j.cwd, timeout: $j.timeout,
-    max_output: $j.max_output, stdout: $j.stdout, stderr: $j.stderr})
+  return map($jobs, fn($j) = {argv: $j.argv, env: $j.env, clear_env: true, cwd: $j.cwd,
+    timeout: $j.timeout, max_output: $j.max_output, stdout: $j.stdout, stderr: $j.stderr})
 end
 fn strip_escapes($l)
   return re_replace($l, "\\x1b\\[[0-9;]*m", "")
@@ -125,8 +129,11 @@ try
   -- The build output, without the record pass's Running lines: each binary's
   -- Running line is printed once, with its result, below.
   print(join(filter($err_lines, fn($l) = not re_match(strip_escapes($l), $run_line)), "\n"))
-  if len($runs) == 0 then
-    -- Nothing recorded: the build failed, or the selection has no test binaries.
+  -- Cargo printed Doc-tests lines when it would run doc-tests here.
+  $has_doc = len(filter($err_lines, fn($l) = re_match(strip_escapes($l), "^\\s+Doc-tests "))) > 0
+  if len($runs) == 0 and not ($b.ok and $has_doc) then
+    -- Nothing recorded: the build failed, or the selection has no tests at
+    -- all. (Doc-tests alone, after a good build, run below as under cargo.)
     print($b.stdout)
     if not $b.ok then
       print("::error::test build failed (rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. "): cargo test " .. join($cargo_args, " "))
@@ -142,8 +149,6 @@ try
   -- With binaries recorded the build succeeded and the recorder always exits
   -- 0, so a record pass that is not ok means a doc-test failed to build.
   $record_failed = not $b.ok
-  -- Cargo printed Doc-tests lines when it would run doc-tests here.
-  $has_doc = len(filter($err_lines, fn($l) = re_match(strip_escapes($l), "^\\s+Doc-tests "))) > 0
 
   $pool = []
   $alone = []
@@ -161,12 +166,26 @@ try
     $selected_pkgs[$pkg] = true
     $target = re_replace(basename($r.argv[0]), "-[0-9a-f]{16}$", "")
     $key = $pkg .. "/" .. $target
-    -- `env -i` clears the inherited environment and sets cargo's exactly,
-    -- including names with hyphens (CARGO_BIN_EXE_<bin>), which Mix's env
-    -- option refuses.
-    $pairs = map(sort(keys($env)), fn($k) = $k .. "=" .. $env[$k])
-    -- `--` ends env's options: a recorded name may begin with `-`.
-    $job = {argv: concat(concat(["env", "-i", "--"], $pairs), $r.argv), cwd: $r.cwd, timeout: 3600, max_output: 64000000,
+    -- Values travel in the environment block, never in argv (argv is world
+    -- readable in /proc/PID/cmdline and recorded values can be tokens).
+    -- Mix's env option with clear_env sets cargo's environment exactly; it
+    -- refuses names outside [A-Za-z_][A-Za-z0-9_]*, and cargo makes such
+    -- names only as CARGO_BIN_EXE_<bin> (a path, not a secret), which go on
+    -- top through `env --` (`--` ends env's options).
+    $plain = {}
+    $odd = []
+    for $k in sort(keys($env))
+      if re_match($k, "^[A-Za-z_][A-Za-z0-9_]*$") then
+        $plain[$k] = $env[$k]
+      elif starts_with($k, "CARGO_BIN_EXE_") then
+        push($odd, $k .. "=" .. $env[$k])
+      else
+        print("::error::test_pool: " .. $key .. " has environment name '" .. $k .. "', which can only be passed in argv; refusing to expose its value")
+        exit(1)
+      end
+    end
+    $argv = if len($odd) == 0 then $r.argv else concat(concat(["env", "--"], $odd), $r.argv) end
+    $job = {argv: $argv, env: $plain, cwd: $r.cwd, timeout: 3600, max_output: 64000000,
             stdout: "capture", stderr: "stdout", label: $labels[$i], key: $key}
     if len(filter($serial, fn($s) = $s.package == $pkg and $s.target == $target)) > 0 then
       $matched[$key] = true
