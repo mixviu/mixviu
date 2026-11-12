@@ -5,9 +5,9 @@
 //! agent seat is offered on the primary seat, and an unfocused client cannot
 //! take the clipboard.
 
+use std::time::{Duration, Instant};
 use testkit::Harness;
 use testkit::clipboard::ClipboardRead;
-use std::time::{Duration, Instant};
 
 const TEXT: &str = "text/plain;charset=utf-8";
 const PRIMARY: usize = 0;
@@ -93,7 +93,10 @@ fn a_copy_survives_its_source_going_away() {
         .selection_mimes(PRIMARY)
         .is_some_and(|mimes| mimes.iter().any(|mime| mime == TEXT))
     {
-        assert!(Instant::now() < deadline, "the persisted copy was not offered");
+        assert!(
+            Instant::now() < deadline,
+            "the persisted copy was not offered"
+        );
         h.pump();
         std::thread::sleep(Duration::from_millis(2));
     }

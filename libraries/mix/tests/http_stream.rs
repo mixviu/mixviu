@@ -377,9 +377,9 @@ async fn cancellation_drops_a_blocked_response() {
             }
         }
         assert!(
-        tokio::time::timeout(Duration::from_millis(100), &mut response)
-            .await
-            .is_err()
+            tokio::time::timeout(Duration::from_millis(100), &mut response)
+                .await
+                .is_err()
         );
         // Drop the still-blocked evaluator before asking the server to verify EOF.
     }
