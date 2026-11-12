@@ -91,10 +91,7 @@ try
   check("daily-cli reaches the citizen over the Bus", $c.exit_code == 0 and json_parse($c.stdout).stages["manifest.build"].state == "ok")
   print("serve_test: " .. to_string($checks) .. " checks passed")
 finally
-  if $pid != nil then
-    kill($pid)
-    sleep(0.2)
-  end
+  if $pid != nil and kill($pid) then sleep(0.2) end
   if $bus != nil then $pb.stop($bus) end
   if $checks < 7 and is_file($tmp .. "/daily.log") then print(read_file($tmp .. "/daily.log")) end
   remove_dir($tmp)
