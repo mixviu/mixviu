@@ -191,7 +191,10 @@ fn cold_seek_is_time_sliced() {
             budget.max_lines, 0,
             "a behind frame used its whole budget, no more"
         );
-        assert!(frames < max_frames, "seek did not finish in {max_frames} frames");
+        assert!(
+            frames < max_frames,
+            "seek did not finish in {max_frames} frames"
+        );
     }
     assert!(!h.behind());
     assert!(
