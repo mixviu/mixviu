@@ -58,6 +58,11 @@ and `log.jsonl`. A rerun for the same window writes byte-identical
 `manifest.json` and leaves an unchanged file untouched. The schema is
 `media/schemas/manifest.v1.json`; it is checked before the file is written.
 
+PRs are matched to first-parent commits by their merge commit (gh), or by
+a squash subject's `(#N)` when gh is off. Squash merges (this repository's
+rule) and merge commits are handled; a rebase merge would show as its last
+commit under the PR and the earlier ones as direct commits.
+
 PR titles and bodies, commit subjects, labels and author names are
 contributor text. The manifest strips their markup, bounds their length and
 lists them in `untrusted_fields`; prompts in later stages must treat them as

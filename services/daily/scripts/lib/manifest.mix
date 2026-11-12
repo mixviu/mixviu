@@ -96,21 +96,34 @@ end
 -- human co-author is not an agent). nil when nothing is declared.
 fn agent_of($commit, $body)
   if type($body) == "string" then
-    $m = re_find($body, "(?mi)^[ \t]*[-*]?[ \t]*agent[ \t]*/[ \t]*model:[ \t]*([^\n]*\\S)")
+    $m = re_find($u.visible($body), "(?mi)^[ \t]*[-*]?[ \t]*agent[ \t]*/[ \t]*model:[ \t]*([^\n]*\\S)")
     if len($m) > 0 then return $u.untrusted_line($m[0].groups[0], 80) end
   end
   for $co in $commit.coauthors
     $parts = re_find($co, "^(.*?)\\s*<([^>]*)>\\s*$")
     if len($parts) != 1 then continue end
     $name = trim($parts[0].groups[0])
-    if $name != "" and not ends_with($name, "[bot]") and contains(lower($parts[0].groups[1]), "noreply") then return $u.untrusted_line($name, 80) end
+    $mail = lower($parts[0].groups[1])
+    -- users.noreply.github.com is a human co-author added in the web UI.
+    if $name != "" and not ends_with($name, "[bot]") and contains($mail, "noreply") and not ends_with($mail, "users.noreply.github.com") then return $u.untrusted_line($name, 80) end
   end
   return nil
 end
 
+-- The fields a change takes from its PR record (gh, or the subject fallback).
+fn pr_fields($c, $pr, $login)
+  return {
+    title: $u.untrusted_line($pr.title, $c.manifest.title_chars),
+    url: $pr.url, author: $login,
+    labels: sort(map(filter($pr.labels ?? [], fn($l) = type($l) == "map" and type($l.name) == "string"), fn($l) = $u.untrusted_line($l.name, 60))),
+    task: task_of($pr.body),
+    summary_hint: $u.untrusted_text($pr.body, $c.manifest.hint_chars)
+  }
+end
+
 fn task_of($body)
   if type($body) != "string" then return nil end
-  $m = re_find($body, "(?m)^\\s*Task:\\s*(T-[0-9]{4,})\\b")
+  $m = re_find($u.visible($body), "(?m)^\\s*Task:\\s*(T-[0-9]{4,})\\b")
   return if len($m) == 0 then nil else $m[0].groups[0] end
 end
 
@@ -204,7 +217,8 @@ fn build($env, $params, $today)
     $used[$area.id] = {title: $area.title, audience: $area.audience}
     $pr = $by_oid[$cm.sha]
     $source = "gh"
-    if $pr == nil then
+    -- The subject fallback is the offline path only: with gh on, gh decides.
+    if $pr == nil and $prs == nil then
       $num = re_find($cm.subject, "\\(#([0-9]+)\\)\\s*$")
       if len($num) == 1 then
         $source = "subject"
@@ -235,15 +249,10 @@ fn build($env, $params, $today)
     push($order, $id)
     $changes[$id] = {
       id: $id, kind: "pr", number: $pr.number,
-      title: $u.untrusted_line($pr.title, $c.manifest.title_chars),
-      url: $pr.url, author: $login, agent: agent_of($cm, $pr.body),
-      area: $area.id, audience: $area.audience,
-      labels: sort(map(filter($pr.labels ?? [], fn($l) = type($l) == "map" and type($l.name) == "string"), fn($l) = $u.untrusted_line($l.name, 60))),
-      task: task_of($pr.body), commits: $brought, files_raw: $files,
-      highlight_hunks: highlights($c, $g, $base, $cm.sha),
-      summary_hint: $u.untrusted_text($pr.body, $c.manifest.hint_chars),
-      source: $source
+      agent: agent_of($cm, $pr.body), area: $area.id, audience: $area.audience,
+      commits: $brought, files_raw: $files, highlight_hunks: highlights($c, $g, $base, $cm.sha)
     }
+    $changes[$id] = merge($changes[$id], merge(pr_fields($c, $pr, $login), {source: $source}))
   end
   $list = []
   for $id in $order
@@ -270,7 +279,7 @@ fn build($env, $params, $today)
     if type($i.closedAt) != "string" then continue end
     $at = $u.iso_epoch($i.closedAt)
     if $at <= $fs.time or $at > $ts.time then continue end
-    $m = re_find(($i.title ?? "") .. "\n" .. ($i.body ?? ""), "\\bT-[0-9]{4,}\\b")
+    $m = re_find($u.visible(($i.title ?? "") .. "\n" .. ($i.body ?? "")),"\\bT-[0-9]{4,}\\b")
     if len($m) > 0 then push($tasks, $m[0].match) end
   end
   $wt = stat_of($window_files)

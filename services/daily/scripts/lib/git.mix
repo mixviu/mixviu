@@ -7,13 +7,14 @@ fn ctx($config)
 end
 
 fn raw($g, $args, $max = 33554432)
-  return run_argv(concat(["git", "-C", $g.path], $args), {env: $g.env, timeout: $g.timeout, max_output: $max})
+  -- quotePath off: diff headers carry non-ASCII paths as they are.
+  return run_argv(concat(["git", "-C", $g.path, "-c", "core.quotePath=false"], $args), {env: $g.env, timeout: $g.timeout, max_output: $max})
 end
 
 fn must($g, $args, $max = 33554432)
   $r = raw($g, $args, $max)
   if not $r.ok or $r.stdout_truncated then
-    raise("GIT", "git " .. join($args, " ") .. " failed: " .. trim($r.stderr ?? ""))
+    raise("GIT", "git " .. join($args, " ") .. " failed: " .. slice(trim($r.stderr ?? ""), 0, 500))
   end
   return $r.stdout
 end
@@ -36,7 +37,8 @@ end
 -- {sha, time (epoch), iso} for one commit.
 fn stamp($g, $sha)
   $f = split(trim(must($g, ["show", "-s", "--format=%H%x1f%ct%x1f%cI", $sha])), "\x1f")
-  return {sha: $f[0], time: to_number($f[1]), iso: $f[2]}
+  -- Older git prints a zero offset as +00:00, newer as Z: keep one spelling.
+  return {sha: $f[0], time: to_number($f[1]), iso: re_replace($f[2], "[+-]00:00$", "Z")}
 end
 
 -- First-parent commits in (from, to], oldest first.
@@ -105,7 +107,8 @@ fn hunks($g, $a, $b)
       $cur = nil
       $file = nil
     elif starts_with($l, "+++ ") then
-      $file = if $l == "+++ /dev/null" then nil else slice($l, 6) end
+      -- A path git still quotes (tab, newline, quote) is skipped, not misfiled.
+      $file = if $l == "+++ /dev/null" or starts_with($l, "+++ \"") then nil else slice($l, 6) end
     elif starts_with($l, "@@ ") then
       if $cur != nil then push($out, $cur) end
       $cur = nil

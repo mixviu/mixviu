@@ -20,7 +20,7 @@ $ACTIONS = [
     params: {date: $P_DATE, dry_run: $P_DRY, sha: $P_SHA}},
   {id: "resume", label: "Resume from the first open stage", read_only: false, enabled: true,
     description: "Continue a day's run from its first stage that is not ok",
-    params: {date: $P_DATE, dry_run: $P_DRY}},
+    params: {date: $P_DATE, dry_run: $P_DRY, sha: $P_SHA}},
   {id: "manifest.build", label: "Build the manifest", read_only: false, enabled: true,
     description: "Stage 1: cut tag and manifest.json for one date; reruns are byte-identical",
     params: {date: $P_DATE, dry_run: $P_DRY, sha: $P_SHA}},
@@ -82,6 +82,12 @@ fn stage_manifest($e, $date, $params)
   return {manifest: $m, sha256: $sha, cut: $built.cut}
 end
 
+-- How to continue after a failed stage. A missing cut needs the commit.
+fn resume_hint($code, $date)
+  $p = "date: \"" .. $date .. "\"" .. (if $code == "CUT_MISSING" then ", sha: \"<commit to cut>\"" else "" end)
+  return "daily.execute {id: \"resume\", params: {" .. $p .. "}}"
+end
+
 fn run_stages($e, $date, $params, $from_stage)
   $c = $e.config
   $d = $runs.ensure($c, $date)
@@ -119,7 +125,7 @@ fn run_stages($e, $date, $params, $from_stage)
         $runs.write_status($c, $date, $s)
         $runs.log_event($c, $date, {stage: $st, event: "failed", code: $err.code ?? "ERROR", message: $msg})
         return {rc: 10, body: {error_code: $err.code ?? "ERROR", message: $msg, stage: $st, date: $date,
-          resume: "daily.execute {id: \"resume\", params: {date: \"" .. $date .. "\"}}"}}
+          resume: resume_hint($err.code ?? "ERROR", $date)}}
       end
     end
     return {rc: 0, body: {date: $date, completed: $done, dry_run: $s.dry_run, run_dir: $d}}

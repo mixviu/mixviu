@@ -7,7 +7,7 @@ fn call($config, $args)
   $gh = $config.gh
   $r = run_argv(concat($gh.argv, $args), {env: $gh.env, timeout: $gh.timeout_s, max_output: 67108864})
   if not $r.ok or $r.stdout_truncated then
-    raise("GH", "gh " .. $args[0] .. " " .. $args[1] .. " failed (rc " .. to_string($r.exit_code ?? -1) .. "): " .. trim($r.stderr ?? ""))
+    raise("GH", "gh " .. $args[0] .. " " .. $args[1] .. " failed (rc " .. to_string($r.exit_code ?? -1) .. "): " .. slice(trim($r.stderr ?? ""), 0, 500))
   end
   $v = json_parse($r.stdout)
   if type($v) != "list" then raise("GH", "gh " .. $args[0] .. " " .. $args[1] .. " did not return a JSON list") end

@@ -103,7 +103,7 @@ end
 fn untrusted_text($s, $n)
   if type($s) != "string" then return "" end
   $t = re_replace($s, "\r", "")
-  $t = re_replace($t, "(?s)<!--.*?-->", "")
+  $t = visible($t)
   $t = re_replace($t, "(?s)```.*?(```|$)", "")
   $t = re_replace($t, "(?s)<[^>]*>", "")
   $t = re_replace($t, "!\\[[^\\]]*\\]\\([^)]*\\)", "")
@@ -124,7 +124,14 @@ end
 
 fn untrusted_line($s, $n)
   if type($s) != "string" then return "" end
-  return clip(collapse(re_replace($s, "[`<>{}\\[\\]]", "")), $n)
+  $t = collapse(re_replace(visible($s), "[`<>{}\\[\\]*]", ""))
+  return clip(trim(re_replace($t, "^#+\\s*", "")), $n)
+end
+
+-- Text a reader of the rendered Markdown sees: HTML comments removed.
+fn visible($s)
+  if type($s) != "string" then return "" end
+  return re_replace($s, "(?s)<!--.*?(-->|$)", "")
 end
 
 fn short($sha)
