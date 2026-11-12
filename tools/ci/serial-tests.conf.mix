@@ -9,11 +9,6 @@
 
 serial_tests: [
   {
-    package: "editor-model",
-    target: "editor_model",
-    reason: "highlight::tests::cold_seek_is_time_sliced asserts a wall-clock frame budget; failed in the parallel lab (frame 450 took 56 ms, 2026-11-12)"
-  },
-  {
     package: "mix",
     target: "native_session_pty",
     reason: "p4 tests assert pgrep -f 'sleep 600' finds nothing on the whole machine (tests/native_session_pty.rs:3317, :3378); PTY timing; red when another job runs the suite (2026-11-12)"

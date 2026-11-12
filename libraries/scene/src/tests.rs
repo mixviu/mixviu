@@ -689,18 +689,14 @@ fn hundred_rows_parse() {
         body.push_str(&format!("{{id: \"{i}\", cells: [\"x\"]}}"));
     }
     body.push_str("], row: \"t\", row_height: 1}\nt: {widget: \"row\", children: []}");
-    let start = std::time::Instant::now();
-    assert!(
-        parse(&format!(
-            "---\nscene: 1\nname: test\ncitizen: c\n---\n```mix\n{body}\n```\n"
-        ))
-        .is_ok()
-    );
-    assert!(
-        start.elapsed().as_millis() < 5,
-        "100-row parse took {:?}",
-        start.elapsed()
-    );
+    // Protect bulk-row parsing and ordering. Debug wall time on a shared
+    // worker is not a parser throughput measurement.
+    let document = doc(&body);
+    let rows = document.nodes["root"].ports["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 100);
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(row, &json!({"id": i.to_string(), "cells": ["x"]}));
+    }
 }
 
 #[test]
