@@ -1,31 +1,62 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Run on CBC. Validate the actual argv lists before any gate work starts.
-fn check($commands)
-  $metadata=json_parse(run_argv_must(["cargo","metadata","--locked","--no-deps","--format-version","1"]))
+-- Validate Cargo's package/target selectors before starting a CBC gate.
+fn prepare_command($argv,$prepare)
+  $out=[];$forwarded=false
+  for $arg in $argv
+    if $arg=="--" then $forwarded=true end
+    if not $prepare or $forwarded or $arg!="--locked" then push($out,$arg) end
+  end
+  return $out
+end
+fn validate_targets($commands,$metadata)
+  if len($commands)==0 then raise("TERM_TARGET","terminal gate requires at least one command") end
   $packages={}
   for $p in $metadata.packages
     if contains($metadata.workspace_members,$p.id) then $packages[$p.name]=$p end
   end
   for $command in $commands
-    $selected=[];$targets=[]
-    for $i=0 to len($command)-2
-      $flag=$command[$i];$value=$command[$i+1]
-      if $flag=="-p" then
-        if not has_key($packages,$value) then raise("TERM_TARGET","missing workspace package: "..$value) end
-        push($selected,$value)
-      elif contains(["--test","--example","--bin"],$flag) then
-        push($targets,{kind:slice($flag,2),name:$value})
+    $selected=[];$targets=[];$i=2
+    while $i<len($command)
+      $flag=$command[$i]
+      if $flag=="--" then break end
+      if contains(["-p","--package","--test","--example","--bin"],$flag) then
+        if $i+1>=len($command) or starts_with($command[$i+1],"-") then raise("TERM_TARGET","missing value for "..$flag) end
+        $value=$command[$i+1];$i=$i+1
+        if contains(["-p","--package"],$flag) then push($selected,$value)
+        else push($targets,{kind:slice($flag,2),name:$value}) end
+      elif starts_with($flag,"--package=") then push($selected,slice($flag,10))
+      elif starts_with($flag,"-p=") then push($selected,slice($flag,3))
+      elif re_match($flag,"^--(test|example|bin)=") then
+        $parts=split($flag,"=");$value=join(slice($parts,1),"=")
+        if $value=="" then raise("TERM_TARGET","missing value for "..$parts[0]) end
+        push($targets,{kind:slice($parts[0],2),name:$value})
+      elif $flag=="--lib" then push($targets,{kind:"lib",name:nil})
       end
+      $i=$i+1
+    end
+    -- Gates deliberately require explicit packages for target selectors.
+    if len($targets)>0 and len($selected)==0 then raise("TERM_TARGET","target selectors require an explicit package in terminal gates") end
+    for $name in $selected
+      if not has_key($packages,$name) then raise("TERM_TARGET","missing workspace package: "..$name) end
     end
     for $target in $targets
-      $found=false
+      $found=[]
       for $name in $selected
         for $t in $packages[$name].targets
-          if $t.name==$target.name and contains($t.kind,$target.kind) then $found=true end
+          $kind=if $target.kind=="lib" then any($t.kind,fn($k)=contains(["lib","rlib","dylib","cdylib","staticlib","proc-macro"],$k)) else contains($t.kind,$target.kind) end
+          if $kind and ($target.name==nil or $t.name==$target.name) then push($found,$name) end
         end
       end
-      if not $found then raise("TERM_TARGET","missing "..$target.kind.." "..$target.name.." in "..join($selected,", ")) end
+      if len($found)==0 then raise("TERM_TARGET","missing "..$target.kind.." "..($target.name ?? "target").." in "..join($selected,", ")) end
+      print("term cargo target: "..$target.kind.." "..($target.name ?? "target").." in "..join($found,", "))
     end
   end
   print("term cargo targets: "..to_string(len($commands)).." commands verified against workspace metadata")
+end
+fn check($commands,$prepare=false)
+  $argv=prepare_command(["cargo","metadata","--locked","--no-deps","--format-version","1"],$prepare)
+  $metadata=json_parse(run_argv_must($argv))
+  validate_targets($commands,$metadata)
+  if type($metadata.target_directory)!="string" or $metadata.target_directory=="" then raise("TERM_TARGET","cargo metadata did not supply target_directory") end
+  return $metadata.target_directory
 end

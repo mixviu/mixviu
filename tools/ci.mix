@@ -95,6 +95,9 @@ fn stage_test($mix)
   -- platform's crates in the cache.
   ensure_mix($mix)
   $abs = realpath($mix)
+  run_step([$mix, "tools/reserved_keys.mix", $abs])
+  run_step([$mix, "tools/reserved-policy-test.mix"])
+  run_step([$mix, "tools/term-targets-test.mix"])
   $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
   run_step(["cargo", "fetch", "--locked"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)

@@ -1,0 +1,66 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$p=require("reserved-policy.mix")
+for $text in ["ctrl+left","Control+ArrowLeft","Command+Left","MacCmd+arrowleft"]
+  if $p.canonical_chord($text)!="Ctrl+ArrowLeft" or not $p.reserved_chord($text) then raise("TEST","canonical default policy drift: "..$text) end
+end
+if $p.reserved_chord("command+shift+Left") or $p.canonical_chord("ctrl+Control+Left")!=nil then raise("TEST","canonical modifiers") end
+fn expect_refused($source,$line)
+  $refused=false
+  try $p.inspect_mix($source,"fixture.mix") catch $message
+    if not re_match($message,"fixture\\.mix:"..to_string($line).."[.:]") then raise("TEST","wrong diagnostic line: "..$message) end
+    $refused=true
+  end
+  if not $refused then raise("TEST","reserved binding escaped: "..$source) end
+end
+expect_refused("-- comment\n$x={id:\"back\",shortcut:\"Alt+Left\"}",2)
+expect_refused("$x={id:\"back\",key:\"ArrowLeft\",ctrl:true}",1)
+expect_refused("$x={id:\"back\",keys:[\"Ctrl+S\",\"F1\"]}",1)
+expect_refused("$x={bindings:{\"F1\":\"back\"}}",1)
+expect_refused("if $a.ctrl and $a.key == \"ArrowLeft\" then print(1) end",1)
+expect_refused("if $a.alt and $a.key == \"ArrowUp\" then print(1) end",1)
+expect_refused("if $a.alt and contains([\"ArrowLeft\",\"ArrowRight\"],$a.key) then print(1) end",1)
+expect_refused("if $a.key==\"ArrowLeft\" and $a.ctrl then print(1) end",1)
+expect_refused("if $a.alt and\n contains([\"ArrowLeft\",\"ArrowRight\"],$a.key)\n then print(1) end",1)
+expect_refused("if \"ArrowLeft\"==$a.key and $a.command then print(1) end",1)
+expect_refused("if ($a.shift and $a.ctrl and $a.key==\"ArrowUp\") or ($a.alt and $a.key==\"ArrowLeft\") then print(1) end",1)
+for $modifier in ["ctrl","alt","command","mac_cmd"]
+  for $negative in ["not $a."..$modifier,"$a."..$modifier.."==false","$a."..$modifier.."!=true"]
+    $p.inspect_mix("if "..$negative.." and $a.key==\"ArrowDown\" then print(1) end","plain.mix")
+  end
+  for $positive in ["$a."..$modifier,"$a."..$modifier.."==true","$a."..$modifier.."!=false"]
+    expect_refused("if "..$positive.." and $a.key==\"ArrowDown\" then print(1) end",1)
+  end
+end
+for $negative in ["not $a.shift","$a.shift==false","$a.shift!=true"]
+  expect_refused("if "..$negative.." and $a.ctrl and $a.key==\"ArrowDown\" then print(1) end",1)
+end
+for $positive in ["$a.shift","$a.shift==true","$a.shift!=false"]
+  $p.inspect_mix("if "..$positive.." and $a.ctrl and $a.key==\"ArrowDown\" then print(1) end","shift.mix")
+end
+expect_refused("if $a.ctrl and not $a.shift and $a.key == \"ArrowLeft\" then print(1) end",1)
+expect_refused("$x={id:\"back\",shortcut:\"Alt+\"..\"Left\"}",1)
+expect_refused("---\nscene: 1\n---\n```mix\n$x='text\n```\nmore'\n$x={id:\"back\",shortcut:\"F12\"}\n```\n",8)
+expect_refused("---\nscene: 1\n---\n```mix\n$x={id:\"back\",shortcut:\"F12\"}\n```\n",5)
+$p.inspect_mix("$label=\"F1\"\n$message=\"Ctrl+ArrowLeft\"\n$x={key:\"F1\",label:\"Metadata\"}\n$multiline='first\n```\nF1\n'", "prose.mix")
+$p.inspect_mix("if $a.ctrl and $a.shift and $a.key == \"ArrowLeft\" then print(1) end", "permitted.mix")
+$refused=false
+try $p.inspect_bindings({bindings:{"ctrl+left":"back"}},"fixture.json") catch $message $refused=true end
+if not $refused then raise("TEST","binding map keys escaped") end
+$p.inspect_bindings({key:"F12",modifiers:["ctrl"]},"injection.json")
+$p.inspect_bindings({key:"ArrowLeft",ctrl:true},"injection.json")
+for $text in ["Meta+F1","Ctrl+Foo+F1","Ctrl+","Ctrl+Ctrl+A"]
+  $refused=false
+  try $p.inspect_bindings({id:"command",shortcut:$text},"invalid.json") catch $message
+    if not contains($message,"invalid default chord") then raise("TEST",$message) end
+    $refused=true
+  end
+  if not $refused then raise("TEST","invalid default chord accepted") end
+end
+$chooser=read_file(path_join(dirname(script_path()),"fixtures/reserved-chooser-main.mix"))
+$line=1
+for $row in split($chooser,"\n")
+  if contains($row,'$a.alt and contains(["ArrowLeft","ArrowRight"],$a.key)') then break end
+  $line=$line+1
+end
+expect_refused($chooser,$line)
+print("reserved binding structures: literals, flag comparisons, prose and source lines pass")

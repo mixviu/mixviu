@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- History clause frozen from origin/main:apps/dopus/chooser.mix blob 4b7953e700fffd3dd8b1a7a79cbdbac6294f480b
+  if $a.alt and contains(["ArrowLeft","ArrowRight"],$a.key) then
+    $from=if $a.key=="ArrowLeft" then "back" else "forward" end;$to=if $from=="back" then "forward" else "back" end
+    if len($s[$from] ?? [])>0 then
+      $history=$s[$from];$target=$history[len($history)-1];$s[$from]=slice($history,0,len($history)-1);$s[$to]=concat($s[$to] ?? [],[$s.folder]);return ch_go($s,$target,false)
+    end
+    return $s
+  end
