@@ -149,7 +149,8 @@ struct PendingResponse {
     traffic_class: TrafficClass,
     caller_tx: mpsc::Sender<String>,
     /// Exact recipient connection; a reused service name is not reply authority.
-    responder_tx: mpsc::Sender<String>,
+    /// `None` once that connection has closed: no reply can arrive from it.
+    responder_tx: Option<mpsc::Sender<String>>,
     caller_id: String,
     /// Original caller correlation captured before the broker rewrites `id`.
     /// Kept as an explicit observation field so a future correlation surface
@@ -247,7 +248,7 @@ impl PendingResponseTable {
                 caller_verified,
                 traffic_class,
                 caller_tx: caller_tx.clone(),
-                responder_tx: responder_tx.clone(),
+                responder_tx: Some(responder_tx.clone()),
                 observer_correlation_id: caller_id.clone(),
                 caller_id,
                 caller_service: caller_service.map(ToString::to_string),
@@ -284,7 +285,12 @@ impl PendingResponseTable {
         let mut pending = self.map.write().await;
         if pending
             .get(broker_id)
-            .is_some_and(|entry| entry.responder_tx.same_channel(responder_tx))
+            .is_some_and(|entry| {
+                entry
+                    .responder_tx
+                    .as_ref()
+                    .is_some_and(|tx| tx.same_channel(responder_tx))
+            })
         {
             let entry = pending.remove(broker_id);
             if let Some(entry) = &entry {
@@ -345,29 +351,28 @@ impl PendingResponseTable {
             .collect()
     }
 
-    /// Remove every pending entry whose responder is `responder_tx`, which
-    /// is closing. No reply can complete such an entry afterwards:
-    /// [`Self::take_response`] accepts a reply only from the exact responder
-    /// connection, and a service re-registered under the same name is a
-    /// different connection. Without this, a caller that stays connected
-    /// kept one entry per unanswered request for its whole life. The caller
-    /// is told nothing, as before: its own deadline still decides.
-    async fn reclaim_for_responder(&self, responder_tx: &mpsc::Sender<String>) -> usize {
+    /// Release the closing responder's channel from every entry addressed to
+    /// it. The entries stay, so classification, error correlation and the
+    /// caller-side `delivery.inflight_fate` report are exactly as before; no
+    /// reply could complete them anyway, because [`Self::take_response`]
+    /// accepts a reply only from the exact responder connection. What goes
+    /// is the entry's `Sender`, which kept the closed connection's channel,
+    /// and every frame still queued in it, allocated for as long as the
+    /// caller stayed connected.
+    async fn release_responder(&self, responder_tx: &mpsc::Sender<String>) -> usize {
         let mut map = self.map.write().await;
-        let ids: Vec<String> = map
-            .iter()
-            .filter(|(_, p)| p.responder_tx.same_channel(responder_tx))
-            .map(|(bid, _)| bid.clone())
-            .collect();
-        for bid in &ids {
-            if let Some(p) = map.remove(bid) {
-                self.protection
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .retain(bid, p.traffic_class);
+        let mut released = 0;
+        for entry in map.values_mut() {
+            if entry
+                .responder_tx
+                .as_ref()
+                .is_some_and(|tx| tx.same_channel(responder_tx))
+            {
+                entry.responder_tx = None;
+                released += 1;
             }
         }
-        ids.len()
+        released
     }
 
     #[cfg(test)]
@@ -3157,14 +3162,13 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             "in-flight request abandoned on session drop (§14 B3 churn instrumentation)"
         );
     }
-    // After the caller-side drain above, so a request this connection sent
-    // to itself is still reported there as before.
-    let reclaimed = state.pending_responses.reclaim_for_responder(&tx).await;
-    if reclaimed > 0 {
+    // Entries this connection was to answer keep everything but its channel.
+    let released = state.pending_responses.release_responder(&tx).await;
+    if released > 0 {
         tracing::debug!(
-            reclaimed,
+            released,
             peer = %peer_label,
-            "reclaimed pending requests addressed to a closed responder"
+            "released a closed responder from its pending requests"
         );
     }
 
@@ -5349,11 +5353,12 @@ mod tests {
         assert!(table.drain_for_channel(&tx_a).await.is_empty());
     }
 
-    /// A closing responder takes its unanswerable entries with it; a live
+    /// A closing responder's channel is released from its entries, which
+    /// stay for classification and the caller's churn report; a live
     /// responder's entries, and a reply from the right connection, are
     /// untouched.
     #[tokio::test]
-    async fn reclaim_for_responder_removes_only_that_responders_entries() {
+    async fn release_responder_keeps_entries_and_drops_only_the_channel() {
         use super::PendingResponseTable;
         use bus::wire::BusMessage;
         use tokio::sync::mpsc;
@@ -5373,12 +5378,21 @@ mod tests {
                     .unwrap(),
             );
         }
-        assert_eq!(table.reclaim_for_responder(&gone).await, 2);
-        assert_eq!(table.len().await, 1);
+        assert_eq!(table.release_responder(&gone).await, 2);
+        assert_eq!(table.len().await, 3);
         assert!(table.take_response(&ids[0], &gone).await.is_none());
-        assert_eq!(table.reclaim_for_responder(&gone).await, 0);
+        assert_eq!(table.len().await, 3);
+        assert_eq!(table.release_responder(&gone).await, 0);
+        // The released channel is no longer referenced by the table.
+        assert_eq!(gone.strong_count(), 1);
         let answered = table.take_response(&ids[2], &live).await.unwrap();
         assert_eq!(answered.caller_id, "c2");
+        // Error-path correlation and the caller's churn report still find
+        // the released entries.
+        assert_eq!(table.take(&ids[0]).await.unwrap().caller_id, "c0");
+        let drained = table.drain_for_channel(&caller).await;
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].1.caller_id, "c1");
         assert_eq!(table.len().await, 0);
     }
 
