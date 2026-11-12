@@ -51,8 +51,11 @@ fn refuse($why)
   exit(64)
 end
 $flag_of = fn($a) = split($a, "=")[0]
-if len(filter($cargo_args, fn($a) = contains(["-q", "--quiet"], $a))) > 0 then refuse("quiet output hides cargo's Running lines; do not pass -q") end
-if len(filter($cargo_args, fn($a) = $flag_of($a) == "--target")) > 0 then refuse("only the host target is recorded; do not pass --target") end
+-- Only cargo's own arguments: anything after `--` belongs to the test harness.
+$dashdash = index_of($cargo_args, "--")
+$cargo_own = if $dashdash < 0 then $cargo_args else slice($cargo_args, 0, $dashdash) end
+if len(filter($cargo_own, fn($a) = contains(["-q", "--quiet"], $a))) > 0 then refuse("quiet output hides cargo's Running lines; do not pass -q") end
+if len(filter($cargo_own, fn($a) = $flag_of($a) == "--target")) > 0 then refuse("only the host target is recorded; do not pass --target") end
 if not is_file("/proc/self/environ") then refuse("needs Linux procfs (/proc/self/environ) to record environments") end
 
 $serial_path = $o.opts.serial ?? "tools/ci/serial-tests.conf.mix"
@@ -65,7 +68,7 @@ $recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
 $meta_target = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps"], {timeout: 600, max_output: 64000000})).target_directory
 mkdir($meta_target)
 $target_dir = realpath($meta_target)
-if contains($mix_exe .. $recorder .. $root .. $target_dir, " ") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
+if re_match($mix_exe .. $recorder .. $root .. $target_dir, "\\s") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
 $host = re_find(run_argv_must(["rustc", "-vV"]), "(?m)^host: (\\S+)$")[0].groups[0]
 $runner_var = "CARGO_TARGET_" .. upper(replace(replace($host, "-", "_"), ".", "_")) .. "_RUNNER"
 if env($runner_var) != "" then refuse($runner_var .. " is already set; the pool cannot record through it") end
@@ -99,10 +102,14 @@ try
   $record_s = monotonic() - $t_build
   $runs = map(filter(lines(read_file($rec)), fn($l) = trim($l) != ""), fn($l) = json_parse($l))
   $err_lines = lines($b.stderr)
-  $labels = map(filter($err_lines, fn($l) = re_match(strip_escapes($l), "^\\s+Running ")), fn($l) = trim(re_replace(strip_escapes($l), "^\\s+Running ", "")))
+  -- Only cargo's test-run status lines: "     Running <source> (<program>)".
+  -- A build script or --verbose line that merely starts with Running does
+  -- not end in a bracketed program path.
+  $run_line = "^\\s+Running .+ \\([^()]+\\)$"
+  $labels = map(filter($err_lines, fn($l) = re_match(strip_escapes($l), $run_line)), fn($l) = trim(re_replace(strip_escapes($l), "^\\s+Running ", "")))
   -- The build output, without the record pass's Running lines: each binary's
   -- Running line is printed once, with its result, below.
-  print(join(filter($err_lines, fn($l) = not re_match(strip_escapes($l), "^\\s+Running ")), "\n"))
+  print(join(filter($err_lines, fn($l) = not re_match(strip_escapes($l), $run_line)), "\n"))
   if len($runs) == 0 then
     -- Nothing recorded: the build failed, or the selection has no test binaries.
     print($b.stdout)
