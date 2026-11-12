@@ -1,5 +1,5 @@
 #!/usr/bin/env mix
--- version: 0.4.0
+-- version: 0.5.0
 -- tools/ci/test_pool.mix: `cargo test` with the test binaries run in
 -- parallel. Called by tools/ci.mix in place of `cargo test`.
 --
@@ -55,6 +55,18 @@
 -- result that is not ok (non-zero exit, crash, timeout even when the
 -- leader exited 0, spawn failure), failing doc-tests, a failed build or
 -- an empty selection fails the step. Ends with the slowest binaries.
+--
+-- Retry once (merge gate only). Strict unless TEST_POOL_RETRY_REPORT names
+-- a report file; the hosted and nightly runs never set it, so main and gold
+-- stay strict. With it set, and TEST_POOL_CHANGED_PATHS_FILE listing the
+-- change's paths (one per line, relative to the workspace root), a run in
+-- which exactly one test binary failed, and nothing else (no doc-test or
+-- build failure), re-runs that binary once, alone. If it passes, the step
+-- passes with a `::warning::FLAKY:` line and a JSON line appended to the
+-- report. No retry when the binary belongs to a package the change touches,
+-- when a changed path lies outside every package (other than *.md), or
+-- when the report already holds an entry (one retry per run, shared by
+-- every step that uses the same report).
 
 $o = getopt(args(), {jobs: {arg: true}, serial: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) == 0 then
@@ -105,7 +117,47 @@ $mix_exe = realpath("/proc/self/exe")
 $recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
 -- The recorder records programs under the target directory (cargo's test
 -- binaries) and runs anything else, i.e. rustdoc's doc-test executables.
-$meta_target = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps"], {timeout: 600, max_output: 64000000})).target_directory
+$metadata = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps"], {timeout: 600, max_output: 64000000}))
+$meta_target = $metadata.target_directory
+
+-- Retry-once policy (see header). Decided before anything runs.
+fn changed_packages($metadata, $paths)
+  $root = $metadata.workspace_root
+  $dirs = filter(map($metadata.packages, fn($p) = {name: $p.name, dir: dirname($p.manifest_path)}), fn($d) = $d.dir != $root)
+  $pkgs = {}
+  for $path in $paths
+    $abs = path_join($root, $path)
+    $best = nil
+    for $d in $dirs
+      if starts_with($abs, $d.dir .. "/") and ($best == nil or len($d.dir) > len($best.dir)) then $best = $d end
+    end
+    if $best != nil then
+      $pkgs[$best.name] = true
+    elif not ends_with($path, ".md") then
+      return {pkgs: $pkgs, outside: $path}
+    end
+  end
+  return {pkgs: $pkgs, outside: nil}
+end
+$retry_report = env("TEST_POOL_RETRY_REPORT", "")
+$retry = {on: false, why: "strict (TEST_POOL_RETRY_REPORT unset)", pkgs: {}}
+if $retry_report != "" then
+  $paths_file = env("TEST_POOL_CHANGED_PATHS_FILE", "")
+  if $paths_file == "" or not is_file($paths_file) then
+    $retry.why = "strict: TEST_POOL_CHANGED_PATHS_FILE is missing"
+  else
+    $paths = filter(map(lines(read_file($paths_file)), fn($l) = trim($l)), fn($l) = $l != "")
+    $cp = changed_packages($metadata, $paths)
+    if len($paths) == 0 then
+      $retry.why = "strict: the changed-paths file is empty"
+    elif $cp.outside != nil then
+      $retry.why = "strict: " .. $cp.outside .. " is outside every package"
+    else
+      $retry = {on: true, why: "one retry, not for " .. join(sort(keys($cp.pkgs)), ", "), pkgs: $cp.pkgs}
+    end
+  end
+end
+print("test_pool: retry " .. $retry.why)
 mkdir($meta_target)
 $target_dir = realpath($meta_target)
 if re_match($mix_exe .. $recorder .. $root .. $target_dir, "\\s") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
@@ -237,6 +289,7 @@ try
   $all = concat($pool, $alone)
   $rs = concat($pool_rs, $alone_rs)
   $failed = []
+  $failed_bins = []
   $timing = []
   for $i = 0 to len($all) - 1
     $j = $all[$i]
@@ -249,6 +302,7 @@ try
     if not $r.ok then
       push($failed, $j.key .. " (rc " .. to_string($r.exit_code ?? 124) .. (if $r.timed_out then ", timed out" else "" end)
         .. (if $r.error != nil then ", " .. to_string($r.error) else "" end) .. ")")
+      push($failed_bins, $i)
     end
     push($timing, {key: $j.key, s: $r.duration_ms / 1000})
   end
@@ -265,6 +319,39 @@ try
   if $record_failed then
     print($b.stdout)
     push($failed, "record pass (cargo test rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. ")")
+  end
+
+  -- 5. Retry once (merge gate only; see header).
+  if $retry.on and len($failed_bins) > 0 then
+    $other = len($failed) > len($failed_bins)
+    if len($failed_bins) > 1 or $other then
+      print("::notice::test_pool: no retry: " .. to_string(len($failed_bins)) .. " binaries failed"
+        .. (if $other then ", and doc-tests or the record pass failed" else "" end) .. " (at most one flaky binary per run)")
+    else
+      $i = $failed_bins[0]
+      $j = $all[$i]
+      $first = $rs[$i]
+      $pkg = split($j.key, "/")[0]
+      $used = if is_file($retry_report) then len(filter(lines(read_file($retry_report)), fn($l) = trim($l) != "")) else 0 end
+      if has_key($retry.pkgs, $pkg) then
+        print("::notice::test_pool: no retry: " .. $j.key .. " belongs to a package this change touches")
+      elif $used > 0 then
+        print("::notice::test_pool: no retry: this run already retried a binary (" .. $retry_report .. ")")
+      else
+        print("     Running " .. $j.label .. " (retry, alone)")
+        $again = run_parallel(run_spec([$j]), {max: 1})[0]
+        print($again.stdout)
+        if $again.ok then
+          $out = $first.stdout ?? ""
+          append_file($retry_report, json_encode({key: $j.key, label: $j.label, first_rc: $first.exit_code, first_timed_out: $first.timed_out,
+            cargo_args: $cargo_args, first_tail: substr($out, max(0, len($out) - 4000), 4000)}) .. "\n")
+          print("::warning::FLAKY: " .. $j.key .. " failed beside other binaries (" .. $failed[0] .. ") and passed alone; recorded for a fix")
+          $failed = []
+        else
+          print("::error::test_pool: " .. $j.key .. " failed again alone (rc " .. to_string($again.exit_code ?? 124) .. ")")
+        end
+      end
+    end
   end
 
   print(fmt("test_pool: %d binaries; build+record %.0f s, pool %.0f s (%d at a time), serial %.0f s (%d alone), doc-tests %.0f s",
