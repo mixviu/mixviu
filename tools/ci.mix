@@ -216,7 +216,7 @@ fn stage_env()
     if not starts_with($n, "MIX_") then
       $words = ["-e", $n]
       if has_key($consts, $n) and $consts[$n] != $n then $words = concat($words, ["-e", $consts[$n]]) end
-      $sites = git_grep(concat(["-l", "-F", "-w"], $words, ["--", "*.rs", "*.mix", ":!vendor", ":!libraries/paths/src/env_names.rs"]))
+      $sites = git_grep(concat(["-l", "-F", "-w"], $words, ["--", "*.rs", "*.mix", ":!vendor", ":!libraries/paths/src/env_names.rs", ":!etc/env.conf.mix"]))
       if trim($sites) != "" then $used[$n] = true end
     end
     if not has_key($used, $n) then
