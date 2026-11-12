@@ -5559,6 +5559,7 @@ name = "mixtrayd"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "buildinfo",
  "bus",
  "futures",
  "notify",
