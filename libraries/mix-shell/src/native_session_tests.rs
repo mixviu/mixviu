@@ -4,6 +4,36 @@ use super::*;
 use std::io::{Seek, Write};
 use std::os::unix::process::CommandExt;
 
+#[test]
+fn diagnostic_formats_the_whole_line_before_writing() {
+    #[derive(Default)]
+    struct RecordingWriter(Vec<Vec<u8>>);
+    impl Write for RecordingWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.push(bytes.to_vec());
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            panic!("diagnostic must not need a flush");
+        }
+    }
+
+    // Runtime substitutions force formatted output to have separate fragments.
+    // A writeln! directly to this writer splits them into separate writes.
+    let stage = String::from("scope: broker scope does not match retained launch");
+    let mut writer = RecordingWriter::default();
+    write_diagnostic(
+        &mut writer,
+        format_args!("mix native-session FAILED at {stage}; shell remains usable without binding"),
+    )
+    .unwrap();
+    assert_eq!(
+        writer.0,
+        [b"mix native-session FAILED at scope: broker scope does not match retained launch; shell remains usable without binding\n".to_vec()]
+    );
+}
+
 fn descriptor() -> serde_json::Value {
     let seed = Zeroizing::new([42u8; 32]);
     let key = SigningKey::from_bytes(&seed);

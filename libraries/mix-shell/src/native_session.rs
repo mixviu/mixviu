@@ -20,6 +20,7 @@ use ::bus::native_session::*;
 use ed25519_dalek::SigningKey;
 use sha2::{Digest, Sha256};
 use std::fs::File;
+use std::io::Write;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::time::{Duration, Instant};
@@ -54,14 +55,14 @@ pub(super) fn before_exec_restart() {
         && receiver
             .recv_timeout(Duration::from_secs(16))
             .unwrap_or(false);
-    eprintln!(
+    diagnostic(format_args!(
         "mix native-session: exec restart leaves this pane unbound until pane restart; {}",
         if revoked {
             "record observed revoked"
         } else {
             "revocation unconfirmed; remaining records expire by lease/window"
         }
-    );
+    ));
 }
 
 // Deliberately no Debug, Clone, Serialize, accessor or shared/static storage.
@@ -285,7 +286,23 @@ pub(crate) fn options(mut options: UnixConnectOptions) -> UnixConnectOptions {
 }
 
 fn loud(stage: &str) {
-    eprintln!("mix native-session FAILED at {stage}; shell remains usable without binding");
+    diagnostic(format_args!(
+        "mix native-session FAILED at {stage}; shell remains usable without binding"
+    ));
+}
+
+fn diagnostic(message: std::fmt::Arguments<'_>) {
+    // stderr and stdout may share a PTY. The stderr lock alone cannot stop
+    // startup rc output from landing between formatted fragments.
+    let _ = write_diagnostic(&mut std::io::stderr().lock(), message);
+}
+
+fn write_diagnostic(
+    output: &mut impl Write,
+    message: std::fmt::Arguments<'_>,
+) -> std::io::Result<()> {
+    let line = format!("{message}\n");
+    output.write_all(line.as_bytes())
 }
 #[derive(Default)]
 struct Reporter {
