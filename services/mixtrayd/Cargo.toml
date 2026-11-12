@@ -24,6 +24,7 @@ name = "mixtrayd"
 path = "src/main.rs"
 
 [dependencies]
+buildinfo.workspace = true
 paths = { path = "../../libraries/paths" }
 anyhow.workspace = true
 bus = { workspace = true, features = ["native"] }
@@ -33,3 +34,6 @@ serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process"] }
 zbus = { workspace = true, features = ["blocking-api"] }
+
+[build-dependencies]
+buildinfo.workspace = true
