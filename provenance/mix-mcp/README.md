@@ -19,9 +19,9 @@ remain unchanged.
 
 Runtime defaults moved to the registry retain ranking, transport, deadline
 and logging values. The domain map retains all four frozen entries and adds MixViu and its hub. As prescribed
-by `paths::env::raw`, empty environment overrides count as unset (the source
-treated an empty agent session override as invalid). Nonempty malformed agent
-session IDs still refuse the Bus. No compatibility reads of retired names.
+by `paths::env::os`, an empty agent session override remains present and
+is rejected, preserving the source policy. Malformed agent session IDs refuse
+the Bus. The exact presence-preserving reader is shared with the paths follow-up. No compatibility reads of retired names.
 
 MCP tool names, parameters and result field shapes stay unchanged; inventory
 is `services/mix-mcp/tests/tools.txt`. Human descriptions mentioning the old
@@ -35,8 +35,10 @@ The shared MixViu config store places each file in its own service directory:
 `<etc-root>/domains/domains.conf.mix`. Operator relocation is documented;
 fixtures use that store layout without changing their source assertions.
 
-`rmcp = "=3.1.2"` is crate-local, with the original server feature set and
-client/child-process features confined to dev-dependencies. The source lockfile
+The candidate `rmcp = "=3.9.0"` is crate-local, with defaults disabled and
+only `server`, `transport-io`, `macros`, `schemars`; client/child-process features
+are confined to dev-dependencies. `ServerInfo` is renamed to its SDK replacement
+`ServerConfig`. The source lockfile
 seeds resolution, with unused packages removed by Cargo on CBC.
 
 The frozen isolated evaluator worker now lives in `mix-shell::script_worker`,
@@ -66,3 +68,32 @@ gate has not run. The empty-session compatibility difference above remains an
 open decision because a presence-preserving reader would exceed the brief's
 permitted `paths` edits.
 
+
+## Round 3: dependency-isolation stop
+
+The approved candidate compiles on CBC. Resolve job
+`20261112-100430-22ef7d43-a1` passed (including the foreign gate, 16 listed
+foreign crates, no policy change) and supplied the applied lock/fmt patch.
+Compared with the 3.1.2 closure, resolution adds const-oid 0.10.3 and updates
+process-wrap 9.1.1 to 10.0.1, rmcp 3.1.2 to 3.9.0, and rmcp-macros 3.5.1
+to 3.9.0. Existing shared package versions remain locked.
+
+The exact-source audit at `d820ad5d7dad` then failed:
+`20261112-101225-50ff9ff4-a1`, BUILD_RC=1, STRICT_DEPENDENCY const-oid.
+Cargo metadata reports its licence as Apache-2.0 OR MIT. The workspace inverse
+tree contains both rmcp/mix-mcp and this second path:
+
+```text
+const-oid 0.10.3 <- digest 0.11.3 <- sha2 0.11.0 <- sha-crypt 0.6.0
+  <- lib-mix <- mix / mix-shell / mixd
+```
+
+Workspace feature unification makes this new package reachable beyond the
+adapter. This violates the approved isolation condition even though shared
+versions did not change and the foreign gate passed. Work stops here under
+the explicit round-3 instruction; the remaining licence/graph/advisory checks,
+66-test candidate suite, final full gate and new release-size receipt have not
+run. The previous 65-test/size receipts above cover 3.1.2 only.
+The new separate empty-session stdio regression is committed but unrun; the
+existing stdio tests and 29-name fixture remain unmodified in round 3.
+No ready PR, merge, install or running-adapter change was made.
