@@ -1941,8 +1941,8 @@ mod tests {
     #[test]
     fn every_logical_default_uses_the_shared_policy_at_both_registry_entries() {
         for &key in Key::ALL {
-            for bits in 0..16 {
-                let modifiers=Modifiers { shift:bits&1!=0,alt:bits&2!=0,ctrl:bits&4!=0,command:bits&4!=0,mac_cmd:bits&8!=0 };
+            for bits in 0..32 {
+                let modifiers=Modifiers { shift:bits&1!=0,alt:bits&2!=0,ctrl:bits&4!=0,command:bits&8!=0,mac_cmd:bits&16!=0 };
                 let chord=KeyboardShortcut::new(modifiers,key);
                 let refused=crate::keymap::reserved(key,modifiers);
                 for extra in [false,true] {
