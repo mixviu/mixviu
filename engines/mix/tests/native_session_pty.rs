@@ -1691,7 +1691,7 @@ fn stage_d_refuses_every_ineligible_prompt_state_without_discarding_anything() {
         // A running evaluation. `sleep` holds the shell in a foreground child.
         let generation = prompt_generation_after(&mut f.parent, &f.bound, continuation).await;
         f.child.send("run_stream([\"sleep\", \"2\"])\n");
-        tokio::time::sleep(Duration::from_millis(400)).await;
+        phase(&mut f.parent, &f.bound, "foreground-child").await;
         let busy = execute_call(
             &mut f.parent,
             &f.bound,
@@ -2363,7 +2363,10 @@ fn stage_d_paste_and_search_drafts_are_preserved_with_exact_refusals() {
         // A reverse history search in progress.
         let generation = prompt_generation_after(&mut f.parent, &f.bound, generation).await;
         f.child.send("\x12PASTED");
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // Status has no search field. The recalled line is rendered only after
+        // Ctrl-R enters search and its query matches history; until has a 30s
+        // deadline. The earlier execution's output was already consumed above.
+        f.child.until("print(\"PASTED_OK\")");
         let error = execute_call(
             &mut f.parent,
             &f.bound,
