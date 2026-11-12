@@ -1,0 +1,57 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- daily-cli: call the daily service's execute, over the Bus by default.
+--
+--   mix daily-cli.mix actions
+--   mix daily-cli.mix ID [--date YYYY-MM-DD] [--dry-run] [--sha SHA]
+--                        [--params JSON] [--local] [--timeout SECONDS]
+--
+-- --local runs the same execute in this process instead (no Bus; the per-day
+-- lock still keeps it apart from the service). The timer uses the Bus form.
+-- Prints the reply as JSON and exits 0 on success, 1 on a refused action.
+$daily = require("lib/daily.mix")
+
+$o = getopt(args(), {date: {arg: true}, sha: {arg: true}, params: {arg: true}, timeout: {arg: true},
+  "dry-run": {}, local: {}, target: {arg: true}})
+if len($o.errors) > 0 or len($o.rest) != 1 then
+  eprint("usage: mix daily-cli.mix actions | ID [--date D] [--dry-run] [--sha SHA] [--params JSON] [--local] [--target NAME] [--timeout S]")
+  exit(64)
+end
+$id = $o.rest[0]
+$params = if $o.opts.params != nil then json_parse($o.opts.params) else {} end
+if type($params) != "map" then
+  eprint("daily-cli: --params must be a JSON object")
+  exit(64)
+end
+if $o.opts.date != nil then $params.date = $o.opts.date end
+if $o.opts.sha != nil then $params.sha = $o.opts.sha end
+if $o.opts["dry-run"] then $params.dry_run = true end
+$target = $o.opts.target ?? "daily"
+$timeout = to_number($o.opts.timeout ?? "1800")
+
+if $o.opts.local then
+  if $id == "actions" then
+    print(json_encode({schema: "mixviu.daily.actions/1", actions: $daily.actions()}, true))
+    exit(0)
+  end
+  $out = $daily.execute($id, $params)
+  print(json_encode($out.body, true))
+  exit(if $out.rc == 0 then 0 else 1 end)
+end
+
+if $id == "actions" then
+  send $target daily.actions timeout=$timeout
+else
+  $wire = json_encode({id: $id, params: $params})
+  send $target daily.execute body=$wire timeout=$timeout
+end
+$body = $result
+if type($body) == "string" then
+  try
+    $body = json_parse($body)
+  catch $m
+  end
+end
+print(json_encode($body, true))
+if $rc < 0 then eprint("daily-cli: Bus call failed (rc " .. to_string($rc) .. ")") end
+exit(if $rc >= 0 and $rc < 10 then 0 else 1 end)
