@@ -189,7 +189,18 @@ fn stage_env()
       exit(1)
     end
   end
-  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path]
+  -- The prefix gate's files arrive with PR #65 (a pathspec for an absent
+  -- path excludes nothing). Its finding identities (both greps), its own
+  -- recognisers (second grep only: the gate scripts stay in the first, so a
+  -- MIX_ consumer cannot hide in them) and the exact fixtures that spell a
+  -- MIX_ name (first grep) or an old spelling (second grep) are metadata,
+  -- not variable consumers. Everything else stays in both greps.
+  $baseline = [":!tools/prefix-baseline.json"]
+  $recognisers = [":!tools/prefix_gate.mix", ":!tools/prefix.conf.mix"]
+  $fixtures = ":!tools/test-support/prefix_gate/"
+  $name_fixtures = map(["cases.conf.mix", "comment.txt", "digit.txt", "doc-word.txt", "env.txt", "env-upper.txt", "include-data.txt"], fn($f) = $fixtures + $f)
+  $old_fixtures = map(["bare-opt.txt", "cases.conf.mix", "legacy-boundaries.txt", "legacy-names.txt", "recogniser.txt", "wrong-prefix.txt"], fn($f) = $fixtures + $f)
+  $excluded = concat(concat(["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path], $baseline), $name_fixtures)
   $used = {}
   $prefix_used = {}
   for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
@@ -218,7 +229,8 @@ fn stage_env()
       push($bad, "unlisted prefix " + $n)
     end
   end
-  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path])), "\n")
+  $old_excluded = concat(concat(["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path], concat($baseline, $recognisers)), $old_fixtures)
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], $old_excluded)), "\n")
     if $f != "" then
       $ok = false
       for $re in $reg.mixos_allowed ?? []
