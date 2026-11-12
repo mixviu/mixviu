@@ -6,8 +6,12 @@
 --   mix tools/ci.mix STAGE [--mix PATH]
 --   STAGE: fmt | env | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
---   stage-install (not in all): copy built debug binaries to a temporary prefix,
---   write registry defaults as env.mx (no layout.mx), and print the prefix.
+--   stage-install [--dir DIR] (not in all): copy the built debug engine and
+--   service binaries, by name, into DIR/bin (default target/stage-install,
+--   never /tmp), write the registry's runtime defaults as DIR/env.mx (no
+--   layout.mx), and print DIR. The caller removes DIR.
+--   stage-smoke (in all, after test): stage into target/stage-smoke, check a
+--   staged binary resolves an installed default, and remove the stage.
 --
 -- MixViu has four engines: mix, mixd, viu, viud. The `mix` package is built and tested apart from the
 -- rest of the workspace: the workspace build would unify features and ship
@@ -17,9 +21,9 @@
 -- mix-lint is a ratchet: diagnostics may only shrink against
 -- tools/ci/mix-lint-baseline.json. Regenerate it only in a PR that fixes lint.
 
-$o = getopt(args(), {mix: {arg: true}})
+$o = getopt(args(), {mix: {arg: true}, dir: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|foreign|test|mix-lint|mix-lint-baseline|release-mix|all [--mix PATH]")
+  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|foreign|test|stage-smoke|mix-lint|mix-lint-baseline|release-mix|stage-install|all [--mix PATH] [--dir DIR]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -186,7 +190,18 @@ fn stage_env()
       exit(1)
     end
   end
-  $excluded = ["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path]
+  -- The prefix gate's files arrive with PR #65 (a pathspec for an absent
+  -- path excludes nothing). Its finding identities (both greps), its own
+  -- recognisers (second grep only: the gate scripts stay in the first, so a
+  -- MIX_ consumer cannot hide in them) and the exact fixtures that spell a
+  -- MIX_ name (first grep) or an old spelling (second grep) are metadata,
+  -- not variable consumers. Everything else stays in both greps.
+  $baseline = [":!tools/prefix-baseline.json"]
+  $recognisers = [":!tools/prefix_gate.mix", ":!tools/prefix.conf.mix"]
+  $fixtures = ":!tools/test-support/prefix_gate/"
+  $name_fixtures = map(["cases.conf.mix", "comment.txt", "digit.txt", "doc-word.txt", "env.txt", "env-upper.txt", "include-data.txt"], fn($f) = $fixtures + $f)
+  $old_fixtures = map(["bare-opt.txt", "cases.conf.mix", "legacy-boundaries.txt", "legacy-names.txt", "recogniser.txt", "wrong-prefix.txt"], fn($f) = $fixtures + $f)
+  $excluded = concat(concat(["--", ".", ":!vendor", ":!provenance", ":!Cargo.lock", ":!last.md", ":!" + $reg_path], $baseline), $name_fixtures)
   $used = {}
   $prefix_used = {}
   for $tok in split(git_grep(concat(["-o", "-h", "-w", "-E", "MIX_[A-Z0-9_]+"], $excluded)), "\n")
@@ -215,7 +230,8 @@ fn stage_env()
       push($bad, "unlisted prefix " + $n)
     end
   end
-  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], ["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path])), "\n")
+  $old_excluded = concat(concat(["--", ".", ":!vendor", ":!Cargo.lock", ":!last.md", ":!" + $reg_path], concat($baseline, $recognisers)), $old_fixtures)
+  for $f in split(git_grep(concat(["-l", "-E", "MIXOS_|/opt/mixos"], $old_excluded)), "\n")
     if $f != "" then
       $ok = false
       for $re in $reg.mixos_allowed ?? []
@@ -226,6 +242,12 @@ fn stage_env()
       if not $ok then
         push($bad, "MIXOS_ or /opt/mixos outside the allowed paths: " + $f)
       end
+    end
+  end
+  -- The layout manifest names only sources that are in the tree.
+  for $f in load_data("share/layout/templates.mx").files
+    if not is_file("share/layout/" .. $f.source) then
+      push($bad, "share/layout/templates.mx source missing: " .. $f.source)
     end
   end
   for $line in $bad
@@ -311,25 +333,162 @@ fn stage_mix_lint_baseline($mix)
   print("wrote " + $baseline_path)
 end
 
--- Optional staging only. Callers choose when to use this install.
-fn stage_install()
-  $prefix = trim(run_argv_must(["mktemp", "-d", "--tmpdir", "mix-stage-XXXXXXXX"]))
-  mkdir($prefix .. "/bin")
-  for $file in sort(glob("target/debug/*"))
-    if is_file($file) and access($file, "x") then
-      run_argv_must(["cp", "--", $file, $prefix .. "/bin/" .. basename($file)])
+-- The engine and service binaries the workspace builds, by name: every bin
+-- target of a package under engines/ or services/.
+fn staged_binary_names()
+  $r = run_argv(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], {timeout: 600, max_output: 64000000})
+  if $r.exit_code != 0 then
+    print("::error::cargo metadata failed: " + $r.stderr)
+    exit(1)
+  end
+  $meta = json_parse($r.stdout)
+  $names = []
+  for $p in $meta.packages
+    $rel = replace($p.manifest_path, $meta.workspace_root .. "/", "")
+    if starts_with($rel, "engines/") or starts_with($rel, "services/") then
+      for $t in $p.targets
+        if contains($t.kind, "bin") and not contains($names, $t.name) then
+          push($names, $t.name)
+        end
+      end
     end
   end
-  $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
+  return sort($names)
+end
+
+-- Never stage on a temporary filesystem: on 2026-11-11 a stage of every
+-- target/debug executable filled a worker's /tmp tmpfs for hours.
+-- A stage lives under this tree's target/ and nowhere else. The check is on
+-- resolved paths, not spellings: target/ is canonicalised, the name below it
+-- is plain components only, and an existing stage must resolve inside it.
+fn stage_refuse($dir, $why)
+  print("::error::stage-install refuses " .. $dir .. ": " .. $why)
+  exit(1)
+end
+
+fn stage_dir($dir)
+  $root = realpath("target")
+  if $root == nil then stage_refuse($dir, "target/ does not exist; build first") end
+  $tmp = env("TMPDIR") ?? ""
+  $tmp_real = if $tmp != "" then realpath($tmp) else nil end
+  if $root == "/tmp" or starts_with($root, "/tmp/") or ($tmp_real != nil and ($root == $tmp_real or starts_with($root, $tmp_real .. "/"))) then
+    stage_refuse($dir, "target/ resolves to " .. $root .. ", a temporary filesystem")
+  end
+  if not starts_with($dir, "target/") then stage_refuse($dir, "the stage must be a path under target/") end
+  $parts = split(substr($dir, len("target/")), "/")
+  for $p in $parts
+    if $p == "" or $p == "." or $p == ".." then stage_refuse($dir, "only plain path components are allowed") end
+  end
+  $abs = $root .. "/" .. join($parts, "/")
+  -- Every existing ancestor, and the stage itself, must still be inside
+  -- target/ once symlinks are resolved.
+  $probe = $root
+  for $p in $parts
+    $probe = $probe .. "/" .. $p
+    $real = realpath($probe)
+    if $real == nil then break end
+    if $real != $probe then stage_refuse($dir, $probe .. " resolves to " .. $real) end
+  end
+  return $abs
+end
+
+-- Optional staging only: {prefix, commit}. Callers choose when to use this
+-- install and remove the directory when done.
+fn stage_install($dir)
+  $prefix = stage_dir($dir)
+  if is_dir($prefix) and len(ls($prefix)) > 0 then
+    if not is_file($prefix .. "/.mix-stage") then
+      print("::error::stage-install: " .. $prefix .. " is not empty and is not a previous stage")
+      exit(1)
+    end
+    remove_dir($prefix)
+  end
+  if not is_file("target/debug/mix") then
+    print("::error::stage-install: target/debug/mix is not built")
+    exit(1)
+  end
+  mkdir($prefix .. "/bin")
+  write_file($prefix .. "/.mix-stage", "")
+  $copied = []
+  for $name in staged_binary_names()
+    if is_file("target/debug/" .. $name) then
+      run_argv_must(["cp", "--", "target/debug/" .. $name, $prefix .. "/bin/" .. $name])
+      push($copied, $name)
+    end
+  end
+  -- The snapshot commit is the staged binary's own stamp, not HEAD, so a
+  -- stale target/ is never paired with this tree's defaults.
+  $commit = json_parse(run_argv_must([$prefix .. "/bin/mix", "--version", "--json"], {clear_env: true})).git_sha_full
+  if type($commit) != "string" or not re_match($commit, "^[0-9a-f]{40}$") then
+    print("::error::stage-install: staged mix has no full commit stamp")
+    exit(1)
+  end
+  $head = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+  if $commit != $head and trim(run_argv_must(["git", "status", "--porcelain"])) == "" then
+    print("::error::stage-install: target/debug/mix was built from " .. $commit .. ", not HEAD " .. $head .. ": rebuild it")
+    exit(1)
+  end
+  if $commit != $head then
+    eprint("stage-install: warning: the tree is dirty and target/debug/mix was built from " .. $commit .. ", not HEAD " .. $head)
+  end
+  $defaults = {schema: 1, commit: $commit}
   for $v in load_data("etc/env.conf.mix").vars
-    if has_key($v, "default") then $defaults[$v.name] = $v.default end
+    if $v.scope == "runtime" and has_key($v, "default") then $defaults[$v.name] = $v.default end
   end
   write_file($prefix .. "/env.mx", data_encode($defaults))
-  print($prefix)
+  eprint("staged into " .. $prefix .. "/bin: " .. join($copied, " "))
+  return {prefix: $prefix, commit: $commit}
+end
+
+-- A staged binary resolves an installed default from the staged env.mx.
+-- No engine reads a setting yet, so the staged program is this tree's paths
+-- unit-test binary, copied into the stage's bin/ and run with a cleared
+-- environment: it must find the prefix from its own location.
+fn paths_test_exe()
+  $r = run_argv(["cargo", "test", "--locked", "-p", "paths", "--lib", "--no-run", "--message-format", "json"], {timeout: 1800, max_output: 64000000})
+  if $r.exit_code != 0 then
+    print("::error::cannot build the paths test binary: " + $r.stderr)
+    exit(1)
+  end
+  $exe = nil
+  for $line in split($r.stdout, "\n")
+    if starts_with($line, "{") then
+      $m = json_parse($line)
+      if $m.reason == "compiler-artifact" and $m.executable != nil and $m.target.name == "paths" then
+        $exe = $m.executable
+      end
+    end
+  end
+  if $exe == nil then
+    print("::error::cargo named no paths test binary")
+    exit(1)
+  end
+  return $exe
+end
+
+fn stage_smoke()
+  $dir = "target/stage-smoke"
+  $exe = paths_test_exe()
+  try
+    $s = stage_install($dir)
+    run_argv_must(["cp", "--", $exe, $s.prefix .. "/bin/paths-smoke"])
+    $test = "env_tests::staged_install_resolves_installed_defaults"
+    $r = run_argv([$s.prefix .. "/bin/paths-smoke", "--exact", $test], {clear_env: true, env: {MIX_TEST_PATH_CACHE: "staged:" .. $s.commit}, timeout: 300})
+    print($r.stdout + $r.stderr)
+    if $r.exit_code != 0 or not contains($r.stdout, "test result: ok. 1 passed") then
+      print("::error::stage-smoke: the staged binary did not resolve its installed defaults")
+      exit(1)
+    end
+    print("stage-smoke: staged binary resolved its installed defaults")
+  finally
+    if is_file($dir .. "/.mix-stage") then remove_dir($dir) end
+  end
 end
 
 if $stage == "stage-install" then
-  stage_install()
+  print(stage_install($o.opts.dir ?? "target/stage-install").prefix)
+elif $stage == "stage-smoke" then
+  stage_smoke()
 elif $stage == "fmt" then
   stage_fmt()
 elif $stage == "clippy" then
@@ -357,6 +516,7 @@ elif $stage == "all" then
   stage_viud_egui_free()
   stage_foreign($mix)
   stage_test($mix)
+  stage_smoke()
   stage_mix_lint($mix)
 else
   eprint("unknown stage: " + $stage)
