@@ -1,0 +1,128 @@
+#!/usr/bin/env mix
+-- version: 0.1.0
+-- tools/ci/test_pool.mix: `cargo test` with the test binaries run in
+-- parallel. Called by tools/ci.mix in place of `cargo test`.
+--
+--   mix tools/ci/test_pool.mix [--jobs N] [--serial FILE] -- CARGO_TEST_ARGS...
+--
+-- `cargo test` runs its test binaries one after another; only tests inside a
+-- binary run in parallel. On a 16-core worker the 464 workspace binaries
+-- took 887 s that way and 195 s eight at a time (lab, cbc4, 2026-11-12).
+--
+-- 1. `cargo test --no-run --message-format=json CARGO_TEST_ARGS` builds and
+--    lists every test executable (compile errors go to stderr as usual).
+-- 2. The executables run from a pool of N (default 8), each with the working
+--    directory and runtime variables cargo gives it, and its own TMPDIR
+--    under target/t/, short enough for socket paths.
+-- 3. Binaries listed in tools/ci/serial-tests.conf.mix run alone afterwards.
+-- 4. Doc-tests run as `cargo test --doc` with the same arguments.
+--
+-- Output is printed per binary in cargo's order, with cargo's "Running" and
+-- "test result:" lines, so logs and test-count parsers read as before.
+-- Ends with the slowest binaries. Exit 1 if anything failed.
+
+$o = getopt(args(), {jobs: {arg: true}, serial: {arg: true}})
+if len($o.errors) > 0 or len($o.rest) == 0 then
+  eprint("usage: mix tools/ci/test_pool.mix [--jobs N] [--serial FILE] -- CARGO_TEST_ARGS...")
+  exit(64)
+end
+$jobs = to_number($o.opts.jobs ?? "8")
+$cargo_args = $o.rest
+$serial_path = $o.opts.serial ?? "tools/ci/serial-tests.conf.mix"
+$serial = if exists($serial_path) then load_data($serial_path).serial_tests else [] end
+$cargo = trim(run_argv_must(["which", "cargo"]))
+
+-- 1. Build and list.
+$t_build = monotonic()
+$b = run_argv(concat(["cargo", "test", "--no-run", "--message-format=json"], $cargo_args), {timeout: 14400, stderr: "inherit", max_output: 512000000})
+if $b.exit_code != 0 then
+  print("::error::test build failed (rc " .. to_string($b.exit_code) .. "): cargo test --no-run " .. join($cargo_args, " "))
+  exit(1)
+end
+$build_s = monotonic() - $t_build
+
+-- A fresh, short TMPDIR root per run; passing binaries' directories are
+-- removed, failing ones kept for evidence.
+$tmp_root = path_join(realpath("."), "target/t")
+if exists($tmp_root) then run_argv_must(["rm", "-rf", $tmp_root]) end
+mkdir($tmp_root)
+
+$pool = []
+$alone = []
+$n = 0
+for $line in lines($b.stdout)
+  if not starts_with($line, "{") then continue end
+  $m = json_parse($line)
+  if $m.reason != "compiler-artifact" or $m.executable == nil then continue end
+  if not ($m.profile.test ?? false) then continue end
+  $dir = dirname($m.manifest_path)
+  -- package_id is ".../dir#name@ver", or ".../name#ver" when they agree.
+  $pid = re_find($m.package_id, "#(?:([A-Za-z0-9_.-]+)@)?([0-9][^ ]*)$")
+  $pkg = basename($dir)
+  $ver = "0.0.0"
+  if len($pid) > 0 then
+    $pkg = $pid[0].groups[0] ?? $pkg
+    $ver = $pid[0].groups[1]
+  end
+  $tmp = path_join($tmp_root, to_string($n))
+  mkdir($tmp)
+  chmod($tmp, 0o755)
+  $src = replace($m.target.src_path, $dir .. "/", "")
+  $job = {
+    argv: [$m.executable], cwd: $dir, timeout: 3600, max_output: 16000000,
+    stdout: "capture", stderr: "stdout",
+    env: {CARGO: $cargo, CARGO_MANIFEST_DIR: $dir, CARGO_PKG_NAME: $pkg, CARGO_PKG_VERSION: $ver,
+          CARGO_CRATE_NAME: replace($m.target.name, "-", "_"), TMPDIR: $tmp},
+    label: (if contains($m.target.kind, "lib") or contains($m.target.kind, "rlib") then "unittests " else "" end) .. $src
+      .. " (" .. replace($m.executable, realpath(".") .. "/", "") .. ")",
+    key: $pkg .. "/" .. $m.target.name,
+    tmp: $tmp
+  }
+  $is_serial = len(filter($serial, fn($s) = $s.package == $pkg and $s.target == $m.target.name)) > 0
+  if $is_serial then push($alone, $job) else push($pool, $job) end
+  $n = $n + 1
+end
+
+-- 2-4. Run: the pool (with doc-tests as one more job), then the serial list.
+$doc = {argv: concat(["cargo", "test", "--doc"], $cargo_args), timeout: 7200, max_output: 64000000,
+        stdout: "capture", stderr: "stdout", label: "doc-tests", key: "doc-tests", tmp: nil}
+fn run_spec($jobs)
+  return map($jobs, fn($j) = {argv: $j.argv, cwd: $j.cwd, env: $j.env, timeout: $j.timeout, max_output: $j.max_output, stdout: $j.stdout, stderr: $j.stderr})
+end
+$t_run = monotonic()
+$pool_jobs = concat($pool, [$doc])
+$pool_rs = run_parallel(run_spec(map($pool_jobs, fn($j) = merge($j, {cwd: $j.cwd ?? realpath(".")}))), {max: $jobs})
+$pool_s = monotonic() - $t_run
+$t_alone = monotonic()
+$alone_rs = run_parallel(run_spec($alone), {max: 1})
+$alone_s = monotonic() - $t_alone
+
+$all = concat($pool_jobs, $alone)
+$rs = concat($pool_rs, $alone_rs)
+$failed = []
+$timing = []
+for $i = 0 to len($all) - 1
+  $j = $all[$i]
+  $r = $rs[$i]
+  print("     Running " .. $j.label)
+  print($r.stdout)
+  if $r.exit_code != 0 then
+    push($failed, $j.key .. " (rc " .. to_string($r.exit_code ?? 124) .. (if $r.timed_out then ", timed out" else "" end) .. ")")
+  elif $j.tmp != nil then
+    run_argv(["rm", "-rf", $j.tmp])
+  end
+  push($timing, {key: $j.key, s: $r.duration_ms / 1000})
+end
+
+print(fmt("test_pool: %d binaries + doc-tests; build %.0f s, pool %.0f s (%d at a time), serial %.0f s (%d alone)",
+  len($all) - 1, $build_s, $pool_s, $jobs, $alone_s, len($alone)))
+for $t in slice(reverse(sort_by($timing, fn($t) = $t.s)), 0, 10)
+  print(fmt("  %7.1f s  %s", $t.s, $t.key))
+end
+if len($failed) > 0 then
+  for $f in $failed
+    print("::error::test binary failed: " .. $f)
+  end
+  print("Failing binaries keep their TMPDIR under " .. $tmp_root .. ".")
+  exit(1)
+end

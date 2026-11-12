@@ -1,0 +1,26 @@
+-- tools/ci/serial-tests.conf.mix: test binaries tools/ci/test_pool.mix runs
+-- alone, after the parallel pool, because they measure wall-clock time or
+-- look at the whole machine and so fail when other tests run beside them.
+--
+-- Strict data. Each entry names the cargo package and test target and says
+-- why, with the evidence. The list only shrinks: fix the test (scope it to
+-- its own process group, time a CPU budget instead of wall clock) and
+-- delete its entry in the same PR.
+
+serial_tests: [
+  {
+    package: "editor-model",
+    target: "editor_model",
+    reason: "highlight::tests::cold_seek_is_time_sliced asserts a wall-clock frame budget; failed in the parallel lab (frame 450 took 56 ms, 2026-11-12)"
+  },
+  {
+    package: "mix",
+    target: "native_session_pty",
+    reason: "p4 tests assert pgrep -f 'sleep 600' finds nothing on the whole machine (tests/native_session_pty.rs:3317, :3378); PTY timing; red when another job runs the suite (2026-11-12)"
+  },
+  {
+    package: "mix",
+    target: "exec_stdio_routing",
+    reason: "abandoned_in_flight_stream_write_cannot_follow_return is timing-sensitive; red on main's own hosted run at 4e69abbc (2026-11-12)"
+  }
+]
