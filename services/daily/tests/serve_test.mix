@@ -1,0 +1,98 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run from the checkout root: mix services/daily/tests/serve_test.mix
+-- The daily Bus citizen on a private broker: daily.actions, daily.execute
+-- (the phase 1 exit criterion, run {dry_run: true}, over the Bus), the
+-- request shape refusals, and daily-cli's Bus form. MIX_TEST_NODED_EXE
+-- names a fresh noded (default <prefix>/bin/noded).
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$mix = env("MIX_TEST_MIX_EXE", "")
+if $mix == "" then $mix = mix_path("prefix") .. "/bin/mix" end
+$noded = env("MIX_TEST_NODED_EXE", "")
+if $noded == "" then $noded = mix_path("prefix") .. "/bin/noded" end
+$script = realpath($here .. "/../scripts/daily.mix")
+$cli = realpath($here .. "/../scripts/daily-cli.mix")
+$media = realpath($here .. "/../../../media")
+$tmp = "/var/tmp/daily-serve-test-" .. uuid()
+$repo = $tmp .. "/repo"
+$bus = nil
+$pid = nil
+$checks = 0
+
+fn check($label, $ok)
+  global $checks
+  if not $ok then raise("TEST", "FAIL " .. $label) end
+  $checks = $checks + 1
+  print("PASS " .. $label)
+end
+
+fn gitenv()
+  return {GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", HOME: $tmp, TZ: "UTC",
+    GIT_AUTHOR_NAME: "Test Author", GIT_AUTHOR_EMAIL: "author@example.org",
+    GIT_COMMITTER_NAME: "Test Committer", GIT_COMMITTER_EMAIL: "committer@example.org",
+    GIT_AUTHOR_DATE: "2026-12-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-12-01T00:00:00Z"}
+end
+
+fn call($command, $b)
+  $wire = json_encode($b)
+  send daily $command body=$wire timeout=60
+  $v = $result
+  if type($v) == "string" then
+    try
+      $v = json_parse($v)
+    catch $m
+    end
+  end
+  return {rc: $rc, v: $v}
+end
+
+mkdir($repo, {parents: true})
+try
+  run_argv_must(["git", "init", "-q", "-b", "main", $repo], {env: gitenv()})
+  write_file($repo .. "/README.md", "# fixture\n")
+  run_argv_must(["git", "-C", $repo, "add", "-A"], {env: gitenv()})
+  run_argv_must(["git", "-C", $repo, "commit", "-q", "--no-verify", "-m", "initial"], {env: gitenv()})
+  run_argv_must(["git", "-C", $repo, "tag", "v0.1.0"], {env: gitenv()})
+  write_file($repo .. "/docs.md", "more\n")
+  run_argv_must(["git", "-C", $repo, "add", "-A"], {env: gitenv()})
+  run_argv_must(["git", "-C", $repo, "commit", "-q", "--no-verify", "-m", "docs: more (#7)"], {env: gitenv()})
+  write_file($tmp .. "/config.conf.mix", data_encode({
+    hub: $tmp .. "/hub", first_cut_from: "v0.1.0",
+    repo: {path: $repo, remote: "example/mixviu", ref: "main", fetch: false},
+    git: {env: gitenv()}, gh: {enabled: false}}, true))
+
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "daily-test", noded: $noded})
+  $env = merge($pb.client_env($bus), {MIX_DAILY_CONFIG: $tmp .. "/config.conf.mix", MIX_DAILY_MEDIA: $media, MIX_STATS: "off"})
+  $pid = spawn([$mix, "--serve", $script, "--name", "daily"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/daily.log"}, stderr: "stdout"})
+  $ready = false
+  for $i = 1 to 100
+    if call("daily.actions", {}).rc == 0 then
+      $ready = true
+      break
+    end
+    sleep(0.1)
+  end
+  check("daily citizen answers daily.actions", $ready)
+  $acts = call("daily.actions", {}).v
+  check("actions are data", $acts.schema == "mixviu.daily.actions/1" and any($acts.actions, fn($a) = $a.id == "manifest.build" and $a.enabled))
+
+  $r = call("daily.execute", {id: "run", params: {dry_run: true}})
+  check("daily.execute run {dry_run: true} stops cleanly after stage 1", $r.rc == 0
+    and $r.v.stopped_before == "post.write" and $r.v.completed[0].stage == "manifest.build" and $r.v.dry_run)
+  check("the PR came from the squash subject", $r.v.completed[0].totals.prs == 1)
+  $bad = call("daily.execute", {id: "run", params: {}, extra: 1})
+  check("unknown request field refused", $bad.rc == 10 and $bad.v.error_code == "INVALID_ARGUMENT")
+  $bad = call("daily.execute", {id: "nope"})
+  check("unknown action refused over the Bus", $bad.rc == 10 and $bad.v.error_code == "UNKNOWN_ACTION")
+
+  $c = run_argv([$mix, $cli, "status", "--date", $r.v.date], {env: $env, timeout: 60})
+  check("daily-cli reaches the citizen over the Bus", $c.exit_code == 0 and json_parse($c.stdout).stages["manifest.build"].state == "ok")
+  print("serve_test: " .. to_string($checks) .. " checks passed")
+finally
+  if $pid != nil and kill($pid) then sleep(0.2) end
+  if $bus != nil then $pb.stop($bus) end
+  if $checks < 7 and is_file($tmp .. "/daily.log") then print(read_file($tmp .. "/daily.log")) end
+  remove_dir($tmp)
+end

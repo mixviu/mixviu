@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- A stand-in for gh(1) in the daily tests: `pr list ...` prints
+-- $DAILY_FAKE_GH/pr.json, `issue list ...` prints issue.json, and every call's
+-- argv is appended to calls.jsonl so the test can check what was asked.
+$dir = env("DAILY_FAKE_GH", "")
+if $dir == "" then
+  eprint("fake_gh: DAILY_FAKE_GH is not set")
+  exit(2)
+end
+$a = args()
+append_file($dir .. "/calls.jsonl", json_encode($a) .. "\n")
+-- A planted failure whose stderr carries a secret-looking line.
+if is_file($dir .. "/fail") then
+  eprint("gh: token=" .. trim(read_file($dir .. "/fail")))
+  exit(1)
+end
+if len($a) >= 2 and $a[1] == "list" and ($a[0] == "pr" or $a[0] == "issue") then
+  print(read_file($dir .. "/" .. $a[0] .. ".json"))
+  exit(0)
+end
+eprint("fake_gh: unsupported call")
+exit(2)

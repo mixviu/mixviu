@@ -1,0 +1,103 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- The JSON Schema subset the daily schemas use (draft 2020-12 keywords):
+-- type, enum, const, properties, required, additionalProperties (bool or
+-- schema), items, minItems, maxItems, minimum, maximum, minLength,
+-- maxLength, pattern, $ref to "#/$defs/NAME". Any other keyword is refused
+-- rather than ignored, so a schema cannot claim more than is checked.
+$KNOWN = ["$schema", "$id", "$defs", "title", "description", "type", "enum", "const", "properties", "required",
+  "additionalProperties", "items", "minItems", "maxItems", "minimum", "maximum", "minLength", "maxLength", "pattern", "$ref"]
+
+fn json_type($v)
+  $t = type($v)
+  if $t == "map" then return "object" end
+  if $t == "list" then return "array" end
+  if $t == "bool" then return "boolean" end
+  if $t == "nil" then return "null" end
+  if $t == "number" then return if floor($v) == $v then "integer" else "number" end end
+  return $t
+end
+
+fn type_ok($v, $want)
+  $have = json_type($v)
+  return $have == $want or ($want == "number" and $have == "integer")
+end
+
+fn fail($errors, $path, $msg)
+  push($errors, (if $path == "" then "$" else $path end) .. ": " .. $msg)
+  return $errors
+end
+
+fn node($root, $s, $v, $path, $errors)
+  for $k in keys($s)
+    if not contains($KNOWN, $k) then raise("SCHEMA_KEYWORD", "unsupported keyword " .. $k .. " at " .. $path) end
+  end
+  if $s["$ref"] != nil then
+    $ref = $s["$ref"]
+    if not starts_with($ref, "#/$defs/") then raise("SCHEMA_REF", "only #/$defs/ refs are supported: " .. $ref) end
+    $target = ($root["$defs"] ?? {})[slice($ref, 8)]
+    if $target == nil then raise("SCHEMA_REF", "unknown ref " .. $ref) end
+    $errors = node($root, $target, $v, $path, $errors)
+  end
+  if $s.type != nil then
+    $types = if type($s.type) == "list" then $s.type else [$s.type] end
+    if not any($types, fn($t) = type_ok($v, $t)) then
+      return fail($errors, $path, "expected " .. join($types, "|") .. ", got " .. json_type($v))
+    end
+  end
+  if $s.enum != nil and not any($s.enum, fn($e) = json_type($e) == json_type($v) and deep_eq($e, $v)) then
+    $errors = fail($errors, $path, "not one of " .. json_encode($s.enum))
+  end
+  if has_key($s, "const") and not deep_eq($s.const, $v) then
+    $errors = fail($errors, $path, "must be " .. json_encode($s.const))
+  end
+  $jt = json_type($v)
+  if $jt == "string" then
+    if $s.minLength != nil and len($v) < $s.minLength then $errors = fail($errors, $path, "shorter than " .. to_string($s.minLength)) end
+    if $s.maxLength != nil and len($v) > $s.maxLength then $errors = fail($errors, $path, "longer than " .. to_string($s.maxLength)) end
+    if $s.pattern != nil and not re_match($v, $s.pattern) then $errors = fail($errors, $path, "does not match " .. $s.pattern) end
+  end
+  if $jt == "integer" or $jt == "number" then
+    if $s.minimum != nil and $v < $s.minimum then $errors = fail($errors, $path, "below " .. to_string($s.minimum)) end
+    if $s.maximum != nil and $v > $s.maximum then $errors = fail($errors, $path, "above " .. to_string($s.maximum)) end
+  end
+  if $jt == "array" then
+    if $s.minItems != nil and len($v) < $s.minItems then $errors = fail($errors, $path, "fewer than " .. to_string($s.minItems) .. " items") end
+    if $s.maxItems != nil and len($v) > $s.maxItems then $errors = fail($errors, $path, "more than " .. to_string($s.maxItems) .. " items") end
+    if $s.items != nil then
+      $i = 0
+      for $x in $v
+        $errors = node($root, $s.items, $x, $path .. "[" .. to_string($i) .. "]", $errors)
+        $i = $i + 1
+      end
+    end
+  end
+  if $jt == "object" then
+    for $r in $s.required ?? []
+      if not has_key($v, $r) then $errors = fail($errors, $path, "missing " .. $r) end
+    end
+    $props = $s.properties ?? {}
+    for $k in sort(keys($v))
+      $sub = $path .. "." .. $k
+      if has_key($props, $k) then
+        $errors = node($root, $props[$k], $v[$k], $sub, $errors)
+      elif $s.additionalProperties == false then
+        $errors = fail($errors, $sub, "not allowed")
+      elif type($s.additionalProperties) == "map" then
+        $errors = node($root, $s.additionalProperties, $v[$k], $sub, $errors)
+      end
+    end
+  end
+  return $errors
+end
+
+-- [] when $value conforms, else one message per violation.
+fn errors($schema, $value)
+  return node($schema, $schema, $value, "", [])
+end
+
+fn check($schema, $value, $what)
+  $e = errors($schema, $value)
+  if len($e) > 0 then raise("SCHEMA", $what .. " does not match its schema: " .. join(slice($e, 0, 10), "; ")) end
+  return $value
+end
