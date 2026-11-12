@@ -6,7 +6,7 @@
 resolver = "3"
 exclude = ["vendor", "vendor/smithay", "vendor/eframe", "vendor/egui-wgpu", "vendor/calloop", "vendor/input"]
 # libs/* includes maildoc and every other shared library component.
-members = ["libraries/maildoc","engines/viud/crates/*","libraries/ui","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","libraries/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
+members = ["services/inputd","libraries/maildoc","engines/viud/crates/*","libraries/ui","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","libraries/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd"]
 
 [workspace.package]
 version = "0.1.2"
@@ -24,6 +24,7 @@ maildoc = { path = "libraries/maildoc" }
 input = { path = "vendor/input" }
 calloop = { path = "vendor/calloop" }
 inputd-core = { path = "libraries/inputd-core" }
+inputd-schema = { path = "libraries/inputd-schema" }
 world = { path = "engines/viud/crates/world" }
 ui = { path = "libraries/ui" }
 surfaces = { path = "engines/viud/crates/surfaces" }
@@ -84,7 +85,7 @@ rpassword = "7"
 rustls-native-certs = "0.8"
 rustls-pki-types = { version = "1.15.1", features = ["std"] }
 smtp-proto = "0.2"
-spamlite = { git = "https://github.com/markc/spamlite", rev = "e4cda94713f696414550f414feaea4e8d6c4355e", default-features = false }
+spamlite = { git = "https://github.com/markc/spamlite", rev = "a4d8202a4d78bbcd1fd737b617bca3591d4e096d", default-features = false }
 tokio-stream = "0.1"
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 unicode-normalization = "0.1"
