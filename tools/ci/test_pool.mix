@@ -94,7 +94,9 @@ try
   $record_env[$runner_var] = $mix_exe .. " " .. $recorder .. " " .. $rec
   $b = run_argv(concat(concat(["cargo", "test", "--no-fail-fast", "--color", "never"], $select), $cargo_args),
     {timeout: 14400, env: $record_env, stdout: "capture", stderr: "capture", max_output: 256000000})
-  print($b.stderr)
+  -- The build output, without the record pass's Running lines: each binary's
+  -- Running line is printed once, with its result, below.
+  print(join(filter(lines($b.stderr), fn($l) = not re_match(re_replace($l, "\\x1b\\[[0-9;]*m", ""), "^\\s+Running ")), "\n"))
   if not $b.ok then
     print($b.stdout)
     print("::error::test build or record failed (rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. "): cargo test " .. join(concat($select, $cargo_args), " "))
