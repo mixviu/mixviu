@@ -169,14 +169,18 @@ fn cold_seek_is_time_sliced() {
     let text = Text::from_text(&s).unwrap();
     let mut h = Highlight::for_language("python", None);
     let mut frames = 0;
+    let frame_lines = SliceBudget::default().max_lines;
+    let max_frames = (lines - 1).div_ceil(frame_lines) + 1;
     loop {
         let mut budget = SliceBudget::default();
-        let started = std::time::Instant::now();
+        let before = h.inner.borrow().cache.reach();
         let got = h.spans(&text, lines, &mut budget).is_some();
-        let spent = started.elapsed();
+        let after = h.inner.borrow().cache.reach();
+        // Measure parsed-line progress, not scheduler delays in debug builds.
+        // The successful frame also parses the requested line itself.
         assert!(
-            spent < std::time::Duration::from_millis(50),
-            "frame {frames} took {spent:?}"
+            after > before && after - before <= frame_lines + usize::from(got),
+            "frame {frames}: frontier {before} -> {after} (ready={got})"
         );
         frames += 1;
         if got {
@@ -187,7 +191,7 @@ fn cold_seek_is_time_sliced() {
             budget.max_lines, 0,
             "a behind frame used its whole budget, no more"
         );
-        assert!(frames < lines, "no progress");
+        assert!(frames < max_frames, "seek did not finish in {max_frames} frames");
     }
     assert!(!h.behind());
     assert!(
