@@ -1258,7 +1258,10 @@ mod tests {
         for index in 0..10 {
             observe_command(&manager, &format!("musicd.event.{index}"));
         }
-        assert!(rx.try_recv().is_err(), "delivery waits for the batch window");
+        assert!(
+            rx.try_recv().is_err(),
+            "delivery waits for the batch window"
+        );
         tokio::time::sleep(DRAIN_INTERVAL + Duration::from_millis(1)).await;
         assert_eq!(std::iter::from_fn(|| rx.try_recv().ok()).count(), 10);
         assert_eq!(passes(), 1);

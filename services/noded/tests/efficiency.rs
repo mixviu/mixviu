@@ -47,9 +47,10 @@ use std::{
 };
 
 /// Wake-ups a second allowed to an idle broker with live mesh links. The
-/// broker's own timers are a 1 s publish flush and a 10 s janitor; the
-/// regression this guards (a 2 ms drain tick) made 500.
-const IDLE_WAKEUP_BUDGET: f64 = 50.0;
+/// broker's own timers are a 1 s publish flush and a 10 s janitor, and it
+/// measures 2.3 a second; the regression this guards (a 2 ms drain tick)
+/// made 500. Anything polling faster than every 50 ms fails.
+const IDLE_WAKEUP_BUDGET: f64 = 20.0;
 
 const NAMES: [&str; 5] = ["alpha", "beta", "gamma", "delta", "epsilon"];
 
