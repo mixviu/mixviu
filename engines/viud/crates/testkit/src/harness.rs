@@ -251,7 +251,10 @@ impl Harness {
             }
             std::thread::sleep(Duration::from_millis(1));
         }
-        panic!("no protocol error within {WAIT_BOUND:?}; sync target {target}, observed {}", self.client.state.syncs);
+        panic!(
+            "no protocol error within {WAIT_BOUND:?}; sync target {target}, observed {}",
+            self.client.state.syncs
+        );
     }
 
     /// Service screencopy as a backend does after rendering a frame of the fake
@@ -373,7 +376,8 @@ impl Harness {
         let target = self.client.sync();
         assert!(
             self.pump_until(|h| h.client.state.syncs >= target),
-            "sync target {target}, observed {}", self.client.state.syncs
+            "sync target {target}, observed {}",
+            self.client.state.syncs
         );
     }
 

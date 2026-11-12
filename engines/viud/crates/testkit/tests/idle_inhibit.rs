@@ -188,7 +188,8 @@ fn idle_notification_is_held_then_rearmed_on_the_real_calloop() {
     dispatcher::idle::set_inhibited(&mut h.wire.state, false);
     assert!(
         h.pump_until(|h| !h.client.state.idle_events.is_empty()),
-        "idle notification did not resume; events: {:?}", h.client.state.idle_events
+        "idle notification did not resume; events: {:?}",
+        h.client.state.idle_events
     );
     assert_eq!(h.client.state.idle_events, [true]);
     notification.destroy();

@@ -16,7 +16,8 @@ const AGENT: usize = 1;
 fn finish(h: &mut Harness, read: &mut ClipboardRead) -> Vec<u8> {
     assert!(
         h.pump_until(|_| read.poll()),
-        "paste never reached EOF; bytes so far: {:?}", read.bytes()
+        "paste never reached EOF; bytes so far: {:?}",
+        read.bytes()
     );
     read.bytes().to_vec()
 }
@@ -73,17 +74,23 @@ fn a_copy_survives_its_source_going_away() {
     let source = h.client.set_selection(PRIMARY, &[TEXT], b"bravo");
     // Capture is read by a worker: pumping for a fixed 40 ms does not prove
     // that it ran. Keep the source alive until its bytes have been admitted.
-    assert!(h.pump_until(|h| !h.wire.state.clipboard.capture.is_empty()),
-        "copy was not captured; capture empty: {}", h.wire.state.clipboard.capture.is_empty());
+    assert!(
+        h.pump_until(|h| !h.wire.state.clipboard.capture.is_empty()),
+        "copy was not captured; capture empty: {}",
+        h.wire.state.clipboard.capture.is_empty()
+    );
     source.destroy();
     h.roundtrip();
     let served = h.client.state.clipboard.served.len();
     h.focus_keyboard_client(b, &paster);
     h.roundtrip_client(b);
-    assert!(h.pump_until(|h| h.extra_clients[b]
-        .selection_mimes(PRIMARY)
-        .is_some_and(|mimes| mimes.iter().any(|mime| mime == TEXT))),
-        "persisted copy was not offered; mimes: {:?}", h.extra_clients[b].selection_mimes(PRIMARY));
+    assert!(
+        h.pump_until(|h| h.extra_clients[b]
+            .selection_mimes(PRIMARY)
+            .is_some_and(|mimes| mimes.iter().any(|mime| mime == TEXT))),
+        "persisted copy was not offered; mimes: {:?}",
+        h.extra_clients[b].selection_mimes(PRIMARY)
+    );
     let mut read = h.extra_clients[b].receive(PRIMARY, TEXT);
     assert_eq!(finish(&mut h, &mut read), b"bravo");
     assert_eq!(
@@ -123,7 +130,8 @@ fn an_agent_seat_copy_is_offered_on_the_primary_seat() {
     // its capture is still in flight leaves nothing to persist).
     assert!(
         h.pump_until(|h| !h.wire.state.clipboard.capture.is_empty()),
-        "agent copy was not captured; capture empty: {}", h.wire.state.clipboard.capture.is_empty()
+        "agent copy was not captured; capture empty: {}",
+        h.wire.state.clipboard.capture.is_empty()
     );
     source.destroy();
     h.roundtrip();
