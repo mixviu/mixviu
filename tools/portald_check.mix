@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC only: refresh the lock/fmt, exercise both feature modes, return the diff.
+-- No installed defaults are staged: the tests that need settings set them.
+fn check_step($argv, $env = {})
+  $env.RUSTC_WRAPPER = ""
+  $env.TMPDIR = "/var/tmp"
+  print(join($argv, " "))
+  $r = run_argv($argv, {env: $env, timeout: 3600, stdout: "inherit", stderr: "inherit"})
+  if not $r.ok then raise("CHECK_FAILED", join($argv, " ")) end
+end
+$rc = 0
+try
+  check_step(["cargo", "fmt", "--all"])
+  check_step(["cargo", "check", "-p", "portald", "--all-targets"])
+  check_step(["cargo", "check", "-p", "portald", "--no-default-features", "--all-targets"])
+  check_step(["cargo", "test", "--locked", "-p", "portald", "--no-fail-fast"])
+  check_step(["cargo", "test", "--locked", "-p", "portald", "--no-default-features", "--no-fail-fast"])
+  -- The ELF check builds the feature-disabled binary itself, whatever ran before.
+  check_step(["cargo", "build", "--locked", "-p", "portald", "--no-default-features", "--bin", "portald"])
+  $elf = run_argv_must(["ldd", "target/debug/portald"])
+  print($elf)
+  if contains($elf, "libpipewire") then raise("FEATURE_LEAK", "feature-disabled portald links PipeWire") end
+  check_step(["cargo", "build", "--locked", "-p", "portald", "--bin", "portald"])
+  check_step([realpath("/proc/self/exe"), "services/portald/tests/restart_recovery_test.mix"])
+  check_step(["cargo", "tree", "--locked", "-i", "pipewire-sys"])
+  check_step([realpath("/proc/self/exe"), "tools/foreign_admission_test.mix", "--cargo"])
+  check_step([realpath("/proc/self/exe"), "tools/foreign_gate.mix", "--locked"])
+catch $message
+  print($message)
+  $rc = 1
+finally
+  print("WORKER_DIFF_BEGIN")
+  print(run_argv_must(["git", "diff"]))
+  print("WORKER_DIFF_END")
+  check_step(["git", "checkout", "-q", "--", "."])
+end
+exit($rc)

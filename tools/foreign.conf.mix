@@ -3,11 +3,10 @@
 -- assembly) code. Read by tools/foreign_gate.mix. Rule: AGENTS.md "Foreign
 -- code has a high bar" (2026-10-28).
 --
--- allow:  accepted foreign code, each with a reason and an exit path. Adding
---         one is the project lead's call.
--- debt:   foreign code present today. The gate fails on any foreign crate in
---         neither list, so this list only shrinks. `kind`: "vendored" compiles
---         bundled C/C++ (cc); "system" binds a host library (pkg-config).
+-- allow: accepted code strict crates may reach; debt: existing code to remove.
+-- admitted: deliberately accepted for named non-strict members only.
+-- Every foreign crate is in exactly one list. Debt only shrinks.
+-- `kind`: vendored compiles bundled C/C++; system binds a host library.
 -- strict: crates whose closure may reach `allow` entries only (the `mix`
 --         shell is every server's login shell).
 foreign: {
@@ -16,6 +15,11 @@ foreign: {
       exit: "the planned Rust SQLite rewrite"},
     "ring": {reason: "TLS crypto primitives (rustls); audited C and assembly",
       exit: "a pure-Rust rustls crypto provider when one is mature"}
+  },
+  admitted: {
+    "pipewire-sys": {kind: "system", via: "pipewire (portald ScreenCast only)", exit: "a pure-Rust PipeWire native-protocol client once one can publish a video stream; until then OS interface", only: ["portald"], by: "Mark", on: "2026-11-12"},
+    "libspa-sys": {kind: "vendored", via: "pipewire (portald ScreenCast only); runs bindgen; compiles generated SPA inline shims and src/{type-info,command,node-command,meta}.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"},
+    "libspa": {kind: "vendored", via: "pipewire (portald ScreenCast only); compiles upstream tests/pod.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"}
   },
   debt: {
     -- vendored C/C++
@@ -61,7 +65,7 @@ foreign: {
   },
   -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
   -- A trailing * matches a prefix.
-  strict_forbid: ["lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
+  strict_forbid: ["pipewire*", "libspa*", "lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
     "glow", "glutin*", "smithay*", "wayland-*", "x11*", "xkbcommon*", "calloop-wayland-source",
     "iced*", "bevy*", "vello*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
   -- Shared libraries a built strict binary must not need (DT_NEEDED prefix).

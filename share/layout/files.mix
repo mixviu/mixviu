@@ -14,6 +14,22 @@ fn entries($here)
   return $files
 end
 
+-- Preserve the template closure in apps.tar. Repository-relative sources do
+-- not exist on an installed host; the bundled manifest names its own copies.
+fn bundle($here, $dest)
+  mkdir($dest .. "/sources", {parents: true})
+  $files = []
+  for $entry in entries($here)
+    $source = $here .. "/" .. $entry.source
+    if not is_file($source) then raise("LAYOUT_SOURCE", "missing template " .. $source) end
+    $name = "sources/" .. hash_sha256($entry.source) .. "-" .. basename($source)
+    copy($source, $dest .. "/" .. $name)
+    $entry.source = $name
+    push($files, $entry)
+  end
+  write_file($dest .. "/templates.mx", data_encode({schema: 1, files: $files}, true) .. "\n")
+end
+
 fn plan($here, $roots)
   $pending = []
   $seen = {}

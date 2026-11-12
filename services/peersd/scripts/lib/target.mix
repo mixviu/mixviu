@@ -1,0 +1,77 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- target: which peersd a client on this node talks to. The CLI and the
+-- hooks share it.
+--
+-- $PEERS_TARGET wins (tests run a private peersd). Otherwise
+-- $XDG_CONFIG_HOME/mixos/peers.conf.mix may name a hub node, {hub: "NODE"}:
+-- every node but the hub then reaches the hub's peersd as peers.NODE.bus,
+-- so one registry serves a group of nodes. With no conf (or on the hub
+-- itself) the target is this node's own peers service.
+
+fn conf_file()
+  return env("XDG_CONFIG_HOME", env("HOME") .. "/.config") .. "/mixos/peers.conf.mix"
+end
+
+-- The hub named in the conf, or "" (no conf, or one that does not parse).
+fn hub()
+  $f = conf_file()
+  if not is_file($f) then return "" end
+  try
+    $c = load_data($f)
+    if type($c) == "map" and type($c.hub) == "string" then return $c.hub end
+  catch $m
+  end
+  return ""
+end
+
+-- This node's name from the local broker, or "" when it does not answer.
+fn node($timeout)
+  try
+    send noded noded.info timeout=$timeout
+    if $rc == 0 then
+      $info = if type($result) == "string" then json_parse($result) else $result end
+      return to_string($info.node ?? "")
+    end
+  catch $m
+  end
+  return ""
+end
+
+-- Every peersd a fan-out visits, this node first: [{node, service}].
+-- $PEERS_NODES ("n1=svc1,n2=svc2", this node first) overrides it for tests.
+-- With a hub, the hub's registry is the only one. Otherwise this node's
+-- own, then one per mesh peer noded knows (`noded.peers`); a node without a
+-- peersd answers "not found" at once and is skipped.
+fn nodes($node)
+  $o = env("PEERS_NODES", "")
+  if $o != "" then
+    return map(split($o, ","), fn($p) = {node: split($p, "=")[0], service: split($p, "=")[1]})
+  end
+  $h = hub()
+  if $h != "" then return [{node: $h, service: service($node)}] end
+  $out = [{node: $node, service: "peers"}]
+  $asked = false
+  try
+    send noded noded.peers timeout=2
+    if $rc == 0 then
+      $asked = true
+      $v = if type($result) == "string" then json_parse($result) else $result end
+      for each $p in $v.peers ?? []
+        if type($p.name) == "string" and $p.name != $node then push($out, {node: $p.name, service: "peers." .. $p.name .. ".bus"}) end
+      end
+    end
+  catch $m
+  end
+  if not $asked then eprint("peers: noded did not list the mesh nodes; this node only") end
+  return $out
+end
+
+fn service($node)
+  $t = env("PEERS_TARGET", "")
+  if $t != "" then return $t end
+  $h = hub()
+  if $h == "" or $h == $node then return "peers" end
+  return "peers." .. $h .. ".bus"
+end
