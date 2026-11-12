@@ -20,8 +20,11 @@
 -- 2. Replay. Every recorded invocation runs from a pool of N (default 8)
 --    with exactly the recorded argv, cwd and environment. Values go in the
 --    environment block (Mix's env option with clear_env), never in argv;
---    only cargo's hyphenated CARGO_BIN_EXE_<bin> paths, whose names Mix
---    refuses, are set through `env --`.
+--    only cargo's hyphenated CARGO_BIN_EXE_<bin> paths (name of that form,
+--    value under the target directory), whose names Mix refuses, are set
+--    through `env --`. Any other name Mix refuses (an inherited
+--    BASH_FUNC_f%%, say) fails the step rather than putting its value in
+--    argv: unset it in the CI environment.
 -- 3. Binaries in tools/ci/serial-tests.conf.mix run alone afterwards; an
 --    entry for a selected package that matches none of its binaries is an
 --    error.
@@ -177,7 +180,7 @@ try
     for $k in sort(keys($env))
       if re_match($k, "^[A-Za-z_][A-Za-z0-9_]*$") then
         $plain[$k] = $env[$k]
-      elif starts_with($k, "CARGO_BIN_EXE_") then
+      elif re_match($k, "^CARGO_BIN_EXE_[A-Za-z0-9_-]+$") and (starts_with($env[$k], $target_dir .. "/") or starts_with($env[$k], $meta_target .. "/")) then
         push($odd, $k .. "=" .. $env[$k])
       else
         print("::error::test_pool: " .. $key .. " has environment name '" .. $k .. "', which can only be passed in argv; refusing to expose its value")
