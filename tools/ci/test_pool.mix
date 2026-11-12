@@ -12,9 +12,10 @@
 -- 1. `cargo test --no-run --message-format=json CARGO_TEST_ARGS` builds and
 --    lists every test executable (compile errors go to stderr as usual).
 -- 2. The executables run from a pool of N (default 8), each with the working
---    directory and runtime variables cargo gives it. The environment is
---    otherwise the caller's, as under `cargo test` (a per-binary TMPDIR
---    inside the checkout changed what some tests observe, so there is none).
+--    directory and the run environment cargo gives it (see pkg_env and the
+--    library search path below). The environment is otherwise the
+--    caller's, as under `cargo test` (a per-binary TMPDIR inside the
+--    checkout changed what some tests observe, so there is none).
 -- 3. Binaries listed in tools/ci/serial-tests.conf.mix run alone afterwards.
 -- 4. Doc-tests run as `cargo test --doc` with the same arguments, only when
 --    the selection has a library (cargo refuses --doc otherwise; plain
@@ -39,11 +40,58 @@ $root = realpath(".")
 -- 1. Build and list.
 $t_build = monotonic()
 $b = run_argv(concat(["cargo", "test", "--no-run", "--message-format=json"], $cargo_args), {timeout: 14400, stderr: "inherit", max_output: 512000000})
-if $b.exit_code != 0 then
-  print("::error::test build failed (rc " .. to_string($b.exit_code) .. "): cargo test --no-run " .. join($cargo_args, " "))
+if not $b.ok then
+  print("::error::test build failed (rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. "): cargo test --no-run " .. join($cargo_args, " "))
   exit(1)
 end
 $build_s = monotonic() - $t_build
+
+-- Cargo's run environment for a test binary (cargo's fill_env): CARGO,
+-- CARGO_MANIFEST_DIR, CARGO_MANIFEST_PATH and the CARGO_PKG_* set from the
+-- package, and a dynamic-library search path of the build scripts' native
+-- link paths inside the target directory, then the deps and output
+-- directories, then the sysroot's target libdir, then the caller's
+-- LD_LIBRARY_PATH. Package fields come from cargo metadata, not guesses.
+$meta = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps", "--locked"], {timeout: 600, max_output: 64000000}))
+$pkgs = {}
+for $p in $meta.packages
+  $pkgs[dirname($p.manifest_path)] = $p
+end
+$target_dir = $meta.target_directory
+$sysroot = trim(run_argv_must(["rustc", "--print", "sysroot"]))
+$host = re_find(run_argv_must(["rustc", "-vV"]), "(?m)^host: (\\S+)$")[0].groups[0]
+$sysroot_lib = path_join($sysroot, "lib/rustlib/" .. $host .. "/lib")
+$native = []
+for $line in lines($b.stdout)
+  if not starts_with($line, "{") then continue end
+  $m = json_parse($line)
+  if $m.reason != "build-script-executed" then continue end
+  for $lp in $m.linked_paths ?? []
+    -- "native=/path", "dependency=/path" or a bare path; cargo keeps only
+    -- paths inside the target directory.
+    $path = re_replace($lp, "^[a-z]+=", "")
+    if starts_with($path, $target_dir .. "/") and not contains($native, $path) then push($native, $path) end
+  end
+end
+$caller_ld = env("LD_LIBRARY_PATH")
+
+fn pkg_env($p, $dir)
+  $v = $p.version
+  $core = split(split($v, "+")[0], "-")
+  $nums = split($core[0], ".")
+  return {
+    CARGO_MANIFEST_DIR: $dir, CARGO_MANIFEST_PATH: $p.manifest_path,
+    CARGO_PKG_NAME: $p.name, CARGO_PKG_VERSION: $v,
+    CARGO_PKG_VERSION_MAJOR: $nums[0], CARGO_PKG_VERSION_MINOR: $nums[1] ?? "0",
+    CARGO_PKG_VERSION_PATCH: $nums[2] ?? "0",
+    CARGO_PKG_VERSION_PRE: if len($core) > 1 then join(slice($core, 1, len($core)), "-") else "" end,
+    CARGO_PKG_AUTHORS: join($p.authors ?? [], ":"),
+    CARGO_PKG_DESCRIPTION: $p.description ?? "", CARGO_PKG_HOMEPAGE: $p.homepage ?? "",
+    CARGO_PKG_REPOSITORY: $p.repository ?? "", CARGO_PKG_LICENSE: $p.license ?? "",
+    CARGO_PKG_LICENSE_FILE: $p.license_file ?? "", CARGO_PKG_RUST_VERSION: $p.rust_version ?? "",
+    CARGO_PKG_README: $p.readme ?? ""
+  }
+end
 
 $pool = []
 $alone = []
@@ -56,32 +104,32 @@ for $line in lines($b.stdout)
   $is_lib = contains($m.target.kind, "lib") or contains($m.target.kind, "rlib")
   if $is_lib then $has_lib = true end
   $dir = dirname($m.manifest_path)
-  -- package_id is ".../dir#name@ver", or ".../name#ver" when they agree.
-  $pid = re_find($m.package_id, "#(?:([A-Za-z0-9_.-]+)@)?([0-9][^ ]*)$")
-  $pkg = basename($dir)
-  $ver = "0.0.0"
-  if len($pid) > 0 then
-    $pkg = $pid[0].groups[0] ?? $pkg
-    $ver = $pid[0].groups[1]
+  $p = $pkgs[$dir]
+  if $p == nil then
+    print("::error::no cargo metadata for the package at " .. $dir)
+    exit(1)
   end
+  $deps = dirname($m.executable)
+  $ld = concat($native, [$deps, dirname($deps), $sysroot_lib])
+  if $caller_ld != "" then push($ld, $caller_ld) end
   $src = replace($m.target.src_path, $dir .. "/", "")
   $job = {
     argv: [$m.executable], cwd: $dir, timeout: 3600, max_output: 16000000,
     stdout: "capture", stderr: "stdout",
-    env: {CARGO: $cargo, CARGO_MANIFEST_DIR: $dir, CARGO_PKG_NAME: $pkg, CARGO_PKG_VERSION: $ver,
-          CARGO_CRATE_NAME: replace($m.target.name, "-", "_")},
+    env: merge(pkg_env($p, $dir), {CARGO: $cargo, LD_LIBRARY_PATH: join($ld, ":")}),
     label: (if $is_lib then "unittests " else "" end) .. $src .. " (" .. replace($m.executable, $root .. "/", "") .. ")",
-    key: $pkg .. "/" .. $m.target.name
+    key: $p.name .. "/" .. $m.target.name
   }
-  $is_serial = len(filter($serial, fn($s) = $s.package == $pkg and $s.target == $m.target.name)) > 0
+  $is_serial = len(filter($serial, fn($s) = $s.package == $p.name and $s.target == $m.target.name)) > 0
   if $is_serial then push($alone, $job) else push($pool, $job) end
 end
 
 -- 2-4. Run: the pool (with doc-tests as one more job when there is a
--- library), then the serial list one at a time.
+-- library), then the serial list one at a time. --no-fail-fast keeps the
+-- doc-tests of later packages running after one fails, as before.
 $pool_jobs = $pool
 if $has_lib then
-  push($pool_jobs, {argv: concat(["cargo", "test", "--doc"], $cargo_args), cwd: $root, env: {},
+  push($pool_jobs, {argv: concat(["cargo", "test", "--doc", "--no-fail-fast"], $cargo_args), cwd: $root, env: {},
     timeout: 7200, max_output: 64000000, stdout: "capture", stderr: "stdout", label: "doc-tests", key: "doc-tests"})
 end
 fn run_spec($jobs)
@@ -103,8 +151,11 @@ for $i = 0 to len($all) - 1
   $r = $rs[$i]
   print("     Running " .. $j.label)
   print($r.stdout)
-  if $r.exit_code != 0 then
-    push($failed, $j.key .. " (rc " .. to_string($r.exit_code ?? 124) .. (if $r.timed_out then ", timed out" else "" end) .. ")")
+  -- `ok` is false for a non-zero exit, a timeout (even when the leader
+  -- exited 0 while a descendant held its output open), and a spawn failure.
+  if not $r.ok then
+    push($failed, $j.key .. " (rc " .. to_string($r.exit_code ?? 124) .. (if $r.timed_out then ", timed out" else "" end)
+      .. (if $r.error != nil then ", " .. to_string($r.error) else "" end) .. ")")
   end
   push($timing, {key: $j.key, s: $r.duration_ms / 1000})
 end
