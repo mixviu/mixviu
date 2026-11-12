@@ -1390,7 +1390,7 @@ fn cmd_type(name: &str, eval: &Evaluator) {
     }
 
     // Keyword
-    if MIX_KEYWORDS.contains(&name) {
+    if KEYWORDS.contains(&name) {
         println!("{} is a keyword", name);
         return;
     }
