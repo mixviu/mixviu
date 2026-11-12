@@ -11,7 +11,7 @@ lab merge, install or service change.
 
 Adaptations: crate/binary/server/log identity; existing MixViu shared crates;
 registered environment constants and installed settings; paths-root logging;
-logical indexd paths; sibling `paths::bin("mix")` script execution; cleaned
+logical indexd paths; sibling `current_exe().with_file_name("mix")` script execution; cleaned
 manual and helper; all source tests retained, plus a committed 29-name tool
 inventory and stdio status/Bus/execution test. The frozen evaluator worker
 moves into the sibling Mix binary; process-group cancellation and byte bounds
@@ -89,3 +89,5 @@ without rollback. Inherited log_tail/log_search paths are unconfined (including
 absolute and parent paths); path confinement and traversal/symlink coverage
 are listed for follow-up in the PR. No install or live configuration change
 is part of this port.
+
+The audit checkpoint 3f924fae is the immutable 3.1.2 port closure required by the security-pin decision, not a claim that it is advisory-clean. It is intentionally separate from the moving main baseline used for engine closure and performance checks.

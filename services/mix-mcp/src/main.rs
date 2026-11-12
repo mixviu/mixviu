@@ -1203,12 +1203,12 @@ impl MixMcp {
         };
 
         if let Err(e) = crate::knowledge_settings::load_domains() {
-            return tool_output::failure(format!("{e:#}"));
+            return format!("ERROR: {e:#}");
         }
         // Load knowledge settings for trust weighting + journal decay
         let k = match crate::knowledge_settings::load_knowledge() {
             Ok(k) => k,
-            Err(e) => return tool_output::failure(format!("{e:#}")),
+            Err(e) => return format!("ERROR: {e:#}"),
         };
 
         let mut result = serde_json::json!({

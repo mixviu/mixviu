@@ -35,3 +35,31 @@ explicit thresholds and the observation purge procedure.
 Run `mix tools/mcp_gate.mix focused` through CBC to build the test interpreter,
 run tests and collect dependency/release receipts. The integration tests embed
 the real noded using `test-broker`, with isolated socket, config and home paths.
+
+## Worker and settings contract
+
+The interpreter is `mix` beside the adapter's resolved `current_exe()`.
+`MIX_PREFIX` relocates runtime data, never the executable. Tests use the
+same production rule; no interpreter override is provided.
+
+`mix --internal-mix-worker` is a public protocol entry, despite its name.
+It accepts one JSON object on stdin: `script` (string, at most 256 KiB)
+and optional `cwd` (string). Unknown fields are rejected. It skips ordinary
+shell startup hooks, captures stdout/stderr (at most 1 MiB each), and returns
+the script status. It adds no authority beyond a user running `mix`; this
+is not a sandbox. Bus provenance reports `binary: "mix"`, with the MCP
+session's named attribution retained.
+
+The evaluator uses the committed frozen builtin inventory in
+`libraries/mix-shell/src/mcp_builtins.txt`, derived from the two builtin
+registries and feature-gated dispatch arms at `8779f33`. Only core plus
+json, regex, toml, datetime, url and crypto calls are admitted. Shell-only
+extensions such as `tar_list`, HTTP and SQLite calls are refused. Core
+process and file-write builtins were already in the original surface.
+
+Log-filter and deadline overrides use the exact process environment and
+fall back to the original code defaults (baseline filter, 120 seconds,
+600-second script floor). The script override is read only for scripts.
+Missing or malformed installed knowledge/domain/indexd defaults fail the
+affected tool with the variable and `<prefix>/env.mx` in the error; they
+never prevent startup or tool discovery. `Default` implementations are pure.

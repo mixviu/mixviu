@@ -15,7 +15,8 @@ if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") t
 end
 fn checked($argv, $env = {})
   -- A /build ancestor marks scripts for version lint. Narrow PTY fixtures
-  -- also need a short path. This CBC-only root is unique, cleaned below,
+  -- also need a short path for the unchanged 50-column PTY fixture.
+  -- This CBC-only root is unique, cleaned below,
   -- and outside both the build tree and the worker's /tmp.
   $scratch = trim(run_argv_must(["mktemp", "-d", "/mXXXX"]))
   -- Native fixtures require traversable ancestors (BUS-013); their own

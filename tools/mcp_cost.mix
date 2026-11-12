@@ -49,8 +49,8 @@ $head = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
 $base = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
 $root = realpath(trim(run_argv_must(["mktemp", "-d", "target/mcp-cost-XXXXXXXX"])))
 $tmp = $root .. "/tmp"
-mkdir($tmp)
 try
+mkdir($tmp)
 $before = nil
 try
   checked(["git", "checkout", "-q", $base])
