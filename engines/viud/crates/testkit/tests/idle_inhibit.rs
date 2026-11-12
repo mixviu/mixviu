@@ -68,8 +68,11 @@ fn killed_client_releases_its_live_inhibitor() {
     child.kill().unwrap();
     child.wait().unwrap();
     assert_eq!(live, 1, "child must own a live resource before SIGKILL");
-    h.roundtrip();
-    assert!(h.wire.state.inhibitors.surfaces.is_empty());
+    assert!(
+        h.pump_until(|h| h.wire.state.inhibitors.surfaces.is_empty()),
+        "inhibitors retained after disconnect: {:?}",
+        h.wire.state.inhibitors.surfaces
+    );
     std::fs::remove_file(path).unwrap();
 }
 
@@ -83,8 +86,11 @@ fn disconnect_retires_each_resource_without_an_explicit_destroy() {
     h.roundtrip_client(i);
     assert_eq!(h.wire.state.inhibitors.surfaces.len(), 2);
     drop(h.extra_clients.remove(i));
-    h.roundtrip();
-    assert!(h.wire.state.inhibitors.surfaces.is_empty());
+    assert!(
+        h.pump_until(|h| h.wire.state.inhibitors.surfaces.is_empty()),
+        "inhibitors retained after disconnect: {:?}",
+        h.wire.state.inhibitors.surfaces
+    );
 }
 
 #[test]
@@ -180,15 +186,11 @@ fn idle_notification_is_held_then_rearmed_on_the_real_calloop() {
     h.roundtrip();
     assert!(h.client.state.idle_events.is_empty());
     dispatcher::idle::set_inhibited(&mut h.wire.state, false);
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-    while h.client.state.idle_events.is_empty() {
-        h.roundtrip();
-        assert!(
-            std::time::Instant::now() < deadline,
-            "idle notification did not resume"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    assert!(
+        h.pump_until(|h| !h.client.state.idle_events.is_empty()),
+        "idle notification did not resume; events: {:?}",
+        h.client.state.idle_events
+    );
     assert_eq!(h.client.state.idle_events, [true]);
     notification.destroy();
 }
