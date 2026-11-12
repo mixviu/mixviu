@@ -25,8 +25,9 @@ async fn invalid_layout_keeps_discovery_and_returns_log_errors() -> anyhow::Resu
                     std::ffi::OsStr::new("relative")
                 },
             )
-            .stderr(std::fs::File::create(&stderr)?);
-        let service = ().serve(TokioChildProcess::new(command)?).await?;
+;
+        let (transport, _) = TokioChildProcess::builder(command).stderr(std::fs::File::create(&stderr)?).spawn()?;
+        let service = ().serve(transport).await?;
         let tools = service.list_all_tools().await?;
         let mut names: Vec<_> = tools.iter().map(|t| t.name.as_ref()).collect();
         names.sort_unstable();
