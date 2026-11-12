@@ -11759,15 +11759,15 @@ fn resolve_remote_mix_bin(
 fn remote_mix_bin(caller: &str, opt: Option<&str>) -> MixResult<String> {
     // Preserve main's strict Unicode check, including when an option is present.
     let env = paths::env::os(paths::env::REMOTE_EXE)
-            .map(|v| {
-                v.into_string().map_err(|_| {
-                    opt_invalid(
-                        caller,
-                        format!("{} is not valid UTF-8", paths::env::REMOTE_EXE),
-                    )
-                })
+        .map(|v| {
+            v.into_string().map_err(|_| {
+                opt_invalid(
+                    caller,
+                    format!("{} is not valid UTF-8", paths::env::REMOTE_EXE),
+                )
             })
-            .transpose()?;
+        })
+        .transpose()?;
     let binary = resolve_remote_mix_bin(caller, opt, env.as_deref(), || {
         paths::env::setting(paths::env::REMOTE_EXE).map_err(|error| {
             let file = paths::try_root(paths::Root::Prefix)
@@ -31171,60 +31171,108 @@ mod ssh_helpers_tests {
         if paths::env::os(CHILD).is_none() {
             struct Scratch(std::path::PathBuf);
             impl Drop for Scratch {
-                fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+                fn drop(&mut self) {
+                    let _ = std::fs::remove_dir_all(&self.0);
+                }
             }
             let exe = std::env::current_exe().unwrap();
             for mode in ["staged", "missing", "nonunicode"] {
-                let root = Scratch(exe.parent().unwrap().join(format!(
-                    "remote-registry-{}-{mode}-{}", std::process::id(),
-                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())));
+                let root = Scratch(
+                    exe.parent().unwrap().join(format!(
+                        "remote-registry-{}-{mode}-{}",
+                        std::process::id(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_nanos()
+                    )),
+                );
                 std::fs::create_dir(&root.0).unwrap();
                 if mode == "staged" {
-                    std::fs::write(root.0.join("env.mx"), format!(
-                        "{{schema: 1, commit: \"fixture\", {}: \"registry-mix\"}}", paths::env::REMOTE_EXE)).unwrap();
+                    std::fs::write(
+                        root.0.join("env.mx"),
+                        format!(
+                            "{{schema: 1, commit: \"fixture\", {}: \"registry-mix\"}}",
+                            paths::env::REMOTE_EXE
+                        ),
+                    )
+                    .unwrap();
                 }
                 let mut command = std::process::Command::new(&exe);
-                command.args(["--exact", TEST, "--nocapture"])
-                    .env(CHILD, "1").env(MODE, mode)
+                command
+                    .args(["--exact", TEST, "--nocapture"])
+                    .env(CHILD, "1")
+                    .env(MODE, mode)
                     .env(paths::env::PREFIX, &root.0)
                     .env_remove(paths::env::ROOT)
                     .env_remove(paths::env::REMOTE_EXE);
                 #[cfg(unix)]
                 if mode == "nonunicode" {
                     use std::os::unix::ffi::OsStringExt;
-                    command.env(paths::env::REMOTE_EXE, std::ffi::OsString::from_vec(vec![0xff]));
+                    command.env(
+                        paths::env::REMOTE_EXE,
+                        std::ffi::OsString::from_vec(vec![0xff]),
+                    );
                 }
                 let output = command.output().unwrap();
-                assert!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
-                    "{mode}: {}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+                assert!(
+                    output.status.success()
+                        && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                    "{mode}: {}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
             return;
         }
         match paths::env::os(MODE).unwrap().to_str().unwrap() {
-            "staged" => assert_eq!(super::remote_mix_bin("fixture", None).unwrap(), "registry-mix"),
+            "staged" => assert_eq!(
+                super::remote_mix_bin("fixture", None).unwrap(),
+                "registry-mix"
+            ),
             "missing" => {
                 let error = super::remote_mix_bin("fixture", None).unwrap_err();
-                let crate::MixError::Structured(info) = error else { panic!("expected configuration error"); };
+                let crate::MixError::Structured(info) = error else {
+                    panic!("expected configuration error");
+                };
                 assert_eq!(info.code, "REMOTE_MIX_CONFIG");
                 assert!(info.message.contains(paths::env::REMOTE_EXE));
                 assert!(info.message.contains("mix_bin"));
                 let prefix = paths::env::os(paths::env::PREFIX).unwrap();
-                assert!(info.message.contains(&std::path::Path::new(&prefix).join("env.mx").display().to_string()));
+                assert!(
+                    info.message.contains(
+                        &std::path::Path::new(&prefix)
+                            .join("env.mx")
+                            .display()
+                            .to_string()
+                    )
+                );
                 // Neither override requires a registry.
-                assert_eq!(super::remote_mix_bin("fixture", Some("call-mix")).unwrap(), "call-mix");
-                assert_eq!(super::resolve_remote_mix_bin("fixture", None, Some("env-mix"), || panic!("override must be lazy")).unwrap(), "env-mix");
+                assert_eq!(
+                    super::remote_mix_bin("fixture", Some("call-mix")).unwrap(),
+                    "call-mix"
+                );
+                assert_eq!(
+                    super::resolve_remote_mix_bin("fixture", None, Some("env-mix"), || panic!(
+                        "override must be lazy"
+                    ))
+                    .unwrap(),
+                    "env-mix"
+                );
             }
             #[cfg(unix)]
             "nonunicode" => {
                 for option in [None, Some("call-mix")] {
                     let error = super::remote_mix_bin("fixture", option).unwrap_err();
-                    let crate::MixError::Structured(info) = error else { panic!("expected option error"); };
+                    let crate::MixError::Structured(info) = error else {
+                        panic!("expected option error");
+                    };
                     assert_eq!(info.code, "OPTION_INVALID");
                     assert!(info.message.contains("not valid UTF-8"));
                 }
             }
             #[cfg(not(unix))]
-            "nonunicode" => {},
+            "nonunicode" => {}
             mode => panic!("unknown fixture mode {mode}"),
         }
     }
@@ -31253,7 +31301,9 @@ mod ssh_helpers_tests {
     #[test]
     fn remote_mix_bin_rejects_values_unsafe_in_a_remote_command_string() {
         fn r(caller: &str, opt: Option<&str>, env: Option<&str>) -> crate::MixResult<String> {
-            super::resolve_remote_mix_bin(caller, opt, env, || panic!("invalid override must be checked without reading installed defaults"))
+            super::resolve_remote_mix_bin(caller, opt, env, || {
+                panic!("invalid override must be checked without reading installed defaults")
+            })
         }
         for good in [
             "/srv/example/bin/mix",

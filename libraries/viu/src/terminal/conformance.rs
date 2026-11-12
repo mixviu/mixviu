@@ -341,13 +341,20 @@ fn widening_restores_wrapped_text_at_each_cursor_column() {
 #[test]
 fn real_mix_login_input_resize_exit_and_reap() {
     let Some(mix) = paths::env::os(paths::env::test::TEST_MIX_EXE) else {
-        eprintln!("skip real Mix PTY fixture: set {} to a staged interpreter", paths::env::test::TEST_MIX_EXE);
+        eprintln!(
+            "skip real Mix PTY fixture: set {} to a staged interpreter",
+            paths::env::test::TEST_MIX_EXE
+        );
         return;
     };
     use std::os::unix::fs::PermissionsExt;
     let selected = std::path::Path::new(&mix);
-    assert!(selected.is_file() && selected.metadata().unwrap().permissions().mode() & 0o111 != 0,
-        "{} is not an executable file: {}", paths::env::test::TEST_MIX_EXE, selected.display());
+    assert!(
+        selected.is_file() && selected.metadata().unwrap().permissions().mode() & 0o111 != 0,
+        "{} is not an executable file: {}",
+        paths::env::test::TEST_MIX_EXE,
+        selected.display()
+    );
     struct Unbound;
     impl crate::terminal::native_session::SessionIssuer for Unbound {
         fn prepare(
@@ -368,7 +375,8 @@ fn real_mix_login_input_resize_exit_and_reap() {
     let mut t = Terminal::start_session_e2e(
         settings,
         &Unbound,
-        mix.to_str().expect("selected test interpreter path must be UTF-8"),
+        mix.to_str()
+            .expect("selected test interpreter path must be UTF-8"),
         home.path().to_str().unwrap().into(),
         vec![
             ("HOME".into(), home.path().to_str().unwrap().into()),

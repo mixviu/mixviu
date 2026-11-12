@@ -826,13 +826,21 @@ mod tests {
         const CHILD: &str = "VIU_TERM_OWNER_CHILD";
         if std::env::var_os(CHILD).is_none() {
             let Some(mix) = paths::env::os(paths::env::test::TEST_MIX_EXE) else {
-                eprintln!("skip real Mix owner fixture: set {} to a staged interpreter", paths::env::test::TEST_MIX_EXE);
+                eprintln!(
+                    "skip real Mix owner fixture: set {} to a staged interpreter",
+                    paths::env::test::TEST_MIX_EXE
+                );
                 return;
             };
             use std::os::unix::fs::PermissionsExt;
             let selected = std::path::Path::new(&mix);
-            assert!(selected.is_file() && selected.metadata().unwrap().permissions().mode() & 0o111 != 0,
-                "{} is not an executable file: {}", paths::env::test::TEST_MIX_EXE, selected.display());
+            assert!(
+                selected.is_file()
+                    && selected.metadata().unwrap().permissions().mode() & 0o111 != 0,
+                "{} is not an executable file: {}",
+                paths::env::test::TEST_MIX_EXE,
+                selected.display()
+            );
             let broker = test_broker::Broker::start();
             let home = tempfile::tempdir().unwrap();
             let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();

@@ -28,7 +28,10 @@ pub fn prefix() -> &'static Path {
                 .find_map(|marker| {
                     let info: serde_json::Value = serde_json::from_str(marker).ok()?;
                     if info["component"] == "mix-shell" {
-                        info["git_sha_full"].as_str().filter(|sha| !sha.is_empty()).map(str::to_owned)
+                        info["git_sha_full"]
+                            .as_str()
+                            .filter(|sha| !sha.is_empty())
+                            .map(str::to_owned)
                     } else {
                         None
                     }

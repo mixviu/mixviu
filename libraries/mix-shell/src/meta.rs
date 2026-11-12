@@ -759,7 +759,11 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
     }
 }
 
-fn dispatch_inner(args: &[&str], eval: &Evaluator, version: &str) -> Result<Option<String>, String> {
+fn dispatch_inner(
+    args: &[&str],
+    eval: &Evaluator,
+    version: &str,
+) -> Result<Option<String>, String> {
     if args.is_empty() {
         cmd_status(eval, version);
         return Ok(None);
@@ -1140,10 +1144,11 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
         let exe_path = exe.to_string_lossy().into_owned();
         if let Ok(prelude_src) = mix_src_str()
             && exe_path.starts_with(
-            &::paths::root(::paths::Root::Prefix)
-                .to_string_lossy()
-                .to_string(),
-        ) {
+                &::paths::root(::paths::Root::Prefix)
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        {
             if !prelude_src.starts_with(
                 &::paths::root(::paths::Root::Prefix)
                     .to_string_lossy()
@@ -1539,7 +1544,10 @@ fn cmd_self_check() {
     }
     let prelude_label = "std/prelude.mix";
     match mix_src_str() {
-        Ok(source) => check_pure_mix(&format!("{source}/crates/mix/std/prelude.mix"), prelude_label),
+        Ok(source) => check_pure_mix(
+            &format!("{source}/crates/mix/std/prelude.mix"),
+            prelude_label,
+        ),
         Err(error) => {
             eprintln!("{prelude_label}: {error}");
             mark_missed();
@@ -2961,8 +2969,11 @@ fn cmd_man(topic: Option<&str>) {
 
     // Installed settings are needed only once local/built-in lookup is exhausted.
     let base_url = ::paths::env::setting(::paths::env::MAN_URL).map(|value| man_base_url(&value));
-    let cache_paths = configured_man_cache_paths(base_url.as_ref().ok().map(String::as_str), &filename);
-    let cached = cache_paths.iter().find_map(|path| read_cached_man_page(path));
+    let cache_paths =
+        configured_man_cache_paths(base_url.as_ref().ok().map(String::as_str), &filename);
+    let cached = cache_paths
+        .iter()
+        .find_map(|path| read_cached_man_page(path));
 
     if source == ManSource::Local {
         if let Some(cached) = cached {
@@ -3003,7 +3014,9 @@ fn cmd_man(topic: Option<&str>) {
     }
 
     if let Err(error) = &base_url {
-        eprintln!("mix man: cannot fetch online manual: {error}; set MIX_MAN_URL or install its default in <prefix>/env.mx");
+        eprintln!(
+            "mix man: cannot fetch online manual: {error}; set MIX_MAN_URL or install its default in <prefix>/env.mx"
+        );
     }
     print_man_not_found(topic, base_url.as_ref().ok().map(String::as_str));
 }
@@ -3203,8 +3216,13 @@ fn cmd_apropos(term: &str) {
         dirs::home_dir().as_deref(),
     )
     .map(|root| {
-        let url = ::paths::env::setting(::paths::env::MAN_URL).ok().map(|value| man_base_url(&value));
-        man_cache_candidates(&root, url.as_deref(), "").iter().flat_map(|path| dir_pages(path)).collect()
+        let url = ::paths::env::setting(::paths::env::MAN_URL)
+            .ok()
+            .map(|value| man_base_url(&value));
+        man_cache_candidates(&root, url.as_deref(), "")
+            .iter()
+            .flat_map(|path| dir_pages(path))
+            .collect()
     })
     .unwrap_or_default();
     let sources = if local {
@@ -3494,8 +3512,10 @@ mod man_resolver_tests {
     #[test]
     fn url_override_has_an_isolated_cache_namespace() {
         let root = Path::new("/cache/mix/man");
-        assert_eq!(man_cache_path(root, "a", "syntax.md"),
-            PathBuf::from("/cache/mix/man/sources/af63dc4c8601ec8c/syntax.md"));
+        assert_eq!(
+            man_cache_path(root, "a", "syntax.md"),
+            PathBuf::from("/cache/mix/man/sources/af63dc4c8601ec8c/syntax.md")
+        );
         let canonical_path = man_cache_path(root, "https://manual.example.test/mix", "syntax.md");
         assert!(canonical_path.starts_with(root.join("sources")));
         let override_path = man_cache_path(root, "http://127.0.0.1:8080/mix", "syntax.md");
@@ -3516,10 +3536,16 @@ mod man_resolver_tests {
         for url in [None, Some("https://manual.example.test/mix")] {
             let candidates = man_cache_candidates(dir.path(), url, "custom.md");
             assert_eq!(candidates.last(), Some(&flat));
-            let page = candidates.iter().find_map(|path| read_cached_man_page(path)).unwrap();
+            let page = candidates
+                .iter()
+                .find_map(|path| read_cached_man_page(path))
+                .unwrap();
             assert!(page.content.contains("Cached offline heading"));
         }
-        assert_eq!(man_cache_candidates(dir.path(), None, "custom.md"), vec![flat]);
+        assert_eq!(
+            man_cache_candidates(dir.path(), None, "custom.md"),
+            vec![flat]
+        );
     }
 
     #[test]

@@ -18,8 +18,7 @@ fn main() {
 /// copied alone still has `mix man`. The layout is, per page in name order,
 /// `u32 LE name length, name, u32 LE body length, body`.
 fn pack_manual() {
-    let dir =
-        PathBuf::from(::paths::env::os("CARGO_MANIFEST_DIR").unwrap()).join("../../docs/mix");
+    let dir = PathBuf::from(::paths::env::os("CARGO_MANIFEST_DIR").unwrap()).join("../../docs/mix");
     println!("cargo:rerun-if-changed={}", dir.display());
     let mut names: Vec<String> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))

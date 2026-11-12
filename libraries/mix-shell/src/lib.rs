@@ -480,18 +480,31 @@ async fn shutdown_signal() -> i32 {
 const SIGTERM_BACKSTOP_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
 
 fn sigterm_backstop_grace(value: Option<&str>) -> std::time::Duration {
-    value.and_then(|s| s.parse::<u64>().ok())
+    value
+        .and_then(|s| s.parse::<u64>().ok())
         .map(std::time::Duration::from_secs)
         .unwrap_or(SIGTERM_BACKSTOP_GRACE)
 }
 
 #[test]
 fn sigterm_backstop_keeps_builtin_grace_without_a_usable_override() {
-    for value in [None, Some(""), Some("abc"), Some("-1"), Some("18446744073709551616")] {
-        assert_eq!(sigterm_backstop_grace(value), std::time::Duration::from_secs(15));
+    for value in [
+        None,
+        Some(""),
+        Some("abc"),
+        Some("-1"),
+        Some("18446744073709551616"),
+    ] {
+        assert_eq!(
+            sigterm_backstop_grace(value),
+            std::time::Duration::from_secs(15)
+        );
     }
     assert_eq!(sigterm_backstop_grace(Some("0")), std::time::Duration::ZERO);
-    assert_eq!(sigterm_backstop_grace(Some("60")), std::time::Duration::from_secs(60));
+    assert_eq!(
+        sigterm_backstop_grace(Some("60")),
+        std::time::Duration::from_secs(60)
+    );
 }
 
 // The evaluator consumes its cooperative flag before returning an error.
