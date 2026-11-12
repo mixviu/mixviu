@@ -899,6 +899,10 @@ struct NativePortal {
 }
 impl NativePortal {
     fn start(bus: &PrivateBus, url: &str) -> Self {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter("portald::service=debug,settingsd::service=debug")
+            .with_test_writer()
+            .try_init();
         let (projections, received) = mpsc::channel(8);
         let shared = status::shared();
         let binding = projection("a", 1, "dark").binding;

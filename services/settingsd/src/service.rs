@@ -904,6 +904,8 @@ async fn handle(
     ctx: &mut Ctx,
     command: IncomingCommand,
 ) -> anyhow::Result<Authority> {
+    let started = std::time::Instant::now();
+    tracing::debug!(command = %command.command, id = ?command.id, from = %command.from, "settings request received");
     let name = command.command.as_str();
     let mirror = matches!(authority.role, Role::Mirror { .. });
     if mirror && WRITES.contains(&name) {
@@ -993,6 +995,7 @@ async fn handle(
             })
             .await?;
             authority = taken;
+            tracing::debug!(command = %command.command, id = ?command.id, elapsed_us = started.elapsed().as_micros(), "settings dispatch completed");
             if authority.accepted.revision != previous_revision {
                 ctx.retry = PublicationRetry::default();
             }
@@ -1031,6 +1034,7 @@ async fn handle(
     if let Err(error) = ctx.client.respond(&command, rc, &body).await {
         tracing::warn!(%error, "settings reply unavailable; operation receipt retained");
     }
+    tracing::debug!(command = %command.command, id = ?command.id, elapsed_us = started.elapsed().as_micros(), "settings response sent");
     // A mirror attached at the revision it holds is pushed now: harmless
     // when the answer arrives, the catch-up when it was lost.
     if name == MIRROR_ATTACH && rc == 0 {
