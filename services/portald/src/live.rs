@@ -1,0 +1,375 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! The live portal. Startup requests the bus name with cached or default
+//! values immediately, independently of the asynchronous authority feed.
+//! Accepted projections replace the served values atomically and emit
+//! `SettingChanged` for the changed keys only.
+use crate::appearance::{NAMESPACE, Projection, Values};
+use crate::cache;
+use crate::portal::{self, Portal, PortalSignals};
+use crate::screencast;
+#[cfg(feature = "screencast")]
+use crate::screencast::consent::{self, Consent};
+#[cfg(feature = "screencast")]
+use crate::screencast::{ScreenCast, session::Sessions};
+use crate::status::{self, Origin, Shared};
+use settings::{Binding, Revision};
+use std::path::PathBuf;
+use std::sync::{Arc, PoisonError, RwLock};
+use tokio::sync::mpsc;
+use zbus::fdo::{RequestNameFlags, RequestNameReply};
+use zbus::zvariant::Value;
+
+pub struct Config {
+    pub filechooser: Option<(
+        crate::filechooser::Bridge,
+        mpsc::Receiver<(u64, serde_json::Value)>,
+    )>,
+    pub address: String,
+    pub state_dir: Option<PathBuf>,
+    pub binding: Binding,
+    /// Also serve `org.freedesktop.portal.ScreenCast` from viud screencopy,
+    /// deciding each Start with this consent policy and offering this
+    /// frame-rate ceiling. `None`: not served.
+    pub screencast: Option<screencast::Config>,
+}
+
+/// The evidence identity of the values held. Ordering within one incarnation
+/// is by revision.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Identity {
+    incarnation: String,
+    revision: Revision,
+}
+
+impl Identity {
+    fn of(projection: &Projection) -> Self {
+        let (incarnation, revision) = projection.identity();
+        Self {
+            incarnation: incarnation.to_owned(),
+            revision,
+        }
+    }
+}
+
+pub type Change = (&'static str, Value<'static>);
+
+/// The values served and the evidence behind them.
+pub struct State {
+    identity: Option<Identity>,
+    values: Values,
+    origin: Origin,
+}
+
+impl State {
+    pub fn initial(cached: Option<&Projection>) -> Self {
+        match cached {
+            Some(projection) => Self {
+                identity: Some(Identity::of(projection)),
+                values: Values::from_projection(projection),
+                origin: Origin::Cache,
+            },
+            None => Self {
+                identity: None,
+                values: Values::defaults(),
+                origin: Origin::Defaults,
+            },
+        }
+    }
+
+    pub fn origin(&self) -> Origin {
+        self.origin
+    }
+
+    pub fn values(&self) -> &Values {
+        &self.values
+    }
+
+    /// Adopts a projection unless it is older than the held one within the
+    /// same incarnation. Returns the changed keys, which may be empty when a
+    /// cache or default origin is merely confirmed. `None` means stale.
+    pub fn accept(&mut self, projection: &Projection) -> Option<Vec<Change>> {
+        let next = Identity::of(projection);
+        if let Some(current) = &self.identity
+            && current.incarnation == next.incarnation
+            && next.revision < current.revision
+        {
+            return None;
+        }
+        let values = Values::from_projection(projection);
+        let changes = self.values.changed(&values);
+        self.values = values;
+        self.identity = Some(next);
+        self.origin = Origin::Settingsd;
+        Some(changes)
+    }
+}
+
+/// Applies one projection to the served values, the status and the cache.
+fn adopt(
+    state: &mut State,
+    values: &RwLock<Values>,
+    config: &Config,
+    status: &Shared,
+    projection: &Projection,
+) -> Option<Vec<Change>> {
+    if projection.binding != config.binding || projection.validate().is_err() {
+        status::update(status, |s| s.rejected += 1);
+        return None;
+    }
+    let Some(changes) = state.accept(projection) else {
+        status::update(status, |s| s.stale += 1);
+        return None;
+    };
+    *values.write().unwrap_or_else(PoisonError::into_inner) = state.values().clone();
+    let (incarnation, revision) = projection.identity();
+    status::update(status, |s| {
+        s.origin = state.origin();
+        s.incarnation = Some(incarnation.to_owned());
+        s.revision = Some(revision);
+        s.settings_fault = None;
+        s.accepted += 1;
+    });
+    if state.origin() == Origin::Settingsd
+        && let Some(dir) = &config.state_dir
+        && let Err(error) = cache::save(dir, projection)
+    {
+        tracing::warn!(%error, "appearance cache not saved");
+    }
+    Some(changes)
+}
+
+pub async fn serve(
+    mut config: Config,
+    mut projections: mpsc::Receiver<Projection>,
+    status: Shared,
+) -> anyhow::Result<()> {
+    config
+        .binding
+        .validate()
+        .map_err(|fault| anyhow::anyhow!(fault.message))?;
+    let cached = config
+        .state_dir
+        .as_deref()
+        .and_then(|dir| cache::load(dir, &config.binding));
+    let mut state = State::initial(cached.as_ref());
+    let values = Arc::new(RwLock::new(state.values().clone()));
+    status::update(&status, |s| s.origin = state.origin());
+    // Export and acquire the name before touching the authority receiver.
+    let mut source_open = true;
+
+    #[cfg(feature = "screencast")]
+    let sessions = Sessions::default();
+    #[cfg(not(feature = "screencast"))]
+    anyhow::ensure!(
+        config.screencast.is_none(),
+        "built without the screencast feature"
+    );
+    let builder = zbus::connection::Builder::address(config.address.as_str())?
+        .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?;
+    #[cfg(feature = "screencast")]
+    let builder = if let Some(screencast) = config.screencast {
+        consent::install(Consent::new(screencast.consent));
+        builder.serve_at(
+            portal::OBJECT_PATH,
+            ScreenCast::with_max_framerate(sessions.clone(), screencast.max_framerate),
+        )?
+    } else {
+        builder
+    };
+    let connection = builder.build().await?;
+    // Interfaces are exported before the name, and an existing owner is refused
+    // rather than queued or replaced.
+    match connection
+        .request_name_with_flags(portal::BUS_NAME, RequestNameFlags::DoNotQueue.into())
+        .await?
+    {
+        RequestNameReply::PrimaryOwner => {}
+        _ => anyhow::bail!("{} is owned by another service", portal::BUS_NAME),
+    }
+    status::update(&status, |s| s.name_owned = true);
+    let chooser = config.filechooser.take().map(|(bridge, outcomes)| {
+        let connection = connection.clone();
+        tokio::spawn(async move {
+            if let Err(error) = bridge.attach(connection, outcomes).await {
+                tracing::error!(%error, "FileChooser bridge ended");
+            }
+        })
+    });
+    tracing::info!(origin = ?state.origin(), screencast = ?config.screencast, "serving {}", portal::BUS_NAME);
+    #[cfg(feature = "screencast")]
+    let owners = config.screencast.is_some().then(|| {
+        let connection = connection.clone();
+        let sessions = sessions.clone();
+        tokio::spawn(async move {
+            if let Err(error) = screencast::watch_owners(connection, sessions).await {
+                tracing::warn!(%error, "screencast owner watch ended");
+            }
+        })
+    });
+
+    let interface = connection
+        .object_server()
+        .interface::<_, Portal>(portal::OBJECT_PATH)
+        .await?;
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    loop {
+        tokio::select! {
+            received = projections.recv(), if source_open => {
+                let Some(projection) = received else {
+                    source_open = false;
+                    continue;
+                };
+                if let Some(changes) = adopt(&mut state, &values, &config, &status, &projection) {
+                    for (key, value) in changes {
+                        if let Err(error) = interface
+                            .signal_emitter()
+                            .setting_changed(NAMESPACE, key, &value)
+                            .await
+                        {
+                            tracing::warn!(%error, key, "SettingChanged not emitted");
+                        }
+                    }
+                }
+            }
+            // zbus closes the connection on peer disconnect, socket error or
+            // restart of the bus. Nothing can serve or hold the name after that,
+            // so exit non-zero and let the unit's Restart=on-failure reconnect.
+            _ = connection.closed() => {
+                status::update(&status, |s| s.name_owned = false);
+                anyhow::bail!(
+                    "session bus closed: {} released; exiting so the unit restarts",
+                    portal::BUS_NAME
+                );
+            }
+            _ = sigterm.recv() => break,
+            _ = sigint.recv() => break,
+        }
+    }
+    tracing::info!("portal stopping");
+    if let Some(chooser) = chooser {
+        chooser.abort();
+    }
+    #[cfg(feature = "screencast")]
+    if let Some(owners) = owners {
+        owners.abort();
+    }
+    #[cfg(feature = "screencast")]
+    for path in sessions.with(|map| map.keys().cloned().collect::<Vec<_>>()) {
+        screencast::session::end(&connection, &sessions, &path, true).await;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use settings::Binding;
+
+    fn projection(incarnation: &str, revision: u64, mode: &str) -> Projection {
+        Projection {
+            schema: crate::appearance::PROJECTION_SCHEMA,
+            export: true,
+            binding: Binding {
+                instance: "host".into(),
+                profile: "default".into(),
+            },
+            incarnation: incarnation.into(),
+            revision: Revision(revision),
+            mode: mode.into(),
+            contrast: "normal".into(),
+            accent: [0.1, 0.2, 0.3],
+        }
+    }
+
+    #[test]
+    fn adopts_current_projections_and_the_export_gate_but_never_stale_or_rejected_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            filechooser: None,
+            address: String::new(),
+            state_dir: Some(dir.path().join("state")),
+            binding: projection("inc", 1, "dark").binding,
+            screencast: None,
+        };
+        let cached = projection("inc", 1, "dark");
+        cache::save(config.state_dir.as_deref().unwrap(), &cached).unwrap();
+        let cached = cache::load(config.state_dir.as_deref().unwrap(), &config.binding).unwrap();
+        let mut state = State::initial(Some(&cached));
+        let values = RwLock::new(state.values().clone());
+        let status = status::shared();
+
+        let current = projection("inc", 2, "dark");
+        assert_eq!(
+            adopt(&mut state, &values, &config, &status, &current),
+            Some(vec![])
+        );
+        assert!(adopt(&mut state, &values, &config, &status, &cached).is_none());
+        let mut invalid = projection("inc", 3, "auto");
+        invalid.mode = "auto".into();
+        assert!(adopt(&mut state, &values, &config, &status, &invalid).is_none());
+        let mut off = projection("inc", 3, "light");
+        off.export = false;
+        let changes = adopt(&mut state, &values, &config, &status, &off).unwrap();
+        assert_eq!(
+            changes.len(),
+            2,
+            "color-scheme and unset accent: contrast stays 0"
+        );
+        assert_eq!(values.read().unwrap().color_scheme, 0);
+        assert!(values.read().unwrap().accent.is_none());
+        let next = projection("inc", 4, "light");
+        assert_eq!(
+            adopt(&mut state, &values, &config, &status, &next)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(values.read().unwrap().color_scheme, 2);
+        let report = status::report(&status);
+        assert_eq!(report["portal"]["origin"], "settingsd");
+        assert_eq!(report["portal"]["rejected"], 1);
+        assert_eq!(report["portal"]["stale"], 1);
+    }
+
+    #[test]
+    fn stale_revisions_are_refused_and_confirmation_is_quiet() {
+        let mut state = State::initial(None);
+        assert_eq!(state.origin(), Origin::Defaults);
+        let first = state
+            .accept(&projection("a", 2, "light"))
+            .expect("accepted");
+        assert_eq!(first.len(), 2, "color-scheme and the first accent");
+        assert!(state.accept(&projection("a", 1, "dark")).is_none());
+        assert!(
+            state
+                .accept(&projection("a", 2, "light"))
+                .expect("same identity")
+                .is_empty()
+        );
+        assert_eq!(state.values().color_scheme, 2);
+    }
+
+    #[test]
+    fn a_new_incarnation_is_adopted_even_at_a_lower_revision() {
+        let mut state = State::initial(None);
+        state
+            .accept(&projection("a", 5, "light"))
+            .expect("accepted");
+        let changes = state
+            .accept(&projection("b", 1, "dark"))
+            .expect("new incarnation");
+        assert_eq!(changes.len(), 1);
+        assert_eq!(state.values().color_scheme, 1);
+    }
+
+    #[test]
+    fn a_cache_is_promoted_by_matching_authority_without_signals() {
+        let cached = projection("a", 2, "light");
+        let mut state = State::initial(Some(&cached));
+        assert_eq!(state.origin(), Origin::Cache);
+        assert!(state.accept(&cached).expect("accepted").is_empty());
+        assert_eq!(state.origin(), Origin::Settingsd);
+    }
+}

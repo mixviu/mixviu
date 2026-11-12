@@ -84,7 +84,7 @@ for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/m
 for $f in tracked("share/scenes") place($stage, $f, $f) end
 for $f in tracked("engines/viud/scripts") place($stage, $f, "share/viud/scripts/" .. substr($f, len("engines/viud/scripts/"))) end
 -- Mix services: their scripts install at <prefix>/lib/<service>/.
-for $svc in ["clipd", "notifyd", "exportd", "dlnad"]
+for $svc in ["clipd", "notifyd", "exportd", "dlnad", "agentd", "peersd", "releasesd", "daylight"]
   $base = "services/" .. $svc .. "/scripts/"
   for $f in tracked($base) place($stage, $f, "lib/" .. $svc .. "/" .. substr($f, len($base))) end
 end
@@ -102,8 +102,13 @@ for $f in tracked(".")
   end
 end
 for $dir in ["share/layout", "share/daylight"]
-  for $f in tracked($dir) place($stage, $f, $f) end
+  for $f in tracked($dir)
+    if $dir == "share/layout" and ($f == "share/layout/templates.mx" or starts_with($f, "share/layout/manifests/")) then continue end
+    place($stage, $f, $f)
+  end
 end
+$layout = require("../share/layout/files.mix")
+$layout.bundle("share/layout", $stage .. "/share/layout")
 
 -- Icons and brand marks, through their own offline installers.
 for $installer in ["share/icons/install.mix", "share/brand/install.mix"]

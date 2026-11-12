@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixViu desktop portal (Settings, ScreenCast) for session %i
+# The session target chooses the broker (noded@%i or the system noded.service);
+# this unit only orders after both. Never Wants= or Requires= a broker: on a desk
+# with the system broker noded@%i is masked.
+# Wants, not Requires: the portal owns the session bus name and keeps serving
+# last-good values when settingsd or the broker is down.
+Wants=settingsd@%i.service
+After=noded@%i.service noded.service settingsd@%i.service
+PartOf=session@%i.target
+# The cache root may sit on its own mount, as StateDirectory= would order.
+RequiresMountsFor=@{var}/portald
+# Bus downtime must never exhaust restarts: portald exits on bus loss and must keep retrying.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=mix
+# Keeps DBUS_SESSION_BUS_ADDRESS: the portal serves the session bus itself.
+EnvironmentFile=@{etc}/session/%i.env
+# The appearance cache lives at the rendered state root, in the directory
+# portald.tmpfiles.conf creates for the service user (StateDirectory= would
+# put it under systemd's state root, not the layout's). No privileged
+# pre-step; the cache is partitioned by --instance and profile below it, as
+# it was with StateDirectory=portald.
+ExecStart=@{prefix}/bin/portald serve --instance %H --screencast --state-dir @{var}/portald
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+# Back off while the bus stays down: 1s growing to 15s over five restarts (systemd 254+).
+RestartSec=1
+RestartSteps=5
+RestartMaxDelaySec=15

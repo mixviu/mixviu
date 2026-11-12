@@ -112,6 +112,43 @@ fn term_bundle_child() {
     );
     let model = done.model.expect("initial model");
     viu::gold_frame::mount(&scene, model).expect("native frame and terminal model validate");
+    // Exercise the real app.mix handler, not just the find module in isolation.
+    let opened = invoke(
+        &mut runtime,
+        &rx,
+        "term.intent",
+        json!({"id":"terminal","action":"command","value":"terminal.find"}),
+    );
+    assert_eq!(opened.model.unwrap()["find_open"], true);
+    invoke(
+        &mut runtime,
+        &rx,
+        "term.intent",
+        json!({"id":"terminal-find","action":"edit","value":{"pattern":"needle","regex":false,"case":true}}),
+    );
+    let mut previous = 0.0;
+    for shift in [false, true] {
+        let submitted = invoke(
+            &mut runtime,
+            &rx,
+            "term.intent",
+            json!({"id":"terminal-find","action":"submit","value":{"shift":shift}}),
+        );
+        let model = submitted.model.expect("submit publishes search request");
+        let search = &model["terminal"]["properties"]["search"];
+        assert_eq!(search["query"], "needle");
+        assert_eq!(search["backwards"], shift);
+        let request = search["request"].as_f64().unwrap();
+        assert!(request > previous);
+        previous = request;
+        assert_eq!(model["find_open"], true);
+    }
+    invoke(
+        &mut runtime,
+        &rx,
+        "term.intent",
+        json!({"id":"terminal-find","action":"close"}),
+    );
     let help = invoke(&mut runtime, &rx, "HELP", json!({})).reply.unwrap();
     assert_eq!(help.rc, 0);
     let help = help.body;

@@ -12,31 +12,27 @@
 pub use ::action::keymap::Overrides;
 use egui::{Key, KeyboardShortcut, Modifiers};
 
-/// The function keys F1–F12. They belong to the person: no app binds one by
-/// default, with or without modifiers; only the person's own bindings may
-/// (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md).
-pub const USER_KEYS: [Key; 12] = [
-    Key::F1,
-    Key::F2,
-    Key::F3,
-    Key::F4,
-    Key::F5,
-    Key::F6,
-    Key::F7,
-    Key::F8,
-    Key::F9,
-    Key::F10,
-    Key::F11,
-    Key::F12,
-];
-
-/// Whether `key` is one of the person's function keys ([`USER_KEYS`]).
+/// Logical F-key classification for default-table checks only. The physical
+/// authority is `inputd_schema::is_user_key`; no second physical list lives here.
 pub fn user_only(key: Key) -> bool {
-    USER_KEYS.contains(&key)
+    ::action::keymap::reserved_key(key.name(), false, false, false)
+}
+
+/// Shipped-default policy only. Physical interception belongs to
+/// `inputd_schema::is_user_key`; overrides and input remain unrestricted.
+pub fn reserved(key: Key, modifiers: Modifiers) -> bool {
+    ::action::keymap::reserved_key(
+        key.name(),
+        modifiers.ctrl || modifiers.command || modifiers.mac_cmd,
+        modifiers.alt,
+        modifiers.shift,
+    )
 }
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
+    let canonical = ::action::keymap::parse_chord(text)?;
+    let text = canonical.as_str();
     let parts: Vec<&str> = text.split('+').collect();
     let (key, mods) = parts.split_last()?;
     let mut modifiers = Modifiers::NONE;
@@ -62,7 +58,12 @@ pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
         "/" => Key::Slash,
         "" => return None,
         one if one.chars().count() == 1 => Key::from_name(&one.to_ascii_uppercase())?,
-        name => Key::from_name(name)?,
+        name => Key::from_name(name).or_else(|| {
+            Key::ALL
+                .iter()
+                .find(|key| key.name().eq_ignore_ascii_case(name))
+                .copied()
+        })?,
     };
     Some(KeyboardShortcut::new(modifiers, key))
 }
@@ -98,6 +99,47 @@ pub fn chord_text(shortcut: &KeyboardShortcut) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_and_logical_defaults_policy_agree() {
+        for (text, key, modifiers) in [
+            ("f1", Key::F1, Modifiers::NONE),
+            ("ctrl+left", Key::ArrowLeft, Modifiers::CTRL),
+            ("Control+ARROWLEFT", Key::ArrowLeft, Modifiers::CTRL),
+            ("Command+Right", Key::ArrowRight, Modifiers::COMMAND),
+            ("MacCmd+Down", Key::ArrowDown, Modifiers::MAC_CMD),
+            ("alt+Up", Key::ArrowUp, Modifiers::ALT),
+            (
+                "ctrl+shift+Left",
+                Key::ArrowLeft,
+                Modifiers::CTRL | Modifiers::SHIFT,
+            ),
+            (
+                "Alt+Shift+Right",
+                Key::ArrowRight,
+                Modifiers::ALT | Modifiers::SHIFT,
+            ),
+            ("F13", Key::F13, Modifiers::NONE),
+        ] {
+            let parsed = parse_chord(text).expect(text);
+            assert_eq!(parsed.logical_key, key);
+            assert_eq!(
+                ::action::keymap::reserved(text),
+                reserved(key, modifiers),
+                "{text}"
+            );
+            assert_eq!(
+                reserved(parsed.logical_key, parsed.modifiers),
+                reserved(key, modifiers),
+                "{text}"
+            );
+        }
+        // egui/XKB collapses keypad arrows into Arrow*. These spellings
+        // are not keys at either textual injection boundary.
+        for name in ["KP_Left", "NumpadLeft", "F01", "Function3"] {
+            assert!(parse_chord(name).is_none(), "{name}");
+        }
+    }
 
     #[test]
     fn chords_parse_and_round_trip() {

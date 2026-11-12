@@ -37,7 +37,7 @@ $s.drain_close=true;$v=$core.framed($s)
 assert(not $v.window_close and $v.layout_hidden,"bounded final-event drain hides removed sessions before host exit")
 assert(len($v.values["gold-menu"])==6 and len($v.values["gold-toolbar"])==4,"gold menus and standard tail")
 $s.settings_lost=true;$v=$core.framed($s)
-assert($v.window_settings["window.decorations"]==nil and $v.window_settings["window.header_seamless"],"authority loss uses gold default window policy with the terminal seamless band")
+assert(not has_key($v.window_settings,"window.decorations") and $v.window_settings["window.header_seamless"],"authority loss uses gold default window policy with the terminal seamless band")
 assert($v.terminal.initial=="vt-test","authority loss retains the existing PTY")
 $s.settings_lost=false;$s.settings_connected=false;$v=$core.framed($s)
 assert($v.window_settings["window.decorations"]=="ssd","transient read failure retains accepted window policy")
@@ -52,6 +52,7 @@ $expected={font_family:"Example Mono",font_size:18,text_scale:1,font_weight:700,
 fn appearance_is($s,$expected)
   $v=$core.framed($s)
   for $key in keys($expected)
+    assert(has_key($v.terminal.properties,$key),"missing oracle terminal property: "..$key)
     assert(deep_eq($v.terminal.properties[$key],$expected[$key]),"oracle terminal property: "..$key)
   end
   assert($v.terminal.initial=="vt-defaults","settings changes retain the session")
@@ -60,13 +61,15 @@ $s={look:{appearance:{},values:{}},choice:{},bindings:{},effective:{},closed:fal
 appearance_is($s,$defaults)
 $s.look.values={"appearance.mono_family":"Session Mono"}
 assert($core.framed($s).terminal.properties.font_family=="Session Mono","absent family follows session mono family")
+$recovered=merge($explicit,{"terminal.font.size":20,"terminal.padding":12,"terminal.cursor.shape":"block"})
+$recovered_expected=merge($expected,{font_size:20,padding:12,cursor:"block"})
 $session=require("../../libraries/viu/mix/session.mix")
 $follow=$session.session_new("test");$s.look.values={}
 for $phase in ["absent","explicit","transient","lost","recovered","reset"]
   if $phase=="absent" or $phase=="lost" then $follow=$session.session_answer($follow,10,nil,nil)
   elif $phase=="transient" then $follow=$session.session_answer($follow,20,nil,"offline")
-  else $follow=$session.session_answer($follow,0,{incarnation:"test",revision:if $phase=="reset" then "2" else "1" end,values:if $phase=="reset" then {} else $explicit end},nil) end
+  else $follow=$session.session_answer($follow,0,{incarnation:"test",revision:if $phase=="reset" then "3" elif $phase=="recovered" then "2" else "1" end,values:if $phase=="reset" then {} elif $phase=="recovered" then $recovered else $explicit end},nil) end
   $s=$core.accept_look($s,{appearance:{},state:$follow})
-  appearance_is($s,if contains(["absent","reset"],$phase) then $defaults else $expected end)
+  appearance_is($s,if contains(["absent","reset"],$phase) then $defaults elif $phase=="recovered" then $recovered_expected else $expected end)
 end
-print("term default appearance: 92 checks passed (absent, explicit, transient failure, loss, recovery, reset, family)")
+print("term default appearance: property presence, values, retained loss and distinct recovery passed")
