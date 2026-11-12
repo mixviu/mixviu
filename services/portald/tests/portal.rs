@@ -901,6 +901,7 @@ impl NativePortal {
     fn start(bus: &PrivateBus, url: &str) -> Self {
         let _ = tracing_subscriber::fmt()
             .with_env_filter("portald::service=debug,settingsd::service=debug")
+            .with_ansi(false)
             .with_test_writer()
             .try_init();
         let (projections, received) = mpsc::channel(8);
@@ -936,11 +937,15 @@ impl Drop for NativePortal {
 struct AuthorityTask(JoinHandle<anyhow::Result<()>>);
 impl AuthorityTask {
     fn start(root: &std::path::Path, url: &str) -> Self {
-        Self(tokio::spawn(settingsd::service::serve_at(
-            root.to_owned(),
-            projection("a", 1, "dark").binding,
-            url.into(),
-        )))
+        let root = root.to_owned();
+        let url = url.to_owned();
+        Self(tokio::spawn(async move {
+            let result = settingsd::service::serve_at(root, projection("a", 1, "dark").binding, url).await;
+            if let Err(error) = &result {
+                tracing::error!(%error, "native authority exited");
+            }
+            result
+        }))
     }
     async fn stop(&mut self) {
         self.0.abort();
