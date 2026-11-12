@@ -572,8 +572,7 @@ impl FileId {
         // Both mtime and ctime must be safely outside the cache's tick.
         // Allow two seconds for coarse filesystem timestamps (including FAT).
         // Checking ctime also catches rewrites which restore an old mtime.
-        i128::from(self.mtime_ns.max(self.ctime_ns)) + 2_000_000_000
-            < cached.as_nanos() as i128
+        i128::from(self.mtime_ns.max(self.ctime_ns)) + 2_000_000_000 < cached.as_nanos() as i128
     }
 
     fn of(meta: &fs::Metadata) -> Self {
@@ -950,8 +949,8 @@ fn write_cache(dir: &Path, day: &str, raw: &RawDay) -> Result<(), String> {
 /// A raw day's contribution to a window, with every op applied. The cache
 /// is used only when its header names exactly the file as it is now (device,
 /// inode, length, mtime and ctime), outside the racy timestamp window. Its
-/// date bounds then decide whether the
-/// day can touch the window at all, and its aggregate is used unless an op
+/// date bounds then decide whether the day can touch the window at all,
+/// and its aggregate is used unless an op
 /// covers some of its records but not all (judged by payload ends, as for a
 /// single record); then the raw file is read record by record. Without a
 /// usable cache the raw file is read; with `may_cache`, a stable read of a
@@ -3089,7 +3088,13 @@ mod tests {
         let mut header: serde_json::Value = serde_json::from_str(header).unwrap();
         let before = FileId::from_json(&header["id"]).unwrap();
         let after = FileId::of(&fs::metadata(&path).unwrap());
-        assert_eq!(FileId { ctime_ns: after.ctime_ns, ..before }, after);
+        assert_eq!(
+            FileId {
+                ctime_ns: after.ctime_ns,
+                ..before
+            },
+            after
+        );
         header["id"]["ctime_ns"] = after.ctime_ns.into();
         fs::write(&cache, format!("{header}\n{body}")).unwrap();
         File::options()
