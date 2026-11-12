@@ -19,8 +19,9 @@
 --    process; see test_record.mix).
 -- 2. Replay. Every recorded invocation runs from a pool of N with exactly
 --    the recorded argv, cwd and environment. N defaults to half the cores
---    `nproc` reports (it honours affinity and cgroup limits), at least 1 and
---    at most 8, or TEST_POOL_JOBS, or --jobs. Each binary runs its own tests
+--    `nproc` reports (CPU affinity; NOT a cgroup cpu.max quota, so a
+--    quota-limited container must set TEST_POOL_JOBS), at least 1 and at
+--    most 8, or TEST_POOL_JOBS, or --jobs. Each binary runs its own tests
 --    on every core, so 8 at a time suits a 16-core CBC worker; on a 4-vCPU
 --    hosted runner 8 at a time made the pool slower than one at a time
 --    (1150 s) and timing tests failed (2026-11-12). Values go in the
@@ -63,13 +64,17 @@ end
 fn default_jobs()
   $n = run_argv(["nproc"])
   $cores = if $n.ok then to_number(trim($n.stdout)) else nil end
-  if $cores == nil or $cores < 1 then return 1 end
+  if $cores == nil or $cores < 1 then
+    print("::warning::test_pool: nproc gave no core count; running one binary at a time (set TEST_POOL_JOBS)")
+    return 1
+  end
   return max(1, min(8, floor($cores / 2)))
 end
+$jobs_from = if $o.opts.jobs != nil then "--jobs" elif env("TEST_POOL_JOBS") != "" then "TEST_POOL_JOBS" else nil end
 $jobs_text = $o.opts.jobs ?? env("TEST_POOL_JOBS", "")
-$jobs = if $jobs_text != "" then to_number($jobs_text) else default_jobs() end
+$jobs = if $jobs_from == nil then default_jobs() else to_number($jobs_text) end
 if $jobs == nil or $jobs < 1 or $jobs != floor($jobs) then
-  eprint("test_pool: --jobs / TEST_POOL_JOBS must be a whole number >= 1, got '" .. $jobs_text .. "'")
+  eprint("test_pool: " .. ($jobs_from ?? "the job count") .. " must be a whole number >= 1, got '" .. $jobs_text .. "'")
   exit(64)
 end
 $cargo_args = $o.rest
