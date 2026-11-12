@@ -200,6 +200,7 @@ impl Harness {
     /// Pump until the observed state holds, or the wall-clock deadline expires.
     /// Returns false on timeout so callers can report the state they expected.
     /// The predicate may poll an external receiver; it is checked after each pump.
+    #[must_use = "a timeout returns false; assert on it"]
     pub fn pump_until(&mut self, mut ready: impl FnMut(&mut Self) -> bool) -> bool {
         let deadline = Instant::now() + WAIT_BOUND;
         loop {

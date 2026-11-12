@@ -76,8 +76,7 @@ fn a_copy_survives_its_source_going_away() {
     // that it ran. Keep the source alive until its bytes have been admitted.
     assert!(
         h.pump_until(|h| !h.wire.state.clipboard.capture.is_empty()),
-        "copy was not captured; capture empty: {}",
-        h.wire.state.clipboard.capture.is_empty()
+        "copy was not captured within the harness wait bound"
     );
     source.destroy();
     h.roundtrip();
@@ -130,8 +129,7 @@ fn an_agent_seat_copy_is_offered_on_the_primary_seat() {
     // its capture is still in flight leaves nothing to persist).
     assert!(
         h.pump_until(|h| !h.wire.state.clipboard.capture.is_empty()),
-        "agent copy was not captured; capture empty: {}",
-        h.wire.state.clipboard.capture.is_empty()
+        "agent copy was not captured within the harness wait bound"
     );
     source.destroy();
     h.roundtrip();
