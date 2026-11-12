@@ -1,0 +1,42 @@
+#!/usr/bin/env mix
+-- version: 0.3.0
+-- tools/ci/test_record.mix: the test runner tools/ci/test_pool.mix sets as
+-- CARGO_TARGET_<TRIPLE>_RUNNER. Cargo calls
+--   mix test_record.mix OUT TARGET_DIR PROGRAM ARGS...
+-- once per program it would run, with its exact working directory and
+-- environment.
+--
+-- - A test binary cargo built (any file under TARGET_DIR: deps/ for unit and
+--   integration tests, examples/ for test-mode examples) is recorded, not
+--   run: one JSON line appended to OUT with the argv, the working directory
+--   and the whole environment. The pool replays them.
+-- - Anything else is a doc-test (cargo sends rustdoc's doc-test programs
+--   through the runner too; rustdoc builds them outside TARGET_DIR). It
+--   exits 0 without running: through a runner rustdoc runs every merged
+--   doc-test in one process instead of one each (it sets
+--   RUSTDOC_DOCTEST_BIN_PATH only without a runner), so the pool runs the
+--   doc-tests itself in a plain `cargo test --doc` pass with no runner.
+--
+-- The environment is read from /proc/self/environ (Linux; Mix has no
+-- environ() yet, see the hub's TODO-mix) and must be UTF-8.
+
+$a = args()
+if len($a) < 3 then
+  eprint("usage: test_record.mix OUT TARGET_DIR PROGRAM [ARGS...]")
+  exit(64)
+end
+$out = $a[0]
+$target_dir = $a[1]
+$argv = slice($a, 2, len($a))
+$program = realpath($argv[0]) ?? $argv[0]
+if not starts_with($program, $target_dir .. "/") then
+  -- A doc-test: run later, without a runner, by the pool's doc-test pass.
+  exit(0)
+end
+
+$env = {}
+for $kv in split(read_file("/proc/self/environ"), chr(0))
+  $p = split_once($kv, "=")
+  if $p != nil then $env[$p[0]] = $p[1] end
+end
+append_file($out, json_encode({argv: $argv, cwd: realpath("."), env: $env}) .. "\n")
