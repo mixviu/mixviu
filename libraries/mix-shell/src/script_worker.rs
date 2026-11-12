@@ -221,8 +221,11 @@ async fn run_mix_script(script: &str, cwd: Option<&str>) -> Result<(String, Stri
     // Set working directory if requested
     if let Some(cwd) = cwd {
         let expanded = if cwd.starts_with("~/") {
-            if let Some(home) = paths::env::os("HOME") {
-                std::path::PathBuf::from(home).join(&cwd[2..])
+            if let Some(mut home) = paths::env::os("HOME") {
+                // Concatenate as the source did, including empty HOME and
+                // its leading slash, while retaining non-UTF-8 OS bytes.
+                home.push(&cwd[1..]);
+                std::path::PathBuf::from(home)
             } else {
                 std::path::PathBuf::from(cwd)
             }

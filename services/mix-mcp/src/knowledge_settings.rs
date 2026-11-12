@@ -149,6 +149,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn explicit_domain_map_replaces_defaults_but_indexd_inherits_fields() {
+        let mut value = serde_json::json!({"map":{"old":"old"}, "indexd":{"target":"indexd", "call_timeout_secs":120}});
+        merge(&mut value, serde_json::json!({"map":{"custom":"custom"}, "indexd":{"target":"custom-index"}}));
+        assert_eq!(value["map"], serde_json::json!({"custom":"custom"}));
+        assert_eq!(value["indexd"], serde_json::json!({"target":"custom-index", "call_timeout_secs":120}));
+    }
+
+    #[test]
     fn domains_match_canonical_home_and_prefixes() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("real-home");
@@ -287,6 +295,12 @@ fn installed_json(name: &str) -> anyhow::Result<serde_json::Value> {
 fn merge(base: &mut serde_json::Value, overlay: serde_json::Value) {
     if let (Some(a), Some(b)) = (base.as_object_mut(), overlay.as_object()) {
         for (key, value) in b {
+            // A user domain map replaces the default map as in the source;
+            // nested typed settings (indexd) inherit omitted fields instead.
+            if key == "map" {
+                a.insert(key.clone(), value.clone());
+                continue;
+            }
             if let Some(old) = a.get_mut(key) {
                 merge(old, value.clone());
             } else {
