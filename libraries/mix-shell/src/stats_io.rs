@@ -1183,8 +1183,7 @@ fn read_legacy_source(
         return Some((id, None));
     }
     if may_cache {
-        let header =
-            serde_json::json!({"id": id.to_json(), "dates": DateBounds::of(&document).to_json(),
+        let header = serde_json::json!({"id": id.to_json(), "dates": DateBounds::of(&document).to_json(),
                 "verified_before_ns": verified_before_ns});
         let mut bytes = header.to_string().into_bytes();
         bytes.push(b'\n');
