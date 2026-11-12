@@ -1,0 +1,31 @@
+diff --git a/src/buffer.rs b/src/buffer.rs
+index c3e4a02..0aa1286 100644
+--- a/src/buffer.rs
++++ b/src/buffer.rs
+@@ -69,6 +69,26 @@ impl Buffer<'_> {
+         None
+     }
+ 
++    /// Mutable twin of [`Buffer::find_meta`], for a producer that stamps its
++    /// own metadata (PTS, sequence) before queueing the buffer. The buffer is
++    /// borrowed exclusively, so the metadata is too.
++    pub fn find_meta_mut<T>(&mut self) -> Option<&mut T>
++    where
++        T: Metadata,
++    {
++        let buffer: *mut spa_sys::spa_buffer = unsafe { self.buf.as_ref().buffer };
++        if !buffer.is_null() && unsafe { (*buffer).n_metas != 0 } {
++            let meta_data = unsafe {
++                spa_sys::spa_buffer_find_meta_data(buffer, T::META_TYPE, std::mem::size_of::<T>())
++                    as *mut T
++            };
++            if !meta_data.is_null() {
++                return Some(unsafe { &mut *meta_data });
++            }
++        }
++        None
++    }
++
+     #[cfg(feature = "v0_3_49")]
+     pub fn requested(&self) -> u64 {
+         unsafe { self.buf.as_ref().requested }

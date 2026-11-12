@@ -1,0 +1,111 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Policy checks and helpers shared by the foreign gate and its self-test.
+
+-- The gate's command line. Every --elf is kept, in order; --min-elf N makes
+-- the gate fail unless at least N binaries were scanned.
+fn parse_args($av)
+  $out = {pass: [], list: false, elf_bins: [], min_elf: 0, errors: []}
+  $pass = []
+  $bins = []
+  $errors = []
+  $i = 0
+  while $i < len($av)
+    $a = $av[$i]
+    $i = $i + 1
+    if $a == "--locked" or $a == "--offline" then
+      push($pass, $a)
+    elif $a == "--list" then
+      $out.list = true
+    elif $a == "--elf" and $i < len($av) then
+      push($bins, $av[$i])
+      $i = $i + 1
+    elif $a == "--min-elf" and $i < len($av) and re_match($av[$i], "^[0-9]+$") then
+      $out.min_elf = to_number($av[$i])
+      $i = $i + 1
+    else
+      push($errors, "unknown argument " .. $a)
+    end
+  end
+  $out.pass = $pass
+  $out.elf_bins = $bins
+  $out.errors = $errors
+  return $out
+end
+
+-- A failure when fewer ELF binaries were scanned than the caller required.
+fn elf_shortfall($scanned, $min)
+  if len($scanned) < $min then
+    return "ELF check scanned " .. to_string(len($scanned)) .. " binaries, expected at least " .. to_string($min)
+  end
+  return nil
+end
+
+-- Package names in one member's dependency closure. $target is a target
+-- triple, or "all" so that every target-specific edge is included.
+fn tree_names($manifest, $crate, $mode, $edges, $target, $pass)
+  $argv = concat(["cargo", "tree", "-p", $crate, "-e", $edges, "--target", $target, "--prefix", "none", "-f", "{p}",
+    "--manifest-path", $manifest], $mode, $pass)
+  $r = run_argv($argv, {timeout: 900, max_output: 268435456})
+  if not $r.ok then
+    raise("CARGO_TREE", "cargo tree -p " .. $crate .. " failed\n" .. $r.stderr)
+  end
+  $names = {}
+  for $line in split($r.stdout, "\n")
+    $n = trim($line)
+    if $n != "" then
+      $names[split($n, " ")[0]] = true
+    end
+  end
+  return $names
+end
+
+fn check($policy, $members, $closures)
+  $bad = []
+  $allow = $policy.allow ?? {}
+  $debt = $policy.debt ?? {}
+  $admitted = $policy.admitted ?? {}
+  $strict = $policy.strict ?? []
+  for $name in unique(concat(keys($allow), keys($debt), keys($admitted)))
+    $lists = 0
+    for $list in [$allow, $debt, $admitted]
+      if has_key($list, $name) then $lists = $lists + 1 end
+    end
+    if $lists != 1 then push($bad, $name .. ": must appear in exactly one policy list") end
+  end
+  for $name in keys($admitted)
+    $entry = $admitted[$name]
+    for $field in ["kind", "via", "exit", "by", "on"]
+      if type($entry[$field]) != "string" or $entry[$field] == "" then
+        push($bad, $name .. ": missing or invalid " .. $field)
+      end
+    end
+    if not contains(["system", "vendored"], $entry.kind) then
+      push($bad, $name .. ": invalid kind")
+    end
+    if $entry.by != "Mark" then push($bad, $name .. ": admission must be by Mark") end
+    if type($entry.on) == "string" and not re_match($entry.on, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$") then
+      push($bad, $name .. ": on must be YYYY-MM-DD")
+    end
+    if type($entry.only) != "list" or len($entry.only) == 0 then
+      push($bad, $name .. ": only must be a nonempty member list")
+      continue
+    end
+    for $member in $entry.only
+      if not contains($members, $member) then push($bad, $name .. ": unknown member " .. to_string($member)) end
+      if contains($strict, $member) then push($bad, $name .. ": strict member forbidden in only: " .. $member) end
+    end
+    $used = false
+    for $member in $members
+      if ($closures[$member] ?? {})[$name] == true then
+        $used = true
+        if contains($strict, $member) then
+          push($bad, "strict " .. $member .. " reaches admitted " .. $name)
+        elif not contains($entry.only, $member) then
+          push($bad, $member .. " reaches admitted " .. $name .. " outside only")
+        end
+      end
+    end
+    if not $used then push($bad, $name .. ": stale admitted entry (no member uses it)") end
+  end
+  return $bad
+end
