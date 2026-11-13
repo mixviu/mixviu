@@ -185,6 +185,8 @@ fn every_app_executes_the_mode_contract_and_restores_its_choice() {
     let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--ignored", "--exact", "app_mode_child", "--nocapture"])
         .env("HOME", home.path())
+        .env("MIX_APP_HOME", home.path())
+        .env("MIX_APPS_HOME", home.path())
         .env("XDG_STATE_HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path())
         .env("XDG_RUNTIME_DIR", home.path())
@@ -299,7 +301,7 @@ fn app_mode_child() {
                 runtime
                     .event(
                         format!("{app}.execute"),
-                        json!({"id":format!("view.mode.{mode}"),"params":{}}),
+                        json!({"id":format!("view.mode.{mode}")}),
                     )
                     .unwrap();
                 let done = next(&runtime, &wakes, app);

@@ -49,7 +49,10 @@ fn scene_colour(theme: &toolkit::Theme, role: &str) -> Option<Color32> {
     match role {
         "panel.background" | "panel.hover" => Some(background),
         "panel.foreground" => Some(readable(background, colour(palette.base.foreground))),
-        "panel.muted" => Some(readable(background, colour(palette.base.foreground).lerp_to_gamma(background, 0.25))),
+        "panel.muted" => Some(readable(
+            background,
+            colour(palette.base.foreground).lerp_to_gamma(background, 0.25),
+        )),
         "panel.selected" => Some(selected),
         "panel.selected-foreground" => {
             Some(readable(selected, colour(palette.secondary.foreground)))

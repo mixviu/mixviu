@@ -1328,13 +1328,29 @@ impl Terminal {
         let mut palette = List::from(&Colors::default());
         if let Some((foreground, background)) = defaults {
             use rio_vt::config::colors::NamedColor;
-            let rgba = |rgb: [u8; 3]| [f32::from(rgb[0]) / 255.0, f32::from(rgb[1]) / 255.0, f32::from(rgb[2]) / 255.0, 1.0];
-            for name in [NamedColor::Foreground, NamedColor::LightForeground, NamedColor::Cursor] {
+            let rgba = |rgb: [u8; 3]| {
+                [
+                    f32::from(rgb[0]) / 255.0,
+                    f32::from(rgb[1]) / 255.0,
+                    f32::from(rgb[2]) / 255.0,
+                    1.0,
+                ]
+            };
+            for name in [
+                NamedColor::Foreground,
+                NamedColor::LightForeground,
+                NamedColor::Cursor,
+            ] {
                 palette[name] = rgba(foreground);
             }
             let fg = rgba(foreground);
             let bg = rgba(background);
-            palette[NamedColor::DimForeground] = [fg[0] * 0.66 + bg[0] * 0.34, fg[1] * 0.66 + bg[1] * 0.34, fg[2] * 0.66 + bg[2] * 0.34, 1.0];
+            palette[NamedColor::DimForeground] = [
+                fg[0] * 0.66 + bg[0] * 0.34,
+                fg[1] * 0.66 + bg[1] * 0.34,
+                fg[2] * 0.66 + bg[2] * 0.34,
+                1.0,
+            ];
             palette[NamedColor::Background] = rgba(background);
         }
         let colour = |c: AnsiColor| -> [u8; 3] {
@@ -1467,7 +1483,9 @@ impl Terminal {
         let mut previous_colours = self.captured_colours.lock().unwrap();
         if let Some(dirty) = dirty {
             *dirty = dirty_rows(&mut term, *self.captured_offset.lock().unwrap());
-            if *previous_colours != defaults { dirty.fill(true); }
+            if *previous_colours != defaults {
+                dirty.fill(true);
+            }
             if *previous_search != highlight {
                 for (range, _) in previous_search.iter().chain(highlight.iter()) {
                     for (y, row) in dirty.iter_mut().enumerate() {
@@ -1965,8 +1983,8 @@ mod tests {
                 stats,
                 grid,
                 captured_offset: Mutex::new(0),
-            default_colours: Mutex::new(None),
-            captured_colours: Mutex::new(None),
+                default_colours: Mutex::new(None),
+                captured_colours: Mutex::new(None),
                 damage: Mutex::new(rx),
                 captured_cursor: Mutex::new(None),
                 captured_selection: Mutex::new(None),
@@ -2054,7 +2072,13 @@ mod tests {
         let dark = terminal.grid_snapshot();
         let red = dark.screen.cells[1].fg;
         assert_eq!(dark.screen.cells[0].bg, [16, 16, 16]);
-        assert!(terminal.grid_snapshot().dirty_rows.iter().all(|dirty| !dirty));
+        assert!(
+            terminal
+                .grid_snapshot()
+                .dirty_rows
+                .iter()
+                .all(|dirty| !dirty)
+        );
         terminal.set_default_colours([20, 20, 20], [250, 250, 250]);
         let light = terminal.grid_snapshot();
         assert!(light.dirty_rows.iter().all(|dirty| *dirty));
@@ -2064,7 +2088,13 @@ mod tests {
         assert_eq!(light.screen.cells[2].bg, [18, 52, 86]);
         assert_eq!(light.screen.cells[3].fg, [20, 20, 20]);
         terminal.set_default_colours([20, 20, 20], [250, 250, 250]);
-        assert!(terminal.grid_snapshot().dirty_rows.iter().all(|dirty| !dirty));
+        assert!(
+            terminal
+                .grid_snapshot()
+                .dirty_rows
+                .iter()
+                .all(|dirty| !dirty)
+        );
         terminal.set_default_colours([230, 230, 230], [16, 16, 16]);
         let dark = terminal.grid_snapshot();
         assert!(dark.dirty_rows.iter().all(|dirty| *dirty));

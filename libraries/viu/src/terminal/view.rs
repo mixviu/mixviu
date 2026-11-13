@@ -1453,7 +1453,11 @@ impl Views {
         let body = crate::editor::native_palette(ui, widget);
         terminal.set_default_colours(
             [body.text.r(), body.text.g(), body.text.b()],
-            [body.background.r(), body.background.g(), body.background.b()],
+            [
+                body.background.r(),
+                body.background.g(),
+                body.background.b(),
+            ],
         );
         let mut snapshot = super::view_search::snapshot(
             &mut surface.search,
