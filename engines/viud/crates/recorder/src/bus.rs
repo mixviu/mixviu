@@ -34,6 +34,8 @@ pub struct Recording {
     path: String,
     width: u32,
     height: u32,
+    source_width: u32,
+    source_height: u32,
     seq: u64,
     last: Vec<u8>,
     frames_file: File,
@@ -50,10 +52,10 @@ impl Recording {
         height: u32,
         fps: u32,
     ) -> Result<Self, String> {
+        let (source_width,source_height)=(width,height);
+        let width=width.checked_add(1).ok_or("capture width overflow")? & !1;
+        let height=height.checked_add(1).ok_or("capture height overflow")? & !1;
         let encoder = VideoEncoder::start_at(width, height, fps, Some(path.clone().into()))?;
-        if encoder.dims() != (width, height) {
-            return Err("recording requires even target dimensions".into());
-        }
         let frames_file =
             File::create(format!("{path}.frames.jsonl")).map_err(|e| e.to_string())?;
         let markers_file =
@@ -63,6 +65,8 @@ impl Recording {
             path,
             width,
             height,
+            source_width,
+            source_height,
             fps,
             t0_us: monotonic_us(),
             frames: 0,
@@ -85,16 +89,17 @@ impl Recording {
 
     pub fn frame(&mut self, pixels: Option<(u32, u32, Vec<u8>)>) -> Result<(), String> {
         if let Some((w, h, rgb)) = pixels {
-            if (w, h) != (self.width, self.height) {
+            if (w, h) != (self.source_width, self.source_height) {
                 return Err("target dimensions changed".into());
             }
             if rgb.len() != w as usize * h as usize * 3 {
                 return Err("invalid RGB frame".into());
             }
-            self.last = rgb
-                .chunks_exact(3)
-                .flat_map(|p| [p[2], p[1], p[0], 255])
-                .collect();
+            self.last = vec![0;self.width as usize*self.height as usize*4];
+            for (i,p) in rgb.chunks_exact(3).enumerate() {
+                let at=((i/w as usize)*self.width as usize+i%w as usize)*4;
+                self.last[at..at+4].copy_from_slice(&[p[2],p[1],p[0],255]);
+            }
         } else {
             self.repeated += 1;
         }

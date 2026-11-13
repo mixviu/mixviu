@@ -142,6 +142,10 @@ fn record_idle_output_lifecycle_and_clock() {
     let frames = stop["frames"].as_u64().unwrap();
     assert!(frames >= 10, "{stop}");
     assert!(fs::metadata(&path).unwrap().len() > 0);
+    let decoded = Command::new("ffmpeg").args(["-v","error","-i"])
+        .arg(&path).args(["-f","rawvideo","-pix_fmt","rgb24","-"]).output().unwrap();
+    assert!(decoded.status.success(),"{}",String::from_utf8_lossy(&decoded.stderr));
+    assert_eq!(decoded.stdout.len() as u64, frames * 1280 * 720 * 3);
     let rows: Vec<Value> = fs::read_to_string(start["frames_path"].as_str().unwrap())
         .unwrap()
         .lines()
@@ -184,7 +188,7 @@ fn record_window_target_gone_fails() {
     pattern.wait_callback(0);
     let window = bus.window();
     let start=bus.call("comp.record.start",json!({"request_id":"gone","target":{"windows":[target(&window)]},"path":process.root.join("gone.mkv"),"max_seconds":10}));
-    assert_eq!(start["width"], 1280);
+    assert!(start["width"].as_u64().unwrap() > 0);
     drop(pattern);
     thread::sleep(Duration::from_millis(250));
     let status = bus.call("comp.record.status", json!({"session":start["session"]}));

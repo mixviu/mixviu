@@ -6962,6 +6962,7 @@ dependencies = [
  "motion",
  "policy",
  "protocols",
+ "recorder",
  "screencopy",
  "seat",
  "serde_json",
@@ -7625,7 +7626,9 @@ version = "0.1.2"
 dependencies = [
  "dispatcher",
  "graphics",
+ "libc",
  "model",
+ "serde_json",
  "smithay",
  "ui-surface",
  "uuid",

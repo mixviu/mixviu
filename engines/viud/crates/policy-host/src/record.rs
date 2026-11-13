@@ -16,6 +16,13 @@ use std::{
 use world::state::Loop;
 
 type Answer = Box<dyn FnOnce(ControlReply)>;
+#[derive(Clone)]
+struct Past {
+    id: String,
+    start: Option<Value>,
+    terminal: Value,
+    status: Value,
+}
 struct Session {
     request_id: String,
     id: String,
@@ -32,6 +39,7 @@ struct Session {
     failed: Option<String>,
 }
 thread_local! {
+    static PAST: RefCell<std::collections::HashMap<String,Past>> = RefCell::new(std::collections::HashMap::new());
     static CURRENT: RefCell<Option<Rc<RefCell<Session>>>> = const { RefCell::new(None) };
     static EVENTS: RefCell<Vec<Value>> = const { RefCell::new(Vec::new()) };
 }
@@ -49,6 +57,26 @@ fn event(s: &Session, state: &str) {
 
 pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlReply) + 'static) {
     let answer: Answer = Box::new(answer);
+    if let RecordCommand::Start { request_id, .. } = &op {
+        if let Some(past) = PAST.with_borrow(|past|past.get(request_id).cloned()) {
+            answer(past.start.map(ControlReply::Body).unwrap_or_else(||refused("previous start failed")));
+            return;
+        }
+    } else {
+        let id = match &op {
+            RecordCommand::Marker {session,..}|RecordCommand::Stop {session,..} => Some(session),
+            RecordCommand::Status {session} => session.as_ref(),
+            _ => None,
+        };
+        if let Some(past) = id.and_then(|id|PAST.with_borrow(|past|past.values().find(|p|p.id==*id).cloned())) {
+            answer(match op {
+                RecordCommand::Stop {..}=>ControlReply::Body(past.terminal),
+                RecordCommand::Status {..}=>ControlReply::Body(past.status),
+                _=>refused("session is no longer recording"),
+            });
+            return;
+        }
+    }
     if let RecordCommand::Start {
         request_id,
         mut targets,
@@ -192,6 +220,8 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         if let Some(r) = s.recording.as_mut() {
             if r.poll() {
                 let reply = r.terminal.clone().unwrap();
+                let past=Past {id:s.id.clone(),start:s.start.clone(),terminal:reply.clone(),status:s.recording.as_ref().unwrap().status()};
+                PAST.with_borrow_mut(|all|{all.insert(s.request_id.clone(),past);});
                 for answer in std::mem::take(&mut s.stop_answers) {
                     answer(ControlReply::Body(reply.clone()));
                 }
@@ -284,13 +314,6 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         signature
     };
     let mut s = session.borrow_mut();
-    if let Some(r) = &s.recording {
-        if recorder::bus::monotonic_us() - r.t0_us >= s.max_seconds * 1_000_000 {
-            s.recording.as_mut().unwrap().stop(false);
-            event(&s, "finishing");
-            return;
-        }
-    }
     if s.recording.is_some() && s.signature == signature {
         let result = s.recording.as_mut().unwrap().frame(None);
         drop(s);
