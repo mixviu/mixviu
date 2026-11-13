@@ -441,7 +441,7 @@ $all_snap.tasks_scope = "all"
 $all = $models.panel($all_snap, $icons_busy, date_parse("2024-02-29T21:05:07Z"))
 check(deep_eq(map($all.tasks, fn($x) = $x.id), ["t_4", "t_9", "t_12", "t_20", "t_30"]), "scope all: other workspaces included, overlay still excluded, id order")
 $away = $all.tasks[3]
-check($away.color == "panel.foreground" and $away.background == nil, "another workspace's task is dimmed with no button background")
+check($away.color == "panel.muted" and $away.background == nil, "another workspace's task is dimmed with no button background")
 check($all.tasks[0].background != nil and $all.tasks[0].color == "panel.foreground", "current workspace tasks keep their look")
 check($all.tasks[4].background != nil, "a window without a workspace belongs to the current one")
 $all_snap.tasks_scope = "current"

@@ -350,10 +350,10 @@ fn panel($snap, $icons, $now)
     end
     $color = if $background=="panel.selected" then "panel.selected-foreground" else "panel.foreground" end
     if $w.minimized then
-      -- Keep initials readable over the translucent dark panel on light backgrounds.
-      $color = if $background=="panel.selected" then "panel.selected-foreground" else "panel.foreground" end
+      -- Retain inactive task dimming with readable session ink.
+      $color = "panel.muted"
     elif $away then
-      $color = if $background=="panel.selected" then "panel.selected-foreground" else "panel.foreground" end
+      $color = "panel.muted"
     end
     $icon = $window_icons[to_string($w.app_id)] ?? ""
     push($tasks, {id: "t_" .. to_string($w.id), cells: [], window: $w.id, generation: $w.generation,
