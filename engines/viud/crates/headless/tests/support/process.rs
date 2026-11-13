@@ -12,6 +12,8 @@ use std::{
 pub struct Process {
     pub child: Child,
     pub root: PathBuf,
+    #[allow(dead_code)]
+    pub control: Option<std::os::unix::net::UnixDatagram>,
     stop: mpsc::Sender<()>,
     watchdog: Option<thread::JoinHandle<()>>,
 }
@@ -85,6 +87,29 @@ fn spawn_options(
     trace: bool,
     agent: bool,
 ) -> Process {
+    spawn_with_seat(
+        scale,
+        explicit_node,
+        label,
+        bus,
+        refresh,
+        service,
+        trace,
+        agent,
+        None,
+    )
+}
+fn spawn_with_seat(
+    scale: i32,
+    explicit_node: Option<&str>,
+    label: &str,
+    bus: Option<&str>,
+    refresh: &str,
+    service: Option<&str>,
+    trace: bool,
+    agent: bool,
+    seat: Option<&str>,
+) -> Process {
     let binary = std::env::var_os("MIX_TEST_VIUD_EXE")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -114,6 +139,9 @@ fn spawn_options(
     } else {
         node.clone()
     };
+    if seat.is_some() {
+        config.priority = "inherited".into();
+    }
     let settings = root.join("settings.json");
     fs::write(&settings, serde_json::to_vec(&config).unwrap()).unwrap();
     let log = root.join("viud.log");
@@ -121,11 +149,8 @@ fn spawn_options(
     let mut command = Command::new(binary);
     command
         .args([
-            "--headless",
             "--socket",
             "wayland-headless-test",
-            "--size",
-            "1280x720",
             "--config-file",
         ])
         .arg(settings)
@@ -154,6 +179,15 @@ fn spawn_options(
         .env_remove("MIX_VT")
         .stdout(Stdio::from(stderr.try_clone().unwrap()))
         .stderr(stderr);
+    if seat.is_some() {
+        command
+            .args(["--kms", "--kms-confirm", "--bus-service", "comp-headless"])
+            .env("MIX_TEST_VIUD_SEAT_INACTIVE", seat.unwrap_or("1"))
+            .env("MIX_VIUD_OFFSCREEN_SIZE", "1280x720")
+            .env("MIX_VIUD_XWAYLAND", "0");
+    } else {
+        command.args(["--headless", "--size", "1280x720"]);
+    }
     if let Some(node) = explicit_node {
         command.args(["--render-node", node]);
     }
@@ -163,7 +197,30 @@ fn spawn_options(
     if let Some(service) = service {
         command.args(["--bus-service", service]);
     }
+    let mut control = None;
+    let mut child_control = None;
+    if seat == Some("transitions") {
+        use std::os::{fd::AsRawFd, unix::process::CommandExt};
+        let (parent, child) = std::os::unix::net::UnixDatagram::pair().unwrap();
+        parent
+            .set_read_timeout(Some(Duration::from_secs(8)))
+            .unwrap();
+        let fd = child.as_raw_fd();
+        command.env("MIX_TEST_VIUD_SEAT_INACTIVE", "fd:198");
+        // SAFETY: transfer only our owned fixture socket into the test child.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::dup2(fd, 198) < 0 || libc::fcntl(198, libc::F_SETFD, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        control = Some(parent);
+        child_control = Some(child);
+    }
     let child = command.spawn().expect("start viud");
+    drop(child_control);
     let pid = child.id();
     let (stop, stopped) = mpsc::channel();
     let watchdog = thread::spawn(move || {
@@ -175,6 +232,7 @@ fn spawn_options(
         }
     });
     Process {
+        control,
         child,
         root,
         stop,
@@ -185,4 +243,34 @@ fn spawn_options(
 #[allow(dead_code)]
 pub fn spawn_denied(label: &str, bus: &str) -> Process {
     spawn_options(1, None, label, Some(bus), "60", None, true, false)
+}
+
+#[allow(dead_code)]
+pub fn spawn_inactive(label: &str, bus: &str) -> Process {
+    spawn_with_seat(
+        1,
+        None,
+        label,
+        Some(bus),
+        "60",
+        None,
+        true,
+        false,
+        Some("1"),
+    )
+}
+
+#[allow(dead_code)]
+pub fn spawn_transitions(label: &str, bus: &str) -> Process {
+    spawn_with_seat(
+        1,
+        None,
+        label,
+        Some(bus),
+        "60",
+        None,
+        true,
+        false,
+        Some("transitions"),
+    )
 }

@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Human-facing dates follow the session zone, just like the message list.
+fn instant($stamp)
+  try return date_parse($stamp) catch $not_iso nil end
+  -- JMAP uses RFC 3339; imported message headers can use RFC 2822 with a
+  -- numeric offset. Normalise with Mix because date_parse only accepts ISO.
+  $match=re_find($stamp,"^(?:[A-Z][a-z]{2}, )?([0-9]{1,2}) ([A-Z][a-z]{2}) ([0-9]{4}) ([0-9]{2}:[0-9]{2}:[0-9]{2}) ([+-])([0-9]{2})([0-9]{2})$")[0]
+  if $match==nil then raise("DATE","Unsupported message date") end
+  $g=$match.groups;$months={Jan:"01",Feb:"02",Mar:"03",Apr:"04",May:"05",Jun:"06",Jul:"07",Aug:"08",Sep:"09",Oct:"10",Nov:"11",Dec:"12"}
+  if $months[$g[1]]==nil then raise("DATE","Unsupported month") end
+  return date_parse($g[2].."-"..$months[$g[1]].."-"..fmt("%02d",to_number($g[0])).."T"..$g[3]..$g[4]..$g[5]..":"..$g[6])
+end
+fn display($stamp,$format)
+  if $stamp==nil or $stamp=="" then return "" end
+  try return date_format(instant($stamp),$format) catch $invalid return "" end
+end

@@ -11,7 +11,7 @@ use smithay::backend::egl::{EGLDevice, EGLDisplay};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ImportDma, ImportEgl, Offscreen};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
-use smithay::reexports::calloop::{EventLoop, ping::make_ping};
+use smithay::reexports::calloop::{EventLoop, LoopHandle, ping::make_ping};
 use smithay::reexports::wayland_server::{DisplayHandle, protocol::wl_surface::WlSurface};
 use smithay::utils::{DeviceFd, Physical, Size, Transform};
 use world::state::Loop;
@@ -81,9 +81,21 @@ impl RenderContract for Contract {
 
 pub fn wire(
     state: &mut Loop,
-    event_loop: &mut EventLoop<Loop>,
+    event_loop: &mut EventLoop<'static, Loop>,
     options: Options<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    install(state, &event_loop.handle(), options, None, None).map(|_| ())
+}
+
+/// Install the headless renderer, optionally with a discovered connector's
+/// identity and mode. The VT adapter later adopts this renderer and output.
+pub fn install(
+    state: &mut Loop,
+    handle: &LoopHandle<'static, Loop>,
+    options: Options<'_>,
+    mode_override: Option<Mode>,
+    existing_output: Option<Output>,
+) -> Result<Output, Box<dyn std::error::Error>> {
     // Test-only injection, read exclusively by this backend. A later settingsd
     // snapshot supersedes it. Real sessions never read this variable.
     if let Some(names) = std::env::var_os("MIX_TEST_VIUD_AGENT_SEAT_ALLOW") {
@@ -143,11 +155,11 @@ pub fn wire(
             );
         }
     };
-    let mode = Mode {
+    let mode = mode_override.unwrap_or(Mode {
         size: options.size,
         refresh: refresh * 1000,
-    };
-    let output = virtual_output(0);
+    });
+    let output = existing_output.unwrap_or_else(|| virtual_output(0));
     output.change_current_state(
         Some(mode),
         Some(Transform::Normal),
@@ -160,9 +172,9 @@ pub fn wire(
         mode,
         renderer,
     };
-    let handle = state.state.output.display_handle.clone();
+    let display_handle = state.state.output.display_handle.clone();
     let damage_tracker =
-        scenegraph::state::lifecycle::initialize(state, &output, &handle, &mut contract);
+        scenegraph::state::lifecycle::initialize(state, &output, &display_handle, &mut contract);
     // This runs before the event loop serves any client.
     human_seat_without_sources(&mut state.state.seat.seat);
     state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
@@ -212,30 +224,29 @@ pub fn wire(
         Offscreen::<GlesTexture>::create_buffer(
             &mut contract.renderer,
             Fourcc::Abgr8888,
-            (options.size.w, options.size.h).into(),
+            (mode.size.w, mode.size.h).into(),
         )?,
         Offscreen::<GlesTexture>::create_buffer(
             &mut contract.renderer,
             Fourcc::Abgr8888,
-            (options.size.w, options.size.h).into(),
+            (mode.size.w, mode.size.h).into(),
         )?,
     ];
     decor::window::install(decor::ChromeTheme::load(
         decor::ChromeStyle::from_name(&state.inner.preference.chrome_style).unwrap_or_default(),
     ));
     let context = Rc::new(RefCell::new(crate::frame::Context::new(
-        output,
+        output.clone(),
         contract.renderer,
         targets,
         damage_tracker,
     )));
     let (ping, source) = make_ping()?;
     let first = ping.clone();
-    event_loop
-        .handle()
-        .insert_source(source, move |_, _, state| {
-            crate::frame::arm(state, &context);
-        })?;
+    let source_context = context.clone();
+    handle.insert_source(source, move |_, _, state| {
+        crate::frame::arm(state, &source_context);
+    })?;
     state.state.redraw.set_ping(ping);
     first.ping();
     screencopy::create_global(&state.state.output.display_handle);
@@ -243,7 +254,8 @@ pub fn wire(
         "headless: headless-0 {}x{} at scale {} wired",
         mode.size.w, mode.size.h, options.scale
     );
-    Ok(())
+    FALLBACK.with(|slot| *slot.borrow_mut() = Some(context));
+    Ok(output)
 }
 
 /// Synthetic identities are deterministic per virtual connector.
@@ -275,4 +287,72 @@ mod identity_tests {
             world::state::output_preference_key(&b)
         );
     }
+}
+
+thread_local! {
+    static FALLBACK: RefCell<Option<Rc<RefCell<crate::frame::Context>>>> = const { RefCell::new(None) };
+}
+
+/// Wake the same damage-driven renderer used by the headless backend.
+pub fn arm_inactive(state: &mut Loop) -> bool {
+    FALLBACK.with(|slot| {
+        let slot = slot.borrow();
+        let Some(context) = slot.as_ref() else {
+            return false;
+        };
+        crate::frame::arm(state, context);
+        true
+    })
+}
+
+pub fn available() -> bool {
+    FALLBACK.with(|slot| slot.borrow().is_some())
+}
+
+/// Reserve the installed renderer for inactive VT frames only.
+pub fn vt_session(state: &mut Loop) {
+    state.state.seat.seat.add_pointer();
+    state.state.seat.seat.add_touch();
+    state.inner.comp.injection.backend = world::comp::injection::BackendInput::Session;
+    FALLBACK.with(|slot| {
+        if let Some(context) = slot.borrow().as_ref() {
+            context.borrow_mut().vt_session = true;
+        }
+    });
+}
+
+/// Transfer the render-node renderer into the KMS manager, preserving EGL
+/// context identity for UI textures, imports and recording registries.
+pub fn take_renderer() -> Option<GlesRenderer> {
+    FALLBACK.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .and_then(|ctx| ctx.borrow_mut().renderer.take())
+    })
+}
+
+/// Keep the offscreen desk on the primary output after native hotplug/mode work.
+pub fn follow_output(output: Output) {
+    FALLBACK.with(|slot| {
+        if let Some(context) = slot.borrow().as_ref() {
+            context.borrow_mut().follow(output);
+        }
+    });
+}
+
+/// Fake-seat harness only: retire the real offscreen timer on activation,
+/// then stand in for KMS presentation without opening a primary DRM device.
+#[doc(hidden)]
+pub fn fixture_presentation(state: &mut Loop, active: bool) {
+    if active {
+        arm_inactive(state);
+    }
+    FALLBACK.with(|slot| {
+        if let Some(context) = slot.borrow().as_ref() {
+            context.borrow_mut().vt_session = !active;
+        }
+    });
+    state
+        .state
+        .schedule_redraw(protocols::redraw::schedule::RedrawReason::Resume);
 }

@@ -9,7 +9,6 @@
 use crate::edid::identity;
 use crate::edid::parse;
 use render_gles::preference::output::profile::OutputProfile;
-use smithay::backend::drm::DrmDevice;
 use smithay::reexports::drm::control::connector;
 use std::sync::OnceLock;
 
@@ -51,7 +50,7 @@ pub fn connector_name(info: &impl ConnectorInfo) -> String {
 /// legacy match, preserving profile order within each pass. Otherwise use the
 /// first connected connector.
 pub fn select(
-    drm: &DrmDevice,
+    drm: &impl smithay::reexports::drm::control::Device,
     connectors: Vec<connector::Info>,
     profiles: &[OutputProfile],
 ) -> Option<connector::Info> {
@@ -92,7 +91,10 @@ pub fn select(
 /// value both the in-compositor switch and the standalone settings editor key
 /// preferences by. An unreadable EDID yields the unknown-monitor key, so it simply
 /// never matches a real preference.
-fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
+fn identity_key(
+    drm: &impl smithay::reexports::drm::control::Device,
+    info: &connector::Info,
+) -> String {
     let raw = parse::read(drm, info);
     let parsed = raw.as_ref().and_then(parse::parse);
     identity::connector_key(parsed.as_ref(), info)
