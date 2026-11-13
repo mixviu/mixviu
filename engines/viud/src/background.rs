@@ -7,27 +7,31 @@ use world::state::{Loop, StatusSession};
 
 pub type Handles = Rc<RefCell<Option<native::wire::entry::NativeHandles>>>;
 
+pub struct InitialOutput {
+    mode: smithay::output::Mode,
+    output: Option<smithay::output::Output>,
+}
+
 /// Configured advertised mode is known before seat acquisition. Once KMS is
 /// attached the shared Output carries its last live mode across every pause.
-pub fn initial_mode()
--> Result<(smithay::output::Mode, Option<smithay::output::Output>), Box<dyn std::error::Error>> {
+pub fn initial_mode() -> Result<InitialOutput, Box<dyn std::error::Error>> {
     let config = model::environment::config::base::get();
     let discovered = kms::mode::offscreen::discover(&config.render_node, &config.scanout_node);
     if let Ok(size) = std::env::var("MIX_VIUD_OFFSCREEN_SIZE") {
         return crate::cli::parse_size(&size)
             .map(|size| {
-                (
-                    smithay::output::Mode {
+                InitialOutput {
+                    mode: smithay::output::Mode {
                         size: size.into(),
                         refresh: discovered.as_ref().map_or(60_000, |(mode, _)| mode.refresh),
                     },
-                    discovered.map(|(_, output)| output),
-                )
+                    output: discovered.map(|(_, output)| output),
+                }
             })
             .map_err(Into::into);
     }
     if let Some((mode, output)) = discovered {
-        return Ok((mode, Some(output)));
+        return Ok(InitialOutput { mode, output: Some(output) });
     }
     use render_gles::preference::output::profile::{self, ModeRequest};
     let mode = profile::get()
@@ -41,24 +45,24 @@ pub fn initial_mode()
         ) => (i32::from(width), i32::from(height)),
         _ => (3840, 2160),
     };
-    Ok((
-        smithay::output::Mode {
+    Ok(InitialOutput {
+        mode: smithay::output::Mode {
             size: size.into(),
             refresh: 60_000,
         },
-        None,
-    ))
+        output: None,
+    })
 }
 
 pub fn wire(
     state: &mut Loop,
     event_loop: &mut EventLoop<'static, Loop>,
     socket: OsString,
-    initial: (smithay::output::Mode, Option<smithay::output::Output>),
+    initial: InitialOutput,
     scale: f64,
     render_node: &str,
 ) -> Result<Handles, Box<dyn std::error::Error>> {
-    let (mode, output) = initial;
+    let InitialOutput { mode, output } = initial;
     state.inner.status_session = StatusSession::Paused;
     let output = headless::wire::install(
         state,

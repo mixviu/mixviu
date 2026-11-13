@@ -11,7 +11,7 @@ pub struct RawEdid(pub Vec<u8>);
 
 /// Read the EDID property blob for a connector, if present.
 pub fn read(
-    drm: &impl smithay::reexports::drm::control::Device,
+    drm: &impl Device,
     info: &connector::Info,
 ) -> Option<RawEdid> {
     let props = drm.get_properties(info.handle()).ok()?;
