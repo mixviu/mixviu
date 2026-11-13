@@ -362,6 +362,7 @@ fn status_without_right_fields_and_priority_error_stay_visible_at_desktop_scales
                         ..Default::default()
                     },
                     |ui| {
+                        ui.set_max_size(egui::vec2(3840.0 / scale, 2160.0 / scale));
                         error_colour = ui.visuals().error_fg_color;
                         widgets.begin_frame();
                         widgets.widget(ui, &widget, &json!({}));
@@ -408,7 +409,7 @@ fn status_without_right_fields_and_priority_error_stay_visible_at_desktop_scales
                             .iter()
                             .all(|s| s.format.color == error_colour)
                     );
-                    let bounds = error.galley.rect.translate(error.pos.to_vec2());
+                    let bounds = error.galley.mesh_bounds.translate(error.pos.to_vec2());
                     assert!(clip.contains_rect(bounds), "scale {scale}, right={right}: error {bounds:?} outside {clip:?}");
                     assert!(!left_bounds.intersects(bounds));
                 }
@@ -440,6 +441,7 @@ fn long_status_paint_never_intersects_right_fields_at_desktop_scales() {
                 ..Default::default()
             },
             |ui| {
+                ui.set_max_size(egui::vec2(3840.0 / scale, 2160.0 / scale));
                 widgets.begin_frame();
                 widgets.widget(ui, &widget, &json!({}));
                 widgets.finish_frame().unwrap();
