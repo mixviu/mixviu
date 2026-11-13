@@ -343,3 +343,19 @@ fn scene_authored_caption_groups_share_native_controls_and_retire_when_detached(
         );
     }
 }
+#[test]
+#[allow(deprecated)]
+fn session_install_clears_the_stable_local_choice_latch() {
+    let ctx = egui::Context::default();
+    let key = egui::Id::new("viu-local-choice");
+    let snapshot = serde_json::json!({"state":{"lost":false,"values":{"appearance.mode":"light"}}});
+    for explicit in [false, true] {
+        ctx.data_mut(|d| d.insert_temp(key, serde_json::json!({"mode":"dark"})));
+        if explicit {
+            viu::appearance::install_session_choice(&ctx, &snapshot, "ced", &toolkit::Theme::embedded(), &Default::default(), &serde_json::json!({})).unwrap();
+        } else {
+            viu::appearance::install_session(&ctx, &snapshot, "ced", &toolkit::Theme::embedded(), &Default::default()).unwrap();
+        }
+        assert!(ctx.data(|d| d.get_temp::<serde_json::Value>(key)).is_none());
+    }
+}

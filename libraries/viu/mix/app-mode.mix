@@ -1,6 +1,7 @@
 -- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- App policy: null follows the live session; only an explicit mode is saved.
+$saved_modes={}
 fn valid($mode)
   return $mode==nil or contains(["light","dark"],$mode)
 end
@@ -14,14 +15,21 @@ fn mode_enabled()
   return ($ctx.native_facilities ?? false) and not ($options.headless ?? false)
 end
 fn load($app)
+  global $saved_modes
   if not mode_enabled() then return nil end
-  return read_mode(path($app))
+  $mode=read_mode(path($app))
+  $saved_modes[$app]=$mode
+  return $mode
 end
 fn read_mode($file)
-  if not is_file($file) then return nil end
-  $value=json_parse(read_file($file))
-  if not valid($value.mode) then raise("APP_MODE","invalid saved app mode") end
-  return $value.mode
+  try
+    if not is_file($file) then return nil end
+    $value=json_parse(read_file($file))
+    if type($value)!="map" or not has_key($value,"mode") or not valid($value.mode) then return nil end
+    return $value.mode
+  catch $unreadable
+    return nil
+  end
 end
 fn restore($app,$legacy)
   if not mode_enabled() then return $legacy end
@@ -29,8 +37,11 @@ fn restore($app,$legacy)
   return $legacy
 end
 fn save($app,$mode,$explicit=false)
+  global $saved_modes
   if not mode_enabled() then return end
+  if not $explicit and has_key($saved_modes,$app) and $saved_modes[$app]==$mode then return end
   write_mode(path($app),$mode,$explicit)
+  $saved_modes[$app]=$mode
 end
 fn write_mode($file,$mode,$explicit=false)
   if not valid($mode) then raise("APP_MODE","mode must be light, dark or null") end

@@ -221,6 +221,7 @@ fn dp_action($s,$contract,$id,$params)
   if $id=="place.open" then return dp_go($s,$i,$params.path) end
   if not any($contract.actions,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",to_string($id)) end
   $id=$contract.action_aliases[$id] ?? $id
+  if $id=="theme.mode-toggle" then return dp_action($s,$contract,if $s.appearance.mode=="dark" then "view.mode.light" else "view.mode.dark" end,$params) end
   if $s.dialog_status!=nil and (starts_with($id,"nav.") or starts_with($id,"selection.") or contains(["view.refresh","view.toggle-hidden"],$id)) then $s.dialog_status=nil;$s.info="Select a file or folder" end
   $p=$s.panes[$i]
   $n=len($p.selected_paths)
@@ -272,7 +273,6 @@ fn dp_action($s,$contract,$id,$params)
     $s.appearance_reset=$key
   elif starts_with($id,"theme.decorations-") then $s.window_choice["window.decorations"]=slice($id,len("theme.decorations-"))
   elif starts_with($id,"theme.captions-") then $s.window_choice["window.caption_side"]=slice($id,len("theme.captions-"))
-  elif $id=="theme.mode-toggle" then $s.appearance.mode=if $s.appearance.mode=="dark" then "light" else "dark" end
   elif starts_with($id,"view.mode.") then $s.appearance.mode=slice($id,len("view.mode."));$s.appearance_choice.mode=$s.appearance.mode
   elif starts_with($id,"theme.style-") then $s.appearance.style=slice($id,len("theme.style-"))
   elif starts_with($id,"theme.scheme-") then $s.appearance.scheme=slice($id,len("theme.scheme-"))

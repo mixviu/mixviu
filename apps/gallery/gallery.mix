@@ -68,7 +68,7 @@ $ctx = viu_context()
 on gallery.execute
   $a = $event.args
   if starts_with($a.id ?? "","view.mode.") then
-    $choice.mode=$app_mode.choose($a.id);publish_gallery($ctx,$state);reply(0,json_encode({mode:$choice.mode,effective:$effective}));return
+    $choice.mode=$app_mode.choose($a.id);publish_gallery($ctx,$state);reply(0,json_encode({executed:$a.id}));return
   end
   if $a.action != "reset" then
     $matches=filter($widgets,fn($w)=$w.id==$a.id)
@@ -112,10 +112,12 @@ end
 publish_gallery($ctx,$state)
 
 on gallery.actions
-  reply(0,json_encode($app_mode.actions($choice.mode)))
+  reply(0,json_encode({actions:$app_mode.actions($choice.mode)}))
 end
 on viu.frame.intent
-  $choice.mode=$app_mode.choose($event.args.value.command ?? $event.args.id);publish_gallery($ctx,$state)
+  $id=$event.args.value.command ?? $event.args.id
+  if not starts_with($id ?? "","view.mode.") then return end
+  $choice.mode=$app_mode.choose($id);publish_gallery($ctx,$state)
 end
 on viu.theme.changed
   $effective=$event.args;publish_gallery($ctx,$state)

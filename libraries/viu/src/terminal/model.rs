@@ -1338,13 +1338,18 @@ impl Terminal {
             };
             for name in [
                 NamedColor::Foreground,
-                NamedColor::LightForeground,
                 NamedColor::Cursor,
             ] {
                 palette[name] = rgba(foreground);
             }
             let fg = rgba(foreground);
             let bg = rgba(background);
+            palette[NamedColor::LightForeground] = [
+                (fg[0] + (fg[0] - bg[0]) * 0.18).clamp(0.0, 1.0),
+                (fg[1] + (fg[1] - bg[1]) * 0.18).clamp(0.0, 1.0),
+                (fg[2] + (fg[2] - bg[2]) * 0.18).clamp(0.0, 1.0),
+                1.0,
+            ];
             palette[NamedColor::DimForeground] = [
                 fg[0] * 0.66 + bg[0] * 0.34,
                 fg[1] * 0.66 + bg[1] * 0.34,

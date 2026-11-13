@@ -2,6 +2,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Tab, transport and application policy. Text and mirror mechanics remain
 -- in-process; only this Mix owner schedules editd requests.
+$mode=require("../../libraries/viu/mix/app-mode.mix")
 fn current($s)
   if len($s.tabs)==0 then raise("EMPTY","Open a document first") end
   return $s.tabs[$s.active]
@@ -188,6 +189,6 @@ fn publish_ced($s)
   $model=$ced_ui.ced_ui_model($s,$model)
   $local=$s.local_theme ?? {};if $local.decorations!=nil then $window["window.decorations"]=$local.decorations end;if $local.captions!=nil then $window["window.caption_side"]=$local.captions end
   $model=$frame.apply($model,{padding_top:0,padding_bottom:0,identity:($local.decorations ?? "ssd")!="ssd",icon:"file-text",title:"MixViu Editor",menus:$ced_ui.ced_menus($s),toolbar:$ced_ui.ced_toolbar($s),status:$ced_ui.ced_status($s,$t),appearance:$look,window:$window})
-  $mode=require("../../libraries/viu/mix/app-mode.mix");$model=$mode.project($model,"ced",{scheme:$local.theme,mode:$local.mode,style:$local.style,decorations:$local.decorations,captions:$local.captions})
+  $model=$mode.project($model,"ced",{scheme:$local.theme,mode:$local.mode,style:$local.style,decorations:$local.decorations,captions:$local.captions})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
 end

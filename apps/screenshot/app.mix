@@ -53,7 +53,7 @@ on viu.session.changed
   $state.effective=$event.args.appearance;if $state.look.mode!=nil then $state.effective.mode=$state.look.mode end;$state.keymap=$event.args.keymap;$state=publish_model($state)
 end
 on viu.theme.changed
-  $state.effective=$event.args;$state=publish_model($state)
+  $state.effective=$event.args;if $state.look.mode!=nil then $state.effective.mode=$state.look.mode end;$state=publish_model($state)
 end
 on bus.connected
   $state.connected=true;$state=$op.refresh($state);$state=publish_model($state)

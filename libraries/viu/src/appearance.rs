@@ -53,7 +53,7 @@ pub fn install_session(
     install_theme(ctx, &theme)?;
     ctx.data_mut(|d| {
         d.insert_temp(egui::Id::unique("viu-session-theme"), theme);
-        d.remove::<Value>(egui::Id::unique("viu-local-choice"));
+        d.remove::<Value>(egui::Id::new("viu-local-choice"));
     });
     Ok(ui)
 }
@@ -109,7 +109,7 @@ pub fn install_session_choice(
         .map_err(|e| e.to_string())?;
     install_theme(ctx, &theme)?;
     ctx.data_mut(|d| {
-        d.remove::<Value>(egui::Id::unique("viu-local-choice"));
+        d.remove::<Value>(egui::Id::new("viu-local-choice"));
     });
     Ok(ui)
 }
@@ -174,7 +174,7 @@ pub fn local_mode(ctx: &egui::Context, name: &str) -> Result<(), String> {
     local_choice(ctx, &serde_json::json!({"mode":mode.name()}))
 }
 pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
-    let key = egui::Id::unique("viu-local-choice");
+    let key = egui::Id::new("viu-local-choice");
     if ctx.data(|d| d.get_temp::<Value>(key)).as_ref() == Some(value) {
         return Ok(());
     }
