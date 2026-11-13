@@ -411,11 +411,7 @@ pub fn wire(
     }
 
     // ---- Loop sources.
-    crate::wire::session::register(
-        event_loop,
-        display.session_notifier,
-        ctx_rc.clone(),
-    );
+    crate::wire::session::register(event_loop, display.session_notifier, ctx_rc.clone());
 
     crate::wire::frame::register(event_loop, _loop, display.drm_notifier, ctx_rc.clone());
 

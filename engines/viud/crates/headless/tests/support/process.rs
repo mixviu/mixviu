@@ -94,17 +94,7 @@ pub fn spawn_at_refresh(refresh: &str) -> Process {
 
 #[allow(dead_code)] // Only the timing integration target disables tracing.
 pub fn spawn_measurement() -> Process {
-    spawn_options(
-        1,
-        None,
-        "presentation",
-        None,
-        "60",
-        None,
-        false,
-        true,
-        None,
-    )
+    spawn_options(1, None, "presentation", None, "60", None, false, true, None)
 }
 
 fn spawn_options(
@@ -210,14 +200,20 @@ fn spawn_options(
     if seat == Some("transitions") {
         use std::os::{fd::AsRawFd, unix::process::CommandExt};
         let (parent, child) = std::os::unix::net::UnixDatagram::pair().unwrap();
-        parent.set_read_timeout(Some(Duration::from_secs(8))).unwrap();
+        parent
+            .set_read_timeout(Some(Duration::from_secs(8)))
+            .unwrap();
         let fd = child.as_raw_fd();
         command.env("MIX_TEST_VIUD_SEAT_INACTIVE", "fd:198");
         // SAFETY: transfer only our owned fixture socket into the test child.
-        unsafe { command.pre_exec(move || {
-            if libc::dup2(fd, 198) < 0 || libc::fcntl(198, libc::F_SETFD, 0) < 0 { return Err(std::io::Error::last_os_error()); }
-            Ok(())
-        }); }
+        unsafe {
+            command.pre_exec(move || {
+                if libc::dup2(fd, 198) < 0 || libc::fcntl(198, libc::F_SETFD, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
         control = Some(parent);
         child_control = Some(child);
     }
@@ -249,10 +245,30 @@ pub fn spawn_denied(label: &str, bus: &str) -> Process {
 
 #[allow(dead_code)]
 pub fn spawn_inactive(label: &str, bus: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", None, true, false, Some("1"))
+    spawn_options(
+        1,
+        None,
+        label,
+        Some(bus),
+        "60",
+        None,
+        true,
+        false,
+        Some("1"),
+    )
 }
 
 #[allow(dead_code)]
 pub fn spawn_transitions(label: &str, bus: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", None, true, false, Some("transitions"))
+    spawn_options(
+        1,
+        None,
+        label,
+        Some(bus),
+        "60",
+        None,
+        true,
+        false,
+        Some("transitions"),
+    )
 }

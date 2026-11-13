@@ -47,7 +47,9 @@ impl Session {
     pub(super) fn snapshot(&self) -> SessionSnapshot {
         let mut snapshot = self.snapshot;
         #[cfg(feature = "backend-native")]
-        { snapshot.watcher_failed = crate::background::watcher_failed(); }
+        {
+            snapshot.watcher_failed = crate::background::watcher_failed();
+        }
         snapshot
     }
 }
@@ -85,7 +87,7 @@ mod tests {
                 assert_eq!(
                     session.snapshot(),
                     SessionSnapshot {
-                watcher_failed: false,
+                        watcher_failed: false,
                         active,
                         vt: Some(3),
                         since_ms,

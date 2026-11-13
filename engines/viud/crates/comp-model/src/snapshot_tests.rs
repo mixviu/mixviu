@@ -1089,7 +1089,7 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
     );
     for (active, vt) in [(true, Some(3)), (false, Some(3)), (true, None)] {
         snapshot.session = Some(SessionSnapshot {
-                watcher_failed: false,
+            watcher_failed: false,
             active,
             vt,
             since_ms: 1_792_108_800_123,

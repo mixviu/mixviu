@@ -15,7 +15,11 @@ pub fn pause(pause_display: impl FnOnce(), suspend_input: impl FnOnce()) {
 
 /// Legacy GPU capture entries must retire before *any* KMS buffer/plane release.
 /// Bus frame captures own synchronous CPU readbacks and need no retained KMS fd.
-pub fn release<D>(data: &mut D, retire_capture: impl FnOnce(&mut D), release_display: impl FnOnce(&mut D)) {
+pub fn release<D>(
+    data: &mut D,
+    retire_capture: impl FnOnce(&mut D),
+    release_display: impl FnOnce(&mut D),
+) {
     retire_capture(data);
     release_display(data);
 }
@@ -24,12 +28,24 @@ pub fn release<D>(data: &mut D, retire_capture: impl FnOnce(&mut D), release_dis
 mod tests {
     #[test]
     fn capture_entries_retire_before_display_buffers_and_owned_pixels_survive() {
-        struct Desk { kms: Option<Vec<u8>>, legacy_capture: bool, snapshot: Vec<u8> }
-        let mut desk = Desk { kms: Some(vec![1, 2, 3]), legacy_capture: true, snapshot: vec![1, 2, 3] };
-        super::release(&mut desk, |desk| desk.legacy_capture = false, |desk| {
-            assert!(!desk.legacy_capture);
-            desk.kms.take();
-        });
+        struct Desk {
+            kms: Option<Vec<u8>>,
+            legacy_capture: bool,
+            snapshot: Vec<u8>,
+        }
+        let mut desk = Desk {
+            kms: Some(vec![1, 2, 3]),
+            legacy_capture: true,
+            snapshot: vec![1, 2, 3],
+        };
+        super::release(
+            &mut desk,
+            |desk| desk.legacy_capture = false,
+            |desk| {
+                assert!(!desk.legacy_capture);
+                desk.kms.take();
+            },
+        );
         assert!(desk.kms.is_none());
         assert_eq!(desk.snapshot, [1, 2, 3]);
     }

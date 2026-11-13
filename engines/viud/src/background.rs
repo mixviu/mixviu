@@ -21,13 +21,24 @@ pub fn initial_mode() -> Result<InitialOutput, Box<dyn std::error::Error>> {
     let config = model::environment::config::base::get();
     let discovered = kms::mode::offscreen::discover(&config.render_node, &config.scanout_node);
     match std::env::var("MIX_VIUD_OFFSCREEN_SIZE") {
-        Ok(value) => return Ok(InitialOutput {
-            mode: smithay::output::Mode { size: override_size(&value).into(), refresh: discovered.as_ref().map_or(60_000, |(mode, _)| mode.refresh) },
-            output: discovered.map(|(_, output)| output),
-        }),
+        Ok(value) => {
+            return Ok(InitialOutput {
+                mode: smithay::output::Mode {
+                    size: override_size(&value).into(),
+                    refresh: discovered.as_ref().map_or(60_000, |(mode, _)| mode.refresh),
+                },
+                output: discovered.map(|(_, output)| output),
+            });
+        }
         Err(std::env::VarError::NotUnicode(_)) => {
             warn!("MIX_VIUD_OFFSCREEN_SIZE is not UTF-8; using 3840x2160");
-            return Ok(InitialOutput { mode: smithay::output::Mode { size: (3840, 2160).into(), refresh: 60_000 }, output: discovered.map(|(_, output)| output) });
+            return Ok(InitialOutput {
+                mode: smithay::output::Mode {
+                    size: (3840, 2160).into(),
+                    refresh: 60_000,
+                },
+                output: discovered.map(|(_, output)| output),
+            });
         }
         Err(std::env::VarError::NotPresent) => {}
     }

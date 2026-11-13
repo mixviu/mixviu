@@ -40,10 +40,18 @@ struct FrameTimer {
     epoch: u64,
 }
 impl FrameTimer {
-    fn arm(&mut self) -> u64 { self.armed = true; self.epoch }
-    fn retire(&mut self) { self.armed = false; self.epoch = self.epoch.wrapping_add(1); }
+    fn arm(&mut self) -> u64 {
+        self.armed = true;
+        self.epoch
+    }
+    fn retire(&mut self) {
+        self.armed = false;
+        self.epoch = self.epoch.wrapping_add(1);
+    }
     fn fire(&mut self, epoch: u64) -> bool {
-        if !self.armed || epoch != self.epoch { return false; }
+        if !self.armed || epoch != self.epoch {
+            return false;
+        }
         self.armed = false;
         true
     }
@@ -151,7 +159,9 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
         .insert_source(Timer::from_deadline(at), move |_, _, state| {
             {
                 let mut ctx = context.borrow_mut();
-                if !ctx.timer.fire(epoch) { return TimeoutAction::Drop; }
+                if !ctx.timer.fire(epoch) {
+                    return TimeoutAction::Drop;
+                }
                 ctx.timer_source = None;
                 draw(state, &mut ctx);
             }
@@ -258,9 +268,16 @@ fn compose_available(
         ctx.renderer = Some(renderer);
         return result;
     }
-    let binding = state.inner.kernel.get(&world::state::GPU_BINDING)
-        .as_ref().ok_or("native renderer binding temporarily unavailable")?.clone();
-    let mut binding = binding.try_borrow_mut().map_err(|_| "native renderer is busy")?;
+    let binding = state
+        .inner
+        .kernel
+        .get(&world::state::GPU_BINDING)
+        .as_ref()
+        .ok_or("native renderer binding temporarily unavailable")?
+        .clone();
+    let mut binding = binding
+        .try_borrow_mut()
+        .map_err(|_| "native renderer is busy")?;
     let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
     let primary = *primary;
     let mut renderer = gpus.single_renderer(&primary)?;
@@ -471,7 +488,10 @@ mod tests {
         assert!(!timer.armed);
         assert!(!timer.fire(before_activation));
         let after_pause = timer.arm();
-        assert!(!timer.fire(before_activation), "late old callback must not clear the new timer");
+        assert!(
+            !timer.fire(before_activation),
+            "late old callback must not clear the new timer"
+        );
         assert!(timer.armed);
         assert!(timer.fire(after_pause));
         assert!(!timer.armed);
