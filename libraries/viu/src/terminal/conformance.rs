@@ -355,7 +355,8 @@ fn split_reflow_of_history_does_not_fill_unused_viewport_rows() {
     let t = Terminal::from_test_vt(
         24,
         3,
-        b"abcdefghijklmnopq\r\none\r\ntwo\r\nthree\x1b[2J\x1b[Hshort",
+        b"abcdefghijklmnopq\r\none\r\ntwo\r\nthree\x1b[H\x1b[2K\
+          \x1b[2;1H\x1b[2K\x1b[3;1H\x1b[2K\x1b[Hshort",
     );
     assert_eq!(t.grid.lock().history_size(), 1);
     t.resize(8, 3, 80, 30);
