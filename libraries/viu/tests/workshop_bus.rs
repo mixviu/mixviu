@@ -174,7 +174,12 @@ fn ordering_keeps_drive_fences_and_only_read_queries_bypass_undrawn_work() {
     let (_dir, mut host) = fixture(&broker.url);
     // A held, unplanned click must not stop a declared read-only ping, but
     // mutators, window commands and geometry queries keep the earlier order.
-    let click = request(&rt, &caller, "workshop.ui.click", json!({"label":"Target","trace":true}));
+    let click = request(
+        &rt,
+        &caller,
+        "workshop.ui.click",
+        json!({"label":"Target","trace":true}),
+    );
     pump_until(&mut host, |h| {
         h.held().contains(&"workshop.ui.click".into())
     });
@@ -188,7 +193,9 @@ fn ordering_keeps_drive_fences_and_only_read_queries_bypass_undrawn_work() {
     );
     pump_until(&mut host, |h| h.held().contains(&"workshop.window".into()));
     let window_state = request(&rt, &caller, "workshop.window.state", json!({}));
-    pump_until(&mut host, |h| h.held().contains(&"workshop.window.state".into()));
+    pump_until(&mut host, |h| {
+        h.held().contains(&"workshop.window.state".into())
+    });
     let state = request(&rt, &caller, "viu.state", json!({}));
     assert_eq!(
         call(&mut host, &rt, &caller, "workshop.ping").1["mutations"],
@@ -225,10 +232,14 @@ fn ordering_keeps_drive_fences_and_only_read_queries_bypass_undrawn_work() {
         assert!(Instant::now() < end, "held {:?}", host.held());
         std::thread::sleep(Duration::from_millis(2));
     }
-    let clicked=rt.block_on(click).unwrap();assert_eq!(clicked.0, 0);
+    let clicked = rt.block_on(click).unwrap();
+    assert_eq!(clicked.0, 0);
     let changed = rt.block_on(mutation).unwrap();
     assert_eq!(changed.0, 0);
-    assert_eq!(changed.1["clicks"], 1,"click reply {clicked:?}; mutation {changed:?}");
+    assert_eq!(
+        changed.1["clicks"], 1,
+        "click reply {clicked:?}; mutation {changed:?}"
+    );
     let geometry = rt.block_on(state).unwrap();
     assert_eq!(geometry.0, 0);
     assert_eq!(geometry.1["revision"], host.state()["revision"]);
