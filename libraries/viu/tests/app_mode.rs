@@ -258,7 +258,7 @@ fn app_mode_child() {
                     rasters: Some(Default::default()),
                     terminals: Some(Default::default()),
                     ui_state: Some(Default::default()),
-                    options: json!({"state_home":app_home}),
+                    options: json!({"state_home":temporary.path()}),
                     ..Default::default()
                 },
             );
@@ -309,6 +309,8 @@ fn app_mode_child() {
                     assert_eq!(reply.rc, 0, "{app}: {}", reply.body);
                 }
                 let model = done.model.unwrap();
+                let saved: Value = serde_json::from_slice(&std::fs::read(temporary.path().join("mixviu").join(app).join("mode.json")).unwrap()).unwrap();
+                assert_eq!(saved["mode"], model["theme_choice"]["mode"], "{app} owns its mode file");
                 assert_eq!(
                     model["theme_choice"]["mode"].as_str(),
                     if mode == "session" { None } else { Some(mode) },
