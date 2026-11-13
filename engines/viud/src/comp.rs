@@ -462,7 +462,8 @@ impl Bus {
         // Losing input authority (a session pause) clears the agent seat.
         let paused = matches!(lp.inner.status_session, world::state::StatusSession::Paused);
         for state in policy_host::record::take_events() {
-            self.producer.offer_next(move |event_seq| ObservationRecord::RecordState { state, event_seq });
+            self.producer
+                .offer_next(move |event_seq| ObservationRecord::RecordState { state, event_seq });
         }
         // Every libseat edge in order (a pause and an activation can share a
         // dispatch), then the current state, which announces the first one.

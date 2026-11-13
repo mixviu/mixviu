@@ -459,14 +459,14 @@ fn affected_topics_supports_every_topic_including_pointer() {
     for suffix in TOPIC_SUFFIXES {
         topics.insert(suffix);
     }
-    assert_eq!(topics.0, (1u16 << TOPIC_SUFFIXES.len()) - 1);
+    assert_eq!(topics.0, (1u32 << TOPIC_SUFFIXES.len()) - 1);
     assert_eq!(topics.iter().collect::<Vec<_>>(), TOPIC_SUFFIXES);
     topics.remove(CORNER_CLICKED_TOPIC_SUFFIX);
     assert!(!topics.contains(CORNER_CLICKED_TOPIC_SUFFIX));
     let mut clicked = AffectedTopics::default();
     clicked.insert(CORNER_CLICKED_TOPIC_SUFFIX);
     topics.merge(clicked);
-    assert_eq!(topics.0, (1u16 << TOPIC_SUFFIXES.len()) - 1);
+    assert_eq!(topics.0, (1u32 << TOPIC_SUFFIXES.len()) - 1);
     topics.remove(POINTER_TOPIC_SUFFIX);
     assert!(!topics.contains(POINTER_TOPIC_SUFFIX));
 }

@@ -52,54 +52,146 @@ pub struct CaptureWindow {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RecordCommand {
-    Start { request_id: String, targets: Vec<CaptureFrameSpec>, path: String, fps: u32, max_seconds: u64 },
-    Marker { session: String, label: String, data: Value },
-    Status { session: Option<String> },
-    Stop { session: String, discard: bool },
+    Start {
+        request_id: String,
+        targets: Vec<CaptureFrameSpec>,
+        path: String,
+        fps: u32,
+        max_seconds: u64,
+    },
+    Marker {
+        session: String,
+        label: String,
+        data: Value,
+    },
+    Status {
+        session: Option<String>,
+    },
+    Stop {
+        session: String,
+        discard: bool,
+    },
 }
 
 pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, ControlReply> {
-    let fields = args.as_object().ok_or_else(|| invalid_argument("args", "object", "record arguments"))?;
+    let fields = args
+        .as_object()
+        .ok_or_else(|| invalid_argument("args", "object", "record arguments"))?;
     let allowed: &[&str] = match command {
-        "comp.record.start" => &["request_id", "target", "path", "fps", "cursor", "max_seconds"],
+        "comp.record.start" => &[
+            "request_id",
+            "target",
+            "path",
+            "fps",
+            "cursor",
+            "max_seconds",
+        ],
         "comp.record.marker" => &["session", "label", "data"],
         "comp.record.status" => &["session"],
         _ => &["session", "discard"],
     };
     if let Some(key) = fields.keys().find(|key| !allowed.contains(&key.as_str())) {
-        return Err(invalid_argument(key, "record argument", "see comp.record contract"));
+        return Err(invalid_argument(
+            key,
+            "record argument",
+            "see comp.record contract",
+        ));
     }
     let text = |key: &str| -> Result<String, ControlReply> {
-        fields.get(key).and_then(Value::as_str).filter(|s| !s.is_empty())
-            .map(str::to_owned).ok_or_else(|| invalid_argument(key, "non-empty string", "string"))
+        fields
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| invalid_argument(key, "non-empty string", "string"))
     };
     match command {
         "comp.record.start" => {
             let request_id = text("request_id")?;
             let path = text("path")?;
-            if !path.ends_with(".mkv") { return Err(invalid_argument("path", "Matroska path", "absolute .mkv path")); }
-            let fps = fields.get("fps").unwrap_or(&Value::Null).as_u64().or_else(|| (!fields.contains_key("fps")).then_some(30))
-                .filter(|fps| (1..=60).contains(fps)).ok_or_else(|| invalid_argument("fps", "integer", "1..=60"))? as u32;
-            let max_seconds = fields.get("max_seconds").and_then(Value::as_u64).filter(|n| (1..=86400).contains(n))
+            if !path.ends_with(".mkv") {
+                return Err(invalid_argument(
+                    "path",
+                    "Matroska path",
+                    "absolute .mkv path",
+                ));
+            }
+            let fps = fields
+                .get("fps")
+                .unwrap_or(&Value::Null)
+                .as_u64()
+                .or_else(|| (!fields.contains_key("fps")).then_some(30))
+                .filter(|fps| (1..=60).contains(fps))
+                .ok_or_else(|| invalid_argument("fps", "integer", "1..=60"))?
+                as u32;
+            let max_seconds = fields
+                .get("max_seconds")
+                .and_then(Value::as_u64)
+                .filter(|n| (1..=86400).contains(n))
                 .ok_or_else(|| invalid_argument("max_seconds", "integer", "1..=86400"))?;
-            let cursor = match fields.get("cursor") { None => false, Some(Value::Bool(b)) => *b, _ => return Err(invalid_argument("cursor", "boolean", "true|false")) };
-            let target = fields.get("target").and_then(Value::as_object).ok_or_else(|| invalid_argument("target", "object", "{output?|window?|windows?|region?}"))?;
+            let cursor = match fields.get("cursor") {
+                None => false,
+                Some(Value::Bool(b)) => *b,
+                _ => return Err(invalid_argument("cursor", "boolean", "true|false")),
+            };
+            let target = fields
+                .get("target")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    invalid_argument("target", "object", "{output?|window?|windows?|region?}")
+                })?;
             let mut targets = Vec::new();
             if let Some(windows) = target.get("windows") {
-                let windows = windows.as_array().filter(|w| !w.is_empty() && w.len() <= 16).ok_or_else(|| invalid_argument("windows", "array", "1..=16 window targets"))?;
-                if target.len() != 1 { return Err(invalid_argument("target", "exclusive windows target", "{windows:[{id,generation}]}")); }
-                for window in windows { targets.push(parse(&json!({"window":window,"path":path,"cursor":cursor}))?); }
+                let windows = windows
+                    .as_array()
+                    .filter(|w| !w.is_empty() && w.len() <= 16)
+                    .ok_or_else(|| invalid_argument("windows", "array", "1..=16 window targets"))?;
+                if target.len() != 1 {
+                    return Err(invalid_argument(
+                        "target",
+                        "exclusive windows target",
+                        "{windows:[{id,generation}]}",
+                    ));
+                }
+                for window in windows {
+                    targets.push(parse(
+                        &json!({"window":window,"path":path,"cursor":cursor}),
+                    )?);
+                }
             } else {
                 let mut capture = Value::Object(target.clone());
                 capture["path"] = json!(path);
                 capture["cursor"] = json!(cursor);
                 targets.push(parse(&capture)?);
             }
-            Ok(RecordCommand::Start { request_id, targets, path, fps, max_seconds })
+            Ok(RecordCommand::Start {
+                request_id,
+                targets,
+                path,
+                fps,
+                max_seconds,
+            })
         }
-        "comp.record.marker" => Ok(RecordCommand::Marker { session: text("session")?, label: text("label")?, data: fields.get("data").cloned().unwrap_or(Value::Null) }),
-        "comp.record.status" => Ok(RecordCommand::Status { session: if fields.contains_key("session") { Some(text("session")?) } else { None } }),
-        _ => Ok(RecordCommand::Stop { session: text("session")?, discard: match fields.get("discard") { None => false, Some(Value::Bool(b)) => *b, _ => return Err(invalid_argument("discard", "boolean", "true|false")) } }),
+        "comp.record.marker" => Ok(RecordCommand::Marker {
+            session: text("session")?,
+            label: text("label")?,
+            data: fields.get("data").cloned().unwrap_or(Value::Null),
+        }),
+        "comp.record.status" => Ok(RecordCommand::Status {
+            session: if fields.contains_key("session") {
+                Some(text("session")?)
+            } else {
+                None
+            },
+        }),
+        _ => Ok(RecordCommand::Stop {
+            session: text("session")?,
+            discard: match fields.get("discard") {
+                None => false,
+                Some(Value::Bool(b)) => *b,
+                _ => return Err(invalid_argument("discard", "boolean", "true|false")),
+            },
+        }),
     }
 }
 
@@ -285,18 +377,42 @@ mod tests {
 
     #[test]
     fn recording_validation_and_read_only_classification() {
-        let args=json!({"request_id":"take","target":{"windows":[{"id":1,"generation":2},{"id":3,"generation":4}]},"path":"/tmp/take.mkv","max_seconds":60});
-        let RecordCommand::Start{targets,fps,..}=parse_record("comp.record.start",&args).unwrap() else {panic!()};
-        assert_eq!(targets.len(),2);
-        assert_eq!(fps,30);
+        let args = json!({"request_id":"take","target":{"windows":[{"id":1,"generation":2},{"id":3,"generation":4}]},"path":"/tmp/take.mkv","max_seconds":60});
+        let RecordCommand::Start { targets, fps, .. } =
+            parse_record("comp.record.start", &args).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(targets.len(), 2);
+        assert_eq!(fps, 30);
         assert!(!targets[0].cursor);
-        for (key,value) in [("path",json!("relative.mkv")),("fps",json!(0)),("fps",json!(61)),("max_seconds",json!(0)),("request_id",json!("")),("cursor",json!("false")),("unknown",json!(true))] {
-            let mut bad=args.clone(); bad[key]=value;
-            assert!(parse_record("comp.record.start",&bad).is_err(),"{bad}");
+        for (key, value) in [
+            ("path", json!("relative.mkv")),
+            ("fps", json!(0)),
+            ("fps", json!(61)),
+            ("max_seconds", json!(0)),
+            ("request_id", json!("")),
+            ("cursor", json!("false")),
+            ("unknown", json!(true)),
+        ] {
+            let mut bad = args.clone();
+            bad[key] = value;
+            assert!(parse_record("comp.record.start", &bad).is_err(), "{bad}");
         }
         assert!(crate::catalogue::read_only("comp.record.status"));
-        for command in ["comp.record.start","comp.record.marker","comp.record.stop"] { assert!(!crate::catalogue::read_only(command)); }
-        assert!(matches!(crate::request::classify("comp.record.status",&json!({}),false),Ok(crate::request::Request::Long(crate::request::LongOp::Record(RecordCommand::Status{session:None})))));
+        for command in [
+            "comp.record.start",
+            "comp.record.marker",
+            "comp.record.stop",
+        ] {
+            assert!(!crate::catalogue::read_only(command));
+        }
+        assert!(matches!(
+            crate::request::classify("comp.record.status", &json!({}), false),
+            Ok(crate::request::Request::Long(
+                crate::request::LongOp::Record(RecordCommand::Status { session: None })
+            ))
+        ));
     }
 
     #[test]

@@ -2094,9 +2094,16 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
     ) {
         return Ok(Request::Debug);
     }
-    if matches!(command, "comp.record.start" | "comp.record.marker" | "comp.record.status" | "comp.record.stop") {
-        if malformed { return Err(invalid_argument("args", "object", "record arguments").into_wire()); }
-        return crate::capture::parse_record(command, args).map(|spec| Request::Long(LongOp::Record(spec))).map_err(ControlReply::into_wire);
+    if matches!(
+        command,
+        "comp.record.start" | "comp.record.marker" | "comp.record.status" | "comp.record.stop"
+    ) {
+        if malformed {
+            return Err(invalid_argument("args", "object", "record arguments").into_wire());
+        }
+        return crate::capture::parse_record(command, args)
+            .map(|spec| Request::Long(LongOp::Record(spec)))
+            .map_err(ControlReply::into_wire);
     }
     if command == "comp.capture.frame" {
         if malformed {

@@ -7,5 +7,5 @@
 #[macro_use]
 extern crate model;
 
-pub mod interface;
 pub mod bus;
+pub mod interface;

@@ -23,7 +23,9 @@ thread_local! {
 /// A raw capture uses the same target fencing, crop and offscreen window path
 /// as a file capture. Its private token is never opened as a filesystem path.
 pub fn raw_answer(token: String, answer: impl FnOnce(Result<Pixels, ControlReply>) + 'static) {
-    PIXEL_ANSWERS.with_borrow_mut(|answers| { answers.insert(token, Box::new(answer)); });
+    PIXEL_ANSWERS.with_borrow_mut(|answers| {
+        answers.insert(token, Box::new(answer));
+    });
 }
 
 pub fn raw_fail(token: &str, error: ControlReply) {

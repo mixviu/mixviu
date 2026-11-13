@@ -76,7 +76,9 @@ pub fn command_class(command: &str) -> Option<CommandClass> {
         | "comp.window.stats"
         | "comp.callers" => Read,
         "comp.record.status" => Read,
-        "comp.capture.frame" | "comp.record.start" | "comp.record.marker" | "comp.record.stop" => Capture,
+        "comp.capture.frame" | "comp.record.start" | "comp.record.marker" | "comp.record.stop" => {
+            Capture
+        }
         "comp.debug.set" => Debug,
         "comp.input.sequence"
         | "comp.input.pointer.move"
@@ -116,7 +118,8 @@ pub fn command_class(command: &str) -> Option<CommandClass> {
 /// Registry queries, including commands that wait, capture or observe rather
 /// than reading the current snapshot. This is discovery metadata, not routing.
 pub fn read_only(command: &str) -> bool {
-    command == "comp.record.status" || command == "comp.callers"
+    command == "comp.record.status"
+        || command == "comp.callers"
         || READ_COMMANDS.contains(&command)
         || matches!(
             command,

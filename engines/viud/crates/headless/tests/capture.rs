@@ -116,56 +116,79 @@ fn record_idle_output_lifecycle_and_clock() {
     let path = process.root.join("take.mkv");
     let args = json!({"request_id":"take-1","target":{"output":"headless-0"},"path":path,"fps":30,"max_seconds":10});
     let start = bus.call("comp.record.start", args.clone());
-    assert_eq!(start, bus.call("comp.record.start",args));
+    assert_eq!(start, bus.call("comp.record.start", args));
     let session = start["session"].clone();
-    assert_eq!(start["clock"],"monotonic");
-    assert_eq!(start["width"],1280);
-    assert_eq!(start["height"],720);
+    assert_eq!(start["clock"], "monotonic");
+    assert_eq!(start["width"], 1280);
+    assert_eq!(start["height"], 720);
     let busy = bus.call_rc("comp.record.start",json!({"request_id":"other","target":{"output":"headless-0"},"path":process.root.join("other.mkv"),"max_seconds":10}),10);
-    assert_eq!(busy["error"],"record_busy");
+    assert_eq!(busy["error"], "record_busy");
     let mut markers = Vec::new();
     for index in 0..4 {
         thread::sleep(Duration::from_millis(100));
-        markers.push(bus.call("comp.record.marker",json!({"session":session,"label":format!("step-{index}"),"data":{"step":index}})));
+        markers.push(bus.call(
+            "comp.record.marker",
+            json!({"session":session,"label":format!("step-{index}"),"data":{"step":index}}),
+        ));
     }
-    let status = bus.call("comp.record.status",json!({"session":session}));
-    assert_eq!(status["state"],"recording");
-    assert!(status["repeated"].as_u64().unwrap()>0);
-    let stop=bus.call("comp.record.stop",json!({"session":session}));
-    assert_eq!(stop,bus.call("comp.record.stop",json!({"session":session})));
-    let frames=stop["frames"].as_u64().unwrap();
-    assert!(frames>=10,"{stop}");
-    assert!(fs::metadata(&path).unwrap().len()>0);
-    let rows: Vec<Value>=fs::read_to_string(start["frames_path"].as_str().unwrap()).unwrap().lines().map(|line|serde_json::from_str(line).unwrap()).collect();
-    assert_eq!(rows.len() as u64,frames);
-    let duration=rows.last().unwrap()["t_us"].as_u64().unwrap() as f64/1_000_000.0;
-    assert!((frames as f64-30.0*duration).abs()<5.0,"{frames} frames in {duration}s");
+    let status = bus.call("comp.record.status", json!({"session":session}));
+    assert_eq!(status["state"], "recording");
+    assert!(status["repeated"].as_u64().unwrap() > 0);
+    let stop = bus.call("comp.record.stop", json!({"session":session}));
+    assert_eq!(
+        stop,
+        bus.call("comp.record.stop", json!({"session":session}))
+    );
+    let frames = stop["frames"].as_u64().unwrap();
+    assert!(frames >= 10, "{stop}");
+    assert!(fs::metadata(&path).unwrap().len() > 0);
+    let rows: Vec<Value> = fs::read_to_string(start["frames_path"].as_str().unwrap())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(rows.len() as u64, frames);
+    let duration = rows.last().unwrap()["t_us"].as_u64().unwrap() as f64 / 1_000_000.0;
+    assert!(
+        (frames as f64 - 30.0 * duration).abs() < 5.0,
+        "{frames} frames in {duration}s"
+    );
     for pair in markers.windows(2) {
-        assert!(pair[0]["t_us"].as_u64()<pair[1]["t_us"].as_u64());
-        assert!(pair[0]["seq"].as_u64()<pair[1]["seq"].as_u64());
+        assert!(pair[0]["t_us"].as_u64() < pair[1]["t_us"].as_u64());
+        assert!(pair[0]["seq"].as_u64() < pair[1]["seq"].as_u64());
     }
-    assert!(markers.iter().all(|m|m["frame"].as_u64().unwrap()<frames));
-    let logged: Vec<Value>=fs::read_to_string(start["markers_path"].as_str().unwrap()).unwrap().lines().map(|line|serde_json::from_str(line).unwrap()).collect();
-    for (reply,row) in markers.iter().zip(logged) {
-        for key in ["seq","frame","t_us"] { assert_eq!(reply[key],row[key]); }
+    assert!(
+        markers
+            .iter()
+            .all(|m| m["frame"].as_u64().unwrap() < frames)
+    );
+    let logged: Vec<Value> = fs::read_to_string(start["markers_path"].as_str().unwrap())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    for (reply, row) in markers.iter().zip(logged) {
+        for key in ["seq", "frame", "t_us"] {
+            assert_eq!(reply[key], row[key]);
+        }
     }
 }
 
 #[test]
 #[ignore = "needs a GPU render node, ffmpeg/libx264 and built viud/noded/testkit binaries"]
 fn record_window_target_gone_fails() {
-    let bus=Bus::start("record-gone");
-    let mut process=process::spawn(1,None,"record-gone",Some(&bus.url));
-    let mut pattern=Pattern::new(connect(&mut process));
+    let bus = Bus::start("record-gone");
+    let mut process = process::spawn(1, None, "record-gone", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
     bus.ready();
     pattern.wait_callback(0);
-    let window=bus.window();
+    let window = bus.window();
     let start=bus.call("comp.record.start",json!({"request_id":"gone","target":{"windows":[target(&window)]},"path":process.root.join("gone.mkv"),"max_seconds":10}));
-    assert_eq!(start["width"],1280);
+    assert_eq!(start["width"], 1280);
     drop(pattern);
     thread::sleep(Duration::from_millis(250));
-    let status=bus.call("comp.record.status",json!({"session":start["session"]}));
-    assert_eq!(status["state"],"failed","{status}");
+    let status = bus.call("comp.record.status", json!({"session":start["session"]}));
+    assert_eq!(status["state"], "failed", "{status}");
     assert!(status["error"].as_str().unwrap().contains("gone"));
 }
 fn place_args(row: &Value, extra: Value) -> Value {

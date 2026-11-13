@@ -14,11 +14,11 @@ use std::process::{Child, Stdio};
 
 use slots::library::process::child::hygiene::command;
 use slots::library::process::child::spawn as child_spawn;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
-use std::time::{Duration, Instant};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 pub struct VideoEncoder {
     tx: Option<SyncSender<Vec<u8>>>,
@@ -30,6 +30,7 @@ pub struct VideoEncoder {
     stderr: Arc<Mutex<String>>,
     queued: Arc<AtomicUsize>,
     closed: Arc<AtomicBool>,
+    cleanup: bool,
 }
 
 impl VideoEncoder {
@@ -41,6 +42,10 @@ impl VideoEncoder {
     }
 
     pub fn start_result(width: u32, height: u32, fps: u32) -> Result<Self, String> {
+        Self::start_at(width, height, fps, None)
+    }
+
+    pub fn start_at(width: u32, height: u32, fps: u32, path: Option<PathBuf>) -> Result<Self, String> {
         let w = width & !1;
         let h = height & !1;
         if w == 0 || h == 0 {
@@ -50,7 +55,8 @@ impl VideoEncoder {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let temp = std::env::temp_dir().join(format!("viud-capture-{nanos}.mkv"));
+        let cleanup = path.is_none();
+        let temp = path.unwrap_or_else(|| std::env::temp_dir().join(format!("viud-capture-{nanos}.mkv")));
 
         let mut cmd = command("ffmpeg");
         cmd.args([
@@ -69,14 +75,22 @@ impl VideoEncoder {
             "-",
             "-pix_fmt",
             "yuv420p",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "14", "-g", "30", "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "14",
+            "-g",
+            "30",
+            "-an",
         ])
         .arg(&temp)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
-        let mut child = child_spawn::spawn_awaited(&mut cmd)
-            .map_err(|e| format!("ffmpeg spawn: {e}"))?;
+        let mut child =
+            child_spawn::spawn_awaited(&mut cmd).map_err(|e| format!("ffmpeg spawn: {e}"))?;
 
         let mut stdin = child.stdin.take().ok_or("ffmpeg stdin unavailable")?;
         let stderr = Arc::new(Mutex::new(String::new()));
@@ -85,7 +99,9 @@ impl VideoEncoder {
             std::thread::spawn(move || {
                 let mut chunk = [0; 4096];
                 while let Ok(n) = pipe.read(&mut chunk) {
-                    if n == 0 { break; }
+                    if n == 0 {
+                        break;
+                    }
                     let mut text = errors.lock().unwrap();
                     // Drain the pipe continuously, retaining at most 64 KiB.
                     if text.len() < 65536 {
@@ -120,6 +136,7 @@ impl VideoEncoder {
             stderr,
             queued,
             closed,
+            cleanup,
         })
     }
 
@@ -135,15 +152,25 @@ impl VideoEncoder {
 
     /// Non-blocking admission: false means the bounded queue overran or closed.
     pub fn try_push(&self, bgra: Vec<u8>) -> bool {
-        if bgra.len() != self.width as usize * self.height as usize * 4 { return false; }
+        if bgra.len() != self.width as usize * self.height as usize * 4 {
+            return false;
+        }
         self.queued.fetch_add(1, Ordering::Relaxed);
-        if self.tx.as_ref().is_some_and(|tx| tx.try_send(bgra).is_ok()) { true }
-        else { self.queued.fetch_sub(1, Ordering::Relaxed); false }
+        if self.tx.as_ref().is_some_and(|tx| tx.try_send(bgra).is_ok()) {
+            true
+        } else {
+            self.queued.fetch_sub(1, Ordering::Relaxed);
+            false
+        }
     }
 
-    pub fn queue(&self) -> usize { self.queued.load(Ordering::Relaxed) }
+    pub fn queue(&self) -> usize {
+        self.queued.load(Ordering::Relaxed)
+    }
     pub fn error(&self) -> Option<String> {
-        self.closed.load(Ordering::Acquire).then(|| format!("ffmpeg pipe closed: {}",self.stderr.lock().unwrap()))
+        self.closed
+            .load(Ordering::Acquire)
+            .then(|| format!("ffmpeg pipe closed: {}", self.stderr.lock().unwrap()))
     }
 
     /// Call on a finaliser thread. Kill a stuck encoder after the deadline,
@@ -155,27 +182,38 @@ impl VideoEncoder {
         let result = loop {
             match child.try_wait() {
                 Ok(Some(status)) if status.success() => break Ok(std::mem::take(&mut self.temp)),
-                Ok(Some(status)) => break Err(format!("ffmpeg {status}: {}", self.stderr.lock().unwrap())),
+                Ok(Some(status)) => {
+                    break Err(format!("ffmpeg {status}: {}", self.stderr.lock().unwrap()));
+                }
                 Err(error) => break Err(format!("ffmpeg wait: {error}")),
                 _ if Instant::now() >= deadline => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    break Err(format!("ffmpeg finalise timeout: {}", self.stderr.lock().unwrap()));
+                    break Err(format!(
+                        "ffmpeg finalise timeout: {}",
+                        self.stderr.lock().unwrap()
+                    ));
                 }
                 _ => std::thread::sleep(Duration::from_millis(10)),
             }
         };
-        if let Some(join) = self.join.take() { let _ = join.join(); }
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
         result
     }
 
     /// Stop the stream, wait for ffmpeg to flush, and return the temp mp4 path
     /// (or `None` if ffmpeg exited non-zero / produced nothing).
-    pub fn finish(self) -> Option<PathBuf> { self.finish_result().ok() }
+    pub fn finish(self) -> Option<PathBuf> {
+        self.finish_result().ok()
+    }
 
     pub fn discard(self) {
         std::thread::spawn(move || {
-            if let Ok(path) = self.finish_result() { let _ = std::fs::remove_file(path); }
+            if let Ok(path) = self.finish_result() {
+                let _ = std::fs::remove_file(path);
+            }
         });
     }
 }
@@ -185,12 +223,13 @@ impl Drop for VideoEncoder {
         self.tx = None;
         if let Some(mut child) = self.child.take() {
             let path = std::mem::take(&mut self.temp);
+            let cleanup = self.cleanup;
             std::thread::spawn(move || {
                 let _ = child.kill();
                 let _ = child.wait();
-                let _ = std::fs::remove_file(path);
+                if cleanup { let _ = std::fs::remove_file(path); }
             });
-        } else if !self.temp.as_os_str().is_empty() {
+        } else if self.cleanup && !self.temp.as_os_str().is_empty() {
             let _ = std::fs::remove_file(&self.temp);
         }
     }
@@ -205,15 +244,27 @@ mod tests {
         // never drain it. Exercise the real admission path deterministically.
         let (tx, _rx) = sync_channel(4);
         let encoder = VideoEncoder {
-            tx:Some(tx), join:None, child:None, temp:PathBuf::new(), width:2,height:2,
-            stderr:Arc::new(Mutex::new(String::new())),queued:Arc::new(AtomicUsize::new(0)),closed:Arc::new(AtomicBool::new(false)),
+            tx: Some(tx),
+            join: None,
+            child: None,
+            cleanup: true,
+            temp: PathBuf::new(),
+            width: 2,
+            height: 2,
+            stderr: Arc::new(Mutex::new(String::new())),
+            queued: Arc::new(AtomicUsize::new(0)),
+            closed: Arc::new(AtomicBool::new(false)),
         };
-        for _ in 0..4 { assert!(encoder.try_push(vec![0;16])); }
-        let started=Instant::now();
-        for _ in 0..1000 { assert!(!encoder.try_push(vec![0;16])); }
-        assert!(started.elapsed()<Duration::from_secs(1));
-        assert_eq!(encoder.queue(),4);
-        assert!(!encoder.try_push(vec![0;15]));
-        assert_eq!(encoder.queue(),4);
+        for _ in 0..4 {
+            assert!(encoder.try_push(vec![0; 16]));
+        }
+        let started = Instant::now();
+        for _ in 0..1000 {
+            assert!(!encoder.try_push(vec![0; 16]));
+        }
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(encoder.queue(), 4);
+        assert!(!encoder.try_push(vec![0; 15]));
+        assert_eq!(encoder.queue(), 4);
     }
 }
