@@ -34,6 +34,24 @@ async fn run_ok(source: &str) -> String {
         .unwrap_or_else(|error| panic!("script should succeed, got: {error}"))
 }
 
+/// A deadline starts before exec, so a shell-side wait alone cannot exclude
+/// startup from it. Retry only an unmet fixture precondition, never a result
+/// from an armed fixture. Keep the original per-attempt timeout and grace.
+async fn run_ready(source: &str, ready: &std::path::Path, marker: Option<&std::path::Path>) -> String {
+    for _ in 0..10 {
+        let _ = std::fs::remove_file(ready);
+        if let Some(marker) = marker {
+            let _ = std::fs::remove_file(marker);
+        }
+        let output = run_ok(source).await;
+        if ready.exists() {
+            let _ = std::fs::remove_file(ready);
+            return output;
+        }
+    }
+    panic!("fixture never reached readiness before its deadline: {source}");
+}
+
 /// A pid is gone when /proc no longer lists it, or lists it as a zombie
 /// (dead, only awaiting its new parent's reap — no longer running anything).
 fn pid_is_gone(pid: u32) -> bool {
@@ -76,11 +94,13 @@ fn parse_lines(output: &str) -> Vec<String> {
 /// timeout + grace, and the descendant is gone.
 #[tokio::test]
 async fn deadline_grace_escalates_to_sigkill_and_reaps_the_descendant() {
-    let output = run_ok(
-        "$r = run_argv([\"sh\", \"-c\", \"trap '' TERM; sleep 60 & echo $!; wait\"], {timeout: 0.3, grace: 0.6})\n\
+    let ready = marker_path("escalate-ready");
+    let r = ready.display();
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"trap '' TERM; sleep 60 & echo $!; echo ready > {r}; wait\"], {{timeout: 0.3, grace: 0.6}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. $r.ok .. \" \" .. ($r.duration_ms >= 850))\n\
          print(trim($r.stdout))\n",
-    )
+    ), &ready, None)
     .await;
     let lines = parse_lines(&output);
     assert_eq!(lines[0], "true 9 false true", "full output: {output:?}");
@@ -101,11 +121,13 @@ async fn deadline_grace_escalates_to_sigkill_and_reaps_the_descendant() {
 /// SIGKILLed AT the grace deadline — never left running as an orphan.
 #[tokio::test]
 async fn term_ignoring_descendant_is_killed_at_the_grace_deadline() {
-    let output = run_ok(
-        "$r = run_argv([\"sh\", \"-c\", \"(trap '' TERM; exec sleep 60) & echo $!; wait\"], {timeout: 0.3, grace: 1})\n\
+    let ready = marker_path("ignore-ready");
+    let r = ready.display();
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"(trap '' TERM; echo ready > {r}; exec sleep 60) & echo $!; wait\"], {{timeout: 0.3, grace: 1}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. ($r.duration_ms >= 1250) .. \" \" .. ($r.duration_ms < 5000))\n\
          print(trim($r.stdout))\n",
-    )
+    ), &ready, None)
     .await;
     let lines = parse_lines(&output);
     assert_eq!(lines[0], "true 15 true true", "full output: {output:?}");
@@ -132,11 +154,13 @@ fn marker_path(label: &str) -> std::path::PathBuf {
 #[tokio::test]
 async fn term_honouring_descendant_gets_the_grace_to_finish() {
     let marker = marker_path("honour");
+    let ready = marker_path("honour-ready");
+    let r = ready.display();
     let m = marker.display();
-    let output = run_ok(&format!(
-        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 1; echo done > {m}; exit 0' TERM; while true; do sleep 0.1; done) & wait\"], {{timeout: 0.3, grace: 5}})\n\
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 1; echo done > {m}; exit 0' TERM; echo ready > {r}; while true; do sleep 0.1; done) & wait\"], {{timeout: 0.3, grace: 5}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. ($r.duration_ms >= 1200) .. \" \" .. ($r.duration_ms < 4500))\n",
-    ))
+    ), &ready, Some(&marker))
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
@@ -153,11 +177,13 @@ async fn term_honouring_descendant_gets_the_grace_to_finish() {
 #[tokio::test]
 async fn drain_deadline_honours_grace_for_a_pipe_holding_descendant() {
     let marker = marker_path("drain");
+    let ready = marker_path("drain-ready");
+    let r = ready.display();
     let m = marker.display();
-    let output = run_ok(&format!(
-        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 0.5; echo done > {m}; exit 0' TERM; while true; do sleep 0.1; done) &\"], {{timeout: 0.3, grace: 5}})\n\
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 0.5; echo done > {m}; exit 0' TERM; echo ready > {r}; while true; do sleep 0.1; done) & while ! test -f {r}; do sleep 0.01; done\"], {{timeout: 0.3, grace: 5}})\n\
          print($r.timed_out .. \" \" .. $r.exit_code .. \" \" .. ($r.duration_ms < 4500))\n",
-    ))
+    ), &ready, Some(&marker))
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
@@ -285,24 +311,33 @@ async fn run_parallel_timeout_override_applies_before_grace_validation() {
 #[tokio::test]
 async fn a_stopped_member_is_continued_so_it_can_honour_sigterm() {
     let marker = marker_path("stopped");
+    let installed = marker_path("stopped-installed");
+    let ready = marker_path("stopped-ready");
     let helper = marker_path("stopper-sh");
     std::fs::write(
         &helper,
         format!(
-            "trap 'echo done > {}; exit 0' TERM\nkill -STOP $$\nwhile true; do sleep 0.1; done\n",
-            marker.display()
+            "trap 'echo done > {}; exit 0' TERM\necho ready > {}\nkill -STOP $$\nwhile true; do sleep 0.1; done\n",
+            marker.display(), installed.display()
         ),
     )
     .unwrap();
     let h = helper.display();
-    let output = run_ok(&format!(
-        "$r = run_argv([\"sh\", \"-c\", \"sh {h} & wait\"], {{timeout: 0.5, grace: 3}})\n\
+    let i = installed.display();
+    let r = ready.display();
+    // Keep the leader alive until its child exits. Otherwise its death can
+    // orphan the stopped group: the kernel sends SIGHUP (killing the child)
+    // and SIGCONT (masking a missing SIGCONT in Mix).
+    // Arm only after observing T, so a fast TERM trap before STOP cannot pass.
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"trap 'wait' TERM; sh {h} & child=$!; while ! test -f {i}; do sleep 0.01; done; while read -r pid comm state rest < /proc/$child/stat; do if test $state = T; then echo ready > {r}; break; fi; sleep 0.01; done; wait\"], {{timeout: 0.5, grace: 3}})\n\
          print($r.timed_out .. \" \" .. ($r.duration_ms < 3000))\n",
-    ))
+    ), &ready, Some(&marker))
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
     let _ = std::fs::remove_file(&helper);
+    let _ = std::fs::remove_file(&installed);
     assert_eq!(output, "true true\n", "full output: {output:?}");
     assert!(finished, "the stopped member never ran its SIGTERM trap");
 }
