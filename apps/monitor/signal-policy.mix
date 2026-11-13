@@ -29,20 +29,21 @@ fn local_context()
   return {uid:$uid,ancestors:$ancestors}
 end
 fn protected($pid)
-  if $session==nil or parent_pid($pid)!=1 then return false end
+  if parent_pid($pid)!=1 then return false end
   for $line in split(trim(read_file($proc_root.."/"..to_string($pid).."/cgroup")),"\n")
-    $unit=re_find($line,"(?:^|/)([^/@:]+)@([0-9]+)\\.service$")
-    if len($unit)==1 and $unit[0].groups[0]!="apps" and $unit[0].groups[1]==$session then return true end
+    $unit=re_find(trim($line),"(?:^|/)([^/@:]+)@([0-9]+)\\.service$")
+    if len($unit)==1 and $unit[0].groups[0]!="apps" and ($session==nil or $unit[0].groups[1]==$session) then return true end
   end
   return false
 end
 fn disabled($message) return {error_code:"DISABLED",message:$message} end
 fn admission($s,$pid)
+  if $pid==nil then return disabled("Select a process in the table") end
   if type($pid)!="number" or $pid<=1 or floor($pid)!=$pid then return disabled("Select a process other than PID 1") end
   if $s.node!="" then return disabled("End task and Kill act only on this node") end
   try
     if protected($pid) then
-      return {error_code:"PROTECTED",message:"Session infrastructure is protected",recovery:"Use the host's hostd desk.restart {desk: <desk name>}; see docs/ports/monitor.md#protected-session-processes"}
+      return {error_code:"PROTECTED",message:if $session==nil then "Session number is unknown; all session-unit main processes are protected" else "Session infrastructure is protected" end,recovery:"Use the host's hostd desk.restart {desk: <desk name>}; for a non-container session, restart the unit from another VT with sudo systemctl restart <unit>@N.service. See docs/ports/monitor.md#protected-session-processes"}
     end
     if $s.dialog!=nil or $s.quitting then return disabled("Close the dialog before ending a task") end
     if $pid!=$s.selected or not any($s.processes,fn($p)=$p.pid==$pid) then return disabled("Select a process in the table") end

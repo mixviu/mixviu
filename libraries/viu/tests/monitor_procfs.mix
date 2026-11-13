@@ -7,8 +7,9 @@ fn process($root,$pid,$parent,$uid,$unit)
   write_file($dir.."/status","Uid:\t"..to_string($uid).."\t"..to_string($uid).."\t0\t0\n")
   write_file($dir.."/cgroup","0::/system.slice/"..$unit.."\n")
 end
-fn create($source=nil)
-  $root=trim(run_argv_must(["mktemp","-d"]))
+fn create($source=nil,$root=nil)
+  $root=$root ?? trim(run_argv_must(["mktemp","-d"]))
+  try
   $source=$source ?? dirname(script_path())
   $copied=run_argv_must(["cp","-R",$source,$root.."/monitor"])
   mkdir($root.."/proc")
@@ -30,4 +31,8 @@ fn create($source=nil)
   $core=replace_must($core,'require("../../libraries/viu/mix/gold-frame.mix")',"require("..json_encode(path_join($source,"../../libraries/viu/mix/gold-frame.mix"))..")")
   write_file($root.."/monitor/core.mix",$core)
   return $root
+  catch $message, $error
+    $removed=run_argv_must(["rm","-r",$root])
+    raise($error.code,$message)
+  end
 end

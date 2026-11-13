@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use serde_json::json;
+use mix::{BusHandler, MixResult, evaluator::{BusFuture, IncomingEvent}, value::Value as MixValue};
+use serde_json::{Value, json};
 use std::{
     path::PathBuf,
-    sync::{Arc, mpsc},
+    rc::Rc,
+    sync::{Arc, Mutex, mpsc},
     time::Duration,
 };
 use viu::{
     bundle::Bundle,
-    runtime::{Completion, Program, Runtime},
+    runtime::{Completion, Program, Runtime, from_json, to_json},
 };
 
 fn done(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
@@ -58,12 +60,14 @@ fn monitor_mix_contracts_and_disabled_signal_paths_send_no_signals() {
         None,
     );
     // Build a copy with fake procfs using the same fixture helper as Mix tests.
+    let fixture_guard = tempfile::tempdir().unwrap();
     runtime
         .load(Program {
             source: format!(
-                "$fixture=require({});print($fixture.create({}))",
-                serde_json::to_string(&root.join("test-procfs.mix")).unwrap(),
-                serde_json::to_string(&root).unwrap()
+                "$fixture=require({});print($fixture.create({},{}))",
+                serde_json::to_string(&root.join("../../libraries/viu/tests/monitor_procfs.mix")).unwrap(),
+                serde_json::to_string(&root).unwrap(),
+                serde_json::to_string(fixture_guard.path()).unwrap()
             ),
             path: root.join("fixture-generator.mix"),
             scene: "probe".into(),
@@ -187,5 +191,125 @@ end
             );
         }
     }
-    std::fs::remove_dir_all(fixture).unwrap();
+}
+
+struct SuccessBus {
+    calls: Arc<Mutex<Vec<(String, Value)>>>,
+}
+impl BusHandler for SuccessBus {
+    fn send<'a>(&'a self, _: &'a str, command: &'a str, args: &'a MixValue)
+        -> BusFuture<'a, MixResult<(i32, MixValue)>> {
+        Box::pin(async move {
+            self.calls.lock().unwrap().push((command.into(), to_json(args)?));
+            let body = match command {
+                "monitord.snapshot" => json!({"host":"fixture","cpu":{"busy":0,"cores":1},"memory":{"used":0,"total":1},"swap":{"used":0,"total":0}}),
+                "monitord.processes" => json!({"total":1,"rows":[{"pid":42,"uid":1000,"name":"app","user":"user","cpu":0,"memory":0}]}),
+                "monitord.history" => json!({"series":{}}),
+                "native.executed" => json!({}),
+                _ => panic!("unexpected effect {command}"),
+            };
+            Ok((0, from_json(body)?))
+        })
+    }
+    fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a MixValue) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn port_exists<'a>(&'a self, _: &'a str) -> BusFuture<'a, MixResult<bool>> {
+        Box::pin(async { Ok(true) })
+    }
+    fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> {
+        Box::pin(async { None })
+    }
+}
+
+#[test]
+fn monitor_success_routes_refresh_state_and_record_execution_without_real_signals() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/monitor");
+    let fixture_guard = tempfile::tempdir().unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let backend_calls = calls.clone();
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        8,
+        Arc::new(move || { let _ = tx.send(()); }),
+        Some(Box::new(move || Rc::new(SuccessBus { calls: backend_calls }))),
+    );
+    runtime.load(Program {
+        source: format!(
+            "$fixture=require({});print($fixture.create({},{}))",
+            serde_json::to_string(&root.join("../../libraries/viu/tests/monitor_procfs.mix")).unwrap(),
+            serde_json::to_string(&root).unwrap(),
+            serde_json::to_string(fixture_guard.path()).unwrap()
+        ),
+        path: root.join("fixture-generator.mix"),
+        scene: "probe".into(), citizen: "probe".into(),
+    }).unwrap();
+    done(&runtime, &rx);
+    let mut bundle = Bundle::load(&fixture_guard.path().join("monitor"), &[]).unwrap();
+    // Replace both primitive call sites in the test copy. The fake verifies
+    // the token supplied by signal_monitor; it cannot send a kernel signal.
+    assert_eq!(bundle.program.source.matches("viu_process(").count(), 2);
+    bundle.program.source = bundle.program.source.replace("viu_process(", "fixture_process(");
+    bundle.program.source.push_str(r#"
+$fake_signals=[]
+fn fixture_process($op,$args)
+  global $fake_signals
+  if $op=="snapshot" then return {"42":"fixture-token"} end
+  if $op!="signal" or $args.pid!=42 or $args.start_time!="fixture-token" then raise("FAKE_SIGNAL","Unexpected signal request") end
+  push($fake_signals,$args)
+  return {ok:true}
+end
+on fixture
+  $state.selected=42
+  $state.processes=[{pid:42,uid:1000,name:"app",user:"user",cpu:0,memory:0}]
+  $state.start_times={"42":"fixture-token"}
+  $state.inflight={};$state.history_seeded=false;$state.serial=0
+  $state.error="previous error";$fake_signals=[]
+end
+on fixture.signals
+  reply(0,json_encode($fake_signals))
+end
+"#);
+    runtime.load(bundle.program).unwrap();
+    done(&runtime, &rx);
+    for (name, args, command, signal, origin) in [
+        ("monitor.signal", json!({"pid":42,"signal":"SIGTERM"}), None, "SIGTERM", "bus"),
+        ("monitor.execute", json!({"id":"process.end"}), Some("process.end"), "SIGTERM", "bus"),
+        ("monitor.execute", json!({"id":"process.kill"}), Some("process.kill"), "SIGKILL", "bus"),
+        ("monitor.intent", json!({"id":"end-task"}), Some("process.end"), "SIGTERM", "ui"),
+        ("viu.frame.intent", json!({"value":{"command":"process.kill","origin":"menu"}}), Some("process.kill"), "SIGKILL", "menu"),
+    ] {
+        runtime.event("fixture".into(), json!({})).unwrap();
+        done(&runtime, &rx);
+        calls.lock().unwrap().clear();
+        runtime.event(name.into(), args).unwrap();
+        let result = done(&runtime, &rx);
+        assert_eq!(result.reply.unwrap().rc, 0);
+        assert_eq!(result.model.unwrap()["serial"], 1);
+        runtime.event("monitor.debug.state".into(), json!({})).unwrap();
+        let state = done(&runtime, &rx).reply.unwrap().body;
+        assert_eq!(state["status"], if signal=="SIGTERM" { "Asked to end" } else { "Killed" });
+        assert_eq!(state["serial"], 1);
+        assert!(state["error"].is_null());
+        assert_eq!(state["total"], 1);
+        assert_eq!(state["start_times"]["42"], "fixture-token");
+        assert!(state["history_seeded"].as_bool().unwrap());
+        runtime.event("fixture.signals".into(), json!({})).unwrap();
+        let signals = done(&runtime, &rx).reply.unwrap().body;
+        assert_eq!(signals.as_array().unwrap().len(), 1);
+        assert_eq!(signals[0]["signal"], signal);
+        let effects = calls.lock().unwrap();
+        for expected in ["monitord.snapshot", "monitord.processes", "monitord.history"] {
+            assert_eq!(effects.iter().filter(|(name,_)| name==expected).count(), 1);
+        }
+        let recorded: Vec<_> = effects.iter().filter(|(name,_)| name=="native.executed").collect();
+        if let Some(command) = command {
+            assert_eq!(recorded.len(), 1);
+            assert_eq!(recorded[0].1["id"], command);
+            assert_eq!(recorded[0].1["origin"], origin);
+            assert_eq!(recorded[0].1["params"], json!({"pid":42,"signal":signal}));
+        } else {
+            assert!(recorded.is_empty());
+        }
+    }
 }

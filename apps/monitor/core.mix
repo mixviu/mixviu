@@ -21,7 +21,9 @@ fn sort_edit($s,$column,$reverse=nil)
   $s.sort=$column
   return $s
 end
-fn project($s)
+fn project($s,$registry=nil)
+  $registry=$registry ?? $commands.registry($s)
+  $end=filter($registry,fn($a)=$a.id=="process.end")[0]
   $rows=[]
   for $p in $s.processes
     if type($p.name)!="string" or type($p.user)!="string" or type($p.cpu)!="number" or type($p.memory)!="number" then raise("PROCESS_ROW","Invalid process row; no partial table") end
@@ -41,10 +43,9 @@ fn project($s)
   $nodes=concat(["This node"],$s.peers);if $s.node!="" and not contains($nodes,$s.node) then push($nodes,$s.node) end
   -- The striped renderer uses legacy reverse=true for its up arrow; ascending is
   -- used by the other table renderer. Both describe the actual order here.
-  $model={performance_view:$performance.project($s),readings_hidden:if $s.tab=="Processes" then $s.processes_loaded else $s.snapshot!=nil end,processes_hidden:$s.tab!="Processes" or not $s.processes_loaded,performance_hidden:$s.tab!="Performance" or $s.snapshot==nil,node_choice:{id:"node",kind:"combo",label:"Node",initial:if $s.node=="" then "This node" else $s.node end,properties:{choices:$nodes,width:150}},end_button:{id:"end-task",kind:"button",label:"",initial:"End task",properties:{text:"End task",style:"secondary",enabled:$commands.can_signal($s,$s.selected)}},status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,reverse:not $s.reverse,ascending:not $s.reverse},properties:{style:"grid",frame:"dock"}},options:{tabs:{preferred:220,minimum:200,align:"left",order:0},server:{preferred:26,minimum:26,align:"left",order:1},node:{preferred:150,minimum:100,align:"left",order:2},"filter-gap":{preferred:15,minimum:15,align:"right",order:5},filter:{preferred:220,minimum:120,align:"right",order:4},tree:{preferred:112,minimum:94,align:"right",order:3},"end-task":{preferred:90,minimum:80,align:"right",order:2},paused:{preferred:80,minimum:0,align:"left",order:3}},performance:$s.tab=="Performance",values:{paused:if $s.paused then "Paused" else "" end,tabs:$s.tab,tree:$s.tree,pause:$s.paused,filter:$s.filter,node:if $s.node=="" then "This node" else $s.node end},serial:$s.serial}
-  $end=filter($commands.registry($s),fn($a)=$a.id=="process.end")[0]
+  $model={performance_view:$performance.project($s),readings_hidden:if $s.tab=="Processes" then $s.processes_loaded else $s.snapshot!=nil end,processes_hidden:$s.tab!="Processes" or not $s.processes_loaded,performance_hidden:$s.tab!="Performance" or $s.snapshot==nil,node_choice:{id:"node",kind:"combo",label:"Node",initial:if $s.node=="" then "This node" else $s.node end,properties:{choices:$nodes,width:150}},end_button:{id:"end-task",kind:"button",label:"",initial:"End task",properties:{text:"End task",style:"secondary",enabled:$end.enabled}},status:if $s.error!=nil then "Unavailable: "..$s.error else (if $s.paused then "Paused · " else "Live · " end)..(if $s.node=="" then "local" else $s.node end).." · "..to_string(len($rows)).." processes" end,summary:$summary,chart:{id:"history",kind:"canvas",label:"CPU · last 60 samples · 0–100%",initial:"CPU",properties:{shapes:$shapes}},table:{id:"processes",kind:"tree-table",label:"Processes",initial:{key:"processes",rows:$rows,columns:$columns,sort:$s.sort,reverse:not $s.reverse,ascending:not $s.reverse},properties:{style:"grid",frame:"dock"}},options:{tabs:{preferred:220,minimum:200,align:"left",order:0},server:{preferred:26,minimum:26,align:"left",order:1},node:{preferred:150,minimum:100,align:"left",order:2},"filter-gap":{preferred:15,minimum:15,align:"right",order:5},filter:{preferred:220,minimum:120,align:"right",order:4},tree:{preferred:112,minimum:94,align:"right",order:3},"end-task":{preferred:90,minimum:80,align:"right",order:2},paused:{preferred:80,minimum:0,align:"left",order:3}},performance:$s.tab=="Performance",values:{paused:if $s.paused then "Paused" else "" end,tabs:$s.tab,tree:$s.tree,pause:$s.paused,filter:$s.filter,node:if $s.node=="" then "This node" else $s.node end},serial:$s.serial}
   $model.end_button.properties.tooltip=$end.reason ?? $end.label
-  if $end.reason!=nil then $model.status=$model.status.." · "..$end.reason end
+  if $s.selected!=nil and $end.reason!=nil then $model.status=$model.status.." · "..$end.reason end
   $model.end_button.properties.shortcut=if $s.node=="" then $end.shortcut else nil end
   $left=[{id:"tabs",kind:"tabs",label:"",initial:$s.tab,properties:{choices:["Processes","Performance"]}},{id:"node-divider",kind:"divider",label:"",initial:nil,properties:{}},{id:"server",kind:"mark",label:"",initial:"server",properties:{size:14,weak:true}},$model.node_choice]
   if $s.paused then push($left,{id:"paused",kind:"label",label:"",initial:"Paused",properties:{tone:"warning"}}) end
@@ -57,11 +58,12 @@ fn project($s)
 end
 
 fn framed($s)
-  $model=project($s)
-  $actions=$commands.toolbar($s)
-  $menus=$commands.menus($s)
+  $registry=$commands.registry($s)
+  $model=project($s,$registry)
+  $actions=$commands.toolbar($s,$registry)
+  $menus=$commands.menus($s,$registry)
   $model.window_close=$s.window_close
-  $model.shortcuts=$commands.shortcuts($s)
+  $model.shortcuts=$commands.shortcuts($s,$registry)
   $model.macros_open=$s.macros_open
   $model.native_focus=if $s.focus_serial>0 then {id:"filter",serial:$s.focus_serial} else nil end
   $model.native_overlays=[]
@@ -69,7 +71,7 @@ fn framed($s)
     $definition={id:"monitor-dialog",kind:"dialog-form",label:"",initial:{open:true,instance:$s.dialog,title:if $s.dialog=="about" then "About Monitor" else "Keyboard shortcuts" end,body:"Processes and performance for this node or any node on the mesh, read from monitord. End task and Kill act only on this node"..chr(39).."s processes, as you.",choices:[{id:"close",label:"Done",enabled:true,default:true}]},properties:{style:"gold"}}
     if $s.dialog=="shortcuts" then
       $grid=[]
-      for $a in $commands.registry($s)
+      for $a in $registry
         $bound=$s.bindings[$a.id] ?? {}; $a.keys=$bound.keys ?? (if $a.shortcut==nil then [] else [$a.shortcut] end)
         if len($a.keys)>0 then push($grid,$a) end
       end
@@ -77,7 +79,7 @@ fn framed($s)
     end
     $model.native_overlays=[{definition:$definition,command:"monitor.dialog.intent"}]
   end
-  return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:status_line($s)})
+  return $frame.apply($model,{icon:"monitor",title:"Monitor — "..(if $s.snapshot!=nil then $s.snapshot.host ?? "This node" else "This node" end),menus:$menus,toolbar:$actions,status:status_line($s,$registry)})
 end
 
 fn gold_bytes($n)
@@ -88,9 +90,10 @@ fn gold_bytes($n)
   return (if $i==0 or $v>=100 then fmt("%.0f",$v) else fmt("%.1f",$v) end).." "..$units[$i]
 end
 
-fn status_line($s)
+fn status_line($s,$registry=nil)
   $right=[]
-  $reason=$commands.signal_reason($s)
+  $registry=$registry ?? $commands.registry($s)
+  $reason=if $s.selected==nil then nil else filter($registry,fn($a)=$a.id=="process.end")[0].reason end
   if $s.snapshot!=nil and $s.snapshot.uptime_s!=nil then push($right,"Up time "..gold_uptime($s.snapshot.uptime_s)) end
   if $s.processes_loaded then push($right,to_string(len($s.processes)).." of "..to_string($s.total).." processes") end
   return {left:$s.status,icon:if $s.connected and $s.error==nil then "plug" else "unplug" end,error:not $s.connected or $s.error!=nil,message:$s.error ?? $reason,right:$right}
