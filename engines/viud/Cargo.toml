@@ -28,7 +28,7 @@ mod_module_files = "deny"
 default = ["backend-all"]
 # Optional compatibility adapters. The native session does not enable these.
 desktop-dbus = ["dep:zbus", "world/desktop-dbus", "graphics/desktop-dbus", "slots/desktop-dbus"]
-backend-native = ["dep:native"]
+backend-native = ["dep:native", "backend-headless"]
 # All backends in one binary; the backend is picked at runtime (src/cli.rs).
 backend-all = ["backend-native", "backend-winit", "backend-headless"]
 backend-winit = ["dep:nested"]

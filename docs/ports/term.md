@@ -1,3 +1,5 @@
+> Current runtime names: Mix `term`, Rust reference `term-rs`. See [runtime and migration](term-runtime.md). This implementation history retains original source paths, schema names and job ids.
+
 # Term parity work
 
 Gold is MixOS `8779f33284b7d3f1178c3d57a699efb9b0867b22`.

@@ -318,27 +318,27 @@ pub fn load(root: &Path, args: &[String]) -> Result<Bundle, String> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn term_comparison_identity_keeps_the_canonical_bundle_namespace() {
+    fn term_launcher_identity_matches_the_canonical_bundle_namespace() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
         let bundle = super::load(
             &root,
             &[
                 "--service",
-                "term-mix",
+                "term",
                 "--app-id",
-                "mixviu.term-mix",
+                "mixviu.term",
                 "--title",
-                "Term (Mix)",
+                "Term",
                 "--headless",
             ]
             .map(String::from),
         )
         .unwrap();
-        assert_eq!(bundle.manifest.service, "term-mix");
+        assert_eq!(bundle.manifest.service, "term");
         assert_eq!(bundle.manifest.app(), "term");
-        assert_eq!(super::app_id(&bundle), "mixviu.term-mix");
-        assert_eq!(bundle.manifest.title, "Term (Mix)");
-        assert!(bundle.program.source.contains("mixviu.term-mix"));
+        assert_eq!(super::app_id(&bundle), "mixviu.term");
+        assert_eq!(bundle.manifest.title, "Term");
+        assert!(bundle.program.source.contains("mixviu.term"));
         assert!(!bundle.startup.unwrap().source.contains("--service"));
     }
     #[test]
@@ -429,8 +429,8 @@ mod tests {
     fn explicit_window_app_id_survives_service_override() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/term");
         let mut bundle = super::load(&root, &["--service".into(), "term.other".into()]).unwrap();
-        assert_eq!(super::app_id(&bundle), "dev.mixos.term");
-        assert!(bundle.program.source.contains("dev.mixos.term"));
+        assert_eq!(super::app_id(&bundle), "mixviu.term");
+        assert!(bundle.program.source.contains("mixviu.term"));
         bundle.manifest.window_app_id = None;
         assert_eq!(super::app_id(&bundle), "mixviu.term.other");
         bundle.manifest.bus_surface = Some(serde_json::json!({"app_id":"example.terminal"}));
