@@ -68,6 +68,29 @@ snapshot token. Decimal-string tokens preserve exact ticks. Mix owns
 admission, snapshots, refresh and replies; the primitive owns stat parsing and
 the guarded syscall. Tests signal disposable children only.
 
+## Protected session processes
+
+Monitor refuses session infrastructure with rc 10 and
+`{error_code: "PROTECTED", message, recovery}` on direct signals, command
+execution, widget intents and frame intents. Procfs identifies a main process
+(ppid 1) whose cgroup ends in `<unit>@N.service`, where N comes from
+`MIX_RUN=/run/mix/session/N` or `MIX_VT`. `apps@N.service` is excluded.
+Process names and Bus registration do not grant or remove protection.
+
+For recovery, use the **host's hostd** `desk.restart {desk: <desk name>}`
+command, as the top bar Restart action does. This restarts the whole desk
+and ends its applications. The implementation is
+[`services/hostd/src/desk.rs`](../../services/hostd/src/desk.rs);
+hostd inside a container refuses desk power operations. Monitor never
+performs this recovery itself.
+
+Disabled End task/Kill actions expose their reason; the status and End task
+tooltip show it too. Credentials and ancestry are read again at admission;
+temporary procfs failures fail closed with a retry reason and are not cached.
+No confirmation override exists: intent origin is caller supplied, not
+authenticated. The native start-time fence remains; pidfd signalling to close
+the remaining identity race is deferred.
+
 ## Evidence and acceptance
 
 ### Tutorial corrections: 2026-11-13
