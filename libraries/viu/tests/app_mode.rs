@@ -356,6 +356,7 @@ fn app_mode_child() {
                     runtime.event(command, json!({})).unwrap();
                     let info = next(&runtime, &wakes, app).reply.unwrap();
                     assert_eq!(info.rc, 0, "{app}: {}", info.body);
+                    assert_eq!(info.body["theme"]["mode"], model["theme_choice"]["mode"], "{app} requested mode readback");
                     assert_eq!(info.body["theme"]["effective"]["mode"], if mode=="session" {session} else {mode}, "{app} effective state readback");
                 }
             }
