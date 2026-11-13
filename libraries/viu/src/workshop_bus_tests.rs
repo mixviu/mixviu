@@ -33,11 +33,12 @@ fn workshop_answers_during_discovery() {
         for i in 0..count {
             let peer = Arc::new(rt.block_on(bus::SupervisedClient::connect_options(&format!("peer-{i:03}"), &broker.url).connect()).unwrap());
             let mut incoming = peer.incoming().unwrap();
-            if i != 0 {
+            {
                 let p = peer.clone();
                 let gone = disconnected.clone();
                 tasks.push(rt.spawn(async move {
                     while let Some(command) = incoming.recv().await {
+                        if i == 0 { continue; }
                         if i == 1 {
                             gone.store(true, std::sync::atomic::Ordering::Release);
                             p.close().await;

@@ -85,6 +85,9 @@ fn observed($s,$event)
   if $headers.type!="event" or $s.subscription==nil or $headers.subscription_id!=$s.subscription then
     $s.ignored_observations=$counter.add($s.ignored_observations,1);return $s
   end
+  -- Discovery and control-surface polling are our own work, not peer traffic.
+  -- Do not copy and render those observations back through the owner queue.
+  if $a.from==$s.mesh.observer or $a.to==$s.mesh.observer then return $s end
   $a.subscription_id=$headers.subscription_id
   $a.dropped_count=$counter.extract($event.body,["args","dropped_count"])
   $s.mesh=$mesh.add_event($s.mesh,$a,$mesh.now_ms())

@@ -1,0 +1,20 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$d=require("discovery.mix");$w=require("work.mix")
+fn check($v,$message) if not $v then raise("DISCOVERY_TEST",$message) end end
+$s=$m.initial();$s.connected=true
+-- Admission refusals must remain dormant until their retry time.
+for $i=0 to 199
+  $s=$w.enqueue($s,{owner:"discovery",op:"describe",service:"peer-"..to_string($i),retry_at:monotonic()+60})
+end
+for $i=0 to 9 $s=$w.launch($s) end
+check(len($s.queue)==200 and $s.serial==0,"backoff prevents repeat admissions")
+-- An overall deadline clears queued work, retains per-service failures and
+-- completes progress even when a worker result never reaches the owner.
+$s.discovery={generation:1,reply:nil,deadline:monotonic()-1,peers_done:false,nodes:{"@local":{info_done:true,list_done:true,descriptions:200,node:{name:"local",local:true,services:[],info:nil,error:nil}}},data:{error:nil,peer_error:nil,nodes:[],identities:{},services:{"peer-0":{Err:"description phase deadline exceeded"}},peers:[]}}
+$s=$d.expire($s)
+check($s.discovery==nil and len($s.queue)==0,"overall deadline terminates queued work")
+check($s.snapshot.progress.finished and $s.snapshot.progress.completed==1,"deadline finishes progress")
+check($s.snapshot.services["peer-0"].Err!=nil,"deadline retains per-service error")
+$s=$d.received($s,{generation:1,op:"describe",service:"peer-0"},{rc:0,body:{Ok:[]}})
+check($s.snapshot.services["peer-0"].Err!=nil,"late result cannot overwrite expired generation")
+print("Workshop discovery contracts PASS")

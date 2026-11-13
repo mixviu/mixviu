@@ -318,6 +318,8 @@ impl Runtime {
                         (generation, 0, outcome.map(|_| ()))
                     }
                     Request::Event(generation, sequence, command, body, is_request, mut headers, native) => {
+                        #[cfg(test)]
+                        eprintln!("runtime event {sequence} {command}");
                         let _native_scope = native.map(|enter| enter());
                         let outcome = match current.as_mut() {
                             Some((active, eval, local, ..)) if *active == generation => {
@@ -346,6 +348,8 @@ impl Runtime {
                         continue;
                     }
                 };
+                #[cfg(test)]
+                eprintln!("runtime complete {sequence} {result:?}");
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let (mut model, stdout, stderr, fault, mut reply) = match current.as_ref() {
                     Some((_, _, local, out, err)) => (local.model.borrow_mut().take(), String::from_utf8_lossy(&out.take()).into_owned(), String::from_utf8_lossy(&err.take()).into_owned(), local.error.borrow_mut().take(),local.reply.borrow_mut().take()),

@@ -114,6 +114,7 @@ fn workshop_policy_contracts_run_inside_the_embedded_runtime() {
         "mesh",
         "view",
         "saved",
+        "discovery",
     ] {
         let (tx, rx) = mpsc::channel();
         let mut runtime = Runtime::new(
