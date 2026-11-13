@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Calendar and address-book presentation policy, copied from pinned gold.
+$email_dates=require("dates.mix")
 fn contact_name($c)
   return $c.full_name ?? (($c.data ?? {}).name ?? {}).full ?? ""
 end
