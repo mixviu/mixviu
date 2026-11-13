@@ -51,6 +51,13 @@ for $pair in [["shell.panels.top.enabled","yes"],["shell.panels.top.edge","middl
   if not $refused then raise("PANEL","Scene edit bypassed type/enum admission") end
 end
 print("prefs panel: shared state/class/type admission passes")
+$s.catalog_all=[{path:"shell.panels.<panel>.opacity",inactive_captures:{top:{write:"refused",reason:"Retired catalogue entry"}}}]
+for $key in ["shell.panels.top.opacity","shell.panels.top.autohide","shell.panels.top.output","shell.panels.top.future"]
+  $refused=false
+  try $c.admitted($s,$key,1) catch $message,$error $refused=$error.code=="RETIRED_KEY" end
+  if not $refused then raise("PANEL","Retired field escaped admission: "..$key) end
+end
+print("prefs panel: all retired captures are refused before queueing")
 
 $model=$c.framed($c.initial("example"))
 if $model.values["gold-title"]!="Preferences" or $model.browser.kind!="settings-browser" then raise("FRAME","Prefs must publish the shared frame and page browser") end

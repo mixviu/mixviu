@@ -6,6 +6,7 @@ $core=require("core.mix");$ctx=viu_context()
 $nav=require("navigation.mix")
 $pages=require("pages.mix")
 $panel=require("panel.mix")
+$writes=require("write-policy.mix")
 $actions=require("actions.mix")
 $look=require("look.mix")
 $seat=require("agent-seat.mix")
@@ -74,6 +75,7 @@ fn refresh_prefs($s)
   return start_prefs($s,{op:"read",binding:$s.binding})
 end
 fn queued_prefs($s)
+  $s=$writes.prune($s)
   if $s.busy or len(keys($s.queue_changes))==0 or $s.uncertain then return $s end
   $changes={};$reset=[]
   for $key in keys($s.queue_changes)
@@ -179,11 +181,14 @@ fn apply_email($s,$args)
 end
 fn queue_keys($s,$changes)
   if $pages.store_blocked($s)!=nil or not $s.connected or $s.quitting then raise("FAILED",$nav.text_for("store-unreachable")) end
+  if $s.look.settings!="missing" then $s.store_error=nil end
+  $waiting=$s.queue_changes
+  $s.queue_changes=$changes;$s=$writes.prune($s)
+  $changes=$s.queue_changes;$s.queue_changes=$waiting
   $reset=[];$values={}
   for $key in keys($changes) if $changes[$key]==nil then push($reset,$key) else $values[$key]=$changes[$key] end end
   $checked=viu_settings("admit",$s.values,$values,$reset)
   if not $checked.ok then raise("FAILED",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
-  if $s.look.settings!="missing" then $s.store_error=nil end
   $s.queue_changes=merge($s.queue_changes,$changes)
   return queued_prefs($s)
 end
@@ -557,6 +562,7 @@ on viu.job.completed
       $b=$d.body
       if type($b.catalog.keys)!="list" or len($b.catalog.keys)>2048 or type($b.read.values)!="map" or type($b.read.revision)!="string" or not re_match($b.read.revision,"^(0|[1-9][0-9]*)$") or type($b.read.incarnation)!="string" then raise("REPLY","Malformed or oversized settings reply") end
       $state.catalog=filter($b.catalog.keys,fn($k)=not contains($k.path,"<"))
+      $state.catalog_all=$b.catalog.keys
       $state.values=$b.read.values;$state.revision=$b.read.revision;$state.incarnation=$b.read.incarnation
       $state.look=$look.observe($state.look,$b.read)
       $state.agent_seat=$seat.observe($state.agent_seat,$b.read)
@@ -585,13 +591,15 @@ on viu.job.completed
         if contains($state.store_error,"not found") then $state.look.settings="missing" end
       end
       if $state.pending.op=="write" then
-        $state.store_error=$answer.message ?? json_encode($answer)
-        if contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 or contains($answer.message ?? "","not found") then
-          $state.queue_changes=merge($state.inflight_changes,$state.queue_changes)
+        $retryable=contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 or contains($answer.message ?? "","not found")
+        -- An explicit validation refusal is final even if a transport wrapper
+        -- classified it as unavailable. Retry only the unrelated atomic writes.
+        if $answer.status=="validation_failed" then $retryable=false end
+        $state=$writes.refused($state,$answer,$retryable)
+        if $retryable then
           if $answer.status=="authority_unreachable" then $state.uncertain=true
           else $state=refresh_prefs($state) end
         end
-        $state.inflight_changes={}
       end
     end
     if not $state.busy and $state.needs_read then $state=refresh_prefs($state) end

@@ -653,6 +653,11 @@ on panel.tasks_scope desc "set the task scope {scope: all|current}, or toggle it
     return
   end
   $args = type($event.args) == "map" ? $event.args : {}
+  $lock=dirname($SETTINGS).."/.settings.lock"
+  if not flock($lock,{wait:1}) then
+    reply(10,json_encode({error_code:"settings_busy",message:"panel settings are being saved; retry the command"}));return
+  end
+  try
   $current = read_settings()
   $scope = $args.scope
   if $scope == nil then
@@ -685,6 +690,9 @@ on panel.tasks_scope desc "set the task scope {scope: all|current}, or toggle it
     eprint("panel: tasks_scope redraw not scheduled: " .. to_string($message))
   end
   reply(0, json_encode({scope: $scope, file: $SETTINGS}))
+  finally
+    $_=funlock($lock)
+  end
 end
 
 on panel.refresh desc "queue one rebuild from fresh service state {}"

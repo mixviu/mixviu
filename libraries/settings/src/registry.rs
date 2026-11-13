@@ -58,6 +58,11 @@ pub const REGISTRY_VERSION: u32 = 2;
 pub const SINCE: &str = "1.0.0";
 /// Changes plus resets in one batch, all or nothing.
 pub const MAX_BATCH: usize = 64;
+
+/// Historical top-panel values remain readable, but scenes owns the bar.
+pub fn retired_panel_key(path: &str) -> bool {
+    path.starts_with("shell.panels.top.")
+}
 /// The bound on `tune.*` entries.
 pub const MAX_TUNE: usize = 128;
 

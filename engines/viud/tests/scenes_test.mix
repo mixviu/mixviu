@@ -12,6 +12,10 @@ fn check($ok, $message)
   $checks.count = $checks.count + 1
   if not $ok then raise("SCENES_TEST", $message) end
 end
+fn panel_row($s)
+  for $row in $l.inventory($s).scenes if $row.name=="panel" then return $row end end
+  return nil
+end
 fn calls($command)
   $out = []
   for each $line in read_lines($log)
@@ -1598,32 +1602,31 @@ try
 
   check(tree_digest($tpl .. "/editor") == $shipped_digest, "the loader never writes the shipped editor")
   -- Preferences uses the loader's authority, never the legacy settings keys.
-  $prefs = require("../../../apps/prefs/panel.mix")
   $host_state.refuse_edge = nil
   $host_state.rollback_fail = nil
   install_fixture($s.root, "panel", false)
   $s = $l.rescan($s, false)
   $original = read_file($s.root .. "/panel/scene.mix")
   for $enabled in [true, false, true]
-    $req = $prefs.request("shell.panels.top.enabled", $enabled)
+    $req = {command:if $enabled then "scenes.enable" else "scenes.disable" end,args:{name:"panel"}}
     $s = $l.request($s, substr($req.command, 7), $req.args)
     check($s.rc == 0 and $s.scenes.panel.mounted == $enabled, "Preferences toggle changes actual mount")
-    check($prefs.from_inventory($l.inventory($s)).enabled == $enabled, "Preferences reads actual enablement")
+    check(panel_row($s).enabled == $enabled, "Preferences reads actual enablement")
   end
   for $edge in ["top", "bottom", "left", "right"]
-    $req = $prefs.request("shell.panels.top.edge", $edge)
+    $req = {command:"scenes.move",args:{name:"panel",edge:$edge}}
     $s = $l.request($s, substr($req.command, 7), $req.args)
     check($s.rc == 0 and $s.scenes.panel.edge == $edge, "Preferences moves actual panel")
-    check($prefs.from_inventory($l.inventory($s)).edge == $edge, "Preferences reads actual edge")
+    check(panel_row($s).edge == $edge, "Preferences reads actual edge")
     check(read_file($s.root .. "/panel/scene.mix") == $original, "position leaves upgradeable code untouched")
   end
   write_file($s.root .. "/panel/settings.conf.mix", "{edge: bottom, tasks_scope: current}")
   $s = $l.filesystem($s, {overflow:false, changes:[{path:$s.root .. "/panel/settings.conf.mix"}]})
-  check($prefs.from_inventory($l.inventory($s)).edge == "bottom", "panel-side edit reaches Preferences")
+  check(panel_row($s).edge == "bottom", "panel-side edit reaches Preferences")
   check(load_data($s.root .. "/panel/settings.conf.mix").tasks_scope == "current", "other user settings survive")
   $s = $l.request($s, "disable", {name:"panel"})
   $s = $l.request($s, "move", {name:"panel",edge:"top"})
-  check($s.rc == 0 and not $s.scenes.panel.mounted and $prefs.from_inventory($l.inventory($s)).edge == "top", "disabled panel position is editable and readable")
+  check($s.rc == 0 and not $s.scenes.panel.mounted and panel_row($s).edge == "top", "disabled panel position is editable and readable")
   install_fixture($s.templates, "panel-template", false)
   $s.desired.origins.panel = "panel-template"
   $s = $l.request($s, "reset", {name:"panel"})
@@ -1659,6 +1662,33 @@ try
     check(read_file($source_path)==$bad and not exists($settings_path), "unsupported panel window is never patched and creates no settings")
   end
   write_file($source_path,$valid_source)
+  write_file($settings_path,"{edge: top,tasks_scope: current}")
+  $uneditable=replace($valid_source,$window_line,"")
+  write_file($source_path,$uneditable)
+  $s=$l.request($s,"reload",{name:"panel"})
+  check($s.rc==0 and $s.scenes.panel.mounted and panel_row($s).position_supported==false,"valid headerless template loads at its own mount with position unsupported")
+  check(read_file($source_path)==$uneditable and load_data($settings_path).edge=="top","unsupported position never corrupts template or user state")
+  write_file($source_path,$valid_source)
+  $s=$l.request($s,"reload",{name:"panel"})
+  $dir=$s.root.."/panel"
+  $child=spawn([read_link("/proc/self/exe"),dirname(script_path()).."/panel_settings_writer.mix",$dir],{die_with_parent:true,stderr:{file:$tmp.."/settings-writer.log"}})
+  try
+    $until=monotonic()+3
+    while not is_file($dir.."/.lock-ready") and monotonic()<$until sleep(0.02) end
+    check(is_file($dir.."/.lock-ready"),"competing task-scope writer owns settings lock")
+    $before=read_file($settings_path)
+    $s=$l.request($s,"move",{name:"panel",edge:"bottom"})
+    check($s.rc==10 and $s.response.error_code=="SCENES_SETTINGS_BUSY" and read_file($settings_path)==$before,"move cannot clobber a task-scope save holding the shared lock")
+  finally
+    write_file($dir.."/.lock-release","")
+    $until=monotonic()+3
+    while not is_file($dir.."/.lock-done") and monotonic()<$until sleep(0.02) end
+    if process_alive($child) then kill($child,15) end
+  end
+  check(is_file($dir.."/.lock-done") and load_data($settings_path).tasks_scope=="all","competing task-scope save completes")
+  $s=$l.request($s,"move",{name:"panel",edge:"bottom"})
+  check($s.rc==0 and load_data($settings_path).tasks_scope=="all","move reads fresh locked state and preserves completed task-scope save")
+  check(contains(read_file(dirname(script_path()).."/../../../share/scenes/panel/behaviour.mix"),'$lock=dirname($SETTINGS).."/.settings.lock"'),"real panel behaviour uses the same settings lock")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
 finally
   remove_dir($tmp)

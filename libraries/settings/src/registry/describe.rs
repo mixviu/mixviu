@@ -230,7 +230,7 @@ pub fn describe(prefix: Option<&str>) -> Value {
         "keys": entries,
         "constraints": constraints,
         "placeholders": placeholders,
-        "reset": "null resets a key; a reset entry may end .* to reset a prefix",
+        "reset": "null resets a key; a reset entry may end .* to reset a prefix; settingsd * resets active keys globally. Broad/global resets skip historical inactive captures, targeted resets of those captures are refused.",
     });
     if under.is_none() || prefix == Some("tune") {
         out["tunables"] = serde_json::to_value(design::tunables()).unwrap_or(Value::Null);

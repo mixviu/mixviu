@@ -9,6 +9,7 @@ $look=require("look.mix")
 $email=require("email.mix")
 $gallery=require("gallery.mix")
 $panel=require("panel.mix")
+$writes=require("write-policy.mix")
 $sections=[{id:"appearance",label:"Appearance",prefixes:["appearance."]},{id:"text_and_fonts",label:"Text & Fonts",prefixes:["appearance.font","appearance.mono"]},{id:"wallpaper",label:"Wallpaper",prefixes:["wallpaper."]},{id:"windows",label:"Windows",prefixes:["window."]},{id:"accessibility",label:"Accessibility",prefixes:["accessibility."]},{id:"apps_term",label:"Terminal",prefixes:["terminal."]},{id:"apps_ced",label:"Editor",prefixes:["ced."]},{id:"all",label:"All described settings",prefixes:[""]}]
 fn initial($instance)
   return {bindings:{},binding:{instance:$instance,profile:"default"},retargeted:false,catalog:[],values:{},incarnation:nil,revision:nil,role:"unknown",stale:true,busy:false,uncertain:false,serial:0,section:"appearance",search:"",key:"appearance.mode",draft:"",draft_kind:"field",status:"Waiting for settingsd",read_at:0,pending:nil,ui:$nav.initial_ui(),nav:$nav.initial_nav(),apps:[],notes:nil,notes_error:nil,notes_owner:nil,releases:"unknown",release_status:"Connecting to the Bus…",release_failed:false,release_busy:false,release_serial:0,release_owner:nil,release_started:false,quitting:false,needs_read:true,subscribed:false,connected:false,queue_changes:{},inflight_changes:{},look:$look.initial(),email:$email.initial(),gallery:$gallery.initial(),live:{outputs:[],options:{}},failed:false}
@@ -52,6 +53,8 @@ fn choose($s,$key)
 end
 fn admitted($s,$key,$value)
   if $s.busy or $s.uncertain or $s.revision==nil or $s.incarnation==nil or $s.stale or not contains(["authority","mirror"],$s.role) then raise("NOT_WRITABLE","Refresh a reachable non-stale settings authority before writing") end
+  $inactive=$writes.inactive($s,$key)
+  if $inactive!=nil and not $panel.supports($key) then raise("RETIRED_KEY",$inactive) end
   $k=key_info($s,$key)
   if not contains(["stored","applied"],$k.class) or contains(["email.accounts","email.default_account"],$key) or contains($key,"<") then raise("READ_ONLY","This key needs its owning service workflow") end
   if $value!=nil and $k.kind!="domain" then

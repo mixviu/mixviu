@@ -340,7 +340,7 @@ fn inventory($s)
       attempted_digest:$e.attempted, accepted_digest:$e.digest,
       journal:"journalctl -u mix-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
       title:$shown.title ?? $name, edge:if $e.enabled then $e.edge ?? $shown.edge else $shown.edge end, page:$e.page ?? $shown.page,
-      kind:$e.kind ?? $shown.kind ?? "edge", files:$e.files, digests:$e.digests ?? {},
+      kind:$e.kind ?? $shown.kind ?? "edge", position_supported:$shown.position_supported ?? true, files:$e.files, digests:$e.digests ?? {},
       forked_from:type($fork) == "map" ? $fork.from : nil,
       problems:scene_problems($s, $name, $e, $diagnostic, $diagnostics)})
   end
@@ -589,13 +589,26 @@ fn panel_source($source, $dir)
   return join($lines, "\n")
 end
 
+-- A valid future template may mount without an editable window header.
+-- Keep its own mount intact; only the optional position overlay is refused.
+fn panel_mount_source($source,$dir)
+  try
+    $window=panel_window($source)
+    if seated($window.kind) then return {source:$source,supported:false} end
+    return {source:panel_source($source,$dir),supported:true}
+  catch $message,$error
+    if $error.code!="SCENES_PANEL_WINDOW" then raise($error.code,$message,$error.details) end
+    return {source:$source,supported:false}
+  end
+end
+
 fn candidate($s, $name, $dir)
   if stat($dir, {follow_symlinks:false}).is_symlink or not regular($dir .. "/scene.mix") or not regular($dir .. "/template.conf.mix") then
     fail("SCENES_FILES", "scene and metadata must be regular files in a real directory", {file:$dir})
   end
   $source = bounded_read($dir .. "/scene.mix", 262144)
   $source_digest = hash_sha256($source)
-  if $name == "panel" then $source = panel_source($source, $dir) end
+  if $name == "panel" then $source = panel_mount_source($source, $dir).source end
   $doc = document($source)
   if $doc.name != $name then fail("SCENES_NAME", "document name must match installation directory", {name:$name, scene:$doc.name}) end
   for each $route in [$doc.mount.panel, $doc.mount.edge]
@@ -651,7 +664,11 @@ fn observe($s, $name, $dir)
   $shown = {}
   try
     $source = bounded_read($files.scene, 262144)
-    if $name == "panel" then $source = panel_source($source, $dir) end
+    if $name == "panel" then
+      $position=panel_mount_source($source,$dir)
+      $source=$position.source
+      $shown.position_supported=$position.supported
+    end
     $doc = document($source)
     $shown.kind = $doc.mount.kind ?? "edge"
     $shown.page = type($doc.mount.panel) == "string" ? $doc.mount.panel : "scene-" .. $name
@@ -2245,6 +2262,9 @@ fn move($s, $args)
     $window = panel_window(bounded_read($s.root .. "/panel/scene.mix", 262144))
     if seated($window.kind) then fail("SCENES_MOUNT", "a seated scene has no edge", {name:$name}) end
     $path = $s.root .. "/panel/settings.conf.mix"
+    $lock=dirname($path).."/.settings.lock"
+    if not flock($lock,{wait:1}) then fail("SCENES_SETTINGS_BUSY","panel settings are being saved; retry the command",{}) end
+    try
     $before = regular($path) ? bounded_read($path, 65536) : nil
     $settings = $before == nil ? {} : data_parse($before)
     $settings.edge = $args.edge
@@ -2259,6 +2279,9 @@ fn move($s, $args)
       $s.response = {name:$name, edge:$args.edge, revision:$s.scenes[$name].revision}
     end
     return $s
+    finally
+      $_=funlock($lock)
+    end
   end
   $path = $s.root .. "/" .. $name .. "/scene.mix"
   $source = bounded_read($path, 262144)

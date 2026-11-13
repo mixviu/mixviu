@@ -633,3 +633,43 @@ tests cover their named text/surface pairs, not every toolkit border.
 The scoped CBC checker refuses formatting drift after printing and reverting
 the worker patch. It also tests settingsd retired-key refusal, common panel
 admission with host bindings, burst coalescing and rollback failures.
+
+### Retired writes, historical state and broad reset
+
+Preferences retains the complete settings catalogue for inactive_captures
+admission. Every inactive concrete key is blocked in search and at write
+admission; the two existing Panel actions are explicit scene workflows.
+Bulk/preflight queue filtering drops all retired settingsd writes, including
+stale queued aliases, before validation. A scoped atomic refusal discards
+the refused fields and retries only unrelated changes. An unscoped
+permanent refusal is terminal. The browser retains a visible drop/refusal
+notice instead of silently retrying the poisoned batch.
+
+settingsd refuses direct retired changes, nulls and targeted resets. Broad
+resets (shell.panels.*, shell.*) and global reset (*) skip historical top.*
+values: they preserve existing values as readable data, never manufacture
+missing keys, and reset only active settings. Historical top values no
+longer reserve a live edge in the registry constraint. The scene loader
+validates actual mount conflicts.
+
+Historical-path audit: Store::seed creates an empty sparse Values record,
+or opens the sealed existing record; Store::open and backup recovery load
+records directly. Format-4 migration builds Accepted values directly. There
+is no pending-request journal: crash replay returns a committed receipt
+before patch validation. Snapshot/cache restoration and mirror adoption
+load sealed records rather than applying their values. Backdrop import
+submits only wallpaper changes and wallpaper.* reset; its receipt replay
+does not resubmit historical panel data. Regression tests cover seed,
+cache/snapshot restoration, committed-receipt replay, backup recovery,
+backdrop import/replay and unrelated writes after each path.
+
+A valid template without a patchable window header now loads at its own
+mount and reports position_supported:false; Preferences disables only its
+position control. Malformed native scene documents still fail native
+validation. A scenes.list reply missing the scenes list retains confirmed
+state and shows a translated read error; an empty list confirms removal.
+All panel command errors now use strings.ftl. The loader and task-scope
+behaviour serialise settings read-modify-write with the same advisory
+.settings.lock, released in finally. A competing-writer test proves refusal
+under contention and preservation of the completed task-scope save. Edge
+enum equality is checked across Preferences, the loader and the registry.

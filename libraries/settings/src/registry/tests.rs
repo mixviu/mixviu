@@ -736,17 +736,27 @@ fn c8_is_enforced_on_write_and_a_stored_conflict_still_loads() {
 }
 
 #[test]
-fn panels_may_not_share_an_edge() {
-    assert_eq!(
-        codes(set(&[
+fn retired_top_panel_does_not_reserve_a_live_edge() {
+    set(&[
             ("shell.panels.top.enabled", json!(true)),
             ("shell.panels.top.edge", json!("bottom")),
-        ]))[0]
-            .0,
-        "constraint_failed"
-    );
+        ]).unwrap();
     // A disabled panel may sit anywhere.
     set(&[("shell.panels.top.edge", json!("bottom"))]).unwrap();
+}
+
+#[test]
+fn preferences_and_registry_panel_edge_enums_agree() {
+    let source = include_str!("../../../../apps/prefs/panel.mix");
+    let edges = source.lines().find_map(|line| line.strip_prefix("$EDGES=")).unwrap();
+    let mut prefs: Vec<String> = serde_json::from_str(edges).unwrap();
+    let Kind::Enum(variants) = lookup("shell.panels.top.edge").unwrap().def.kind else { panic!("edge enum") };
+    let mut registry: Vec<String> = variants.iter().map(|name| (*name).into()).collect();
+    prefs.sort(); registry.sort(); assert_eq!(prefs,registry);
+    let loader=include_str!("../../../../engines/viud/scripts/lib/scenes.mix");
+    let edges=loader.lines().find_map(|line|line.strip_prefix("$EDGES = ")).unwrap();
+    let mut loader: Vec<String>=serde_json::from_str(edges).unwrap();
+    loader.sort(); assert_eq!(prefs,loader);
 }
 
 #[test]

@@ -148,22 +148,37 @@ impl Authority {
     }
     /// The values `request` would leave, through the registry's one write.
     fn patched(&self, request: &ApplyRequest) -> Result<registry::Values, Value> {
+        if request.changes.len() + request.reset.len() > registry::MAX_BATCH {
+            return Err(json!({"status":"validation_failed","message":"Batch limit exceeded"}));
+        }
         // Retain old values for load/downgrade, but never acknowledge a dead
         // panel edit, including a targeted reset or null-valued change.
         if let Some(path) = request
             .changes
             .keys()
             .chain(request.reset.iter())
-            .find(|path| path.starts_with("shell.panels.top."))
+            .find(|path| registry::retired_panel_key(path))
         {
             return Err(json!({"status":"validation_failed", "diagnostics":[{
                 "code":"retired_key", "path":path,
                 "message":"Legacy top panel keys do not control the live panel; use scenes.enable, scenes.disable or scenes.move with name panel."
             }]}));
         }
-        registry::apply(&self.accepted.values, &request.changes, &request.reset)
-            .map(canonical)
-            .map_err(diagnostics)
+        // Broad/global reset skips retired values, rather than submitting
+        // them again or materialising defaults for keys that were absent.
+        let global = request.reset.iter().any(|path| path == "*");
+        let mut base = self.accepted.values.clone();
+        if global {
+            base.retain(|path, _| registry::retired_panel_key(path));
+        }
+        let resets: Vec<String> = request.reset.iter().filter(|path| *path != "*").cloned().collect();
+        let mut next = registry::apply(&base, &request.changes, &resets).map_err(diagnostics)?;
+        for (path, value) in &self.accepted.values {
+            if registry::retired_panel_key(path) {
+                next.insert(path.clone(), value.clone());
+            }
+        }
+        Ok(canonical(next))
     }
     pub fn validate(&self, request: &ApplyRequest) -> Result<Value, Value> {
         self.target(&request.binding)?;

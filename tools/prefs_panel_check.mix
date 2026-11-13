@@ -9,12 +9,14 @@ run_argv_must(["git", "checkout", "-q", "--", "libraries/design", "libraries/set
 if not $fmt.ok then exit($fmt.exit_code ?? 124) end
 if trim($diff)!="" then eprint("Formatting differs; apply the CBC patch and requeue");exit(1) end
 for $argv in [["cargo", "test", "--locked", "-p", "design"],
-  ["cargo", "test", "--locked", "-p", "settings", "--lib", "registry::"],
+  ["cargo", "test", "--locked", "-p", "settings", "--lib"],
   ["cargo", "test", "--locked", "-p", "settingsd", "--test", "transactions"],
+  ["cargo", "test", "--locked", "-p", "settingsd", "--test", "format5"],
   ["cargo", "test", "--locked", "-p", "lib-viu", "--test", "app_mix", "--", "--nocapture"],
   ["cargo", "test", "--locked", "-p", "toolkit", "--lib", "session_look"],
   ["/opt/mixos/bin/mix", "engines/viud/tests/scenes_test.mix"],
   ["/opt/mixos/bin/mix", "apps/prefs/panel-test.mix"],
+  ["/opt/mixos/bin/mix", "apps/prefs/write-policy-test.mix"],
   ["/opt/mixos/bin/mix", "apps/prefs/navigation-test.mix"]]
   print("CHECK " .. join($argv, " "))
   $test_env=if contains($argv,"app_mix") then {MIX_TEST_VIU_APP_SCRIPT:realpath("apps/prefs/core-test.mix")} else {} end

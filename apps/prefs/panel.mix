@@ -1,14 +1,16 @@
 -- The scene loader owns the live bar, including while its behaviour is off.
+$n=require("navigation.mix")
+$EDGES=["top","bottom","left","right"]
 fn supports($key)
   return contains(["shell.panels.top.enabled","shell.panels.top.edge"],$key)
 end
 fn definition($key)
   return if $key=="shell.panels.top.enabled" then {path:$key,kind:"bool",class:"applied",default:true,owner:"scenes"}
-    else {path:$key,kind:"enum",variants:["top","bottom","left","right"],class:"applied",default:"bottom",owner:"scenes"} end
+    else {path:$key,kind:"enum",variants:$EDGES,class:"applied",default:"bottom",owner:"scenes"} end
 end
 fn from_inventory($inventory)
   for $row in $inventory.scenes ?? []
-    if $row.name=="panel" then return {enabled:$row.enabled,edge:$row.edge ?? "bottom"} end
+    if $row.name=="panel" then return {enabled:$row.enabled,edge:$row.edge ?? "bottom",position_supported:$row.position_supported ?? true} end
   end
   return nil
 end
@@ -18,7 +20,13 @@ fn refresh($s)
 end
 fn refreshed($s,$code,$body)
   -- A transport failure is not evidence that a confirmed scene disappeared.
-  if $code==0 and type($body)=="map" then $s.panel=from_inventory($body) end
+  if $code==0 then
+    if type($body)!="map" or type($body.scenes)!="list" then
+      $s.panel_error=$n.text_for("panel-inventory-invalid")
+      return $s
+    end
+    $s.panel=from_inventory($body);$s.panel_error=nil
+  end
   return $s
 end
 fn hint($s)
@@ -30,21 +38,21 @@ fn due($s)
   return ($s.panel_refresh_at ?? nil)!=nil and monotonic()>=$s.panel_refresh_at
 end
 fn request($key,$value)
-  if not supports($key) then raise("ARGUMENT","Unsupported scene panel setting") end
+  if not supports($key) then raise("ARGUMENT",$n.text_for("panel-setting-invalid")) end
   if $key=="shell.panels.top.enabled" then
     if $value==nil then $value=true end
-    if type($value)!="bool" then raise("ARGUMENT","Panel enabled must be boolean") end
+    if type($value)!="bool" then raise("ARGUMENT",$n.text_for("panel-enabled-invalid")) end
     $command=if $value then "scenes.enable" else "scenes.disable" end
     return {command:$command,args:{name:"panel"}}
   else
     if $value==nil then $value="bottom" end
-    if not contains(["top","bottom","left","right"],$value) then raise("ARGUMENT","Invalid panel edge") end
+    if not contains($EDGES,$value) then raise("ARGUMENT",$n.text_for("panel-edge-invalid")) end
     return {command:"scenes.move",args:{name:"panel",edge:$value}}
   end
 end
 fn apply_request($s,$req)
   send "scenes" $req.command body=$req.args timeout=5
-  if $rc!=0 then raise("FAILED","Scene panel change refused: "..to_string($result)) end
+  if $rc!=0 then raise("FAILED",$n.text_for("panel-change-refused").." "..to_string($result)) end
   $s=confirmed($s,$req)
   return refresh($s)
 end
