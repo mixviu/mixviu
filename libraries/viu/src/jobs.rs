@@ -78,6 +78,8 @@ impl Jobs {
     }
     pub fn poll(&mut self) -> Vec<ResultMessage> {
         while let Ok(start) = self.rx.try_recv() {
+            #[cfg(test)]
+            eprintln!("job admission {}", start.spec);
             let id = start.spec["id"].as_str().unwrap_or("");
             if start.spec["signal"] == "cancel" {
                 let found = self.running.get(id);
