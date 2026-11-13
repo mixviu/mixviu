@@ -8,6 +8,35 @@ use crate::*;
 use serde::Serialize;
 
 #[test]
+fn image_color_is_optional_string_and_supports_live_bindings() {
+    let ports = describe("image").unwrap();
+    let color = ports.iter().find(|p| p.path == "color").unwrap();
+    assert_eq!(color.ty, "string");
+    assert!(color.default.is_none());
+    let mut d = doc(r#"root: {widget: "image", src: "icon:folder"}"#);
+    assert!(!resolve(&d).unwrap().nodes["root"].ports.contains_key("color"));
+    for ink in ["#123456", "panel.foreground", "panel.selected-foreground"] {
+        d.nodes["root"].ports.insert("color".into(), json!(ink));
+        assert!(lint(&d).is_empty());
+        assert_eq!(resolve(&d).unwrap().nodes["root"].ports["color"], ink);
+    }
+    d.nodes["root"].ports.insert("color".into(), json!(42));
+    assert!(lint(&d).iter().any(|d| d.code == "port-type"));
+    d.nodes["root"].ports.insert("color".into(), json!("= $model.ink"));
+    d.model = Some(json!({"ink": "panel.foreground"}));
+    let tree = resolve(&d).unwrap();
+    assert_eq!(tree.nodes["root"].ports["color"], "panel.foreground");
+    let set = compile(&d).unwrap();
+    let result = reevaluate(&tree, &set, "model.ink", &json!("#abcdef")).unwrap();
+    assert!(result.diagnostics.is_empty());
+    assert_eq!(result.tree.nodes["root"].ports["color"], "#abcdef");
+    let result = reevaluate(&result.tree, &set, "model.ink", &JsonValue::Null).unwrap();
+    assert!(!result.tree.nodes["root"].ports.contains_key("color"));
+    let result = reevaluate(&tree, &set, "model.ink", &json!(42)).unwrap();
+    assert!(result.diagnostics.iter().any(|d| d.code == "binding-type"));
+}
+
+#[test]
 fn horizontal_flow_and_hidden_are_described_and_type_checked() {
     for family in [
         "row", "column", "text", "image", "list", "field", "button", "toggle", "spacer",
