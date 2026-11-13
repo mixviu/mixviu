@@ -1,6 +1,14 @@
 {
   "adaptations": [
     {
+      "file": "src/crosswords/grid/resize.rs",
+      "reason": "MIXVIU LOCAL PATCH (#106), review matrix: when shrink reflow displaces a wide character from the last column, include the inserted leading spacer in the cursor offset. Pinned Rio omitted it, leaving the cursor one column left. CJK conformance covers cursor before the glyph, either wide half, following text and the end, plus shrink/grow text and selection preservation."
+    },
+    {
+      "file": "src/crosswords/grid/resize.rs",
+      "reason": "MIXVIU LOCAL PATCH (#106): deliberate correction of pinned Gold/upstream shrink reflow. Consume trailing newest blank viewport rows before adding history, bounded by live viewport expansion, never history expansion. Storage/take_all are newest-first; the reversed walk builds oldest-first and only then truncates blank rows at its newest tail. Debug assertions pin complete viewport storage and blank-only truncation. Correct the two reversal comments to newest-first storage order. Preserve cursor displacement and mark dropped remap rows with the established -1 sentinel. Retain the labelled hunks on refresh until an upstream fix passes the terminal conformance matrix (history plus consumption, already-wrapped lines, CJK, scroll margins, alternate screen and simultaneous height changes)."
+    },
+    {
       "file": "Cargo.toml",
       "reason": "Materialise upstream workspace package/dependency inheritance; all sibling Rio crates retain the same pinned git source. Preserve features and dependency flags."
     },
