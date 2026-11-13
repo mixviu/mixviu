@@ -1,0 +1,38 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Only test copies of modules read this fake procfs. No real signals.
+fn process($root,$pid,$parent,$uid,$unit)
+  $dir=$root.."/proc/"..to_string($pid)
+  mkdir($dir)
+  write_file($dir.."/stat",to_string($pid).." (fixture ) name) S "..to_string($parent).." 0 0")
+  write_file($dir.."/status","Uid:\t"..to_string($uid).."\t"..to_string($uid).."\t0\t0\n")
+  write_file($dir.."/cgroup","0::/system.slice/"..$unit.."\n")
+end
+fn create($source=nil,$root=nil)
+  $root=$root ?? trim(run_argv_must(["mktemp","-d"]))
+  try
+  $source=$source ?? dirname(script_path())
+  $copied=run_argv_must(["cp","-R",$source,$root.."/monitor"])
+  mkdir($root.."/proc")
+  process($root,1,0,0,"init.scope")
+  process($root,90,80,1000,"apps@4.service")
+  process($root,80,1,1000,"apps@4.service")
+  process($root,42,1,1000,"apps@4.service")
+  process($root,43,1,1001,"apps@4.service")
+  process($root,44,1,1000,"apps@4.service")
+  process($root,45,1,1000,"viud@4.service")
+  mkdir($root.."/proc/self")
+  write_file($root.."/proc/self/stat",read_file($root.."/proc/90/stat"))
+  write_file($root.."/proc/self/status",read_file($root.."/proc/90/status"))
+  $policy=read_file($root.."/monitor/signal-policy.mix")
+  $policy=replace_must($policy,'$proc_root="/proc"','$proc_root='..json_encode($root.."/proc"))
+  $policy=replace_must($policy,'$session=session_id(env("MIX_RUN",""),env("MIX_VT",""))','$session="4"')
+  write_file($root.."/monitor/signal-policy.mix",$policy)
+  $core=read_file($root.."/monitor/core.mix")
+  $core=replace_must($core,'require("../../libraries/viu/mix/gold-frame.mix")',"require("..json_encode(path_join($source,"../../libraries/viu/mix/gold-frame.mix"))..")")
+  write_file($root.."/monitor/core.mix",$core)
+  return $root
+  catch $message, $error
+    $removed=run_argv_must(["rm","-r",$root])
+    raise($error.code,$message)
+  end
+end
