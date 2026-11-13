@@ -256,6 +256,12 @@ fn record_vaapi_capability_or_clear_failure() {
             "device failure must include ffmpeg stderr: {stop}"
         );
         println!("VAAPI reported, device unavailable: {error}");
+        assert!(!Path::new(start["path"].as_str().unwrap()).exists());
+        assert_eq!(stop["frames_path"], Value::Null);
+        assert_eq!(stop["markers_path"], Value::Null);
+        assert!(!fs::read_dir(&process.root).unwrap().any(|entry| {
+            entry.unwrap().file_name().to_string_lossy().contains(".part")
+        }));
     } else {
         assert_eq!(stop["encoder"], "vaapi");
         assert!(fs::metadata(start["path"].as_str().unwrap()).unwrap().len() > 0);
@@ -306,12 +312,20 @@ fn record_4k_output_windows_pointer_and_damage_repeat() {
         "comp.input.pointer.move",
         json!({"seat":"agent","output":"headless-0","x":1200,"y":500}),
     );
-    thread::sleep(Duration::from_millis(200));
-    let moved = bus.call("comp.record.status", json!({"session":session}));
-    assert!(
-        moved["readbacks"].as_u64() > idle["readbacks"].as_u64(),
-        "pointer damage must cause readback"
-    );
+    // A debug renderer's first read can incur up to sixty ticks of budget
+    // debt. Verify eventual pointer capture within that recovery bound.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let moved = bus.call("comp.record.status", json!({"session":session}));
+        if moved["readbacks"].as_u64() > idle["readbacks"].as_u64() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "pointer damage must cause readback: {moved}"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
     let marker = bus.call(
         "comp.record.marker",
         json!({"session":session,"label":"4k-done"}),
