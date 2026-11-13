@@ -18,12 +18,19 @@ use std::{
 use world::state::Loop;
 
 #[derive(Debug, PartialEq, Eq)]
-enum Route { Offscreen, Kms }
+enum Route {
+    Offscreen,
+    Kms,
+}
 
 /// Session state is the authority for both newly armed and already queued
 /// frames. In particular a queued offscreen timer must retire on activation.
 fn route(vt_session: bool, active: bool) -> Route {
-    if vt_session && active { Route::Kms } else { Route::Offscreen }
+    if vt_session && active {
+        Route::Kms
+    } else {
+        Route::Offscreen
+    }
 }
 
 #[derive(Default)]
@@ -93,7 +100,14 @@ impl Context {
 
 pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     let mut ctx = context.borrow_mut();
-    if route(ctx.vt_session, !matches!(state.inner.status_session, world::state::StatusSession::Paused)) == Route::Kms {
+    if route(
+        ctx.vt_session,
+        !matches!(
+            state.inner.status_session,
+            world::state::StatusSession::Paused
+        ),
+    ) == Route::Kms
+    {
         return;
     }
     if let Some(mode) = ctx.output.current_mode() {
@@ -123,7 +137,14 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
 }
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
-    if route(ctx.vt_session, !matches!(state.inner.status_session, world::state::StatusSession::Paused)) == Route::Kms {
+    if route(
+        ctx.vt_session,
+        !matches!(
+            state.inner.status_session,
+            world::state::StatusSession::Paused
+        ),
+    ) == Route::Kms
+    {
         return;
     }
     let key = world::state::output_key(&ctx.output);
@@ -143,7 +164,13 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
         ctx.renderer = Some(renderer);
         result
     } else {
-        let binding = state.inner.kernel.get(&world::state::GPU_BINDING).as_ref().expect("native renderer binding").clone();
+        let binding = state
+            .inner
+            .kernel
+            .get(&world::state::GPU_BINDING)
+            .as_ref()
+            .expect("native renderer binding")
+            .clone();
         let mut binding = binding.borrow_mut();
         let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
         let primary = *primary;
@@ -216,8 +243,16 @@ fn compose(
     let texture_size = (size.w, size.h).into();
     if ctx.targets[0].size() != texture_size {
         ctx.targets = [
-            Offscreen::<GlesTexture>::create_buffer(renderer, smithay::backend::allocator::Fourcc::Abgr8888, texture_size)?,
-            Offscreen::<GlesTexture>::create_buffer(renderer, smithay::backend::allocator::Fourcc::Abgr8888, texture_size)?,
+            Offscreen::<GlesTexture>::create_buffer(
+                renderer,
+                smithay::backend::allocator::Fourcc::Abgr8888,
+                texture_size,
+            )?,
+            Offscreen::<GlesTexture>::create_buffer(
+                renderer,
+                smithay::backend::allocator::Fourcc::Abgr8888,
+                texture_size,
+            )?,
         ];
         ctx.tracker = OutputDamageTracker::from_output(&ctx.output);
     }
@@ -264,13 +299,7 @@ fn compose(
         let mut target = renderer.bind(&mut ctx.targets[ctx.next])?;
         // No buffer-age assumptions: each target is repainted completely.
         OutputDamageTracker::from_output(&ctx.output)
-            .render_output(
-                renderer,
-                &mut target,
-                0,
-                &elements,
-                [0.1, 0.1, 0.1, 1.0],
-            )?
+            .render_output(renderer, &mut target, 0, &elements, [0.1, 0.1, 0.1, 1.0])?
             .sync
             .wait()?;
     }
@@ -292,8 +321,7 @@ fn compose(
             )?);
         }
         {
-            let mut target = renderer
-                .bind(ctx.cursor.as_mut().expect("cursor texture"))?;
+            let mut target = renderer.bind(ctx.cursor.as_mut().expect("cursor texture"))?;
             OutputDamageTracker::from_output(&ctx.output)
                 .render_output(
                     renderer,

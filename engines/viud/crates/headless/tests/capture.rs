@@ -120,10 +120,15 @@ fn inactive_seat_maps_clients_and_captures_output_and_window() {
     assert_eq!(session["render_state"], "offscreen", "{session}");
     for cursor in [false, true] {
         for window in [None, Some(target(&window))] {
-            let path = process.root.join(format!("inactive-{cursor}-{}.ppm", window.is_some()));
+            let path = process
+                .root
+                .join(format!("inactive-{cursor}-{}.ppm", window.is_some()));
             let mut args = json!({"path":path,"format":"ppm","cursor":cursor});
-            if let Some(window) = window { args["window"] = window; }
-            else { args["output"] = json!("headless-0"); }
+            if let Some(window) = window {
+                args["window"] = window;
+            } else {
+                args["output"] = json!("headless-0");
+            }
             let reply = bus.call("comp.capture.frame", args);
             assert_eq!(reply["source"], "offscreen", "{reply}");
             assert!(fs::read(path).unwrap().starts_with(b"P6\n"));

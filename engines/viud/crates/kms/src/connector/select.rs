@@ -91,7 +91,10 @@ pub fn select(
 /// value both the in-compositor switch and the standalone settings editor key
 /// preferences by. An unreadable EDID yields the unknown-monitor key, so it simply
 /// never matches a real preference.
-fn identity_key(drm: &impl smithay::reexports::drm::control::Device, info: &connector::Info) -> String {
+fn identity_key(
+    drm: &impl smithay::reexports::drm::control::Device,
+    info: &connector::Info,
+) -> String {
     let raw = parse::read(drm, info);
     let parsed = raw.as_ref().and_then(parse::parse);
     identity::connector_key(parsed.as_ref(), info)

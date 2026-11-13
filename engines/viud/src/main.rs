@@ -577,7 +577,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // nested session still get the right values. Only launches from OUTSIDE it are
     // affected, and those wanting a nested session can say so per-invocation
     // (`WAYLAND_DISPLAY=wayland-2 app`) instead of a global mutation nothing unwinds.
-    if backend == cli::Backend::Kms && matches!(state.inner.status_session, world::state::StatusSession::Active) {
+    if backend == cli::Backend::Kms
+        && matches!(
+            state.inner.status_session,
+            world::state::StatusSession::Active
+        )
+    {
         world::environment::interface::lifecycle::announce_session(
             wayland_socket_name_default_subprocess_2.to_str().unwrap(),
             &environment.desktop_name,
@@ -826,7 +831,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match drm_restore.try_borrow() {
             Ok(handles) => {
                 if let Some(native) = handles.as_ref() {
-                    native.ctx.borrow().drm_output_manager.borrow().device().restore_state();
+                    native
+                        .ctx
+                        .borrow()
+                        .drm_output_manager
+                        .borrow()
+                        .device()
+                        .restore_state();
                 }
                 info!("DRM state restored");
             }

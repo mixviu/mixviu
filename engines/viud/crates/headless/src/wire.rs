@@ -173,7 +173,8 @@ pub fn install(
         renderer,
     };
     let display_handle = state.state.output.display_handle.clone();
-    let damage_tracker = scenegraph::state::lifecycle::initialize(state, &output, &display_handle, &mut contract);
+    let damage_tracker =
+        scenegraph::state::lifecycle::initialize(state, &output, &display_handle, &mut contract);
     // This runs before the event loop serves any client.
     human_seat_without_sources(&mut state.state.seat.seat);
     state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
@@ -243,10 +244,9 @@ pub fn install(
     let (ping, source) = make_ping()?;
     let first = ping.clone();
     let source_context = context.clone();
-    handle
-        .insert_source(source, move |_, _, state| {
-            crate::frame::arm(state, &source_context);
-        })?;
+    handle.insert_source(source, move |_, _, state| {
+        crate::frame::arm(state, &source_context);
+    })?;
     state.state.redraw.set_ping(ping);
     first.ping();
     screencopy::create_global(&state.state.output.display_handle);
@@ -297,7 +297,9 @@ thread_local! {
 pub fn arm_inactive(state: &mut Loop) -> bool {
     FALLBACK.with(|slot| {
         let slot = slot.borrow();
-        let Some(context) = slot.as_ref() else { return false };
+        let Some(context) = slot.as_ref() else {
+            return false;
+        };
         crate::frame::arm(state, context);
         true
     })
@@ -322,7 +324,11 @@ pub fn vt_session(state: &mut Loop) {
 /// Transfer the render-node renderer into the KMS manager, preserving EGL
 /// context identity for UI textures, imports and recording registries.
 pub fn take_renderer() -> Option<GlesRenderer> {
-    FALLBACK.with(|slot| slot.borrow().as_ref().and_then(|ctx| ctx.borrow_mut().renderer.take()))
+    FALLBACK.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .and_then(|ctx| ctx.borrow_mut().renderer.take())
+    })
 }
 
 /// Keep the offscreen desk on the primary output after native hotplug/mode work.

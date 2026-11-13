@@ -1099,6 +1099,7 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
             serde_json::from_str::<Value>(&body).unwrap(),
             json!({
                 "version": 1, "active": active, "vt": vt,
+                "render_state": if active { "active" } else { "offscreen" },
                 "since_ms": 1_792_108_800_123_u64,
             })
         );

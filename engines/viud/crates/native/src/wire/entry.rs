@@ -45,7 +45,10 @@ pub fn wire(
     _wayland_socket_name: OsString,
     event_loop: &LoopHandle<'static, Loop>,
     existing_output: Option<smithay::output::Output>,
-    session: (smithay::backend::session::libseat::LibSeatSession, smithay::backend::session::libseat::LibSeatSessionNotifier),
+    session: (
+        smithay::backend::session::libseat::LibSeatSession,
+        smithay::backend::session::libseat::LibSeatSessionNotifier,
+    ),
 ) -> NativeHandles {
     info!("Backend initialization - Native");
 
@@ -198,12 +201,12 @@ pub fn wire(
     // its side effects (output registration + EGL bind/registration); winit does
     // use the return value.
     if !reuse {
-    let _ = scenegraph::state::lifecycle::initialize(
-        _loop,
-        &display.output.clone(),
-        &_loop.inner.loader.display_handle.clone(),
-        &mut contract,
-    );
+        let _ = scenegraph::state::lifecycle::initialize(
+            _loop,
+            &display.output.clone(),
+            &_loop.inner.loader.display_handle.clone(),
+            &mut contract,
+        );
     }
 
     // ---- Input stack (panics internally; a compositor without input cannot run).
