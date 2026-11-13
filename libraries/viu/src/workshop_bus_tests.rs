@@ -53,6 +53,7 @@ fn workshop_answers_during_discovery() {
         let caller = Arc::new(rt.block_on(bus::SupervisedClient::connect_options("test-caller", &broker.url).connect()).unwrap());
         let mut bundle = Bundle::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop"), &["--headless".into()]).unwrap();
         bundle.manifest.bus_url = Some(broker.url.clone());
+        bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
         let mut host = create(bundle, Arc::new(|| {}));
         let ctx = egui::Context::default();
