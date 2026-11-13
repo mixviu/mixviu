@@ -572,3 +572,80 @@ fn paint_image(
     painter.image(texture, rect, uv, tint);
     Some(cache)
 }
+
+#[cfg(test)]
+mod light_mode_tests {
+    use super::*;
+
+    #[test]
+    fn panel_icons_and_labels_keep_contrast_in_light_and_dark() {
+        let doc = scene::parse(include_str!("../../../../share/scenes/panel/scene.mix")).unwrap();
+        let background = hex(doc.nodes["root"].ports["background"].as_str().unwrap()).unwrap();
+        // The scene-template Mix test checks this recorded model against the
+        // live panel model builder, whose colours are fixed for a dark panel.
+        let model: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../engines/viud/tests/fixtures/scenes/panel-busy.model.json"
+        ))
+        .unwrap();
+        for scheme in design::Scheme::ALL {
+            for mode in [design::Mode::Dark, design::Mode::Light] {
+                let theme = toolkit::Theme::for_context(design::DesignContext {
+                    scheme,
+                    mode,
+                    ..Default::default()
+                });
+                let ink = colour(crate::appearance::page(&theme, false).base.foreground);
+                for id in [
+                    "task_icon",
+                    "tray_icon",
+                    "st_notes_i",
+                    "st_vol_i",
+                    "st_net_i",
+                ] {
+                    let tint = doc.nodes[id]
+                        .ports
+                        .get("color")
+                        .and_then(|v| v.as_str())
+                        .and_then(hex)
+                        .unwrap_or(ink);
+                    let luminance = |c: Color32| {
+                        let c = egui::Rgba::from(c);
+                        0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
+                    };
+                    // Include both extremes behind the translucent panel.
+                    for under in [Color32::BLACK, Color32::WHITE] {
+                        let bg = under.blend(background);
+                        let (a, b) = (luminance(tint), luminance(bg));
+                        assert!(
+                            (a.max(b) + 0.05) / (a.min(b) + 0.05) >= 3.0,
+                            "{id} {scheme:?} {mode:?}: {tint:?}"
+                        );
+                    }
+                }
+                for (id, rows) in [("ws_label", "workspaces"), ("task_initial", "tasks")] {
+                    assert_eq!(doc.nodes[id].ports["color"], "= $item.color");
+                    for row in model[rows].as_array().unwrap() {
+                        let tint = hex(row["color"].as_str().unwrap()).unwrap();
+                        let overlay = row["background"]
+                            .as_str()
+                            .and_then(hex)
+                            .unwrap_or(Color32::TRANSPARENT);
+                        for under in [Color32::BLACK, Color32::WHITE] {
+                            let bg = under.blend(background).blend(overlay);
+                            let luminance = |c: Color32| {
+                                let c = egui::Rgba::from(c);
+                                0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
+                            };
+                            let (a, b) = (luminance(tint), luminance(bg));
+                            assert!(
+                                (a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5,
+                                "{id} {} {scheme:?} {mode:?}: {tint:?} on {bg:?}",
+                                row["id"]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

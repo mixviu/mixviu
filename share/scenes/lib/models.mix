@@ -3,7 +3,7 @@ $p = require("data.mix")
 $t = require("taskbar.mix")
 $hd = require("hostd.mix")
 $C = {
-  fg: "#fcfcfc", dim: "#a1a9b1", faint: "#6e7680", hover: "#ffffff1a",
+  fg: "#fcfcfc", dim: "#a1a9b1", faint: "#6e7680", panel_faint: "#929ba5", hover: "#ffffff1a",
   accent: "#3daee9", accent_bg: "#3daee940", task_bg: "#ffffff0f", card: "#2a2e32",
   today_fg: "#ffffff", weekend: "#c9cfd6", ok: "#27ae60"
 }
@@ -350,7 +350,8 @@ fn panel($snap, $icons, $now)
     end
     $color = $C.fg
     if $w.minimized then
-      $color = $C.faint
+      -- Keep initials readable over the translucent dark panel on light backgrounds.
+      $color = $C.panel_faint
     elif $away then
       $color = $C.dim
     end
