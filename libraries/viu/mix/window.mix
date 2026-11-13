@@ -5,6 +5,7 @@ on job.run
   try
     $a=$event.args
     $comp=env("MIX_COMP_SERVICE","comp")
+    if not port_exists($comp) then reply(0,json_encode({shown:false,reason:"compositor_unavailable"}));return end
     send $comp "comp.window.wait" body={match:{app_id:$a.app_id},until:"mapped",timeout_ms:3000} timeout=5
     if $rc!=0 then raise("ACTIVATION",to_string($result)) end
     send $comp "comp.windows.list" body={} timeout=5

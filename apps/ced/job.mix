@@ -2,6 +2,11 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 $ced_mail=require("mail.mix")
+$show=require("../../libraries/viu/mix/window-show.mix")
+fn compositor($service,$command,$body)
+  send $service $command body=$body timeout=5
+  return {rc:$rc,body:$reply ?? $result}
+end
 $macros=require("../../libraries/viu/mix/macro-policy.mix");$app_call=require("../../libraries/viu/mix/app-call.mix")
 fn load_session()
   $dirs=viu_app_dirs("ced");$path=if $dirs!=nil then path_join($dirs.state,"session.json") else nil end
@@ -100,13 +105,8 @@ on job.run
     reply(0,json_encode({path:$a.request.path,tabs:map($a.documents,fn($d)=to_number($d)),shown:$shown,stale:$stale}));return
   elif $job.kind=="show" then
     $service=env("MIX_COMP_SERVICE") ?? "comp"
-    send $service "comp.windows.list" body={} timeout=5
-    if $rc!=0 then raise("ACTIVATION","Cannot list compositor windows") end
-    $windows=filter($reply.windows,fn($w)=$w.pid==pid())
-    if len($windows)==0 then raise("ACTIVATION","No native window") end
-    send $service "comp.window.focus" body={id:$windows[0].id,generation:$windows[0].generation,raise:true} timeout=5
-    if $rc!=0 then raise("ACTIVATION",json_encode($reply ?? $result)) end
-    reply(0,json_encode({shown:true,target:$reply}));return
+    $out=$show.perform("dev.mixos.ced",pid(),fn($command,$body)=compositor($service,$command,$body),port_exists($service))
+    reply($out.rc,json_encode($out.body));return
   elif $job.kind=="find" then
     $v=viu_document("find",$a.document,$a.query)
     reply(0,json_encode($v));return

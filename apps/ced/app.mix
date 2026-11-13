@@ -76,6 +76,7 @@ on viu.job.completed
     if $job.kind=="macro-panel" and $event.args.rc==0 then $state.macro_panel=$event.args.body end
     if $job.kind=="macro" then $state=$ced_bus.finish_call($state,$job.payload.call,if $event.args.rc==0 then $event.args.body.rc else 10 end,if $event.args.rc==0 then $event.args.body.body else $event.args.body end) end
     if $event.args.rc==0 then
+      if $state.status_failure ?? false then $state.status="";$state.status_failure=false end
       if $job.kind=="notify" and $event.args.body.fallback then $state.status=$event.args.body.text;$state.status_until=monotonic()+6 end
       if $job.kind=="io" and $event.args.body.deadline_after_ms!=nil then
         viu_timer($job.payload.document..":deadline:"..$job.payload.request.op_id,$event.args.body.deadline_after_ms,{document:$job.payload.document,kind:"deadline",op_id:$job.payload.request.op_id})
@@ -103,7 +104,10 @@ on viu.job.completed
         $state.mail=delete($state.mail,$job.payload.document);$state.classified=delete($state.classified,$job.payload.document)
       end
     else
-      if $job.kind!="close" then $state.status="Failed: "..json_encode($event.args.body) end
+      if $job.kind!="close" then
+        $state.last_job_error={kind:$job.kind,rc:$event.args.rc,body:$event.args.body}
+        $state.status="Failed: "..($event.args.body.message ?? "The operation failed.");$state.status_failure=true
+      end
       if $job.kind=="preview" then $state.preview_requested=delete($state.preview_requested,$job.payload.document) end
       if $job.kind=="open" then $state.restore=delete($state.restore,$job.payload.document);$state.open_errors[$job.payload.document]=$event.args.body end
       if $job.kind=="close" then

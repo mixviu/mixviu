@@ -3,6 +3,7 @@
 on job.run
   try
     $comp=$event.args.comp
+    if not port_exists($comp) then reply(0,json_encode({shown:false,reason:"compositor_unavailable"}));return end
     send $comp "comp.window.wait" body={match:{app_id:"dev.mixos.prefs"},until:"mapped",timeout_ms:10000} timeout=12
     if $rc!=0 then raise("SHOW",to_string($result)) end
     send $comp "comp.windows.list" body={} timeout=5

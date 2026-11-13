@@ -181,11 +181,12 @@ fn long_status_paint_never_intersects_right_fields_at_desktop_scales() {
         ctx.set_pixels_per_point(scale);
         let widget = viu::widgets::Widget::new("status", "status-line", "", json!({"left":"Long activation failure ".repeat(100),"right":["INS","Rust","UTF-8 · LF","rev 0","Saved"],"icon":"plug"}));
         let mut widgets = viu::widgets::Widgets::default();
-        let output = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(3840.0 / scale, 2160.0 / scale))), ..Default::default() }, |ui| {
+        let mut output = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(3840.0 / scale, 2160.0 / scale))), ..Default::default() }, |ui| {
             widgets.begin_frame();
             widgets.widget(ui, &widget, &json!({}));
             widgets.finish_frame().unwrap();
         });
+        output.textures_delta.clear();
         let mut left = None;
         let mut right = Vec::new();
         for clipped in &output.shapes {
