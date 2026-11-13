@@ -337,7 +337,42 @@ async fn a_stopped_member_is_continued_so_it_can_honour_sigterm() {
 /// otherwise the kernel's SIGHUP can kill the worker before its TERM trap.
 #[tokio::test]
 async fn stopped_member_honours_sigterm_when_its_untrapped_leader_dies() {
-    check_stopped_member(false).await;
+    use std::os::unix::process::CommandExt;
+
+    const CHILD: &str = "MIX_TEST_ORPHAN_SESSION";
+    if std::env::var_os(CHILD).is_some() {
+        check_stopped_member(false).await;
+        return;
+    }
+    // A build-service subreaper in the same session can adopt the worker
+    // without orphaning its group. Isolate this test so adoption outside the
+    // test process cannot suppress the kernel's orphan-group behaviour.
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "stopped_member_honours_sigterm_when_its_untrapped_leader_dies",
+            "--exact",
+            "--nocapture",
+        ])
+        .env(CHILD, "1");
+    // SAFETY: setsid is a raw syscall, and this forked child is not yet a
+    // process-group leader. No allocation or locking runs before exec.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+    let output = command.output().expect("launch isolated orphan-group test");
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "isolated orphan-group test failed: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 async fn check_stopped_member(keep_leader: bool) {
