@@ -337,7 +337,7 @@ fn inventory($s)
     push($rows, {name:$name, installed:$e.installed, enabled:$e.enabled, mounted:$e.mounted,
       revision:$e.revision, generation:$e.generation, behaviour:$e.status, ready:$e.ready,
       template:$s.desired.origins[$name], stale:($s.upgrades ?? {})[$name] != nil,
-      upgrade:($s.upgrades ?? {})[$name], diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
+      upgrade:upgrade_summary(($s.upgrades ?? {})[$name]), diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
       attempted_digest:$e.attempted, accepted_digest:$e.digest,
       journal:"journalctl -u mix-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
       title:$shown.title ?? $name, edge:$e.edge ?? $shown.edge, page:$e.page ?? $shown.page,
@@ -346,7 +346,7 @@ fn inventory($s)
       problems:scene_problems($s, $name, $e, $diagnostic, $diagnostics)})
   end
   return {needs_setup:needs_setup($s), root:$s.root, templates_root:$s.templates, state_ok:$s.state_ok,
-    editor:editor_record($s), scenes:$rows, diagnostic:$s.diagnostic}
+    editor:editor_record($s), scenes:$rows, diagnostic:$s.diagnostic, recovery_prune_error:$s.recovery_prune_error}
 end
 
 fn changed($s)
@@ -420,15 +420,11 @@ fn read_state($s)
     end
   end
   if $v.templates != nil then
-    if type($v.templates) != "map" or len(keys($v.templates)) > 128 then fail("SCENES_STATE", "invalid template records", {}) end
+    -- Optional cache: bad entries must never invalidate durable user intent.
+    if type($v.templates) != "map" or len(keys($v.templates)) > 128 then $v.templates = {} end
     for $n in keys($v.templates)
       $r = $v.templates[$n]
-      if not valid_name($n) or type($r) != "map" or not valid_name($r.template) or type($r.files) != "map" then
-        fail("SCENES_STATE", "invalid template record", {name:$n})
-      end
-      for $k in ["digest", "behaviour_digest", "meta_digest"]
-        if type($r[$k]) != "string" then fail("SCENES_STATE", "invalid template digest", {name:$n}) end
-      end
+      if not template_record_valid($n, $r) then $v.templates = delete($v.templates, $n) end
     end
   end
   for each $kind in ["promoting", "resetting"]
@@ -905,6 +901,19 @@ fn recover_one($s, $kind, $r)
   $t = exists($to, {follow_symlinks:false})
   $st = exists($stage, {follow_symlinks:false})
   $b = exists($backup, {follow_symlinks:false})
+  if $r.upgrade_expected != nil and $b and not fingerprint_equal($backup, $r.upgrade_expected) then
+    if $t then recovery_move($s, $to, $stage) end
+    recovery_move($s, $backup, $to)
+    if is_dir($stage) then remove_dir($stage) end
+    if $s.upgrades == nil then $s.upgrades = {} end
+    $s.upgrades[$r.name] = {error_code:"SCENES_EDITED", reason:"scene changed during swap; original restored"}
+    return clear_record($s, $kind)
+  end
+  if $r.placed_expected != nil and $t and not $st and $r.phase != "staged" and not fingerprint_equal($to, $r.placed_expected) then
+    if $s.upgrades == nil then $s.upgrades = {} end
+    $s.upgrades[$r.name] = {error_code:"SCENES_EDITED", reason:"scene saved into replacement; edited copy retained"}
+    return clear_record($s, $kind)
+  end
   if $t and $st and not $b then
     -- Not swapped yet.
     remove_dir($stage)
@@ -1418,6 +1427,17 @@ fn swap_in($s, $kind, $record, $to, $stage, $backup)
     $s = persist($s)
     fault($s, $kind .. ":swapped")
     recovery_move($s, $stage, $to)
+    if $record.upgrade_expected != nil then
+      if $s.io.upgrade_swapped != nil then $s.io.upgrade_swapped($backup) end
+      if not fingerprint_equal($backup, $record.upgrade_expected) then
+        recovery_move($s, $to, $stage)
+        recovery_move($s, $backup, $to)
+        fail("SCENES_EDITED", "scene changed during swap; original restored", {})
+      end
+      if not fingerprint_equal($to, $record.placed_expected) then
+        fail("SCENES_EDITED", "scene saved into replacement during swap; edited copy retained", {})
+      end
+    end
   catch $message, $error
     if $moved and exists($backup, {follow_symlinks:false}) and not exists($to, {follow_symlinks:false}) then
       recovery_move($s, $backup, $to)
@@ -2251,20 +2271,93 @@ end
 -- are user state, never evidence of a code edit. Stream hashes so binary
 -- assets retain their byte identity and do not require an unbounded read.
 fn template_record($dir, $template)
+  if not stat($dir, {follow_symlinks:false}).is_dir or realpath($dir) != $dir then
+    fail("SCENES_FILES", "fingerprint root must be a real directory", {file:$dir})
+  end
   $files = {}
-  for $p in sort(walk($dir, {follow_symlinks:false}))
+  for $p in sort(walk($dir, {follow_symlinks:false, include_dirs:true}))
+    $before = stat($p, {follow_symlinks:false})
+    if $before.is_symlink then fail("SCENES_FILES", "fingerprint refuses symlinks", {file:$p}) end
+    if $before.is_dir then continue end
     $rel = substr($p, len($dir) + 1)
     if $rel == "settings.conf.mix" then continue end
     if not regular($p) then fail("SCENES_FILES", "template file must be regular", {file:$p}) end
     $files[$rel] = hash_file($p, "sha256")
+    -- hash_file opens a path normally; lstat both sides of the streamed read
+    -- to reject replaced files and aliases rather than treating them as edits.
+    $after = stat($p, {follow_symlinks:false})
+    if $after.is_symlink or $before.ino != $after.ino or $before.dev != $after.dev or $before.ctime != $after.ctime or $before.ctime_nsec != $after.ctime_nsec then
+      fail("SCENES_EDITED", "file changed while hashing", {file:$p})
+    end
   end
-  return {template:$template, digest:$files["scene.mix"],
-    behaviour_digest:$files["behaviour.mix"] ?? "", meta_digest:$files["template.conf.mix"], files:$files}
+  return {template:$template, digest:$files["scene.mix"] ?? "",
+    behaviour_digest:$files["behaviour.mix"] ?? "", meta_digest:$files["template.conf.mix"] ?? "", files:$files,
+    settings_digest:regular($dir .. "/settings.conf.mix") ? hash_file($dir .. "/settings.conf.mix", "sha256") : ""}
+end
+
+fn template_record_valid($name, $r)
+  if not valid_name($name) or type($r) != "map" or not valid_name($r.template) or type($r.files) != "map" then return false end
+  for $k in ["digest", "behaviour_digest", "meta_digest"]
+    if type($r[$k]) != "string" then return false end
+  end
+  for $p in keys($r.files)
+    if type($r.files[$p]) != "string" then return false end
+  end
+  return $r.settings_digest == nil or type($r.settings_digest) == "string"
+end
+
+fn code_equal($a, $b)
+  if type($a) != "map" or type($b) != "map" then return false end
+  return deep_eq(delete($a, "settings_digest"), delete($b, "settings_digest"))
+end
+
+fn fingerprint_equal($dir, $record)
+  try
+    return deep_eq(template_record($dir, $record.template), $record)
+  catch $ignored
+    return false
+  end
+end
+
+fn upgrade_summary($u)
+  if $u == nil then return nil end
+  $out = {reason:$u.reason, error_code:$u.error_code}
+  for $key in ["old", "local", "new"]
+    $r = $u[$key]
+    if type($r) == "map" then $out[$key] = {template:$r.template, digest:$r.digest,
+      behaviour_digest:$r.behaviour_digest, meta_digest:$r.meta_digest} end
+  end
+  return $out
+end
+
+fn carry_settings($s, $name, $installation, $tmp)
+  $settings = $installation .. "/settings.conf.mix"
+  if not exists($settings, {follow_symlinks:false}) then return end
+  if not regular($settings) then fail("SCENES_FILES", "settings must be regular", {file:$settings}) end
+  $old = ($s.desired.templates ?? {})[$name]
+  if $old != nil and $old.settings_digest != nil and hash_file($settings, "sha256") == $old.settings_digest then return end
+  -- Refuse explicitly, before either directory moves. Never write a prefix.
+  if stat($settings, {follow_symlinks:false}).size > 262144 then fail("SCENES_LIMIT", "settings exceed upgrade size limit; refresh refused", {file:$settings}) end
+  $meta = load_data($tmp .. "/template.conf.mix")
+  if $meta.settings_schema != nil then $_ = validate(data_parse(bounded_read($settings, 262144)), $meta.settings_schema) end
+  copy($settings, $tmp .. "/settings.conf.mix")
+  if hash_file($tmp .. "/settings.conf.mix", "sha256") != hash_file($settings, "sha256") then
+    fail("SCENES_EDITED", "settings changed while copying; refresh refused", {file:$settings})
+  end
 end
 
 -- Keep the newest 16 completed backups globally. Never prune a transaction's
 -- backup, nor follow an alias. A successful swap's backup is explicitly kept.
 fn cap_recovery($s, $keep)
+  try
+    return cap_recovery_inner($s, $keep)
+  catch $message, $error
+    $s.recovery_prune_error = {error_code:$error.code, message:$message}
+    return $s
+  end
+end
+
+fn cap_recovery_inner($s, $keep)
   $dir = recovery_directory($s)
   $held = [$keep]
   for $kind in ["resetting", "promoting"]
@@ -2281,7 +2374,12 @@ fn cap_recovery($s, $keep)
   $items = sort_by($items, fn($v) = $v.time + $v.ns / 1000000000)
   $reserved = len(filter($held, fn($p) = $p != nil and exists($p, {follow_symlinks:false})))
   for $i = 0 to len($items) + $reserved - 17
-    remove_dir($items[$i].path)
+    try
+      fault($s, "recovery:prune")
+      remove_dir($items[$i].path)
+    catch $message, $error
+      $s.recovery_prune_error = {error_code:$error.code, message:$message}
+    end
   end
   return $s
 end
@@ -2303,13 +2401,13 @@ fn upgrade($s)
       $tmp = nil
       $local = template_record($dir, $origin)
       $old = ($s.desired.templates ?? {})[$name]
-      if deep_eq($local, $new) then
+      if code_equal($local, $new) and ($old == nil or not code_equal($old, $new) or $old.settings_digest == $new.settings_digest) then
         if not deep_eq($old, $new) then
           if $s.desired.templates == nil then $s.desired.templates = {} end
           $s.desired.templates[$name] = $new
           $s = persist($s)
         end
-      elif $old == nil or not deep_eq($local, $old) then
+      elif $old == nil or not code_equal($local, $old) then
         $s.upgrades[$name] = {reason:"template updated: Reset or Keep", old:$old, local:$local, new:$new}
       elif not deep_eq($old, $new) then
         -- Synchronous loader handler owns the writer lock through reset.
@@ -2320,8 +2418,13 @@ fn upgrade($s)
     catch $message, $error
       if $tmp != nil and is_dir($tmp) then remove_dir($tmp) end
       $s.upgrade_expected = nil
+      $flags = $s.upgrades
       $s = load_state($s)
+      $s.upgrades = $flags
       $s.upgrades[$name] = {reason:$message, error_code:$error.code}
+      -- A placed reset must finish (or roll back) before the next scene.
+      $s = recover_records($s, $name)
+      if $s.scenes[$name] != nil then $s = reconcile_safe($s, $name, true) end
     end
   end
   $s = cap_recovery($s, nil)
@@ -2346,11 +2449,7 @@ fn reset_scene($s, $name, $e)
       if not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
         fail("SCENES_EDITED", "scene changed during upgrade; refresh refused", {name:$name})
       end
-      $settings = $installation .. "/settings.conf.mix"
-      if exists($settings, {follow_symlinks:false}) then
-        if not regular($settings) then fail("SCENES_FILES", "settings must be regular", {file:$settings}) end
-        write_file($tmp .. "/settings.conf.mix", bounded_read($settings, 262144))
-      end
+      carry_settings($s, $name, $installation, $tmp)
     catch $message, $error
       remove_dir($tmp)
       raise($error.code, $message, $error.details)
@@ -2368,14 +2467,20 @@ fn reset_scene($s, $name, $e)
       if not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
         fail("SCENES_EDITED", "scene changed during upgrade; refresh refused", {name:$name})
       end
-      if regular($settings) then write_file($tmp .. "/settings.conf.mix", bounded_read($settings, 262144)) end
+      carry_settings($s, $name, $installation, $tmp)
     catch $message, $error
       remove_dir($tmp)
       $s.upgrades[$name] = {reason:$message, error_code:$error.code}
       return reconcile_safe($s, $name, true)
     end
   end
-  $s = swap_in($s, "resetting", {name:$name, template_record:$record}, $installation, $tmp, $backup)
+  $transaction = {name:$name, template_record:$record}
+  if $s.upgrade_expected != nil then
+    $transaction.upgrade_expected = $s.upgrade_expected
+    $transaction.placed_expected = template_record($tmp, $origin)
+  end
+  $s = swap_in($s, "resetting", $transaction, $installation, $tmp, $backup)
+  fault($s, "resetting:placed")
   $s = finish_record($s, "resetting", $s.desired.resetting)
   if $s.upgrades != nil then $s.upgrades = delete($s.upgrades, $name) end
   $s = cap_recovery($s, $backup)

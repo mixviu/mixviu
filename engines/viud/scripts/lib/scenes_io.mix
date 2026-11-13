@@ -29,7 +29,7 @@ end
 fn upgrade_guard($dir)
   $services = rpc("noded", "noded.props.get", {}).services.registered
   if type($services) != "list" then raise("SCENES_SNAPSHOT", "missing service registry") end
-  $ced = env("CED_SERVICE", "ced")
+  $ced = "ced"
   if not contains($services, $ced) then return end
   $tabs = rpc($ced, "ced.tabs", {})
   if type($tabs.tabs) != "list" then raise("SCENES_SNAPSHOT", "missing editor tabs") end

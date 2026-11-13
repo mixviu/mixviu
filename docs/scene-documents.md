@@ -38,10 +38,15 @@ installed_as. Requires is display metadata. Other metadata keys are not a
 generic settings contract. (`engines/viud/scripts/lib/scenes.mix:1565`.)
 
 On install and reset, the optional `templates` map in `state.conf.mix`
-records template identity and SHA-256 digests of the rewritten staged files.
+records template identity and SHA-256 digests of the rewritten staged files,
+including a separate digest for shipped settings defaults. Malformed optional
+records are discarded without invalidating enablement or origins.
 Loader startup and `scenes.upgrade {}` reconcile recorded origins. Unedited
-copies refresh through the reset transaction, preserving `settings.conf.mix`
-and a recovery backup. Settings are excluded from edit detection. Helpers
+copies refresh through the reset transaction with a recovery backup.
+Untouched settings follow changed template defaults; edited settings are
+copied byte-for-byte (legacy records without a settings digest conservatively
+carry settings). Edited settings over 256 KiB refuse the refresh without
+changing the original. Settings are excluded from code edit detection. Helpers
 and assets are included. Forks and scenes without a shipped origin remain
 user-owned.
 
@@ -51,8 +56,18 @@ reports `stale: true` with an `upgrade` comparison/reason. Scene Editor marks
 these as "template updated: Reset or Keep"; keeping the copy requires no
 action. Close Ced buffers for a copy before refreshing it. The loader checks
 for open buffers and rechecks disk digests after staging under its writer
-lock. Recovery retains at most 16 completed backups across scenes, newest
-first, while protecting unfinished transaction backups.
+lock. After swapping, it verifies both the backup and replacement: a save to
+the old copy restores that copy and flags it; a save into the replacement is
+retained and flagged. Inventory exposes the actual refusal reason and only
+top-level comparison digests. Recovery retains at most 16 completed backups
+across scenes, newest first, while protecting unfinished transaction backups.
+Prune failures are warnings in `recovery_prune_error`, not reset failures.
+
+Template metadata may declare `settings_schema`, a field-spec map accepted
+by Mix `validate`. Carried settings must parse as strict data and satisfy
+that spec before refresh; a mismatch flags the installation and retains its
+files. Metadata `requires` lists service dependencies, not settings fields.
+The buffer guard always queries the canonical `ced` service.
 
 ## Document grammar
 

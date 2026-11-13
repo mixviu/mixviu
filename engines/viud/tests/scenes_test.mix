@@ -51,6 +51,7 @@ fn rpc($host, $command, $body)
     end
     $source = type($body) == "map" ? $body.source : $body
     $d = $l.document($source)
+    if $command == "shell.scene.load" and $d.name == $host_state.load_only_error then raise("SCENES_UPSTREAM", "fixture load refusal", {}) end
     if $d.name == $host_state.load_error then raise("SCENES_UPSTREAM", "load timed out", {rpc:"shell.scene.load"}) end
     if contains($source, "BROKEN") then raise("SCENES_UPSTREAM", "invalid document", {rc:10, upstream:{diagnostics:[{line:7, code:"mix-parse", severity:"Error", message:"parse"}]}}) end
     if $command == "shell.scene.load" then
@@ -154,6 +155,17 @@ fn upgrade_guard($dir)
   if $host_state.upgrade_edit == true or ($host_state.upgrade_edit_late == true and $host_state.guard_calls == 2) then
     write_file($dir .. "/behaviour.mix", read_file($dir .. "/behaviour.mix") .. "-- racing editor save\n")
     $host_state.upgrade_edit = false
+  end
+end
+fn upgrade_swapped($backup)
+  if $host_state.replacement_dir != nil then
+    $path = $host_state.replacement_dir .. "/behaviour.mix"
+    write_file($path, read_file($path) .. "-- save into replacement\n")
+    $host_state.replacement_dir = nil
+  end
+  if $host_state.edit_after_swap == true then
+    write_file($backup .. "/behaviour.mix", read_file($backup .. "/behaviour.mix") .. "-- save after swap\n")
+    $host_state.edit_after_swap = false
   end
 end
 fn probe_row($s)
@@ -276,7 +288,8 @@ try
   mkdir($tmp .. "/templates")
   $io = {rpc:fn($a,$b,$c) = rpc($a,$b,$c), check:fn($a,$b) = check_behaviour($a,$b),
     launch:fn($a,$b,$c,$d,$e) = launch($a,$b,$c,$d,$e),
-    stop:fn($a,$b) = stop($a,$b), notify:fn($a) = notify($a), upgrade_guard:fn($a) = upgrade_guard($a)}
+    stop:fn($a,$b) = stop($a,$b), notify:fn($a) = notify($a), upgrade_guard:fn($a) = upgrade_guard($a),
+    upgrade_swapped:fn($a) = upgrade_swapped($a)}
   $s = $l.initial($tmp .. "/scenes", $tmp .. "/templates", "test-shell", "test-scenes", $io)
   $s.first_run_enabled = false
   $s = $l.rescan($s, false)
@@ -1671,6 +1684,72 @@ try
   $s.desired = delete($s.desired, "resetting")
   $helpers = require("../../../share/scenes/editor/lib.mix")
   check($helpers.scene_state({stale:true}).status == "template updated", "Scene Editor marks stale copies")
+  check($helpers.scene_state({stale:true, upgrade:{error_code:"SCENES_EDITOR_OPEN"}}).status == "SCENES_EDITOR_OPEN", "editor shows actual stale error")
+
+  -- Round 2: optional records cannot poison durable desired state.
+  mkdir($ut .. "/no-meta")
+  write_file($ut .. "/no-meta/scene.mix", fixture_source("no-meta", "test"))
+  check($l.template_record($ut .. "/no-meta", "no-meta").meta_digest == "", "missing metadata digest has fallback")
+  $before_state = state_bytes($s)
+  $bad = $l.request($s, "install", {template:"no-meta"})
+  check($bad.rc != 0 and state_bytes($s) == $before_state, "stage requires metadata before install persists")
+  $s.desired.templates.renamed.meta_digest = nil
+  $s = $l.persist($s)
+  $s.state_digest = ""
+  $s = $l.load_state($s)
+  check($s.state_ok and $s.desired.origins.renamed == "alpha" and $s.desired.templates.renamed == nil, "bad optional record skipped without losing origins")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  $large = repeat(" ", 262145) .. "{value:123}\n"
+  write_file($dir .. "/settings.conf.mix", $large)
+  $code_before = read_file($dir .. "/scene.mix")
+  write_file($ut .. "/alpha/scene.mix", replace(read_file($ut .. "/alpha/scene.mix"), "updated", "round-two"))
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_LIMIT" and read_file($dir .. "/settings.conf.mix") == $large and read_file($dir .. "/scene.mix") == $code_before, "oversized settings refuse refresh without truncation")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  write_file($ut .. "/alpha/settings.conf.mix", "{value:2}\n")
+  $s = $l.request($s, "upgrade", {})
+  check(read_file($dir .. "/settings.conf.mix") == "{value:2}\n", "untouched shipped settings follow changed defaults")
+  write_file($dir .. "/settings.conf.mix", "{value:99}\n")
+  write_file($ut .. "/alpha/settings.conf.mix", "{value:3}\n")
+  write_file($ut .. "/alpha/template.conf.mix", '{title:"Test", settings_schema:{value:{type:"string"}}}')
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and read_file($dir .. "/settings.conf.mix") == "{value:99}\n" and contains($s.upgrades.renamed.error_code, "VALIDATION"), "incompatible carried settings flag and retain original")
+  write_file($ut .. "/alpha/template.conf.mix", '{title:"Test", settings_schema:{value:{type:"integer"}}}')
+  $s = $l.request($s, "upgrade", {})
+  check(not $s.response.scenes[0].stale and read_file($dir .. "/settings.conf.mix") == "{value:99}\n", "compatible edited settings carried byte-for-byte")
+  write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- latest\n")
+  $host_state.edit_after_swap = true
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "save after swap") and not contains(read_file($dir .. "/behaviour.mix"), "latest"), "post-swap save rolls back to edited original and flags")
+  check($s.desired.resetting == nil and len(stages($s.root)) == 0, "raced swap leaves no unfinished transaction")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- next\n")
+  $host_state.replacement_dir = $dir
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "save into replacement"), "save into replacement remains installed and flagged")
+  check($s.response.scenes[0].upgrade.local == nil or $s.response.scenes[0].upgrade.local.files == nil, "inventory omits per-file comparison manifests")
+  -- A stale row followed by an error and a placed reset must retain the row
+  -- and finish the transaction so the following scene can still refresh.
+  $s = $l.request($s, "install", {template:"alpha", name:"zzz"})
+  $s = $l.request($s, "install", {template:"alpha", name:"zzzz"})
+  write_file($ut .. "/alpha/scene.mix", read_file($ut .. "/alpha/scene.mix") .. "\n")
+  $s.faults = ["resetting:placed"]
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed != nil and $s.upgrades.zzz != nil and $s.upgrades.zzzz != nil and $s.desired.resetting == nil, "flags survive errors and placed resets recover between scenes")
+  check(contains(read_file($s.root .. "/zzzz/behaviour.mix"), "latest"), "later scene is not blocked by earlier placed reset")
+  $s.faults = ["recovery:prune"]
+  for $i = 1 to 18 mkdir($s.root .. "/.recovery/prune-" .. to_string($i)) end
+  $s = $l.request($s, "reset", {name:"zzz"})
+  check($s.rc == 0 and $s.recovery_prune_error != nil, "prune failure does not report committed reset as failure")
+  $s.faults = []
+  $s = se_fresh("editor-reset-model", $tpl)
+  $s = $l.request($s, "install", {template:"editor"})
+  $s = $l.request($s, "editor.open", {})
+  $s.scenes.editor.model = {sentinel:"last-good"}
+  $host_state.load_only_error = "editor"
+  $s = $l.request($s, "reset", {name:"editor"})
+  $host_state.load_only_error = nil
+  check($s.rc == 10 and deep_eq($s.scenes.editor.model, {sentinel:"last-good"}), "editor reset failure retains pre-finish model snapshot")
 
   check(tree_digest($tpl .. "/editor") == $shipped_digest, "the loader never writes the shipped editor")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
