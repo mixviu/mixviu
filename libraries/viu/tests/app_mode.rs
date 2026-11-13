@@ -233,10 +233,12 @@ fn app_mode_child() {
             } else {
                 vec![]
             };
-            let bundle = viu::bundle::Bundle::load(
-                &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../apps/{app}")),
-                &arguments,
-            )
+            let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../apps/{app}"));
+            let bundle = if app == "dopus" {
+                viu::launch::load(&root, &arguments)
+            } else {
+                viu::bundle::Bundle::load(&root, &arguments)
+            }
             .unwrap();
             let handlers = bundle.program.source.clone();
             let (tx, wakes) = mpsc::channel();
