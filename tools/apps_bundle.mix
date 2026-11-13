@@ -26,7 +26,7 @@
 --   share/mixviu/libraries/viu/mix/   the Viu Mix library the apps require
 --   share/mixviu/units/               unit templates (@{prefix} placeholders)
 --   share/mixviu/{LICENSE-*,NOTICE}, share/mixviu/BUNDLE.conf.mix (manifest)
---   bin/term-mix, share/applications/mixviu.term-mix.desktop
+--   bin/term, share/applications/mixviu.term.desktop
 --   share/scenes/, share/viud/scripts/
 --   lib/{clipd,notifyd,exportd,dlnad}/   the Mix services
 --   share/icons/, share/assets/, share/wallpapers/, share/layout/, share/daylight/
@@ -76,9 +76,9 @@ for $f in tracked("apps")
 end
 for $f in tracked("libraries/viu/mix") place($stage, $f, "share/mixviu/" .. $f) end
 -- Term uses the same app/library layout as every bundled Mix app.
-place($stage, "apps/term/term-mix.mix", "bin/term-mix")
-chmod($stage .. "/bin/term-mix", 0o755)
-place($stage, "apps/term/mixviu.term-mix.desktop", "share/applications/mixviu.term-mix.desktop")
+place($stage, "apps/term/term.mix", "bin/term")
+chmod($stage .. "/bin/term", 0o755)
+place($stage, "apps/term/mixviu.term.desktop", "share/applications/mixviu.term.desktop")
 for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/mixviu/" .. $f) end
 for $f in tracked("share/scenes") place($stage, $f, $f) end
 for $f in tracked("engines/viud/scripts") place($stage, $f, "share/viud/scripts/" .. substr($f, len("engines/viud/scripts/"))) end

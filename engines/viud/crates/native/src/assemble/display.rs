@@ -55,11 +55,14 @@ pub struct DisplayAssembly {
     pub hdr: kms::edid::parse::HdrInfo,
 }
 
-pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayAssembly {
+pub fn assemble(
+    formats: &render_gles::format::registrar::Registrar,
+    session: (LibSeatSession, LibSeatSessionNotifier),
+) -> DisplayAssembly {
     info!("Init native backend (assemble.display)");
 
     // 1. Session via libseat.
-    let (mut session, session_notifier) = kms::seat::session::factory::create();
+    let (mut session, session_notifier) = session;
     let seat_name = session.seat();
 
     // 2. Primary GPU: an explicit `scanout_node` wins outright; otherwise

@@ -70,6 +70,28 @@ the guarded syscall. Tests signal disposable children only.
 
 ## Evidence and acceptance
 
+### Tutorial corrections: 2026-11-13
+
+Monitor now defines `reverse: true` as descending for all six sort columns,
+with a down arrow; false is ascending with an up arrow. The initial CPU view
+remains busiest first. Both Bus requests and header clicks use the same
+transition: an omitted direction toggles the current column, or starts a new
+column ascending. Tree order remains parent first, sorting roots and siblings.
+The Mix query adapter translates this direction to monitord's unchanged
+natural-order contract (CPU/Memory/Disk descending, Name/PID/User ascending).
+The pinned gold view used `reverse: true` to show an up arrow for every column;
+its numeric order was ascending. This correction deliberately changes that
+public Monitor convention and fixes gold's inconsistent text-column arrows.
+
+At Mark's request, signal admission supersedes the P1 gold admission above:
+End task, Kill and `monitor.signal` require a selected local row, no dialog,
+PID greater than 1, and a known matching effective UID unless Monitor runs as
+root. Monitor itself and its ancestors are always protected. Credentials and
+ancestry come from local procfs, independently of filters/tree order. Unknown
+ownership fails closed. The native start-time fence and kernel refusal remain.
+`policy-test.mix`, the embedded `monitor_policy` test and monitord's direction
+matrix cover these corrections without sending signals.
+
 Private receipts retain scripts, fixture hashes, native replies, paired PNGs,
 whole/region figures, raw SSIM/RMSE, source/binary hashes and PID cleanup.
 No private captures or machine configuration belong in this repository.

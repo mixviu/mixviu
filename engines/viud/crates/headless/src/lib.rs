@@ -3,7 +3,7 @@
 //! headless: viud's render-node backend with a virtual output and no seat.
 //!
 //! GBM/EGL owns only a render node. Frames are full repaints into two
-//! offscreen textures, paced by an on-demand calloop timer at at most 60 Hz.
+//! offscreen textures, paced by an on-demand calloop timer at output refresh.
 
 #[macro_use]
 extern crate model;
