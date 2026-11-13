@@ -31,8 +31,8 @@ end
 fn dp_framed($s,$contract,$cache)
   $model=$projection.dp_project($s,$contract,$cache)
   $model.layout=delete(delete($model.layout,"topbar"),"status-pane")
-  $title=$core.dp_display($s.panes[$s.active].path).." — MixViu DOpus"
-  $model=$frame.apply($model,{icon:"folder",title:$title,native_title:$title,menus:$model.values.menu,toolbar:$model.values.toolbar,status:{left:$s.info,right:[],icon:nil},appearance:$s.appearance,window:$model.window_settings})
+  $title=$model.values["caption-title"]
+  $model=$frame.apply($model,{icon:"folder",title:$title,native_title:$title,menus:$model.values.menu,toolbar:$model.values.toolbar,status:{left:$model.info,right:[],icon:nil},appearance:$s.appearance,window:$model.window_settings})
   $model.macros_open=$s.macros_open ?? false
   $model.properties_control={id:"properties",kind:"property-grid",label:"Properties",initial:[],properties:{preview:$model.values.preview}}
   $model.location_controls={}
@@ -150,6 +150,7 @@ fn dp_request($request)
       if $name=="dopus.execute" and $candidate.reply.error_code==nil then
         $candidate.reply=if $a.id=="app.quit" then {quitting:true} else {id:$a.id,ok:true,result:nil} end
       end
+      $candidate=$app.dp_selection_notice($state,$candidate)
       $candidate.serial=$candidate.serial+1
       $profile_reduced=if $dopus_profile then monotonic() else 0 end
       $save=(viu_context().native_facilities ?? true) and $candidate.save_allowed and not deep_eq($app.dp_config($state),$app.dp_config($candidate))

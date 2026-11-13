@@ -4,6 +4,28 @@
 -- App-owned projection into reusable Viu controls. Shared data is deliberately
 -- consumed by both language drivers; no native file-manager reducer is called.
 $dp=require("core.mix")
+fn dp_selection_info($state)
+  -- Operation/error notices take precedence until selection or pane changes.
+  if $state.info!="Select a file or folder" then return $state.info end
+  $pane=$state.panes[$state.active]
+  if len($pane.selected_paths)==0 then return "Select a file or folder" end
+  $rows=filter($pane.entries,fn($r)=contains($pane.selected_paths,$r.path))
+  if len($rows)==0 then return "Select a file or folder" end
+  if len($rows)==1 then
+    $row=$rows[0]
+    $ext=$dp.dp_extension($row.path)
+    $kind=if $row.symlink then "Symbolic link" elif $row.dir then "Folder" elif $ext=="" then "File" else upper($ext).." file" end
+    return $dp.dp_display($row.name).." — "..$kind.." — "..$dp.dp_size($row.size)
+  end
+  -- Listing sizes only: directories are not recursively measured or counted
+  -- again through expanded children. Unknown sizes are stated explicitly.
+  $bytes=0;$unknown=false
+  for $row in $rows
+    if $row.dir or $row.size==nil then $unknown=true
+    else $bytes=$bytes+$row.size end
+  end
+  return to_string(len($rows)).." selected — "..$dp.dp_size($bytes)..if $unknown then " (known sizes)" else "" end
+end
 fn dp_rows($pane)
   -- Retain the established per-cell fallback for unrepresentable timestamps.
   for $entry in unique_by($pane.entries,fn($r)=[type($r.modified),$r.modified])
@@ -136,6 +158,7 @@ fn dp_legacy_view($s)
   return $out
 end
 fn dp_project($state,$contract,$cache)
+  $info=dp_selection_info($state)
   $window=$state.window ?? {}
   for $key in keys($state.window_choice ?? {})
     if $state.window_choice[$key]!="auto" then $window[$key]=$state.window_choice[$key] end
@@ -155,7 +178,7 @@ fn dp_project($state,$contract,$cache)
   $caption_control={id:"caption-title",kind:"label",label:"",initial:"",properties:{align:$title_align,emphasis:true,truncate:true}}
   $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
-  $values={"caption-title":$dp.dp_display($state.panes[$state.active].path),menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
+  $values={"caption-title":"MixViu DOpus",menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
   $values.window={side:$caption_side,enabled:true}
   $values.form.dialog=dp_legacy_view($state)
   $panes=[]
@@ -179,5 +202,5 @@ fn dp_project($state,$contract,$cache)
   $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:$place_rows,context:[],background_context:[]}
   $values.preview=if $state.preview_slots==nil then {phase:"none"} else $state.preview_slots[$state.active].value end
   $layout={form:{edge:"top",size:0},topbar:{edge:"top",size:34},"status-pane":{edge:"bottom",size:32},"places-pane":{edge:"left",fraction:$state.places_width,resizable:true,panel:true,min_fraction:0.1,max_fraction:0.3,minimum_window_width:640},"properties-pane":{edge:"right",fraction:$state.properties_width,resizable:true,panel:true,min_fraction:0.1,max_fraction:0.3,minimum_window_width:640},"center-pane":{edge:"fill",panel:true}}
-  return {window_settings:$window,topbar_hidden:($window["viu.hosted-menu"] ?? false) and ($window["viu.hosted-actions"] ?? false),actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,header_groups:$header_groups,caption_control:$caption_control,pane_outlines:{left:if $state.active==0 then "design.selection.background" else nil end,right:if $state.active==1 then "design.selection.background" else nil end},places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
+  return {window_settings:$window,topbar_hidden:($window["viu.hosted-menu"] ?? false) and ($window["viu.hosted-actions"] ?? false),actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,header_groups:$header_groups,caption_control:$caption_control,pane_outlines:{left:if $state.active==0 then "design.selection.background" else nil end,right:if $state.active==1 then "design.selection.background" else nil end},places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$info,ready:true}
 end

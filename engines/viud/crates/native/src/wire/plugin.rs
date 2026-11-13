@@ -9,7 +9,7 @@ use crate::context::render::NativeRenderContext;
 use crate::context::topology::Topology;
 use kms::gpu::registry::node::NodeRegistry;
 use kms::udev::loop_::watch::UdevWatch;
-use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::calloop::LoopHandle;
 use std::cell::RefCell;
 use std::rc::Rc;
 use world::state::Loop;
@@ -57,14 +57,13 @@ pub fn apply_output_change(state: &mut Loop, change: world::event::output::Outpu
 }
 
 pub fn register(
-    event_loop: &mut EventLoop<'static, Loop>,
+    event_loop: &LoopHandle<'static, Loop>,
     watch: UdevWatch,
     registry: Rc<RefCell<NodeRegistry>>,
     topology: Rc<RefCell<Topology>>,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
 ) {
     event_loop
-        .handle()
         .insert_source(watch, move |event, _, state| {
             let decoded = kms::udev::loop_::event::decode(event);
             info!("udev event received: {decoded:?}");
