@@ -117,6 +117,7 @@ fn inactive_seat_maps_clients_and_captures_output_and_window() {
     let window = bus.window();
     let session = bus.call("comp.session.get", json!({}));
     assert_eq!(session["active"], false, "{session}");
+    assert_eq!(session["render_state"], "offscreen", "{session}");
     for cursor in [false, true] {
         for window in [None, Some(target(&window))] {
             let path = process.root.join(format!("inactive-{cursor}-{}.ppm", window.is_some()));
@@ -128,6 +129,11 @@ fn inactive_seat_maps_clients_and_captures_output_and_window() {
             assert!(fs::read(path).unwrap().starts_with(b"P6\n"));
         }
     }
+    assert_ne!(
+        fs::read(process.root.join("inactive-false-false.ppm")).unwrap(),
+        fs::read(process.root.join("inactive-true-false.ppm")).unwrap(),
+        "cursor:true must draw the retained pointer while the seat is inactive"
+    );
 }
 fn place_args(row: &Value, extra: Value) -> Value {
     let mut args = target(row);

@@ -154,7 +154,7 @@ fn spawn_options(
         .stdout(Stdio::from(stderr.try_clone().unwrap()))
         .stderr(stderr);
     if inactive {
-        command.args(["--kms", "--kms-confirm"]).env("MIX_TEST_VIUD_SEAT_INACTIVE", "1").env("MIX_VIUD_OFFSCREEN_SIZE", "1280x720").env("MIX_VIUD_XWAYLAND", "0");
+        command.args(["--kms", "--kms-confirm", "--bus-service", "comp-headless"]).env("MIX_TEST_VIUD_SEAT_INACTIVE", "1").env("MIX_VIUD_OFFSCREEN_SIZE", "1280x720").env("MIX_VIUD_XWAYLAND", "0");
     } else {
         command.args(["--headless", "--size", "1280x720"]);
     }
