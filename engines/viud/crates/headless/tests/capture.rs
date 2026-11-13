@@ -169,7 +169,6 @@ fn record_changing_4k_ten_seconds() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node, ffmpeg and built viud/noded/testkit binaries"]
 fn record_windows_only_content_and_multiple_targets() {
     let bus = Bus::start("record-windows");
     let mut process = process::spawn(1, None, "record-windows", Some(&bus.url));
@@ -213,7 +212,6 @@ fn record_windows_only_content_and_multiple_targets() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node, ffmpeg and built viud/noded binaries"]
 fn record_vaapi_capability_or_clear_failure() {
     let bus = Bus::start("record-vaapi");
     let mut process = process::spawn(1, None, "record-vaapi", Some(&bus.url));
@@ -250,7 +248,6 @@ fn record_vaapi_capability_or_clear_failure() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node, ffmpeg/libx264 and built viud/noded/testkit binaries"]
 fn record_4k_output_windows_pointer_and_damage_repeat() {
     let bus = Bus::start("record-4k");
     let mut process = process::spawn_4k("record-4k", &bus.url);
@@ -378,7 +375,6 @@ fn record_4k_output_windows_pointer_and_damage_repeat() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node, ffmpeg/libx264 and built viud/noded binaries"]
 fn record_idle_output_lifecycle_and_clock() {
     let bus = Bus::start("record-idle");
     let mut process = process::spawn(1, None, "record-idle", Some(&bus.url));
@@ -527,7 +523,6 @@ fn record_idle_output_lifecycle_and_clock() {
 }
 
 #[test]
-#[ignore = "needs a GPU render node, ffmpeg/libx264 and built viud/noded/testkit binaries"]
 fn record_window_target_gone_fails() {
     let bus = Bus::start("record-gone");
     let mut process = process::spawn(1, None, "record-gone", Some(&bus.url));

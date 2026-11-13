@@ -355,10 +355,8 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
             status: empty_status("failed", Some(error)),
         };
         PAST.with_borrow_mut(|all| {
-            if all.len() >= 128 {
-                if let Some(key) = all.keys().next().cloned() {
-                    all.remove(&key);
-                }
+            if all.len() >= 128 && let Some(key) = all.keys().next().cloned() {
+                all.remove(&key);
             }
             all.insert(s.request_id.clone(), past);
         });
@@ -368,63 +366,6 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
 
 fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) {
     fail(session, message);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn pending_cancel_replies_and_leaves_replayable_terminal_without_sidecars() {
-        let params = comp_model::capture::parse_record("comp.record.start", &json!({"request_id":"pending", "path":"/tmp/pending-record-unit.mkv", "target":{}, "max_seconds":1})).unwrap();
-        let answered = Rc::new(Cell::new(false));
-        let got = answered.clone();
-        let session = Rc::new(RefCell::new(Session {
-            request_id: "pending".into(),
-            admitted: Instant::now() - Duration::from_secs(2),
-            id: "pending-session".into(),
-            params,
-            path: "/tmp/pending-record-unit.mkv".into(),
-            targets: vec![],
-            fps: 30,
-            encoder: "x264".into(),
-            probe: None,
-            max_seconds: 1,
-            probe_cancel: Default::default(),
-            probe_join: None,
-            recording: None,
-            start: None,
-            start_answers: vec![Box::new(move |reply| {
-                assert!(!matches!(reply, ControlReply::Body(_)));
-                got.set(true);
-            })],
-            stop_answers: vec![],
-            pending: true,
-            signature: vec![],
-            failed: None,
-            last_state: Cell::new(""),
-        }));
-        assert!(
-            session.borrow().admitted.elapsed() > Duration::from_secs(session.borrow().max_seconds)
-        );
-        cancel_pending(&session, "cancelled before first frame");
-        assert!(answered.get());
-        let past = PAST.with_borrow(|p| p.get("pending").cloned()).unwrap();
-        assert_eq!(past.terminal["frames"], 0);
-        assert_eq!(past.terminal["frames_path"], Value::Null);
-        assert_eq!(past.status["state"], "failed");
-        cancel_pending(&session, "duplicate cancellation");
-        assert!(session.borrow().start_answers.is_empty());
-        for i in 0..256 {
-            {
-                let mut s = session.borrow_mut();
-                s.request_id = format!("pending-{i}");
-                s.id = format!("session-{i}");
-                s.failed = None;
-            }
-            cancel_pending(&session, "max_seconds elapsed before first frame");
-        }
-        assert_eq!(PAST.with_borrow(|p| p.len()), 128);
-    }
 }
 
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
@@ -480,10 +421,8 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     start_error: None,
                 };
                 PAST.with_borrow_mut(|all| {
-                    if all.len() >= 128 {
-                        if let Some(key) = all.keys().next().cloned() {
-                            all.remove(&key);
-                        }
+                    if all.len() >= 128 && let Some(key) = all.keys().next().cloned() {
+                        all.remove(&key);
                     }
                     all.insert(s.request_id.clone(), past);
                 });
@@ -593,15 +532,11 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         }
         return;
     }
-    if let Some(r) = s.recording.as_mut() {
-        if r.skip_readback() {
-            let result = r.frame(None);
-            drop(s);
-            if let Err(error) = result {
-                fail(session, &error);
-            }
-            return;
-        }
+    if let Some(r) = s.recording.as_mut() && r.skip_readback() {
+        let result = r.frame(None);
+        drop(s);
+        if let Err(error) = result { fail(session, &error); }
+        return;
     }
     s.signature = signature;
     s.pending = true;
@@ -715,5 +650,62 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 screencopy::file::raw_fail(&token, reply);
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn pending_cancel_replies_and_leaves_replayable_terminal_without_sidecars() {
+        let params = comp_model::capture::parse_record("comp.record.start", &json!({"request_id":"pending", "path":"/tmp/pending-record-unit.mkv", "target":{}, "max_seconds":1})).unwrap();
+        let answered = Rc::new(Cell::new(false));
+        let got = answered.clone();
+        let session = Rc::new(RefCell::new(Session {
+            request_id: "pending".into(),
+            admitted: Instant::now() - Duration::from_secs(2),
+            id: "pending-session".into(),
+            params,
+            path: "/tmp/pending-record-unit.mkv".into(),
+            targets: vec![],
+            fps: 30,
+            encoder: "x264".into(),
+            probe: None,
+            max_seconds: 1,
+            probe_cancel: Default::default(),
+            probe_join: None,
+            recording: None,
+            start: None,
+            start_answers: vec![Box::new(move |reply| {
+                assert!(!matches!(reply, ControlReply::Body(_)));
+                got.set(true);
+            })],
+            stop_answers: vec![],
+            pending: true,
+            signature: vec![],
+            failed: None,
+            last_state: Cell::new(""),
+        }));
+        assert!(
+            session.borrow().admitted.elapsed() > Duration::from_secs(session.borrow().max_seconds)
+        );
+        cancel_pending(&session, "cancelled before first frame");
+        assert!(answered.get());
+        let past = PAST.with_borrow(|p| p.get("pending").cloned()).unwrap();
+        assert_eq!(past.terminal["frames"], 0);
+        assert_eq!(past.terminal["frames_path"], Value::Null);
+        assert_eq!(past.status["state"], "failed");
+        cancel_pending(&session, "duplicate cancellation");
+        assert!(session.borrow().start_answers.is_empty());
+        for i in 0..256 {
+            {
+                let mut s = session.borrow_mut();
+                s.request_id = format!("pending-{i}");
+                s.id = format!("session-{i}");
+                s.failed = None;
+            }
+            cancel_pending(&session, "max_seconds elapsed before first frame");
+        }
+        assert_eq!(PAST.with_borrow(|p| p.len()), 128);
     }
 }

@@ -105,65 +105,6 @@ impl TakeFiles {
     }
 }
 
-#[cfg(test)]
-mod file_tests {
-    use super::*;
-    use std::os::unix::fs::{PermissionsExt, symlink};
-    #[test]
-    fn private_staging_no_clobber_and_cleanup() {
-        let dir = std::env::temp_dir().join(private_token().unwrap());
-        std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("take.mkv").to_str().unwrap().to_owned();
-        {
-            let files = TakeFiles::create(&path).unwrap();
-            for name in [&files.video, &files.frames, &files.markers] {
-                let file = secure_file(name).unwrap();
-                assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
-                assert!(secure_file(name).is_err());
-            }
-            assert!(!std::path::Path::new(&path).exists());
-            std::fs::write(&path, "keep").unwrap();
-            assert!(files.publish().is_err());
-            assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep");
-            assert!(!std::path::Path::new(&format!("{path}.frames.jsonl")).exists());
-        }
-        assert!(check_destination(&path).is_err());
-        std::fs::remove_file(&path).unwrap();
-        symlink("missing", &path).unwrap();
-        assert!(check_destination(&path).is_err());
-        assert!(secure_file(&path).is_err());
-        std::fs::remove_file(&path).unwrap();
-        let files = TakeFiles::create(&path).unwrap();
-        for name in [&files.video, &files.frames, &files.markers] {
-            secure_file(name).unwrap().write_all(b"private").unwrap();
-        }
-        files.publish().unwrap();
-        drop(files);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "private");
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-    #[test]
-    fn readback_budget_bounds_amortised_cost() {
-        assert_eq!(readback_skips(8000, 30), 0);
-        assert_eq!(readback_skips(14000, 30), 1);
-        assert_eq!(readback_skips(25000, 30), 3);
-        assert_eq!(readback_skips(1_000_000, 30), 60);
-    }
-    #[test]
-    fn invalid_clock_reports_error_without_panic() {
-        assert!(read_clock(-1).is_err());
-        assert!(monotonic_us().unwrap() > 0);
-    }
-    #[test]
-    fn failed_encoder_setup_removes_private_sidecars() {
-        let dir = std::env::temp_dir().join(private_token().unwrap());
-        std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("failed.mkv").to_str().unwrap().to_owned();
-        assert!(Recording::new("failed".into(), path, 2, 2, 30, "invalid".into()).is_err());
-        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
-        std::fs::remove_dir(dir).unwrap();
-    }
-}
 impl Drop for TakeFiles {
     fn drop(&mut self) {
         self.cleanup();
@@ -424,5 +365,65 @@ impl Drop for Recording {
         if let Some(join) = self.finaliser.take() {
             let _ = join.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod file_tests {
+    use super::*;
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    #[test]
+    fn private_staging_no_clobber_and_cleanup() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("take.mkv").to_str().unwrap().to_owned();
+        {
+            let files = TakeFiles::create(&path).unwrap();
+            for name in [&files.video, &files.frames, &files.markers] {
+                let file = secure_file(name).unwrap();
+                assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+                assert!(secure_file(name).is_err());
+            }
+            assert!(!std::path::Path::new(&path).exists());
+            std::fs::write(&path, "keep").unwrap();
+            assert!(files.publish().is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep");
+            assert!(!std::path::Path::new(&format!("{path}.frames.jsonl")).exists());
+        }
+        assert!(check_destination(&path).is_err());
+        std::fs::remove_file(&path).unwrap();
+        symlink("missing", &path).unwrap();
+        assert!(check_destination(&path).is_err());
+        assert!(secure_file(&path).is_err());
+        std::fs::remove_file(&path).unwrap();
+        let files = TakeFiles::create(&path).unwrap();
+        for name in [&files.video, &files.frames, &files.markers] {
+            secure_file(name).unwrap().write_all(b"private").unwrap();
+        }
+        files.publish().unwrap();
+        drop(files);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "private");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn readback_budget_bounds_amortised_cost() {
+        assert_eq!(readback_skips(8000, 30), 0);
+        assert_eq!(readback_skips(14000, 30), 1);
+        assert_eq!(readback_skips(25000, 30), 3);
+        assert_eq!(readback_skips(1_000_000, 30), 60);
+    }
+    #[test]
+    fn invalid_clock_reports_error_without_panic() {
+        assert!(read_clock(-1).is_err());
+        assert!(monotonic_us().unwrap() > 0);
+    }
+    #[test]
+    fn failed_encoder_setup_removes_private_sidecars() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("failed.mkv").to_str().unwrap().to_owned();
+        assert!(Recording::new("failed".into(), path, 2, 2, 30, "invalid".into()).is_err());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        std::fs::remove_dir(dir).unwrap();
     }
 }

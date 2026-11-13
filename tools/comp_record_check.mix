@@ -17,7 +17,7 @@ try
     if not $result.ok then exit($result.exit_code ?? 1) end
   end
   if exists("/dev/dri/renderD128") then
-    $result = run_argv(["cargo", "test", "-p", "headless", "--test", "capture", "record_", "--", "--ignored", "--nocapture", "--test-threads=1"], {timeout: 180, max_output: 16000000})
+    $result = run_argv(["cargo", "test", "-p", "headless", "--test", "capture", "record_", "--", "--include-ignored", "--nocapture", "--test-threads=1"], {timeout: 180, max_output: 16000000})
     print($result.stdout)
     print($result.stderr)
     if not $result.ok then exit($result.exit_code ?? 1) end

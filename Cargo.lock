@@ -3469,6 +3469,7 @@ dependencies = [
  "gbm",
  "glow",
  "image",
+ "libc",
  "model",
  "pkg-config",
  "pollster 1.0.1",
