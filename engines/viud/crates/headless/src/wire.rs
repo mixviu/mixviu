@@ -87,8 +87,8 @@ pub fn wire(
     install(state, &event_loop.handle(), options, None, None).map(|_| ())
 }
 
-/// Install the existing offscreen renderer for a VT session. With an existing
-/// output this adds no globals, seat sources or scene lifecycle.
+/// Install the headless renderer, optionally with a discovered connector's
+/// identity and mode. The VT adapter later adopts this renderer and output.
 pub fn install(
     state: &mut Loop,
     handle: &LoopHandle<'static, Loop>,
@@ -301,6 +301,10 @@ pub fn arm_inactive(state: &mut Loop) -> bool {
         crate::frame::arm(state, context);
         true
     })
+}
+
+pub fn available() -> bool {
+    FALLBACK.with(|slot| slot.borrow().is_some())
 }
 
 /// Reserve the installed renderer for inactive VT frames only.
