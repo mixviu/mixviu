@@ -41,6 +41,9 @@ On install and reset, the optional `templates` map in `state.conf.mix`
 records template identity and SHA-256 digests of the rewritten staged files,
 including a separate digest for shipped settings defaults. Malformed optional
 records are discarded without invalidating enablement or origins.
+The reset transaction captures that template baseline before carrying user
+settings; its separate placement fingerprint includes the carried bytes.
+Repeated default changes therefore never enrol a user edit as a default.
 Loader startup and `scenes.upgrade {}` reconcile recorded origins. Unedited
 copies refresh through the reset transaction with a recovery backup.
 Untouched settings follow changed template defaults; edited settings are
@@ -58,10 +61,19 @@ action. Close Ced buffers for a copy before refreshing it. The loader checks
 for open buffers and rechecks disk digests after staging under its writer
 lock. After swapping, it verifies both the backup and replacement: a save to
 the old copy restores that copy and flags it; a save into the replacement is
-retained and flagged. Inventory exposes the actual refusal reason and only
+retained and flagged. When restoring the original, the replacement is moved
+to `.recovery/review-*` rather than deleted, even when both copies were saved.
+These review copies are excluded from the automatic cap until reviewed and
+removed by the user. Optional `reviews` state keeps the stale reason naming
+both locations across restarts; the same recovery path handles crashes
+before or after restoring the original. Directory moves atomically refuse
+overwrite if another save creates a restore destination.
+Inventory exposes the actual refusal reason and only
 top-level comparison digests. Recovery retains at most 16 completed backups
 across scenes, newest first, while protecting unfinished transaction backups.
 Prune failures are warnings in `recovery_prune_error`, not reset failures.
+Settings files use the same symlink refusal and before/after identity checks
+as other fingerprinted files.
 
 Template metadata may declare `settings_schema`, a field-spec map accepted
 by Mix `validate`. Carried settings must parse as strict data and satisfy

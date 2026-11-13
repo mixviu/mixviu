@@ -1717,6 +1717,10 @@ try
   write_file($ut .. "/alpha/template.conf.mix", '{title:"Test", settings_schema:{value:{type:"integer"}}}')
   $s = $l.request($s, "upgrade", {})
   check(not $s.response.scenes[0].stale and read_file($dir .. "/settings.conf.mix") == "{value:99}\n", "compatible edited settings carried byte-for-byte")
+  check($s.desired.templates.renamed.settings_digest == hash_file($ut .. "/alpha/settings.conf.mix", "sha256") and $s.desired.templates.renamed.settings_digest != hash_file($dir .. "/settings.conf.mix", "sha256"), "carried settings never become the template baseline")
+  write_file($ut .. "/alpha/settings.conf.mix", "{value:4}\n")
+  $s = $l.request($s, "upgrade", {})
+  check(read_file($dir .. "/settings.conf.mix") == "{value:99}\n" and $s.desired.templates.renamed.settings_digest == hash_file($ut .. "/alpha/settings.conf.mix", "sha256"), "second defaults change still preserves edited settings")
   write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- latest\n")
   $host_state.edit_after_swap = true
   $s = $l.request($s, "upgrade", {})
@@ -1750,6 +1754,48 @@ try
   $s = $l.request($s, "reset", {name:"editor"})
   $host_state.load_only_error = nil
   check($s.rc == 10 and deep_eq($s.scenes.editor.model, {sentinel:"last-good"}), "editor reset failure retains pre-finish model snapshot")
+
+  -- Saves to both directories survive rollback and either crash boundary.
+  for $point in ["normal", "review-saved", "review-restored"]
+    $s = se_fresh("both-saves-" .. $point, $ut)
+    $s = $l.request($s, "install", {template:"alpha"})
+    $dir = $s.root .. "/alpha"
+    $old_code = read_file($dir .. "/behaviour.mix")
+    write_file($ut .. "/alpha/behaviour.mix", $old_code .. "-- round-three " .. $point .. "\n")
+    $new_code = read_file($ut .. "/alpha/behaviour.mix")
+    $host_state.replacement_dir = $dir
+    $host_state.edit_after_swap = true
+    if $point != "normal" then $s.faults = ["resetting:" .. $point] end
+    $s = $l.request($s, "upgrade", {})
+    $root = $s.root
+    -- Restart from the durable transaction, never the pre-crash state copy.
+    $s = $l.initial($root, $ut, "test-shell", "test-scenes", $io)
+    $s.first_run_enabled = false
+    $s = $l.rescan($s, false)
+    check(read_file($dir .. "/behaviour.mix") == $old_code .. "-- save after swap\n", $point .. ": original save restored byte-for-byte")
+    $saved = $s.desired.reviews.alpha
+    check(type($saved) == "list" and len($saved) == 1 and read_file($root .. "/" .. $saved[0] .. "/behaviour.mix") == $new_code .. "-- save into replacement\n", $point .. ": replacement save retained byte-for-byte")
+    check($s.desired.resetting == nil, $point .. ": recovery clears transaction without enrolling either edit")
+    for $i = 1 to 20 mkdir($root .. "/.recovery/cap-" .. to_string($i)) end
+    $s = $l.cap_recovery($s, nil)
+    $ordinary = filter(ls($root .. "/.recovery"), fn($n) = not starts_with($n, "review-"))
+    check(len($ordinary) == 16 and is_dir($root .. "/" .. $saved[0]), $point .. ": review copy survives cap independently of ordinary backups")
+    $s = $l.request($s, "upgrade", {})
+    $row = $s.response.scenes[0]
+    check($row.stale and contains($row.upgrade.reason, $dir) and contains($row.upgrade.reason, $root .. "/" .. $saved[0]), $point .. ": stale reason names both copies after restart and upgrade")
+  end
+  $s = se_fresh("settings-link", $ut)
+  $s = $l.request($s, "install", {template:"alpha"})
+  $settings_path = $s.root .. "/alpha/settings.conf.mix"
+  run_argv_must(["unlink", $settings_path])
+  $target = $tmp .. "/linked-settings"
+  write_file($target, "{value:91}\n")
+  run_argv_must(["ln", "-s", $target, $settings_path])
+  $link_error = nil
+  try $l.template_record($s.root .. "/alpha", "alpha") catch $message, $error $link_error = $error.code end
+  check($link_error == "SCENES_FILES", "fingerprint refuses symlinked settings before hashing")
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and $s.upgrades.alpha.error_code == "SCENES_FILES" and read_file($target) == "{value:91}\n" and stat($settings_path, {follow_symlinks:false}).is_symlink, "settings alias is flagged without changing link or target")
 
   check(tree_digest($tpl .. "/editor") == $shipped_digest, "the loader never writes the shipped editor")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
