@@ -7,6 +7,6 @@ fn compositor($service,$command,$args)
 end
 on window.show
   $launch=$event.args
-  $out=$show.perform($launch.app_id,$launch.pid,fn($command,$args)=compositor($launch.comp,$command,$args))
+  $out=$show.perform($launch.app_id,$launch.pid,fn($command,$args)=compositor($launch.comp,$command,$args),port_exists($launch.comp))
   reply($out.rc,json_encode($out.body))
 end

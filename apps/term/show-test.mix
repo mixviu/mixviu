@@ -22,6 +22,9 @@ $wait={rc:0,body:{mapped:true}}
 $list={rc:0,body:{windows:[{id:1,generation:1,app_id:"example.term",pid:41},{id:2,generation:2,app_id:"other",pid:42},{id:3,generation:7,app_id:"example.term",pid:42}]}}
 $restore={rc:0,body:{id:3,generation:7,minimized:false}}
 $focus={rc:0,body:{id:3,generation:7,focused:true}}
+-- An absent startup service is not a failed activation; the next call can show.
+$pending=$show.perform("example.term",42,fn($command,$args)=request($command,$args),false)
+check(deep_eq($pending,{rc:0,body:{shown:false,reason:"compositor_unavailable"}}),"startup without compositor is not yet shown")
 $out=perform([$wait,$list,$restore,$focus])
 check(deep_eq($out,{rc:0,body:{shown:true,target:$focus.body}}),"gold successful show shape")
 check(deep_eq(call_log(),[{command:"comp.window.wait",args:{match:{app_id:"example.term"},until:"mapped",timeout_ms:10000}},{command:"comp.windows.list",args:{}},{command:"comp.window.restore",args:{id:3,generation:7}},{command:"comp.window.focus",args:{id:3,generation:7,raise:true}}]),"map then app-id/PID lookup then generation-bound restore and raise/focus")
