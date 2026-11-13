@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- host: viu
--- lint: globals app_args
+-- lint: globals app_args app_launch
   $ced_core=require("core.mix")
   $ced_session=require("session.mix")
   $ced_bus=require("bus.mix")
@@ -16,6 +16,7 @@ $state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={}
 $state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
 $state.local_theme={};$state.info_commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).info_commands
 $state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil;$state.locations={};$state.save_prompts={};$state.notice_at={}
+try $state.launch=$app_launch catch $why $state.launch={app_id:"mixviu.ced",comp:env("MIX_COMP_SERVICE","comp")} end
 $ced_core.publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
@@ -76,7 +77,8 @@ on viu.job.completed
     if $job.kind=="macro-panel" and $event.args.rc==0 then $state.macro_panel=$event.args.body end
     if $job.kind=="macro" then $state=$ced_bus.finish_call($state,$job.payload.call,if $event.args.rc==0 then $event.args.body.rc else 10 end,if $event.args.rc==0 then $event.args.body.body else $event.args.body end) end
     if $event.args.rc==0 then
-      if $job.kind=="notify" and $event.args.body.fallback then $state.status=$event.args.body.text;$state.status_until=monotonic()+6 end
+      if $state.status_failure==$job.kind then $state.status="";$state.status_failure=nil end
+      if $state.status_failure==nil and $job.kind=="notify" and $event.args.body.fallback then $state.status=$event.args.body.text;$state.status_until=monotonic()+6 end
       if $job.kind=="io" and $event.args.body.deadline_after_ms!=nil then
         viu_timer($job.payload.document..":deadline:"..$job.payload.request.op_id,$event.args.body.deadline_after_ms,{document:$job.payload.document,kind:"deadline",op_id:$job.payload.request.op_id})
       end
@@ -103,7 +105,11 @@ on viu.job.completed
         $state.mail=delete($state.mail,$job.payload.document);$state.classified=delete($state.classified,$job.payload.document)
       end
     else
-      if $job.kind!="close" then $state.status="Failed: "..json_encode($event.args.body) end
+      if $job.kind!="close" then
+        $state.last_job_error={kind:$job.kind,rc:$event.args.rc,body:$event.args.body}
+        $message=if type($event.args.body)=="map" then $event.args.body?.message else nil end
+        $state.status="Failed: "..if type($message)=="string" then $message else "The operation failed." end;$state.status_failure=$job.kind
+      end
       if $job.kind=="preview" then $state.preview_requested=delete($state.preview_requested,$job.payload.document) end
       if $job.kind=="open" then $state.restore=delete($state.restore,$job.payload.document);$state.open_errors[$job.payload.document]=$event.args.body end
       if $job.kind=="close" then

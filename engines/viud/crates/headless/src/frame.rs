@@ -17,6 +17,45 @@ use std::{
 };
 use world::state::Loop;
 
+#[derive(Debug, PartialEq, Eq)]
+enum Route {
+    Offscreen,
+    Kms,
+}
+
+/// Session state is the authority for both newly armed and already queued
+/// frames. In particular a queued offscreen timer must retire on activation.
+fn route(vt_session: bool, active: bool) -> Route {
+    if vt_session && active {
+        Route::Kms
+    } else {
+        Route::Offscreen
+    }
+}
+
+/// Generations prevent a retired callback from clearing a newly armed timer.
+#[derive(Default)]
+struct FrameTimer {
+    armed: bool,
+    epoch: u64,
+}
+impl FrameTimer {
+    fn arm(&mut self) -> u64 {
+        self.armed = true;
+        self.epoch
+    }
+    fn retire(&mut self) {
+        self.armed = false;
+        self.epoch = self.epoch.wrapping_add(1);
+    }
+    fn fire(&mut self, epoch: u64) -> bool {
+        if !self.armed || epoch != self.epoch {
+            return false;
+        }
+        self.armed = false;
+        true
+    }
+}
 #[derive(Default)]
 struct Retry {
     delay: Duration,
@@ -40,19 +79,31 @@ impl Retry {
 }
 
 pub(crate) struct Context {
+    pub(crate) vt_session: bool,
     output: Output,
-    renderer: GlesRenderer,
+    pub(crate) renderer: Option<GlesRenderer>,
     targets: [GlesTexture; 2],
     cursor: Option<GlesTexture>,
     next: usize,
     tracker: OutputDamageTracker,
     last: Option<Instant>,
-    armed: bool,
+    timer: FrameTimer,
+    timer_source: Option<smithay::reexports::calloop::RegistrationToken>,
     retry: Retry,
     interval: Duration,
 }
 
 impl Context {
+    fn retire_timer(&mut self, state: &Loop) {
+        self.timer.retire();
+        if let Some(token) = self.timer_source.take() {
+            state.loop_handle.remove(token);
+        }
+    }
+    pub(crate) fn follow(&mut self, output: Output) {
+        self.tracker = OutputDamageTracker::from_output(&output);
+        self.output = output;
+    }
     pub(crate) fn new(
         output: Output,
         renderer: GlesRenderer,
@@ -62,14 +113,16 @@ impl Context {
         let refresh = output.current_mode().expect("headless mode").refresh;
         let interval = Duration::from_nanos(1_000_000_000_000 / refresh as u64);
         Self {
+            vt_session: false,
             output,
-            renderer,
+            renderer: Some(renderer),
             targets,
             cursor: None,
             next: 0,
             tracker,
             last: None,
-            armed: false,
+            timer: FrameTimer::default(),
+            timer_source: None,
             retry: Retry::default(),
             interval,
         }
@@ -78,30 +131,59 @@ impl Context {
 
 pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     let mut ctx = context.borrow_mut();
+    if route(
+        ctx.vt_session,
+        !matches!(
+            state.inner.status_session,
+            world::state::StatusSession::Paused
+        ),
+    ) == Route::Kms
+    {
+        ctx.retire_timer(state);
+        return;
+    }
+    if let Some(mode) = ctx.output.current_mode() {
+        ctx.interval = Duration::from_nanos(1_000_000_000_000 / mode.refresh.max(1) as u64);
+    }
     let key = world::state::output_key(&ctx.output);
-    if ctx.armed || !state.state.redraw.needs(&key) {
+    if ctx.timer.armed || !state.state.redraw.needs(&key) {
         return;
     }
     let at = ctx.last.map_or_else(Instant::now, |last| {
         (last + ctx.interval.max(ctx.retry.delay)).max(Instant::now())
     });
+    let epoch = ctx.timer.arm();
     let context = Rc::clone(context);
-    state
+    let token = state
         .loop_handle
         .insert_source(Timer::from_deadline(at), move |_, _, state| {
             {
                 let mut ctx = context.borrow_mut();
-                ctx.armed = false;
+                if !ctx.timer.fire(epoch) {
+                    return TimeoutAction::Drop;
+                }
+                ctx.timer_source = None;
                 draw(state, &mut ctx);
             }
             arm(state, &context);
             TimeoutAction::Drop
         })
         .expect("headless: frame timer");
-    ctx.armed = true;
+    ctx.timer_source = Some(token);
 }
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
+    if route(
+        ctx.vt_session,
+        !matches!(
+            state.inner.status_session,
+            world::state::StatusSession::Paused
+        ),
+    ) == Route::Kms
+    {
+        ctx.retire_timer(state);
+        return;
+    }
     let key = world::state::output_key(&ctx.output);
     if !state.state.redraw.needs(&key) {
         return;
@@ -112,7 +194,9 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     state.state.redraw.begin_render();
     state.inner.render_output = Some(key.clone());
     let mut visible = Vec::new();
-    let result = compose(state, ctx, &mut visible);
+    // KMS adopts this very renderer on first activation. Its EGL display
+    // continues to own the render fd, so offscreen frames need no DRM master.
+    let result = compose_available(state, ctx, &mut visible);
     match result {
         Ok(true) => {
             ctx.retry.delay = Duration::ZERO;
@@ -161,11 +245,48 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             |s| &mut s.state.redraw,
         );
     }
+    // Recording owns a separate keep-alive deadline from UI animation. A
+    // paused KMS executor never drains it, so the offscreen owner must do so.
+    if let Some(at) = graphics::bridge::publish::wake::take_capture_deadline() {
+        let handle = state.loop_handle.clone();
+        state.state.redraw.request_at(
+            &handle,
+            at,
+            protocols::redraw::schedule::RedrawReason::Capture,
+            |s| &mut s.state.redraw,
+        );
+    }
 }
 
+fn compose_available(
+    state: &mut Loop,
+    ctx: &mut Context,
+    visible: &mut Vec<Window>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if let Some(mut renderer) = ctx.renderer.take() {
+        let result = compose(state, ctx, &mut renderer, visible);
+        ctx.renderer = Some(renderer);
+        return result;
+    }
+    let binding = state
+        .inner
+        .kernel
+        .get(&world::state::GPU_BINDING)
+        .as_ref()
+        .ok_or("native renderer binding temporarily unavailable")?
+        .clone();
+    let mut binding = binding
+        .try_borrow_mut()
+        .map_err(|_| "native renderer is busy")?;
+    let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
+    let primary = *primary;
+    let mut renderer = gpus.single_renderer(&primary)?;
+    compose(state, ctx, renderer.as_mut(), visible)
+}
 fn compose(
     state: &mut Loop,
     ctx: &mut Context,
+    renderer: &mut GlesRenderer,
     visible: &mut Vec<Window>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     use frames::draw::plan::frame::{FramePass, plan};
@@ -175,8 +296,24 @@ fn compose(
         return Ok(false);
     }
     let size = ctx.output.current_mode().expect("headless mode").size;
-    let prepared = frames::scene::prepare(state, &mut ctx.renderer, size);
-    let scene = frames::scene::scene(state, &mut ctx.renderer, size, prepared);
+    let texture_size = (size.w, size.h).into();
+    if ctx.targets[0].size() != texture_size {
+        ctx.targets = [
+            Offscreen::<GlesTexture>::create_buffer(
+                renderer,
+                smithay::backend::allocator::Fourcc::Abgr8888,
+                texture_size,
+            )?,
+            Offscreen::<GlesTexture>::create_buffer(
+                renderer,
+                smithay::backend::allocator::Fourcc::Abgr8888,
+                texture_size,
+            )?,
+        ];
+        ctx.tracker = OutputDamageTracker::from_output(&ctx.output);
+    }
+    let prepared = frames::scene::prepare(state, renderer, size);
+    let scene = frames::scene::scene(state, renderer, size, prepared);
     *visible = scene.visible_window;
     // Track content changes independently of the alternating targets. This
     // age-1 query is only a scene diff; it never assumes preserved pixels in
@@ -197,7 +334,7 @@ fn compose(
     // Window jobs use the owning window's scene (including parked worlds),
     // just as nested does. They never consume the output framebuffer.
     screencopy::offscreen::capture_windows(
-        &mut ctx.renderer,
+        renderer,
         &ctx.output,
         |renderer, target, recording| {
             let window = world::window::draw::frame::scene::capture_window(
@@ -226,16 +363,10 @@ fn compose(
             .iter()
             .filter(|element| !element.is_cursor())
             .collect();
-        let mut target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
+        let mut target = renderer.bind(&mut ctx.targets[ctx.next])?;
         // No buffer-age assumptions: each target is repainted completely.
         OutputDamageTracker::from_output(&ctx.output)
-            .render_output(
-                &mut ctx.renderer,
-                &mut target,
-                0,
-                &elements,
-                [0.1, 0.1, 0.1, 1.0],
-            )?
+            .render_output(renderer, &mut target, 0, &elements, [0.1, 0.1, 0.1, 1.0])?
             .sync
             .wait()?;
     }
@@ -251,18 +382,16 @@ fn compose(
             .is_none_or(|texture| texture.size() != texture_size)
         {
             ctx.cursor = Some(Offscreen::<GlesTexture>::create_buffer(
-                &mut ctx.renderer,
+                renderer,
                 smithay::backend::allocator::Fourcc::Abgr8888,
                 texture_size,
             )?);
         }
         {
-            let mut target = ctx
-                .renderer
-                .bind(ctx.cursor.as_mut().expect("cursor texture"))?;
+            let mut target = renderer.bind(ctx.cursor.as_mut().expect("cursor texture"))?;
             OutputDamageTracker::from_output(&ctx.output)
                 .render_output(
-                    &mut ctx.renderer,
+                    renderer,
                     &mut target,
                     0,
                     &scene.elements,
@@ -276,9 +405,9 @@ fn compose(
         .cursor
         .as_mut()
         .filter(|_| cursor_needed)
-        .map(|texture| ctx.renderer.bind(texture))
+        .map(|texture| renderer.bind(texture))
         .transpose()?;
-    let target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
+    let target = renderer.bind(&mut ctx.targets[ctx.next])?;
     let readback = screencopy::Readback {
         size,
         origin_bottom_left: false,
@@ -286,7 +415,7 @@ fn compose(
     // All copies start only after completion of both passes. Missing sources
     // fail explicitly rather than borrowing another capture's cursor policy.
     let captures = screencopy::service_with_sources(
-        &mut ctx.renderer,
+        renderer,
         screencopy::Sources {
             cursor: cursor_target
                 .as_ref()
@@ -303,7 +432,7 @@ fn compose(
         damage.as_deref(),
     );
     screencopy::file::service(
-        &mut ctx.renderer,
+        renderer,
         screencopy::Source {
             framebuffer: &target,
             readback,
@@ -314,7 +443,7 @@ fn compose(
     );
     if let Some(framebuffer) = cursor_target.as_ref() {
         screencopy::file::service(
-            &mut ctx.renderer,
+            renderer,
             screencopy::Source {
                 framebuffer,
                 readback,
@@ -327,7 +456,7 @@ fn compose(
     // finish() and file::service above synchronously map their readbacks;
     // GLES map_texture blocks on each copy (including file::read_pixels).
     // All reads complete before targets rotate or the cached cursor is reused.
-    captures.finish(&mut ctx.renderer);
+    captures.finish(renderer);
     ctx.next ^= 1;
     // A capture of unchanged content is not a new presentation.
     Ok(damaged)
@@ -361,6 +490,42 @@ fn send_frames(state: &mut Loop, output: &Output, visible: &[Window]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn queued_timer_activation_race_cannot_starve_the_next_pause() {
+        let mut timer = FrameTimer::default();
+        let before_activation = timer.arm();
+        timer.retire();
+        assert!(!timer.armed);
+        assert!(!timer.fire(before_activation));
+        let after_pause = timer.arm();
+        assert!(
+            !timer.fire(before_activation),
+            "late old callback must not clear the new timer"
+        );
+        assert!(timer.armed);
+        assert!(timer.fire(after_pause));
+        assert!(!timer.armed);
+        for _ in 0..4 {
+            let epoch = timer.arm();
+            timer.retire();
+            assert!(!timer.fire(epoch));
+            let epoch = timer.arm();
+            assert!(timer.fire(epoch));
+        }
+    }
+
+    #[test]
+    fn inactive_start_activate_deactivate_routes_frames_without_recreating_the_desk() {
+        let vt_session = true;
+        assert_eq!(route(vt_session, false), Route::Offscreen);
+        assert_eq!(route(vt_session, true), Route::Kms);
+        // An offscreen timer queued before activation follows the same gate.
+        assert_eq!(route(vt_session, true), Route::Kms);
+        assert_eq!(route(vt_session, false), Route::Offscreen);
+        // A standalone headless desk never acquires KMS, even with an active seat.
+        assert_eq!(route(false, true), Route::Offscreen);
+    }
 
     #[test]
     fn persistent_errors_back_off_and_warnings_are_throttled() {

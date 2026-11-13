@@ -1089,6 +1089,7 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
     );
     for (active, vt) in [(true, Some(3)), (false, Some(3)), (true, None)] {
         snapshot.session = Some(SessionSnapshot {
+            watcher_failed: false,
             active,
             vt,
             since_ms: 1_792_108_800_123,
@@ -1099,6 +1100,7 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
             serde_json::from_str::<Value>(&body).unwrap(),
             json!({
                 "version": 1, "active": active, "vt": vt,
+                "render_state": if active { "active" } else { "offscreen" },
                 "since_ms": 1_792_108_800_123_u64,
             })
         );
@@ -1114,6 +1116,18 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
                 .is_none()
         );
     }
+    snapshot.session = Some(SessionSnapshot {
+        watcher_failed: true,
+        active: false,
+        vt: Some(4),
+        since_ms: 42,
+    });
+    let (rc, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
+    assert_eq!(rc, 0);
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["render_state"],
+        "offscreen-retrying"
+    );
 }
 
 #[test]

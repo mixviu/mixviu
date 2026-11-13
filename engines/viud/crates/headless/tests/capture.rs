@@ -575,6 +575,139 @@ fn record_window_target_gone_fails() {
     assert_eq!(stop["frames_path"], Value::Null);
     assert!(!Path::new(start["path"].as_str().unwrap()).exists());
 }
+#[test]
+fn inactive_seat_maps_clients_and_captures_output_and_window() {
+    if !inactive_fixture_available() {
+        return;
+    }
+    let bus = Bus::start("inactive-seat");
+    let mut process = process::spawn_inactive("inactive-seat", &bus.url);
+    let mut pattern = Pattern::new(connect(&mut process));
+    bus.ready();
+    pattern.wait_callback(0);
+    let window = bus.window();
+    let session = bus.call("comp.session.get", json!({}));
+    assert_eq!(session["active"], false, "{session}");
+    assert_eq!(session["render_state"], "offscreen", "{session}");
+    for cursor in [false, true] {
+        for window in [None, Some(target(&window))] {
+            let path = process
+                .root
+                .join(format!("inactive-{cursor}-{}.ppm", window.is_some()));
+            let mut args = json!({"path":path,"format":"ppm","cursor":cursor});
+            if let Some(window) = window {
+                args["window"] = window;
+            } else {
+                args["output"] = json!("headless-0");
+            }
+            let reply = bus.call("comp.capture.frame", args);
+            assert_eq!(reply["source"], "offscreen", "{reply}");
+            assert!(fs::read(path).unwrap().starts_with(b"P6\n"));
+        }
+    }
+    assert_ne!(
+        fs::read(process.root.join("inactive-false-false.ppm")).unwrap(),
+        fs::read(process.root.join("inactive-true-false.ppm")).unwrap(),
+        "cursor:true must draw the retained pointer while the seat is inactive"
+    );
+}
+
+fn inactive_fixture_available() -> bool {
+    let node =
+        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let ready = Path::new(&node).exists()
+        && binary("viud").is_file()
+        && binary("noded").is_file()
+        && std::env::var_os("MIX_TEST_MIX_EXE").is_some_and(|path| Path::new(&path).is_file());
+    if !ready {
+        eprintln!(
+            "inactive-seat GPU fixture skipped: build viud/backend-native, noded and Mix; set MIX_TEST_MIX_EXE and provide a render node"
+        );
+    }
+    ready
+}
+
+#[test]
+fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
+    if !inactive_fixture_available() {
+        return;
+    }
+    let bus = Bus::start("inactive-transitions");
+    let mut process = process::spawn_transitions("inactive-transitions", &bus.url);
+    let mut pattern = Pattern::new(connect(&mut process));
+    bus.ready();
+    pattern.wait_callback(0);
+    let window = bus.window();
+    let control = process.control.as_ref().unwrap().try_clone().unwrap();
+    let edge = |command| {
+        control.send(&[command]).unwrap();
+        let mut ack = [0];
+        control.recv(&mut ack).unwrap();
+        assert_eq!(ack, [command]);
+    };
+    let before = ppm(&bus, &process, "owned-before", None);
+    let start = Instant::now();
+    edge(b'A'); // first two fake seat opens fail, then retry without another edge
+    assert!(start.elapsed() >= Duration::from_millis(650));
+    assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
+    let (_, _, owned_active) = ppm(&bus, &process, "owned-active", None);
+    let expected_active = owned_active.clone();
+    for index in 0..3 {
+        edge(b'P');
+        assert_eq!(bus.call("comp.session.get", json!({}))["active"], false);
+        ppm(&bus, &process, &format!("paused-{index}"), None);
+        ppm(
+            &bus,
+            &process,
+            &format!("window-paused-{index}"),
+            Some(target(&window)),
+        );
+        edge(b'Q'); // activation with an offscreen frame timer queued
+        assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
+        ppm(&bus, &process, &format!("active-{index}"), None);
+        assert_eq!(bus.window()["id"], window["id"]);
+    }
+    edge(b'P');
+    edge(b'D'); // a temporarily missing binding must back off, not panic
+    let restore = control.try_clone().unwrap();
+    let restore_thread = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(400));
+        restore.send(b"B").unwrap();
+        let mut ack = [0];
+        restore.recv(&mut ack).unwrap();
+        assert_eq!(ack, *b"B");
+    });
+    ppm(&bus, &process, "restored-binding", None);
+    restore_thread.join().unwrap();
+    edge(b'F');
+    assert_eq!(
+        bus.call("comp.session.get", json!({}))["render_state"],
+        "offscreen-retrying"
+    );
+    let until = Instant::now() + Duration::from_secs(4);
+    while bus.call("comp.session.get", json!({}))["render_state"] != "offscreen" {
+        assert!(Instant::now() < until);
+        thread::sleep(Duration::from_millis(50));
+    }
+    ppm(&bus, &process, "after-watcher-recovery", None);
+    assert_eq!(
+        owned_active, expected_active,
+        "copied capture pixels survive all buffer reuse and transitions"
+    );
+    assert_eq!(
+        before.2,
+        fs::read(process.root.join("owned-before.ppm"))
+            .unwrap()
+            .splitn(4, |b| *b == b'\n')
+            .nth(3)
+            .unwrap()
+    );
+    control.send(b"H").unwrap();
+    let mut handovers = [0];
+    control.recv(&mut handovers).unwrap();
+    assert_eq!(handovers, [1]);
+    assert!(process.child.try_wait().unwrap().is_none());
+}
 fn place_args(row: &Value, extra: Value) -> Value {
     let mut args = target(row);
     args.as_object_mut()

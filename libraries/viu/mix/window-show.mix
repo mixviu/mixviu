@@ -4,13 +4,18 @@
 fn failure($message)
   return {rc:10,body:{error_code:"ACTIVATION",message:$message,reason:"show_failed"}}
 end
+fn unavailable()
+  return {rc:0,body:{shown:false,reason:"compositor_unavailable"}}
+end
 fn raw_body($body)
   return if type($body)=="string" then $body else json_encode($body) end
 end
 fn value($body)
   return if type($body)=="string" then json_parse($body) else $body end
 end
-fn perform($app_id,$pid,$call)
+fn perform($app_id,$pid,$call,$available=true)
+  -- Launch can precede compositor registration. Do not turn that into a notice.
+  if not $available then return unavailable() end
   try
     $answer=$call("comp.window.wait",{match:{app_id:$app_id},until:"mapped",timeout_ms:10000})
     if $answer.rc!=0 then return failure(raw_body($answer.body)) end
