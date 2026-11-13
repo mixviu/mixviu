@@ -254,14 +254,14 @@ fn app_mode_child() {
                 }),
                 Some(Box::new(|| std::rc::Rc::new(NativeTheme))),
                 viu::runtime::Services {
-                    application_roots: Some(app_home.clone()),
+                    application_roots: Some(temporary.path().to_path_buf()),
                     calls: Some(Default::default()),
                     timers: Some(Default::default()),
                     documents: Some(Default::default()),
                     rasters: Some(Default::default()),
                     terminals: Some(Default::default()),
                     ui_state: Some(Default::default()),
-                    options: json!({"state_home":temporary.path()}),
+                    options: json!({}),
                     ..Default::default()
                 },
             );
@@ -312,7 +312,7 @@ fn app_mode_child() {
                     assert_eq!(reply.rc, 0, "{app}: {}", reply.body);
                 }
                 let model = done.model.unwrap();
-                let saved: Value = serde_json::from_slice(&std::fs::read(temporary.path().join("mixviu").join(app).join("mode.json")).unwrap()).unwrap();
+                let saved: Value = serde_json::from_slice(&std::fs::read(temporary.path().join(app).join("mode.json")).unwrap()).unwrap();
                 assert_eq!(saved["mode"], model["theme_choice"]["mode"], "{app} owns its mode file");
                 assert_eq!(
                     model["theme_choice"]["mode"].as_str(),
