@@ -107,6 +107,64 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
+#[ignore = "needs a GPU render node, ffmpeg and built viud/noded/testkit binaries"]
+fn record_windows_only_content_and_multiple_targets() {
+    let bus=Bus::start("record-windows");
+    let mut process=process::spawn(1,None,"record-windows",Some(&bus.url));
+    let mut b=Pattern::named(connect(&mut process),"record-window-b",false);
+    let mut a=Pattern::named(connect(&mut process),"record-window-a",false);
+    bus.ready();
+    a.change_buffer();a.commit(true);
+    pump_patterns(&mut [&mut a,&mut b]);
+    let ar=bus.window_for("record-window-a");
+    let br=bus.window_for("record-window-b");
+    for (row,z) in [(&br,0),(&ar,10)] {
+        bus.call("comp.window.place",place_args(row,json!({"x":100,"y":100,"z":z})));
+    }
+    let start=bus.call("comp.record.start",json!({"request_id":"windows","target":{"windows":[target(&br),target(&ar)]},"cursor":false,"path":process.root.join("windows.mkv"),"max_seconds":5}));
+    assert_eq!(start["width"],400,"no server frame or shadow is part of a window take");
+    assert_eq!(start["height"],160);
+    thread::sleep(Duration::from_millis(150));
+    let stop=bus.call("comp.record.stop",json!({"session":start["session"]}));
+    assert_eq!(stop["error"],Value::Null,"{stop}");
+    let decoded=Command::new("ffmpeg").args(["-v","error","-i"]).arg(start["path"].as_str().unwrap()).args(["-frames:v","1","-f","rawvideo","-pix_fmt","rgb24","-"]).output().unwrap();
+    assert!(decoded.status.success());
+    assert_eq!(decoded.stdout.len(),400*160*3);
+    for (x,expected) in [(50,rgb(COLOURS[0])),(250,[0xaa,0x33,0x77])] {
+        let at=(40*400+x)*3;
+        for (actual,expected) in decoded.stdout[at..at+3].iter().zip(expected) {assert!((i16::from(*actual)-i16::from(expected)).abs()<20);}
+    }
+}
+
+#[test]
+#[ignore = "needs a GPU render node, ffmpeg and built viud/noded binaries"]
+fn record_vaapi_capability_or_clear_failure() {
+    let bus=Bus::start("record-vaapi");
+    let mut process=process::spawn(1,None,"record-vaapi",Some(&bus.url));
+    drop(connect(&mut process));bus.ready();
+    let probe=Command::new("ffmpeg").args(["-hide_banner","-encoders"]).output().unwrap();
+    let reported=String::from_utf8_lossy(&probe.stdout).split_whitespace().any(|word|word=="h264_vaapi");
+    let args=json!({"request_id":"vaapi","target":{"output":"headless-0"},"encoder":"vaapi","path":process.root.join("vaapi.mkv"),"max_seconds":5});
+    if !reported {
+        let error=bus.call_rc("comp.record.start",args,10);
+        assert!(error["message"].as_str().unwrap().contains("h264_vaapi"));
+        println!("VAAPI not reported by ffmpeg; explicit refusal verified");
+        return;
+    }
+    let start=bus.call("comp.record.start",args);
+    thread::sleep(Duration::from_millis(300));
+    let stop=bus.call("comp.record.stop",json!({"session":start["session"]}));
+    if let Some(error)=stop["error"].as_str() {
+        assert!(error.contains("ffmpeg"),"device failure must include ffmpeg stderr: {stop}");
+        println!("VAAPI reported, device unavailable: {error}");
+    } else {
+        assert_eq!(stop["encoder"],"vaapi");
+        assert!(fs::metadata(start["path"].as_str().unwrap()).unwrap().len()>0);
+        println!("VAAPI recording completed: {stop}");
+    }
+}
+
+#[test]
 #[ignore = "needs a GPU render node, ffmpeg/libx264 and built viud/noded/testkit binaries"]
 fn record_4k_output_windows_pointer_and_damage_repeat() {
     let bus=Bus::start("record-4k");

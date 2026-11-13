@@ -60,7 +60,7 @@ where R:Renderer+ImportAll+ImportMem+dispatcher::frame::SceneDispatch,
 R::TextureId:Texture+Clone+'static {
     use world::window::draw::element::{Element,RawElement,ClampOpaque,ElementWindowSurface};
     if !scale.is_finite() || scale<=0.0 {return Err("invalid window capture scale".into());}
-    let bounds=window.bbox_with_popups().to_physical_precise_round(scale);
+    let bounds:Rectangle<i32,Physical>=window.bbox_with_popups().to_physical_precise_round(scale);
     let size=bounds.size;
     if size.w<=0 || size.h<=0 {return Err("window target has no content".into());}
     let windows=[(window.clone(),Point::from((-bounds.loc.x,-bounds.loc.y)))];
