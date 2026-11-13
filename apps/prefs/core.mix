@@ -24,7 +24,7 @@ fn framed($s)
   $model.frame.menu.properties.native_menu=true
   $model.theme_choice=$actions.theme_choice($s)
   -- Gold Shell::wanted: profile installation follows these authored inputs.
-  $model.theme_refresh_key=[$model.theme_choice,$look.shown($s.look),$s.look.custom_source,$s.values["appearance.font_weight"],$s.values["appearance.font_size"]]
+  $model.theme_refresh_key=[$model.theme_choice,$look.shown($s.look),$s.look.custom_source,$s.values["appearance.font_weight"],$s.values["appearance.font_size"],$s.values["state.appearance.mode_override"],$s.values["state.appearance.daylight"]]
   $model.theme_values=$look.preview_values($s)
   $model.macros_open=$s.ui.macros_open
   $model.shortcuts=$actions.shortcuts($s)

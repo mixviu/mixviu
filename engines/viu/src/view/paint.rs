@@ -72,7 +72,7 @@ mod panel_mode_tests {
                 }
                 for node in doc.nodes.values() {
                     if let Some(role) = node.ports.get("color").and_then(|v| v.as_str()) {
-                        assert!(role.starts_with("panel.") || role.starts_with("= "), "{}: {role}", node.id);
+                        assert!(role.starts_with("panel.") || role.starts_with("= "), "{role}");
                     }
                 }
             }

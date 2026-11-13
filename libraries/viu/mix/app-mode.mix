@@ -1,3 +1,4 @@
+-- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- App policy: null follows the live session; only an explicit mode is saved.
 fn valid($mode)

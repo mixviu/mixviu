@@ -77,7 +77,7 @@ fn dispatch_fields($s,$command,$a,$native,$numbers)
   try
     $s=refresh($s,$native)
     if $command=="term.info" then $body=$discovery.info($s.service ?? "term",$s.identity)
-    elif $command=="term.session" then $body=json_encode($native("session","",{}))
+    elif $command=="term.session" then $body=json_encode(merge($native("session","",{}),{theme:{mode:$s.choice.mode,effective:$s.effective}}))
     elif $command=="term.tabs" then
       $lines=[]
       for $i=0 to len($s.layout.tabs)-1

@@ -81,7 +81,7 @@ on dopus.initialise
   dp_start($event.args)
   reply(0,json_encode({ready:true}))
 end
-fn dp_request($request)
+fn dp_request($request)\n  if starts_with($request.args.id ?? "","theme.mode-") and $request.args.id!="theme.mode-toggle" then $request.args.id="view.mode."..slice($request.args.id,len("theme.mode-")) end
   global $state, $row_cache, $contract
   if $state==nil then reply(10,json_encode({error_code:"NOT_READY"}))
   else

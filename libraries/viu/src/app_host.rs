@@ -1319,6 +1319,7 @@ impl Host {
                             }
                             self.session_window = Some(window);
                             if (refresh_key.is_none() || key_changed)
+                                && !self.model["theme_choice"].is_object()
                                 && self
                                     .native_choice
                                     .as_object()
