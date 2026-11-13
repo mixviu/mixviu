@@ -434,7 +434,7 @@ mod search_input_tests {
             let background = output.shapes.iter().take_while(|s| !matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == "Search preferences")).filter_map(|s| match &s.shape { egui::Shape::Rect(r) if r.rect.contains(hint.pos) => Some(r.fill), _ => None }).last().expect("painted search background");
             for section in &hint.galley.job.sections {
                 assert!(contrast(section.format.color, background) >= 4.5,
-                    "placeholder {:?} on {:?}",section.format.color,look.window);
+                    "placeholder {:?} on {:?}",section.format.color,background);
             }
         });
     }
