@@ -18,11 +18,15 @@ struct Compositor(std::sync::Arc<AtomicBool>);
 impl mix::BusHandler for Compositor {
     fn send<'a>(
         &'a self,
-        _: &'a str,
+        target: &'a str,
         command: &'a str,
-        _: &'a mix::value::Value,
+        args: &'a mix::value::Value,
     ) -> mix::evaluator::BusFuture<'a, mix::MixResult<(i32, mix::value::Value)>> {
         Box::pin(async move {
+            assert_eq!(target, "comp-status-test");
+            let args = viu::runtime::to_json(args)?;
+            let body = args.get("body").unwrap_or(&args);
+            if command == "comp.window.wait" { assert_eq!(body["match"]["app_id"], "example.ced"); }
             assert!(
                 self.0.load(std::sync::atomic::Ordering::SeqCst),
                 "no request before registration"
@@ -49,9 +53,9 @@ impl mix::BusHandler for Compositor {
     }
     fn port_exists<'a>(
         &'a self,
-        _: &'a str,
+        target: &'a str,
     ) -> mix::evaluator::BusFuture<'a, mix::MixResult<bool>> {
-        Box::pin(async { Ok(self.0.load(std::sync::atomic::Ordering::SeqCst)) })
+        Box::pin(async move { assert_eq!(target, "comp-status-test"); Ok(self.0.load(std::sync::atomic::Ordering::SeqCst)) })
     }
     fn next_incoming<'a>(
         &'a self,
@@ -75,7 +79,13 @@ fn ced_worker_recovers_when_compositor_registers_after_start() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced/job.mix");
     runtime
         .load(viu::runtime::Program {
-            source: std::fs::read_to_string(&path).unwrap(),
+            source: std::fs::read_to_string(&path).unwrap() + r#"
+$core=require("core.mix")
+on test.queue
+  $s=$core.queue_job({serial:0,queue:[]},"show",$event.args)
+  reply(0,json_encode($s.queue[0]))
+end
+"#,
             path,
             scene: "worker-test".into(),
             citizen: "ced".into(),
@@ -85,10 +95,14 @@ fn ced_worker_recovers_when_compositor_registers_after_start() {
     assert!(runtime.try_completion().unwrap().error.is_none());
     for registered in [false, true] {
         available.store(registered, std::sync::atomic::Ordering::SeqCst);
+        runtime.event("test.queue".into(), json!({"app_id":"example.ced","comp":"comp-status-test"})).unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let queued = runtime.try_completion().unwrap().reply.unwrap().body;
+        assert_eq!(queued, json!({"id":"ced-1","kind":"show","payload":{"app_id":"example.ced","comp":"comp-status-test"}}));
         runtime
             .event(
                 "job.run".into(),
-                json!({"kind":"show","payload":{"app_id":"example.ced"}}),
+                queued,
             )
             .unwrap();
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -178,7 +192,7 @@ on test.mail
   $state.session_seen=$ced_session.session_value($state);$state.session_dirty=false
 end
 on test.job
-  $state.running["status-test"]={id:"status-test",kind:"show",payload:{}}
+  $state.running["status-test"]={id:"status-test",kind:$event.args.kind ?? "show",payload:{}}
 end
 "#,
         );
@@ -252,11 +266,63 @@ fn job_notice_is_readable_retains_diagnostics_and_clears_on_success() {
     let (_, state) = app.answered("ced.specimen", json!({}));
     assert_eq!(state["status"], "Failed: Cannot focus the window.");
     assert_eq!(state["last_job_error"]["body"], error);
+    app.answered("test.job", json!({"kind":"notify"}));
+    app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"notify","payload":{}}},"rc":0,"body":{"fallback":false}}));
+    let (_, state) = app.answered("ced.specimen", json!({}));
+    assert_eq!(state["status"], "Failed: Cannot focus the window.");
+    assert_eq!(state["last_job_error"]["body"], error);
     app.answered("test.job", json!({}));
     app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"show","payload":{}}},"rc":0,"body":{"shown":true}}));
     let (_, state) = app.answered("ced.specimen", json!({}));
     assert_eq!(state["status"], "");
     assert_eq!(state["last_job_error"]["body"], error);
+}
+
+#[test]
+fn non_map_job_failures_keep_diagnostics_and_use_plain_fallback() {
+    let mut app = App::new();
+    for body in [json!("transport stopped"), json!(17), Value::Null, json!({"message":17})] {
+        app.answered("test.job", json!({}));
+        app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"show","payload":{}}},"rc":10,"body":body}));
+        let (_, state) = app.answered("ced.specimen", json!({}));
+        assert_eq!(state["status"], "Failed: The operation failed.");
+        assert_eq!(state["last_job_error"]["body"], body);
+    }
+}
+
+#[test]
+fn status_without_right_fields_and_priority_error_stay_visible_at_desktop_scales() {
+    for scale in [1.0, 2.5] {
+        for right in [json!([]), json!(["INS", "Saved"])] {
+            for message in [Value::Null, json!("Cannot save the document.")] {
+                let ctx = egui::Context::default();
+                viu::appearance::install(&ctx);
+                ctx.set_pixels_per_point(scale);
+                let widget = viu::widgets::Widget::new("status", "status-line", "", json!({"left":"Long notice 界 ".repeat(300),"right":right,"message":message,"error":false}));
+                let mut widgets = viu::widgets::Widgets::default();
+                let mut error_colour = egui::Color32::TRANSPARENT;
+                let mut output = ctx.run_ui(egui::RawInput { screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(3840.0/scale,2160.0/scale))),..Default::default() },|ui| {
+                    error_colour=ui.visuals().error_fg_color;
+                    widgets.begin_frame();widgets.widget(ui,&widget,&json!({}));widgets.finish_frame().unwrap();
+                });
+                output.textures_delta.clear();
+                let texts: Vec<_> = output.shapes.iter().filter_map(|s| if let egui::Shape::Text(t)=&s.shape {Some((s.clip_rect,t))} else {None}).collect();
+                let (clip,left)=texts.iter().find(|(_,t)|t.galley.text().starts_with("Long notice")).expect("notice painted");
+                let left_bounds=left.galley.rect.translate(left.pos.to_vec2()).intersect(*clip);
+                assert!(left_bounds.width()>10.0,"scale {scale}: visible left text");
+                assert!(left.galley.elided,"left text must ellipsise");
+                if message.is_string() {
+                    let (clip,error)=texts.iter().find(|(_,t)|t.galley.text()==message.as_str().unwrap()).expect("error has its own label");
+                    assert!(!error.galley.elided,"full error message takes priority");
+                    assert!(error.galley.job.sections.iter().all(|s|s.format.color==error_colour));
+                    let bounds=error.galley.rect.translate(error.pos.to_vec2());
+                    assert!(clip.contains_rect(bounds),"error is fully visible");
+                    assert!(!left_bounds.intersects(bounds));
+                }
+                output.drop_without_applying_deltas();
+            }
+        }
+    }
 }
 
 #[test]
