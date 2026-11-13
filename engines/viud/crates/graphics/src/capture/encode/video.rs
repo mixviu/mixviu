@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+#[derive(Debug)]
 enum VideoFrame {
     Bgra(Arc<[u8]>),
     Rgb {
@@ -43,6 +44,7 @@ pub struct VideoEncoder {
     cleanup: bool,
 }
 
+#[derive(Debug)]
 struct QueuedFrame {
     slot: u64,
     pixels: VideoFrame,
