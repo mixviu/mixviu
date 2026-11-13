@@ -3,7 +3,7 @@ $legacy=require("core.mix");$mesh=require("mesh.mix");$saved=require("saved.mix"
 fn initial()
   $s=$legacy.initial();$s.body="";$s.snapshot={progress:nil,nodes:[],identities:{},services:{},peers:[],peer_error:nil,error:nil}
   $s.selection=nil;$s.row_key=nil;$s.expanded=["nodes"];$s.split=0.34;$s.dock_width=0.3;$s.dock_height=0.28;$s.window_width=1100
-  $s.watched_topics=[];$s.refetch=false
+  $s.watched_topics=[];$s.refetch=false;$s.refresh_after=0
   $s.mesh=$mesh.initial("local","workshop",$mesh.now_ms());$s.activation_next=0
   $s.window_height=760;$s.focus_id="filter";$s.macro_drafts={}
   $s.mesh_inspected=nil

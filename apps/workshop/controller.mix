@@ -237,7 +237,7 @@ fn notice($s,$event)
     if $a.path=="services.registered" then
       $entry=$s.agents.nodes[$agents.local_name($s)]
       if $entry!=nil and $entry.available==false then $s=$agents.refresh_node($s,$agents.local_name($s)) end
-      if $m.busy($s) then $s.refetch=true else $s=$discovery.begin($s,nil) end
+      $s.refetch=true
     end
   elif $cmd=="bus.overflow" or $cmd=="citizen.topic.gap" then
     $s.dropped=$s.dropped+($a.dropped ?? 0);$s=$agents.refresh_node($s,$agents.local_name($s))
@@ -253,6 +253,6 @@ fn notice($s,$event)
 end
 fn follow_up($s)
   $s=$discovery.expire($s)
-  if $s.refetch and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
+  if $s.refetch and monotonic()>=$s.refresh_after and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
   return $work.launch($s)
 end

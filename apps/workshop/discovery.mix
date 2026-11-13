@@ -37,6 +37,7 @@ fn snapshot($s)
   if $s.snapshot.error!=nil then $s.status="Discovery failed: "..$s.snapshot.error end
   if $s.snapshot.peer_error!=nil then $s.status=$s.status.." · noded.peers: "..$s.snapshot.peer_error end
   if $finished then
+    $s.refresh_after=monotonic()+5
     $s.discovery=nil
     if $s.selection!=nil and $model.command($s,$s.selection)==nil then
       $existing=$s.snapshot.services[$s.selection.service] ?? {}

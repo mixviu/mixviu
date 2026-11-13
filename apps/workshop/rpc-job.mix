@@ -2,6 +2,7 @@
 $model=require("model.mix");$counter=require("counter.mix")
 fn description($service,$command,$timeout)
   send $service $command body="" timeout=$timeout reply_mode="raw"
+  if type($reply)!="map" then raise("DESCRIPTION","peer did not reply within deadline") end
   if $reply.transport_error!=nil then raise("DESCRIPTION",$reply.transport_error) end
   if $reply.rc>=10 then raise("DESCRIPTION","rc = "..to_string($reply.rc)..": "..($reply.error ?? "").." "..$reply.body) end
   return $model.catalogue(json_parse($reply.body))
