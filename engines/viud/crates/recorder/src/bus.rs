@@ -50,6 +50,12 @@ fn readback_skips(readback_us: u64, fps: u32) -> u64 {
     readback_us.saturating_sub(budget).div_ceil(budget).min(60)
 }
 
+fn spend_readback_budget(debt: &mut u64, damaged: bool) -> bool {
+    if *debt == 0 { return false; }
+    *debt -= 1;
+    damaged
+}
+
 #[derive(Clone)]
 struct TakeFiles {
     path: String,
@@ -287,11 +293,10 @@ impl Recording {
 
     /// ExportMem maps synchronously. Repay over-budget readback time with
     /// skipped captures, preserving CFR through the previous immutable frame.
-    pub fn skip_readback(&mut self) -> bool {
-        if self.readback_debt == 0 {
+    pub fn skip_readback(&mut self, damaged: bool) -> bool {
+        if !spend_readback_budget(&mut self.readback_debt, damaged) {
             return false;
         }
-        self.readback_debt -= 1;
         self.dropped += 1;
         self.skipped_readback = true;
         true
@@ -411,6 +416,13 @@ mod file_tests {
         assert_eq!(readback_skips(14000, 30), 1);
         assert_eq!(readback_skips(25000, 30), 3);
         assert_eq!(readback_skips(1_000_000, 30), 60);
+        let mut debt = readback_skips(14000, 30);
+        assert!(!spend_readback_budget(&mut debt, false));
+        assert!(!spend_readback_budget(&mut debt, true), "idle ticks already repaid the slow read");
+        let mut debt = 2;
+        assert!(spend_readback_budget(&mut debt, true));
+        assert!(spend_readback_budget(&mut debt, true));
+        assert!(!spend_readback_budget(&mut debt, true));
     }
     #[test]
     fn invalid_clock_reports_error_without_panic() {
