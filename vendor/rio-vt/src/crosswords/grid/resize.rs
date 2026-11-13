@@ -560,6 +560,13 @@ impl Grid<Square> {
         let consumed = min(free_rows, new_raw.len().saturating_sub(old_len));
         new_raw.truncate(new_raw.len() - consumed);
         self.cursor.pos.row += consumed.saturating_sub(cursor_rows_above_viewport);
+        if let Some(r) = remap.as_mut() {
+            for pos in &mut r.new_pos {
+                if *pos >= new_raw.len() as i64 {
+                    *pos = -1;
+                }
+            }
+        }
 
         // Restore oldest-first order in place and reuse the buffer as the new
         // grid storage, avoiding a second full row-buffer allocation.
