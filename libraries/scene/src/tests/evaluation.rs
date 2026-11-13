@@ -14,7 +14,11 @@ fn image_color_is_optional_string_and_supports_live_bindings() {
     assert_eq!(color.ty, "string");
     assert!(color.default.is_none());
     let mut d = doc(r#"root: {widget: "image", src: "icon:folder"}"#);
-    assert!(!resolve(&d).unwrap().nodes["root"].ports.contains_key("color"));
+    assert!(
+        !resolve(&d).unwrap().nodes["root"]
+            .ports
+            .contains_key("color")
+    );
     for ink in ["#123456", "panel.foreground", "panel.selected-foreground"] {
         d.nodes["root"].ports.insert("color".into(), json!(ink));
         assert!(lint(&d).is_empty());
@@ -22,7 +26,9 @@ fn image_color_is_optional_string_and_supports_live_bindings() {
     }
     d.nodes["root"].ports.insert("color".into(), json!(42));
     assert!(lint(&d).iter().any(|d| d.code == "port-type"));
-    d.nodes["root"].ports.insert("color".into(), json!("= $model.ink"));
+    d.nodes["root"]
+        .ports
+        .insert("color".into(), json!("= $model.ink"));
     d.model = Some(json!({"ink": "panel.foreground"}));
     let tree = resolve(&d).unwrap();
     assert_eq!(tree.nodes["root"].ports["color"], "panel.foreground");
