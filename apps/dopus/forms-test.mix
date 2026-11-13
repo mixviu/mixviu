@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 $app=require("reducer.mix")
+$dp=require("core.mix")
 fn forms_test_check($ok,$message)
   if not $ok then raise("CHECK_FAILED",$message) end
 end
@@ -36,7 +37,7 @@ $legacy=$view.dp_legacy_view($state)
 forms_test_check($legacy.kind=="about" and $legacy.body=="About body" and $legacy.buttons[0].id=="done","legacy message envelope has a typed Done button")
 -- Explicit pane actions work without a window and preserve both selections.
 $contract={actions:[{id:"nav.pane-left"},{id:"nav.pane-right"},{id:"file.new-folder"}],action_aliases:{}}
-$state={headless:true,active:1,busy:false,next_token:0,form:$app.dp_closed_form(),panes:[{path:"/left",selected_paths:["/left/a"]},{path:"/right",selected_paths:[]}],info:"Select a file or folder"}
+$state={headless:true,active:1,busy:false,next_token:0,form:$app.dp_closed_form(),panes:[{path:"/left",selected_paths:["/left/a"]},{path:"/right",selected_paths:[]}],info:$dp.dp_idle_info}
 for $target in [{id:"nav.pane-left",index:0},{id:"nav.pane-left",index:0},{id:"nav.pane-right",index:1},{id:"nav.pane-right",index:1}]
   $before=$state.panes
   $state=$app.dp_action($state,$contract,$target.id,{})
@@ -47,6 +48,7 @@ for $target in [{id:"nav.pane-left",index:0},{id:"nav.pane-left",index:0},{id:"n
 end
 $state.panes[0].entries=[{path:"/left/a",name:"a\nb",dir:false,symlink:false,size:1024},{path:"/left/Folder",name:"Folder",dir:true,symlink:false,size:nil}]
 $state.active=0
+$state.panes[0].selected_paths=["/left/a"]
 forms_test_check($view.dp_selection_info($state)=="a�b — File — 1.0 KiB","single selection includes safe name, kind and size")
 $state.panes[0].selected_paths=["/left/Folder"]
 forms_test_check($view.dp_selection_info($state)=="Folder — Folder — —","directory size is explicitly unknown")
@@ -57,12 +59,18 @@ forms_test_check($view.dp_selection_info($state)=="Operation failed","operation 
 $before=$state
 $state.panes[0].selected_paths=[]
 $state=$app.dp_selection_notice($before,$state)
-forms_test_check($view.dp_selection_info($state)=="Select a file or folder","deselection clears old notices")
+forms_test_check($view.dp_selection_info($state)==$dp.dp_idle_info,"deselection clears old notices")
 $state.info="Copying";$state.busy=true;$before=$state
 $state.active=1
 $state=$app.dp_selection_notice($before,$state)
 forms_test_check($view.dp_selection_info($state)=="Copying","busy operation notice survives pane changes")
 $state.busy=false;$before=$state;$state.active=0
 $state=$app.dp_selection_notice($before,$state)
-forms_test_check($view.dp_selection_info($state)=="Select a file or folder","pane change clears a completed notice")
-print(json_encode({checks:25,result:"passed"}))
+forms_test_check($view.dp_selection_info($state)==$dp.dp_idle_info,"pane change clears a completed notice")
+$state.dialog_status="Old failure";$state.info="Old failure";$before=$state
+$state.panes[0].path="/elsewhere"
+$state=$app.dp_selection_notice($before,$state)
+forms_test_check($state.info==$dp.dp_idle_info and $state.dialog_status==nil,"navigation clears completed notice and dialog status together")
+$pane={entries:[{path:"/a"},{path:"/b"},{path:"/c"}],selected_paths:["/c","/gone","/a","/a"]}
+forms_test_check(deep_eq(map($dp.dp_selected_rows($pane),fn($r)=$r.path),["/a","/c"]),"membership keeps listing order, deduplicates selection and ignores stale paths")
+print(json_encode({checks:27,result:"passed"}))

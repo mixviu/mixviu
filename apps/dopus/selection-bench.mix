@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Repeatable in-memory select-all projection measurement; no filesystem scan.
+$view=require("presentation.mix")
+$dp=require("core.mix")
+$entries=[];$paths=[]
+for $i=1 to 2000
+  $path="/fixture/"..to_string($i)..".txt"
+  push($paths,$path)
+  push($entries,{path:$path,name:to_string($i)..".txt",dir:false,symlink:false,size:1})
+end
+$state={info:$dp.dp_idle_info,active:0,panes:[{entries:$entries,selected_paths:$paths}]}
+$samples=[]
+for $i=1 to 11
+  $start=time()
+  $line=$view.dp_selection_info($state)
+  $elapsed=(time()-$start)*1000
+  if $line!="2000 selected — 2.0 KiB" then raise("BENCH_FAILED",$line) end
+  if $i>1 then push($samples,$elapsed) end
+end
+$samples=sort($samples)
+print(json_encode({rows:2000,selected:2000,samples:10,median_ms:($samples[4]+$samples[5])/2,min_ms:$samples[0],max_ms:$samples[9]}))
