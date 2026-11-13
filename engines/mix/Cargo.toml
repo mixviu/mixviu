@@ -61,7 +61,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 tempfile = "3"
 proptest = "1"
-tungstenite = "0.29"
+tungstenite = "0.30"
 sha2 = "0.10"
 ed25519-dalek = { version = "2", features = ["zeroize"] }
 # tests/owned_editor_pty.rs compiles the shell's editor and session-state
