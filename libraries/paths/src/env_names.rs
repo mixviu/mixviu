@@ -80,6 +80,7 @@ pub const VAR: &str = "MIX_VAR";
 pub const VIUD_CONFIG: &str = "MIX_VIUD_CONFIG";
 pub const VIUD_CONTAIN_CHILDREN: &str = "MIX_VIUD_CONTAIN_CHILDREN";
 pub const VIUD_HEADLESS_SIZE: &str = "MIX_VIUD_HEADLESS_SIZE";
+pub const VIUD_OFFSCREEN_SIZE: &str = "MIX_VIUD_OFFSCREEN_SIZE";
 pub const VIUD_OUTPUT_SCALE: &str = "MIX_VIUD_OUTPUT_SCALE";
 pub const VIUD_USER_KEYMAP: &str = "MIX_VIUD_USER_KEYMAP";
 pub const VT: &str = "MIX_VT";
@@ -148,6 +149,7 @@ pub const XDG_RUNTIME_DIR: &str = "XDG_RUNTIME_DIR";
 pub mod test {
 pub const TEST_STRICT_FONT: &str = "MIX_TEST_STRICT_FONT";
 pub const TEST_VIUD_AGENT_SEAT_ALLOW: &str = "MIX_TEST_VIUD_AGENT_SEAT_ALLOW";
+pub const TEST_VIUD_SEAT_INACTIVE: &str = "MIX_TEST_VIUD_SEAT_INACTIVE";
 pub const PTY_TIMEOUT_SECS: &str = "MIX_PTY_TIMEOUT_SECS";
 pub const TEST_ACTIVE: &str = "MIX_TEST_ACTIVE";
 pub const TEST_ADMIT_DELAY_MS: &str = "MIX_TEST_ADMIT_DELAY_MS";

@@ -12,7 +12,7 @@ use kms::input::loop_::libinput::LibinputSource;
 use seat::pointer::restore::TouchCursor;
 use smithay::backend::input::{Event, InputEvent};
 use smithay::input::tablet::TabletDescriptor;
-use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::input::event::tablet_pad::{
     ButtonState as PadButtonState, RingAxisSource, StripAxisSource, TabletPadEvent,
 };
@@ -198,12 +198,11 @@ where
 }
 
 pub fn register(
-    event_loop: &mut EventLoop<Loop>,
+    event_loop: &LoopHandle<'static, Loop>,
     libinput_source: LibinputSource,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
 ) {
     event_loop
-        .handle()
         .insert_source(libinput_source, move |event, _, state| {
             if let StatusSession::Paused = state.inner.status_session {
                 return;
