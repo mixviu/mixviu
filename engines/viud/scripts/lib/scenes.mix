@@ -2248,14 +2248,15 @@ fn move($s, $args)
 end
 
 -- Fingerprint the rewritten installation, including helpers/assets. Settings
--- are user state, never evidence of a code edit. Bound reads as in candidate.
+-- are user state, never evidence of a code edit. Stream hashes so binary
+-- assets retain their byte identity and do not require an unbounded read.
 fn template_record($dir, $template)
   $files = {}
   for $p in sort(walk($dir, {follow_symlinks:false}))
     $rel = substr($p, len($dir) + 1)
     if $rel == "settings.conf.mix" then continue end
     if not regular($p) then fail("SCENES_FILES", "template file must be regular", {file:$p}) end
-    $files[$rel] = hash_sha256(bounded_read($p, 262144))
+    $files[$rel] = hash_file($p, "sha256")
   end
   return {template:$template, digest:$files["scene.mix"],
     behaviour_digest:$files["behaviour.mix"] ?? "", meta_digest:$files["template.conf.mix"], files:$files}
@@ -2359,6 +2360,21 @@ fn reset_scene($s, $name, $e)
   if $s.open == $name then $s.open = nil end
   $s = drive_popups($s)
   $s = invalidate($s, $name)
+  if $s.upgrade_expected != nil then
+    -- Invalidation may perform host I/O. Recheck after that last RPC, and
+    -- preserve the updated process bookkeeping if an editor won the race.
+    try
+      if $s.io.upgrade_guard != nil then $s.io.upgrade_guard($installation) end
+      if not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
+        fail("SCENES_EDITED", "scene changed during upgrade; refresh refused", {name:$name})
+      end
+      if regular($settings) then write_file($tmp .. "/settings.conf.mix", bounded_read($settings, 262144)) end
+    catch $message, $error
+      remove_dir($tmp)
+      $s.upgrades[$name] = {reason:$message, error_code:$error.code}
+      return reconcile_safe($s, $name, true)
+    end
+  end
   $s = swap_in($s, "resetting", {name:$name, template_record:$record}, $installation, $tmp, $backup)
   $s = finish_record($s, "resetting", $s.desired.resetting)
   if $s.upgrades != nil then $s.upgrades = delete($s.upgrades, $name) end

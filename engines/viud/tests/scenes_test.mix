@@ -149,8 +149,9 @@ fn notify($body)
   return true
 end
 fn upgrade_guard($dir)
+  $host_state.guard_calls = ($host_state.guard_calls ?? 0) + 1
   if $host_state.upgrade_open == true then raise("SCENES_EDITOR_OPEN", "editor buffer is open") end
-  if $host_state.upgrade_edit == true then
+  if $host_state.upgrade_edit == true or ($host_state.upgrade_edit_late == true and $host_state.guard_calls == 2) then
     write_file($dir .. "/behaviour.mix", read_file($dir .. "/behaviour.mix") .. "-- racing editor save\n")
     $host_state.upgrade_edit = false
   end
@@ -1650,11 +1651,24 @@ try
   $s = $l.request($s, "upgrade", {})
   check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "racing editor save"), "digest rechecked after guard under writer lock")
   $s = $l.request($s, "reset", {name:"renamed"})
+  write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- another upgrade\n")
+  $host_state.upgrade_edit_late = true
+  $host_state.guard_calls = 0
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "racing editor save") and not contains(read_file($dir .. "/behaviour.mix"), "another upgrade"), "final recheck refuses a save after invalidation")
+  $host_state.upgrade_edit_late = false
+  $s = $l.request($s, "reset", {name:"renamed"})
   for $i = 1 to 19
     mkdir($s.root .. "/.recovery/old-" .. to_string($i))
   end
   $s = $l.request($s, "reset", {name:"renamed"})
   check($s.rc == 0 and len(ls($s.root .. "/.recovery")) == 16 and is_dir($s.response.recovery), "recovery cap retains latest reset backup")
+  $protected = $s.response.recovery
+  $s.desired.resetting = {backup:substr($protected, len($s.root) + 1)}
+  mkdir($s.root .. "/.recovery/new-backup")
+  $s = $l.cap_recovery($s, nil)
+  check(is_dir($protected) and len(ls($s.root .. "/.recovery")) == 16, "recovery cap protects unfinished transaction backup")
+  $s.desired = delete($s.desired, "resetting")
   $helpers = require("../../../share/scenes/editor/lib.mix")
   check($helpers.scene_state({stale:true}).status == "template updated", "Scene Editor marks stale copies")
 
