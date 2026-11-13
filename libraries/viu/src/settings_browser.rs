@@ -384,6 +384,60 @@ fn search_edited(ctx: &egui::Context, key: egui::Id, accepted: &str, edited: &st
 mod search_input_tests {
     use super::*;
 
+    fn light_frames(check: impl Fn(&Look, &egui::FullOutput)) {
+        for scheme in [design::Scheme::Mixos, design::Scheme::Ocean, design::Scheme::Sunset] {
+            for live in [false, true] {
+                let ctx = egui::Context::default();
+                let value = json!({"title":"Settings","pages":[],"sections":[],
+                    "search_hint":"Search preferences","look_refresh_key":[true,"comfortable","round"]});
+                for mode in if live { vec![design::Mode::Dark, design::Mode::Light] } else { vec![design::Mode::Light] } {
+                    let snapshot = json!({"state":{"values":{"appearance.scheme":scheme.name(),"appearance.mode":mode.name()}}});
+                    crate::appearance::install_session(&ctx, &snapshot, "prefs", &toolkit::Theme::embedded(), &Default::default()).unwrap();
+                    let theme = crate::appearance::session_theme(&ctx);
+                    let look = Look::of(&theme, &Value::Null);
+                    let output = ctx.run_ui(egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1040.0,680.0))),
+                        ..Default::default()
+                    }, |ui| { draw(ui, "browser", &value, &mut BTreeMap::new(), &mut Vec::new()); });
+                    if mode == design::Mode::Light { check(&look, &output); }
+                    output.drop_without_applying_deltas();
+                }
+            }
+        }
+    }
+
+    fn contrast(a: Color32, b: Color32) -> f32 {
+        let luminance = |c: Color32| { let c = egui::Rgba::from(c); 0.2126*c.r()+0.7152*c.g()+0.0722*c.b() };
+        let (a,b) = (luminance(a),luminance(b));
+        (a.max(b)+0.05)/(a.min(b)+0.05)
+    }
+
+    #[test]
+    fn light_body_follows_live_session_and_fresh_start() {
+        light_frames(|look, output| {
+            assert!(!look.dark);
+            assert!(contrast(look.text, look.window) >= 4.5);
+            assert!(contrast(look.text, look.sidebar) >= 4.5);
+            let fills: Vec<_> = output.shapes.iter().filter_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.rect.width() > 900.0 => Some(r.fill), _ => None
+            }).collect();
+            assert!(fills.contains(&look.window), "body retained a previous palette: {fills:?}");
+        });
+    }
+
+    #[test]
+    fn search_placeholder_contrasts_with_its_painted_background() {
+        light_frames(|look, output| {
+            let hint = output.shapes.iter().find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.job.text == "Search preferences" => Some(t), _ => None
+            }).expect("search hint painted");
+            for section in &hint.galley.job.sections {
+                assert!(contrast(section.format.color, look.window) >= 4.5,
+                    "placeholder {:?} on {:?}",section.format.color,look.window);
+            }
+        });
+    }
+
     #[test]
     fn search_keeps_caret_through_delayed_and_partial_owner_acknowledgements() {
         let ctx = egui::Context::default();
