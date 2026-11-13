@@ -6,6 +6,7 @@ fn call(host: &mut Host, ctx: &egui::Context, rt: &tokio::runtime::Runtime,
         caller: &Arc<bus::SupervisedClient>, command: &str) -> (u8, Value) {
     let caller = caller.clone();
     let command = command.to_owned();
+    let label = command.clone();
     let task = rt.spawn(async move {
         tokio::time::timeout(Duration::from_secs(1), caller.call_with_headers_raw_within(
             "workshop", &command, &BTreeMap::new(), "{}", Duration::from_secs(1))).await
@@ -17,7 +18,7 @@ fn call(host: &mut Host, ctx: &egui::Context, rt: &tokio::runtime::Runtime,
         assert!(Instant::now() < end, "owner stalled: {:?}", host.inflight);
         std::thread::sleep(Duration::from_millis(2));
     }
-    let (rc, body, _) = rt.block_on(task).unwrap().expect("one-second Bus bound").unwrap();
+    let (rc, body, _) = rt.block_on(task).unwrap().unwrap_or_else(|e| panic!("{label}: {e}")).unwrap_or_else(|e| panic!("{label}: {e}"));
     (rc, serde_json::from_str(&body).unwrap())
 }
 

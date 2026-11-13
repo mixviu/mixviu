@@ -29,7 +29,7 @@ on workshop.ping
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.info
-  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  $out=handle($state,$event);$state=$out.state
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.actions
@@ -182,7 +182,7 @@ on bus.disconnected
   $state.connected=false;$state.status="Disconnected — requests are never replayed";$state=publish_workshop($state)
 end
 on viu.job.completed
-  $state=$controller.follow_up($controller.received($state,$event.args));$state=publish_workshop($state)
+  $state=$controller.follow_up($controller.received($state,$event.args));$dirty=true
 end
 on viu.tick
   $state=$controller.follow_up($state)
@@ -293,7 +293,7 @@ on workshop.macros.dopus
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.notice
-  $state=$controller.follow_up($controller.notice($state,$event))
+  $state=$controller.notice($state,$event)
   if $event.args.command=="noded.observe.event" then $dirty=true
   else $state=publish_workshop($state) end
 end
