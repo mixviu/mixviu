@@ -597,5 +597,6 @@ small amount of scheme hue. Borders and focus rings use full-strength ink.
 GTK and Qt exports receive strengthened surface/text pairs too. Normal
 contrast keeps authored palettes. The palette test measures delivered 8-bit
 colours across every scheme and mode: body text at least 7:1, edges at least
-3:1, and no weaker body or edge pairs than normal. The scoped CBC entry is
+3:1, and no weaker main body or edge pairs than normal. Hover, pressed and
+selection fills retain distinct shades with the same text floor. The scoped CBC entry is
 tools/prefs_panel_check.mix. Desktop visual acceptance remains separate.

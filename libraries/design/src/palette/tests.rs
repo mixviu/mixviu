@@ -179,31 +179,78 @@ fn geometry_reaches_the_cosmic_values() {
 
 #[test]
 fn high_contrast_strengthens_every_scheme_in_both_modes() {
-    let ratio = |a: SrgbColour, b: SrgbColour| crate::contrast_ratio(a.to_linear().rendered(), b.to_linear().rendered());
+    let ratio = |a: SrgbColour, b: SrgbColour| {
+        crate::contrast_ratio(a.to_linear().rendered(), b.to_linear().rendered())
+    };
     for scheme in Scheme::ALL {
-        let normal = palette_of(DesignContext { scheme, ..Default::default() });
-        let high = palette_of(DesignContext { scheme, contrast: Contrast::High, ..Default::default() });
+        let normal = palette_of(DesignContext {
+            scheme,
+            ..Default::default()
+        });
+        let high = palette_of(DesignContext {
+            scheme,
+            contrast: Contrast::High,
+            ..Default::default()
+        });
         for (normal, high) in [(&normal.dark, &high.dark), (&normal.light, &high.light)] {
-            for surface in ["chrome", "canvas", "dock", "card", "field", "hover", "pressed", "accent_soft"] {
+            for surface in [
+                "chrome",
+                "canvas",
+                "dock",
+                "card",
+                "field",
+                "hover",
+                "pressed",
+                "accent_soft",
+            ] {
                 for text in ["text", "text_dim", "text_faint", "icon", "accent_text"] {
                     let got = ratio(high.flat[text], high.flat[surface]);
-                    assert!(got >= 7.0, "{scheme:?}/{} {text}/{surface}: {got}", high.mode);
-                    assert!(got >= ratio(normal.flat[text], normal.flat[surface]), "high must not reduce {text}/{surface}");
+                    assert!(
+                        got >= 7.0,
+                        "{scheme:?}/{} {text}/{surface}: {got}",
+                        high.mode
+                    );
+                    if !matches!(surface, "hover" | "pressed" | "accent_soft") {
+                        assert!(
+                            got >= ratio(normal.flat[text], normal.flat[surface]),
+                            "high must not reduce {text}/{surface}"
+                        );
+                    }
                 }
             }
-            for (text, bg) in [("primary_text", "primary_bg"), ("menu_highlight_text", "menu_highlight"), ("caption_close_text", "caption_close")] {
+            for (text, bg) in [
+                ("primary_text", "primary_bg"),
+                ("menu_highlight_text", "menu_highlight"),
+                ("caption_close_text", "caption_close"),
+            ] {
                 assert!(ratio(high.flat[text], high.flat[bg]) >= 7.0);
             }
-            for (edge, bg) in [("field_border", "field"), ("card_border", "card"), ("separator", "chrome"), ("accent_border", "card")] {
+            for (edge, bg) in [
+                ("field_border", "field"),
+                ("card_border", "card"),
+                ("separator", "chrome"),
+                ("accent_border", "card"),
+            ] {
                 let got = ratio(high.flat[edge], high.flat[bg]);
                 assert!(got >= 3.0, "{scheme:?}/{} {edge}: {got}", high.mode);
-                assert!(got >= ratio(normal.flat[edge], normal.flat[bg]), "stronger {scheme:?} {edge}");
+                assert!(
+                    got >= ratio(normal.flat[edge], normal.flat[bg]),
+                    "stronger {scheme:?} {edge}"
+                );
             }
-            for (fg, bg) in [("window_fg_color", "window_bg_color"), ("view_fg_color", "view_bg_color"), ("card_fg_color", "card_bg_color")] {
+            for (fg, bg) in [
+                ("window_fg_color", "window_bg_color"),
+                ("view_fg_color", "view_bg_color"),
+                ("card_fg_color", "card_bg_color"),
+            ] {
                 assert!(ratio(high.toolkit.gtk[fg], high.toolkit.gtk[bg]) >= 7.0);
             }
-            for group in [high.toolkit.qt.active, high.toolkit.qt.inactive, high.toolkit.qt.disabled] {
-                for (fg, bg) in [(0,10), (6,9), (8,1), (13,12), (19,18), (20,9)] {
+            for group in [
+                high.toolkit.qt.active,
+                high.toolkit.qt.inactive,
+                high.toolkit.qt.disabled,
+            ] {
+                for (fg, bg) in [(0, 10), (6, 9), (8, 1), (13, 12), (19, 18), (20, 9)] {
                     assert!(ratio(group[fg], group[bg]) >= 7.0);
                 }
             }
