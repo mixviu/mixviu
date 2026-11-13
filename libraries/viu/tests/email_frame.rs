@@ -63,8 +63,8 @@ on test.date
   $message={id:"e1",date:$event.args.stamp,text:"Body"}
   $q=require($event.args.quoting);$e={id:"a",user:"user@example.test",label:"Example"}
   $forward=$q.make("email.forward",$e,$message,{},{}).body
-  $reply=$q.make("email.reply",$e,$message,{},{quote_on_reply:true,reply_position:"above"}).body
-  publish_email();reply(0,json_encode({forward:$forward,quoted:$reply}))
+  $quoted=$q.make("email.reply",$e,$message,{},{quote_on_reply:true,reply_position:"above"}).body
+  publish_email();reply(0,json_encode({forward:$forward,quoted:$quoted}))
 end
 "#,
     );

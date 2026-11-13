@@ -66,10 +66,10 @@ fn sample_width(ui: &Ui, id: &str, column: &Value, rows: &[Value], index: usize)
     }
     let key = hash.finish();
     let cache_id = Id::unique((ui.ctx().viewport_id(), id, index, "sample-width"));
-    if let Some(cache) = ui.data(|data| data.get_temp::<SampleWidthCache>(cache_id)) {
-        if cache.key == key {
-            return Some(cache.width);
-        }
+    if let Some(cache) = ui.data(|data| data.get_temp::<SampleWidthCache>(cache_id))
+        && cache.key == key
+    {
+        return Some(cache.width);
     }
     let width = measure_sample_width(ui, column, samples, rows, index, &body, &strong);
     ui.data_mut(|data| data.insert_temp(cache_id, SampleWidthCache { key, width }));
