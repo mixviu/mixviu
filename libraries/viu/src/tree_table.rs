@@ -21,12 +21,15 @@ fn sample_width(ui: &Ui, column: &Value, rows: &[Value], index: usize) -> Option
         .chain(samples.iter().filter_map(Value::as_str))
         .chain(rows.iter().filter_map(|row| row["cells"][index].as_str()))
         .map(|text| {
-            [body.clone(), strong.clone()].into_iter().map(|font| {
-                ui.painter()
-                    .layout_no_wrap(text.into(), font, ui.visuals().text_color())
-                    .size()
-                    .x
-            }).fold(0.0, f32::max)
+            [body.clone(), strong.clone()]
+                .into_iter()
+                .map(|font| {
+                    ui.painter()
+                        .layout_no_wrap(text.into(), font, ui.visuals().text_color())
+                        .size()
+                        .x
+                })
+                .fold(0.0, f32::max)
         })
         .fold(0.0, f32::max);
     Some(width + ui.spacing().item_spacing.x + 2.0)
@@ -62,20 +65,36 @@ mod numeric_state_tests {
             let ctx = egui::Context::default();
             crate::appearance::install(&ctx);
             ctx.set_pixels_per_point(scale);
-            let column = json!({"label":"Date","samples":["23:58","Wed 23:58","28 May","28/05/2025"]});
-            let rows = ["3 Nov", "28 Oct", "13:51", "Wed 23:59", "30/09/2025",
-                "A wider formatted date"].map(|date| json!({"cells":[date]}));
+            let column =
+                json!({"label":"Date","samples":["23:58","Wed 23:58","28 May","28/05/2025"]});
+            let rows = [
+                "3 Nov",
+                "28 Oct",
+                "13:51",
+                "Wed 23:59",
+                "30/09/2025",
+                "A wider formatted date",
+            ]
+            .map(|date| json!({"cells":[date]}));
             ctx.run_ui(egui::RawInput::default(), |ui| {
                 let width = sample_width(ui, &column, &rows, 0).unwrap();
                 let body = TextStyle::Body.resolve(ui.style());
-                for font in [body.clone(), toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(body.size))] {
+                for font in [
+                    body.clone(),
+                    toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(body.size)),
+                ] {
                     for row in &rows {
-                        let galley = ui.painter().layout_no_wrap(row["cells"][0].as_str().unwrap().into(), font.clone(), ui.visuals().text_color());
+                        let galley = ui.painter().layout_no_wrap(
+                            row["cells"][0].as_str().unwrap().into(),
+                            font.clone(),
+                            ui.visuals().text_color(),
+                        );
                         // Native table cells inset half the item gap on each side.
                         assert!(galley.size().x <= width - ui.spacing().item_spacing.x);
                     }
                 }
-            }).drop_without_applying_deltas();
+            })
+            .drop_without_applying_deltas();
         }
     }
 
@@ -681,7 +700,9 @@ fn draw_grid(
         let measured = columns
             .iter()
             .enumerate()
-            .map(|(index, column)| sample_width(ui, column, value["rows"].as_array().unwrap(), index))
+            .map(|(index, column)| {
+                sample_width(ui, column, value["rows"].as_array().unwrap(), index)
+            })
             .collect::<Vec<_>>();
         let mut table = TableBuilder::new(ui)
             .id_salt(id)
@@ -843,7 +864,9 @@ fn draw_gold(
             let label = text(column, "label").replace(['\r', '\n', '{', '}'], " ");
             catalogue.push_str(&format!("{} = {}\n", COLUMN_KEYS[index], label));
             let min = number(column, "min_width", 40.0);
-            let width = if let Some(width) = sample_width(ui, column, value["rows"].as_array().unwrap(), index) {
+            let width = if let Some(width) =
+                sample_width(ui, column, value["rows"].as_array().unwrap(), index)
+            {
                 Width::Fixed(width)
             } else if column["remainder"] == true {
                 Width::Remainder { min }

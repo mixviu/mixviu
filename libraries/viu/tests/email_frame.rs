@@ -38,23 +38,31 @@ fn isolated_runtime() -> (tempfile::TempDir, Runtime, mpsc::Receiver<()>) {
 fn reader_date_uses_session_zone() {
     // Isolate TZ from the parallel test process and chrono's local-zone cache.
     if std::env::var_os("EMAIL_DATE_ZONE_CHILD").is_none() {
-        assert!(std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "reader_date_uses_session_zone", "--nocapture"])
-            .env("EMAIL_DATE_ZONE_CHILD", "1")
-            .env("TZ", "Australia/Brisbane")
-            .status().unwrap().success());
+        assert!(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "reader_date_uses_session_zone", "--nocapture"])
+                .env("EMAIL_DATE_ZONE_CHILD", "1")
+                .env("TZ", "Australia/Brisbane")
+                .status()
+                .unwrap()
+                .success()
+        );
         return;
     }
     let bundle = Bundle::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"), &[],
-    ).unwrap();
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+        &[],
+    )
+    .unwrap();
     let mut program = bundle.program;
-    program.source.push_str(r#"
+    program.source.push_str(
+        r#"
 on test.date
   $message={id:"e1",date:$event.args.stamp,text:"Body"}
   publish_email();reply(0,"{}")
 end
-"#);
+"#,
+    );
     let (_home, mut runtime, rx) = isolated_runtime();
     runtime.load(program).unwrap();
     complete(&runtime, &rx);
@@ -63,8 +71,13 @@ end
         ("2026-11-13T23:51:00Z", "Nov 14 09:51"),
         ("invalid", ""),
     ] {
-        runtime.event("test.date".into(), json!({"stamp":stamp})).unwrap();
-        assert_eq!(complete(&runtime, &rx).model.unwrap()["values"]["message-date"], expected);
+        runtime
+            .event("test.date".into(), json!({"stamp":stamp}))
+            .unwrap();
+        assert_eq!(
+            complete(&runtime, &rx).model.unwrap()["values"]["message-date"],
+            expected
+        );
     }
 }
 
