@@ -1,0 +1,17 @@
+-- Scoped CBC checks for the panel authority and high-contrast palette.
+$fmt = run_argv(["cargo", "fmt", "-p", "design"], {timeout:300, stderr:"stdout"})
+print($fmt.stdout)
+print("FMT_PATCH_BEGIN")
+print(run_argv_must(["git", "diff", "--", "libraries/design"]))
+print("FMT_PATCH_END")
+run_argv_must(["git", "checkout", "-q", "--", "libraries/design"])
+if not $fmt.ok then exit($fmt.exit_code ?? 124) end
+for $argv in [["cargo", "test", "--locked", "-p", "design"],
+  ["cargo", "test", "--locked", "-p", "toolkit", "--lib", "session_look"],
+  ["/opt/mixos/bin/mix", "engines/viud/tests/scenes_test.mix"],
+  ["/opt/mixos/bin/mix", "apps/prefs/navigation-test.mix"]]
+  print("CHECK " .. join($argv, " "))
+  $r = run_argv($argv, {timeout:1800, max_output:16000000, stderr:"stdout"})
+  print($r.stdout)
+  if not $r.ok then exit($r.exit_code ?? 124) end
+end

@@ -858,8 +858,7 @@ mod tests {
         let mut failures = Vec::new();
         for scheme in Scheme::REVISION_ONE {
             for mode in Mode::ALL {
-                // High contrast applies the accessibility override tested by palette tests.
-                for contrast in [Contrast::Normal] {
+                for contrast in Contrast::ALL {
                     let context = DesignContext {
                         scheme,
                         mode,
