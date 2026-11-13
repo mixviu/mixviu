@@ -28,7 +28,7 @@ cache = ["dep:config", "dep:libc"]
 bus = { workspace = true, optional = true, features = ["native"] }
 tokio = { workspace = true, optional = true }
 serde.workspace = true
-serde_json = { workspace = true, features = ["float_roundtrip"] }
+serde_json.workspace = true
 blake3.workspace = true
 design.workspace = true
 thiserror.workspace = true
