@@ -19,12 +19,17 @@ fn read_mode($file)
   if not valid($value.mode) then raise("APP_MODE","invalid saved app mode") end
   return $value.mode
 end
+fn restore($app,$legacy)
+  if is_file(path($app)) then return load($app) end
+  return $legacy
+end
 fn save($app,$mode)
   if not (viu_context().native_facilities ?? false) or (viu_context().options.headless ?? false) then return end
   write_mode(path($app),$mode)
 end
 fn write_mode($file,$mode)
   if not valid($mode) then raise("APP_MODE","mode must be light, dark or null") end
+  if $mode==nil and not is_file($file) then return end
   $text=json_encode({mode:$mode}).."\n"
   if is_file($file) and read_file($file)==$text then return end
   mkdir(dirname($file))

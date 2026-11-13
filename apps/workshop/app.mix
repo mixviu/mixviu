@@ -119,7 +119,7 @@ on viu.viewport.changed
   $state.window_width=$event.args.width;$state.window_height=$event.args.height;$state=publish_workshop($state)
 end
 on viu.saved.loaded
-  $state=$saved.load($state,$event.args);$state.theme_choice.mode=$app_mode.load("workshop");$state=publish_workshop($state)
+  $state=$saved.load($state,$event.args);$state.theme_choice.mode=$app_mode.restore("workshop",$state.theme_choice.mode);$state=publish_workshop($state)
 end
 on workshop.layout
   $a=$event.args
