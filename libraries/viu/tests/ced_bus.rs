@@ -86,7 +86,10 @@ fn ced_worker_recovers_when_compositor_registers_after_start() {
     for registered in [false, true] {
         available.store(registered, std::sync::atomic::Ordering::SeqCst);
         runtime
-            .event("job.run".into(), json!({"kind":"show","payload":{"app_id":"example.ced"}}))
+            .event(
+                "job.run".into(),
+                json!({"kind":"show","payload":{"app_id":"example.ced"}}),
+            )
             .unwrap();
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let done = runtime.try_completion().unwrap();

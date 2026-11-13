@@ -16,7 +16,7 @@ $state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={}
 $state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
 $state.local_theme={};$state.info_commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).info_commands
 $state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil;$state.locations={};$state.save_prompts={};$state.notice_at={}
-$state.launch=$app_launch ?? {app_id:"mixviu.ced",comp:env("MIX_COMP_SERVICE") ?? "comp"}
+try $state.launch=$app_launch catch $why $state.launch={app_id:"mixviu.ced",comp:env("MIX_COMP_SERVICE") ?? "comp"} end
 $ced_core.publish_ced($state)
 on ced.ping
   reply(0,json_encode({pong:true,service:"ced",schema:"ced.v1",pid:pid(),headless:false}))
