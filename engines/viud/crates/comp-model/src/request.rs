@@ -483,6 +483,7 @@ pub struct SequenceStep {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LongOp {
     CaptureFrame(crate::capture::CaptureFrameSpec),
+    Record(crate::capture::RecordCommand),
     RegionSelect {
         output: Option<String>,
         timeout: Duration,
@@ -509,6 +510,7 @@ impl LongOp {
     pub fn budget(&self) -> Duration {
         match self {
             Self::Motion(spec) => spec.budget(),
+            Self::Record(_) => Duration::from_secs(15),
             Self::CaptureFrame(_) => Duration::from_secs(3),
             // Reserve four seconds after interaction for an acknowledged clean
             // frame (55s + 4s = 59s), strictly inside LONG_COMMAND_MAX's 60s.
@@ -2091,6 +2093,17 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
         "comp.debug" | "comp.debug.set" | "comp.debug.recent"
     ) {
         return Ok(Request::Debug);
+    }
+    if matches!(
+        command,
+        "comp.record.start" | "comp.record.marker" | "comp.record.status" | "comp.record.stop"
+    ) {
+        if malformed {
+            return Err(invalid_argument("args", "object", "record arguments").into_wire());
+        }
+        return crate::capture::parse_record(command, args)
+            .map(|spec| Request::Long(LongOp::Record(spec)))
+            .map_err(ControlReply::into_wire);
     }
     if command == "comp.capture.frame" {
         if malformed {

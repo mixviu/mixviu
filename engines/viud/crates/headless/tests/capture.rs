@@ -107,6 +107,500 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
+#[ignore = "needs render node, ffmpeg and same-revision viud/noded/Mix binaries"]
+fn record_changing_4k_ten_seconds() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("record-changing");
+    let mut process = process::spawn_4k("record-changing", &bus.url);
+    let mut p = Pattern::new(connect(&mut process));
+    p.wait_callback(0);
+    bus.ready();
+    let row = bus.window();
+    bus.call(
+        "comp.window.fullscreen",
+        place_args(&row, json!({"output":"headless-0"})),
+    );
+    pump_patterns(&mut [&mut p]);
+    // The fixture's initial xdg configure chooses 1280x720 even on a larger
+    // output. Submit full-output buffers explicitly and prove their coverage.
+    p.state.size = (3840, 2160);
+    p.solid_buffer(0xff20d040);
+    let mut alternate = p.current_buffer();
+    p.change_buffer();
+    let previous = p.state.callbacks;
+    p.commit(true);
+    p.wait_callback(previous);
+    let (width, height, pixels) = ppm(&bus, &process, "full-4k-workload", None);
+    assert_eq!((width, height), (3840, 2160));
+    let at = (2100 * width + 3800) * 3;
+    assert_eq!(&pixels[at..at + 3], &[0xaa, 0x33, 0x77]);
+    for recording in [false, true] {
+        let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.mkv"), "max_seconds":12,"fps":30,"cursor":true})));
+        let begin_us = monotonic_ns() / 1000;
+        let begin = Instant::now();
+        let mut commits = 0;
+        while begin.elapsed() < Duration::from_secs(10) {
+            p.swap_buffer(&mut alternate);
+            p.state.size = (3840, 2160);
+            p.commit(true);
+            commits += 1;
+            let next = begin + Duration::from_nanos(commits * 1_000_000_000 / 30);
+            while Instant::now() < next {
+                p.pump();
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+        let end_us = monotonic_ns() / 1000;
+        let stop = start.map(|s| bus.call("comp.record.stop", json!({"session":s["session"]})));
+        thread::sleep(Duration::from_millis(300));
+        let trace = fs::read_to_string(process.root.join("frames.log")).unwrap();
+        let field = |line: &str, key: &str| -> u64 {
+            line.split_whitespace()
+                .find_map(|word| word.strip_prefix(key)?.parse().ok())
+                .unwrap()
+        };
+        let mut times: Vec<u64> = trace
+            .lines()
+            .filter(|line| line.contains("stage=headless_frame_cpu "))
+            .filter(|line| (begin_us..end_us).contains(&field(line, "start_us=")))
+            .map(|line| field(line, "duration_us="))
+            .collect();
+        assert!(!times.is_empty());
+        times.sort_unstable();
+        println!(
+            "CHANGING_4K30 recording={recording} commits={commits} compositor_frames={} mean_us={} p95_us={} max_us={} recording_stats={stop:?}",
+            times.len(),
+            times.iter().sum::<u64>() / times.len() as u64,
+            times[times.len() * 95 / 100],
+            times.last().unwrap()
+        );
+        if let Some(stop) = stop {
+            assert_eq!(stop["error"], Value::Null, "{stop}");
+            assert!(stop["readbacks"].as_u64().unwrap() > 10);
+            assert!(
+                (290..=320).contains(&stop["frames"].as_u64().unwrap()),
+                "{stop}"
+            );
+        }
+    }
+}
+
+#[test]
+fn record_windows_only_content_and_multiple_targets() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("record-windows");
+    let mut process = process::spawn(1, None, "record-windows", Some(&bus.url));
+    let mut b = Pattern::named(connect(&mut process), "record-window-b", false);
+    let mut a = Pattern::named(connect(&mut process), "record-window-a", false);
+    bus.ready();
+    a.change_buffer();
+    a.commit(true);
+    pump_patterns(&mut [&mut a, &mut b]);
+    let ar = bus.window_for("record-window-a");
+    let br = bus.window_for("record-window-b");
+    for (row, z) in [(&br, 0), (&ar, 10)] {
+        bus.call(
+            "comp.window.place",
+            place_args(row, json!({"x":100,"y":100,"z":z})),
+        );
+    }
+    let start=bus.call("comp.record.start",json!({"request_id":"windows","target":{"windows":[target(&br),target(&ar)]},"cursor":false,"path":process.root.join("windows.mkv"),"max_seconds":5}));
+    assert_eq!(
+        start["width"], 400,
+        "no server frame or shadow is part of a window take"
+    );
+    assert_eq!(start["height"], 160);
+    thread::sleep(Duration::from_millis(150));
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    assert_eq!(stop["error"], Value::Null, "{stop}");
+    let decoded = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(start["path"].as_str().unwrap())
+        .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
+        .output()
+        .unwrap();
+    assert!(decoded.status.success());
+    assert_eq!(decoded.stdout.len(), 400 * 160 * 3);
+    for (x, expected) in [(50, rgb(COLOURS[0])), (250, [0xaa, 0x33, 0x77])] {
+        let at = (40 * 400 + x) * 3;
+        for (actual, expected) in decoded.stdout[at..at + 3].iter().zip(expected) {
+            assert!((i16::from(*actual) - i16::from(expected)).abs() < 20);
+        }
+    }
+}
+
+#[test]
+fn record_vaapi_capability_or_clear_failure() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("record-vaapi");
+    let mut process = process::spawn(1, None, "record-vaapi", Some(&bus.url));
+    drop(connect(&mut process));
+    bus.ready();
+    let probe = Command::new("ffmpeg")
+        .args(["-hide_banner", "-encoders"])
+        .output()
+        .unwrap();
+    let reported = String::from_utf8_lossy(&probe.stdout)
+        .split_whitespace()
+        .any(|word| word == "h264_vaapi");
+    let args = json!({"request_id":"vaapi","target":{"output":"headless-0"},"encoder":"vaapi","path":process.root.join("vaapi.mkv"),"max_seconds":5});
+    if !reported {
+        let error = bus.call_rc("comp.record.start", args, 10);
+        assert!(error["message"].as_str().unwrap().contains("h264_vaapi"));
+        println!("VAAPI not reported by ffmpeg; explicit refusal verified");
+        return;
+    }
+    let start = bus.call("comp.record.start", args);
+    thread::sleep(Duration::from_millis(300));
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    if let Some(error) = stop["error"].as_str() {
+        assert!(
+            error.contains("ffmpeg"),
+            "device failure must include ffmpeg stderr: {stop}"
+        );
+        println!("VAAPI reported, device unavailable: {error}");
+        assert!(!Path::new(start["path"].as_str().unwrap()).exists());
+        assert_eq!(stop["frames_path"], Value::Null);
+        assert_eq!(stop["markers_path"], Value::Null);
+        assert!(!fs::read_dir(&process.root).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".part")
+        }));
+    } else {
+        assert_eq!(stop["encoder"], "vaapi");
+        assert!(fs::metadata(start["path"].as_str().unwrap()).unwrap().len() > 0);
+        println!("VAAPI recording completed: {stop}");
+    }
+}
+
+#[test]
+fn record_4k_output_windows_pointer_and_damage_repeat() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("record-4k");
+    let mut process = process::spawn_4k("record-4k", &bus.url);
+    let mut a = Pattern::named(connect(&mut process), "record-a", false);
+    let mut b = Pattern::named(connect(&mut process), "record-b", false);
+    bus.ready();
+    pump_patterns(&mut [&mut a, &mut b]);
+    for (name, x) in [("record-a", 100), ("record-b", 600)] {
+        let row = bus.window_for(name);
+        bus.call(
+            "comp.window.place",
+            place_args(&row, json!({"x":x,"y":100})),
+        );
+    }
+    bus.call(
+        "comp.input.pointer.move",
+        json!({"seat":"agent","output":"headless-0","x":1000,"y":500}),
+    );
+    pump_patterns(&mut [&mut a, &mut b]);
+    let path = process.root.join("4k.mkv");
+    let args = json!({"request_id":"4k","target":{"output":"headless-0"},"cursor":true,"path":path,"fps":30,"max_seconds":10});
+    let start = bus.call("comp.record.start", args);
+    assert_eq!(start["width"], 3840);
+    assert_eq!(start["height"], 2160);
+    let session = start["session"].clone();
+    let before = bus.call("comp.record.status", json!({"session":session}));
+    for _ in 0..50 {
+        a.pump();
+        b.pump();
+        thread::sleep(Duration::from_millis(20));
+    }
+    let idle = bus.call("comp.record.status", json!({"session":session}));
+    assert!(idle["repeated"].as_u64().unwrap() >= 20, "{idle}");
+    assert!(
+        idle["readbacks"].as_u64().unwrap() - before["readbacks"].as_u64().unwrap() <= 4,
+        "idle output kept reading back: {before} -> {idle}"
+    );
+    assert!(idle["readback_mean_us"].as_u64().unwrap() > 0);
+    bus.call(
+        "comp.input.pointer.move",
+        json!({"seat":"agent","output":"headless-0","x":1200,"y":500}),
+    );
+    // A debug renderer's first read can incur up to sixty ticks of budget
+    // debt. Verify eventual pointer capture within that recovery bound.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let moved = bus.call("comp.record.status", json!({"session":session}));
+        if moved["readbacks"].as_u64() > idle["readbacks"].as_u64() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "pointer damage must cause readback: {moved}"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+    let marker = bus.call(
+        "comp.record.marker",
+        json!({"session":session,"label":"4k-done"}),
+    );
+    let stop = bus.call("comp.record.stop", json!({"session":session}));
+    assert!(
+        stop["repeated"].as_u64() >= stop["dropped"].as_u64(),
+        "overruns must be repeated on the timeline: {stop}"
+    );
+    assert!(marker["frame"].as_u64() < stop["frames"].as_u64());
+    let decoded = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(&path)
+        .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
+        .output()
+        .unwrap();
+    assert!(
+        decoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decoded.stderr)
+    );
+    assert_eq!(decoded.stdout.len(), 3840 * 2160 * 3);
+    let counted = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(&path)
+        .args(["-progress", "pipe:1", "-nostats", "-f", "null", "-"])
+        .output()
+        .unwrap();
+    assert!(
+        counted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&counted.stderr)
+    );
+    let encoded_frames = String::from_utf8_lossy(&counted.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("frame=")?.trim().parse::<u64>().ok())
+        .max()
+        .unwrap();
+    assert_eq!(
+        encoded_frames,
+        stop["frames"].as_u64().unwrap(),
+        "queue overruns must not shorten the encoded stream"
+    );
+    let at = |x: usize, y: usize| {
+        let i = (y * 3840 + x) * 3;
+        &decoded.stdout[i..i + 3]
+    };
+    // Each independent client must be visible in the whole-output recording.
+    for x in [150, 650] {
+        for (actual, expected) in at(x, 140).iter().zip(rgb(COLOURS[0])) {
+            assert!((i16::from(*actual) - i16::from(expected)).abs() < 20);
+        }
+    }
+    let amber = (500..524)
+        .flat_map(|y| (1000..1024).map(move |x| (x, y)))
+        .filter(|(x, y)| {
+            let p = at(*x, *y);
+            p[0] > 200 && p[1] > 90 && p[1] < 210 && p[2] < 80
+        })
+        .count();
+    assert!(
+        amber > 20,
+        "the encoded output must include the pointer ({amber} amber pixels)"
+    );
+    let frames: Vec<Value> = fs::read_to_string(start["frames_path"].as_str().unwrap())
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    let duration = frames.last().unwrap()["t_us"].as_u64().unwrap() as f64 / 1_000_000.0;
+    assert!(
+        (frames.len() as f64 - duration * 30.0).abs() < 5.0,
+        "{} frames in {duration}s",
+        frames.len()
+    );
+    println!("4K30: {stop}; idle status: {idle}");
+}
+
+#[test]
+fn record_idle_output_lifecycle_and_clock() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("record-idle");
+    let mut process = process::spawn(1, None, "record-idle", Some(&bus.url));
+    drop(connect(&mut process));
+    bus.ready();
+    let observer = BlankObserver::start(&bus);
+    let path = process.root.join("take.mkv");
+    let args = json!({"request_id":"take-1","target":{"output":"headless-0"},"path":path,"fps":30,"max_seconds":10});
+    fs::write(&path, "existing").unwrap();
+    bus.call_rc("comp.record.start", args.clone(), 10);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "existing");
+    fs::remove_file(&path).unwrap();
+    let start = bus.call("comp.record.start", args.clone());
+    assert!(
+        !path.exists(),
+        "final path stays absent until successful stop"
+    );
+    let mut changed = args.clone();
+    changed["fps"] = json!(10);
+    bus.call_rc("comp.record.start", changed, 10);
+    assert_eq!(start, bus.call("comp.record.start", args.clone()));
+    let session = start["session"].clone();
+    assert_eq!(start["clock"], "monotonic");
+    assert_eq!(start["width"], 1280);
+    assert_eq!(start["height"], 720);
+    for id in ["unknown", "stale-session", "mismatched-session"] {
+        let refused = bus.call_rc("comp.record.stop", json!({"session":id}), 10);
+        assert_eq!(refused["error"], "record_failed");
+        let live = bus.call("comp.record.status", json!({"session":session}));
+        assert_eq!(live["state"], "recording");
+        assert_eq!(live["session"], session);
+    }
+    let busy = bus.call_rc("comp.record.start",json!({"request_id":"other","target":{"output":"headless-0"},"path":process.root.join("other.mkv"),"max_seconds":10}),10);
+    assert_eq!(busy["error"], "record_busy");
+    let mut markers = Vec::new();
+    for index in 0..4 {
+        thread::sleep(Duration::from_millis(100));
+        markers.push(bus.call(
+            "comp.record.marker",
+            json!({"session":session,"label":format!("step-{index}"),"data":{"step":index}}),
+        ));
+    }
+    let status = bus.call("comp.record.status", json!({"session":session}));
+    assert_eq!(status["state"], "recording");
+    assert!(status["repeated"].as_u64().unwrap() > 0);
+    let stop = bus.call("comp.record.stop", json!({"session":session}));
+    assert_eq!(
+        stop,
+        bus.call("comp.record.stop", json!({"session":session}))
+    );
+    let frames = stop["frames"].as_u64().unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    for key in ["path", "frames_path", "markers_path"] {
+        assert_eq!(
+            fs::metadata(stop[key].as_str().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+    assert!(frames >= 10, "{stop}");
+    assert!(fs::metadata(&path).unwrap().len() > 0);
+    let decoded = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(&path)
+        .args(["-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
+        .output()
+        .unwrap();
+    assert!(
+        decoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decoded.stderr)
+    );
+    assert_eq!(decoded.stdout.len() as u64, frames * 1280 * 720 * 3);
+    let rows: Vec<Value> = fs::read_to_string(start["frames_path"].as_str().unwrap())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(rows.len() as u64, frames);
+    let duration = rows.last().unwrap()["t_us"].as_u64().unwrap() as f64 / 1_000_000.0;
+    assert!(
+        (frames as f64 - 30.0 * duration).abs() < 5.0,
+        "{frames} frames in {duration}s"
+    );
+    for pair in markers.windows(2) {
+        assert!(pair[0]["t_us"].as_u64() < pair[1]["t_us"].as_u64());
+        assert!(pair[0]["seq"].as_u64() < pair[1]["seq"].as_u64());
+    }
+    assert!(
+        markers
+            .iter()
+            .all(|m| m["frame"].as_u64().unwrap() < frames)
+    );
+    let logged: Vec<Value> = fs::read_to_string(start["markers_path"].as_str().unwrap())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    for (reply, row) in markers.iter().zip(logged) {
+        for key in ["seq", "frame", "t_us"] {
+            assert_eq!(reply[key], row[key]);
+        }
+    }
+    let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.mkv"),"max_seconds":1}));
+    thread::sleep(Duration::from_millis(1300));
+    let bounded = bus.call("comp.record.stop", json!({"session":next["session"]}));
+    assert!(
+        (28..=32).contains(&bounded["frames"].as_u64().unwrap()),
+        "max_seconds did not bound the take: {bounded}"
+    );
+    assert_eq!(start, bus.call("comp.record.start", args));
+    let discard_path = process.root.join("discard.mkv");
+    let discard = bus.call("comp.record.start", json!({"request_id":"discard", "target":{"output":"headless-0"},"path":discard_path,"max_seconds":1}));
+    let discarded = bus.call(
+        "comp.record.stop",
+        json!({"session":discard["session"], "discard":true}),
+    );
+    assert_eq!(discarded["frames_path"], Value::Null);
+    assert!(!discard_path.exists());
+    assert!(!fs::read_dir(&process.root).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains(".part")
+    }));
+    assert_eq!(
+        stop,
+        bus.call("comp.record.stop", json!({"session":session}))
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let reply = observer.request(&bus, "observer.record_states");
+        let states: Vec<_> = reply["body"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["session"] == session)
+            .map(|row| row["state"].as_str().unwrap())
+            .collect();
+        if states == ["recording", "finishing", "idle"] {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "record.state publications: {reply}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn record_window_target_gone_fails() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("record-gone");
+    let mut process = process::spawn(1, None, "record-gone", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
+    bus.ready();
+    pattern.wait_callback(0);
+    let window = bus.window();
+    let start=bus.call("comp.record.start",json!({"request_id":"gone","target":{"windows":[target(&window)]},"path":process.root.join("gone.mkv"),"max_seconds":10}));
+    assert!(start["width"].as_u64().unwrap() > 0);
+    drop(pattern);
+    thread::sleep(Duration::from_millis(250));
+    let status = bus.call("comp.record.status", json!({"session":start["session"]}));
+    assert_eq!(status["state"], "failed", "{status}");
+    assert!(status["error"].as_str().unwrap().contains("gone"));
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    assert_eq!(stop["frames_path"], Value::Null);
+    assert!(!Path::new(start["path"].as_str().unwrap()).exists());
+}
+#[test]
 fn inactive_seat_maps_clients_and_captures_output_and_window() {
     if !inactive_fixture_available() {
         return;

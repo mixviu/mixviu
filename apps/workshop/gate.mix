@@ -3,6 +3,8 @@
 $code=0
 try
   if contains(args(),"--prepare") then print(run_argv_must(["cargo","fmt","-p","lib-viu","-p","scene"])) end
+  $r=run_argv(["cargo","test","--locked","-p","lib-viu","--features","test-support","--test","workshop_bus"],{timeout:3600,max_output:16000000});print($r)
+  if not $r.ok then exit($r.exit_code ?? 124) end
   for $argv in [["cargo","fmt","-p","lib-viu","-p","scene","--","--check"],["cargo","test","--locked","-p","lib-viu","--test","workshop_frame","--test","ports_round4"],["cargo","test","--locked","-p","lib-viu","--lib","native_bus::tests"],["cargo","test","--locked","-p","lib-viu","--lib","launch::tests"],["cargo","test","--locked","-p","scene"]]
     print({argv:$argv})
     $r=run_argv($argv,{timeout:3600,max_output:16000000,env:{CARGO_BUILD_JOBS:"6"}});print($r)

@@ -3,7 +3,12 @@
 -- Only the private headless test broker reaches this observer.
 $edges = []
 $inhibitors = []
+$record_states = []
 subscribe("comp-headless.props.changed")
+subscribe("comp-headless.record.state")
+on record.state
+  push($record_states, $event.args)
+end
 on props.changed
   if $event.args.path == "display.blanked" then
     push($edges, $event.args)
@@ -21,4 +26,7 @@ on observer.blanks
 end
 on observer.inhibitors
   reply(0, json_encode($inhibitors))
+end
+on observer.record_states
+  reply(0, json_encode($record_states))
 end
