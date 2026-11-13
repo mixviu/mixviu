@@ -222,7 +222,9 @@ fn notice($s,$event)
   $cmd=$event.args.command;$a=$event.args.args;$headers=$event.headers
   if $cmd=="bus.connected" then
     $s.connected=true;$s.status="Connected"
-    for $topic in ["noded.props.changed","agent.session.updated","agent.session.ended","agent.permission.requested",viu_context().citizen..".macros.finished"] subscribe($topic) end
+    for $topic in ["noded.props.changed","agent.session.updated","agent.session.ended","agent.permission.requested",viu_context().citizen..".macros.finished"]
+      $s=$work.enqueue($s,{owner:"subscription",op:"subscribe",topic:$topic,lane:"subscription"})
+    end
     $s=$discovery.begin($s,nil);$s=$agents.refresh($s);$s=$macros.enqueue($s,"catalogues",{},nil);$s=$mesh_flow.refresh($s)
     if $s.mesh.resume_observe or not $s.mesh.ever_connected then $s=$mesh_flow.ensure($s) end
     $s.mesh.ever_connected=true

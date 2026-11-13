@@ -9,7 +9,10 @@ end
 on job.run
   $a=$event.args
   try
-    if $a.op=="describe" then
+    if $a.op=="subscribe" then
+      subscribe($a.topic)
+      reply(0,"{}")
+    elif $a.op=="describe" then
       if monotonic()-$a.queued>=10 then raise("DESCRIPTION","discovery capacity deadline exceeded") end
       if monotonic()>=$a.phase_deadline then raise("DESCRIPTION","description phase deadline exceeded") end
       $started=monotonic();$ok=false;$why=""
