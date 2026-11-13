@@ -185,6 +185,7 @@ on viu.job.completed
   $state=$controller.follow_up($controller.received($state,$event.args));$dirty=true
 end
 on viu.tick
+  if $state.discovery!=nil then $dirty=true end
   $state=$controller.follow_up($state)
   if $dirty or $state.row_key=="nodes:mesh" or ($state.row_key!=nil and starts_with($state.row_key,"agent:")) then $state=publish_workshop($state);$dirty=false end
 end

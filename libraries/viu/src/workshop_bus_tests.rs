@@ -67,6 +67,12 @@ fn workshop_answers_during_discovery() {
         // Keep a windowed owner's model deliberately undrawn. Its ordinary
         // Bus surface must work even while UI automation waits for geometry.
         if count == 4 { host.headless = false; }
+        let blocked_ui = if count == 4 {
+            let c = caller.clone();
+            Some(rt.spawn(async move {
+                c.call_with_headers_raw_within("workshop", "workshop.ui.tree", &BTreeMap::new(), "{}", Duration::from_secs(30)).await
+            }))
+        } else { None };
         let mut overlapping = false;
         let mut streamed = false;
         loop {
@@ -92,6 +98,10 @@ fn workshop_answers_during_discovery() {
         }
         assert!(streamed, "healthy results must appear before the silent peer finishes");
         assert!(disconnected.load(std::sync::atomic::Ordering::Acquire));
+        if let Some(task) = blocked_ui {
+            assert!(!task.is_finished(), "UI must still wait for an actual draw");
+            task.abort();
+        }
         for task in tasks { task.abort(); }
         for peer in peers { rt.block_on(peer.close()); }
         rt.block_on(caller.close());
