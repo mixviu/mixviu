@@ -298,7 +298,7 @@ fn record_idle_output_lifecycle_and_clock() {
     let mut process = process::spawn(1, None, "record-idle", Some(&bus.url));
     drop(connect(&mut process));
     bus.ready();
-    let observer=BlankObserver::start(&bus);
+    let observer = BlankObserver::start(&bus);
     let path = process.root.join("take.mkv");
     let args = json!({"request_id":"take-1","target":{"output":"headless-0"},"path":path,"fps":30,"max_seconds":10});
     let start = bus.call("comp.record.start", args.clone());
@@ -372,16 +372,33 @@ fn record_idle_output_lifecycle_and_clock() {
     }
     let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.mkv"),"max_seconds":1}));
     thread::sleep(Duration::from_millis(1300));
-    let bounded=bus.call("comp.record.stop",json!({"session":next["session"]}));
-    assert!((28..=32).contains(&bounded["frames"].as_u64().unwrap()),"max_seconds did not bound the take: {bounded}");
-    assert_eq!(start,bus.call("comp.record.start",args));
-    assert_eq!(stop,bus.call("comp.record.stop",json!({"session":session})));
-    let deadline=Instant::now()+Duration::from_secs(2);
+    let bounded = bus.call("comp.record.stop", json!({"session":next["session"]}));
+    assert!(
+        (28..=32).contains(&bounded["frames"].as_u64().unwrap()),
+        "max_seconds did not bound the take: {bounded}"
+    );
+    assert_eq!(start, bus.call("comp.record.start", args));
+    assert_eq!(
+        stop,
+        bus.call("comp.record.stop", json!({"session":session}))
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
     loop {
-        let reply=observer.request(&bus,"observer.record_states");
-        let states:Vec<_>=reply["body"].as_array().unwrap().iter().filter(|row|row["session"]==session).map(|row|row["state"].as_str().unwrap()).collect();
-        if states==["recording","finishing","idle"] {break;}
-        assert!(Instant::now()<deadline,"record.state publications: {reply}");
+        let reply = observer.request(&bus, "observer.record_states");
+        let states: Vec<_> = reply["body"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["session"] == session)
+            .map(|row| row["state"].as_str().unwrap())
+            .collect();
+        if states == ["recording", "finishing", "idle"] {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "record.state publications: {reply}"
+        );
         thread::sleep(Duration::from_millis(10));
     }
 }

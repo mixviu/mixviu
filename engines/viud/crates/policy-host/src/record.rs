@@ -57,7 +57,9 @@ fn empty_status(state: &str, error: Option<&str>) -> Value {
     json!({"state":state,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"bytes":0,"queue":0,"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
 }
 fn event(s: &Session, state: &'static str) {
-    if s.last_state.replace(state) == state { return; }
+    if s.last_state.replace(state) == state {
+        return;
+    }
     EVENTS.with_borrow_mut(|events| {
         events.push(json!({"session":s.id,"state":state,"error":s.failed}))
     });
@@ -67,11 +69,13 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
     let answer: Answer = Box::new(answer);
     if let RecordCommand::Start { request_id, .. } = &op {
         if let Some(past) = PAST.with_borrow(|past| past.get(request_id).cloned()) {
-            answer(
-                past.start
-                    .map(ControlReply::Body)
-                    .unwrap_or_else(|| refused(past.start_error.as_deref().unwrap_or("previous start failed"))),
-            );
+            answer(past.start.map(ControlReply::Body).unwrap_or_else(|| {
+                refused(
+                    past.start_error
+                        .as_deref()
+                        .unwrap_or("previous start failed"),
+                )
+            }));
             return;
         }
     } else {
@@ -217,9 +221,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
     let current = CURRENT.with_borrow(Clone::clone);
     let Some(current) = current else {
         if matches!(op, RecordCommand::Status { session: None }) {
-            answer(ControlReply::Body(
-                empty_status("idle",None),
-            ));
+            answer(ControlReply::Body(empty_status("idle", None)));
         } else {
             answer(refused("unknown session"));
         }
@@ -238,23 +240,56 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         return;
     }
     match op {
-        RecordCommand::Status{..} => answer(ControlReply::Body(s.recording.as_ref().map(Recording::status).unwrap_or_else(||empty_status(if s.failed.is_some(){"failed"}else{"recording"},s.failed.as_deref())))),
-        RecordCommand::Marker{label,data,..} => answer(match s.recording.as_mut().ok_or("first frame pending").and_then(|r|r.marker(label,data).map_err(|_|"marker write failed")) { Ok(value)=>ControlReply::Body(value),Err(error)=>refused(error) }),
-        RecordCommand::Stop{discard,..} => {
-            if let Some(r)=s.recording.as_mut() {
-                if let Some(reply)=&r.terminal { answer(ControlReply::Body(reply.clone())); return; }
-                let changed=r.stop(discard);
+        RecordCommand::Status { .. } => answer(ControlReply::Body(
+            s.recording
+                .as_ref()
+                .map(Recording::status)
+                .unwrap_or_else(|| {
+                    empty_status(
+                        if s.failed.is_some() {
+                            "failed"
+                        } else {
+                            "recording"
+                        },
+                        s.failed.as_deref(),
+                    )
+                }),
+        )),
+        RecordCommand::Marker { label, data, .. } => answer(
+            match s
+                .recording
+                .as_mut()
+                .ok_or("first frame pending")
+                .and_then(|r| r.marker(label, data).map_err(|_| "marker write failed"))
+            {
+                Ok(value) => ControlReply::Body(value),
+                Err(error) => refused(error),
+            },
+        ),
+        RecordCommand::Stop { discard, .. } => {
+            if let Some(r) = s.recording.as_mut() {
+                if let Some(reply) = &r.terminal {
+                    answer(ControlReply::Body(reply.clone()));
+                    return;
+                }
+                let changed = r.stop(discard);
                 s.stop_answers.push(answer);
-                if changed { event(&s,"finishing"); }
-            } else { answer(refused("first frame pending or session failed")); }
+                if changed {
+                    event(&s, "finishing");
+                }
+            } else {
+                answer(refused("first frame pending or session failed"));
+            }
         }
-        _=>unreachable!(),
+        _ => unreachable!(),
     }
 }
 
 fn fail(session: &Rc<RefCell<Session>>, error: &str) {
     let mut s = session.borrow_mut();
-    if s.failed.is_some() { return; }
+    if s.failed.is_some() {
+        return;
+    }
     s.failed = Some(error.into());
     for answer in std::mem::take(&mut s.start_answers) {
         answer(refused(error));
@@ -263,11 +298,16 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
         r.error = Some(error.into());
         r.stop(false);
     } else {
-        let past = Past { id:s.id.clone(), start:None, start_error:Some(error.into()),
-            terminal:json!({"path":s.path,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"frames_path":format!("{}.frames.jsonl",s.path),"markers_path":format!("{}.markers.jsonl",s.path),"encoder":s.encoder,"error":error}),
-            status:empty_status("failed",Some(error)),
+        let past = Past {
+            id: s.id.clone(),
+            start: None,
+            start_error: Some(error.into()),
+            terminal: json!({"path":s.path,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"frames_path":format!("{}.frames.jsonl",s.path),"markers_path":format!("{}.markers.jsonl",s.path),"encoder":s.encoder,"error":error}),
+            status: empty_status("failed", Some(error)),
         };
-        PAST.with_borrow_mut(|all| { all.insert(s.request_id.clone(),past); });
+        PAST.with_borrow_mut(|all| {
+            all.insert(s.request_id.clone(), past);
+        });
     }
     event(&s, "failed");
 }
@@ -295,7 +335,9 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if r.poll() {
                 let reply = r.terminal.clone().unwrap();
                 let error = r.error.clone();
-                if error.is_some() { s.failed = error; }
+                if error.is_some() {
+                    s.failed = error;
+                }
                 let past = Past {
                     id: s.id.clone(),
                     start: s.start.clone(),
@@ -425,8 +467,10 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         let session = session.clone();
         screencopy::file::raw_answer(token.clone(), move |result| {
             {
-                let s=session.borrow();
-                if s.failed.is_some() || s.recording.as_ref().is_some_and(|r|!r.is_recording()) { return; }
+                let s = session.borrow();
+                if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
+                    return;
+                }
             }
             let captured_us = recorder::bus::monotonic_us();
             let frame = match result {

@@ -179,7 +179,10 @@ impl Recording {
         std::thread::spawn(move || {
             let result = encoder.finish_result().and_then(|temp| {
                 if discard {
-                    std::fs::remove_file(temp).and_then(|_|std::fs::remove_file(format!("{path}.frames.jsonl"))).and_then(|_|std::fs::remove_file(format!("{path}.markers.jsonl"))).map_err(|e| e.to_string())
+                    std::fs::remove_file(temp)
+                        .and_then(|_| std::fs::remove_file(format!("{path}.frames.jsonl")))
+                        .and_then(|_| std::fs::remove_file(format!("{path}.markers.jsonl")))
+                        .map_err(|e| e.to_string())
                 } else {
                     std::fs::rename(temp, path).map_err(|e| e.to_string())
                 }
@@ -193,18 +196,20 @@ impl Recording {
         let Some(rx) = &self.finishing else {
             return false;
         };
-        let result=match rx.try_recv() {
-            Ok(result)=>result,
-            Err(std::sync::mpsc::TryRecvError::Disconnected)=>Err("encoder finaliser disconnected".into()),
-            Err(std::sync::mpsc::TryRecvError::Empty)=>return false,
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("encoder finaliser disconnected".into())
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
         };
-                if let Err(error) = result {
-                    self.error = Some(error);
-                }
-                self.finishing = None;
-                self.terminal = Some(
-                    json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
-                );
-                true
+        if let Err(error) = result {
+            self.error = Some(error);
+        }
+        self.finishing = None;
+        self.terminal = Some(
+            json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
+        );
+        true
     }
 }

@@ -2,8 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Video encoding via an ffmpeg subprocess.
 //!
-//! We pipe raw BGRA frames to `ffmpeg`'s stdin and let it mux to mp4 (codec
-//! auto-selected by the container — H.264 where available, else mpeg4). A
+//! Raw BGRA frames are piped to external ffmpeg using x264 or optional VAAPI. A
 //! dedicated thread owns stdin so the render path never blocks on the pipe.
 //! Output goes to a temp file; the caller moves it to the final destination on
 //! Save (or deletes it on Discard).
@@ -287,7 +286,7 @@ impl VideoEncoder {
             match child.try_wait() {
                 Ok(Some(status)) if status.success() => break Ok(std::mem::take(&mut self.temp)),
                 Ok(Some(status)) => {
-                    break Err(format!("ffmpeg {status}: {}", self.stderr.lock().unwrap()));
+                    break Err(format!("ffmpeg {status}"));
                 }
                 Err(error) => {
                     let _ = child.kill();
@@ -297,10 +296,7 @@ impl VideoEncoder {
                 _ if Instant::now() >= deadline => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    break Err(format!(
-                        "ffmpeg finalise timeout: {}",
-                        self.stderr.lock().unwrap()
-                    ));
+                    break Err("ffmpeg finalise timeout".into());
                 }
                 _ => std::thread::sleep(Duration::from_millis(10)),
             }
