@@ -578,7 +578,7 @@ mod light_mode_tests {
     use super::*;
 
     #[test]
-    fn panel_symbolic_icons_keep_contrast_in_light_and_dark() {
+    fn panel_icons_and_labels_keep_contrast_in_light_and_dark() {
         let doc = scene::parse(include_str!("../../../../share/scenes/panel/scene.mix")).unwrap();
         let background = hex(doc.nodes["root"].ports["background"].as_str().unwrap()).unwrap();
         // The scene-template Mix test checks this recorded model against the
@@ -633,7 +633,7 @@ mod light_mode_tests {
                                 0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
                             };
                             let (a, b) = (luminance(tint), luminance(bg));
-                            assert!((a.max(b) + 0.05) / (a.min(b) + 0.05) >= 3.0,
+                            assert!((a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5,
                                 "{id} {} {scheme:?} {mode:?}: {tint:?} on {bg:?}", row["id"]);
                         }
                     }
