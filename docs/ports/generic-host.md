@@ -12,7 +12,7 @@ Arguments arrive as `$app_args`. Behaviour paths stay within the bundle.
 options removed before application argument parsing. `--` ends host option
 parsing. `--app-id` selects compositor identity; `--title` selects the initial
 window title and is exposed as `viu_context().options.title`. A bundle can
-use that value for its authored frame. See [term-mix.md](term-mix.md).
+use that value for its authored frame. See [term-runtime.md](term-runtime.md).
 Mix publishes through the existing `viu-local scenes.model` protocol.
 Callbacks, model publication and Bus replies use the existing bounded worker.
 
