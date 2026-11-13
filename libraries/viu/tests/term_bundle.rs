@@ -164,7 +164,7 @@ fn term_bundle_child() {
     assert_eq!(described.rc, 0);
     let described = described.body;
     assert_eq!(described["schema"], "term.v1");
-    assert_eq!(described["app_id"], "dev.mixos.term");
+    assert_eq!(described["app_id"], "mixviu.term");
     let info = invoke(&mut runtime, &rx, "INFO", json!({})).reply.unwrap();
     assert_eq!(info.rc, 0);
     assert!(
