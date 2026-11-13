@@ -74,6 +74,25 @@ fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>, app: &str) -> viu::runtim
 
 #[test]
 fn every_app_executes_the_mode_contract_and_restores_its_choice() {
+    let home = tempfile::tempdir().unwrap();
+    let prefix = home.path().join("prefix");
+    std::fs::create_dir_all(prefix.join("bin")).unwrap();
+    let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+    std::os::unix::fs::symlink(&mix, prefix.join("bin/mix")).unwrap();
+    std::os::unix::fs::symlink(std::path::Path::new(&mix).parent().unwrap().join("mixd"), prefix.join("bin/mixd")).unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", "app_mode_child", "--nocapture"])
+        .env("HOME", home.path()).env("XDG_STATE_HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path()).env("XDG_RUNTIME_DIR", home.path())
+        .env("MIX_RUN", home.path()).env("MIX_PREFIX", prefix)
+        .env("MIX_BUS_SOCKET", home.path().join("absent.sock"))
+        .env_remove("MIX_SESSION_FD").output().unwrap();
+    assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+}
+
+#[test]
+#[ignore = "isolated child driven by the parent test"]
+fn app_mode_child() {
     let temporary = tempfile::tempdir().unwrap();
     for app in ["ced", "dopus", "email", "gallery", "monitor", "prefs", "screenshot", "term", "workshop"] {
         let app_home = temporary.path().join(app);
@@ -83,7 +102,7 @@ fn every_app_executes_the_mode_contract_and_restores_its_choice() {
             let bundle = viu::bundle::Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../apps/{app}")), &arguments).unwrap();
             let (tx, wakes) = mpsc::channel();
             let mut runtime = Runtime::with_services(16, Arc::new(move || { let _ = tx.send(()); }), Some(Box::new(|| std::rc::Rc::new(NativeTheme))), viu::runtime::Services {
-                calls: Some(Default::default()), timers: Some(Default::default()), documents: Some(Default::default()), rasters: Some(Default::default()), terminals: Some(Default::default()), ui_state: Some(Default::default()), options: json!({"state_home":app_home}), ..Default::default()
+                application_roots: Some(app_home.clone()), calls: Some(Default::default()), timers: Some(Default::default()), documents: Some(Default::default()), rasters: Some(Default::default()), terminals: Some(Default::default()), ui_state: Some(Default::default()), options: json!({"state_home":app_home}), ..Default::default()
             });
             runtime.load(bundle.program).unwrap();
             let initial = next(&runtime, &wakes, app).model.unwrap();
