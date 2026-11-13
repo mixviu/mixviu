@@ -6,6 +6,13 @@ $dp=require("core.mix")
 $view=require("presentation.mix")
 $ops=require("operations.mix")
 $configuration=require("config.mix")
+fn dp_selection_notice($before,$after)
+  $old=$before.panes[$before.active];$new=$after.panes[$after.active]
+  if not $after.busy and ($before.active!=$after.active or $old.path!=$new.path or $old.selected!=$new.selected or not deep_eq($old.selected_paths,$new.selected_paths)) then
+    $after.info="Select a file or folder";$after.dialog_status=nil
+  end
+  return $after
+end
 fn dp_drop_allowed($sources,$destination,$busy)
   if $busy or len($sources)==0 then return false end
   $destination=$dp.dp_realpath($destination)
@@ -229,6 +236,8 @@ fn dp_action($s,$contract,$id,$params)
   end
   if ($s.headless ?? false) and starts_with($id,"theme.") then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
   if $id=="nav.switch-pane" then $s.active=1-$s.active
+  elif $id=="nav.pane-left" then $s.active=0
+  elif $id=="nav.pane-right" then $s.active=1
   elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
   elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path),false)
   elif $id=="nav.home" then return dp_go($s,$i,env("HOME","/"),false)
