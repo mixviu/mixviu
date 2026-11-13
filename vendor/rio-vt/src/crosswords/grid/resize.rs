@@ -291,7 +291,7 @@ impl Grid<Square> {
             self.cursor.pos.row = max(self.cursor.pos.row - overflow, Line(0));
         }
 
-        // Restore oldest-first order in place and fill all rows that are
+        // Restore newest-first storage order in place and fill all rows that are
         // still too short. Reusing `reversed` avoids allocating a second
         // full row buffer, which matters when reflowing a long scrollback.
         reversed.reverse();
@@ -347,6 +347,7 @@ impl Grid<Square> {
             return;
         }
 
+        // MIXVIU LOCAL PATCH (#106): consume spare viewport rows before history.
         // Reflow must consume unused rows below the cursor before adding
         // history. Gold retained these blanks and anchored the cursor, hiding
         // the first row even when the screen had ample space.
@@ -373,6 +374,10 @@ impl Grid<Square> {
 
         let mut rows = self.raw.take_all();
         let old_len = rows.len();
+        // resize() adjusts height first; storage always contains the complete
+        // nonempty viewport, including padding when growth exhausts history.
+        // Thus the reversed walk must visit i == self.lines - 1 below.
+        debug_assert!(self.lines > 0 && old_len >= self.lines);
         // See `grow_columns`; `base_abs + position` also survives the
         // cap truncation below because dropping the N oldest rows
         // advances the eviction base by the same N.
@@ -559,14 +564,20 @@ impl Grid<Square> {
             }
         }
 
-        // `new_raw` is oldest-first here. Drop only trailing unused rows,
-        // at most the number introduced by wrapping, keeping the viewport full.
+        // MIXVIU LOCAL PATCH (#106): truncate only trailing newest blank rows.
+        // take_all() returns newest-first storage; the reversed walk above
+        // builds `new_raw` oldest-first. Its tail is the viewport bottom.
+        // This truncate removes only trailing newest blank rows, never scrollback,
+        // and leaves at least a full viewport after visible_start.
         // Expansion of older history must not pull it into an idle viewport.
         let consumed = min(
             free_rows,
             new_raw.len().saturating_sub(visible_start + self.lines),
         );
-        new_raw.truncate(new_raw.len() - consumed);
+        let retained = new_raw.len() - consumed;
+        debug_assert!(retained >= visible_start + self.lines);
+        debug_assert!(new_raw[retained..].iter().all(Row::is_clear));
+        new_raw.truncate(retained);
         self.cursor.pos.row += consumed.saturating_sub(cursor_rows_above_viewport);
         if let Some(r) = remap.as_mut() {
             for pos in &mut r.new_pos {
@@ -576,7 +587,7 @@ impl Grid<Square> {
             }
         }
 
-        // Restore oldest-first order in place and reuse the buffer as the new
+        // Restore newest-first storage order in place and reuse the buffer as the new
         // grid storage, avoiding a second full row-buffer allocation.
         new_raw.reverse();
         let mut reversed = new_raw;
