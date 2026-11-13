@@ -70,6 +70,8 @@ fn workshop_mounts_gold_frame_and_routes_dialogs_without_bus_transport() {
     let model = done.model.unwrap();
     assert_eq!(model["values"]["gold-title"], "Workshop");
     assert_eq!(model["values"]["gold-icon"], "server");
+    assert!(model["theme_choice"]["mode"].is_null());
+    viu::appearance::resolve(&model["appearance"]).unwrap();
     let mut view = viu::gold_frame::mount(&bundle.scene, model).unwrap();
     let ctx = egui::Context::default();
     viu::appearance::install(&ctx);

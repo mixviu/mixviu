@@ -1,0 +1,66 @@
+-- host: viu
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- App policy: null follows the live session; only an explicit mode is saved.
+-- The namespaced cache belongs to the requiring runtime, never module exports.
+fn valid($mode)
+  return $mode==nil or contains(["light","dark"],$mode)
+end
+fn path($app)
+  $dirs=viu_app_dirs($app)
+  if $dirs==nil then raise("APP_MODE","no application state directory") end
+  return path_join($dirs.root,"mode.json")
+end
+fn mode_enabled()
+  $ctx=viu_context();$options=$ctx.options ?? {}
+  return ($ctx.native_facilities ?? false) and not ($options.headless ?? false)
+end
+fn load($app)
+  global $viu_app_mode_last
+  if not mode_enabled() then return nil end
+  $mode=read_mode(path($app))
+  $viu_app_mode_last={app:$app,mode:$mode}
+  return $mode
+end
+fn read_mode($file)
+  try
+    if not is_file($file) then return nil end
+    $value=json_parse(read_file($file))
+    if type($value)!="map" or not has_key($value,"mode") or not valid($value.mode) then return nil end
+    return $value.mode
+  catch $unreadable
+    return nil
+  end
+end
+fn restore($app,$legacy)
+  if not mode_enabled() then return $legacy end
+  if is_file(path($app)) then return load($app) end
+  return $legacy
+end
+fn save($app,$mode,$explicit=false)
+  global $viu_app_mode_last
+  if not mode_enabled() then return end
+  try $last=$viu_app_mode_last catch $uninitialised $last={} end
+  if not $explicit and $last.app==$app and $last.mode==$mode then return end
+  write_mode(path($app),$mode,$explicit)
+  $viu_app_mode_last={app:$app,mode:$mode}
+end
+fn write_mode($file,$mode,$explicit=false)
+  if not valid($mode) then raise("APP_MODE","mode must be light, dark or null") end
+  if $mode==nil and not $explicit and not is_file($file) then return end
+  $text=json_encode({mode:$mode}).."\n"
+  if is_file($file) and read_file($file)==$text then return end
+  mkdir(dirname($file))
+  write_atomic($file,$text)
+end
+fn project($model,$app,$choice,$headless=false)
+  if not $headless then save($app,$choice.mode) end
+  $model.theme_choice=$choice
+  return $model
+end
+fn actions($mode)
+  return map(["light","dark","session"],fn($name)={id:"view.mode."..$name,label:if $name=="session" then "Follow session" elif $name=="light" then "Light" else "Dark" end,enabled:true,checked:($mode ?? "session")==$name})
+end
+fn choose($id)
+  if not contains(["view.mode.light","view.mode.dark","view.mode.session"],$id) then raise("APP_MODE","unknown mode action") end
+  return if $id=="view.mode.session" then nil else slice($id,len("view.mode.")) end
+end

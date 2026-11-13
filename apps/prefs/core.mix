@@ -20,13 +20,13 @@ fn framed($s)
   $available=not $s.busy
   $refresh={id:"view.refresh",label:"Refresh",icon:"refresh-cw",enabled:$available}
   $search={id:"view.search",label:"Search preferences",icon:"search",icon_only:true,plain:true,enabled:$s.ui.dialog==nil}
-  $toolbar=[{id:"sidebar.toggle",label:"Sidebar",icon:"panel-left",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"help.macros",label:"Macros",icon:"scroll-text",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},$search,{id:"help.shortcuts",label:"Keyboard shortcuts",icon:"keyboard",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"view.mode",label:"Light or dark interface",icon:if ($look.shown($s.look) ?? {}).mode=="light" then "moon" else "sun" end,icon_only:true,plain:true,enabled:true}]
+  $toolbar=[{id:"sidebar.toggle",label:"Sidebar",icon:"panel-left",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"help.macros",label:"Macros",icon:"scroll-text",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},$search,{id:"help.shortcuts",label:"Keyboard shortcuts",icon:"keyboard",icon_only:true,plain:true,enabled:$s.ui.dialog==nil},{id:"view.mode",label:"Light or dark interface",icon:if $actions.theme_view($s).effective.mode=="light" then "moon" else "sun" end,icon_only:true,plain:true,enabled:true}]
   $toolbar=map($toolbar,fn($b)=merge($b,{shortcut:(filter($actions.action_list($s).actions,fn($a)=$a.id==$b.id)[0] ?? {}).shortcut}))
   $model=$frame.apply($model,{icon:"settings",title:"Preferences",menus:$actions.menus($s),toolbar:$toolbar,status:nil})
   $model.frame.menu.properties.native_menu=true
   $model.theme_choice=$actions.theme_choice($s)
   -- Gold Shell::wanted: profile installation follows these authored inputs.
-  $model.theme_refresh_key=[$model.theme_choice,$look.shown($s.look),$s.look.custom_source,$s.values["appearance.font_weight"],$s.values["appearance.font_size"]]
+  $model.theme_refresh_key=[$model.theme_choice,$look.shown($s.look),$s.look.custom_source,$s.values["appearance.font_weight"],$s.values["appearance.font_size"],$s.values["state.appearance.mode_override"],$s.values["state.appearance.daylight"]]
   $model.theme_values=$look.preview_values($s)
   $model.macros_open=$s.ui.macros_open
   $model.shortcuts=$actions.shortcuts($s)
@@ -108,5 +108,5 @@ fn model($s)
 end
 
 fn info($s)
-  return {schema:"prefs.v1",app_id:"dev.mixos.prefs",version:"0.1.2",pid:pid(),connected:$s.connected,releases:$s.releases,busy:$s.release_busy or $s.notes_owner!=nil or $s.look.job!=nil or $s.email.task!=nil or len($s.show_tokens ?? [])>0,working:$s.release_op ?? nil,uncertain:$s.release_uncertain ?? nil,status:$s.status,failed:$s.failed ?? false,release_status:$s.release_status,release_failed:$s.release_failed,apps:$s.apps,notes:$s.notes,notes_error:$s.notes_error,appearance:$look.view($s),gallery:$gallery.view($s),email:$email.view($s),section:$s.ui.section,category:$nav.section($s.ui.section).category,ui:$s.ui,nav:$s.nav,store:$pages.store_view($s)}
+  return {schema:"prefs.v1",app_id:"dev.mixos.prefs",version:"0.1.2",pid:pid(),connected:$s.connected,releases:$s.releases,busy:$s.release_busy or $s.notes_owner!=nil or $s.look.job!=nil or $s.email.task!=nil or len($s.show_tokens ?? [])>0,working:$s.release_op ?? nil,uncertain:$s.release_uncertain ?? nil,status:$s.status,failed:$s.failed ?? false,release_status:$s.release_status,release_failed:$s.release_failed,apps:$s.apps,notes:$s.notes,notes_error:$s.notes_error,appearance:$look.view($s),gallery:$gallery.view($s),email:$email.view($s),section:$s.ui.section,category:$nav.section($s.ui.section).category,theme:$actions.theme_view($s),ui:$s.ui,nav:$s.nav,store:$pages.store_view($s)}
 end

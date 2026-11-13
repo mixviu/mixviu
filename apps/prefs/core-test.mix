@@ -61,3 +61,16 @@ print("prefs panel: all retired captures are refused before queueing")
 
 $model=$c.framed($c.initial("example"))
 if $model.values["gold-title"]!="Preferences" or $model.browser.kind!="settings-browser" then raise("FRAME","Prefs must publish the shared frame and page browser") end
+
+$actions=require("actions.mix")
+$s=$c.initial("example");$s.values={"appearance.mode":"light"};$s.theme_effective={mode:"dark"}
+$s=$actions.choose_theme($s,{mode:"dark"})
+if $actions.theme_view($s).effective.mode!="dark" then raise("MODE","explicit mode wins") end
+$s=$actions.choose_theme($s,{mode:nil})
+if $actions.theme_view($s).effective.mode!="light" then raise("MODE","return to session must not report the previous override") end
+$s.values={"appearance.mode":"auto","state.appearance.daylight":true}
+if $actions.theme_view($s).effective.mode!="light" then raise("MODE","daylight resolves automatic mode") end
+$s.values["state.appearance.mode_override"]="dark"
+if $actions.theme_view($s).effective.mode!="dark" then raise("MODE","automatic session override wins over daylight") end
+$s.values={};$s.theme_effective={mode:"light"}
+if $actions.theme_view($s).effective.mode!="light" then raise("MODE","native mode is authoritative before the settings snapshot arrives") end

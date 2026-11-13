@@ -2,6 +2,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- lint: globals app_args
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $core=require("core.mix");$ctx=viu_context()
 $nav=require("navigation.mix")
 $pages=require("pages.mix")
@@ -20,9 +21,10 @@ if $app_args[0]=="--page" then
   $parts=split($app_args[1],"/")
   try $state=$pages.open_page($state,$parts[0],$parts[1]) catch $ignored $state.nav=$nav.initial_nav() end
 end
+$state.ui.theme_mode=$app_mode.load("prefs")
 $state.agent_seat=$seat.initial();$state.seat_names=[];$state.seat_name=""
 fn publish_prefs($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$app_mode.project($core.framed($s),"prefs",$actions.theme_choice($s))}
 end
 fn pump_look($s)
   $before=$s.look.serial
@@ -336,6 +338,9 @@ end
 on prefs.quit
   if $state.ui.dialog!=nil then reply(10,json_encode({error_code:"BUSY",message:$nav.text_for("busy")}));return end
   $state.quitting=true;publish_prefs($state);reply(0,json_encode({quitting:true}))
+end
+on viu.theme.changed
+  $state.theme_effective=$event.args;publish_prefs($state)
 end
 on prefs.theme
   try

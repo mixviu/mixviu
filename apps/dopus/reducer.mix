@@ -221,6 +221,7 @@ fn dp_action($s,$contract,$id,$params)
   if $id=="place.open" then return dp_go($s,$i,$params.path) end
   if not any($contract.actions,fn($a)=$a.id==$id) then raise("UNKNOWN_ACTION",to_string($id)) end
   $id=$contract.action_aliases[$id] ?? $id
+  if $id=="theme.mode-toggle" then return dp_action($s,$contract,if $s.appearance.mode=="dark" then "view.mode.light" else "view.mode.dark" end,$params) end
   if $s.dialog_status!=nil and (starts_with($id,"nav.") or starts_with($id,"selection.") or contains(["view.refresh","view.toggle-hidden"],$id)) then $s.dialog_status=nil;$s.info=$dp.dp_idle_info end
   $p=$s.panes[$i]
   $n=len($p.selected_paths)
@@ -234,7 +235,7 @@ fn dp_action($s,$contract,$id,$params)
   if contains(["view.toggle-places","view.toggle-properties","location.focus"],$id) and (($s.headless ?? false) or $s.form.open) then
     raise(if $s.headless ?? false then "HEADLESS" else "WINDOW_BUSY" end,if $id=="location.focus" then "location focus needs an available window editor" else "sidebar toggles need an available window" end)
   end
-  if ($s.headless ?? false) and starts_with($id,"theme.") then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
+  if ($s.headless ?? false) and (starts_with($id,"theme.") or starts_with($id,"view.mode.")) then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
   if $id=="nav.switch-pane" then $s.active=1-$s.active
   elif $id=="nav.pane-left" then $s.active=0
   elif $id=="nav.pane-right" then $s.active=1
@@ -265,15 +266,14 @@ fn dp_action($s,$contract,$id,$params)
     return dp_start_effect($s,{kind:"open",path:$entry.path})
   elif $id=="file.mail" then
     return dp_start_effect($s,{kind:"mail",paths:$dp.dp_sources($p)})
-  elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then
-    $key=replace(slice($id,len("theme.")),"-session","")
+  elif contains(["theme.scheme-session","view.mode.session","theme.style-session"],$id) then
+    $key=if $id=="view.mode.session" then "mode" else replace(slice($id,len("theme.")),"-session","") end
     $s.appearance_choice=delete($s.appearance_choice,$key)
     $s.appearance[$key]=$s.appearance_session[$key]
     $s.appearance_reset=$key
   elif starts_with($id,"theme.decorations-") then $s.window_choice["window.decorations"]=slice($id,len("theme.decorations-"))
   elif starts_with($id,"theme.captions-") then $s.window_choice["window.caption_side"]=slice($id,len("theme.captions-"))
-  elif $id=="theme.mode-toggle" then $s.appearance.mode=if $s.appearance.mode=="dark" then "light" else "dark" end
-  elif starts_with($id,"theme.mode-") then $s.appearance.mode=slice($id,len("theme.mode-"))
+  elif starts_with($id,"view.mode.") then $s.appearance.mode=slice($id,len("view.mode."));$s.appearance_choice.mode=$s.appearance.mode
   elif starts_with($id,"theme.style-") then $s.appearance.style=slice($id,len("theme.style-"))
   elif starts_with($id,"theme.scheme-") then $s.appearance.scheme=slice($id,len("theme.scheme-"))
   elif $id=="help.macros" then $s.reply={panel:"macros"}
