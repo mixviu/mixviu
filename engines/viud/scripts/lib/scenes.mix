@@ -2080,10 +2080,10 @@ fn editor_reset($s)
   $backup = recovery_directory($s) .. "/editor-" .. uuid()
   $s = swap_in($s, "resetting", {name:"editor", template_record:$record}, $user, $tmp, $backup)
   $s.desired.origins.editor = "editor"
-  $s = finish_record($s, "resetting", $s.desired.resetting)
   $e = $s.scenes.editor
+  $s = finish_record($s, "resetting", $s.desired.resetting)
   if $e.copy == "user" and $e.summoned then
-    $model = $s.scenes.editor.model
+    $model = $e.model
     $s.scenes.editor.model = nil
     $s = reconcile_one($s, "editor", true)
     $s.scenes.editor.user_dirty = false
