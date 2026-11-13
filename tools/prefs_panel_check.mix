@@ -10,7 +10,7 @@ if not $fmt.ok then exit($fmt.exit_code ?? 124) end
 if trim($diff)!="" then eprint("Formatting differs; apply the CBC patch and requeue");exit(1) end
 for $argv in [["/opt/mixos/bin/mix", "engines/viud/tests/scenes_test.mix"],
   ["cargo", "test", "--locked", "-p", "design"],
-  ["cargo", "test", "--locked", "-p", "settings", "--lib"],
+  ["cargo", "test", "--locked", "-p", "settings"],
   ["cargo", "test", "--locked", "-p", "settingsd", "--test", "transactions"],
   ["cargo", "test", "--locked", "-p", "settingsd", "--test", "format5"],
   ["cargo", "test", "--locked", "-p", "lib-viu", "--test", "app_mix", "--", "--nocapture"],
