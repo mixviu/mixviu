@@ -5,6 +5,23 @@ use crate::widgets::{Intent, Widget};
 use egui::{Align2, FontId, Id, Rect, Sense, TextStyle, Ui, pos2, vec2};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
+
+fn table_rows(value: &Value) -> &[Value] {
+    value["rows"].as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+
+#[derive(Clone)]
+struct SampleWidthCache {
+    key: u64,
+    width: f32,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SAMPLE_LAYOUTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static UNCACHED_SAMPLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
     v[key].as_str().unwrap_or("")
@@ -12,11 +29,52 @@ fn text<'a>(v: &'a Value, key: &str) -> &'a str {
 fn number(v: &Value, key: &str, default: f32) -> f32 {
     v[key].as_f64().unwrap_or(default as f64) as f32
 }
-fn sample_width(ui: &Ui, column: &Value, rows: &[Value], index: usize) -> Option<f32> {
+fn sample_width(ui: &Ui, id: &str, column: &Value, rows: &[Value], index: usize) -> Option<f32> {
     let samples = column["samples"].as_array()?;
-    let size = TextStyle::Body.resolve(ui.style()).size;
     let body = TextStyle::Body.resolve(ui.style());
-    let strong = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(size));
+    let strong = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(body.size));
+    #[cfg(test)]
+    if UNCACHED_SAMPLES.get() {
+        return Some(measure_sample_width(ui, column, samples, rows, index, &body, &strong));
+    }
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    body.hash(&mut hash);
+    strong.hash(&mut hash);
+    ui.ctx().pixels_per_point().to_bits().hash(&mut hash);
+    ui.spacing().item_spacing.x.to_bits().hash(&mut hash);
+    // Family names alone do not detect replacement faces under the same name.
+    ui.fonts(|fonts| {
+        let definitions = fonts.definitions();
+        for family in [&body.family, &strong.family] {
+            if let Some(names) = definitions.families.get(family) {
+                for name in names {
+                    name.hash(&mut hash);
+                    if let Some(data) = definitions.font_data.get(name) {
+                        std::sync::Arc::as_ptr(data).hash(&mut hash);
+                    }
+                }
+            }
+        }
+    });
+    for value in std::iter::once(text(column, "label"))
+        .chain(samples.iter().filter_map(Value::as_str))
+        .chain(rows.iter().filter_map(|row| row["cells"][index].as_str()))
+    {
+        value.hash(&mut hash);
+    }
+    let key = hash.finish();
+    let cache_id = Id::unique((ui.ctx().viewport_id(), id, index, "sample-width"));
+    if let Some(cache) = ui.data(|data| data.get_temp::<SampleWidthCache>(cache_id)) {
+        if cache.key == key {
+            return Some(cache.width);
+        }
+    }
+    let width = measure_sample_width(ui, column, samples, rows, index, &body, &strong);
+    ui.data_mut(|data| data.insert_temp(cache_id, SampleWidthCache { key, width }));
+    Some(width)
+}
+
+fn measure_sample_width(ui: &Ui, column: &Value, samples: &[Value], rows: &[Value], index: usize, body: &FontId, strong: &FontId) -> f32 {
     let width = std::iter::once(text(column, "label"))
         .chain(samples.iter().filter_map(Value::as_str))
         .chain(rows.iter().filter_map(|row| row["cells"][index].as_str()))
@@ -24,6 +82,8 @@ fn sample_width(ui: &Ui, column: &Value, rows: &[Value], index: usize) -> Option
             [body.clone(), strong.clone()]
                 .into_iter()
                 .map(|font| {
+                    #[cfg(test)]
+                    SAMPLE_LAYOUTS.set(SAMPLE_LAYOUTS.get() + 1);
                     ui.painter()
                         .layout_no_wrap(text.into(), font, ui.visuals().text_color())
                         .size()
@@ -32,7 +92,7 @@ fn sample_width(ui: &Ui, column: &Value, rows: &[Value], index: usize) -> Option
                 .fold(0.0, f32::max)
         })
         .fold(0.0, f32::max);
-    Some(width + ui.spacing().item_spacing.x + 2.0)
+    width + ui.spacing().item_spacing.x + 2.0
 }
 fn native_table_state(value: &Value) -> Result<toolkit::datatable::TableState, String> {
     if value.is_null() {
@@ -60,6 +120,93 @@ mod numeric_state_tests {
     use super::*;
 
     #[test]
+    fn sampled_columns_cache_layout_and_invalidate_on_render_inputs() {
+        let ctx = egui::Context::default();
+        crate::appearance::install(&ctx);
+        let mut value = json!({"key":"cache-test","columns":[{"id":"date","label":"Date","samples":["Wed 23:58"]}],"rows":[{"key":"a","cells":["13:51"]}]});
+        for stage in 0..7 {
+            if stage == 2 { value["rows"][0]["cells"][0] = json!("A much wider value"); }
+            if stage == 3 { value["columns"][0]["samples"] = json!(["An even wider sample value"]); }
+            if stage == 4 { ctx.set_pixels_per_point(2.5); }
+            if stage == 5 { ctx.style_mut(|style| { style.text_styles.insert(TextStyle::Body, FontId::monospace(24.0)); }); }
+            if stage == 6 {
+                let mut definitions = egui::FontDefinitions::default();
+                definitions.families.insert(egui::FontFamily::Name("medium".into()), definitions.families[&egui::FontFamily::Proportional].clone());
+                ctx.set_fonts(definitions);
+            }
+            SAMPLE_LAYOUTS.set(0);
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                sample_width(ui, "cache-test", &value["columns"][0], table_rows(&value), 0);
+            }).drop_without_applying_deltas();
+            if stage == 1 { assert_eq!(SAMPLE_LAYOUTS.get(), 0); }
+            else { assert!(SAMPLE_LAYOUTS.get() > 0, "stage {stage}"); }
+        }
+    }
+
+    #[test]
+    fn table_renderers_tolerate_missing_or_malformed_rows() {
+        let ctx = egui::Context::default();
+        crate::appearance::install(&ctx);
+        for rows in [None, Some(json!(null)), Some(json!("bad")), Some(json!({}))] {
+            for sampled in [false, true] {
+                let mut value = json!({"key":"empty","columns":[{"id":"date","label":"Date"}]});
+                if sampled { value["columns"][0]["samples"] = json!(["13:51"]); }
+                if let Some(rows) = &rows { value["rows"] = rows.clone(); }
+                // Admission still refuses malformed scenes; direct rendering is defensive too.
+                assert!(validate(&value).is_err());
+                ctx.run_ui(egui::RawInput::default(), |ui| {
+                    let widget = Widget::new("empty", "tree-table", "", value.clone());
+                    draw_gold(ui, &widget, &value, &mut Vec::new());
+                    draw_grid(ui, &widget, &value, &mut BTreeMap::new(), &mut Vec::new());
+                }).drop_without_applying_deltas();
+            }
+        }
+    }
+
+    #[test]
+    fn sampled_table_steady_frame_measurement() {
+        // Same full native table draw, with the pre-cache measurement path as
+        // baseline. No GPU/presentation or application publication is included.
+        for count in [500, 2000] {
+            for scale in [1.0, 2.5] {
+                let rows = (0..count).map(|i| json!({"key":format!("r{i}"),"cells":[format!("Message {i:04}"),format!("Sender {i:04}"),format!("{:02}/09/2025",i%30+1)],"strong":i%2==0})).collect::<Vec<_>>();
+                let value = json!({"key":"bench","rows":rows,"columns":[
+                    {"id":"subject","label":"Subject","samples":["Message 2000"]},
+                    {"id":"from","label":"From","samples":["Sender 2000"]},
+                    {"id":"date","label":"Date","samples":["Wed 23:58"]}]});
+                let widget = Widget::new("bench", "tree-table", "", value.clone());
+                for uncached in [true, false] {
+                    let ctx = egui::Context::default();
+                    crate::appearance::install(&ctx);
+                    ctx.set_pixels_per_point(scale);
+                    UNCACHED_SAMPLES.set(uncached);
+                    let mut times = Vec::new();
+                    let mut steady_layouts = 0;
+                    for frame in 0..24 {
+                        SAMPLE_LAYOUTS.set(0);
+                        let began = std::time::Instant::now();
+                        ctx.run_ui(egui::RawInput {
+                            screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(3840.0 / scale, 2160.0 / scale))),
+                            ..Default::default()
+                        }, |ui| {
+                            draw_gold(ui, &widget, &value, &mut Vec::new());
+                        }).drop_without_applying_deltas();
+                        if frame >= 3 {
+                            times.push(began.elapsed().as_secs_f64()*1000.0);
+                            steady_layouts += SAMPLE_LAYOUTS.get();
+                        }
+                    }
+                    if uncached { assert!(steady_layouts >= 21 * count * 6); }
+                    else { assert_eq!(steady_layouts, 0); }
+                    times.sort_by(f64::total_cmp);
+                    eprintln!("sampled table rows={count} scale={scale} uncached={uncached}: median_ms={:.3} p95_ms={:.3} measured_layouts={steady_layouts}", times[10], times[19]);
+                    UNCACHED_SAMPLES.set(false);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn email_date_measurement_fits_current_rows_at_desktop_scales() {
         for scale in [1.0, 2.5] {
             let ctx = egui::Context::default();
@@ -77,7 +224,7 @@ mod numeric_state_tests {
             ]
             .map(|date| json!({"cells":[date]}));
             ctx.run_ui(egui::RawInput::default(), |ui| {
-                let width = sample_width(ui, &column, &rows, 0).unwrap();
+                let width = sample_width(ui, "email", &column, &rows, 0).unwrap();
                 let body = TextStyle::Body.resolve(ui.style());
                 for font in [
                     body.clone(),
@@ -345,7 +492,7 @@ struct WidthCache {
 }
 fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
     let columns = value["columns"].as_array().expect("validated columns");
-    let rows = value["rows"].as_array().expect("validated rows");
+    let rows = table_rows(value);
     let key = WidthKey {
         revision: value["revision"].clone(),
         columns: value["columns"].clone(),
@@ -489,7 +636,7 @@ pub(crate) fn draw(
                     .id_salt((&widget.id, "sides"))
                     .auto_shrink(false)
                     .show(ui, |ui| {
-                        let rows = value["rows"].as_array().expect("validated rows");
+                        let rows = table_rows(value);
                         if rows.is_empty() && value["busy"] != true {
                             ui.weak(value["empty"].as_str().unwrap_or("No items"));
                         }
@@ -542,7 +689,7 @@ pub(crate) fn draw(
         return draw_grid(ui, widget, value, geometry, events);
     }
     let id = &widget.id;
-    let rows = value["rows"].as_array().expect("validated rows");
+    let rows = table_rows(value);
     let columns = value["columns"].as_array().expect("validated columns");
     let metadata_scale = number(&widget.properties, "metadata_scale", 1.0);
     let mut measured = widths(ui, id, value, metadata_scale);
@@ -688,7 +835,7 @@ fn draw_grid(
     use egui_extras::{Column, TableBuilder};
     let id = &widget.id;
     let weak = ui.visuals().weak_text_color();
-    let rows = value["rows"].as_array().expect("validated rows");
+    let rows = table_rows(value);
     let columns = value["columns"].as_array().expect("validated columns");
     let height = ui.text_style_height(&TextStyle::Body)
         + number(&widget.properties, "row_padding", 6.0).clamp(0.0, 32.0);
@@ -701,7 +848,7 @@ fn draw_grid(
             .iter()
             .enumerate()
             .map(|(index, column)| {
-                sample_width(ui, column, value["rows"].as_array().unwrap(), index)
+                sample_width(ui, id, column, rows, index)
             })
             .collect::<Vec<_>>();
         let mut table = TableBuilder::new(ui)
@@ -865,7 +1012,7 @@ fn draw_gold(
             catalogue.push_str(&format!("{} = {}\n", COLUMN_KEYS[index], label));
             let min = number(column, "min_width", 40.0);
             let width = if let Some(width) =
-                sample_width(ui, column, value["rows"].as_array().unwrap(), index)
+                sample_width(ui, &widget.id, column, table_rows(value), index)
             {
                 Width::Fixed(width)
             } else if column["remainder"] == true {
@@ -928,7 +1075,7 @@ fn draw_gold(
             .unwrap_or_default()
     };
     let rows = Model {
-        rows: value["rows"].as_array().unwrap(),
+        rows: table_rows(value),
     };
     let strings = toolkit::Strings::new(&catalogue);
     ui.scope(|ui| {
@@ -1002,7 +1149,7 @@ fn draw_outline(
         outline_rows(
             ui,
             widget,
-            value["rows"].as_array().expect("validated rows"),
+            table_rows(value),
             &mut next,
             0,
             geometry,
@@ -1148,7 +1295,7 @@ fn draw_counted_outline(
     events: &mut Vec<Intent>,
 ) -> egui::Response {
     let id = &widget.id;
-    let rows = value["rows"].as_array().unwrap();
+    let rows = table_rows(value);
     let keyboard = widget.properties["keyboard"] == true;
     let focus_id = Id::unique(id);
     if keyboard {

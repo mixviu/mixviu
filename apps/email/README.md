@@ -2,7 +2,7 @@
 
 Run `viu run apps/email`. Accounts come from settingsd's `email.accounts`
 and `email.default_account`. Open Email Settings to manage them, or use the
-app's Bus commands with these JSON argument objects:
+app's Bus commands with these JSON argument objects (these are not shell commands):
 
 ```text
 email.account.set {"name":"Personal","url":"https://mail.example.test","email":"user@example.test"}
@@ -26,10 +26,13 @@ JMAP HTTPS; sending uploads MIME, creates the email, submits it and files it
 in Sent. No `submit_service` setting is needed. Server replies distinguish
 sent, filed and uncertain outcomes; acceptance does not confirm delivery.
 
-The app supports paged lists, reader modes, attachments, separate composers,
-identities, replies, durable drafts, calendar and contacts. See
-[the port record](../../docs/ports/email.md) for contracts, limits and evidence.
-Older checkpoints there describe the superseded catalogue and submission route.
+Paged lists and reader modes are implemented. The current acceptance inventory
+in [the port record](../../docs/ports/email.md#round-6-acceptance-record-2026-11-07-accepted)
+records attachment transfers/previews, draft save/restore, document/close gates
+and calendar/contact CRUD. These are separate from durable outbox/restart
+reconciliation; this README does not promise that pending sends survive restart.
+Older checkpoints retain their historical open items and the superseded
+catalogue/submission route.
 
 `viu run apps/email --fixture` is a separate synthetic-list measurement mode
 that cannot contact a mail server.

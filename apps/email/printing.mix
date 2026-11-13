@@ -1,14 +1,14 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Gold self-contained print page. Application content and desktop launch
 -- policy stay in Mix; Markdown parsing and palette lookup are shared leaves.
-$addresses=require("addresses.mix");$quoting=require("quoting.mix")
+$addresses=require("addresses.mix");$quoting=require("quoting.mix");$dates=require("dates.mix")
 fn escape($text)
   for $p in [["&","&amp;"],["<","&lt;"],[">","&gt;"],["\"","&quot;"],["'","&#39;"]] $text=replace($text,$p[0],$p[1]) end
   return $text
 end
 fn page($email,$markdown)
   $subject=$email.subject ?? "";$date=""
-  try $date=date_format(date_parse($email.date ?? $email.receivedAt),"%a %-d %b %Y, %H:%M") catch $bad nil end
+  $date=$dates.display($email.date ?? $email.receivedAt,"%a %-d %b %Y, %H:%M")
   $rows=""
   for $pair in [["From",join(map($email.from ?? [],fn($a)=$addresses.format($a)),", ")],["To",join(map($email.to ?? [],fn($a)=$addresses.format($a)),", ")],["Cc",join(map($email.cc ?? [],fn($a)=$addresses.format($a)),", ")],["Date",$date],["Subject",$subject]]
     if $pair[1]!="" then $rows=$rows.."<tr><th>"..escape($pair[0]).."</th><td>"..escape($pair[1]).."</td></tr>\n" end

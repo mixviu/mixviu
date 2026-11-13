@@ -38,15 +38,17 @@ fn isolated_runtime() -> (tempfile::TempDir, Runtime, mpsc::Receiver<()>) {
 fn reader_date_uses_session_zone() {
     // Isolate TZ from the parallel test process and chrono's local-zone cache.
     if std::env::var_os("EMAIL_DATE_ZONE_CHILD").is_none() {
+        for zone in ["Australia/Brisbane", "Australia/Melbourne"] {
         assert!(
             std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "reader_date_uses_session_zone", "--nocapture"])
                 .env("EMAIL_DATE_ZONE_CHILD", "1")
-                .env("TZ", "Australia/Brisbane")
+                .env("TZ", zone)
                 .status()
                 .unwrap()
                 .success()
         );
+        }
         return;
     }
     let bundle = Bundle::load(
@@ -59,25 +61,45 @@ fn reader_date_uses_session_zone() {
         r#"
 on test.date
   $message={id:"e1",date:$event.args.stamp,text:"Body"}
-  publish_email();reply(0,"{}")
+  $q=require($event.args.quoting);$e={id:"a",user:"user@example.test",label:"Example"}
+  $forward=$q.make("email.forward",$e,$message,{},{}).body
+  $reply=$q.make("email.reply",$e,$message,{},{quote_on_reply:true,reply_position:"above"}).body
+  publish_email();reply(0,json_encode({forward:$forward,quoted:$reply}))
 end
 "#,
     );
     let (_home, mut runtime, rx) = isolated_runtime();
     runtime.load(program).unwrap();
     complete(&runtime, &rx);
-    for (stamp, expected) in [
+    let brisbane = [
         ("2026-11-13T03:51:00Z", "Nov 13 13:51"),
         ("2026-11-13T23:51:00Z", "Nov 14 09:51"),
+        ("Fri, 13 Nov 2026 05:51:00 +0200", "Nov 13 13:51"),
         ("invalid", ""),
-    ] {
+    ];
+    let melbourne = [
+        ("2026-10-03T15:59:00Z", "Oct 04 01:59"),
+        ("2026-10-03T16:01:00Z", "Oct 04 03:01"),
+        ("2026-04-04T15:59:00Z", "Apr 05 02:59"),
+        ("2026-04-04T16:01:00Z", "Apr 05 02:01"),
+        ("Fri, 13 Nov 2026 05:51:00 +0200", "Nov 13 14:51"),
+        ("invalid", ""),
+    ];
+    let cases = if std::env::var("TZ").unwrap() == "Australia/Brisbane" { &brisbane[..] } else { &melbourne[..] };
+    for &(stamp, expected) in cases {
         runtime
-            .event("test.date".into(), json!({"stamp":stamp}))
+            .event("test.date".into(), json!({"stamp":stamp,"quoting":PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email/quoting.mix")}))
             .unwrap();
+        let done = complete(&runtime, &rx);
         assert_eq!(
-            complete(&runtime, &rx).model.unwrap()["values"]["message-date"],
+            done.model.unwrap()["values"]["message-date"],
             expected
         );
+        let body = done.reply.unwrap().body;
+        assert!(body["forward"].as_str().unwrap().contains(&format!("Date: {expected}\n")));
+        if !expected.is_empty() {
+            assert!(body["quoted"].as_str().unwrap().contains(&expected[7..]));
+        }
     }
 }
 

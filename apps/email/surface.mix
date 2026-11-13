@@ -2,7 +2,7 @@
 -- Account navigation and table policy. Native widgets only report intent.+-- lint: globals entries active boxes box rows total offset selected message revision connected wire_views wire_sessions wire_data mail_settings c
 $mail_emails=[];$mail_selection=[];$mail_focus=nil;$mail_sort={column:"date",order:"descending"};$mail_widths={};$mail_hidden_columns=[];$mail_density="compact"
 $pane="list";$places_ratio=0.18;$list_ratio=0.58;$tree_closed=[];$search_text="";$reader_markdown=false;$attachments_inline=true;$attachments_expanded=false
-$mode="mail";$attachment_policy=require("attachments.mix")
+$mode="mail";$attachment_policy=require("attachments.mix");$email_dates=require("dates.mix")
 $reader_detected=false;$reader_auto=true
 include "pim-surface.mix"
 fn surface_info()
@@ -134,7 +134,7 @@ fn surface_model($m)
   $m.values["message-date"]=""
   if $opened.date!=nil or $opened.receivedAt!=nil then
     -- Like the list, use the session's local zone (including TZ).
-    try $m.values["message-date"]=date_format(date_parse($opened.date ?? $opened.receivedAt),"%b %d %H:%M") catch $bad_stamp $m.values["message-date"]="" end
+    $m.values["message-date"]=$email_dates.display($opened.date ?? $opened.receivedAt,"%b %d %H:%M")
   end
   $m.account_state=if $state.state=="no_password" then "No password is saved for this account. Open Email Settings to set one." elif $state.state=="failed" then $state.error ?? "Connection failed" elif $state.state=="disabled" then "This account is disabled." else "Connecting…" end
   $m.values["connection-state"]=$m.account_state;$m.values["message-subject"]=$m.message_subject;$m.values["message-from"]=$m.message_from;$m.values["message-to"]=$m.message_to

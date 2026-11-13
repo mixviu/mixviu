@@ -15,7 +15,7 @@ fn event_range($e)
   $out=[]
   for $stamp in [$e.start,$e.end]
     try
-      if $stamp!=nil then push($out,date_format(date_parse($stamp),"%d %b %H:%M",{utc:true})) end
+      if $stamp!=nil then push($out,$email_dates.display($stamp,"%d %b %H:%M")) end
     catch $invalid
       if len($out)==0 then return "" end
     end
