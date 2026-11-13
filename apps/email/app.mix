@@ -102,7 +102,7 @@ on email.info
   $target=composer_target($event.args)
   if $target.rc!=0 then reply($target.rc,json_encode($target.body));return end
   if not $fixture then reply(0,json_encode(composer_snapshot(surface_info(),$event.args.window)));return end
-  reply(0,json_encode({fixture:$fixture,connected:$connected,busy:$busy,status:$status,accounts:map($entries,fn($e)={id:$e.id,label:$e.label,user:$e.user}),active:$active,server_accounts:if $session!=nil then $session.accounts else [] end,mailboxes:$boxes,mailbox:$box,rows:len($rows),total:$total,offset:$offset,selected:$selected,revision:$revision,draft:$draft,operation_id:if $submission!=nil then $submission.operation_id else nil end,receipt:$last_receipt}))
+  reply(0,json_encode({theme:{mode:$chrome.theme_choice.mode,effective:$chrome.theme_effective},fixture:$fixture,connected:$connected,busy:$busy,status:$status,accounts:map($entries,fn($e)={id:$e.id,label:$e.label,user:$e.user}),active:$active,server_accounts:if $session!=nil then $session.accounts else [] end,mailboxes:$boxes,mailbox:$box,rows:len($rows),total:$total,offset:$offset,selected:$selected,revision:$revision,draft:$draft,operation_id:if $submission!=nil then $submission.operation_id else nil end,receipt:$last_receipt}))
 end
 on email.message
   reply(0,json_encode($message))

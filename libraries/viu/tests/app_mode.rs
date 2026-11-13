@@ -131,6 +131,9 @@ impl mix::BusHandler for NativeTheme {
                     )?,
                 ));
             }
+            if command == "native.saved" {
+                return Ok((0, viu::runtime::from_json(json!({"schema_version":1,"writable":true,"window":{"theme":{}},"widgets":{"panels":{},"scrolls":{},"groups":{},"open":{}},"windows":{},"app":{"version":1,"value":{}}}))?));
+            }
             Ok((
                 0,
                 viu::runtime::from_json(json!({"bindings":[],"ready":true}))?,
@@ -349,6 +352,11 @@ fn app_mode_child() {
                             }
                         }
                     }
+                    let command = if app == "gallery" { "gallery.state".into() } else if app == "term" { "term.session".into() } else { format!("{app}.info") };
+                    runtime.event(command, json!({})).unwrap();
+                    let info = next(&runtime, &wakes, app).reply.unwrap();
+                    assert_eq!(info.rc, 0, "{app}: {}", info.body);
+                    assert_eq!(info.body["theme"]["effective"]["mode"], if mode=="session" {session} else {mode}, "{app} effective state readback");
                 }
             }
         }

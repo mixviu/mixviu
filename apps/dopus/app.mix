@@ -358,7 +358,7 @@ fn dp_wire_panes($s)
   return $out
 end
 on dopus.state
-  reply(0,json_encode({places:{open:$state.places_open,width:$state.places_width},properties:{open:$state.properties_open,width:$state.properties_width},panes:dp_wire_panes($state),theme_scheme:if $state.headless then "" else $state.appearance.scheme end,theme_mode:if $state.headless then "" else $state.appearance.mode end,appearance:{icons:if $state.headless then "" else "lucide" end,asset_set:nil,font_ui:if $state.headless then "" else "Inter" end,font_mono:if $state.headless then "" else "JetBrains Mono" end,font_ui_weight:if $state.headless then 0 else 400 end,icon_weight:nil}}))
+  reply(0,json_encode({theme:{mode:$state.appearance_choice.mode,effective:$state.appearance},places:{open:$state.places_open,width:$state.places_width},properties:{open:$state.properties_open,width:$state.properties_width},panes:dp_wire_panes($state),theme_scheme:if $state.headless then "" else $state.appearance.scheme end,theme_mode:if $state.headless then "" else $state.appearance.mode end,appearance:{icons:if $state.headless then "" else "lucide" end,asset_set:nil,font_ui:if $state.headless then "" else "Inter" end,font_mono:if $state.headless then "" else "JetBrains Mono" end,font_ui_weight:if $state.headless then 0 else 400 end,icon_weight:nil}}))
 end
 on dopus.info
   $ctx=viu_context()
