@@ -80,7 +80,7 @@ fn headless_term_default_and_override_attach_and_exit_after_last_tab_reply() {
                 "--title",
                 "Term",
                 "--app-id",
-                "mixviu.term.test",
+                "mixviu.term-test",
             ]);
         }
         Owned(
@@ -105,7 +105,7 @@ fn headless_term_default_and_override_attach_and_exit_after_last_tab_reply() {
                 .unwrap(),
         )
     };
-    let mut mix = launch(Some("term.test"), "mix-home");
+    let mut mix = launch(Some("term-test"), "mix-home");
     let mut default = launch(None, "default-home");
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -119,7 +119,7 @@ fn headless_term_default_and_override_attach_and_exit_after_last_tab_reply() {
         else {
             panic!("verified ingress required")
         };
-        for service in ["term.test", "term"] {
+        for service in ["term-test", "term"] {
             let start = Instant::now();
             let help = loop {
                 if let Ok((0, value)) = call(caller.client(), service, "HELP", json!({})).await {
@@ -190,8 +190,8 @@ fn headless_term_default_and_override_attach_and_exit_after_last_tab_reply() {
         }
         let (rc, _) = call(
             caller.client(),
-            "term.test",
-            "term.test.tab.close",
+            "term-test",
+            "term-test.tab.close",
             json!({"id":1}),
         )
         .await

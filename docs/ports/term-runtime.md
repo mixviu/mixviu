@@ -54,6 +54,6 @@ checked at installation.
 
 Use scoped CBC fmt, clippy and `lib-viu` tests, plus the term app's Mix suites.
 `tools/term-smoke.mix` explicitly runs the headless `term_host` test: default
-`term` and isolated `term.test`, HELP descriptors, real shell output and
+`term` and isolated `term-test`, HELP descriptors, real shell output and
 last-tab reply delivery before exit. The override exercises the generic
 host facility; it is not a legacy alias.
