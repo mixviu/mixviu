@@ -1,0 +1,39 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$c=require("core.mix");$a=require("actions.mix");$p=require("signal-policy.mix")
+$s=$c.initial()
+for $column in ["name","pid","user","cpu","memory","io"]
+  for $descending in [false,true]
+    for $tree in [false,true]
+      $s.sort=$column;$s.reverse=$descending;$s.tree=$tree
+      $q=$c.query($s);$table=$c.project($s).table.initial
+      $natural_desc=contains(["cpu","memory","io"],$column)
+      if $q.reverse!=(if $natural_desc then not $descending else $descending end) or $q.tree!=$tree or $table.ascending==$descending or $table.reverse==$descending then raise("SORT","Query/arrow direction: "..$column) end
+      if $c.sort_edit($s,$column).reverse==$descending or $c.sort_edit($s,$column,$descending).reverse!=$descending then raise("CLICK","Header/Bus toggle") end
+    end
+  end
+end
+$s=$c.sort_edit($c.initial(),"name")
+if $s.reverse then raise("CLICK","New column starts ascending") end
+for $tree in [false,true]
+  for $uid in [0,1000]
+    $s=$c.initial();$s.tree=$tree;$s.signal_context={uid:$uid,ancestors:[90,80,1]}
+    for $case in [[1,0,false],[90,1000,false],[80,1000,false],[42,1000,true],[43,1001,$uid==0],[44,nil,false],[0,1000,false]]
+      $s.selected=$case[0];$s.processes=[{pid:$case[0],uid:$case[1],name:"fixture",user:"user",cpu:0,memory:0}]
+      $expected=$case[2]
+      if $p.allowed($s,$s.selected)!=$expected or $c.project($s).end_button.properties.enabled!=$expected then raise("ADMISSION","Button/policy mismatch") end
+      for $action in filter($a.registry($s),fn($x)=contains(["process.end","process.kill"],$x.id))
+        if $action.enabled!=$expected then raise("ADMISSION","Action mismatch") end
+      end
+      $s.node="peer"
+      if $p.allowed($s,$s.selected) then raise("REMOTE","Remote signal") end
+      $s.node="";$s.dialog="about"
+      if $p.allowed($s,$s.selected) then raise("DIALOG","Dialog signal") end
+      $s.dialog=nil
+    end
+    $s.selected=42;$s.processes=[]
+    if $p.allowed($s,42) then raise("MISSING","Stale selection") end
+  end
+end
+$live=$p.local_context()
+if $live.uid==nil or not contains($live.ancestors,1) then raise("CONTEXT","Local credentials/ancestry unavailable") end
+print("Monitor sort adapter/arrow and signal admission pass; no signals sent")
