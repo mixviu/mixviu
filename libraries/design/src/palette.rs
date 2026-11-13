@@ -232,7 +232,8 @@ pub fn mode_palette(
         scheme: context.scheme.name(),
         mode: context.mode.name(),
         contrast: context.contrast.name(),
-        parity: if context.scheme.is_derived() {
+        // The accessibility pass changes chrome after the reference derivation.
+        parity: if context.scheme.is_derived() && context.contrast != crate::Contrast::High {
             "exact"
         } else {
             "closest"

@@ -1,0 +1,30 @@
+$p=require("panel.mix")
+fn check($ok,$why)
+  if not $ok then raise("PANEL_TEST",$why) end
+end
+check($p.request("shell.panels.top.enabled",true).command=="scenes.enable","enable alias selects the loader command")
+check($p.request("shell.panels.top.enabled",false).command=="scenes.disable","disable alias selects the loader command")
+for $edge in $p.definition("shell.panels.top.edge").variants
+  $r=$p.request("shell.panels.top.edge",$edge)
+  check($r.command=="scenes.move" and $r.args.name=="panel" and $r.args.edge==$edge,"position alias targets the real panel for every edge")
+end
+$s={panel:{enabled:true,edge:"bottom"}}
+$s=$p.hint($s)
+$deadline=$s.panel_refresh_at
+for $i=1 to 50 $s=$p.hint($s) end
+check($s.panel_refresh_at==$deadline,"burst must retain a single bounded read deadline")
+$s.panel_refresh_at=0
+check($p.due($s),"elapsed deadline drains on the next UI tick")
+$s.panel_refresh_at=nil
+check(not $p.due($s),"drained deadline does not poll")
+$s=$p.confirmed($s,$p.request("shell.panels.top.edge","top"))
+$s=$p.refreshed($s,20,nil)
+check($s.panel.edge=="top" and $s.panel.enabled,"failed readback must retain confirmed set state")
+$s=$p.refreshed($s,0,{scenes:[]})
+check($s.panel==nil,"successful inventory can confirm removal")
+$s={panel:{enabled:true,edge:"top"}}
+$s=$p.refreshed($s,0,{})
+check($s.panel.edge=="top" and $s.panel_error!=nil,"missing scenes is a malformed reply, not removal")
+$s=$p.refreshed($s,0,{scenes:[]})
+check($s.panel==nil and $s.panel_error==nil,"a real empty inventory confirms removal and clears read errors")
+print("prefs panel: burst coalescing, confirmed state and timeout/removal distinction pass")

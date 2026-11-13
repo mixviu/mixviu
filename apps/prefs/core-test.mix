@@ -23,6 +23,42 @@ try $c.admitted($s,"appearance.mode","light") catch $message $refused=true end
 if not $refused then raise("STALE","Mirror must inhibit writes") end
 print("prefs: exact revision fence, type/range/owner and stale refusals pass")
 
+$s.stale=false
+for $key in ["shell.panels.top.enabled","shell.panels.top.edge"]
+  $value=if ends_with($key,"enabled") then true else "bottom" end
+  $r=$c.admitted($s,$key,$value)
+  if $r.scene.args.name!="panel" then raise("PANEL","Scene alias did not use common admission") end
+  for $flag in ["busy","uncertain","stale"]
+    $blocked=$s;$blocked[$flag]=true;$refused=false
+    try $c.admitted($blocked,$key,$value) catch $message $refused=true end
+    if not $refused then raise("PANEL","Scene edit bypassed "..$flag) end
+  end
+  for $field in ["revision","incarnation"]
+    $blocked=$s;$blocked[$field]=nil;$refused=false
+    try $c.admitted($blocked,$key,$value) catch $message $refused=true end
+    if not $refused then raise("PANEL","Scene edit bypassed unread "..$field) end
+  end
+  $blocked=$s;$blocked.role="unknown";$refused=false
+  try $c.admitted($blocked,$key,$value) catch $message $refused=true end
+  if not $refused then raise("PANEL","Scene edit bypassed role") end
+  $blocked=$s;$blocked.catalog=concat($s.catalog,[{path:$key,kind:"bool",class:"state"}]);$refused=false
+  try $c.admitted($blocked,$key,$value) catch $message $refused=true end
+  if not $refused then raise("PANEL","Scene edit bypassed read-only catalogue class") end
+end
+for $pair in [["shell.panels.top.enabled","yes"],["shell.panels.top.edge","middle"]]
+  $refused=false
+  try $c.admitted($s,$pair[0],$pair[1]) catch $message $refused=true end
+  if not $refused then raise("PANEL","Scene edit bypassed type/enum admission") end
+end
+print("prefs panel: shared state/class/type admission passes")
+$s.catalog_all=[{path:"shell.panels.<panel>.opacity",inactive_captures:{top:{write:"refused",reason:"Retired catalogue entry"}}}]
+for $key in ["shell.panels.top.opacity","shell.panels.top.autohide","shell.panels.top.output","shell.panels.top.future"]
+  $refused=false
+  try $c.admitted($s,$key,1) catch $message,$error $refused=$error.code=="RETIRED_KEY" end
+  if not $refused then raise("PANEL","Retired field escaped admission: "..$key) end
+end
+print("prefs panel: all retired captures are refused before queueing")
+
 $model=$c.framed($c.initial("example"))
 if $model.values["gold-title"]!="Preferences" or $model.browser.kind!="settings-browser" then raise("FRAME","Prefs must publish the shared frame and page browser") end
 

@@ -343,8 +343,8 @@ fn inventory($s)
       upgrade:upgrade_summary(upgrade_notice($s, $name)), diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
       attempted_digest:$e.attempted, accepted_digest:$e.digest,
       journal:"journalctl -u mix-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
-      title:$shown.title ?? $name, edge:$e.edge ?? $shown.edge, page:$e.page ?? $shown.page,
-      kind:$e.kind ?? $shown.kind ?? "edge", files:$e.files, digests:$e.digests ?? {},
+      title:$shown.title ?? $name, edge:if $e.enabled then $e.edge ?? $shown.edge else $shown.edge end, page:$e.page ?? $shown.page,
+      kind:$e.kind ?? $shown.kind ?? "edge", position_supported:$shown.position_supported ?? true, files:$e.files, digests:$e.digests ?? {},
       forked_from:type($fork) == "map" ? $fork.from : nil,
       problems:scene_problems($s, $name, $e, $diagnostic, $diagnostics)})
   end
@@ -572,11 +572,72 @@ fn system_dialog($s, $name)
   end
 end
 
+-- Mount position is user state, separate from the upgradeable scene code.
+fn panel_window($source)
+  $lines = split($source, "\n")
+  $found = nil
+  $in_window = false
+  for $i = 1 to len($lines) - 1
+    $line = $lines[$i]
+    if $line == "---" then break end
+    if trim($line)=="" then continue end
+    if starts_with($line," ") or starts_with($line,"\t") then
+      if $in_window then fail("SCENES_PANEL_WINDOW", "panel position requires a single-line JSON window header; nested window blocks are unsupported", {}) end
+      continue
+    end
+    $in_window = starts_with($line,"window:")
+    if not $in_window then continue end
+    if $found!=nil then fail("SCENES_PANEL_WINDOW", "duplicate panel window header", {}) end
+    try
+      $found = json_parse(trim(substr($line,7)))
+    catch $message
+      fail("SCENES_PANEL_WINDOW", "panel position requires a single-line JSON window header; nested window blocks are unsupported", {})
+    end
+    if type($found)!="map" then fail("SCENES_PANEL_WINDOW", "panel window header must be a JSON object", {}) end
+  end
+  if $found==nil then fail("SCENES_PANEL_WINDOW", "panel position requires an explicit single-line JSON window header", {}) end
+  return $found
+end
+
+fn panel_source($source, $dir)
+  $path = $dir .. "/settings.conf.mix"
+  if not regular($path) then return $source end
+  $settings = data_parse(bounded_read($path, 65536))
+  if $settings.edge == nil then return $source end
+  if not contains($EDGES, $settings.edge) then fail("SCENES_ARGUMENT", "invalid panel settings edge", {}) end
+  $window = panel_window($source)
+  if orientation($window.edge ?? "bottom") != orientation($settings.edge) then
+    $window = delete(delete($window, "w"), "h")
+  end
+  $window.edge = $settings.edge
+  $lines = split($source, "\n")
+  for $i = 1 to len($lines) - 1
+    if $lines[$i] == "---" then break end
+    if trim(split($lines[$i], ":")[0]) == "window" then $lines[$i] = "window: " .. json_encode($window) end
+  end
+  return join($lines, "\n")
+end
+
+-- A valid future template may mount without an editable window header.
+-- Keep its own mount intact; only the optional position overlay is refused.
+fn panel_mount_source($source,$dir)
+  try
+    $window=panel_window($source)
+    if seated($window.kind) then return {source:$source,supported:false} end
+    return {source:panel_source($source,$dir),supported:true}
+  catch $message,$error
+    if $error.code!="SCENES_PANEL_WINDOW" then raise($error.code,$message,$error.details) end
+    return {source:$source,supported:false}
+  end
+end
+
 fn candidate($s, $name, $dir)
   if stat($dir, {follow_symlinks:false}).is_symlink or not regular($dir .. "/scene.mix") or not regular($dir .. "/template.conf.mix") then
     fail("SCENES_FILES", "scene and metadata must be regular files in a real directory", {file:$dir})
   end
   $source = bounded_read($dir .. "/scene.mix", 262144)
+  $source_digest = hash_sha256($source)
+  if $name == "panel" then $source = panel_mount_source($source, $dir).source end
   $doc = document($source)
   if $doc.name != $name then fail("SCENES_NAME", "document name must match installation directory", {name:$name, scene:$doc.name}) end
   for each $route in [$doc.mount.panel, $doc.mount.edge]
@@ -614,7 +675,7 @@ fn candidate($s, $name, $dir)
   if not contains(["left", "top", "bottom"], $edge) then $edge = "right" end
   if seated($kind) then $edge = nil end
   return {source:$source, model:$doc.model, page:$page, edge:$edge, kind:$kind, title:$meta.title ?? $name,
-    digest:hash_sha256($source), behaviour_digest:$behaviour, meta_digest:hash_sha256($meta_text)}
+    digest:$source_digest, behaviour_digest:$behaviour, meta_digest:hash_sha256($meta_text)}
 end
 
 -- Per-file attempted digests and display fields, whatever the scene's state.
@@ -631,7 +692,13 @@ fn observe($s, $name, $dir)
   end
   $shown = {}
   try
-    $doc = document(bounded_read($files.scene, 262144))
+    $source = bounded_read($files.scene, 262144)
+    if $name == "panel" then
+      $position=panel_mount_source($source,$dir)
+      $source=$position.source
+      $shown.position_supported=$position.supported
+    end
+    $doc = document($source)
     $shown.kind = $doc.mount.kind ?? "edge"
     $shown.page = type($doc.mount.panel) == "string" ? $doc.mount.panel : "scene-" .. $name
     $shown.edge = contains($EDGES, $doc.mount.edge) ? $doc.mount.edge : "right"
@@ -777,7 +844,7 @@ fn reconcile_one($s, $name, $force)
       $e.check_problems = ($checked ?? {}).problems ?? []
     end
     $s.scenes[$name] = $e
-    if $force or $c.digest != $e.digest or not $e.mounted then
+    if $force or $c.digest != $e.digest or $c.edge != $e.edge or not $e.mounted then
       legacy_guard($s, $c.page)
       $model = $e.model ?? $c.model
       if $e.mounted and ($c.page != $e.page or $c.edge != $e.edge or $c.kind != ($e.kind ?? "edge")) then
@@ -1090,7 +1157,7 @@ fn filesystem_scenes($s, $batch)
         $editor = true
         continue
       end
-      if $parts[0] != "lib" and valid_name($parts[0]) and (len($parts) == 1 or (len($parts) == 2 and contains(["scene.mix", "behaviour.mix", "template.conf.mix"], $parts[1]))) then
+      if $parts[0] != "lib" and valid_name($parts[0]) and (len($parts) == 1 or (len($parts) == 2 and contains(["scene.mix", "behaviour.mix", "template.conf.mix", "settings.conf.mix"], $parts[1]))) then
         if not contains($names, $parts[0]) then push($names, $parts[0]) end
       end
     end
@@ -2463,6 +2530,33 @@ fn move($s, $args)
   if not contains($EDGES, $args.edge) then fail("SCENES_ARGUMENT", "edge must be left, right, top or bottom", {edge:$args.edge}) end
   known($s, $name)
   if not $s.scenes[$name].installed then fail("SCENES_NOT_FOUND", "scene document is missing", {name:$name}) end
+  if $name == "panel" then
+    -- Validate the patchable envelope before creating any settings file.
+    $window = panel_window(bounded_read($s.root .. "/panel/scene.mix", 262144))
+    if seated($window.kind) then fail("SCENES_MOUNT", "a seated scene has no edge", {name:$name}) end
+    $path = $s.root .. "/panel/settings.conf.mix"
+    -- Outside the installation: reset swaps directories, not this lock inode.
+    $lock=$s.root.."/.settings.lock"
+    if not flock($lock,{wait:1}) then fail("SCENES_SETTINGS_BUSY","panel settings are being saved; retry the command",{}) end
+    try
+    $before = regular($path) ? bounded_read($path, 65536) : nil
+    $settings = $before == nil ? {} : data_parse($before)
+    $settings.edge = $args.edge
+    write_atomic($path, data_encode($settings))
+    $s = reconcile_one($s, $name, true)
+    if failure($s.scenes[$name]) != nil then
+      $s.rc = 10
+      $s.response = failure($s.scenes[$name])
+      if $before==nil then remove($path) else write_atomic($path, $before) end
+      if $s.scenes[$name].mounted then $s = reconcile_one($s, $name, false) end
+    else
+      $s.response = {name:$name, edge:$args.edge, revision:$s.scenes[$name].revision}
+    end
+    return $s
+    finally
+      $_=funlock($lock)
+    end
+  end
   $path = $s.root .. "/" .. $name .. "/scene.mix"
   $source = bounded_read($path, 262144)
   $doc = document($source)
@@ -2564,12 +2658,12 @@ fn upgrade_summary($u)
   return $out
 end
 
-fn carry_settings($s, $name, $installation, $tmp)
+fn carry_settings($s, $name, $installation, $tmp, $force = false)
   $settings = $installation .. "/settings.conf.mix"
   if not exists($settings, {follow_symlinks:false}) then return end
   if not regular($settings) then fail("SCENES_FILES", "settings must be regular", {file:$settings}) end
   $old = ($s.desired.templates ?? {})[$name]
-  if $old != nil and $old.settings_digest != nil and hash_file($settings, "sha256") == $old.settings_digest then return end
+  if not $force and $old != nil and $old.settings_digest != nil and hash_file($settings, "sha256") == $old.settings_digest then return end
   -- Refuse explicitly, before either directory moves. Never write a prefix.
   if stat($settings, {follow_symlinks:false}).size > 262144 then fail("SCENES_LIMIT", "settings exceed upgrade size limit; refresh refused", {file:$settings}) end
   $meta = load_data($tmp .. "/template.conf.mix")
@@ -2701,6 +2795,18 @@ fn upgrade($s)
 end
 
 fn reset_scene($s, $name, $e)
+  -- Shared with panel move/task-scope saves. The scene root survives the swap,
+  -- so a writer already waiting on this inode cannot bypass the replacement.
+  $lock = $s.root .. "/.settings.lock"
+  if not flock($lock, {wait:1}) then fail("SCENES_SETTINGS_BUSY", "scene settings are being saved; retry the command", {}) end
+  try
+    return reset_scene_locked($s, $name, $e)
+  finally
+    $_ = funlock($lock)
+  end
+end
+
+fn reset_scene_locked($s, $name, $e)
   $recovery = recovery_directory($s)
   $installation = $s.root .. "/" .. $name
   if exists($installation, {follow_symlinks:false}) and not stat($installation, {follow_symlinks:false}).is_dir then
@@ -2714,13 +2820,15 @@ fn reset_scene($s, $name, $e)
   -- Immutable template baseline BEFORE any user settings are carried. This
   -- settings digest must always describe shipped defaults, never a user edit.
   $template_baseline = template_record($tmp, $origin)
-  if $s.upgrade_expected != nil then
+  if $s.upgrade_expected != nil or $name == "panel" then
     try
       if $s.io.upgrade_guard != nil then $s.io.upgrade_guard($installation) end
-      if not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
+      if $s.upgrade_expected != nil and not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
         fail("SCENES_EDITED", "scene changed during upgrade; refresh refused", {name:$name})
       end
-      carry_settings($s, $name, $installation, $tmp)
+      -- Panel edge/task scope remain user state on explicit Reset too. Other
+      -- scenes retain the upgrade policy: edits carry, defaults may advance.
+      carry_settings($s, $name, $installation, $tmp, $name == "panel")
     catch $message, $error
       remove_dir($tmp)
       raise($error.code, $message, $error.details)
@@ -2738,7 +2846,7 @@ fn reset_scene($s, $name, $e)
       if not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
         fail("SCENES_EDITED", "scene changed during upgrade; refresh refused", {name:$name})
       end
-      carry_settings($s, $name, $installation, $tmp)
+      carry_settings($s, $name, $installation, $tmp, $name == "panel")
     catch $message, $error
       remove_dir($tmp)
       $s.upgrades[$name] = {reason:$message, error_code:$error.code}

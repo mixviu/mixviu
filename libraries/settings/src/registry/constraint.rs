@@ -72,8 +72,8 @@ pub const CONSTRAINTS: &[Constraint] = &[
     },
     Constraint {
         id: "panel_edges",
-        text: "two enabled panels may not share an edge",
-        check: Some(panel_edges),
+        text: "legacy top-panel values do not reserve an edge; scenes validates live mounts",
+        check: None,
         write_only: false,
     },
     Constraint {
@@ -223,20 +223,6 @@ fn unique_chords(values: &Values) -> Vec<Diagnostic> {
         }
     }
     errors
-}
-
-fn panel_edges(values: &Values) -> Vec<Diagnostic> {
-    let edge = |id: &str| effective(values, &format!("shell.panels.{id}.edge"));
-    let on = |id: &str| flag(values, &format!("shell.panels.{id}.enabled"));
-    if on("top") && on("bottom") && edge("top") == edge("bottom") {
-        vec![refuse(
-            "panel_edges",
-            "shell.panels.top.edge",
-            "the top and bottom panels share an edge",
-        )]
-    } else {
-        Vec::new()
-    }
 }
 
 /// A bare function key: `F1` to `F12` (or `f1` to `f12`) with no modifier.
