@@ -654,11 +654,14 @@ pub(crate) fn draw(
                         16.0,
                         look.icon,
                     ));
+                    // TextEdit replaces hint colours with weak_text_color;
+                    // keep it opaque and tied to this field's painted surface.
+                    ui.visuals_mut().weak_text_color = Some(look.text);
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut query)
                             .id_salt((id, "query"))
                             .frame(egui::Frame::NONE)
-                            .hint_text(RichText::new(text(value, "search_hint")).color(look.text))
+                            .hint_text(text(value, "search_hint"))
                             .text_color(look.text)
                             .desired_width(ui.available_width() - 24.0),
                     );
