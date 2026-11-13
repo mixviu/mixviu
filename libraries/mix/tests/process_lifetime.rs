@@ -185,7 +185,7 @@ async fn drain_deadline_honours_grace_for_a_pipe_holding_descendant() {
     let r = ready.display();
     let m = marker.display();
     let output = run_ready(&format!(
-        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 0.5; echo done > {m}; exit 0' TERM; echo ready > {r}; while true; do sleep 0.1; done) & while ! test -f {r}; do sleep 0.01; done\"], {{timeout: 0.3, grace: 5}})\n\
+        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 0.5; echo done > {m}; exit 0' TERM; echo ready > {r}; while true; do sleep 0.1; done) &\"], {{timeout: 0.3, grace: 5}})\n\
          print($r.timed_out .. \" \" .. $r.exit_code .. \" \" .. ($r.duration_ms < 4500))\n",
     ), &ready, Some(&marker))
     .await;
