@@ -4,8 +4,9 @@
 //!
 //! Raw BGRA frames are piped to external ffmpeg using x264 or optional VAAPI. A
 //! dedicated thread owns stdin so the render path never blocks on the pipe.
-//! Output goes to a temp file; the caller moves it to the final destination on
-//! Save (or deletes it on Discard).
+//! Bus takes stream Matroska into an exclusively opened private descriptor;
+//! the recorder publishes the staged files after a successful stop. Interactive
+//! recordings retain their temporary MP4 and Save/Discard flow.
 
 use std::io::{Read, Write};
 use std::os::unix::{fs::OpenOptionsExt, process::CommandExt};

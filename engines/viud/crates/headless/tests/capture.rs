@@ -260,7 +260,11 @@ fn record_vaapi_capability_or_clear_failure() {
         assert_eq!(stop["frames_path"], Value::Null);
         assert_eq!(stop["markers_path"], Value::Null);
         assert!(!fs::read_dir(&process.root).unwrap().any(|entry| {
-            entry.unwrap().file_name().to_string_lossy().contains(".part")
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".part")
         }));
     } else {
         assert_eq!(stop["encoder"], "vaapi");

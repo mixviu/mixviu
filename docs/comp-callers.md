@@ -64,7 +64,8 @@ also bounds that pending phase.
 The renderer's shared export interface maps synchronously. Recording budgets
 readback to one quarter of the frame period: after an over-budget read, following
 damaged ticks repeat the previous frame and increment `dropped` until the debt
-is repaid. The first read itself can still exceed that budget. Single-target
+is repaid. Idle ticks also repay the debt without counting a dropped capture.
+The first read itself can still exceed that budget. Single-target
 pixels share one immutable allocation through capture, session and encoder.
 Set `MIX_VIUD_RECORD_VAAPI_DEVICE` to select the external encoder's render device;
 the default is `/dev/dri/renderD128`. Frame timestamps are taken after readback,
