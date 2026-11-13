@@ -702,6 +702,8 @@ pub struct Terminal {
     grid: Grid,
     /// Updated only by consuming captures, under the grid lock.
     captured_offset: Mutex<usize>,
+    default_colours: Mutex<Option<([u8; 3], [u8; 3])>>,
+    captured_colours: Mutex<Option<([u8; 3], [u8; 3])>>,
     damage: Mutex<Receiver<()>>,
     captured_cursor: Mutex<Option<((usize, usize), bool)>>,
     captured_selection: Mutex<Option<SelectionRange>>,
@@ -871,6 +873,8 @@ impl Terminal {
             stats,
             grid,
             captured_offset: Mutex::new(0),
+            default_colours: Mutex::new(None),
+            captured_colours: Mutex::new(None),
             damage: Mutex::new(rx),
             captured_cursor: Mutex::new(None),
             captured_selection: Mutex::new(None),
@@ -1129,6 +1133,8 @@ impl Terminal {
             stats,
             grid,
             captured_offset: Mutex::new(0),
+            default_colours: Mutex::new(None),
+            captured_colours: Mutex::new(None),
             damage: Mutex::new(rx),
             captured_cursor: Mutex::new(None),
             captured_selection: Mutex::new(None),
@@ -1150,6 +1156,10 @@ impl Terminal {
     }
     pub fn take_damage(&self) -> bool {
         self.damage.lock().unwrap().try_recv().is_ok()
+    }
+    /// Render defaults follow the embedding widget; SGR/OSC colours retain precedence.
+    pub(crate) fn set_default_colours(&self, foreground: [u8; 3], background: [u8; 3]) {
+        *self.default_colours.lock().unwrap() = Some((foreground, background));
     }
     pub fn screen(&self, consume: bool) -> Screen {
         self.capture(consume, None)
@@ -1314,7 +1324,19 @@ impl Terminal {
             .as_ref()
             .and_then(|outcome| outcome.matched)
             .zip(search_colors);
-        let palette = List::from(&Colors::default());
+        let defaults = *self.default_colours.lock().unwrap();
+        let mut palette = List::from(&Colors::default());
+        if let Some((foreground, background)) = defaults {
+            use rio_vt::config::colors::NamedColor;
+            let rgba = |rgb: [u8; 3]| [f32::from(rgb[0]) / 255.0, f32::from(rgb[1]) / 255.0, f32::from(rgb[2]) / 255.0, 1.0];
+            for name in [NamedColor::Foreground, NamedColor::LightForeground, NamedColor::Cursor] {
+                palette[name] = rgba(foreground);
+            }
+            let fg = rgba(foreground);
+            let bg = rgba(background);
+            palette[NamedColor::DimForeground] = [fg[0] * 0.66 + bg[0] * 0.34, fg[1] * 0.66 + bg[1] * 0.34, fg[2] * 0.66 + bg[2] * 0.34, 1.0];
+            palette[NamedColor::Background] = rgba(background);
+        }
         let colour = |c: AnsiColor| -> [u8; 3] {
             let index = match c {
                 AnsiColor::Named(n) => n as usize,
@@ -1442,8 +1464,10 @@ impl Terminal {
         let mut previous = self.captured_cursor.lock().unwrap();
         let mut previous_selection = self.captured_selection.lock().unwrap();
         let mut previous_search = self.captured_search.lock().unwrap();
+        let mut previous_colours = self.captured_colours.lock().unwrap();
         if let Some(dirty) = dirty {
             *dirty = dirty_rows(&mut term, *self.captured_offset.lock().unwrap());
+            if *previous_colours != defaults { dirty.fill(true); }
             if *previous_search != highlight {
                 for (range, _) in previous_search.iter().chain(highlight.iter()) {
                     for (y, row) in dirty.iter_mut().enumerate() {
@@ -1482,6 +1506,7 @@ impl Terminal {
         }
         if consume {
             *previous_search = highlight;
+            *previous_colours = defaults;
             *previous_selection = selection;
             *previous = Some((cursor, cursor_visible));
             *self.captured_offset.lock().unwrap() = term.display_offset();
@@ -1940,6 +1965,8 @@ mod tests {
                 stats,
                 grid,
                 captured_offset: Mutex::new(0),
+            default_colours: Mutex::new(None),
+            captured_colours: Mutex::new(None),
                 damage: Mutex::new(rx),
                 captured_cursor: Mutex::new(None),
                 captured_selection: Mutex::new(None),
@@ -2018,6 +2045,30 @@ mod tests {
 
     fn all(rows: &[bool]) -> bool {
         rows.iter().all(|row| *row)
+    }
+
+    #[test]
+    fn theme_defaults_recolour_idle_cells_without_replacing_ansi_colours() {
+        let terminal = Terminal::from_test_vt(8, 2, b"A\x1b[31mB\x1b[48;2;18;52;86mC\x1b[0mD");
+        terminal.set_default_colours([230, 230, 230], [16, 16, 16]);
+        let dark = terminal.grid_snapshot();
+        let red = dark.screen.cells[1].fg;
+        assert_eq!(dark.screen.cells[0].bg, [16, 16, 16]);
+        assert!(terminal.grid_snapshot().dirty_rows.iter().all(|dirty| !dirty));
+        terminal.set_default_colours([20, 20, 20], [250, 250, 250]);
+        let light = terminal.grid_snapshot();
+        assert!(light.dirty_rows.iter().all(|dirty| *dirty));
+        assert_eq!(light.screen.cells[0].fg, [20, 20, 20]);
+        assert_eq!(light.screen.cells[0].bg, [250, 250, 250]);
+        assert_eq!(light.screen.cells[1].fg, red);
+        assert_eq!(light.screen.cells[2].bg, [18, 52, 86]);
+        assert_eq!(light.screen.cells[3].fg, [20, 20, 20]);
+        terminal.set_default_colours([20, 20, 20], [250, 250, 250]);
+        assert!(terminal.grid_snapshot().dirty_rows.iter().all(|dirty| !dirty));
+        terminal.set_default_colours([230, 230, 230], [16, 16, 16]);
+        let dark = terminal.grid_snapshot();
+        assert!(dark.dirty_rows.iter().all(|dirty| *dirty));
+        assert_eq!(dark.screen.cells[0].bg, [16, 16, 16]);
     }
 
     #[test]
