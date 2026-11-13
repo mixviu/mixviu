@@ -256,7 +256,7 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
                     }
 
                     let ctx = session_context.clone();
-                    let kick = render_kick.clone();
+                    let kick = render_kick;
                     let token = kms::seat::lifecycle::resume::watchdog::arm(
                         &session_loop_handle,
                         |state: &mut Loop| *state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN),

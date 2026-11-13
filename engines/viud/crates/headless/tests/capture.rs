@@ -143,8 +143,9 @@ fn inactive_seat_maps_clients_and_captures_output_and_window() {
 
 fn inactive_fixture_available() -> bool {
     let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
-    let ready = Path::new(&node).exists() && binary("viud").is_file() && binary("noded").is_file();
-    if !ready { eprintln!("inactive-seat GPU fixture skipped: build viud/backend-native and noded and provide a render node"); }
+    let ready = Path::new(&node).exists() && binary("viud").is_file() && binary("noded").is_file()
+        && std::env::var_os("MIX_TEST_MIX_EXE").is_some_and(|path| Path::new(&path).is_file());
+    if !ready { eprintln!("inactive-seat GPU fixture skipped: build viud/backend-native, noded and Mix; set MIX_TEST_MIX_EXE and provide a render node"); }
     ready
 }
 

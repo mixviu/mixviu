@@ -59,4 +59,6 @@ recovers a missing binding, and exposes/recovers watcher failure. Its KMS
 presentation is explicitly a stand-in: no seat or primary-device ioctl runs.
 The two inactive-seat tests are not ignored; when no render node or built
 viud/noded binaries exist they print the missing-prerequisite skip reason.
-CBC acceptance builds the native binaries first and runs both fixtures.
+CBC acceptance builds the native binaries first, sets `MIX_TEST_MIX_EXE` to
+the matching Mix binary, and runs both fixtures. A missing matching Mix binary
+is also reported as a fixture prerequisite.
