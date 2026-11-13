@@ -75,6 +75,24 @@ Prune failures are warnings in `recovery_prune_error`, not reset failures.
 Settings files use the same symlink refusal and before/after identity checks
 as other fingerprinted files.
 
+The backup is checked again after replacement verification. Successful
+upgrades retain the backup's expected fingerprint in optional `backup_records`
+state. Later writes through an inode held across rename are detected before
+pruning and move that backup into protected review storage. Ordinary backups
+are eligible for pruning only after a loader restart and ten minutes without
+a tree change; the target of 16 may temporarily be exceeded during that quiet
+period. The fingerprint and quiet time are rechecked at deletion.
+
+Inventory reports `review_usage` (count and bytes), both globally and per
+scene. A scene with eight retained copies or 64 MiB of retained data refuses
+new upgrades with `SCENES_REVIEW_LIMIT`; existing copies are never deleted
+automatically. To resume, compare the current scene and every saved location
+named by its stale reason, merge or copy out edits to keep, then manually
+remove only the reviewed `.recovery/review-*` directories. The next upgrade
+recomputes usage; deleted review references are dropped when reading state.
+Backup transaction identities cannot reuse an existing backup, recorded
+fingerprint or retained review prefix.
+
 Template metadata may declare `settings_schema`, a field-spec map accepted
 by Mix `validate`. Carried settings must parse as strict data and satisfy
 that spec before refresh; a mismatch flags the installation and retains its

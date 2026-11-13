@@ -168,6 +168,25 @@ fn upgrade_swapped($backup)
     $host_state.edit_after_swap = false
   end
 end
+fn upgrade_verified($backup)
+  if $host_state.held_inode != nil and $host_state.inode_after_verify == true then
+    append_file($host_state.held_inode, "-- late open-inode save\n")
+    $host_state.inode_after_verify = false
+  end
+end
+fn hold_inode($path)
+  check(flock($path, {create:false}), "fixture retains writable inode")
+  $identity = stat($path)
+  for $n in ls("/proc/self/fd")
+    $fd = "/proc/" .. to_string(pid()) .. "/fd/" .. $n
+    try
+      $st = stat($fd)
+      if $st.ino == $identity.ino and $st.dev == $identity.dev then return $fd end
+    catch $ignored
+    end
+  end
+  raise("SCENES_TEST", "held inode descriptor missing")
+end
 fn probe_row($s)
   return filter($l.inventory($s).scenes, fn($r) = $r.name == "probe")[0]
 end
@@ -289,7 +308,7 @@ try
   $io = {rpc:fn($a,$b,$c) = rpc($a,$b,$c), check:fn($a,$b) = check_behaviour($a,$b),
     launch:fn($a,$b,$c,$d,$e) = launch($a,$b,$c,$d,$e),
     stop:fn($a,$b) = stop($a,$b), notify:fn($a) = notify($a), upgrade_guard:fn($a) = upgrade_guard($a),
-    upgrade_swapped:fn($a) = upgrade_swapped($a)}
+    upgrade_swapped:fn($a) = upgrade_swapped($a), upgrade_verified:fn($a) = upgrade_verified($a)}
   $s = $l.initial($tmp .. "/scenes", $tmp .. "/templates", "test-shell", "test-scenes", $io)
   $s.first_run_enabled = false
   $s = $l.rescan($s, false)
@@ -1674,11 +1693,14 @@ try
   for $i = 1 to 19
     mkdir($s.root .. "/.recovery/old-" .. to_string($i))
   end
+  $s.recovery_clock = time() + 601
+  $s.recovery_boot = ls($s.root .. "/.recovery")
   $s = $l.request($s, "reset", {name:"renamed"})
   check($s.rc == 0 and len(ls($s.root .. "/.recovery")) == 16 and is_dir($s.response.recovery), "recovery cap retains latest reset backup")
   $protected = $s.response.recovery
   $s.desired.resetting = {backup:substr($protected, len($s.root) + 1)}
   mkdir($s.root .. "/.recovery/new-backup")
+  $s.recovery_boot = ls($s.root .. "/.recovery")
   $s = $l.cap_recovery($s, nil)
   check(is_dir($protected) and len(ls($s.root .. "/.recovery")) == 16, "recovery cap protects unfinished transaction backup")
   $s.desired = delete($s.desired, "resetting")
@@ -1743,6 +1765,7 @@ try
   check(contains(read_file($s.root .. "/zzzz/behaviour.mix"), "latest"), "later scene is not blocked by earlier placed reset")
   $s.faults = ["recovery:prune"]
   for $i = 1 to 18 mkdir($s.root .. "/.recovery/prune-" .. to_string($i)) end
+  $s.recovery_boot = ls($s.root .. "/.recovery")
   $s = $l.request($s, "reset", {name:"zzz"})
   check($s.rc == 0 and $s.recovery_prune_error != nil, "prune failure does not report committed reset as failure")
   $s.faults = []
@@ -1777,6 +1800,8 @@ try
     check(type($saved) == "list" and len($saved) == 1 and read_file($root .. "/" .. $saved[0] .. "/behaviour.mix") == $new_code .. "-- save into replacement\n", $point .. ": replacement save retained byte-for-byte")
     check($s.desired.resetting == nil, $point .. ": recovery clears transaction without enrolling either edit")
     for $i = 1 to 20 mkdir($root .. "/.recovery/cap-" .. to_string($i)) end
+    $s.recovery_clock = time() + 601
+    $s.recovery_boot = ls($root .. "/.recovery")
     $s = $l.cap_recovery($s, nil)
     $ordinary = filter(ls($root .. "/.recovery"), fn($n) = not starts_with($n, "review-"))
     check(len($ordinary) == 16 and is_dir($root .. "/" .. $saved[0]), $point .. ": review copy survives cap independently of ordinary backups")
@@ -1796,6 +1821,73 @@ try
   check($link_error == "SCENES_FILES", "fingerprint refuses symlinked settings before hashing")
   $s = $l.request($s, "upgrade", {})
   check($s.response.scenes[0].stale and $s.upgrades.alpha.error_code == "SCENES_FILES" and read_file($target) == "{value:91}\n" and stat($settings_path, {follow_symlinks:false}).is_symlink, "settings alias is flagged without changing link or target")
+
+  -- Writes through an inode retained across rename, after replacement check.
+  for $late in [false, true]
+    $s = se_fresh("held-inode-" .. to_string($late), $ut)
+    $s = $l.request($s, "install", {template:"alpha"})
+    $path = $s.root .. "/alpha/behaviour.mix"
+    $old_code = read_file($path)
+    $host_state.held_inode = hold_inode($path)
+    write_file($ut .. "/alpha/behaviour.mix", $old_code .. "-- inode upgrade\n")
+    $host_state.inode_after_verify = not $late
+    $s = $l.request($s, "upgrade", {})
+    if $late then
+      check(not $s.response.scenes[0].stale, "unchanged backup accepted before delayed write")
+      append_file($host_state.held_inode, "-- late open-inode save\n")
+      $s = $l.cap_recovery($s, nil)
+      $saved = $s.desired.reviews.alpha[0]
+      check(read_file($s.root .. "/" .. $saved .. "/behaviour.mix") == $old_code .. "-- late open-inode save\n" and $l.inventory($s).scenes[0].stale, "post-commit inode edit is quarantined and flagged before pruning")
+    else
+      check(read_file($path) == $old_code .. "-- late open-inode save\n" and $s.response.scenes[0].stale, "second backup check detects held-inode write after replacement verification")
+    end
+    funlock($path)
+    $host_state.held_inode = nil
+  end
+  -- Young backups remain even above the ordinary target, across restarts.
+  $s = se_fresh("quiet-backups", $ut)
+  mkdir($s.root .. "/.recovery")
+  for $i = 1 to 20 mkdir($s.root .. "/.recovery/quiet-" .. to_string($i)) end
+  $s = $l.cap_recovery($s, nil)
+  check(len(ls($s.root .. "/.recovery")) == 20, "new backups cannot be pruned in their birth loader")
+  $s.recovery_boot = ls($s.root .. "/.recovery")
+  $s = $l.cap_recovery($s, nil)
+  check(len(ls($s.root .. "/.recovery")) == 20, "restart alone does not bypass ten-minute quiet floor")
+  $s.recovery_clock = time() + 601
+  $s = $l.cap_recovery($s, nil)
+  check(len(ls($s.root .. "/.recovery")) == 16, "quiet backups from prior loader may be capped")
+  -- Count and byte high-water marks refuse before staging or replacing code.
+  $s = $l.request($s, "install", {template:"alpha"})
+  $paths = []
+  for $i = 1 to 8
+    $rel = ".recovery/review-alpha-threshold-" .. to_string($i)
+    mkdir($s.root .. "/" .. $rel)
+    write_file($s.root .. "/" .. $rel .. "/saved", "saved edit\n")
+    push($paths, $rel)
+  end
+  $s.desired.reviews = {alpha:$paths}
+  $s = $l.persist($s)
+  $usage = $l.inventory($s)
+  check($usage.review_usage.count == 8 and $usage.review_usage.bytes == 88 and $usage.scenes[0].review_usage.blocked, "inventory accounts retained review count and bytes")
+  $before_code = read_file($s.root .. "/alpha/behaviour.mix")
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.alpha.error_code == "SCENES_REVIEW_LIMIT" and read_file($s.root .. "/alpha/behaviour.mix") == $before_code and len(stages($s.root)) == 0, "count threshold refuses new upgrades without deleting saved copies")
+  -- A sparse file exercises byte admission without allocating 64 MiB.
+  $s.desired.reviews.alpha = [$paths[0]]
+  run_argv_must(["truncate", "-s", "67108864", $s.root .. "/" .. $paths[0] .. "/saved"])
+  $s = $l.persist($s)
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.alpha.error_code == "SCENES_REVIEW_LIMIT" and $s.response.scenes[0].review_usage.bytes == 67108864, "byte threshold also refuses upgrade while retaining saved data")
+  $candidate_stage = $l.stage($s, "alpha", "alpha")
+  $reused_backup = $s.root .. "/.recovery/alpha-reused"
+  mkdir($s.root .. "/.recovery/review-alpha-reused-previous")
+  $collision = nil
+  try
+    $l.swap_in($s, "resetting", {name:"alpha"}, $s.root .. "/alpha", $candidate_stage, $reused_backup)
+  catch $message, $error
+    $collision = $error.code
+  end
+  check($collision == "SCENES_COLLISION" and read_file($s.root .. "/alpha/behaviour.mix") == $before_code, "backup transaction identity cannot reuse retained review prefix")
 
   check(tree_digest($tpl .. "/editor") == $shipped_digest, "the loader never writes the shipped editor")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
