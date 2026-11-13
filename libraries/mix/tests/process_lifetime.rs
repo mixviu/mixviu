@@ -40,11 +40,7 @@ async fn run_ok(source: &str) -> String {
 /// the runner's deadline. Once present, every result assertion is final.
 /// Bound elapsed time spent on unready attempts; an accepted attempt still
 /// gets its full timeout and grace. The budget may overrun by one attempt.
-async fn run_ready(
-    source: &str,
-    ready: &std::path::Path,
-    reset: &[&std::path::Path],
-) -> String {
+async fn run_ready(source: &str, ready: &std::path::Path, reset: &[&std::path::Path]) -> String {
     let startup_deadline = Instant::now() + Duration::from_secs(5);
     let mut attempts = 0;
     loop {
@@ -55,7 +51,11 @@ async fn run_ready(
         }
         let output = run_ok(source).await;
         if ready.exists() {
-            eprintln!("FIXTURE_READY retries={} path={}", attempts - 1, ready.display());
+            eprintln!(
+                "FIXTURE_READY retries={} path={}",
+                attempts - 1,
+                ready.display()
+            );
             let _ = std::fs::remove_file(ready);
             return output;
         }
@@ -358,7 +358,11 @@ async fn check_stopped_member(keep_leader: bool) {
     let r = ready.display();
     // The trapped variant isolates native SIGCONT from the kernel's orphan
     // SIGCONT; the untrapped variant tests protection from orphan SIGHUP.
-    let term_trap = if keep_leader { "trap 'wait' TERM; " } else { "" };
+    let term_trap = if keep_leader {
+        "trap 'wait' TERM; "
+    } else {
+        ""
+    };
     // Reopen stat on every poll. EOF, Z and X mean the child exited; the
     // bounded loop cannot wait forever if it never stops. T follows trap
     // installation in the helper, and is required before writing ready.
@@ -372,7 +376,11 @@ async fn check_stopped_member(keep_leader: bool) {
     let _ = std::fs::remove_file(&marker);
     let _ = std::fs::remove_file(&helper);
     let _ = std::fs::remove_file(&installed);
-    let expected = if keep_leader { "true true\nfalse\n" } else { "true true\ntrue\n" };
+    let expected = if keep_leader {
+        "true true\nfalse\n"
+    } else {
+        "true true\ntrue\n"
+    };
     assert_eq!(output, expected, "full output: {output:?}");
     assert!(finished, "the stopped member never ran its SIGTERM trap");
 }
