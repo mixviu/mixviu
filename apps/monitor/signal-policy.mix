@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Read credentials and ancestry independently of the filtered process table.
+fn local_context()
+  $status=read_file("/proc/self/status")
+  $uids=re_find($status,"(?m)^Uid:\\s+([0-9]+)\\s+([0-9]+)")
+  $ancestors=[];$at=to_number(split(read_file("/proc/self/stat")," ")[0])
+  while $at>0 and not contains($ancestors,$at)
+    push($ancestors,$at)
+    try
+      $stat=read_file("/proc/"..to_string($at).."/stat")
+      $tail=re_replace($stat,"(?s)^.*\\) ","")
+      $at=to_number(split($tail," ")[1])
+    catch $message
+      return {uid:nil,ancestors:$ancestors}
+    end
+  end
+  return {uid:if len($uids)==1 then to_number($uids[0].groups[1]) else nil end,ancestors:$ancestors}
+end
+fn allowed($s,$pid)
+  if type($pid)!="number" or $pid<=1 or floor($pid)!=$pid or $s.node!="" or $s.dialog!=nil or $pid!=$s.selected then return false end
+  $ctx=$s.signal_context ?? {uid:nil,ancestors:[]}
+  if $ctx.uid==nil or contains($ctx.ancestors,$pid) then return false end
+  $rows=filter($s.processes,fn($p)=$p.pid==$pid)
+  if len($rows)!=1 or type($rows[0].uid)!="number" then return false end
+  return $ctx.uid==0 or $ctx.uid==$rows[0].uid
+end
