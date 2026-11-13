@@ -225,6 +225,17 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             |s| &mut s.state.redraw,
         );
     }
+    // Recording owns a separate keep-alive deadline from UI animation. A
+    // paused KMS executor never drains it, so the offscreen owner must do so.
+    if let Some(at) = graphics::bridge::publish::wake::take_capture_deadline() {
+        let handle = state.loop_handle.clone();
+        state.state.redraw.request_at(
+            &handle,
+            at,
+            protocols::redraw::schedule::RedrawReason::Capture,
+            |s| &mut s.state.redraw,
+        );
+    }
 }
 
 fn compose(
