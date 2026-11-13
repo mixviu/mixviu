@@ -411,10 +411,17 @@ async fn check_stopped_member(keep_leader: bool) {
     let _ = std::fs::remove_file(&marker);
     let _ = std::fs::remove_file(&helper);
     let _ = std::fs::remove_file(&installed);
-    let expected = if keep_leader { "true false\n" } else { "true true\n" };
+    let expected = if keep_leader {
+        "true false\n"
+    } else {
+        "true true\n"
+    };
     assert!(output.starts_with(expected), "full output: {output:?}");
     // The worker is killed by the grace deadline if it cannot run its trap.
     // Its marker proves cooperative completion; a return-time upper bound
     // also measures scheduling and group bookkeeping under the test pool.
-    assert!(finished, "the stopped member never ran its SIGTERM trap; full output: {output:?}");
+    assert!(
+        finished,
+        "the stopped member never ran its SIGTERM trap; full output: {output:?}"
+    );
 }
