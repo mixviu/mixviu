@@ -347,6 +347,17 @@ impl Grid<Square> {
             return;
         }
 
+        // Reflow must consume unused rows below the cursor before adding
+        // history. Gold retained these blanks and anchored the cursor, hiding
+        // the first row even when the screen had ample space.
+        let free_rows = if reflow {
+            ((self.cursor.pos.row.0 as usize + 1)..self.lines)
+                .rev()
+                .take_while(|&line| self[Line(line as i32)].is_clear())
+                .count()
+        } else {
+            0
+        };
         self.columns = columns;
 
         // Remove the linewrap special case, by moving the cursor outside of the grid.
@@ -539,6 +550,12 @@ impl Grid<Square> {
                 }
             }
         }
+
+        // `new_raw` is oldest-first here. Drop only trailing unused rows,
+        // at most the number introduced by wrapping, keeping the viewport full.
+        let consumed = min(free_rows, new_raw.len().saturating_sub(old_len));
+        new_raw.truncate(new_raw.len() - consumed);
+        self.cursor.pos.row += consumed;
 
         // Restore oldest-first order in place and reuse the buffer as the new
         // grid storage, avoiding a second full row-buffer allocation.

@@ -281,13 +281,12 @@ fn scrollback_pages_and_selection_use_the_native_grid() {
 fn resize_reflows_a_logical_line_and_restores_its_cursor() {
     let t = Terminal::from_test_vt(10, 4, b"abcdefgh");
     t.resize(5, 4, 50, 40);
-    // Gold's Rio reflow keeps the tail at the live viewport origin and
-    // moves the leading wrapped segment into history. Inspect both parts,
-    // rather than assuming a resize pins the logical line to screen row 0.
-    assert_eq!(row(&t, 0), "fgh  ");
-    assert_eq!(t.screen(false).cursor, (3, 0));
+    // Deliberate deviation from pinned Gold: spare rows absorb wrapping
+    // before any content is pushed into history.
+    assert_eq!(row(&t, 0), "abcde");
+    assert_eq!(t.screen(false).cursor, (3, 1));
     t.scroll_view(ScrollRequest::Top);
-    assert_eq!(t.display_offset(), 1);
+    assert_eq!(t.display_offset(), 0);
     assert_eq!(row(&t, 0), "abcde");
     assert_eq!(row(&t, 1), "fgh  ");
     t.selection_start(0, 0, SelectionSide::Left, SelectionType::Simple);
@@ -299,6 +298,43 @@ fn resize_reflows_a_logical_line_and_restores_its_cursor() {
     assert_eq!(row(&t, 0), "abcdefgh  ");
     assert_eq!(row(&t, 1), "          ");
     assert_eq!(t.screen(false).cursor, (8, 0));
+}
+
+#[test]
+fn split_reflow_uses_free_rows_before_history_and_grows_back() {
+    for short_lines in 0..=6 {
+        for rows in [8, 24] {
+            let text = format!("{}abcdefghijklmnop", "short\r\n".repeat(short_lines));
+            let t = Terminal::from_test_vt(24, rows, text.as_bytes());
+            t.resize(8, rows as u16, 80, rows as u16 * 10);
+            for n in 0..short_lines {
+                assert_eq!(row(&t, n), "short   ");
+            }
+            assert_eq!(row(&t, short_lines), "abcdefgh");
+            assert_eq!(row(&t, short_lines + 1), "ijklmnop");
+            assert_eq!(t.grid.lock().grid.history_size(), 0);
+            t.resize(24, rows as u16, 240, rows as u16 * 10);
+            for n in 0..short_lines {
+                assert_eq!(row(&t, n).trim_end(), "short");
+            }
+            assert_eq!(row(&t, short_lines).trim_end(), "abcdefghijklmnop");
+            assert_eq!(t.screen(false).cursor, (16, short_lines));
+            assert_eq!(t.grid.lock().grid.history_size(), 0);
+        }
+    }
+}
+
+#[test]
+fn split_reflow_preserves_overflow_in_history() {
+    let t = Terminal::from_test_vt(24, 3, b"one\r\ntwo\r\nabcdefghijklmnopq");
+    t.resize(8, 3, 80, 30);
+    assert_eq!(row(&t, 0), "abcdefgh");
+    assert_eq!(row(&t, 1), "ijklmnop");
+    assert_eq!(row(&t, 2), "q       ");
+    t.scroll_view(ScrollRequest::Top);
+    assert_eq!(t.display_offset(), 2);
+    assert_eq!(row(&t, 0), "one     ");
+    assert_eq!(row(&t, 1), "two     ");
 }
 
 #[test]

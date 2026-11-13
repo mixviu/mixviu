@@ -2124,6 +2124,22 @@ mod tests {
     /// A zoom step must be the same raster `new` would build, without
     /// reading the font again: the bytes are shared, not re-read or copied.
     #[test]
+    fn zoom_steps_are_logical_at_normal_and_fractional_output_scale() {
+        let raster = raster_with(Cursor::Block);
+        for scale in [1.0, 2.5] {
+            let mut size = crate::terminal::font::FontSize::new(14.667);
+            let base = raster.resized(scale, size.current()).unwrap();
+            for steps in 1..=2 {
+                assert!(size.increase());
+                let zoomed = raster.resized(scale, size.current()).unwrap();
+                let logical_delta = (zoomed.px - base.px) / scale;
+                assert!((logical_delta - steps as f32 * 2.0 / 3.0).abs() < 1e-5);
+                assert!(zoomed.cell().1 >= base.cell().1);
+            }
+        }
+    }
+
+    #[test]
     fn resized_matches_new_and_shares_the_font_bytes() {
         let base = Raster::for_test(1.0, 13.0, Cursor::Block).expect("DejaVu Sans Mono");
         for (scale, px) in [(1.0, 17.0), (2.5, 13.0), (1.25, 9.5)] {
