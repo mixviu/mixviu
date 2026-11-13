@@ -660,31 +660,55 @@ mod tests {
                     } else {
                         descending
                     };
-                    let (got, _) = select(fixture.clone(), &Query {
-                        sort: Some(sort.into()), reverse, tree, limit: Some(0),
-                        ..Query::default()
-                    }, &users).unwrap();
-                    let ranks = if descending { [3,2,1] } else { [1,2,3] };
+                    let (got, _) = select(
+                        fixture.clone(),
+                        &Query {
+                            sort: Some(sort.into()),
+                            reverse,
+                            tree,
+                            limit: Some(0),
+                            ..Query::default()
+                        },
+                        &users,
+                    )
+                    .unwrap();
+                    let ranks = if descending { [3, 2, 1] } else { [1, 2, 3] };
                     let expected = if tree {
-                        ranks.into_iter().flat_map(|r| {
-                            std::iter::once(r).chain(ranks.into_iter().map(move |c| r*10+c))
-                        }).collect::<Vec<_>>()
+                        ranks
+                            .into_iter()
+                            .flat_map(|r| {
+                                std::iter::once(r).chain(ranks.into_iter().map(move |c| r * 10 + c))
+                            })
+                            .collect::<Vec<_>>()
                     } else if sort == "pid" {
                         let mut ids = fixture.iter().map(|p| p.pid).collect::<Vec<_>>();
                         ids.sort();
-                        if descending { ids.reverse(); }
+                        if descending {
+                            ids.reverse();
+                        }
                         ids
                     } else {
                         let mut ids = Vec::new();
                         for r in ranks {
-                            let bases = if descending { [30,20,10,0] } else { [0,10,20,30] };
-                            ids.extend(bases.map(|b| b+r));
+                            let bases = if reverse {
+                                [30, 20, 10, 0]
+                            } else {
+                                [0, 10, 20, 30]
+                            };
+                            ids.extend(bases.map(|b| b + r));
                         }
                         ids
                     };
-                    assert_eq!(got.iter().map(|p| p.pid).collect::<Vec<_>>(), expected, "{sort} descending={descending} tree={tree}");
+                    assert_eq!(
+                        got.iter().map(|p| p.pid).collect::<Vec<_>>(),
+                        expected,
+                        "{sort} descending={descending} tree={tree}"
+                    );
                     if tree {
-                        assert_eq!(got.iter().map(|p| p.depth.unwrap()).collect::<Vec<_>>(), [0,1,1,1,0,1,1,1,0,1,1,1]);
+                        assert_eq!(
+                            got.iter().map(|p| p.depth.unwrap()).collect::<Vec<_>>(),
+                            [0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1]
+                        );
                     }
                 }
             }
