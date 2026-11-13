@@ -81,7 +81,8 @@ on dopus.initialise
   dp_start($event.args)
   reply(0,json_encode({ready:true}))
 end
-fn dp_request($request)\n  if starts_with($request.args.id ?? "","theme.mode-") and $request.args.id!="theme.mode-toggle" then $request.args.id="view.mode."..slice($request.args.id,len("theme.mode-")) end
+fn dp_request($request)
+  if starts_with($request.args.id ?? "","theme.mode-") and $request.args.id!="theme.mode-toggle" then $request.args.id="view.mode."..slice($request.args.id,len("theme.mode-")) end
   global $state, $row_cache, $contract
   if $state==nil then reply(10,json_encode({error_code:"NOT_READY"}))
   else
@@ -359,7 +360,7 @@ on dopus.state
 end
 on dopus.info
   $ctx=viu_context()
-  reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:$state.headless,panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
+  reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:$state.headless,theme:{mode:$state.appearance_choice.mode,effective:$state.appearance},panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
 end
 fn dp_describe()
   $description=$contract.describe

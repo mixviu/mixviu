@@ -165,7 +165,7 @@ fn bus_command($s,$e)
     if $a.text!=nil and type($a.text)!="bool" then return refused($s,"INVALID_ARGUMENT","text must be boolean","bad_args") end
     try
       $v=viu_document("inspect",$t.document,{text:$a.text ?? false})
-      $body={tab:to_number($t.document),preview:$s.previews[$t.document] ?? "source",buffer:$v.buffer,rev:$v.rev,view_gen:$v.view_gen,phase:$v.phase,pending:$v.pending,inflight:$v.inflight,text_hash:$v.text_hash,bytes:$v.bytes,lines:$v.lines,selection:$v.selection,first_line:$v.first_line,last_remote:$v.last_remote,conflicts:$v.conflicts,detached_copy:$v.detached_copy,text:$v.text}
+      $body={theme:{mode:$s.local_theme.mode,effective:$s.look.appearance},tab:to_number($t.document),preview:$s.previews[$t.document] ?? "source",buffer:$v.buffer,rev:$v.rev,view_gen:$v.view_gen,phase:$v.phase,pending:$v.pending,inflight:$v.inflight,text_hash:$v.text_hash,bytes:$v.bytes,lines:$v.lines,selection:$v.selection,first_line:$v.first_line,last_remote:$v.last_remote,conflicts:$v.conflicts,detached_copy:$v.detached_copy,text:$v.text}
       if $s.mail[$t.document]!=nil then $m=$s.mail[$t.document];$body.mail={headers:$m.headers,sending:$m.sending,saving:$m.saving,notice:$m.notice} end
       if $s.notices[$t.document]!=nil then $body.document_notice=$s.notices[$t.document] end
       reply(0,json_encode($body));return $s
