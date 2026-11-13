@@ -90,10 +90,30 @@ fn five(seed: SrgbColour) -> [SrgbColour; 5] {
 
 impl Toolkit {
     pub fn of(theme: &DerivedTheme) -> Self {
-        Self {
+        let mut out = Self {
             gtk: gtk(theme),
             qt: qt(theme),
+        };
+        if theme.is_high_contrast {
+            let (surface, ink) = if theme.is_dark { (BLACK, WHITE) } else { (WHITE, BLACK) };
+            for (name, colour) in &mut out.gtk {
+                if name.ends_with("_bg_color") {
+                    *colour = with_alpha(mix(*colour, surface, 0.92), 1.0);
+                } else if name.ends_with("_fg_color") || *name == "headerbar_border_color" {
+                    *colour = ink;
+                }
+            }
+            for group in [&mut out.qt.active, &mut out.qt.inactive, &mut out.qt.disabled] {
+                for role in [BUTTON, BASE, WINDOW, 12, ALTERNATE_BASE, TOOL_TIP_BASE] {
+                    group[role] = with_alpha(mix(group[role], surface, 0.92), 1.0);
+                }
+                for role in [WINDOW_TEXT, TEXT, BUTTON_TEXT, HIGHLIGHTED_TEXT, LINK,
+                    LINK_VISITED, TOOL_TIP_TEXT, PLACEHOLDER_TEXT] {
+                    group[role] = ink;
+                }
+            }
         }
+        out
     }
 }
 

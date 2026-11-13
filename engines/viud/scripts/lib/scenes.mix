@@ -543,11 +543,32 @@ fn system_dialog($s, $name)
   end
 end
 
+-- Mount position is user state, separate from the upgradeable scene code.
+fn panel_source($source, $dir)
+  $path = $dir .. "/settings.conf.mix"
+  if not regular($path) then return $source end
+  $settings = data_parse(bounded_read($path, 65536))
+  if $settings.edge == nil then return $source end
+  if not contains($EDGES, $settings.edge) then fail("SCENES_ARGUMENT", "invalid panel settings edge", {}) end
+  $window = document($source).window
+  if orientation($window.edge ?? "bottom") != orientation($settings.edge) then
+    $window = delete(delete($window, "w"), "h")
+  end
+  $window.edge = $settings.edge
+  $lines = split($source, "\n")
+  for $i = 1 to len($lines) - 1
+    if $lines[$i] == "---" then break end
+    if trim(split($lines[$i], ":")[0]) == "window" then $lines[$i] = "window: " .. json_encode($window) end
+  end
+  return join($lines, "\n")
+end
+
 fn candidate($s, $name, $dir)
   if stat($dir, {follow_symlinks:false}).is_symlink or not regular($dir .. "/scene.mix") or not regular($dir .. "/template.conf.mix") then
     fail("SCENES_FILES", "scene and metadata must be regular files in a real directory", {file:$dir})
   end
   $source = bounded_read($dir .. "/scene.mix", 262144)
+  if $name == "panel" then $source = panel_source($source, $dir) end
   $doc = document($source)
   if $doc.name != $name then fail("SCENES_NAME", "document name must match installation directory", {name:$name, scene:$doc.name}) end
   for each $route in [$doc.mount.panel, $doc.mount.edge]
@@ -1030,7 +1051,7 @@ fn filesystem_scenes($s, $batch)
         $editor = true
         continue
       end
-      if $parts[0] != "lib" and valid_name($parts[0]) and (len($parts) == 1 or (len($parts) == 2 and contains(["scene.mix", "behaviour.mix", "template.conf.mix"], $parts[1]))) then
+      if $parts[0] != "lib" and valid_name($parts[0]) and (len($parts) == 1 or (len($parts) == 2 and contains(["scene.mix", "behaviour.mix", "template.conf.mix", "settings.conf.mix"], $parts[1]))) then
         if not contains($names, $parts[0]) then push($names, $parts[0]) end
       end
     end
@@ -2190,6 +2211,23 @@ fn move($s, $args)
   if not contains($EDGES, $args.edge) then fail("SCENES_ARGUMENT", "edge must be left, right, top or bottom", {edge:$args.edge}) end
   known($s, $name)
   if not $s.scenes[$name].installed then fail("SCENES_NOT_FOUND", "scene document is missing", {name:$name}) end
+  if $name == "panel" then
+    $path = $s.root .. "/panel/settings.conf.mix"
+    $before = regular($path) ? bounded_read($path, 65536) : nil
+    $settings = $before == nil ? {} : data_parse($before)
+    $settings.edge = $args.edge
+    write_atomic($path, data_encode($settings))
+    $s = reconcile_one($s, $name, true)
+    if failure($s.scenes[$name]) != nil then
+      $s.rc = 10
+      $s.response = failure($s.scenes[$name])
+      write_atomic($path, $before ?? "{}")
+      if $s.scenes[$name].mounted then $s = reconcile_one($s, $name, false) end
+    else
+      $s.response = {name:$name, edge:$args.edge, revision:$s.scenes[$name].revision}
+    end
+    return $s
+  end
   $path = $s.root .. "/" .. $name .. "/scene.mix"
   $source = bounded_read($path, 262144)
   $doc = document($source)

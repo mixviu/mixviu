@@ -1,0 +1,34 @@
+-- The scene loader owns the live bar, including while its behaviour is off.
+fn supports($key)
+  return contains(["shell.panels.top.enabled","shell.panels.top.edge"],$key)
+end
+fn from_inventory($inventory)
+  for $row in $inventory.scenes ?? []
+    if $row.name=="panel" then return {enabled:$row.enabled,edge:$row.edge ?? "bottom"} end
+  end
+  return nil
+end
+fn refresh($s)
+  send "scenes" "scenes.list" body={} timeout=5
+  $s.panel=if $rc==0 and type($reply)=="map" then from_inventory($reply) else nil end
+  return $s
+end
+fn request($key,$value)
+  if not supports($key) then raise("ARGUMENT","Unsupported scene panel setting") end
+  if $key=="shell.panels.top.enabled" then
+    if $value==nil then $value=true end
+    if type($value)!="bool" then raise("ARGUMENT","Panel enabled must be boolean") end
+    $command=if $value then "scenes.enable" else "scenes.disable" end
+    return {command:$command,args:{name:"panel"}}
+  else
+    if $value==nil then $value="bottom" end
+    if not contains(["top","bottom","left","right"],$value) then raise("ARGUMENT","Invalid panel edge") end
+    return {command:"scenes.move",args:{name:"panel",edge:$value}}
+  end
+end
+fn set_value($s,$key,$value)
+  $req=request($key,$value)
+  send "scenes" $req.command body=$req.args timeout=5
+  if $rc!=0 then raise("FAILED","Scene panel change refused: "..to_string($result)) end
+  return refresh($s)
+end

@@ -1597,6 +1597,30 @@ try
   check($s.response.templates[2].diagnostic.error_code == "SCENES_METADATA" and $s.response.templates[2].order == 1000, "T1: an invalid template is a row with a diagnostic")
 
   check(tree_digest($tpl .. "/editor") == $shipped_digest, "the loader never writes the shipped editor")
+  -- Preferences uses the loader's authority, never the legacy settings keys.
+  $prefs = require("../../../apps/prefs/panel.mix")
+  $host_state.refuse_edge = nil
+  $host_state.rollback_fail = nil
+  install_fixture($s.root, "panel", false)
+  $s = $l.rescan($s, false)
+  $original = read_file($s.root .. "/panel/scene.mix")
+  for $enabled in [true, false, true]
+    $req = $prefs.request("shell.panels.top.enabled", $enabled)
+    $s = $l.request($s, substr($req.command, 7), $req.args)
+    check($s.rc == 0 and $s.scenes.panel.mounted == $enabled, "Preferences toggle changes actual mount")
+    check($prefs.from_inventory($l.inventory($s)).enabled == $enabled, "Preferences reads actual enablement")
+  end
+  for $edge in ["top", "bottom", "left", "right"]
+    $req = $prefs.request("shell.panels.top.edge", $edge)
+    $s = $l.request($s, substr($req.command, 7), $req.args)
+    check($s.rc == 0 and $s.scenes.panel.edge == $edge, "Preferences moves actual panel")
+    check($prefs.from_inventory($l.inventory($s)).edge == $edge, "Preferences reads actual edge")
+    check(read_file($s.root .. "/panel/scene.mix") == $original, "position leaves upgradeable code untouched")
+  end
+  write_file($s.root .. "/panel/settings.conf.mix", "{edge: bottom, tasks_scope: current}")
+  $s = $l.filesystem($s, {overflow:false, changes:[{path:$s.root .. "/panel/settings.conf.mix"}]})
+  check($prefs.from_inventory($l.inventory($s)).edge == "bottom", "panel-side edit reaches Preferences")
+  check(load_data($s.root .. "/panel/settings.conf.mix").tasks_scope == "current", "other user settings survive")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
 finally
   remove_dir($tmp)

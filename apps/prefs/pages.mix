@@ -35,6 +35,8 @@ fn item_action($s,$params)
   raise("FAILED",replace($n.text_for("item-unknown"),"{ $item }",$params.source))
 end
 fn stored($s,$key)
+  if $key=="shell.panels.top.enabled" then return ($s.panel ?? {}).enabled end
+  if $key=="shell.panels.top.edge" then return ($s.panel ?? {}).edge end
   if contains(keys($s.queue_changes ?? {}),$key) then return $s.queue_changes[$key] ?? viu_settings("default",$key) end
   if contains(keys($s.inflight_changes ?? {}),$key) then return $s.inflight_changes[$key] ?? viu_settings("default",$key) end
   if contains(keys($s.values),$key) and $s.values[$key]!=nil then return $s.values[$key] end
@@ -52,6 +54,10 @@ fn store_view($s)
   return {role:$s.role,stale:$s.stale,unreachable:$s.uncertain,blocked:store_blocked($s),described:len($s.catalog)>0,revision:$s.revision,writing:len($waiting)>0,waiting:$waiting,error:$s.store_error ?? nil}
 end
 fn row_blocked($s,$p,$r)
+  if $p.id=="panel" then
+    if not contains(["enabled","edge"],$r.id) then return "This control is not supported by the panel scene." end
+    return if ($s.panel ?? nil)==nil or not $s.connected then "Panel scene unavailable" else nil end
+  end
   if $p.backend!=nil then return backend_reason($p.backend) end
   if $r.backend!=nil then return $r.backend end
   if $p.id=="appearance" then

@@ -5,6 +5,7 @@
 $core=require("core.mix");$ctx=viu_context()
 $nav=require("navigation.mix")
 $pages=require("pages.mix")
+$panel=require("panel.mix")
 $actions=require("actions.mix")
 $look=require("look.mix")
 $seat=require("agent-seat.mix")
@@ -192,6 +193,7 @@ fn gallery_action($s,$action,$value)
   return scan_gallery($s)
 end
 fn enter_page($s)
+  if $s.nav.page=="panel" then $s=$panel.refresh($s) end
   if $s.nav.page=="wallpaper" then
     if not ($s.gallery.entered ?? false) and ($s.gallery.error!=nil or monotonic()-($s.gallery.scanned_at ?? 0)>=60) then $s.gallery.scanned=nil end
     $s.gallery.entered=true;$s=scan_gallery($s)
@@ -227,6 +229,7 @@ fn confirm_dialog($s,$answer)
   return $s
 end
 fn set_prefs($s,$key,$value)
+  if $panel.supports($key) then return $panel.set_value($s,$key,$value) end
   $admission=$s;$admission.busy=false
   $request=$core.admitted($admission,$key,$value)
   if $s.look.settings!="missing" then $s.store_error=nil end
@@ -266,6 +269,7 @@ on viu.tick
   if not $state.subscribed then
     for $prefix in ["wallpaper","appearance","window","shell.panels","workspaces","displays","sound","power","input","keymaps","apps_default","apps_startup","xwayland","agent_seat","time","region","accessibility","terminal","email","ced","apps","tune","state"] subscribe("settingsd.desktop.keys.default."..$prefix) end
     subscribe("settingsd.desktop.look.default")
+    subscribe("scenes.changed")
     $state.subscribed=true
   end
   if not $state.release_started then $state.release_started=true;$state=release_request($state,"releases.list",{}) end
@@ -802,7 +806,10 @@ on settingsd.desktop.look.default
   $state=hint_prefs($state)
 end
 on bus.connected
-  $state.connected=true;$state=hint_prefs($state)
+  $state.connected=true;$state=$panel.refresh($state);$state=hint_prefs($state)
+end
+on scenes.changed
+  $state=$panel.refresh($state);publish_prefs($state)
 end
 on bus.disconnected
   $state.connected=false;$state.stale=true;$state.needs_read=true;publish_prefs($state)
