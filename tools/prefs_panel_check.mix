@@ -11,7 +11,7 @@ if trim($diff)!="" then eprint("Formatting differs; apply the CBC patch and requ
 for $argv in [["cargo", "test", "--locked", "-p", "design"],
   ["cargo", "test", "--locked", "-p", "settings", "--lib", "registry::"],
   ["cargo", "test", "--locked", "-p", "settingsd", "--test", "transactions"],
-  ["cargo", "test", "--locked", "-p", "viu", "--test", "app_mix", "--", "--nocapture"],
+  ["cargo", "test", "--locked", "-p", "lib-viu", "--test", "app_mix", "--", "--nocapture"],
   ["cargo", "test", "--locked", "-p", "toolkit", "--lib", "session_look"],
   ["/opt/mixos/bin/mix", "engines/viud/tests/scenes_test.mix"],
   ["/opt/mixos/bin/mix", "apps/prefs/panel-test.mix"],
