@@ -633,6 +633,65 @@ mod tests {
     }
 
     #[test]
+    fn monitor_direction_adapter_orders_every_column_flat_and_tree() {
+        let users = Users::default();
+        // Three roots, each with three children: check root and sibling order,
+        // while requiring parents before children in both directions.
+        let mut fixture = Vec::new();
+        for base in [0, 10, 20, 30] {
+            for rank in 1..=3 {
+                let mut p = rows()[0].clone();
+                p.pid = base + rank;
+                p.ppid = if base == 0 { 0 } else { base / 10 };
+                p.name = format!("name-{rank}");
+                p.user = format!("user-{rank}");
+                p.cpu = f64::from(rank);
+                p.memory = u64::from(rank);
+                p.read_bps = Some(f64::from(rank));
+                p.write_bps = Some(f64::from(rank));
+                fixture.push(p);
+            }
+        }
+        for &sort in SORTS {
+            for descending in [false, true] {
+                for tree in [false, true] {
+                    let reverse = if ["cpu", "memory", "io"].contains(&sort) {
+                        !descending
+                    } else {
+                        descending
+                    };
+                    let (got, _) = select(fixture.clone(), &Query {
+                        sort: Some(sort.into()), reverse, tree, limit: Some(0),
+                        ..Query::default()
+                    }, &users).unwrap();
+                    let ranks = if descending { [3,2,1] } else { [1,2,3] };
+                    let expected = if tree {
+                        ranks.into_iter().flat_map(|r| {
+                            std::iter::once(r).chain(ranks.into_iter().map(move |c| r*10+c))
+                        }).collect::<Vec<_>>()
+                    } else if sort == "pid" {
+                        let mut ids = fixture.iter().map(|p| p.pid).collect::<Vec<_>>();
+                        ids.sort();
+                        if descending { ids.reverse(); }
+                        ids
+                    } else {
+                        let mut ids = Vec::new();
+                        for r in ranks {
+                            let bases = if descending { [30,20,10,0] } else { [0,10,20,30] };
+                            ids.extend(bases.map(|b| b+r));
+                        }
+                        ids
+                    };
+                    assert_eq!(got.iter().map(|p| p.pid).collect::<Vec<_>>(), expected, "{sort} descending={descending} tree={tree}");
+                    if tree {
+                        assert_eq!(got.iter().map(|p| p.depth.unwrap()).collect::<Vec<_>>(), [0,1,1,1,0,1,1,1,0,1,1,1]);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn the_table_sorts_filters_and_limits() {
         let users = Users::default();
         let (got, total) = select(
