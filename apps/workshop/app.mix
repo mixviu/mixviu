@@ -2,6 +2,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_launch app_args
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $controller=require("controller.mix");$model=require("model.mix");$frame=require("frame.mix");$presentation=require("presentation.mix");$discovery=require("discovery.mix");$work=require("work.mix");$counter=require("counter.mix")
 $saved=require("saved.mix")
 $actions=require("actions.mix");$macros=require("macro.mix")
@@ -9,6 +10,7 @@ $agent_ui=require("agent-ui.mix")
 $state=$model.initial();$ctx=viu_context();$state.mesh.observer=$ctx.citizen
 try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
 $state.comp=$launch.comp ?? env("MIX_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
+$state.theme_choice.mode=$app_mode.load("workshop")
 $dirty=false
 fn publish_workshop($s)
   $s=$saved.reconcile($s)
@@ -16,7 +18,7 @@ fn publish_workshop($s)
   if $s.quitting and not $s.busy then $s.window_close=true end
   $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)
   for $key in keys($persist) $projection[$key]=$persist[$key] end
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$projection}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$app_mode.project($projection,"workshop",$s.theme_choice)}
   return $s
 end
 fn handle($s,$event)
@@ -118,7 +120,7 @@ on viu.viewport.changed
   $state.window_width=$event.args.width;$state.window_height=$event.args.height;$state=publish_workshop($state)
 end
 on viu.saved.loaded
-  $state=$saved.load($state,$event.args);$state=publish_workshop($state)
+  $state=$saved.load($state,$event.args);$state.theme_choice.mode=$app_mode.restore("workshop",$state.theme_choice.mode);$state=publish_workshop($state)
 end
 on workshop.layout
   $a=$event.args

@@ -1,4 +1,5 @@
 -- host: viu
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $fetch=require("fetch.mix")
 $wire=require("wire.mix")
 $commands=require("actions.mix")
@@ -15,8 +16,9 @@ if len($app_args)>0 then
   else raise("ARGUMENT","Usage: viu run apps/monitor [--node NAME]") end
   $state.node_draft=$state.node;$checked=$core.target($state.node)
 end
+$state.theme_choice.mode=$app_mode.load("monitor")
 fn publish_monitor($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$app_mode.project($core.framed($s),"monitor",$s.theme_choice)}
 end
 fn refresh_monitor($s)
   try

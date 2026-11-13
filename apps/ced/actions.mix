@@ -17,6 +17,7 @@ fn action_rows($s)
     if $id=="file.send" or $id=="mail.headers" then $m=if $has then $s.mail[$t.document] else nil end;$rows[$i].enabled=$m!=nil and not $m.saving and not $m.sending end
     if contains(["tabs.next","tabs.prev"],$id) then $rows[$i].enabled=len($s.tabs)>1 end
     if starts_with($rows[$i].id,"tabs.goto.") then $rows[$i].enabled=to_number(split($rows[$i].id,".")[2])<=len($s.tabs) end
+    if starts_with($id,"view.mode.") then $rows[$i].enabled=true;$rows[$i].checked=($s.local_theme.mode ?? "session")==slice($id,len("view.mode.")) end
     if $modal then $rows[$i].enabled=false end
     if $s.keys[$rows[$i].id]!=nil then $rows[$i].keys=$s.keys[$rows[$i].id] end
   end
