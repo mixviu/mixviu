@@ -1705,8 +1705,10 @@ try
   check(is_dir($protected) and len(ls($s.root .. "/.recovery")) == 16, "recovery cap protects unfinished transaction backup")
   $s.desired = delete($s.desired, "resetting")
   $helpers = require("../../../share/scenes/editor/lib.mix")
-  check($helpers.scene_state({stale:true}).status == "template updated", "Scene Editor marks stale copies")
-  check($helpers.scene_state({stale:true, upgrade:{error_code:"SCENES_EDITOR_OPEN"}}).status == "SCENES_EDITOR_OPEN", "editor shows actual stale error")
+  check($helpers.scene_state({enabled:true, stale:true}).status == "template updated", "Scene Editor marks stale copies")
+  check($helpers.scene_state({enabled:true, stale:true, upgrade:{error_code:"SCENES_EDITOR_OPEN"}}).status == "SCENES_EDITOR_OPEN", "editor shows actual stale error")
+  check($helpers.scene_state({enabled:false, stale:true}).status == "disabled", "disabled status outranks stale")
+  check($helpers.scene_state({enabled:true, behaviour:"crash_loop", stale:true}).status == "crash_loop", "crash loop status outranks stale")
 
   -- Round 2: optional records cannot poison durable desired state.
   mkdir($ut .. "/no-meta")
@@ -1888,6 +1890,87 @@ try
     $collision = $error.code
   end
   check($collision == "SCENES_COLLISION" and read_file($s.root .. "/alpha/behaviour.mix") == $before_code, "backup transaction identity cannot reuse retained review prefix")
+
+  -- Every swap route protects the old inode, not just template upgrades.
+  for $route in ["reset", "editor-reset", "promote"]
+    for $late in [false, true]
+      $s = se_fresh("swap-inode-" .. $route .. "-" .. to_string($late), $tpl)
+      $name = $route == "editor-reset" ? "editor" : "alpha"
+      $s = $l.request($s, "install", {template:$name})
+      if $route == "promote" then
+        $s = $l.request($s, "fork", {name:"alpha", enable:false})
+        append_file($s.root .. "/alpha-sandbox/behaviour.mix", "-- promoted behaviour\n")
+      end
+      $path = $s.root .. "/" .. $name .. "/behaviour.mix"
+      $before = read_file($path)
+      $host_state.held_inode = hold_inode($path)
+      $host_state.inode_after_verify = not $late
+      $s = $l.request($s, $route == "promote" ? "promote" : "reset", $route == "promote" ? {from:"alpha-sandbox"} : {name:$name})
+      if $late then
+        check($s.rc == 0, $route .. ": swap completed before delayed descriptor write: " .. json_encode($s.response))
+        append_file($host_state.held_inode, "-- delayed non-upgrade inode save\n")
+        $s = $l.cap_recovery($s, nil)
+        $paths = $l.live_review_paths($s, $name)
+        check(len($paths) == 1 and read_file($paths[0] .. "/behaviour.mix") == $before .. "-- delayed non-upgrade inode save\n", $route .. ": delayed old-inode save quarantined byte-for-byte")
+      else
+        check($s.rc != 0 and read_file($path) == $before .. "-- late open-inode save\n", $route .. ": swap rechecks and restores the edited inode")
+        $s = $l.rescan($s, false)
+        check($s.desired.resetting == nil and $s.desired.promoting == nil and len($l.live_review_paths($s, $name)) == 1, $route .. ": recovery preserves counterpart and clears transaction")
+      end
+      funlock($path)
+      $host_state.held_inode = nil
+      $host_state.inode_after_verify = false
+    end
+  end
+  -- Promote also retires its sandbox; that inode needs durable protection.
+  $s = se_fresh("sandbox-inode", $tpl)
+  $s = $l.request($s, "install", {template:"alpha"})
+  $s = $l.request($s, "fork", {name:"alpha", enable:false})
+  $path = $s.root .. "/alpha-sandbox/behaviour.mix"
+  $before = read_file($path)
+  $host_state.held_inode = hold_inode($path)
+  $s = $l.request($s, "promote", {from:"alpha-sandbox"})
+  check($s.rc == 0, "sandbox inode fixture promotes")
+  append_file($host_state.held_inode, "-- retired sandbox save\n")
+  $s = $l.cap_recovery($s, nil)
+  $paths = $l.live_review_paths($s, "alpha-sandbox")
+  check(len($paths) == 1 and read_file($paths[0] .. "/behaviour.mix") == $before .. "-- retired sandbox save\n", "retired sandbox save is also quarantined")
+  $host_state.held_inode = nil
+  funlock($path)
+  -- Ced buffers refuse each mutation before any swap or source retirement.
+  for $route in ["reset", "editor-reset", "promote"]
+    $s = se_fresh("ced-guard-" .. $route, $tpl)
+    $name = $route == "editor-reset" ? "editor" : "alpha"
+    $s = $l.request($s, "install", {template:$name})
+    if $route == "promote" then $s = $l.request($s, "fork", {name:"alpha", enable:false}) end
+    $before = tree_digest($s.root .. "/" .. $name)
+    $host_state.upgrade_open = true
+    $s = $l.request($s, $route == "promote" ? "promote" : "reset", $route == "promote" ? {from:"alpha-sandbox"} : {name:$name})
+    $host_state.upgrade_open = false
+    check($s.rc != 0 and $s.response.error_code == "SCENES_EDITOR_OPEN" and tree_digest($s.root .. "/" .. $name) == $before and len(stages($s.root)) == 0, $route .. ": Ced guard refuses without replacing files")
+  end
+  -- A state-write failure after moving a changed backup cannot hide it.
+  $s = se_fresh("orphan-review", $tpl)
+  $s = $l.request($s, "install", {template:"alpha"})
+  $path = $s.root .. "/alpha/behaviour.mix"
+  $host_state.held_inode = hold_inode($path)
+  $s = $l.request($s, "reset", {name:"alpha"})
+  append_file($host_state.held_inode, "-- save before failed review persist\n")
+  $s.faults = ["reviews:persist"]
+  $s = $l.cap_recovery($s, nil)
+  check($s.recovery_prune_error != nil and len(($s.desired.reviews ?? {}).alpha ?? []) == 0, "fixture loses review bookkeeping after durable directory rename")
+  $view = $l.inventory($s)
+  check($view.scenes[0].stale and $view.scenes[0].review_usage.count == 1 and $view.review_usage.count == 1, "directory discovery still exposes orphaned review usage and reason")
+  $root = $s.root
+  funlock($path)
+  $host_state.held_inode = nil
+  $s = $l.rescan($l.initial($root, $tpl, "test-shell", "test-scenes", $io), false)
+  check($l.inventory($s).scenes[0].review_usage.count == 1, "orphaned review discovery survives restart")
+  for $i = 1 to 8
+    mkdir($root .. "/.recovery/review-alpha-" .. uuid() .. "-" .. uuid())
+  end
+  $view = $l.inventory($s)
+  check($view.scenes[0].review_usage.count == 9 and $view.scenes[0].review_usage.over_limit and $view.scenes[0].review_usage.warning != nil and $view.review_usage.over_limit and contains($view.scenes[0].upgrade.reason, "limit reached"), "over-cap recovery copies are retained and explicitly warned in per-scene and global inventory")
 
   check(tree_digest($tpl .. "/editor") == $shipped_digest, "the loader never writes the shipped editor")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")

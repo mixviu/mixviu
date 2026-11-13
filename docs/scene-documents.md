@@ -93,6 +93,25 @@ recomputes usage; deleted review references are dropped when reading state.
 Backup transaction identities cannot reuse an existing backup, recorded
 fingerprint or retained review prefix.
 
+Backup capture, Ced guarding, post-swap verification and durable fingerprint
+registration live in the common swap path for upgrade, reset, editor reset
+and promote. Removal and promotion's retired sandbox use the same backup
+registry and quarantine checks. A sandbox changed after staging is retained
+rather than silently discarded during promotion.
+
+Per-scene review paths are rebuilt from directory names as well as state, so
+a failed state write after quarantine cannot hide retained data. Recovery
+always keeps copies even above the admission thresholds; inventory reports
+`over_limit` and a warning in that case. Crash-loop and disabled status take
+precedence over the stale marker in Scene Editor; stale details remain visible.
+
+Pruning retains a residual check-to-unlink window: an unsynchronised external
+writer can change an inode after the final fingerprint/quiet-time checks and
+before recursive deletion. The restart and ten-minute quiet floor narrow this
+risk; they cannot eliminate it without a save lock shared by all writers or
+a stronger native deletion primitive. Ced buffer guards protect the mutation
+routes, but do not authenticate or lock arbitrary external writers.
+
 Template metadata may declare `settings_schema`, a field-spec map accepted
 by Mix `validate`. Carried settings must parse as strict data and satisfy
 that spec before refresh; a mismatch flags the installation and retains its

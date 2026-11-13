@@ -152,9 +152,9 @@ end
 -- {status, color} of one installed scene: grey disabled, red crash-loop or
 -- refused, amber diagnostic or not settled, green mounted and running.
 fn scene_state($r)
-  if $r.stale == true then return {status: ($r.upgrade ?? {}).error_code ?? "template updated", color: $C.amber} end
   if $r.enabled != true then return {status: "disabled", color: $C.grey} end
   if $r.behaviour == "crash_loop" then return {status: "crash_loop", color: $C.red} end
+  if $r.stale == true then return {status: ($r.upgrade ?? {}).error_code ?? "template updated", color: $C.amber} end
   if $r.mounted != true then
     if $r.diagnostic != nil then return {status: "refused", color: $C.red} end
     $waiting = contains(["handover", "starting", "backoff"], $r.behaviour ?? "") ? $r.behaviour : "not mounted"
