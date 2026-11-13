@@ -90,9 +90,15 @@ pub fn watch_own_vt(mut activated: impl FnMut(), ready: impl FnOnce()) -> std::i
 }
 
 /// A failed read is a failed watcher, not an immediately-readable poll loop.
-pub fn watch_changes(own: u32, source: &mut impl ActiveVt, mut activated: impl FnMut()) -> std::io::Result<()> {
+pub fn watch_changes(
+    own: u32,
+    source: &mut impl ActiveVt,
+    mut activated: impl FnMut(),
+) -> std::io::Result<()> {
     loop {
-        let active = source.read().ok_or_else(|| std::io::Error::other("VT source unreadable"))?;
+        let active = source
+            .read()
+            .ok_or_else(|| std::io::Error::other("VT source unreadable"))?;
         if active == own {
             activated();
         }
@@ -158,10 +164,17 @@ mod tests {
 
     #[test]
     fn watcher_waits_for_edges_and_returns_source_failures_for_rearming() {
-        struct Source { at: usize }
+        struct Source {
+            at: usize,
+        }
         impl ActiveVt for Source {
-            fn read(&mut self) -> Option<u32> { [Some(1), Some(4), None][self.at] }
-            fn wait(&mut self) -> std::io::Result<()> { self.at += 1; Ok(()) }
+            fn read(&mut self) -> Option<u32> {
+                [Some(1), Some(4), None][self.at]
+            }
+            fn wait(&mut self) -> std::io::Result<()> {
+                self.at += 1;
+                Ok(())
+            }
         }
         let mut source = Source { at: 0 };
         let mut activated = 0;

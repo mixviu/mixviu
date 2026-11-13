@@ -59,30 +59,12 @@ impl Process {
 
 #[allow(dead_code)] // The timing target uses spawn_measurement instead.
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
-    spawn_options(
-        scale,
-        explicit_node,
-        label,
-        bus,
-        "60",
-        None,
-        true,
-        true,
-    )
+    spawn_options(scale, explicit_node, label, bus, "60", None, true, true)
 }
 
 #[allow(dead_code)]
 pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
-    spawn_options(
-        1,
-        None,
-        label,
-        Some(bus),
-        "60",
-        Some(service),
-        true,
-        true,
-    )
+    spawn_options(1, None, label, Some(bus), "60", Some(service), true, true)
 }
 
 #[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
@@ -105,8 +87,17 @@ fn spawn_options(
     trace: bool,
     agent: bool,
 ) -> Process {
-    spawn_with_seat(scale, explicit_node, label, bus, refresh, service, trace, agent,
-        None)
+    spawn_with_seat(
+        scale,
+        explicit_node,
+        label,
+        bus,
+        refresh,
+        service,
+        trace,
+        agent,
+        None,
+    )
 }
 fn spawn_with_seat(
     scale: i32,

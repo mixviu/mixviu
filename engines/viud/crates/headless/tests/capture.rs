@@ -233,13 +233,10 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
             .nth(3)
             .unwrap()
     );
-    assert_eq!(
-        fs::read_to_string(process.root.join("viud.log"))
-            .unwrap()
-            .matches("fake-seat: renderer handed over once")
-            .count(),
-        1
-    );
+    control.send(b"H").unwrap();
+    let mut handovers = [0];
+    control.recv(&mut handovers).unwrap();
+    assert_eq!(handovers, [1]);
     assert!(process.child.try_wait().unwrap().is_none());
 }
 fn place_args(row: &Value, extra: Value) -> Value {

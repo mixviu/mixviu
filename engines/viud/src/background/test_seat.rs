@@ -32,6 +32,7 @@ struct Seat {
     render_node: String,
     reply: UnixDatagram,
     binding: Option<Rc<RefCell<StateDRMBinding>>>,
+    handovers: u8,
     failures: usize,
     retry: super::activation::Backoff,
 }
@@ -73,6 +74,7 @@ fn activate(seat: &Rc<RefCell<Seat>>, state: &mut Loop, ack: u8) {
         }));
         *state.inner.kernel.get_mut(&world::state::GPU_BINDING_MUT) = Some(binding.clone());
         fixture.binding = Some(binding);
+        fixture.handovers += 1;
         info!("fake-seat: renderer handed over once");
     }
     native::wire::session::transition(state, true);
@@ -99,6 +101,7 @@ pub fn install(
         render_node: render_node.into(),
         reply: socket.try_clone()?,
         binding: None,
+        handovers: 0,
         failures: 2,
         retry: Default::default(),
     }));
@@ -110,6 +113,10 @@ pub fn install(
                 return Ok(PostAction::Continue);
             }
             match command[0] {
+                b'H' => {
+                    let _ = socket.send(&[seat.borrow().handovers]);
+                    return Ok(PostAction::Continue);
+                }
                 b'A' | b'Q' => {
                     // Q arms an offscreen timer immediately before activation.
                     if command[0] == b'Q' {
