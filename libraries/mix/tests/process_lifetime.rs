@@ -37,7 +37,11 @@ async fn run_ok(source: &str) -> String {
 /// A deadline starts before exec, so a shell-side wait alone cannot exclude
 /// startup from it. Retry only an unmet fixture precondition, never a result
 /// from an armed fixture. Keep the original per-attempt timeout and grace.
-async fn run_ready(source: &str, ready: &std::path::Path, marker: Option<&std::path::Path>) -> String {
+async fn run_ready(
+    source: &str,
+    ready: &std::path::Path,
+    marker: Option<&std::path::Path>,
+) -> String {
     for _ in 0..10 {
         let _ = std::fs::remove_file(ready);
         if let Some(marker) = marker {
