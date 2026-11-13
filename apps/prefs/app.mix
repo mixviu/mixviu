@@ -2,9 +2,12 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- lint: globals app_args
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $core=require("core.mix");$ctx=viu_context()
 $nav=require("navigation.mix")
 $pages=require("pages.mix")
+$panel=require("panel.mix")
+$writes=require("write-policy.mix")
 $actions=require("actions.mix")
 $look=require("look.mix")
 $seat=require("agent-seat.mix")
@@ -18,9 +21,10 @@ if $app_args[0]=="--page" then
   $parts=split($app_args[1],"/")
   try $state=$pages.open_page($state,$parts[0],$parts[1]) catch $ignored $state.nav=$nav.initial_nav() end
 end
+$state.ui.theme_mode=$app_mode.load("prefs")
 $state.agent_seat=$seat.initial();$state.seat_names=[];$state.seat_name=""
 fn publish_prefs($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$app_mode.project($core.framed($s),"prefs",$actions.theme_choice($s))}
 end
 fn pump_look($s)
   $before=$s.look.serial
@@ -73,6 +77,7 @@ fn refresh_prefs($s)
   return start_prefs($s,{op:"read",binding:$s.binding})
 end
 fn queued_prefs($s)
+  $s=$writes.prune($s)
   if $s.busy or len(keys($s.queue_changes))==0 or $s.uncertain then return $s end
   $changes={};$reset=[]
   for $key in keys($s.queue_changes)
@@ -178,11 +183,14 @@ fn apply_email($s,$args)
 end
 fn queue_keys($s,$changes)
   if $pages.store_blocked($s)!=nil or not $s.connected or $s.quitting then raise("FAILED",$nav.text_for("store-unreachable")) end
+  if $s.look.settings!="missing" then $s.store_error=nil end
+  $waiting=$s.queue_changes
+  $s.queue_changes=$changes;$s=$writes.prune($s)
+  $changes=$s.queue_changes;$s.queue_changes=$waiting
   $reset=[];$values={}
   for $key in keys($changes) if $changes[$key]==nil then push($reset,$key) else $values[$key]=$changes[$key] end end
   $checked=viu_settings("admit",$s.values,$values,$reset)
   if not $checked.ok then raise("FAILED",join(map($checked.diagnostics,fn($d)=$d.path..": "..$d.message),"; ")) end
-  if $s.look.settings!="missing" then $s.store_error=nil end
   $s.queue_changes=merge($s.queue_changes,$changes)
   return queued_prefs($s)
 end
@@ -192,6 +200,7 @@ fn gallery_action($s,$action,$value)
   return scan_gallery($s)
 end
 fn enter_page($s)
+  if $s.nav.page=="panel" then $s=$panel.refresh($s) end
   if $s.nav.page=="wallpaper" then
     if not ($s.gallery.entered ?? false) and ($s.gallery.error!=nil or monotonic()-($s.gallery.scanned_at ?? 0)>=60) then $s.gallery.scanned=nil end
     $s.gallery.entered=true;$s=scan_gallery($s)
@@ -227,8 +236,11 @@ fn confirm_dialog($s,$answer)
   return $s
 end
 fn set_prefs($s,$key,$value)
-  $admission=$s;$admission.busy=false
+  $admission=$s
+  -- Stored writes queue while busy; synchronous scene commands cannot queue.
+  if not $panel.supports($key) then $admission.busy=false end
   $request=$core.admitted($admission,$key,$value)
+  if $request.scene!=nil then return $panel.apply_request($s,$request.scene) end
   if $s.look.settings!="missing" then $s.store_error=nil end
   $s.queue_changes=merge($s.queue_changes,$request.changes)
   for $key in $request.reset $s.queue_changes[$key]=nil end
@@ -263,9 +275,15 @@ fn email_task($s,$kind,$id,$command,$body,$launch,$token)
 end
 publish_prefs($state)
 on viu.tick
+  if $state.connected and $panel.due($state) then
+    $state.panel_refresh_at=nil
+    $state=$panel.refresh($state);publish_prefs($state)
+  end
   if not $state.subscribed then
     for $prefix in ["wallpaper","appearance","window","shell.panels","workspaces","displays","sound","power","input","keymaps","apps_default","apps_startup","xwayland","agent_seat","time","region","accessibility","terminal","email","ced","apps","tune","state"] subscribe("settingsd.desktop.keys.default."..$prefix) end
     subscribe("settingsd.desktop.look.default")
+    subscribe("scenes.changed")
+    $state=$panel.refresh($state)
     $state.subscribed=true
   end
   if not $state.release_started then $state.release_started=true;$state=release_request($state,"releases.list",{}) end
@@ -320,6 +338,9 @@ end
 on prefs.quit
   if $state.ui.dialog!=nil then reply(10,json_encode({error_code:"BUSY",message:$nav.text_for("busy")}));return end
   $state.quitting=true;publish_prefs($state);reply(0,json_encode({quitting:true}))
+end
+on viu.theme.changed
+  $state.theme_effective=$event.args;publish_prefs($state)
 end
 on prefs.theme
   try
@@ -546,6 +567,7 @@ on viu.job.completed
       $b=$d.body
       if type($b.catalog.keys)!="list" or len($b.catalog.keys)>2048 or type($b.read.values)!="map" or type($b.read.revision)!="string" or not re_match($b.read.revision,"^(0|[1-9][0-9]*)$") or type($b.read.incarnation)!="string" then raise("REPLY","Malformed or oversized settings reply") end
       $state.catalog=filter($b.catalog.keys,fn($k)=not contains($k.path,"<"))
+      $state.catalog_all=$b.catalog.keys
       $state.values=$b.read.values;$state.revision=$b.read.revision;$state.incarnation=$b.read.incarnation
       $state.look=$look.observe($state.look,$b.read)
       $state.agent_seat=$seat.observe($state.agent_seat,$b.read)
@@ -574,13 +596,15 @@ on viu.job.completed
         if contains($state.store_error,"not found") then $state.look.settings="missing" end
       end
       if $state.pending.op=="write" then
-        $state.store_error=$answer.message ?? json_encode($answer)
-        if contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 or contains($answer.message ?? "","not found") then
-          $state.queue_changes=merge($state.inflight_changes,$state.queue_changes)
+        $retryable=contains(["conflict","outcome_unknown","authority_unreachable"],$answer.status) or $d.rc>=20 or contains($answer.message ?? "","not found")
+        -- An explicit validation refusal is final even if a transport wrapper
+        -- classified it as unavailable. Retry only the unrelated atomic writes.
+        if $answer.status=="validation_failed" then $retryable=false end
+        $state=$writes.refused($state,$answer,$retryable)
+        if $retryable then
           if $answer.status=="authority_unreachable" then $state.uncertain=true
           else $state=refresh_prefs($state) end
         end
-        $state.inflight_changes={}
       end
     end
     if not $state.busy and $state.needs_read then $state=refresh_prefs($state) end
@@ -718,6 +742,8 @@ on settingsd.desktop.keys.default.window
   $state=hint_prefs($state)
 end
 
+-- Dock still reads bottom.* on this shared prefix topic. The Panel page
+-- uses scenes.changed; there is no top-only settings subscription.
 on settingsd.desktop.keys.default.shell.panels
   $state=hint_prefs($state)
 end
@@ -802,7 +828,10 @@ on settingsd.desktop.look.default
   $state=hint_prefs($state)
 end
 on bus.connected
-  $state.connected=true;$state=hint_prefs($state)
+  $state.connected=true;$state=$panel.refresh($state);$state=hint_prefs($state)
+end
+on scenes.changed
+  $state=$panel.hint($state)
 end
 on bus.disconnected
   $state.connected=false;$state.stale=true;$state.needs_read=true;publish_prefs($state)

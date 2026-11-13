@@ -3,6 +3,11 @@
 //! supplies its chosen mode, accent and metrics; this module owns egui wiring.
 use egui::{Color32, FontFamily, FontId, TextStyle};
 use serde_json::Value;
+// Keep the choice latch keyed identically across install and overlay calls.
+#[allow(deprecated)]
+fn local_choice_key() -> egui::Id {
+    egui::Id::new("viu-local-choice")
+}
 pub fn session_theme(ctx: &egui::Context) -> toolkit::Theme {
     ctx.data(|d| d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-session-theme")))
         .unwrap_or_else(toolkit::Theme::embedded)
@@ -53,7 +58,7 @@ pub fn install_session(
     install_theme(ctx, &theme)?;
     ctx.data_mut(|d| {
         d.insert_temp(egui::Id::unique("viu-session-theme"), theme);
-        d.remove::<Value>(egui::Id::unique("viu-local-choice"));
+        d.remove::<Value>(local_choice_key());
     });
     Ok(ui)
 }
@@ -108,6 +113,9 @@ pub fn install_session_choice(
         .with_choice(&crate::native_theme::choice(choice)?)
         .map_err(|e| e.to_string())?;
     install_theme(ctx, &theme)?;
+    ctx.data_mut(|d| {
+        d.remove::<Value>(local_choice_key());
+    });
     Ok(ui)
 }
 pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
@@ -171,7 +179,7 @@ pub fn local_mode(ctx: &egui::Context, name: &str) -> Result<(), String> {
     local_choice(ctx, &serde_json::json!({"mode":mode.name()}))
 }
 pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
-    let key = egui::Id::unique("viu-local-choice");
+    let key = local_choice_key();
     if ctx.data(|d| d.get_temp::<Value>(key)).as_ref() == Some(value) {
         return Ok(());
     }

@@ -64,6 +64,59 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const PATH: &str = "design.v1.families.chrome";
 
+/// Accessibility overrides apply after authored schemes and accent choices.
+/// High contrast deliberately overrides app-authored chrome as well.
+/// Use opaque endpoint surfaces and ink; retain hue on action fills.
+pub(crate) fn high_contrast(chrome: &mut ResolvedChrome, mode: crate::Mode) {
+    let (surface, ink) = if mode == crate::Mode::Dark {
+        (LinearRgba::BLACK, LinearRgba::WHITE)
+    } else {
+        (LinearRgba::WHITE, LinearRgba::BLACK)
+    };
+    for role in ["chrome", "canvas", "dock", "card", "tab_strip", "field"] {
+        if chrome.get(role).is_some() {
+            chrome.set(role, surface);
+        }
+    }
+    for role in [
+        "text",
+        "text_dim",
+        "text_faint",
+        "icon",
+        "accent_text",
+        "menu_highlight_text",
+    ] {
+        chrome.set(role, ink);
+    }
+    for role in ["card_border", "field_border", "separator", "accent_border"] {
+        chrome.set(role, ink);
+    }
+    // Keep interaction states visible without weakening the text floor.
+    for (role, amount) in [
+        ("hover", 0.025),
+        ("pressed", 0.05),
+        ("accent_soft", 0.04),
+        ("row_selected", 0.04),
+        ("menu_highlight", 0.04),
+    ] {
+        if chrome.get(role).is_some() {
+            chrome.set(role, mix(surface, ink, amount));
+        }
+    }
+    for (bg, fg) in [
+        ("primary_bg", "primary_text"),
+        ("accent", "accent_text"),
+        ("caption_close", "caption_close_text"),
+    ] {
+        if let Some(value) = chrome.get(bg) {
+            let mut value = mix(value, surface, 0.92);
+            value.alpha = 1.0;
+            chrome.set(bg, value);
+            chrome.set(fg, ink);
+        }
+    }
+}
+
 /// Every chrome role. The vocabulary is shared with the desktop-editor
 /// chrome MixViu matches, name for name, so a value change there is a one-row
 /// change here. A role is added here first, then authored in each design.
@@ -750,7 +803,8 @@ mod tests {
         let document = embedded();
         for scheme in Scheme::REVISION_ONE {
             for mode in Mode::ALL {
-                for contrast in Contrast::ALL {
+                // High contrast applies the accessibility override tested by palette tests.
+                for contrast in [Contrast::Normal] {
                     let context = DesignContext {
                         scheme,
                         mode,

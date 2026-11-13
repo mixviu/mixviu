@@ -190,6 +190,12 @@ pub fn describe_key(def: &KeyDef) -> Value {
     if def.export_only {
         out.insert("export_only".into(), true.into());
     }
+    if def.path.starts_with("shell.panels.<panel>.") {
+        out.insert("inactive_captures".into(), json!({"top": {
+            "write": "refused", "owner": "scenes",
+            "reason": "Legacy top panel keys do not control the live panel. Writes and targeted resets are refused. Use scenes.list, scenes.enable, scenes.disable and scenes.move for name panel."
+        }}));
+    }
     if let Some(when) = def.used_when {
         out.insert("used_when".into(), when.into());
     }
@@ -224,7 +230,7 @@ pub fn describe(prefix: Option<&str>) -> Value {
         "keys": entries,
         "constraints": constraints,
         "placeholders": placeholders,
-        "reset": "null resets a key; a reset entry may end .* to reset a prefix",
+        "reset": "null resets a key; a reset entry may end .* to reset a prefix; settingsd * resets active keys globally. Broad/global resets skip historical inactive captures, targeted resets of those captures are refused.",
     });
     if under.is_none() || prefix == Some("tune") {
         out["tunables"] = serde_json::to_value(design::tunables()).unwrap_or(Value::Null);
