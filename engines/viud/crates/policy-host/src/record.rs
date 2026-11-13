@@ -355,7 +355,9 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
             status: empty_status("failed", Some(error)),
         };
         PAST.with_borrow_mut(|all| {
-            if all.len() >= 128 && let Some(key) = all.keys().next().cloned() {
+            if all.len() >= 128
+                && let Some(key) = all.keys().next().cloned()
+            {
                 all.remove(&key);
             }
             all.insert(s.request_id.clone(), past);
@@ -369,13 +371,7 @@ fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) {
 }
 
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
-    let now_us = match recorder::bus::monotonic_us() {
-        Ok(now) => now,
-        Err(error) => {
-            fail(session, &error);
-            return;
-        }
-    };
+    let clock = recorder::bus::monotonic_us();
     {
         let s = session.borrow();
         if s.recording.is_none()
@@ -421,7 +417,9 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     start_error: None,
                 };
                 PAST.with_borrow_mut(|all| {
-                    if all.len() >= 128 && let Some(key) = all.keys().next().cloned() {
+                    if all.len() >= 128
+                        && let Some(key) = all.keys().next().cloned()
+                    {
                         all.remove(&key);
                     }
                     all.insert(s.request_id.clone(), past);
@@ -439,6 +437,14 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         if s.failed.is_some() {
             return;
         }
+        let now_us = match clock {
+            Ok(now) => now,
+            Err(error) => {
+                drop(s);
+                fail(session, &error);
+                return;
+            }
+        };
         if s.recording
             .as_ref()
             .is_some_and(|r| now_us.saturating_sub(r.t0_us) >= s.max_seconds * 1_000_000)
@@ -532,10 +538,14 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         }
         return;
     }
-    if let Some(r) = s.recording.as_mut() && r.skip_readback() {
+    if let Some(r) = s.recording.as_mut()
+        && r.skip_readback()
+    {
         let result = r.frame(None);
         drop(s);
-        if let Err(error) = result { fail(session, &error); }
+        if let Err(error) = result {
+            fail(session, &error);
+        }
         return;
     }
     s.signature = signature;
