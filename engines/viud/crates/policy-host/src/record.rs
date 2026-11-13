@@ -49,8 +49,11 @@ struct Session {
 }
 impl Drop for Session {
     fn drop(&mut self) {
-        self.probe_cancel.store(true, std::sync::atomic::Ordering::Release);
-        if let Some(join) = self.probe_join.take() { let _ = join.join(); }
+        self.probe_cancel
+            .store(true, std::sync::atomic::Ordering::Release);
+        if let Some(join) = self.probe_join.take() {
+            let _ = join.join();
+        }
     }
 }
 thread_local! {
@@ -81,7 +84,10 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
     let params = op.clone();
     if let RecordCommand::Start { request_id, .. } = &op {
         if let Some(past) = PAST.with_borrow(|past| past.get(request_id).cloned()) {
-            if past.params != op { answer(refused("request_id parameters differ")); return; }
+            if past.params != op {
+                answer(refused("request_id parameters differ"));
+                return;
+            }
             answer(past.start.map(ControlReply::Body).unwrap_or_else(|| {
                 refused(
                     past.start_error
@@ -123,7 +129,10 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         if let Some(previous) = previous {
             let mut s = previous.borrow_mut();
             if s.request_id == request_id {
-                if s.params != params { answer(refused("request_id parameters differ")); return; }
+                if s.params != params {
+                    answer(refused("request_id parameters differ"));
+                    return;
+                }
                 if let Some(reply) = &s.start {
                     answer(ControlReply::Body(reply.clone()));
                 } else if let Some(error) = &s.failed {
@@ -143,7 +152,10 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 return;
             }
         }
-        if let Err(error) = recorder::bus::check_destination(&path) { answer(refused(&error)); return; }
+        if let Err(error) = recorder::bus::check_destination(&path) {
+            answer(refused(&error));
+            return;
+        }
         for target in &mut targets {
             if target.window.is_none() {
                 let outputs: Vec<_> = lp.inner.space_state().state.outputs().cloned().collect();
@@ -176,7 +188,13 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 target.output_generation = Some(generation);
             }
         }
-        let id = match recorder::bus::private_token() { Ok(token) => format!("record-{token}"), Err(error) => { answer(refused(&error)); return; } };
+        let id = match recorder::bus::private_token() {
+            Ok(token) => format!("record-{token}"),
+            Err(error) => {
+                answer(refused(&error));
+                return;
+            }
+        };
         let probe_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut probe_join = None;
         let probe = if encoder == "vaapi" {
@@ -263,7 +281,8 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
     }
     match op {
         RecordCommand::Status { .. } => {
-            let mut status = s.recording
+            let mut status = s
+                .recording
                 .as_ref()
                 .map(Recording::status)
                 .unwrap_or_else(|| {
@@ -278,7 +297,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 });
             status["session"] = json!(s.id);
             answer(ControlReply::Body(status));
-        },
+        }
         RecordCommand::Marker { label, data, .. } => answer(
             match s
                 .recording
@@ -318,7 +337,8 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
         return;
     }
     s.failed = Some(error.into());
-    s.probe_cancel.store(true, std::sync::atomic::Ordering::Release);
+    s.probe_cancel
+        .store(true, std::sync::atomic::Ordering::Release);
     for answer in std::mem::take(&mut s.start_answers) {
         answer(refused(error));
     }
@@ -335,14 +355,20 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
             status: empty_status("failed", Some(error)),
         };
         PAST.with_borrow_mut(|all| {
-            if all.len() >= 128 { if let Some(key) = all.keys().next().cloned() { all.remove(&key); } }
+            if all.len() >= 128 {
+                if let Some(key) = all.keys().next().cloned() {
+                    all.remove(&key);
+                }
+            }
             all.insert(s.request_id.clone(), past);
         });
     }
     event(&s, "failed");
 }
 
-fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) { fail(session, message); }
+fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) {
+    fail(session, message);
+}
 
 #[cfg(test)]
 mod tests {
@@ -353,14 +379,33 @@ mod tests {
         let answered = Rc::new(Cell::new(false));
         let got = answered.clone();
         let session = Rc::new(RefCell::new(Session {
-            request_id: "pending".into(), admitted: Instant::now() - Duration::from_secs(2),
-            id: "pending-session".into(), params, path: "/tmp/pending-record-unit.mkv".into(),
-            targets: vec![], fps: 30, encoder: "x264".into(), probe: None, max_seconds: 1,
-            probe_cancel: Default::default(), probe_join: None,
-            recording: None, start: None, start_answers: vec![Box::new(move |reply| { assert!(!matches!(reply, ControlReply::Body(_))); got.set(true); })],
-            stop_answers: vec![], pending: true, signature: vec![], failed: None, last_state: Cell::new(""),
+            request_id: "pending".into(),
+            admitted: Instant::now() - Duration::from_secs(2),
+            id: "pending-session".into(),
+            params,
+            path: "/tmp/pending-record-unit.mkv".into(),
+            targets: vec![],
+            fps: 30,
+            encoder: "x264".into(),
+            probe: None,
+            max_seconds: 1,
+            probe_cancel: Default::default(),
+            probe_join: None,
+            recording: None,
+            start: None,
+            start_answers: vec![Box::new(move |reply| {
+                assert!(!matches!(reply, ControlReply::Body(_)));
+                got.set(true);
+            })],
+            stop_answers: vec![],
+            pending: true,
+            signature: vec![],
+            failed: None,
+            last_state: Cell::new(""),
         }));
-        assert!(session.borrow().admitted.elapsed() > Duration::from_secs(session.borrow().max_seconds));
+        assert!(
+            session.borrow().admitted.elapsed() > Duration::from_secs(session.borrow().max_seconds)
+        );
         cancel_pending(&session, "cancelled before first frame");
         assert!(answered.get());
         let past = PAST.with_borrow(|p| p.get("pending").cloned()).unwrap();
@@ -370,7 +415,12 @@ mod tests {
         cancel_pending(&session, "duplicate cancellation");
         assert!(session.borrow().start_answers.is_empty());
         for i in 0..256 {
-            { let mut s = session.borrow_mut(); s.request_id = format!("pending-{i}"); s.id = format!("session-{i}"); s.failed = None; }
+            {
+                let mut s = session.borrow_mut();
+                s.request_id = format!("pending-{i}");
+                s.id = format!("session-{i}");
+                s.failed = None;
+            }
             cancel_pending(&session, "max_seconds elapsed before first frame");
         }
         assert_eq!(PAST.with_borrow(|p| p.len()), 128);
@@ -380,9 +430,22 @@ mod tests {
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     let now_us = match recorder::bus::monotonic_us() {
         Ok(now) => now,
-        Err(error) => { fail(session, &error); return; }
+        Err(error) => {
+            fail(session, &error);
+            return;
+        }
     };
-    { let s = session.borrow(); if s.recording.is_none() && s.failed.is_none() && s.admitted.elapsed() >= Duration::from_secs(s.max_seconds) { drop(s); cancel_pending(session, "max_seconds elapsed before first frame"); return; } }
+    {
+        let s = session.borrow();
+        if s.recording.is_none()
+            && s.failed.is_none()
+            && s.admitted.elapsed() >= Duration::from_secs(s.max_seconds)
+        {
+            drop(s);
+            cancel_pending(session, "max_seconds elapsed before first frame");
+            return;
+        }
+    }
     {
         let mut s = session.borrow_mut();
         if let Some(probe) = &s.probe {
@@ -410,15 +473,19 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 let past = Past {
                     id: s.id.clone(),
-            params: s.params.clone(),
+                    params: s.params.clone(),
                     start: s.start.clone(),
                     terminal: reply.clone(),
                     status: s.recording.as_ref().unwrap().status(),
                     start_error: None,
                 };
                 PAST.with_borrow_mut(|all| {
-                    if all.len() >= 128 { if let Some(key) = all.keys().next().cloned() { all.remove(&key); } }
-            all.insert(s.request_id.clone(), past);
+                    if all.len() >= 128 {
+                        if let Some(key) = all.keys().next().cloned() {
+                            all.remove(&key);
+                        }
+                    }
+                    all.insert(s.request_id.clone(), past);
                 });
                 for answer in std::mem::take(&mut s.stop_answers) {
                     answer(ControlReply::Body(reply.clone()));
@@ -527,7 +594,14 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         return;
     }
     if let Some(r) = s.recording.as_mut() {
-        if r.skip_readback() { let result = r.frame(None); drop(s); if let Err(error) = result { fail(session, &error); } return; }
+        if r.skip_readback() {
+            let result = r.frame(None);
+            drop(s);
+            if let Err(error) = result {
+                fail(session, &error);
+            }
+            return;
+        }
     }
     s.signature = signature;
     s.pending = true;
@@ -536,7 +610,13 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     drop(s);
     let frames = Rc::new(RefCell::new(Vec::new()));
     for (index, mut target) in targets.into_iter().enumerate() {
-        let token = match recorder::bus::private_token() { Ok(token) => format!("/{id}-{token}-{index}"), Err(error) => { fail(session, &error); return; } };
+        let token = match recorder::bus::private_token() {
+            Ok(token) => format!("/{id}-{token}-{index}"),
+            Err(error) => {
+                fail(session, &error);
+                return;
+            }
+        };
         target.path = token.clone();
         let got = frames.clone();
         let session = session.clone();
@@ -547,7 +627,13 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     return;
                 }
             }
-            let captured_us = match recorder::bus::monotonic_us() { Ok(time) => time, Err(error) => { fail(&session, &error); return; } };
+            let captured_us = match recorder::bus::monotonic_us() {
+                Ok(time) => time,
+                Err(error) => {
+                    fail(&session, &error);
+                    return;
+                }
+            };
             let frame = match result {
                 Ok(frame) => frame,
                 Err(error) => {
@@ -565,18 +651,22 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             let width = frames.iter().map(|(_, f)| f.0).sum::<u32>();
             let height = frames.iter().map(|(_, f)| f.1).max().unwrap();
             let readback_us = frames.iter().map(|(_, frame)| frame.3).sum::<u64>();
-            let pixels = if frames.len() == 1 { frames[0].1.2.clone() } else {
+            let pixels = if frames.len() == 1 {
+                frames[0].1.2.clone()
+            } else {
                 let mut pixels = vec![0; width as usize * height as usize * 3];
                 let mut x = 0;
                 for (_, (w, h, p, _)) in frames.iter() {
                     for y in 0..*h as usize {
                         let at = (y * width as usize + x) * 3;
-                        pixels[at..at + *w as usize * 3].copy_from_slice(&p[y * *w as usize * 3..(y + 1) * *w as usize * 3]);
+                        pixels[at..at + *w as usize * 3]
+                            .copy_from_slice(&p[y * *w as usize * 3..(y + 1) * *w as usize * 3]);
                     }
                     x += *w as usize;
                 }
                 std::sync::Arc::new(pixels)
-            };            let mut s = session.borrow_mut();
+            };
+            let mut s = session.borrow_mut();
             s.pending = false;
             if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
                 return;

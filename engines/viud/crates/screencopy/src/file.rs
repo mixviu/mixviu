@@ -249,7 +249,15 @@ fn complete(
     output: &Output,
     kind: CaptureSource,
 ) -> Result<Value, String> {
-    complete_timed(spec, readback, &std::sync::Arc::new(pixels.to_vec()), output, kind, 0, false)
+    complete_timed(
+        spec,
+        readback,
+        &std::sync::Arc::new(pixels.to_vec()),
+        output,
+        kind,
+        0,
+        false,
+    )
 }
 
 fn complete_timed(
@@ -292,7 +300,16 @@ fn complete_timed(
         None
     };
     if let Some(answer) = raw {
-        answer(Ok((width, height, if spec.region.is_none() { pixels.clone() } else { std::sync::Arc::new(cropped.into_owned()) }, readback_us)));
+        answer(Ok((
+            width,
+            height,
+            if spec.region.is_none() {
+                pixels.clone()
+            } else {
+                std::sync::Arc::new(cropped.into_owned())
+            },
+            readback_us,
+        )));
     } else {
         write(spec, width, height, &cropped)?;
     }

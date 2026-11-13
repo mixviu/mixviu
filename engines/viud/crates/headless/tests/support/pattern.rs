@@ -81,8 +81,12 @@ pub struct Pattern {
 }
 
 impl Pattern {
-    pub fn current_buffer(&self) -> WlBuffer { self.buffer.clone() }
-    pub fn swap_buffer(&mut self, buffer: &mut WlBuffer) { std::mem::swap(&mut self.buffer, buffer); }
+    pub fn current_buffer(&self) -> WlBuffer {
+        self.buffer.clone()
+    }
+    pub fn swap_buffer(&mut self, buffer: &mut WlBuffer) {
+        std::mem::swap(&mut self.buffer, buffer);
+    }
     pub fn idle_notification(&mut self, timeout_ms: u32) {
         use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
         let name = self

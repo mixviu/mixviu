@@ -148,7 +148,11 @@ impl VideoEncoder {
         let mut cmd = command("ffmpeg");
         cmd.process_group(0);
         if encoder == "vaapi" {
-            cmd.args(["-vaapi_device", &std::env::var("MIX_VIUD_RECORD_VAAPI_DEVICE").unwrap_or_else(|_| "/dev/dri/renderD128".into())]);
+            cmd.args([
+                "-vaapi_device",
+                &std::env::var("MIX_VIUD_RECORD_VAAPI_DEVICE")
+                    .unwrap_or_else(|_| "/dev/dri/renderD128".into()),
+            ]);
         }
         cmd.args([
             "-y",
@@ -191,12 +195,25 @@ impl VideoEncoder {
             _ => return Err("unknown recording encoder".into()),
         }
         let destination = if bus {
-            Some(std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).custom_flags(libc::O_NOFOLLOW).open(&temp).map_err(|e| format!("create recording: {e}"))?)
-        } else { None };
+            Some(
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .custom_flags(libc::O_NOFOLLOW)
+                    .open(&temp)
+                    .map_err(|e| format!("create recording: {e}"))?,
+            )
+        } else {
+            None
+        };
         cmd.args(["-g", "30", "-an"]);
-        if bus { cmd.args(["-f", "matroska", "pipe:1"]); } else { cmd.arg(&temp); }
-        cmd
-            .stdin(Stdio::piped())
+        if bus {
+            cmd.args(["-f", "matroska", "pipe:1"]);
+        } else {
+            cmd.arg(&temp);
+        }
+        cmd.stdin(Stdio::piped())
             .stdout(destination.map(Stdio::from).unwrap_or_else(Stdio::null))
             .stderr(Stdio::piped());
         let mut child =
@@ -347,7 +364,6 @@ impl VideoEncoder {
         }
         result.map_err(|error| format!("{error}: {}", self.stderr.lock().unwrap()))
     }
-
 }
 
 /// Called on a preflight worker thread, never on the compositor thread.
@@ -378,7 +394,11 @@ pub fn probe_vaapi(cancel: &AtomicBool) -> Result<(), String> {
                     Err("ffmpeg encoder probe failed".into())
                 };
             }
-            Err(error) => { kill_group(&mut child); let _ = child.wait(); break Err(format!("ffmpeg encoder probe: {error}")); },
+            Err(error) => {
+                kill_group(&mut child);
+                let _ = child.wait();
+                break Err(format!("ffmpeg encoder probe: {error}"));
+            }
             _ if Instant::now() >= deadline || cancel.load(Ordering::Acquire) => {
                 kill_group(&mut child);
                 let _ = child.wait();
@@ -400,7 +420,9 @@ pub fn probe_vaapi(cancel: &AtomicBool) -> Result<(), String> {
 }
 
 fn kill_group(child: &mut Child) {
-    unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL); }
+    unsafe {
+        libc::kill(-(child.id() as i32), libc::SIGKILL);
+    }
     let _ = child.kill();
 }
 
@@ -410,12 +432,18 @@ impl Drop for VideoEncoder {
         if let Some(mut child) = self.child.take() {
             kill_group(&mut child);
             let _ = child.wait();
-            if self.cleanup { let _ = std::fs::remove_file(&self.temp); }
+            if self.cleanup {
+                let _ = std::fs::remove_file(&self.temp);
+            }
         } else if self.cleanup && !self.temp.as_os_str().is_empty() {
             let _ = std::fs::remove_file(&self.temp);
         }
-        if let Some(join) = self.join.take() { let _ = join.join(); }
-        if let Some(join) = self.stderr_join.take() { let _ = join.join(); }
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+        if let Some(join) = self.stderr_join.take() {
+            let _ = join.join();
+        }
     }
 }
 
@@ -425,13 +453,20 @@ mod tests {
     #[test]
     fn drop_kills_and_reaps_encoder() {
         let Ok(encoder) = VideoEncoder::start_result(2, 2, 30) else {
-            eprintln!("encoder drop test skipped: ffmpeg unavailable"); return;
+            eprintln!("encoder drop test skipped: ffmpeg unavailable");
+            return;
         };
         let pid = encoder.child.as_ref().unwrap().id() as i32;
         drop(encoder);
         let mut status = 0;
-        assert_eq!(unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) }, -1);
-        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+        assert_eq!(
+            unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },
+            -1
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
     }
     #[test]
     fn missing_slots_and_dropped_tail_repeat_the_previous_frame() {
