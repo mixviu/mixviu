@@ -2594,8 +2594,13 @@ end
 fn cap_recovery_inner($s, $keep)
   $dir = recovery_directory($s)
   $held = [$keep]
+  $pending = []
   for $kind in ["resetting", "promoting"]
-    if $s.desired[$kind] != nil then push($held, $s.root .. "/" .. $s.desired[$kind].backup) end
+    if $s.desired[$kind] != nil then
+      $path = $s.root .. "/" .. $s.desired[$kind].backup
+      push($held, $path)
+      push($pending, $path)
+    end
   end
   $items = []
   $ordinary = 0
@@ -2609,6 +2614,9 @@ fn cap_recovery_inner($s, $keep)
     if not valid_record_path(".recovery/" .. $n, ".recovery/") then continue end
     $st = stat($p, {follow_symlinks:false})
     if not $st.is_dir then continue end
+    -- Pending recovery owns this directory, including an edited original.
+    -- Do not quarantine it away from the durable transaction's restore path.
+    if contains($pending, $p) then $ordinary = $ordinary + 1; continue end
     $rel = ".recovery/" .. $n
     $record = ($s.desired.backup_records ?? {})[$rel]
     if $record != nil and not backup_matches($p, $record) then
