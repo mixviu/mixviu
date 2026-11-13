@@ -1183,18 +1183,23 @@ impl Host {
             if !self.runtime.has_capacity() {
                 break;
             }
-            if self.ready && !self.headless && !self.view.current_revision_drawn() {
+            // Rendering and queued UI automation must not hold ordinary Bus
+            // requests hostage. A stream of model revisions may never become
+            // drawn/stable; allow control requests past that UI-only barrier.
+            let ui_blocked = (self.ready && !self.headless && !self.view.current_revision_drawn())
+                || toolkit::drive::pending(ctx) || !self.drive_answers.is_empty()
+                || (self.queued_click() && (!self.inflight.is_empty() || !self.drive_geometry_stable));
+            let position = self.held_requests.iter().position(|request| {
+                let command = request.command.strip_prefix(&format!("{}.", self.app))
+                    .or_else(|| request.command.strip_prefix("viu."))
+                    .unwrap_or(&request.command);
+                !ui_blocked || !(command.starts_with("ui.") || command == "capture")
+            });
+            let Some(position) = position else {
                 ctx.request_repaint();
                 break;
-            }
-            if toolkit::drive::pending(ctx) || !self.drive_answers.is_empty() {
-                break;
-            }
-            if self.queued_click() && (!self.inflight.is_empty() || !self.drive_geometry_stable) {
-                ctx.request_repaint();
-                break;
-            }
-            let request = self.held_requests.pop_front().unwrap();
+            };
+            let request = self.held_requests.remove(position).unwrap();
             self.request(request, ctx);
         }
         for _ in 0..32 {

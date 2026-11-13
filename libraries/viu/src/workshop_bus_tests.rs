@@ -64,6 +64,9 @@ fn workshop_answers_during_discovery() {
             assert!(start.elapsed() < Duration::from_secs(5), "startup");
             std::thread::sleep(Duration::from_millis(2));
         }
+        // Keep a windowed owner's model deliberately undrawn. Its ordinary
+        // Bus surface must work even while UI automation waits for geometry.
+        if count == 4 { host.headless = false; }
         let mut overlapping = false;
         let mut streamed = false;
         loop {
