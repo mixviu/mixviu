@@ -9,6 +9,7 @@ $agent_ui=require("agent-ui.mix")
 $state=$model.initial();$ctx=viu_context();$state.mesh.observer=$ctx.citizen
 try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
 $state.comp=$launch.comp ?? env("MIX_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
+$dirty=false
 fn publish_workshop($s)
   $s=$saved.reconcile($s)
   $s.busy=$model.busy($s)
@@ -24,11 +25,11 @@ fn handle($s,$event)
 end
 $state=publish_workshop($state)
 on workshop.ping
-  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  $out=handle($state,$event);$state=$out.state
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.info
-  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  $out=handle($state,$event);$state=$out.state
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.actions
@@ -181,11 +182,13 @@ on bus.disconnected
   $state.connected=false;$state.status="Disconnected — requests are never replayed";$state=publish_workshop($state)
 end
 on viu.job.completed
-  $state=$controller.follow_up($controller.received($state,$event.args));$state=publish_workshop($state)
+  $state=$controller.follow_up($controller.received($state,$event.args));$dirty=true
 end
 on viu.tick
+  $before=$state.discovery_revision;$job_error=$state.job_error
   $state=$controller.follow_up($state)
-  if $state.row_key=="nodes:mesh" or ($state.row_key!=nil and starts_with($state.row_key,"agent:")) then $state=publish_workshop($state) end
+  if $before!=$state.discovery_revision or $job_error!=$state.job_error then $dirty=true end
+  if $dirty or $state.row_key=="nodes:mesh" or ($state.row_key!=nil and starts_with($state.row_key,"agent:")) then $state=publish_workshop($state);$dirty=false end
 end
 on workshop.agents
   $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
@@ -292,7 +295,8 @@ on workshop.macros.dopus
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.notice
-  $state=$controller.follow_up($controller.notice($state,$event));$state=publish_workshop($state)
+  $state=$controller.notice($state,$event)
+  $dirty=true
 end
 on workshop.mesh
   $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
