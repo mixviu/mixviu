@@ -312,14 +312,14 @@ fn split_reflow_uses_free_rows_before_history_and_grows_back() {
             }
             assert_eq!(row(&t, short_lines), "abcdefgh");
             assert_eq!(row(&t, short_lines + 1), "ijklmnop");
-            assert_eq!(t.grid.lock().grid.history_size(), 0);
+            assert_eq!(t.grid.lock().history_size(), 0);
             t.resize(24, rows as u16, 240, rows as u16 * 10);
             for n in 0..short_lines {
                 assert_eq!(row(&t, n).trim_end(), "short");
             }
             assert_eq!(row(&t, short_lines).trim_end(), "abcdefghijklmnop");
             assert_eq!(t.screen(false).cursor, (16, short_lines));
-            assert_eq!(t.grid.lock().grid.history_size(), 0);
+            assert_eq!(t.grid.lock().history_size(), 0);
         }
     }
 }
@@ -347,7 +347,7 @@ fn split_reflow_keeps_cursor_above_wrapped_output_and_nonempty_tail() {
     assert_eq!(row(&t, 3), "q       ");
     assert_eq!(row(&t, 4), "tail    ");
     assert_eq!(t.screen(false).cursor, (0, 0));
-    assert_eq!(t.grid.lock().grid.history_size(), 0);
+    assert_eq!(t.grid.lock().history_size(), 0);
 }
 
 #[test]
