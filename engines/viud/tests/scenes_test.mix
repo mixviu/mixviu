@@ -1996,6 +1996,7 @@ try
   -- Preferences uses the loader's authority, never the legacy settings keys.
   $host_state.refuse_edge = nil
   $host_state.rollback_fail = nil
+  $s = se_fresh("prefs-panel", $tpl)
   install_fixture($s.root, "panel", false)
   $s = $l.rescan($s, false)
   $original = read_file($s.root .. "/panel/scene.mix")
@@ -2101,7 +2102,7 @@ try
   install_fixture($ut,"panel",false)
   write_file($ut.."/panel/settings.conf.mix","{edge: bottom,tasks_scope: all}\n")
   $s=se_fresh("panel-upgrade",$ut)
-  $s=$l.request($s,"install",{template:"panel"})
+  $s=$l.request($s,"install",{template:"panel",enable:true})
   check($s.rc==0,"panel upgrade fixture installs with recorded shipped baseline")
   $settings_path=$s.root.."/panel/settings.conf.mix"
   $panel_settings="{edge: top,tasks_scope: current}\n"
