@@ -85,7 +85,8 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
             "path",
             "fps",
             "cursor",
-            "max_seconds", "encoder",
+            "max_seconds",
+            "encoder",
         ],
         "comp.record.marker" => &["session", "label", "data"],
         "comp.record.status" => &["session"],
@@ -141,15 +142,23 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 .ok_or_else(|| {
                     invalid_argument("target", "object", "{output?|window?|windows?|region?}")
                 })?;
-            if target.keys().any(|key|!["output","output_generation","window","windows","region"].contains(&key.as_str())) {
-                return Err(invalid_argument("target","capture target","output|window|windows|region"));
+            if target.keys().any(|key| {
+                !["output", "output_generation", "window", "windows", "region"]
+                    .contains(&key.as_str())
+            }) {
+                return Err(invalid_argument(
+                    "target",
+                    "capture target",
+                    "output|window|windows|region",
+                ));
             }
-            let encoder=match fields.get("encoder").and_then(Value::as_str) {
+            let encoder = match fields.get("encoder").and_then(Value::as_str) {
                 None if !fields.contains_key("encoder") => "x264",
                 Some("x264") => "x264",
                 Some("vaapi") => "vaapi",
-                _ => return Err(invalid_argument("encoder","encoder name","x264|vaapi")),
-            }.to_owned();
+                _ => return Err(invalid_argument("encoder", "encoder name", "x264|vaapi")),
+            }
+            .to_owned();
             let mut targets = Vec::new();
             if let Some(windows) = target.get("windows") {
                 let windows = windows

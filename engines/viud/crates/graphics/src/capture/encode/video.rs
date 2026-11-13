@@ -22,7 +22,11 @@ use std::time::{Duration, Instant};
 
 enum VideoFrame {
     Bgra(Arc<[u8]>),
-    Rgb { pixels: Arc<[u8]>, width: u32, height: u32 },
+    Rgb {
+        pixels: Arc<[u8]>,
+        width: u32,
+        height: u32,
+    },
 }
 
 pub struct VideoEncoder {
@@ -51,11 +55,22 @@ impl VideoEncoder {
         Self::start_at(width, height, fps, None)
     }
 
-    pub fn start_at(width: u32, height: u32, fps: u32, path: Option<PathBuf>) -> Result<Self, String> {
-        Self::start_with_encoder(width,height,fps,path,"x264")
+    pub fn start_at(
+        width: u32,
+        height: u32,
+        fps: u32,
+        path: Option<PathBuf>,
+    ) -> Result<Self, String> {
+        Self::start_with_encoder(width, height, fps, path, "x264")
     }
 
-    pub fn start_with_encoder(width: u32, height: u32, fps: u32, path: Option<PathBuf>, encoder: &str) -> Result<Self,String> {
+    pub fn start_with_encoder(
+        width: u32,
+        height: u32,
+        fps: u32,
+        path: Option<PathBuf>,
+        encoder: &str,
+    ) -> Result<Self, String> {
         let w = width & !1;
         let h = height & !1;
         if w == 0 || h == 0 {
@@ -66,10 +81,13 @@ impl VideoEncoder {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let cleanup = path.is_none();
-        let temp = path.unwrap_or_else(|| std::env::temp_dir().join(format!("viud-capture-{nanos}.mp4")));
+        let temp =
+            path.unwrap_or_else(|| std::env::temp_dir().join(format!("viud-capture-{nanos}.mp4")));
 
         let mut cmd = command("ffmpeg");
-        if encoder == "vaapi" { cmd.args(["-vaapi_device","/dev/dri/renderD128"]); }
+        if encoder == "vaapi" {
+            cmd.args(["-vaapi_device", "/dev/dri/renderD128"]);
+        }
         cmd.args([
             "-y",
             "-loglevel",
@@ -86,21 +104,42 @@ impl VideoEncoder {
             "-",
         ]);
         match encoder {
-            "x264" => { cmd.args(["-pix_fmt","yuv420p","-c:v","libx264","-preset","ultrafast","-crf","14"]); }
-            "vaapi" => { cmd.args(["-vf","format=nv12,hwupload","-c:v","h264_vaapi","-qp","18"]); }
+            "x264" => {
+                cmd.args([
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-crf",
+                    "14",
+                ]);
+            }
+            "vaapi" => {
+                cmd.args([
+                    "-vf",
+                    "format=nv12,hwupload",
+                    "-c:v",
+                    "h264_vaapi",
+                    "-qp",
+                    "18",
+                ]);
+            }
             _ => return Err("unknown recording encoder".into()),
         }
-        cmd.args(["-g","30","-an"]).arg(&temp)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+        cmd.args(["-g", "30", "-an"])
+            .arg(&temp)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
         let mut child =
             child_spawn::spawn_awaited(&mut cmd).map_err(|e| format!("ffmpeg spawn: {e}"))?;
 
         let mut stdin = child.stdin.take().ok_or("ffmpeg stdin unavailable")?;
         let stderr = Arc::new(Mutex::new(String::new()));
         let errors = stderr.clone();
-        let stderr_join=child.stderr.take().map(|mut pipe| {
+        let stderr_join = child.stderr.take().map(|mut pipe| {
             std::thread::spawn(move || {
                 let mut chunk = [0; 4096];
                 while let Ok(n) = pipe.read(&mut chunk) {
@@ -121,19 +160,34 @@ impl VideoEncoder {
         let closed = Arc::new(AtomicBool::new(false));
         let writer_closed = closed.clone();
         let join = std::thread::spawn(move || {
-            let mut previous: Option<Arc<[u8]>>=None;
-            let mut converted=Vec::new();
+            let mut previous: Option<Arc<[u8]>> = None;
+            let mut converted = Vec::new();
             while let Ok(frame) = rx.recv() {
                 queue_count.fetch_sub(1, Ordering::Relaxed);
-                let buf=match &frame {
-                    VideoFrame::Bgra(pixels)=>pixels.as_ref(),
-                    VideoFrame::Rgb{pixels,width,height}=>{
-                        if !previous.as_ref().is_some_and(|old|Arc::ptr_eq(old,pixels)) {
-                            converted=vec![0;w as usize*h as usize*4];
-                            for (input,output) in pixels.chunks_exact(*width as usize*3).take(*height as usize).zip(converted.chunks_exact_mut(w as usize*4)) {
-                                for (p,out) in input.chunks_exact(3).zip(output.chunks_exact_mut(4)) {out.copy_from_slice(&[p[2],p[1],p[0],255]);}
+                let buf = match &frame {
+                    VideoFrame::Bgra(pixels) => pixels.as_ref(),
+                    VideoFrame::Rgb {
+                        pixels,
+                        width,
+                        height,
+                    } => {
+                        if !previous
+                            .as_ref()
+                            .is_some_and(|old| Arc::ptr_eq(old, pixels))
+                        {
+                            converted = vec![0; w as usize * h as usize * 4];
+                            for (input, output) in pixels
+                                .chunks_exact(*width as usize * 3)
+                                .take(*height as usize)
+                                .zip(converted.chunks_exact_mut(w as usize * 4))
+                            {
+                                for (p, out) in
+                                    input.chunks_exact(3).zip(output.chunks_exact_mut(4))
+                                {
+                                    out.copy_from_slice(&[p[2], p[1], p[0], 255]);
+                                }
                             }
-                            previous=Some(pixels.clone());
+                            previous = Some(pixels.clone());
                         }
                         &converted
                     }
@@ -184,14 +238,29 @@ impl VideoEncoder {
         self.submit(VideoFrame::Bgra(bgra))
     }
 
-    pub fn try_push_rgb(&self, pixels:Arc<[u8]>,width:u32,height:u32)->bool {
-        if width==0 || height==0 || width>self.width || height>self.height || pixels.len()!=width as usize*height as usize*3 { return false; }
-        self.submit(VideoFrame::Rgb{pixels,width,height})
+    pub fn try_push_rgb(&self, pixels: Arc<[u8]>, width: u32, height: u32) -> bool {
+        if width == 0
+            || height == 0
+            || width > self.width
+            || height > self.height
+            || pixels.len() != width as usize * height as usize * 3
+        {
+            return false;
+        }
+        self.submit(VideoFrame::Rgb {
+            pixels,
+            width,
+            height,
+        })
     }
 
-    fn submit(&self, frame:VideoFrame)->bool {
+    fn submit(&self, frame: VideoFrame) -> bool {
         self.queued.fetch_add(1, Ordering::Relaxed);
-        if self.tx.as_ref().is_some_and(|tx| tx.try_send(frame).is_ok()) {
+        if self
+            .tx
+            .as_ref()
+            .is_some_and(|tx| tx.try_send(frame).is_ok())
+        {
             true
         } else {
             self.queued.fetch_sub(1, Ordering::Relaxed);
@@ -220,7 +289,11 @@ impl VideoEncoder {
                 Ok(Some(status)) => {
                     break Err(format!("ffmpeg {status}: {}", self.stderr.lock().unwrap()));
                 }
-                Err(error) => {let _=child.kill();let _=child.wait();break Err(format!("ffmpeg wait: {error}"));},
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break Err(format!("ffmpeg wait: {error}"));
+                }
                 _ if Instant::now() >= deadline => {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -235,8 +308,10 @@ impl VideoEncoder {
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
-        if let Some(join)=self.stderr_join.take() {let _=join.join();}
-        result.map_err(|error|format!("{error}: {}",self.stderr.lock().unwrap()))
+        if let Some(join) = self.stderr_join.take() {
+            let _ = join.join();
+        }
+        result.map_err(|error| format!("{error}: {}", self.stderr.lock().unwrap()))
     }
 
     /// Stop the stream, wait for ffmpeg to flush, and return the temp mp4 path
@@ -255,25 +330,51 @@ impl VideoEncoder {
 }
 
 /// Called on a preflight worker thread, never on the compositor thread.
-pub fn probe_vaapi() -> Result<(),String> {
-    let mut cmd=command("ffmpeg");
-    cmd.args(["-hide_banner","-encoders"]).stdout(Stdio::piped()).stderr(Stdio::null());
-    let mut child=child_spawn::spawn_awaited(&mut cmd).map_err(|e|format!("ffmpeg encoder probe: {e}"))?;
-    let stdout=child.stdout.take().ok_or("ffmpeg probe stdout unavailable")?;
-    let reader=std::thread::spawn(move || { let mut bytes=Vec::new(); let _=stdout.take(1_048_576).read_to_end(&mut bytes); bytes });
-    let deadline=Instant::now()+Duration::from_secs(3);
-    let result=loop {
+pub fn probe_vaapi() -> Result<(), String> {
+    let mut cmd = command("ffmpeg");
+    cmd.args(["-hide_banner", "-encoders"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child =
+        child_spawn::spawn_awaited(&mut cmd).map_err(|e| format!("ffmpeg encoder probe: {e}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("ffmpeg probe stdout unavailable")?;
+    let reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stdout.take(1_048_576).read_to_end(&mut bytes);
+        bytes
+    });
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let result = loop {
         match child.try_wait() {
-            Ok(Some(status))=>break if status.success(){Ok(())}else{Err("ffmpeg encoder probe failed".into())},
-            Err(error)=>break Err(format!("ffmpeg encoder probe: {error}")),
-            _ if Instant::now()>=deadline=>{let _=child.kill();let _=child.wait();break Err("ffmpeg encoder probe timed out".into());},
-            _=>std::thread::sleep(Duration::from_millis(10)),
+            Ok(Some(status)) => {
+                break if status.success() {
+                    Ok(())
+                } else {
+                    Err("ffmpeg encoder probe failed".into())
+                };
+            }
+            Err(error) => break Err(format!("ffmpeg encoder probe: {error}")),
+            _ if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break Err("ffmpeg encoder probe timed out".into());
+            }
+            _ => std::thread::sleep(Duration::from_millis(10)),
         }
     };
-    let bytes=reader.join().unwrap_or_default();
+    let bytes = reader.join().unwrap_or_default();
     result?;
-    if String::from_utf8_lossy(&bytes).split_whitespace().any(|word|word=="h264_vaapi") {Ok(())}
-    else {Err("ffmpeg does not report h264_vaapi".into())}
+    if String::from_utf8_lossy(&bytes)
+        .split_whitespace()
+        .any(|word| word == "h264_vaapi")
+    {
+        Ok(())
+    } else {
+        Err("ffmpeg does not report h264_vaapi".into())
+    }
 }
 
 impl Drop for VideoEncoder {
@@ -285,7 +386,9 @@ impl Drop for VideoEncoder {
             std::thread::spawn(move || {
                 let _ = child.kill();
                 let _ = child.wait();
-                if cleanup { let _ = std::fs::remove_file(path); }
+                if cleanup {
+                    let _ = std::fs::remove_file(path);
+                }
             });
         } else if self.cleanup && !self.temp.as_os_str().is_empty() {
             let _ = std::fs::remove_file(&self.temp);

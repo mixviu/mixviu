@@ -146,8 +146,8 @@ pub fn capture_windows<E>(
     E: RenderElement<GlesRenderer>,
 {
     let scale = output.current_scale().fractional_scale();
-    file::service_windows(output, |target,recording| {
-        let (elements, size) = elements(renderer, target,recording)?;
+    file::service_windows(output, |target, recording| {
+        let (elements, size) = elements(renderer, target, recording)?;
         let mut texture = crate::render_offscreen(renderer, &elements, |_| true, size, scale)
             .map_err(file::capture_failed)?;
         let framebuffer = renderer

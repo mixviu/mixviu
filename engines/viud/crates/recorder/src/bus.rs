@@ -7,8 +7,8 @@ use serde_json::{Value, json};
 use std::{
     fs::File,
     io::Write,
-    sync::mpsc::{Receiver, channel},
     sync::Arc,
+    sync::mpsc::{Receiver, channel},
 };
 
 pub fn monotonic_us() -> u64 {
@@ -60,10 +60,16 @@ impl Recording {
         fps: u32,
         encoder_name: String,
     ) -> Result<Self, String> {
-        let (source_width,source_height)=(width,height);
-        let width=width.checked_add(1).ok_or("capture width overflow")? & !1;
-        let height=height.checked_add(1).ok_or("capture height overflow")? & !1;
-        let encoder = VideoEncoder::start_with_encoder(width, height, fps, Some(path.clone().into()),&encoder_name)?;
+        let (source_width, source_height) = (width, height);
+        let width = width.checked_add(1).ok_or("capture width overflow")? & !1;
+        let height = height.checked_add(1).ok_or("capture height overflow")? & !1;
+        let encoder = VideoEncoder::start_with_encoder(
+            width,
+            height,
+            fps,
+            Some(path.clone().into()),
+            &encoder_name,
+        )?;
         let frames_file =
             File::create(format!("{path}.frames.jsonl")).map_err(|e| e.to_string())?;
         let markers_file =
@@ -85,7 +91,10 @@ impl Recording {
             seq: 0,
             last: Arc::from([]),
             encoder_name,
-            readback_us:0,readback_total_us:0,readbacks:0,readback_max_us:0,
+            readback_us: 0,
+            readback_total_us: 0,
+            readbacks: 0,
+            readback_max_us: 0,
             frames_file,
             markers_file,
             encoder: Some(encoder),
@@ -97,32 +106,38 @@ impl Recording {
         json!({"session":self.session,"path":self.path,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path)})
     }
 
-    pub fn is_recording(&self) -> bool { self.encoder.is_some() && self.error.is_none() }
+    pub fn is_recording(&self) -> bool {
+        self.encoder.is_some() && self.error.is_none()
+    }
 
-    pub fn frame(&mut self, pixels: Option<(u32, u32, Vec<u8>,u64)>) -> Result<(), String> {
-        if let Some((w, h, rgb,readback_us)) = pixels {
-            self.readback_us=readback_us;
-            self.readback_total_us+=readback_us;
-            self.readbacks+=1;
-            self.readback_max_us=self.readback_max_us.max(readback_us);
+    pub fn frame(&mut self, pixels: Option<(u32, u32, Vec<u8>, u64)>) -> Result<(), String> {
+        if let Some((w, h, rgb, readback_us)) = pixels {
+            self.readback_us = readback_us;
+            self.readback_total_us += readback_us;
+            self.readbacks += 1;
+            self.readback_max_us = self.readback_max_us.max(readback_us);
             if (w, h) != (self.source_width, self.source_height) {
                 return Err("target dimensions changed".into());
             }
             if rgb.len() != w as usize * h as usize * 3 {
                 return Err("invalid RGB frame".into());
             }
-            self.last=rgb.into();
+            self.last = rgb.into();
         } else {
-            self.readback_us=0;
+            self.readback_us = 0;
             self.repeated += 1;
         }
         let encoder = self.encoder.as_ref().ok_or("recording is finishing")?;
         if let Some(error) = encoder.error() {
             return Err(error);
         }
-        if encoder.try_push_rgb(self.last.clone(),self.source_width,self.source_height) {
+        if encoder.try_push_rgb(self.last.clone(), self.source_width, self.source_height) {
             let now = monotonic_us();
-            let t_us = if self.frames == 0 { 0 } else { now - self.t0_us };
+            let t_us = if self.frames == 0 {
+                0
+            } else {
+                now - self.t0_us
+            };
             writeln!(
                 self.frames_file,
                 "{}",
@@ -151,10 +166,11 @@ impl Recording {
         json!({"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":std::fs::metadata(&self.path).map(|m|m.len()).unwrap_or(0),"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
     }
 
-    pub fn stop(&mut self, discard: bool) {
+    pub fn stop(&mut self, discard: bool) -> bool {
         let Some(encoder) = self.encoder.take() else {
-            return;
+            return false;
         };
+        self.last = Arc::from([]);
         let _ = self.frames_file.flush();
         let _ = self.markers_file.flush();
         let path = self.path.clone();
@@ -163,21 +179,25 @@ impl Recording {
         std::thread::spawn(move || {
             let result = encoder.finish_result().and_then(|temp| {
                 if discard {
-                    std::fs::remove_file(temp).map_err(|e| e.to_string())
+                    std::fs::remove_file(temp).and_then(|_|std::fs::remove_file(format!("{path}.frames.jsonl"))).and_then(|_|std::fs::remove_file(format!("{path}.markers.jsonl"))).map_err(|e| e.to_string())
                 } else {
                     std::fs::rename(temp, path).map_err(|e| e.to_string())
                 }
             });
             let _ = tx.send(result);
         });
+        true
     }
 
     pub fn poll(&mut self) -> bool {
         let Some(rx) = &self.finishing else {
             return false;
         };
-        match rx.try_recv() {
-            Ok(result) => {
+        let result=match rx.try_recv() {
+            Ok(result)=>result,
+            Err(std::sync::mpsc::TryRecvError::Disconnected)=>Err("encoder finaliser disconnected".into()),
+            Err(std::sync::mpsc::TryRecvError::Empty)=>return false,
+        };
                 if let Err(error) = result {
                     self.error = Some(error);
                 }
@@ -186,8 +206,5 @@ impl Recording {
                     json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
                 );
                 true
-            }
-            _ => false,
-        }
     }
 }

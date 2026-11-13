@@ -55,20 +55,43 @@ type LogicalRect = Rectangle<i32, smithay::utils::Logical>;
 
 /// Bus takes reuse the recorder's native window-only element builder. No
 /// server decoration, shadow, backdrop or overlay enters this picture.
-pub fn bus_window_elements<R>(renderer:&mut R,window:&Window,scale:f64)->Result<world::window::draw::frame::scene::WindowCapture<R>,String>
-where R:Renderer+ImportAll+ImportMem+dispatcher::frame::SceneDispatch,
-R::TextureId:Texture+Clone+'static {
-    use world::window::draw::element::{Element,RawElement,ClampOpaque,ElementWindowSurface};
-    if !scale.is_finite() || scale<=0.0 {return Err("invalid window capture scale".into());}
-    let bounds:Rectangle<i32,Physical>=window.bbox_with_popups().to_physical_precise_round(scale);
-    let size=bounds.size;
-    if size.w<=0 || size.h<=0 {return Err("window target has no content".into());}
-    let windows=[(window.clone(),Point::from((-bounds.loc.x,-bounds.loc.y)))];
-    let built=build_window_elements(renderer,&windows,Scale::from(scale));
-    let elements=built.into_iter().flatten().map(|inner|Element::Plain(RawElement::Window(ClampOpaque{
-        inner:ElementWindowSurface{inner,zoom:scale,bundle_owned:false},screen:size,bundle_owned:false,
-    }))).collect();
-    Ok((elements,size))
+pub fn bus_window_elements<R>(
+    renderer: &mut R,
+    window: &Window,
+    scale: f64,
+) -> Result<world::window::draw::frame::scene::WindowCapture<R>, String>
+where
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
+    R::TextureId: Texture + Clone + 'static,
+{
+    use world::window::draw::element::{ClampOpaque, Element, ElementWindowSurface, RawElement};
+    if !scale.is_finite() || scale <= 0.0 {
+        return Err("invalid window capture scale".into());
+    }
+    let bounds: Rectangle<i32, Physical> =
+        window.bbox_with_popups().to_physical_precise_round(scale);
+    let size = bounds.size;
+    if size.w <= 0 || size.h <= 0 {
+        return Err("window target has no content".into());
+    }
+    let windows = [(window.clone(), Point::from((-bounds.loc.x, -bounds.loc.y)))];
+    let built = build_window_elements(renderer, &windows, Scale::from(scale));
+    let elements = built
+        .into_iter()
+        .flatten()
+        .map(|inner| {
+            Element::Plain(RawElement::Window(ClampOpaque {
+                inner: ElementWindowSurface {
+                    inner,
+                    zoom: scale,
+                    bundle_owned: false,
+                },
+                screen: size,
+                bundle_owned: false,
+            }))
+        })
+        .collect();
+    Ok((elements, size))
 }
 
 fn rects_overlap(a: LogicalRect, b: LogicalRect) -> bool {
