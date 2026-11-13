@@ -555,7 +555,10 @@ fn action_inventory_and_execute_share_native_editor_semantics() {
     assert_eq!(rows.len(), 64);
     assert_eq!(rows[0]["id"], "file.new");
     for id in ["view.mode.light", "view.mode.dark", "view.mode.session"] {
-        let row = rows.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("missing {id}"));
+        let row = rows
+            .iter()
+            .find(|r| r["id"] == id)
+            .unwrap_or_else(|| panic!("missing {id}"));
         assert_eq!(row["menu"], "View");
         assert_eq!(row["enabled"], true);
     }
