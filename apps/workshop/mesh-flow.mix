@@ -85,9 +85,20 @@ fn observed($s,$event)
   if $headers.type!="event" or $s.subscription==nil or $headers.subscription_id!=$s.subscription then
     $s.ignored_observations=$counter.add($s.ignored_observations,1);return $s
   end
-  -- Discovery and control-surface polling are our own work, not peer traffic.
-  -- Do not copy and render those observations back through the owner queue.
-  if $a.from==$s.mesh.observer or $a.to==$s.mesh.observer then return $s end
+  -- Only tagged discovery jobs are noise. Deliberate inbound and outbound
+  -- Workshop calls remain visible, including HELP sent by the user.
+  $payload=$a.payload ?? {};$wire=$payload.headers ?? {};$id=$a.correlation_id
+  if type($id)=="string" and len($id)<=256 then
+    if $a.message_type=="request" and $a.from==$s.mesh.observer and $wire.workshop_job_owner=="discovery" and $wire.workshop_discovery_generation!=nil then
+      if len($s.discovery_observations)>=2048 then $s.discovery_observations=delete($s.discovery_observations,keys($s.discovery_observations)[0]) end
+      $s.discovery_observations[$id]={service:$a.to,generation:$wire.workshop_discovery_generation}
+      return $s
+    end
+    $pending=$s.discovery_observations[$id]
+    if $a.message_type=="response" and $a.to==$s.mesh.observer and $pending!=nil and $pending.service==$a.from then
+      $s.discovery_observations=delete($s.discovery_observations,$id);return $s
+    end
+  end
   $a.subscription_id=$headers.subscription_id
   $a.dropped_count=$counter.extract($event.body,["args","dropped_count"])
   $s.mesh=$mesh.add_event($s.mesh,$a,$mesh.now_ms())

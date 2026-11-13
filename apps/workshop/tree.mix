@@ -36,6 +36,7 @@ fn tree($s)
   for $node in $s.snapshot.nodes
     $children=service_rows($s,$node)
     if $node.error!=nil then $r=row("node:"..$node.name..":error","error","Unavailable descriptions",[],$s);$r.error=$node.error;push($children,$r) end
+    if $node.warning!=nil then $r=row("node:"..$node.name..":limit","error",$node.warning,[],$s);$r.error=$node.warning;push($children,$r) end
     $label=$node.name..(if $node.error!=nil then " — unreachable: "..$node.error else "" end)
     $r=row("node:"..$node.name,"node",$label,$children,$s);$r.error=$node.error
     push($nodes,$r)

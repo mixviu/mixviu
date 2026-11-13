@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $model=require("model.mix");$counter=require("counter.mix")
-fn description($service,$command,$timeout)
-  send $service $command body="" timeout=$timeout reply_mode="raw"
+fn description($service,$command,$timeout,$generation)
+  send $service $command body="" timeout=$timeout reply_mode="raw" workshop_discovery_generation=$generation workshop_job_owner="discovery"
   if type($reply)!="map" then raise("DESCRIPTION","peer did not reply within deadline") end
   if $reply.transport_error!=nil then raise("DESCRIPTION",$reply.transport_error) end
   if $reply.rc>=10 then raise("DESCRIPTION","rc = "..to_string($reply.rc)..": "..($reply.error ?? "").." "..$reply.body) end
@@ -18,19 +18,21 @@ on job.run
       if monotonic()>=$a.phase_deadline then raise("DESCRIPTION","description phase deadline exceeded") end
       $started=monotonic();$ok=false;$why=""
       try
-        $commands=description($a.service,"HELP",3);$ok=true
+        $commands=description($a.service,"HELP",3,$a.generation);$ok=true
       catch $message $why=$message end
       if not $ok then
         $left=3-(monotonic()-$started)
         if $left<0.1 then raise("HELP",$why) end
-        try $commands=description($a.service,"app.describe",$left)
+        try $commands=description($a.service,"app.describe",$left,$a.generation)
         catch $message raise("DESCRIBE","HELP: "..$why.."\napp.describe: "..$message) end
       end
       reply(0,json_encode({Ok:$commands}))
     else
       $body=$a.body ?? ""
       if type($body)=="map" then $body=$counter.wire($body) end
-      send $a.service $a.command body=$body timeout=($a.timeout ?? 3) reply_mode="raw"
+      if $a.owner=="discovery" then
+        send $a.service $a.command body=$body timeout=($a.timeout ?? 3) reply_mode="raw" workshop_discovery_generation=$a.generation workshop_job_owner="discovery"
+      else send $a.service $a.command body=$body timeout=($a.timeout ?? 3) reply_mode="raw" end
       reply(if $reply.transport_error!=nil then 20 else 0 end,json_encode($reply))
     end
   catch $message

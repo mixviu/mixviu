@@ -17,4 +17,20 @@ check($s.snapshot.progress.finished and $s.snapshot.progress.completed==1,"deadl
 check($s.snapshot.services["peer-0"].Err!=nil,"deadline retains per-service error")
 $s=$d.received($s,{generation:1,op:"describe",service:"peer-0"},{rc:0,body:{Ok:[]}})
 check($s.snapshot.services["peer-0"].Err!=nil,"late result cannot overwrite expired generation")
+-- One generation-wide budget covers every node, not 4096 jobs per node.
+$s=$m.initial();$s.generation=1
+for $i=0 to 14 $s.jobs[to_string($i)]={lane:"local"} end
+$s.discovery={generation:1,remaining:2045,reply:nil,deadline:monotonic()+60,peers_done:false,nodes:{"@local":{info_done:true,list_done:false,descriptions:0,node:{name:"local",local:true,services:[],info:nil,error:nil}}},data:{error:nil,peer_error:nil,nodes:[],identities:{},services:{},peers:[]}}
+$peers=[]
+for $i=0 to 69 push($peers,{name:"peer-"..to_string($i)}) end
+$s=$d.received($s,{generation:1,op:"peers"},{rc:0,body:{rc:0,body:json_encode({node:"local",peers:$peers})}})
+check($s.discovery.data.truncated_peers==6 and $s.snapshot.peer_error!=nil,"peer truncation is explicit")
+$identities=[]
+for $i=0 to 2999 push($identities,{name:"svc-"..to_string($i)}) end
+for $node in ["@local","peer-0","peer-1"]
+  $s=$d.received($s,{generation:1,op:"list",node:$node,service:if $node=="@local" then "noded" else "noded."..$node..".bus" end},{rc:0,body:{rc:0,body:json_encode($identities)}})
+end
+check(len($s.queue)<=2048 and len($s.discovery.data.services)<=2048,"all nodes share one budget")
+check($s.discovery.remaining==0,"global budget exhausted exactly")
+check($s.discovery.nodes["peer-1"].node.warning!=nil,"omitted services are visible per node")
 print("Workshop discovery contracts PASS")

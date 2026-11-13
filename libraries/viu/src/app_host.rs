@@ -113,6 +113,9 @@ struct Host {
     clipboard_reply: Option<Reply>,
     local_clipboard: std::sync::mpsc::Receiver<crate::clipboard::Request>,
     commands: BTreeSet<String>,
+    read_only: BTreeSet<String>,
+    #[cfg(feature = "test-support")]
+    legacy_draw_barrier: bool,
     scene_source: String,
     loaded: bool,
     active_scene: String,
@@ -1183,21 +1186,30 @@ impl Host {
             if !self.runtime.has_capacity() {
                 break;
             }
-            // Rendering and queued UI automation must not hold ordinary Bus
-            // requests hostage. A stream of model revisions may never become
-            // drawn/stable; allow control requests past that UI-only barrier.
-            let ui_blocked = (self.ready && !self.headless && !self.view.current_revision_drawn())
-                || toolkit::drive::pending(ctx)
-                || !self.drive_answers.is_empty()
-                || (self.queued_click()
-                    && (!self.inflight.is_empty() || !self.drive_geometry_stable));
+            // Planned drive input fixes its target before later passes press
+            // it. No caller may change (or read) state across that fence.
+            if toolkit::drive::pending(ctx) || !self.drive_answers.is_empty() {
+                break;
+            }
+            let undrawn = self.ready && !self.headless && !self.view.current_revision_drawn();
+            let queued_click = self.queued_click()
+                && (!self.inflight.is_empty() || !self.drive_geometry_stable);
+            let mut earlier_held = false;
             let position = self.held_requests.iter().position(|request| {
                 let command = request
                     .command
                     .strip_prefix(&format!("{}.", self.app))
                     .or_else(|| request.command.strip_prefix("viu."))
                     .unwrap_or(&request.command);
-                !ui_blocked || !(command.starts_with("ui.") || command == "capture")
+                let geometry = toolkit::drive::COMMANDS.contains(&command)
+                    || request.command == "viu.state"
+                    || request.command.starts_with("viu.ui.") || command == "capture";
+                let bypass = self.read_only.contains(&request.command) && !geometry;
+                #[cfg(feature = "test-support")]
+                let bypass = bypass && !self.legacy_draw_barrier;
+                let admitted = bypass || (!undrawn && !queued_click && !earlier_held);
+                earlier_held = true;
+                admitted
             });
             let Some(position) = position else {
                 ctx.request_repaint();
@@ -1771,56 +1783,39 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let mut command_names = BTreeSet::new();
     commands.retain(|name| command_names.insert(name.clone()));
     let declared = commands.iter().cloned().collect();
+    let descriptors: Vec<bus::CommandDescriptor> = {
+        let mut described = bundle.manifest.command_descriptors.clone();
+        for entry in bundle.manifest.command_metadata.iter().chain(
+            facilities.surface.as_ref().and_then(|s| s["commands"].as_array()).into_iter().flatten()) {
+            described.push(bus::CommandDescriptor {
+                name: entry["name"].as_str().unwrap().into(),
+                args: entry["args"].as_object().map(|a| a.keys().cloned().collect()).unwrap_or_default(),
+                description: entry["description"].as_str().unwrap_or("").into(),
+                read_only: entry["read_only"] == true,
+            });
+        }
+        let mut native = Vec::new();
+        if bundle.manifest.native_drive { native.extend(toolkit::drive::describe(&bundle.manifest.service)); }
+        if bundle.manifest.macros { native.extend(macros::commands::describe(&bundle.manifest.service)); }
+        for value in native {
+            described.push(bus::CommandDescriptor {
+                name: value["name"].as_str().unwrap().into(),
+                args: value["args"].as_object().map(|a| a.keys().cloned().collect()).unwrap_or_default(),
+                description: value["description"].as_str().unwrap_or("").into(),
+                read_only: value["read_only"] == true,
+            });
+        }
+        commands.into_iter().map(|name| described.iter().find(|d| d.name == name).cloned()
+            .unwrap_or_else(|| bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false))).collect()
+    };
+    let read_only = descriptors.iter().filter(|d| d.read_only).map(|d| d.name.clone()).collect();
     let bus = if !bundle.manifest.bus {
         Endpoint::offline()
     } else {
         Endpoint::start_policy(
             std::env::var("MIX_VIU_SERVICE").unwrap_or(service),
             bundle.manifest.bus_url(),
-            {
-                let mut described = bundle.manifest.command_descriptors.clone();
-                for entry in &bundle.manifest.command_metadata {
-                    described.push(bus::CommandDescriptor {
-                        name: entry["name"].as_str().unwrap().into(),
-                        args: entry["args"]
-                            .as_object()
-                            .map(|a| a.keys().cloned().collect())
-                            .unwrap_or_default(),
-                        description: entry["description"].as_str().unwrap().into(),
-                        read_only: entry["read_only"] == true,
-                    });
-                }
-                let mut native = Vec::new();
-                if bundle.manifest.native_drive {
-                    native.extend(toolkit::drive::describe(&bundle.manifest.service));
-                }
-                if bundle.manifest.macros {
-                    native.extend(macros::commands::describe(&bundle.manifest.service));
-                }
-                for value in native {
-                    described.push(bus::CommandDescriptor {
-                        name: value["name"].as_str().unwrap().into(),
-                        args: value["args"]
-                            .as_object()
-                            .map(|a| a.keys().cloned().collect())
-                            .unwrap_or_default(),
-                        description: value["description"].as_str().unwrap_or("").into(),
-                        read_only: value["read_only"] == true,
-                    });
-                }
-                commands
-                    .into_iter()
-                    .map(|name| {
-                        described
-                            .iter()
-                            .find(|d| d.name == name)
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false)
-                            })
-                    })
-                    .collect()
-            },
+            descriptors,
             "viu.quit".into(),
             wake.clone(),
             crate::native_bus::RequestPolicy {
@@ -1974,6 +1969,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         jobs,
         job_results: std::collections::VecDeque::new(),
         commands: declared,
+        read_only,
+        #[cfg(feature = "test-support")]
+        legacy_draw_barrier: false,
         scene_source: bundle.scene,
         loaded: false,
         active_scene: String::new(),
@@ -2331,9 +2329,35 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         }),
     )
 }
-#[cfg(test)]
-#[path = "workshop_bus_tests.rs"]
-mod workshop_bus_tests;
+/// Headless access to the real owner for integration tests. Never opens a
+/// native window; only available with the existing test-support feature.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support {
+    use super::*;
+    pub struct Harness { host: Host, pub ctx: egui::Context }
+    impl Harness {
+        pub fn new(bundle: Bundle) -> Self {
+            let ctx = egui::Context::default();
+            crate::appearance::install(&ctx);
+            toolkit::drive::install(&ctx, bundle.manifest.app());
+            Self { host: create(bundle, Arc::new(|| {})), ctx }
+        }
+        pub fn pump(&mut self) {
+            self.ctx.run_ui(egui::RawInput::default(), |ui| self.host.pump(ui.ctx())).drop_without_applying_deltas();
+        }
+        pub fn draw(&mut self) {
+            self.ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1100.,760.))), ..Default::default() }, |ui| self.host.frame(ui)).drop_without_applying_deltas();
+        }
+        pub fn ready(&self) -> bool { self.host.ready && self.host.bus.client().is_some() }
+        pub fn windowed(&mut self) { self.host.headless = false; }
+        pub fn legacy_draw_barrier(&mut self) { self.host.legacy_draw_barrier = true; }
+        pub fn error(&self) -> &str { &self.host.error }
+        pub fn held(&self) -> Vec<String> { self.host.held_requests.iter().map(|r| r.command.clone()).collect() }
+        pub fn drawn(&self) -> bool { self.host.view.current_revision_drawn() }
+        pub fn state(&self) -> Value { self.host.state() }
+    }
+}
 
 fn run_headless(bundle: Bundle) -> eframe::Result {
     let (tx, rx) = std::sync::mpsc::channel();

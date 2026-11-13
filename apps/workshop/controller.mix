@@ -252,6 +252,8 @@ fn notice($s,$event)
   return $s
 end
 fn follow_up($s)
+  $failures=$s.admission_failures;$s.admission_failures=[]
+  for $failure in $failures $s=received($s,$failure) end
   $s=$discovery.expire($s)
   if $s.refetch and monotonic()>=$s.refresh_after and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
   return $work.launch($s)
