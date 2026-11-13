@@ -84,7 +84,7 @@ pub fn wire(
     event_loop: &mut EventLoop<'static, Loop>,
     options: Options<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    install(state, &event_loop.handle(), options, None).map(|_| ())
+    install(state, &event_loop.handle(), options, None, None).map(|_| ())
 }
 
 /// Install the existing offscreen renderer for a VT session. With an existing
@@ -94,6 +94,7 @@ pub fn install(
     handle: &LoopHandle<'static, Loop>,
     options: Options<'_>,
     mode_override: Option<Mode>,
+    existing_output: Option<Output>,
 ) -> Result<Output, Box<dyn std::error::Error>> {
     // Test-only injection, read exclusively by this backend. A later settingsd
     // snapshot supersedes it. Real sessions never read this variable.
@@ -158,7 +159,7 @@ pub fn install(
         size: options.size,
         refresh: refresh * 1000,
     });
-    let output = virtual_output(0);
+    let output = existing_output.unwrap_or_else(|| virtual_output(0));
     output.change_current_state(
         Some(mode),
         Some(Transform::Normal),
@@ -318,4 +319,13 @@ pub fn vt_session(state: &mut Loop) {
 /// context identity for UI textures, imports and recording registries.
 pub fn take_renderer() -> Option<GlesRenderer> {
     FALLBACK.with(|slot| slot.borrow().as_ref().and_then(|ctx| ctx.borrow_mut().renderer.take()))
+}
+
+/// Keep the offscreen desk on the primary output after native hotplug/mode work.
+pub fn follow_output(output: Output) {
+    FALLBACK.with(|slot| {
+        if let Some(context) = slot.borrow().as_ref() {
+            context.borrow_mut().follow(output);
+        }
+    });
 }

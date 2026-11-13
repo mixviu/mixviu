@@ -63,6 +63,10 @@ pub(crate) struct Context {
 }
 
 impl Context {
+    pub(crate) fn follow(&mut self, output: Output) {
+        self.tracker = OutputDamageTracker::from_output(&output);
+        self.output = output;
+    }
     pub(crate) fn new(
         output: Output,
         renderer: GlesRenderer,

@@ -9,13 +9,14 @@ pub type Handles = Rc<RefCell<Option<native::wire::entry::NativeHandles>>>;
 
 /// Configured advertised mode is known before seat acquisition. Once KMS is
 /// attached the shared Output carries its last live mode across every pause.
-pub fn initial_mode() -> Result<smithay::output::Mode, Box<dyn std::error::Error>> {
-    if let Ok(size) = std::env::var("MIX_VIUD_OFFSCREEN_SIZE") {
-        return crate::cli::parse_size(&size).map(|size| smithay::output::Mode { size: size.into(), refresh: 60_000 }).map_err(Into::into);
-    }
+pub fn initial_mode() -> Result<(smithay::output::Mode, Option<smithay::output::Output>), Box<dyn std::error::Error>> {
     let config = model::environment::config::base::get();
-    if let Some(mode) = kms::mode::offscreen::discover(&config.render_node, &config.scanout_node) {
-        return Ok(mode);
+    let discovered = kms::mode::offscreen::discover(&config.render_node, &config.scanout_node);
+    if let Ok(size) = std::env::var("MIX_VIUD_OFFSCREEN_SIZE") {
+        return crate::cli::parse_size(&size).map(|size| (smithay::output::Mode { size: size.into(), refresh: discovered.as_ref().map_or(60_000, |(mode, _)| mode.refresh) }, discovered.map(|(_, output)| output))).map_err(Into::into);
+    }
+    if let Some((mode, output)) = discovered {
+        return Ok((mode, Some(output)));
     }
     use render_gles::preference::output::profile::{self, ModeRequest};
     let mode = profile::get().into_iter().find(|p| p.active).and_then(|p| p.mode)
@@ -24,23 +25,25 @@ pub fn initial_mode() -> Result<smithay::output::Mode, Box<dyn std::error::Error
         Some(ModeRequest::Advertised { width, height, .. } | ModeRequest::Cvt { width, height, .. }) => (i32::from(width), i32::from(height)),
         _ => (3840, 2160),
     };
-    Ok(smithay::output::Mode { size: size.into(), refresh: 60_000 })
+    Ok((smithay::output::Mode { size: size.into(), refresh: 60_000 }, None))
 }
 
 pub fn wire(
     state: &mut Loop,
     event_loop: &mut EventLoop<'static, Loop>,
     socket: OsString,
-    mode: smithay::output::Mode,
+    initial: (smithay::output::Mode, Option<smithay::output::Output>),
     scale: f64,
     render_node: &str,
 ) -> Result<Handles, Box<dyn std::error::Error>> {
+    let (mode, output) = initial;
     state.inner.status_session = StatusSession::Paused;
     let output = headless::wire::install(
         state,
         &event_loop.handle(),
         headless::wire::Options { size: mode.size, scale, render_node },
         Some(mode),
+        output,
     )?;
     headless::wire::vt_session(state);
     let handles = Rc::new(RefCell::new(None));

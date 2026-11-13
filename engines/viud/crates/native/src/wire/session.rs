@@ -44,6 +44,9 @@ pub fn register(
 
             match event {
                 smithay::backend::session::Event::PauseSession => {
+                    if let Some(primary) = ctx_ref.outputs.first() {
+                        headless::wire::follow_output(primary.output.clone());
+                    }
                     // KMS exclusivity and its rescue timers have no authority
                     // over the render-node desk's damage-driven schedule.
                     protocols::tearing::gate::set(protocols::tearing::gate::Gate::Off);
