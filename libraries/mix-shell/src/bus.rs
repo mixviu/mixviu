@@ -2921,7 +2921,13 @@ mod tests {
 
     #[test]
     fn json_float_roundtrip_bus_replies() {
-        for x in [1794606090.8718243, 0.1 + 0.2, 1e300, 5e-324, 2147483647.9999998] {
+        for x in [
+            1794606090.8718243,
+            0.1 + 0.2,
+            1e300,
+            5e-324,
+            2147483647.9999998,
+        ] {
             let body = serde_json::to_string(&x).unwrap();
             assert_eq!(parse_reply_body(&body), Value::Number(x));
             for (_, result, reply) in [

@@ -20233,7 +20233,13 @@ mod event_args_tests {
     #[cfg(feature = "json")]
     #[test]
     fn json_float_roundtrip_bus_event() {
-        for x in [1794606090.8718243, 0.1 + 0.2, 1e300, 5e-324, 2147483647.9999998] {
+        for x in [
+            1794606090.8718243,
+            0.1 + 0.2,
+            1e300,
+            5e-324,
+            2147483647.9999998,
+        ] {
             let body = serde_json::to_string(&x).unwrap();
             assert_eq!(parse_event_args(&body), Value::Number(x), "{body}");
         }
