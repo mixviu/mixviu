@@ -2322,6 +2322,10 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         }),
     )
 }
+#[cfg(test)]
+#[path = "workshop_bus_tests.rs"]
+mod workshop_bus_tests;
+
 fn run_headless(bundle: Bundle) -> eframe::Result {
     let (tx, rx) = std::sync::mpsc::channel();
     let wake: crate::runtime::Wake = Arc::new(move || {
