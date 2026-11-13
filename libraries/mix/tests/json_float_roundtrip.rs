@@ -11,16 +11,19 @@ async fn json_float_roundtrip() {
     let source = format!(
         r#"
 $path = {path:?}
+fn check($ok)
+  if not $ok then raise("FLOAT_ROUNDTRIP", "JSON changed a double") end
+end
 $values = [1794606090.8718243, 0.1 + 0.2, 1e300, 5e-324,
   1794606090.0000002, 2147483647.9999998, -1794606090.8718243]
 for $x in $values
   $wire = json_encode($x)
-  assert(json_parse($wire) == $x)
+  check(json_parse($wire) == $x)
   write_file($path, $wire)
-  assert(read_json($path) == $x)
+  check(read_json($path) == $x)
   write_file($path, $wire .. "\n" .. $wire .. "\n")
   $rows = read_jsonl($path)
-  assert($rows[0] == $x and $rows[1] == $x)
+  check($rows[0] == $x and $rows[1] == $x)
 end
 true
 "#,
@@ -29,6 +32,6 @@ true
     let tokens = Lexer::new(&source).tokenize().unwrap();
     let stmts = Parser::new(tokens, &source).parse_program().unwrap();
     let result = Evaluator::new().execute(&stmts).await;
-    std::fs::remove_file(path).unwrap();
+    let _ = std::fs::remove_file(path);
     assert_eq!(result.unwrap(), Value::Bool(true));
 }
