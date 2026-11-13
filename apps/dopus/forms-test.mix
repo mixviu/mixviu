@@ -34,4 +34,15 @@ forms_test_check($view.dp_legacy_view($state)==nil,"closed legacy envelope is ni
 $state=$app.dp_form($state,"message","About Dopus","About body",nil,{legacy_kind:"about"})
 $legacy=$view.dp_legacy_view($state)
 forms_test_check($legacy.kind=="about" and $legacy.body=="About body" and $legacy.buttons[0].id=="done","legacy message envelope has a typed Done button")
-print(json_encode({checks:10,result:"passed"}))
+-- Explicit pane actions work without a window and preserve both selections.
+$contract={actions:[{id:"nav.pane-left"},{id:"nav.pane-right"},{id:"file.new-folder"}],action_aliases:{}}
+$state={headless:true,active:1,busy:false,next_token:0,form:$app.dp_closed_form(),panes:[{path:"/left",selected_paths:["/left/a"]},{path:"/right",selected_paths:[]}],info:"Select a file or folder"}
+for $target in [{id:"nav.pane-left",index:0},{id:"nav.pane-left",index:0},{id:"nav.pane-right",index:1},{id:"nav.pane-right",index:1}]
+  $before=$state.panes
+  $state=$app.dp_action($state,$contract,$target.id,{})
+  forms_test_check($state.active==$target.index and deep_eq($state.panes,$before),"explicit focus is idempotent and preserves panes headlessly")
+  $state=$app.dp_action($state,$contract,"file.new-folder",{})
+  forms_test_check($state.reservation.operation.destination==$state.panes[$target.index].path,"new folder uses the explicitly active pane")
+  $state=$app.dp_answer($state,"cancel")
+end
+print(json_encode({checks:18,result:"passed"}))

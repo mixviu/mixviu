@@ -164,6 +164,56 @@ end
     assert!(view.geometry.contains_key("gold-header"));
     assert!(view.geometry.contains_key("left-tree"));
     assert!(!view.geometry.contains_key("topbar"));
+    runtime.event("dopus.actions".into(), json!({})).unwrap();
+    let actions = done(&runtime, &rx).reply.unwrap().body;
+    for id in ["nav.pane-left", "nav.pane-right"] {
+        assert!(actions["actions"].as_array().unwrap().iter().any(|a| {
+            a["id"] == id && a["enabled"] == true && a["keys"] == json!([])
+        }));
+    }
+    // Repeated explicit actions choose the same pane, including an empty one.
+    // Exercise the real Bus handlers and verify the next action's target.
+    for (id, active, rows) in [
+        ("nav.pane-right", 1, 0),
+        ("nav.pane-right", 1, 0),
+        ("nav.pane-left", 0, 1),
+        ("nav.pane-left", 0, 1),
+    ] {
+        runtime
+            .event("dopus.execute".into(), json!({"id":id}))
+            .unwrap();
+        let completion = done(&runtime, &rx);
+        assert_eq!(completion.reply.unwrap().rc, 0);
+        let selected = completion.model.unwrap();
+        assert_eq!(selected["active"], active);
+        assert_eq!(selected["panes"][active]["rows"], rows);
+        runtime
+            .event("dopus.execute".into(), json!({"id":"selection.first"}))
+            .unwrap();
+        let selected = done(&runtime, &rx).model.unwrap();
+        assert_eq!(selected["active"], active);
+        if active == 0 {
+            assert_eq!(selected["panes"][0]["selected"], json!(left.join("selected.txt")));
+        } else {
+            assert_eq!(selected["panes"][1]["selected"], json!(null));
+        }
+        // Gold keeps the idle line and listing totals on selection.
+        assert_eq!(selected["info"], "Select a file or folder");
+        assert_eq!(selected["panes"][0]["summary"], "0 folders, 1 file (7 B)");
+        runtime
+            .event("dopus.execute".into(), json!({"id":"file.new-folder"}))
+            .unwrap();
+        let prompt = done(&runtime, &rx).model.unwrap();
+        assert_eq!(prompt["active"], active);
+        let instance = prompt["values"]["form"]["instance"].clone();
+        runtime
+            .event(
+                "dopus.dialog.answer".into(),
+                json!({"instance":instance,"choice":"cancel"}),
+            )
+            .unwrap();
+        done(&runtime, &rx);
+    }
     runtime.event("budget-test".into(), json!({})).unwrap();
     done(&runtime, &rx);
     // First navigation succeeds in the candidate; second exhausts its budget.

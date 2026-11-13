@@ -229,6 +229,8 @@ fn dp_action($s,$contract,$id,$params)
   end
   if ($s.headless ?? false) and starts_with($id,"theme.") then raise("HEADLESS","theme selection needs the windowed app (headless paints nothing)") end
   if $id=="nav.switch-pane" then $s.active=1-$s.active
+  elif $id=="nav.pane-left" then $s.active=0
+  elif $id=="nav.pane-right" then $s.active=1
   elif $id=="nav.back" or $id=="nav.forward" then $s.panes[$i]=$dp.dp_history($p,$id=="nav.back");$s.locations[$i]=$s.panes[$i].path
   elif $id=="nav.parent" then return dp_go($s,$i,$dp.dp_parent($p.path),false)
   elif $id=="nav.home" then return dp_go($s,$i,env("HOME","/"),false)

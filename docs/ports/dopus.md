@@ -2,6 +2,28 @@ Current integrated acceptance: **ACCEPTED** at runtime `e1bbea99071c2fa8793a7e0e
 
 # Dopus gold parity
 
+## Selection feedback and explicit pane actions (2026-11-13)
+
+The tutorial reported an unchanged idle line and pane totals after selecting
+a file. This matches the pinned MixOS oracle
+`8779f33284b7d3f1178c3d57a699efb9b0867b22`:
+
+- `apps/dopus/src/view.rs:367` draws `app.info()`;
+  `apps/dopus/src/app.rs:199` returns the transient status override or
+  `core.info()`. `crates/dopus-core/src/model.rs:38,425,528` initialises and
+  returns `Select a file or folder`.
+- `model.rs:912-930,935-986` changes selection and emits notifications without
+  assigning info text. Metadata is displayed separately in Properties.
+- `view.rs:734-736` draws `visible_summary` or `footer_summary`.
+  `model.rs:157-164,350-360` counts the listing, without filtering by selection.
+
+Selection feedback is therefore unchanged under the requested parity rule.
+No selection count/name/size was added to the info line or pane footer.
+`nav.pane-left` and `nav.pane-right` extend the Bus action catalogue with
+idempotent active-pane selection; existing toggle and targeted-open semantics
+are preserved. Bundle tests exercise discovery, repeated execution, selection
+and dialog actions; Mix tests verify headless operation and mkdir targeting.
+
 Overall verdict: **ACCEPTED** at the tested source below.
 
 ## Acceptance: 2026-11-07 round five
