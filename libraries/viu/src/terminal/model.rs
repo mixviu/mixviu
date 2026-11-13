@@ -1336,10 +1336,7 @@ impl Terminal {
                     1.0,
                 ]
             };
-            for name in [
-                NamedColor::Foreground,
-                NamedColor::Cursor,
-            ] {
+            for name in [NamedColor::Foreground, NamedColor::Cursor] {
                 palette[name] = rgba(foreground);
             }
             let fg = rgba(foreground);
@@ -2072,7 +2069,8 @@ mod tests {
 
     #[test]
     fn theme_defaults_recolour_idle_cells_without_replacing_ansi_colours() {
-        let terminal = Terminal::from_test_vt(8, 2, b"A\x1b[31mB\x1b[48;2;18;52;86mC\x1b[0mD\x1b[1mE");
+        let terminal =
+            Terminal::from_test_vt(8, 2, b"A\x1b[31mB\x1b[48;2;18;52;86mC\x1b[0mD\x1b[1mE");
         terminal.set_default_colours([230, 230, 230], [16, 16, 16]);
         let dark = terminal.grid_snapshot();
         let red = dark.screen.cells[1].fg;

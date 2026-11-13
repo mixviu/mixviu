@@ -48,9 +48,9 @@ fn scene_colour(theme: &toolkit::Theme, role: &str) -> Option<Color32> {
     };
     match role {
         "panel.background" => Some(background),
-        "panel.hover" => Some(background.lerp_to_gamma(
-            readable(background, colour(palette.base.foreground)), 0.08,
-        )),
+        "panel.hover" => Some(
+            background.lerp_to_gamma(readable(background, colour(palette.base.foreground)), 0.08),
+        ),
         "panel.foreground" => Some(readable(background, colour(palette.base.foreground))),
         "panel.muted" => Some(readable(
             background,
@@ -647,7 +647,10 @@ mod panel_mode_tests {
                 let hover = scene_colour(&theme, "panel.hover").unwrap();
                 assert_ne!(bg, hover, "hover feedback {scheme:?} {mode:?}");
                 for role in ["panel.foreground", "panel.muted"] {
-                    assert!(contrast(hover, scene_colour(&theme, role).unwrap()) >= 4.5, "hover contrast {scheme:?} {mode:?} {role}");
+                    assert!(
+                        contrast(hover, scene_colour(&theme, role).unwrap()) >= 4.5,
+                        "hover contrast {scheme:?} {mode:?} {role}"
+                    );
                 }
                 if mode == design::Mode::Light {
                     assert!(

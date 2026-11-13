@@ -352,9 +352,24 @@ fn session_install_clears_the_stable_local_choice_latch() {
     for explicit in [false, true] {
         ctx.data_mut(|d| d.insert_temp(key, serde_json::json!({"mode":"dark"})));
         if explicit {
-            viu::appearance::install_session_choice(&ctx, &snapshot, "ced", &toolkit::Theme::embedded(), &Default::default(), &serde_json::json!({})).unwrap();
+            viu::appearance::install_session_choice(
+                &ctx,
+                &snapshot,
+                "ced",
+                &toolkit::Theme::embedded(),
+                &Default::default(),
+                &serde_json::json!({}),
+            )
+            .unwrap();
         } else {
-            viu::appearance::install_session(&ctx, &snapshot, "ced", &toolkit::Theme::embedded(), &Default::default()).unwrap();
+            viu::appearance::install_session(
+                &ctx,
+                &snapshot,
+                "ced",
+                &toolkit::Theme::embedded(),
+                &Default::default(),
+            )
+            .unwrap();
         }
         assert!(ctx.data(|d| d.get_temp::<serde_json::Value>(key)).is_none());
     }

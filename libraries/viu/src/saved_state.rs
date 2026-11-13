@@ -201,9 +201,16 @@ mod tests {
     #[test]
     fn authored_captions_survive_both_choice_spellings() {
         let mut saved = Saved::load("mode-test", 1, true);
-        for choice in [json!({"captions":"left"}), json!({"caption_side":"left"}), json!({"captions":"left","caption_side":null})] {
+        for choice in [
+            json!({"captions":"left"}),
+            json!({"caption_side":"left"}),
+            json!({"captions":"left","caption_side":null}),
+        ] {
             saved.apply(&json!({"theme_choice":choice}));
-            assert_eq!(serde_json::to_value(&saved.store.window.theme).unwrap()["captions"], "left");
+            assert_eq!(
+                serde_json::to_value(&saved.store.window.theme).unwrap()["captions"],
+                "left"
+            );
         }
     }
 }

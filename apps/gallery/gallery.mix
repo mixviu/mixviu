@@ -115,7 +115,7 @@ on gallery.actions
   reply(0,json_encode({actions:$app_mode.actions($choice.mode)}))
 end
 on viu.frame.intent
-  $id=$event.args.value.command ?? $event.args.id
+  $id=($event.args.value ?? {}).command ?? $event.args.id
   if not starts_with($id ?? "","view.mode.") then return end
   $choice.mode=$app_mode.choose($id);publish_gallery($ctx,$state)
 end

@@ -114,7 +114,15 @@ fn app_modes_follow_live_session_override_restart_and_return_to_session() {
 fn malformed_mode_files_fall_back_to_session_without_destroying_evidence() {
     let temporary = tempfile::tempdir().unwrap();
     let file = temporary.path().join("mode.json");
-    for text in ["garbage", "{\"mode\":", "{\"mode\":\"session\"}", "{\"theme\":\"dark\"}", "[]", "null", "{\"mode\":42}"] {
+    for text in [
+        "garbage",
+        "{\"mode\":",
+        "{\"mode\":\"session\"}",
+        "{\"theme\":\"dark\"}",
+        "[]",
+        "null",
+        "{\"mode\":42}",
+    ] {
         std::fs::write(&file, text).unwrap();
         assert!(policy("ced", &file, None)["theme_choice"]["mode"].is_null());
         assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
@@ -243,7 +251,9 @@ fn app_mode_child() {
     ] {
         let app_home = temporary.path().join(app);
         std::fs::create_dir_all(&app_home).unwrap();
-        if app != "workshop" { std::fs::write(app_home.join("mode.json"), "{\"mode\":").unwrap(); }
+        if app != "workshop" {
+            std::fs::write(app_home.join("mode.json"), "{\"mode\":").unwrap();
+        }
         for (restart, expected) in [(false, None), (true, Some("light"))] {
             let arguments = if app == "email" {
                 vec!["--fixture".into()]
@@ -288,12 +298,18 @@ fn app_mode_child() {
             runtime.load(bundle.program).unwrap();
             let initial = next(&runtime, &wakes, app).model.unwrap();
             if !restart && app != "workshop" {
-                assert_eq!(std::fs::read_to_string(app_home.join("mode.json")).unwrap(), "{\"mode\":");
+                assert_eq!(
+                    std::fs::read_to_string(app_home.join("mode.json")).unwrap(),
+                    "{\"mode\":"
+                );
             }
             if !restart && app == "ced" {
                 let menus = initial["frame"]["menu"].to_string();
                 for mode in ["light", "dark", "session"] {
-                    assert!(menus.contains(&format!("view.mode.{mode}")), "ced View mode menu: {initial}");
+                    assert!(
+                        menus.contains(&format!("view.mode.{mode}")),
+                        "ced View mode menu: {initial}"
+                    );
                 }
             }
             assert_eq!(
@@ -328,15 +344,21 @@ fn app_mode_child() {
             assert_eq!(actions.rc, 0, "{app}");
             if app == "gallery" {
                 assert!(actions.body["actions"].is_array());
-                runtime.event("viu.frame.intent".into(), json!({"id":"unrelated"})).unwrap();
+                runtime
+                    .event("viu.frame.intent".into(), json!({"id":"unrelated"}))
+                    .unwrap();
                 next(&runtime, &wakes, app);
             }
             if app == "dopus" && !restart {
                 for _ in 0..2 {
-                    runtime.event("dopus.execute".into(), json!({"id":"view.mode"})).unwrap();
+                    runtime
+                        .event("dopus.execute".into(), json!({"id":"view.mode"}))
+                        .unwrap();
                     let toggled = next(&runtime, &wakes, app).model.unwrap();
                     assert!(toggled["theme_choice"]["mode"].is_string());
-                    let saved: Value = serde_json::from_slice(&std::fs::read(app_home.join("mode.json")).unwrap()).unwrap();
+                    let saved: Value =
+                        serde_json::from_slice(&std::fs::read(app_home.join("mode.json")).unwrap())
+                            .unwrap();
                     assert_eq!(saved["mode"], toggled["theme_choice"]["mode"]);
                 }
             }
@@ -434,8 +456,16 @@ fn app_mode_child() {
                         "{app} effective state readback"
                     );
                 }
-                assert_eq!(std::fs::read_to_string(app_home.join("mode.json")).unwrap(), "diagnostic sentinel", "{app} saves only on change");
-                std::fs::write(app_home.join("mode.json"), serde_json::to_vec(&saved).unwrap()).unwrap();
+                assert_eq!(
+                    std::fs::read_to_string(app_home.join("mode.json")).unwrap(),
+                    "diagnostic sentinel",
+                    "{app} saves only on change"
+                );
+                std::fs::write(
+                    app_home.join("mode.json"),
+                    serde_json::to_vec(&saved).unwrap(),
+                )
+                .unwrap();
             }
             if app == "gallery" {
                 runtime.event("viu.frame.close".into(), json!({})).unwrap();
