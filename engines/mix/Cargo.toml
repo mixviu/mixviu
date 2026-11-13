@@ -58,7 +58,7 @@ test-broker = { path = "../../libraries/test-broker" }
 libc = "0.2"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "net", "io-util"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json.workspace = true
 tempfile = "3"
 proptest = "1"
 tungstenite = "0.29"

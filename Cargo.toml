@@ -136,7 +136,8 @@ sqlite-vec = { version = "=0.1.9" }
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 # serde_json must never gain `preserve_order` (indexmap): frozen wire formats
 # rely on BTreeMap key order.
-serde_json = { version = "=1.0.154" }
+# Every engine must decode finite doubles exactly, independent of feature unification.
+serde_json = { version = "=1.0.154", features = ["float_roundtrip"] }
 schemars = { version = "=1.2.3" }
 sha2 = { version = "=0.10.9" }
 tempfile = "=3.27.0"
