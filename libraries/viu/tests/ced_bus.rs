@@ -552,8 +552,13 @@ fn action_inventory_and_execute_share_native_editor_semantics() {
     let (rc, rows) = app.answered("ced.actions", json!({}));
     assert_eq!(rc, 0);
     let rows = rows["actions"].as_array().unwrap();
-    assert_eq!(rows.len(), 61);
+    assert_eq!(rows.len(), 64);
     assert_eq!(rows[0]["id"], "file.new");
+    for id in ["view.mode.light", "view.mode.dark", "view.mode.session"] {
+        let row = rows.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("missing {id}"));
+        assert_eq!(row["menu"], "View");
+        assert_eq!(row["enabled"], true);
+    }
     assert_eq!(rows[0]["keys"], json!(["Ctrl+N"]));
     let (rc, unknown) = app.answered("ced.execute", json!({"id":"edit.unknown"}));
     assert_eq!(rc, 10);
