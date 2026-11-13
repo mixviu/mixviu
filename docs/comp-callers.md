@@ -61,7 +61,9 @@ sidecar and marker times are relative to the first frame, numbered from zero.
 
 The intermediate is silent Matroska using ffmpeg/libx264, ultrafast, CRF 14,
 GOP 30 and yuv420p. No hardware encoder is required. The queue holds four
-frames; overruns increment `dropped`. Finalisation runs on a separate thread
+frames; overruns increment `dropped` and the encoder worker fills their time
+slots with the previous image. `frames` and the frame sidecar include those
+repeats, so overload does not shorten the video. Finalisation runs on a separate thread
 and kills ffmpeg after ten seconds. Encoder failures retain stderr in `error`.
 
 The tutorial target is the whole output at its native size, including every

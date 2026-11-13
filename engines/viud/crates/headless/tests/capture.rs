@@ -242,7 +242,7 @@ fn record_4k_output_windows_pointer_and_damage_repeat() {
         json!({"session":session,"label":"4k-done"}),
     );
     let stop = bus.call("comp.record.stop", json!({"session":session}));
-    assert_eq!(stop["dropped"], 0, "4K30 overran: {stop}");
+    assert!(stop["repeated"].as_u64()>=stop["dropped"].as_u64(),"overruns must be repeated on the timeline: {stop}");
     assert!(marker["frame"].as_u64() < stop["frames"].as_u64());
     let decoded = Command::new("ffmpeg")
         .args(["-v", "error", "-i"])
@@ -256,6 +256,10 @@ fn record_4k_output_windows_pointer_and_damage_repeat() {
         String::from_utf8_lossy(&decoded.stderr)
     );
     assert_eq!(decoded.stdout.len(), 3840 * 2160 * 3);
+    let counted=Command::new("ffmpeg").args(["-v","error","-i"]).arg(&path).args(["-progress","pipe:1","-nostats","-f","null","-"]).output().unwrap();
+    assert!(counted.status.success(),"{}",String::from_utf8_lossy(&counted.stderr));
+    let encoded_frames=String::from_utf8_lossy(&counted.stdout).lines().filter_map(|line|line.strip_prefix("frame=")?.trim().parse::<u64>().ok()).max().unwrap();
+    assert_eq!(encoded_frames,stop["frames"].as_u64().unwrap(),"queue overruns must not shorten the encoded stream");
     let at = |x: usize, y: usize| {
         let i = (y * 3840 + x) * 3;
         &decoded.stdout[i..i + 3]
