@@ -19,6 +19,67 @@ use super::{
 };
 use crate::templates::text as port_text;
 
+fn contrast(a: Color32, b: Color32) -> f32 {
+    let luminance = |c: Color32| {
+        let c = egui::Rgba::from(c);
+        0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
+    };
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
+// Semantic scene colours resolve at paint time, so a session update also
+// recolours cached task/tray rows without a behaviour restart or model rebuild.
+fn scene_colour(theme: &toolkit::Theme, role: &str) -> Option<Color32> {
+    if !role.starts_with("panel.") { return hex(role); }
+    let palette = crate::appearance::page(theme, true);
+    let background = colour(palette.base.surface);
+    let selected = colour(palette.secondary.surface);
+    let readable = |surface, foreground| {
+        if contrast(surface, foreground) >= 4.5 { foreground }
+        else if contrast(surface, Color32::BLACK) >= contrast(surface, Color32::WHITE) {
+            Color32::BLACK
+        } else { Color32::WHITE }
+    };
+    match role {
+        "panel.background" | "panel.hover" => Some(background),
+        "panel.foreground" => Some(readable(background, colour(palette.base.foreground))),
+        "panel.selected" => Some(selected),
+        "panel.selected-foreground" => Some(readable(selected, colour(palette.secondary.foreground))),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod panel_mode_tests {
+    use super::*;
+    #[test]
+    fn every_scheme_and_mode_has_readable_panel_surfaces() {
+        let doc = scene::parse(include_str!("../../../../share/scenes/panel/scene.mix")).unwrap();
+        assert_eq!(doc.nodes["root"].ports["background"], "panel.background");
+        for scheme in design::Scheme::ALL {
+            for mode in [design::Mode::Light, design::Mode::Dark] {
+                let theme = toolkit::Theme::for_context(design::DesignContext { scheme, mode, ..Default::default() });
+                for (bg, fg) in [("panel.background", "panel.foreground"), ("panel.selected", "panel.selected-foreground")] {
+                    let bg = scene_colour(&theme, bg).unwrap();
+                    let fg = scene_colour(&theme, fg).unwrap();
+                    assert_eq!(bg.a(), 255);
+                    assert!(contrast(bg, fg) >= 4.5, "{scheme:?} {mode:?}");
+                }
+                let bg = scene_colour(&theme, "panel.background").unwrap();
+                if mode == design::Mode::Light {
+                    assert!(contrast(bg, Color32::BLACK) > contrast(bg, Color32::WHITE), "light panel {scheme:?}");
+                }
+                for node in doc.nodes.values() {
+                    if let Some(role) = node.ports.get("color").and_then(|v| v.as_str()) {
+                        assert!(role.starts_with("panel.") || role.starts_with("= "), "{}: {role}", node.id);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The font a scene text draws in: the session's body or display face,
 /// or the independent mono face.
 pub(crate) fn font(size: f32, mono: bool, bold: bool) -> FontId {
@@ -174,8 +235,8 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         }
         match node.family.as_str() {
             "column" | "row" => {
-                let normal = hex(port_text(&node, "background"));
-                let hover = hex(port_text(&node, "hover")).or(normal);
+                let normal = scene_colour(&scene.theme(), port_text(&node, "background"));
+                let hover = scene_colour(&scene.theme(), port_text(&node, "hover")).or(normal);
                 let radius = number(&node, "radius").unwrap_or(0.0);
                 let clickable = node.ports.contains_key("on_click")
                     || node.ports.contains_key("on_context")
@@ -224,7 +285,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let style = if mono { styles.mono } else { styles.ui };
                 let size = style.size(number(&node, "size"));
                 let font = font(size, mono, flag(&node, "bold"));
-                let colour = hex(port_text(&node, "color")).unwrap_or(ink);
+                let colour = scene_colour(&scene.theme(), port_text(&node, "color")).unwrap_or(ink);
                 let mut text = port_text(&node, "text").to_owned();
                 if flag(&node, "wrap") {
                     let lines = super::flex::wrap_text(
@@ -561,7 +622,7 @@ fn paint_image(
                 }
             };
             let tint = if svg.symbolic {
-                hex(port_text(node, "color")).unwrap_or(ink)
+                scene_colour(&scene.theme(), port_text(node, "color")).unwrap_or(ink)
             } else {
                 Color32::WHITE
             };
@@ -573,79 +634,3 @@ fn paint_image(
     Some(cache)
 }
 
-#[cfg(test)]
-mod light_mode_tests {
-    use super::*;
-
-    #[test]
-    fn panel_icons_and_labels_keep_contrast_in_light_and_dark() {
-        let doc = scene::parse(include_str!("../../../../share/scenes/panel/scene.mix")).unwrap();
-        let background = hex(doc.nodes["root"].ports["background"].as_str().unwrap()).unwrap();
-        // The scene-template Mix test checks this recorded model against the
-        // live panel model builder, whose colours are fixed for a dark panel.
-        let model: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../engines/viud/tests/fixtures/scenes/panel-busy.model.json"
-        ))
-        .unwrap();
-        for scheme in design::Scheme::ALL {
-            for mode in [design::Mode::Dark, design::Mode::Light] {
-                let theme = toolkit::Theme::for_context(design::DesignContext {
-                    scheme,
-                    mode,
-                    ..Default::default()
-                });
-                let ink = colour(crate::appearance::page(&theme, false).base.foreground);
-                for id in [
-                    "task_icon",
-                    "tray_icon",
-                    "st_notes_i",
-                    "st_vol_i",
-                    "st_net_i",
-                ] {
-                    let tint = doc.nodes[id]
-                        .ports
-                        .get("color")
-                        .and_then(|v| v.as_str())
-                        .and_then(hex)
-                        .unwrap_or(ink);
-                    let luminance = |c: Color32| {
-                        let c = egui::Rgba::from(c);
-                        0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
-                    };
-                    // Include both extremes behind the translucent panel.
-                    for under in [Color32::BLACK, Color32::WHITE] {
-                        let bg = under.blend(background);
-                        let (a, b) = (luminance(tint), luminance(bg));
-                        assert!(
-                            (a.max(b) + 0.05) / (a.min(b) + 0.05) >= 3.0,
-                            "{id} {scheme:?} {mode:?}: {tint:?}"
-                        );
-                    }
-                }
-                for (id, rows) in [("ws_label", "workspaces"), ("task_initial", "tasks")] {
-                    assert_eq!(doc.nodes[id].ports["color"], "= $item.color");
-                    for row in model[rows].as_array().unwrap() {
-                        let tint = hex(row["color"].as_str().unwrap()).unwrap();
-                        let overlay = row["background"]
-                            .as_str()
-                            .and_then(hex)
-                            .unwrap_or(Color32::TRANSPARENT);
-                        for under in [Color32::BLACK, Color32::WHITE] {
-                            let bg = under.blend(background).blend(overlay);
-                            let luminance = |c: Color32| {
-                                let c = egui::Rgba::from(c);
-                                0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
-                            };
-                            let (a, b) = (luminance(tint), luminance(bg));
-                            assert!(
-                                (a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5,
-                                "{id} {} {scheme:?} {mode:?}: {tint:?} on {bg:?}",
-                                row["id"]
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-}

@@ -2,6 +2,7 @@
 -- version: 0.2.0
 -- host: viu
 -- lint: globals app_args
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
   $ced_core=require("core.mix")
   $ced_session=require("session.mix")
   $ced_bus=require("bus.mix")
@@ -14,7 +15,7 @@ $state={tabs:[],active:0,busy:false,serial:0,next_tab:0,queue:[],running:{},time
 $state.reattach_wait={};$state.recent=[];$state.session_path=nil;$state.session_loaded=false;$state.session_dirty=false;$state.session_seen=nil;$state.restore={};$state.restore_active=nil;$state.exit_after_save=false;$state.edit={epoch:nil,version:nil,volatile:nil}
 $state.classified={};$state.notices={};$state.header_dialog=nil;$state.pastes={};$state.waits={};$state.open_errors={};$state.actions=json_parse(read_file(path_join(dirname(script_path()),"actions.json")));$state.commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).commands;$state.keys={};$state.mail={};$state.zoom=0;$state.save_dialog=false;$state.goto_dialog=false;$state.find={open:false,replace:false,pattern:"",replacement:"",regex:false,case:false,expand:false};$state.whitespace=false;$state.remote_carets=true;$state.problems=false;$state.output=false;$state.previews={};$state.preview_requested={};$state.lex_requested={};$state.caret_wanted={};$state.caret_published={};$state.caret_at={};$state.help=nil;$state.diagnostics={};$state.diag_paths=[]
 $state.macro_panel={epoch:0,serial:0,page:"closed",id:nil,filter:"",form:{open:false,title:"",body:"",field:nil,choices:[]}}
-$state.local_theme={};$state.info_commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).info_commands
+$state.local_theme={mode:$app_mode.load("ced")};$state.info_commands=json_parse(read_file(path_join(dirname(script_path()),"contract.json"))).info_commands
 $state.recovered=[];$state.recovery_open=false;$state.recovery_checked=false;$state.dialog_call=nil;$state.locations={};$state.save_prompts={};$state.notice_at={}
 $ced_core.publish_ced($state)
 on ced.ping
@@ -176,9 +177,12 @@ end
 on noded.props.changed
   if $event.args.path=="services.registered" and contains($event.args.new,"edit") then $state=$ced_core.pump($ced_session.request_probe($state)) end
 end
+on viu.theme.changed
+  $state.look.appearance=$event.args;$ced_core.publish_ced($state)
+end
 on viu.session
   $state.keys=$event.args.keymap ?? $state.keys
-  $state.look.appearance=$event.args.appearance;$state.look.revision=$event.args.state.revision
+  $state.look.appearance=$event.args.appearance;if $state.local_theme.mode!=nil then $state.look.appearance.mode=$state.local_theme.mode end;$state.look.revision=$event.args.state.revision
   if not $event.args.state.lost then $state.look.values=$event.args.state.values end
   $ced_core.publish_ced($state)
 end

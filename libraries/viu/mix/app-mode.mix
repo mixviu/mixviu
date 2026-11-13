@@ -1,0 +1,41 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- App policy: null follows the live session; only an explicit mode is saved.
+fn valid($mode)
+  return $mode==nil or contains(["light","dark"],$mode)
+end
+fn path($app)
+  return path_join(path_join(path_join(env("XDG_STATE_HOME",path_join(env("HOME"),".local/state")),"mixviu"),$app),"mode.json")
+end
+fn load($app)
+  if not (viu_context().native_facilities ?? false) or (viu_context().options.headless ?? false) then return nil end
+  return read_mode(path($app))
+end
+fn read_mode($file)
+  if not is_file($file) then return nil end
+  $value=json_parse(read_file($file))
+  if not valid($value.mode) then raise("APP_MODE","invalid saved app mode") end
+  return $value.mode
+end
+fn save($app,$mode)
+  if not (viu_context().native_facilities ?? false) then return end
+  write_mode(path($app),$mode)
+end
+fn write_mode($file,$mode)
+  if not valid($mode) then raise("APP_MODE","mode must be light, dark or null") end
+  $text=json_encode({mode:$mode}).."\n"
+  if is_file($file) and read_file($file)==$text then return end
+  mkdir(dirname($file))
+  write_atomic($file,$text)
+end
+fn project($model,$app,$choice,$headless=false)
+  if not $headless then save($app,$choice.mode) end
+  $model.theme_choice=$choice
+  return $model
+end
+fn actions($mode)
+  return map(["light","dark","session"],fn($name)={id:"view.mode."..$name,label:if $name=="session" then "Follow session" elif $name=="light" then "Light" else "Dark" end,enabled:true,checked:($mode ?? "session")==$name})
+end
+fn choose($id)
+  if not contains(["view.mode.light","view.mode.dark","view.mode.session"],$id) then raise("APP_MODE","unknown mode action") end
+  return if $id=="view.mode.session" then nil else slice($id,len("view.mode.")) end
+end

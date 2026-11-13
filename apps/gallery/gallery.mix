@@ -2,6 +2,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- Mix application composition and behaviour. No Rust gallery controller called.
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+$choice={mode:$app_mode.load("gallery")};$effective={}
 $widgets = [
  {id:"label",kind:"label",label:"Label",initial:"Shared Viu typography"},
  {id:"button",kind:"button",label:"Button",initial:"Ready"},
@@ -56,12 +59,17 @@ for $widget in $widgets
   $state.values[$widget.id] = $widget.initial
 end
 fn publish_gallery($ctx, $model)
+  $model=$app_mode.project($model,"gallery",$choice)
+  $model=$frame.apply($model,{icon:"grid-2x2",title:"Viu Widget Gallery",menus:[{id:"View",label:"View",enabled:true,children:$app_mode.actions($choice.mode)}],toolbar:[],status:nil})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
   if $rc != 0 then raise("MODEL_PUBLISH",to_string($result)) end
 end
 $ctx = viu_context()
 on gallery.execute
   $a = $event.args
+  if starts_with($a.id ?? "","view.mode.") then
+    $choice.mode=$app_mode.choose($a.id);publish_gallery($ctx,$state);reply(0,json_encode({mode:$choice.mode,effective:$effective}));return
+  end
   if $a.action != "reset" then
     $matches=filter($widgets,fn($w)=$w.id==$a.id)
     if len($matches)!=1 then raise("UNKNOWN_WIDGET",to_string($a.id)) end
@@ -103,8 +111,17 @@ on gallery.execute
 end
 publish_gallery($ctx,$state)
 
+on gallery.actions
+  reply(0,json_encode($app_mode.actions($choice.mode)))
+end
+on viu.frame.intent
+  $choice.mode=$app_mode.choose($event.args.value.command ?? $event.args.id);publish_gallery($ctx,$state)
+end
+on viu.theme.changed
+  $effective=$event.args;publish_gallery($ctx,$state)
+end
 on gallery.state
-  reply(0,json_encode($state))
+  reply(0,json_encode(merge($state,{theme:{mode:$choice.mode,effective:$effective}})))
 end
 on gallery.describe
   reply(0,json_encode({widgets:$widgets,execute:"gallery.execute {id,action,value}",host:"viu.state / viu.ui.* / viu.capture / viu.quit"}))

@@ -2,6 +2,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_args
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $states=require("state.mix");$op=require("operations.mix");$events=require("events.mix");$model=require("model.mix")
 $journal=require("journal.mix")
 $macros=require("macros.mix")
@@ -12,11 +13,12 @@ $state=$states.initial($app_args[0] ?? env("MIX_COMP_SERVICE","comp"),if $app_ar
 $options=$ctx.options ?? {}
 $state.headless=$options.headless ?? false
 $state.build=$ctx.build
+$state.look.mode=$app_mode.load("screenshot")
 $state=$op.refresh($state)
 fn publish_model($s)
   $s=$macros.flush($s)
   $s=$journal.flush($s,$ctx.citizen)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model.render($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$app_mode.project($model.render($s),"screenshot",$s.look,$s.headless)}
   return $s
 end
 fn command($s,$name,$args)
@@ -51,7 +53,8 @@ on viu.session.changed
   $state.effective=$event.args.appearance;$state.keymap=$event.args.keymap;$state=publish_model($state)
 end
 on bus.connected
-  $state.connected=true;$state=$op.refresh($state);$state=publish_model($state)
+  $state.connected=true;$state.look.mode=$app_mode.load("screenshot")
+$state=$op.refresh($state);$state=publish_model($state)
 end
 on bus.disconnected
   $state.connected=false;$state.status="The Bus is disconnected";$state=publish_model($state)

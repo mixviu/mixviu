@@ -128,7 +128,7 @@ impl Saved {
                 }
             }
         }
-        if let Some(appearance) = model["appearance"].as_object() {
+        if let Some(appearance) = model["theme_choice"].as_object().or_else(|| model["appearance"].as_object()) {
             let mut choice = Value::Object(appearance.clone());
             choice["captions"] = choice["caption_side"].clone();
             if let Ok(theme) = serde_json::from_value(choice) {

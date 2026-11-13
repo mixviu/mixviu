@@ -2,6 +2,7 @@
 -- host: viu
 -- lint: globals app_args app_launch
 -- Embedded Mix entry. Commands use the host's existing native Bus connection.
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $app=require("reducer.mix")
 $projection=require("presentation.mix")
 $core=require("core.mix")
@@ -54,6 +55,7 @@ fn dp_framed($s,$contract,$cache)
   $model.values.palette={open:$search,commands:map($contract.registry_order,fn($id)={id:$id,label:$contract.ui_labels[$id] ?? filter($contract.actions,fn($a)=$a.id==$id)[0].label,enabled:$projection.dp_command($s,$contract,$id).enabled})}
   $model.native_overlays=[{definition:{id:"palette",kind:"command-palette",label:"",initial:{open:false,commands:[]}},command:"dopus.palette"}]
   if $search then $model.values.form.open=false end
+  $model=$app_mode.project($model,"dopus",$s.appearance_choice,$s.headless ?? false)
   $model.local_theme={theme:$s.appearance_choice.scheme,mode:$s.appearance_choice.mode,style:$s.appearance_choice.style,decorations:$s.window_choice["window.decorations"],captions:$s.window_choice["window.caption_side"]}
   $model.native_focus=if $s.focus==nil then nil else {id:$s.focus.id,selection:$s.focus.selection,serial:$s.serial} end
   $model.shortcuts=if $s.form.open then [] else $s.bindings ?? [] end
@@ -65,7 +67,7 @@ fn dp_start($initial)
   $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
   $state=$app.dp_initialise($initial)
   $state.bus_connected=if viu_context().native_facilities ?? false then false else nil end
-  $state.appearance_choice={}
+  $state.appearance_choice={};$mode=$app_mode.load("dopus");if $mode!=nil then $state.appearance_choice.mode=$mode end
   $state.appearance_session=$state.appearance
   $state.default_keys={}
   $state.window={}

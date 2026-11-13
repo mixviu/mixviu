@@ -252,7 +252,7 @@ fn execute($s,$id,$params,$alias)
   elif $id=="view.zoom_out" then $s.ui.zoom=clamp($s.ui.zoom/1.25,0.1,8)
   elif $id=="view.fit" then $s.ui.zoom=1;$s.ui.pan={x:0,y:0}
   elif $id=="view.mode" then
-    $mode=$s.look.mode
+    $mode=$s.look.mode ?? $s.effective.mode
     if $mode==nil then
       send "viu-local" "native.theme.file" body={}
       if $rc!=0 then raise("FAILED",to_string($result)) end
