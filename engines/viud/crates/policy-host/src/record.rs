@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use std::{
     cell::{Cell, RefCell},
+    collections::{HashMap, VecDeque},
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -25,10 +26,39 @@ struct Past {
     status: Value,
     start_error: Option<String>,
 }
+#[derive(Default)]
+struct History {
+    entries: HashMap<String, Past>,
+    order: VecDeque<String>,
+}
+impl History {
+    fn get(&mut self, key: &str) -> Option<Past> {
+        let past = self.entries.get(key)?.clone();
+        self.order.retain(|entry| entry != key);
+        self.order.push_back(key.into());
+        Some(past)
+    }
+    fn session(&mut self, id: &str) -> Option<Past> {
+        let key = self.entries.iter().find(|(_, past)| past.id == id)?.0.clone();
+        self.get(&key)
+    }
+    fn insert(&mut self, key: String, past: Past) {
+        self.order.retain(|entry| *entry != key);
+        self.order.push_back(key.clone());
+        self.entries.insert(key, past);
+        while self.order.len() > 128 {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+    }
+}
 struct Session {
     request_id: String,
     admitted: Instant,
     id: String,
+    pixel_secret: String,
+    pixel_counter: u64,
     params: RecordCommand,
     path: String,
     targets: Vec<CaptureFrameSpec>,
@@ -57,7 +87,7 @@ impl Drop for Session {
     }
 }
 thread_local! {
-    static PAST: RefCell<std::collections::HashMap<String,Past>> = RefCell::new(std::collections::HashMap::new());
+    static PAST: RefCell<History> = RefCell::new(History::default());
     static CURRENT: RefCell<Option<Rc<RefCell<Session>>>> = const { RefCell::new(None) };
     static EVENTS: RefCell<Vec<Value>> = const { RefCell::new(Vec::new()) };
 }
@@ -68,7 +98,7 @@ fn refused(error: &str) -> ControlReply {
     ControlReply::refused("record_failed", json!({"message":error}))
 }
 fn empty_status(state: &str, error: Option<&str>) -> Value {
-    json!({"state":state,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"bytes":0,"queue":0,"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
+    json!({"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"bytes":0,"queue":0,"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
 }
 fn event(s: &Session, state: &'static str) {
     if s.last_state.replace(state) == state {
@@ -83,7 +113,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
     let answer: Answer = Box::new(answer);
     let params = op.clone();
     if let RecordCommand::Start { request_id, .. } = &op {
-        if let Some(past) = PAST.with_borrow(|past| past.get(request_id).cloned()) {
+        if let Some(past) = PAST.with_borrow_mut(|past| past.get(request_id)) {
             if past.params != op {
                 answer(refused("request_id parameters differ"));
                 return;
@@ -106,7 +136,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             _ => None,
         };
         if let Some(past) =
-            id.and_then(|id| PAST.with_borrow(|past| past.values().find(|p| p.id == *id).cloned()))
+            id.and_then(|id| PAST.with_borrow_mut(|past| past.session(id)))
         {
             answer(match op {
                 RecordCommand::Stop { .. } => ControlReply::Body(past.terminal),
@@ -196,6 +226,13 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             }
         };
         let probe_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let pixel_secret = match recorder::bus::private_token() {
+            Ok(secret) => secret,
+            Err(error) => {
+                answer(refused(&error));
+                return;
+            }
+        };
         let mut probe_join = None;
         let probe = if encoder == "vaapi" {
             let (tx, rx) = std::sync::mpsc::channel();
@@ -212,6 +249,8 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             admitted: Instant::now(),
             params,
             id,
+            pixel_secret,
+            pixel_counter: 0,
             path,
             targets,
             fps,
@@ -258,6 +297,10 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         }
         return;
     }
+    session_command(op, answer);
+}
+
+fn session_command(op: RecordCommand, answer: Answer) {
     let current = CURRENT.with_borrow(Clone::clone);
     let Some(current) = current else {
         if matches!(op, RecordCommand::Status { session: None }) {
@@ -310,9 +353,17 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             },
         ),
         RecordCommand::Stop { session, discard } => {
+            if session != s.id {
+                answer(refused("unknown session"));
+                return;
+            }
             if let Some(r) = s.recording.as_mut() {
                 if let Some(reply) = &r.terminal {
                     answer(ControlReply::Body(reply.clone()));
+                    return;
+                }
+                if r.stop_conflicts(discard) {
+                    answer(refused("already finishing"));
                     return;
                 }
                 let changed = r.stop(discard);
@@ -323,8 +374,11 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             } else {
                 drop(s);
                 cancel_pending(&current, "cancelled before first frame");
-                let past = PAST.with_borrow(|p| p.values().find(|p| p.id == session).cloned());
-                answer(ControlReply::Body(past.unwrap().terminal));
+                let past = PAST.with_borrow_mut(|p| p.session(&session));
+                answer(match past {
+                    Some(past) => ControlReply::Body(past.terminal),
+                    None => refused("unknown session"),
+                });
             }
         }
         _ => unreachable!(),
@@ -346,20 +400,17 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
         r.error = Some(error.into());
         r.stop(false);
     } else {
+        let mut status = empty_status("failed", Some(error));
+        status["session"] = json!(s.id);
         let past = Past {
             id: s.id.clone(),
             params: s.params.clone(),
             start: None,
             start_error: Some(error.into()),
             terminal: json!({"path":s.path,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"frames_path":null,"markers_path":null,"encoder":s.encoder,"error":error}),
-            status: empty_status("failed", Some(error)),
+            status,
         };
         PAST.with_borrow_mut(|all| {
-            if all.len() >= 128
-                && let Some(key) = all.keys().next().cloned()
-            {
-                all.remove(&key);
-            }
             all.insert(s.request_id.clone(), past);
         });
     }
@@ -417,11 +468,6 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     start_error: None,
                 };
                 PAST.with_borrow_mut(|all| {
-                    if all.len() >= 128
-                        && let Some(key) = all.keys().next().cloned()
-                    {
-                        all.remove(&key);
-                    }
                     all.insert(s.request_id.clone(), past);
                 });
                 for answer in std::mem::take(&mut s.stop_answers) {
@@ -546,17 +592,18 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     s.signature = signature;
     s.pending = true;
     let targets = s.targets.clone();
-    let id = s.id.clone();
+    let counter = s.pixel_counter;
+    let Some(next_counter) = counter.checked_add(1) else {
+        drop(s);
+        fail(session, "raw capture counter exhausted");
+        return;
+    };
+    s.pixel_counter = next_counter;
+    let prefix = format!("/{}-{counter}", s.pixel_secret);
     drop(s);
     let frames = Rc::new(RefCell::new(Vec::new()));
     for (index, mut target) in targets.into_iter().enumerate() {
-        let token = match recorder::bus::private_token() {
-            Ok(token) => format!("/{id}-{token}-{index}"),
-            Err(error) => {
-                fail(session, &error);
-                return;
-            }
-        };
+        let token = format!("{prefix}-{index}");
         target.path = token.clone();
         let got = frames.clone();
         let session = session.clone();
@@ -661,8 +708,17 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn stop_reply(id: &str) -> bool {
+        let answered = Rc::new(Cell::new(None));
+        let got = answered.clone();
+        session_command(RecordCommand::Stop { session: id.into(), discard: false }, Box::new(move |reply| got.set(Some(matches!(reply, ControlReply::Body(_))))));
+        answered.get().expect("stop must answer immediately")
+    }
     #[test]
     fn pending_cancel_replies_and_leaves_replayable_terminal_without_sidecars() {
+        CURRENT.with_borrow_mut(|current| *current = None);
+        PAST.with_borrow_mut(|past| *past = History::default());
+        assert!(!stop_reply("unknown"));
         let params = comp_model::capture::parse_record("comp.record.start", &json!({"request_id":"pending", "path":"/tmp/pending-record-unit.mkv", "target":{}, "max_seconds":1})).unwrap();
         let answered = Rc::new(Cell::new(false));
         let got = answered.clone();
@@ -670,6 +726,8 @@ mod tests {
             request_id: "pending".into(),
             admitted: Instant::now() - Duration::from_secs(2),
             id: "pending-session".into(),
+            pixel_secret: "private-unit-secret".into(),
+            pixel_counter: 0,
             params,
             path: "/tmp/pending-record-unit.mkv".into(),
             targets: vec![],
@@ -694,9 +752,15 @@ mod tests {
         assert!(
             session.borrow().admitted.elapsed() > Duration::from_secs(session.borrow().max_seconds)
         );
-        cancel_pending(&session, "cancelled before first frame");
+        CURRENT.with_borrow_mut(|current| *current = Some(session.clone()));
+        for id in ["unknown", "stale-session", "mismatched-session"] {
+            assert!(!stop_reply(id));
+            assert!(session.borrow().failed.is_none());
+            assert!(!answered.get(), "a wrong ID must not cancel the pending start");
+        }
+        assert!(stop_reply("pending-session"));
         assert!(answered.get());
-        let past = PAST.with_borrow(|p| p.get("pending").cloned()).unwrap();
+        let past = PAST.with_borrow_mut(|p| p.get("pending")).unwrap();
         assert_eq!(past.terminal["frames"], 0);
         assert_eq!(past.terminal["frames_path"], Value::Null);
         assert_eq!(past.status["state"], "failed");
@@ -711,6 +775,17 @@ mod tests {
             }
             cancel_pending(&session, "max_seconds elapsed before first frame");
         }
-        assert_eq!(PAST.with_borrow(|p| p.len()), 128);
+        assert_eq!(PAST.with_borrow(|p| p.entries.len()), 128);
+        assert!(!stop_reply("pending-session"), "evicted session must be refused");
+        assert_eq!(session.borrow().id, "session-255");
+        let mut history = History::default();
+        for i in 0..128 {
+            history.insert(format!("key-{i}"), past.clone());
+        }
+        assert!(history.get("key-0").is_some());
+        history.insert("new".into(), past);
+        assert!(history.get("key-0").is_some(), "recently used entry must survive");
+        assert!(history.get("key-1").is_none(), "least recently used entry must be evicted");
+        CURRENT.with_borrow_mut(|current| *current = None);
     }
 }

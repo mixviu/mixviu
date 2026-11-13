@@ -42,11 +42,49 @@ pub fn check_destination(path: &str) -> Result<(), String> {
             Err(e) => return Err(e.to_string()),
         }
     }
-    Ok(())
+    probe_publication(path, rename_no_replace)
+}
+
+fn rename_no_replace(src: &str, dst: &str) -> std::io::Result<()> {
+    let from = std::ffi::CString::new(src)?;
+    let to = std::ffi::CString::new(dst)?;
+    if unsafe {
+        libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
+    } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+fn probe_publication(
+    path: &str,
+    rename: impl Fn(&str, &str) -> std::io::Result<()>,
+) -> Result<(), String> {
+    // Both the collision and successful rename must work in this directory.
+    let base = format!("{path}.{}.part", private_token()?);
+    let files = TakeFiles {
+        path: path.into(),
+        video: format!("{base}.probe-from"),
+        frames: format!("{base}.probe-to"),
+        markers: format!("{base}.probe-unused"),
+    };
+    secure_file(&files.video)?;
+    secure_file(&files.frames)?;
+    match rename(&files.video, &files.frames) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        result => return Err(format!("destination does not support no-replace publication: {result:?}")),
+    }
+    std::fs::remove_file(&files.frames).map_err(|e| e.to_string())?;
+    rename(&files.video, &files.frames)
+        .map_err(|e| format!("destination does not support no-replace publication: {e}"))
 }
 
 fn readback_skips(readback_us: u64, fps: u32) -> u64 {
-    let budget = 1_000_000 / u64::from(fps) / 4;
+    if fps == 0 {
+        return 0;
+    }
+    let budget = (1_000_000 / u64::from(fps) / 4).max(1);
     readback_us.saturating_sub(budget).div_ceil(budget).min(60)
 }
 
@@ -88,24 +126,12 @@ impl TakeFiles {
             (&self.markers, format!("{}.markers.jsonl", self.path)),
             (&self.video, self.path.clone()),
         ] {
-            let from = std::ffi::CString::new(src.as_str()).map_err(|e| e.to_string())?;
-            let to = std::ffi::CString::new(dst.as_str()).map_err(|e| e.to_string())?;
-            if unsafe {
-                libc::renameat2(
-                    libc::AT_FDCWD,
-                    from.as_ptr(),
-                    libc::AT_FDCWD,
-                    to.as_ptr(),
-                    libc::RENAME_NOREPLACE,
-                )
-            } != 0
-            {
-                let error = std::io::Error::last_os_error().to_string();
+            if let Err(error) = rename_no_replace(src, &dst) {
                 for name in published {
                     let _ = std::fs::remove_file(name);
                 }
                 self.cleanup();
-                return Err(error);
+                return Err(error.to_string());
             }
             published.push(dst);
         }
@@ -167,6 +193,7 @@ pub struct Recording {
     markers_file: File,
     encoder: Option<VideoEncoder>,
     finishing: Option<Receiver<Result<(), String>>>,
+    stop_discard: Option<bool>,
     finaliser: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -221,6 +248,7 @@ impl Recording {
             markers_file,
             encoder: Some(encoder),
             finishing: None,
+            stop_discard: None,
             finaliser: None,
         })
     }
@@ -305,13 +333,14 @@ impl Recording {
     }
 
     pub fn status(&self) -> Value {
-        json!({"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes,"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
+        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes,"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
     }
 
     pub fn stop(&mut self, discard: bool) -> bool {
         let Some(encoder) = self.encoder.take() else {
             return false;
         };
+        self.stop_discard = Some(discard);
         self.last = Arc::new(Vec::new());
         if let Err(error) = self
             .frames_file
@@ -335,6 +364,10 @@ impl Recording {
             let _ = tx.send(result);
         }));
         true
+    }
+
+    pub fn stop_conflicts(&self, discard: bool) -> bool {
+        self.finishing.is_some() && self.stop_discard.is_some_and(|previous| previous != discard)
     }
 
     pub fn poll(&mut self) -> bool {
@@ -414,6 +447,7 @@ mod file_tests {
     }
     #[test]
     fn readback_budget_bounds_amortised_cost() {
+        assert_eq!(readback_skips(100, 0), 0);
         assert_eq!(readback_skips(8000, 30), 0);
         assert_eq!(readback_skips(14000, 30), 1);
         assert_eq!(readback_skips(25000, 30), 3);
@@ -430,9 +464,46 @@ mod file_tests {
         assert!(!spend_readback_budget(&mut debt, true));
     }
     #[test]
+    fn unsupported_publication_refused_before_take_without_residue() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("take.mkv").to_str().unwrap().to_owned();
+        let error = probe_publication(&path, |_, _| Err(std::io::Error::from_raw_os_error(libc::EINVAL))).unwrap_err();
+        assert!(error.contains("no-replace publication"));
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        check_destination(&path).unwrap();
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
     fn invalid_clock_reports_error_without_panic() {
         assert!(read_clock(-1).is_err());
         assert!(monotonic_us().unwrap() > 0);
+    }
+    #[test]
+    fn finishing_preserves_original_discard_choice() {
+        if !std::process::Command::new("ffmpeg").arg("-version").output().is_ok_and(|o| o.status.success()) {
+            assert!(std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref() != Ok("1"), "recording test requires ffmpeg");
+            eprintln!("recording test skipped: ffmpeg is absent");
+            return;
+        }
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        for discard in [false, true] {
+            let path = dir.join(format!("{discard}.mkv")).to_str().unwrap().to_owned();
+            let mut recording = Recording::new("test".into(), path, 2, 2, 30, "x264".into()).unwrap();
+            recording.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+            assert!(!recording.stop_conflicts(discard));
+            assert!(recording.stop(discard));
+            assert!(recording.stop_conflicts(!discard));
+            assert!(!recording.stop_conflicts(discard));
+            while !recording.poll() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert!(recording.error.is_none(), "{:?}", recording.error);
+            assert!(!recording.stop_conflicts(!discard));
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn failed_encoder_setup_removes_private_sidecars() {

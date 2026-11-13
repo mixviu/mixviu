@@ -9,6 +9,26 @@ use std::{
     thread,
     time::Duration,
 };
+
+#[allow(dead_code)] // Only recording tests need these optional host facilities.
+pub fn record_available() -> bool {
+    let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE")
+        .unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let mut missing = Vec::new();
+    if let Err(error) = fs::OpenOptions::new().read(true).write(true).open(&node) {
+        missing.push(format!("render node {node}: {error}"));
+    }
+    if !Command::new("ffmpeg").arg("-version").output().is_ok_and(|output| output.status.success()) {
+        missing.push("ffmpeg is absent from PATH or cannot run".into());
+    }
+    if missing.is_empty() {
+        return true;
+    }
+    let reason = missing.join("; ");
+    assert!(std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref() != Ok("1"), "recording tests required by MIX_TEST_REQUIRE_RECORD=1: {reason}");
+    eprintln!("recording test skipped: {reason}");
+    false
+}
 pub struct Process {
     pub child: Child,
     pub root: PathBuf,

@@ -109,6 +109,9 @@ fn target(row: &Value) -> Value {
 #[test]
 #[ignore = "needs render node, ffmpeg and same-revision viud/noded/Mix binaries"]
 fn record_changing_4k_ten_seconds() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("record-changing");
     let mut process = process::spawn_4k("record-changing", &bus.url);
     let mut p = Pattern::new(connect(&mut process));
@@ -186,6 +189,9 @@ fn record_changing_4k_ten_seconds() {
 
 #[test]
 fn record_windows_only_content_and_multiple_targets() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("record-windows");
     let mut process = process::spawn(1, None, "record-windows", Some(&bus.url));
     let mut b = Pattern::named(connect(&mut process), "record-window-b", false);
@@ -229,6 +235,9 @@ fn record_windows_only_content_and_multiple_targets() {
 
 #[test]
 fn record_vaapi_capability_or_clear_failure() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("record-vaapi");
     let mut process = process::spawn(1, None, "record-vaapi", Some(&bus.url));
     drop(connect(&mut process));
@@ -275,6 +284,9 @@ fn record_vaapi_capability_or_clear_failure() {
 
 #[test]
 fn record_4k_output_windows_pointer_and_damage_repeat() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("record-4k");
     let mut process = process::spawn_4k("record-4k", &bus.url);
     let mut a = Pattern::named(connect(&mut process), "record-a", false);
@@ -410,6 +422,9 @@ fn record_4k_output_windows_pointer_and_damage_repeat() {
 
 #[test]
 fn record_idle_output_lifecycle_and_clock() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("record-idle");
     let mut process = process::spawn(1, None, "record-idle", Some(&bus.url));
     drop(connect(&mut process));
@@ -434,6 +449,13 @@ fn record_idle_output_lifecycle_and_clock() {
     assert_eq!(start["clock"], "monotonic");
     assert_eq!(start["width"], 1280);
     assert_eq!(start["height"], 720);
+    for id in ["unknown", "stale-session", "mismatched-session"] {
+        let refused = bus.call_rc("comp.record.stop", json!({"session":id}), 10);
+        assert_eq!(refused["error"], "record_failed");
+        let live = bus.call("comp.record.status", json!({"session":session}));
+        assert_eq!(live["state"], "recording");
+        assert_eq!(live["session"], session);
+    }
     let busy = bus.call_rc("comp.record.start",json!({"request_id":"other","target":{"output":"headless-0"},"path":process.root.join("other.mkv"),"max_seconds":10}),10);
     assert_eq!(busy["error"], "record_busy");
     let mut markers = Vec::new();
@@ -558,6 +580,9 @@ fn record_idle_output_lifecycle_and_clock() {
 
 #[test]
 fn record_window_target_gone_fails() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("record-gone");
     let mut process = process::spawn(1, None, "record-gone", Some(&bus.url));
     let mut pattern = Pattern::new(connect(&mut process));

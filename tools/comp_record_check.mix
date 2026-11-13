@@ -1,4 +1,7 @@
 -- Scoped CBC-only recording validation; never run on a desktop.
+fn ensure($condition, $message)
+  if not $condition then raise("RECORD_CHECK", $message) end
+end
 $commands = [
   ["cargo", "build", "-p", "mix", "--bin", "mix"],
   ["cargo", "build", "--release", "-p", "viud"],
@@ -7,6 +10,7 @@ $commands = [
   ["cargo", "test", "-p", "headless", "--test", "capture", "--no-run"]
 ]
 try
+  export MIX_TEST_REQUIRE_RECORD=1
   export MIX_TEST_VIUD_EXE=realpath(".") .. "/target/release/viud"
   export MIX_TEST_MIX_EXE=realpath("target/debug") .. "/mix"
   for $command in $commands
@@ -16,14 +20,38 @@ try
     print($result.stderr)
     if not $result.ok then exit($result.exit_code ?? 1) end
   end
-  if exists("/dev/dri/renderD128") then
-    $result = run_argv(["cargo", "test", "-p", "headless", "--test", "capture", "record_", "--", "--include-ignored", "--nocapture", "--test-threads=1"], {timeout: 180, max_output: 16000000})
-    print($result.stdout)
-    print($result.stderr)
-    if not $result.ok then exit($result.exit_code ?? 1) end
-  else
-    print("RECORD_GPU_TESTS_NOT_RUN: worker has no /dev/dri/renderD128")
+  -- Exercise the compiled test binary itself with no executables on PATH.
+  $built = run_argv(["cargo", "test", "-p", "headless", "--test", "capture", "--no-run", "--message-format=json"], {timeout: 180, max_output: 16000000})
+  print($built.stderr)
+  if not $built.ok then print($built.stdout); exit($built.exit_code ?? 1) end
+  $binary = nil
+  for $line in lines($built.stdout)
+    $artifact = json_parse($line) ?? {}
+    if $artifact.reason == "compiler-artifact" and $artifact.target.name == "capture" and $artifact.executable != nil then
+      $binary = $artifact.executable
+    end
   end
+  ensure($binary != nil, "capture test binary was not built")
+  $empty_path = trim(run_argv_must(["mktemp", "-d", "/tmp/record-empty-path-XXXXXX"]))
+  try
+    for $required in ["", "1"]
+      $proof = run_argv([$binary, "record_", "--nocapture", "--test-threads=1"], {timeout: 30, max_output: 16000000, env: {PATH: $empty_path, MIX_TEST_REQUIRE_RECORD: $required}})
+      print($proof.stdout)
+      print($proof.stderr)
+      if $required == "" then
+        ensure($proof.ok and contains($proof.stderr, "recording test skipped:") and contains($proof.stderr, "ffmpeg"), "missing ffmpeg must skip optional recording tests")
+      else
+        ensure(not $proof.ok and contains($proof.stderr, "recording tests required by MIX_TEST_REQUIRE_RECORD=1"), "required recording tests must fail when ffmpeg is missing")
+      end
+      print("RECORD_PREREQUISITE_PROOF required=" .. $required .. " rc=" .. to_string($proof.exit_code))
+    end
+  finally
+    run_argv_must(["rmdir", $empty_path])
+  end
+  $result = run_argv(["cargo", "test", "-p", "headless", "--test", "capture", "record_", "--", "--include-ignored", "--nocapture", "--test-threads=1"], {timeout: 180, max_output: 16000000})
+  print($result.stdout)
+  print($result.stderr)
+  if not $result.ok then exit($result.exit_code ?? 1) end
 finally
   print("==LOCKDIFF==")
   print(run_argv(["git", "diff", "--", "Cargo.lock"]).stdout)
