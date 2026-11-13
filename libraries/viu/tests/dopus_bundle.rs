@@ -240,11 +240,7 @@ end
     std::fs::write(left.join("second.txt"), "123").unwrap();
     std::fs::write(right.join("photo.jpg"), "12345").unwrap();
     let steps = [
-        (
-            "dopus.execute",
-            json!({"id":"view.refresh"}),
-            idle_info,
-        ),
+        ("dopus.execute", json!({"id":"view.refresh"}), idle_info),
         ("operation-test", json!({"rc":10}), "Operation failed"),
         (
             "dopus.intent",
@@ -276,16 +272,8 @@ end
             json!({"id":"left-tree","action":"navigate","value":{"key":"End","shift":true}}),
             "2 selected — 10 B",
         ),
-        (
-            "dopus.execute",
-            json!({"id":"nav.pane-right"}),
-            idle_info,
-        ),
-        (
-            "dopus.execute",
-            json!({"id":"view.refresh"}),
-            idle_info,
-        ),
+        ("dopus.execute", json!({"id":"nav.pane-right"}), idle_info),
+        ("dopus.execute", json!({"id":"view.refresh"}), idle_info),
         (
             "dopus.execute",
             json!({"id":"selection.first"}),
