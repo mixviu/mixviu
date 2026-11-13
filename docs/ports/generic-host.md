@@ -59,6 +59,8 @@ they cannot overtake earlier held UI requests. Drive commands are classified
 by `toolkit::drive::COMMANDS`, including `window` and `window.state`.
 Generic `viu.ui.*`, captures and `viu.state` also remain fenced: root and
 child-window geometry queries report a revision whose geometry has been drawn.
+Geometry queries also wait for earlier evaluator callbacks to complete before
+checking the draw, since those callbacks may publish a newer revision.
 Background surfaces use the retained native layer-shell backend, one per output.
 An optional `model.surfaces[output-name]` supplies a complete scene model for
 that output; otherwise the common model is drawn. Mix owns those projections.

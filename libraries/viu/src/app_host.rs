@@ -1211,8 +1211,11 @@ impl Host {
                 let bypass = bypass && !self.legacy_draw_barrier;
                 // An earlier callback may still publish a new revision. Do
                 // not snapshot geometry between its admission and completion.
-                let admitted = bypass || (!undrawn && !queued_click && !earlier_held
-                    && (!geometry || self.inflight.is_empty()));
+                let admitted = bypass
+                    || (!undrawn
+                        && !queued_click
+                        && !earlier_held
+                        && (!geometry || self.inflight.is_empty()));
                 earlier_held = true;
                 admitted
             });
