@@ -289,7 +289,14 @@ fn views_follow_private_broker_inventory_and_refuse_without_changing_selection()
     });
     let inventory = connect();
     rt.block_on(inventory.client().register_as("backdrop-test")).unwrap();
-    let mut incoming = inventory.client().incoming().unwrap();
+    let (events, incoming) = mpsc::channel();
+    let receiver = inventory.clone();
+    let receive_task = rt.spawn(async move {
+        while let Some(event) = receiver.recv_shared().await {
+            let event = event.command();
+            if events.send((event.command.clone(), event.args.clone())).is_err() { break; }
+        }
+    });
     let published = Arc::new(std::sync::Mutex::new(Vec::new()));
     let backend = Inventory { connection: inventory.clone(), handle: rt.handle().clone(), published: published.clone() };
     let mut app = App::with_backend(Box::new(move || Rc::new(backend)));
@@ -313,9 +320,9 @@ fn views_follow_private_broker_inventory_and_refuse_without_changing_selection()
     rt.block_on(train.client().deregister()).unwrap();
     let end = Instant::now() + Duration::from_secs(10);
     loop {
-        while let Ok(event) = incoming.try_recv() {
-            if event.command == "props.changed" {
-                app.runtime.notify(event.command, event.args).unwrap();
+        while let Ok((command, args)) = incoming.try_recv() {
+            if command == "props.changed" {
+                app.runtime.notify(command, args).unwrap();
             }
         }
         app.pump();
@@ -325,6 +332,7 @@ fn views_follow_private_broker_inventory_and_refuse_without_changing_selection()
     assert!(published.lock().unwrap().iter().any(|v| v.to_string().contains("needs Bus services train")));
     assert!(!app.model.to_string().contains("raw Bus error"));
     rt.block_on(async { inventory.client().close().await; train.client().close().await; buildd.client().close().await; });
+    receive_task.abort();
 }
 #[test]
 fn backdrop_colours_modes_outputs_and_refusals_use_mix() {
