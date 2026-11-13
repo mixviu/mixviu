@@ -3,6 +3,12 @@
 -- Copyright 2026 Mark Constable
 -- version: 0.1.0
 -- Application-owned file-manager state. No Rust Dopus controller is called.
+$dp_idle_info="Select a file or folder"
+fn dp_selected_rows($pane)
+  $selected={}
+  for $path in $pane.selected_paths $selected[$path]=true end
+  return filter($pane.entries,fn($r)=$selected[$r.path] ?? false)
+end
 fn dp_display($text)
   if type($text)=="string" and starts_with($text,"file://") then $text=viu_files("display-path",{path:$text}) end
   return re_replace(to_string($text), "\\p{Cc}", "�")
@@ -45,7 +51,9 @@ fn dp_contains_path($path,$parent)
   return $path==$parent or starts_with($path,if ends_with($parent,"/") then $parent else $parent.."/" end)
 end
 fn dp_extension($path)
-  $parts=split(dp_leaf_text($path),".")
+  $name=dp_leaf_text($path)
+  if starts_with($name,".") or ends_with($name,".") then return "" end
+  $parts=split($name,".")
   return if len($parts)>1 then lower($parts[len($parts)-1]) else "" end
 end
 fn dp_size($bytes)

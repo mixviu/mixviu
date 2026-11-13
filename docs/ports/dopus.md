@@ -20,11 +20,14 @@ a file. This matches the pinned MixOS oracle
 Mark's 2026-11-13 decision supersedes the initial parity-only brief: MixViu
 intentionally improves on gold. Its info line follows the active pane and
 shows a single selected item's name, kind and size, or the selected count
-and total known listed sizes. Directory sizes remain unknown, with no
+and total known listed sizes. Directory and symlink sizes remain unknown, with no
 recursive scan; mixed totals are labelled "known sizes". The optional date
 is omitted to keep the line compact. Deselecting or completing an operation
-restores the idle line; operation/error notices retain priority until the
-next selection or active-pane change. Pane footers still count the listing.
+restores the idle line. Completed operation/error notices retain priority until
+the next selection, active-pane change or navigation; busy notices persist
+across these changes. Clearing a completed notice also clears `dialog_status`
+so an old dialog error cannot override the new selection. Pane footers still
+count the listing. Leading-dot and trailing-dot names have no extension.
 The window title is now only `MixViu DOpus`; paths remain in pane headers.
 These are intended improvements over gold, not parity corrections.
 `nav.pane-left` and `nav.pane-right` extend the Bus action catalogue with

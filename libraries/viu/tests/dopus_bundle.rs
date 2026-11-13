@@ -131,7 +131,7 @@ on budget-test
 end
 on operation-test
   $state.job="test-operation";$state.busy=true
-  dp_job_completed({tag:{id:"test-operation",owner:viu_context().generation},rc:0,body:{}})
+  dp_job_completed({tag:{id:"test-operation",owner:viu_context().generation},rc:$event.args.rc ?? 0,body:{message:"Operation failed"}})
   reply(0,"{}")
 end
 "#,
@@ -147,6 +147,7 @@ end
     runtime.load(bundle.program).unwrap();
     let model = done(&runtime, &rx).model.unwrap();
     assert_eq!(model["panes"][0]["rows"], 1);
+    let idle_info = model["info"].as_str().unwrap();
     assert_eq!(model["values"]["gold-title"], "MixViu DOpus");
     assert_eq!(model["values"]["caption-title"], "MixViu DOpus");
     assert_eq!(model["window_title"], "MixViu DOpus");
@@ -216,7 +217,7 @@ end
             if active == 0 {
                 "selected.txt — TXT file — 7 B"
             } else {
-                "Select a file or folder"
+                idle_info
             }
         );
         assert_eq!(selected["panes"][0]["summary"], "0 folders, 1 file (7 B)");
@@ -242,8 +243,9 @@ end
         (
             "dopus.execute",
             json!({"id":"view.refresh"}),
-            "Select a file or folder",
+            idle_info,
         ),
+        ("operation-test", json!({"rc":10}), "Operation failed"),
         (
             "dopus.intent",
             json!({"id":"left-tree","action":"select","value":{"key":left.join("selected.txt")}}),
@@ -262,7 +264,7 @@ end
         (
             "dopus.intent",
             json!({"id":"left-tree","action":"select","value":{"key":left.join("selected.txt"),"ctrl":true}}),
-            "Select a file or folder",
+            idle_info,
         ),
         (
             "dopus.execute",
@@ -277,12 +279,12 @@ end
         (
             "dopus.execute",
             json!({"id":"nav.pane-right"}),
-            "Select a file or folder",
+            idle_info,
         ),
         (
             "dopus.execute",
             json!({"id":"view.refresh"}),
-            "Select a file or folder",
+            idle_info,
         ),
         (
             "dopus.execute",
@@ -299,7 +301,7 @@ end
             json!({"id":"nav.pane-right"}),
             "photo.jpg — JPG file — 5 B",
         ),
-        ("operation-test", json!({}), "Select a file or folder"),
+        ("operation-test", json!({}), idle_info),
     ];
     for (command, args, info) in steps {
         runtime.event(command.into(), args).unwrap();

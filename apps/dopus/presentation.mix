@@ -5,12 +5,12 @@
 -- consumed by both language drivers; no native file-manager reducer is called.
 $dp=require("core.mix")
 fn dp_selection_info($state)
-  -- Operation/error notices take precedence until selection or pane changes.
-  if $state.info!="Select a file or folder" then return $state.info end
+  -- Busy notices persist; completed notices clear on selection/pane/navigation.
+  if $state.info!=$dp.dp_idle_info then return $state.info end
   $pane=$state.panes[$state.active]
-  if len($pane.selected_paths)==0 then return "Select a file or folder" end
-  $rows=filter($pane.entries,fn($r)=contains($pane.selected_paths,$r.path))
-  if len($rows)==0 then return "Select a file or folder" end
+  if len($pane.selected_paths)==0 then return $dp.dp_idle_info end
+  $rows=$dp.dp_selected_rows($pane)
+  if len($rows)==0 then return $dp.dp_idle_info end
   if len($rows)==1 then
     $row=$rows[0]
     $ext=$dp.dp_extension($row.path)
@@ -21,7 +21,7 @@ fn dp_selection_info($state)
   -- again through expanded children. Unknown sizes are stated explicitly.
   $bytes=0;$unknown=false
   for $row in $rows
-    if $row.dir or $row.size==nil then $unknown=true
+    if $row.symlink or $row.dir or $row.size==nil then $unknown=true
     else $bytes=$bytes+$row.size end
   end
   return to_string(len($rows)).." selected — "..$dp.dp_size($bytes)..if $unknown then " (known sizes)" else "" end
@@ -72,7 +72,7 @@ fn dp_enabled($state,$id)
   $p=$state.panes[$state.active]
   $n=len($p.selected_paths)
   if $id=="file.open" then return $n>0
-  elif $id=="file.mail" then return $n>0 and all(filter($p.entries,fn($r)=contains($p.selected_paths,$r.path)),fn($r)=$r.file)
+  elif $id=="file.mail" then return $n>0 and all($dp.dp_selected_rows($p),fn($r)=$r.file)
   elif $id=="file.rename" then return $n==1 and not $state.busy
   elif contains(["file.copy-other-pane","file.move-other-pane","file.delete"],$id) then return $n>0 and not $state.busy
   elif $id=="file.new-folder" then return not $state.busy
@@ -191,7 +191,7 @@ fn dp_project($state,$contract,$cache)
     $values[$side.."-tree"]={key:$p.path,revision:$p.revision,active:$state.active==$i,columns:$contract.columns,sort:$p.sort,ascending:$p.ascending,rows:$rows,selected_keys:$p.selected_paths,focused_key:$p.selected,context:$context,background_context:$background}
     $expanded=[]
     for $path in keys($p.expanded) if $p.expanded[$path] then push($expanded,$path) end end
-    push($panes,{path:$p.path,generation:$p.generation,show_hidden:$p.show_hidden,previews:$p.previews,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:filter(map($p.entries,fn($r)=$r.path),fn($path)=contains($p.selected_paths,$path)),expanded:sort($expanded),summary:$p.summary,rows:len($p.entries),error:$p.error})
+    push($panes,{path:$p.path,generation:$p.generation,show_hidden:$p.show_hidden,previews:$p.previews,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:map($dp.dp_selected_rows($p),fn($r)=$r.path),expanded:sort($expanded),summary:$p.summary,rows:len($p.entries),error:$p.error})
   end
   $place_rows=[]
   $place_icons={Home:"house",Filesystem:"hard-drive",Documents:"file-text",Downloads:"download",Music:"music",Pictures:"image",Videos:"film"}
