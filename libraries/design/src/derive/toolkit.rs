@@ -115,7 +115,14 @@ impl Toolkit {
                 &mut out.qt.inactive,
                 &mut out.qt.disabled,
             ] {
-                for role in [BUTTON, BASE, WINDOW, HIGHLIGHT, ALTERNATE_BASE, TOOL_TIP_BASE] {
+                for role in [
+                    BUTTON,
+                    BASE,
+                    WINDOW,
+                    HIGHLIGHT,
+                    ALTERNATE_BASE,
+                    TOOL_TIP_BASE,
+                ] {
                     group[role] = with_alpha(mix(group[role], surface, 0.92), 1.0);
                 }
                 for role in [

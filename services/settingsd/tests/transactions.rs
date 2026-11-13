@@ -45,16 +45,34 @@ fn retired_top_panel_writes_are_described_and_refused_atomically() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());
     let catalogue = settingsd::service::dispatch(&mut state, "settings.describe", "{}").unwrap();
-    for key in ["shell.panels.<panel>.enabled", "shell.panels.<panel>.edge", "shell.panels.<panel>.opacity"] {
-        assert_eq!(described(&catalogue, key).unwrap()["inactive_captures"]["top"]["write"], "refused");
+    for key in [
+        "shell.panels.<panel>.enabled",
+        "shell.panels.<panel>.edge",
+        "shell.panels.<panel>.opacity",
+    ] {
+        assert_eq!(
+            described(&catalogue, key).unwrap()["inactive_captures"]["top"]["write"],
+            "refused"
+        );
     }
     let before = state.accepted.values.clone();
     let revision = state.accepted.revision;
-    for (key, value) in [("shell.panels.top.enabled", json!(true)), ("shell.panels.top.edge", json!("bottom")), ("shell.panels.top.opacity", json!(0.5)), ("shell.panels.top.enabled", serde_json::Value::Null)] {
+    for (key, value) in [
+        ("shell.panels.top.enabled", json!(true)),
+        ("shell.panels.top.edge", json!("bottom")),
+        ("shell.panels.top.opacity", json!(0.5)),
+        ("shell.panels.top.enabled", serde_json::Value::Null),
+    ] {
         let mut edit = request(&state, "dead-panel-write", "light");
         edit.changes.insert(key.into(), value);
-        assert_eq!(state.validate(&edit).unwrap_err()["diagnostics"][0]["code"], "retired_key");
-        assert_eq!(state.apply(edit).unwrap_err()["diagnostics"][0]["code"], "retired_key");
+        assert_eq!(
+            state.validate(&edit).unwrap_err()["diagnostics"][0]["code"],
+            "retired_key"
+        );
+        assert_eq!(
+            state.apply(edit).unwrap_err()["diagnostics"][0]["code"],
+            "retired_key"
+        );
         assert_eq!(state.accepted.values, before);
         assert_eq!(state.accepted.revision, revision);
     }

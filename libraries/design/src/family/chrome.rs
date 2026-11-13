@@ -73,14 +73,7 @@ pub(crate) fn high_contrast(chrome: &mut ResolvedChrome, mode: crate::Mode) {
     } else {
         (LinearRgba::WHITE, LinearRgba::BLACK)
     };
-    for role in [
-        "chrome",
-        "canvas",
-        "dock",
-        "card",
-        "tab_strip",
-        "field",
-    ] {
+    for role in ["chrome", "canvas", "dock", "card", "tab_strip", "field"] {
         if chrome.get(role).is_some() {
             chrome.set(role, surface);
         }

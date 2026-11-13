@@ -150,7 +150,11 @@ impl Authority {
     fn patched(&self, request: &ApplyRequest) -> Result<registry::Values, Value> {
         // Retain old values for load/downgrade, but never acknowledge a dead
         // panel edit. Explicit reset remains available to clean up old state.
-        if let Some(path) = request.changes.keys().find(|path| path.starts_with("shell.panels.top.")) {
+        if let Some(path) = request
+            .changes
+            .keys()
+            .find(|path| path.starts_with("shell.panels.top."))
+        {
             return Err(json!({"status":"validation_failed", "diagnostics":[{
                 "code":"retired_key", "path":path,
                 "message":"Legacy top panel keys do not control the live panel; use scenes.enable, scenes.disable or scenes.move with name panel."
