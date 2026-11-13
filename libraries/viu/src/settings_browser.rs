@@ -427,12 +427,13 @@ mod search_input_tests {
 
     #[test]
     fn search_placeholder_contrasts_with_its_painted_background() {
-        light_frames(|look, output| {
+        light_frames(|_look, output| {
             let hint = output.shapes.iter().find_map(|s| match &s.shape {
                 egui::Shape::Text(t) if t.galley.job.text == "Search preferences" => Some(t), _ => None
             }).expect("search hint painted");
+            let background = output.shapes.iter().take_while(|s| !matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == "Search preferences")).filter_map(|s| match &s.shape { egui::Shape::Rect(r) if r.rect.contains(hint.pos) => Some(r.fill), _ => None }).last().expect("painted search background");
             for section in &hint.galley.job.sections {
-                assert!(contrast(section.format.color, look.window) >= 4.5,
+                assert!(contrast(section.format.color, background) >= 4.5,
                     "placeholder {:?} on {:?}",section.format.color,look.window);
             }
         });

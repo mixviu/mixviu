@@ -579,7 +579,7 @@ mod light_mode_tests {
 
     #[test]
     fn panel_symbolic_icons_keep_contrast_in_light_and_dark() {
-        let doc = scene::parse(include_str!("../../../../../share/scenes/panel/scene.mix")).unwrap();
+        let doc = scene::parse(include_str!("../../../../share/scenes/panel/scene.mix")).unwrap();
         let background = hex(doc.nodes["root"].ports["background"].as_str().unwrap()).unwrap();
         for scheme in [design::Scheme::Mixos, design::Scheme::Ocean, design::Scheme::Sunset] {
             for mode in [design::Mode::Dark, design::Mode::Light] {
