@@ -76,9 +76,10 @@ Options (unknown keys are a hard `OPTION_INVALID` error):
   exited. Note `run`/`run_rc` default to no deadline.
 - `grace`: seconds, default **0**, fractional ok — what happens AT the
   deadline. `0` SIGKILLs the child's process group at once (the historic hard
-  kill). A positive grace sends SIGTERM to the group, then waits until the
+  kill). A positive grace sends SIGCONT and then SIGTERM to the group, then waits until the
   **whole group** is gone or `grace` runs out, then SIGKILLs whatever is
-  left. The grace covers the group, not only the child. In
+  left. Continuing first prevents orphan-group SIGHUP from killing a stopped
+  member when its leader dies on SIGTERM. The grace covers the group, not only the child. In
   `sh -c "pg_dump app | gzip > f"`, `sh` may die at once, but `pg_dump` and
   `gzip` still get the full grace to finish. A descendant that ignores SIGTERM
   is killed at the grace deadline, never left running. The same escalation

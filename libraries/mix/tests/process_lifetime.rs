@@ -35,25 +35,34 @@ async fn run_ok(source: &str) -> String {
 }
 
 /// A deadline starts before exec, so a shell-side wait alone cannot exclude
-/// startup from it. Retry only an unmet fixture precondition, never a result
-/// from an armed fixture. Keep the original per-attempt timeout and grace.
+/// startup from it. Readiness is sampled on return, not necessarily before
+/// the runner's deadline. Once present, every result assertion is final.
+/// Bound elapsed time spent on unready attempts; an accepted attempt still
+/// gets its full timeout and grace. The budget may overrun by one attempt.
 async fn run_ready(
     source: &str,
     ready: &std::path::Path,
-    marker: Option<&std::path::Path>,
+    reset: &[&std::path::Path],
 ) -> String {
-    for _ in 0..10 {
+    let startup_deadline = Instant::now() + Duration::from_secs(5);
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
         let _ = std::fs::remove_file(ready);
-        if let Some(marker) = marker {
-            let _ = std::fs::remove_file(marker);
+        for path in reset {
+            let _ = std::fs::remove_file(path);
         }
         let output = run_ok(source).await;
         if ready.exists() {
+            eprintln!("FIXTURE_READY retries={} path={}", attempts - 1, ready.display());
             let _ = std::fs::remove_file(ready);
             return output;
         }
+        assert!(
+            Instant::now() < startup_deadline,
+            "fixture never reached readiness after {attempts} attempts; last output: {output:?}; source: {source}"
+        );
     }
-    panic!("fixture never reached readiness before its deadline: {source}");
 }
 
 /// A pid is gone when /proc no longer lists it, or lists it as a zombie
@@ -104,7 +113,7 @@ async fn deadline_grace_escalates_to_sigkill_and_reaps_the_descendant() {
         "$r = run_argv([\"sh\", \"-c\", \"trap '' TERM; sleep 60 & echo $!; echo ready > {r}; wait\"], {{timeout: 0.3, grace: 0.6}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. $r.ok .. \" \" .. ($r.duration_ms >= 850))\n\
          print(trim($r.stdout))\n",
-    ), &ready, None)
+    ), &ready, &[])
     .await;
     let lines = parse_lines(&output);
     assert_eq!(lines[0], "true 9 false true", "full output: {output:?}");
@@ -131,7 +140,7 @@ async fn term_ignoring_descendant_is_killed_at_the_grace_deadline() {
         "$r = run_argv([\"sh\", \"-c\", \"(trap '' TERM; echo ready > {r}; exec sleep 60) & echo $!; wait\"], {{timeout: 0.3, grace: 1}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. ($r.duration_ms >= 1250) .. \" \" .. ($r.duration_ms < 5000))\n\
          print(trim($r.stdout))\n",
-    ), &ready, None)
+    ), &ready, &[])
     .await;
     let lines = parse_lines(&output);
     assert_eq!(lines[0], "true 15 true true", "full output: {output:?}");
@@ -164,7 +173,7 @@ async fn term_honouring_descendant_gets_the_grace_to_finish() {
     let output = run_ready(&format!(
         "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 1; echo done > {m}; exit 0' TERM; echo ready > {r}; while true; do sleep 0.1; done) & wait\"], {{timeout: 0.3, grace: 5}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. ($r.duration_ms >= 1200) .. \" \" .. ($r.duration_ms < 4500))\n",
-    ), &ready, Some(&marker))
+    ), &ready, &[&marker])
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
@@ -187,7 +196,7 @@ async fn drain_deadline_honours_grace_for_a_pipe_holding_descendant() {
     let output = run_ready(&format!(
         "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 0.5; echo done > {m}; exit 0' TERM; echo ready > {r}; while true; do sleep 0.1; done) &\"], {{timeout: 0.3, grace: 5}})\n\
          print($r.timed_out .. \" \" .. $r.exit_code .. \" \" .. ($r.duration_ms < 4500))\n",
-    ), &ready, Some(&marker))
+    ), &ready, &[&marker])
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
@@ -310,10 +319,22 @@ async fn run_parallel_timeout_override_applies_before_grace_validation() {
 }
 
 /// Review R6: a STOPPED member never handles SIGTERM until it is continued.
-/// The escalation sends SIGCONT right after SIGTERM, so a stopped member
+/// The escalation sends SIGCONT before SIGTERM, so a stopped member
 /// that traps SIGTERM still runs its cleanup inside the grace.
 #[tokio::test]
 async fn a_stopped_member_is_continued_so_it_can_honour_sigterm() {
+    check_stopped_member(true).await;
+}
+
+/// The common worker & wait topology: the leader has no TERM trap. Continue
+/// the stopped worker before TERM can kill the leader and orphan the group,
+/// otherwise the kernel's SIGHUP can kill the worker before its TERM trap.
+#[tokio::test]
+async fn stopped_member_honours_sigterm_when_its_untrapped_leader_dies() {
+    check_stopped_member(false).await;
+}
+
+async fn check_stopped_member(keep_leader: bool) {
     let marker = marker_path("stopped");
     let installed = marker_path("stopped-installed");
     let ready = marker_path("stopped-ready");
@@ -329,19 +350,23 @@ async fn a_stopped_member_is_continued_so_it_can_honour_sigterm() {
     let h = helper.display();
     let i = installed.display();
     let r = ready.display();
-    // Keep the leader alive until its child exits. Otherwise its death can
-    // orphan the stopped group: the kernel sends SIGHUP (killing the child)
-    // and SIGCONT (masking a missing SIGCONT in Mix).
-    // Arm only after observing T, so a fast TERM trap before STOP cannot pass.
+    // The trapped variant isolates native SIGCONT from the kernel's orphan
+    // SIGCONT; the untrapped variant tests protection from orphan SIGHUP.
+    let term_trap = if keep_leader { "trap 'wait' TERM; " } else { "" };
+    // Reopen stat on every poll. EOF, Z and X mean the child exited; the
+    // bounded loop cannot wait forever if it never stops. T follows trap
+    // installation in the helper, and is required before writing ready.
     let output = run_ready(&format!(
-        "$r = run_argv([\"sh\", \"-c\", \"trap 'wait' TERM; sh {h} & child=$!; while ! test -f {i}; do sleep 0.01; done; while read -r pid comm state rest < /proc/$child/stat; do if test $state = T; then echo ready > {r}; break; fi; sleep 0.01; done; wait\"], {{timeout: 0.5, grace: 3}})\n\
-         print($r.timed_out .. \" \" .. ($r.duration_ms < 3000))\n",
-    ), &ready, Some(&marker))
+        "$r = run_argv([\"sh\", \"-c\", \"{term_trap}sh {h} & child=$!; polls=0; while test $polls -lt 100; do if ! read -r pid comm state rest < /proc/$child/stat; then break; fi; case $state in T) if test -f {i}; then echo ready > {r}; break; fi ;; Z|X) break ;; esac; polls=$((polls + 1)); sleep 0.01; done; wait\"], {{timeout: 0.5, grace: 3}})\n\
+         print($r.timed_out .. \" \" .. ($r.duration_ms < 3000))\n\
+         print($r.signal == 15)\n",
+    ), &ready, &[&marker, &installed])
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
     let _ = std::fs::remove_file(&helper);
     let _ = std::fs::remove_file(&installed);
-    assert_eq!(output, "true true\n", "full output: {output:?}");
+    let expected = if keep_leader { "true true\nfalse\n" } else { "true true\ntrue\n" };
+    assert_eq!(output, expected, "full output: {output:?}");
     assert!(finished, "the stopped member never ran its SIGTERM trap");
 }
