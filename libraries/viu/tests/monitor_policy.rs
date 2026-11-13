@@ -80,20 +80,19 @@ end
                     .unwrap();
                 let result = done(&runtime, &rx);
                 assert_eq!(result.reply.unwrap().body["reverse"], descending);
-                assert_eq!(
-                    result.model.unwrap()["table"]["initial"]["ascending"],
-                    !descending
-                );
+                let table = result.model.unwrap()["table"]["initial"].clone();
+                assert_eq!(table["ascending"], !descending);
+                // Striped tables retain gold's reverse=true => up-arrow flag.
+                assert_eq!(table["reverse"], !descending);
                 runtime
                     .event(
                         "monitor.intent".into(),
                         json!({"id":"processes","action":"sort","value":{"column":column}}),
                     )
                     .unwrap();
-                assert_eq!(
-                    done(&runtime, &rx).model.unwrap()["table"]["initial"]["ascending"],
-                    descending
-                );
+                let table = done(&runtime, &rx).model.unwrap()["table"]["initial"].clone();
+                assert_eq!(table["ascending"], descending);
+                assert_eq!(table["reverse"], descending);
             }
         }
     }

@@ -7,7 +7,7 @@ for $column in ["name","pid","user","cpu","memory","io"]
       $s.sort=$column;$s.reverse=$descending;$s.tree=$tree
       $q=$c.query($s);$table=$c.project($s).table.initial
       $natural_desc=contains(["cpu","memory","io"],$column)
-      if $q.reverse!=(if $natural_desc then not $descending else $descending end) or $q.tree!=$tree or $table.ascending==$descending then raise("SORT","Query/arrow direction: "..$column) end
+      if $q.reverse!=(if $natural_desc then not $descending else $descending end) or $q.tree!=$tree or $table.ascending==$descending or $table.reverse==$descending then raise("SORT","Query/arrow direction: "..$column) end
       if $c.sort_edit($s,$column).reverse==$descending or $c.sort_edit($s,$column,$descending).reverse!=$descending then raise("CLICK","Header/Bus toggle") end
     end
   end
