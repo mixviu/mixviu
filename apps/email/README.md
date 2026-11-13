@@ -1,40 +1,38 @@
 # Email on the generic Viu host
 
-Run `viu run apps/email /absolute/path/accounts.json`, then choose Connect,
-a mailbox and a message. Mail data uses maild's existing authenticated JMAP
-wire. Compose uses an explicitly configured native Bus `maild.submit` route.
+Run `viu run apps/email`. Accounts come from settingsd's `email.accounts`
+and `email.default_account`. Open Email Settings to manage them, or use the
+app's Bus commands with these JSON argument objects (these are not shell commands):
 
-```json
-{
-  "accounts": [{
-    "id": "personal",
-    "label": "Personal",
-    "url": "https://mail.example.test",
-    "user": "user@example.test",
-    "password_file": "/home/user/.config/email/password",
-    "submit_service": "maild"
-  }]
-}
+```text
+email.account.set {"name":"Personal","url":"https://mail.example.test","email":"user@example.test"}
+email.account.password.set {"id":"<returned-account-id>","password":"<your-password>"}
+email.account.default {"id":"<returned-account-id>"}
 ```
 
-Keep the catalogue and password file private (mode 0600). An optional
-`ca_file` names a PEM trust certificate. URLs are origins without a trailing
-slash/path; HTTPS is required except for loopback HTTP test servers. Only
-the same origin's `/.well-known/jmap` and `/jmap` are supported. Credentials
-are read in the background worker and excluded from `email.info` replies.
-No settingsd migration or credential editor is implemented yet.
+`email.account.set` returns the new account ID; supply that ID to update an
+existing account. Optional fields include `ca_path` (an absolute PEM file
+path), `enabled`, `signature` and `identities`. Passwords stay in the app's
+private `secrets.conf.mix` file, separate from settingsd and account readbacks.
+Keep that file private; do not put credentials in command history or logs.
 
-The submission route is optional for reading. Configure it only when that Bus
-service owns the selected account. Acceptance is a maild receipt, not delivery
-confirmation. A lost reply retains the draft and operation ID; explicit Send
-retries that same ID. Drafts and pending IDs are in memory: do not quit with
-an unresolved submission. Durable outbox/restart reconciliation is deferred.
+The old positional accounts catalogue is a compatibility startup input,
+not the current account authority: settingsd's live account snapshot replaces
+it. Use Email Settings or the commands above for persistent configuration.
+When settingsd is unavailable, cached accounts are shown read-only.
 
-Lists page 200 rows at a time through the shared virtual table. Plain message
-bodies are bounded at 64 KiB and shown in a native read-only scrollable editor;
-`email.message` also returns the full admitted text. Header labels are excerpts.
-HTML, attachments and richer reader/compose workflows remain deferred.
+Select an account, mailbox and message. Reads and sends use authenticated
+JMAP HTTPS; sending uploads MIME, creates the email, submits it and files it
+in Sent. No `submit_service` setting is needed. Server replies distinguish
+sent, filed and uncertain outcomes; acceptance does not confirm delivery.
+
+Paged lists and reader modes are implemented. The current acceptance inventory
+in [the port record](../../docs/ports/email.md#round-6-acceptance-record-2026-11-07-accepted)
+records attachment transfers/previews, draft save/restore, document/close gates
+and calendar/contact CRUD. These are separate from durable outbox/restart
+reconciliation; this README does not promise that pending sends survive restart.
+Older checkpoints retain their historical open items and the superseded
+catalogue/submission route.
 
 `viu run apps/email --fixture` is a separate synthetic-list measurement mode
-that cannot contact a mail server. See [the inventory](../../docs/ports/email.md)
-for all limits, original-source comparison and 2,000-row measurements.
+that cannot contact a mail server.

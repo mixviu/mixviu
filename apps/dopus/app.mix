@@ -203,7 +203,7 @@ fn dp_job_completed($completion)
     elif $state.job==$completion.tag.id then
       $state.busy=false;$state.job=nil
       $result=$completion.body
-      $state.info=if $completion.rc==0 then "Select a file or folder" else $result.message ?? "Operation failed" end
+      $state.info=if $completion.rc==0 then $core.dp_idle_info else $result.message ?? "Operation failed" end
       $panes=$state.panes
       try
         for $i=0 to 1 $panes[$i]=$core.dp_relist($panes[$i]) end

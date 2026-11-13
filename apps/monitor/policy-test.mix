@@ -1,0 +1,96 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$fixture=require("../../libraries/viu/tests/monitor_procfs.mix");$root=$fixture.create()
+try
+$failed_root=$root.."/failed-setup"
+mkdir($failed_root)
+try
+  $unexpected=$fixture.create($root.."/absent-source",$failed_root)
+  raise("CLEANUP","Fixture setup unexpectedly succeeded")
+catch $message
+  if is_dir($failed_root) then raise("CLEANUP","Failed setup leaked root") end
+end
+$c=require($root.."/monitor/core.mix");$a=require($root.."/monitor/actions.mix");$p=require($root.."/monitor/signal-policy.mix")
+$s=$c.initial()
+if $p.admission($s,nil).message!="Select a process in the table" or $p.admission($s,1).message!="Select a process other than PID 1" then raise("SELECTION","Wrong disabled reason") end
+if contains($c.project($s).status,"Select a process") or $c.status_line($s).message!=nil then raise("SELECTION","Idle status contains selection prompt") end
+$s.selected=1
+if not contains($c.project($s).status,"PID 1") or not contains($c.status_line($s).message,"PID 1") then raise("SELECTION","Selected PID 1 needs visible reason") end
+for $column in ["name","pid","user","cpu","memory","io"]
+  for $descending in [false,true]
+    for $tree in [false,true]
+      $s.sort=$column;$s.reverse=$descending;$s.tree=$tree
+      $q=$c.query($s);$table=$c.project($s).table.initial
+      $natural_desc=contains(["cpu","memory","io"],$column)
+      if $q.reverse!=(if $natural_desc then not $descending else $descending end) or $q.tree!=$tree or $table.ascending==$descending or $table.reverse==$descending then raise("SORT","Query/arrow direction: "..$column) end
+      if $c.sort_edit($s,$column).reverse==$descending or $c.sort_edit($s,$column,$descending).reverse!=$descending then raise("CLICK","Header/Bus toggle") end
+    end
+  end
+end
+$s=$c.sort_edit($c.initial(),"name")
+if $s.reverse then raise("CLICK","New column starts ascending") end
+for $tree in [false,true]
+  for $uid in [0,1000]
+    $s=$c.initial();$s.tree=$tree
+    write_file($root.."/proc/self/status","Uid: "..to_string($uid).." "..to_string($uid))
+    for $case in [[1,0,false],[90,1000,false],[80,1000,false],[42,1000,true],[43,1001,$uid==0],[44,nil,false],[0,1000,false]]
+      $s.selected=$case[0];$s.processes=[{pid:$case[0],uid:$case[1],name:"fixture",user:"user",cpu:0,memory:0}]
+      $expected=$case[2]
+      if $case[0]>1 then
+        write_file($root.."/proc/"..to_string($case[0]).."/status",if $case[1]==nil then "" else "Uid: "..to_string($case[1]).." "..to_string($case[1]) end)
+      end
+      if $p.allowed($s,$s.selected)!=$expected or $c.project($s).end_button.properties.enabled!=$expected then raise("ADMISSION","Button/policy mismatch") end
+      for $action in filter($a.registry($s),fn($x)=contains(["process.end","process.kill"],$x.id))
+        if $action.enabled!=$expected then raise("ADMISSION","Action mismatch") end
+      end
+      $s.node="peer"
+      if $p.allowed($s,$s.selected) then raise("REMOTE","Remote signal") end
+      $s.node="";$s.dialog="about"
+      if $p.allowed($s,$s.selected) then raise("DIALOG","Dialog signal") end
+      $s.dialog=nil
+    end
+    $s.selected=42;$s.processes=[]
+    if $p.allowed($s,42) then raise("MISSING","Stale selection") end
+  end
+end
+$live=$p.local_context()
+if $live.uid==nil or not contains($live.ancestors,1) then raise("CONTEXT","Local credentials/ancestry unavailable") end
+$s=$c.initial();$s.selected=45;$s.processes=[{pid:45,name:"fixture",user:"user",cpu:0,memory:0}]
+for $unit in ["viud","noded","mixd","shell-host"]
+  $fixture.process($root,45,1,1000,$unit.."@4.service")
+  if not $p.protected(45) or $p.admission($s,45).error_code!="PROTECTED" then raise("PROTECTED",$unit) end
+end
+write_file($root.."/proc/45/cgroup","0::/system.slice/apps@4.service \r\n2:cpu,cpuacct:/system.slice/viud@4.service \r\n1:name=systemd:/other.scope\n")
+if not $p.protected(45) then raise("CGROUP","Trim each v1/v2 line") end
+$unknown=replace_must(read_file($root.."/monitor/signal-policy.mix"),'$session="4"','$session=nil')
+write_file($root.."/monitor/unknown-policy.mix",$unknown)
+$unknown_policy=require($root.."/monitor/unknown-policy.mix")
+for $n in ["4","7","1000"]
+  $fixture.process($root,45,1,1000,"viud@"..$n..".service")
+  $refused=$unknown_policy.admission($s,45)
+  if not $unknown_policy.protected(45) or $refused.error_code!="PROTECTED" or not contains($refused.message,"unknown") then raise("UNKNOWN_SESSION","Fail closed for any session") end
+end
+$fixture.process($root,45,1,1000,"apps@7.service")
+if $unknown_policy.protected(45) then raise("UNKNOWN_SESSION","Apps exclusion") end
+$fixture.process($root,45,90,1000,"viud@7.service")
+if $unknown_policy.protected(45) then raise("UNKNOWN_SESSION","Not a unit main") end
+for $case in [[1,"apps@4.service"],[2,"viud@4.service"],[1,"viud@5.service"],[1,"viud@4.service/child"],[1,"viud.service"]]
+  $fixture.process($root,45,$case[0],1000,$case[1])
+  if $p.protected(45) then raise("PROTECTED","Overbroad protection") end
+end
+$fixture.process($root,45,1,1000,"apps@4.service")
+write_file($root.."/proc/self/status","Uid: 1000 1000")
+if not $p.allowed($s,45) then raise("APP","Same uid app refused") end
+write_file($root.."/proc/80/stat","broken")
+if $p.allowed($s,45) or not contains($a.signal_reason($s),"retry") then raise("RETRY","Procfs failure must explain retry") end
+$fixture.process($root,80,1,1000,"apps@4.service")
+if not $p.allowed($s,45) then raise("RETRY","Failure cached") end
+$fixture.process($root,80,45,1000,"apps@4.service")
+if $p.allowed($s,45) then raise("ANCESTOR","Reparenting not checked") end
+$fixture.process($root,80,1,1000,"apps@4.service")
+$fixture.process($root,45,1,1001,"apps@4.service")
+if $p.allowed($s,45) then raise("UID","Ownership change not checked") end
+if $p.session_id("/run/mix/session/12","4")!="12" or $p.session_id("","4")!="4" or $p.session_id("","bad")!=nil then raise("SESSION","Environment parsing") end
+finally
+  $removed=run_argv_must(["rm","-r",$root])
+end
+print("Monitor sort adapter/arrow and signal admission pass; no signals sent")

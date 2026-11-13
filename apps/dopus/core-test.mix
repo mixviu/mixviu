@@ -3,6 +3,7 @@
 -- Real filesystem checks; the supplied test directory must not exist.
 $dp=require("core.mix")
 $ops=require("operations.mix")
+$view=require("presentation.mix")
 $base=args()[0]
 if type($base)!="string" or not starts_with($base,"/") or exists($base) then raise("TEST_ROOT","Supply a fresh absolute disposable directory") end
 mkdir($base)
@@ -100,5 +101,24 @@ $r=$ops.dp_batch("delete",[$base.."/right/first.txt",$base.."/right/Folder",$bas
 dptest_assert($r.ok and not exists($base.."/right/Folder") and $dp.dp_lstat($base.."/right/dangling")==nil,"delete removes actual entries")
 dptest_assert(exists($base.."/left/first.txt"),"deleting copied link/tree never touches source")
 push($checks,"delete")
+-- Exercise actual listing metadata for links to files/directories and dangling links.
+symlink("Folder",$base.."/left/directory-link")
+for $name in [".bashrc",".hidden.txt","trailing.","normal.TXT"]
+  write_file($base.."/left/"..$name,"x")
+end
+$p=$dp.dp_pane({path:$base.."/left",show_hidden:true})
+for $name in [".bashrc",".hidden.txt","trailing.","normal.TXT"]
+  $p.selected_paths=[$base.."/left/"..$name]
+  $expected=if $name=="normal.TXT" then "TXT file" else "File" end
+  dptest_assert($view.dp_selection_info({info:$dp.dp_idle_info,active:0,panes:[$p]})==$name.." — "..$expected.." — 1 B","hidden/trailing-dot selection kind: "..$name)
+end
+for $name in ["link","directory-link","dangling"]
+  $path=$base.."/left/"..$name
+  $p.selected_paths=[$path]
+  dptest_assert(contains($view.dp_selection_info({info:$dp.dp_idle_info,active:0,panes:[$p]}),"Symbolic link"),"single link kind: "..$name)
+  $p.selected_paths=[$path,$base.."/left/normal.TXT"]
+  dptest_assert($view.dp_selection_info({info:$dp.dp_idle_info,active:0,panes:[$p]})=="2 selected — 1 B (known sizes)","link bytes excluded from known total: "..$name)
+end
+push($checks,"selection-links-and-hidden-names")
 print(json_encode({ok:true,groups:$checks,root:$base}))
 remove_dir($base)
