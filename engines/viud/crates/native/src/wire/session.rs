@@ -44,6 +44,11 @@ pub fn register(
 
             match event {
                 smithay::backend::session::Event::PauseSession => {
+                    // KMS exclusivity and its rescue timers have no authority
+                    // over the render-node desk's damage-driven schedule.
+                    protocols::tearing::gate::set(protocols::tearing::gate::Gate::Off);
+                    protocols::tearing::gate::set_governed(false);
+                    crate::wire::watchdog::disarm(&state.loop_handle, &mut ctx_ref.watchdog);
                     crate::render::execute::blank::release(ctx_ref);
                     for pipe in &mut ctx_ref.outputs {
                         crate::render::execute::late_latch::cancel(pipe);

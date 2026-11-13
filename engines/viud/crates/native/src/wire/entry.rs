@@ -64,13 +64,6 @@ pub fn wire(
     // `format.registrar` treats an unregistered role as a race and refuses to
     // answer across it, and the assembly below is the first thing that asks.
     absent(_loop, "gles composite (no vulkan device is consulted)");
-    let renderer = crate::assemble::renderer::assemble(
-        _loop
-            .inner
-            .kernel
-            .get(&render_gles::format::registrar::FORMATS),
-        &mut display,
-    );
     let reuse = existing_output.is_some();
     if let Some(output) = existing_output {
         output.change_current_state(
@@ -81,6 +74,13 @@ pub fn wire(
         );
         display.output = output;
     }
+    let renderer = crate::assemble::renderer::assemble(
+        _loop
+            .inner
+            .kernel
+            .get(&render_gles::format::registrar::FORMATS),
+        &mut display,
+    );
 
     // Bind the RC cell into loop so it can register a DMABuf global.
     *_loop.inner.kernel.get_mut(&world::state::GPU_BINDING_MUT) =

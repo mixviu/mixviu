@@ -99,7 +99,8 @@ pub fn register(
             }
         },
         move |state: &Loop| {
-            if *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF) {
+            if matches!(state.inner.status_session, StatusSession::Paused)
+                || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF) {
                 return Vec::new();
             }
             let Ok(ctx) = ctx_outstanding.try_borrow() else {

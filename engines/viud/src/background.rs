@@ -59,7 +59,7 @@ pub fn wire(
         state.state.schedule_redraw(protocols::redraw::schedule::RedrawReason::Resume);
     })?;
     // Only this blocking, event-driven waiter runs off-thread. No seat/device
-    // or Wayland state crosses threads. It exits after the first activation;
+    // or Wayland state crosses threads. Once attached, pings are ignored;
     // libseat owns subsequent pause/resume notifications.
     let _ = token;
     if std::env::var("MIX_TEST_VIUD_SEAT_INACTIVE").as_deref() == Ok("1") {
