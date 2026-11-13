@@ -270,6 +270,7 @@ on viu.tick
     for $prefix in ["wallpaper","appearance","window","shell.panels","workspaces","displays","sound","power","input","keymaps","apps_default","apps_startup","xwayland","agent_seat","time","region","accessibility","terminal","email","ced","apps","tune","state"] subscribe("settingsd.desktop.keys.default."..$prefix) end
     subscribe("settingsd.desktop.look.default")
     subscribe("scenes.changed")
+    $state=$panel.refresh($state)
     $state.subscribed=true
   end
   if not $state.release_started then $state.release_started=true;$state=release_request($state,"releases.list",{}) end
