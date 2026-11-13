@@ -44,7 +44,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 else { s.start_answers.push(answer); }
                 return;
             }
-            if s.recording.as_ref().is_none_or(|r| r.terminal.is_none()) && s.failed.is_none() {
+            if s.recording.as_ref().is_some_and(|r| r.terminal.is_none()) || s.recording.is_none() && s.failed.is_none() {
                 answer(ControlReply::refused("record_busy",json!({"session":s.id}))); return;
             }
         }
@@ -167,7 +167,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             }
             let mut s=session.borrow_mut();
             s.pending=false;
-            if s.failed.is_some() { return; }
+            if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| r.status()["state"] != "recording") { return; }
             if s.recording.is_none() {
                 match Recording::new(s.id.clone(),s.path.clone(),width,height,s.fps) {
                     Ok(recording)=>s.recording=Some(recording),

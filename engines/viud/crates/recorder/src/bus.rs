@@ -52,6 +52,7 @@ impl Recording {
             self.last = rgb.chunks_exact(3).flat_map(|p| [p[2],p[1],p[0],255]).collect();
         } else { self.repeated += 1; }
         let encoder = self.encoder.as_ref().ok_or("recording is finishing")?;
+        if let Some(error) = encoder.error() { return Err(error); }
         if encoder.try_push(self.last.clone()) {
             let t_us = monotonic_us() - self.t0_us;
             writeln!(self.frames_file,"{}",json!({"frame":self.frames,"t_us":t_us})).map_err(|e| e.to_string())?;
@@ -70,7 +71,7 @@ impl Recording {
     }
 
     pub fn status(&self) -> Value {
-        json!({"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":std::fs::metadata(&self.path).map(|m|m.len()).unwrap_or(0),"queue":Value::Null,"error":self.error})
+        json!({"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":std::fs::metadata(&self.path).map(|m|m.len()).unwrap_or(0),"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"error":self.error})
     }
 
     pub fn stop(&mut self, discard: bool) {

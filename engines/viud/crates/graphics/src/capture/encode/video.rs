@@ -16,6 +16,7 @@ use slots::library::process::child::hygiene::command;
 use slots::library::process::child::spawn as child_spawn;
 use std::sync::mpsc::{SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use std::thread::JoinHandle;
 
@@ -27,6 +28,8 @@ pub struct VideoEncoder {
     width: u32,
     height: u32,
     stderr: Arc<Mutex<String>>,
+    queued: Arc<AtomicUsize>,
+    closed: Arc<AtomicBool>,
 }
 
 impl VideoEncoder {
@@ -92,12 +95,18 @@ impl VideoEncoder {
             });
         }
         let (tx, rx) = sync_channel::<Vec<u8>>(4);
+        let queued = Arc::new(AtomicUsize::new(0));
+        let queue_count = queued.clone();
+        let closed = Arc::new(AtomicBool::new(false));
+        let writer_closed = closed.clone();
         let join = std::thread::spawn(move || {
             while let Ok(buf) = rx.recv() {
+                queue_count.fetch_sub(1, Ordering::Relaxed);
                 if stdin.write_all(&buf).is_err() {
                     break;
                 }
             }
+            writer_closed.store(true, Ordering::Release);
             // Dropping `stdin` here signals EOF so ffmpeg flushes and exits.
         });
 
@@ -109,6 +118,8 @@ impl VideoEncoder {
             width: w,
             height: h,
             stderr,
+            queued,
+            closed,
         })
     }
 
@@ -119,15 +130,20 @@ impl VideoEncoder {
 
     /// Queue one BGRA frame (must be exactly `width*height*4` bytes).
     pub fn push(&self, bgra: Vec<u8>) {
-        if let Some(tx) = &self.tx {
-            let _ = tx.try_send(bgra);
-        }
+        let _ = self.try_push(bgra);
     }
 
     /// Non-blocking admission: false means the bounded queue overran or closed.
     pub fn try_push(&self, bgra: Vec<u8>) -> bool {
-        bgra.len() == self.width as usize * self.height as usize * 4
-            && self.tx.as_ref().is_some_and(|tx| tx.try_send(bgra).is_ok())
+        if bgra.len() != self.width as usize * self.height as usize * 4 { return false; }
+        self.queued.fetch_add(1, Ordering::Relaxed);
+        if self.tx.as_ref().is_some_and(|tx| tx.try_send(bgra).is_ok()) { true }
+        else { self.queued.fetch_sub(1, Ordering::Relaxed); false }
+    }
+
+    pub fn queue(&self) -> usize { self.queued.load(Ordering::Relaxed) }
+    pub fn error(&self) -> Option<String> {
+        self.closed.load(Ordering::Acquire).then(|| format!("ffmpeg pipe closed: {}",self.stderr.lock().unwrap()))
     }
 
     /// Call on a finaliser thread. Kill a stuck encoder after the deadline,
@@ -155,31 +171,49 @@ impl VideoEncoder {
 
     /// Stop the stream, wait for ffmpeg to flush, and return the temp mp4 path
     /// (or `None` if ffmpeg exited non-zero / produced nothing).
-    pub fn finish(mut self) -> Option<PathBuf> {
-        self.tx = None; // close the channel → writer thread ends → stdin EOF
-        if let Some(j) = self.join.take() {
-            let _ = j.join();
-        }
-        let status = self.child.take().and_then(|mut c| c.wait().ok());
-        match status {
-            Some(s) if s.success() => Some(std::mem::take(&mut self.temp)),
-            other => {
-                warn!("ffmpeg exited unsuccessfully: {other:?}");
-                let _ = std::fs::remove_file(&self.temp);
-                None
-            }
+    pub fn finish(self) -> Option<PathBuf> { self.finish_result().ok() }
+
+    pub fn discard(self) {
+        std::thread::spawn(move || {
+            if let Ok(path) = self.finish_result() { let _ = std::fs::remove_file(path); }
+        });
+    }
+}
+
+impl Drop for VideoEncoder {
+    fn drop(&mut self) {
+        self.tx = None;
+        if let Some(mut child) = self.child.take() {
+            let path = std::mem::take(&mut self.temp);
+            std::thread::spawn(move || {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = std::fs::remove_file(path);
+            });
+        } else if !self.temp.as_os_str().is_empty() {
+            let _ = std::fs::remove_file(&self.temp);
         }
     }
+}
 
-    /// Drop the encoder and delete the temp file (discard path).
-    pub fn discard(mut self) {
-        self.tx = None;
-        if let Some(j) = self.join.take() {
-            let _ = j.join();
-        }
-        if let Some(mut c) = self.child.take() {
-            let _ = c.wait();
-        }
-        let _ = std::fs::remove_file(&self.temp);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn queue_overrun_never_waits_for_encoder() {
+        // A deliberately stalled encoder: keep the receiving end alive but
+        // never drain it. Exercise the real admission path deterministically.
+        let (tx, _rx) = sync_channel(4);
+        let encoder = VideoEncoder {
+            tx:Some(tx), join:None, child:None, temp:PathBuf::new(), width:2,height:2,
+            stderr:Arc::new(Mutex::new(String::new())),queued:Arc::new(AtomicUsize::new(0)),closed:Arc::new(AtomicBool::new(false)),
+        };
+        for _ in 0..4 { assert!(encoder.try_push(vec![0;16])); }
+        let started=Instant::now();
+        for _ in 0..1000 { assert!(!encoder.try_push(vec![0;16])); }
+        assert!(started.elapsed()<Duration::from_secs(1));
+        assert_eq!(encoder.queue(),4);
+        assert!(!encoder.try_push(vec![0;15]));
+        assert_eq!(encoder.queue(),4);
     }
 }
