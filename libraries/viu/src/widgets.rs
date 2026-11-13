@@ -1222,14 +1222,54 @@ impl Widgets {
                     {
                         ui.add(crate::icons::image_of(ui.ctx(), icon, 14.0, colour));
                     }
-                    ui.small(value["left"].as_str().unwrap());
-                    if let Some(error) = value["message"].as_str() {
-                        ui.small(egui::RichText::new(error).color(ui.visuals().error_fg_color));
+                    // Reserve the right fields before laying out the notice.
+                    let mut rect = ui.available_rect_before_wrap();
+                    let fields = value["right"].as_array().unwrap();
+                    if !fields.is_empty() {
+                        let right = ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                for item in fields {
+                                    ui.small(item.as_str().unwrap());
+                                }
+                            },
+                        );
+                        rect.max.x = (right.response.rect.left() - ui.spacing().item_spacing.x)
+                            .max(rect.min.x);
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        for item in value["right"].as_array().unwrap() {
-                            ui.small(item.as_str().unwrap());
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                        ui.set_clip_rect(ui.clip_rect().intersect(rect));
+                        // The error takes priority over the ordinary left text.
+                        let mut left = rect;
+                        if let Some(error) = value["message"].as_str().filter(|s| !s.is_empty()) {
+                            let message = ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(error)
+                                                .small()
+                                                .color(ui.visuals().error_fg_color),
+                                        )
+                                        .wrap_mode(egui::TextWrapMode::Extend),
+                                    );
+                                },
+                            );
+                            left.max.x = (message.response.rect.left()
+                                - ui.spacing().item_spacing.x)
+                                .max(left.min.x);
                         }
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| {
+                            ui.set_clip_rect(ui.clip_rect().intersect(left));
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(value["left"].as_str().unwrap())
+                                        .small()
+                                        .color(colour),
+                                )
+                                .truncate(),
+                            );
+                        });
                     });
                 })
                 .response

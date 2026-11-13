@@ -1,5 +1,7 @@
 # Ced parity inventory
 
+Activation results and caller deadlines: [Application control](../app-control.md).
+
 Gold reference: MixOS 8779f3328. Acceptance: see [ced-acceptance.md](ced-acceptance.md) for the exact tested source, native witnesses and inspected capture regions.
 
 Ced is a Mix application over the reusable in-process editor-model Mirror.
