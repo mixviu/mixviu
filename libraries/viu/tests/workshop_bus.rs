@@ -179,13 +179,16 @@ fn ordering_keeps_drive_fences_and_only_read_queries_bypass_undrawn_work() {
         h.held().contains(&"workshop.ui.click".into())
     });
     let mutation = request(&rt, &caller, "workshop.mutate", json!({}));
+    pump_until(&mut host, |h| h.held().contains(&"workshop.mutate".into()));
     let resize = request(
         &rt,
         &caller,
         "workshop.window",
         json!({"action":"resize","width":800,"height":600}),
     );
+    pump_until(&mut host, |h| h.held().contains(&"workshop.window".into()));
     let window_state = request(&rt, &caller, "workshop.window.state", json!({}));
+    pump_until(&mut host, |h| h.held().contains(&"workshop.window.state".into()));
     let state = request(&rt, &caller, "viu.state", json!({}));
     assert_eq!(
         call(&mut host, &rt, &caller, "workshop.ping").1["mutations"],
