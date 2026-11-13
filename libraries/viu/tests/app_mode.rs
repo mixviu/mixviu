@@ -328,8 +328,7 @@ fn app_mode_child() {
                 }
                 let model = done.model.unwrap();
                 let saved: Value = serde_json::from_slice(
-                    &std::fs::read(temporary.path().join(app).join("mode.json"))
-                        .unwrap(),
+                    &std::fs::read(temporary.path().join(app).join("mode.json")).unwrap(),
                 )
                 .unwrap();
                 assert_eq!(
