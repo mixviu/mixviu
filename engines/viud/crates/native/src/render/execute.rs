@@ -297,19 +297,27 @@ fn capture_windows_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &
     };
     for pipe in &ctx.outputs {
         let scale = pipe.output.current_scale().fractional_scale();
-        screencopy::offscreen::capture_windows(renderer, &pipe.output, |renderer, target| {
-            let window = world::window::draw::frame::scene::capture_window(
-                state,
-                target.id,
-                target.generation,
-            )
-            .map_err(|error| screencopy::file::ControlReply::WindowTarget {
-                id: target.id,
-                error,
-            })?;
-            world::window::draw::frame::scene::capture(renderer, &window, scale)
+        screencopy::offscreen::capture_windows(
+            renderer,
+            &pipe.output,
+            |renderer, target, recording| {
+                let window = world::window::draw::frame::scene::capture_window(
+                    state,
+                    target.id,
+                    target.generation,
+                )
+                .map_err(|error| screencopy::file::ControlReply::WindowTarget {
+                    id: target.id,
+                    error,
+                })?;
+                if recording {
+                    recorder::interface::render::bus_window_elements(renderer, &window, scale)
+                } else {
+                    world::window::draw::frame::scene::capture(renderer, &window, scale)
+                }
                 .map_err(screencopy::file::capture_failed)
-        });
+            },
+        );
     }
     screencopy::file::fail_windows("no capture output available");
 }

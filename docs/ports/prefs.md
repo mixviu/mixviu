@@ -670,6 +670,11 @@ validation. A scenes.list reply missing the scenes list retains confirmed
 state and shows a translated read error; an empty list confirms removal.
 All panel command errors now use strings.ftl. The loader and task-scope
 behaviour serialise settings read-modify-write with the same advisory
-.settings.lock, released in finally. A competing-writer test proves refusal
-under contention and preservation of the completed task-scope save. Edge
+.settings.lock in the scene root, released in finally. The lock lives outside
+the swapped installation so waiting writers keep the same inode after Reset.
+Reset holds it across settings copy, swap and reconciliation, retaining panel
+edge and task scope even on explicit Reset. Other scenes retain their shipped
+Reset defaults and the upgrade policy for edited settings. Competing-writer
+tests prove refusal under contention, exclusion during swap, preservation of
+completed saves and release on success and error. Edge
 enum equality is checked across Preferences, the loader and the registry.

@@ -199,6 +199,8 @@ fn initial($root, $templates, $host, $me, $io)
     host_live:false, sync_needed:true, services:nil, legacy:"quoin-panel", connection:nil, revision:0, published:"",
     sequence:$sequence, diagnostic:nil, response:{}, rc:0}
   $s.library_seen = library_signature($s)
+  $recovery = $root .. "/.recovery"
+  $s.recovery_boot = exists($recovery, {follow_symlinks:false}) and stat($recovery, {follow_symlinks:false}).is_dir ? ls($recovery) : []
   return $s
 end
 
@@ -336,7 +338,9 @@ fn inventory($s)
     $fork = ($s.desired.forks ?? {})[$name]
     push($rows, {name:$name, installed:$e.installed, enabled:$e.enabled, mounted:$e.mounted,
       revision:$e.revision, generation:$e.generation, behaviour:$e.status, ready:$e.ready,
-      template:$s.desired.origins[$name], diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
+      template:$s.desired.origins[$name], stale:upgrade_notice($s, $name) != nil,
+      review_usage:review_usage($s, $name),
+      upgrade:upgrade_summary(upgrade_notice($s, $name)), diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
       attempted_digest:$e.attempted, accepted_digest:$e.digest,
       journal:"journalctl -u mix-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
       title:$shown.title ?? $name, edge:if $e.enabled then $e.edge ?? $shown.edge else $shown.edge end, page:$e.page ?? $shown.page,
@@ -345,7 +349,8 @@ fn inventory($s)
       problems:scene_problems($s, $name, $e, $diagnostic, $diagnostics)})
   end
   return {needs_setup:needs_setup($s), root:$s.root, templates_root:$s.templates, state_ok:$s.state_ok,
-    editor:editor_record($s), scenes:$rows, diagnostic:$s.diagnostic}
+    editor:editor_record($s), scenes:$rows, diagnostic:$s.diagnostic, recovery_prune_error:$s.recovery_prune_error,
+    review_usage:review_usage($s, nil)}
 end
 
 fn changed($s)
@@ -416,6 +421,30 @@ fn read_state($s)
       if not valid_name($n) or type($f) != "map" or not valid_name($f.from) or ($f.panel != nil and type($f.panel) != "string") then
         fail("SCENES_STATE", "invalid fork record", {name:$n})
       end
+    end
+  end
+  if $v.templates != nil then
+    -- Optional cache: bad entries must never invalidate durable user intent.
+    if type($v.templates) != "map" or len(keys($v.templates)) > 128 then $v.templates = {} end
+    for $n in keys($v.templates)
+      $r = $v.templates[$n]
+      if not template_record_valid($n, $r) then $v.templates = delete($v.templates, $n) end
+    end
+  end
+  if type($v.reviews) != "map" then $v.reviews = {} end
+  for $n in keys($v.reviews)
+    $paths = $v.reviews[$n]
+    if not valid_name($n) or type($paths) != "list" then
+      $v.reviews = delete($v.reviews, $n)
+      continue
+    end
+    $v.reviews[$n] = filter($paths, fn($p) = valid_record_path($p, ".recovery/") and starts_with($p, ".recovery/review-") and exists($s.root .. "/" .. $p, {follow_symlinks:false}))
+  end
+  if type($v.backup_records) != "map" then $v.backup_records = {} end
+  for $p in keys($v.backup_records)
+    $r = $v.backup_records[$p]
+    if not valid_record_path($p, ".recovery/") or type($r) != "map" or not valid_name($r.name) or not valid_name($r.template) or type($r.fingerprint) != "string" then
+      $v.backup_records = delete($v.backup_records, $p)
     end
   end
   for each $kind in ["promoting", "resetting"]
@@ -953,12 +982,33 @@ fn recover_records($s, $only)
 end
 
 fn recover_one($s, $kind, $r)
+  $name = record_target($kind, $r)
+  $expected = $r.backup_expected ?? $r.upgrade_expected
   $to = $s.root .. "/" .. record_target($kind, $r)
   $stage = $s.root .. "/" .. $r.stage
   $backup = $s.root .. "/" .. $r.backup
   $t = exists($to, {follow_symlinks:false})
   $st = exists($stage, {follow_symlinks:false})
   $b = exists($backup, {follow_symlinks:false})
+  $reviews = review_copies($s, $backup)
+  if $expected != nil and len($reviews) > 0 and not $b then
+    $s = remember_reviews($s, $name, $reviews)
+    if $s.upgrades == nil then $s.upgrades = {} end
+    $s.upgrades[$name] = {error_code:"SCENES_EDITED", reason:review_reason($to, $reviews)}
+    return clear_record($s, $kind)
+  end
+  if $expected != nil and $b and not fingerprint_equal($backup, $expected) then
+    $reviews = restore_with_review($s, $to, $stage, $backup)
+    $s = remember_reviews($s, $name, $reviews)
+    if $s.upgrades == nil then $s.upgrades = {} end
+    $s.upgrades[$name] = {error_code:"SCENES_EDITED", reason:review_reason($to, $reviews)}
+    return clear_record($s, $kind)
+  end
+  if $r.placed_expected != nil and $t and not $st and $r.phase != "staged" and not fingerprint_equal($to, $r.placed_expected) then
+    if $s.upgrades == nil then $s.upgrades = {} end
+    $s.upgrades[$name] = {error_code:"SCENES_EDITED", reason:"scene saved into replacement; edited copy retained"}
+    return clear_record($s, $kind)
+  end
   if $t and $st and not $b then
     -- Not swapped yet.
     remove_dir($stage)
@@ -990,13 +1040,21 @@ fn recover_one($s, $kind, $r)
 end
 
 fn clear_record($s, $kind)
+  $backup = $s.desired[$kind].backup
+  if not exists($s.root .. "/" .. $backup, {follow_symlinks:false}) and $s.desired.backup_records != nil then
+    $s.desired.backup_records = delete($s.desired.backup_records, $backup)
+  end
   $s.desired = delete($s.desired, $kind)
-  return persist($s)
+  return cap_recovery(persist($s), $s.root .. "/" .. $backup)
 end
 
 fn finish_record($s, $kind, $r)
   if $kind == "promoting" then return promote_finish($s, $r) end
   if has_key($s.scenes, $r.name) then $s.scenes[$r.name].model = nil end
+  if $r.template_record != nil then
+    if $s.desired.templates == nil then $s.desired.templates = {} end
+    $s.desired.templates[$r.name] = $r.template_record
+  end
   return clear_record($s, $kind)
 end
 
@@ -1021,8 +1079,9 @@ fn promote_finish($s, $r)
     $installation = $s.root .. "/" .. $from
     if exists($installation, {follow_symlinks:false}) then
       $backup = recovery_directory($s) .. "/" .. $from .. "-" .. uuid()
-      recovery_move($s, $installation, $backup)
-      $s.last_removed = $backup
+      $s = protected_backup_move($s, $installation, $backup, $from, $r.source_expected)
+      $s.last_removed = $s.last_backup_path
+      if $s.last_backup_path != $backup then $s = remember_reviews($s, $r.to, [$s.last_backup_path]) end
     end
     fault($s, "promoting:finish")
     $s.scenes = delete($s.scenes, $from)
@@ -1030,6 +1089,7 @@ fn promote_finish($s, $r)
     if $s.desired.forks != nil then $s.desired.forks = delete($s.desired.forks, $from) end
     $s.desired = delete($s.desired, "promoting")
     $s = persist($s)
+    $s = cap_recovery($s, $s.root .. "/" .. $r.backup)
   catch $message, $error
     $s.finish_error = {error_code:$error.code, message:$message,
       context:{phase:"finish", name:$r.to, removed:$from, sandbox:$s.last_removed, upstream:$error.details}}
@@ -1432,6 +1492,12 @@ end
 -- persisted staged/swapped/placed record (plan rule 9). A software failure
 -- before placement restores the original; a crash is finished by rescan.
 fn swap_in($s, $kind, $record, $to, $stage, $backup)
+  -- A backup name is the transaction identity used by review_copies. Never
+  -- reuse an existing, retained or previously recorded transaction name.
+  if exists($backup, {follow_symlinks:false}) or len(review_copies($s, $backup)) > 0 or ($s.desired.backup_records ?? {})[substr($backup, len($s.root) + 1)] != nil then
+    remove_dir($stage)
+    fail("SCENES_COLLISION", "backup transaction identity already exists", {backup:$backup})
+  end
   $record.stage = substr($stage, len($s.root) + 1)
   $record.backup = substr($backup, len($s.root) + 1)
   $record.phase = "staged"
@@ -1443,7 +1509,27 @@ fn swap_in($s, $kind, $record, $to, $stage, $backup)
     fail("SCENES_RECOVERY", "an unfinished " .. $kind .. " record must be recovered first", {record:$kind, name:record_target($kind, $held), stage:$held.stage, backup:$held.backup, error:$held.error})
   end
   try
+    -- All swaps share the editor guard, snapshot and durable backup record.
+    -- The upgrade's earlier snapshot additionally fences edits during staging.
+    if exists($to, {follow_symlinks:false}) then
+      if $s.io.upgrade_guard != nil then $s.io.upgrade_guard($to) end
+      $name = record_target($kind, $record)
+      $record.backup_expected = $record.upgrade_expected ?? template_record($to, $s.desired.origins[$name] ?? $name)
+      if not fingerprint_equal($to, $record.backup_expected) then fail("SCENES_EDITED", "scene changed before swap; refresh refused", {name:$name}) end
+    end
+    if $kind == "promoting" and $record.source_expected != nil and not fingerprint_equal($s.root .. "/" .. $record.from, $record.source_expected) then
+      fail("SCENES_EDITED", "sandbox changed while staging promotion; copy retained", {name:$record.from})
+    end
+    $record.placed_expected = template_record($stage, $s.desired.origins[record_target($kind, $record)] ?? record_target($kind, $record))
+  catch $message, $error
+    remove_dir($stage)
+    raise($error.code, $message, $error.details)
+  end
+  try
     $s.desired[$kind] = $record
+    if $record.backup_expected != nil then
+      $s = register_backup($s, $backup, record_target($kind, $record), $record.backup_expected)
+    end
     $s = persist($s)
     fault($s, $kind .. ":staged")
   catch $message, $error
@@ -1466,7 +1552,30 @@ fn swap_in($s, $kind, $record, $to, $stage, $backup)
     $s = persist($s)
     fault($s, $kind .. ":swapped")
     recovery_move($s, $stage, $to)
+    if $record.backup_expected != nil then
+      if $s.io.upgrade_swapped != nil then $s.io.upgrade_swapped($backup) end
+      if not fingerprint_equal($backup, $record.backup_expected) then
+        $reviews = restore_with_review($s, $to, $stage, $backup)
+        fail("SCENES_EDITED", review_reason($to, $reviews), {})
+      end
+      if not fingerprint_equal($to, $record.placed_expected) then
+        fail("SCENES_EDITED", "scene saved into replacement during swap; edited copy retained", {})
+      end
+      if $s.io.upgrade_verified != nil then $s.io.upgrade_verified($backup) end
+      if not fingerprint_equal($backup, $record.backup_expected) then
+        $reviews = restore_with_review($s, $to, $stage, $backup)
+        fail("SCENES_EDITED", review_reason($to, $reviews), {})
+      end
+    end
+    if not fingerprint_equal($to, $record.placed_expected) then
+      fail("SCENES_EDITED", "scene saved into replacement during swap; edited copy retained", {})
+    end
   catch $message, $error
+    if len(review_copies($s, $backup)) > 0 then
+      -- Keep the transaction until recover_one finishes/restores it. A new
+      -- save creating $to during restore must never be overwritten or lost.
+      raise($error.code, $message, $error.details)
+    end
     if $moved and exists($backup, {follow_symlinks:false}) and not exists($to, {follow_symlinks:false}) then
       recovery_move($s, $backup, $to)
     end
@@ -1480,6 +1589,163 @@ fn swap_in($s, $kind, $record, $to, $stage, $backup)
   end
   $s.desired[$kind].phase = "placed"
   return persist($s)
+end
+
+fn register_backup($s, $backup, $name, $expected)
+  if $s.desired.backup_records == nil then $s.desired.backup_records = {} end
+  $s.desired.backup_records[substr($backup, len($s.root) + 1)] = {name:$name,
+    template:$expected.template, fingerprint:hash_sha256(json_encode($expected))}
+  return $s
+end
+
+-- Removal and promote's retired sandbox also move directories out from under
+-- descriptors. Use the same registry and quarantine checks as swap backups.
+fn protected_backup_move($s, $source, $backup, $name, $expected = nil)
+  if $s.io.upgrade_guard != nil then $s.io.upgrade_guard($source) end
+  if $expected == nil then $expected = template_record($source, $s.desired.origins[$name] ?? $name) end
+  $s = persist(register_backup($s, $backup, $name, $expected))
+  recovery_move($s, $source, $backup)
+  $s.last_backup_path = $backup
+  $rel = substr($backup, len($s.root) + 1)
+  if not fingerprint_equal($backup, $expected) then
+    $s = quarantine_backup($s, $backup, $rel, $s.desired.backup_records[$rel])
+    $s.last_backup_path = $s.last_quarantined
+  end
+  return $s
+end
+
+-- Keep every counterpart, even if the pre-restore fingerprint looked clean:
+-- an editor may still hold its inode. The backup's unique name ties these
+-- protected copies to the existing transaction, including after a crash.
+fn review_copies($s, $backup)
+  $dir = recovery_directory($s)
+  $prefix = "review-" .. basename($backup) .. "-"
+  return map(filter(ls($dir), fn($n) = starts_with($n, $prefix)), fn($n) = $dir .. "/" .. $n)
+end
+
+fn review_reason($to, $copies)
+  return "scene changed during swap; original retained at " .. $to .. "; replacement copies retained for review at " .. join($copies, ", ")
+end
+
+fn remember_reviews($s, $name, $copies)
+  if $s.desired.reviews == nil then $s.desired.reviews = {} end
+  $paths = $s.desired.reviews[$name] ?? []
+  $paths = filter($paths, fn($p) = exists($s.root .. "/" .. $p, {follow_symlinks:false}))
+  for $p in $copies
+    $rel = substr($p, len($s.root) + 1)
+    if not contains($paths, $rel) then push($paths, $rel) end
+  end
+  $s.desired.reviews[$name] = $paths
+  fault($s, "reviews:persist")
+  return persist($s)
+end
+
+fn upgrade_notice($s, $name)
+  $notice = ($s.upgrades ?? {})[$name]
+  $paths = live_review_paths($s, $name)
+  if len($paths) == 0 then return $notice end
+  $reason = review_reason($s.root .. "/" .. $name, $paths)
+  $usage = review_usage($s, $name)
+  if $usage.blocked then $reason = "review storage limit reached; saved copies retained; " .. $reason end
+  if $notice == nil then return {error_code:$usage.blocked ? "SCENES_REVIEW_LIMIT" : "SCENES_EDITED", reason:$reason} end
+  if contains($notice.reason ?? "", "replacement copies retained for review") then $notice.reason = $reason
+  else $notice.reason = ($notice.reason ?? "") .. "; " .. $reason end
+  return $notice
+end
+
+fn restore_with_review($s, $to, $stage, $backup)
+  for $path in [$to, $stage]
+    if exists($path, {follow_symlinks:false}) then
+      $saved = recovery_directory($s) .. "/review-" .. basename($backup) .. "-" .. uuid()
+      recovery_move($s, $path, $saved)
+    end
+  end
+  fault($s, "resetting:review-saved")
+  -- recovery_move/dir_rename atomically refuse overwrite if a fresh save
+  -- creates the target after we moved its previous directory aside.
+  recovery_move($s, $backup, $to)
+  fault($s, "resetting:review-restored")
+  return review_copies($s, $backup)
+end
+
+fn review_owner($base)
+  $uuid_pattern = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+  $suffix = "-" .. $uuid_pattern .. "-" .. $uuid_pattern .. "$"
+  if not re_match($base, "^review-[a-z0-9_-]+" .. $suffix) then return nil end
+  $name = substr(re_replace($base, $suffix, ""), len("review-"))
+  return valid_name($name) ? $name : nil
+end
+
+-- Review names carry the scene and two transaction UUIDs. Rebuild from disk
+-- as well as state: a successful rename must survive a failed state write.
+fn live_review_paths($s, $name)
+  $paths = []
+  $dir = $s.root .. "/.recovery"
+  if not exists($dir, {follow_symlinks:false}) or not stat($dir, {follow_symlinks:false}).is_dir or realpath($dir) != $dir then return [] end
+  if $name != nil then
+    $paths = map(($s.desired.reviews ?? {})[$name] ?? [], fn($p) = $s.root .. "/" .. $p)
+  end
+  $paths = filter($paths, fn($p) = exists($p, {follow_symlinks:false}))
+  for $base in ls($dir)
+    if not starts_with($base, "review-") then continue end
+    if $name != nil and review_owner($base) != $name then continue end
+    $path = $dir .. "/" .. $base
+    if not contains($paths, $path) then push($paths, $path) end
+  end
+  return sort($paths)
+end
+
+fn review_usage($s, $name)
+  $paths = live_review_paths($s, $name)
+  $total = 0
+  $copies = 0
+  for $p in $paths
+    if not exists($p, {follow_symlinks:false}) then continue end
+    $copies = $copies + 1
+    $st = stat($p, {follow_symlinks:false})
+    if $st.is_dir then
+      for $file in walk($p, {follow_symlinks:false})
+        $total = $total + stat($file, {follow_symlinks:false}).size
+      end
+    else
+      $total = $total + $st.size
+    end
+  end
+  return {count:$copies, bytes:$total, limit_count:8, limit_bytes:67108864,
+    blocked:$copies >= 8 or $total >= 67108864,
+    over_limit:$copies > 8 or $total > 67108864,
+    warning:($copies >= 8 or $total >= 67108864) ? "Review storage limit reached; saved copies retained; review and clean up before upgrading" : nil}
+end
+
+fn require_review_capacity($s, $name)
+  $usage = review_usage($s, $name)
+  if $usage.blocked then
+    fail("SCENES_REVIEW_LIMIT", "review limit reached (" .. to_string($usage.count) .. " copies, " .. to_string($usage.bytes) .. " bytes); compare saved copies under .recovery/review-* and remove reviewed copies before upgrading", {name:$name, usage:$usage})
+  end
+end
+
+fn tree_last_change($dir)
+  $latest = stat($dir, {follow_symlinks:false}).ctime
+  for $p in walk($dir, {follow_symlinks:false, include_dirs:true})
+    $latest = max($latest, stat($p, {follow_symlinks:false}).ctime)
+  end
+  return $latest
+end
+
+fn backup_matches($path, $record)
+  try
+    return hash_sha256(json_encode(template_record($path, $record.template))) == $record.fingerprint
+  catch $ignored
+    return false
+  end
+end
+
+fn quarantine_backup($s, $path, $rel, $record)
+  $saved = recovery_directory($s) .. "/review-" .. basename($path) .. "-" .. uuid()
+  recovery_move($s, $path, $saved)
+  $s.last_quarantined = $saved
+  $s.desired.backup_records = delete($s.desired.backup_records, $rel)
+  return remember_reviews($s, $record.name, [$saved])
 end
 
 -- A stuck promote/reset record must be recovered before another of its kind
@@ -2107,10 +2373,11 @@ fn editor_remove($s)
   if not stat($user, {follow_symlinks:false}).is_dir then fail("SCENES_FILES", "installation must be a real directory", {file:$user}) end
   $backup = recovery_directory($s) .. "/editor-" .. uuid()
   $s = editor_to_shipped($s)
-  recovery_move($s, $user, $backup)
+  $s = protected_backup_move($s, $user, $backup, "editor")
   $s.desired.origins = delete($s.desired.origins, "editor")
   $s = persist($s)
   $s.scenes.editor.user_dirty = false
+  $s = cap_recovery($s, $backup)
   $s.response = {name:"editor", recovery:$backup}
   return $s
 end
@@ -2121,16 +2388,17 @@ fn editor_reset($s)
   -- Reset (re)creates the user copy from the template (plan rule 1); there
   -- is a recovery copy only when one existed (review n2).
   $had = exists($user, {follow_symlinks:false})
+  if $had and $s.io.upgrade_guard != nil then $s.io.upgrade_guard($user) end
   require_no_record($s, "resetting")
   $tmp = stage($s, "editor", "editor")
+  $record = template_record($tmp, "editor")
   $backup = recovery_directory($s) .. "/editor-" .. uuid()
-  $s = swap_in($s, "resetting", {name:"editor"}, $user, $tmp, $backup)
+  $s = swap_in($s, "resetting", {name:"editor", template_record:$record}, $user, $tmp, $backup)
   $s.desired.origins.editor = "editor"
-  $s.desired = delete($s.desired, "resetting")
-  $s = persist($s)
   $e = $s.scenes.editor
+  $s = finish_record($s, "resetting", $s.desired.resetting)
   if $e.copy == "user" and $e.summoned then
-    $model = $s.scenes.editor.model
+    $model = $e.model
     $s.scenes.editor.model = nil
     $s = reconcile_one($s, "editor", true)
     $s.scenes.editor.user_dirty = false
@@ -2213,6 +2481,11 @@ fn promote($s, $args)
   end
   require_no_record($s, "promoting")
   $src = $s.root .. "/" .. $from
+  if $s.io.upgrade_guard != nil then
+    $s.io.upgrade_guard($src)
+    $s.io.upgrade_guard($s.root .. "/" .. $to)
+  end
+  $source_expected = template_record($src, $s.desired.origins[$from] ?? $from)
   try
     $tmp = stage_from($s, $src, $to, $f.panel ?? "")
   catch $message, $error
@@ -2226,12 +2499,12 @@ fn promote($s, $args)
     $s = drive_popups($s)
   end
   $backup = recovery_directory($s) .. "/" .. $to .. "-" .. uuid()
-  $s = swap_in($s, "promoting", {from:$from, to:$to}, $s.root .. "/" .. $to, $tmp, $backup)
+  $s = swap_in($s, "promoting", {from:$from, to:$to, source_expected:$source_expected}, $s.root .. "/" .. $to, $tmp, $backup)
   -- Complete on disk from here: a failure is a diagnostic, never an undo,
   -- and never a raise that would drop the process records reconcile just
   -- changed (review m1). The placed record is finished by the next rescan.
   $s = reconcile_safe($s, $to, true)
-  $s = promote_finish($s, {from:$from, to:$to})
+  $s = promote_finish($s, $s.desired.promoting)
   $recovery = [$backup]
   if $s.last_removed != nil then push($recovery, $s.last_removed) end
   if $s.finish_error != nil then
@@ -2262,7 +2535,8 @@ fn move($s, $args)
     $window = panel_window(bounded_read($s.root .. "/panel/scene.mix", 262144))
     if seated($window.kind) then fail("SCENES_MOUNT", "a seated scene has no edge", {name:$name}) end
     $path = $s.root .. "/panel/settings.conf.mix"
-    $lock=dirname($path).."/.settings.lock"
+    -- Outside the installation: reset swaps directories, not this lock inode.
+    $lock=$s.root.."/.settings.lock"
     if not flock($lock,{wait:1}) then fail("SCENES_SETTINGS_BUSY","panel settings are being saved; retry the command",{}) end
     try
     $before = regular($path) ? bounded_read($path, 65536) : nil
@@ -2320,7 +2594,219 @@ fn move($s, $args)
   return $s
 end
 
+-- Fingerprint the rewritten installation, including helpers/assets. Settings
+-- are user state, never evidence of a code edit. Stream hashes so binary
+-- assets retain their byte identity and do not require an unbounded read.
+fn template_record($dir, $template)
+  if not stat($dir, {follow_symlinks:false}).is_dir or realpath($dir) != $dir then
+    fail("SCENES_FILES", "fingerprint root must be a real directory", {file:$dir})
+  end
+  $files = {}
+  $settings_digest = ""
+  for $p in sort(walk($dir, {follow_symlinks:false, include_dirs:true}))
+    $before = stat($p, {follow_symlinks:false})
+    if $before.is_symlink then fail("SCENES_FILES", "fingerprint refuses symlinks", {file:$p}) end
+    if $before.is_dir then continue end
+    $rel = substr($p, len($dir) + 1)
+    if not regular($p) then fail("SCENES_FILES", "template file must be regular", {file:$p}) end
+    $digest = hash_file($p, "sha256")
+    -- hash_file opens a path normally; lstat both sides of the streamed read
+    -- to reject replaced files and aliases rather than treating them as edits.
+    $after = stat($p, {follow_symlinks:false})
+    if $after.is_symlink or $before.ino != $after.ino or $before.dev != $after.dev or $before.ctime != $after.ctime or $before.ctime_nsec != $after.ctime_nsec then
+      fail("SCENES_EDITED", "file changed while hashing", {file:$p})
+    end
+    if $rel == "settings.conf.mix" then $settings_digest = $digest else $files[$rel] = $digest end
+  end
+  return {template:$template, digest:$files["scene.mix"] ?? "",
+    behaviour_digest:$files["behaviour.mix"] ?? "", meta_digest:$files["template.conf.mix"] ?? "", files:$files,
+    settings_digest:$settings_digest}
+end
+
+fn template_record_valid($name, $r)
+  if not valid_name($name) or type($r) != "map" or not valid_name($r.template) or type($r.files) != "map" then return false end
+  for $k in ["digest", "behaviour_digest", "meta_digest"]
+    if type($r[$k]) != "string" then return false end
+  end
+  for $p in keys($r.files)
+    if type($r.files[$p]) != "string" then return false end
+  end
+  return $r.settings_digest == nil or type($r.settings_digest) == "string"
+end
+
+fn code_equal($a, $b)
+  if type($a) != "map" or type($b) != "map" then return false end
+  return deep_eq(delete($a, "settings_digest"), delete($b, "settings_digest"))
+end
+
+fn fingerprint_equal($dir, $record)
+  try
+    return deep_eq(template_record($dir, $record.template), $record)
+  catch $ignored
+    return false
+  end
+end
+
+fn upgrade_summary($u)
+  if $u == nil then return nil end
+  $out = {reason:$u.reason, error_code:$u.error_code}
+  for $key in ["old", "local", "new"]
+    $r = $u[$key]
+    if type($r) == "map" then $out[$key] = {template:$r.template, digest:$r.digest,
+      behaviour_digest:$r.behaviour_digest, meta_digest:$r.meta_digest} end
+  end
+  return $out
+end
+
+fn carry_settings($s, $name, $installation, $tmp, $force = false)
+  $settings = $installation .. "/settings.conf.mix"
+  if not exists($settings, {follow_symlinks:false}) then return end
+  if not regular($settings) then fail("SCENES_FILES", "settings must be regular", {file:$settings}) end
+  $old = ($s.desired.templates ?? {})[$name]
+  if not $force and $old != nil and $old.settings_digest != nil and hash_file($settings, "sha256") == $old.settings_digest then return end
+  -- Refuse explicitly, before either directory moves. Never write a prefix.
+  if stat($settings, {follow_symlinks:false}).size > 262144 then fail("SCENES_LIMIT", "settings exceed upgrade size limit; refresh refused", {file:$settings}) end
+  $meta = load_data($tmp .. "/template.conf.mix")
+  if $meta.settings_schema != nil then $_ = validate(data_parse(bounded_read($settings, 262144)), $meta.settings_schema) end
+  copy($settings, $tmp .. "/settings.conf.mix")
+  if hash_file($tmp .. "/settings.conf.mix", "sha256") != hash_file($settings, "sha256") then
+    fail("SCENES_EDITED", "settings changed while copying; refresh refused", {file:$settings})
+  end
+end
+
+-- Keep the newest 16 completed backups globally. Never prune a transaction's
+-- backup, nor follow an alias. A successful swap's backup is explicitly kept.
+fn cap_recovery($s, $keep)
+  try
+    return cap_recovery_inner($s, $keep)
+  catch $message, $error
+    $s.recovery_prune_error = {error_code:$error.code, message:$message}
+    return $s
+  end
+end
+
+fn cap_recovery_inner($s, $keep)
+  $dir = recovery_directory($s)
+  $held = [$keep]
+  $pending = []
+  for $kind in ["resetting", "promoting"]
+    if $s.desired[$kind] != nil then
+      $path = $s.root .. "/" .. $s.desired[$kind].backup
+      push($held, $path)
+      push($pending, $path)
+    end
+  end
+  $items = []
+  $ordinary = 0
+  -- Test clock only; production always uses wall time. Birth in this loader
+  -- and any tree change both restart the ten-minute retention floor.
+  $now = $s.recovery_clock ?? time()
+  for $n in ls($dir)
+    -- Conflicting saves are excluded from automatic retention until reviewed.
+    if starts_with($n, "review-") then continue end
+    $p = $dir .. "/" .. $n
+    if not valid_record_path(".recovery/" .. $n, ".recovery/") then continue end
+    $st = stat($p, {follow_symlinks:false})
+    if not $st.is_dir then continue end
+    -- Pending recovery owns this directory, including an edited original.
+    -- Do not quarantine it away from the durable transaction's restore path.
+    if contains($pending, $p) then $ordinary = $ordinary + 1; continue end
+    $rel = ".recovery/" .. $n
+    $record = ($s.desired.backup_records ?? {})[$rel]
+    if $record != nil and not backup_matches($p, $record) then
+      $s = quarantine_backup($s, $p, $rel, $record)
+      continue
+    end
+    $ordinary = $ordinary + 1
+    if not contains($held, $p) and contains($s.recovery_boot ?? [], $n) and tree_last_change($p) <= $now - 600 then
+      push($items, {path:$p, rel:$rel, time:$st.ctime, ns:$st.ctime_nsec})
+    end
+  end
+  $items = sort_by($items, fn($v) = $v.time + $v.ns / 1000000000)
+  $dirty = false
+  for $i = 0 to min(len($items), max(0, $ordinary - 16)) - 1
+    try
+      $item = $items[$i]
+      $record = ($s.desired.backup_records ?? {})[$item.rel]
+      if $record != nil and not backup_matches($item.path, $record) then
+        $s = quarantine_backup($s, $item.path, $item.rel, $record)
+        continue
+      end
+      if tree_last_change($item.path) > $now - 600 then continue end
+      fault($s, "recovery:prune")
+      remove_dir($items[$i].path)
+      if $s.desired.backup_records != nil then $s.desired.backup_records = delete($s.desired.backup_records, $items[$i].rel) end
+      $dirty = true
+    catch $message, $error
+      $s.recovery_prune_error = {error_code:$error.code, message:$message}
+    end
+  end
+  if $dirty then $s = persist($s) end
+  return $s
+end
+
+fn upgrade($s)
+  $s = load_state($s)
+  require_state($s)
+  $s.upgrades = {}
+  for $name in keys($s.desired.origins)
+    if ($s.desired.forks ?? {})[$name] != nil then continue end
+    $dir = $s.root .. "/" .. $name
+    if not is_dir($dir) then continue end
+    $tmp = nil
+    try
+      require_review_capacity($s, $name)
+      $origin = $s.desired.origins[$name]
+      $tmp = stage($s, $origin, $name)
+      $new = template_record($tmp, $origin)
+      remove_dir($tmp)
+      $tmp = nil
+      $local = template_record($dir, $origin)
+      $old = ($s.desired.templates ?? {})[$name]
+      if code_equal($local, $new) and ($old == nil or not code_equal($old, $new) or $old.settings_digest == $new.settings_digest) then
+        if not deep_eq($old, $new) then
+          if $s.desired.templates == nil then $s.desired.templates = {} end
+          $s.desired.templates[$name] = $new
+          $s = persist($s)
+        end
+      elif $old == nil or not code_equal($local, $old) then
+        $s.upgrades[$name] = {reason:"template updated: Reset or Keep", old:$old, local:$local, new:$new}
+      elif not deep_eq($old, $new) then
+        -- Synchronous loader handler owns the writer lock through reset.
+        $s.upgrade_expected = $local
+        $s = reset_scene($s, $name, $s.scenes[$name] ?? entry($name))
+        $s.upgrade_expected = nil
+      end
+    catch $message, $error
+      if $tmp != nil and is_dir($tmp) then remove_dir($tmp) end
+      $s.upgrade_expected = nil
+      $flags = $s.upgrades
+      $s = load_state($s)
+      $s.upgrades = $flags
+      $s.upgrades[$name] = {reason:$message, error_code:$error.code}
+      -- A placed reset must finish (or roll back) before the next scene.
+      $s = recover_records($s, $name)
+      if $s.scenes[$name] != nil then $s = reconcile_safe($s, $name, true) end
+    end
+  end
+  $s = cap_recovery($s, nil)
+  $s.response = inventory($s)
+  return $s
+end
+
 fn reset_scene($s, $name, $e)
+  -- Shared with panel move/task-scope saves. The scene root survives the swap,
+  -- so a writer already waiting on this inode cannot bypass the replacement.
+  $lock = $s.root .. "/.settings.lock"
+  if not flock($lock, {wait:1}) then fail("SCENES_SETTINGS_BUSY", "scene settings are being saved; retry the command", {}) end
+  try
+    return reset_scene_locked($s, $name, $e)
+  finally
+    $_ = funlock($lock)
+  end
+end
+
+fn reset_scene_locked($s, $name, $e)
   $recovery = recovery_directory($s)
   $installation = $s.root .. "/" .. $name
   if exists($installation, {follow_symlinks:false}) and not stat($installation, {follow_symlinks:false}).is_dir then
@@ -2329,18 +2815,54 @@ fn reset_scene($s, $name, $e)
   $origin = $s.desired.origins[$name]
   if $origin == nil then fail("SCENES_NO_ORIGIN", "reset requires a recorded shipped template origin", {name:$name}) end
   require_no_record($s, "resetting")
+  if exists($installation, {follow_symlinks:false}) and $s.io.upgrade_guard != nil then $s.io.upgrade_guard($installation) end
   $tmp = stage($s, $origin, $name)
-  -- Settings are user state, including panel position and task scope.
-  if regular($installation .. "/settings.conf.mix") then
-    write_atomic($tmp .. "/settings.conf.mix", bounded_read($installation .. "/settings.conf.mix", 65536))
+  -- Immutable template baseline BEFORE any user settings are carried. This
+  -- settings digest must always describe shipped defaults, never a user edit.
+  $template_baseline = template_record($tmp, $origin)
+  if $s.upgrade_expected != nil or $name == "panel" then
+    try
+      if $s.io.upgrade_guard != nil then $s.io.upgrade_guard($installation) end
+      if $s.upgrade_expected != nil and not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
+        fail("SCENES_EDITED", "scene changed during upgrade; refresh refused", {name:$name})
+      end
+      -- Panel edge/task scope remain user state on explicit Reset too. Other
+      -- scenes retain the upgrade policy: edits carry, defaults may advance.
+      carry_settings($s, $name, $installation, $tmp, $name == "panel")
+    catch $message, $error
+      remove_dir($tmp)
+      raise($error.code, $message, $error.details)
+    end
   end
   $backup = $recovery .. "/" .. $name .. "-" .. uuid()
   if $s.open == $name then $s.open = nil end
   $s = drive_popups($s)
   $s = invalidate($s, $name)
-  $s = swap_in($s, "resetting", {name:$name}, $installation, $tmp, $backup)
-  $s.desired = delete($s.desired, "resetting")
-  $s = persist($s)
+  if $s.upgrade_expected != nil then
+    -- Invalidation may perform host I/O. Recheck after that last RPC, and
+    -- preserve the updated process bookkeeping if an editor won the race.
+    try
+      if $s.io.upgrade_guard != nil then $s.io.upgrade_guard($installation) end
+      if not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
+        fail("SCENES_EDITED", "scene changed during upgrade; refresh refused", {name:$name})
+      end
+      carry_settings($s, $name, $installation, $tmp, $name == "panel")
+    catch $message, $error
+      remove_dir($tmp)
+      $s.upgrades[$name] = {reason:$message, error_code:$error.code}
+      return reconcile_safe($s, $name, true)
+    end
+  end
+  $transaction = {name:$name, template_record:$template_baseline}
+  if $s.upgrade_expected != nil then
+    $transaction.upgrade_expected = $s.upgrade_expected
+    $transaction.placed_expected = template_record($tmp, $origin)
+  end
+  $s = swap_in($s, "resetting", $transaction, $installation, $tmp, $backup)
+  fault($s, "resetting:placed")
+  $s = finish_record($s, "resetting", $s.desired.resetting)
+  if $s.upgrades != nil then $s.upgrades = delete($s.upgrades, $name) end
+  $s = cap_recovery($s, $backup)
   $s.scenes[$name].model = nil
   $s = reconcile_one($s, $name, true)
   if failure($s.scenes[$name]) != nil then
@@ -2360,6 +2882,7 @@ fn request($s, $command, $args)
   $s.response = {}
   try
     if type($args) != "map" then fail("SCENES_ARGUMENT", "arguments must be a map", {}) end
+    if $command == "upgrade" then return upgrade($s) end
     if $command == "quoin.reload" then
       if not contains(["scene", "lib", "all"], $args.scope) then fail("SCENES_ARGUMENT", "scope must be scene, lib or all", {}) end
       if $args.scope == "scene" then
@@ -2396,8 +2919,11 @@ fn request($s, $command, $args)
       if exists($s.root .. "/" .. $name, {follow_symlinks:false}) then fail("SCENES_COLLISION", "installation already exists", {name:$name}) end
       if len(keys($s.scenes)) > 128 then fail("SCENES_LIMIT", "at most 128 installed scenes", {}) end
       $tmp = stage($s, $args.template, $name)
+      $record = template_record($tmp, $args.template)
       place_install($s, $tmp, $name)
       $s.desired.origins[$name] = $args.template
+      if $s.desired.templates == nil then $s.desired.templates = {} end
+      $s.desired.templates[$name] = $record
       if $name == "editor" then
         $s = persist($s)
         $s.scenes.editor.user_dirty = true
@@ -2451,12 +2977,14 @@ fn request($s, $command, $args)
       $s.desired.enabled = filter($s.desired.enabled, fn($n) = $n != $name)
       $s = persist($s)
       $s = reconcile_one($s, $name, false)
-      if exists($installation, {follow_symlinks:false}) then recovery_move($s, $installation, $backup) end
+      if exists($installation, {follow_symlinks:false}) then $s = protected_backup_move($s, $installation, $backup, $name) end
       $s.scenes = delete($s.scenes, $name)
       $s.desired.origins = delete($s.desired.origins, $name)
+      if $s.desired.templates != nil then $s.desired.templates = delete($s.desired.templates, $name) end
       if $s.desired.forks != nil then $s.desired.forks = delete($s.desired.forks, $name) end
       $s = persist($s)
       $s.response = {name:$name, recovery:$backup}
+      $s = cap_recovery($s, $backup)
       return $s
     elif $command == "reset" then
       return reset_scene($s, $name, $e)

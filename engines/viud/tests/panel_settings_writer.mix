@@ -1,6 +1,12 @@
 -- A competing task-scope save, using the behaviour's shared lock contract.
 $dir=args()[0]
-$lock=$dir.."/.settings.lock"
+$lock=dirname($dir).."/.settings.lock"
+if (args()[1] ?? "") == "probe" then
+  $held=flock($lock)
+  write_file(dirname($dir).."/.settings-probe",if $held then "acquired" else "busy" end)
+  if $held then $_=funlock($lock) end
+  exit(0)
+end
 if not flock($lock,{wait:1}) then raise("TEST_LOCK","writer could not acquire lock") end
 try
   write_file($dir.."/.lock-ready","")

@@ -231,6 +231,7 @@ on lifecycle.commit
     -- service reconciliation: mount accepted content, start each enabled
     -- behaviour exactly once (fresh generations, no retiring tombstones).
     $state = $loader.rescan($state, true)
+    $state = $loader.upgrade($state)
     $state = refresh_services($state, true)
   catch $message, $error
     $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
@@ -327,6 +328,12 @@ end
 
 on scenes.reset desc "Restore recorded template defaults {name}; retain recovery copy"
   $state = $loader.request($state, "reset", $event.args ?? {})
+  reply($state.rc, json_encode($state.response))
+  $state = $loader.changed($state)
+end
+
+on scenes.upgrade desc "Refresh unedited template copies; flag edited copies for review"
+  $state = $loader.request($state, "upgrade", $event.args ?? {})
   reply($state.rc, json_encode($state.response))
   $state = $loader.changed($state)
 end
@@ -437,6 +444,7 @@ if is_reload_candidate() then
   $state = $loader.prepare_reload($state)
 else
   $state = $loader.rescan($state, false)
+  if $state.state_ok then $state = $loader.upgrade($state) end
   $state = refresh_services($state, false)
   $state = $loader.changed($state)
 end

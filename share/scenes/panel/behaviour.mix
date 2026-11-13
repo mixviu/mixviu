@@ -653,7 +653,8 @@ on panel.tasks_scope desc "set the task scope {scope: all|current}, or toggle it
     return
   end
   $args = type($event.args) == "map" ? $event.args : {}
-  $lock=dirname($SETTINGS).."/.settings.lock"
+  -- The scene root survives loader reset; a lock inside the scene would move.
+  $lock=dirname(dirname($SETTINGS)).."/.settings.lock"
   if not flock($lock,{wait:1}) then
     reply(10,json_encode({error_code:"settings_busy",message:"panel settings are being saved; retry the command"}));return
   end

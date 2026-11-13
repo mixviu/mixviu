@@ -69,7 +69,8 @@ pub const TOPIC_SUFFIXES: [&str; 14] = [
     PLACEMENT_TOPIC_SUFFIX,
 ];
 /// Lab extensions; the frozen base catalogue remains byte-for-byte compatible.
-pub const EXTENSION_TOPIC_SUFFIXES: [&str; 2] = ["corner.input", "chrome.action.hover"];
+pub const EXTENSION_TOPIC_SUFFIXES: [&str; 3] =
+    ["corner.input", "chrome.action.hover", "record.state"];
 
 pub fn topic_name(service: &str, suffix: &str) -> String {
     format!("{service}.{suffix}")
@@ -394,6 +395,10 @@ impl TopicMessage {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObservationRecord {
+    RecordState {
+        state: Value,
+        event_seq: u64,
+    },
     ChromeHover {
         hover: Value,
         event_seq: u64,
@@ -505,7 +510,9 @@ pub enum ObservationRecord {
 impl ObservationRecord {
     pub fn event_seq(&self) -> u64 {
         match self {
-            Self::ChromeHover { event_seq, .. } | Self::CornerInput { event_seq, .. } => *event_seq,
+            Self::RecordState { event_seq, .. }
+            | Self::ChromeHover { event_seq, .. }
+            | Self::CornerInput { event_seq, .. } => *event_seq,
             Self::PlacementChanged { event_seq, .. } => *event_seq,
             Self::SessionChanged { event_seq, .. } => *event_seq,
             Self::PanelCommand { event_seq, .. } => *event_seq,
@@ -527,9 +534,9 @@ impl ObservationRecord {
     /// the outbox numbers each one as it is offered (`offer_next`).
     pub fn with_event_seq(mut self, seq: u64) -> Self {
         match &mut self {
-            Self::ChromeHover { event_seq, .. } | Self::CornerInput { event_seq, .. } => {
-                *event_seq = seq
-            }
+            Self::RecordState { event_seq, .. }
+            | Self::ChromeHover { event_seq, .. }
+            | Self::CornerInput { event_seq, .. } => *event_seq = seq,
             Self::PlacementChanged { event_seq, .. } => *event_seq = seq,
             Self::SessionChanged { event_seq, .. }
             | Self::PanelCommand { event_seq, .. }
@@ -550,6 +557,7 @@ impl ObservationRecord {
 
     pub fn topic_suffix(&self) -> &'static str {
         match self {
+            Self::RecordState { .. } => "record.state",
             Self::ChromeHover { .. } => "chrome.action.hover",
             Self::CornerInput { .. } => "corner.input",
             Self::PlacementChanged { .. } => PLACEMENT_TOPIC_SUFFIX,
@@ -577,6 +585,7 @@ impl ObservationRecord {
         message.set("command", self.topic_suffix());
         message.set("event_seq", &self.event_seq().to_string());
         message.body = match self {
+            Self::RecordState { state, event_seq } => { let mut body = state.clone(); body["event_seq"] = json!(event_seq); body.to_string() },
             Self::ChromeHover { hover, event_seq } => json!({"version":1,"hover":hover,"event_seq":event_seq}).to_string(),
             Self::CornerInput { output, corner, phase, button, consumed, event_seq } => json!({"version":1,"output":output,"corner":corner.name(),"phase":phase,"button":button,"consumed":consumed,"event_seq":event_seq}).to_string(),
             Self::PlacementChanged { id, generation, placement, output, event_seq } => json!({
@@ -750,7 +759,7 @@ impl ObservationRecord {
 /// The set of topics a loss interval touched, one bit per
 /// [`TOPIC_SUFFIXES`] entry.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct AffectedTopics(u16);
+pub struct AffectedTopics(u32);
 
 impl AffectedTopics {
     fn index(suffix: &str) -> usize {
@@ -782,7 +791,7 @@ impl AffectedTopics {
         self.0 == 0
     }
 
-    pub fn bits(self) -> u16 {
+    pub fn bits(self) -> u32 {
         self.0
     }
 

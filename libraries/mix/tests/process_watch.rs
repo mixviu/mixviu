@@ -174,22 +174,30 @@ async fn detached_pipe_holder_has_bounded_drain() {
     exec(&mut e, r#"$h = process_watch(["sh", "-c", $command])"#)
         .await
         .unwrap();
-    // Install cleanup before pumping, including on timeout/assertion failure.
-    for _ in 0..100 {
-        if pidfile.exists() {
-            break;
+    let deadline = start + Duration::from_millis(1200);
+    // Redirection creates the file before echo writes it. Wait for the whole
+    // PID line, not merely the file (or a possibly partial numeric prefix).
+    let pid = loop {
+        match std::fs::read_to_string(&pidfile) {
+            Ok(contents) => {
+                if let Some(line) = contents.strip_suffix('\n') {
+                    let pid: i32 = line.parse().expect("invalid detached child PID");
+                    assert!(pid > 0, "invalid detached child PID: {pid}");
+                    break pid;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => panic!("cannot read detached child PID: {error}"),
         }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "detached child did not publish a complete PID line within 1200ms"
+        );
         tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    let _cleanup = Cleanup(
-        std::fs::read_to_string(pidfile)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap(),
-        dir,
-    );
-    tokio::time::timeout(Duration::from_millis(1200), e.run_event_pump())
+    };
+    // Install cleanup before pumping, including on timeout/assertion failure.
+    let _cleanup = Cleanup(pid, dir);
+    tokio::time::timeout_at(deadline.into(), e.run_event_pump())
         .await
         .unwrap()
         .unwrap();
