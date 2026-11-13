@@ -10846,7 +10846,10 @@ pub(crate) fn terminate_process_group(pgid: i32, grace: std::time::Duration) {
         // SAFETY: kill(2) on a group whose id the caller holds. Continue the
         // group BEFORE SIGTERM: if TERM kills the leader while a member is
         // stopped, orphan-group SIGHUP+SIGCONT can kill that member before
-        // its TERM trap runs. SIGCONT makes it running before that can happen.
+        // its TERM trap runs. On Linux, SIGCONT clears the group stop and
+        // wakes tasks in the sender's context before kill returns. Members
+        // can run briefly before TERM; one that re-stops in this window can
+        // still be caught by orphan-group SIGHUP when the leader dies.
         unsafe {
             libc::kill(-pgid, libc::SIGCONT);
             libc::kill(-pgid, libc::SIGTERM);

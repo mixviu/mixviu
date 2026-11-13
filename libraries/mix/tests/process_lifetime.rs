@@ -35,6 +35,41 @@ async fn run_ok(source: &str) -> String {
         .unwrap_or_else(|error| panic!("script should succeed, got: {error}"))
 }
 
+async fn bounded_run_ok(source: &str, within: Duration) -> String {
+    // A blocking builtin must not stall the watchdog's runtime. A detached
+    // thread also avoids waiting forever for a hung blocking task at shutdown.
+    let source = source.to_owned();
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let result = std::panic::catch_unwind(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(run_ok(&source))
+        });
+        let _ = sender.send(result);
+    });
+    match tokio::time::timeout(within, receiver)
+        .await
+        .expect("process fixture attempt timed out")
+        .expect("process fixture thread disappeared")
+    {
+        Ok(output) => output,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
+}
+
+#[tokio::test]
+#[should_panic(expected = "process fixture attempt timed out")]
+async fn blocking_process_attempt_cannot_stall_the_watchdog() {
+    bounded_run_ok(
+        "run_argv([\"sleep\", \"0.2\"], {timeout: 0})",
+        Duration::from_millis(20),
+    )
+    .await;
+}
+
 /// A deadline starts before exec, so a shell-side wait alone cannot exclude
 /// startup from it. Readiness is sampled on return, not necessarily before
 /// the runner's deadline. Once present, every result assertion is final.
@@ -49,7 +84,7 @@ async fn run_ready(source: &str, ready: &std::path::Path, reset: &[&std::path::P
         for path in reset {
             let _ = std::fs::remove_file(path);
         }
-        let output = run_ok(source).await;
+        let output = bounded_run_ok(source, Duration::from_secs(10)).await;
         if ready.exists() {
             eprintln!(
                 "FIXTURE_READY retries={} path={}",
@@ -59,6 +94,10 @@ async fn run_ready(source: &str, ready: &std::path::Path, reset: &[&std::path::P
             let _ = std::fs::remove_file(ready);
             return output;
         }
+        eprintln!(
+            "FIXTURE_DISCARDED attempt={attempts} path={} output={output:?}",
+            ready.display()
+        );
         assert!(
             Instant::now() < startup_deadline,
             "fixture never reached readiness after {attempts} attempts; last output: {output:?}; source: {source}"
@@ -403,7 +442,7 @@ async fn check_stopped_member(keep_leader: bool) {
     // installation in the helper, and is required before writing ready.
     let output = run_ready(&format!(
         "$r = run_argv([\"sh\", \"-c\", \"{term_trap}sh {h} & child=$!; polls=0; while test $polls -lt 100; do if ! read -r pid comm state rest < /proc/$child/stat; then break; fi; case $state in T) if test -f {i}; then echo ready > {r}; break; fi ;; Z|X) break ;; esac; polls=$((polls + 1)); sleep 0.01; done; wait\"], {{timeout: 0.5, grace: 3}})\n\
-         print($r.timed_out .. \" \" .. ($r.signal == 15))\n\
+         print($r.timed_out .. \" \" .. ($r.signal == 15) .. \" \" .. ($r.duration_ms < 4500))\n\
          print($r.duration_ms)\n",
     ), &ready, &[&marker, &installed])
     .await;
@@ -412,16 +451,37 @@ async fn check_stopped_member(keep_leader: bool) {
     let _ = std::fs::remove_file(&helper);
     let _ = std::fs::remove_file(&installed);
     let expected = if keep_leader {
-        "true false\n"
+        "true false true\n"
     } else {
-        "true true\n"
+        "true true true\n"
     };
     assert!(output.starts_with(expected), "full output: {output:?}");
-    // The worker is killed by the grace deadline if it cannot run its trap.
-    // Its marker proves cooperative completion; a return-time upper bound
-    // also measures scheduling and group bookkeeping under the test pool.
+    // Require both cooperative trap completion and a generous return bound
+    // covering timeout + grace + reaping and pool bookkeeping.
     assert!(
         finished,
         "the stopped member never ran its SIGTERM trap; full output: {output:?}"
     );
+}
+
+/// Run only on a build worker in an exclusive checkout. The Mix driver
+/// mutates the signal sequence, rebuilds, checks the expected failures,
+/// and restores the source even when a control fails.
+#[test]
+#[ignore = "requires MIX_PROCESS_LIFETIME_NEGATIVE=1 and an exclusive build-worker checkout"]
+fn process_lifetime_negative_controls() {
+    assert_eq!(
+        std::env::var("MIX_PROCESS_LIFETIME_NEGATIVE").as_deref(),
+        Ok("1"),
+        "negative controls require explicit opt-in on a build worker"
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = std::process::Command::new("/opt/mixos/bin/mix")
+        .arg("libraries/mix/tests/process_lifetime_negative.mix")
+        .current_dir(root)
+        .output()
+        .expect("launch installed Mix negative-control driver");
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "negative-control driver failed");
 }
