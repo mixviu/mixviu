@@ -410,7 +410,10 @@ fn status_without_right_fields_and_priority_error_stay_visible_at_desktop_scales
                             .all(|s| s.format.color == error_colour)
                     );
                     let bounds = error.galley.mesh_bounds.translate(error.pos.to_vec2());
-                    assert!(clip.contains_rect(bounds), "scale {scale}, right={right}: error {bounds:?} outside {clip:?}");
+                    assert!(
+                        clip.contains_rect(bounds),
+                        "scale {scale}, right={right}: error {bounds:?} outside {clip:?}"
+                    );
                     assert!(!left_bounds.intersects(bounds));
                 }
                 output.drop_without_applying_deltas();
