@@ -290,3 +290,22 @@ pending; the missing integrated capability is not labelled accepted.
 Merged into the desk4 integration branch after four-app runtime 1804bb9. The macro-source editor uses the accepted shared native_document editor; New macro uses the reusable gold dialog title field. Native numeric deferrals use the existing Calls receipts and accepted deadline/cancellation paths. Job/reply limits are declared in Mix configuration. Integrated release-byte acceptance is complete at 0124e5c5; the current record supersedes earlier open attempts. Ced opens through generic viu; installed native Dopus is the explicit dependency used by gold, not evidence that the separate generic Dopus migration is complete.
 
 The final release editor witness passes New macro, Unicode edit, undo/redo, Save and explicit Tab/Cancel focus. Ced uses the accepted generic bundle and native ced.open contract; the file opens once after read-only readiness probes. Dopus resolves the installed application through the explicit active prefix, matching gold. All release-byte repetition is complete in the linked integrated acceptance. Generic Dopus migration remains a separate open port.
+
+## Discovery scheduling and traffic
+
+Discovery uses one generation-wide budget of 2,048 jobs, including local and
+remote node reads and descriptions, at most 64 peers, six jobs per lane and
+fifteen jobs total. Omitted peers and per-node services have visible warnings.
+A generation ends after fifteen seconds; discovery/subscription workers have
+four-second budgets. Job admission backs off one second, stops after three
+attempts and reports a terminal failure through the owner and info.job_error.
+
+All subscribed topics mark the projection dirty. The next tick publishes once;
+idle discovery ticks do not rebuild an unchanged view. Only observations tagged
+by a discovery job (generation and owner) and their correlated replies are
+filtered. Deliberate inbound and outbound calls remain visible.
+
+Host request ordering follows [the generic host contract](generic-host.md).
+The focused gate includes `cargo test -p lib-viu --features test-support --test
+workshop_bus`; `discovery-test.mix` runs both in `workshop_frame` and the
+automatically enumerated `app_mix` runner.
