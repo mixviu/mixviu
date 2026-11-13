@@ -573,6 +573,7 @@ fn paint_image(
     rect: Rect,
     ink: Color32,
 ) -> Option<(u64, u32, u32)> {
+    let ink = scene_colour(&scene.theme(), port_text(node, "color")).unwrap_or(ink);
     let key = match &item.source {
         Source::Tree => (String::new(), String::new(), item.id.clone()),
         Source::Row { list, item: row } => (list.clone(), row.clone(), item.id.clone()),

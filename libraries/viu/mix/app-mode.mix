@@ -5,7 +5,8 @@ fn valid($mode)
   return $mode==nil or contains(["light","dark"],$mode)
 end
 fn path($app)
-  return path_join(path_join(path_join(env("XDG_STATE_HOME",path_join(env("HOME"),".local/state")),"mixviu"),$app),"mode.json")
+  $root=viu_context().options.state_home ?? env("XDG_STATE_HOME",path_join(env("HOME"),".local/state"))
+  return path_join(path_join(path_join($root,"mixviu"),$app),"mode.json")
 end
 fn load($app)
   if not (viu_context().native_facilities ?? false) or (viu_context().options.headless ?? false) then return nil end

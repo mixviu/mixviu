@@ -45,3 +45,62 @@ fn app_modes_follow_live_session_override_restart_and_return_to_session() {
         }
     }
 }
+
+struct NativeTheme;
+impl mix::BusHandler for NativeTheme {
+    fn send<'a>(&'a self, _: &'a str, command: &'a str, args: &'a mix::value::Value) -> mix::evaluator::BusFuture<'a, mix::MixResult<(i32, mix::value::Value)>> {
+        Box::pin(async move {
+            let args = viu::runtime::to_json(args)?;
+            let body = args.get("body").unwrap_or(&args);
+            if command == "native.theme" {
+                let choice = viu::appearance::theme_choice(&json!({"mode":body["mode"]})).unwrap();
+                let theme = toolkit::Theme::embedded().with_choice(&choice).unwrap();
+                return Ok((0, viu::runtime::from_json(json!({"mode":theme.mode().name(),"scheme":theme.scheme().name()}))?));
+            }
+            Ok((0, viu::runtime::from_json(json!({"bindings":[],"ready":true}))?))
+        })
+    }
+    fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a mix::value::Value) -> mix::evaluator::BusFuture<'a, mix::MixResult<()>> { Box::pin(async { Ok(()) }) }
+    fn port_exists<'a>(&'a self, _: &'a str) -> mix::evaluator::BusFuture<'a, mix::MixResult<bool>> { Box::pin(async { Ok(false) }) }
+    fn next_incoming<'a>(&'a self) -> mix::evaluator::BusFuture<'a, Option<mix::evaluator::IncomingEvent>> { Box::pin(async { None }) }
+}
+
+fn next(runtime: &Runtime, wakes: &mpsc::Receiver<()>, app: &str) -> viu::runtime::Completion {
+    wakes.recv_timeout(Duration::from_secs(20)).unwrap();
+    let done = runtime.try_completion().unwrap();
+    assert!(done.error.is_none(), "{app}: {:?}\n{}", done.error, done.stderr);
+    done
+}
+
+#[test]
+fn every_app_executes_the_mode_contract_and_restores_its_choice() {
+    let temporary = tempfile::tempdir().unwrap();
+    for app in ["ced", "dopus", "email", "gallery", "monitor", "prefs", "screenshot", "term", "workshop"] {
+        let app_home = temporary.path().join(app);
+        std::fs::create_dir_all(&app_home).unwrap();
+        for (restart, expected) in [(false, None), (true, Some("light"))] {
+            let arguments = if app == "email" { vec!["--fixture".into()] } else if app == "screenshot" { vec!["comp".into(), app_home.to_string_lossy().into_owned(), app_home.join("captures").to_string_lossy().into_owned()] } else if app == "dopus" { vec!["--profile".into(),app_home.to_string_lossy().into_owned()] } else { vec![] };
+            let bundle = viu::bundle::Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../apps/{app}")), &arguments).unwrap();
+            let (tx, wakes) = mpsc::channel();
+            let mut runtime = Runtime::with_services(16, Arc::new(move || { let _ = tx.send(()); }), Some(Box::new(|| std::rc::Rc::new(NativeTheme))), viu::runtime::Services {
+                calls: Some(Default::default()), timers: Some(Default::default()), documents: Some(Default::default()), rasters: Some(Default::default()), terminals: Some(Default::default()), ui_state: Some(Default::default()), options: json!({"state_home":app_home}), ..Default::default()
+            });
+            runtime.load(bundle.program).unwrap();
+            let initial = next(&runtime, &wakes, app).model.unwrap();
+            assert_eq!(initial["theme_choice"]["mode"].as_str(), expected, "{app} restart={restart}");
+            for mode in if restart { vec!["session"] } else { vec!["dark", "session", "light"] } {
+                runtime.event(format!("{app}.execute"), json!({"id":format!("view.mode.{mode}"),"params":{}})).unwrap();
+                let done = next(&runtime, &wakes, app);
+                if let Some(reply) = done.reply { assert_eq!(reply.rc, 0, "{app}: {}", reply.body); }
+                let model = done.model.unwrap();
+                assert_eq!(model["theme_choice"]["mode"].as_str(), if mode == "session" { None } else { Some(mode) }, "{app}");
+                let ctx = egui::Context::default();
+                for session in ["light", "dark"] {
+                    let snapshot = json!({"state":{"lost":false,"values":{"appearance.mode":session}}});
+                    viu::appearance::install_session_choice(&ctx,&snapshot,app,&toolkit::Theme::embedded(),&Default::default(),&model["theme_choice"]).unwrap();
+                    assert_eq!(viu::appearance::session_theme(&ctx).mode().name(), if mode=="session" { session } else { mode }, "{app}");
+                }
+            }
+        }
+    }
+}

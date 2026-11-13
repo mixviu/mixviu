@@ -52,9 +52,11 @@ end
 on viu.session.changed
   $state.effective=$event.args.appearance;$state.keymap=$event.args.keymap;$state=publish_model($state)
 end
+on viu.theme.changed
+  $state.effective=$event.args;$state=publish_model($state)
+end
 on bus.connected
-  $state.connected=true;$state.look.mode=$app_mode.load("screenshot")
-$state=$op.refresh($state);$state=publish_model($state)
+  $state.connected=true;$state=$op.refresh($state);$state=publish_model($state)
 end
 on bus.disconnected
   $state.connected=false;$state.status="The Bus is disconnected";$state=publish_model($state)
