@@ -422,6 +422,17 @@ impl Drop for VideoEncoder {
 mod tests {
     use super::*;
     #[test]
+    fn drop_kills_and_reaps_encoder() {
+        let Ok(encoder) = VideoEncoder::start_result(2, 2, 30) else {
+            eprintln!("encoder drop test skipped: ffmpeg unavailable"); return;
+        };
+        let pid = encoder.child.as_ref().unwrap().id() as i32;
+        drop(encoder);
+        let mut status = 0;
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) }, -1);
+        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+    }
+    #[test]
     fn missing_slots_and_dropped_tail_repeat_the_previous_frame() {
         let (tx, rx) = sync_channel(4);
         tx.send(QueuedFrame {

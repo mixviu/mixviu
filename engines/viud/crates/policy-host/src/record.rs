@@ -352,6 +352,11 @@ mod tests {
         assert_eq!(past.status["state"], "failed");
         cancel_pending(&session, "duplicate cancellation");
         assert!(session.borrow().start_answers.is_empty());
+        for i in 0..256 {
+            { let mut s = session.borrow_mut(); s.request_id = format!("pending-{i}"); s.id = format!("session-{i}"); s.failed = None; }
+            cancel_pending(&session, "max_seconds elapsed before first frame");
+        }
+        assert_eq!(PAST.with_borrow(|p| p.len()), 128);
     }
 }
 

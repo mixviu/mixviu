@@ -114,6 +114,15 @@ mod file_tests {
         assert!(read_clock(-1).is_err());
         assert!(monotonic_us().unwrap() > 0);
     }
+    #[test]
+    fn failed_encoder_setup_removes_private_sidecars() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("failed.mkv").to_str().unwrap().to_owned();
+        assert!(Recording::new("failed".into(), path, 2, 2, 30, "invalid".into()).is_err());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        std::fs::remove_dir(dir).unwrap();
+    }
 }
 impl Drop for TakeFiles { fn drop(&mut self) { self.cleanup(); } }
 
