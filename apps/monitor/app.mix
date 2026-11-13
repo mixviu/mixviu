@@ -8,6 +8,7 @@ $commands=require("actions.mix")
 $history=require("history.mix")
 $performance=require("performance.mix")
 $core=require("core.mix");$state=$core.initial();$ctx=viu_context()
+$signal_policy=require("signal-policy.mix");$state.signal_context=$signal_policy.local_context()
 if len($app_args)>0 then
   if len($app_args)==2 and $app_args[0]=="--node" then $state.node=$app_args[1]
   elif len($app_args)==1 and not starts_with($app_args[0],"--") then $state.node=$app_args[0]
@@ -90,7 +91,7 @@ on monitor.sort
   if type($event.args.column)!="string" then reply(10,json_encode({error_code:"ARGUMENT",message:"column must be a string"}));return end
   if not contains(["name","pid","user","cpu","memory","io"],$event.args.column) then reply(10,json_encode({error_code:"ARGUMENT",message:"column must be name, pid, user, cpu, memory or io"}));return end
   if contains(keys($event.args),"reverse") and type($event.args.reverse)!="bool" then reply(10,json_encode({error_code:"ARGUMENT",message:"reverse must be a bool"}));return end
-  $state.reverse=$event.args.reverse ?? (if $state.sort==$event.args.column then not $state.reverse else false end);$state.sort=$event.args.column
+  $state=$core.sort_edit($state,$event.args.column,$event.args.reverse)
   $state=requery_monitor($state);publish_monitor($state)
   reply(0,json_encode({sort:$state.sort,reverse:$state.reverse}))
 end
@@ -136,8 +137,7 @@ on monitor.intent
     end
   elif $a.id=="processes" then
     if $a.action=="sort" then
-      $state.reverse=if $state.sort==$a.value.column then not $state.reverse else false end
-      $state.sort=$a.value.column;$state=$fetch.requery($state)
+      $state=$core.sort_edit($state,$a.value.column); $state=$fetch.requery($state)
     elif $a.action=="select" then $state.selected=to_number($a.value.key) end
   end
   publish_monitor($state);reply(0,"{}")
@@ -156,7 +156,7 @@ end
 
 fn signal_monitor($s,$a)
   $pid=$a.pid
-  if $s.node!="" or $s.dialog!=nil or $s.selected==nil or $pid!=$s.selected then
+  if not $commands.can_signal($s,$pid) then
     return {state:$s,rc:10,body:{error_code:"DISABLED",message:"Command is disabled"}}
   end
   $expected=if contains(keys($a),"start_time") then $a.start_time else $s.start_times[to_string($pid)] end
