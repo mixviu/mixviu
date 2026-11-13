@@ -287,6 +287,9 @@ fn app_mode_child() {
             );
             runtime.load(bundle.program).unwrap();
             let initial = next(&runtime, &wakes, app).model.unwrap();
+            if !restart && app != "workshop" {
+                assert_eq!(std::fs::read_to_string(app_home.join("mode.json")).unwrap(), "{\"mode\":");
+            }
             if !restart && app == "ced" {
                 let menus = initial["frame"]["menu"].to_string();
                 for mode in ["light", "dark", "session"] {
@@ -376,6 +379,9 @@ fn app_mode_child() {
                     "{app}"
                 );
                 let ctx = egui::Context::default();
+                // An unchanged publish must not even inspect/rewrite the file.
+                // External edits become authoritative on the next launch.
+                std::fs::write(app_home.join("mode.json"), "diagnostic sentinel").unwrap();
                 for session in ["light", "dark"] {
                     let snapshot = json!({"appearance":{"scheme":"mixos","mode":session,"style":"own"},"keymap":{},"state":{"lost":false,"error":null,"binding":{"instance":"example","profile":"default"},"incarnation":"mode-fixture","revision":"1","values":{"appearance.mode":session}}});
                     viu::appearance::install_session_choice(
@@ -428,6 +434,8 @@ fn app_mode_child() {
                         "{app} effective state readback"
                     );
                 }
+                assert_eq!(std::fs::read_to_string(app_home.join("mode.json")).unwrap(), "diagnostic sentinel", "{app} saves only on change");
+                std::fs::write(app_home.join("mode.json"), serde_json::to_vec(&saved).unwrap()).unwrap();
             }
             if app == "gallery" {
                 runtime.event("viu.frame.close".into(), json!({})).unwrap();

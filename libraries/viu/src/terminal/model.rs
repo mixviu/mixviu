@@ -2072,11 +2072,12 @@ mod tests {
 
     #[test]
     fn theme_defaults_recolour_idle_cells_without_replacing_ansi_colours() {
-        let terminal = Terminal::from_test_vt(8, 2, b"A\x1b[31mB\x1b[48;2;18;52;86mC\x1b[0mD");
+        let terminal = Terminal::from_test_vt(8, 2, b"A\x1b[31mB\x1b[48;2;18;52;86mC\x1b[0mD\x1b[1mE");
         terminal.set_default_colours([230, 230, 230], [16, 16, 16]);
         let dark = terminal.grid_snapshot();
         let red = dark.screen.cells[1].fg;
         assert_eq!(dark.screen.cells[0].bg, [16, 16, 16]);
+        assert_ne!(dark.screen.cells[3].fg, dark.screen.cells[4].fg);
         assert!(
             terminal
                 .grid_snapshot()
@@ -2092,6 +2093,7 @@ mod tests {
         assert_eq!(light.screen.cells[1].fg, red);
         assert_eq!(light.screen.cells[2].bg, [18, 52, 86]);
         assert_eq!(light.screen.cells[3].fg, [20, 20, 20]);
+        assert_ne!(light.screen.cells[3].fg, light.screen.cells[4].fg);
         terminal.set_default_colours([20, 20, 20], [250, 250, 250]);
         assert!(
             terminal
