@@ -437,6 +437,15 @@ fn split_reflow_keeps_a_cjk_character_displaced_at_the_wrap_point() {
     assert_eq!(row(&t, 1).trim_end(), "abcde界 Z");
     assert_eq!(t.screen(false).cursor, (8, 1));
     assert_eq!(t.grid.lock().history_size(), 0);
+    // Cursor before the wide glyph, on either half, on Z, and after Z.
+    for col in 4..=8 {
+        let t = Terminal::from_test_vt(10, 8, "top\r\nabcde界Z".as_bytes());
+        t.advance_test_vt(format!("\x1b[2;{}H", col + 1).as_bytes());
+        t.resize(6, 8, 60, 80);
+        let expected = if col < 5 { (col, 1) } else { (col - 5, 2) };
+        assert_eq!(t.screen(false).cursor, expected, "old column {col}");
+        assert_eq!(t.grid.lock().history_size(), 0);
+    }
 }
 
 #[test]

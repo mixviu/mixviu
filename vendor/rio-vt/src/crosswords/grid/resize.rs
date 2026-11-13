@@ -469,6 +469,13 @@ impl Grid<Square> {
                             mem::replace(&mut row[Column(columns - 1)], spacer);
                         wrapped.insert(0, wide_char);
                         displaced = 1;
+                        // MIXVIU LOCAL PATCH (#106): account for the leading
+                        // spacer when the cursor moves with the displaced char.
+                        let cursor_line =
+                            self.lines - self.cursor.pos.row.0 as usize - 1;
+                        if i == cursor_line && self.cursor.pos.col.0 >= columns - 1 {
+                            self.cursor.pos.col += 1;
+                        }
                     }
                 }
 
