@@ -395,10 +395,11 @@ mod search_input_tests {
                     crate::appearance::install_session(&ctx, &snapshot, "prefs", &toolkit::Theme::embedded(), &Default::default()).unwrap();
                     let theme = crate::appearance::session_theme(&ctx);
                     let look = Look::of(&theme, &Value::Null);
-                    let output = ctx.run_ui(egui::RawInput {
+                    let mut output = ctx.run_ui(egui::RawInput {
                         screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1040.0,680.0))),
                         ..Default::default()
                     }, |ui| { draw(ui, "browser", &value, &mut BTreeMap::new(), &mut Vec::new()); });
+                    output.textures_delta.clear();
                     if mode == design::Mode::Light { check(&look, &output); }
                     output.drop_without_applying_deltas();
                 }
@@ -408,7 +409,7 @@ mod search_input_tests {
 
     fn contrast(a: Color32, b: Color32) -> f32 {
         let luminance = |c: Color32| { let c = egui::Rgba::from(c); 0.2126*c.r()+0.7152*c.g()+0.0722*c.b() };
-        let (a,b) = (luminance(a),luminance(b));
+        let (a,b) = (luminance(b.blend(a)),luminance(b));
         (a.max(b)+0.05)/(a.min(b)+0.05)
     }
 
@@ -431,7 +432,7 @@ mod search_input_tests {
             let hint = output.shapes.iter().find_map(|s| match &s.shape {
                 egui::Shape::Text(t) if t.galley.job.text == "Search preferences" => Some(t), _ => None
             }).expect("search hint painted");
-            let background = output.shapes.iter().take_while(|s| !matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == "Search preferences")).filter_map(|s| match &s.shape { egui::Shape::Rect(r) if r.rect.contains(hint.pos) => Some(r.fill), _ => None }).last().expect("painted search background");
+            let background = output.shapes.iter().take_while(|s| !matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == "Search preferences")).filter_map(|s| match &s.shape { egui::Shape::Rect(r) if r.rect.contains(hint.pos) && r.fill.a() == 255 => Some(r.fill), _ => None }).last().expect("painted search background");
             for section in &hint.galley.job.sections {
                 assert!(contrast(section.format.color, background) >= 4.5,
                     "placeholder {:?} on {:?}",section.format.color,background);
@@ -563,13 +564,22 @@ pub(crate) fn draw(
         }
     });
     crate::media_gallery::begin(ui, id);
-    let look = Look::of(
+    let mut look = Look::of(
         &crate::appearance::session_theme(ui.ctx()),
         &value["settings"],
     );
-    // Paint from the installed session theme, as the title band does. A
-    // model revision can arrive independently of an effective auto-mode or
-    // window theme change; it cannot be a palette invalidation key.
+    // The author decides when a palette snapshot changes. Other browsers
+    // continue following the live theme on every frame.
+    if let Some(refresh) = value.get("look_refresh_key") {
+        let key = egui::Id::unique((ui.ctx().viewport_id(), id, "browser-look"));
+        if let Some((previous, cached)) = ui.ctx().data(|d| d.get_temp::<(Value, Look)>(key)) {
+            if previous == *refresh {
+                look = cached;
+            }
+        }
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(key, (refresh.clone(), look)));
+    }
     ui.painter().rect_filled(area, 0.0, look.window);
     let condensed = area.width() < 648.0;
     let mut content = area;
@@ -612,8 +622,7 @@ pub(crate) fn draw(
                         egui::TextEdit::singleline(&mut query)
                             .id_salt((id, "query"))
                             .frame(egui::Frame::NONE)
-                            .hint_text(RichText::new(text(value, "search_hint")).color(look.text))
-                            .text_color(look.text)
+                            .hint_text(text(value, "search_hint"))
                             .desired_width(ui.available_width() - 24.0),
                     );
                     record(geometry, id, "search", &r);
