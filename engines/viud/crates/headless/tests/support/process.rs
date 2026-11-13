@@ -68,7 +68,7 @@ pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&
         None,
         true,
         true,
-        None,
+        false,
     )
 }
 
@@ -83,21 +83,35 @@ pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
         Some(service),
         true,
         true,
-        None,
+        false,
     )
 }
 
 #[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
 pub fn spawn_at_refresh(refresh: &str) -> Process {
-    spawn_options(1, None, "refresh", None, refresh, None, true, true, None)
+    spawn_options(1, None, "refresh", None, refresh, None, true, true, false)
 }
 
 #[allow(dead_code)] // Only the timing integration target disables tracing.
 pub fn spawn_measurement() -> Process {
-    spawn_options(1, None, "presentation", None, "60", None, false, true, None)
+    spawn_options(1, None, "presentation", None, "60", None, false, true, false)
 }
 
 fn spawn_options(
+    scale: i32,
+    explicit_node: Option<&str>,
+    label: &str,
+    bus: Option<&str>,
+    refresh: &str,
+    service: Option<&str>,
+    trace: bool,
+    agent: bool,
+    inactive: bool,
+) -> Process {
+    spawn_with_seat(scale, explicit_node, label, bus, refresh, service, trace, agent,
+        if inactive { Some("1") } else { None })
+}
+fn spawn_with_seat(
     scale: i32,
     explicit_node: Option<&str>,
     label: &str,
@@ -240,7 +254,7 @@ fn spawn_options(
 
 #[allow(dead_code)]
 pub fn spawn_denied(label: &str, bus: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", None, true, false, None)
+    spawn_options(1, None, label, Some(bus), "60", None, true, false, false)
 }
 
 #[allow(dead_code)]
@@ -254,13 +268,13 @@ pub fn spawn_inactive(label: &str, bus: &str) -> Process {
         None,
         true,
         false,
-        Some("1"),
+        true,
     )
 }
 
 #[allow(dead_code)]
 pub fn spawn_transitions(label: &str, bus: &str) -> Process {
-    spawn_options(
+    spawn_with_seat(
         1,
         None,
         label,
