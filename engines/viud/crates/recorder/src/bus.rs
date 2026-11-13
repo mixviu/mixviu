@@ -2,11 +2,13 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Overlay-free recording core. The host owns target validation and scheduling.
 use graphics::capture::encode::VideoEncoder;
+pub use graphics::capture::encode::video::probe_vaapi;
 use serde_json::{Value, json};
 use std::{
     fs::File,
     io::Write,
     sync::mpsc::{Receiver, channel},
+    sync::Arc,
 };
 
 pub fn monotonic_us() -> u64 {
@@ -37,7 +39,12 @@ pub struct Recording {
     source_width: u32,
     source_height: u32,
     seq: u64,
-    last: Vec<u8>,
+    last: Arc<[u8]>,
+    encoder_name: String,
+    readback_us: u64,
+    readback_total_us: u64,
+    readbacks: u64,
+    readback_max_us: u64,
     frames_file: File,
     markers_file: File,
     encoder: Option<VideoEncoder>,
@@ -51,11 +58,12 @@ impl Recording {
         width: u32,
         height: u32,
         fps: u32,
+        encoder_name: String,
     ) -> Result<Self, String> {
         let (source_width,source_height)=(width,height);
         let width=width.checked_add(1).ok_or("capture width overflow")? & !1;
         let height=height.checked_add(1).ok_or("capture height overflow")? & !1;
-        let encoder = VideoEncoder::start_at(width, height, fps, Some(path.clone().into()))?;
+        let encoder = VideoEncoder::start_with_encoder(width, height, fps, Some(path.clone().into()),&encoder_name)?;
         let frames_file =
             File::create(format!("{path}.frames.jsonl")).map_err(|e| e.to_string())?;
         let markers_file =
@@ -75,7 +83,9 @@ impl Recording {
             error: None,
             terminal: None,
             seq: 0,
-            last: Vec::new(),
+            last: Arc::from([]),
+            encoder_name,
+            readback_us:0,readback_total_us:0,readbacks:0,readback_max_us:0,
             frames_file,
             markers_file,
             encoder: Some(encoder),
@@ -87,27 +97,32 @@ impl Recording {
         json!({"session":self.session,"path":self.path,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path)})
     }
 
-    pub fn frame(&mut self, pixels: Option<(u32, u32, Vec<u8>)>) -> Result<(), String> {
-        if let Some((w, h, rgb)) = pixels {
+    pub fn frame(&mut self, pixels: Option<(u32, u32, Vec<u8>,u64)>) -> Result<(), String> {
+        if let Some((w, h, rgb,readback_us)) = pixels {
+            self.readback_us=readback_us;
+            self.readback_total_us+=readback_us;
+            self.readbacks+=1;
+            self.readback_max_us=self.readback_max_us.max(readback_us);
             if (w, h) != (self.source_width, self.source_height) {
                 return Err("target dimensions changed".into());
             }
             if rgb.len() != w as usize * h as usize * 3 {
                 return Err("invalid RGB frame".into());
             }
-            self.last = vec![0;self.width as usize*self.height as usize*4];
-            for (i,p) in rgb.chunks_exact(3).enumerate() {
-                let at=((i/w as usize)*self.width as usize+i%w as usize)*4;
-                self.last[at..at+4].copy_from_slice(&[p[2],p[1],p[0],255]);
+            let mut bgra = vec![0;self.width as usize*self.height as usize*4];
+            for (input,output) in rgb.chunks_exact(w as usize*3).zip(bgra.chunks_exact_mut(self.width as usize*4)) {
+                for (p,out) in input.chunks_exact(3).zip(output.chunks_exact_mut(4)) { out.copy_from_slice(&[p[2],p[1],p[0],255]); }
             }
+            self.last=bgra.into();
         } else {
+            self.readback_us=0;
             self.repeated += 1;
         }
         let encoder = self.encoder.as_ref().ok_or("recording is finishing")?;
         if let Some(error) = encoder.error() {
             return Err(error);
         }
-        if encoder.try_push(self.last.clone()) {
+        if encoder.try_push_shared(self.last.clone()) {
             let now = monotonic_us();
             if self.frames == 0 {
                 self.t0_us = now;
@@ -138,7 +153,7 @@ impl Recording {
     }
 
     pub fn status(&self) -> Value {
-        json!({"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":std::fs::metadata(&self.path).map(|m|m.len()).unwrap_or(0),"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"error":self.error})
+        json!({"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":std::fs::metadata(&self.path).map(|m|m.len()).unwrap_or(0),"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
     }
 
     pub fn stop(&mut self, discard: bool) {
@@ -173,7 +188,7 @@ impl Recording {
                 }
                 self.finishing = None;
                 self.terminal = Some(
-                    json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path),"encoder":"ffmpeg/libx264/matroska","error":self.error}),
+                    json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
                 );
                 true
             }

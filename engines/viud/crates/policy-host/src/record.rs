@@ -29,6 +29,8 @@ struct Session {
     path: String,
     targets: Vec<CaptureFrameSpec>,
     fps: u32,
+    encoder: String,
+    probe: Option<std::sync::mpsc::Receiver<Result<(),String>>>,
     max_seconds: u64,
     recording: Option<Recording>,
     start: Option<Value>,
@@ -82,6 +84,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         mut targets,
         path,
         fps,
+        encoder,
         max_seconds,
     } = op
     {
@@ -124,12 +127,19 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             }
         }
         let id = format!("record-{}", recorder::bus::monotonic_us());
+        let probe=if encoder=="vaapi" {
+            let (tx,rx)=std::sync::mpsc::channel();
+            std::thread::spawn(move || {let _=tx.send(recorder::bus::probe_vaapi());});
+            Some(rx)
+        } else { None };
         let session = Rc::new(RefCell::new(Session {
             request_id,
             id,
             path,
             targets,
             fps,
+            encoder,
+            probe,
             max_seconds,
             recording: None,
             start: None,
@@ -143,6 +153,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         let tick_session = session.clone();
         let period = Duration::from_nanos(1_000_000_000 / u64::from(fps));
         let mut next = Instant::now();
+        let mut anchored=false;
         if lp
             .loop_handle
             .insert_source(Timer::immediate(), move |_, _, lp| {
@@ -153,6 +164,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 {
                     TimeoutAction::Drop
                 } else {
+                    if !anchored && s.start.is_some() { next=Instant::now(); anchored=true; }
                     next += period;
                     TimeoutAction::ToInstant(next)
                 }
@@ -217,6 +229,14 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     {
         let mut s = session.borrow_mut();
+        if let Some(probe)=&s.probe {
+            match probe.try_recv() {
+                Ok(Ok(()))=>s.probe=None,
+                Ok(Err(error))=>{drop(s);fail(session,&error);return;},
+                Err(std::sync::mpsc::TryRecvError::Disconnected)=>{drop(s);fail(session,"encoder preflight disconnected");return;},
+                _=>return,
+            }
+        }
         if let Some(r) = s.recording.as_mut() {
             if r.poll() {
                 let reply = r.terminal.clone().unwrap();
@@ -352,7 +372,8 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             let height = frames.iter().map(|(_, f)| f.1).max().unwrap();
             let mut pixels = vec![0; width as usize * height as usize * 3];
             let mut x = 0;
-            for (_, (w, h, p)) in frames.iter() {
+            let readback_us=frames.iter().map(|(_,frame)|frame.3).sum::<u64>();
+            for (_, (w, h, p,_)) in frames.iter() {
                 for y in 0..*h as usize {
                     let at = (y * width as usize + x) * 3;
                     pixels[at..at + *w as usize * 3]
@@ -370,7 +391,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 return;
             }
             if s.recording.is_none() {
-                match Recording::new(s.id.clone(), s.path.clone(), width, height, s.fps) {
+                match Recording::new(s.id.clone(), s.path.clone(), width, height, s.fps,s.encoder.clone()) {
                     Ok(recording) => s.recording = Some(recording),
                     Err(error) => {
                         drop(s);
@@ -383,7 +404,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 .recording
                 .as_mut()
                 .unwrap()
-                .frame(Some((width, height, pixels)))
+                .frame(Some((width, height, pixels,readback_us)))
             {
                 drop(s);
                 fail(&session, &error);

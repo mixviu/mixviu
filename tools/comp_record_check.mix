@@ -1,11 +1,13 @@
 -- Scoped CBC-only recording validation; never run on a desktop.
 $commands = [
+  ["cargo", "build", "-p", "mix", "--bin", "mix"],
   ["cargo", "build", "-p", "viud", "--no-default-features", "--features", "backend-headless"],
   ["cargo", "build", "-p", "noded", "-p", "testkit", "--bins"],
   ["cargo", "test", "-p", "comp-model", "-p", "recorder", "-p", "graphics", "-p", "policy-host", "-p", "screencopy", "-p", "headless", "--lib"],
   ["cargo", "test", "-p", "headless", "--test", "capture", "--no-run"]
 ]
 try
+  export MIX_TEST_MIX_EXE=realpath("target/debug") .. "/mix"
   for $command in $commands
     print(join($command, " "))
     $result = run_argv($command, {timeout: 1800, max_output: 16000000})

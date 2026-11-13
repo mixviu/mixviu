@@ -57,6 +57,7 @@ pub enum RecordCommand {
         targets: Vec<CaptureFrameSpec>,
         path: String,
         fps: u32,
+        encoder: String,
         max_seconds: u64,
     },
     Marker {
@@ -84,7 +85,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
             "path",
             "fps",
             "cursor",
-            "max_seconds",
+            "max_seconds", "encoder",
         ],
         "comp.record.marker" => &["session", "label", "data"],
         "comp.record.status" => &["session"],
@@ -130,7 +131,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 .filter(|n| (1..=86400).contains(n))
                 .ok_or_else(|| invalid_argument("max_seconds", "integer", "1..=86400"))?;
             let cursor = match fields.get("cursor") {
-                None => false,
+                None => true,
                 Some(Value::Bool(b)) => *b,
                 _ => return Err(invalid_argument("cursor", "boolean", "true|false")),
             };
@@ -140,6 +141,15 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 .ok_or_else(|| {
                     invalid_argument("target", "object", "{output?|window?|windows?|region?}")
                 })?;
+            if target.keys().any(|key|!["output","output_generation","window","windows","region"].contains(&key.as_str())) {
+                return Err(invalid_argument("target","capture target","output|window|windows|region"));
+            }
+            let encoder=match fields.get("encoder").and_then(Value::as_str) {
+                None if !fields.contains_key("encoder") => "x264",
+                Some("x264") => "x264",
+                Some("vaapi") => "vaapi",
+                _ => return Err(invalid_argument("encoder","encoder name","x264|vaapi")),
+            }.to_owned();
             let mut targets = Vec::new();
             if let Some(windows) = target.get("windows") {
                 let windows = windows
@@ -169,6 +179,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 targets,
                 path,
                 fps,
+                encoder,
                 max_seconds,
             })
         }
@@ -385,7 +396,7 @@ mod tests {
         };
         assert_eq!(targets.len(), 2);
         assert_eq!(fps, 30);
-        assert!(!targets[0].cursor);
+        assert!(targets[0].cursor);
         for (key, value) in [
             ("path", json!("relative.mkv")),
             ("fps", json!(0)),

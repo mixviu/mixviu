@@ -107,6 +107,59 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
+#[ignore = "needs a GPU render node, ffmpeg/libx264 and built viud/noded/testkit binaries"]
+fn record_4k_output_windows_pointer_and_damage_repeat() {
+    let bus=Bus::start("record-4k");
+    let mut process=process::spawn_4k("record-4k",&bus.url);
+    let mut a=Pattern::named(connect(&mut process),"record-a",false);
+    let mut b=Pattern::named(connect(&mut process),"record-b",false);
+    bus.ready();
+    pump_patterns(&mut [&mut a,&mut b]);
+    for (name,x) in [("record-a",100),("record-b",600)] {
+        let row=bus.window_for(name);
+        bus.call("comp.window.place",place_args(&row,json!({"x":x,"y":100})));
+    }
+    bus.call("comp.input.pointer.move",json!({"seat":"agent","output":"headless-0","x":1000,"y":500}));
+    pump_patterns(&mut [&mut a,&mut b]);
+    let path=process.root.join("4k.mkv");
+    let args=json!({"request_id":"4k","target":{"output":"headless-0"},"cursor":true,"path":path,"fps":30,"max_seconds":10});
+    let start=bus.call("comp.record.start",args);
+    assert_eq!(start["width"],3840);
+    assert_eq!(start["height"],2160);
+    let session=start["session"].clone();
+    let before=bus.call("comp.record.status",json!({"session":session}));
+    for _ in 0..50 { a.pump(); b.pump(); thread::sleep(Duration::from_millis(20)); }
+    let idle=bus.call("comp.record.status",json!({"session":session}));
+    assert!(idle["repeated"].as_u64().unwrap()>=20,"{idle}");
+    assert!(idle["readbacks"].as_u64().unwrap()-before["readbacks"].as_u64().unwrap()<=4,"idle output kept reading back: {before} -> {idle}");
+    assert!(idle["readback_mean_us"].as_u64().unwrap()>0);
+    bus.call("comp.input.pointer.move",json!({"seat":"agent","output":"headless-0","x":1200,"y":500}));
+    thread::sleep(Duration::from_millis(200));
+    let moved=bus.call("comp.record.status",json!({"session":session}));
+    assert!(moved["readbacks"].as_u64()>idle["readbacks"].as_u64(),"pointer damage must cause readback");
+    let marker=bus.call("comp.record.marker",json!({"session":session,"label":"4k-done"}));
+    let stop=bus.call("comp.record.stop",json!({"session":session}));
+    assert_eq!(stop["dropped"],0,"4K30 overran: {stop}");
+    assert!(marker["frame"].as_u64()<stop["frames"].as_u64());
+    let decoded=Command::new("ffmpeg").args(["-v","error","-i"]).arg(&path).args(["-frames:v","1","-f","rawvideo","-pix_fmt","rgb24","-"]).output().unwrap();
+    assert!(decoded.status.success(),"{}",String::from_utf8_lossy(&decoded.stderr));
+    assert_eq!(decoded.stdout.len(),3840*2160*3);
+    let at=|x:usize,y:usize| {let i=(y*3840+x)*3; &decoded.stdout[i..i+3]};
+    // Each independent client must be visible in the whole-output recording.
+    for x in [150,650] {
+        for (actual,expected) in at(x,140).iter().zip(rgb(COLOURS[0])) { assert!((i16::from(*actual)-i16::from(expected)).abs()<20); }
+    }
+    let amber=(500..524).flat_map(|y|(1000..1024).map(move|x|(x,y))).filter(|(x,y)| {
+        let p=at(*x,*y); p[0]>200 && p[1]>90 && p[1]<210 && p[2]<80
+    }).count();
+    assert!(amber>20,"the encoded output must include the pointer ({amber} amber pixels)");
+    let frames: Vec<Value>=fs::read_to_string(start["frames_path"].as_str().unwrap()).unwrap().lines().map(|s|serde_json::from_str(s).unwrap()).collect();
+    let duration=frames.last().unwrap()["t_us"].as_u64().unwrap() as f64/1_000_000.0;
+    assert!((frames.len() as f64-duration*30.0).abs()<5.0,"{} frames in {duration}s",frames.len());
+    println!("4K30: {stop}; idle status: {idle}");
+}
+
+#[test]
 #[ignore = "needs a GPU render node, ffmpeg/libx264 and built viud/noded binaries"]
 fn record_idle_output_lifecycle_and_clock() {
     let bus = Bus::start("record-idle");

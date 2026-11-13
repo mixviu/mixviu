@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::io::Write;
 
 type Answer = Box<dyn FnOnce(Result<Value, ControlReply>)>;
-pub type Pixels = (u32, u32, Vec<u8>);
+pub type Pixels = (u32, u32, Vec<u8>, u64);
 type PixelAnswer = Box<dyn FnOnce(Result<Pixels, ControlReply>)>;
 thread_local! {
     static PIXEL_ANSWERS: RefCell<std::collections::HashMap<String, PixelAnswer>> = RefCell::new(std::collections::HashMap::new());
@@ -104,13 +104,15 @@ pub(crate) fn service_windows(
     for request in take(|request| request.output == output.name() && request.spec.window.is_some())
     {
         let target = request.spec.window.expect("window request");
+        let started=std::time::Instant::now();
         let result = capture(target).and_then(|(readback, pixels)| {
-            complete(
+            complete_timed(
                 &request.spec,
                 readback,
                 &pixels,
                 output,
                 CaptureSource::Offscreen,
+                started.elapsed().as_micros() as u64,
             )
             .map_err(capture_failed)
         });
@@ -184,12 +186,14 @@ pub fn service<R: ExportMem>(
         return;
     }
     let readback = source.readback;
+    let started=std::time::Instant::now();
     let pixels = read_pixels(renderer, source);
+    let readback_us=started.elapsed().as_micros() as u64;
     for request in requests {
         let result = pixels
             .as_ref()
             .map_err(Clone::clone)
-            .and_then(|pixels| complete(&request.spec, readback, pixels, output, kind))
+            .and_then(|pixels| complete_timed(&request.spec, readback, pixels, output, kind,readback_us))
             .map_err(capture_failed);
         (request.answer)(result);
     }
@@ -231,6 +235,10 @@ fn complete(
     output: &Output,
     kind: CaptureSource,
 ) -> Result<Value, String> {
+    complete_timed(spec,readback,pixels,output,kind,0)
+}
+
+fn complete_timed(spec: &CaptureFrameSpec, readback: Readback, pixels: &[u8], output: &Output, kind: CaptureSource, readback_us:u64) -> Result<Value,String> {
     if let Some(expected) = spec.output_generation {
         let topology = output
             .user_data()
@@ -258,7 +266,7 @@ fn complete(
     )?;
     let raw = PIXEL_ANSWERS.with_borrow_mut(|answers| answers.remove(&spec.path));
     if let Some(answer) = raw {
-        answer(Ok((width, height, cropped.into_owned())));
+        answer(Ok((width, height, cropped.into_owned(),readback_us)));
     } else {
         write(spec, width, height, &cropped)?;
     }

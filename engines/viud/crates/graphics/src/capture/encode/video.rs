@@ -21,7 +21,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 pub struct VideoEncoder {
-    tx: Option<SyncSender<Vec<u8>>>,
+    tx: Option<SyncSender<Arc<[u8]>>>,
     join: Option<JoinHandle<()>>,
     child: Option<Child>,
     temp: PathBuf,
@@ -46,6 +46,10 @@ impl VideoEncoder {
     }
 
     pub fn start_at(width: u32, height: u32, fps: u32, path: Option<PathBuf>) -> Result<Self, String> {
+        Self::start_with_encoder(width,height,fps,path,"x264")
+    }
+
+    pub fn start_with_encoder(width: u32, height: u32, fps: u32, path: Option<PathBuf>, encoder: &str) -> Result<Self,String> {
         let w = width & !1;
         let h = height & !1;
         if w == 0 || h == 0 {
@@ -59,6 +63,7 @@ impl VideoEncoder {
         let temp = path.unwrap_or_else(|| std::env::temp_dir().join(format!("viud-capture-{nanos}.mkv")));
 
         let mut cmd = command("ffmpeg");
+        if encoder == "vaapi" { cmd.args(["-vaapi_device","/dev/dri/renderD128"]); }
         cmd.args([
             "-y",
             "-loglevel",
@@ -73,19 +78,13 @@ impl VideoEncoder {
             &fps.max(1).to_string(),
             "-i",
             "-",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-crf",
-            "14",
-            "-g",
-            "30",
-            "-an",
-        ])
-        .arg(&temp)
+        ]);
+        match encoder {
+            "x264" => { cmd.args(["-pix_fmt","yuv420p","-c:v","libx264","-preset","ultrafast","-crf","14"]); }
+            "vaapi" => { cmd.args(["-vf","format=nv12,hwupload","-c:v","h264_vaapi","-qp","18"]); }
+            _ => return Err("unknown recording encoder".into()),
+        }
+        cmd.args(["-g","30","-an"]).arg(&temp)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
@@ -110,7 +109,7 @@ impl VideoEncoder {
                 }
             });
         }
-        let (tx, rx) = sync_channel::<Vec<u8>>(4);
+        let (tx, rx) = sync_channel::<Arc<[u8]>>(4);
         let queued = Arc::new(AtomicUsize::new(0));
         let queue_count = queued.clone();
         let closed = Arc::new(AtomicBool::new(false));
@@ -152,6 +151,11 @@ impl VideoEncoder {
 
     /// Non-blocking admission: false means the bounded queue overran or closed.
     pub fn try_push(&self, bgra: Vec<u8>) -> bool {
+        self.try_push_shared(bgra.into())
+    }
+
+    /// Repeated frames share the same immutable allocation, including at 4K.
+    pub fn try_push_shared(&self, bgra: Arc<[u8]>) -> bool {
         if bgra.len() != self.width as usize * self.height as usize * 4 {
             return false;
         }
@@ -216,6 +220,28 @@ impl VideoEncoder {
             }
         });
     }
+}
+
+/// Called on a preflight worker thread, never on the compositor thread.
+pub fn probe_vaapi() -> Result<(),String> {
+    let mut cmd=command("ffmpeg");
+    cmd.args(["-hide_banner","-encoders"]).stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child=child_spawn::spawn_awaited(&mut cmd).map_err(|e|format!("ffmpeg encoder probe: {e}"))?;
+    let stdout=child.stdout.take().ok_or("ffmpeg probe stdout unavailable")?;
+    let reader=std::thread::spawn(move || { let mut bytes=Vec::new(); let _=stdout.take(1_048_576).read_to_end(&mut bytes); bytes });
+    let deadline=Instant::now()+Duration::from_secs(3);
+    let result=loop {
+        match child.try_wait() {
+            Ok(Some(status))=>break if status.success(){Ok(())}else{Err("ffmpeg encoder probe failed".into())},
+            Err(error)=>break Err(format!("ffmpeg encoder probe: {error}")),
+            _ if Instant::now()>=deadline=>{let _=child.kill();let _=child.wait();break Err("ffmpeg encoder probe timed out".into());},
+            _=>std::thread::sleep(Duration::from_millis(10)),
+        }
+    };
+    let bytes=reader.join().unwrap_or_default();
+    result?;
+    if String::from_utf8_lossy(&bytes).split_whitespace().any(|word|word=="h264_vaapi") {Ok(())}
+    else {Err("ffmpeg does not report h264_vaapi".into())}
 }
 
 impl Drop for VideoEncoder {

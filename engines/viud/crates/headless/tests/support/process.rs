@@ -85,6 +85,17 @@ fn spawn_options(
     trace: bool,
     agent: bool,
 ) -> Process {
+    spawn_options_size(scale,explicit_node,label,bus,refresh,service,trace,agent,"1280x720")
+}
+
+pub fn spawn_4k(label: &str, bus: &str) -> Process {
+    spawn_options_size(1,None,label,Some(bus),"60",None,true,true,"3840x2160")
+}
+
+fn spawn_options_size(
+    scale:i32,explicit_node:Option<&str>,label:&str,bus:Option<&str>,refresh:&str,
+    service:Option<&str>,trace:bool,agent:bool,size:&str,
+) -> Process {
     let binary = std::env::var_os("MIX_TEST_VIUD_EXE")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -125,7 +136,7 @@ fn spawn_options(
             "--socket",
             "wayland-headless-test",
             "--size",
-            "1280x720",
+            size,
             "--config-file",
         ])
         .arg(settings)
