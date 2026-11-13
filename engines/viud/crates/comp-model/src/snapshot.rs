@@ -2608,7 +2608,7 @@ pub fn dispatch_read_with_limit(
                     json!({
                         "version": 1,
                         "active": session.active,
-                        "render_state": if session.active { "active" } else { "offscreen" },
+                        "render_state": if session.active && snapshot.info.backend != "headless" { "active" } else { "offscreen" },
                         "vt": session.vt,
                         "since_ms": session.since_ms,
                     })
