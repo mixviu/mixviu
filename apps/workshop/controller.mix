@@ -224,7 +224,9 @@ fn notice($s,$event)
   $cmd=$event.args.command;$a=$event.args.args;$headers=$event.headers
   if $cmd=="bus.connected" then
     $s.connected=true;$s.status="Connected"
-    for $topic in ["noded.props.changed","agent.session.updated","agent.session.ended","agent.permission.requested",viu_context().citizen..".macros.finished"] subscribe($topic) end
+    for $topic in ["noded.props.changed","agent.session.updated","agent.session.ended","agent.permission.requested",viu_context().citizen..".macros.finished"]
+      $s=$work.enqueue($s,{owner:"subscription",op:"subscribe",topic:$topic,lane:"subscription"})
+    end
     $s=$discovery.begin($s,nil);$s=$agents.refresh($s);$s=$macros.enqueue($s,"catalogues",{},nil);$s=$mesh_flow.refresh($s)
     if $s.mesh.resume_observe or not $s.mesh.ever_connected then $s=$mesh_flow.ensure($s) end
     $s.mesh.ever_connected=true
@@ -237,7 +239,7 @@ fn notice($s,$event)
     if $a.path=="services.registered" then
       $entry=$s.agents.nodes[$agents.local_name($s)]
       if $entry!=nil and $entry.available==false then $s=$agents.refresh_node($s,$agents.local_name($s)) end
-      if $m.busy($s) then $s.refetch=true else $s=$discovery.begin($s,nil) end
+      $s.refetch=true
     end
   elif $cmd=="bus.overflow" or $cmd=="citizen.topic.gap" then
     $s.dropped=$s.dropped+($a.dropped ?? 0);$s=$agents.refresh_node($s,$agents.local_name($s))
@@ -252,6 +254,9 @@ fn notice($s,$event)
   return $s
 end
 fn follow_up($s)
-  if $s.refetch and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
+  $failures=$s.admission_failures;$s.admission_failures=[]
+  for $failure in $failures $s=received($s,$failure) end
+  $s=$discovery.expire($s)
+  if $s.refetch and monotonic()>=$s.refresh_after and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
   return $work.launch($s)
 end

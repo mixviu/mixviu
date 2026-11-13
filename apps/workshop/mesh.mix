@@ -92,7 +92,6 @@ fn prune($m,$now)
 end
 fn add_event($m,$e,$now)
   $m=prune($m,$now);$m.revision=$m.revision+1;$m.last_observe_ms=$now;$m.seen=$c.add($m.seen,1);$m.ring_dropped=$c.add($m.ring_dropped,$e.dropped_count ?? 0)
-  if $e.from==$m.observer or $e.to==$m.observer then return $m end
   $dir=$e.direction ?? ""
   if not contains(["local","mesh_out","mesh_in"],$dir) then return $m end
   $t=min(ts_ms($e.ts) ?? $now,$now);$size=max(0,$e.size ?? 0);$command=text($e.command ?? "?");$outcome=$e.outcome ?? "";$kind=$e.message_type ?? ""

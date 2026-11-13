@@ -8,6 +8,49 @@ use std::{
 use viu::{bundle::Bundle, runtime::Runtime};
 
 #[test]
+fn workshop_topic_bursts_project_once_and_idle_ticks_do_not_project() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
+    let bundle = Bundle::load(&root, &[]).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        8,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        None,
+    );
+    runtime.load(bundle.program).unwrap();
+    rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(runtime.try_completion().unwrap().model.is_some());
+    for command in ["noded.props.changed", "agent.session.updated"]
+        .into_iter()
+        .cycle()
+        .take(20)
+    {
+        runtime
+            .notify(
+                "workshop.notice".into(),
+                json!({"command":command,"args":{}}),
+            )
+            .unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let done = runtime.try_completion().unwrap();
+        assert!(done.error.is_none(), "{:?}", done.error);
+        assert!(
+            done.model.is_none(),
+            "topic {command} projected before tick"
+        );
+    }
+    for dirty in [true, false, false] {
+        runtime.notify("viu.tick".into(), json!({})).unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let done = runtime.try_completion().unwrap();
+        assert!(done.error.is_none(), "{:?}", done.error);
+        assert_eq!(done.model.is_some(), dirty, "idle ticks must stay idle");
+    }
+}
+
+#[test]
 fn workshop_mounts_gold_frame_and_routes_dialogs_without_bus_transport() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
     let bundle = Bundle::load(&root, &[]).unwrap();
@@ -114,6 +157,7 @@ fn workshop_policy_contracts_run_inside_the_embedded_runtime() {
         "mesh",
         "view",
         "saved",
+        "discovery",
     ] {
         let (tx, rx) = mpsc::channel();
         let mut runtime = Runtime::new(
