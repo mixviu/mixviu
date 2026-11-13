@@ -105,15 +105,15 @@ try
   $audio=launch([$bin.."/mixd","serve",$root.."/tools/p2-audio.mix","--name","audio-fixture"],"audio-fixture",{})
   push($children,$audio)
   await_service("audio-fixture","snapshot")
-  for $app in [{dir:"backdrop",service:"backdrop"},{dir:"gallery",service:"gallery-mix"},{dir:"monitor",service:"monitor"},{dir:"volume-lab/volume",service:"quoin-volume"},{dir:"dopus",service:"dopus-mix"}]
+  for $app in [{dir:"backdrop",service:"backdrop"},{dir:"gallery",service:"gallery"},{dir:"monitor",service:"monitor"},{dir:"volume-lab/volume",service:"quoin-volume"},{dir:"dopus",service:"dopus-mix"}]
     $cold=monotonic()
     $p=launch([$bin.."/viu","run",$root.."/apps/"..$app.dir],$app.service,{})
     push($children,$p)
     $state=await_app($app.service)
     push($records,{app:$app.service,pid:$p,cold_to_model_ms:(monotonic()-$cold)*1000,state:$state})
   end
-  checked("gallery-mix","gallery.execute",{id:"slider",action:"set",value:72})
-  if checked("gallery-mix","viu.state",{}).model.values.slider!=72 then raise("GALLERY_REDUCER","Slider model differs") end
+  checked("gallery","gallery.execute",{id:"slider",action:"set",value:72})
+  if checked("gallery","viu.state",{}).model.values.slider!=72 then raise("GALLERY_REDUCER","Slider model differs") end
   $monitor=checked("monitor","monitor.refresh",{})
   if $monitor.snapshot==nil or len($monitor.processes)==0 then raise("MONITOR_DATA","No real samples") end
   if $monitor.processes[0].cpu<$monitor.processes[len($monitor.processes)-1].cpu then raise("SORT_CPU","Default CPU ordering differs") end
@@ -155,7 +155,7 @@ try
   checked("quoin-volume","volume.state",{})
   sleep(2)
   checked("comp-p2","comp.capture.frame",{path:$run.path.."/desk.png",cursor:false})
-  for $app in ["gallery-mix","monitor","quoin-volume","dopus-mix"]
+  for $app in ["gallery","monitor","quoin-volume","dopus-mix"]
     $capture=checked($app,"viu.capture",{name:$app..".png"})
     copy($capture.path,$run.path.."/"..$app..".png")
   end

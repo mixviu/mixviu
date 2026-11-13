@@ -49,6 +49,7 @@ for $i=0 to len($widgets)-1
   elif $kind=="canvas" then $props={shapes:[{kind:"line",from:[0,1],to:[1,0]},{kind:"circle",at:[0.5,0.5],radius:7}]}
   end
   $widgets[$i].properties=$props
+  $widgets[$i].actions=viu_widget_actions($widgets[$i])
 end
 $rows=json_parse(read_file(dirname(script_path()).."/rows.json"))
 $state = {widgets:$widgets,datasets:{examples:$rows},values:{},expanded:{tree:true},sorted:{table:false},serial:0,activations:0,last_activation:nil,last:"Ready"}
@@ -60,13 +61,33 @@ fn publish_gallery($ctx, $model)
   if $rc != 0 then raise("MODEL_PUBLISH",to_string($result)) end
 end
 $ctx = viu_context()
+$actions=[{id:"reset",label:"Reset gallery",keys:[],enabled:true}]
+for $widget in $widgets
+  for $action in $widget.actions
+    push($actions,{id:$widget.id.."."..$action,label:$widget.label..": "..$action,keys:[],enabled:true,widget:$widget.id,action:$action})
+  end
+end
+$description={contract:"ctk-app-control.v0",app:"gallery",app_id:"dev.mixos.gallery",title:"Viu Widget Gallery",version:"0.1.0",widgets:$widgets,commands:["app.describe","gallery.describe","gallery.actions","gallery.execute","gallery.state"],execute:"gallery.execute {id, value?} or {id, action, value?}",host:"viu.state / viu.ui.* / viu.capture / viu.quit"}
 on gallery.execute
   $a = $event.args
-  if $a.action != "reset" then
-    $matches=filter($widgets,fn($w)=$w.id==$a.id)
-    if len($matches)!=1 then raise("UNKNOWN_WIDGET",to_string($a.id)) end
-    viu_widget_admit($matches[0],{values:$state.values},$a.action,$a.value)
-    if not contains(["set","submit","expand","sort","accept","cancel","activate"],$a.action) then raise("UNKNOWN_ACTION",to_string($a.action)) end
+  try
+    if type($a)!="map" then raise("ARGUMENT","arguments must be an object") end
+    if $a.action==nil then
+      $commands=filter($actions,fn($c)=$c.id==$a.id)
+      if len($commands)!=1 then raise("UNKNOWN_ACTION","Unknown gallery action") end
+      $command=$commands[0]
+      $a.action=$command.action ?? "reset"
+      $a.id=$command.widget ?? "reset"
+    end
+    if $a.action != "reset" then
+      $matches=filter($widgets,fn($w)=$w.id==$a.id)
+      if len($matches)!=1 then raise("UNKNOWN_WIDGET","Unknown gallery widget") end
+      if not contains($matches[0].actions,$a.action) then raise("UNKNOWN_ACTION","Unsupported widget action") end
+      viu_widget_admit($matches[0],{values:$state.values},$a.action,$a.value)
+    end
+  catch $message, $error
+    reply(10,json_encode({error_code:if contains(["UNKNOWN_WIDGET","UNKNOWN_ACTION","ARGUMENT"],$error.code) then $error.code else "ARGUMENT" end,message:$message}))
+    return
   end
   if $a.action == "reset" then
     for $widget in $widgets
@@ -107,5 +128,11 @@ on gallery.state
   reply(0,json_encode($state))
 end
 on gallery.describe
-  reply(0,json_encode({widgets:$widgets,execute:"gallery.execute {id,action,value}",host:"viu.state / viu.ui.* / viu.capture / viu.quit"}))
+  reply(0,json_encode($description))
+end
+on app.describe
+  reply(0,json_encode($description))
+end
+on gallery.actions
+  reply(0,json_encode({actions:$actions}))
 end

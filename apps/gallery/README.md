@@ -27,7 +27,7 @@ viu-gallery rust
 viu-gallery mix /path/to/apps/gallery/gallery.mix
 ```
 
-The applications register as `gallery-rust` and `gallery-mix` on the existing
+The applications register as `gallery-rust` and `gallery` on the existing
 native Bus (`MIX_NODED_URL`). There is no application socket or extra broker
 implementation. Both paths have bounded ingress. The Mix interpreter runs on
 its own worker; Rust applies its own controller, without invoking Mix.
@@ -72,10 +72,10 @@ activation also selects that application item; disabled actions refuse.
 
 ```
 send gallery-rust gallery.describe
-send gallery-mix gallery.widget.slider.set body=json_encode({value:72})
+send gallery gallery.widget.slider.set body=json_encode({value:72})
 send gallery-rust gallery.widget.field.submit body=json_encode({value:"Hello"})
-send gallery-mix gallery.widget.dialog.set body=json_encode({value:true})
-send gallery-mix gallery.widget.dialog.accept
+send gallery gallery.widget.dialog.set body=json_encode({value:true})
+send gallery gallery.widget.dialog.accept
 send gallery-rust gallery.execute body=json_encode({action:"reset"})
 send gallery-rust gallery.state
 ```
