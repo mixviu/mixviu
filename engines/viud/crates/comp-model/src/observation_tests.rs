@@ -12,7 +12,7 @@ fn extension_topics_have_gap_tracking_without_changing_the_frozen_catalogue() {
     for topic in EXTENSION_TOPIC_SUFFIXES {
         affected.insert(topic);
     }
-    assert_eq!(affected.bits(), 0xc000);
+    assert_eq!(affected.bits(), 0x1c000);
     assert_eq!(
         affected.iter().collect::<Vec<_>>(),
         EXTENSION_TOPIC_SUFFIXES
