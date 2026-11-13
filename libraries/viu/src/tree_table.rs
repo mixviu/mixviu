@@ -916,7 +916,7 @@ fn draw_grid(
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
         for (column, measured) in columns.iter().zip(measured) {
             let width = if let Some(width) = measured {
-                Column::exact(width)
+                Column::exact(width.max(number(column, "min_width", 50.0)))
             } else if column["remainder"] == true {
                 Column::remainder()
             } else if let Some(fraction) = column["fraction"].as_f64() {
@@ -1065,7 +1065,7 @@ fn draw_gold(
             let width = if let Some(width) =
                 sample_width(ui, &widget.id, column, table_rows(value), index)
             {
-                Width::Fixed(width)
+                Width::Fixed(width.max(min))
             } else if column["remainder"] == true {
                 Width::Remainder { min }
             } else if let Some(share) = column["fraction"].as_f64() {
