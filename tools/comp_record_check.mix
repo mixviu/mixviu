@@ -1,0 +1,29 @@
+-- Scoped CBC-only recording validation; never run on a desktop.
+$commands = [
+  ["cargo", "build", "-p", "viud", "--no-default-features", "--features", "backend-headless"],
+  ["cargo", "build", "-p", "noded", "-p", "testkit", "--bins"],
+  ["cargo", "test", "-p", "comp-model", "-p", "recorder", "-p", "graphics", "-p", "policy-host", "-p", "screencopy", "-p", "headless", "--lib"],
+  ["cargo", "test", "-p", "headless", "--test", "capture", "--no-run"]
+]
+try
+  for $command in $commands
+    print(join($command, " "))
+    $result = run_argv($command, {timeout: 1800, max_output: 16000000})
+    print($result.stdout)
+    print($result.stderr)
+    if not $result.ok then exit($result.exit_code ?? 1) end
+  end
+  if is_file("/dev/dri/renderD128") then
+    $result = run_argv(["cargo", "test", "-p", "headless", "--test", "capture", "record_", "--", "--ignored", "--nocapture", "--test-threads=1"], {timeout: 180, max_output: 16000000})
+    print($result.stdout)
+    print($result.stderr)
+    if not $result.ok then exit($result.exit_code ?? 1) end
+  else
+    print("RECORD_GPU_TESTS_NOT_RUN: worker has no /dev/dri/renderD128")
+  end
+finally
+  print("==LOCKDIFF==")
+  print(run_argv(["git", "diff", "--", "Cargo.lock"]).stdout)
+  print("==ENDLOCKDIFF==")
+  print(run_argv(["git", "checkout", "-q", "--", "Cargo.lock"]).stderr)
+end
