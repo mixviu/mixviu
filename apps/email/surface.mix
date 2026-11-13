@@ -133,7 +133,8 @@ fn surface_model($m)
   $m.message_body={id:"message-body",kind:"label",label:"",initial:"",properties:{wrap:true,mono:$m.html_source,weak:$opened.text==nil and $opened.html==nil}}
   $m.values["message-date"]=""
   if $opened.date!=nil or $opened.receivedAt!=nil then
-    try $m.values["message-date"]=date_format(date_parse($opened.date ?? $opened.receivedAt),"%b %d %H:%M",{utc:true}) catch $bad_stamp $m.values["message-date"]="" end
+    -- Like the list, use the session's local zone (including TZ).
+    try $m.values["message-date"]=date_format(date_parse($opened.date ?? $opened.receivedAt),"%b %d %H:%M") catch $bad_stamp $m.values["message-date"]="" end
   end
   $m.account_state=if $state.state=="no_password" then "No password is saved for this account. Open Email Settings to set one." elif $state.state=="failed" then $state.error ?? "Connection failed" elif $state.state=="disabled" then "This account is disabled." else "Connecting…" end
   $m.values["connection-state"]=$m.account_state;$m.values["message-subject"]=$m.message_subject;$m.values["message-from"]=$m.message_from;$m.values["message-to"]=$m.message_to
