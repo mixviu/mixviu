@@ -2919,6 +2919,21 @@ mod tests {
         assert_eq!(rpc_body(&serde_json::json!({"a": 1})), r#"{"a":1}"#);
     }
 
+    #[test]
+    fn json_float_roundtrip_bus_replies() {
+        for x in [1794606090.8718243, 0.1 + 0.2, 1e300, 5e-324, 2147483647.9999998] {
+            let body = serde_json::to_string(&x).unwrap();
+            assert_eq!(parse_reply_body(&body), Value::Number(x));
+            for (_, result, reply) in [
+                typed_reply(0, body.clone(), None),
+                headers_reply(0, body.clone(), None),
+            ] {
+                assert_eq!(result, Value::Number(x));
+                assert_eq!(reply, Value::Number(x));
+            }
+        }
+    }
+
     // --- headers_reply_to_result: the `send body=` reply mapping ---
     // Regression guard for the `send TARGET cmd body="…"` fire-and-forget
     // bug: a body-bearing send used to hard-return `(0, Nil)` and never
