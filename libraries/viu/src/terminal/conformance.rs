@@ -351,6 +351,22 @@ fn split_reflow_keeps_cursor_above_wrapped_output_and_nonempty_tail() {
 }
 
 #[test]
+fn split_reflow_of_history_does_not_fill_unused_viewport_rows() {
+    let t = Terminal::from_test_vt(
+        24,
+        3,
+        b"abcdefghijklmnopq\r\none\r\ntwo\r\nthree\x1b[2J\x1b[Hshort",
+    );
+    assert_eq!(t.grid.lock().history_size(), 1);
+    t.resize(8, 3, 80, 30);
+    assert_eq!(row(&t, 0), "short   ");
+    assert_eq!(row(&t, 1), "        ");
+    assert_eq!(row(&t, 2), "        ");
+    assert_eq!(t.screen(false).cursor, (5, 0));
+    assert_eq!(t.grid.lock().history_size(), 3);
+}
+
+#[test]
 fn alternate_screen_resize_preserves_main_text_and_saved_cursor() {
     // Screen switching saves/restores the cursor but does not home it.
     let t = Terminal::from_test_vt(10, 4, b"main\x1b[?1049h\x1b[Halt");

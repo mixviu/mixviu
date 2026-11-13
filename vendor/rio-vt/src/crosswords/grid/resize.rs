@@ -369,6 +369,7 @@ impl Grid<Square> {
         let mut new_raw = Vec::with_capacity(self.raw.len());
         let mut buffered: Option<Vec<Square>> = None;
         let mut cursor_rows_above_viewport = 0;
+        let mut visible_start = 0;
 
         let mut rows = self.raw.take_all();
         let old_len = rows.len();
@@ -388,6 +389,9 @@ impl Grid<Square> {
         let mut trackers: Vec<(usize, i64)> = Vec::new();
 
         for (i, mut row) in rows.drain(..).enumerate().rev() {
+            if i == self.lines - 1 {
+                visible_start = new_raw.len();
+            }
             if remap.is_some() {
                 let own_first = buffered.as_ref().map_or(0, |b| b.len()) as i64;
                 trackers.push((old_len - 1 - i, own_first));
@@ -557,7 +561,11 @@ impl Grid<Square> {
 
         // `new_raw` is oldest-first here. Drop only trailing unused rows,
         // at most the number introduced by wrapping, keeping the viewport full.
-        let consumed = min(free_rows, new_raw.len().saturating_sub(old_len));
+        // Expansion of older history must not pull it into an idle viewport.
+        let consumed = min(
+            free_rows,
+            new_raw.len().saturating_sub(visible_start + self.lines),
+        );
         new_raw.truncate(new_raw.len() - consumed);
         self.cursor.pos.row += consumed.saturating_sub(cursor_rows_above_viewport);
         if let Some(r) = remap.as_mut() {
