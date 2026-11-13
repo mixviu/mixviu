@@ -1187,10 +1187,14 @@ impl Host {
             // requests hostage. A stream of model revisions may never become
             // drawn/stable; allow control requests past that UI-only barrier.
             let ui_blocked = (self.ready && !self.headless && !self.view.current_revision_drawn())
-                || toolkit::drive::pending(ctx) || !self.drive_answers.is_empty()
-                || (self.queued_click() && (!self.inflight.is_empty() || !self.drive_geometry_stable));
+                || toolkit::drive::pending(ctx)
+                || !self.drive_answers.is_empty()
+                || (self.queued_click()
+                    && (!self.inflight.is_empty() || !self.drive_geometry_stable));
             let position = self.held_requests.iter().position(|request| {
-                let command = request.command.strip_prefix(&format!("{}.", self.app))
+                let command = request
+                    .command
+                    .strip_prefix(&format!("{}.", self.app))
                     .or_else(|| request.command.strip_prefix("viu."))
                     .unwrap_or(&request.command);
                 !ui_blocked || !(command.starts_with("ui.") || command == "capture")
