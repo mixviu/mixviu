@@ -531,7 +531,10 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     };
     let mut s = session.borrow_mut();
     let unchanged = s.recording.is_some() && s.signature == signature;
-    let skipped = s.recording.as_mut().is_some_and(|r| r.skip_readback(!unchanged));
+    let skipped = s
+        .recording
+        .as_mut()
+        .is_some_and(|r| r.skip_readback(!unchanged));
     if unchanged || skipped {
         let result = s.recording.as_mut().unwrap().frame(None);
         drop(s);
