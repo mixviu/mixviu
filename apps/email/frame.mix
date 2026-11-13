@@ -25,5 +25,6 @@ fn apply($model,$s)
     $model.native_overlays=[{definition:$definition,command:"email.dialog.intent"}]
   end
   $status=if $model.no_accounts then "" else $s.status end
+  $model.theme_choice=$s.theme_choice
   return $frame.apply($model,{icon:"mail",title:"Email",native_title:"Email",menus:$actions.menus($s),toolbar:$actions.toolbar($s),status:{left:$status,right:[],icon:if $s.connected then "plug" else "unplug" end,error:not $s.connected}})
 end

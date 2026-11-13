@@ -14,6 +14,115 @@ mod fixture {
     include!("support/documents.rs");
 }
 struct Accepted;
+struct Compositor(std::sync::Arc<AtomicBool>);
+impl mix::BusHandler for Compositor {
+    fn send<'a>(
+        &'a self,
+        target: &'a str,
+        command: &'a str,
+        args: &'a mix::value::Value,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<(i32, mix::value::Value)>> {
+        Box::pin(async move {
+            assert_eq!(target, "comp-status-test");
+            let args = viu::runtime::to_json(args)?;
+            let body = args.get("body").unwrap_or(&args);
+            if command == "comp.window.wait" {
+                assert_eq!(body["match"]["app_id"], "example.ced");
+            }
+            assert!(
+                self.0.load(std::sync::atomic::Ordering::SeqCst),
+                "no request before registration"
+            );
+            let body = match command {
+                "comp.window.wait" => json!({"mapped":true}),
+                "comp.windows.list" => {
+                    json!({"windows":[{"id":7,"generation":3,"app_id":"example.ced","pid":std::process::id()}]})
+                }
+                "comp.window.restore" => json!({"minimized":false}),
+                "comp.window.focus" => json!({"focused":true}),
+                _ => panic!("unexpected {command}"),
+            };
+            Ok((0, viu::runtime::from_json(body)?))
+        })
+    }
+    fn emit<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: &'a mix::value::Value,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn port_exists<'a>(
+        &'a self,
+        target: &'a str,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<bool>> {
+        Box::pin(async move {
+            assert_eq!(target, "comp-status-test");
+            Ok(self.0.load(std::sync::atomic::Ordering::SeqCst))
+        })
+    }
+    fn next_incoming<'a>(
+        &'a self,
+    ) -> mix::evaluator::BusFuture<'a, Option<mix::evaluator::IncomingEvent>> {
+        Box::pin(async { None })
+    }
+}
+
+#[test]
+fn ced_worker_recovers_when_compositor_registers_after_start() {
+    let available = Arc::new(AtomicBool::new(false));
+    let bus = available.clone();
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(
+        4,
+        Arc::new(move || {
+            let _ = tx.send(());
+        }),
+        Some(Box::new(move || std::rc::Rc::new(Compositor(bus.clone())))),
+    );
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced/job.mix");
+    runtime
+        .load(viu::runtime::Program {
+            source: std::fs::read_to_string(&path).unwrap()
+                + r#"
+$core=require("core.mix")
+on test.queue
+  $s=$core.queue_job({serial:0,queue:[]},"show",$event.args)
+  reply(0,json_encode($s.queue[0]))
+end
+"#,
+            path,
+            scene: "worker-test".into(),
+            citizen: "ced".into(),
+        })
+        .unwrap();
+    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(runtime.try_completion().unwrap().error.is_none());
+    for registered in [false, true] {
+        available.store(registered, std::sync::atomic::Ordering::SeqCst);
+        runtime
+            .event(
+                "test.queue".into(),
+                json!({"app_id":"example.ced","comp":"comp-status-test"}),
+            )
+            .unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let queued = runtime.try_completion().unwrap().reply.unwrap().body;
+        assert_eq!(
+            queued,
+            json!({"id":"ced-1","kind":"show","payload":{"app_id":"example.ced","comp":"comp-status-test"}})
+        );
+        runtime.event("job.run".into(), queued).unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let done = runtime.try_completion().unwrap();
+        assert!(done.error.is_none(), "{:?}", done.error);
+        let reply = done.reply.unwrap();
+        assert_eq!(reply.rc, 0);
+        let body = reply.body;
+        assert_eq!(body["shown"], registered);
+    }
+}
 #[test]
 fn every_ced_worker_program_parses_with_its_real_includes() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced/job.mix");
@@ -91,6 +200,12 @@ on test.mail
   $state.session_loaded=true;$state.session_path="/tmp/ced-test-session.json"
   $state.session_seen=$ced_session.session_value($state);$state.session_dirty=false
 end
+on test.job
+  $state.running["status-test"]={id:"status-test",kind:$event.args.kind ?? "show",payload:{}}
+end
+on test.launch
+  $state.launch=$event.args
+end
 "#,
         );
         let docs = viu::documents::Documents::default();
@@ -151,6 +266,217 @@ end
         self.command(name, body)
             .try_recv()
             .expect("synchronous reply")
+    }
+}
+
+#[test]
+fn job_notice_is_readable_retains_diagnostics_and_clears_on_success() {
+    let mut app = App::new();
+    app.answered("test.job", json!({}));
+    let error = json!({"error_code":"ACTIVATION","message":"Cannot focus the window."});
+    app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"show","payload":{}}},"rc":10,"body":error}));
+    let (_, state) = app.answered("ced.specimen", json!({}));
+    assert_eq!(state["status"], "Failed: Cannot focus the window.");
+    assert_eq!(state["last_job_error"]["body"], error);
+    app.answered("test.job", json!({"kind":"notify"}));
+    app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"notify","payload":{}}},"rc":0,"body":{"fallback":true,"text":"Unrelated notification"}}));
+    let (_, state) = app.answered("ced.specimen", json!({}));
+    assert_eq!(state["status"], "Failed: Cannot focus the window.");
+    assert_eq!(state["last_job_error"]["body"], error);
+    app.answered("test.job", json!({}));
+    app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"show","payload":{}}},"rc":0,"body":{"shown":true}}));
+    let (_, state) = app.answered("ced.specimen", json!({}));
+    assert_eq!(state["status"], "");
+    assert_eq!(state["last_job_error"]["body"], error);
+}
+
+#[test]
+fn non_map_job_failures_keep_diagnostics_and_use_plain_fallback() {
+    let mut app = App::new();
+    for body in [
+        json!("transport stopped"),
+        json!(17),
+        Value::Null,
+        json!({"message":17}),
+    ] {
+        app.answered("test.job", json!({}));
+        app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"show","payload":{}}},"rc":10,"body":body}));
+        let (_, state) = app.answered("ced.specimen", json!({}));
+        assert_eq!(state["status"], "Failed: The operation failed.");
+        assert_eq!(state["last_job_error"]["body"], body);
+    }
+}
+
+#[test]
+fn show_forwards_launch_identity_and_holds_past_the_worker_budget() {
+    let mut app = App::new();
+    app.answered(
+        "test.launch",
+        json!({"app_id":"example.ced","comp":"comp-status-test"}),
+    );
+    let mut pending = app.command("ced.show", json!({}));
+    assert!(pending.try_recv().is_err());
+    let (_, state) = app.answered("ced.specimen", json!({}));
+    let job = state["running"]
+        .as_object()
+        .unwrap()
+        .values()
+        .find(|j| j["kind"] == "show")
+        .unwrap();
+    assert_eq!(job["payload"]["app_id"], "example.ced");
+    assert_eq!(job["payload"]["comp"], "comp-status-test");
+    let held = state["waits"]
+        .as_object()
+        .unwrap()
+        .values()
+        .find(|w| w["kind"] == "job")
+        .unwrap();
+    assert!(
+        held["timeout_ms"].as_u64().unwrap() > 4 * 15_000,
+        "hold must outlast all four sends"
+    );
+}
+
+#[test]
+fn status_without_right_fields_and_priority_error_stay_visible_at_desktop_scales() {
+    for scale in [1.0, 2.5] {
+        for right in [json!([]), json!(["INS", "Saved"])] {
+            for message in [Value::Null, json!("Cannot save the document.")] {
+                let ctx = egui::Context::default();
+                viu::appearance::install(&ctx);
+                ctx.set_pixels_per_point(scale);
+                let widget = viu::widgets::Widget::new(
+                    "status",
+                    "status-line",
+                    "",
+                    json!({"left":"Long notice 界 ".repeat(300),"right":right,"message":message,"error":false}),
+                );
+                let mut widgets = viu::widgets::Widgets::default();
+                let mut error_colour = egui::Color32::TRANSPARENT;
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(3840.0 / scale, 2160.0 / scale),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.set_max_size(egui::vec2(3840.0 / scale, 2160.0 / scale));
+                        error_colour = ui.visuals().error_fg_color;
+                        widgets.begin_frame();
+                        widgets.widget(ui, &widget, &json!({}));
+                        widgets.finish_frame().unwrap();
+                    },
+                );
+                output.textures_delta.clear();
+                let texts: Vec<_> = output
+                    .shapes
+                    .iter()
+                    .filter_map(|s| {
+                        if let egui::Shape::Text(t) = &s.shape {
+                            Some((s.clip_rect, t))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let (clip, left) = texts
+                    .iter()
+                    .find(|(_, t)| t.galley.text().starts_with("Long notice"))
+                    .expect("notice painted");
+                let left_bounds = left
+                    .galley
+                    .rect
+                    .translate(left.pos.to_vec2())
+                    .intersect(*clip);
+                assert!(
+                    left_bounds.width() > 10.0,
+                    "scale {scale}: visible left text"
+                );
+                assert!(left.galley.elided, "left text must ellipsise");
+                if message.is_string() {
+                    let (clip, error) = texts
+                        .iter()
+                        .find(|(_, t)| t.galley.text() == message.as_str().unwrap())
+                        .expect("error has its own label");
+                    assert!(!error.galley.elided, "full error message takes priority");
+                    assert!(
+                        error
+                            .galley
+                            .job
+                            .sections
+                            .iter()
+                            .all(|s| s.format.color == error_colour)
+                    );
+                    let bounds = error.galley.mesh_bounds.translate(error.pos.to_vec2());
+                    assert!(
+                        clip.contains_rect(bounds),
+                        "scale {scale}, right={right}: error {bounds:?} outside {clip:?}"
+                    );
+                    assert!(!left_bounds.intersects(bounds));
+                }
+                output.drop_without_applying_deltas();
+            }
+        }
+    }
+}
+
+#[test]
+fn long_status_paint_never_intersects_right_fields_at_desktop_scales() {
+    for scale in [1.0, 2.5] {
+        let ctx = egui::Context::default();
+        viu::appearance::install(&ctx);
+        ctx.set_pixels_per_point(scale);
+        let widget = viu::widgets::Widget::new(
+            "status",
+            "status-line",
+            "",
+            json!({"left":"Long activation failure ".repeat(100),"right":["INS","Rust","UTF-8 · LF","rev 0","Saved"],"icon":"plug"}),
+        );
+        let mut widgets = viu::widgets::Widgets::default();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(3840.0 / scale, 2160.0 / scale),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                ui.set_max_size(egui::vec2(3840.0 / scale, 2160.0 / scale));
+                widgets.begin_frame();
+                widgets.widget(ui, &widget, &json!({}));
+                widgets.finish_frame().unwrap();
+            },
+        );
+        output.textures_delta.clear();
+        let mut left = None;
+        let mut right = Vec::new();
+        for clipped in &output.shapes {
+            if let egui::Shape::Text(text) = &clipped.shape {
+                let bounds = text
+                    .galley
+                    .rect
+                    .translate(text.pos.to_vec2())
+                    .intersect(clipped.clip_rect);
+                if text.galley.text().starts_with("Long activation") {
+                    left = Some(bounds);
+                }
+                if ["INS", "Rust", "UTF-8 · LF", "rev 0", "Saved"].contains(&text.galley.text()) {
+                    right.push(bounds);
+                }
+            }
+        }
+        assert_eq!(right.len(), 5);
+        let left = left.expect("left notice painted");
+        for field in right {
+            assert!(
+                !left.intersects(field),
+                "scale {scale}: {left:?} intersects {field:?}"
+            );
+        }
+        output.drop_without_applying_deltas();
     }
 }
 #[test]
@@ -226,8 +552,16 @@ fn action_inventory_and_execute_share_native_editor_semantics() {
     let (rc, rows) = app.answered("ced.actions", json!({}));
     assert_eq!(rc, 0);
     let rows = rows["actions"].as_array().unwrap();
-    assert_eq!(rows.len(), 61);
+    assert_eq!(rows.len(), 64);
     assert_eq!(rows[0]["id"], "file.new");
+    for id in ["view.mode.light", "view.mode.dark", "view.mode.session"] {
+        let row = rows
+            .iter()
+            .find(|r| r["id"] == id)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        assert_eq!(row["menu"], "View");
+        assert_eq!(row["enabled"], true);
+    }
     assert_eq!(rows[0]["keys"], json!(["Ctrl+N"]));
     let (rc, unknown) = app.answered("ced.execute", json!({"id":"edit.unknown"}));
     assert_eq!(rc, 10);

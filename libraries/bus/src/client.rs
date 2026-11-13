@@ -28,6 +28,6 @@ pub use connection::Connection;
 pub use error::{ClientError, RegistrationRejected, RegistrationRejectionKind, SupervisedError};
 pub use locate::{DEFAULT_NODED_URL, node_config_path, noded_url, url_from_node_config};
 pub use supervised::{
-    ConnState, MAX_INITIAL_ATTEMPTS, SubscriptionRegistry, SupervisedClient,
-    SupervisedConnectOptions, SupervisedDelivery,
+    ConnState, MAX_INITIAL_ATTEMPTS, RECONNECT_BACKOFF_MAX, SubscriptionRegistry, SupervisedClient,
+    SupervisedConnectOptions, SupervisedDelivery, initial_connect_backoff_budget,
 };

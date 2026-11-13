@@ -575,3 +575,106 @@ anti-aliasing edge. No deviation from gold or Fable decision is proposed.
 ## Four-app release integration at 1804bb9
 
 Release-byte revalidation **PASS**. Exact four-engine hashes, complete native/visual results, all residual figures, deferred-reply witnesses, two same-worker timing comparisons and provenance debt are in [four-app-integration-acceptance.md](four-app-integration-acceptance.md). The runtime source is `1804bb98a5ab305111bd35412bf6f3902bc24013`; following commits are documentation receipts.
+
+## Live panel and high contrast
+
+The Panel page follows the scene loader inventory and sends scenes.enable,
+scenes.disable and scenes.move for the installed panel scene. Its existing
+shell.panels.top.enabled and shell.panels.top.edge action keys remain API
+aliases; these two controls no longer read or write settingsd. Other panel
+controls stay disabled until the scene implements them. Missing scenes are
+reported unavailable. Position defaults to the shipped bottom edge.
+
+Panel moves store edge in the scene settings.conf.mix, alongside task scope;
+enablement remains in the loader state. Position edits leave template code
+and its digest untouched. Reset carries user settings into the new copy.
+Preferences refreshes from inventory on entry, reconnect and scenes.changed,
+including scene-side edits and changes made while the panel is disabled.
+
+High contrast overrides chrome after scheme and accent resolution. Body
+surfaces and ink use opaque black/white endpoints; action fills retain a
+small amount of scheme hue. Borders and focus rings use full-strength ink.
+GTK and Qt exports receive strengthened surface/text pairs too. Normal
+contrast keeps authored palettes. The palette test measures delivered 8-bit
+colours across every scheme and mode: body text at least 7:1, edges at least
+3:1, and no weaker main body or edge pairs than normal. Hover, pressed and
+selection fills retain distinct shades with the same text floor. The scoped CBC entry is
+tools/prefs_panel_check.mix. Desktop visual acceptance remains separate.
+
+### Panel authority and accessibility policy (review follow-up)
+
+Direct settingsd writes to every shell.panels.top.* key are retired and
+refused with retired_key, including null changes. The catalogue marks the
+top capture inactive and names the scene commands. Historical values remain
+readable for migration/downgrade; targeted resets and null changes are also
+refused, so they cannot be mistaken for panel commands. Preferences keeps two action
+aliases, enabled and edge: these operate through scenes, never settingsd.
+They share core.admitted state, class and type/enum checks with stored
+settings. Their scene schema replaces settingsd mutation validation and CAS,
+because settingsd cannot admit or fence a scene mutation. Busy scene writes
+are refused rather than queued.
+
+The shared settingsd shell.panels topic remains necessary for the Dock page
+(bottom.*); no top-only topic is subscribed. Panel refreshes follow the
+scene topic, coalesced over a bounded 150 ms deadline on UI ticks. Failed
+readback preserves the last confirmed command state; a successful inventory
+can confirm removal.
+
+Panel position edits require an explicit single-line JSON window header.
+Absent/nested window blocks are refused before any settings write. Rollback
+restores original bytes, or removes the new settings file if none existed.
+
+High contrast deliberately supersedes app-authored chrome and replaces the
+Qt disabled/visited-text dimming with full-strength ink. This trades colour
+and disabled shading for readability; disabled controls still refuse input.
+The numerical edge guarantee covers native chrome roles; toolkit export
+tests cover their named text/surface pairs, not every toolkit border.
+
+The scoped CBC checker refuses formatting drift after printing and reverting
+the worker patch. It also tests settingsd retired-key refusal, common panel
+admission with host bindings, burst coalescing and rollback failures.
+
+### Retired writes, historical state and broad reset
+
+Preferences retains the complete settings catalogue for inactive_captures
+admission. Every inactive concrete key is blocked in search and at write
+admission; the two existing Panel actions are explicit scene workflows.
+Bulk/preflight queue filtering drops all retired settingsd writes, including
+stale queued aliases, before validation. A scoped atomic refusal discards
+the refused fields and retries only unrelated changes. An unscoped
+permanent refusal is terminal. The browser retains a visible drop/refusal
+notice instead of silently retrying the poisoned batch.
+
+settingsd refuses direct retired changes, nulls and targeted resets. Broad
+resets (shell.panels.*, shell.*) and global reset (*) skip historical top.*
+values: they preserve existing values as readable data, never manufacture
+missing keys, and reset only active settings. Historical top values no
+longer reserve a live edge in the registry constraint. The scene loader
+validates actual mount conflicts.
+
+Historical-path audit: Store::seed creates an empty sparse Values record,
+or opens the sealed existing record; Store::open and backup recovery load
+records directly. Format-4 migration builds Accepted values directly. There
+is no pending-request journal: crash replay returns a committed receipt
+before patch validation. Snapshot/cache restoration and mirror adoption
+load sealed records rather than applying their values. Backdrop import
+submits only wallpaper changes and wallpaper.* reset; its receipt replay
+does not resubmit historical panel data. Regression tests cover seed,
+cache/snapshot restoration, committed-receipt replay, backup recovery,
+backdrop import/replay and unrelated writes after each path.
+
+A valid template without a patchable window header now loads at its own
+mount and reports position_supported:false; Preferences disables only its
+position control. Malformed native scene documents still fail native
+validation. A scenes.list reply missing the scenes list retains confirmed
+state and shows a translated read error; an empty list confirms removal.
+All panel command errors now use strings.ftl. The loader and task-scope
+behaviour serialise settings read-modify-write with the same advisory
+.settings.lock in the scene root, released in finally. The lock lives outside
+the swapped installation so waiting writers keep the same inode after Reset.
+Reset holds it across settings copy, swap and reconciliation, retaining panel
+edge and task scope even on explicit Reset. Other scenes retain their shipped
+Reset defaults and the upgrade policy for edited settings. Competing-writer
+tests prove refusal under contention, exclusion during swap, preservation of
+completed saves and release on success and error. Edge
+enum equality is checked across Preferences, the loader and the registry.

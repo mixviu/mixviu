@@ -41,6 +41,218 @@ fn request(authority: &Authority, id: &str, mode: &str) -> ApplyRequest {
 }
 
 #[test]
+fn retired_top_panel_writes_are_described_and_refused_atomically() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let catalogue = settingsd::service::dispatch(&mut state, "settings.describe", "{}").unwrap();
+    for key in [
+        "shell.panels.<panel>.enabled",
+        "shell.panels.<panel>.edge",
+        "shell.panels.<panel>.opacity",
+    ] {
+        assert_eq!(
+            described(&catalogue, key).unwrap()["inactive_captures"]["top"]["write"],
+            "refused"
+        );
+    }
+    let before = state.accepted.values.clone();
+    let revision = state.accepted.revision;
+    for (key, value) in [
+        ("shell.panels.top.enabled", json!(true)),
+        ("shell.panels.top.edge", json!("bottom")),
+        ("shell.panels.top.opacity", json!(0.5)),
+        ("shell.panels.top.enabled", serde_json::Value::Null),
+    ] {
+        let mut edit = request(&state, "dead-panel-write", "light");
+        edit.changes.insert(key.into(), value);
+        assert_eq!(
+            state.validate(&edit).unwrap_err()["diagnostics"][0]["code"],
+            "retired_key"
+        );
+        assert_eq!(
+            state.apply(edit).unwrap_err()["diagnostics"][0]["code"],
+            "retired_key"
+        );
+        assert_eq!(state.accepted.values, before);
+        assert_eq!(state.accepted.revision, revision);
+    }
+    for reset in ["shell.panels.top.enabled", "shell.panels.top.*"] {
+        let mut edit = request(&state, "dead-panel-reset", "light");
+        edit.reset.push(reset.into());
+        assert_eq!(
+            state.validate(&edit).unwrap_err()["diagnostics"][0]["code"],
+            "retired_key"
+        );
+        assert_eq!(
+            state.apply(edit).unwrap_err()["diagnostics"][0]["code"],
+            "retired_key"
+        );
+        assert_eq!(state.accepted.values, before);
+        assert_eq!(state.accepted.revision, revision);
+    }
+}
+
+fn historical_panel_values() -> registry::Values {
+    registry::Values::from([
+        ("shell.panels.top.enabled".into(), json!(true)),
+        ("shell.panels.top.edge".into(), json!("bottom")),
+        ("shell.panels.top.opacity".into(), json!(0.4)),
+        ("shell.panels.bottom.enabled".into(), json!(false)),
+        ("appearance.scheme".into(), json!("studio")),
+    ])
+}
+
+#[test]
+fn broad_and_global_resets_skip_retired_values_without_resurrection() {
+    for (index, reset) in ["shell.panels.*", "shell.*", "*"].into_iter().enumerate() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, data) =
+            Store::create(dir.path(), binding(), historical_panel_values()).unwrap();
+        let mut state = Authority::new(store, data).unwrap();
+        let old: registry::Values = state
+            .accepted
+            .values
+            .iter()
+            .filter(|(k, _)| registry::retired_panel_key(k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let mut edit = request(&state, &format!("broad-{index}"), "light");
+        edit.changes.clear();
+        edit.reset = vec![reset.into()];
+        state.validate(&edit).unwrap();
+        settingsd::service::dispatch(
+            &mut state,
+            "settings.reset",
+            &serde_json::to_string(&edit).unwrap(),
+        )
+        .unwrap();
+        for (key, value) in old {
+            assert_eq!(state.accepted.values[&key], value);
+        }
+        assert!(
+            !state
+                .accepted
+                .values
+                .contains_key("shell.panels.bottom.enabled")
+        );
+        assert!(
+            !state
+                .accepted
+                .values
+                .contains_key("shell.panels.top.autohide")
+        );
+        drop(state);
+        let (store, data) = Store::open(dir.path(), &binding()).unwrap();
+        let mut state = Authority::new(store, data).unwrap();
+        let benign = request(&state, "after-reset", "light");
+        state.apply(benign).unwrap();
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let mut edit = request(&state, "empty-global", "light");
+    edit.changes.clear();
+    edit.reset = vec!["*".into()];
+    state.apply(edit).unwrap();
+    assert!(
+        !state
+            .accepted
+            .values
+            .keys()
+            .any(|k| registry::retired_panel_key(k))
+    );
+}
+
+#[test]
+fn historical_panel_values_survive_seed_cache_recovery_and_receipt_replay() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, initial) =
+        Store::create(dir.path(), binding(), historical_panel_values()).unwrap();
+    let mut old = ApplyRequest {
+        binding: binding(),
+        expected_incarnation: initial.incarnation.clone(),
+        expected_revision: initial.revision,
+        operation_id: "old-panel-save".into(),
+        changes: BTreeMap::from([("shell.panels.top.opacity".into(), json!(0.4))]),
+        reset: vec![],
+        request_digest: None,
+    };
+    let mut accepted = initial.clone();
+    accepted.revision = Revision(2);
+    accepted.receipts.push(Receipt {
+        operation_id: old.operation_id.clone(),
+        request_digest: old.digest().unwrap(),
+        incarnation: accepted.incarnation.clone(),
+        revision: accepted.revision,
+        outcome: Outcome::Changed,
+    });
+    accepted.seal().unwrap();
+    store.commit(&initial, &accepted).unwrap();
+    drop(store);
+    // Seed/open restores sealed state directly, never as an apply batch.
+    let (store, data) = Store::seed(dir.path(), binding(), true).unwrap();
+    assert_eq!(data.values, initial.values);
+    let cache = settingsd::mirror::Cache::of(&data, "source").unwrap();
+    let mut mirror = Authority::mirror(&cache).unwrap();
+    assert_eq!(mirror.accepted.values, data.values);
+    let mut state = Authority::new(store, data).unwrap();
+    assert_eq!(state.apply(old.clone()).unwrap()["replayed"], true);
+    old.operation_id = "new-panel-save".into();
+    old.expected_revision = state.accepted.revision;
+    assert_eq!(
+        state.apply(old).unwrap_err()["diagnostics"][0]["code"],
+        "retired_key"
+    );
+    let restored_snapshot = state.snapshot_v3().unwrap().expand().unwrap();
+    assert_eq!(restored_snapshot.values, state.accepted.values);
+    let benign = request(&state, "after-upgrade", "light");
+    state.validate(&benign).unwrap();
+    state.apply(benign).unwrap();
+    mirror
+        .adopt(
+            &settingsd::mirror::Cache::of(&state.accepted, "source").unwrap(),
+            &Default::default(),
+        )
+        .unwrap();
+    assert_eq!(mirror.accepted.values, state.accepted.values);
+    drop(state);
+    std::fs::write(dir.path().join("desktop.conf.mix"), "{ interrupted").unwrap();
+    let (store, data) = Store::open(dir.path(), &binding()).unwrap();
+    assert!(store.restored);
+    assert_eq!(data.values["shell.panels.top.opacity"], json!(0.4));
+    let mut state = Authority::new(store, data).unwrap();
+    let benign = request(&state, "after-backup-restore", "light");
+    state.apply(benign).unwrap();
+    let fresh = tempfile::tempdir().unwrap();
+    let (_, data) = Store::seed(fresh.path(), binding(), true).unwrap();
+    assert!(
+        data.values.is_empty(),
+        "first boot never materialises a default top-panel batch"
+    );
+}
+
+#[test]
+fn backdrop_import_and_interrupted_import_replay_do_not_resubmit_history() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(Store::create(dir.path(), binding(), historical_panel_values()).unwrap());
+    let path = dir.path().join("wallpaper-import.conf.mix");
+    let text = "{schema:1,default:{colour:\"#123456\",image:\"/home/user/walls/example.jpg\"}}";
+    std::fs::write(&path, text).unwrap();
+    settingsd::migration::import_backdrop(dir.path(), &binding(), &path).unwrap();
+    // Simulate a crash before rename: source and committed receipt both exist.
+    std::fs::write(&path, text).unwrap();
+    assert_eq!(
+        settingsd::migration::import_backdrop(dir.path(), &binding(), &path).unwrap()["replayed"],
+        true
+    );
+    let (_, data) = Store::open(dir.path(), &binding()).unwrap();
+    assert_eq!(data.values["shell.panels.top.opacity"], json!(0.4));
+    assert_eq!(
+        data.values["wallpaper.image"],
+        json!("/home/user/walls/example.jpg")
+    );
+}
+
+#[test]
 fn values_read_session_scale_density_and_motion_on_the_same_revision() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());

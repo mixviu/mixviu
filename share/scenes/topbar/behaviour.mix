@@ -16,7 +16,7 @@ $POPUPS = {launcher: env("TOPBAR_LAUNCHER_SCENE", "launcher"),
   calendar: env("TOPBAR_CALENDAR_SCENE", "calendar"), notes: env("TOPBAR_NOTES_SCENE", "notes"),
   network: env("TOPBAR_NETWORK_SCENE", "network")}
 -- Launch buttons: the desktop entry to start and the icon to show.
-$LAUNCH = {term: {app: "dev.mixos.term", icon: "dev.mixos.term-symbolic", label: "Terminal"},
+$LAUNCH = {term: {app: "mixviu.term", icon: "dev.mixos.term-symbolic", label: "Terminal"},
   files: {app: "dev.mixos.dopus", icon: "dev.mixos.dopus-symbolic", label: "Files"},
   shot: {app: "dev.mixos.screenshot", icon: "dev.mixos.screenshot-symbolic", label: "Screenshot"},
   settings: {app: "dev.mixos.prefs", icon: "dev.mixos.prefs-symbolic", label: "Settings"}}

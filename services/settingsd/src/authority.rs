@@ -28,6 +28,15 @@ pub struct Authority {
     /// as `snapshot.effective`. Never serialised; it is not part of the sealed
     /// `Snapshot` or `Effective`. Rebuilt wherever `snapshot` is rebuilt.
     accents: Accents,
+    /// Completed palette work for this accepted record, bounded to dark/light.
+    /// A caller abandoning its reply must not make the next read recompile it.
+    /// Cleared with the publication board whenever the accepted record changes.
+    /// Two invariants keep it fresh: palette compilation is a pure function of
+    /// (`accepted.values`, `accepted.embedded_source`, mode), and every path
+    /// that replaces `accepted` goes through `stage_with`, which clears this
+    /// map. A palette input read from elsewhere (a file, ambient state) needs
+    /// its own invalidation here.
+    pub(crate) palettes: std::collections::BTreeMap<String, Value>,
 }
 impl Authority {
     pub fn new(store: Store, accepted: Accepted) -> anyhow::Result<Self> {
@@ -55,6 +64,7 @@ impl Authority {
             board: Default::default(),
             stale,
             accents,
+            palettes: Default::default(),
         };
         serving.stage();
         Ok(serving)
@@ -138,9 +148,42 @@ impl Authority {
     }
     /// The values `request` would leave, through the registry's one write.
     fn patched(&self, request: &ApplyRequest) -> Result<registry::Values, Value> {
-        registry::apply(&self.accepted.values, &request.changes, &request.reset)
-            .map(canonical)
-            .map_err(diagnostics)
+        if request.changes.len() + request.reset.len() > registry::MAX_BATCH {
+            return Err(json!({"status":"validation_failed","message":"Batch limit exceeded"}));
+        }
+        // Retain old values for load/downgrade, but never acknowledge a dead
+        // panel edit, including a targeted reset or null-valued change.
+        if let Some(path) = request
+            .changes
+            .keys()
+            .chain(request.reset.iter())
+            .find(|path| registry::retired_panel_key(path))
+        {
+            return Err(json!({"status":"validation_failed", "diagnostics":[{
+                "code":"retired_key", "path":path,
+                "message":"Legacy top panel keys do not control the live panel; use scenes.enable, scenes.disable or scenes.move with name panel."
+            }]}));
+        }
+        // Broad/global reset skips retired values, rather than submitting
+        // them again or materialising defaults for keys that were absent.
+        let global = request.reset.iter().any(|path| path == "*");
+        let mut base = self.accepted.values.clone();
+        if global {
+            base.retain(|path, _| registry::retired_panel_key(path));
+        }
+        let resets: Vec<String> = request
+            .reset
+            .iter()
+            .filter(|path| *path != "*")
+            .cloned()
+            .collect();
+        let mut next = registry::apply(&base, &request.changes, &resets).map_err(diagnostics)?;
+        for (path, value) in &self.accepted.values {
+            if registry::retired_panel_key(path) {
+                next.insert(path.clone(), value.clone());
+            }
+        }
+        Ok(canonical(next))
     }
     pub fn validate(&self, request: &ApplyRequest) -> Result<Value, Value> {
         self.target(&request.binding)?;

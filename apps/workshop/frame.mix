@@ -24,5 +24,9 @@ fn project($s,$model)
     end
     $model.native_overlays=[{definition:$d,command:"workshop.dialog.intent"}]
   end
-  return $gold.apply($model,{icon:"server",title:"Workshop",native_title:"Workshop",menus:$menus.menus($s),toolbar:$toolbar,status:{left:$s.status,icon:if $s.connected then "plug" else "unplug" end,error:not $s.connected,right:[]},appearance:$s.theme_choice})
+  -- Null axes follow the session in theme_choice; the initial design context
+  -- accepts only authored names, so omit those axes from frame appearance.
+  $appearance={}
+  for $key in keys($s.theme_choice) if $s.theme_choice[$key]!=nil then $appearance[$key]=$s.theme_choice[$key] end end
+  return $gold.apply($model,{icon:"server",title:"Workshop",native_title:"Workshop",menus:$menus.menus($s),toolbar:$toolbar,status:{left:$s.status,icon:if $s.connected then "plug" else "unplug" end,error:not $s.connected,right:[]},appearance:$appearance})
 end

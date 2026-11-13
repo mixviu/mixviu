@@ -12,6 +12,10 @@ fn check($ok, $message)
   $checks.count = $checks.count + 1
   if not $ok then raise("SCENES_TEST", $message) end
 end
+fn panel_row($s)
+  for $row in $l.inventory($s).scenes if $row.name=="panel" then return $row end end
+  return nil
+end
 fn calls($command)
   $out = []
   for each $line in read_lines($log)
@@ -51,6 +55,7 @@ fn rpc($host, $command, $body)
     end
     $source = type($body) == "map" ? $body.source : $body
     $d = $l.document($source)
+    if $command == "shell.scene.load" and $d.name == $host_state.load_only_error then raise("SCENES_UPSTREAM", "fixture load refusal", {}) end
     if $d.name == $host_state.load_error then raise("SCENES_UPSTREAM", "load timed out", {rpc:"shell.scene.load"}) end
     if contains($source, "BROKEN") then raise("SCENES_UPSTREAM", "invalid document", {rc:10, upstream:{diagnostics:[{line:7, code:"mix-parse", severity:"Error", message:"parse"}]}}) end
     if $command == "shell.scene.load" then
@@ -147,6 +152,60 @@ end
 fn notify($body)
   record("publish", $body)
   return true
+end
+fn upgrade_guard($dir)
+  $host_state.guard_calls = ($host_state.guard_calls ?? 0) + 1
+  if $host_state.upgrade_open == true then raise("SCENES_EDITOR_OPEN", "editor buffer is open") end
+  if $host_state.upgrade_edit == true or ($host_state.upgrade_edit_late == true and $host_state.guard_calls == 2) then
+    write_file($dir .. "/behaviour.mix", read_file($dir .. "/behaviour.mix") .. "-- racing editor save\n")
+    $host_state.upgrade_edit = false
+  end
+end
+fn upgrade_swapped($backup)
+  if $host_state.settings_probe_dir != nil then
+    check(settings_lock_probe($host_state.settings_probe_dir)=="busy","reset holds the settings lock through copy and directory swap")
+  end
+  if $host_state.replacement_dir != nil then
+    $path = $host_state.replacement_dir .. "/behaviour.mix"
+    write_file($path, read_file($path) .. "-- save into replacement\n")
+    $host_state.replacement_dir = nil
+  end
+  if $host_state.edit_after_swap == true then
+    write_file($backup .. "/behaviour.mix", read_file($backup .. "/behaviour.mix") .. "-- save after swap\n")
+    $host_state.edit_after_swap = false
+  end
+end
+fn settings_lock_probe($dir)
+  $answer=dirname($dir).."/.settings-probe"
+  remove($answer)
+  $child=spawn([read_link("/proc/self/exe"),dirname(script_path()).."/panel_settings_writer.mix",$dir,"probe"],{die_with_parent:true,stderr:{file:$tmp.."/settings-probe.log"}})
+  try
+    $until=monotonic()+3
+    while not is_file($answer) and monotonic()<$until sleep(0.02) end
+    check(is_file($answer),"competing writer probe completes")
+    return read_file($answer)
+  finally
+    if process_alive($child) then kill($child,15) end
+  end
+end
+fn upgrade_verified($backup)
+  if $host_state.held_inode != nil and $host_state.inode_after_verify == true then
+    append_file($host_state.held_inode, "-- late open-inode save\n")
+    $host_state.inode_after_verify = false
+  end
+end
+fn hold_inode($path)
+  check(flock($path, {create:false}), "fixture retains writable inode")
+  $identity = stat($path)
+  for $n in ls("/proc/self/fd")
+    $fd = "/proc/" .. to_string(pid()) .. "/fd/" .. $n
+    try
+      $st = stat($fd)
+      if $st.ino == $identity.ino and $st.dev == $identity.dev then return $fd end
+    catch $ignored
+    end
+  end
+  raise("SCENES_TEST", "held inode descriptor missing")
 end
 fn probe_row($s)
   return filter($l.inventory($s).scenes, fn($r) = $r.name == "probe")[0]
@@ -268,7 +327,8 @@ try
   mkdir($tmp .. "/templates")
   $io = {rpc:fn($a,$b,$c) = rpc($a,$b,$c), check:fn($a,$b) = check_behaviour($a,$b),
     launch:fn($a,$b,$c,$d,$e) = launch($a,$b,$c,$d,$e),
-    stop:fn($a,$b) = stop($a,$b), notify:fn($a) = notify($a)}
+    stop:fn($a,$b) = stop($a,$b), notify:fn($a) = notify($a), upgrade_guard:fn($a) = upgrade_guard($a),
+    upgrade_swapped:fn($a) = upgrade_swapped($a), upgrade_verified:fn($a) = upgrade_verified($a)}
   $s = $l.initial($tmp .. "/scenes", $tmp .. "/templates", "test-shell", "test-scenes", $io)
   $s.first_run_enabled = false
   $s = $l.rescan($s, false)
@@ -1596,7 +1656,470 @@ try
   check($a.title == "Alpha" and $a.description == "the alpha scene" and $a.recommended and $a.order == 20 and deep_eq($a.requires, ["apps"]) and $a.behaviour and $a.edge == "left" and $a.kind == "edge" and deep_eq($a.installed_as, ["alpha-two"]), "T1: metadata row: " .. json_encode($a))
   check($s.response.templates[2].diagnostic.error_code == "SCENES_METADATA" and $s.response.templates[2].order == 1000, "T1: an invalid template is a row with a diagnostic")
 
+  -- Upgrade-aware copies: real staging/rewriting, persistence and swaps.
+  $ut = $tmp .. "/upgrade-templates"
+  mkdir($ut)
+  install_fixture($ut, "alpha", true)
+  write_file($ut .. "/alpha/settings.conf.mix", "{value:1}\n")
+  mkdir($ut .. "/alpha/assets")
+  write_file($ut .. "/alpha/assets/icon", "icon")
+  $s = se_fresh("upgrade", $ut)
+  $s = $l.request($s, "install", {template:"alpha", name:"renamed"})
+  check($s.rc == 0, "upgrade fixture installs")
+  $dir = $s.root .. "/renamed"
+  $rec = $s.desired.templates.renamed
+  check($rec.digest == hash_sha256(read_file($dir .. "/scene.mix")) and $rec.template == "alpha", "record uses rewritten bytes and template identity")
+  $before_state = state_bytes($s)
+  $s = $l.request($s, "upgrade", {})
+  check($s.rc == 0 and state_bytes($s) == $before_state and len(ls($s.root .. "/.recovery")) == 0, "unchanged upgrade is a no-op")
+  write_file($dir .. "/settings.conf.mix", "{value:99}\n")
+  $before_scene = read_file($dir .. "/scene.mix")
+  write_file($ut .. "/alpha/scene.mix", replace(read_file($ut .. "/alpha/scene.mix"), "hello", "updated"))
+  $s = $l.request($s, "upgrade", {})
+  $backups = ls($s.root .. "/.recovery")
+  check($s.rc == 0 and contains(read_file($dir .. "/scene.mix"), "updated"), "untouched code refreshes")
+  check(read_file($dir .. "/settings.conf.mix") == "{value:99}\n" and len($backups) == 1 and read_file($s.root .. "/.recovery/" .. $backups[0] .. "/scene.mix") == $before_scene, "settings-only edit survives refresh with original backup")
+  write_file($dir .. "/assets/icon", "custom icon")
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and read_file($dir .. "/assets/icon") == "custom icon", "edited asset is flagged and retained")
+  write_file($dir .. "/assets/icon", "icon")
+  $s.desired.templates = {}
+  $s = $l.persist($s)
+  $s = $l.request($s, "upgrade", {})
+  check($s.desired.templates.renamed != nil and not $s.response.scenes[0].stale, "equal unrecorded copy is enrolled")
+  $s.desired.templates = {}
+  $s = $l.persist($s)
+  write_file($dir .. "/behaviour.mix", "-- local code\n")
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and $s.desired.templates.renamed == nil and read_file($dir .. "/behaviour.mix") == "-- local code\n", "unequal unrecorded copy is retained for review")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  check($s.rc == 0 and $s.desired.templates.renamed != nil, "reset records new baseline")
+  write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- new template\n")
+  $host_state.upgrade_open = true
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and $s.upgrades.renamed.error_code == "SCENES_EDITOR_OPEN" and not contains(read_file($dir .. "/behaviour.mix"), "new template"), "open editor buffer refuses refresh")
+  $host_state.upgrade_open = false
+  $host_state.upgrade_edit = true
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "racing editor save"), "digest rechecked after guard under writer lock")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- another upgrade\n")
+  $host_state.upgrade_edit_late = true
+  $host_state.guard_calls = 0
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "racing editor save") and not contains(read_file($dir .. "/behaviour.mix"), "another upgrade"), "final recheck refuses a save after invalidation")
+  $host_state.upgrade_edit_late = false
+  $s = $l.request($s, "reset", {name:"renamed"})
+  for $i = 1 to 19
+    mkdir($s.root .. "/.recovery/old-" .. to_string($i))
+  end
+  $s.recovery_clock = time() + 601
+  $s.recovery_boot = ls($s.root .. "/.recovery")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  check($s.rc == 0 and len(ls($s.root .. "/.recovery")) == 16 and is_dir($s.response.recovery), "recovery cap retains latest reset backup")
+  $protected = $s.response.recovery
+  $s.desired.resetting = {backup:substr($protected, len($s.root) + 1)}
+  mkdir($s.root .. "/.recovery/new-backup")
+  $s.recovery_boot = ls($s.root .. "/.recovery")
+  $s = $l.cap_recovery($s, nil)
+  check(is_dir($protected) and len(ls($s.root .. "/.recovery")) == 16, "recovery cap protects unfinished transaction backup")
+  $s.desired = delete($s.desired, "resetting")
+  $helpers = require("../../../share/scenes/editor/lib.mix")
+  check($helpers.scene_state({enabled:true, stale:true}).status == "template updated", "Scene Editor marks stale copies")
+  check($helpers.scene_state({enabled:true, stale:true, upgrade:{error_code:"SCENES_EDITOR_OPEN"}}).status == "SCENES_EDITOR_OPEN", "editor shows actual stale error")
+  check($helpers.scene_state({enabled:false, stale:true}).status == "disabled", "disabled status outranks stale")
+  check($helpers.scene_state({enabled:true, behaviour:"crash_loop", stale:true}).status == "crash_loop", "crash loop status outranks stale")
+
+  -- Round 2: optional records cannot poison durable desired state.
+  mkdir($ut .. "/no-meta")
+  write_file($ut .. "/no-meta/scene.mix", fixture_source("no-meta", "test"))
+  check($l.template_record($ut .. "/no-meta", "no-meta").meta_digest == "", "missing metadata digest has fallback")
+  $before_state = state_bytes($s)
+  $bad = $l.request($s, "install", {template:"no-meta"})
+  check($bad.rc != 0 and state_bytes($s) == $before_state, "stage requires metadata before install persists")
+  $s.desired.templates.renamed.meta_digest = nil
+  $s = $l.persist($s)
+  $s.state_digest = ""
+  $s = $l.load_state($s)
+  check($s.state_ok and $s.desired.origins.renamed == "alpha" and $s.desired.templates.renamed == nil, "bad optional record skipped without losing origins")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  $large = repeat(" ", 262145) .. "{value:123}\n"
+  write_file($dir .. "/settings.conf.mix", $large)
+  $code_before = read_file($dir .. "/scene.mix")
+  write_file($ut .. "/alpha/scene.mix", replace(read_file($ut .. "/alpha/scene.mix"), "updated", "round-two"))
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_LIMIT" and read_file($dir .. "/settings.conf.mix") == $large and read_file($dir .. "/scene.mix") == $code_before, "oversized settings refuse refresh without truncation")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  write_file($ut .. "/alpha/settings.conf.mix", "{value:2}\n")
+  $s = $l.request($s, "upgrade", {})
+  check(read_file($dir .. "/settings.conf.mix") == "{value:2}\n", "untouched shipped settings follow changed defaults")
+  write_file($dir .. "/settings.conf.mix", "{value:99}\n")
+  write_file($ut .. "/alpha/settings.conf.mix", "{value:3}\n")
+  write_file($ut .. "/alpha/template.conf.mix", '{title:"Test", settings_schema:{value:{type:"string"}}}')
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and read_file($dir .. "/settings.conf.mix") == "{value:99}\n" and contains($s.upgrades.renamed.error_code, "VALIDATION"), "incompatible carried settings flag and retain original")
+  write_file($ut .. "/alpha/template.conf.mix", '{title:"Test", settings_schema:{value:{type:"integer"}}}')
+  $s = $l.request($s, "upgrade", {})
+  check(not $s.response.scenes[0].stale and read_file($dir .. "/settings.conf.mix") == "{value:99}\n", "compatible edited settings carried byte-for-byte")
+  check($s.desired.templates.renamed.settings_digest == hash_file($ut .. "/alpha/settings.conf.mix", "sha256") and $s.desired.templates.renamed.settings_digest != hash_file($dir .. "/settings.conf.mix", "sha256"), "carried settings never become the template baseline")
+  write_file($ut .. "/alpha/settings.conf.mix", "{value:4}\n")
+  $s = $l.request($s, "upgrade", {})
+  check(read_file($dir .. "/settings.conf.mix") == "{value:99}\n" and $s.desired.templates.renamed.settings_digest == hash_file($ut .. "/alpha/settings.conf.mix", "sha256"), "second defaults change still preserves edited settings")
+  write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- latest\n")
+  $host_state.edit_after_swap = true
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "save after swap") and not contains(read_file($dir .. "/behaviour.mix"), "latest"), "post-swap save rolls back to edited original and flags")
+  check($s.desired.resetting == nil and len(stages($s.root)) == 0, "raced swap leaves no unfinished transaction")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- next\n")
+  $host_state.replacement_dir = $dir
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "save into replacement"), "save into replacement remains installed and flagged")
+  check($s.response.scenes[0].upgrade.local == nil or $s.response.scenes[0].upgrade.local.files == nil, "inventory omits per-file comparison manifests")
+  -- A stale row followed by an error and a placed reset must retain the row
+  -- and finish the transaction so the following scene can still refresh.
+  $s = $l.request($s, "install", {template:"alpha", name:"zzz"})
+  $s = $l.request($s, "install", {template:"alpha", name:"zzzz"})
+  write_file($ut .. "/alpha/scene.mix", read_file($ut .. "/alpha/scene.mix") .. "\n")
+  $s.faults = ["resetting:placed"]
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed != nil and $s.upgrades.zzz != nil and $s.upgrades.zzzz != nil and $s.desired.resetting == nil, "flags survive errors and placed resets recover between scenes")
+  check(contains(read_file($s.root .. "/zzzz/behaviour.mix"), "latest"), "later scene is not blocked by earlier placed reset")
+  $s.faults = ["recovery:prune"]
+  for $i = 1 to 18 mkdir($s.root .. "/.recovery/prune-" .. to_string($i)) end
+  $s.recovery_boot = ls($s.root .. "/.recovery")
+  $s = $l.request($s, "reset", {name:"zzz"})
+  check($s.rc == 0 and $s.recovery_prune_error != nil, "prune failure does not report committed reset as failure")
+  $s.faults = []
+  $s = se_fresh("editor-reset-model", $tpl)
+  $s = $l.request($s, "install", {template:"editor"})
+  $s = $l.request($s, "editor.open", {})
+  $s.scenes.editor.model = {sentinel:"last-good"}
+  $host_state.load_only_error = "editor"
+  $s = $l.request($s, "reset", {name:"editor"})
+  $host_state.load_only_error = nil
+  check($s.rc == 10 and deep_eq($s.scenes.editor.model, {sentinel:"last-good"}), "editor reset failure retains pre-finish model snapshot")
+
+  -- Saves to both directories survive rollback and either crash boundary.
+  for $point in ["normal", "review-saved", "review-restored"]
+    $s = se_fresh("both-saves-" .. $point, $ut)
+    $s = $l.request($s, "install", {template:"alpha"})
+    $dir = $s.root .. "/alpha"
+    $old_code = read_file($dir .. "/behaviour.mix")
+    write_file($ut .. "/alpha/behaviour.mix", $old_code .. "-- round-three " .. $point .. "\n")
+    $new_code = read_file($ut .. "/alpha/behaviour.mix")
+    $host_state.replacement_dir = $dir
+    $host_state.edit_after_swap = true
+    if $point != "normal" then $s.faults = ["resetting:" .. $point] end
+    $s = $l.request($s, "upgrade", {})
+    $root = $s.root
+    -- Restart from the durable transaction, never the pre-crash state copy.
+    $s = $l.initial($root, $ut, "test-shell", "test-scenes", $io)
+    $s.first_run_enabled = false
+    $s = $l.rescan($s, false)
+    check(read_file($dir .. "/behaviour.mix") == $old_code .. "-- save after swap\n", $point .. ": original save restored byte-for-byte")
+    $saved = $s.desired.reviews.alpha
+    check(type($saved) == "list" and len($saved) == 1 and read_file($root .. "/" .. $saved[0] .. "/behaviour.mix") == $new_code .. "-- save into replacement\n", $point .. ": replacement save retained byte-for-byte")
+    check($s.desired.resetting == nil, $point .. ": recovery clears transaction without enrolling either edit")
+    for $i = 1 to 20 mkdir($root .. "/.recovery/cap-" .. to_string($i)) end
+    $s.recovery_clock = time() + 601
+    $s.recovery_boot = ls($root .. "/.recovery")
+    $s = $l.cap_recovery($s, nil)
+    $ordinary = filter(ls($root .. "/.recovery"), fn($n) = not starts_with($n, "review-"))
+    check(len($ordinary) == 16 and is_dir($root .. "/" .. $saved[0]), $point .. ": review copy survives cap independently of ordinary backups")
+    $s = $l.request($s, "upgrade", {})
+    $row = $s.response.scenes[0]
+    check($row.stale and contains($row.upgrade.reason, $dir) and contains($row.upgrade.reason, $root .. "/" .. $saved[0]), $point .. ": stale reason names both copies after restart and upgrade")
+  end
+  $s = se_fresh("settings-link", $ut)
+  $s = $l.request($s, "install", {template:"alpha"})
+  $settings_path = $s.root .. "/alpha/settings.conf.mix"
+  run_argv_must(["unlink", $settings_path])
+  $target = $tmp .. "/linked-settings"
+  write_file($target, "{value:91}\n")
+  run_argv_must(["ln", "-s", $target, $settings_path])
+  $link_error = nil
+  try $l.template_record($s.root .. "/alpha", "alpha") catch $message, $error $link_error = $error.code end
+  check($link_error == "SCENES_FILES", "fingerprint refuses symlinked settings before hashing")
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and $s.upgrades.alpha.error_code == "SCENES_FILES" and read_file($target) == "{value:91}\n" and stat($settings_path, {follow_symlinks:false}).is_symlink, "settings alias is flagged without changing link or target")
+
+  -- Writes through an inode retained across rename, after replacement check.
+  for $late in [false, true]
+    $s = se_fresh("held-inode-" .. to_string($late), $ut)
+    $s = $l.request($s, "install", {template:"alpha"})
+    $path = $s.root .. "/alpha/behaviour.mix"
+    $old_code = read_file($path)
+    $host_state.held_inode = hold_inode($path)
+    write_file($ut .. "/alpha/behaviour.mix", $old_code .. "-- inode upgrade\n")
+    $host_state.inode_after_verify = not $late
+    $s = $l.request($s, "upgrade", {})
+    if $late then
+      check(not $s.response.scenes[0].stale, "unchanged backup accepted before delayed write")
+      append_file($host_state.held_inode, "-- late open-inode save\n")
+      $s = $l.cap_recovery($s, nil)
+      $saved = $s.desired.reviews.alpha[0]
+      check(read_file($s.root .. "/" .. $saved .. "/behaviour.mix") == $old_code .. "-- late open-inode save\n" and $l.inventory($s).scenes[0].stale, "post-commit inode edit is quarantined and flagged before pruning")
+    else
+      check(read_file($path) == $old_code .. "-- late open-inode save\n" and $s.response.scenes[0].stale, "second backup check detects held-inode write after replacement verification")
+    end
+    funlock($path)
+    $host_state.held_inode = nil
+  end
+  -- Young backups remain even above the ordinary target, across restarts.
+  $s = se_fresh("quiet-backups", $ut)
+  mkdir($s.root .. "/.recovery")
+  for $i = 1 to 20 mkdir($s.root .. "/.recovery/quiet-" .. to_string($i)) end
+  $s = $l.cap_recovery($s, nil)
+  check(len(ls($s.root .. "/.recovery")) == 20, "new backups cannot be pruned in their birth loader")
+  $s.recovery_boot = ls($s.root .. "/.recovery")
+  $s = $l.cap_recovery($s, nil)
+  check(len(ls($s.root .. "/.recovery")) == 20, "restart alone does not bypass ten-minute quiet floor")
+  $s.recovery_clock = time() + 601
+  $s = $l.cap_recovery($s, nil)
+  check(len(ls($s.root .. "/.recovery")) == 16, "quiet backups from prior loader may be capped")
+  -- Count and byte high-water marks refuse before staging or replacing code.
+  $s = $l.request($s, "install", {template:"alpha"})
+  $paths = []
+  for $i = 1 to 8
+    $rel = ".recovery/review-alpha-threshold-" .. to_string($i)
+    mkdir($s.root .. "/" .. $rel)
+    write_file($s.root .. "/" .. $rel .. "/saved", "saved edit\n")
+    push($paths, $rel)
+  end
+  $s.desired.reviews = {alpha:$paths}
+  $s = $l.persist($s)
+  $usage = $l.inventory($s)
+  check($usage.review_usage.count == 8 and $usage.review_usage.bytes == 88 and $usage.scenes[0].review_usage.blocked, "inventory accounts retained review count and bytes")
+  $before_code = read_file($s.root .. "/alpha/behaviour.mix")
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.alpha.error_code == "SCENES_REVIEW_LIMIT" and read_file($s.root .. "/alpha/behaviour.mix") == $before_code and len(stages($s.root)) == 0, "count threshold refuses new upgrades without deleting saved copies")
+  -- A sparse file exercises byte admission without allocating 64 MiB.
+  $s.desired.reviews.alpha = [$paths[0]]
+  run_argv_must(["truncate", "-s", "67108864", $s.root .. "/" .. $paths[0] .. "/saved"])
+  $s = $l.persist($s)
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.alpha.error_code == "SCENES_REVIEW_LIMIT" and $s.response.scenes[0].review_usage.bytes == 67108864, "byte threshold also refuses upgrade while retaining saved data")
+  $candidate_stage = $l.stage($s, "alpha", "alpha")
+  $reused_backup = $s.root .. "/.recovery/alpha-reused"
+  mkdir($s.root .. "/.recovery/review-alpha-reused-previous")
+  $collision = nil
+  try
+    $l.swap_in($s, "resetting", {name:"alpha"}, $s.root .. "/alpha", $candidate_stage, $reused_backup)
+  catch $message, $error
+    $collision = $error.code
+  end
+  check($collision == "SCENES_COLLISION" and read_file($s.root .. "/alpha/behaviour.mix") == $before_code, "backup transaction identity cannot reuse retained review prefix")
+
+  -- Every swap route protects the old inode, not just template upgrades.
+  for $route in ["reset", "editor-reset", "promote"]
+    for $late in [false, true]
+      $s = se_fresh("swap-inode-" .. $route .. "-" .. to_string($late), $tpl)
+      $name = $route == "editor-reset" ? "editor" : "alpha"
+      $s = $l.request($s, "install", {template:$name})
+      if $route == "promote" then
+        $s = $l.request($s, "fork", {name:"alpha", enable:false})
+        append_file($s.root .. "/alpha-sandbox/behaviour.mix", "-- promoted behaviour\n")
+      end
+      $path = $s.root .. "/" .. $name .. "/behaviour.mix"
+      $before = read_file($path)
+      $host_state.held_inode = hold_inode($path)
+      $host_state.inode_after_verify = not $late
+      $s = $l.request($s, $route == "promote" ? "promote" : "reset", $route == "promote" ? {from:"alpha-sandbox"} : {name:$name})
+      if $late then
+        check($s.rc == 0, $route .. ": swap completed before delayed descriptor write: " .. json_encode($s.response))
+        append_file($host_state.held_inode, "-- delayed non-upgrade inode save\n")
+        $s = $l.cap_recovery($s, nil)
+        $paths = $l.live_review_paths($s, $name)
+        check(len($paths) == 1 and read_file($paths[0] .. "/behaviour.mix") == $before .. "-- delayed non-upgrade inode save\n", $route .. ": delayed old-inode save quarantined byte-for-byte")
+      else
+        check($s.rc != 0 and read_file($path) == $before .. "-- late open-inode save\n", $route .. ": swap rechecks and restores the edited inode")
+        $s = $l.rescan($s, false)
+        check($s.desired.resetting == nil and $s.desired.promoting == nil and len($l.live_review_paths($s, $name)) == 1, $route .. ": recovery preserves counterpart and clears transaction")
+      end
+      funlock($path)
+      $host_state.held_inode = nil
+      $host_state.inode_after_verify = false
+    end
+  end
+  -- Promote also retires its sandbox; that inode needs durable protection.
+  $s = se_fresh("sandbox-inode", $tpl)
+  $s = $l.request($s, "install", {template:"alpha"})
+  $s = $l.request($s, "fork", {name:"alpha", enable:false})
+  $path = $s.root .. "/alpha-sandbox/behaviour.mix"
+  $before = read_file($path)
+  $host_state.held_inode = hold_inode($path)
+  $s = $l.request($s, "promote", {from:"alpha-sandbox"})
+  check($s.rc == 0, "sandbox inode fixture promotes")
+  append_file($host_state.held_inode, "-- retired sandbox save\n")
+  $s = $l.cap_recovery($s, nil)
+  $paths = $l.live_review_paths($s, "alpha-sandbox")
+  check(len($paths) == 1 and read_file($paths[0] .. "/behaviour.mix") == $before .. "-- retired sandbox save\n", "retired sandbox save is also quarantined")
+  $host_state.held_inode = nil
+  funlock($path)
+  -- Ced buffers refuse each mutation before any swap or source retirement.
+  for $route in ["reset", "editor-reset", "promote"]
+    $s = se_fresh("ced-guard-" .. $route, $tpl)
+    $name = $route == "editor-reset" ? "editor" : "alpha"
+    $s = $l.request($s, "install", {template:$name})
+    if $route == "promote" then $s = $l.request($s, "fork", {name:"alpha", enable:false}) end
+    $before = tree_digest($s.root .. "/" .. $name)
+    $host_state.upgrade_open = true
+    $s = $l.request($s, $route == "promote" ? "promote" : "reset", $route == "promote" ? {from:"alpha-sandbox"} : {name:$name})
+    $host_state.upgrade_open = false
+    check($s.rc != 0 and $s.response.error_code == "SCENES_EDITOR_OPEN" and tree_digest($s.root .. "/" .. $name) == $before and len(stages($s.root)) == 0, $route .. ": Ced guard refuses without replacing files")
+  end
+  -- A state-write failure after moving a changed backup cannot hide it.
+  $s = se_fresh("orphan-review", $tpl)
+  $s = $l.request($s, "install", {template:"alpha"})
+  $path = $s.root .. "/alpha/behaviour.mix"
+  $host_state.held_inode = hold_inode($path)
+  $s = $l.request($s, "reset", {name:"alpha"})
+  append_file($host_state.held_inode, "-- save before failed review persist\n")
+  $s.faults = ["reviews:persist"]
+  $s = $l.cap_recovery($s, nil)
+  check($s.recovery_prune_error != nil and len(($s.desired.reviews ?? {}).alpha ?? []) == 0, "fixture loses review bookkeeping after durable directory rename")
+  $view = $l.inventory($s)
+  check($view.scenes[0].stale and $view.scenes[0].review_usage.count == 1 and $view.review_usage.count == 1, "directory discovery still exposes orphaned review usage and reason")
+  $root = $s.root
+  funlock($path)
+  $host_state.held_inode = nil
+  $s = $l.rescan($l.initial($root, $tpl, "test-shell", "test-scenes", $io), false)
+  check($l.inventory($s).scenes[0].review_usage.count == 1, "orphaned review discovery survives restart")
+  for $i = 1 to 8
+    mkdir($root .. "/.recovery/review-alpha-" .. uuid() .. "-" .. uuid())
+  end
+  $view = $l.inventory($s)
+  check($view.scenes[0].review_usage.count == 9 and $view.scenes[0].review_usage.over_limit and $view.scenes[0].review_usage.warning != nil and $view.review_usage.over_limit and contains($view.scenes[0].upgrade.reason, "limit reached"), "over-cap recovery copies are retained and explicitly warned in per-scene and global inventory")
+
   check(tree_digest($tpl .. "/editor") == $shipped_digest, "the loader never writes the shipped editor")
+  -- Preferences uses the loader's authority, never the legacy settings keys.
+  $host_state.refuse_edge = nil
+  $host_state.rollback_fail = nil
+  $s = se_fresh("prefs-panel", $tpl)
+  install_fixture($s.root, "panel", false)
+  $s = $l.rescan($s, false)
+  $original = read_file($s.root .. "/panel/scene.mix")
+  for $enabled in [true, false, true]
+    $req = {command:if $enabled then "scenes.enable" else "scenes.disable" end,args:{name:"panel"}}
+    $s = $l.request($s, substr($req.command, 7), $req.args)
+    check($s.rc == 0 and $s.scenes.panel.mounted == $enabled, "Preferences toggle changes actual mount")
+    check(panel_row($s).enabled == $enabled, "Preferences reads actual enablement")
+  end
+  for $edge in ["top", "bottom", "left", "right"]
+    $req = {command:"scenes.move",args:{name:"panel",edge:$edge}}
+    $s = $l.request($s, substr($req.command, 7), $req.args)
+    check($s.rc == 0 and $s.scenes.panel.edge == $edge, "Preferences moves actual panel")
+    check(panel_row($s).edge == $edge, "Preferences reads actual edge")
+    check(read_file($s.root .. "/panel/scene.mix") == $original, "position leaves upgradeable code untouched")
+  end
+  write_file($s.root .. "/panel/settings.conf.mix", "{edge: bottom, tasks_scope: current}")
+  $s = $l.filesystem($s, {overflow:false, changes:[{path:$s.root .. "/panel/settings.conf.mix"}]})
+  check(panel_row($s).edge == "bottom", "panel-side edit reaches Preferences")
+  check(load_data($s.root .. "/panel/settings.conf.mix").tasks_scope == "current", "other user settings survive")
+  $s = $l.request($s, "disable", {name:"panel"})
+  $s = $l.request($s, "move", {name:"panel",edge:"top"})
+  check($s.rc == 0 and not $s.scenes.panel.mounted and panel_row($s).edge == "top", "disabled panel position is editable and readable")
+  install_fixture($s.templates, "panel-template", false)
+  $s.desired.origins.panel = "panel-template"
+  $s = $l.request($s, "reset", {name:"panel"})
+  check($s.rc == 0 and load_data($s.root .. "/panel/settings.conf.mix").edge == "top" and load_data($s.root .. "/panel/settings.conf.mix").tasks_scope == "current", "template reset carries panel user state")
+  $s = $l.request($s, "enable", {name:"panel"})
+  check($s.rc == 0 and $s.scenes.panel.edge == "top", "reset mounts at preserved user position")
+  $settings_path=$s.root .. "/panel/settings.conf.mix"
+  $settings_before=read_file($settings_path)
+  $host_state.refuse_edge="left"
+  $s=$l.request($s,"move",{name:"panel",edge:"left"})
+  check($s.rc==10 and read_file($settings_path)==$settings_before and $s.scenes.panel.edge=="top", "failed panel move restores existing settings byte-for-byte")
+  $host_state.rollback_fail="panel"
+  $s=$l.request($s,"move",{name:"panel",edge:"left"})
+  check($s.rc==10 and read_file($settings_path)==$settings_before, "double mount failure still restores existing settings")
+  $host_state.refuse_edge=nil;$host_state.rollback_fail=nil
+  $s=$l.request($s,"reload",{name:"panel"})
+  check($s.rc==0 and $s.scenes.panel.edge=="top", "reload recovers restored position after rollback failure")
+  remove($settings_path)
+  $s=$l.filesystem($s,{overflow:false,changes:[{path:$settings_path}]})
+  $before_edge=$s.scenes.panel.edge
+  $host_state.refuse_edge="left"
+  $s=$l.request($s,"move",{name:"panel",edge:"left"})
+  check($s.rc==10 and not exists($settings_path) and $s.scenes.panel.edge==$before_edge, "failed first move removes newly created settings file")
+  $host_state.refuse_edge=nil
+  $source_path=$s.root .. "/panel/scene.mix"
+  $valid_source=read_file($source_path)
+  $window_line="window: " .. $l.document($valid_source).headers.window
+  for $replacement in ["", "window:\n  edge: right", "window: {}\n  edge: right"]
+    $bad=replace($valid_source,$window_line,$replacement)
+    write_file($source_path,$bad)
+    $s=$l.request($s,"move",{name:"panel",edge:"left"})
+    check($s.rc==10 and $s.response.error_code=="SCENES_PANEL_WINDOW", "absent or nested panel window fails clearly")
+    check(read_file($source_path)==$bad and not exists($settings_path), "unsupported panel window is never patched and creates no settings")
+  end
+  write_file($source_path,$valid_source)
+  write_file($settings_path,"{edge: top,tasks_scope: current}")
+  $uneditable=replace($valid_source,$window_line,"")
+  write_file($source_path,$uneditable)
+  $s=$l.request($s,"reload",{name:"panel"})
+  check($s.rc==0 and $s.scenes.panel.mounted and panel_row($s).position_supported==false,"valid headerless template loads at its own mount with position unsupported")
+  check(read_file($source_path)==$uneditable and load_data($settings_path).edge=="top","unsupported position never corrupts template or user state")
+  write_file($source_path,$valid_source)
+  $s=$l.request($s,"reload",{name:"panel"})
+  $dir=$s.root.."/panel"
+  $child=spawn([read_link("/proc/self/exe"),dirname(script_path()).."/panel_settings_writer.mix",$dir],{die_with_parent:true,stderr:{file:$tmp.."/settings-writer.log"}})
+  try
+    $until=monotonic()+3
+    while not is_file($dir.."/.lock-ready") and monotonic()<$until sleep(0.02) end
+    check(is_file($dir.."/.lock-ready"),"competing task-scope writer owns settings lock")
+    $before=read_file($settings_path)
+    $s=$l.request($s,"move",{name:"panel",edge:"bottom"})
+    check($s.rc==10 and $s.response.error_code=="SCENES_SETTINGS_BUSY" and read_file($settings_path)==$before,"move cannot clobber a task-scope save holding the shared lock")
+    $before_source=read_file($source_path)
+    $before_state=state_bytes($s)
+    $s=$l.request($s,"reset",{name:"panel"})
+    check($s.rc==10 and $s.response.error_code=="SCENES_SETTINGS_BUSY","reset refuses a competing task-scope writer")
+    check(read_file($settings_path)==$before and read_file($source_path)==$before_source and state_bytes($s)==$before_state and len(stages($s.root))==0,"contended reset leaves settings, code and desired state intact without staging")
+  finally
+    write_file($dir.."/.lock-release","")
+    $until=monotonic()+3
+    while not is_file($dir.."/.lock-done") and monotonic()<$until sleep(0.02) end
+    if process_alive($child) then kill($child,15) end
+  end
+  check(is_file($dir.."/.lock-done") and load_data($settings_path).tasks_scope=="all","competing task-scope save completes")
+  $s=$l.request($s,"move",{name:"panel",edge:"bottom"})
+  check($s.rc==0 and load_data($settings_path).tasks_scope=="all","move reads fresh locked state and preserves completed task-scope save")
+  $lock_identity=stat($s.root.."/.settings.lock").ino
+  $host_state.settings_probe_dir=$dir
+  $s=$l.request($s,"reset",{name:"panel"})
+  $host_state.settings_probe_dir=nil
+  check($s.rc==0 and load_data($settings_path).tasks_scope=="all" and load_data($settings_path).edge=="bottom","reset carries the completed competing save and panel edge")
+  check(stat($s.root.."/.settings.lock").ino==$lock_identity,"settings lock inode survives directory swap")
+  check(settings_lock_probe($dir)=="acquired","reset releases the shared lock after completion")
+  $host_state.upgrade_open=true
+  $s=$l.request($s,"reset",{name:"panel"})
+  $host_state.upgrade_open=false
+  check($s.rc==10 and $s.response.error_code=="SCENES_EDITOR_OPEN" and settings_lock_probe($dir)=="acquired","refused reset releases the shared lock on error")
+  check(contains(read_file(dirname(script_path()).."/../../../share/scenes/panel/behaviour.mix"),'$lock=dirname(dirname($SETTINGS)).."/.settings.lock"'),"real panel behaviour uses the same stable settings lock")
+  -- Panel overlays must coexist with the upgrade fingerprint/baseline policy.
+  install_fixture($ut,"panel",false)
+  write_file($ut.."/panel/settings.conf.mix","{edge: bottom,tasks_scope: all}\n")
+  $s=se_fresh("panel-upgrade",$ut)
+  $s=$l.request($s,"install",{template:"panel",enable:true})
+  check($s.rc==0,"panel upgrade fixture installs with recorded shipped baseline")
+  $settings_path=$s.root.."/panel/settings.conf.mix"
+  $panel_settings="{edge: top,tasks_scope: current}\n"
+  write_file($settings_path,$panel_settings)
+  write_file($ut.."/panel/scene.mix",replace(read_file($ut.."/panel/scene.mix"),"hello","upgraded"))
+  write_file($ut.."/panel/settings.conf.mix","{edge: right,tasks_scope: all}\n")
+  $s=$l.request($s,"upgrade",{})
+  check($s.rc==0 and $s.upgrades.panel==nil and $s.scenes.panel.edge=="top" and read_file($settings_path)==$panel_settings,"automatic panel upgrade preserves user edge and task scope")
+  check($s.desired.templates.panel.settings_digest==hash_file($ut.."/panel/settings.conf.mix","sha256") and $s.desired.templates.panel.settings_digest!=hash_file($settings_path,"sha256"),"panel user settings never replace the shipped template baseline")
+  check($s.scenes.panel.digest==hash_file($s.root.."/panel/scene.mix","sha256"),"panel accepted fingerprint uses raw code, without edge overlay")
+  $before_state=state_bytes($s)
+  $s=$l.request($s,"upgrade",{})
+  check($s.upgrades.panel==nil and state_bytes($s)==$before_state,"root settings lock and edge overlay do not cause a spurious upgrade")
+  $source=read_file($ut.."/panel/scene.mix")
+  write_file($ut.."/panel/scene.mix",replace($source,"window: "..$l.document($source).headers.window,""))
+  $s=$l.request($s,"upgrade",{})
+  check($s.rc==0 and $s.upgrades.panel==nil and $s.scenes.panel.mounted and panel_row($s).position_supported==false and read_file($settings_path)==$panel_settings,"headerless template upgrade degrades position support while preserving user settings")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
 finally
   remove_dir($tmp)

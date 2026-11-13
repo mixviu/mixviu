@@ -4,6 +4,28 @@
 -- App-owned projection into reusable Viu controls. Shared data is deliberately
 -- consumed by both language drivers; no native file-manager reducer is called.
 $dp=require("core.mix")
+fn dp_selection_info($state)
+  -- Busy notices persist; completed notices clear on selection/pane/navigation.
+  if $state.info!=$dp.dp_idle_info then return $state.info end
+  $pane=$state.panes[$state.active]
+  if len($pane.selected_paths)==0 then return $dp.dp_idle_info end
+  $rows=$dp.dp_selected_rows($pane)
+  if len($rows)==0 then return $dp.dp_idle_info end
+  if len($rows)==1 then
+    $row=$rows[0]
+    $ext=$dp.dp_extension($row.path)
+    $kind=if $row.symlink then "Symbolic link" elif $row.dir then "Folder" elif $ext=="" then "File" else upper($ext).." file" end
+    return $dp.dp_display($row.name).." — "..$kind.." — "..$dp.dp_size($row.size)
+  end
+  -- Listing sizes only: directories are not recursively measured or counted
+  -- again through expanded children. Unknown sizes are stated explicitly.
+  $bytes=0;$unknown=false
+  for $row in $rows
+    if $row.symlink or $row.dir or $row.size==nil then $unknown=true
+    else $bytes=$bytes+$row.size end
+  end
+  return to_string(len($rows)).." selected — "..$dp.dp_size($bytes)..if $unknown then " (known sizes)" else "" end
+end
 fn dp_rows($pane)
   -- Retain the established per-cell fallback for unrepresentable timestamps.
   for $entry in unique_by($pane.entries,fn($r)=[type($r.modified),$r.modified])
@@ -14,7 +36,7 @@ fn dp_rows($pane)
   $expanded=$pane.expanded
   -- File-manager choices are data and expressions owned by this Mix app.
   $icons={png:"file-image",jpg:"file-image",jpeg:"file-image",gif:"file-image",webp:"file-image",svg:"file-image",avif:"file-image",mp3:"file-music",flac:"file-music",wav:"file-music",ogg:"file-music",mp4:"file-video-camera",m4v:"file-video-camera",mkv:"file-video-camera",webm:"file-video-camera",zip:"file-archive",gz:"file-archive",tar:"file-archive","7z":"file-archive",rs:"file-code",mix:"file-code",c:"file-code",h:"file-code",toml:"file-code",yaml:"file-code",yml:"file-code",json:"file-code",txt:"file-text",log:"file-text",conf:"file-text",md:"file-text",html:"file-text",htm:"file-text",css:"file-text",csv:"file-text",xml:"file-text",pdf:"file-text"}
-  return rows_project($pane.entries,fn($r)={key:$r.path,cells:[$r.name,$r.dir ? ($r.child_count==nil ? "" : to_string($r.child_count)..($r.child_count==1 ? " item" : " items")) : ($r.size==nil ? "—" : $r.size<1024 ? fmt("%d B",$r.size) : $r.size<1048576 ? fmt("%.1f KiB",$r.size/1024) : $r.size<1073741824 ? fmt("%.1f MiB",$r.size/1048576) : fmt("%.1f GiB",$r.size/1073741824)),$r.modified==nil ? "—" : date_format($r.modified,"%d/%m/%y %H:%M")],depth:$r.depth,branch:$r.dir,expanded:$expanded[$r.path] ?? false,selected:false,focused:false,icon:$r.dir ? (($expanded[$r.path] ?? false) ? "folder-open" : "folder") : (len(split($r.name,"."))>1 ? ($icons[lower(split($r.name,".")[len(split($r.name,"."))-1])] ?? "file") : "file")})
+  return rows_project($pane.entries,fn($r)={key:$r.path,cells:[$r.name,$r.dir ? ($r.child_count==nil ? "" : to_string($r.child_count)..($r.child_count==1 ? " item" : " items")) : ($r.size==nil ? "—" : $r.size<1024 ? fmt("%d B",$r.size) : $r.size<1048576 ? fmt("%.1f KiB",$r.size/1024) : $r.size<1073741824 ? fmt("%.1f MiB",$r.size/1048576) : fmt("%.1f GiB",$r.size/1073741824)),$r.modified==nil ? "—" : date_format($r.modified,"%d/%m/%y %H:%M")],depth:$r.depth,branch:$r.dir,expanded:$expanded[$r.path] ?? false,selected:false,focused:false,icon:$r.dir ? (($expanded[$r.path] ?? false) ? "folder-open" : "folder") : (len(split($r.name,"."))>1 and split($r.name,".")[0]!="" ? ($icons[lower(split($r.name,".")[len(split($r.name,"."))-1])] ?? "file") : "file")})
 end
 fn dp_rows_interpreted($pane)
   $rows=[]
@@ -50,7 +72,7 @@ fn dp_enabled($state,$id)
   $p=$state.panes[$state.active]
   $n=len($p.selected_paths)
   if $id=="file.open" then return $n>0
-  elif $id=="file.mail" then return $n>0 and all(filter($p.entries,fn($r)=contains($p.selected_paths,$r.path)),fn($r)=$r.file)
+  elif $id=="file.mail" then return $n>0 and all($dp.dp_selected_rows($p),fn($r)=$r.file)
   elif $id=="file.rename" then return $n==1 and not $state.busy
   elif contains(["file.copy-other-pane","file.move-other-pane","file.delete"],$id) then return $n>0 and not $state.busy
   elif $id=="file.new-folder" then return not $state.busy
@@ -67,8 +89,8 @@ fn dp_command($state,$contract,$id)
   $p=$state.panes[$state.active]
   if $id=="nav.back" then $a.enabled=len($p.back)>0
   elif $id=="nav.forward" then $a.enabled=len($p.forward)>0 end
-  if $state.form.open and $state.reservation.kind!="search" and not starts_with($id,"theme.") and $id!="view.search" then $a.enabled=false end
-  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif contains(["theme.scheme-session","theme.mode-session","theme.style-session"],$id) then $state.appearance_choice[replace(slice($id,len("theme.")),"-session","")]==nil elif starts_with($id,"theme.decorations-") then ($state.window_choice["window.decorations"] ?? "auto")==slice($id,len("theme.decorations-")) elif starts_with($id,"theme.captions-") then ($state.window_choice["window.caption_side"] ?? "auto")==slice($id,len("theme.captions-")) elif starts_with($id,"theme.scheme-") then $state.appearance_choice.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance_choice.style==slice($id,12) elif starts_with($id,"theme.mode-") then $state.appearance_choice.mode==slice($id,11) else nil end
+  if $state.form.open and $state.reservation.kind!="search" and not starts_with($id,"theme.") and not starts_with($id,"view.mode.") and $id!="view.search" then $a.enabled=false end
+  $a.checked=if $id=="view.toggle-hidden" then $p.show_hidden elif $id=="view.toggle-previews" then $p.previews elif $id=="view.toggle-places" then $state.places_open elif $id=="view.toggle-properties" then $state.properties_open elif contains(["theme.scheme-session","view.mode.session","theme.style-session"],$id) then $state.appearance_choice[if $id=="view.mode.session" then "mode" else replace(slice($id,len("theme.")),"-session","") end]==nil elif starts_with($id,"theme.decorations-") then ($state.window_choice["window.decorations"] ?? "auto")==slice($id,len("theme.decorations-")) elif starts_with($id,"theme.captions-") then ($state.window_choice["window.caption_side"] ?? "auto")==slice($id,len("theme.captions-")) elif starts_with($id,"theme.scheme-") then $state.appearance_choice.scheme==slice($id,13) elif starts_with($id,"theme.style-") then $state.appearance_choice.style==slice($id,12) elif starts_with($id,"view.mode.") then $state.appearance_choice.mode==slice($id,len("view.mode.")) else nil end
   return $a
 end
 fn dp_menus($state,$contract)
@@ -136,6 +158,7 @@ fn dp_legacy_view($s)
   return $out
 end
 fn dp_project($state,$contract,$cache)
+  $info=dp_selection_info($state)
   $window=$state.window ?? {}
   for $key in keys($state.window_choice ?? {})
     if $state.window_choice[$key]!="auto" then $window[$key]=$state.window_choice[$key] end
@@ -155,7 +178,7 @@ fn dp_project($state,$contract,$cache)
   $caption_control={id:"caption-title",kind:"label",label:"",initial:"",properties:{align:$title_align,emphasis:true,truncate:true}}
   $context=map($contract.context,fn($id)=dp_command($state,$contract,$id))
   $background=map($contract.background_context,fn($id)=dp_command($state,$contract,$id))
-  $values={"caption-title":$dp.dp_display($state.panes[$state.active].path),menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$state.info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
+  $values={"caption-title":"MixViu DOpus",menu:dp_menus($state,$contract),toolbar:dp_toolbar($state,$contract),status:$info,properties:dp_properties($state.panes[$state.active]),form:$state.form}
   $values.window={side:$caption_side,enabled:true}
   $values.form.dialog=dp_legacy_view($state)
   $panes=[]
@@ -168,7 +191,7 @@ fn dp_project($state,$contract,$cache)
     $values[$side.."-tree"]={key:$p.path,revision:$p.revision,active:$state.active==$i,columns:$contract.columns,sort:$p.sort,ascending:$p.ascending,rows:$rows,selected_keys:$p.selected_paths,focused_key:$p.selected,context:$context,background_context:$background}
     $expanded=[]
     for $path in keys($p.expanded) if $p.expanded[$path] then push($expanded,$path) end end
-    push($panes,{path:$p.path,generation:$p.generation,show_hidden:$p.show_hidden,previews:$p.previews,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:filter(map($p.entries,fn($r)=$r.path),fn($path)=contains($p.selected_paths,$path)),expanded:sort($expanded),summary:$p.summary,rows:len($p.entries),error:$p.error})
+    push($panes,{path:$p.path,generation:$p.generation,show_hidden:$p.show_hidden,previews:$p.previews,sort:$p.sort,ascending:$p.ascending,selected:$p.selected,selected_paths:map($dp.dp_selected_rows($p),fn($r)=$r.path),expanded:sort($expanded),summary:$p.summary,rows:len($p.entries),error:$p.error})
   end
   $place_rows=[]
   $place_icons={Home:"house",Filesystem:"hard-drive",Documents:"file-text",Downloads:"download",Music:"music",Pictures:"image",Videos:"film"}
@@ -179,5 +202,5 @@ fn dp_project($state,$contract,$cache)
   $values.places={key:"places",revision:0,active:false,columns:[{id:"name",label:"Places"}],rows:$place_rows,context:[],background_context:[]}
   $values.preview=if $state.preview_slots==nil then {phase:"none"} else $state.preview_slots[$state.active].value end
   $layout={form:{edge:"top",size:0},topbar:{edge:"top",size:34},"status-pane":{edge:"bottom",size:32},"places-pane":{edge:"left",fraction:$state.places_width,resizable:true,panel:true,min_fraction:0.1,max_fraction:0.3,minimum_window_width:640},"properties-pane":{edge:"right",fraction:$state.properties_width,resizable:true,panel:true,min_fraction:0.1,max_fraction:0.3,minimum_window_width:640},"center-pane":{edge:"fill",panel:true}}
-  return {window_settings:$window,topbar_hidden:($window["viu.hosted-menu"] ?? false) and ($window["viu.hosted-actions"] ?? false),actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,header_groups:$header_groups,caption_control:$caption_control,pane_outlines:{left:if $state.active==0 then "design.selection.background" else nil end,right:if $state.active==1 then "design.selection.background" else nil end},places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$state.info,ready:true}
+  return {window_settings:$window,topbar_hidden:($window["viu.hosted-menu"] ?? false) and ($window["viu.hosted-actions"] ?? false),actions:map($contract.actions,fn($a)=dp_command($state,$contract,$a.id)),values:$values,panes:$panes,active:$state.active,split:$state.split,layout:$layout,header_groups:$header_groups,caption_control:$caption_control,pane_outlines:{left:if $state.active==0 then "design.selection.background" else nil end,right:if $state.active==1 then "design.selection.background" else nil end},places_hidden:not $state.places_open,properties_hidden:not $state.properties_open,appearance:$state.appearance,busy:$state.busy,serial:$state.serial,focus:$state.focus,info:$info,ready:true}
 end

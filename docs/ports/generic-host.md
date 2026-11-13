@@ -12,7 +12,7 @@ Arguments arrive as `$app_args`. Behaviour paths stay within the bundle.
 options removed before application argument parsing. `--` ends host option
 parsing. `--app-id` selects compositor identity; `--title` selects the initial
 window title and is exposed as `viu_context().options.title`. A bundle can
-use that value for its authored frame. See [term-mix.md](term-mix.md).
+use that value for its authored frame. See [term-runtime.md](term-runtime.md).
 Mix publishes through the existing `viu-local scenes.model` protocol.
 Callbacks, model publication and Bus replies use the existing bounded worker.
 
@@ -45,6 +45,22 @@ application GPU readback and timer delivery (`viu.tick`). It contains no
 gallery command catalogue, layout, reset or state reducer. Those stay in Mix.
 Generic endpoints are `viu.state`, `viu.ui.tree`, `viu.ui.*`, `viu.capture`,
 and `viu.quit`. App commands are declared as data and dispatched to Mix.
+
+The root owner preserves FIFO for mutations and drive commands. Once drive
+input is planned, `toolkit::drive::pending` and undelivered drive answers fence
+**every** later request until the bounded drive operation finishes. This keeps
+a click's planned position valid across its press/release passes.
+
+Outside that active-input fence, only commands whose registered descriptor
+declares `read_only: true` may bypass an undrawn revision or a held click.
+They can observe application state before that held input runs. Mutations,
+unknown commands and requests without a read-only declaration retain FIFO;
+they cannot overtake earlier held UI requests. Drive commands are classified
+by `toolkit::drive::COMMANDS`, including `window` and `window.state`.
+Generic `viu.ui.*`, captures and `viu.state` also remain fenced: root and
+child-window geometry queries report a revision whose geometry has been drawn.
+Geometry queries also wait for earlier evaluator callbacks to complete before
+checking the draw, since those callbacks may publish a newer revision.
 Background surfaces use the retained native layer-shell backend, one per output.
 An optional `model.surfaces[output-name]` supplies a complete scene model for
 that output; otherwise the common model is drawn. Mix owns those projections.

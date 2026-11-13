@@ -8,4 +8,19 @@ The generic executable also hosts the reusable file chooser: `viu run apps/dopus
 
 The former `viu-dopus` executable and Rust comparator are retired. Their source remains in git history; clean pinned MixOS gold is the oracle. Mix chooser and raw-name contract tests now live with Viu.
 
+Agents can choose the active pane with `dopus.execute {id:"nav.pane-left"}` or
+`dopus.execute {id:"nav.pane-right"}`. These idempotent actions are listed by
+`dopus.actions` and work headlessly. They preserve locations and selections;
+subsequent selection and file actions use that pane. `nav.switch-pane` still
+toggles. `dopus.open` with a pane target changes its location and preserves
+the active pane.
+Pane actions set the active pane but do not move keyboard focus out of a focused widget.
+
+The selection line uses listing metadata; directories and symlinks contribute
+no known bytes to multi-select totals. Completed notices clear on selection,
+active-pane change or navigation, together with `dialog_status`. Busy notices
+persist across those changes. The idle text is defined once in `core.mix`.
+`selection-bench.mix` measures the selection line for 2,000 selected rows
+in memory (one warm-up, ten timed samples; no scan or window).
+
 Rust checks and builds run through CBC. `apps/dopus/gate.mix` checks the bundle, scan refusals, byte-preserving operations, chooser contracts and release 2,000-row paths, then saves the generic release executable and its source/hash receipt. A scoped gate alone does not grant parity or authorise installation.

@@ -2,6 +2,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_launch app_args
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $controller=require("controller.mix");$model=require("model.mix");$frame=require("frame.mix");$presentation=require("presentation.mix");$discovery=require("discovery.mix");$work=require("work.mix");$counter=require("counter.mix")
 $saved=require("saved.mix")
 $actions=require("actions.mix");$macros=require("macro.mix")
@@ -9,13 +10,15 @@ $agent_ui=require("agent-ui.mix")
 $state=$model.initial();$ctx=viu_context();$state.mesh.observer=$ctx.citizen
 try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$launcher.plan($app_args) end
 $state.comp=$launch.comp ?? env("MIX_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
+$state.theme_choice.mode=$app_mode.load("workshop")
+$dirty=false
 fn publish_workshop($s)
   $s=$saved.reconcile($s)
   $s.busy=$model.busy($s)
   if $s.quitting and not $s.busy then $s.window_close=true end
   $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)
   for $key in keys($persist) $projection[$key]=$persist[$key] end
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$projection}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$app_mode.project($projection,"workshop",$s.theme_choice)}
   return $s
 end
 fn handle($s,$event)
@@ -24,11 +27,11 @@ fn handle($s,$event)
 end
 $state=publish_workshop($state)
 on workshop.ping
-  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  $out=handle($state,$event);$state=$out.state
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.info
-  $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
+  $out=handle($state,$event);$state=$out.state
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.actions
@@ -117,7 +120,7 @@ on viu.viewport.changed
   $state.window_width=$event.args.width;$state.window_height=$event.args.height;$state=publish_workshop($state)
 end
 on viu.saved.loaded
-  $state=$saved.load($state,$event.args);$state=publish_workshop($state)
+  $state=$saved.load($state,$event.args);$state.theme_choice.mode=$app_mode.restore("workshop",$state.theme_choice.mode);$state=publish_workshop($state)
 end
 on workshop.layout
   $a=$event.args
@@ -181,11 +184,13 @@ on bus.disconnected
   $state.connected=false;$state.status="Disconnected — requests are never replayed";$state=publish_workshop($state)
 end
 on viu.job.completed
-  $state=$controller.follow_up($controller.received($state,$event.args));$state=publish_workshop($state)
+  $state=$controller.follow_up($controller.received($state,$event.args));$dirty=true
 end
 on viu.tick
+  $before=$state.discovery_revision;$job_error=$state.job_error
   $state=$controller.follow_up($state)
-  if $state.row_key=="nodes:mesh" or ($state.row_key!=nil and starts_with($state.row_key,"agent:")) then $state=publish_workshop($state) end
+  if $before!=$state.discovery_revision or $job_error!=$state.job_error then $dirty=true end
+  if $dirty or $state.row_key=="nodes:mesh" or ($state.row_key!=nil and starts_with($state.row_key,"agent:")) then $state=publish_workshop($state);$dirty=false end
 end
 on workshop.agents
   $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
@@ -292,7 +297,8 @@ on workshop.macros.dopus
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end
 on workshop.notice
-  $state=$controller.follow_up($controller.notice($state,$event));$state=publish_workshop($state)
+  $state=$controller.notice($state,$event)
+  $dirty=true
 end
 on workshop.mesh
   $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)

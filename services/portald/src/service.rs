@@ -38,7 +38,8 @@ pub const FETCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
 /// The first retry after a failed subscribe or read, doubling to [`RETRY_MAX`].
 const RETRY_FIRST: Duration = Duration::from_millis(250);
-const RETRY_MAX: Duration = Duration::from_secs(30);
+/// Maximum delay before repeating a failed authority read or subscription.
+pub const RETRY_MAX: Duration = Duration::from_secs(30);
 
 pub fn manifest() -> Vec<bus::CommandDescriptor> {
     manifest_for_screencast(crate::screencast::consent::installed().is_some())
@@ -79,10 +80,16 @@ fn fault(command: &str, message: impl Into<String>) -> Diagnostic {
 
 /// One bounded call to settingsd, answered `current`.
 async fn call(client: &SupervisedClient, command: &str, body: Value) -> Result<Value, Diagnostic> {
-    let reply = client
-        .call_typed(SOURCE, command, body)
-        .await
-        .map_err(|error| fault(command, error.to_string()))?;
+    let started = std::time::Instant::now();
+    tracing::debug!(command, "appearance request started");
+    let result = client.call_typed(SOURCE, command, body).await;
+    tracing::debug!(
+        command,
+        elapsed_us = started.elapsed().as_micros(),
+        transport_ok = result.is_ok(),
+        "appearance request answered"
+    );
+    let reply = result.map_err(|error| fault(command, error.to_string()))?;
     let value = match reply {
         PortReply::Ok { rc: 0, value } => value,
         PortReply::Ok { rc, value } => {

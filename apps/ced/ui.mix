@@ -23,6 +23,7 @@ fn ced_menus($s)
       if $last_group!=nil and $last_group!=$group then push($children,{separator:true}) end
       $last_group=$group
       $row={id:$a.id,label:$a.label,enabled:$a.enabled,shortcut:$a.keys[0] ?? ""}
+      if starts_with($a.id,"view.mode.") then $row.checked=$a.checked end
       if contains(["edit.cut","edit.copy","edit.paste"],$a.id) and len($s.keys[$a.id] ?? [])==0 then $row.shortcut="" end
       if starts_with($a.id,"view.markdown.") then $row.checked=len($s.tabs)>0 and ($s.previews[$ced_core.current($s).document] ?? "source")==split($a.id,".")[2]
       elif $a.id=="edit.overwrite" then $row.checked=len($s.tabs)>0 and $ced_core.current($s).overwrite

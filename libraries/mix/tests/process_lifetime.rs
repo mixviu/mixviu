@@ -9,6 +9,7 @@
 
 #![cfg(target_os = "linux")]
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use mix::error::MixError;
@@ -32,6 +33,76 @@ async fn run_ok(source: &str) -> String {
     run(source)
         .await
         .unwrap_or_else(|error| panic!("script should succeed, got: {error}"))
+}
+
+async fn bounded_run_ok(source: &str, within: Duration) -> String {
+    // A blocking builtin must not stall the watchdog's runtime. A detached
+    // thread also avoids waiting forever for a hung blocking task at shutdown.
+    let source = source.to_owned();
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let result = std::panic::catch_unwind(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(run_ok(&source))
+        });
+        let _ = sender.send(result);
+    });
+    match tokio::time::timeout(within, receiver)
+        .await
+        .expect("process fixture attempt timed out")
+        .expect("process fixture thread disappeared")
+    {
+        Ok(output) => output,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
+}
+
+#[tokio::test]
+#[should_panic(expected = "process fixture attempt timed out")]
+async fn blocking_process_attempt_cannot_stall_the_watchdog() {
+    bounded_run_ok(
+        "run_argv([\"sleep\", \"0.2\"], {timeout: 0})",
+        Duration::from_millis(20),
+    )
+    .await;
+}
+
+/// A deadline starts before exec, so a shell-side wait alone cannot exclude
+/// startup from it. Readiness is sampled on return, not necessarily before
+/// the runner's deadline. Once present, every result assertion is final.
+/// Bound elapsed time spent on unready attempts; an accepted attempt still
+/// gets its full timeout and grace. The budget may overrun by one attempt.
+async fn run_ready(source: &str, ready: &std::path::Path, reset: &[&std::path::Path]) -> String {
+    let startup_deadline = Instant::now() + Duration::from_secs(5);
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let _ = std::fs::remove_file(ready);
+        for path in reset {
+            let _ = std::fs::remove_file(path);
+        }
+        let output = bounded_run_ok(source, Duration::from_secs(10)).await;
+        if ready.exists() {
+            eprintln!(
+                "FIXTURE_READY retries={} path={}",
+                attempts - 1,
+                ready.display()
+            );
+            let _ = std::fs::remove_file(ready);
+            return output;
+        }
+        eprintln!(
+            "FIXTURE_DISCARDED attempt={attempts} path={} output={output:?}",
+            ready.display()
+        );
+        assert!(
+            Instant::now() < startup_deadline,
+            "fixture never reached readiness after {attempts} attempts; last output: {output:?}; source: {source}"
+        );
+    }
 }
 
 /// A pid is gone when /proc no longer lists it, or lists it as a zombie
@@ -76,11 +147,13 @@ fn parse_lines(output: &str) -> Vec<String> {
 /// timeout + grace, and the descendant is gone.
 #[tokio::test]
 async fn deadline_grace_escalates_to_sigkill_and_reaps_the_descendant() {
-    let output = run_ok(
-        "$r = run_argv([\"sh\", \"-c\", \"trap '' TERM; sleep 60 & echo $!; wait\"], {timeout: 0.3, grace: 0.6})\n\
+    let ready = marker_path("escalate-ready");
+    let r = ready.display();
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"trap '' TERM; sleep 60 & echo $!; echo ready > {r}; wait\"], {{timeout: 0.3, grace: 0.6}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. $r.ok .. \" \" .. ($r.duration_ms >= 850))\n\
          print(trim($r.stdout))\n",
-    )
+    ), &ready, &[])
     .await;
     let lines = parse_lines(&output);
     assert_eq!(lines[0], "true 9 false true", "full output: {output:?}");
@@ -101,11 +174,13 @@ async fn deadline_grace_escalates_to_sigkill_and_reaps_the_descendant() {
 /// SIGKILLed AT the grace deadline — never left running as an orphan.
 #[tokio::test]
 async fn term_ignoring_descendant_is_killed_at_the_grace_deadline() {
-    let output = run_ok(
-        "$r = run_argv([\"sh\", \"-c\", \"(trap '' TERM; exec sleep 60) & echo $!; wait\"], {timeout: 0.3, grace: 1})\n\
+    let ready = marker_path("ignore-ready");
+    let r = ready.display();
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"(trap '' TERM; echo ready > {r}; exec sleep 60) & echo $!; wait\"], {{timeout: 0.3, grace: 1}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. ($r.duration_ms >= 1250) .. \" \" .. ($r.duration_ms < 5000))\n\
          print(trim($r.stdout))\n",
-    )
+    ), &ready, &[])
     .await;
     let lines = parse_lines(&output);
     assert_eq!(lines[0], "true 15 true true", "full output: {output:?}");
@@ -118,11 +193,16 @@ async fn term_ignoring_descendant_is_killed_at_the_grace_deadline() {
 }
 
 fn marker_path(label: &str) -> std::path::PathBuf {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("mix-grace-{label}-{}-{nonce}", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "mix-grace-{label}-{}-{nonce}-{sequence}",
+        std::process::id()
+    ))
 }
 
 /// The review's `pg_dump | gzip` case: the leader (`sh`) dies on SIGTERM at
@@ -132,11 +212,13 @@ fn marker_path(label: &str) -> std::path::PathBuf {
 #[tokio::test]
 async fn term_honouring_descendant_gets_the_grace_to_finish() {
     let marker = marker_path("honour");
+    let ready = marker_path("honour-ready");
+    let r = ready.display();
     let m = marker.display();
-    let output = run_ok(&format!(
-        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 1; echo done > {m}; exit 0' TERM; while true; do sleep 0.1; done) & wait\"], {{timeout: 0.3, grace: 5}})\n\
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 1; echo done > {m}; exit 0' TERM; echo ready > {r}; while true; do sleep 0.1; done) & wait\"], {{timeout: 0.3, grace: 5}})\n\
          print($r.timed_out .. \" \" .. $r.signal .. \" \" .. ($r.duration_ms >= 1200) .. \" \" .. ($r.duration_ms < 4500))\n",
-    ))
+    ), &ready, &[&marker])
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
@@ -153,11 +235,13 @@ async fn term_honouring_descendant_gets_the_grace_to_finish() {
 #[tokio::test]
 async fn drain_deadline_honours_grace_for_a_pipe_holding_descendant() {
     let marker = marker_path("drain");
+    let ready = marker_path("drain-ready");
+    let r = ready.display();
     let m = marker.display();
-    let output = run_ok(&format!(
-        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 0.5; echo done > {m}; exit 0' TERM; while true; do sleep 0.1; done) &\"], {{timeout: 0.3, grace: 5}})\n\
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"(trap 'sleep 0.5; echo done > {m}; exit 0' TERM; echo ready > {r}; while true; do sleep 0.1; done) &\"], {{timeout: 0.3, grace: 5}})\n\
          print($r.timed_out .. \" \" .. $r.exit_code .. \" \" .. ($r.duration_ms < 4500))\n",
-    ))
+    ), &ready, &[&marker])
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
@@ -280,29 +364,124 @@ async fn run_parallel_timeout_override_applies_before_grace_validation() {
 }
 
 /// Review R6: a STOPPED member never handles SIGTERM until it is continued.
-/// The escalation sends SIGCONT right after SIGTERM, so a stopped member
+/// The escalation sends SIGCONT before SIGTERM, so a stopped member
 /// that traps SIGTERM still runs its cleanup inside the grace.
 #[tokio::test]
 async fn a_stopped_member_is_continued_so_it_can_honour_sigterm() {
+    check_stopped_member(true).await;
+}
+
+/// The common worker & wait topology: the leader has no TERM trap. Continue
+/// the stopped worker before TERM can kill the leader and orphan the group,
+/// otherwise the kernel's SIGHUP can kill the worker before its TERM trap.
+#[tokio::test]
+async fn stopped_member_honours_sigterm_when_its_untrapped_leader_dies() {
+    use std::os::unix::process::CommandExt;
+
+    const CHILD: &str = "MIX_TEST_ORPHAN_SESSION";
+    if std::env::var_os(CHILD).is_some() {
+        check_stopped_member(false).await;
+        return;
+    }
+    // A build-service subreaper in the same session can adopt the worker
+    // without orphaning its group. Isolate this test so adoption outside the
+    // test process cannot suppress the kernel's orphan-group behaviour.
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "stopped_member_honours_sigterm_when_its_untrapped_leader_dies",
+            "--exact",
+            "--nocapture",
+        ])
+        .env(CHILD, "1");
+    // SAFETY: setsid is a raw syscall, and this forked child is not yet a
+    // process-group leader. No allocation or locking runs before exec.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+    let output = command.output().expect("launch isolated orphan-group test");
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "isolated orphan-group test failed: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+async fn check_stopped_member(keep_leader: bool) {
     let marker = marker_path("stopped");
+    let installed = marker_path("stopped-installed");
+    let ready = marker_path("stopped-ready");
     let helper = marker_path("stopper-sh");
     std::fs::write(
         &helper,
         format!(
-            "trap 'echo done > {}; exit 0' TERM\nkill -STOP $$\nwhile true; do sleep 0.1; done\n",
-            marker.display()
+            "trap 'echo done > {}; exit 0' TERM\necho ready > {}\nkill -STOP $$\nwhile :; do :; done\n",
+            marker.display(), installed.display()
         ),
     )
     .unwrap();
     let h = helper.display();
-    let output = run_ok(&format!(
-        "$r = run_argv([\"sh\", \"-c\", \"sh {h} & wait\"], {{timeout: 0.5, grace: 3}})\n\
-         print($r.timed_out .. \" \" .. ($r.duration_ms < 3000))\n",
-    ))
+    let i = installed.display();
+    let r = ready.display();
+    // The trapped variant isolates native SIGCONT from the kernel's orphan
+    // SIGCONT; the untrapped variant tests protection from orphan SIGHUP.
+    let term_trap = if keep_leader {
+        "trap 'wait' TERM; "
+    } else {
+        ""
+    };
+    // Reopen stat on every poll. EOF, Z and X mean the child exited; the
+    // bounded loop cannot wait forever if it never stops. T follows trap
+    // installation in the helper, and is required before writing ready.
+    let output = run_ready(&format!(
+        "$r = run_argv([\"sh\", \"-c\", \"{term_trap}sh {h} & child=$!; polls=0; while test $polls -lt 100; do if ! read -r pid comm state rest < /proc/$child/stat; then break; fi; case $state in T) if test -f {i}; then echo ready > {r}; break; fi ;; Z|X) break ;; esac; polls=$((polls + 1)); sleep 0.01; done; wait\"], {{timeout: 0.5, grace: 3}})\n\
+         print($r.timed_out .. \" \" .. ($r.signal == 15) .. \" \" .. ($r.duration_ms < 4500))\n\
+         print($r.duration_ms)\n",
+    ), &ready, &[&marker, &installed])
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
     let _ = std::fs::remove_file(&helper);
-    assert_eq!(output, "true true\n", "full output: {output:?}");
-    assert!(finished, "the stopped member never ran its SIGTERM trap");
+    let _ = std::fs::remove_file(&installed);
+    let expected = if keep_leader {
+        "true false true\n"
+    } else {
+        "true true true\n"
+    };
+    assert!(output.starts_with(expected), "full output: {output:?}");
+    // Require both cooperative trap completion and a generous return bound
+    // covering timeout + grace + reaping and pool bookkeeping.
+    assert!(
+        finished,
+        "the stopped member never ran its SIGTERM trap; full output: {output:?}"
+    );
+}
+
+/// Run only on a build worker in an exclusive checkout. The Mix driver
+/// mutates the signal sequence, rebuilds, checks the expected failures,
+/// and restores the source even when a control fails.
+#[test]
+#[ignore = "requires MIX_PROCESS_LIFETIME_NEGATIVE=1 and an exclusive build-worker checkout"]
+fn process_lifetime_negative_controls() {
+    assert_eq!(
+        std::env::var("MIX_PROCESS_LIFETIME_NEGATIVE").as_deref(),
+        Ok("1"),
+        "negative controls require explicit opt-in on a build worker"
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = std::process::Command::new("/opt/mixos/bin/mix")
+        .arg("libraries/mix/tests/process_lifetime_negative.mix")
+        .current_dir(root)
+        .output()
+        .expect("launch installed Mix negative-control driver");
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "negative-control driver failed");
 }

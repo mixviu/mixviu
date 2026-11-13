@@ -26,4 +26,4 @@ strict = { path = "../strict" }
 indexmap = { version = "=2.14.2", features = ["serde"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 # Never enable `preserve_order`: resolved trees and digests rely on sorted keys.
-serde_json = { version = "=1.0.154" }
+serde_json.workspace = true

@@ -1,0 +1,21 @@
+-- tools/ci/serial-tests.conf.mix: test binaries tools/ci/test_pool.mix runs
+-- alone, after the parallel pool, because they measure wall-clock time or
+-- look at the whole machine and so fail when other tests run beside them.
+--
+-- Strict data. Each entry names the cargo package and test target and says
+-- why, with the evidence. The list only shrinks: fix the test (scope it to
+-- its own process group, time a CPU budget instead of wall clock) and
+-- delete its entry in the same PR.
+
+serial_tests: [
+  {
+    package: "mix",
+    target: "native_session_pty",
+    reason: "p4 tests assert pgrep -f 'sleep 600' finds nothing on the whole machine (tests/native_session_pty.rs:3317, :3378); PTY timing; red when another job runs the suite (2026-11-12)"
+  },
+  {
+    package: "mix",
+    target: "exec_stdio_routing",
+    reason: "abandoned_in_flight_stream_write_cannot_follow_return is timing-sensitive: red on main's own hosted run at 4e69abbc (2026-11-12), where binaries already ran one at a time, so running it alone does not cure it; it is kept out of the pool so the extra load does not make it worse. Fix the test, then delete this entry"
+  }
+]

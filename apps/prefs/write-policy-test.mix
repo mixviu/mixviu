@@ -1,0 +1,17 @@
+$p=require("write-policy.mix")
+fn check($ok,$why)
+  if not $ok then raise("WRITE_POLICY_TEST",$why) end
+end
+$s={catalog_all:[{path:"sample.<kind>.value",inactive_captures:{old:{write:"refused",reason:"Inactive capture"}}}],queue_changes:{"appearance.mode":"light","shell.panels.top.opacity":0.5,"shell.panels.top.edge":"top","sample.old.value":1}}
+check($p.inactive($s,"sample.old.value")=="Inactive capture","capture metadata drives admission")
+check($p.inactive($s,"sample.new.value")==nil,"other captures stay active")
+$s=$p.prune($s)
+check(deep_eq($s.queue_changes,{"appearance.mode":"light"}) and contains($s.store_error,"opacity"),"preflight drops retired writes with a visible reason and keeps unrelated changes")
+$s.inflight_changes={"shell.panels.top.output":"all","accessibility.text_scale":1.25}
+$s=$p.refused($s,{status:"validation_failed",diagnostics:[{code:"retired_key",path:"shell.panels.top.output"}]},false)
+check(deep_eq($s.inflight_changes,{}) and $s.queue_changes["accessibility.text_scale"]==1.25 and not has_key($s.queue_changes,"shell.panels.top.output"),"an atomic scoped refusal retries only unrelated writes")
+check($s.store_error!=nil,"refusal reason remains visible")
+$s.inflight_changes={"appearance.mode":"light"};$s.queue_changes={}
+$s=$p.refused($s,{status:"validation_failed",diagnostics:[{path:"unknown"}]},false)
+check(deep_eq($s.queue_changes,{}),"an unscoped permanent refusal is not retried forever")
+print("prefs write policy: inactive captures, mixed queues, visible drop reasons and terminal refusals pass")

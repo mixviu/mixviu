@@ -19,7 +19,7 @@ fn current_of($values)
   end
   $d=$out.density
   if type($d)=="string" then $out.density=if $d=="compact" then 0.85 elif $d=="spacious" then 1.2 else 1 end end
-  if $out.mode=="auto" then $out.mode=$values["state.appearance.mode"] ?? "dark" end
+  if $out.mode=="auto" then $out.mode=$values["state.appearance.mode_override"] ?? if $values["state.appearance.daylight"]==true then "light" else "dark" end end
   return $out
 end
 fn expected($l)
