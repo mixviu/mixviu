@@ -132,7 +132,12 @@ impl mix::BusHandler for NativeTheme {
                 ));
             }
             if command == "native.saved" {
-                return Ok((0, viu::runtime::from_json(json!({"schema_version":1,"writable":true,"window":{"theme":{}},"widgets":{"panels":{},"scrolls":{},"groups":{},"open":{}},"windows":{},"app":{"version":1,"value":{}}}))?));
+                return Ok((
+                    0,
+                    viu::runtime::from_json(
+                        json!({"schema_version":1,"writable":true,"window":{"theme":{}},"widgets":{"panels":{},"scrolls":{},"groups":{},"open":{}},"windows":{},"app":{"version":1,"value":{}}}),
+                    )?,
+                ));
             }
             Ok((
                 0,
@@ -274,14 +279,24 @@ fn app_mode_child() {
             );
             if app == "workshop" {
                 let legacy = json!({"app_loaded":false,"state":{"app":{"value":{}},"widgets":{"panels":{}},"window":{"theme":{"mode":"dark"}}}});
-                runtime.notify("viu.saved.loaded".into(), legacy.clone()).unwrap();
+                runtime
+                    .notify("viu.saved.loaded".into(), legacy.clone())
+                    .unwrap();
                 let restored = next(&runtime, &wakes, app).model.unwrap();
-                assert_eq!(restored["theme_choice"]["mode"], if restart { "light" } else { "dark" });
+                assert_eq!(
+                    restored["theme_choice"]["mode"],
+                    if restart { "light" } else { "dark" }
+                );
                 if !restart {
-                    runtime.event("workshop.execute".into(), json!({"id":"view.mode.session"})).unwrap();
+                    runtime
+                        .event("workshop.execute".into(), json!({"id":"view.mode.session"}))
+                        .unwrap();
                     next(&runtime, &wakes, app);
                     runtime.notify("viu.saved.loaded".into(), legacy).unwrap();
-                    assert!(next(&runtime, &wakes, app).model.unwrap()["theme_choice"]["mode"].is_null());
+                    assert!(
+                        next(&runtime, &wakes, app).model.unwrap()["theme_choice"]["mode"]
+                            .is_null()
+                    );
                 }
             }
             runtime.event(format!("{app}.actions"), json!({})).unwrap();
@@ -312,8 +327,15 @@ fn app_mode_child() {
                     assert_eq!(reply.rc, 0, "{app}: {}", reply.body);
                 }
                 let model = done.model.unwrap();
-                let saved: Value = serde_json::from_slice(&std::fs::read(temporary.path().join(app).join("mode.json")).unwrap()).unwrap();
-                assert_eq!(saved["mode"], model["theme_choice"]["mode"], "{app} owns its mode file");
+                let saved: Value = serde_json::from_slice(
+                    &std::fs::read(temporary.path().join(app).join("mode.json"))
+                        .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    saved["mode"], model["theme_choice"]["mode"],
+                    "{app} owns its mode file"
+                );
                 assert_eq!(
                     model["theme_choice"]["mode"].as_str(),
                     if mode == "session" { None } else { Some(mode) },
@@ -352,17 +374,33 @@ fn app_mode_child() {
                             }
                         }
                     }
-                    let command = if app == "gallery" { "gallery.state".into() } else if app == "term" { "term.session".into() } else { format!("{app}.info") };
+                    let command = if app == "gallery" {
+                        "gallery.state".into()
+                    } else if app == "term" {
+                        "term.session".into()
+                    } else {
+                        format!("{app}.info")
+                    };
                     runtime.event(command, json!({})).unwrap();
                     let info = next(&runtime, &wakes, app).reply.unwrap();
                     assert_eq!(info.rc, 0, "{app}: {}", info.body);
-                    assert_eq!(info.body["theme"]["mode"], model["theme_choice"]["mode"], "{app} requested mode readback");
-                    assert_eq!(info.body["theme"]["effective"]["mode"], if mode=="session" {session} else {mode}, "{app} effective state readback");
+                    assert_eq!(
+                        info.body["theme"]["mode"], model["theme_choice"]["mode"],
+                        "{app} requested mode readback"
+                    );
+                    assert_eq!(
+                        info.body["theme"]["effective"]["mode"],
+                        if mode == "session" { session } else { mode },
+                        "{app} effective state readback"
+                    );
                 }
             }
             if app == "gallery" {
                 runtime.event("viu.frame.close".into(), json!({})).unwrap();
-                assert_eq!(next(&runtime, &wakes, app).model.unwrap()["window_close"], true);
+                assert_eq!(
+                    next(&runtime, &wakes, app).model.unwrap()["window_close"],
+                    true
+                );
             }
         }
     }
