@@ -34,6 +34,11 @@ pub fn check_destination(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn readback_skips(readback_us: u64, fps: u32) -> u64 {
+    let budget = 1_000_000 / u64::from(fps) / 4;
+    readback_us.saturating_sub(budget).div_ceil(budget).min(60)
+}
+
 #[derive(Clone)]
 struct TakeFiles { path: String, video: String, frames: String, markers: String }
 impl TakeFiles {
@@ -89,7 +94,20 @@ mod file_tests {
         symlink("missing", &path).unwrap();
         assert!(check_destination(&path).is_err());
         assert!(secure_file(&path).is_err());
+        std::fs::remove_file(&path).unwrap();
+        let files = TakeFiles::create(&path).unwrap();
+        for name in [&files.video, &files.frames, &files.markers] { secure_file(name).unwrap().write_all(b"private").unwrap(); }
+        files.publish().unwrap();
+        drop(files);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "private");
         std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn readback_budget_bounds_amortised_cost() {
+        assert_eq!(readback_skips(8000, 30), 0);
+        assert_eq!(readback_skips(14000, 30), 1);
+        assert_eq!(readback_skips(25000, 30), 3);
+        assert_eq!(readback_skips(1_000_000, 30), 60);
     }
 }
 impl Drop for TakeFiles { fn drop(&mut self) { self.cleanup(); } }
@@ -132,6 +150,7 @@ pub struct Recording {
     markers_file: File,
     encoder: Option<VideoEncoder>,
     finishing: Option<Receiver<Result<(), String>>>,
+    finaliser: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Recording {
@@ -184,6 +203,7 @@ impl Recording {
             markers_file,
             encoder: Some(encoder),
             finishing: None,
+            finaliser: None,
         })
     }
 
@@ -202,8 +222,7 @@ impl Recording {
             self.readback_total_us += readback_us;
             self.readbacks += 1;
             self.readback_max_us = self.readback_max_us.max(readback_us);
-            let budget = 1_000_000 / u64::from(self.fps) / 4;
-            self.readback_debt = readback_us.saturating_sub(budget).div_ceil(budget).min(60);
+            self.readback_debt = readback_skips(readback_us, self.fps);
             if (w, h) != (self.source_width, self.source_height) {
                 return Err("target dimensions changed".into());
             }
@@ -276,14 +295,14 @@ impl Recording {
         let failed = self.error.is_some();
         let (tx, rx) = channel();
         self.finishing = Some(rx);
-        std::thread::spawn(move || {
+        self.finaliser = Some(std::thread::spawn(move || {
             let result = encoder.finish_result();
             let result = if discard || failed || result.is_err() {
                 files.cleanup();
                 result.map(|_| ())
             } else { files.publish() };
             let _ = tx.send(result);
-        });
+        }));
         true
     }
 
@@ -302,11 +321,20 @@ impl Recording {
             self.error = Some(error);
         }
         self.finishing = None;
+        if let Some(join) = self.finaliser.take() { let _ = join.join(); }
         self.bytes = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
         let kept = std::path::Path::new(&format!("{}.frames.jsonl", self.path)).exists() && self.error.is_none();
         self.terminal = Some(
             json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}.frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}.markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
         true
+    }
+}
+
+impl Drop for Recording {
+    fn drop(&mut self) {
+        // VideoEncoder::drop kills/reaps its process group before returning.
+        drop(self.encoder.take());
+        if let Some(join) = self.finaliser.take() { let _ = join.join(); }
     }
 }
