@@ -12,7 +12,7 @@ for $i=0 to len($base)-1
   check(deep_eq($actual,$original),"namespace changes preserve argument order, flags and descriptions")
 end
 $surface=$d.describe("term-42")
-check($surface.schema=="term.v1" and $surface.app_id=="dev.mixos.term" and len($surface.commands)==53,"gold app describe schema and inventory")
+check($surface.schema=="term.v1" and $surface.app_id=="mixviu.term" and len($surface.commands)==53,"gold app describe schema and inventory")
 check(all($surface.commands,fn($c)=not starts_with($c.name,"term.")),"describe contains no canonical command prefix for another instance")
 check($d.named("term-42","terminal.show")=="terminal.show" and $d.named("term-42","app.describe")=="app.describe","only the exact canonical dot namespace is rewritten")
 $text=$d.info("term-42",{instance:123,pid:456})

@@ -6,7 +6,7 @@ $ctx=viu_context();$core=require("core.mix");$wire=require("wire.mix");$model=re
 $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
 $context_options=$ctx.options ?? {}
-$state.window_title=$context_options.title ?? "Terminal"
+$state.window_title=$context_options.title ?? "Term"
 $state.headless=$app_startup.headless ?? false
 $state.startup=$app_startup.settings ?? {font_px:14.667,scrollback:1000,cursor:"underline",TERM:"xterm-256color"}
 $state.font_current=$state.startup.font_px;$state.font_profile=$state.startup.font_px;$state.font_base=$state.startup.font_px

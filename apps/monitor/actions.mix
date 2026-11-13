@@ -1,3 +1,5 @@
+$signal_policy=require("signal-policy.mix")
+fn can_signal($s,$pid) return $signal_policy.allowed($s,$pid) end
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Registry data adapted from the pinned gold actions/theme catalogue.
 $base=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
@@ -5,7 +7,7 @@ fn registry($s)
   $out=[];$selected=$s.selected!=nil and any($s.processes,fn($p)=$p.pid==$s.selected)
   for $a in $base
     if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end
-    $a.enabled=if $a.id=="help.macros" then $s.macros_open or $s.dialog==nil elif $a.id=="process.copy" then $selected elif contains(["process.end","process.kill"],$a.id) then $selected and $s.node=="" and $s.dialog==nil elif $a.id=="view.tree" then $s.dialog==nil and $s.tab=="Processes" elif starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.") then true else $s.dialog==nil end
+    $a.enabled=if $a.id=="help.macros" then $s.macros_open or $s.dialog==nil elif $a.id=="process.copy" then $selected elif contains(["process.end","process.kill"],$a.id) then can_signal($s,$s.selected) elif $a.id=="view.tree" then $s.dialog==nil and $s.tab=="Processes" elif starts_with($a.id,"view.theme.") or starts_with($a.id,"view.mode") or starts_with($a.id,"view.style.") or starts_with($a.id,"view.decorations.") or starts_with($a.id,"view.captions.") then true else $s.dialog==nil end
     $a.reason=if $a.enabled then nil else "disabled" end
     for $axis in [["theme","scheme"],["mode","mode"],["style","style"],["decorations","decorations"],["captions","caption_side"]]
       $prefix="view."..$axis[0].."."
