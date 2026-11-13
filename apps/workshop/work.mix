@@ -5,15 +5,16 @@ fn enqueue($s,$task)
   return $s
 end
 fn launch($s)
-  $waiting=[]
+  $waiting=[];$admitted=0;$now=monotonic()
   for $task in $s.queue
     $lane=$task.lane ?? "local"
     $used=len(filter(values($s.jobs),fn($j)=($j.lane ?? "local")==$lane))
-    if $used>=6 or len($s.jobs)>=15 then push($waiting,$task);continue end
+    if $used>=6 or len($s.jobs)>=15 or $admitted>=2 or $now<($task.retry_at ?? 0) then push($waiting,$task);continue end
     $s.serial=$s.serial+1;$id="workshop-"..to_string($s.serial)
     $job_path=if $task.job!=nil then path_join(dirname($path),$task.job) else $path end
-    send "viu-local" "jobs.start" id=$id owner=$task.generation path=$job_path source=read_file($job_path) command="job.run" args=$task
-    if $rc!=0 then push($waiting,$task);continue end
+    send "viu-local" "jobs.start" id=$id owner=$task.generation path=$job_path source=read_file($job_path) command="job.run" args=$task timeout_seconds=(if $task.owner=="discovery" then 4 else 180 end)
+    $admitted=$admitted+1
+    if $rc!=0 then $task.retry_at=$now+1;push($waiting,$task);continue end
     $s.jobs[$id]=$task
   end
   $s.queue=$waiting

@@ -7,7 +7,7 @@ fn begin($s,$reply)
     return $s
   end
   $s.generation=$s.generation+1
-  $s.discovery={generation:$s.generation,reply:$reply,peers_done:false,nodes:{"@local":{local:true,info_done:false,list_done:false,descriptions:0,node:{name:"local",local:true,services:[],info:nil,error:nil}}}}
+  $s.discovery={generation:$s.generation,deadline:monotonic()+15,reply:$reply,peers_done:false,nodes:{"@local":{local:true,info_done:false,list_done:false,descriptions:0,node:{name:"local",local:true,services:[],info:nil,error:nil}}}}
   $s.discovery.data={progress:nil,nodes:[],identities:{},services:{},peers:[],peer_error:nil,error:nil};$s.discovery.open_local=not any($s.snapshot.nodes,fn($n)=$n.local)
   $s.status="Discovering services and commands…"
   for $item in [["info","noded.info"],["list","noded.list"],["peers","noded.peers"]]
@@ -67,7 +67,7 @@ fn received($s,$task,$d)
           $name=$peer.name
           if type($name)=="string" and $name!=$object.node and ($peer.class==nil or $peer.class=="active-bus") and not contains($names,$name) then push($names,$name) end
         end
-        $s.discovery.data.peers=sort($names)
+        $s.discovery.data.peers=take(sort($names),64)
         for $name in $s.discovery.data.peers
           $s.discovery.nodes[$name]={local:false,info_done:false,list_done:false,descriptions:0,node:{name:$name,local:false,services:[],info:nil,error:nil}}
           for $op in [["info","noded.info"],["list","noded.list"]]
@@ -107,10 +107,10 @@ fn received($s,$task,$d)
       $s.discovery.nodes[$task.node].node.services=$services
       for $i=0 to len($services)-1
         $route=$services[$i]
-        $s.discovery.data.services[$route]={Err:if $i<64 then "description phase deadline exceeded" else "not described (limit)" end}
-        if $i<64 then
+        $s.discovery.data.services[$route]={Err:if $i<4096 then "description phase deadline exceeded" else "not described (limit)" end}
+        if $i<4096 then
           $s.discovery.nodes[$task.node].descriptions=$s.discovery.nodes[$task.node].descriptions+1
-          $s=$work.enqueue($s,{owner:"discovery",op:"describe",node:$task.node,service:$route,phase_deadline:monotonic()+42,lane:if $local then "local" else "remote" end})
+          $s=$work.enqueue($s,{owner:"discovery",op:"describe",node:$task.node,service:$route,phase_deadline:$s.discovery.deadline,lane:if $local then "local" else "remote" end})
         end
       end
     end
@@ -120,4 +120,17 @@ fn received($s,$task,$d)
   end
   $s=snapshot($s)
   return $work.launch($s)
+end
+fn expire($s)
+  if $s.discovery==nil or monotonic()<$s.discovery.deadline then return $s end
+  -- Jobs have their own four-second bound. Forget their results; do not wait
+  -- for a peer or retry admission on the owner at the overall deadline.
+  $s.queue=filter($s.queue,fn($t)=$t.owner!="discovery")
+  for $key in keys($s.discovery.nodes)
+    $n=$s.discovery.nodes[$key]
+    if not $n.list_done or not $n.info_done then $s.discovery.nodes[$key].node.error="discovery deadline exceeded" end
+    $s.discovery.nodes[$key].list_done=true;$s.discovery.nodes[$key].info_done=true;$s.discovery.nodes[$key].descriptions=0
+  end
+  $s.discovery.peers_done=true
+  return snapshot($s)
 end

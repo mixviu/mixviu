@@ -250,6 +250,7 @@ fn notice($s,$event)
   return $s
 end
 fn follow_up($s)
+  $s=$discovery.expire($s)
   if $s.refetch and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
   return $work.launch($s)
 end
