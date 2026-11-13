@@ -1224,12 +1224,14 @@ impl Widgets {
                     }
                     // Reserve the right fields before laying out the notice.
                     let mut rect = ui.available_rect_before_wrap();
-                    let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        for item in value["right"].as_array().unwrap() {
-                            ui.small(item.as_str().unwrap());
-                        }
-                    });
-                    rect.max.x = (right.response.rect.left() - ui.spacing().item_spacing.x).max(rect.min.x);
+                    let right =
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            for item in value["right"].as_array().unwrap() {
+                                ui.small(item.as_str().unwrap());
+                            }
+                        });
+                    rect.max.x =
+                        (right.response.rect.left() - ui.spacing().item_spacing.x).max(rect.min.x);
                     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                         ui.set_clip_rect(ui.clip_rect().intersect(rect));
                         let label = if let Some(error) = value["message"].as_str() {
@@ -1237,7 +1239,10 @@ impl Widgets {
                         } else {
                             value["left"].as_str().unwrap().to_owned()
                         };
-                        ui.add(egui::Label::new(egui::RichText::new(label).small().color(colour)).truncate());
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(label).small().color(colour))
+                                .truncate(),
+                        );
                     });
                 })
                 .response
