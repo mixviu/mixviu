@@ -14,6 +14,48 @@ mod fixture {
     include!("support/documents.rs");
 }
 struct Accepted;
+struct Compositor(std::sync::Arc<AtomicBool>);
+impl mix::BusHandler for Compositor {
+    fn send<'a>(&'a self, _: &'a str, command: &'a str, _: &'a mix::value::Value) -> mix::evaluator::BusFuture<'a, mix::MixResult<(i32, mix::value::Value)>> {
+        Box::pin(async move {
+            assert!(self.0.load(std::sync::atomic::Ordering::SeqCst), "no request before registration");
+            let body = match command {
+                "comp.window.wait" => json!({"mapped":true}),
+                "comp.windows.list" => json!({"windows":[{"id":7,"generation":3,"app_id":"dev.mixos.ced","pid":std::process::id()}]}),
+                "comp.window.restore" => json!({"minimized":false}),
+                "comp.window.focus" => json!({"focused":true}),
+                _ => panic!("unexpected {command}"),
+            };
+            Ok((0, viu::runtime::from_json(body)?))
+        })
+    }
+    fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a mix::value::Value) -> mix::evaluator::BusFuture<'a, mix::MixResult<()>> { Box::pin(async { Ok(()) }) }
+    fn port_exists<'a>(&'a self, _: &'a str) -> mix::evaluator::BusFuture<'a, mix::MixResult<bool>> { Box::pin(async { Ok(self.0.load(std::sync::atomic::Ordering::SeqCst)) }) }
+    fn next_incoming<'a>(&'a self) -> mix::evaluator::BusFuture<'a, Option<mix::evaluator::IncomingEvent>> { Box::pin(async { None }) }
+}
+
+#[test]
+fn ced_worker_recovers_when_compositor_registers_after_start() {
+    let available = Arc::new(AtomicBool::new(false));
+    let bus = available.clone();
+    let (tx, rx) = mpsc::channel();
+    let mut runtime = Runtime::new(4, Arc::new(move || { let _ = tx.send(()); }), Some(Box::new(move || std::rc::Rc::new(Compositor(bus.clone())))));
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced/job.mix");
+    runtime.load(viu::runtime::Program { source: std::fs::read_to_string(&path).unwrap(), path, scene:"worker-test".into(), citizen:"ced".into() }).unwrap();
+    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(runtime.try_completion().unwrap().error.is_none());
+    for registered in [false, true] {
+        available.store(registered, std::sync::atomic::Ordering::SeqCst);
+        runtime.event("job.run".into(), json!({"kind":"show","payload":{}})).unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let done = runtime.try_completion().unwrap();
+        assert!(done.error.is_none(), "{:?}", done.error);
+        let reply = done.reply.unwrap();
+        assert_eq!(reply.rc, 0);
+        let body = reply.body;
+        assert_eq!(body["shown"], registered);
+    }
+}
 #[test]
 fn every_ced_worker_program_parses_with_its_real_includes() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/ced/job.mix");
