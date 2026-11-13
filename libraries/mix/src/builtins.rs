@@ -10830,8 +10830,8 @@ pub(crate) fn group_has_live_members(pgid: i32) -> bool {
 }
 
 /// End process group `pgid`: with a zero `grace`, SIGKILL at once; otherwise
-/// SIGCONT then SIGTERM, then wait until the grace deadline OR until no live member is
-/// left, then SIGKILL whatever remains. Waiting on the whole GROUP, not just
+/// SIGCONT then SIGTERM, then wait until the grace deadline OR until no live
+/// member is left, then SIGKILL whatever remains. Waiting on the whole GROUP, not just
 /// its leader, is the point: a TERM-honouring descendant (the `gzip` in
 /// `sh -c "pg_dump | gzip > f"`) gets the full grace to finish, and a
 /// TERM-ignoring one is killed at the deadline.

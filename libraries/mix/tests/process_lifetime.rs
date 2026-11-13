@@ -9,6 +9,7 @@
 
 #![cfg(target_os = "linux")]
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use mix::error::MixError;
@@ -153,11 +154,16 @@ async fn term_ignoring_descendant_is_killed_at_the_grace_deadline() {
 }
 
 fn marker_path(label: &str) -> std::path::PathBuf {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("mix-grace-{label}-{}-{nonce}", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "mix-grace-{label}-{}-{nonce}-{sequence}",
+        std::process::id()
+    ))
 }
 
 /// The review's `pg_dump | gzip` case: the leader (`sh`) dies on SIGTERM at
