@@ -86,12 +86,7 @@ impl App {
         };
         let mut jobs = viu::jobs::Jobs::new(4, wake.clone());
         jobs.set_services(services.clone());
-        let runtime = Runtime::with_services(
-            32,
-            wake,
-            Some(jobs.backend(Some(backend))),
-            services,
-        );
+        let runtime = Runtime::with_services(32, wake, Some(jobs.backend(Some(backend))), services);
         let mut app = Self {
             runtime,
             jobs,
@@ -250,11 +245,26 @@ struct Inventory {
     published: Arc<std::sync::Mutex<Vec<Value>>>,
 }
 impl BusHandler for Inventory {
-    fn send<'a>(&'a self, _: &'a str, command: &'a str, args: &'a MixValue) -> BusFuture<'a, MixResult<(i32, MixValue)>> {
+    fn send<'a>(
+        &'a self,
+        _: &'a str,
+        command: &'a str,
+        args: &'a MixValue,
+    ) -> BusFuture<'a, MixResult<(i32, MixValue)>> {
         if command == "topic.publish" {
-            self.published.lock().unwrap().push(viu::runtime::to_json(args).unwrap());
+            self.published
+                .lock()
+                .unwrap()
+                .push(viu::runtime::to_json(args).unwrap());
         }
-        Box::pin(async move { Ok((if command == "topic.publish" { 0 } else { 10 }, viu::runtime::from_json(json!({"error":"Service data unavailable: raw Bus error"}))?)) })
+        Box::pin(async move {
+            Ok((
+                if command == "topic.publish" { 0 } else { 10 },
+                viu::runtime::from_json(
+                    json!({"error":"Service data unavailable: raw Bus error"}),
+                )?,
+            ))
+        })
     }
     fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a MixValue) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async { Ok(()) })
@@ -262,16 +272,35 @@ impl BusHandler for Inventory {
     fn port_exists<'a>(&'a self, target: &'a str) -> BusFuture<'a, MixResult<bool>> {
         let connection = self.connection.clone();
         let target = target.to_owned();
-        let task = self.handle.spawn(async move { connection.client().list_services().await.unwrap().contains(&target) });
+        let task = self.handle.spawn(async move {
+            connection
+                .client()
+                .list_services()
+                .await
+                .unwrap()
+                .contains(&target)
+        });
         Box::pin(async move { Ok(task.await.unwrap()) })
     }
     fn subscribe_topic<'a>(&'a self, topic: &'a str) -> BusFuture<'a, MixResult<()>> {
         let connection = self.connection.clone();
         let topic = topic.to_owned();
         let task = self.handle.spawn(async move {
-            connection.client().call_with_headers("noded", "topic.subscribe", &BTreeMap::from([("name".into(), topic)]), "").await.unwrap();
+            connection
+                .client()
+                .call_with_headers(
+                    "noded",
+                    "topic.subscribe",
+                    &BTreeMap::from([("name".into(), topic)]),
+                    "",
+                )
+                .await
+                .unwrap();
         });
-        Box::pin(async move { task.await.unwrap(); Ok(()) })
+        Box::pin(async move {
+            task.await.unwrap();
+            Ok(())
+        })
     }
     fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> {
         Box::pin(async { None })
@@ -282,38 +311,71 @@ impl BusHandler for Inventory {
 fn views_follow_private_broker_inventory_and_refuse_without_changing_selection() {
     use bus::native_client::{NodedClient, UnixConnectOutcome};
     let broker = test_broker::Broker::start();
-    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
-    let connect = || rt.block_on(async {
-        let UnixConnectOutcome::VerifiedUnix(c) = NodedClient::connect_unix("", &broker.url, &broker.options(), None).await.unwrap() else { panic!("verified Unix connection required") };
-        Arc::new(c)
-    });
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let connect = || {
+        rt.block_on(async {
+            let UnixConnectOutcome::VerifiedUnix(c) =
+                NodedClient::connect_unix("", &broker.url, &broker.options(), None)
+                    .await
+                    .unwrap()
+            else {
+                panic!("verified Unix connection required")
+            };
+            Arc::new(c)
+        })
+    };
     let inventory = connect();
-    rt.block_on(inventory.client().register_as("backdrop-test")).unwrap();
+    rt.block_on(inventory.client().register_as("backdrop-test"))
+        .unwrap();
     let (events, incoming) = mpsc::channel();
     let receiver = inventory.clone();
     let receive_task = rt.spawn(async move {
         while let Some(event) = receiver.recv_shared().await {
             let event = event.command();
-            if events.send((event.command.clone(), event.args.clone())).is_err() { break; }
+            if events
+                .send((event.command.clone(), event.args.clone()))
+                .is_err()
+            {
+                break;
+            }
         }
     });
     let published = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let backend = Inventory { connection: inventory.clone(), handle: rt.handle().clone(), published: published.clone() };
+    let backend = Inventory {
+        connection: inventory.clone(),
+        handle: rt.handle().clone(),
+        published: published.clone(),
+    };
     let mut app = App::with_backend(Box::new(move || Rc::new(backend)));
-    app.runtime.notify("bus.connected".into(), json!({})).unwrap();
+    app.runtime
+        .notify("bus.connected".into(), json!({}))
+        .unwrap();
     let (_, list) = app.call("backdrop.view.list", json!({}));
     assert_eq!(list["views"][0]["available"], true);
     assert_eq!(list["views"][1]["available"], false);
     let (rc, refusal) = app.call("backdrop.view.set", json!({"view":"train"}));
     assert_eq!(rc, 10);
-    assert_eq!(refusal, json!({"error_code":"UNAVAILABLE","message":"needs Bus services train, buildd","needs":["train","buildd"]}));
+    assert_eq!(
+        refusal,
+        json!({"error_code":"UNAVAILABLE","message":"needs Bus services train, buildd","needs":["train","buildd"]})
+    );
     assert_eq!(app.state()["view"], "wallpaper");
-    assert_eq!(app.call("backdrop.view.cycle", json!({"dir":"next"})).1["view"], "wallpaper");
+    assert_eq!(
+        app.call("backdrop.view.cycle", json!({"dir":"next"})).1["view"],
+        "wallpaper"
+    );
     let train = connect();
     let buildd = connect();
     rt.block_on(train.client().register_as("train")).unwrap();
     rt.block_on(buildd.client().register_as("buildd")).unwrap();
-    assert_eq!(app.call("backdrop.view.list", json!({})).1["views"][1]["available"], true);
+    assert_eq!(
+        app.call("backdrop.view.list", json!({})).1["views"][1]["available"],
+        true
+    );
     assert_eq!(app.call("backdrop.view.set", json!({"view":"train"})).0, 0);
     // Discard arrival events before testing the real departure notification.
     while incoming.try_recv().is_ok() {}
@@ -326,12 +388,27 @@ fn views_follow_private_broker_inventory_and_refuse_without_changing_selection()
             }
         }
         app.pump();
-        if app.state()["view"] == "wallpaper" { break; }
-        assert!(Instant::now() < end, "registry departure did not cause fallback");
+        if app.state()["view"] == "wallpaper" {
+            break;
+        }
+        assert!(
+            Instant::now() < end,
+            "registry departure did not cause fallback"
+        );
     }
-    assert!(published.lock().unwrap().iter().any(|v| v.to_string().contains("needs Bus services train")));
+    assert!(
+        published
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|v| v.to_string().contains("needs Bus services train"))
+    );
     assert!(!app.model.to_string().contains("raw Bus error"));
-    rt.block_on(async { inventory.client().close().await; train.client().close().await; buildd.client().close().await; });
+    rt.block_on(async {
+        inventory.client().close().await;
+        train.client().close().await;
+        buildd.client().close().await;
+    });
     receive_task.abort();
 }
 #[test]
