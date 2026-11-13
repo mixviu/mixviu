@@ -575,3 +575,27 @@ anti-aliasing edge. No deviation from gold or Fable decision is proposed.
 ## Four-app release integration at 1804bb9
 
 Release-byte revalidation **PASS**. Exact four-engine hashes, complete native/visual results, all residual figures, deferred-reply witnesses, two same-worker timing comparisons and provenance debt are in [four-app-integration-acceptance.md](four-app-integration-acceptance.md). The runtime source is `1804bb98a5ab305111bd35412bf6f3902bc24013`; following commits are documentation receipts.
+
+## Live panel and high contrast
+
+The Panel page follows the scene loader inventory and sends scenes.enable,
+scenes.disable and scenes.move for the installed panel scene. Its existing
+shell.panels.top.enabled and shell.panels.top.edge action keys remain API
+aliases; these two controls no longer read or write settingsd. Other panel
+controls stay disabled until the scene implements them. Missing scenes are
+reported unavailable. Position defaults to the shipped bottom edge.
+
+Panel moves store edge in the scene settings.conf.mix, alongside task scope;
+enablement remains in the loader state. Position edits leave template code
+and its digest untouched. Reset carries user settings into the new copy.
+Preferences refreshes from inventory on entry, reconnect and scenes.changed,
+including scene-side edits and changes made while the panel is disabled.
+
+High contrast overrides chrome after scheme and accent resolution. Body
+surfaces and ink use opaque black/white endpoints; action fills retain a
+small amount of scheme hue. Borders and focus rings use full-strength ink.
+GTK and Qt exports receive strengthened surface/text pairs too. Normal
+contrast keeps authored palettes. The palette test measures delivered 8-bit
+colours across every scheme and mode: body text at least 7:1, edges at least
+3:1, and no weaker body or edge pairs than normal. The scoped CBC entry is
+tools/prefs_panel_check.mix. Desktop visual acceptance remains separate.

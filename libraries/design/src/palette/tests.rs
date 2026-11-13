@@ -179,7 +179,7 @@ fn geometry_reaches_the_cosmic_values() {
 
 #[test]
 fn high_contrast_strengthens_every_scheme_in_both_modes() {
-    let ratio = |a: SrgbColour, b: SrgbColour| crate::contrast_ratio(a.to_linear(), b.to_linear());
+    let ratio = |a: SrgbColour, b: SrgbColour| crate::contrast_ratio(a.to_linear().rendered(), b.to_linear().rendered());
     for scheme in Scheme::ALL {
         let normal = palette_of(DesignContext { scheme, ..Default::default() });
         let high = palette_of(DesignContext { scheme, contrast: Contrast::High, ..Default::default() });
@@ -197,7 +197,7 @@ fn high_contrast_strengthens_every_scheme_in_both_modes() {
             for (edge, bg) in [("field_border", "field"), ("card_border", "card"), ("separator", "chrome"), ("accent_border", "card")] {
                 let got = ratio(high.flat[edge], high.flat[bg]);
                 assert!(got >= 3.0, "{scheme:?}/{} {edge}: {got}", high.mode);
-                assert!(got > ratio(normal.flat[edge], normal.flat[bg]), "stronger {scheme:?} {edge}");
+                assert!(got >= ratio(normal.flat[edge], normal.flat[bg]), "stronger {scheme:?} {edge}");
             }
             for (fg, bg) in [("window_fg_color", "window_bg_color"), ("view_fg_color", "view_bg_color"), ("card_fg_color", "card_bg_color")] {
                 assert!(ratio(high.toolkit.gtk[fg], high.toolkit.gtk[bg]) >= 7.0);

@@ -65,7 +65,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const PATH: &str = "design.v1.families.chrome";
 
 /// Accessibility overrides apply after authored schemes and accent choices.
-/// Keep the scheme's hue, but remove translucent greys and strengthen edges.
+/// Use opaque endpoint surfaces and ink; retain hue on action fills.
 pub(crate) fn high_contrast(chrome: &mut ResolvedChrome, mode: crate::Mode) {
     let (surface, ink) = if mode == crate::Mode::Dark {
         (LinearRgba::BLACK, LinearRgba::WHITE)
@@ -74,10 +74,8 @@ pub(crate) fn high_contrast(chrome: &mut ResolvedChrome, mode: crate::Mode) {
     };
     for role in ["chrome", "canvas", "dock", "card", "tab_strip", "field",
         "hover", "pressed", "accent_soft", "row_selected", "menu_highlight"] {
-        if let Some(value) = chrome.get(role) {
-            let mut value = mix(value, surface, 0.92);
-            value.alpha = 1.0;
-            chrome.set(role, value);
+        if chrome.get(role).is_some() {
+            chrome.set(role, surface);
         }
     }
     for role in ["text", "text_dim", "text_faint", "icon", "accent_text",

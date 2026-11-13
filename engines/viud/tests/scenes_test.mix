@@ -1621,6 +1621,15 @@ try
   $s = $l.filesystem($s, {overflow:false, changes:[{path:$s.root .. "/panel/settings.conf.mix"}]})
   check($prefs.from_inventory($l.inventory($s)).edge == "bottom", "panel-side edit reaches Preferences")
   check(load_data($s.root .. "/panel/settings.conf.mix").tasks_scope == "current", "other user settings survive")
+  $s = $l.request($s, "disable", {name:"panel"})
+  $s = $l.request($s, "move", {name:"panel",edge:"top"})
+  check($s.rc == 0 and not $s.scenes.panel.mounted and $prefs.from_inventory($l.inventory($s)).edge == "top", "disabled panel position is editable and readable")
+  install_fixture($s.templates, "panel-template", false)
+  $s.desired.origins.panel = "panel-template"
+  $s = $l.request($s, "reset", {name:"panel"})
+  check($s.rc == 0 and load_data($s.root .. "/panel/settings.conf.mix").edge == "top" and load_data($s.root .. "/panel/settings.conf.mix").tasks_scope == "current", "template reset carries panel user state")
+  $s = $l.request($s, "enable", {name:"panel"})
+  check($s.rc == 0 and $s.scenes.panel.edge == "top", "reset mounts at preserved user position")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
 finally
   remove_dir($tmp)
