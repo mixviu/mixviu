@@ -111,7 +111,7 @@ impl Recording {
     }
 
     pub fn frame(&mut self, pixels: Option<(u32, u32, Vec<u8>, u64)>) -> Result<(), String> {
-        let changed=pixels.is_some();
+        let changed = pixels.is_some();
         if let Some((w, h, rgb, readback_us)) = pixels {
             self.readback_us = readback_us;
             self.readback_total_us += readback_us;
@@ -134,21 +134,23 @@ impl Recording {
         }
         if !encoder.try_push_rgb(self.last.clone(), self.source_width, self.source_height) {
             self.dropped += 1;
-            if changed { self.repeated += 1; }
+            if changed {
+                self.repeated += 1;
+            }
         }
-            let now = monotonic_us();
-            let t_us = if self.frames == 0 {
-                0
-            } else {
-                now - self.t0_us
-            };
-            writeln!(
-                self.frames_file,
-                "{}",
-                json!({"frame":self.frames,"t_us":t_us})
-            )
-            .map_err(|e| e.to_string())?;
-            self.frames += 1;
+        let now = monotonic_us();
+        let t_us = if self.frames == 0 {
+            0
+        } else {
+            now - self.t0_us
+        };
+        writeln!(
+            self.frames_file,
+            "{}",
+            json!({"frame":self.frames,"t_us":t_us})
+        )
+        .map_err(|e| e.to_string())?;
+        self.frames += 1;
         Ok(())
     }
 

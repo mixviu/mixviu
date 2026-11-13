@@ -52,33 +52,60 @@ struct QueuedFrame {
 
 /// Fill gaps, including a dropped tail at shutdown, without retaining an
 /// unbounded backlog of pixel buffers. Every scheduled slot reaches ffmpeg.
-fn write_frames(writer: &mut impl Write, rx: Receiver<QueuedFrame>, scheduled: &AtomicU64,
-    queued: &AtomicUsize, width:u32,height:u32) -> std::io::Result<()> {
-    let mut next=0;
-    let mut last:Arc<[u8]>=vec![0;width as usize*height as usize*4].into();
-    let mut previous_rgb:Option<Arc<[u8]>>=None;
+fn write_frames(
+    writer: &mut impl Write,
+    rx: Receiver<QueuedFrame>,
+    scheduled: &AtomicU64,
+    queued: &AtomicUsize,
+    width: u32,
+    height: u32,
+) -> std::io::Result<()> {
+    let mut next = 0;
+    let mut last: Arc<[u8]> = vec![0; width as usize * height as usize * 4].into();
+    let mut previous_rgb: Option<Arc<[u8]>> = None;
     for frame in rx {
-        queued.fetch_sub(1,Ordering::Relaxed);
-        for _ in next..frame.slot {writer.write_all(&last)?;}
-        let pixels=match frame.pixels {
-            VideoFrame::Bgra(pixels)=>{previous_rgb=None;pixels},
-            VideoFrame::Rgb{pixels,width:source_width,height:source_height}=>{
-                if previous_rgb.as_ref().is_some_and(|old|Arc::ptr_eq(old,&pixels)) {last.clone()}
-                else {
-                    let mut converted=vec![0;width as usize*height as usize*4];
-                    for (input,output) in pixels.chunks_exact(source_width as usize*3).take(source_height as usize).zip(converted.chunks_exact_mut(width as usize*4)) {
-                        for (p,out) in input.chunks_exact(3).zip(output.chunks_exact_mut(4)) {out.copy_from_slice(&[p[2],p[1],p[0],255]);}
+        queued.fetch_sub(1, Ordering::Relaxed);
+        for _ in next..frame.slot {
+            writer.write_all(&last)?;
+        }
+        let pixels = match frame.pixels {
+            VideoFrame::Bgra(pixels) => {
+                previous_rgb = None;
+                pixels
+            }
+            VideoFrame::Rgb {
+                pixels,
+                width: source_width,
+                height: source_height,
+            } => {
+                if previous_rgb
+                    .as_ref()
+                    .is_some_and(|old| Arc::ptr_eq(old, &pixels))
+                {
+                    last.clone()
+                } else {
+                    let mut converted = vec![0; width as usize * height as usize * 4];
+                    for (input, output) in pixels
+                        .chunks_exact(source_width as usize * 3)
+                        .take(source_height as usize)
+                        .zip(converted.chunks_exact_mut(width as usize * 4))
+                    {
+                        for (p, out) in input.chunks_exact(3).zip(output.chunks_exact_mut(4)) {
+                            out.copy_from_slice(&[p[2], p[1], p[0], 255]);
+                        }
                     }
-                    previous_rgb=Some(pixels);
+                    previous_rgb = Some(pixels);
                     converted.into()
                 }
             }
         };
         writer.write_all(&pixels)?;
-        last=pixels;
-        next=frame.slot+1;
+        last = pixels;
+        next = frame.slot + 1;
     }
-    for _ in next..scheduled.load(Ordering::Acquire) {writer.write_all(&last)?;}
+    for _ in next..scheduled.load(Ordering::Acquire) {
+        writer.write_all(&last)?;
+    }
     Ok(())
 }
 
@@ -196,12 +223,12 @@ impl VideoEncoder {
         let (tx, rx) = sync_channel::<QueuedFrame>(4);
         let queued = Arc::new(AtomicUsize::new(0));
         let queue_count = queued.clone();
-        let scheduled=Arc::new(AtomicU64::new(0));
-        let slots=scheduled.clone();
+        let scheduled = Arc::new(AtomicU64::new(0));
+        let slots = scheduled.clone();
         let closed = Arc::new(AtomicBool::new(false));
         let writer_closed = closed.clone();
         let join = std::thread::spawn(move || {
-            let _ = write_frames(&mut stdin,rx,&slots,&queue_count,w,h);
+            let _ = write_frames(&mut stdin, rx, &slots, &queue_count, w, h);
             writer_closed.store(true, Ordering::Release);
             // Dropping `stdin` here signals EOF so ffmpeg flushes and exits.
         });
@@ -262,13 +289,15 @@ impl VideoEncoder {
     }
 
     fn submit(&self, frame: VideoFrame) -> bool {
-        let slot=self.scheduled.fetch_add(1,Ordering::AcqRel);
+        let slot = self.scheduled.fetch_add(1, Ordering::AcqRel);
         self.queued.fetch_add(1, Ordering::Relaxed);
-        if self
-            .tx
-            .as_ref()
-            .is_some_and(|tx| tx.try_send(QueuedFrame{slot,pixels:frame}).is_ok())
-        {
+        if self.tx.as_ref().is_some_and(|tx| {
+            tx.try_send(QueuedFrame {
+                slot,
+                pixels: frame,
+            })
+            .is_ok()
+        }) {
             true
         } else {
             self.queued.fetch_sub(1, Ordering::Relaxed);
@@ -406,15 +435,31 @@ mod tests {
     use super::*;
     #[test]
     fn missing_slots_and_dropped_tail_repeat_the_previous_frame() {
-        let (tx,rx)=sync_channel(4);
-        tx.send(QueuedFrame{slot:0,pixels:VideoFrame::Bgra(Arc::from([1u8;16]))}).unwrap();
-        tx.send(QueuedFrame{slot:2,pixels:VideoFrame::Bgra(Arc::from([2u8;16]))}).unwrap();
+        let (tx, rx) = sync_channel(4);
+        tx.send(QueuedFrame {
+            slot: 0,
+            pixels: VideoFrame::Bgra(Arc::from([1u8; 16])),
+        })
+        .unwrap();
+        tx.send(QueuedFrame {
+            slot: 2,
+            pixels: VideoFrame::Bgra(Arc::from([2u8; 16])),
+        })
+        .unwrap();
         drop(tx);
-        let mut bytes=Vec::new();
-        write_frames(&mut bytes,rx,&AtomicU64::new(4),&AtomicUsize::new(2),2,2).unwrap();
-        assert_eq!(bytes.len(),64);
-        assert_eq!(&bytes[..32],&[1;32]);
-        assert_eq!(&bytes[32..],&[2;32]);
+        let mut bytes = Vec::new();
+        write_frames(
+            &mut bytes,
+            rx,
+            &AtomicU64::new(4),
+            &AtomicUsize::new(2),
+            2,
+            2,
+        )
+        .unwrap();
+        assert_eq!(bytes.len(), 64);
+        assert_eq!(&bytes[..32], &[1; 32]);
+        assert_eq!(&bytes[32..], &[2; 32]);
     }
     #[test]
     fn queue_overrun_never_waits_for_encoder() {
@@ -432,7 +477,7 @@ mod tests {
             height: 2,
             stderr: Arc::new(Mutex::new(String::new())),
             queued: Arc::new(AtomicUsize::new(0)),
-            scheduled:Arc::new(AtomicU64::new(0)),
+            scheduled: Arc::new(AtomicU64::new(0)),
             closed: Arc::new(AtomicBool::new(false)),
         };
         for _ in 0..4 {
