@@ -31,52 +31,29 @@ fn contrast(a: Color32, b: Color32) -> f32 {
 // Semantic scene colours resolve at paint time, so a session update also
 // recolours cached task/tray rows without a behaviour restart or model rebuild.
 fn scene_colour(theme: &toolkit::Theme, role: &str) -> Option<Color32> {
-    if !role.starts_with("panel.") { return hex(role); }
+    if !role.starts_with("panel.") {
+        return hex(role);
+    }
     let palette = crate::appearance::page(theme, true);
     let background = colour(palette.base.surface);
     let selected = colour(palette.secondary.surface);
     let readable = |surface, foreground| {
-        if contrast(surface, foreground) >= 4.5 { foreground }
-        else if contrast(surface, Color32::BLACK) >= contrast(surface, Color32::WHITE) {
+        if contrast(surface, foreground) >= 4.5 {
+            foreground
+        } else if contrast(surface, Color32::BLACK) >= contrast(surface, Color32::WHITE) {
             Color32::BLACK
-        } else { Color32::WHITE }
+        } else {
+            Color32::WHITE
+        }
     };
     match role {
         "panel.background" | "panel.hover" => Some(background),
         "panel.foreground" => Some(readable(background, colour(palette.base.foreground))),
         "panel.selected" => Some(selected),
-        "panel.selected-foreground" => Some(readable(selected, colour(palette.secondary.foreground))),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod panel_mode_tests {
-    use super::*;
-    #[test]
-    fn every_scheme_and_mode_has_readable_panel_surfaces() {
-        let doc = scene::parse(include_str!("../../../../share/scenes/panel/scene.mix")).unwrap();
-        assert_eq!(doc.nodes["root"].ports["background"], "panel.background");
-        for scheme in design::Scheme::ALL {
-            for mode in [design::Mode::Light, design::Mode::Dark] {
-                let theme = toolkit::Theme::for_context(design::DesignContext { scheme, mode, ..Default::default() });
-                for (bg, fg) in [("panel.background", "panel.foreground"), ("panel.selected", "panel.selected-foreground")] {
-                    let bg = scene_colour(&theme, bg).unwrap();
-                    let fg = scene_colour(&theme, fg).unwrap();
-                    assert_eq!(bg.a(), 255);
-                    assert!(contrast(bg, fg) >= 4.5, "{scheme:?} {mode:?}");
-                }
-                let bg = scene_colour(&theme, "panel.background").unwrap();
-                if mode == design::Mode::Light {
-                    assert!(contrast(bg, Color32::BLACK) > contrast(bg, Color32::WHITE), "light panel {scheme:?}");
-                }
-                for node in doc.nodes.values() {
-                    if let Some(role) = node.ports.get("color").and_then(|v| v.as_str()) {
-                        assert!(role.starts_with("panel.") || role.starts_with("= "), "{role}");
-                    }
-                }
-            }
+        "panel.selected-foreground" => {
+            Some(readable(selected, colour(palette.secondary.foreground)))
         }
+        _ => None,
     }
 }
 
@@ -635,3 +612,45 @@ fn paint_image(
     Some(cache)
 }
 
+#[cfg(test)]
+mod panel_mode_tests {
+    use super::*;
+    #[test]
+    fn every_scheme_and_mode_has_readable_panel_surfaces() {
+        let doc = scene::parse(include_str!("../../../../share/scenes/panel/scene.mix")).unwrap();
+        assert_eq!(doc.nodes["root"].ports["background"], "panel.background");
+        for scheme in design::Scheme::ALL {
+            for mode in [design::Mode::Light, design::Mode::Dark] {
+                let theme = toolkit::Theme::for_context(design::DesignContext {
+                    scheme,
+                    mode,
+                    ..Default::default()
+                });
+                for (bg, fg) in [
+                    ("panel.background", "panel.foreground"),
+                    ("panel.selected", "panel.selected-foreground"),
+                ] {
+                    let bg = scene_colour(&theme, bg).unwrap();
+                    let fg = scene_colour(&theme, fg).unwrap();
+                    assert_eq!(bg.a(), 255);
+                    assert!(contrast(bg, fg) >= 4.5, "{scheme:?} {mode:?}");
+                }
+                let bg = scene_colour(&theme, "panel.background").unwrap();
+                if mode == design::Mode::Light {
+                    assert!(
+                        contrast(bg, Color32::BLACK) > contrast(bg, Color32::WHITE),
+                        "light panel {scheme:?}"
+                    );
+                }
+                for node in doc.nodes.values() {
+                    if let Some(role) = node.ports.get("color").and_then(|v| v.as_str()) {
+                        assert!(
+                            role.starts_with("panel.") || role.starts_with("= "),
+                            "{role}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

@@ -108,7 +108,9 @@ pub fn install_session_choice(
         .with_choice(&crate::native_theme::choice(choice)?)
         .map_err(|e| e.to_string())?;
     install_theme(ctx, &theme)?;
-    ctx.data_mut(|d| { d.remove::<Value>(egui::Id::unique("viu-local-choice")); });
+    ctx.data_mut(|d| {
+        d.remove::<Value>(egui::Id::unique("viu-local-choice"));
+    });
     Ok(ui)
 }
 pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
