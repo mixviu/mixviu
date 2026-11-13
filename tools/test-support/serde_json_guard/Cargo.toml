@@ -1,0 +1,15 @@
+# Deliberately invalid policy, parsed directly by the guard; not a Cargo package.
+[workspace.dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+serde_json = { version = "1" }
+
+[build-dependencies]
+renamed = { package = "serde_json", version = "1" }
+
+[target.'cfg(unix)'.dependencies]
+serde_json = { workspace = false }

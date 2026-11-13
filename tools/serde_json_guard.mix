@@ -1,0 +1,82 @@
+#!/usr/bin/env mix
+-- version: 0.1.0
+-- Run by tools/ci.mix env in the per-PR lint job. Inspect source manifests:
+-- Cargo's resolved feature union can hide a member bypassing the workspace.
+
+fn dependency_problems($doc, $label)
+  $bad = []
+  for $kind in ["dependencies", "dev-dependencies", "build-dependencies"]
+    for $name in keys($doc[$kind] ?? {})
+      $dep = $doc[$kind][$name]
+      if $name == "serde_json" or (type($dep) == "map" and $dep.package == "serde_json") then
+        if $name != "serde_json" or type($dep) != "map" or $dep.workspace != true then
+          push($bad, $label .. ": " .. $kind .. "." .. $name .. " must use serde_json.workspace = true")
+        end
+        if type($dep) == "map" and contains($dep.features ?? [], "preserve_order") then
+          push($bad, $label .. ": serde_json must keep sorted keys (no preserve_order)")
+        end
+      end
+    end
+  end
+  for $target in keys($doc.target ?? {})
+    $bad = concat($bad, dependency_problems($doc.target[$target], $label .. ": target." .. $target))
+  end
+  return $bad
+end
+
+fn root_problems($doc)
+  $dep = $doc.workspace.dependencies.serde_json
+  $features = if type($dep) == "map" then $dep.features ?? [] else [] end
+  $bad = []
+  if not contains($features, "float_roundtrip") then
+    push($bad, "Cargo.toml: workspace serde_json must enable float_roundtrip")
+  end
+  if contains($features, "preserve_order") then
+    push($bad, "Cargo.toml: workspace serde_json must not enable preserve_order")
+  end
+  return $bad
+end
+
+-- Explicit exemptions: patched upstream code and the pinned reference app
+-- retain their upstream dependency contracts, rather than ours.
+$exemptions = {
+  "vendor/": "patched upstream manifests",
+  "apps/gallery-reference/": "pinned reference app"
+}
+
+-- Always exercise the recogniser, including target-specific and renamed deps.
+$fixture = toml_parse(read_file("tools/test-support/serde_json_guard/Cargo.toml"))
+if len(dependency_problems($fixture, "negative control")) != 4 then
+  raise("SERDE_JSON_GUARD", "negative control must refuse all four bypasses")
+end
+if len(root_problems($fixture)) != 2 then
+  raise("SERDE_JSON_GUARD", "negative control must refuse both workspace feature regressions")
+end
+for $source in ["[dependencies]\nserde_json.workspace = true", "[dependencies]\nserde_json = { workspace = true, features = [\"raw_value\"] }"]
+  if len(dependency_problems(toml_parse($source), "positive control")) != 0 then
+    raise("SERDE_JSON_GUARD", "workspace inheritance must be accepted")
+  end
+end
+
+$bad = root_problems(toml_parse(read_file("Cargo.toml")))
+-- Fail before metadata: a broken workspace feature policy needs no resolution.
+if len($bad) == 0 then
+  $meta = json_parse(run_argv_must(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], {timeout: 300, max_output: 64000000}))
+  for $pkg in $meta.packages
+    if contains($meta.workspace_members, $pkg.id) then
+      $path = replace($pkg.manifest_path, $meta.workspace_root .. "/", "")
+      $exempt = false
+      for $prefix in keys($exemptions)
+        if starts_with($path, $prefix) then $exempt = true end
+      end
+      if not $exempt then
+        $bad = concat($bad, dependency_problems(toml_parse(read_file($pkg.manifest_path)), $path))
+      end
+    end
+  end
+end
+for $problem in $bad
+  eprint("::error::serde_json guard: " .. $problem)
+end
+if len($bad) > 0 then exit(1) end
+print("serde_json guard: workspace inheritance and float_roundtrip policy OK; negative control refused")
