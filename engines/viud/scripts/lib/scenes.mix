@@ -336,7 +336,8 @@ fn inventory($s)
     $fork = ($s.desired.forks ?? {})[$name]
     push($rows, {name:$name, installed:$e.installed, enabled:$e.enabled, mounted:$e.mounted,
       revision:$e.revision, generation:$e.generation, behaviour:$e.status, ready:$e.ready,
-      template:$s.desired.origins[$name], diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
+      template:$s.desired.origins[$name], stale:($s.upgrades ?? {})[$name] != nil,
+      upgrade:($s.upgrades ?? {})[$name], diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
       attempted_digest:$e.attempted, accepted_digest:$e.digest,
       journal:"journalctl -u mix-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
       title:$shown.title ?? $name, edge:$e.edge ?? $shown.edge, page:$e.page ?? $shown.page,
@@ -415,6 +416,18 @@ fn read_state($s)
       $f = $v.forks[$n]
       if not valid_name($n) or type($f) != "map" or not valid_name($f.from) or ($f.panel != nil and type($f.panel) != "string") then
         fail("SCENES_STATE", "invalid fork record", {name:$n})
+      end
+    end
+  end
+  if $v.templates != nil then
+    if type($v.templates) != "map" or len(keys($v.templates)) > 128 then fail("SCENES_STATE", "invalid template records", {}) end
+    for $n in keys($v.templates)
+      $r = $v.templates[$n]
+      if not valid_name($n) or type($r) != "map" or not valid_name($r.template) or type($r.files) != "map" then
+        fail("SCENES_STATE", "invalid template record", {name:$n})
+      end
+      for $k in ["digest", "behaviour_digest", "meta_digest"]
+        if type($r[$k]) != "string" then fail("SCENES_STATE", "invalid template digest", {name:$n}) end
       end
     end
   end
@@ -923,13 +936,18 @@ fn recover_one($s, $kind, $r)
 end
 
 fn clear_record($s, $kind)
+  $backup = $s.desired[$kind].backup
   $s.desired = delete($s.desired, $kind)
-  return persist($s)
+  return cap_recovery(persist($s), $s.root .. "/" .. $backup)
 end
 
 fn finish_record($s, $kind, $r)
   if $kind == "promoting" then return promote_finish($s, $r) end
   if has_key($s.scenes, $r.name) then $s.scenes[$r.name].model = nil end
+  if $r.template_record != nil then
+    if $s.desired.templates == nil then $s.desired.templates = {} end
+    $s.desired.templates[$r.name] = $r.template_record
+  end
   return clear_record($s, $kind)
 end
 
@@ -963,6 +981,7 @@ fn promote_finish($s, $r)
     if $s.desired.forks != nil then $s.desired.forks = delete($s.desired.forks, $from) end
     $s.desired = delete($s.desired, "promoting")
     $s = persist($s)
+    $s = cap_recovery($s, $s.root .. "/" .. $r.backup)
   catch $message, $error
     $s.finish_error = {error_code:$error.code, message:$message,
       context:{phase:"finish", name:$r.to, removed:$from, sandbox:$s.last_removed, upstream:$error.details}}
@@ -2044,6 +2063,7 @@ fn editor_remove($s)
   $s.desired.origins = delete($s.desired.origins, "editor")
   $s = persist($s)
   $s.scenes.editor.user_dirty = false
+  $s = cap_recovery($s, $backup)
   $s.response = {name:"editor", recovery:$backup}
   return $s
 end
@@ -2056,11 +2076,11 @@ fn editor_reset($s)
   $had = exists($user, {follow_symlinks:false})
   require_no_record($s, "resetting")
   $tmp = stage($s, "editor", "editor")
+  $record = template_record($tmp, "editor")
   $backup = recovery_directory($s) .. "/editor-" .. uuid()
-  $s = swap_in($s, "resetting", {name:"editor"}, $user, $tmp, $backup)
+  $s = swap_in($s, "resetting", {name:"editor", template_record:$record}, $user, $tmp, $backup)
   $s.desired.origins.editor = "editor"
-  $s.desired = delete($s.desired, "resetting")
-  $s = persist($s)
+  $s = finish_record($s, "resetting", $s.desired.resetting)
   $e = $s.scenes.editor
   if $e.copy == "user" and $e.summoned then
     $model = $s.scenes.editor.model
@@ -2227,6 +2247,87 @@ fn move($s, $args)
   return $s
 end
 
+-- Fingerprint the rewritten installation, including helpers/assets. Settings
+-- are user state, never evidence of a code edit. Bound reads as in candidate.
+fn template_record($dir, $template)
+  $files = {}
+  for $p in sort(walk($dir, {follow_symlinks:false}))
+    $rel = substr($p, len($dir) + 1)
+    if $rel == "settings.conf.mix" then continue end
+    if not regular($p) then fail("SCENES_FILES", "template file must be regular", {file:$p}) end
+    $files[$rel] = hash_sha256(bounded_read($p, 262144))
+  end
+  return {template:$template, digest:$files["scene.mix"],
+    behaviour_digest:$files["behaviour.mix"] ?? "", meta_digest:$files["template.conf.mix"], files:$files}
+end
+
+-- Keep the newest 16 completed backups globally. Never prune a transaction's
+-- backup, nor follow an alias. A successful swap's backup is explicitly kept.
+fn cap_recovery($s, $keep)
+  $dir = recovery_directory($s)
+  $held = [$keep]
+  for $kind in ["resetting", "promoting"]
+    if $s.desired[$kind] != nil then push($held, $s.root .. "/" .. $s.desired[$kind].backup) end
+  end
+  $items = []
+  for $n in ls($dir)
+    $p = $dir .. "/" .. $n
+    if not valid_record_path(".recovery/" .. $n, ".recovery/") then continue end
+    $st = stat($p, {follow_symlinks:false})
+    -- Rename updates ctime; mtime still describes edits before the backup.
+    if $st.is_dir and not contains($held, $p) then push($items, {path:$p, time:$st.ctime, ns:$st.ctime_nsec}) end
+  end
+  $items = sort_by($items, fn($v) = $v.time + $v.ns / 1000000000)
+  $reserved = len(filter($held, fn($p) = $p != nil and exists($p, {follow_symlinks:false})))
+  for $i = 0 to len($items) + $reserved - 17
+    remove_dir($items[$i].path)
+  end
+  return $s
+end
+
+fn upgrade($s)
+  $s = load_state($s)
+  require_state($s)
+  $s.upgrades = {}
+  for $name in keys($s.desired.origins)
+    if ($s.desired.forks ?? {})[$name] != nil then continue end
+    $dir = $s.root .. "/" .. $name
+    if not is_dir($dir) then continue end
+    $tmp = nil
+    try
+      $origin = $s.desired.origins[$name]
+      $tmp = stage($s, $origin, $name)
+      $new = template_record($tmp, $origin)
+      remove_dir($tmp)
+      $tmp = nil
+      $local = template_record($dir, $origin)
+      $old = ($s.desired.templates ?? {})[$name]
+      if deep_eq($local, $new) then
+        if not deep_eq($old, $new) then
+          if $s.desired.templates == nil then $s.desired.templates = {} end
+          $s.desired.templates[$name] = $new
+          $s = persist($s)
+        end
+      elif $old == nil or not deep_eq($local, $old) then
+        $s.upgrades[$name] = {reason:"template updated: Reset or Keep", old:$old, local:$local, new:$new}
+      elif not deep_eq($old, $new) then
+        -- Synchronous loader handler owns the writer lock through reset.
+        $s.upgrade_expected = $local
+        $s = reset_scene($s, $name, $s.scenes[$name] ?? entry($name))
+        $s.upgrade_expected = nil
+      end
+    catch $message, $error
+      if $tmp != nil and is_dir($tmp) then remove_dir($tmp) end
+      $s.upgrade_expected = nil
+      $s = load_state($s)
+      $s.upgrades[$name] = {reason:$message, error_code:$error.code}
+    end
+  end
+  $s = cap_recovery($s, nil)
+  $s.response = inventory($s)
+  return $s
+end
+
 fn reset_scene($s, $name, $e)
   $recovery = recovery_directory($s)
   $installation = $s.root .. "/" .. $name
@@ -2237,13 +2338,31 @@ fn reset_scene($s, $name, $e)
   if $origin == nil then fail("SCENES_NO_ORIGIN", "reset requires a recorded shipped template origin", {name:$name}) end
   require_no_record($s, "resetting")
   $tmp = stage($s, $origin, $name)
+  $record = template_record($tmp, $origin)
+  if $s.upgrade_expected != nil then
+    try
+      if $s.io.upgrade_guard != nil then $s.io.upgrade_guard($installation) end
+      if not deep_eq(template_record($installation, $origin), $s.upgrade_expected) then
+        fail("SCENES_EDITED", "scene changed during upgrade; refresh refused", {name:$name})
+      end
+      $settings = $installation .. "/settings.conf.mix"
+      if exists($settings, {follow_symlinks:false}) then
+        if not regular($settings) then fail("SCENES_FILES", "settings must be regular", {file:$settings}) end
+        write_file($tmp .. "/settings.conf.mix", bounded_read($settings, 262144))
+      end
+    catch $message, $error
+      remove_dir($tmp)
+      raise($error.code, $message, $error.details)
+    end
+  end
   $backup = $recovery .. "/" .. $name .. "-" .. uuid()
   if $s.open == $name then $s.open = nil end
   $s = drive_popups($s)
   $s = invalidate($s, $name)
-  $s = swap_in($s, "resetting", {name:$name}, $installation, $tmp, $backup)
-  $s.desired = delete($s.desired, "resetting")
-  $s = persist($s)
+  $s = swap_in($s, "resetting", {name:$name, template_record:$record}, $installation, $tmp, $backup)
+  $s = finish_record($s, "resetting", $s.desired.resetting)
+  if $s.upgrades != nil then $s.upgrades = delete($s.upgrades, $name) end
+  $s = cap_recovery($s, $backup)
   $s.scenes[$name].model = nil
   $s = reconcile_one($s, $name, true)
   if failure($s.scenes[$name]) != nil then
@@ -2263,6 +2382,7 @@ fn request($s, $command, $args)
   $s.response = {}
   try
     if type($args) != "map" then fail("SCENES_ARGUMENT", "arguments must be a map", {}) end
+    if $command == "upgrade" then return upgrade($s) end
     if $command == "quoin.reload" then
       if not contains(["scene", "lib", "all"], $args.scope) then fail("SCENES_ARGUMENT", "scope must be scene, lib or all", {}) end
       if $args.scope == "scene" then
@@ -2299,8 +2419,11 @@ fn request($s, $command, $args)
       if exists($s.root .. "/" .. $name, {follow_symlinks:false}) then fail("SCENES_COLLISION", "installation already exists", {name:$name}) end
       if len(keys($s.scenes)) > 128 then fail("SCENES_LIMIT", "at most 128 installed scenes", {}) end
       $tmp = stage($s, $args.template, $name)
+      $record = template_record($tmp, $args.template)
       place_install($s, $tmp, $name)
       $s.desired.origins[$name] = $args.template
+      if $s.desired.templates == nil then $s.desired.templates = {} end
+      $s.desired.templates[$name] = $record
       if $name == "editor" then
         $s = persist($s)
         $s.scenes.editor.user_dirty = true
@@ -2357,9 +2480,11 @@ fn request($s, $command, $args)
       if exists($installation, {follow_symlinks:false}) then recovery_move($s, $installation, $backup) end
       $s.scenes = delete($s.scenes, $name)
       $s.desired.origins = delete($s.desired.origins, $name)
+      if $s.desired.templates != nil then $s.desired.templates = delete($s.desired.templates, $name) end
       if $s.desired.forks != nil then $s.desired.forks = delete($s.desired.forks, $name) end
       $s = persist($s)
       $s.response = {name:$name, recovery:$backup}
+      $s = cap_recovery($s, $backup)
       return $s
     elif $command == "reset" then
       return reset_scene($s, $name, $e)

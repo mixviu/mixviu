@@ -148,6 +148,13 @@ fn notify($body)
   record("publish", $body)
   return true
 end
+fn upgrade_guard($dir)
+  if $host_state.upgrade_open == true then raise("SCENES_EDITOR_OPEN", "editor buffer is open") end
+  if $host_state.upgrade_edit == true then
+    write_file($dir .. "/behaviour.mix", read_file($dir .. "/behaviour.mix") .. "-- racing editor save\n")
+    $host_state.upgrade_edit = false
+  end
+end
 fn probe_row($s)
   return filter($l.inventory($s).scenes, fn($r) = $r.name == "probe")[0]
 end
@@ -268,7 +275,7 @@ try
   mkdir($tmp .. "/templates")
   $io = {rpc:fn($a,$b,$c) = rpc($a,$b,$c), check:fn($a,$b) = check_behaviour($a,$b),
     launch:fn($a,$b,$c,$d,$e) = launch($a,$b,$c,$d,$e),
-    stop:fn($a,$b) = stop($a,$b), notify:fn($a) = notify($a)}
+    stop:fn($a,$b) = stop($a,$b), notify:fn($a) = notify($a), upgrade_guard:fn($a) = upgrade_guard($a)}
   $s = $l.initial($tmp .. "/scenes", $tmp .. "/templates", "test-shell", "test-scenes", $io)
   $s.first_run_enabled = false
   $s = $l.rescan($s, false)
@@ -1595,6 +1602,61 @@ try
   $a = $s.response.templates[1]
   check($a.title == "Alpha" and $a.description == "the alpha scene" and $a.recommended and $a.order == 20 and deep_eq($a.requires, ["apps"]) and $a.behaviour and $a.edge == "left" and $a.kind == "edge" and deep_eq($a.installed_as, ["alpha-two"]), "T1: metadata row: " .. json_encode($a))
   check($s.response.templates[2].diagnostic.error_code == "SCENES_METADATA" and $s.response.templates[2].order == 1000, "T1: an invalid template is a row with a diagnostic")
+
+  -- Upgrade-aware copies: real staging/rewriting, persistence and swaps.
+  $ut = $tmp .. "/upgrade-templates"
+  mkdir($ut)
+  install_fixture($ut, "alpha", true)
+  write_file($ut .. "/alpha/settings.conf.mix", "{value:1}\n")
+  mkdir($ut .. "/alpha/assets")
+  write_file($ut .. "/alpha/assets/icon", "icon")
+  $s = se_fresh("upgrade", $ut)
+  $s = $l.request($s, "install", {template:"alpha", name:"renamed"})
+  check($s.rc == 0, "upgrade fixture installs")
+  $dir = $s.root .. "/renamed"
+  $rec = $s.desired.templates.renamed
+  check($rec.digest == hash_sha256(read_file($dir .. "/scene.mix")) and $rec.template == "alpha", "record uses rewritten bytes and template identity")
+  $before_state = state_bytes($s)
+  $s = $l.request($s, "upgrade", {})
+  check($s.rc == 0 and state_bytes($s) == $before_state and len(ls($s.root .. "/.recovery")) == 0, "unchanged upgrade is a no-op")
+  write_file($dir .. "/settings.conf.mix", "{value:99}\n")
+  $before_scene = read_file($dir .. "/scene.mix")
+  write_file($ut .. "/alpha/scene.mix", replace(read_file($ut .. "/alpha/scene.mix"), "hello", "updated"))
+  $s = $l.request($s, "upgrade", {})
+  $backups = ls($s.root .. "/.recovery")
+  check($s.rc == 0 and contains(read_file($dir .. "/scene.mix"), "updated"), "untouched code refreshes")
+  check(read_file($dir .. "/settings.conf.mix") == "{value:99}\n" and len($backups) == 1 and read_file($s.root .. "/.recovery/" .. $backups[0] .. "/scene.mix") == $before_scene, "settings-only edit survives refresh with original backup")
+  write_file($dir .. "/assets/icon", "custom icon")
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and read_file($dir .. "/assets/icon") == "custom icon", "edited asset is flagged and retained")
+  write_file($dir .. "/assets/icon", "icon")
+  $s.desired.templates = {}
+  $s = $l.persist($s)
+  $s = $l.request($s, "upgrade", {})
+  check($s.desired.templates.renamed != nil and not $s.response.scenes[0].stale, "equal unrecorded copy is enrolled")
+  $s.desired.templates = {}
+  $s = $l.persist($s)
+  write_file($dir .. "/behaviour.mix", "-- local code\n")
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and $s.desired.templates.renamed == nil and read_file($dir .. "/behaviour.mix") == "-- local code\n", "unequal unrecorded copy is retained for review")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  check($s.rc == 0 and $s.desired.templates.renamed != nil, "reset records new baseline")
+  write_file($ut .. "/alpha/behaviour.mix", read_file($ut .. "/alpha/behaviour.mix") .. "-- new template\n")
+  $host_state.upgrade_open = true
+  $s = $l.request($s, "upgrade", {})
+  check($s.response.scenes[0].stale and $s.upgrades.renamed.error_code == "SCENES_EDITOR_OPEN" and not contains(read_file($dir .. "/behaviour.mix"), "new template"), "open editor buffer refuses refresh")
+  $host_state.upgrade_open = false
+  $host_state.upgrade_edit = true
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.renamed.error_code == "SCENES_EDITED" and contains(read_file($dir .. "/behaviour.mix"), "racing editor save"), "digest rechecked after guard under writer lock")
+  $s = $l.request($s, "reset", {name:"renamed"})
+  for $i = 1 to 19
+    mkdir($s.root .. "/.recovery/old-" .. to_string($i))
+  end
+  $s = $l.request($s, "reset", {name:"renamed"})
+  check($s.rc == 0 and len(ls($s.root .. "/.recovery")) == 16 and is_dir($s.response.recovery), "recovery cap retains latest reset backup")
+  $helpers = require("../../../share/scenes/editor/lib.mix")
+  check($helpers.scene_state({stale:true}).status == "template updated", "Scene Editor marks stale copies")
 
   check(tree_digest($tpl .. "/editor") == $shipped_digest, "the loader never writes the shipped editor")
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")

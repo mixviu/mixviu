@@ -706,6 +706,7 @@
     {name:"quoin.reload", owner:"viud", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"scenes.remove", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
     {name:"scenes.reset", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
+    {name:"scenes.upgrade", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
     {name:"scenes.templates", owner:"viud", version:"0.2.5", status:"accepted", class:"query", schema:"none"},
     {name:"scenes.toggle", owner:"viud", version:"0.2.5", status:"accepted", class:"intent", schema:"none"},
     {name:"shell.scene.load", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},
@@ -1192,6 +1193,11 @@
     },
     "reply": "{name:string,recovery?:string}",
     "source": "engines/viud/scripts/lib/scenes.mix:2083"
+  },
+  "scenes.upgrade": {
+    "params": {},
+    "reply": "{scenes:list,editor:map,state_ok:bool}",
+    "source": "engines/viud/scripts/lib/scenes.mix"
   },
   "scenes.open": {
     "params": {

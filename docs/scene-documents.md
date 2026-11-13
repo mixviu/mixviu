@@ -37,6 +37,23 @@ hidden, recommended, numeric order and string-list requires; it reports
 installed_as. Requires is display metadata. Other metadata keys are not a
 generic settings contract. (`engines/viud/scripts/lib/scenes.mix:1565`.)
 
+On install and reset, the optional `templates` map in `state.conf.mix`
+records template identity and SHA-256 digests of the rewritten staged files.
+Loader startup and `scenes.upgrade {}` reconcile recorded origins. Unedited
+copies refresh through the reset transaction, preserving `settings.conf.mix`
+and a recovery backup. Settings are excluded from edit detection. Helpers
+and assets are included. Forks and scenes without a shipped origin remain
+user-owned.
+
+An unrecorded copy is enrolled only when it equals the freshly staged
+template. Other unrecorded or edited copies remain in place and inventory
+reports `stale: true` with an `upgrade` comparison/reason. Scene Editor marks
+these as "template updated: Reset or Keep"; keeping the copy requires no
+action. Close Ced buffers for a copy before refreshing it. The loader checks
+for open buffers and rechecks disk digests after staging under its writer
+lock. Recovery retains at most 16 completed backups across scenes, newest
+first, while protecting unfinished transaction backups.
+
 ## Document grammar
 
 Minimal document (the outer four-backtick fence here is documentation only):
