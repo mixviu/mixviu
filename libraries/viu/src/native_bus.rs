@@ -589,6 +589,8 @@ impl Bridge {
         command: &str,
         args: &MixValue,
     ) -> MixResult<(i32, MixValue, MixValue)> {
+        #[cfg(test)]
+        eprintln!("bridge call {target} {command}");
         let raw = crate::runtime::to_json(args)?["reply_mode"] == "raw";
         let native = match self.native() {
             Ok(native) => native,
@@ -718,6 +720,8 @@ impl BusHandler for Bridge {
         Box::pin(async { None })
     }
     fn subscribe_topic<'a>(&'a self, topic: &'a str) -> BusFuture<'a, MixResult<()>> {
+        #[cfg(test)]
+        eprintln!("bridge subscribe {topic}");
         Box::pin(async move { self.native()?.subscribe_topic(topic).await.map_err(failure) })
     }
     fn unsubscribe_topic<'a>(&'a self, topic: &'a str) -> BusFuture<'a, MixResult<()>> {

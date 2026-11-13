@@ -20,7 +20,7 @@ fn workshop_answers_during_discovery() {
     let mut gone = false;
     while start.elapsed() < Duration::from_secs(18) {
         let c = caller.clone();
-        let ping = rt.spawn(async move { c.call_with_headers_raw_within("workshop", "workshop.ping", &BTreeMap::new(), "{}", Duration::from_secs(1)).await });
+        let ping = rt.spawn(async move { tokio::time::timeout(Duration::from_secs(1), c.call_with_headers_raw_within("workshop", "workshop.ping", &BTreeMap::new(), "{}", Duration::from_secs(1))).await });
         let end = Instant::now() + Duration::from_secs(2);
         while !ping.is_finished() {
             ctx.run_ui(egui::RawInput::default(), |ui| host.pump(ui.ctx())).drop_without_applying_deltas();
@@ -30,7 +30,7 @@ fn workshop_answers_during_discovery() {
         }
         let result = rt.block_on(ping).unwrap();
         if start.elapsed() > Duration::from_secs(2) {
-            assert_eq!(result.unwrap().0, 0, "ping must remain available");
+            assert_eq!(result.unwrap().unwrap().0, 0, "ping must remain available");
         }
         if !gone && start.elapsed() > Duration::from_secs(1) {
             rt.block_on(peers[0].close());
