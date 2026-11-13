@@ -46,6 +46,8 @@ end
         "video.webm",
         "report.pdf",
         ".txt",
+        ".hidden.txt",
+        "trailing.",
     ]
     .iter()
     .enumerate()

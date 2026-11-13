@@ -36,7 +36,7 @@ impl Drop for Owned {
 
 #[test]
 #[ignore = "requires CBC-built viu, mix and mixd beside the test binaries"]
-fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
+fn headless_term_default_and_override_attach_and_exit_after_last_tab_reply() {
     let broker = test_broker::Broker::start();
     let root = tempfile::tempdir().unwrap();
     let bin = std::env::current_exe()
@@ -78,9 +78,9 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
                 "--service",
                 service,
                 "--title",
-                "Term (Mix)",
+                "Term",
                 "--app-id",
-                "mixviu.term-mix",
+                "mixviu.term-test",
             ]);
         }
         Owned(
@@ -105,7 +105,7 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
                 .unwrap(),
         )
     };
-    let mut mix = launch(Some("term-mix"), "mix-home");
+    let mut mix = launch(Some("term-test"), "mix-home");
     let mut default = launch(None, "default-home");
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -119,7 +119,7 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
         else {
             panic!("verified ingress required")
         };
-        for service in ["term-mix", "term"] {
+        for service in ["term-test", "term"] {
             let start = Instant::now();
             let help = loop {
                 if let Ok((0, value)) = call(caller.client(), service, "HELP", json!({})).await {
@@ -148,6 +148,15 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
             .unwrap();
             assert_eq!(rc, 0);
             assert!(tabs.as_str().unwrap().contains("child_pid="), "{tabs}");
+            let (rc, _) = call(
+                caller.client(),
+                service,
+                &format!("{service}.type"),
+                json!({"pane":1,"instance":0,"text":"stale"}),
+            )
+            .await
+            .unwrap();
+            assert_ne!(rc, 0, "stale process token must reject input");
             let (rc, _) = call(
                 caller.client(),
                 service,
@@ -181,8 +190,8 @@ fn headless_term_mix_coexists_attaches_and_exits_after_last_tab_reply() {
         }
         let (rc, _) = call(
             caller.client(),
-            "term-mix",
-            "term-mix.tab.close",
+            "term-test",
+            "term-test.tab.close",
             json!({"id":1}),
         )
         .await
