@@ -171,7 +171,12 @@ impl Authority {
         if global {
             base.retain(|path, _| registry::retired_panel_key(path));
         }
-        let resets: Vec<String> = request.reset.iter().filter(|path| *path != "*").cloned().collect();
+        let resets: Vec<String> = request
+            .reset
+            .iter()
+            .filter(|path| *path != "*")
+            .cloned()
+            .collect();
         let mut next = registry::apply(&base, &request.changes, &resets).map_err(diagnostics)?;
         for (path, value) in &self.accepted.values {
             if registry::retired_panel_key(path) {
