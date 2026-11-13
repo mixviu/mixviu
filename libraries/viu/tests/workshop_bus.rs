@@ -1,29 +1,60 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Real owner, evaluator, Jobs and private noded. No display or agent service.
 #![cfg(feature = "test-support")]
-use std::{collections::BTreeMap, sync::Arc, time::{Duration, Instant}};
 use serde_json::{Value, json};
-use viu::{bundle::Bundle, app_host::test_support::Harness};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use viu::{app_host::test_support::Harness, bundle::Bundle};
 
 struct RefuseJobs(Arc<std::sync::atomic::AtomicUsize>);
 impl mix::BusHandler for RefuseJobs {
-    fn send<'a>(&'a self, target: &'a str, command: &'a str, _: &'a mix::value::Value) -> mix::evaluator::BusFuture<'a,mix::MixResult<(i32,mix::value::Value)>> {
+    fn send<'a>(
+        &'a self,
+        target: &'a str,
+        command: &'a str,
+        _: &'a mix::value::Value,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<(i32, mix::value::Value)>> {
         Box::pin(async move {
-            assert_eq!((target,command),("viu-local","jobs.start"));
-            self.0.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
-            Ok((10,viu::runtime::from_json(json!({"error_code":"BUSY"}))?))
+            assert_eq!((target, command), ("viu-local", "jobs.start"));
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok((10, viu::runtime::from_json(json!({"error_code":"BUSY"}))?))
         })
     }
-    fn emit<'a>(&'a self,_: &'a str,_: &'a str,_: &'a mix::value::Value)->mix::evaluator::BusFuture<'a,mix::MixResult<()>> { Box::pin(async { Ok(()) }) }
-    fn port_exists<'a>(&'a self,_: &'a str)->mix::evaluator::BusFuture<'a,mix::MixResult<bool>> { Box::pin(async { Ok(true) }) }
-    fn next_incoming<'a>(&'a self)->mix::evaluator::BusFuture<'a,Option<mix::evaluator::IncomingEvent>> { Box::pin(async { None }) }
+    fn emit<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: &'a mix::value::Value,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn port_exists<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> mix::evaluator::BusFuture<'a, mix::MixResult<bool>> {
+        Box::pin(async { Ok(true) })
+    }
+    fn next_incoming<'a>(
+        &'a self,
+    ) -> mix::evaluator::BusFuture<'a, Option<mix::evaluator::IncomingEvent>> {
+        Box::pin(async { None })
+    }
 }
 
 #[test]
 fn job_admission_refusals_back_off_then_report_failure_once() {
-    let calls=Arc::new(std::sync::atomic::AtomicUsize::new(0));let observed=calls.clone();
-    let mut runtime=viu::runtime::Runtime::new(4,Arc::new(||{}),Some(Box::new(move||std::rc::Rc::new(RefuseJobs(observed)))));
-    let path=std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop/admission-probe.mix");
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = calls.clone();
+    let mut runtime = viu::runtime::Runtime::new(
+        4,
+        Arc::new(|| {}),
+        Some(Box::new(move || std::rc::Rc::new(RefuseJobs(observed)))),
+    );
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/workshop/discovery-test.mix");
     runtime.load(viu::runtime::Program {path,scene:"admission".into(),citizen:"admission".into(),source:r#"
 $m=require("model.mix");$w=require("work.mix");$c=require("controller.mix")
 $s=$m.initial();$s=$w.enqueue($s,{owner:"subscription",op:"subscribe",topic:"test",lane:"subscription"})
@@ -42,9 +73,17 @@ if len($s.jobs)!=0 or len($s.admission_failures)!=0 then raise("TEST","failed ow
 for $i=0 to 9 $s=$c.follow_up($s) end
 print("PASS")
 "#.into() }).unwrap();
-    let end=Instant::now()+Duration::from_secs(10);
-    loop { if let Some(done)=runtime.try_completion() {assert!(done.error.is_none(),"{:?}",done.error);assert!(done.stdout.contains("PASS"));break} assert!(Instant::now()<end);std::thread::sleep(Duration::from_millis(2)); }
-    assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed),3);
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(done) = runtime.try_completion() {
+            assert!(done.error.is_none(), "{:?}", done.error);
+            assert!(done.stdout.contains("PASS"));
+            break;
+        }
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 3);
 }
 
 fn fixture(url: &str) -> (tempfile::TempDir, Harness) {
@@ -77,76 +116,164 @@ on workshop.clicked $clicks=$clicks+1;reply(0,"{}") end
     bundle.manifest.bus_url = Some(url.into());
     bundle.launch = json!({"headless":true});
     let mut host = Harness::new(bundle);
-    let end = Instant::now()+Duration::from_secs(5);
-    while !host.ready() { host.pump(); assert!(Instant::now()<end); }
+    let end = Instant::now() + Duration::from_secs(5);
+    while !host.ready() {
+        host.pump();
+        assert!(Instant::now() < end);
+    }
     host.windowed();
     (dir, host)
 }
 
-fn request(rt: &tokio::runtime::Runtime, caller: &Arc<bus::SupervisedClient>, command: &str, body: Value)
-    -> tokio::task::JoinHandle<(u8, Value)> {
-    let c=caller.clone();let command=command.to_owned();
+fn request(
+    rt: &tokio::runtime::Runtime,
+    caller: &Arc<bus::SupervisedClient>,
+    command: &str,
+    body: Value,
+) -> tokio::task::JoinHandle<(u8, Value)> {
+    let c = caller.clone();
+    let command = command.to_owned();
     rt.spawn(async move {
-        let (rc, body, _) = c.call_with_headers_raw_within("workshop", &command, &BTreeMap::new(), &body.to_string(), Duration::from_secs(10)).await.unwrap();
-        (rc,serde_json::from_str(&body).unwrap())
+        let (rc, body, _) = c
+            .call_with_headers_raw_within(
+                "workshop",
+                &command,
+                &BTreeMap::new(),
+                &body.to_string(),
+                Duration::from_secs(10),
+            )
+            .await
+            .unwrap();
+        (rc, serde_json::from_str(&body).unwrap())
     })
 }
-fn pump_until(host: &mut Harness, ready: impl Fn(&Harness)->bool) {
-    let end=Instant::now()+Duration::from_secs(5);
-    while !ready(host) { host.pump(); assert!(host.error().is_empty(),"{}",host.error());assert!(Instant::now()<end,"held {:?}",host.held());std::thread::sleep(Duration::from_millis(2)); }
+fn pump_until(host: &mut Harness, ready: impl Fn(&Harness) -> bool) {
+    let end = Instant::now() + Duration::from_secs(5);
+    while !ready(host) {
+        host.pump();
+        assert!(host.error().is_empty(), "{}", host.error());
+        assert!(Instant::now() < end, "held {:?}", host.held());
+        std::thread::sleep(Duration::from_millis(2));
+    }
 }
 
 #[test]
 fn ordering_keeps_drive_fences_and_only_read_queries_bypass_undrawn_work() {
-    let broker=test_broker::Broker::start();
-    let rt=tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
-    let caller=Arc::new(rt.block_on(bus::SupervisedClient::connect_options("ordering-caller",&broker.url).connect()).unwrap());
-    let (_dir,mut host)=fixture(&broker.url);
+    let broker = test_broker::Broker::start();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let caller = Arc::new(
+        rt.block_on(
+            bus::SupervisedClient::connect_options("ordering-caller", &broker.url).connect(),
+        )
+        .unwrap(),
+    );
+    let (_dir, mut host) = fixture(&broker.url);
     // A held, unplanned click must not stop a declared read-only ping, but
     // mutators, window commands and geometry queries keep the earlier order.
-    let click=request(&rt,&caller,"workshop.ui.click",json!({"label":"Target"}));
-    pump_until(&mut host,|h|h.held().contains(&"workshop.ui.click".into()));
-    let mutation=request(&rt,&caller,"workshop.mutate",json!({}));
-    let resize=request(&rt,&caller,"workshop.window",json!({"action":"resize","width":800,"height":600}));
-    let window_state=request(&rt,&caller,"workshop.window.state",json!({}));
-    let state=request(&rt,&caller,"viu.state",json!({}));
-    assert_eq!(call(&mut host,&rt,&caller,"workshop.ping").1["mutations"],0);
-    pump_until(&mut host,|h|h.held().len()>=5);
-    assert!(!mutation.is_finished() && !resize.is_finished() && !state.is_finished() && !window_state.is_finished());
+    let click = request(&rt, &caller, "workshop.ui.click", json!({"label":"Target"}));
+    pump_until(&mut host, |h| {
+        h.held().contains(&"workshop.ui.click".into())
+    });
+    let mutation = request(&rt, &caller, "workshop.mutate", json!({}));
+    let resize = request(
+        &rt,
+        &caller,
+        "workshop.window",
+        json!({"action":"resize","width":800,"height":600}),
+    );
+    let window_state = request(&rt, &caller, "workshop.window.state", json!({}));
+    let state = request(&rt, &caller, "viu.state", json!({}));
+    assert_eq!(
+        call(&mut host, &rt, &caller, "workshop.ping").1["mutations"],
+        0
+    );
+    pump_until(&mut host, |h| h.held().len() >= 5);
+    assert!(
+        !mutation.is_finished()
+            && !resize.is_finished()
+            && !state.is_finished()
+            && !window_state.is_finished()
+    );
     // Draw enough to plan the click, then deliberately stop drawing during
     // its two-pass input: even ping must wait for that self-bounded fence.
-    let end=Instant::now()+Duration::from_secs(5);
-    while !toolkit::drive::pending(&host.ctx) { host.draw();host.pump();assert!(Instant::now()<end); }
-    let ping=request(&rt,&caller,"workshop.ping",json!({}));
-    pump_until(&mut host,|h|h.held().contains(&"workshop.ping".into()));
+    let end = Instant::now() + Duration::from_secs(5);
+    while !toolkit::drive::pending(&host.ctx) {
+        host.draw();
+        host.pump();
+        assert!(Instant::now() < end);
+    }
+    let ping = request(&rt, &caller, "workshop.ping", json!({}));
+    pump_until(&mut host, |h| h.held().contains(&"workshop.ping".into()));
     assert!(!ping.is_finished() && !mutation.is_finished() && !resize.is_finished());
-    let end=Instant::now()+Duration::from_secs(5);
-    while !mutation.is_finished() || !state.is_finished() || !click.is_finished() || !resize.is_finished() || !window_state.is_finished() || !ping.is_finished() {
-        host.draw();host.pump();assert!(Instant::now()<end,"held {:?}",host.held());
+    let end = Instant::now() + Duration::from_secs(5);
+    while !mutation.is_finished()
+        || !state.is_finished()
+        || !click.is_finished()
+        || !resize.is_finished()
+        || !window_state.is_finished()
+        || !ping.is_finished()
+    {
+        host.draw();
+        host.pump();
+        assert!(Instant::now() < end, "held {:?}", host.held());
         std::thread::sleep(Duration::from_millis(2));
     }
-    assert_eq!(rt.block_on(click).unwrap().0,0);
-    let changed=rt.block_on(mutation).unwrap();assert_eq!(changed.0,0);assert_eq!(changed.1["clicks"],1);
-    let geometry=rt.block_on(state).unwrap();assert_eq!(geometry.0,0);
-    assert_eq!(geometry.1["revision"],host.state()["revision"]);
-    assert_eq!(geometry.1["geometry"],host.state()["geometry"]);
-    assert_eq!(rt.block_on(window_state).unwrap().0,0);
+    assert_eq!(rt.block_on(click).unwrap().0, 0);
+    let changed = rt.block_on(mutation).unwrap();
+    assert_eq!(changed.0, 0);
+    assert_eq!(changed.1["clicks"], 1);
+    let geometry = rt.block_on(state).unwrap();
+    assert_eq!(geometry.0, 0);
+    assert_eq!(geometry.1["revision"], host.state()["revision"]);
+    assert_eq!(geometry.1["geometry"], host.state()["geometry"]);
+    assert_eq!(rt.block_on(window_state).unwrap().0, 0);
     // Resize may be refused by the native command; admission must still wait.
-    let _=rt.block_on(resize).unwrap();let _=rt.block_on(ping).unwrap();
+    let _ = rt.block_on(resize).unwrap();
+    let _ = rt.block_on(ping).unwrap();
     rt.block_on(caller.close());
 }
 
 #[test]
 fn restoring_the_old_draw_barrier_times_out_ping() {
-    let broker=test_broker::Broker::start();
-    let rt=tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
-    let caller=Arc::new(rt.block_on(bus::SupervisedClient::connect_options("negative-caller",&broker.url).connect()).unwrap());
-    let (_dir,mut host)=fixture(&broker.url);host.legacy_draw_barrier();
-    let c=caller.clone();
-    let ping=rt.spawn(async move { c.call_with_headers_raw_within("workshop","workshop.ping",&BTreeMap::new(),"{}",Duration::from_millis(200)).await });
-    let end=Instant::now()+Duration::from_secs(2);
-    while !ping.is_finished() { host.pump();assert!(Instant::now()<end);std::thread::sleep(Duration::from_millis(2)); }
-    assert!(rt.block_on(ping).unwrap().is_err(),"old barrier must break ping");
+    let broker = test_broker::Broker::start();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let caller = Arc::new(
+        rt.block_on(
+            bus::SupervisedClient::connect_options("negative-caller", &broker.url).connect(),
+        )
+        .unwrap(),
+    );
+    let (_dir, mut host) = fixture(&broker.url);
+    host.legacy_draw_barrier();
+    let c = caller.clone();
+    let ping = rt.spawn(async move {
+        c.call_with_headers_raw_within(
+            "workshop",
+            "workshop.ping",
+            &BTreeMap::new(),
+            "{}",
+            Duration::from_millis(200),
+        )
+        .await
+    });
+    let end = Instant::now() + Duration::from_secs(2);
+    while !ping.is_finished() {
+        host.pump();
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        rt.block_on(ping).unwrap().is_err(),
+        "old barrier must break ping"
+    );
     rt.block_on(caller.close());
 }
 

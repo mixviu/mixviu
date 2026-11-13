@@ -160,6 +160,7 @@ impl Host {
             request
                 .command
                 .strip_prefix(&format!("{}.", self.app))
+                .or_else(|| request.command.strip_prefix("viu."))
                 .is_some_and(|command| command == "ui.click")
         })
     }
@@ -1192,8 +1193,8 @@ impl Host {
                 break;
             }
             let undrawn = self.ready && !self.headless && !self.view.current_revision_drawn();
-            let queued_click = self.queued_click()
-                && (!self.inflight.is_empty() || !self.drive_geometry_stable);
+            let queued_click =
+                self.queued_click() && (!self.inflight.is_empty() || !self.drive_geometry_stable);
             let mut earlier_held = false;
             let position = self.held_requests.iter().position(|request| {
                 let command = request
@@ -1203,7 +1204,8 @@ impl Host {
                     .unwrap_or(&request.command);
                 let geometry = toolkit::drive::COMMANDS.contains(&command)
                     || request.command == "viu.state"
-                    || request.command.starts_with("viu.ui.") || command == "capture";
+                    || request.command.starts_with("viu.ui.")
+                    || command == "capture";
                 let bypass = self.read_only.contains(&request.command) && !geometry;
                 #[cfg(feature = "test-support")]
                 let bypass = bypass && !self.legacy_draw_barrier;
@@ -1786,29 +1788,59 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let descriptors: Vec<bus::CommandDescriptor> = {
         let mut described = bundle.manifest.command_descriptors.clone();
         for entry in bundle.manifest.command_metadata.iter().chain(
-            facilities.surface.as_ref().and_then(|s| s["commands"].as_array()).into_iter().flatten()) {
+            facilities
+                .surface
+                .as_ref()
+                .and_then(|s| s["commands"].as_array())
+                .into_iter()
+                .flatten(),
+        ) {
             described.push(bus::CommandDescriptor {
                 name: entry["name"].as_str().unwrap().into(),
-                args: entry["args"].as_object().map(|a| a.keys().cloned().collect()).unwrap_or_default(),
+                args: entry["args"]
+                    .as_object()
+                    .map(|a| a.keys().cloned().collect())
+                    .unwrap_or_default(),
                 description: entry["description"].as_str().unwrap_or("").into(),
                 read_only: entry["read_only"] == true,
             });
         }
         let mut native = Vec::new();
-        if bundle.manifest.native_drive { native.extend(toolkit::drive::describe(&bundle.manifest.service)); }
-        if bundle.manifest.macros { native.extend(macros::commands::describe(&bundle.manifest.service)); }
+        if bundle.manifest.native_drive {
+            native.extend(toolkit::drive::describe(&bundle.manifest.service));
+        }
+        if bundle.manifest.macros {
+            native.extend(macros::commands::describe(&bundle.manifest.service));
+        }
         for value in native {
             described.push(bus::CommandDescriptor {
                 name: value["name"].as_str().unwrap().into(),
-                args: value["args"].as_object().map(|a| a.keys().cloned().collect()).unwrap_or_default(),
+                args: value["args"]
+                    .as_object()
+                    .map(|a| a.keys().cloned().collect())
+                    .unwrap_or_default(),
                 description: value["description"].as_str().unwrap_or("").into(),
                 read_only: value["read_only"] == true,
             });
         }
-        commands.into_iter().map(|name| described.iter().find(|d| d.name == name).cloned()
-            .unwrap_or_else(|| bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false))).collect()
+        commands
+            .into_iter()
+            .map(|name| {
+                described
+                    .iter()
+                    .find(|d| d.name == name)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        bus::CommandDescriptor::new(&name, &[], "Mix bundle command", false)
+                    })
+            })
+            .collect()
     };
-    let read_only = descriptors.iter().filter(|d| d.read_only).map(|d| d.name.clone()).collect();
+    let read_only = descriptors
+        .iter()
+        .filter(|d| d.read_only)
+        .map(|d| d.name.clone())
+        .collect();
     let bus = if !bundle.manifest.bus {
         Endpoint::offline()
     } else {
@@ -2335,27 +2367,62 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
 #[doc(hidden)]
 pub mod test_support {
     use super::*;
-    pub struct Harness { host: Host, pub ctx: egui::Context }
+    pub struct Harness {
+        host: Host,
+        pub ctx: egui::Context,
+    }
     impl Harness {
         pub fn new(bundle: Bundle) -> Self {
             let ctx = egui::Context::default();
             crate::appearance::install(&ctx);
             toolkit::drive::install(&ctx, bundle.manifest.app());
-            Self { host: create(bundle, Arc::new(|| {})), ctx }
+            Self {
+                host: create(bundle, Arc::new(|| {})),
+                ctx,
+            }
         }
         pub fn pump(&mut self) {
-            self.ctx.run_ui(egui::RawInput::default(), |ui| self.host.pump(ui.ctx())).drop_without_applying_deltas();
+            self.host.pump(&self.ctx);
         }
         pub fn draw(&mut self) {
-            self.ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1100.,760.))), ..Default::default() }, |ui| self.host.frame(ui)).drop_without_applying_deltas();
+            self.ctx
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1100., 760.),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| self.host.frame(ui),
+                )
+                .drop_without_applying_deltas();
         }
-        pub fn ready(&self) -> bool { self.host.ready && self.host.bus.client().is_some() }
-        pub fn windowed(&mut self) { self.host.headless = false; }
-        pub fn legacy_draw_barrier(&mut self) { self.host.legacy_draw_barrier = true; }
-        pub fn error(&self) -> &str { &self.host.error }
-        pub fn held(&self) -> Vec<String> { self.host.held_requests.iter().map(|r| r.command.clone()).collect() }
-        pub fn drawn(&self) -> bool { self.host.view.current_revision_drawn() }
-        pub fn state(&self) -> Value { self.host.state() }
+        pub fn ready(&self) -> bool {
+            self.host.ready && self.host.bus.client().is_some()
+        }
+        pub fn windowed(&mut self) {
+            self.host.headless = false;
+        }
+        pub fn legacy_draw_barrier(&mut self) {
+            self.host.legacy_draw_barrier = true;
+        }
+        pub fn error(&self) -> &str {
+            &self.host.error
+        }
+        pub fn held(&self) -> Vec<String> {
+            self.host
+                .held_requests
+                .iter()
+                .map(|r| r.command.clone())
+                .collect()
+        }
+        pub fn drawn(&self) -> bool {
+            self.host.view.current_revision_drawn()
+        }
+        pub fn state(&self) -> Value {
+            self.host.state()
+        }
     }
 }
 
