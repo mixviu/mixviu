@@ -19,19 +19,20 @@ pub fn initial_mode() -> Result<InitialOutput, Box<dyn std::error::Error>> {
     let discovered = kms::mode::offscreen::discover(&config.render_node, &config.scanout_node);
     if let Ok(size) = std::env::var("MIX_VIUD_OFFSCREEN_SIZE") {
         return crate::cli::parse_size(&size)
-            .map(|size| {
-                InitialOutput {
-                    mode: smithay::output::Mode {
-                        size: size.into(),
-                        refresh: discovered.as_ref().map_or(60_000, |(mode, _)| mode.refresh),
-                    },
-                    output: discovered.map(|(_, output)| output),
-                }
+            .map(|size| InitialOutput {
+                mode: smithay::output::Mode {
+                    size: size.into(),
+                    refresh: discovered.as_ref().map_or(60_000, |(mode, _)| mode.refresh),
+                },
+                output: discovered.map(|(_, output)| output),
             })
             .map_err(Into::into);
     }
     if let Some((mode, output)) = discovered {
-        return Ok(InitialOutput { mode, output: Some(output) });
+        return Ok(InitialOutput {
+            mode,
+            output: Some(output),
+        });
     }
     use render_gles::preference::output::profile::{self, ModeRequest};
     let mode = profile::get()
