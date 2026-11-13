@@ -606,8 +606,8 @@ tools/prefs_panel_check.mix. Desktop visual acceptance remains separate.
 Direct settingsd writes to every shell.panels.top.* key are retired and
 refused with retired_key, including null changes. The catalogue marks the
 top capture inactive and names the scene commands. Historical values remain
-readable for migration/downgrade; explicit resets only clean up that stored
-legacy state and do not control the panel. Preferences keeps two action
+readable for migration/downgrade; targeted resets and null changes are also
+refused, so they cannot be mistaken for panel commands. Preferences keeps two action
 aliases, enabled and edge: these operate through scenes, never settingsd.
 They share core.admitted state, class and type/enum checks with stored
 settings. Their scene schema replaces settingsd mutation validation and CAS,

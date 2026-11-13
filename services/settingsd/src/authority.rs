@@ -149,10 +149,11 @@ impl Authority {
     /// The values `request` would leave, through the registry's one write.
     fn patched(&self, request: &ApplyRequest) -> Result<registry::Values, Value> {
         // Retain old values for load/downgrade, but never acknowledge a dead
-        // panel edit. Explicit reset remains available to clean up old state.
+        // panel edit, including a targeted reset or null-valued change.
         if let Some(path) = request
             .changes
             .keys()
+            .chain(request.reset.iter())
             .find(|path| path.starts_with("shell.panels.top."))
         {
             return Err(json!({"status":"validation_failed", "diagnostics":[{

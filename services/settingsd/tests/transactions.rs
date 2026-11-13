@@ -76,6 +76,20 @@ fn retired_top_panel_writes_are_described_and_refused_atomically() {
         assert_eq!(state.accepted.values, before);
         assert_eq!(state.accepted.revision, revision);
     }
+    for reset in ["shell.panels.top.enabled", "shell.panels.top.*"] {
+        let mut edit = request(&state, "dead-panel-reset", "light");
+        edit.reset.push(reset.into());
+        assert_eq!(
+            state.validate(&edit).unwrap_err()["diagnostics"][0]["code"],
+            "retired_key"
+        );
+        assert_eq!(
+            state.apply(edit).unwrap_err()["diagnostics"][0]["code"],
+            "retired_key"
+        );
+        assert_eq!(state.accepted.values, before);
+        assert_eq!(state.accepted.revision, revision);
+    }
 }
 
 #[test]

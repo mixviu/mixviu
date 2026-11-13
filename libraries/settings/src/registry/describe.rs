@@ -193,7 +193,7 @@ pub fn describe_key(def: &KeyDef) -> Value {
     if def.path.starts_with("shell.panels.<panel>.") {
         out.insert("inactive_captures".into(), json!({"top": {
             "write": "refused", "owner": "scenes",
-            "reason": "Legacy top panel keys do not control the live panel. Use scenes.list, scenes.enable, scenes.disable and scenes.move for name panel. Resets only clean up stored legacy values."
+            "reason": "Legacy top panel keys do not control the live panel. Writes and targeted resets are refused. Use scenes.list, scenes.enable, scenes.disable and scenes.move for name panel."
         }}));
     }
     if let Some(when) = def.used_when {
