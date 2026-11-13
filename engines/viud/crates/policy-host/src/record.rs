@@ -35,6 +35,8 @@ struct Session {
     fps: u32,
     encoder: String,
     probe: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    probe_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    probe_join: Option<std::thread::JoinHandle<()>>,
     max_seconds: u64,
     recording: Option<Recording>,
     start: Option<Value>,
@@ -44,6 +46,12 @@ struct Session {
     signature: Vec<u64>,
     failed: Option<String>,
     last_state: Cell<&'static str>,
+}
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.probe_cancel.store(true, std::sync::atomic::Ordering::Release);
+        if let Some(join) = self.probe_join.take() { let _ = join.join(); }
+    }
 }
 thread_local! {
     static PAST: RefCell<std::collections::HashMap<String,Past>> = RefCell::new(std::collections::HashMap::new());
@@ -169,11 +177,14 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             }
         }
         let id = match recorder::bus::private_token() { Ok(token) => format!("record-{token}"), Err(error) => { answer(refused(&error)); return; } };
+        let probe_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut probe_join = None;
         let probe = if encoder == "vaapi" {
             let (tx, rx) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = tx.send(recorder::bus::probe_vaapi());
-            });
+            let cancel = probe_cancel.clone();
+            probe_join = Some(std::thread::spawn(move || {
+                let _ = tx.send(recorder::bus::probe_vaapi(&cancel));
+            }));
             Some(rx)
         } else {
             None
@@ -188,6 +199,8 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             fps,
             encoder,
             probe,
+            probe_cancel,
+            probe_join,
             max_seconds,
             recording: None,
             start: None,
@@ -249,8 +262,8 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         return;
     }
     match op {
-        RecordCommand::Status { .. } => answer(ControlReply::Body(
-            s.recording
+        RecordCommand::Status { .. } => {
+            let mut status = s.recording
                 .as_ref()
                 .map(Recording::status)
                 .unwrap_or_else(|| {
@@ -262,8 +275,10 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                         },
                         s.failed.as_deref(),
                     )
-                }),
-        )),
+                });
+            status["session"] = json!(s.id);
+            answer(ControlReply::Body(status));
+        },
         RecordCommand::Marker { label, data, .. } => answer(
             match s
                 .recording
@@ -303,6 +318,7 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
         return;
     }
     s.failed = Some(error.into());
+    s.probe_cancel.store(true, std::sync::atomic::Ordering::Release);
     for answer in std::mem::take(&mut s.start_answers) {
         answer(refused(error));
     }
@@ -340,6 +356,7 @@ mod tests {
             request_id: "pending".into(), admitted: Instant::now() - Duration::from_secs(2),
             id: "pending-session".into(), params, path: "/tmp/pending-record-unit.mkv".into(),
             targets: vec![], fps: 30, encoder: "x264".into(), probe: None, max_seconds: 1,
+            probe_cancel: Default::default(), probe_join: None,
             recording: None, start: None, start_answers: vec![Box::new(move |reply| { assert!(!matches!(reply, ControlReply::Body(_))); got.set(true); })],
             stop_answers: vec![], pending: true, signature: vec![], failed: None, last_state: Cell::new(""),
         }));

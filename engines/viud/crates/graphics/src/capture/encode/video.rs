@@ -351,8 +351,9 @@ impl VideoEncoder {
 }
 
 /// Called on a preflight worker thread, never on the compositor thread.
-pub fn probe_vaapi() -> Result<(), String> {
+pub fn probe_vaapi(cancel: &AtomicBool) -> Result<(), String> {
     let mut cmd = command("ffmpeg");
+    cmd.process_group(0);
     cmd.args(["-hide_banner", "-encoders"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -377,8 +378,8 @@ pub fn probe_vaapi() -> Result<(), String> {
                     Err("ffmpeg encoder probe failed".into())
                 };
             }
-            Err(error) => break Err(format!("ffmpeg encoder probe: {error}")),
-            _ if Instant::now() >= deadline => {
+            Err(error) => { kill_group(&mut child); let _ = child.wait(); break Err(format!("ffmpeg encoder probe: {error}")); },
+            _ if Instant::now() >= deadline || cancel.load(Ordering::Acquire) => {
                 kill_group(&mut child);
                 let _ = child.wait();
                 break Err("ffmpeg encoder probe timed out".into());
