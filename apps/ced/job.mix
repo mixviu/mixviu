@@ -104,7 +104,7 @@ on job.run
     end
     reply(0,json_encode({path:$a.request.path,tabs:map($a.documents,fn($d)=to_number($d)),shown:$shown,stale:$stale}));return
   elif $job.kind=="show" then
-    $service=$a.comp ?? env("MIX_COMP_SERVICE") ?? "comp"
+    $service=$a.comp ?? env("MIX_COMP_SERVICE","comp")
     $out=$show.perform($a.app_id ?? "mixviu.ced",pid(),fn($command,$body)=compositor($service,$command,$body),port_exists($service))
     reply($out.rc,json_encode($out.body));return
   elif $job.kind=="find" then

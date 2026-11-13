@@ -194,6 +194,9 @@ end
 on test.job
   $state.running["status-test"]={id:"status-test",kind:$event.args.kind ?? "show",payload:{}}
 end
+on test.launch
+  $state.launch=$event.args
+end
 "#,
         );
         let docs = viu::documents::Documents::default();
@@ -267,7 +270,7 @@ fn job_notice_is_readable_retains_diagnostics_and_clears_on_success() {
     assert_eq!(state["status"], "Failed: Cannot focus the window.");
     assert_eq!(state["last_job_error"]["body"], error);
     app.answered("test.job", json!({"kind":"notify"}));
-    app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"notify","payload":{}}},"rc":0,"body":{"fallback":false}}));
+    app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"notify","payload":{}}},"rc":0,"body":{"fallback":true,"text":"Unrelated notification"}}));
     let (_, state) = app.answered("ced.specimen", json!({}));
     assert_eq!(state["status"], "Failed: Cannot focus the window.");
     assert_eq!(state["last_job_error"]["body"], error);
@@ -288,6 +291,20 @@ fn non_map_job_failures_keep_diagnostics_and_use_plain_fallback() {
         assert_eq!(state["status"], "Failed: The operation failed.");
         assert_eq!(state["last_job_error"]["body"], body);
     }
+}
+
+#[test]
+fn show_forwards_launch_identity_and_holds_past_the_worker_budget() {
+    let mut app = App::new();
+    app.answered("test.launch",json!({"app_id":"example.ced","comp":"comp-status-test"}));
+    let mut pending=app.command("ced.show",json!({}));
+    assert!(pending.try_recv().is_err());
+    let (_,state)=app.answered("ced.specimen",json!({}));
+    let job=state["running"].as_object().unwrap().values().find(|j|j["kind"]=="show").unwrap();
+    assert_eq!(job["payload"]["app_id"],"example.ced");
+    assert_eq!(job["payload"]["comp"],"comp-status-test");
+    let held=state["waits"].as_object().unwrap().values().find(|w|w["kind"]=="job").unwrap();
+    assert!(held["timeout_ms"].as_u64().unwrap()>4*15_000,"hold must outlast all four sends");
 }
 
 #[test]

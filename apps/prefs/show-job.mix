@@ -1,9 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
+$show=require("../../libraries/viu/mix/window-show.mix")
 on job.run
   try
     $comp=$event.args.comp
-    if not port_exists($comp) then reply(0,json_encode({shown:false,reason:"compositor_unavailable"}));return end
+    if not port_exists($comp) then $out=$show.unavailable();reply($out.rc,json_encode($out.body));return end
     send $comp "comp.window.wait" body={match:{app_id:"dev.mixos.prefs"},until:"mapped",timeout_ms:10000} timeout=12
     if $rc!=0 then raise("SHOW",to_string($result)) end
     send $comp "comp.windows.list" body={} timeout=5
