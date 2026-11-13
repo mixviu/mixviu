@@ -15,6 +15,21 @@
 use smithay::backend::session::Session;
 use smithay::backend::session::libseat::{LibSeatSession, LibSeatSessionNotifier};
 
+/// Never wait on the compositor thread. A switch racing this attempt leaves
+/// the offscreen desk running until the next activation notification.
+pub fn try_create() -> Option<(LibSeatSession, LibSeatSessionNotifier)> {
+    if let Some(own) = crate::seat::session::vt_wait::own_vt()
+        && crate::seat::session::vt_wait::active_vt() != Some(own)
+    {
+        return None;
+    }
+    let (session, notifier) = LibSeatSession::new().expect("libseat session creation failed");
+    if crate::seat::session::vt_wait::own_vt().is_some() && !session.is_active() {
+        return None;
+    }
+    Some((session, notifier))
+}
+
 pub fn create() -> (LibSeatSession, LibSeatSessionNotifier) {
     let own_vt = crate::seat::session::vt_wait::own_vt();
     loop {

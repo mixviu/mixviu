@@ -443,7 +443,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut state,
                 &mut event_loop,
                 wayland_socket_name_default_subprocess,
-                cli.size.unwrap_or((3840, 2160)),
+                background::initial_mode()?,
                 cli::output_scale(&cli, cli::Backend::Kms).unwrap_or(1.0),
                 &e.render_node,
             )?);
@@ -577,7 +577,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // nested session still get the right values. Only launches from OUTSIDE it are
     // affected, and those wanting a nested session can say so per-invocation
     // (`WAYLAND_DISPLAY=wayland-2 app`) instead of a global mutation nothing unwinds.
-    if backend == cli::Backend::Kms {
+    if backend == cli::Backend::Kms && matches!(state.inner.status_session, world::state::StatusSession::Active) {
         world::environment::interface::lifecycle::announce_session(
             wayland_socket_name_default_subprocess_2.to_str().unwrap(),
             &environment.desktop_name,

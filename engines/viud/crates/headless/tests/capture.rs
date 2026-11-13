@@ -105,6 +105,30 @@ impl Bus {
 fn target(row: &Value) -> Value {
     json!({"id":row["id"],"generation":row["generation"]})
 }
+
+#[test]
+#[ignore = "needs a GPU render node and built viud (backend-native) and noded binaries"]
+fn inactive_seat_maps_clients_and_captures_output_and_window() {
+    let bus = Bus::start("inactive-seat");
+    let mut process = process::spawn_inactive("inactive-seat", &bus.url);
+    let mut pattern = Pattern::new(connect(&mut process));
+    bus.ready();
+    pattern.wait_callback(0);
+    let window = bus.window();
+    let session = bus.call("comp.session.get", json!({}));
+    assert_eq!(session["active"], false, "{session}");
+    for cursor in [false, true] {
+        for window in [None, Some(target(&window))] {
+            let path = process.root.join(format!("inactive-{cursor}-{}.ppm", window.is_some()));
+            let mut args = json!({"path":path,"format":"ppm","cursor":cursor});
+            if let Some(window) = window { args["window"] = window; }
+            else { args["output"] = json!("headless-0"); }
+            let reply = bus.call("comp.capture.frame", args);
+            assert_eq!(reply["source"], "offscreen", "{reply}");
+            assert!(fs::read(path).unwrap().starts_with(b"P6\n"));
+        }
+    }
+}
 fn place_args(row: &Value, extra: Value) -> Value {
     let mut args = target(row);
     args.as_object_mut()

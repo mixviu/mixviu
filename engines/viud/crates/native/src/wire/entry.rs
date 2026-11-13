@@ -45,6 +45,7 @@ pub fn wire(
     _wayland_socket_name: OsString,
     event_loop: &LoopHandle<'static, Loop>,
     existing_output: Option<smithay::output::Output>,
+    session: (smithay::backend::session::libseat::LibSeatSession, smithay::backend::session::libseat::LibSeatSessionNotifier),
 ) -> NativeHandles {
     info!("Backend initialization - Native");
 
@@ -56,6 +57,7 @@ pub fn wire(
             .inner
             .kernel
             .get(&render_gles::format::registrar::FORMATS),
+        session,
     );
     // The composite is GLES only. GLES consults no Vulkan device, so the `Render`
     // role has no renderable set to publish — SAY so rather than leaving it silent:
@@ -195,9 +197,7 @@ pub fn wire(
     // second tracker here would never be read. `initialize` is still called for
     // its side effects (output registration + EGL bind/registration); winit does
     // use the return value.
-    if reuse {
-        scenegraph::display::output::bind_display(_loop, &mut contract);
-    } else {
+    if !reuse {
     let _ = scenegraph::state::lifecycle::initialize(
         _loop,
         &display.output.clone(),
@@ -308,7 +308,9 @@ pub fn wire(
     // wlr-screencopy: advertised by the backend that services
     // the copies (`render::execute` → `screencopy::service`, after each
     // pipe's render_frame).
-    screencopy::create_global(&_loop.inner.loader.display_handle);
+    if !reuse {
+        screencopy::create_global(&_loop.inner.loader.display_handle);
+    }
 
     // Server-side chrome (decor): the theme, from the shared design tokens
     // and the `chrome_style` preference, read once at startup.

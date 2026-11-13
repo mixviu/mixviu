@@ -76,6 +76,22 @@ pub fn wait_until_active(own: u32, source: &mut impl ActiveVt) -> usize {
 /// for POLLPRI (sysfs notification).
 struct SysfsActive(std::fs::File);
 
+/// Notify each activation without polling or switching consoles. The initial
+/// read also notifies an already active VT. Libseat takes over after attach.
+pub fn watch_own_vt(mut activated: impl FnMut()) -> std::io::Result<()> {
+    let Some(own) = own_vt() else {
+        activated();
+        return Ok(());
+    };
+    let mut source = SysfsActive(std::fs::File::open(ACTIVE)?);
+    loop {
+        if source.read() == Some(own) {
+            activated();
+        }
+        source.wait()?;
+    }
+}
+
 impl ActiveVt for SysfsActive {
     fn read(&mut self) -> Option<u32> {
         let mut text = String::new();

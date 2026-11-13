@@ -17,6 +17,15 @@ use std::{
 };
 use world::state::Loop;
 
+#[derive(Debug, PartialEq, Eq)]
+enum Route { Offscreen, Kms }
+
+/// Session state is the authority for both newly armed and already queued
+/// frames. In particular a queued offscreen timer must retire on activation.
+fn route(vt_session: bool, active: bool) -> Route {
+    if vt_session && active { Route::Kms } else { Route::Offscreen }
+}
+
 #[derive(Default)]
 struct Retry {
     delay: Duration,
@@ -80,7 +89,7 @@ impl Context {
 
 pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     let mut ctx = context.borrow_mut();
-    if ctx.vt_session && !matches!(state.inner.status_session, world::state::StatusSession::Paused) {
+    if route(ctx.vt_session, !matches!(state.inner.status_session, world::state::StatusSession::Paused)) == Route::Kms {
         return;
     }
     if let Some(mode) = ctx.output.current_mode() {
@@ -110,7 +119,7 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
 }
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
-    if ctx.vt_session && !matches!(state.inner.status_session, world::state::StatusSession::Paused) {
+    if route(ctx.vt_session, !matches!(state.inner.status_session, world::state::StatusSession::Paused)) == Route::Kms {
         return;
     }
     let key = world::state::output_key(&ctx.output);
@@ -382,6 +391,18 @@ fn send_frames(state: &mut Loop, output: &Output, visible: &[Window]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inactive_start_activate_deactivate_routes_frames_without_recreating_the_desk() {
+        let vt_session = true;
+        assert_eq!(route(vt_session, false), Route::Offscreen);
+        assert_eq!(route(vt_session, true), Route::Kms);
+        // An offscreen timer queued before activation follows the same gate.
+        assert_eq!(route(vt_session, true), Route::Kms);
+        assert_eq!(route(vt_session, false), Route::Offscreen);
+        // A standalone headless desk never acquires KMS, even with an active seat.
+        assert_eq!(route(false, true), Route::Offscreen);
+    }
 
     #[test]
     fn persistent_errors_back_off_and_warnings_are_throttled() {

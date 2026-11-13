@@ -7,11 +7,31 @@ use world::state::{Loop, StatusSession};
 
 pub type Handles = Rc<RefCell<Option<native::wire::entry::NativeHandles>>>;
 
+/// Configured advertised mode is known before seat acquisition. Once KMS is
+/// attached the shared Output carries its last live mode across every pause.
+pub fn initial_mode() -> Result<smithay::output::Mode, Box<dyn std::error::Error>> {
+    if let Ok(size) = std::env::var("MIX_VIUD_OFFSCREEN_SIZE") {
+        return crate::cli::parse_size(&size).map(|size| smithay::output::Mode { size: size.into(), refresh: 60_000 }).map_err(Into::into);
+    }
+    let config = model::environment::config::base::get();
+    if let Some(mode) = kms::mode::offscreen::discover(&config.render_node, &config.scanout_node) {
+        return Ok(mode);
+    }
+    use render_gles::preference::output::profile::{self, ModeRequest};
+    let mode = profile::get().into_iter().find(|p| p.active).and_then(|p| p.mode)
+        .or_else(profile::default_mode);
+    let size = match mode {
+        Some(ModeRequest::Advertised { width, height, .. } | ModeRequest::Cvt { width, height, .. }) => (i32::from(width), i32::from(height)),
+        _ => (3840, 2160),
+    };
+    Ok(smithay::output::Mode { size: size.into(), refresh: 60_000 })
+}
+
 pub fn wire(
     state: &mut Loop,
     event_loop: &mut EventLoop<'static, Loop>,
     socket: OsString,
-    size: (i32, i32),
+    mode: smithay::output::Mode,
     scale: f64,
     render_node: &str,
 ) -> Result<Handles, Box<dyn std::error::Error>> {
@@ -19,10 +39,10 @@ pub fn wire(
     let output = headless::wire::install(
         state,
         &event_loop.handle(),
-        headless::wire::Options { size: size.into(), scale, render_node },
-        None,
+        headless::wire::Options { size: mode.size, scale, render_node },
+        Some(mode),
     )?;
-    headless::wire::vt_session();
+    headless::wire::vt_session(state);
     let handles = Rc::new(RefCell::new(None));
     let target = handles.clone();
     let handle = event_loop.handle();
@@ -31,9 +51,9 @@ pub fn wire(
         if target.borrow().is_some() {
             return;
         }
-        let native = native::wire::entry::wire(state, socket.clone(), &handle, Some(output.clone()));
+        let Some(session) = kms::seat::session::factory::try_create() else { return };
+        let native = native::wire::entry::wire(state, socket.clone(), &handle, Some(output.clone()), session);
         // Headless focus stays, but the human pointer/touch sources belong to KMS.
-        state.state.seat.seat.add_pointer();
         state.inner.status_session = StatusSession::Active;
         *target.borrow_mut() = Some(native);
         state.state.schedule_redraw(protocols::redraw::schedule::RedrawReason::Resume);
@@ -42,9 +62,13 @@ pub fn wire(
     // or Wayland state crosses threads. It exits after the first activation;
     // libseat owns subsequent pause/resume notifications.
     let _ = token;
+    if std::env::var("MIX_TEST_VIUD_SEAT_INACTIVE").as_deref() == Ok("1") {
+        return Ok(handles);
+    }
     std::thread::Builder::new().name("viud-vt-wait".into()).spawn(move || {
-        kms::seat::session::vt_wait::wait_for_own_vt();
-        ping.ping();
+        if let Err(error) = kms::seat::session::vt_wait::watch_own_vt(|| ping.ping()) {
+            warn!("VT activation source failed; desk remains offscreen: {error}");
+        }
     })?;
     Ok(handles)
 }

@@ -93,9 +93,8 @@ pub fn install(
     state: &mut Loop,
     handle: &LoopHandle<'static, Loop>,
     options: Options<'_>,
-    existing: Option<Output>,
+    mode_override: Option<Mode>,
 ) -> Result<Output, Box<dyn std::error::Error>> {
-    let fallback = existing.is_some();
     // Test-only injection, read exclusively by this backend. A later settingsd
     // snapshot supersedes it. Real sessions never read this variable.
     if let Some(names) = std::env::var_os("MIX_TEST_VIUD_AGENT_SEAT_ALLOW") {
@@ -155,11 +154,11 @@ pub fn install(
             );
         }
     };
-    let mode = Mode {
+    let mode = mode_override.unwrap_or(Mode {
         size: options.size,
         refresh: refresh * 1000,
-    };
-    let output = existing.unwrap_or_else(|| virtual_output(0));
+    });
+    let output = virtual_output(0);
     output.change_current_state(
         Some(mode),
         Some(Transform::Normal),
@@ -173,18 +172,10 @@ pub fn install(
         renderer,
     };
     let display_handle = state.state.output.display_handle.clone();
-    let damage_tracker = if fallback {
-        smithay::backend::renderer::damage::OutputDamageTracker::from_output(&output)
-    } else {
-        scenegraph::state::lifecycle::initialize(state, &output, &display_handle, &mut contract)
-    };
+    let damage_tracker = scenegraph::state::lifecycle::initialize(state, &output, &display_handle, &mut contract);
     // This runs before the event loop serves any client.
-    if !fallback {
-        human_seat_without_sources(&mut state.state.seat.seat);
-    }
-    if !fallback {
-        state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
-    }
+    human_seat_without_sources(&mut state.state.seat.seat);
+    state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
     // The loop pins the camera to identity before input or drawing. Put the
     // agent at the logical output centre, as centre_pointer_once does for
     // the human pointer. main's apply_pointer only seeds the human accumulator.
@@ -216,7 +207,6 @@ pub fn install(
         .kernel
         .get(&render_gles::format::registrar::FORMATS);
     use render_gles::format::{registrar::Device, role::Role};
-    if !fallback {
     formats.register(
         Device::UNSPECIFIED,
         Role::Sample,
@@ -227,18 +217,17 @@ pub fn install(
     formats.absent(Role::Render, "headless: no scanout render format");
     formats.absent(Role::Plane, "headless: no KMS plane");
     model::stats::registry::base::set_compositor_prefers_dmabuf(false);
-    }
     frames::scene::gpu::prewarm(state, &mut contract.renderer);
     let targets = [
         Offscreen::<GlesTexture>::create_buffer(
             &mut contract.renderer,
             Fourcc::Abgr8888,
-            (options.size.w, options.size.h).into(),
+            (mode.size.w, mode.size.h).into(),
         )?,
         Offscreen::<GlesTexture>::create_buffer(
             &mut contract.renderer,
             Fourcc::Abgr8888,
-            (options.size.w, options.size.h).into(),
+            (mode.size.w, mode.size.h).into(),
         )?,
     ];
     decor::window::install(decor::ChromeTheme::load(
@@ -314,7 +303,10 @@ pub fn arm_inactive(state: &mut Loop) -> bool {
 }
 
 /// Reserve the installed renderer for inactive VT frames only.
-pub fn vt_session() {
+pub fn vt_session(state: &mut Loop) {
+    state.state.seat.seat.add_pointer();
+    state.state.seat.seat.add_touch();
+    state.inner.comp.injection.backend = world::comp::injection::BackendInput::Session;
     FALLBACK.with(|slot| {
         if let Some(context) = slot.borrow().as_ref() {
             context.borrow_mut().vt_session = true;

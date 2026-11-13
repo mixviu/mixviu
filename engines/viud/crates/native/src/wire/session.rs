@@ -99,6 +99,7 @@ pub fn register(
                     );
 
                     *state.inner.kernel.get_mut(&drivers::resume::base::VBLANK_SEEN_MUT) = false;
+                    state.state.schedule_redraw(protocols::redraw::schedule::RedrawReason::Resume);
 
                     if let Some(token) = state.inner.kernel.get_mut(&drivers::resume::base::RESUME_WATCHDOG_MUT).take() {
                         state.loop_handle.remove(token);

@@ -57,22 +57,22 @@ impl Process {
 
 #[allow(dead_code)] // The timing target uses spawn_measurement instead.
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
-    spawn_options(scale, explicit_node, label, bus, "60", None, true, true)
+    spawn_options(scale, explicit_node, label, bus, "60", None, true, true, false)
 }
 
 #[allow(dead_code)]
 pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", Some(service), true, true)
+    spawn_options(1, None, label, Some(bus), "60", Some(service), true, true, false)
 }
 
 #[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
 pub fn spawn_at_refresh(refresh: &str) -> Process {
-    spawn_options(1, None, "refresh", None, refresh, None, true, true)
+    spawn_options(1, None, "refresh", None, refresh, None, true, true, false)
 }
 
 #[allow(dead_code)] // Only the timing integration target disables tracing.
 pub fn spawn_measurement() -> Process {
-    spawn_options(1, None, "presentation", None, "60", None, false, true)
+    spawn_options(1, None, "presentation", None, "60", None, false, true, false)
 }
 
 fn spawn_options(
@@ -84,6 +84,7 @@ fn spawn_options(
     service: Option<&str>,
     trace: bool,
     agent: bool,
+    inactive: bool,
 ) -> Process {
     let binary = std::env::var_os("MIX_TEST_VIUD_EXE")
         .map(PathBuf::from)
@@ -114,6 +115,7 @@ fn spawn_options(
     } else {
         node.clone()
     };
+    if inactive { config.priority = "inherited".into(); }
     let settings = root.join("settings.json");
     fs::write(&settings, serde_json::to_vec(&config).unwrap()).unwrap();
     let log = root.join("viud.log");
@@ -121,11 +123,8 @@ fn spawn_options(
     let mut command = Command::new(binary);
     command
         .args([
-            "--headless",
             "--socket",
             "wayland-headless-test",
-            "--size",
-            "1280x720",
             "--config-file",
         ])
         .arg(settings)
@@ -154,6 +153,11 @@ fn spawn_options(
         .env_remove("MIX_VT")
         .stdout(Stdio::from(stderr.try_clone().unwrap()))
         .stderr(stderr);
+    if inactive {
+        command.args(["--kms", "--kms-confirm"]).env("MIX_TEST_VIUD_SEAT_INACTIVE", "1").env("MIX_VIUD_OFFSCREEN_SIZE", "1280x720").env("MIX_VIUD_XWAYLAND", "0");
+    } else {
+        command.args(["--headless", "--size", "1280x720"]);
+    }
     if let Some(node) = explicit_node {
         command.args(["--render-node", node]);
     }
@@ -184,5 +188,10 @@ fn spawn_options(
 
 #[allow(dead_code)]
 pub fn spawn_denied(label: &str, bus: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", None, true, false)
+    spawn_options(1, None, label, Some(bus), "60", None, true, false, false)
+}
+
+#[allow(dead_code)]
+pub fn spawn_inactive(label: &str, bus: &str) -> Process {
+    spawn_options(1, None, label, Some(bus), "60", None, true, false, true)
 }
