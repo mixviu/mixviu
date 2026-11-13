@@ -345,7 +345,9 @@ on dopus.ping
   reply(0,json_encode({pong:true,service:$ctx.name,schema:"dopus.v1",pid:$ctx.pid,headless:$state.headless}))
 end
 on dopus.actions
-  reply(0,json_encode({actions:map(filter($contract.actions,fn($a)=contains($contract.bus_actions,$a.id)),fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})}))
+  $actions=map(filter($contract.actions,fn($a)=contains($contract.bus_actions,$a.id)),fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})
+  if not $state.headless then $actions=concat($actions,map($app_mode.actions($state.appearance_choice.mode),fn($a)=merge($a,{keys:[]}))) end
+  reply(0,json_encode({actions:$actions}))
 end
 fn dp_wire_panes($s)
   $out=[]
