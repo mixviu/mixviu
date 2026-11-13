@@ -35,7 +35,9 @@ fn sample_width(ui: &Ui, id: &str, column: &Value, rows: &[Value], index: usize)
     let strong = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(body.size));
     #[cfg(test)]
     if UNCACHED_SAMPLES.get() {
-        return Some(measure_sample_width(ui, column, samples, rows, index, &body, &strong));
+        return Some(measure_sample_width(
+            ui, column, samples, rows, index, &body, &strong,
+        ));
     }
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     body.hash(&mut hash);
@@ -74,7 +76,15 @@ fn sample_width(ui: &Ui, id: &str, column: &Value, rows: &[Value], index: usize)
     Some(width)
 }
 
-fn measure_sample_width(ui: &Ui, column: &Value, samples: &[Value], rows: &[Value], index: usize, body: &FontId, strong: &FontId) -> f32 {
+fn measure_sample_width(
+    ui: &Ui,
+    column: &Value,
+    samples: &[Value],
+    rows: &[Value],
+    index: usize,
+    body: &FontId,
+    strong: &FontId,
+) -> f32 {
     let width = std::iter::once(text(column, "label"))
         .chain(samples.iter().filter_map(Value::as_str))
         .chain(rows.iter().filter_map(|row| row["cells"][index].as_str()))
@@ -125,21 +135,46 @@ mod numeric_state_tests {
         crate::appearance::install(&ctx);
         let mut value = json!({"key":"cache-test","columns":[{"id":"date","label":"Date","samples":["Wed 23:58"]}],"rows":[{"key":"a","cells":["13:51"]}]});
         for stage in 0..7 {
-            if stage == 2 { value["rows"][0]["cells"][0] = json!("A much wider value"); }
-            if stage == 3 { value["columns"][0]["samples"] = json!(["An even wider sample value"]); }
-            if stage == 4 { ctx.set_pixels_per_point(2.5); }
-            if stage == 5 { ctx.style_mut(|style| { style.text_styles.insert(TextStyle::Body, FontId::monospace(24.0)); }); }
+            if stage == 2 {
+                value["rows"][0]["cells"][0] = json!("A much wider value");
+            }
+            if stage == 3 {
+                value["columns"][0]["samples"] = json!(["An even wider sample value"]);
+            }
+            if stage == 4 {
+                ctx.set_pixels_per_point(2.5);
+            }
+            if stage == 5 {
+                ctx.style_mut_of(egui::Theme::Dark, |style| {
+                    style
+                        .text_styles
+                        .insert(TextStyle::Body, FontId::monospace(24.0));
+                });
+            }
             if stage == 6 {
                 let mut definitions = egui::FontDefinitions::default();
-                definitions.families.insert(egui::FontFamily::Name("medium".into()), definitions.families[&egui::FontFamily::Proportional].clone());
+                definitions.families.insert(
+                    egui::FontFamily::Name("medium".into()),
+                    definitions.families[&egui::FontFamily::Proportional].clone(),
+                );
                 ctx.set_fonts(definitions);
             }
             SAMPLE_LAYOUTS.set(0);
             ctx.run_ui(egui::RawInput::default(), |ui| {
-                sample_width(ui, "cache-test", &value["columns"][0], table_rows(&value), 0);
-            }).drop_without_applying_deltas();
-            if stage == 1 { assert_eq!(SAMPLE_LAYOUTS.get(), 0); }
-            else { assert!(SAMPLE_LAYOUTS.get() > 0, "stage {stage}"); }
+                sample_width(
+                    ui,
+                    "cache-test",
+                    &value["columns"][0],
+                    table_rows(&value),
+                    0,
+                );
+            })
+            .drop_without_applying_deltas();
+            if stage == 1 {
+                assert_eq!(SAMPLE_LAYOUTS.get(), 0);
+            } else {
+                assert!(SAMPLE_LAYOUTS.get() > 0, "stage {stage}");
+            }
         }
     }
 
@@ -150,15 +185,20 @@ mod numeric_state_tests {
         for rows in [None, Some(json!(null)), Some(json!("bad")), Some(json!({}))] {
             for sampled in [false, true] {
                 let mut value = json!({"key":"empty","columns":[{"id":"date","label":"Date"}]});
-                if sampled { value["columns"][0]["samples"] = json!(["13:51"]); }
-                if let Some(rows) = &rows { value["rows"] = rows.clone(); }
+                if sampled {
+                    value["columns"][0]["samples"] = json!(["13:51"]);
+                }
+                if let Some(rows) = &rows {
+                    value["rows"] = rows.clone();
+                }
                 // Admission still refuses malformed scenes; direct rendering is defensive too.
                 assert!(validate(&value).is_err());
                 ctx.run_ui(egui::RawInput::default(), |ui| {
                     let widget = Widget::new("empty", "tree-table", "", value.clone());
                     draw_gold(ui, &widget, &value, &mut Vec::new());
                     draw_grid(ui, &widget, &value, &mut BTreeMap::new(), &mut Vec::new());
-                }).drop_without_applying_deltas();
+                })
+                .drop_without_applying_deltas();
             }
         }
     }
@@ -185,21 +225,34 @@ mod numeric_state_tests {
                     for frame in 0..24 {
                         SAMPLE_LAYOUTS.set(0);
                         let began = std::time::Instant::now();
-                        ctx.run_ui(egui::RawInput {
-                            screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(3840.0 / scale, 2160.0 / scale))),
-                            ..Default::default()
-                        }, |ui| {
-                            draw_gold(ui, &widget, &value, &mut Vec::new());
-                        }).drop_without_applying_deltas();
+                        ctx.run_ui(
+                            egui::RawInput {
+                                screen_rect: Some(Rect::from_min_size(
+                                    egui::Pos2::ZERO,
+                                    vec2(3840.0 / scale, 2160.0 / scale),
+                                )),
+                                ..Default::default()
+                            },
+                            |ui| {
+                                draw_gold(ui, &widget, &value, &mut Vec::new());
+                            },
+                        )
+                        .drop_without_applying_deltas();
                         if frame >= 3 {
-                            times.push(began.elapsed().as_secs_f64()*1000.0);
+                            times.push(began.elapsed().as_secs_f64() * 1000.0);
                             steady_layouts += SAMPLE_LAYOUTS.get();
                         }
                     }
-                    if uncached { assert!(steady_layouts >= 21 * count * 6); }
-                    else { assert_eq!(steady_layouts, 0); }
+                    if uncached {
+                        assert!(steady_layouts >= 21 * count * 6);
+                    } else {
+                        assert_eq!(steady_layouts, 0);
+                    }
                     times.sort_by(f64::total_cmp);
-                    eprintln!("sampled table rows={count} scale={scale} uncached={uncached}: median_ms={:.3} p95_ms={:.3} measured_layouts={steady_layouts}", times[10], times[19]);
+                    eprintln!(
+                        "sampled table rows={count} scale={scale} uncached={uncached}: median_ms={:.3} p95_ms={:.3} measured_layouts={steady_layouts}",
+                        times[10], times[19]
+                    );
                     UNCACHED_SAMPLES.set(false);
                 }
             }
@@ -847,9 +900,7 @@ fn draw_grid(
         let measured = columns
             .iter()
             .enumerate()
-            .map(|(index, column)| {
-                sample_width(ui, id, column, rows, index)
-            })
+            .map(|(index, column)| sample_width(ui, id, column, rows, index))
             .collect::<Vec<_>>();
         let mut table = TableBuilder::new(ui)
             .id_salt(id)

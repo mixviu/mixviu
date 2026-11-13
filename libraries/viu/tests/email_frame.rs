@@ -39,15 +39,15 @@ fn reader_date_uses_session_zone() {
     // Isolate TZ from the parallel test process and chrono's local-zone cache.
     if std::env::var_os("EMAIL_DATE_ZONE_CHILD").is_none() {
         for zone in ["Australia/Brisbane", "Australia/Melbourne"] {
-        assert!(
-            std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "reader_date_uses_session_zone", "--nocapture"])
-                .env("EMAIL_DATE_ZONE_CHILD", "1")
-                .env("TZ", zone)
-                .status()
-                .unwrap()
-                .success()
-        );
+            assert!(
+                std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", "reader_date_uses_session_zone", "--nocapture"])
+                    .env("EMAIL_DATE_ZONE_CHILD", "1")
+                    .env("TZ", zone)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
         }
         return;
     }
@@ -85,18 +85,24 @@ end
         ("Fri, 13 Nov 2026 05:51:00 +0200", "Nov 13 14:51"),
         ("invalid", ""),
     ];
-    let cases = if std::env::var("TZ").unwrap() == "Australia/Brisbane" { &brisbane[..] } else { &melbourne[..] };
+    let cases = if std::env::var("TZ").unwrap() == "Australia/Brisbane" {
+        &brisbane[..]
+    } else {
+        &melbourne[..]
+    };
     for &(stamp, expected) in cases {
         runtime
             .event("test.date".into(), json!({"stamp":stamp,"quoting":PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email/quoting.mix")}))
             .unwrap();
         let done = complete(&runtime, &rx);
-        assert_eq!(
-            done.model.unwrap()["values"]["message-date"],
-            expected
-        );
+        assert_eq!(done.model.unwrap()["values"]["message-date"], expected);
         let body = done.reply.unwrap().body;
-        assert!(body["forward"].as_str().unwrap().contains(&format!("Date: {expected}\n")));
+        assert!(
+            body["forward"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("Date: {expected}\n"))
+        );
         if !expected.is_empty() {
             assert!(body["quoted"].as_str().unwrap().contains(&expected[7..]));
         }
