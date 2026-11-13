@@ -91,6 +91,9 @@ on test.mail
   $state.session_loaded=true;$state.session_path="/tmp/ced-test-session.json"
   $state.session_seen=$ced_session.session_value($state);$state.session_dirty=false
 end
+on test.job
+  $state.running["status-test"]={id:"status-test",kind:"show",payload:{}}
+end
 "#,
         );
         let docs = viu::documents::Documents::default();
@@ -151,6 +154,51 @@ end
         self.command(name, body)
             .try_recv()
             .expect("synchronous reply")
+    }
+}
+
+#[test]
+fn job_notice_is_readable_retains_diagnostics_and_clears_on_success() {
+    let mut app = App::new();
+    app.answered("test.job", json!({}));
+    let error = json!({"error_code":"ACTIVATION","message":"Cannot focus the window."});
+    app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"show","payload":{}}},"rc":10,"body":error}));
+    let (_, state) = app.answered("ced.specimen", json!({}));
+    assert_eq!(state["status"], "Failed: Cannot focus the window.");
+    assert_eq!(state["last_job_error"]["body"], error);
+    app.answered("test.job", json!({}));
+    app.answered("viu.job.completed", json!({"tag":{"owner":{"id":"status-test","kind":"show","payload":{}}},"rc":0,"body":{"shown":true}}));
+    let (_, state) = app.answered("ced.specimen", json!({}));
+    assert_eq!(state["status"], "");
+    assert_eq!(state["last_job_error"]["body"], error);
+}
+
+#[test]
+fn long_status_paint_never_intersects_right_fields_at_desktop_scales() {
+    for scale in [1.0, 2.5] {
+        let ctx = egui::Context::default();
+        viu::appearance::install(&ctx);
+        ctx.set_pixels_per_point(scale);
+        let widget = viu::widgets::Widget::new("status", "status-line", "", json!({"left":"Long activation failure ".repeat(100),"right":["INS","Rust","UTF-8 · LF","rev 0","Saved"],"icon":"plug"}));
+        let mut widgets = viu::widgets::Widgets::default();
+        let output = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(3840.0 / scale, 2160.0 / scale))), ..Default::default() }, |ui| {
+            widgets.begin_frame();
+            widgets.widget(ui, &widget, &json!({}));
+            widgets.finish_frame().unwrap();
+        });
+        let mut left = None;
+        let mut right = Vec::new();
+        for clipped in &output.shapes {
+            if let egui::Shape::Text(text) = &clipped.shape {
+                let bounds = text.galley.rect.translate(text.pos.to_vec2()).intersect(clipped.clip_rect);
+                if text.galley.text().starts_with("Long activation") { left = Some(bounds); }
+                if ["INS", "Rust", "UTF-8 · LF", "rev 0", "Saved"].contains(&text.galley.text()) { right.push(bounds); }
+            }
+        }
+        assert_eq!(right.len(), 5);
+        let left = left.expect("left notice painted");
+        for field in right { assert!(!left.intersects(field), "scale {scale}: {left:?} intersects {field:?}"); }
+        output.drop_without_applying_deltas();
     }
 }
 #[test]
