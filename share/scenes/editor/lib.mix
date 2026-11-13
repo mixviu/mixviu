@@ -154,6 +154,7 @@ end
 fn scene_state($r)
   if $r.enabled != true then return {status: "disabled", color: $C.grey} end
   if $r.behaviour == "crash_loop" then return {status: "crash_loop", color: $C.red} end
+  if $r.stale == true then return {status: ($r.upgrade ?? {}).error_code ?? "template updated", color: $C.amber} end
   if $r.mounted != true then
     if $r.diagnostic != nil then return {status: "refused", color: $C.red} end
     $waiting = contains(["handover", "starting", "backoff"], $r.behaviour ?? "") ? $r.behaviour : "not mounted"
@@ -214,6 +215,7 @@ fn selected_model($list, $ui)
   end
   $st = scene_state($r)
   $parts = [$r.mounted == true ? "mounted" : "not mounted"]
+  if $r.stale == true then push($parts, ($r.upgrade ?? {}).reason ?? "template updated: Reset or Keep") end
   if $r.diagnostic != nil and $r.attempted_digest != nil and $r.attempted_digest != "" and $r.attempted_digest != $r.accepted_digest then
     push($parts, "last edit refused")
   end
