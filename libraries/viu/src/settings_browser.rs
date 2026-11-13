@@ -564,22 +564,13 @@ pub(crate) fn draw(
         }
     });
     crate::media_gallery::begin(ui, id);
-    let mut look = Look::of(
+    let look = Look::of(
         &crate::appearance::session_theme(ui.ctx()),
         &value["settings"],
     );
-    // The author decides when a palette snapshot changes. Other browsers
-    // continue following the live theme on every frame.
-    if let Some(refresh) = value.get("look_refresh_key") {
-        let key = egui::Id::unique((ui.ctx().viewport_id(), id, "browser-look"));
-        if let Some((previous, cached)) = ui.ctx().data(|d| d.get_temp::<(Value, Look)>(key)) {
-            if previous == *refresh {
-                look = cached;
-            }
-        }
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(key, (refresh.clone(), look)));
-    }
+    // Paint from the installed session theme, as the title band does. A
+    // model revision can arrive independently of an effective auto-mode or
+    // window theme change; it cannot be a palette invalidation key.
     ui.painter().rect_filled(area, 0.0, look.window);
     let condensed = area.width() < 648.0;
     let mut content = area;
@@ -622,7 +613,8 @@ pub(crate) fn draw(
                         egui::TextEdit::singleline(&mut query)
                             .id_salt((id, "query"))
                             .frame(egui::Frame::NONE)
-                            .hint_text(text(value, "search_hint"))
+                            .hint_text(RichText::new(text(value, "search_hint")).color(look.text))
+                            .text_color(look.text)
                             .desired_width(ui.available_width() - 24.0),
                     );
                     record(geometry, id, "search", &r);
