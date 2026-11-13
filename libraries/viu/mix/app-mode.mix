@@ -1,7 +1,7 @@
 -- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- App policy: null follows the live session; only an explicit mode is saved.
-$saved_modes={}
+-- The namespaced cache belongs to the requiring runtime, never module exports.
 fn valid($mode)
   return $mode==nil or contains(["light","dark"],$mode)
 end
@@ -15,10 +15,10 @@ fn mode_enabled()
   return ($ctx.native_facilities ?? false) and not ($options.headless ?? false)
 end
 fn load($app)
-  global $saved_modes
+  global $viu_app_mode_last
   if not mode_enabled() then return nil end
   $mode=read_mode(path($app))
-  $saved_modes[$app]=$mode
+  $viu_app_mode_last={app:$app,mode:$mode}
   return $mode
 end
 fn read_mode($file)
@@ -37,11 +37,12 @@ fn restore($app,$legacy)
   return $legacy
 end
 fn save($app,$mode,$explicit=false)
-  global $saved_modes
+  global $viu_app_mode_last
   if not mode_enabled() then return end
-  if not $explicit and has_key($saved_modes,$app) and $saved_modes[$app]==$mode then return end
+  try $last=$viu_app_mode_last catch $uninitialised $last={} end
+  if not $explicit and $last.app==$app and $last.mode==$mode then return end
   write_mode(path($app),$mode,$explicit)
-  $saved_modes[$app]=$mode
+  $viu_app_mode_last={app:$app,mode:$mode}
 end
 fn write_mode($file,$mode,$explicit=false)
   if not valid($mode) then raise("APP_MODE","mode must be light, dark or null") end
