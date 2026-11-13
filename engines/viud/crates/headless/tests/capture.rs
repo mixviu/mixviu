@@ -107,8 +107,8 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
-#[ignore = "needs a GPU render node and built viud (backend-native) and noded binaries"]
 fn inactive_seat_maps_clients_and_captures_output_and_window() {
+    if !inactive_fixture_available() { return; }
     let bus = Bus::start("inactive-seat");
     let mut process = process::spawn_inactive("inactive-seat", &bus.url);
     let mut pattern = Pattern::new(connect(&mut process));
@@ -139,6 +139,70 @@ fn inactive_seat_maps_clients_and_captures_output_and_window() {
         fs::read(process.root.join("inactive-true-false.ppm")).unwrap(),
         "cursor:true must draw the retained pointer while the seat is inactive"
     );
+}
+
+fn inactive_fixture_available() -> bool {
+    let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let ready = Path::new(&node).exists() && binary("viud").is_file() && binary("noded").is_file();
+    if !ready { eprintln!("inactive-seat GPU fixture skipped: build viud/backend-native and noded and provide a render node"); }
+    ready
+}
+
+#[test]
+fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
+    if !inactive_fixture_available() { return; }
+    let bus = Bus::start("inactive-transitions");
+    let mut process = process::spawn_transitions("inactive-transitions", &bus.url);
+    let mut pattern = Pattern::new(connect(&mut process));
+    bus.ready();
+    pattern.wait_callback(0);
+    let window = bus.window();
+    let control = process.control.as_ref().unwrap().try_clone().unwrap();
+    let edge = |command| {
+        control.send(&[command]).unwrap();
+        let mut ack = [0];
+        control.recv(&mut ack).unwrap();
+        assert_eq!(ack, [command]);
+    };
+    let before = ppm(&bus, &process, "owned-before", None);
+    let start = Instant::now();
+    edge(b'A'); // first two fake seat opens fail, then retry without another edge
+    assert!(start.elapsed() >= Duration::from_millis(650));
+    assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
+    let (_, _, owned_active) = ppm(&bus, &process, "owned-active", None);
+    let expected_active = owned_active.clone();
+    for index in 0..3 {
+        edge(b'P');
+        assert_eq!(bus.call("comp.session.get", json!({}))["active"], false);
+        ppm(&bus, &process, &format!("paused-{index}"), None);
+        ppm(&bus, &process, &format!("window-paused-{index}"), Some(target(&window)));
+        edge(b'Q'); // activation with an offscreen frame timer queued
+        assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
+        ppm(&bus, &process, &format!("active-{index}"), None);
+        assert_eq!(bus.window()["id"], window["id"]);
+    }
+    edge(b'P');
+    edge(b'D'); // a temporarily missing binding must back off, not panic
+    let restore = control.try_clone().unwrap();
+    let restore_thread = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(400));
+        restore.send(b"B").unwrap();
+        let mut ack = [0]; restore.recv(&mut ack).unwrap(); assert_eq!(ack, *b"B");
+    });
+    ppm(&bus, &process, "restored-binding", None);
+    restore_thread.join().unwrap();
+    edge(b'F');
+    assert_eq!(bus.call("comp.session.get", json!({}))["render_state"], "offscreen-retrying");
+    let until = Instant::now() + Duration::from_secs(4);
+    while bus.call("comp.session.get", json!({}))["render_state"] != "offscreen" {
+        assert!(Instant::now() < until);
+        thread::sleep(Duration::from_millis(50));
+    }
+    ppm(&bus, &process, "after-watcher-recovery", None);
+    assert_eq!(owned_active, expected_active, "copied capture pixels survive all buffer reuse and transitions");
+    assert_eq!(before.2, fs::read(process.root.join("owned-before.ppm")).unwrap().splitn(4, |b| *b == b'\n').nth(3).unwrap());
+    assert_eq!(fs::read_to_string(process.root.join("viud.log")).unwrap().matches("fake-seat: renderer handed over once").count(), 1);
+    assert!(process.child.try_wait().unwrap().is_none());
 }
 fn place_args(row: &Value, extra: Value) -> Value {
     let mut args = target(row);

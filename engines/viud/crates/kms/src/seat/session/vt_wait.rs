@@ -78,18 +78,25 @@ struct SysfsActive(std::fs::File);
 
 /// Notify each activation without polling or switching consoles. The initial
 /// read also notifies an already active VT. Libseat takes over after attach.
-pub fn watch_own_vt(mut activated: impl FnMut()) -> std::io::Result<()> {
+pub fn watch_own_vt(mut activated: impl FnMut(), ready: impl FnOnce()) -> std::io::Result<()> {
     let Some(own) = own_vt() else {
+        ready();
         activated();
         return Ok(());
     };
     let mut source = SysfsActive(std::fs::File::open(ACTIVE)?);
+    ready();
     loop {
         if source.read() == Some(own) {
             activated();
         }
         source.wait()?;
     }
+}
+
+/// A retry timer may attempt a seat open only while this VT is active.
+pub fn own_vt_active() -> bool {
+    own_vt().is_none_or(|own| active_vt() == Some(own))
 }
 
 impl ActiveVt for SysfsActive {

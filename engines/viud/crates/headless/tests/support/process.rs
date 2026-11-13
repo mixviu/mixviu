@@ -12,6 +12,8 @@ use std::{
 pub struct Process {
     pub child: Child,
     pub root: PathBuf,
+    #[allow(dead_code)]
+    pub control: Option<std::os::unix::net::UnixDatagram>,
     stop: mpsc::Sender<()>,
     watchdog: Option<thread::JoinHandle<()>>,
 }
@@ -66,7 +68,7 @@ pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&
         None,
         true,
         true,
-        false,
+        None,
     )
 }
 
@@ -81,13 +83,13 @@ pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
         Some(service),
         true,
         true,
-        false,
+        None,
     )
 }
 
 #[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
 pub fn spawn_at_refresh(refresh: &str) -> Process {
-    spawn_options(1, None, "refresh", None, refresh, None, true, true, false)
+    spawn_options(1, None, "refresh", None, refresh, None, true, true, None)
 }
 
 #[allow(dead_code)] // Only the timing integration target disables tracing.
@@ -101,7 +103,7 @@ pub fn spawn_measurement() -> Process {
         None,
         false,
         true,
-        false,
+        None,
     )
 }
 
@@ -114,7 +116,7 @@ fn spawn_options(
     service: Option<&str>,
     trace: bool,
     agent: bool,
-    inactive: bool,
+    seat: Option<&str>,
 ) -> Process {
     let binary = std::env::var_os("MIX_TEST_VIUD_EXE")
         .map(PathBuf::from)
@@ -145,7 +147,7 @@ fn spawn_options(
     } else {
         node.clone()
     };
-    if inactive {
+    if seat.is_some() {
         config.priority = "inherited".into();
     }
     let settings = root.join("settings.json");
@@ -185,10 +187,10 @@ fn spawn_options(
         .env_remove("MIX_VT")
         .stdout(Stdio::from(stderr.try_clone().unwrap()))
         .stderr(stderr);
-    if inactive {
+    if seat.is_some() {
         command
             .args(["--kms", "--kms-confirm", "--bus-service", "comp-headless"])
-            .env("MIX_TEST_VIUD_SEAT_INACTIVE", "1")
+            .env("MIX_TEST_VIUD_SEAT_INACTIVE", seat.unwrap_or("1"))
             .env("MIX_VIUD_OFFSCREEN_SIZE", "1280x720")
             .env("MIX_VIUD_XWAYLAND", "0");
     } else {
@@ -203,7 +205,24 @@ fn spawn_options(
     if let Some(service) = service {
         command.args(["--bus-service", service]);
     }
+    let mut control = None;
+    let mut child_control = None;
+    if seat == Some("transitions") {
+        use std::os::{fd::AsRawFd, unix::process::CommandExt};
+        let (parent, child) = std::os::unix::net::UnixDatagram::pair().unwrap();
+        parent.set_read_timeout(Some(Duration::from_secs(8))).unwrap();
+        let fd = child.as_raw_fd();
+        command.env("MIX_TEST_VIUD_SEAT_INACTIVE", "fd:198");
+        // SAFETY: transfer only our owned fixture socket into the test child.
+        unsafe { command.pre_exec(move || {
+            if libc::dup2(fd, 198) < 0 || libc::fcntl(198, libc::F_SETFD, 0) < 0 { return Err(std::io::Error::last_os_error()); }
+            Ok(())
+        }); }
+        control = Some(parent);
+        child_control = Some(child);
+    }
     let child = command.spawn().expect("start viud");
+    drop(child_control);
     let pid = child.id();
     let (stop, stopped) = mpsc::channel();
     let watchdog = thread::spawn(move || {
@@ -215,6 +234,7 @@ fn spawn_options(
         }
     });
     Process {
+        control,
         child,
         root,
         stop,
@@ -224,10 +244,15 @@ fn spawn_options(
 
 #[allow(dead_code)]
 pub fn spawn_denied(label: &str, bus: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", None, true, false, false)
+    spawn_options(1, None, label, Some(bus), "60", None, true, false, None)
 }
 
 #[allow(dead_code)]
 pub fn spawn_inactive(label: &str, bus: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", None, true, false, true)
+    spawn_options(1, None, label, Some(bus), "60", None, true, false, Some("1"))
+}
+
+#[allow(dead_code)]
+pub fn spawn_transitions(label: &str, bus: &str) -> Process {
+    spawn_options(1, None, label, Some(bus), "60", None, true, false, Some("transitions"))
 }

@@ -143,6 +143,7 @@ pub struct PowerSnapshot {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SessionSnapshot {
+    pub watcher_failed: bool,
     pub active: bool,
     pub vt: Option<u32>,
     pub since_ms: u64,
@@ -2608,7 +2609,7 @@ pub fn dispatch_read_with_limit(
                     json!({
                         "version": 1,
                         "active": session.active,
-                        "render_state": if session.active && snapshot.info.backend != "headless" { "active" } else { "offscreen" },
+                        "render_state": if session.watcher_failed { "offscreen-retrying" } else if session.active && snapshot.info.backend != "headless" { "active" } else { "offscreen" },
                         "vt": session.vt,
                         "since_ms": session.since_ms,
                     })

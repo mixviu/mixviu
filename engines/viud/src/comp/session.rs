@@ -17,6 +17,7 @@ impl Session {
     pub(super) fn new(vt: Option<&str>, started_ms: u64) -> Self {
         Self {
             snapshot: SessionSnapshot {
+                watcher_failed: false,
                 active: true,
                 vt: vt.and_then(|value| value.parse::<u32>().ok()),
                 since_ms: started_ms,
@@ -44,7 +45,10 @@ impl Session {
     }
 
     pub(super) fn snapshot(&self) -> SessionSnapshot {
-        self.snapshot
+        let mut snapshot = self.snapshot;
+        #[cfg(feature = "backend-native")]
+        { snapshot.watcher_failed = crate::background::watcher_failed(); }
+        snapshot
     }
 }
 
@@ -81,6 +85,7 @@ mod tests {
                 assert_eq!(
                     session.snapshot(),
                     SessionSnapshot {
+                watcher_failed: false,
                         active,
                         vt: Some(3),
                         since_ms,

@@ -32,10 +32,8 @@ pub fn register(
     event_loop: &LoopHandle<'static, Loop>,
     session_notifier: LibSeatSessionNotifier,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
-    render_kick: impl Fn(Rc<RefCell<NativeRenderContext>>, &mut Loop) + Clone + 'static,
 ) {
     let session_context = ctx_rc;
-    let session_loop_handle = event_loop.clone();
 
     event_loop
         .insert_source(session_notifier, move |event, _, state| {
@@ -44,6 +42,7 @@ pub fn register(
 
             match event {
                 smithay::backend::session::Event::PauseSession => {
+                    kms::seat::lifecycle::pause::release(state, recorder::interface::stop_and_discard, |state| {
                     if let Some(primary) = ctx_ref.outputs.first() {
                         headless::wire::follow_output(primary.output.clone());
                     }
@@ -58,15 +57,16 @@ pub fn register(
                         pipe.late_latch = Default::default();
                         state.state.redraw.release(&world::state::output_key(&pipe.output));
                     }
-                    state.inner.status_session = StatusSession::Paused;
-                    state.inner.session_edges.push((false, unix_ms()));
+                    transition(state, false);
                     world::comp::scenes::pointer_motion(state, None);
                     info!("Session paused (TTY switch away)");
                     // Drain copies already waiting behind a flip that can no
                     // longer complete, through the capture-only render path.
                     state.state.redraw.wake();
 
-                    // Render-node capture remains available after DRM/input pause.
+                    // The legacy GPU recorder may own scanout-backed entries.
+                    // Retire it BEFORE any KMS buffer/plane release. Bus recording
+                    // (recorder::bus in the recording feature) owns copied frames.
 
                     // The keys-up for anything held at switch time will be
                     // consumed by the other VT — forget held modifiers now.
@@ -112,11 +112,30 @@ pub fn register(
                     if let Some(token) = state.inner.kernel.get_mut(&drivers::resume::base::RESUME_WATCHDOG_MUT).take() {
                         state.loop_handle.remove(token);
                     }
+                    });
                 }
                 smithay::backend::session::Event::ActivateSession => {
+                    drop(ctx);
+                    activate(state, &session_context);
+                }
+            }
+        })
+        .unwrap();
+}
+
+/// The first attachment and every libseat resume run this same transaction.
+pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderContext>>) {
+    let session_loop_handle = state.loop_handle.clone();
+    let render_kick = |ctx, state: &mut Loop| {
+        let handle = state.loop_handle.clone();
+        state.state.redraw.request_silent_for(protocols::redraw::schedule::RedrawReason::Resume);
+        let _ = crate::render::execute::execute(ctx, handle, state, crate::render::execute::RenderScope::All);
+    };
+    let mut ctx = session_context.borrow_mut();
+    let ctx_ref = &mut *ctx;
+                    if !transition(state, true) { return; }
+                    headless::wire::arm_inactive(state);
                     info!("Session activated");
-                    state.inner.status_session = StatusSession::Active;
-                    state.inner.session_edges.push((true, unix_ms()));
                     crate::render::execute::diagnostics::activated();
 
                     // Resume protocol (seat.lifecycle): input, activate
@@ -225,7 +244,7 @@ pub fn register(
                     ) = true;
                     crate::context::display::reconcile::drain_reconcile(
                         state,
-                        &session_context,
+                        session_context,
                     );
 
                     // Arm the watchdog: kick a full render every frame until a
@@ -291,8 +310,16 @@ pub fn register(
                             "session activated: republished WAYLAND_DISPLAY={wayland_display:?} DISPLAY={x_display:?}"
                         );
                     }
-                }
-            }
-        })
-        .unwrap();
+}
+
+/// Publish exactly one edge, including late first activation. Kept separate
+/// from hardware resume so the fake-seat fixture uses the real publication.
+pub fn transition(state: &mut Loop, active: bool) -> bool {
+    if active == matches!(state.inner.status_session, StatusSession::Active) { return false; }
+    state.inner.status_session = if active { StatusSession::Active } else { StatusSession::Paused };
+    state.inner.session_edges.push((active, unix_ms()));
+    if active {
+        lifecycle::announce_session(&state.inner.loader.socket_name.to_string_lossy(), &state.inner.environment.desktop_name);
+    }
+    true
 }

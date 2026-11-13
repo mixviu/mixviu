@@ -415,24 +415,6 @@ pub fn wire(
         event_loop,
         display.session_notifier,
         ctx_rc.clone(),
-        |ctx, state| {
-            // The watchdog's kick is the frame executor; the loop handle it
-            // captures is the state's own. Outcome handling belongs to the
-            // pacing layer — the watchdog only needs the kick.
-            let handle = state.loop_handle.clone();
-            // A resume render has no commit behind it: move the epoch, or the
-            // executor's epoch-current skip finds every pipe up to date.
-            state
-                .state
-                .redraw
-                .request_silent_for(protocols::redraw::schedule::RedrawReason::Resume);
-            let _ = crate::render::execute::execute(
-                ctx,
-                handle,
-                state,
-                crate::render::execute::RenderScope::All,
-            );
-        },
     );
 
     crate::wire::frame::register(event_loop, _loop, display.drm_notifier, ctx_rc.clone());

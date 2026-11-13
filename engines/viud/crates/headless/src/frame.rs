@@ -33,6 +33,21 @@ fn route(vt_session: bool, active: bool) -> Route {
     }
 }
 
+/// Generations prevent a retired callback from clearing a newly armed timer.
+#[derive(Default)]
+struct FrameTimer {
+    armed: bool,
+    epoch: u64,
+}
+impl FrameTimer {
+    fn arm(&mut self) -> u64 { self.armed = true; self.epoch }
+    fn retire(&mut self) { self.armed = false; self.epoch = self.epoch.wrapping_add(1); }
+    fn fire(&mut self, epoch: u64) -> bool {
+        if !self.armed || epoch != self.epoch { return false; }
+        self.armed = false;
+        true
+    }
+}
 #[derive(Default)]
 struct Retry {
     delay: Duration,
@@ -64,12 +79,19 @@ pub(crate) struct Context {
     next: usize,
     tracker: OutputDamageTracker,
     last: Option<Instant>,
-    armed: bool,
+    timer: FrameTimer,
+    timer_source: Option<smithay::reexports::calloop::RegistrationToken>,
     retry: Retry,
     interval: Duration,
 }
 
 impl Context {
+    fn retire_timer(&mut self, state: &Loop) {
+        self.timer.retire();
+        if let Some(token) = self.timer_source.take() {
+            state.loop_handle.remove(token);
+        }
+    }
     pub(crate) fn follow(&mut self, output: Output) {
         self.tracker = OutputDamageTracker::from_output(&output);
         self.output = output;
@@ -91,7 +113,8 @@ impl Context {
             next: 0,
             tracker,
             last: None,
-            armed: false,
+            timer: FrameTimer::default(),
+            timer_source: None,
             retry: Retry::default(),
             interval,
         }
@@ -108,32 +131,35 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
         ),
     ) == Route::Kms
     {
+        ctx.retire_timer(state);
         return;
     }
     if let Some(mode) = ctx.output.current_mode() {
         ctx.interval = Duration::from_nanos(1_000_000_000_000 / mode.refresh.max(1) as u64);
     }
     let key = world::state::output_key(&ctx.output);
-    if ctx.armed || !state.state.redraw.needs(&key) {
+    if ctx.timer.armed || !state.state.redraw.needs(&key) {
         return;
     }
     let at = ctx.last.map_or_else(Instant::now, |last| {
         (last + ctx.interval.max(ctx.retry.delay)).max(Instant::now())
     });
+    let epoch = ctx.timer.arm();
     let context = Rc::clone(context);
-    state
+    let token = state
         .loop_handle
         .insert_source(Timer::from_deadline(at), move |_, _, state| {
             {
                 let mut ctx = context.borrow_mut();
-                ctx.armed = false;
+                if !ctx.timer.fire(epoch) { return TimeoutAction::Drop; }
+                ctx.timer_source = None;
                 draw(state, &mut ctx);
             }
             arm(state, &context);
             TimeoutAction::Drop
         })
         .expect("headless: frame timer");
-    ctx.armed = true;
+    ctx.timer_source = Some(token);
 }
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
@@ -145,6 +171,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
         ),
     ) == Route::Kms
     {
+        ctx.retire_timer(state);
         return;
     }
     let key = world::state::output_key(&ctx.output);
@@ -159,24 +186,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     let mut visible = Vec::new();
     // KMS adopts this very renderer on first activation. Its EGL display
     // continues to own the render fd, so offscreen frames need no DRM master.
-    let result = if let Some(mut renderer) = ctx.renderer.take() {
-        let result = compose(state, ctx, &mut renderer, &mut visible);
-        ctx.renderer = Some(renderer);
-        result
-    } else {
-        let binding = state
-            .inner
-            .kernel
-            .get(&world::state::GPU_BINDING)
-            .as_ref()
-            .expect("native renderer binding")
-            .clone();
-        let mut binding = binding.borrow_mut();
-        let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
-        let primary = *primary;
-        let mut renderer = render_gles::multigpu::factory::single_renderer(gpus, &primary);
-        compose(state, ctx, renderer.as_mut(), &mut visible)
-    };
+    let result = compose_available(state, ctx, &mut visible);
     match result {
         Ok(true) => {
             ctx.retry.delay = Duration::ZERO;
@@ -238,6 +248,24 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     }
 }
 
+fn compose_available(
+    state: &mut Loop,
+    ctx: &mut Context,
+    visible: &mut Vec<Window>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if let Some(mut renderer) = ctx.renderer.take() {
+        let result = compose(state, ctx, &mut renderer, visible);
+        ctx.renderer = Some(renderer);
+        return result;
+    }
+    let binding = state.inner.kernel.get(&world::state::GPU_BINDING)
+        .as_ref().ok_or("native renderer binding temporarily unavailable")?.clone();
+    let mut binding = binding.try_borrow_mut().map_err(|_| "native renderer is busy")?;
+    let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
+    let primary = *primary;
+    let mut renderer = gpus.single_renderer(&primary)?;
+    compose(state, ctx, renderer.as_mut(), visible)
+}
 fn compose(
     state: &mut Loop,
     ctx: &mut Context,
@@ -434,6 +462,27 @@ fn send_frames(state: &mut Loop, output: &Output, visible: &[Window]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn queued_timer_activation_race_cannot_starve_the_next_pause() {
+        let mut timer = FrameTimer::default();
+        let before_activation = timer.arm();
+        timer.retire();
+        assert!(!timer.armed);
+        assert!(!timer.fire(before_activation));
+        let after_pause = timer.arm();
+        assert!(!timer.fire(before_activation), "late old callback must not clear the new timer");
+        assert!(timer.armed);
+        assert!(timer.fire(after_pause));
+        assert!(!timer.armed);
+        for _ in 0..4 {
+            let epoch = timer.arm();
+            timer.retire();
+            assert!(!timer.fire(epoch));
+            let epoch = timer.arm();
+            assert!(timer.fire(epoch));
+        }
+    }
 
     #[test]
     fn inactive_start_activate_deactivate_routes_frames_without_recreating_the_desk() {

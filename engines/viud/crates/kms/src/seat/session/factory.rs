@@ -23,7 +23,13 @@ pub fn try_create() -> Option<(LibSeatSession, LibSeatSessionNotifier)> {
     {
         return None;
     }
-    let (session, notifier) = LibSeatSession::new().expect("libseat session creation failed");
+    let (session, notifier) = match LibSeatSession::new() {
+        Ok(session) => session,
+        Err(error) => {
+            warn!("seat creation deferred; keeping the offscreen desk alive: {error}");
+            return None;
+        }
+    };
     if crate::seat::session::vt_wait::own_vt().is_some() && !session.is_active() {
         return None;
     }

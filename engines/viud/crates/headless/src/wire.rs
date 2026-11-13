@@ -339,3 +339,16 @@ pub fn follow_output(output: Output) {
         }
     });
 }
+
+/// Fake-seat harness only: retire the real offscreen timer on activation,
+/// then stand in for KMS presentation without opening a primary DRM device.
+#[doc(hidden)]
+pub fn fixture_presentation(state: &mut Loop, active: bool) {
+    if active { arm_inactive(state); }
+    FALLBACK.with(|slot| {
+        if let Some(context) = slot.borrow().as_ref() {
+            context.borrow_mut().vt_session = !active;
+        }
+    });
+    state.state.schedule_redraw(protocols::redraw::schedule::RedrawReason::Resume);
+}
