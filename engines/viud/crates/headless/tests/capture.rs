@@ -114,6 +114,9 @@ fn record_changing_4k_ten_seconds() {
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
+    let row = bus.window();
+    bus.call("comp.window.fullscreen", place_args(&row, json!({"output":"headless-0"})));
+    pump_patterns(&mut [&mut p]);
     // The fixture's initial xdg configure chooses 1280x720 even on a larger
     // output. Submit full-output buffers explicitly and prove their coverage.
     p.state.size = (3840, 2160);
