@@ -6,22 +6,71 @@ pub use graphics::capture::encode::video::probe_vaapi;
 use serde_json::{Value, json};
 use std::{
     fs::File,
-    io::Write,
+    io::{Write, Read, BufWriter},
+    os::unix::fs::OpenOptionsExt,
     sync::Arc,
     sync::mpsc::{Receiver, channel},
 };
 
-pub fn monotonic_us() -> u64 {
+pub fn private_token() -> Result<String, String> {
+    let mut bytes = [0u8; 32];
+    File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes)).map_err(|e| e.to_string())?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+fn secure_file(path: &str) -> Result<File, String> {
+    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW).open(path).map_err(|e| format!("create {path}: {e}"))
+}
+
+pub fn check_destination(path: &str) -> Result<(), String> {
+    for name in [path.to_owned(), format!("{path}.frames.jsonl"), format!("{path}.markers.jsonl")] {
+        match std::fs::symlink_metadata(&name) {
+            Ok(_) => return Err("recording destination already exists".into()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
+struct TakeFiles { path: String, video: String, frames: String, markers: String }
+impl TakeFiles {
+    fn create(path: &str) -> Result<Self, String> {
+        check_destination(path)?;
+        let base = format!("{path}.{}.part", private_token()?);
+        Ok(Self { path: path.into(), video: base.clone(), frames: format!("{base}.frames"), markers: format!("{base}.markers") })
+    }
+    fn cleanup(&self) {
+        for path in [&self.video, &self.frames, &self.markers] { let _ = std::fs::remove_file(path); }
+    }
+    fn publish(&self) -> Result<(), String> {
+        let mut published = Vec::new();
+        for (src, dst) in [(&self.frames, format!("{}.frames.jsonl", self.path)), (&self.markers, format!("{}.markers.jsonl", self.path)), (&self.video, self.path.clone())] {
+            let from = std::ffi::CString::new(src.as_str()).map_err(|e| e.to_string())?;
+            let to = std::ffi::CString::new(dst.as_str()).map_err(|e| e.to_string())?;
+            if unsafe { libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE) } != 0 {
+                let error = std::io::Error::last_os_error().to_string();
+                for name in published { let _ = std::fs::remove_file(name); }
+                self.cleanup();
+                return Err(error);
+            }
+            published.push(dst);
+        }
+        Ok(())
+    }
+}
+impl Drop for TakeFiles { fn drop(&mut self) { self.cleanup(); } }
+
+pub fn monotonic_us() -> Result<u64, String> {
     let mut ts = libc::timespec {
         tv_sec: 0,
         tv_nsec: 0,
     };
     // CLOCK_MONOTONIC is the compositor presentation clock on Linux.
-    assert_eq!(
-        unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) },
-        0
-    );
-    ts.tv_sec as u64 * 1_000_000 + ts.tv_nsec as u64 / 1000
+    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } != 0 { return Err(format!("monotonic clock: {}", std::io::Error::last_os_error())); }
+    Ok(ts.tv_sec as u64 * 1_000_000 + ts.tv_nsec as u64 / 1000)
 }
 
 pub struct Recording {
@@ -39,13 +88,16 @@ pub struct Recording {
     source_width: u32,
     source_height: u32,
     seq: u64,
-    last: Arc<[u8]>,
+    last: Arc<Vec<u8>>,
     encoder_name: String,
     readback_us: u64,
     readback_total_us: u64,
     readbacks: u64,
     readback_max_us: u64,
-    frames_file: File,
+    readback_debt: u64,
+    files: TakeFiles,
+    bytes: u64,
+    frames_file: BufWriter<File>,
     markers_file: File,
     encoder: Option<VideoEncoder>,
     finishing: Option<Receiver<Result<(), String>>>,
@@ -63,17 +115,16 @@ impl Recording {
         let (source_width, source_height) = (width, height);
         let width = width.checked_add(1).ok_or("capture width overflow")? & !1;
         let height = height.checked_add(1).ok_or("capture height overflow")? & !1;
+        let files = TakeFiles::create(&path)?;
+        let frames_file = BufWriter::with_capacity(256 * 1024, secure_file(&files.frames)?);
+        let markers_file = secure_file(&files.markers)?;
         let encoder = VideoEncoder::start_with_encoder(
             width,
             height,
             fps,
-            Some(path.clone().into()),
+            Some(files.video.clone().into()),
             &encoder_name,
         )?;
-        let frames_file =
-            File::create(format!("{path}.frames.jsonl")).map_err(|e| e.to_string())?;
-        let markers_file =
-            File::create(format!("{path}.markers.jsonl")).map_err(|e| e.to_string())?;
         Ok(Self {
             session,
             path,
@@ -82,19 +133,22 @@ impl Recording {
             source_width,
             source_height,
             fps,
-            t0_us: monotonic_us(),
+            t0_us: monotonic_us()?,
+            files,
+            bytes: 0,
             frames: 0,
             repeated: 0,
             dropped: 0,
             error: None,
             terminal: None,
             seq: 0,
-            last: Arc::from([]),
+            last: Arc::new(Vec::new()),
             encoder_name,
             readback_us: 0,
             readback_total_us: 0,
             readbacks: 0,
             readback_max_us: 0,
+            readback_debt: 0,
             frames_file,
             markers_file,
             encoder: Some(encoder),
@@ -110,20 +164,22 @@ impl Recording {
         self.encoder.is_some() && self.error.is_none()
     }
 
-    pub fn frame(&mut self, pixels: Option<(u32, u32, Vec<u8>, u64)>) -> Result<(), String> {
+    pub fn frame(&mut self, pixels: Option<(u32, u32, Arc<Vec<u8>>, u64)>) -> Result<(), String> {
         let changed = pixels.is_some();
         if let Some((w, h, rgb, readback_us)) = pixels {
             self.readback_us = readback_us;
             self.readback_total_us += readback_us;
             self.readbacks += 1;
             self.readback_max_us = self.readback_max_us.max(readback_us);
+            let budget = 1_000_000 / u64::from(self.fps) / 4;
+            self.readback_debt = readback_us.saturating_sub(budget).div_ceil(budget).min(60);
             if (w, h) != (self.source_width, self.source_height) {
                 return Err("target dimensions changed".into());
             }
             if rgb.len() != w as usize * h as usize * 3 {
                 return Err("invalid RGB frame".into());
             }
-            self.last = rgb.into();
+            self.last = rgb;
         } else {
             self.readback_us = 0;
             self.repeated += 1;
@@ -138,7 +194,7 @@ impl Recording {
                 self.repeated += 1;
             }
         }
-        let now = monotonic_us();
+        let now = monotonic_us()?;
         let t_us = if self.frames == 0 {
             0
         } else {
@@ -158,38 +214,43 @@ impl Recording {
         if self.encoder.is_none() || self.frames == 0 {
             return Err("session is not recording".into());
         }
-        let row = json!({"seq":self.seq,"frame":self.frames-1,"t_us":monotonic_us()-self.t0_us,"label":label,"data":data});
+        self.frames_file.flush().map_err(|e| e.to_string())?;
+        let row = json!({"seq":self.seq,"frame":self.frames-1,"t_us":monotonic_us()?-self.t0_us,"label":label,"data":data});
         writeln!(self.markers_file, "{row}").map_err(|e| e.to_string())?;
         self.markers_file.flush().map_err(|e| e.to_string())?;
         self.seq += 1;
         Ok(json!({"session":self.session,"seq":row["seq"],"frame":row["frame"],"t_us":row["t_us"]}))
     }
 
+    /// ExportMem maps synchronously. Repay over-budget readback time with
+    /// skipped captures, preserving CFR through the previous immutable frame.
+    pub fn skip_readback(&mut self) -> bool {
+        if self.readback_debt == 0 { return false; }
+        self.readback_debt -= 1;
+        self.dropped += 1;
+        true
+    }
+
     pub fn status(&self) -> Value {
-        json!({"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":std::fs::metadata(&self.path).map(|m|m.len()).unwrap_or(0),"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
+        json!({"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes,"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
     }
 
     pub fn stop(&mut self, discard: bool) -> bool {
         let Some(encoder) = self.encoder.take() else {
             return false;
         };
-        self.last = Arc::from([]);
-        let _ = self.frames_file.flush();
-        let _ = self.markers_file.flush();
-        let path = self.path.clone();
+        self.last = Arc::new(Vec::new());
+        if let Err(error) = self.frames_file.flush().and_then(|_| self.markers_file.flush()) { self.error = Some(error.to_string()); }
+        let files = self.files.clone();
+        let failed = self.error.is_some();
         let (tx, rx) = channel();
         self.finishing = Some(rx);
         std::thread::spawn(move || {
-            let result = encoder.finish_result().and_then(|temp| {
-                if discard {
-                    std::fs::remove_file(temp)
-                        .and_then(|_| std::fs::remove_file(format!("{path}.frames.jsonl")))
-                        .and_then(|_| std::fs::remove_file(format!("{path}.markers.jsonl")))
-                        .map_err(|e| e.to_string())
-                } else {
-                    std::fs::rename(temp, path).map_err(|e| e.to_string())
-                }
-            });
+            let result = encoder.finish_result();
+            let result = if discard || failed || result.is_err() {
+                files.cleanup();
+                result.map(|_| ())
+            } else { files.publish() };
             let _ = tx.send(result);
         });
         true
@@ -210,8 +271,10 @@ impl Recording {
             self.error = Some(error);
         }
         self.finishing = None;
+        self.bytes = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
+        let kept = std::path::Path::new(&format!("{}.frames.jsonl", self.path)).exists() && self.error.is_none();
         self.terminal = Some(
-            json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
+            json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}.frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}.markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
         true
     }

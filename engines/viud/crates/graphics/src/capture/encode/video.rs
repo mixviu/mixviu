@@ -8,6 +8,7 @@
 //! Save (or deletes it on Discard).
 
 use std::io::{Read, Write};
+use std::os::unix::{fs::OpenOptionsExt, process::CommandExt};
 use std::path::PathBuf;
 use std::process::{Child, Stdio};
 
@@ -23,7 +24,7 @@ use std::time::{Duration, Instant};
 enum VideoFrame {
     Bgra(Arc<[u8]>),
     Rgb {
-        pixels: Arc<[u8]>,
+        pixels: Arc<Vec<u8>>,
         width: u32,
         height: u32,
     },
@@ -62,7 +63,7 @@ fn write_frames(
 ) -> std::io::Result<()> {
     let mut next = 0;
     let mut last: Arc<[u8]> = vec![0; width as usize * height as usize * 4].into();
-    let mut previous_rgb: Option<Arc<[u8]>> = None;
+    let mut previous_rgb: Option<Arc<Vec<u8>>> = None;
     for frame in rx {
         queued.fetch_sub(1, Ordering::Relaxed);
         for _ in next..frame.slot {
@@ -110,13 +111,6 @@ fn write_frames(
 }
 
 impl VideoEncoder {
-    /// Spawn ffmpeg encoding `width`×`height` BGRA frames at `fps` to a temp
-    /// mp4. Dimensions are forced even (yuv420p requires it). Returns `None`
-    /// if ffmpeg can't be spawned (treated as "video unavailable").
-    pub fn start(width: u32, height: u32, fps: u32) -> Option<Self> {
-        Self::start_result(width, height, fps).ok()
-    }
-
     pub fn start_result(width: u32, height: u32, fps: u32) -> Result<Self, String> {
         Self::start_at(width, height, fps, None)
     }
@@ -146,13 +140,15 @@ impl VideoEncoder {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let cleanup = path.is_none();
+        let bus = path.is_some();
+        let cleanup = true;
         let temp =
             path.unwrap_or_else(|| std::env::temp_dir().join(format!("viud-capture-{nanos}.mp4")));
 
         let mut cmd = command("ffmpeg");
+        cmd.process_group(0);
         if encoder == "vaapi" {
-            cmd.args(["-vaapi_device", "/dev/dri/renderD128"]);
+            cmd.args(["-vaapi_device", &std::env::var("VIUD_RECORD_VAAPI_DEVICE").unwrap_or_else(|_| "/dev/dri/renderD128".into())]);
         }
         cmd.args([
             "-y",
@@ -194,10 +190,14 @@ impl VideoEncoder {
             }
             _ => return Err("unknown recording encoder".into()),
         }
-        cmd.args(["-g", "30", "-an"])
-            .arg(&temp)
+        let destination = if bus {
+            Some(std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).custom_flags(libc::O_NOFOLLOW).open(&temp).map_err(|e| format!("create recording: {e}"))?)
+        } else { None };
+        cmd.args(["-g", "30", "-an"]);
+        if bus { cmd.args(["-f", "matroska", "pipe:1"]); } else { cmd.arg(&temp); }
+        cmd
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(destination.map(Stdio::from).unwrap_or_else(Stdio::null))
             .stderr(Stdio::piped());
         let mut child =
             child_spawn::spawn_awaited(&mut cmd).map_err(|e| format!("ffmpeg spawn: {e}"))?;
@@ -272,7 +272,7 @@ impl VideoEncoder {
         self.submit(VideoFrame::Bgra(bgra))
     }
 
-    pub fn try_push_rgb(&self, pixels: Arc<[u8]>, width: u32, height: u32) -> bool {
+    pub fn try_push_rgb(&self, pixels: Arc<Vec<u8>>, width: u32, height: u32) -> bool {
         if width == 0
             || height == 0
             || width > self.width
@@ -327,12 +327,12 @@ impl VideoEncoder {
                     break Err(format!("ffmpeg {status}"));
                 }
                 Err(error) => {
-                    let _ = child.kill();
+                    kill_group(&mut child);
                     let _ = child.wait();
                     break Err(format!("ffmpeg wait: {error}"));
                 }
                 _ if Instant::now() >= deadline => {
-                    let _ = child.kill();
+                    kill_group(&mut child);
                     let _ = child.wait();
                     break Err("ffmpeg finalise timeout".into());
                 }
@@ -348,19 +348,6 @@ impl VideoEncoder {
         result.map_err(|error| format!("{error}: {}", self.stderr.lock().unwrap()))
     }
 
-    /// Stop the stream, wait for ffmpeg to flush, and return the temp mp4 path
-    /// (or `None` if ffmpeg exited non-zero / produced nothing).
-    pub fn finish(self) -> Option<PathBuf> {
-        self.finish_result().ok()
-    }
-
-    pub fn discard(self) {
-        std::thread::spawn(move || {
-            if let Ok(path) = self.finish_result() {
-                let _ = std::fs::remove_file(path);
-            }
-        });
-    }
 }
 
 /// Called on a preflight worker thread, never on the compositor thread.
@@ -392,7 +379,7 @@ pub fn probe_vaapi() -> Result<(), String> {
             }
             Err(error) => break Err(format!("ffmpeg encoder probe: {error}")),
             _ if Instant::now() >= deadline => {
-                let _ = child.kill();
+                kill_group(&mut child);
                 let _ = child.wait();
                 break Err("ffmpeg encoder probe timed out".into());
             }
@@ -411,22 +398,23 @@ pub fn probe_vaapi() -> Result<(), String> {
     }
 }
 
+fn kill_group(child: &mut Child) {
+    unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL); }
+    let _ = child.kill();
+}
+
 impl Drop for VideoEncoder {
     fn drop(&mut self) {
         self.tx = None;
         if let Some(mut child) = self.child.take() {
-            let path = std::mem::take(&mut self.temp);
-            let cleanup = self.cleanup;
-            std::thread::spawn(move || {
-                let _ = child.kill();
-                let _ = child.wait();
-                if cleanup {
-                    let _ = std::fs::remove_file(path);
-                }
-            });
+            kill_group(&mut child);
+            let _ = child.wait();
+            if self.cleanup { let _ = std::fs::remove_file(&self.temp); }
         } else if self.cleanup && !self.temp.as_os_str().is_empty() {
             let _ = std::fs::remove_file(&self.temp);
         }
+        if let Some(join) = self.join.take() { let _ = join.join(); }
+        if let Some(join) = self.stderr_join.take() { let _ = join.join(); }
     }
 }
 

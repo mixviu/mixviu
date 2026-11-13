@@ -19,6 +19,7 @@ type Answer = Box<dyn FnOnce(ControlReply)>;
 #[derive(Clone)]
 struct Past {
     id: String,
+    params: RecordCommand,
     start: Option<Value>,
     terminal: Value,
     status: Value,
@@ -26,7 +27,9 @@ struct Past {
 }
 struct Session {
     request_id: String,
+    admitted: Instant,
     id: String,
+    params: RecordCommand,
     path: String,
     targets: Vec<CaptureFrameSpec>,
     fps: u32,
@@ -67,8 +70,10 @@ fn event(s: &Session, state: &'static str) {
 
 pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlReply) + 'static) {
     let answer: Answer = Box::new(answer);
+    let params = op.clone();
     if let RecordCommand::Start { request_id, .. } = &op {
         if let Some(past) = PAST.with_borrow(|past| past.get(request_id).cloned()) {
+            if past.params != op { answer(refused("request_id parameters differ")); return; }
             answer(past.start.map(ControlReply::Body).unwrap_or_else(|| {
                 refused(
                     past.start_error
@@ -110,6 +115,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         if let Some(previous) = previous {
             let mut s = previous.borrow_mut();
             if s.request_id == request_id {
+                if s.params != params { answer(refused("request_id parameters differ")); return; }
                 if let Some(reply) = &s.start {
                     answer(ControlReply::Body(reply.clone()));
                 } else if let Some(error) = &s.failed {
@@ -129,6 +135,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 return;
             }
         }
+        if let Err(error) = recorder::bus::check_destination(&path) { answer(refused(&error)); return; }
         for target in &mut targets {
             if target.window.is_none() {
                 let outputs: Vec<_> = lp.inner.space_state().state.outputs().cloned().collect();
@@ -161,7 +168,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 target.output_generation = Some(generation);
             }
         }
-        let id = format!("record-{}", recorder::bus::monotonic_us());
+        let id = match recorder::bus::private_token() { Ok(token) => format!("record-{token}"), Err(error) => { answer(refused(&error)); return; } };
         let probe = if encoder == "vaapi" {
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
@@ -173,6 +180,8 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         };
         let session = Rc::new(RefCell::new(Session {
             request_id,
+            admitted: Instant::now(),
+            params,
             id,
             path,
             targets,
@@ -266,7 +275,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 Err(error) => refused(error),
             },
         ),
-        RecordCommand::Stop { discard, .. } => {
+        RecordCommand::Stop { session, discard } => {
             if let Some(r) = s.recording.as_mut() {
                 if let Some(reply) = &r.terminal {
                     answer(ControlReply::Body(reply.clone()));
@@ -278,7 +287,10 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                     event(&s, "finishing");
                 }
             } else {
-                answer(refused("first frame pending or session failed"));
+                drop(s);
+                cancel_pending(&current, "cancelled before first frame");
+                let past = PAST.with_borrow(|p| p.values().find(|p| p.id == session).cloned());
+                answer(ControlReply::Body(past.unwrap().terminal));
             }
         }
         _ => unreachable!(),
@@ -300,19 +312,24 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
     } else {
         let past = Past {
             id: s.id.clone(),
+            params: s.params.clone(),
             start: None,
             start_error: Some(error.into()),
-            terminal: json!({"path":s.path,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"frames_path":format!("{}.frames.jsonl",s.path),"markers_path":format!("{}.markers.jsonl",s.path),"encoder":s.encoder,"error":error}),
+            terminal: json!({"path":s.path,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"frames_path":null,"markers_path":null,"encoder":s.encoder,"error":error}),
             status: empty_status("failed", Some(error)),
         };
         PAST.with_borrow_mut(|all| {
+            if all.len() >= 128 { if let Some(key) = all.keys().next().cloned() { all.remove(&key); } }
             all.insert(s.request_id.clone(), past);
         });
     }
     event(&s, "failed");
 }
 
+fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) { fail(session, message); }
+
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
+    { let s = session.borrow(); if s.recording.is_none() && s.failed.is_none() && s.admitted.elapsed() >= Duration::from_secs(s.max_seconds) { drop(s); cancel_pending(session, "max_seconds elapsed before first frame"); return; } }
     {
         let mut s = session.borrow_mut();
         if let Some(probe) = &s.probe {
@@ -340,13 +357,15 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 let past = Past {
                     id: s.id.clone(),
+            params: s.params.clone(),
                     start: s.start.clone(),
                     terminal: reply.clone(),
                     status: s.recording.as_ref().unwrap().status(),
                     start_error: None,
                 };
                 PAST.with_borrow_mut(|all| {
-                    all.insert(s.request_id.clone(), past);
+                    if all.len() >= 128 { if let Some(key) = all.keys().next().cloned() { all.remove(&key); } }
+            all.insert(s.request_id.clone(), past);
                 });
                 for answer in std::mem::take(&mut s.stop_answers) {
                     answer(ControlReply::Body(reply.clone()));
@@ -363,7 +382,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         }
         if s.recording
             .as_ref()
-            .is_some_and(|r| recorder::bus::monotonic_us() - r.t0_us >= s.max_seconds * 1_000_000)
+            .is_some_and(|r| recorder::bus::monotonic_us().unwrap_or(u64::MAX).saturating_sub(r.t0_us) >= s.max_seconds * 1_000_000)
         {
             s.recording.as_mut().unwrap().stop(false);
             event(&s, "finishing");
@@ -454,6 +473,9 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         }
         return;
     }
+    if let Some(r) = s.recording.as_mut() {
+        if r.skip_readback() { let result = r.frame(None); drop(s); if let Err(error) = result { fail(session, &error); } return; }
+    }
     s.signature = signature;
     s.pending = true;
     let targets = s.targets.clone();
@@ -461,7 +483,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     drop(s);
     let frames = Rc::new(RefCell::new(Vec::new()));
     for (index, mut target) in targets.into_iter().enumerate() {
-        let token = format!("/{id}-raw-{index}");
+        let token = match recorder::bus::private_token() { Ok(token) => format!("/{id}-{token}-{index}"), Err(error) => { fail(session, &error); return; } };
         target.path = token.clone();
         let got = frames.clone();
         let session = session.clone();
@@ -472,7 +494,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     return;
                 }
             }
-            let captured_us = recorder::bus::monotonic_us();
+            let captured_us = match recorder::bus::monotonic_us() { Ok(time) => time, Err(error) => { fail(&session, &error); return; } };
             let frame = match result {
                 Ok(frame) => frame,
                 Err(error) => {
@@ -489,18 +511,19 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             frames.sort_by_key(|(index, _)| *index);
             let width = frames.iter().map(|(_, f)| f.0).sum::<u32>();
             let height = frames.iter().map(|(_, f)| f.1).max().unwrap();
-            let mut pixels = vec![0; width as usize * height as usize * 3];
-            let mut x = 0;
             let readback_us = frames.iter().map(|(_, frame)| frame.3).sum::<u64>();
-            for (_, (w, h, p, _)) in frames.iter() {
-                for y in 0..*h as usize {
-                    let at = (y * width as usize + x) * 3;
-                    pixels[at..at + *w as usize * 3]
-                        .copy_from_slice(&p[y * *w as usize * 3..(y + 1) * *w as usize * 3]);
+            let pixels = if frames.len() == 1 { frames[0].1.2.clone() } else {
+                let mut pixels = vec![0; width as usize * height as usize * 3];
+                let mut x = 0;
+                for (_, (w, h, p, _)) in frames.iter() {
+                    for y in 0..*h as usize {
+                        let at = (y * width as usize + x) * 3;
+                        pixels[at..at + *w as usize * 3].copy_from_slice(&p[y * *w as usize * 3..(y + 1) * *w as usize * 3]);
+                    }
+                    x += *w as usize;
                 }
-                x += *w as usize;
-            }
-            let mut s = session.borrow_mut();
+                std::sync::Arc::new(pixels)
+            };            let mut s = session.borrow_mut();
             s.pending = false;
             if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
                 return;

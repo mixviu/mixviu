@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::io::Write;
 
 type Answer = Box<dyn FnOnce(Result<Value, ControlReply>)>;
-pub type Pixels = (u32, u32, Vec<u8>, u64);
+pub type Pixels = (u32, u32, std::sync::Arc<Vec<u8>>, u64);
 type PixelAnswer = Box<dyn FnOnce(Result<Pixels, ControlReply>)>;
 thread_local! {
     static PIXEL_ANSWERS: RefCell<std::collections::HashMap<String, PixelAnswer>> = RefCell::new(std::collections::HashMap::new());
@@ -112,7 +112,7 @@ pub(crate) fn service_windows(
             complete_timed(
                 &request.spec,
                 readback,
-                &pixels,
+                &std::sync::Arc::new(pixels),
                 output,
                 CaptureSource::Offscreen,
                 started.elapsed().as_micros() as u64,
@@ -191,7 +191,7 @@ pub fn service<R: ExportMem>(
     }
     let readback = source.readback;
     let started = std::time::Instant::now();
-    let pixels = read_pixels(renderer, source);
+    let pixels = read_pixels(renderer, source).map(std::sync::Arc::new);
     let readback_us = started.elapsed().as_micros() as u64;
     for request in requests {
         let result = pixels
@@ -249,13 +249,13 @@ fn complete(
     output: &Output,
     kind: CaptureSource,
 ) -> Result<Value, String> {
-    complete_timed(spec, readback, pixels, output, kind, 0, false)
+    complete_timed(spec, readback, &std::sync::Arc::new(pixels.to_vec()), output, kind, 0, false)
 }
 
 fn complete_timed(
     spec: &CaptureFrameSpec,
     readback: Readback,
-    pixels: &[u8],
+    pixels: &std::sync::Arc<Vec<u8>>,
     output: &Output,
     kind: CaptureSource,
     readback_us: u64,
@@ -292,7 +292,7 @@ fn complete_timed(
         None
     };
     if let Some(answer) = raw {
-        answer(Ok((width, height, cropped.into_owned(), readback_us)));
+        answer(Ok((width, height, if spec.region.is_none() { pixels.clone() } else { std::sync::Arc::new(cropped.into_owned()) }, readback_us)));
     } else {
         write(spec, width, height, &cropped)?;
     }
