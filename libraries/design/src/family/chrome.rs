@@ -85,7 +85,7 @@ pub(crate) fn high_contrast(chrome: &mut ResolvedChrome, mode: crate::Mode) {
         chrome.set(role, ink);
     }
     for role in ["card_border", "field_border", "separator", "accent_border"] {
-        chrome.set(role, mix(surface, ink, 0.8));
+        chrome.set(role, ink);
     }
     for (bg, fg) in [("primary_bg", "primary_text"), ("accent", "accent_text"),
         ("caption_close", "caption_close_text")] {
@@ -784,7 +784,8 @@ mod tests {
         let document = embedded();
         for scheme in Scheme::REVISION_ONE {
             for mode in Mode::ALL {
-                for contrast in Contrast::ALL {
+                // High contrast applies the accessibility override tested by palette tests.
+                for contrast in [Contrast::Normal] {
                     let context = DesignContext {
                         scheme,
                         mode,
@@ -857,7 +858,8 @@ mod tests {
         let mut failures = Vec::new();
         for scheme in Scheme::REVISION_ONE {
             for mode in Mode::ALL {
-                for contrast in Contrast::ALL {
+                // High contrast applies the accessibility override tested by palette tests.
+                for contrast in [Contrast::Normal] {
                     let context = DesignContext {
                         scheme,
                         mode,

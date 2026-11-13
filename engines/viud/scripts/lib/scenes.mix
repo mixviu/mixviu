@@ -339,7 +339,7 @@ fn inventory($s)
       template:$s.desired.origins[$name], diagnostic:$diagnostic, load_diagnostic:$e.load_diagnostic, diagnostics:$diagnostics, exit:$e.exit,
       attempted_digest:$e.attempted, accepted_digest:$e.digest,
       journal:"journalctl -u mix-desk-scenes.service", open:$s.open == $name, pending:$e.pending,
-      title:$shown.title ?? $name, edge:$e.edge ?? $shown.edge, page:$e.page ?? $shown.page,
+      title:$shown.title ?? $name, edge:if $e.enabled then $e.edge ?? $shown.edge else $shown.edge end, page:$e.page ?? $shown.page,
       kind:$e.kind ?? $shown.kind ?? "edge", files:$e.files, digests:$e.digests ?? {},
       forked_from:type($fork) == "map" ? $fork.from : nil,
       problems:scene_problems($s, $name, $e, $diagnostic, $diagnostics)})
@@ -568,6 +568,7 @@ fn candidate($s, $name, $dir)
     fail("SCENES_FILES", "scene and metadata must be regular files in a real directory", {file:$dir})
   end
   $source = bounded_read($dir .. "/scene.mix", 262144)
+  $source_digest = hash_sha256($source)
   if $name == "panel" then $source = panel_source($source, $dir) end
   $doc = document($source)
   if $doc.name != $name then fail("SCENES_NAME", "document name must match installation directory", {name:$name, scene:$doc.name}) end
@@ -606,7 +607,7 @@ fn candidate($s, $name, $dir)
   if not contains(["left", "top", "bottom"], $edge) then $edge = "right" end
   if seated($kind) then $edge = nil end
   return {source:$source, model:$doc.model, page:$page, edge:$edge, kind:$kind, title:$meta.title ?? $name,
-    digest:hash_sha256($source), behaviour_digest:$behaviour, meta_digest:hash_sha256($meta_text)}
+    digest:$source_digest, behaviour_digest:$behaviour, meta_digest:hash_sha256($meta_text)}
 end
 
 -- Per-file attempted digests and display fields, whatever the scene's state.
@@ -623,7 +624,9 @@ fn observe($s, $name, $dir)
   end
   $shown = {}
   try
-    $doc = document(bounded_read($files.scene, 262144))
+    $source = bounded_read($files.scene, 262144)
+    if $name == "panel" then $source = panel_source($source, $dir) end
+    $doc = document($source)
     $shown.kind = $doc.mount.kind ?? "edge"
     $shown.page = type($doc.mount.panel) == "string" ? $doc.mount.panel : "scene-" .. $name
     $shown.edge = contains($EDGES, $doc.mount.edge) ? $doc.mount.edge : "right"
@@ -769,7 +772,7 @@ fn reconcile_one($s, $name, $force)
       $e.check_problems = ($checked ?? {}).problems ?? []
     end
     $s.scenes[$name] = $e
-    if $force or $c.digest != $e.digest or not $e.mounted then
+    if $force or $c.digest != $e.digest or $c.edge != $e.edge or not $e.mounted then
       legacy_guard($s, $c.page)
       $model = $e.model ?? $c.model
       if $e.mounted and ($c.page != $e.page or $c.edge != $e.edge or $c.kind != ($e.kind ?? "edge")) then
@@ -2275,6 +2278,10 @@ fn reset_scene($s, $name, $e)
   if $origin == nil then fail("SCENES_NO_ORIGIN", "reset requires a recorded shipped template origin", {name:$name}) end
   require_no_record($s, "resetting")
   $tmp = stage($s, $origin, $name)
+  -- Settings are user state, including panel position and task scope.
+  if regular($installation .. "/settings.conf.mix") then
+    write_atomic($tmp .. "/settings.conf.mix", bounded_read($installation .. "/settings.conf.mix", 65536))
+  end
   $backup = $recovery .. "/" .. $name .. "-" .. uuid()
   if $s.open == $name then $s.open = nil end
   $s = drive_popups($s)
