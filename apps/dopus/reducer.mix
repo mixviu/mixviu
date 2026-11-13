@@ -264,7 +264,7 @@ fn dp_action($s,$contract,$id,$params)
   elif starts_with($id,"theme.decorations-") then $s.window_choice["window.decorations"]=slice($id,len("theme.decorations-"))
   elif starts_with($id,"theme.captions-") then $s.window_choice["window.caption_side"]=slice($id,len("theme.captions-"))
   elif $id=="theme.mode-toggle" then $s.appearance.mode=if $s.appearance.mode=="dark" then "light" else "dark" end
-  elif starts_with($id,"view.mode.") then $s.appearance.mode=slice($id,len("view.mode."))
+  elif starts_with($id,"view.mode.") then $s.appearance.mode=slice($id,len("view.mode."));$s.appearance_choice.mode=$s.appearance.mode
   elif starts_with($id,"theme.style-") then $s.appearance.style=slice($id,len("theme.style-"))
   elif starts_with($id,"theme.scheme-") then $s.appearance.scheme=slice($id,len("theme.scheme-"))
   elif $id=="help.macros" then $s.reply={panel:"macros"}

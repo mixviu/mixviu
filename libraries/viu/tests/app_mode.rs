@@ -88,6 +88,12 @@ fn every_app_executes_the_mode_contract_and_restores_its_choice() {
             runtime.load(bundle.program).unwrap();
             let initial = next(&runtime, &wakes, app).model.unwrap();
             assert_eq!(initial["theme_choice"]["mode"].as_str(), expected, "{app} restart={restart}");
+            runtime.event(format!("{app}.actions"), json!({})).unwrap();
+            let actions = next(&runtime, &wakes, app).reply.unwrap();
+            assert_eq!(actions.rc, 0, "{app}");
+            for mode in ["light", "dark", "session"] {
+                assert!(actions.body.to_string().contains(&format!("view.mode.{mode}")), "{app} discovers {mode}");
+            }
             for mode in if restart { vec!["session"] } else { vec!["dark", "session", "light"] } {
                 runtime.event(format!("{app}.execute"), json!({"id":format!("view.mode.{mode}"),"params":{}})).unwrap();
                 let done = next(&runtime, &wakes, app);

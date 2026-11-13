@@ -228,6 +228,7 @@ on dopus.intent
 end
 on dopus.execute
   $a=$event.args
+  if starts_with($a.id ?? "","theme.mode-") and $a.id!="theme.mode-toggle" then $a.id="view.mode."..slice($a.id,len("theme.mode-")) end
   if type($a.id)!="string" or any(keys($a),fn($k)=not contains(["id","params"],$k)) or ($a.params!=nil and type($a.params)!="map") then
     reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"body: expected id and optional params object",reason:nil}));return
   end

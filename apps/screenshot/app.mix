@@ -50,7 +50,7 @@ on viu.key
   $state=$events.key($state,$event.args);$state=publish_model($state)
 end
 on viu.session.changed
-  $state.effective=$event.args.appearance;$state.keymap=$event.args.keymap;$state=publish_model($state)
+  $state.effective=$event.args.appearance;if $state.look.mode!=nil then $state.effective.mode=$state.look.mode end;$state.keymap=$event.args.keymap;$state=publish_model($state)
 end
 on viu.theme.changed
   $state.effective=$event.args;$state=publish_model($state)

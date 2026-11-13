@@ -21,7 +21,7 @@ end
 fn theme_view($s)
   $choice=theme_choice($s)
   $decorations=$choice.decorations ?? $s.values["window.decorations"] ?? "auto"
-  return merge($choice,{effective:{scheme:$choice.scheme ?? $s.values["appearance.scheme"] ?? "mixos",mode:$choice.mode ?? $session.session_appearance($s.values,"prefs").mode ?? "dark",decorations:if $decorations=="auto" then "csd" else $decorations end,decorations_reason:if $decorations=="auto" then "no_server_protocol" else "choice" end}})
+  return merge($choice,{effective:{scheme:$choice.scheme ?? $s.values["appearance.scheme"] ?? "mixos",mode:$choice.mode ?? $s.theme_effective.mode ?? $session.session_appearance($s.values,"prefs").mode ?? "dark",decorations:if $decorations=="auto" then "csd" else $decorations end,decorations_reason:if $decorations=="auto" then "no_server_protocol" else "choice" end}})
 end
 fn selected($s)
   return filter($n.apps_view($s).visible,fn($r)=$r.app==$s.ui.selected)[0]

@@ -15,7 +15,7 @@ fn ced_menus($s)
     if $menu=="Help" then $menu_rows=concat(filter($menu_rows,fn($a)=$a.id=="help.macros"),filter($menu_rows,fn($a)=$a.id!="help.macros")) end
     if $menu=="View" then $menu_rows=concat(filter($menu_rows,fn($a)=contains(["view.zoom_in","view.zoom_out","view.zoom_reset","view.clear_markers","view.reload_settings"],$a.id)),filter($menu_rows,fn($a)=not contains(["view.zoom_in","view.zoom_out","view.zoom_reset","view.clear_markers","view.reload_settings"],$a.id))) end
     for $a in $menu_rows
-      if $a.id=="mail.headers" then continue end
+      if $a.id=="mail.headers" or starts_with($a.id,"view.mode.") then continue end
       if starts_with($a.id,"view.markdown.") then
         push($markdown,{id:$a.id,label:$a.label,enabled:$a.enabled,checked:len($s.tabs)>0 and ($s.previews[$ced_core.current($s).document] ?? "source")==split($a.id,".")[2]});continue
       end

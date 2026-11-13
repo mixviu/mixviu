@@ -323,6 +323,9 @@ on prefs.quit
   if $state.ui.dialog!=nil then reply(10,json_encode({error_code:"BUSY",message:$nav.text_for("busy")}));return end
   $state.quitting=true;publish_prefs($state);reply(0,json_encode({quitting:true}))
 end
+on viu.theme.changed
+  $state.theme_effective=$event.args;publish_prefs($state)
+end
 on prefs.theme
   try
     $state=$actions.choose_theme($state,$event.args);publish_prefs($state);reply(0,json_encode($actions.theme_view($state)))
