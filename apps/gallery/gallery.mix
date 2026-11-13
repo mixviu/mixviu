@@ -120,6 +120,9 @@ end
 on viu.theme.changed
   $effective=$event.args;publish_gallery($ctx,$state)
 end
+on viu.frame.close
+  $state.window_close=true;publish_gallery($ctx,$state)
+end
 on gallery.state
   reply(0,json_encode(merge($state,{theme:{mode:$choice.mode,effective:$effective}})))
 end

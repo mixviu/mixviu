@@ -359,6 +359,10 @@ fn app_mode_child() {
                     assert_eq!(info.body["theme"]["effective"]["mode"], if mode=="session" {session} else {mode}, "{app} effective state readback");
                 }
             }
+            if app == "gallery" {
+                runtime.event("viu.frame.close".into(), json!({})).unwrap();
+                assert_eq!(next(&runtime, &wakes, app).model.unwrap()["window_close"], true);
+            }
         }
     }
 }
