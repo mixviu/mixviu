@@ -50,6 +50,8 @@ fn chooser_mix_mounts_shared_frame_and_keeps_native_save_focus_and_rows() {
     assert_eq!(model["frame"]["status_hidden"], true);
     assert_eq!(model["values"]["identity"], "Requested by local:test");
     assert_eq!(model["form_rows"], 1);
+    assert_eq!(model["values"]["gold-title"], "Save file");
+    assert_eq!(model["window_title"], "Save file");
     let mut doc =
         scene::parse(&std::fs::read_to_string(root.join("chooser.scene.mix")).unwrap()).unwrap();
     doc.model = Some(model.clone());
@@ -209,9 +211,14 @@ end
             assert_eq!(selected["panes"][1]["selected"], json!(null));
         }
         assert_eq!(selected["values"]["gold-title"], "MixViu DOpus");
-        assert_eq!(selected["info"], if active == 0 {
-            "selected.txt — TXT file — 7 B"
-        } else { "Select a file or folder" });
+        assert_eq!(
+            selected["info"],
+            if active == 0 {
+                "selected.txt — TXT file — 7 B"
+            } else {
+                "Select a file or folder"
+            }
+        );
         assert_eq!(selected["panes"][0]["summary"], "0 folders, 1 file (7 B)");
         runtime
             .event("dopus.execute".into(), json!({"id":"file.new-folder"}))
@@ -232,18 +239,66 @@ end
     std::fs::write(left.join("second.txt"), "123").unwrap();
     std::fs::write(right.join("photo.jpg"), "12345").unwrap();
     let steps = [
-        ("dopus.execute", json!({"id":"view.refresh"}), "Select a file or folder"),
-        ("dopus.intent", json!({"id":"left-tree","action":"select","value":{"key":left.join("selected.txt")}}), "selected.txt — TXT file — 7 B"),
-        ("dopus.intent", json!({"id":"left-tree","action":"select","value":{"key":left.join("second.txt"),"ctrl":true}}), "2 selected — 10 B"),
-        ("dopus.intent", json!({"id":"left-tree","action":"select","value":{"key":left.join("second.txt"),"ctrl":true}}), "selected.txt — TXT file — 7 B"),
-        ("dopus.intent", json!({"id":"left-tree","action":"select","value":{"key":left.join("selected.txt"),"ctrl":true}}), "Select a file or folder"),
-        ("dopus.execute", json!({"id":"selection.first"}), "second.txt — TXT file — 3 B"),
-        ("dopus.intent", json!({"id":"left-tree","action":"navigate","value":{"key":"End","shift":true}}), "2 selected — 10 B"),
-        ("dopus.execute", json!({"id":"nav.pane-right"}), "Select a file or folder"),
-        ("dopus.execute", json!({"id":"view.refresh"}), "Select a file or folder"),
-        ("dopus.execute", json!({"id":"selection.first"}), "photo.jpg — JPG file — 5 B"),
-        ("dopus.execute", json!({"id":"nav.pane-left"}), "2 selected — 10 B"),
-        ("dopus.execute", json!({"id":"nav.pane-right"}), "photo.jpg — JPG file — 5 B"),
+        (
+            "dopus.execute",
+            json!({"id":"view.refresh"}),
+            "Select a file or folder",
+        ),
+        (
+            "dopus.intent",
+            json!({"id":"left-tree","action":"select","value":{"key":left.join("selected.txt")}}),
+            "selected.txt — TXT file — 7 B",
+        ),
+        (
+            "dopus.intent",
+            json!({"id":"left-tree","action":"select","value":{"key":left.join("second.txt"),"ctrl":true}}),
+            "2 selected — 10 B",
+        ),
+        (
+            "dopus.intent",
+            json!({"id":"left-tree","action":"select","value":{"key":left.join("second.txt"),"ctrl":true}}),
+            "selected.txt — TXT file — 7 B",
+        ),
+        (
+            "dopus.intent",
+            json!({"id":"left-tree","action":"select","value":{"key":left.join("selected.txt"),"ctrl":true}}),
+            "Select a file or folder",
+        ),
+        (
+            "dopus.execute",
+            json!({"id":"selection.first"}),
+            "second.txt — TXT file — 3 B",
+        ),
+        (
+            "dopus.intent",
+            json!({"id":"left-tree","action":"navigate","value":{"key":"End","shift":true}}),
+            "2 selected — 10 B",
+        ),
+        (
+            "dopus.execute",
+            json!({"id":"nav.pane-right"}),
+            "Select a file or folder",
+        ),
+        (
+            "dopus.execute",
+            json!({"id":"view.refresh"}),
+            "Select a file or folder",
+        ),
+        (
+            "dopus.execute",
+            json!({"id":"selection.first"}),
+            "photo.jpg — JPG file — 5 B",
+        ),
+        (
+            "dopus.execute",
+            json!({"id":"nav.pane-left"}),
+            "2 selected — 10 B",
+        ),
+        (
+            "dopus.execute",
+            json!({"id":"nav.pane-right"}),
+            "photo.jpg — JPG file — 5 B",
+        ),
         ("operation-test", json!({}), "Select a file or folder"),
     ];
     for (command, args, info) in steps {

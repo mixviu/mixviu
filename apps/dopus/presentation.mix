@@ -8,6 +8,7 @@ fn dp_selection_info($state)
   -- Operation/error notices take precedence until selection or pane changes.
   if $state.info!="Select a file or folder" then return $state.info end
   $pane=$state.panes[$state.active]
+  if len($pane.selected_paths)==0 then return "Select a file or folder" end
   $rows=filter($pane.entries,fn($r)=contains($pane.selected_paths,$r.path))
   if len($rows)==0 then return "Select a file or folder" end
   if len($rows)==1 then
