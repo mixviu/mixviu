@@ -167,9 +167,13 @@ end
     runtime.event("dopus.actions".into(), json!({})).unwrap();
     let actions = done(&runtime, &rx).reply.unwrap().body;
     for id in ["nav.pane-left", "nav.pane-right"] {
-        assert!(actions["actions"].as_array().unwrap().iter().any(|a| {
-            a["id"] == id && a["enabled"] == true && a["keys"] == json!([])
-        }));
+        assert!(
+            actions["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| { a["id"] == id && a["enabled"] == true && a["keys"] == json!([]) })
+        );
     }
     // Repeated explicit actions choose the same pane, including an empty one.
     // Exercise the real Bus handlers and verify the next action's target.
@@ -193,7 +197,10 @@ end
         let selected = done(&runtime, &rx).model.unwrap();
         assert_eq!(selected["active"], active);
         if active == 0 {
-            assert_eq!(selected["panes"][0]["selected"], json!(left.join("selected.txt")));
+            assert_eq!(
+                selected["panes"][0]["selected"],
+                json!(left.join("selected.txt"))
+            );
         } else {
             assert_eq!(selected["panes"][1]["selected"], json!(null));
         }
