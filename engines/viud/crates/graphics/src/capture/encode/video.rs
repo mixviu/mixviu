@@ -110,7 +110,7 @@ impl VideoEncoder {
             // Dropping `stdin` here signals EOF so ffmpeg flushes and exits.
         });
 
-        Some(Self {
+        Ok(Self {
             tx: Some(tx),
             join: Some(join),
             child: Some(child),

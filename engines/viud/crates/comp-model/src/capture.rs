@@ -50,7 +50,7 @@ pub struct CaptureWindow {
     pub generation: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RecordCommand {
     Start { request_id: String, targets: Vec<CaptureFrameSpec>, path: String, fps: u32, max_seconds: u64 },
     Marker { session: String, label: String, data: Value },
@@ -282,6 +282,22 @@ pub fn reply(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recording_validation_and_read_only_classification() {
+        let args=json!({"request_id":"take","target":{"windows":[{"id":1,"generation":2},{"id":3,"generation":4}]},"path":"/tmp/take.mkv","max_seconds":60});
+        let RecordCommand::Start{targets,fps,..}=parse_record("comp.record.start",&args).unwrap() else {panic!()};
+        assert_eq!(targets.len(),2);
+        assert_eq!(fps,30);
+        assert!(!targets[0].cursor);
+        for (key,value) in [("path",json!("relative.mkv")),("fps",json!(0)),("fps",json!(61)),("max_seconds",json!(0)),("request_id",json!("")),("cursor",json!("false")),("unknown",json!(true))] {
+            let mut bad=args.clone(); bad[key]=value;
+            assert!(parse_record("comp.record.start",&bad).is_err(),"{bad}");
+        }
+        assert!(crate::catalogue::read_only("comp.record.status"));
+        for command in ["comp.record.start","comp.record.marker","comp.record.stop"] { assert!(!crate::catalogue::read_only(command)); }
+        assert!(matches!(crate::request::classify("comp.record.status",&json!({}),false),Ok(crate::request::Request::Long(crate::request::LongOp::Record(RecordCommand::Status{session:None})))));
+    }
 
     #[test]
     fn defaults_and_explicit_arguments() {

@@ -52,11 +52,13 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
         let session = Rc::new(RefCell::new(Session {request_id,id,path,targets,fps,max_seconds,recording:None,start:None,start_answers:vec![answer],stop_answers:Vec::new(),pending:false,signature:Vec::new(),failed:None}));
         CURRENT.with_borrow_mut(|current| *current=Some(session.clone()));
         let tick_session = session.clone();
+        let period = Duration::from_nanos(1_000_000_000/u64::from(fps));
+        let mut next = Instant::now();
         if lp.loop_handle.insert_source(Timer::immediate(),move |_,_,lp| {
             tick(lp,&tick_session);
             let s=tick_session.borrow();
             if s.failed.is_some() && s.recording.is_none() || s.recording.as_ref().is_some_and(|r|r.terminal.is_some()) { TimeoutAction::Drop }
-            else { TimeoutAction::ToDuration(Duration::from_micros(1_000_000/u64::from(s.fps))) }
+            else { next += period; TimeoutAction::ToInstant(next) }
         }).is_err() { fail(&session,"record timer unavailable"); }
         return;
     }
@@ -104,7 +106,13 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             }
             if r.terminal.is_some() || r.status()["state"]=="finishing" || s.failed.is_some() { return; }
         }
-        if s.pending || s.failed.is_some() { return; }
+        if s.failed.is_some() { return; }
+        if s.pending {
+            let result = s.recording.as_mut().map(|r|r.frame(None));
+            drop(s);
+            if let Some(Err(error))=result { fail(session,&error); }
+            return;
+        }
     }
     let signature = {
         let s=session.borrow();
@@ -114,7 +122,22 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 if lp.inner.comp.registry.resolve_window_target(window.id,Some(window.generation)).is_err() {
                     drop(s); fail(session,"window target gone or generation changed"); return;
                 }
-                signature.push(lp.inner.comp.presentation.stats.window(window.id,window.generation).map(|s|s.presented).unwrap_or(0));
+                let comp = &lp.inner.comp;
+                let rows: Vec<_> = comp.registry.surface_rows().collect();
+                for row in &rows {
+                    let mut ancestor = Some(row.id());
+                    for _ in 0..=rows.len() {
+                        let Some(id)=ancestor else { break; };
+                        if id.0 == window.id {
+                            signature.extend([row.id().0,comp.commits(row.id())]);
+                            break;
+                        }
+                        ancestor=comp.registry.get(id).and_then(|r|r.parent());
+                    }
+                }
+                if let Ok(w)=world::window::draw::frame::scene::capture_window(lp,window.id,window.generation) {
+                    signature.extend([w.geometry().size.w as u64,w.geometry().size.h as u64]);
+                }
             } else {
                 let outputs: Vec<_>=lp.inner.space_state().state.outputs().cloned().collect();
                 let output=outputs.iter().find(|o|target.output.as_ref().is_none_or(|name|*name==o.name()));

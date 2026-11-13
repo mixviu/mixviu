@@ -54,7 +54,9 @@ impl Recording {
         let encoder = self.encoder.as_ref().ok_or("recording is finishing")?;
         if let Some(error) = encoder.error() { return Err(error); }
         if encoder.try_push(self.last.clone()) {
-            let t_us = monotonic_us() - self.t0_us;
+            let now = monotonic_us();
+            if self.frames == 0 { self.t0_us = now; }
+            let t_us = now - self.t0_us;
             writeln!(self.frames_file,"{}",json!({"frame":self.frames,"t_us":t_us})).map_err(|e| e.to_string())?;
             self.frames += 1;
         } else { self.dropped += 1; }
