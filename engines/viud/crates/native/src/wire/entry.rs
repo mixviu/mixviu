@@ -13,7 +13,7 @@
 //! over fallback).
 
 use crate::context::render::NativeRenderContext;
-use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::calloop::LoopHandle;
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::rc::Rc;
@@ -43,7 +43,8 @@ fn absent(_loop: &mut Loop, why: &'static str) {
 pub fn wire(
     _loop: &mut Loop,
     _wayland_socket_name: OsString,
-    event_loop: &mut EventLoop<'static, Loop>,
+    event_loop: &LoopHandle<'static, Loop>,
+    existing_output: Option<smithay::output::Output>,
 ) -> NativeHandles {
     info!("Backend initialization - Native");
 
@@ -68,6 +69,16 @@ pub fn wire(
             .get(&render_gles::format::registrar::FORMATS),
         &mut display,
     );
+    let reuse = existing_output.is_some();
+    if let Some(output) = existing_output {
+        output.change_current_state(
+            Some(display.mode),
+            Some(display.output.current_transform()),
+            Some(display.output.current_scale()),
+            Some((0, 0).into()),
+        );
+        display.output = output;
+    }
 
     // Bind the RC cell into loop so it can register a DMABuf global.
     *_loop.inner.kernel.get_mut(&world::state::GPU_BINDING_MUT) =
@@ -184,12 +195,16 @@ pub fn wire(
     // second tracker here would never be read. `initialize` is still called for
     // its side effects (output registration + EGL bind/registration); winit does
     // use the return value.
+    if reuse {
+        scenegraph::display::output::bind_display(_loop, &mut contract);
+    } else {
     let _ = scenegraph::state::lifecycle::initialize(
         _loop,
         &display.output.clone(),
         &_loop.inner.loader.display_handle.clone(),
         &mut contract,
     );
+    }
 
     // ---- Input stack (panics internally; a compositor without input cannot run).
     trace!(
@@ -430,7 +445,6 @@ pub fn wire(
             .expect("control-plane ping creation failed");
         let ctx = ctx_rc.clone();
         event_loop
-            .handle()
             .insert_source(source, move |_, _, state| {
                 crate::context::display::apply::drain(state, &ctx);
                 crate::context::display::mode::drain(state, &ctx);

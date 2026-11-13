@@ -11,7 +11,7 @@ use smithay::backend::egl::{EGLDevice, EGLDisplay};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ImportDma, ImportEgl, Offscreen};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
-use smithay::reexports::calloop::{EventLoop, ping::make_ping};
+use smithay::reexports::calloop::{EventLoop, LoopHandle, ping::make_ping};
 use smithay::reexports::wayland_server::{DisplayHandle, protocol::wl_surface::WlSurface};
 use smithay::utils::{DeviceFd, Physical, Size, Transform};
 use world::state::Loop;
@@ -81,9 +81,21 @@ impl RenderContract for Contract {
 
 pub fn wire(
     state: &mut Loop,
-    event_loop: &mut EventLoop<Loop>,
+    event_loop: &mut EventLoop<'static, Loop>,
     options: Options<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    install(state, &event_loop.handle(), options, None).map(|_| ())
+}
+
+/// Install the existing offscreen renderer for a VT session. With an existing
+/// output this adds no globals, seat sources or scene lifecycle.
+pub fn install(
+    state: &mut Loop,
+    handle: &LoopHandle<'static, Loop>,
+    options: Options<'_>,
+    existing: Option<Output>,
+) -> Result<Output, Box<dyn std::error::Error>> {
+    let fallback = existing.is_some();
     // Test-only injection, read exclusively by this backend. A later settingsd
     // snapshot supersedes it. Real sessions never read this variable.
     if let Some(names) = std::env::var_os("MIX_TEST_VIUD_AGENT_SEAT_ALLOW") {
@@ -147,7 +159,7 @@ pub fn wire(
         size: options.size,
         refresh: refresh * 1000,
     };
-    let output = virtual_output(0);
+    let output = existing.unwrap_or_else(|| virtual_output(0));
     output.change_current_state(
         Some(mode),
         Some(Transform::Normal),
@@ -160,12 +172,19 @@ pub fn wire(
         mode,
         renderer,
     };
-    let handle = state.state.output.display_handle.clone();
-    let damage_tracker =
-        scenegraph::state::lifecycle::initialize(state, &output, &handle, &mut contract);
+    let display_handle = state.state.output.display_handle.clone();
+    let damage_tracker = if fallback {
+        smithay::backend::renderer::damage::OutputDamageTracker::from_output(&output)
+    } else {
+        scenegraph::state::lifecycle::initialize(state, &output, &display_handle, &mut contract)
+    };
     // This runs before the event loop serves any client.
-    human_seat_without_sources(&mut state.state.seat.seat);
-    state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
+    if !fallback {
+        human_seat_without_sources(&mut state.state.seat.seat);
+    }
+    if !fallback {
+        state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
+    }
     // The loop pins the camera to identity before input or drawing. Put the
     // agent at the logical output centre, as centre_pointer_once does for
     // the human pointer. main's apply_pointer only seeds the human accumulator.
@@ -197,6 +216,7 @@ pub fn wire(
         .kernel
         .get(&render_gles::format::registrar::FORMATS);
     use render_gles::format::{registrar::Device, role::Role};
+    if !fallback {
     formats.register(
         Device::UNSPECIFIED,
         Role::Sample,
@@ -207,6 +227,7 @@ pub fn wire(
     formats.absent(Role::Render, "headless: no scanout render format");
     formats.absent(Role::Plane, "headless: no KMS plane");
     model::stats::registry::base::set_compositor_prefers_dmabuf(false);
+    }
     frames::scene::gpu::prewarm(state, &mut contract.renderer);
     let targets = [
         Offscreen::<GlesTexture>::create_buffer(
@@ -224,17 +245,17 @@ pub fn wire(
         decor::ChromeStyle::from_name(&state.inner.preference.chrome_style).unwrap_or_default(),
     ));
     let context = Rc::new(RefCell::new(crate::frame::Context::new(
-        output,
+        output.clone(),
         contract.renderer,
         targets,
         damage_tracker,
     )));
     let (ping, source) = make_ping()?;
     let first = ping.clone();
-    event_loop
-        .handle()
+    let source_context = context.clone();
+    handle
         .insert_source(source, move |_, _, state| {
-            crate::frame::arm(state, &context);
+            crate::frame::arm(state, &source_context);
         })?;
     state.state.redraw.set_ping(ping);
     first.ping();
@@ -243,7 +264,8 @@ pub fn wire(
         "headless: headless-0 {}x{} at scale {} wired",
         mode.size.w, mode.size.h, options.scale
     );
-    Ok(())
+    FALLBACK.with(|slot| *slot.borrow_mut() = Some(context));
+    Ok(output)
 }
 
 /// Synthetic identities are deterministic per virtual connector.
@@ -275,4 +297,33 @@ mod identity_tests {
             world::state::output_preference_key(&b)
         );
     }
+}
+
+thread_local! {
+    static FALLBACK: RefCell<Option<Rc<RefCell<crate::frame::Context>>>> = const { RefCell::new(None) };
+}
+
+/// Wake the same damage-driven renderer used by the headless backend.
+pub fn arm_inactive(state: &mut Loop) -> bool {
+    FALLBACK.with(|slot| {
+        let slot = slot.borrow();
+        let Some(context) = slot.as_ref() else { return false };
+        crate::frame::arm(state, context);
+        true
+    })
+}
+
+/// Reserve the installed renderer for inactive VT frames only.
+pub fn vt_session() {
+    FALLBACK.with(|slot| {
+        if let Some(context) = slot.borrow().as_ref() {
+            context.borrow_mut().vt_session = true;
+        }
+    });
+}
+
+/// Transfer the render-node renderer into the KMS manager, preserving EGL
+/// context identity for UI textures, imports and recording registries.
+pub fn take_renderer() -> Option<GlesRenderer> {
+    FALLBACK.with(|slot| slot.borrow().as_ref().and_then(|ctx| ctx.borrow_mut().renderer.take()))
 }

@@ -11,7 +11,7 @@
 
 use crate::context::render::NativeRenderContext;
 use smithay::backend::session::libseat::LibSeatSessionNotifier;
-use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::calloop::LoopHandle;
 use smithay::utils::{Logical, Point};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,16 +29,15 @@ fn unix_ms() -> u64 {
 }
 
 pub fn register(
-    event_loop: &mut EventLoop<'static, Loop>,
+    event_loop: &LoopHandle<'static, Loop>,
     session_notifier: LibSeatSessionNotifier,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
     render_kick: impl Fn(Rc<RefCell<NativeRenderContext>>, &mut Loop) + Clone + 'static,
 ) {
     let session_context = ctx_rc;
-    let session_loop_handle = event_loop.handle();
+    let session_loop_handle = event_loop.clone();
 
     event_loop
-        .handle()
         .insert_source(session_notifier, move |event, _, state| {
             let mut ctx = session_context.borrow_mut();
             let ctx_ref = &mut *ctx;
@@ -59,8 +58,7 @@ pub fn register(
                     // longer complete, through the capture-only render path.
                     state.state.redraw.wake();
 
-                    // Seat de-activating — stop and discard any active capture.
-                    recorder::interface::stop_and_discard(state);
+                    // Render-node capture remains available after DRM/input pause.
 
                     // The keys-up for anything held at switch time will be
                     // consumed by the other VT — forget held modifiers now.

@@ -17,7 +17,6 @@ pub mod deadline;
 use crate::context::render::NativeRenderContext;
 use crate::render::execute::FrameOutcome;
 use smithay::backend::drm::DrmDeviceNotifier;
-use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::ping::make_ping;
 use std::cell::RefCell;
@@ -33,7 +32,7 @@ type EstimateSlot = Rc<RefCell<Option<smithay::reexports::calloop::RegistrationT
 type PredictClock = Rc<RefCell<kms::scanout::timing::predict::PresentationClock>>;
 
 pub fn register(
-    event_loop: &mut EventLoop<'static, Loop>,
+    event_loop: &LoopHandle<'static, Loop>,
     state: &mut Loop,
     drm_notifier: DrmDeviceNotifier,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
@@ -114,14 +113,13 @@ pub fn register(
     );
 
     let context_ping = ctx_rc.clone();
-    let loop_handle_ping = event_loop.handle();
+    let loop_handle_ping = event_loop.clone();
     let rescue_ping = rescue.clone();
     #[cfg(feature = "flip-estimate")]
     let estimate_ping = estimate_slot.clone();
     #[cfg(feature = "timing-predict")]
     let predict_ping = predict_clock.clone();
     event_loop
-        .handle()
         .insert_source(redraw_ping_source, move |_, _, state| {
             // We were pinged because something called schedule_redraw while
             // the VBlank cycle was idle. Run the executor to restart the cycle.
@@ -189,7 +187,7 @@ pub fn register(
     // ---- VBlank: decode -> (throttle gate) -> interpret -> feedback ->
     //      conditional render.
     let context_drm = ctx_rc.clone();
-    let loop_handle_vblank = event_loop.handle();
+    let loop_handle_vblank = event_loop.clone();
     let rescue_vblank = rescue.clone();
     #[cfg(feature = "flip-estimate")]
     let estimate_vblank = estimate_slot.clone();
@@ -200,7 +198,6 @@ pub fn register(
         kms::scanout::timing::throttle::VblankThrottle::new(),
     ));
     event_loop
-        .handle()
         .insert_source(drm_notifier, move |event, event_meta, state| {
             use kms::loop_::notifier::{DecodedDrmEvent, decode};
 
@@ -311,13 +308,13 @@ pub fn register(
         crate::wire::watchdog::settle::arm(&handle, &mut state.state.redraw, keys);
     }
 
-    let loop_handle_init = event_loop.handle();
+    let loop_handle_init = event_loop.clone();
     #[cfg(feature = "flip-estimate")]
     let estimate_init = estimate_slot;
     #[cfg(feature = "timing-predict")]
     let predict_init = predict_clock;
     let rescue_init = rescue;
-    event_loop.handle().insert_idle(move |state| {
+    event_loop.clone().insert_idle(move |state| {
         let outcome = crate::render::execute::execute(
             context_init,
             loop_handle_init.clone(),

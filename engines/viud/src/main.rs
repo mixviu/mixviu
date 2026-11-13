@@ -3,6 +3,8 @@
 #![allow(irrefutable_let_patterns)]
 #[macro_use]
 extern crate model;
+#[cfg(feature = "backend-native")]
+mod background;
 mod cli;
 mod comp;
 mod event_loop;
@@ -437,14 +439,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             kms::output::physical::set_scale(
                 cli::output_scale(&cli, cli::Backend::Kms).unwrap_or(1.0),
             );
-            let backend_handles = native::wire::entry::wire(
+            drm_restore = Some(background::wire(
                 &mut state,
-                wayland_socket_name_default_subprocess,
                 &mut event_loop,
-            );
-            info!("starting loader OK");
-            let manager = backend_handles.ctx.borrow().drm_output_manager.clone();
-            drm_restore = Some(manager);
+                wayland_socket_name_default_subprocess,
+                cli.size.unwrap_or((3840, 2160)),
+                cli::output_scale(&cli, cli::Backend::Kms).unwrap_or(1.0),
+                &e.render_node,
+            )?);
         }
         #[cfg(feature = "backend-winit")]
         cli::Backend::Nested => {
@@ -822,8 +824,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "backend-native")]
     if let Some(drm_restore) = drm_restore.as_ref() {
         match drm_restore.try_borrow() {
-            Ok(manager) => {
-                manager.device().restore_state();
+            Ok(handles) => {
+                if let Some(native) = handles.as_ref() {
+                    native.ctx.borrow().drm_output_manager.borrow().device().restore_state();
+                }
                 info!("DRM state restored");
             }
             Err(err) => warn!("DRM manager still borrowed at teardown; skipping restore: {err:?}"),

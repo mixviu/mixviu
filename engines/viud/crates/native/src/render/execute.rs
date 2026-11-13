@@ -322,8 +322,7 @@ fn capture_windows_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &
 /// with input still queued for a scene surface. Resume, DPMS-on and output
 /// recovery each request their own frame, which drains what waited.
 pub fn frames_parked(state: &Loop) -> bool {
-    matches!(state.inner.status_session, StatusSession::Paused)
-        || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
+    *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
         || NO_OUTPUT_PARKED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
@@ -339,6 +338,11 @@ pub fn execute(
     scope: RenderScope,
 ) -> FrameOutcome {
     let _ = &loop_handle; // retained for parity with the original signature
+    if matches!(state.inner.status_session, StatusSession::Paused)
+        && headless::wire::arm_inactive(state)
+    {
+        return FrameOutcome::Idle;
+    }
     if (matches!(state.inner.status_session, StatusSession::Paused)
         || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF))
         && let Ok(mut ctx) = ctx_rc.try_borrow_mut()
