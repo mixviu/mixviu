@@ -81,6 +81,12 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    pub fn current_buffer(&self) -> WlBuffer {
+        self.buffer.clone()
+    }
+    pub fn swap_buffer(&mut self, buffer: &mut WlBuffer) {
+        std::mem::swap(&mut self.buffer, buffer);
+    }
     pub fn idle_notification(&mut self, timeout_ms: u32) {
         use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
         let name = self
@@ -241,8 +247,12 @@ impl Pattern {
     }
 
     pub fn change_buffer(&mut self) {
+        self.solid_buffer(0xffaa3377);
+    }
+
+    pub fn solid_buffer(&mut self, colour: u32) {
         let (w, h) = self.state.size;
-        self.buffer = buffer(&self.shm, &self.queue.handle(), w, h, |_, _| 0xffaa3377);
+        self.buffer = buffer(&self.shm, &self.queue.handle(), w, h, |_, _| colour);
     }
 
     pub fn remap(&mut self) {
