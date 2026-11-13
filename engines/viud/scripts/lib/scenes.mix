@@ -544,13 +544,39 @@ fn system_dialog($s, $name)
 end
 
 -- Mount position is user state, separate from the upgradeable scene code.
+fn panel_window($source)
+  $lines = split($source, "\n")
+  $found = nil
+  $in_window = false
+  for $i = 1 to len($lines) - 1
+    $line = $lines[$i]
+    if $line == "---" then break end
+    if trim($line)=="" then continue end
+    if starts_with($line," ") or starts_with($line,"\t") then
+      if $in_window then fail("SCENES_PANEL_WINDOW", "panel position requires a single-line JSON window header; nested window blocks are unsupported", {}) end
+      continue
+    end
+    $in_window = starts_with($line,"window:")
+    if not $in_window then continue end
+    if $found!=nil then fail("SCENES_PANEL_WINDOW", "duplicate panel window header", {}) end
+    try
+      $found = json_parse(trim(substr($line,7)))
+    catch $message
+      fail("SCENES_PANEL_WINDOW", "panel position requires a single-line JSON window header; nested window blocks are unsupported", {})
+    end
+    if type($found)!="map" then fail("SCENES_PANEL_WINDOW", "panel window header must be a JSON object", {}) end
+  end
+  if $found==nil then fail("SCENES_PANEL_WINDOW", "panel position requires an explicit single-line JSON window header", {}) end
+  return $found
+end
+
 fn panel_source($source, $dir)
   $path = $dir .. "/settings.conf.mix"
   if not regular($path) then return $source end
   $settings = data_parse(bounded_read($path, 65536))
   if $settings.edge == nil then return $source end
   if not contains($EDGES, $settings.edge) then fail("SCENES_ARGUMENT", "invalid panel settings edge", {}) end
-  $window = document($source).window
+  $window = panel_window($source)
   if orientation($window.edge ?? "bottom") != orientation($settings.edge) then
     $window = delete(delete($window, "w"), "h")
   end
@@ -2215,6 +2241,9 @@ fn move($s, $args)
   known($s, $name)
   if not $s.scenes[$name].installed then fail("SCENES_NOT_FOUND", "scene document is missing", {name:$name}) end
   if $name == "panel" then
+    -- Validate the patchable envelope before creating any settings file.
+    $window = panel_window(bounded_read($s.root .. "/panel/scene.mix", 262144))
+    if seated($window.kind) then fail("SCENES_MOUNT", "a seated scene has no edge", {name:$name}) end
     $path = $s.root .. "/panel/settings.conf.mix"
     $before = regular($path) ? bounded_read($path, 65536) : nil
     $settings = $before == nil ? {} : data_parse($before)
@@ -2224,7 +2253,7 @@ fn move($s, $args)
     if failure($s.scenes[$name]) != nil then
       $s.rc = 10
       $s.response = failure($s.scenes[$name])
-      write_atomic($path, $before ?? "{}")
+      if $before==nil then remove($path) else write_atomic($path, $before) end
       if $s.scenes[$name].mounted then $s = reconcile_one($s, $name, false) end
     else
       $s.response = {name:$name, edge:$args.edge, revision:$s.scenes[$name].revision}

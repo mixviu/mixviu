@@ -65,6 +65,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const PATH: &str = "design.v1.families.chrome";
 
 /// Accessibility overrides apply after authored schemes and accent choices.
+/// High contrast deliberately overrides app-authored chrome as well.
 /// Use opaque endpoint surfaces and ink; retain hue on action fills.
 pub(crate) fn high_contrast(chrome: &mut ResolvedChrome, mode: crate::Mode) {
     let (surface, ink) = if mode == crate::Mode::Dark {
@@ -79,11 +80,6 @@ pub(crate) fn high_contrast(chrome: &mut ResolvedChrome, mode: crate::Mode) {
         "card",
         "tab_strip",
         "field",
-        "hover",
-        "pressed",
-        "accent_soft",
-        "row_selected",
-        "menu_highlight",
     ] {
         if chrome.get(role).is_some() {
             chrome.set(role, surface);

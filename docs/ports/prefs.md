@@ -600,3 +600,36 @@ colours across every scheme and mode: body text at least 7:1, edges at least
 3:1, and no weaker main body or edge pairs than normal. Hover, pressed and
 selection fills retain distinct shades with the same text floor. The scoped CBC entry is
 tools/prefs_panel_check.mix. Desktop visual acceptance remains separate.
+
+### Panel authority and accessibility policy (review follow-up)
+
+Direct settingsd writes to every shell.panels.top.* key are retired and
+refused with retired_key, including null changes. The catalogue marks the
+top capture inactive and names the scene commands. Historical values remain
+readable for migration/downgrade; explicit resets only clean up that stored
+legacy state and do not control the panel. Preferences keeps two action
+aliases, enabled and edge: these operate through scenes, never settingsd.
+They share core.admitted state, class and type/enum checks with stored
+settings. Their scene schema replaces settingsd mutation validation and CAS,
+because settingsd cannot admit or fence a scene mutation. Busy scene writes
+are refused rather than queued.
+
+The shared settingsd shell.panels topic remains necessary for the Dock page
+(bottom.*); no top-only topic is subscribed. Panel refreshes follow the
+scene topic, coalesced over a bounded 150 ms deadline on UI ticks. Failed
+readback preserves the last confirmed command state; a successful inventory
+can confirm removal.
+
+Panel position edits require an explicit single-line JSON window header.
+Absent/nested window blocks are refused before any settings write. Rollback
+restores original bytes, or removes the new settings file if none existed.
+
+High contrast deliberately supersedes app-authored chrome and replaces the
+Qt disabled/visited-text dimming with full-strength ink. This trades colour
+and disabled shading for readability; disabled controls still refuse input.
+The numerical edge guarantee covers native chrome roles; toolkit export
+tests cover their named text/surface pairs, not every toolkit border.
+
+The scoped CBC checker refuses formatting drift after printing and reverting
+the worker patch. It also tests settingsd retired-key refusal, common panel
+admission with host bindings, burst coalescing and rollback failures.

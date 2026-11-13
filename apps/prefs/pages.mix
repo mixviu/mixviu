@@ -55,8 +55,8 @@ fn store_view($s)
 end
 fn row_blocked($s,$p,$r)
   if $p.id=="panel" then
-    if not contains(["enabled","edge"],$r.id) then return "This control is not supported by the panel scene." end
-    return if ($s.panel ?? nil)==nil or not $s.connected then "Panel scene unavailable" else nil end
+    if not contains(["enabled","edge"],$r.id) then return $n.text_for("panel-unsupported") end
+    return if ($s.panel ?? nil)==nil or not $s.connected then $n.text_for("panel-unavailable") else nil end
   end
   if $p.backend!=nil then return backend_reason($p.backend) end
   if $r.backend!=nil then return $r.backend end

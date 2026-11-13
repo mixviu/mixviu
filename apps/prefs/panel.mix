@@ -2,6 +2,10 @@
 fn supports($key)
   return contains(["shell.panels.top.enabled","shell.panels.top.edge"],$key)
 end
+fn definition($key)
+  return if $key=="shell.panels.top.enabled" then {path:$key,kind:"bool",class:"applied",default:true,owner:"scenes"}
+    else {path:$key,kind:"enum",variants:["top","bottom","left","right"],class:"applied",default:"bottom",owner:"scenes"} end
+end
 fn from_inventory($inventory)
   for $row in $inventory.scenes ?? []
     if $row.name=="panel" then return {enabled:$row.enabled,edge:$row.edge ?? "bottom"} end
@@ -10,8 +14,20 @@ fn from_inventory($inventory)
 end
 fn refresh($s)
   send "scenes" "scenes.list" body={} timeout=5
-  $s.panel=if $rc==0 and type($reply)=="map" then from_inventory($reply) else nil end
+  return refreshed($s,$rc,$reply)
+end
+fn refreshed($s,$code,$body)
+  -- A transport failure is not evidence that a confirmed scene disappeared.
+  if $code==0 and type($body)=="map" then $s.panel=from_inventory($body) end
   return $s
+end
+fn hint($s)
+  -- Fixed trailing deadline: a burst schedules one read, without starvation.
+  if ($s.panel_refresh_at ?? nil)==nil then $s.panel_refresh_at=monotonic()+0.15 end
+  return $s
+end
+fn due($s)
+  return ($s.panel_refresh_at ?? nil)!=nil and monotonic()>=$s.panel_refresh_at
 end
 fn request($key,$value)
   if not supports($key) then raise("ARGUMENT","Unsupported scene panel setting") end
@@ -26,9 +42,16 @@ fn request($key,$value)
     return {command:"scenes.move",args:{name:"panel",edge:$value}}
   end
 end
-fn set_value($s,$key,$value)
-  $req=request($key,$value)
+fn apply_request($s,$req)
   send "scenes" $req.command body=$req.args timeout=5
   if $rc!=0 then raise("FAILED","Scene panel change refused: "..to_string($result)) end
+  $s=confirmed($s,$req)
   return refresh($s)
+end
+fn confirmed($s,$req)
+  -- The successful command confirms these fields even if readback times out.
+  $s.panel=$s.panel ?? {}
+  if $req.command=="scenes.move" then $s.panel.edge=$req.args.edge
+  else $s.panel.enabled=$req.command=="scenes.enable" end
+  return $s
 end

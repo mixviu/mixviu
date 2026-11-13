@@ -229,9 +229,11 @@ fn confirm_dialog($s,$answer)
   return $s
 end
 fn set_prefs($s,$key,$value)
-  if $panel.supports($key) then return $panel.set_value($s,$key,$value) end
-  $admission=$s;$admission.busy=false
+  $admission=$s
+  -- Stored writes queue while busy; synchronous scene commands cannot queue.
+  if not $panel.supports($key) then $admission.busy=false end
   $request=$core.admitted($admission,$key,$value)
+  if $request.scene!=nil then return $panel.apply_request($s,$request.scene) end
   if $s.look.settings!="missing" then $s.store_error=nil end
   $s.queue_changes=merge($s.queue_changes,$request.changes)
   for $key in $request.reset $s.queue_changes[$key]=nil end
@@ -266,6 +268,10 @@ fn email_task($s,$kind,$id,$command,$body,$launch,$token)
 end
 publish_prefs($state)
 on viu.tick
+  if $state.connected and $panel.due($state) then
+    $state.panel_refresh_at=nil
+    $state=$panel.refresh($state);publish_prefs($state)
+  end
   if not $state.subscribed then
     for $prefix in ["wallpaper","appearance","window","shell.panels","workspaces","displays","sound","power","input","keymaps","apps_default","apps_startup","xwayland","agent_seat","time","region","accessibility","terminal","email","ced","apps","tune","state"] subscribe("settingsd.desktop.keys.default."..$prefix) end
     subscribe("settingsd.desktop.look.default")
@@ -723,6 +729,8 @@ on settingsd.desktop.keys.default.window
   $state=hint_prefs($state)
 end
 
+-- Dock still reads bottom.* on this shared prefix topic. The Panel page
+-- uses scenes.changed; there is no top-only settings subscription.
 on settingsd.desktop.keys.default.shell.panels
   $state=hint_prefs($state)
 end
@@ -810,7 +818,7 @@ on bus.connected
   $state.connected=true;$state=$panel.refresh($state);$state=hint_prefs($state)
 end
 on scenes.changed
-  $state=$panel.refresh($state);publish_prefs($state)
+  $state=$panel.hint($state)
 end
 on bus.disconnected
   $state.connected=false;$state.stale=true;$state.needs_read=true;publish_prefs($state)

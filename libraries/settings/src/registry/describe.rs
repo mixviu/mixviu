@@ -190,6 +190,12 @@ pub fn describe_key(def: &KeyDef) -> Value {
     if def.export_only {
         out.insert("export_only".into(), true.into());
     }
+    if def.path.starts_with("shell.panels.<panel>.") {
+        out.insert("inactive_captures".into(), json!({"top": {
+            "write": "refused", "owner": "scenes",
+            "reason": "Legacy top panel keys do not control the live panel. Use scenes.list, scenes.enable, scenes.disable and scenes.move for name panel. Resets only clean up stored legacy values."
+        }}));
+    }
     if let Some(when) = def.used_when {
         out.insert("used_when".into(), when.into());
     }

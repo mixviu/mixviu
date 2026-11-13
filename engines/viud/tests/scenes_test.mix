@@ -1630,6 +1630,35 @@ try
   check($s.rc == 0 and load_data($s.root .. "/panel/settings.conf.mix").edge == "top" and load_data($s.root .. "/panel/settings.conf.mix").tasks_scope == "current", "template reset carries panel user state")
   $s = $l.request($s, "enable", {name:"panel"})
   check($s.rc == 0 and $s.scenes.panel.edge == "top", "reset mounts at preserved user position")
+  $settings_path=$s.root .. "/panel/settings.conf.mix"
+  $settings_before=read_file($settings_path)
+  $host_state.refuse_edge="left"
+  $s=$l.request($s,"move",{name:"panel",edge:"left"})
+  check($s.rc==10 and read_file($settings_path)==$settings_before and $s.scenes.panel.edge=="top", "failed panel move restores existing settings byte-for-byte")
+  $host_state.rollback_fail="panel"
+  $s=$l.request($s,"move",{name:"panel",edge:"left"})
+  check($s.rc==10 and read_file($settings_path)==$settings_before, "double mount failure still restores existing settings")
+  $host_state.refuse_edge=nil;$host_state.rollback_fail=nil
+  $s=$l.request($s,"reload",{name:"panel"})
+  check($s.rc==0 and $s.scenes.panel.edge=="top", "reload recovers restored position after rollback failure")
+  remove($settings_path)
+  $s=$l.filesystem($s,{overflow:false,changes:[{path:$settings_path}]})
+  $before_edge=$s.scenes.panel.edge
+  $host_state.refuse_edge="left"
+  $s=$l.request($s,"move",{name:"panel",edge:"left"})
+  check($s.rc==10 and not exists($settings_path) and $s.scenes.panel.edge==$before_edge, "failed first move removes newly created settings file")
+  $host_state.refuse_edge=nil
+  $source_path=$s.root .. "/panel/scene.mix"
+  $valid_source=read_file($source_path)
+  $window_line="window: " .. $l.document($valid_source).headers.window
+  for $replacement in ["", "window:\n  edge: right", "window: {}\n  edge: right"]
+    $bad=replace($valid_source,$window_line,$replacement)
+    write_file($source_path,$bad)
+    $s=$l.request($s,"move",{name:"panel",edge:"left"})
+    check($s.rc==10 and $s.response.error_code=="SCENES_PANEL_WINDOW", "absent or nested panel window fails clearly")
+    check(read_file($source_path)==$bad and not exists($settings_path), "unsupported panel window is never patched and creates no settings")
+  end
+  write_file($source_path,$valid_source)
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
 finally
   remove_dir($tmp)
