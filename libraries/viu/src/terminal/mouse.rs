@@ -230,6 +230,8 @@ mod tests {
                 stats,
                 grid,
                 captured_offset: Mutex::new(0),
+                default_colours: Mutex::new(None),
+                captured_colours: Mutex::new(None),
                 damage: Mutex::new(rx),
                 captured_cursor: Mutex::new(None),
                 captured_selection: Mutex::new(None),
