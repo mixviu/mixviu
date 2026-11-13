@@ -1,5 +1,6 @@
 -- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $m=require("model.mix");$tree=require("tree.mix");$work=require("work.mix");$discovery=require("discovery.mix");$text=require("text.mix");$actions=require("actions.mix");$theme=require("theme.mix")
 $macros=require("macro.mix")
 $agents=require("agents.mix");$traffic=require("traffic.mix");$mesh=require("mesh.mix");$mesh_flow=require("mesh-flow.mix");$counter=require("counter.mix")
@@ -12,6 +13,7 @@ fn theme_edit($s,$args)
   if not $edit.ok then return refused($s,"ARGUMENT",$edit.message) end
   send "viu-local" "native.theme" body=$edit.choice
   if $rc!=0 then return {state:$s,rc:$rc,body:$reply,deferred:false} end
+  if has_key($args,"mode") then $app_mode.save("workshop",$edit.choice.mode,true) end
   $s.theme_choice=$edit.choice;$s.theme_effective=$reply;$body=$edit.choice;$body.effective=$reply
   return result($s,$body)
 end
