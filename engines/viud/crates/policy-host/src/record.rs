@@ -329,6 +329,10 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
 fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) { fail(session, message); }
 
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
+    let now_us = match recorder::bus::monotonic_us() {
+        Ok(now) => now,
+        Err(error) => { fail(session, &error); return; }
+    };
     { let s = session.borrow(); if s.recording.is_none() && s.failed.is_none() && s.admitted.elapsed() >= Duration::from_secs(s.max_seconds) { drop(s); cancel_pending(session, "max_seconds elapsed before first frame"); return; } }
     {
         let mut s = session.borrow_mut();
@@ -382,7 +386,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         }
         if s.recording
             .as_ref()
-            .is_some_and(|r| recorder::bus::monotonic_us().unwrap_or(u64::MAX).saturating_sub(r.t0_us) >= s.max_seconds * 1_000_000)
+            .is_some_and(|r| now_us.saturating_sub(r.t0_us) >= s.max_seconds * 1_000_000)
         {
             s.recording.as_mut().unwrap().stop(false);
             event(&s, "finishing");

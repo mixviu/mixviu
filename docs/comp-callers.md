@@ -52,6 +52,24 @@ right on black, with a fixed canvas for the take.
 | `comp.record.status` | `session?` | `state,frames,repeated,dropped,duration_us,bytes,queue,readbacks,readback_us,readback_mean_us,readback_max_us,encoder,error` |
 | `comp.record.stop` | `session,discard?` | `path,frames,repeated,dropped,duration_us,frames_path,markers_path,encoder,readbacks,readback_us,readback_mean_us,readback_max_us,error` |
 
+Recording refuses existing destinations, including sidecars and symlinks. Private
+0600 temporary files stay in the destination directory until a successful stop
+publishes them without replacing existing files. Failure and discard remove the
+temporary files; absent sidecars have null paths in terminal replies. A window
+resize ends the take because its canvas dimensions are fixed. Reusing a
+`request_id` with different parameters is refused; completed retries are cached
+for at most 128 takes. Stop cancels a pending first frame, and `max_seconds`
+also bounds that pending phase.
+
+The renderer's shared export interface maps synchronously. Recording budgets
+readback to one quarter of the frame period: after an over-budget read, following
+damaged ticks repeat the previous frame and increment `dropped` until the debt
+is repaid. The first read itself can still exceed that budget. Single-target
+pixels share one immutable allocation through capture, session and encoder.
+Set `VIUD_RECORD_VAAPI_DEVICE` to select the external encoder's render device;
+the default is `/dev/dri/renderD128`. Frame timestamps are taken after readback,
+so content can lead its timestamp by the measured readback time.
+
 `start` retries use the same request ID. A concurrent different request is
 refused with `record_busy`. Stop retries return the terminal reply. State edges
 arrive on `<service>.record.state`. The clock is CLOCK_MONOTONIC microseconds;
