@@ -14,5 +14,6 @@ Agents can choose the active pane with `dopus.execute {id:"nav.pane-left"}` or
 subsequent selection and file actions use that pane. `nav.switch-pane` still
 toggles. `dopus.open` with a pane target changes its location and preserves
 the active pane.
+Pane actions set the active pane but do not move keyboard focus out of a focused widget.
 
 Rust checks and builds run through CBC. `apps/dopus/gate.mix` checks the bundle, scan refusals, byte-preserving operations, chooser contracts and release 2,000-row paths, then saves the generic release executable and its source/hash receipt. A scoped gate alone does not grant parity or authorise installation.

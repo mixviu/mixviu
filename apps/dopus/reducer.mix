@@ -6,6 +6,13 @@ $dp=require("core.mix")
 $view=require("presentation.mix")
 $ops=require("operations.mix")
 $configuration=require("config.mix")
+fn dp_selection_notice($before,$after)
+  $old=$before.panes[$before.active];$new=$after.panes[$after.active]
+  if not $after.busy and ($before.active!=$after.active or $old.path!=$new.path or $old.selected!=$new.selected or not deep_eq($old.selected_paths,$new.selected_paths)) then
+    $after.info="Select a file or folder";$after.dialog_status=nil
+  end
+  return $after
+end
 fn dp_drop_allowed($sources,$destination,$busy)
   if $busy or len($sources)==0 then return false end
   $destination=$dp.dp_realpath($destination)

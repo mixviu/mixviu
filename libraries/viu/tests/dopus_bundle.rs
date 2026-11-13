@@ -127,6 +127,11 @@ on budget-test
   $state.panes[1].scan_budget={rows:1,depth:0}
   reply(0,"{}")
 end
+on operation-test
+  $state.job="test-operation";$state.busy=true
+  dp_job_completed({tag:{id:"test-operation",owner:viu_context().generation},rc:0,body:{}})
+  reply(0,"{}")
+end
 "#,
     );
     let (tx, rx) = mpsc::channel();
@@ -140,10 +145,9 @@ end
     runtime.load(bundle.program).unwrap();
     let model = done(&runtime, &rx).model.unwrap();
     assert_eq!(model["panes"][0]["rows"], 1);
-    assert_eq!(
-        model["values"]["gold-title"],
-        format!("{} — MixViu DOpus", left.display())
-    );
+    assert_eq!(model["values"]["gold-title"], "MixViu DOpus");
+    assert_eq!(model["values"]["caption-title"], "MixViu DOpus");
+    assert_eq!(model["window_title"], "MixViu DOpus");
     let mut view = viu::gold_frame::mount(&bundle.scene, model.clone()).unwrap();
     assert!(view.has_control_kind("navigation-list"));
     let ctx = egui::Context::default();
@@ -204,8 +208,10 @@ end
         } else {
             assert_eq!(selected["panes"][1]["selected"], json!(null));
         }
-        // Gold keeps the idle line and listing totals on selection.
-        assert_eq!(selected["info"], "Select a file or folder");
+        assert_eq!(selected["values"]["gold-title"], "MixViu DOpus");
+        assert_eq!(selected["info"], if active == 0 {
+            "selected.txt — TXT file — 7 B"
+        } else { "Select a file or folder" });
         assert_eq!(selected["panes"][0]["summary"], "0 folders, 1 file (7 B)");
         runtime
             .event("dopus.execute".into(), json!({"id":"file.new-folder"}))
@@ -220,6 +226,34 @@ end
             )
             .unwrap();
         done(&runtime, &rx);
+    }
+    // A second file in each pane exercises pointer toggles, keyboard ranges,
+    // active-pane changes and deselection through the actual bundle handlers.
+    std::fs::write(left.join("second.txt"), "123").unwrap();
+    std::fs::write(right.join("photo.jpg"), "12345").unwrap();
+    let steps = [
+        ("dopus.execute", json!({"id":"view.refresh"}), "Select a file or folder"),
+        ("dopus.intent", json!({"id":"left-tree","action":"select","value":{"key":left.join("selected.txt")}}), "selected.txt — TXT file — 7 B"),
+        ("dopus.intent", json!({"id":"left-tree","action":"select","value":{"key":left.join("second.txt"),"ctrl":true}}), "2 selected — 10 B"),
+        ("dopus.intent", json!({"id":"left-tree","action":"select","value":{"key":left.join("second.txt"),"ctrl":true}}), "selected.txt — TXT file — 7 B"),
+        ("dopus.intent", json!({"id":"left-tree","action":"select","value":{"key":left.join("selected.txt"),"ctrl":true}}), "Select a file or folder"),
+        ("dopus.execute", json!({"id":"selection.first"}), "second.txt — TXT file — 3 B"),
+        ("dopus.intent", json!({"id":"left-tree","action":"navigate","value":{"key":"End","shift":true}}), "2 selected — 10 B"),
+        ("dopus.execute", json!({"id":"nav.pane-right"}), "Select a file or folder"),
+        ("dopus.execute", json!({"id":"view.refresh"}), "Select a file or folder"),
+        ("dopus.execute", json!({"id":"selection.first"}), "photo.jpg — JPG file — 5 B"),
+        ("dopus.execute", json!({"id":"nav.pane-left"}), "2 selected — 10 B"),
+        ("dopus.execute", json!({"id":"nav.pane-right"}), "photo.jpg — JPG file — 5 B"),
+        ("operation-test", json!({}), "Select a file or folder"),
+    ];
+    for (command, args, info) in steps {
+        runtime.event(command.into(), args).unwrap();
+        let model = done(&runtime, &rx).model.unwrap();
+        assert_eq!(model["info"], info, "{command}");
+        assert_eq!(model["values"]["status"], info);
+        assert_eq!(model["values"]["gold-status-text"]["left"], info);
+        assert_eq!(model["values"]["gold-title"], "MixViu DOpus");
+        assert_eq!(model["window_title"], "MixViu DOpus");
     }
     runtime.event("budget-test".into(), json!({})).unwrap();
     done(&runtime, &rx);
