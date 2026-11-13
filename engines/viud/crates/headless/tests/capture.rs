@@ -114,6 +114,8 @@ fn record_changing_4k_ten_seconds() {
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
+    assert_eq!(p.state.size, (3840, 2160));
+    p.solid_buffer(0xff20d040);
     let mut alternate = p.current_buffer();
     p.change_buffer();
     for recording in [false, true] {

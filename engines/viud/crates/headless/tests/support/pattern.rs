@@ -243,8 +243,12 @@ impl Pattern {
     }
 
     pub fn change_buffer(&mut self) {
+        self.solid_buffer(0xffaa3377);
+    }
+
+    pub fn solid_buffer(&mut self, colour: u32) {
         let (w, h) = self.state.size;
-        self.buffer = buffer(&self.shm, &self.queue.handle(), w, h, |_, _| 0xffaa3377);
+        self.buffer = buffer(&self.shm, &self.queue.handle(), w, h, |_, _| colour);
     }
 
     pub fn remap(&mut self) {

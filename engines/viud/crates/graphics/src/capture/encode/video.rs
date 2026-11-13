@@ -148,7 +148,7 @@ impl VideoEncoder {
         let mut cmd = command("ffmpeg");
         cmd.process_group(0);
         if encoder == "vaapi" {
-            cmd.args(["-vaapi_device", &std::env::var("VIUD_RECORD_VAAPI_DEVICE").unwrap_or_else(|_| "/dev/dri/renderD128".into())]);
+            cmd.args(["-vaapi_device", &std::env::var("MIX_VIUD_RECORD_VAAPI_DEVICE").unwrap_or_else(|_| "/dev/dri/renderD128".into())]);
         }
         cmd.args([
             "-y",

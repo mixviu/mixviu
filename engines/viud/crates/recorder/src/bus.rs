@@ -109,16 +109,25 @@ mod file_tests {
         assert_eq!(readback_skips(25000, 30), 3);
         assert_eq!(readback_skips(1_000_000, 30), 60);
     }
+    #[test]
+    fn invalid_clock_reports_error_without_panic() {
+        assert!(read_clock(-1).is_err());
+        assert!(monotonic_us().unwrap() > 0);
+    }
 }
 impl Drop for TakeFiles { fn drop(&mut self) { self.cleanup(); } }
 
 pub fn monotonic_us() -> Result<u64, String> {
+    read_clock(libc::CLOCK_MONOTONIC)
+}
+
+fn read_clock(clock: libc::clockid_t) -> Result<u64, String> {
     let mut ts = libc::timespec {
         tv_sec: 0,
         tv_nsec: 0,
     };
     // CLOCK_MONOTONIC is the compositor presentation clock on Linux.
-    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } != 0 { return Err(format!("monotonic clock: {}", std::io::Error::last_os_error())); }
+    if unsafe { libc::clock_gettime(clock, &mut ts) } != 0 { return Err(format!("monotonic clock: {}", std::io::Error::last_os_error())); }
     Ok(ts.tv_sec as u64 * 1_000_000 + ts.tv_nsec as u64 / 1000)
 }
 
@@ -144,6 +153,7 @@ pub struct Recording {
     readbacks: u64,
     readback_max_us: u64,
     readback_debt: u64,
+    skipped_readback: bool,
     files: TakeFiles,
     bytes: u64,
     frames_file: BufWriter<File>,
@@ -199,6 +209,7 @@ impl Recording {
             readbacks: 0,
             readback_max_us: 0,
             readback_debt: 0,
+            skipped_readback: false,
             frames_file,
             markers_file,
             encoder: Some(encoder),
@@ -216,6 +227,7 @@ impl Recording {
     }
 
     pub fn frame(&mut self, pixels: Option<(u32, u32, Arc<Vec<u8>>, u64)>) -> Result<(), String> {
+        let budget_drop = std::mem::take(&mut self.skipped_readback);
         let changed = pixels.is_some();
         if let Some((w, h, rgb, readback_us)) = pixels {
             self.readback_us = readback_us;
@@ -239,7 +251,7 @@ impl Recording {
             return Err(error);
         }
         if !encoder.try_push_rgb(self.last.clone(), self.source_width, self.source_height) {
-            self.dropped += 1;
+            if !budget_drop { self.dropped += 1; }
             if changed {
                 self.repeated += 1;
             }
@@ -278,6 +290,7 @@ impl Recording {
         if self.readback_debt == 0 { return false; }
         self.readback_debt -= 1;
         self.dropped += 1;
+        self.skipped_readback = true;
         true
     }
 
