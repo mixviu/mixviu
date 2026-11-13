@@ -27,6 +27,7 @@ timing-predict = ["kms/timing-predict", "flip-estimate"]
 timing-throttle = ["kms/timing-throttle"]
 
 [dependencies]
+headless = { workspace = true }
 drm-ffi = { workspace = true }
 recorder = { workspace = true }
 dispatcher = { workspace = true }

@@ -20,8 +20,17 @@ pub type NativeMultiRenderer<'a> = MultiRenderer<'a, 'a, NativeGpuBackend, Nativ
 
 /// Create the manager with the High-priority EGL factory (ex wire.rs step 5).
 pub fn create() -> NativeGpuManager {
+    create_with(None)
+}
+
+/// Adopt an already running render-node context for the primary GPU.
+pub fn create_with(renderer: Option<GlesRenderer>) -> NativeGpuManager {
+    let renderer = std::cell::RefCell::new(renderer);
     GpuManager::new(GbmGlesBackend::<GlesRenderer, DrmDeviceFd>::with_factory(
-        |display| Ok(egl::create(display)?),
+        move |display| match renderer.borrow_mut().take() {
+            Some(renderer) => Ok(renderer),
+            None => Ok(egl::create(display)?),
+        },
     ))
     .expect("GpuManager creation failed")
 }

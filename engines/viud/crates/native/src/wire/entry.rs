@@ -13,7 +13,7 @@
 //! over fallback).
 
 use crate::context::render::NativeRenderContext;
-use smithay::reexports::calloop::EventLoop;
+use smithay::reexports::calloop::LoopHandle;
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::rc::Rc;
@@ -43,7 +43,12 @@ fn absent(_loop: &mut Loop, why: &'static str) {
 pub fn wire(
     _loop: &mut Loop,
     _wayland_socket_name: OsString,
-    event_loop: &mut EventLoop<'static, Loop>,
+    event_loop: &LoopHandle<'static, Loop>,
+    existing_output: Option<smithay::output::Output>,
+    session: (
+        smithay::backend::session::libseat::LibSeatSession,
+        smithay::backend::session::libseat::LibSeatSessionNotifier,
+    ),
 ) -> NativeHandles {
     info!("Backend initialization - Native");
 
@@ -55,12 +60,23 @@ pub fn wire(
             .inner
             .kernel
             .get(&render_gles::format::registrar::FORMATS),
+        session,
     );
     // The composite is GLES only. GLES consults no Vulkan device, so the `Render`
     // role has no renderable set to publish — SAY so rather than leaving it silent:
     // `format.registrar` treats an unregistered role as a race and refuses to
     // answer across it, and the assembly below is the first thing that asks.
     absent(_loop, "gles composite (no vulkan device is consulted)");
+    let reuse = existing_output.is_some();
+    if let Some(output) = existing_output {
+        output.change_current_state(
+            Some(display.mode),
+            Some(display.output.current_transform()),
+            Some(display.output.current_scale()),
+            Some((0, 0).into()),
+        );
+        display.output = output;
+    }
     let renderer = crate::assemble::renderer::assemble(
         _loop
             .inner
@@ -184,12 +200,14 @@ pub fn wire(
     // second tracker here would never be read. `initialize` is still called for
     // its side effects (output registration + EGL bind/registration); winit does
     // use the return value.
-    let _ = scenegraph::state::lifecycle::initialize(
-        _loop,
-        &display.output.clone(),
-        &_loop.inner.loader.display_handle.clone(),
-        &mut contract,
-    );
+    if !reuse {
+        let _ = scenegraph::state::lifecycle::initialize(
+            _loop,
+            &display.output.clone(),
+            &_loop.inner.loader.display_handle.clone(),
+            &mut contract,
+        );
+    }
 
     // ---- Input stack (panics internally; a compositor without input cannot run).
     trace!(
@@ -293,7 +311,9 @@ pub fn wire(
     // wlr-screencopy: advertised by the backend that services
     // the copies (`render::execute` → `screencopy::service`, after each
     // pipe's render_frame).
-    screencopy::create_global(&_loop.inner.loader.display_handle);
+    if !reuse {
+        screencopy::create_global(&_loop.inner.loader.display_handle);
+    }
 
     // Server-side chrome (decor): the theme, from the shared design tokens
     // and the `chrome_style` preference, read once at startup.
@@ -391,29 +411,7 @@ pub fn wire(
     }
 
     // ---- Loop sources.
-    crate::wire::session::register(
-        event_loop,
-        display.session_notifier,
-        ctx_rc.clone(),
-        |ctx, state| {
-            // The watchdog's kick is the frame executor; the loop handle it
-            // captures is the state's own. Outcome handling belongs to the
-            // pacing layer — the watchdog only needs the kick.
-            let handle = state.loop_handle.clone();
-            // A resume render has no commit behind it: move the epoch, or the
-            // executor's epoch-current skip finds every pipe up to date.
-            state
-                .state
-                .redraw
-                .request_silent_for(protocols::redraw::schedule::RedrawReason::Resume);
-            let _ = crate::render::execute::execute(
-                ctx,
-                handle,
-                state,
-                crate::render::execute::RenderScope::All,
-            );
-        },
-    );
+    crate::wire::session::register(event_loop, display.session_notifier, ctx_rc.clone());
 
     crate::wire::frame::register(event_loop, _loop, display.drm_notifier, ctx_rc.clone());
 
@@ -430,7 +428,6 @@ pub fn wire(
             .expect("control-plane ping creation failed");
         let ctx = ctx_rc.clone();
         event_loop
-            .handle()
             .insert_source(source, move |_, _, state| {
                 crate::context::display::apply::drain(state, &ctx);
                 crate::context::display::mode::drain(state, &ctx);
