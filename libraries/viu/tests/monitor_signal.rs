@@ -53,7 +53,7 @@ impl BusHandler for Processes {
                     json!({"host":"fixture","cpu":{"busy":0,"cores":1},"memory":{"used":0,"total":1},"swap":{"used":0,"total":0}})
                 }
                 "monitord.processes" => {
-                    json!({"total":1,"rows":[{"pid":self.pid,"name":"disposable child","user":"test","cpu":0,"memory":0,"cmdline":"sleep 60"}]})
+                    json!({"total":1,"rows":[{"pid":self.pid,"name":"disposable child","user":"test","uid":unsafe { libc::geteuid() },"cpu":0,"memory":0,"cmdline":"sleep 60"}]})
                 }
                 "monitord.history" => json!({"series":{}}),
                 _ => panic!("unexpected effect {command}"),

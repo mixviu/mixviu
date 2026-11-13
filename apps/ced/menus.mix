@@ -6,7 +6,6 @@ fn theme_rows($s)
     ["theme",[["ocean","Ocean"],["crimson","Crimson"],["stone","Stone"],["forest","Forest"],["sunset","Sunset"],["mono","Mono"]]],
     ["theme",[["pro","Pro"],["studio","Studio"],["classic","Classic"],["breeze","Breeze"],["adwaita","Adwaita"],["mixos","MixOS"]]],
     ["theme",[["session","Session theme"]]],
-    ["mode",[["light","Light"],["dark","Dark"],["session","Session mode"]]],
     ["style",[["own","Scheme's own style"],["plain","Plain style"],["pro","Pro style"],["studio","Studio style"],["classic","Classic style"],["breeze","Breeze style"],["adwaita","Adwaita style"],["session","Session style"]]],
     ["decorations",[["auto","Automatic title bar"],["csd","App title bar (CSD)"],["ssd","System title bar (SSD)"]]],
     ["captions",[["auto","Style default captions"],["left","Captions left"],["center","Captions centre"],["right","Captions right"]]]]
