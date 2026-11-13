@@ -585,7 +585,8 @@ mod light_mode_tests {
         // live panel model builder, whose colours are fixed for a dark panel.
         let model: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../engines/viud/tests/fixtures/scenes/panel-busy.model.json"
-        )).unwrap();
+        ))
+        .unwrap();
         for scheme in design::Scheme::ALL {
             for mode in [design::Mode::Dark, design::Mode::Light] {
                 let theme = toolkit::Theme::for_context(design::DesignContext {
@@ -625,7 +626,10 @@ mod light_mode_tests {
                     assert_eq!(doc.nodes[id].ports["color"], "= $item.color");
                     for row in model[rows].as_array().unwrap() {
                         let tint = hex(row["color"].as_str().unwrap()).unwrap();
-                        let overlay = row["background"].as_str().and_then(hex).unwrap_or(Color32::TRANSPARENT);
+                        let overlay = row["background"]
+                            .as_str()
+                            .and_then(hex)
+                            .unwrap_or(Color32::TRANSPARENT);
                         for under in [Color32::BLACK, Color32::WHITE] {
                             let bg = under.blend(background).blend(overlay);
                             let luminance = |c: Color32| {
@@ -633,8 +637,11 @@ mod light_mode_tests {
                                 0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
                             };
                             let (a, b) = (luminance(tint), luminance(bg));
-                            assert!((a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5,
-                                "{id} {} {scheme:?} {mode:?}: {tint:?} on {bg:?}", row["id"]);
+                            assert!(
+                                (a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5,
+                                "{id} {} {scheme:?} {mode:?}: {tint:?} on {bg:?}",
+                                row["id"]
+                            );
                         }
                     }
                 }

@@ -655,19 +655,21 @@ pub(crate) fn draw(
                         16.0,
                         look.icon,
                     ));
-                    let r = ui.scope(|ui| {
-                        // TextEdit replaces hint colours with weak_text_color;
-                        // keep it opaque and local to this field's surface.
-                        ui.visuals_mut().weak_text_color = Some(look.text);
-                        ui.add(
-                            egui::TextEdit::singleline(&mut query)
-                                .id_salt((id, "query"))
-                                .frame(egui::Frame::NONE)
-                                .hint_text(text(value, "search_hint"))
-                                .text_color(look.text)
-                                .desired_width(ui.available_width() - 24.0),
-                        )
-                    }).inner;
+                    let r = ui
+                        .scope(|ui| {
+                            // TextEdit replaces hint colours with weak_text_color;
+                            // keep it opaque and local to this field's surface.
+                            ui.visuals_mut().weak_text_color = Some(look.text);
+                            ui.add(
+                                egui::TextEdit::singleline(&mut query)
+                                    .id_salt((id, "query"))
+                                    .frame(egui::Frame::NONE)
+                                    .hint_text(text(value, "search_hint"))
+                                    .text_color(look.text)
+                                    .desired_width(ui.available_width() - 24.0),
+                            )
+                        })
+                        .inner;
                     record(geometry, id, "search", &r);
                     if value["search_focus"] == true {
                         r.request_focus();
