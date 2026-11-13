@@ -292,15 +292,24 @@ try
   -- Re-arming for the same or a later deadline reuses the one wake task.
   $tasks = status().tasks_started
   $later = nil
+  $later_due = nil
   for $z in $candidates
     $k = sky($z, time())
-    if $later == nil and $k.next != nil and $k.next > $st.next + 60 then $later = $z end
+    if $later == nil and $k.next != nil and $k.next > $st.next + 60 then
+      $later = $z
+      $later_due = $k.next
+    end
   end
   if $later != nil then
     apply({"time.zone": $later}, [])
     $ws = wait_status(fn($x) = $x.zone == $later, 10)
+    -- Keep the selected event rather than asking the clock again after the
+    -- wait. The Bus JSON round trip can move its timestamp by one float step;
+    -- use the same one-second tolerance as the timer supersession check below.
+    check("the later zone arms its selected event",
+      $ws.ok and abs($ws.s.due - $later_due) < 1)
     check("a later deadline is taken up by the pending wake task, not a new one",
-      $ws.ok and $ws.s.due == sky($later, time()).next and $ws.s.tasks_started == $tasks)
+      $ws.ok and $ws.s.tasks_started == $tasks)
     apply({}, ["time.zone"])
     wait_status(fn($x) = $x.zone == $A, 10)
   else
