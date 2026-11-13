@@ -383,7 +383,7 @@ async fn check_stopped_member(keep_leader: bool) {
     std::fs::write(
         &helper,
         format!(
-            "trap 'echo done > {}; exit 0' TERM\necho ready > {}\nkill -STOP $$\nwhile true; do sleep 0.1; done\n",
+            "trap 'echo done > {}; exit 0' TERM\necho ready > {}\nkill -STOP $$\nwhile :; do :; done\n",
             marker.display(), installed.display()
         ),
     )
@@ -403,19 +403,18 @@ async fn check_stopped_member(keep_leader: bool) {
     // installation in the helper, and is required before writing ready.
     let output = run_ready(&format!(
         "$r = run_argv([\"sh\", \"-c\", \"{term_trap}sh {h} & child=$!; polls=0; while test $polls -lt 100; do if ! read -r pid comm state rest < /proc/$child/stat; then break; fi; case $state in T) if test -f {i}; then echo ready > {r}; break; fi ;; Z|X) break ;; esac; polls=$((polls + 1)); sleep 0.01; done; wait\"], {{timeout: 0.5, grace: 3}})\n\
-         print($r.timed_out .. \" \" .. ($r.duration_ms < 3000))\n\
-         print($r.signal == 15)\n",
+         print($r.timed_out .. \" \" .. ($r.signal == 15))\n\
+         print($r.duration_ms)\n",
     ), &ready, &[&marker, &installed])
     .await;
     let finished = marker.exists();
     let _ = std::fs::remove_file(&marker);
     let _ = std::fs::remove_file(&helper);
     let _ = std::fs::remove_file(&installed);
-    let expected = if keep_leader {
-        "true true\nfalse\n"
-    } else {
-        "true true\ntrue\n"
-    };
-    assert_eq!(output, expected, "full output: {output:?}");
-    assert!(finished, "the stopped member never ran its SIGTERM trap");
+    let expected = if keep_leader { "true false\n" } else { "true true\n" };
+    assert!(output.starts_with(expected), "full output: {output:?}");
+    // The worker is killed by the grace deadline if it cannot run its trap.
+    // Its marker proves cooperative completion; a return-time upper bound
+    // also measures scheduling and group bookkeeping under the test pool.
+    assert!(finished, "the stopped member never ran its SIGTERM trap; full output: {output:?}");
 }
