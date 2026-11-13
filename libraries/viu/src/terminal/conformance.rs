@@ -338,6 +338,19 @@ fn split_reflow_preserves_overflow_in_history() {
 }
 
 #[test]
+fn split_reflow_keeps_cursor_above_wrapped_output_and_nonempty_tail() {
+    let t = Terminal::from_test_vt(24, 8, b"top\r\nabcdefghijklmnopq\r\ntail\x1b[H");
+    t.resize(8, 8, 80, 80);
+    assert_eq!(row(&t, 0), "top     ");
+    assert_eq!(row(&t, 1), "abcdefgh");
+    assert_eq!(row(&t, 2), "ijklmnop");
+    assert_eq!(row(&t, 3), "q       ");
+    assert_eq!(row(&t, 4), "tail    ");
+    assert_eq!(t.screen(false).cursor, (0, 0));
+    assert_eq!(t.grid.lock().grid.history_size(), 0);
+}
+
+#[test]
 fn alternate_screen_resize_preserves_main_text_and_saved_cursor() {
     // Screen switching saves/restores the cursor but does not home it.
     let t = Terminal::from_test_vt(10, 4, b"main\x1b[?1049h\x1b[Halt");

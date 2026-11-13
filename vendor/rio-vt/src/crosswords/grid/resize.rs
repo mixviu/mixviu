@@ -368,6 +368,7 @@ impl Grid<Square> {
 
         let mut new_raw = Vec::with_capacity(self.raw.len());
         let mut buffered: Option<Vec<Square>> = None;
+        let mut cursor_rows_above_viewport = 0;
 
         let mut rows = self.raw.take_all();
         let old_len = rows.len();
@@ -526,6 +527,9 @@ impl Grid<Square> {
                     if (i == cursor_buffer_line && self.cursor.pos.col < columns)
                         || i < cursor_buffer_line
                     {
+                        if self.cursor.pos.row == Line(0) {
+                            cursor_rows_above_viewport += 1;
+                        }
                         self.cursor.pos.row = max(self.cursor.pos.row - 1, Line(0));
                     }
 
@@ -555,7 +559,7 @@ impl Grid<Square> {
         // at most the number introduced by wrapping, keeping the viewport full.
         let consumed = min(free_rows, new_raw.len().saturating_sub(old_len));
         new_raw.truncate(new_raw.len() - consumed);
-        self.cursor.pos.row += consumed;
+        self.cursor.pos.row += consumed.saturating_sub(cursor_rows_above_viewport);
 
         // Restore oldest-first order in place and reuse the buffer as the new
         // grid storage, avoiding a second full row-buffer allocation.
