@@ -30,7 +30,7 @@ impl mix::BusHandler for Compositor {
             let body = match command {
                 "comp.window.wait" => json!({"mapped":true}),
                 "comp.windows.list" => {
-                    json!({"windows":[{"id":7,"generation":3,"app_id":"dev.mixos.ced","pid":std::process::id()}]})
+                    json!({"windows":[{"id":7,"generation":3,"app_id":"example.ced","pid":std::process::id()}]})
                 }
                 "comp.window.restore" => json!({"minimized":false}),
                 "comp.window.focus" => json!({"focused":true}),
@@ -86,7 +86,7 @@ fn ced_worker_recovers_when_compositor_registers_after_start() {
     for registered in [false, true] {
         available.store(registered, std::sync::atomic::Ordering::SeqCst);
         runtime
-            .event("job.run".into(), json!({"kind":"show","payload":{}}))
+            .event("job.run".into(), json!({"kind":"show","payload":{"app_id":"example.ced"}}))
             .unwrap();
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let done = runtime.try_completion().unwrap();

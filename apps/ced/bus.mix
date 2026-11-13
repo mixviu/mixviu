@@ -119,7 +119,7 @@ fn bus_command($s,$e)
     if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
     $s=$ced_session.save_session($ced_session.session_changed($s));return $ced_core.pump(hold_call($s,$e,{kind:"quit",timeout_ms:30000}))
   elif $command=="ced.show" then
-    $s=hold_call($s,$e,{kind:"job",timeout_ms:10000});return $ced_core.pump($ced_core.queue_job($s,"show",{call:$e.headers["viu-call"]}))
+    $s=hold_call($s,$e,{kind:"job",timeout_ms:30000});return $ced_core.pump($ced_core.queue_job($s,"show",{call:$e.headers["viu-call"],app_id:$s.launch.app_id ?? "mixviu.ced",comp:$s.launch.comp}))
   elif $command=="ced.stats" then
     $v=viu_ui_state();reply(0,json_encode(merge($v.stats,viu_document("stats","*",{}))));return $s
   elif $command=="ced.diagnostics" then

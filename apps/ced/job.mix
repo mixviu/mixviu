@@ -4,7 +4,7 @@
 $ced_mail=require("mail.mix")
 $show=require("../../libraries/viu/mix/window-show.mix")
 fn compositor($service,$command,$body)
-  send $service $command body=$body timeout=5
+  send $service $command body=$body timeout=15
   return {rc:$rc,body:$reply ?? $result}
 end
 $macros=require("../../libraries/viu/mix/macro-policy.mix");$app_call=require("../../libraries/viu/mix/app-call.mix")
@@ -104,8 +104,8 @@ on job.run
     end
     reply(0,json_encode({path:$a.request.path,tabs:map($a.documents,fn($d)=to_number($d)),shown:$shown,stale:$stale}));return
   elif $job.kind=="show" then
-    $service=env("MIX_COMP_SERVICE") ?? "comp"
-    $out=$show.perform("dev.mixos.ced",pid(),fn($command,$body)=compositor($service,$command,$body),port_exists($service))
+    $service=$a.comp ?? env("MIX_COMP_SERVICE") ?? "comp"
+    $out=$show.perform($a.app_id ?? "mixviu.ced",pid(),fn($command,$body)=compositor($service,$command,$body),port_exists($service))
     reply($out.rc,json_encode($out.body));return
   elif $job.kind=="find" then
     $v=viu_document("find",$a.document,$a.query)
