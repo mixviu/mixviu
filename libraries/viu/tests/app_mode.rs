@@ -267,6 +267,18 @@ fn app_mode_child() {
                 expected,
                 "{app} restart={restart}"
             );
+            if app == "workshop" {
+                let legacy = json!({"app_loaded":false,"state":{"app":{"value":{}},"widgets":{"panels":{}},"window":{"theme":{"mode":"dark"}}}});
+                runtime.notify("viu.saved.loaded".into(), legacy.clone()).unwrap();
+                let restored = next(&runtime, &wakes, app).model.unwrap();
+                assert_eq!(restored["theme_choice"]["mode"], if restart { "light" } else { "dark" });
+                if !restart {
+                    runtime.event("workshop.execute".into(), json!({"id":"view.mode.session"})).unwrap();
+                    next(&runtime, &wakes, app);
+                    runtime.notify("viu.saved.loaded".into(), legacy).unwrap();
+                    assert!(next(&runtime, &wakes, app).model.unwrap()["theme_choice"]["mode"].is_null());
+                }
+            }
             runtime.event(format!("{app}.actions"), json!({})).unwrap();
             let actions = next(&runtime, &wakes, app).reply.unwrap();
             assert_eq!(actions.rc, 0, "{app}");
