@@ -5,6 +5,11 @@ fn check($value,$message)
   if not $value then raise("TRAIN_TEST",$message) end
 end
 $s=$t.fresh()
+check(len($t.scene($s))==0,"missing data draws no placeholder bars")
+$s.error="train.queue: Service 'train' not found"
+check(not contains(json_encode($t.model($s,"3d",0)),"Service 'train'") and not contains(json_encode($t.model($s,"2d",0)),"train.queue"),"render model never exposes Bus errors")
+$failed=$r.received($r.fresh(),$s,$v.fresh(),["train","buildd",24],[{key:"queue",command:"train.queue",rc:10,message:"raw transport failure",body:nil}],0)
+check($failed.snapshot.error=="Some train data is unavailable" and $failed.snapshot.queue==nil,"reader replaces failed data with a plain status")
 check(len($t.history($s).landings)==0,"unavailable history has no fabricated samples")
 $s.now=14400;$s.hours=1
 $s.history={landed:[{updated:10900},{updated:11000},{updated:14400},{updated:1}],batches:[{started:10900,ended:11020,gate_reused:0},{started:12000,ended:12600,gate_reused:1},{started:13000,ended:nil}]}
