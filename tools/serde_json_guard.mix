@@ -3,12 +3,29 @@
 -- Run by tools/ci.mix env in the per-PR lint job. Inspect source manifests:
 -- Cargo's resolved feature union can hide a member bypassing the workspace.
 
-fn dependency_problems($doc, $label)
+fn json_names($doc, $inherited = ["serde_json"])
+  $names = $inherited
+  for $kind in ["dependencies", "dev-dependencies", "build-dependencies"]
+    for $name in keys($doc[$kind] ?? {})
+      $dep = $doc[$kind][$name]
+      if type($dep) == "map" and $dep.package == "serde_json" and not contains($names, $name) then
+        push($names, $name)
+      end
+    end
+  end
+  for $target in keys($doc.target ?? {})
+    $names = json_names($doc.target[$target], $names)
+  end
+  return $names
+end
+
+fn dependency_problems($doc, $label, $inherited)
+  $names = json_names($doc, $inherited)
   $bad = []
   for $kind in ["dependencies", "dev-dependencies", "build-dependencies"]
     for $name in keys($doc[$kind] ?? {})
       $dep = $doc[$kind][$name]
-      if $name == "serde_json" or (type($dep) == "map" and $dep.package == "serde_json") then
+      if contains($names, $name) then
         if $name != "serde_json" or type($dep) != "map" or $dep.workspace != true then
           push($bad, $label .. ": " .. $kind .. "." .. $name .. " must use serde_json.workspace = true")
         end
@@ -19,7 +36,43 @@ fn dependency_problems($doc, $label)
     end
   end
   for $target in keys($doc.target ?? {})
-    $bad = concat($bad, dependency_problems($doc.target[$target], $label .. ": target." .. $target))
+    $bad = concat($bad, dependency_problems($doc.target[$target], $label .. ": target." .. $target, $names))
+  end
+  for $feature in keys($doc.features ?? {})
+    for $value in $doc.features[$feature]
+      $parts = split($value, "/")
+      if len($parts) == 2 and $parts[1] == "preserve_order" and contains($names, re_replace($parts[0], "\\?$", "")) then
+        push($bad, $label .. ": features." .. $feature .. " must not enable " .. $value)
+      end
+    end
+  end
+  return $bad
+end
+
+fn workspace_json_names($doc)
+  $names = ["serde_json"]
+  for $name in keys($doc.workspace.dependencies ?? {})
+    $dep = $doc.workspace.dependencies[$name]
+    if type($dep) == "map" and $dep.package == "serde_json" and not contains($names, $name) then
+      push($names, $name)
+    end
+  end
+  return $names
+end
+
+fn override_problems($doc, $label)
+  $bad = []
+  $tables = {replace: $doc.replace ?? {}}
+  for $registry in keys($doc.patch ?? {})
+    $tables["patch." .. $registry] = $doc.patch[$registry]
+  end
+  for $table in keys($tables)
+    for $name in keys($tables[$table])
+      $dep = $tables[$table][$name]
+      if re_match($name, "^serde_json(?::|$)") or (type($dep) == "map" and $dep.package == "serde_json") then
+        push($bad, $label .. ": " .. $table .. "." .. $name .. " must not override serde_json")
+      end
+    end
   end
   return $bad
 end
@@ -28,6 +81,11 @@ fn root_problems($doc)
   $dep = $doc.workspace.dependencies.serde_json
   $features = if type($dep) == "map" then $dep.features ?? [] else [] end
   $bad = []
+  for $name in workspace_json_names($doc)
+    if $name != "serde_json" then
+      push($bad, "Cargo.toml: workspace.dependencies." .. $name .. " must not alias serde_json")
+    end
+  end
   if not contains($features, "float_roundtrip") then
     push($bad, "Cargo.toml: workspace serde_json must enable float_roundtrip")
   end
@@ -37,43 +95,58 @@ fn root_problems($doc)
   return $bad
 end
 
--- Explicit exemptions: patched upstream code and the pinned reference app
--- retain their upstream dependency contracts, rather than ours.
+-- Neither path is a member today. Keep these explicit exemptions if that
+-- changes: upstream code and the pinned reference retain their own contracts.
 $exemptions = {
   "vendor/": "patched upstream manifests",
   "apps/gallery-reference/": "pinned reference app"
 }
 
--- Always exercise the recogniser, including target-specific and renamed deps.
-$fixture = toml_parse(read_file("tools/test-support/serde_json_guard/Cargo.toml"))
-if len(dependency_problems($fixture, "negative control")) != 4 then
-  raise("SERDE_JSON_GUARD", "negative control must refuse all four bypasses")
-end
-if len(root_problems($fixture)) != 2 then
-  raise("SERDE_JSON_GUARD", "negative control must refuse both workspace feature regressions")
+-- Check exact diagnostics, so losing one rejection cannot be masked by another.
+for $case in load_data("tools/test-support/serde_json_guard/cases.conf.mix").cases
+  $fixture = toml_parse(read_file("tools/test-support/serde_json_guard/" .. $case.file))
+  $actual = concat(root_problems($fixture), dependency_problems($fixture, "Cargo.toml", workspace_json_names($fixture)))
+  $actual = concat($actual, override_problems($fixture, "Cargo.toml"))
+  if not deep_eq(sort($actual), sort($case.expected)) then
+    print({fixture: $case.file, expected: sort($case.expected), actual: sort($actual)})
+    raise("SERDE_JSON_GUARD", "negative control diagnostic mismatch")
+  end
 end
 for $source in ["[dependencies]\nserde_json.workspace = true", "[dependencies]\nserde_json = { workspace = true, features = [\"raw_value\"] }"]
-  if len(dependency_problems(toml_parse($source), "positive control")) != 0 then
+  if len(dependency_problems(toml_parse($source), "positive control", ["serde_json"])) != 0 then
     raise("SERDE_JSON_GUARD", "workspace inheritance must be accepted")
   end
 end
 
-$bad = root_problems(toml_parse(read_file("Cargo.toml")))
+$root = toml_parse(read_file("Cargo.toml"))
+$aliases = workspace_json_names($root)
+$bad = concat(root_problems($root), dependency_problems($root, "Cargo.toml", $aliases))
+$bad = concat($bad, override_problems($root, "Cargo.toml"))
 -- Fail before metadata: a broken workspace feature policy needs no resolution.
 if len($bad) == 0 then
   $meta = json_parse(run_argv_must(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], {timeout: 300, max_output: 64000000}))
+  $scanned = 0
+  $workspace_prefix = $meta.workspace_root .. "/"
   for $pkg in $meta.packages
     if contains($meta.workspace_members, $pkg.id) then
-      $path = replace($pkg.manifest_path, $meta.workspace_root .. "/", "")
+      if not starts_with($pkg.manifest_path, $workspace_prefix) then
+        raise("SERDE_JSON_GUARD", "member manifest is outside workspace_root")
+      end
+      $path = substr($pkg.manifest_path, len($workspace_prefix))
       $exempt = false
       for $prefix in keys($exemptions)
         if starts_with($path, $prefix) then $exempt = true end
       end
       if not $exempt then
-        $bad = concat($bad, dependency_problems(toml_parse(read_file($pkg.manifest_path)), $path))
+        $scanned = $scanned + 1
+        $doc = toml_parse(read_file($pkg.manifest_path))
+        $bad = concat($bad, dependency_problems($doc, $path, $aliases))
+        $bad = concat($bad, override_problems($doc, $path))
       end
     end
   end
+  if $scanned < 1 then raise("SERDE_JSON_GUARD", "no workspace members scanned") end
+  print("serde_json guard: scanned " .. to_string($scanned) .. " members")
 end
 for $problem in $bad
   eprint("::error::serde_json guard: " .. $problem)

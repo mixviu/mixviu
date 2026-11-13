@@ -14,7 +14,7 @@ impl TestDir {
             .expect("system clock before epoch")
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "mix-run-argv-{label}-{}-{nonce}-{}",
+            "mix-test-{label}-{}-{nonce}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
