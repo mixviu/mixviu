@@ -100,6 +100,7 @@ fn app_mode_child() {
         for (restart, expected) in [(false, None), (true, Some("light"))] {
             let arguments = if app == "email" { vec!["--fixture".into()] } else if app == "screenshot" { vec!["comp".into(), app_home.to_string_lossy().into_owned(), app_home.join("captures").to_string_lossy().into_owned()] } else if app == "dopus" { vec!["--profile".into(),app_home.to_string_lossy().into_owned()] } else { vec![] };
             let bundle = viu::bundle::Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../apps/{app}")), &arguments).unwrap();
+            let handlers = bundle.program.source.clone();
             let (tx, wakes) = mpsc::channel();
             let mut runtime = Runtime::with_services(16, Arc::new(move || { let _ = tx.send(()); }), Some(Box::new(|| std::rc::Rc::new(NativeTheme))), viu::runtime::Services {
                 application_roots: Some(app_home.clone()), calls: Some(Default::default()), timers: Some(Default::default()), documents: Some(Default::default()), rasters: Some(Default::default()), terminals: Some(Default::default()), ui_state: Some(Default::default()), options: json!({"state_home":app_home}), ..Default::default()
@@ -121,9 +122,18 @@ fn app_mode_child() {
                 assert_eq!(model["theme_choice"]["mode"].as_str(), if mode == "session" { None } else { Some(mode) }, "{app}");
                 let ctx = egui::Context::default();
                 for session in ["light", "dark"] {
-                    let snapshot = json!({"state":{"lost":false,"values":{"appearance.mode":session}}});
+                    let snapshot = json!({"appearance":{"scheme":"mixos","mode":session,"style":"own"},"keymap":{},"state":{"lost":false,"error":null,"binding":{"instance":"example","profile":"default"},"incarnation":"mode-fixture","revision":"1","values":{"appearance.mode":session}}});
                     viu::appearance::install_session_choice(&ctx,&snapshot,app,&toolkit::Theme::embedded(),&Default::default(),&model["theme_choice"]).unwrap();
                     assert_eq!(viu::appearance::session_theme(&ctx).mode().name(), if mode=="session" { session } else { mode }, "{app}");
+                    let effective = json!({"scheme":"mixos","mode":if mode=="session" {session} else {mode},"style":"own"});
+                    for (command, body) in [("viu.session.changed", snapshot.clone()), ("viu.session", snapshot), ("viu.theme.changed", effective)] {
+                        if handlers.contains(&format!("on {command}\n")) {
+                            runtime.notify(command.into(), body).unwrap();
+                            if let Some(changed) = next(&runtime, &wakes, app).model {
+                                assert_eq!(changed["theme_choice"]["mode"], model["theme_choice"]["mode"], "{app} {command} preserves choice");
+                            }
+                        }
+                    }
                 }
             }
         }
