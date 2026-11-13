@@ -114,10 +114,19 @@ fn record_changing_4k_ten_seconds() {
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
-    assert_eq!(p.state.size, (3840, 2160));
+    // The fixture's initial xdg configure chooses 1280x720 even on a larger
+    // output. Submit full-output buffers explicitly and prove their coverage.
+    p.state.size = (3840, 2160);
     p.solid_buffer(0xff20d040);
     let mut alternate = p.current_buffer();
     p.change_buffer();
+    let previous = p.state.callbacks;
+    p.commit(true);
+    p.wait_callback(previous);
+    let (width, height, pixels) = ppm(&bus, &process, "full-4k-workload", None);
+    assert_eq!((width, height), (3840, 2160));
+    let at = (2100 * width + 3800) * 3;
+    assert_eq!(&pixels[at..at + 3], &[0xaa, 0x33, 0x77]);
     for recording in [false, true] {
         let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.mkv"), "max_seconds":12,"fps":30,"cursor":true})));
         let begin_us = monotonic_ns() / 1000;
@@ -125,6 +134,7 @@ fn record_changing_4k_ten_seconds() {
         let mut commits = 0;
         while begin.elapsed() < Duration::from_secs(10) {
             p.swap_buffer(&mut alternate);
+            p.state.size = (3840, 2160);
             p.commit(true);
             commits += 1;
             let next = begin + Duration::from_nanos(commits * 1_000_000_000 / 30);
