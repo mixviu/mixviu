@@ -25,7 +25,7 @@ fn workshop_answers_during_discovery() {
         while !ping.is_finished() {
             ctx.run_ui(egui::RawInput::default(), |ui| host.pump(ui.ctx())).drop_without_applying_deltas();
             assert!(host.error.is_empty(), "{}", host.error);
-            assert!(Instant::now() < end, "owner stalled");
+            assert!(Instant::now() < end, "owner stalled: ready={} inflight={:?} model={} jobs={}", host.ready, host.inflight, host.model, host.jobs.pending());
             std::thread::sleep(Duration::from_millis(2));
         }
         let result = rt.block_on(ping).unwrap();
