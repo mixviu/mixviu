@@ -1,0 +1,63 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Run via the ignored Rust test, only in an exclusive build-worker checkout.
+if env("MIX_PROCESS_LIFETIME_NEGATIVE", "") != "1" then
+  raise("NEGATIVE_OPT_IN", "set MIX_PROCESS_LIFETIME_NEGATIVE=1 on a build worker")
+end
+fn controlled_binary()
+  $out = run_argv_must(["cargo", "test", "-p", "lib-mix", "--test", "process_lifetime", "--no-run", "--message-format=json"], {timeout: 1800})
+  for $line in split($out, "\n")
+    if starts_with($line, "{") then
+      $v = json_parse($line)
+      if $v.reason == "compiler-artifact" and $v.target.name == "process_lifetime" then return $v.executable end
+    end
+  end
+  raise("NO_BINARY", "test executable missing")
+end
+$path = "libraries/mix/src/builtins.rs"
+$original = read_file($path)
+$new = "libc::kill(-pgid, libc::SIGCONT);\n            libc::kill(-pgid, libc::SIGTERM);"
+if not contains($original, $new) then raise("MUTATION", "signal order site missing") end
+try
+  for $order in ["CONT_TERM", "TERM_CONT"]
+    $signals = if $order == "CONT_TERM" then ["SIGCONT", "SIGTERM"] else ["SIGTERM", "SIGCONT"] end
+    $replacement = "libc::kill(-pgid, libc::" .. $signals[0] .. ");\n            std::thread::sleep(Duration::from_millis(20));\n            libc::kill(-pgid, libc::" .. $signals[1] .. ");"
+    write_file($path, replace($original, $new, $replacement))
+    $bin = controlled_binary()
+    $jobs = []
+    for $i = 1 to 8
+      push($jobs, [$bin, "stopped_member_honours_sigterm_when_its_untrapped_leader_dies", "--exact", "--nocapture"])
+    end
+    $failures = 0
+    for $r in run_parallel($jobs, {max: 8, timeout: 60})
+      if not contains($r.stderr, "FIXTURE_READY") then raise("UNARMED_CONTROL", json_encode($r)) end
+      if not $r.ok then
+        if $r.exit_code != 101 or not contains($r.stderr, "the stopped member never ran its SIGTERM trap") then raise("UNEXPECTED_CONTROL", json_encode($r)) end
+        $failures = $failures + 1
+        if $failures == 1 then print(json_encode($r)) end
+      end
+    end
+    print("SCHEDULE_CONTROL order=" .. $order .. " gap_ms=20 failures=" .. to_string($failures) .. "/8")
+    if $order == "CONT_TERM" and $failures != 0 then raise("FIXED_ORDER_FAILURE", "CONT first failed with the scheduling gap") end
+    if $order == "TERM_CONT" and $failures == 0 then raise("NEGATIVE_CONTROL", "old order did not fail with the scheduling gap") end
+  end
+  print("SCHEDULE_CONTROL_PASS: identical preemption window distinguishes the signal orders")
+finally
+  write_file($path, $original)
+end
+
+$path = "libraries/mix/src/builtins.rs"
+$original = read_file($path)
+$needle = "libc::kill(-pgid, libc::SIGCONT);"
+if not contains($original, $needle) then raise("MUTATION", "SIGCONT site missing") end
+try
+  write_file($path, replace($original, $needle, "// SIGCONT deliberately omitted for the negative control."))
+  $r = run_argv(["cargo", "test", "-p", "lib-mix", "--test", "process_lifetime", "a_stopped_member_is_continued_so_it_can_honour_sigterm", "--", "--exact", "--nocapture"], {timeout: 1800})
+  print($r.stdout .. $r.stderr)
+  if $r.exit_code != 101 or not contains($r.stdout, "a_stopped_member_is_continued_so_it_can_honour_sigterm ... FAILED") then
+    raise("NEGATIVE_CONTROL", "removing SIGCONT did not fail the stopped-member test")
+  end
+  print("NEGATIVE_CONTROL_PASS: missing SIGCONT is detected")
+finally
+  write_file($path, $original)
+end
