@@ -1,3 +1,5 @@
+> Current naming: Mix `term`, Rust reference `term-rs`. See [runtime and migration](docs/ports/term-runtime.md). The receipts below retain historical branch, job and installed-file names.
+
 # PR #24 refreshed settlement — 2026-11-10
 
 PR: https://github.com/mixviu/mixviu/pull/24
@@ -187,7 +189,7 @@ Tested code checkpoint: 5f006b1aa99af248b58758c390c93df30ac78423. This status an
 
 The default CI interpreter is now rebuilt incrementally on reused CBC targets, rather than trusting an executable left by another commit. Earlier superseded full gates were cancelled and are not claimed as passes. GitHub run 42478516774 found three raster failures because its image lacked the required Adwaita Mono and Noto Color Emoji fonts. The workflow now declares adwaita-fonts and noto-fonts-emoji; raster assertions and application behaviour are unchanged. Final receipt-head checks are recorded in the PR.
 
-Install/undo recipe (files, prefix layout, launcher and desktop entry): docs/ports/term-mix.md and PR body. No installation, desk4/VT access or desktop restart performed. The receipt proves headless integration; the desk4 visual comparison remains an operator step.
+Install/undo recipe (files, prefix layout, launcher and desktop entry): docs/ports/term-runtime.md and PR body. No installation, desk4/VT access or desktop restart performed. The receipt proves headless integration; the desk4 visual comparison remains an operator step.
 
 branch feat/term-mix; head 5f006b1aa99af248b58758c390c93df30ac78423; PR https://github.com/mixviu/mixviu/pull/24; CBC term-mix-ci-5-a1 rc 0; smoke term-mix-smoke-6-a1 rc 0
 

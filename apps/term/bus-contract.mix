@@ -241,7 +241,7 @@ $catalogue = {
     }
   ],
   "describe": {
-    "app_id": "dev.mixos.term",
+    "app_id": "mixviu.term",
     "commands": [
       {
         "description": "List every command",
