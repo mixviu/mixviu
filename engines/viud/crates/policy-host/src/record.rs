@@ -39,7 +39,12 @@ impl History {
         Some(past)
     }
     fn session(&mut self, id: &str) -> Option<Past> {
-        let key = self.entries.iter().find(|(_, past)| past.id == id)?.0.clone();
+        let key = self
+            .entries
+            .iter()
+            .find(|(_, past)| past.id == id)?
+            .0
+            .clone();
         self.get(&key)
     }
     fn insert(&mut self, key: String, past: Past) {
@@ -135,9 +140,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             RecordCommand::Status { session } => session.as_ref(),
             _ => None,
         };
-        if let Some(past) =
-            id.and_then(|id| PAST.with_borrow_mut(|past| past.session(id)))
-        {
+        if let Some(past) = id.and_then(|id| PAST.with_borrow_mut(|past| past.session(id))) {
             answer(match op {
                 RecordCommand::Stop { .. } => ControlReply::Body(past.terminal),
                 RecordCommand::Status { .. } => ControlReply::Body(past.status),
@@ -711,7 +714,13 @@ mod tests {
     fn stop_reply(id: &str) -> bool {
         let answered = Rc::new(Cell::new(None));
         let got = answered.clone();
-        session_command(RecordCommand::Stop { session: id.into(), discard: false }, Box::new(move |reply| got.set(Some(matches!(reply, ControlReply::Body(_))))));
+        session_command(
+            RecordCommand::Stop {
+                session: id.into(),
+                discard: false,
+            },
+            Box::new(move |reply| got.set(Some(matches!(reply, ControlReply::Body(_))))),
+        );
         answered.get().expect("stop must answer immediately")
     }
     #[test]
@@ -756,7 +765,10 @@ mod tests {
         for id in ["unknown", "stale-session", "mismatched-session"] {
             assert!(!stop_reply(id));
             assert!(session.borrow().failed.is_none());
-            assert!(!answered.get(), "a wrong ID must not cancel the pending start");
+            assert!(
+                !answered.get(),
+                "a wrong ID must not cancel the pending start"
+            );
         }
         assert!(stop_reply("pending-session"));
         assert!(answered.get());
@@ -776,7 +788,10 @@ mod tests {
             cancel_pending(&session, "max_seconds elapsed before first frame");
         }
         assert_eq!(PAST.with_borrow(|p| p.entries.len()), 128);
-        assert!(!stop_reply("pending-session"), "evicted session must be refused");
+        assert!(
+            !stop_reply("pending-session"),
+            "evicted session must be refused"
+        );
         assert_eq!(session.borrow().id, "session-255");
         let mut history = History::default();
         for i in 0..128 {
@@ -784,8 +799,14 @@ mod tests {
         }
         assert!(history.get("key-0").is_some());
         history.insert("new".into(), past);
-        assert!(history.get("key-0").is_some(), "recently used entry must survive");
-        assert!(history.get("key-1").is_none(), "least recently used entry must be evicted");
+        assert!(
+            history.get("key-0").is_some(),
+            "recently used entry must survive"
+        );
+        assert!(
+            history.get("key-1").is_none(),
+            "least recently used entry must be evicted"
+        );
         CURRENT.with_borrow_mut(|current| *current = None);
     }
 }

@@ -333,27 +333,20 @@ fn compose(
     let scale = ctx.output.current_scale().fractional_scale();
     // Window jobs use the owning window's scene (including parked worlds),
     // just as nested does. They never consume the output framebuffer.
-    screencopy::offscreen::capture_windows(
-        renderer,
-        &ctx.output,
-        |renderer, target, recording| {
-            let window = world::window::draw::frame::scene::capture_window(
-                state,
-                target.id,
-                target.generation,
-            )
-            .map_err(|error| screencopy::file::ControlReply::WindowTarget {
-                id: target.id,
-                error,
-            })?;
-            if recording {
-                recorder::interface::render::bus_window_elements(renderer, &window, scale)
-            } else {
-                world::window::draw::frame::scene::capture(renderer, &window, scale)
-            }
-            .map_err(screencopy::file::capture_failed)
-        },
-    );
+    screencopy::offscreen::capture_windows(renderer, &ctx.output, |renderer, target, recording| {
+        let window =
+            world::window::draw::frame::scene::capture_window(state, target.id, target.generation)
+                .map_err(|error| screencopy::file::ControlReply::WindowTarget {
+                    id: target.id,
+                    error,
+                })?;
+        if recording {
+            recorder::interface::render::bus_window_elements(renderer, &window, scale)
+        } else {
+            world::window::draw::frame::scene::capture(renderer, &window, scale)
+        }
+        .map_err(screencopy::file::capture_failed)
+    });
 
     // The normal target is always cursorless. No second allocation or pass
     // occurs unless a protocol or Bus capture explicitly asks for the cursor.

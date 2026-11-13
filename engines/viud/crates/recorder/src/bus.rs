@@ -49,8 +49,15 @@ fn rename_no_replace(src: &str, dst: &str) -> std::io::Result<()> {
     let from = std::ffi::CString::new(src)?;
     let to = std::ffi::CString::new(dst)?;
     if unsafe {
-        libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
-    } == 0 {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    } == 0
+    {
         Ok(())
     } else {
         Err(std::io::Error::last_os_error())
@@ -73,7 +80,11 @@ fn probe_publication(
     secure_file(&files.frames)?;
     match rename(&files.video, &files.frames) {
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-        result => return Err(format!("destination does not support no-replace publication: {result:?}")),
+        result => {
+            return Err(format!(
+                "destination does not support no-replace publication: {result:?}"
+            ));
+        }
     }
     std::fs::remove_file(&files.frames).map_err(|e| e.to_string())?;
     rename(&files.video, &files.frames)
@@ -367,7 +378,10 @@ impl Recording {
     }
 
     pub fn stop_conflicts(&self, discard: bool) -> bool {
-        self.finishing.is_some() && self.stop_discard.is_some_and(|previous| previous != discard)
+        self.finishing.is_some()
+            && self
+                .stop_discard
+                .is_some_and(|previous| previous != discard)
     }
 
     pub fn poll(&mut self) -> bool {
@@ -468,7 +482,10 @@ mod file_tests {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
         let path = dir.join("take.mkv").to_str().unwrap().to_owned();
-        let error = probe_publication(&path, |_, _| Err(std::io::Error::from_raw_os_error(libc::EINVAL))).unwrap_err();
+        let error = probe_publication(&path, |_, _| {
+            Err(std::io::Error::from_raw_os_error(libc::EINVAL))
+        })
+        .unwrap_err();
         assert!(error.contains("no-replace publication"));
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         check_destination(&path).unwrap();
@@ -482,17 +499,31 @@ mod file_tests {
     }
     #[test]
     fn finishing_preserves_original_discard_choice() {
-        if !std::process::Command::new("ffmpeg").arg("-version").output().is_ok_and(|o| o.status.success()) {
-            assert!(std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref() != Ok("1"), "recording test requires ffmpeg");
+        if !std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+        {
+            assert!(
+                std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref() != Ok("1"),
+                "recording test requires ffmpeg"
+            );
             eprintln!("recording test skipped: ffmpeg is absent");
             return;
         }
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
         for discard in [false, true] {
-            let path = dir.join(format!("{discard}.mkv")).to_str().unwrap().to_owned();
-            let mut recording = Recording::new("test".into(), path, 2, 2, 30, "x264".into()).unwrap();
-            recording.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+            let path = dir
+                .join(format!("{discard}.mkv"))
+                .to_str()
+                .unwrap()
+                .to_owned();
+            let mut recording =
+                Recording::new("test".into(), path, 2, 2, 30, "x264".into()).unwrap();
+            recording
+                .frame(Some((2, 2, Arc::new(vec![0; 12]), 0)))
+                .unwrap();
             assert!(!recording.stop_conflicts(discard));
             assert!(recording.stop(discard));
             assert!(recording.stop_conflicts(!discard));

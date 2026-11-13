@@ -12,20 +12,27 @@ use std::{
 
 #[allow(dead_code)] // Only recording tests need these optional host facilities.
 pub fn record_available() -> bool {
-    let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE")
-        .unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let node =
+        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let mut missing = Vec::new();
     if let Err(error) = fs::OpenOptions::new().read(true).write(true).open(&node) {
         missing.push(format!("render node {node}: {error}"));
     }
-    if !Command::new("ffmpeg").arg("-version").output().is_ok_and(|output| output.status.success()) {
+    if !Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+    {
         missing.push("ffmpeg is absent from PATH or cannot run".into());
     }
     if missing.is_empty() {
         return true;
     }
     let reason = missing.join("; ");
-    assert!(std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref() != Ok("1"), "recording tests required by MIX_TEST_REQUIRE_RECORD=1: {reason}");
+    assert!(
+        std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref() != Ok("1"),
+        "recording tests required by MIX_TEST_REQUIRE_RECORD=1: {reason}"
+    );
     eprintln!("recording test skipped: {reason}");
     false
 }
@@ -130,7 +137,18 @@ fn spawn_with_seat(
     agent: bool,
     seat: Option<&str>,
 ) -> Process {
-    spawn_with_seat_size(scale, explicit_node, label, bus, refresh, service, trace, agent, seat, "1280x720")
+    spawn_with_seat_size(
+        scale,
+        explicit_node,
+        label,
+        bus,
+        refresh,
+        service,
+        trace,
+        agent,
+        seat,
+        "1280x720",
+    )
 }
 
 fn spawn_with_seat_size(
@@ -312,5 +330,16 @@ pub fn spawn_transitions(label: &str, bus: &str) -> Process {
 
 #[allow(dead_code)] // Used by capture.rs; this module is shared with other targets.
 pub fn spawn_4k(label: &str, bus: &str) -> Process {
-    spawn_with_seat_size(1, None, label, Some(bus), "60", None, true, true, None, "3840x2160")
+    spawn_with_seat_size(
+        1,
+        None,
+        label,
+        Some(bus),
+        "60",
+        None,
+        true,
+        true,
+        None,
+        "3840x2160",
+    )
 }
