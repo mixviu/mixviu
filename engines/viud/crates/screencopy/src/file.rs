@@ -38,6 +38,7 @@ struct Request {
     output: String,
     spec: CaptureFrameSpec,
     answer: Answer,
+    raw: bool,
 }
 
 thread_local! {
@@ -55,12 +56,14 @@ pub fn enqueue(
         next.set(id.wrapping_add(1));
         id
     });
+    let raw=PIXEL_ANSWERS.with_borrow(|answers|answers.contains_key(&spec.path));
     REQUESTS.with_borrow_mut(|requests| {
         requests.push(Request {
             id,
             output: output.name(),
             spec,
             answer: Box::new(answer),
+            raw,
         })
     });
     id
@@ -99,20 +102,20 @@ pub fn pending_windows() -> bool {
 /// Window requests never consume an output framebuffer, including the KMS tap.
 pub(crate) fn service_windows(
     output: &Output,
-    mut capture: impl FnMut(CaptureWindow) -> Result<(Readback, Vec<u8>), ControlReply>,
+    mut capture: impl FnMut(CaptureWindow,bool) -> Result<(Readback, Vec<u8>), ControlReply>,
 ) {
     for request in take(|request| request.output == output.name() && request.spec.window.is_some())
     {
         let target = request.spec.window.expect("window request");
         let started=std::time::Instant::now();
-        let result = capture(target).and_then(|(readback, pixels)| {
+        let result = capture(target,request.raw).and_then(|(readback, pixels)| {
             complete_timed(
                 &request.spec,
                 readback,
                 &pixels,
                 output,
                 CaptureSource::Offscreen,
-                started.elapsed().as_micros() as u64,
+                started.elapsed().as_micros() as u64, request.raw,
             )
             .map_err(capture_failed)
         });
@@ -193,7 +196,7 @@ pub fn service<R: ExportMem>(
         let result = pixels
             .as_ref()
             .map_err(Clone::clone)
-            .and_then(|pixels| complete_timed(&request.spec, readback, pixels, output, kind,readback_us))
+            .and_then(|pixels| complete_timed(&request.spec, readback, pixels, output, kind,readback_us,request.raw))
             .map_err(capture_failed);
         (request.answer)(result);
     }
@@ -235,10 +238,10 @@ fn complete(
     output: &Output,
     kind: CaptureSource,
 ) -> Result<Value, String> {
-    complete_timed(spec,readback,pixels,output,kind,0)
+    complete_timed(spec,readback,pixels,output,kind,0,false)
 }
 
-fn complete_timed(spec: &CaptureFrameSpec, readback: Readback, pixels: &[u8], output: &Output, kind: CaptureSource, readback_us:u64) -> Result<Value,String> {
+fn complete_timed(spec: &CaptureFrameSpec, readback: Readback, pixels: &[u8], output: &Output, kind: CaptureSource, readback_us:u64,raw:bool) -> Result<Value,String> {
     if let Some(expected) = spec.output_generation {
         let topology = output
             .user_data()
@@ -264,7 +267,7 @@ fn complete_timed(spec: &CaptureFrameSpec, readback: Readback, pixels: &[u8], ou
         pixels,
         output.current_scale().fractional_scale(),
     )?;
-    let raw = PIXEL_ANSWERS.with_borrow_mut(|answers| answers.remove(&spec.path));
+    let raw = if raw { PIXEL_ANSWERS.with_borrow_mut(|answers| answers.remove(&spec.path)) } else { None };
     if let Some(answer) = raw {
         answer(Ok((width, height, cropped.into_owned(),readback_us)));
     } else {
@@ -487,7 +490,7 @@ mod tests {
         let spec =
             comp_model::capture::parse(&serde_json::json!({"path": "/tmp/output.png"})).unwrap();
         let output_id = enqueue(&output, spec, move |answer| got.borrow_mut().push(answer));
-        service_windows(&output, |target| {
+        service_windows(&output, |target, _| {
             assert_eq!(
                 target,
                 CaptureWindow {

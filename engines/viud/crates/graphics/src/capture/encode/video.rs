@@ -20,9 +20,15 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+enum VideoFrame {
+    Bgra(Arc<[u8]>),
+    Rgb { pixels: Arc<[u8]>, width: u32, height: u32 },
+}
+
 pub struct VideoEncoder {
-    tx: Option<SyncSender<Arc<[u8]>>>,
+    tx: Option<SyncSender<VideoFrame>>,
     join: Option<JoinHandle<()>>,
+    stderr_join: Option<JoinHandle<()>>,
     child: Option<Child>,
     temp: PathBuf,
     width: u32,
@@ -60,7 +66,7 @@ impl VideoEncoder {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let cleanup = path.is_none();
-        let temp = path.unwrap_or_else(|| std::env::temp_dir().join(format!("viud-capture-{nanos}.mkv")));
+        let temp = path.unwrap_or_else(|| std::env::temp_dir().join(format!("viud-capture-{nanos}.mp4")));
 
         let mut cmd = command("ffmpeg");
         if encoder == "vaapi" { cmd.args(["-vaapi_device","/dev/dri/renderD128"]); }
@@ -94,7 +100,7 @@ impl VideoEncoder {
         let mut stdin = child.stdin.take().ok_or("ffmpeg stdin unavailable")?;
         let stderr = Arc::new(Mutex::new(String::new()));
         let errors = stderr.clone();
-        if let Some(mut pipe) = child.stderr.take() {
+        let stderr_join=child.stderr.take().map(|mut pipe| {
             std::thread::spawn(move || {
                 let mut chunk = [0; 4096];
                 while let Ok(n) = pipe.read(&mut chunk) {
@@ -107,17 +113,32 @@ impl VideoEncoder {
                         text.push_str(&String::from_utf8_lossy(&chunk[..n]));
                     }
                 }
-            });
-        }
-        let (tx, rx) = sync_channel::<Arc<[u8]>>(4);
+            })
+        });
+        let (tx, rx) = sync_channel::<VideoFrame>(4);
         let queued = Arc::new(AtomicUsize::new(0));
         let queue_count = queued.clone();
         let closed = Arc::new(AtomicBool::new(false));
         let writer_closed = closed.clone();
         let join = std::thread::spawn(move || {
-            while let Ok(buf) = rx.recv() {
+            let mut previous: Option<Arc<[u8]>>=None;
+            let mut converted=Vec::new();
+            while let Ok(frame) = rx.recv() {
                 queue_count.fetch_sub(1, Ordering::Relaxed);
-                if stdin.write_all(&buf).is_err() {
+                let buf=match &frame {
+                    VideoFrame::Bgra(pixels)=>pixels.as_ref(),
+                    VideoFrame::Rgb{pixels,width,height}=>{
+                        if !previous.as_ref().is_some_and(|old|Arc::ptr_eq(old,pixels)) {
+                            converted=vec![0;w as usize*h as usize*4];
+                            for (input,output) in pixels.chunks_exact(*width as usize*3).take(*height as usize).zip(converted.chunks_exact_mut(w as usize*4)) {
+                                for (p,out) in input.chunks_exact(3).zip(output.chunks_exact_mut(4)) {out.copy_from_slice(&[p[2],p[1],p[0],255]);}
+                            }
+                            previous=Some(pixels.clone());
+                        }
+                        &converted
+                    }
+                };
+                if stdin.write_all(buf).is_err() {
                     break;
                 }
             }
@@ -128,6 +149,7 @@ impl VideoEncoder {
         Ok(Self {
             tx: Some(tx),
             join: Some(join),
+            stderr_join,
             child: Some(child),
             temp,
             width: w,
@@ -159,8 +181,17 @@ impl VideoEncoder {
         if bgra.len() != self.width as usize * self.height as usize * 4 {
             return false;
         }
+        self.submit(VideoFrame::Bgra(bgra))
+    }
+
+    pub fn try_push_rgb(&self, pixels:Arc<[u8]>,width:u32,height:u32)->bool {
+        if width==0 || height==0 || width>self.width || height>self.height || pixels.len()!=width as usize*height as usize*3 { return false; }
+        self.submit(VideoFrame::Rgb{pixels,width,height})
+    }
+
+    fn submit(&self, frame:VideoFrame)->bool {
         self.queued.fetch_add(1, Ordering::Relaxed);
-        if self.tx.as_ref().is_some_and(|tx| tx.try_send(bgra).is_ok()) {
+        if self.tx.as_ref().is_some_and(|tx| tx.try_send(frame).is_ok()) {
             true
         } else {
             self.queued.fetch_sub(1, Ordering::Relaxed);
@@ -189,7 +220,7 @@ impl VideoEncoder {
                 Ok(Some(status)) => {
                     break Err(format!("ffmpeg {status}: {}", self.stderr.lock().unwrap()));
                 }
-                Err(error) => break Err(format!("ffmpeg wait: {error}")),
+                Err(error) => {let _=child.kill();let _=child.wait();break Err(format!("ffmpeg wait: {error}"));},
                 _ if Instant::now() >= deadline => {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -204,7 +235,8 @@ impl VideoEncoder {
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
-        result
+        if let Some(join)=self.stderr_join.take() {let _=join.join();}
+        result.map_err(|error|format!("{error}: {}",self.stderr.lock().unwrap()))
     }
 
     /// Stop the stream, wait for ffmpeg to flush, and return the temp mp4 path
@@ -272,6 +304,7 @@ mod tests {
         let encoder = VideoEncoder {
             tx: Some(tx),
             join: None,
+            stderr_join: None,
             child: None,
             cleanup: true,
             temp: PathBuf::new(),

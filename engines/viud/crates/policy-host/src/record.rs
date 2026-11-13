@@ -248,7 +248,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 event(&s, if s.failed.is_some() { "failed" } else { "idle" });
                 return;
             }
-            if r.terminal.is_some() || r.status()["state"] == "finishing" || s.failed.is_some() {
+            if r.terminal.is_some() || !r.is_recording() || s.failed.is_some() {
                 return;
             }
         }
@@ -354,6 +354,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         let got = frames.clone();
         let session = session.clone();
         screencopy::file::raw_answer(token.clone(), move |result| {
+            let captured_us=recorder::bus::monotonic_us();
             let frame = match result {
                 Ok(frame) => frame,
                 Err(error) => {
@@ -386,13 +387,13 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if s.failed.is_some()
                 || s.recording
                     .as_ref()
-                    .is_some_and(|r| r.status()["state"] != "recording")
+                    .is_some_and(|r| !r.is_recording())
             {
                 return;
             }
             if s.recording.is_none() {
                 match Recording::new(s.id.clone(), s.path.clone(), width, height, s.fps,s.encoder.clone()) {
-                    Ok(recording) => s.recording = Some(recording),
+                    Ok(mut recording) => { recording.t0_us=captured_us; s.recording = Some(recording); },
                     Err(error) => {
                         drop(s);
                         fail(&session, &error);

@@ -97,6 +97,8 @@ impl Recording {
         json!({"session":self.session,"path":self.path,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path)})
     }
 
+    pub fn is_recording(&self) -> bool { self.encoder.is_some() && self.error.is_none() }
+
     pub fn frame(&mut self, pixels: Option<(u32, u32, Vec<u8>,u64)>) -> Result<(), String> {
         if let Some((w, h, rgb,readback_us)) = pixels {
             self.readback_us=readback_us;
@@ -109,11 +111,7 @@ impl Recording {
             if rgb.len() != w as usize * h as usize * 3 {
                 return Err("invalid RGB frame".into());
             }
-            let mut bgra = vec![0;self.width as usize*self.height as usize*4];
-            for (input,output) in rgb.chunks_exact(w as usize*3).zip(bgra.chunks_exact_mut(self.width as usize*4)) {
-                for (p,out) in input.chunks_exact(3).zip(output.chunks_exact_mut(4)) { out.copy_from_slice(&[p[2],p[1],p[0],255]); }
-            }
-            self.last=bgra.into();
+            self.last=rgb.into();
         } else {
             self.readback_us=0;
             self.repeated += 1;
@@ -122,12 +120,9 @@ impl Recording {
         if let Some(error) = encoder.error() {
             return Err(error);
         }
-        if encoder.try_push_shared(self.last.clone()) {
+        if encoder.try_push_rgb(self.last.clone(),self.source_width,self.source_height) {
             let now = monotonic_us();
-            if self.frames == 0 {
-                self.t0_us = now;
-            }
-            let t_us = now - self.t0_us;
+            let t_us = if self.frames == 0 { 0 } else { now - self.t0_us };
             writeln!(
                 self.frames_file,
                 "{}",

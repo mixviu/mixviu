@@ -139,14 +139,15 @@ pub fn capture_windows<E>(
     mut elements: impl FnMut(
         &mut GlesRenderer,
         comp_model::capture::CaptureWindow,
+        bool,
     )
         -> Result<(Vec<E>, Size<i32, Physical>), comp_model::reply::ControlReply>,
 ) where
     E: RenderElement<GlesRenderer>,
 {
     let scale = output.current_scale().fractional_scale();
-    file::service_windows(output, |target| {
-        let (elements, size) = elements(renderer, target)?;
+    file::service_windows(output, |target,recording| {
+        let (elements, size) = elements(renderer, target,recording)?;
         let mut texture = crate::render_offscreen(renderer, &elements, |_| true, size, scale)
             .map_err(file::capture_failed)?;
         let framebuffer = renderer

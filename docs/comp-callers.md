@@ -47,10 +47,10 @@ right on black, with a fixed canvas for the take.
 
 | Action | Parameters | Reply |
 |---|---|---|
-| `comp.record.start` | `request_id`, `target:{output?,output_generation?,window?:{id,generation},region?:{x,y,width,height}}` or `target:{windows:[{id,generation}]}`, absolute `.mkv` `path`, `fps?` (30; 1–60), `cursor?` (false), `max_seconds` (1–86400) | `session,path,width,height,fps,clock:"monotonic",t0_us,frames_path,markers_path` |
+| `comp.record.start` | `request_id`, `target:{output?,output_generation?,window?:{id,generation},region?:{x,y,width,height}}` or `target:{windows:[{id,generation}]}`, absolute `.mkv` `path`, `fps?` (30; 1–60), `cursor?` (true), `encoder?` (`x264` default or `vaapi`), `max_seconds` (1–86400) | `session,path,width,height,fps,clock:"monotonic",t0_us,frames_path,markers_path` |
 | `comp.record.marker` | `session,label,data?` | `session,seq,frame,t_us` |
-| `comp.record.status` | `session?` | `state,frames,repeated,dropped,duration_us,bytes,queue,error` |
-| `comp.record.stop` | `session,discard?` | `path,frames,repeated,dropped,duration_us,frames_path,markers_path,encoder,error` |
+| `comp.record.status` | `session?` | `state,frames,repeated,dropped,duration_us,bytes,queue,readbacks,readback_us,readback_mean_us,readback_max_us,encoder,error` |
+| `comp.record.stop` | `session,discard?` | `path,frames,repeated,dropped,duration_us,frames_path,markers_path,encoder,readbacks,readback_us,readback_mean_us,readback_max_us,error` |
 
 `start` retries use the same request ID. A concurrent different request is
 refused with `record_busy`. Stop retries return the terminal reply. State edges
@@ -63,3 +63,17 @@ The intermediate is silent Matroska using ffmpeg/libx264, ultrafast, CRF 14,
 GOP 30 and yuv420p. No hardware encoder is required. The queue holds four
 frames; overruns increment `dropped`. Finalisation runs on a separate thread
 and kills ffmpeg after ten seconds. Encoder failures retain stderr in `error`.
+
+The tutorial target is the whole output at its native size, including every
+client window and the pointer: `{target:{output:"headless-0"},cursor:true,
+fps:30}` records 3840×2160 when that is the output mode. Odd extents are padded
+with black to even dimensions for 4:2:0. Frames of unchanged content share the
+previous buffer; no GPU readback or full-frame copy occurs on repeated ticks.
+`readback_us` reports the latest tick’s readback cost (zero for a repeat), with
+mean and maximum over `readbacks` actual reads. Window measurements include
+the offscreen window render. These are microseconds, not encoder latency.
+
+`encoder:"vaapi"` is optional. An asynchronous, bounded ffmpeg encoder probe
+must report `h264_vaapi`; ffmpeg then uses its VAAPI render device with NV12
+hwupload and QP 18. An unavailable device fails the take with captured stderr.
+The compositor links no libav API and requires no hardware encoder for x264.

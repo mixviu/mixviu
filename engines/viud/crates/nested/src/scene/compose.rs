@@ -74,7 +74,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
     screencopy::offscreen::capture_windows(
         context.winit_backend.renderer(),
         &context.output,
-        |renderer, target| {
+        |renderer, target,recording| {
             let window = world::window::draw::frame::scene::capture_window(
                 state,
                 target.id,
@@ -84,7 +84,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
                 id: target.id,
                 error,
             })?;
-            world::window::draw::frame::scene::capture(renderer, &window, scale)
+            if recording { recorder::interface::render::bus_window_elements(renderer,&window,scale) } else { world::window::draw::frame::scene::capture(renderer, &window, scale) }
                 .map_err(screencopy::file::capture_failed)
         },
     );
