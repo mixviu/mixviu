@@ -8,7 +8,7 @@ $commands=require("actions.mix")
 $history=require("history.mix")
 $performance=require("performance.mix")
 $core=require("core.mix");$state=$core.initial();$ctx=viu_context()
-$signal_policy=require("signal-policy.mix");$state.signal_context=$signal_policy.local_context()
+$signal_policy=require("signal-policy.mix")
 if len($app_args)>0 then
   if len($app_args)==2 and $app_args[0]=="--node" then $state.node=$app_args[1]
   elif len($app_args)==1 and not starts_with($app_args[0],"--") then $state.node=$app_args[0]
@@ -123,6 +123,7 @@ on monitor.intent
   $a=$event.args
   if $a.id=="end-task" then
     $out=execute_monitor($state,"process.end","ui");$state=$out.state
+    publish_monitor($state);reply($out.rc,json_encode($out.body));return
   elif $a.id=="tabs" then $state.tab=$a.value;$state=navigate_monitor($state)
   elif $a.id=="performance" and $a.action=="choose" then $state.section=$a.value;$state=navigate_monitor($state)
   elif $a.id=="tree" then $out=execute_monitor($state,"view.tree","ui");$state=$out.state
@@ -156,8 +157,9 @@ end
 
 fn signal_monitor($s,$a)
   $pid=$a.pid
-  if not $commands.can_signal($s,$pid) then
-    return {state:$s,rc:10,body:{error_code:"DISABLED",message:"Command is disabled"}}
+  $refusal=$signal_policy.admission($s,$pid)
+  if $refusal!=nil then
+    return {state:$s,rc:10,body:$refusal}
   end
   $expected=if contains(keys($a),"start_time") then $a.start_time else $s.start_times[to_string($pid)] end
   $answer=viu_process("signal",{pid:$pid,signal:$a.signal,start_time:$expected})
@@ -199,11 +201,18 @@ fn busy_monitor($s)
 end
 
 fn execute_monitor($s,$id,$origin)
-  $matches=filter($commands.registry($s),fn($a)=$a.id==$id)
-  if len($matches)==0 then return {state:$s,rc:10,body:{error_code:"UNKNOWN_ACTION",message:"Unknown Monitor command"}} end
-  if not $matches[0].enabled then return {state:$s,rc:10,body:{error_code:"DISABLED",message:"That command is not available right now"}} end
-  if contains(["process.end","process.kill"],$id) then
-    $out=signal_monitor($s,{pid:$s.selected,signal:if $id=="process.end" then "SIGTERM" else "SIGKILL" end});$s=$out.state
+  $is_signal=contains(["process.end","process.kill"],$id)
+  if not $is_signal then
+    $matches=filter($commands.registry($s),fn($a)=$a.id==$id)
+    if len($matches)==0 then return {state:$s,rc:10,body:{error_code:"UNKNOWN_ACTION",message:"Unknown Monitor command"}} end
+    if not $matches[0].enabled then return {state:$s,rc:10,body:{error_code:"DISABLED",message:"That command is not available right now"}} end
+  end
+  $params=nil
+  if $is_signal then
+    $params={pid:$s.selected,signal:if $id=="process.end" then "SIGTERM" else "SIGKILL" end}
+    $out=signal_monitor($s,$params)
+    if $out.rc!=0 then return $out end
+    $s=$out.state
   elif $id=="file.refresh" then $s=$fetch.poll($s)
   elif $id=="file.quit" then $s.quitting=true;$s.window_close=true
   elif $id=="view.pause" then $s.paused=not $s.paused;$s.status=if $s.paused then "Paused" else "Live" end;if not $s.paused then $s=$fetch.poll($s) end
@@ -230,7 +239,7 @@ fn execute_monitor($s,$id,$origin)
     $answer=theme_monitor($s,$edit);$s=$answer.state
     if $answer.rc!=0 then return $answer end
   end
-  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:nil,result:nil}
+  send "viu-local" "native.executed" body={id:$id,origin:$origin,params:$params,result:nil}
   $recorded=$rc
   return {state:$s,rc:0,body:{executed:$id}}
 end
