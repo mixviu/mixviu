@@ -60,7 +60,7 @@ for $widget in $widgets
 end
 fn publish_gallery($ctx, $model)
   $model=$app_mode.project($model,"gallery",$choice)
-  $model=$frame.apply($model,{icon:"grid-2x2",title:"Viu Widget Gallery",menus:[{id:"View",label:"View",enabled:true,children:$app_mode.actions($choice.mode)}],toolbar:[],status:nil})
+  $model=$frame.apply($model,{icon:"layout-grid",title:"Viu Widget Gallery",menus:[{id:"View",label:"View",enabled:true,children:$app_mode.actions($choice.mode)}],toolbar:[],status:nil})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
   if $rc != 0 then raise("MODEL_PUBLISH",to_string($result)) end
 end
