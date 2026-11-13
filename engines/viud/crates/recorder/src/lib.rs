@@ -8,3 +8,4 @@
 extern crate model;
 
 pub mod interface;
+pub mod bus;

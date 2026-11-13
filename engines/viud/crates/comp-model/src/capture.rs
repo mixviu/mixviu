@@ -50,6 +50,59 @@ pub struct CaptureWindow {
     pub generation: u64,
 }
 
+#[derive(Clone, Debug)]
+pub enum RecordCommand {
+    Start { request_id: String, targets: Vec<CaptureFrameSpec>, path: String, fps: u32, max_seconds: u64 },
+    Marker { session: String, label: String, data: Value },
+    Status { session: Option<String> },
+    Stop { session: String, discard: bool },
+}
+
+pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, ControlReply> {
+    let fields = args.as_object().ok_or_else(|| invalid_argument("args", "object", "record arguments"))?;
+    let allowed: &[&str] = match command {
+        "comp.record.start" => &["request_id", "target", "path", "fps", "cursor", "max_seconds"],
+        "comp.record.marker" => &["session", "label", "data"],
+        "comp.record.status" => &["session"],
+        _ => &["session", "discard"],
+    };
+    if let Some(key) = fields.keys().find(|key| !allowed.contains(&key.as_str())) {
+        return Err(invalid_argument(key, "record argument", "see comp.record contract"));
+    }
+    let text = |key: &str| -> Result<String, ControlReply> {
+        fields.get(key).and_then(Value::as_str).filter(|s| !s.is_empty())
+            .map(str::to_owned).ok_or_else(|| invalid_argument(key, "non-empty string", "string"))
+    };
+    match command {
+        "comp.record.start" => {
+            let request_id = text("request_id")?;
+            let path = text("path")?;
+            if !path.ends_with(".mkv") { return Err(invalid_argument("path", "Matroska path", "absolute .mkv path")); }
+            let fps = fields.get("fps").unwrap_or(&Value::Null).as_u64().or_else(|| (!fields.contains_key("fps")).then_some(30))
+                .filter(|fps| (1..=60).contains(fps)).ok_or_else(|| invalid_argument("fps", "integer", "1..=60"))? as u32;
+            let max_seconds = fields.get("max_seconds").and_then(Value::as_u64).filter(|n| (1..=86400).contains(n))
+                .ok_or_else(|| invalid_argument("max_seconds", "integer", "1..=86400"))?;
+            let cursor = match fields.get("cursor") { None => false, Some(Value::Bool(b)) => *b, _ => return Err(invalid_argument("cursor", "boolean", "true|false")) };
+            let target = fields.get("target").and_then(Value::as_object).ok_or_else(|| invalid_argument("target", "object", "{output?|window?|windows?|region?}"))?;
+            let mut targets = Vec::new();
+            if let Some(windows) = target.get("windows") {
+                let windows = windows.as_array().filter(|w| !w.is_empty() && w.len() <= 16).ok_or_else(|| invalid_argument("windows", "array", "1..=16 window targets"))?;
+                if target.len() != 1 { return Err(invalid_argument("target", "exclusive windows target", "{windows:[{id,generation}]}")); }
+                for window in windows { targets.push(parse(&json!({"window":window,"path":path,"cursor":cursor}))?); }
+            } else {
+                let mut capture = Value::Object(target.clone());
+                capture["path"] = json!(path);
+                capture["cursor"] = json!(cursor);
+                targets.push(parse(&capture)?);
+            }
+            Ok(RecordCommand::Start { request_id, targets, path, fps, max_seconds })
+        }
+        "comp.record.marker" => Ok(RecordCommand::Marker { session: text("session")?, label: text("label")?, data: fields.get("data").cloned().unwrap_or(Value::Null) }),
+        "comp.record.status" => Ok(RecordCommand::Status { session: if fields.contains_key("session") { Some(text("session")?) } else { None } }),
+        _ => Ok(RecordCommand::Stop { session: text("session")?, discard: match fields.get("discard") { None => false, Some(Value::Bool(b)) => *b, _ => return Err(invalid_argument("discard", "boolean", "true|false")) } }),
+    }
+}
+
 pub fn parse(args: &Value) -> Result<CaptureFrameSpec, ControlReply> {
     let object = args.as_object().ok_or_else(|| {
         invalid_argument("args", "JSON object", "{output?|window?, path, format?}")

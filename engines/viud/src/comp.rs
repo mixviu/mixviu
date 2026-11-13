@@ -461,6 +461,9 @@ impl Bus {
         lp.inner.comp.bindings.ensure(self.binding_profile);
         // Losing input authority (a session pause) clears the agent seat.
         let paused = matches!(lp.inner.status_session, world::state::StatusSession::Paused);
+        for state in policy_host::record::take_events() {
+            self.producer.offer_next(move |event_seq| ObservationRecord::RecordState { state, event_seq });
+        }
         // Every libseat edge in order (a pause and an activation can share a
         // dispatch), then the current state, which announces the first one.
         // Libseat's notifier dispatch reaches this pass on both edges, frames
@@ -1073,6 +1076,9 @@ impl CompEngine for Engine<'_> {
             return;
         };
         match op {
+            LongOp::Record(command) => {
+                policy_host::record::command(self.lp, command, move |answer| reply.send(answer));
+            }
             LongOp::CaptureFrame(spec) => {
                 policy_host::capture::start(self.lp, spec, admitted, move |answer| {
                     reply.send(answer)

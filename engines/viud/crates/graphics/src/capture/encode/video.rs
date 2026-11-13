@@ -8,22 +8,25 @@
 //! Output goes to a temp file; the caller moves it to the final destination on
 //! Save (or deletes it on Discard).
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Stdio};
 
 use slots::library::process::child::hygiene::command;
 use slots::library::process::child::spawn as child_spawn;
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{SyncSender, sync_channel};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use std::thread::JoinHandle;
 
 pub struct VideoEncoder {
-    tx: Option<Sender<Vec<u8>>>,
+    tx: Option<SyncSender<Vec<u8>>>,
     join: Option<JoinHandle<()>>,
     child: Option<Child>,
     temp: PathBuf,
     width: u32,
     height: u32,
+    stderr: Arc<Mutex<String>>,
 }
 
 impl VideoEncoder {
@@ -31,16 +34,20 @@ impl VideoEncoder {
     /// mp4. Dimensions are forced even (yuv420p requires it). Returns `None`
     /// if ffmpeg can't be spawned (treated as "video unavailable").
     pub fn start(width: u32, height: u32, fps: u32) -> Option<Self> {
+        Self::start_result(width, height, fps).ok()
+    }
+
+    pub fn start_result(width: u32, height: u32, fps: u32) -> Result<Self, String> {
         let w = width & !1;
         let h = height & !1;
         if w == 0 || h == 0 {
-            return None;
+            return Err("video dimensions must be at least 2x2".into());
         }
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let temp = std::env::temp_dir().join(format!("viud-capture-{nanos}.mp4"));
+        let temp = std::env::temp_dir().join(format!("viud-capture-{nanos}.mkv"));
 
         let mut cmd = command("ffmpeg");
         cmd.args([
@@ -59,17 +66,32 @@ impl VideoEncoder {
             "-",
             "-pix_fmt",
             "yuv420p",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "14", "-g", "30", "-an",
         ])
         .arg(&temp)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
         let mut child = child_spawn::spawn_awaited(&mut cmd)
-            .map_err(|e| warn!("ffmpeg spawn failed (video disabled): {e}"))
-            .ok()?;
+            .map_err(|e| format!("ffmpeg spawn: {e}"))?;
 
-        let mut stdin = child.stdin.take()?;
-        let (tx, rx) = channel::<Vec<u8>>();
+        let mut stdin = child.stdin.take().ok_or("ffmpeg stdin unavailable")?;
+        let stderr = Arc::new(Mutex::new(String::new()));
+        let errors = stderr.clone();
+        if let Some(mut pipe) = child.stderr.take() {
+            std::thread::spawn(move || {
+                let mut chunk = [0; 4096];
+                while let Ok(n) = pipe.read(&mut chunk) {
+                    if n == 0 { break; }
+                    let mut text = errors.lock().unwrap();
+                    // Drain the pipe continuously, retaining at most 64 KiB.
+                    if text.len() < 65536 {
+                        text.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                    }
+                }
+            });
+        }
+        let (tx, rx) = sync_channel::<Vec<u8>>(4);
         let join = std::thread::spawn(move || {
             while let Ok(buf) = rx.recv() {
                 if stdin.write_all(&buf).is_err() {
@@ -86,6 +108,7 @@ impl VideoEncoder {
             temp,
             width: w,
             height: h,
+            stderr,
         })
     }
 
@@ -97,8 +120,37 @@ impl VideoEncoder {
     /// Queue one BGRA frame (must be exactly `width*height*4` bytes).
     pub fn push(&self, bgra: Vec<u8>) {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(bgra);
+            let _ = tx.try_send(bgra);
         }
+    }
+
+    /// Non-blocking admission: false means the bounded queue overran or closed.
+    pub fn try_push(&self, bgra: Vec<u8>) -> bool {
+        bgra.len() == self.width as usize * self.height as usize * 4
+            && self.tx.as_ref().is_some_and(|tx| tx.try_send(bgra).is_ok())
+    }
+
+    /// Call on a finaliser thread. Kill a stuck encoder after the deadline,
+    /// which also releases a writer blocked on its pipe.
+    pub fn finish_result(mut self) -> Result<PathBuf, String> {
+        self.tx = None;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut child = self.child.take().ok_or("encoder missing")?;
+        let result = loop {
+            match child.try_wait() {
+                Ok(Some(status)) if status.success() => break Ok(std::mem::take(&mut self.temp)),
+                Ok(Some(status)) => break Err(format!("ffmpeg {status}: {}", self.stderr.lock().unwrap())),
+                Err(error) => break Err(format!("ffmpeg wait: {error}")),
+                _ if Instant::now() >= deadline => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break Err(format!("ffmpeg finalise timeout: {}", self.stderr.lock().unwrap()));
+                }
+                _ => std::thread::sleep(Duration::from_millis(10)),
+            }
+        };
+        if let Some(join) = self.join.take() { let _ = join.join(); }
+        result
     }
 
     /// Stop the stream, wait for ffmpeg to flush, and return the temp mp4 path

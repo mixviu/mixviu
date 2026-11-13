@@ -19,6 +19,8 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+serde_json.workspace = true
+libc.workspace = true
 dispatcher = { workspace = true }
 graphics = { workspace = true }
 ui-surface.workspace = true

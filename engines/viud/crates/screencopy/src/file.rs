@@ -14,6 +14,23 @@ use std::cell::RefCell;
 use std::io::Write;
 
 type Answer = Box<dyn FnOnce(Result<Value, ControlReply>)>;
+pub type Pixels = (u32, u32, Vec<u8>);
+type PixelAnswer = Box<dyn FnOnce(Result<Pixels, ControlReply>)>;
+thread_local! {
+    static PIXEL_ANSWERS: RefCell<std::collections::HashMap<String, PixelAnswer>> = RefCell::new(std::collections::HashMap::new());
+}
+
+/// A raw capture uses the same target fencing, crop and offscreen window path
+/// as a file capture. Its private token is never opened as a filesystem path.
+pub fn raw_answer(token: String, answer: impl FnOnce(Result<Pixels, ControlReply>) + 'static) {
+    PIXEL_ANSWERS.with_borrow_mut(|answers| { answers.insert(token, Box::new(answer)); });
+}
+
+pub fn raw_fail(token: &str, error: ControlReply) {
+    if let Some(answer) = PIXEL_ANSWERS.with_borrow_mut(|answers| answers.remove(token)) {
+        answer(Err(error));
+    }
+}
 struct Request {
     id: u64,
     output: String,
@@ -237,7 +254,12 @@ fn complete(
         pixels,
         output.current_scale().fractional_scale(),
     )?;
-    write(spec, width, height, &cropped)?;
+    let raw = PIXEL_ANSWERS.with_borrow_mut(|answers| answers.remove(&spec.path));
+    if let Some(answer) = raw {
+        answer(Ok((width, height, cropped.into_owned())));
+    } else {
+        write(spec, width, height, &cropped)?;
+    }
     Ok(comp_model::capture::reply(
         &spec.path,
         width,
