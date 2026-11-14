@@ -9,7 +9,7 @@ After=noded@%i.service noded.service
 PartOf=session-headless@%i.target
 
 [Service]
-ReadWritePaths=@{run}/session/%i/desktop
+ReadWritePaths=@{run}/session
 ExecStartPre=/usr/bin/install -d -m 0700 @{run}/session/%i/desktop
 ExecStartPre=/usr/bin/find @{run}/session/%i/desktop -mindepth 1 -delete
 Type=simple

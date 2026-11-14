@@ -11,7 +11,7 @@ BindsTo=seatd@%i.service
 PartOf=session@%i.target
 
 [Service]
-ReadWritePaths=@{run}/session/%i/desktop
+ReadWritePaths=@{run}/session
 ExecStartPre=/usr/bin/install -d -m 0700 @{run}/session/%i/desktop
 ExecStartPre=/usr/bin/find @{run}/session/%i/desktop -mindepth 1 -delete
 Type=simple
@@ -23,8 +23,8 @@ Environment=LIBSEAT_BACKEND=seatd MIX_VIUD_CONTAIN_CHILDREN=1
 Environment=MIX_VT=%i
 # The session bus is found at $XDG_RUNTIME_DIR/bus by anything started without
 # DBUS_SESSION_BUS_ADDRESS (apps@ unsets it). The bus socket lives in its own
-# runtime directory, so link it into this one; systemd removes the link with
-# the directory when viud stops. Dangling until the session bus starts.
+# runtime directory, so link it into this one; the pre-start cleanup removes
+# a stale link on restart. Dangling until the session bus starts.
 # Non-fatal (-): a missing link must never keep the compositor down.
 ExecStartPre=-/usr/bin/ln -sfn @{run}/session/%i/dbus/bus @{run}/session/%i/desktop/bus
 ExecStart=@{prefix}/bin/viud kms-live --socket ${WAYLAND_DISPLAY} --scale ${MIX_VIUD_OUTPUT_SCALE} --config-file ${MIX_VIUD_CONFIG} --bus-service comp

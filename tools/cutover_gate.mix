@@ -1,8 +1,8 @@
 -- Four-engine gate (mix, mixd, viu, viud). Run on CBC only, through
--- ~/.mix/_bin/cbc-build.mix --repo mixviu --commit SHA -- /opt/mixos/bin/mix tools/cutover_gate.mix [MODE]
+-- cbc-build.mix --repo mixviu --commit SHA -- mix tools/cutover_gate.mix [MODE]
 --   gate: fmt, clippy, tests per engine boundary, the viud egui check and a
 --         release build of each engine with its size, then the release set
---         /build/cutover-artifacts/<sha>/{mix,mixd,viu,viud,apps.tar,SHA256SUMS}
+--         /build/cutover-artifacts/<sha>/ (release-set.conf.mix plus apps.tar)
 --         (tools/apps_bundle.mix), then the env.mx smoke check: the bundle's
 --         env.mx is a root 0644 member listed in its manifest, carries the
 --         release mix's git_sha_full and, unpacked under target/ with the

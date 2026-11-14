@@ -6,8 +6,10 @@ $release = require("release_set.mix")
 $roots = {prefix: "/srv/mixtest", etc: "/srv/mixtest/etc", var: "/srv/mixtest/var", run: "/srv/mixtest/run", cache: "/srv/mixtest/cache", share: "/srv/mixtest/share", lib: "/srv/mixtest/lib"}
 $guard.check_sources()
 $paths = lines(trim(run_argv_must(["git", "ls-files"])))
+$sources = map($layout.entries("share/layout"), fn($e) = realpath("share/layout/" .. $e.source))
 for $path in $paths
   if $guard.shipped_unit($path) then
+    if not contains($sources, realpath($path)) then raise("HOST_ROOT_TEST", "shipped template missing from layout: " .. $path) end
     $text = $renderer.external(read_file($path), $roots, "unit")
     $guard.check_text($path, $text)
     if contains($text, "/opt/mix") then raise("HOST_ROOT_TEST", "hardwired prefix in " .. $path) end
