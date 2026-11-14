@@ -10844,6 +10844,7 @@ dependencies = [
  "http-body-util",
  "hyper-util",
  "lib-mix",
+ "libc",
  "logging",
  "mimalloc",
  "paths",
@@ -10867,6 +10868,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-subscriber",
  "webpki-roots 0.26.11",
 ]
 
