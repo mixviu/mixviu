@@ -312,6 +312,11 @@ pub(super) async fn close(connection: &Connection, owner: &str, path: &str) -> R
         connection.call_method(Some(owner), path, Some(REQUEST), "Close", &()),
     )
     .await?;
+    close_reply(reply)
+}
+
+// Acknowledgement classification is independent of the transport's IO bound.
+pub(super) fn close_reply(reply: zbus::Result<zbus::Message>) -> Result<()> {
     match reply {
         Ok(_) => Ok(()),
         Err(zbus::Error::MethodError(name, _, _))

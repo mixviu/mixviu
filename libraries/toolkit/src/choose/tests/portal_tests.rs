@@ -597,7 +597,23 @@ async fn portal_close_unknown_method_is_an_acknowledged_end() {
         .await
         .unwrap();
     let client = connection(&address).await;
-    let result = portal::close(&client, server.unique_name().unwrap().as_str(), path).await;
+    // This checks the meaning of a received reply, not the speed of D-Bus.
+    // Await the actual error before passing it to the production classifier.
+    let reply = client
+        .call_method(
+            Some(server.unique_name().unwrap().as_str()),
+            path,
+            Some(REQUEST),
+            "Close",
+            &(),
+        )
+        .await;
+    assert!(matches!(
+        &reply,
+        Err(zbus::Error::MethodError(name, _, _))
+            if name.as_str() == "org.freedesktop.DBus.Error.UnknownMethod"
+    ));
+    let result = portal::close_reply(reply);
     assert!(result.is_ok(), "{result:?}");
 }
 
