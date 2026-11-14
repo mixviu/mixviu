@@ -77,7 +77,10 @@ fn event(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, name: &str, args: Value
     done(runtime, rx)
 }
 fn snapshot_stats(runtime: &mut Runtime, rx: &mpsc::Receiver<()>) -> Value {
-    event(runtime, rx, "bustap.stats", json!({})).reply.unwrap().body
+    event(runtime, rx, "bustap.stats", json!({}))
+        .reply
+        .unwrap()
+        .body
 }
 fn clock(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, now: u64) {
     event(runtime, rx, "test.clock", json!({"now":now}));
@@ -126,7 +129,10 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     )
     .unwrap();
     // Deterministic clock for the real tick/retry handlers, no wall-clock sleeps.
-    bundle.program.source = format!("$test_now=100\n{}\non test.clock\n $test_now=$event.args.now\nend\n", bundle.program.source.replace("time()", "$test_now"));
+    bundle.program.source = format!(
+        "$test_now=100\n{}\non test.clock\n $test_now=$event.args.now\nend\n",
+        bundle.program.source.replace("time()", "$test_now")
+    );
     runtime.load(bundle.program).unwrap();
     assert!(done(&runtime, &rx).model.is_some());
     event(&mut runtime, &rx, "bus.connected", json!({}));
@@ -189,15 +195,34 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
 
     // Every malformed intent returns ARGUMENT and leaves the entire public state intact.
     let before = snapshot_stats(&mut runtime, &rx);
-    for bad in [json!({"id":"traffic","action":"select"}), json!({"id":"traffic","action":"select","value":{"key":1}}), json!({"id":"filter","value":123}), json!({"id":"pause","value":"yes"}), json!({"id":"own","value":1}), json!({"id":"clear","value":[]}), json!({"id":"hide","value":{}}), json!({"id":"unknown"}), json!({"id":"hide"})] {
-        let reply = event(&mut runtime, &rx, "bustap.intent", bad).reply.unwrap();
+    for bad in [
+        json!({"id":"traffic","action":"select"}),
+        json!({"id":"traffic","action":"select","value":{"key":1}}),
+        json!({"id":"filter","value":123}),
+        json!({"id":"pause","value":"yes"}),
+        json!({"id":"own","value":1}),
+        json!({"id":"clear","value":[]}),
+        json!({"id":"hide","value":{}}),
+        json!({"id":"unknown"}),
+        json!({"id":"hide"}),
+    ] {
+        let reply = event(&mut runtime, &rx, "bustap.intent", bad)
+            .reply
+            .unwrap();
         assert_eq!(reply.rc, 10);
         assert_eq!(reply.body["error_code"], "ARGUMENT");
         assert_eq!(snapshot_stats(&mut runtime, &rx), before);
     }
     event(&mut runtime, &rx, "bus.disconnected", json!({}));
     let calls = keep.lock().unwrap().calls.len();
-    let reply = event(&mut runtime, &rx, "bustap.filter", json!({"text":"ping","hide":["noise"],"own":true,"services":["queued"]})).reply.unwrap();
+    let reply = event(
+        &mut runtime,
+        &rx,
+        "bustap.filter",
+        json!({"text":"ping","hide":["noise"],"own":true,"services":["queued"]}),
+    )
+    .reply
+    .unwrap();
     assert_eq!(reply.rc, 0);
     assert_eq!(keep.lock().unwrap().calls.len(), calls);
     let s = snapshot_stats(&mut runtime, &rx);
@@ -221,20 +246,43 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     assert_eq!(s["subscription_id"], "observe-4");
     assert_eq!(s["status"], "Live");
     assert!(s["error"].is_null());
-    assert_eq!(keep.lock().unwrap().calls.last().unwrap().1["body"]["filter"]["services"], json!(["queued"]));
+    assert_eq!(
+        keep.lock().unwrap().calls.last().unwrap().1["body"]["filter"]["services"],
+        json!(["queued"])
+    );
 
     // Several failed stops survive further replacements and report late loss.
     keep.lock().unwrap().stop_refused = true;
-    event(&mut runtime, &rx, "bustap.filter", json!({"services":["one"]}));
-    event(&mut runtime, &rx, "bustap.filter", json!({"services":["two"]}));
+    event(
+        &mut runtime,
+        &rx,
+        "bustap.filter",
+        json!({"services":["one"]}),
+    );
+    event(
+        &mut runtime,
+        &rx,
+        "bustap.filter",
+        json!({"services":["two"]}),
+    );
     observation(&mut runtime, &rx, "observe-4", 1, 4);
     observation(&mut runtime, &rx, "observe-5", 1, 6);
     assert_eq!(snapshot_stats(&mut runtime, &rx)["dropped"], 13);
     let s = snapshot_stats(&mut runtime, &rx);
-    assert!(s["error"].as_str().unwrap().contains("could not be stopped"));
+    assert!(
+        s["error"]
+            .as_str()
+            .unwrap()
+            .contains("could not be stopped")
+    );
     clock(&mut runtime, &rx, 104);
     event(&mut runtime, &rx, "viu.tick", json!({}));
-    assert!(snapshot_stats(&mut runtime, &rx)["error"].as_str().unwrap().contains("could not be stopped"));
+    assert!(
+        snapshot_stats(&mut runtime, &rx)["error"]
+            .as_str()
+            .unwrap()
+            .contains("could not be stopped")
+    );
     keep.lock().unwrap().stop_refused = false;
     clock(&mut runtime, &rx, 106);
     event(&mut runtime, &rx, "viu.tick", json!({}));
@@ -249,5 +297,9 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     event(&mut runtime, &rx, "viu.tick", json!({}));
     assert_eq!(keep.lock().unwrap().calls.len(), calls);
     // Once the rate settles, identical ticks do not republish the scene model.
-    assert!(event(&mut runtime, &rx, "viu.tick", json!({})).model.is_none());
+    assert!(
+        event(&mut runtime, &rx, "viu.tick", json!({}))
+            .model
+            .is_none()
+    );
 }

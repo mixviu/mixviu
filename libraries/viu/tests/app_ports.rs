@@ -50,13 +50,17 @@ fn app(name: &str) -> (Bundle, Runtime, mpsc::Receiver<()>) {
 fn all_mix_bundles_publish_models_the_actual_scene_adapter_can_draw() {
     for name in ["gallery", "backdrop", "monitor", "bustap"] {
         let (bundle, mut runtime, wakes) = app(name);
-        runtime.load(bundle.program).unwrap();
-        let mut model = completion(&runtime, &wakes).model.unwrap();
+        let mut program = bundle.program;
         if name == "bustap" {
-            model["table"]["initial"]["rows"] = json!([{
-                "key":"danger-row", "tone":"danger", "selected":false,
-                "cells":["01:02:03.000","local","(anon)","example","example.ping","reply","10","rejected","—","42"]
-            }]);
+            program.source.push_str(r#"
+$state=$core.observed($state,{seq:1,ts:"2026-11-15T01:02:03.000Z",direction:"local",message_type:"response",from:"example",command:"example.ping",rc:10,outcome:"rejected",size:42},1)
+$state=publish_bustap($state)
+"#);
+        }
+        runtime.load(program).unwrap();
+        let model = completion(&runtime, &wakes).model.unwrap();
+        if name == "bustap" {
+            assert_eq!(model["table"]["initial"]["rows"][0]["tone"], "danger");
         }
         let mut view = if bundle.manifest.frame.is_some() {
             viu::gold_frame::mount(&bundle.scene, model)
