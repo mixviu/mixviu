@@ -115,26 +115,38 @@ fn gallery_mode_actions_coexist_with_widget_control_and_frame_events() {
     let (mut runtime, wakes) = gallery();
     for mode in ["dark", "light", "session"] {
         let id = format!("view.mode.{mode}");
-        let changed = call(
-            &mut runtime,
-            &wakes,
-            "gallery.execute",
-            json!({"id":id}),
-        );
+        let changed = call(&mut runtime, &wakes, "gallery.execute", json!({"id":id}));
         assert_eq!(changed.reply.unwrap().rc, 0);
-        let expected = if mode == "session" { Value::Null } else { json!(mode) };
+        let expected = if mode == "session" {
+            Value::Null
+        } else {
+            json!(mode)
+        };
         assert_eq!(changed.model.unwrap()["theme_choice"]["mode"], expected);
         let actions = call(&mut runtime, &wakes, "gallery.actions", json!({}))
-            .reply.unwrap().body;
+            .reply
+            .unwrap()
+            .body;
         let actions = actions["actions"].as_array().unwrap();
         assert!(actions.iter().any(|a| a["id"] == "slider.set"));
         assert!(actions.iter().any(|a| a["id"] == "reset"));
         assert_eq!(actions.iter().filter(|a| a["checked"] == true).count(), 1);
-        assert!(actions.iter().any(|a| a["id"] == id && a["checked"] == true));
+        assert!(
+            actions
+                .iter()
+                .any(|a| a["id"] == id && a["checked"] == true)
+        );
         assert!(actions.iter().all(|a| a["keys"].is_array()));
-        call(&mut runtime, &wakes, "viu.theme.changed", json!({"mode":"dark"}));
+        call(
+            &mut runtime,
+            &wakes,
+            "viu.theme.changed",
+            json!({"mode":"dark"}),
+        );
         let state = call(&mut runtime, &wakes, "gallery.state", json!({}))
-            .reply.unwrap().body;
+            .reply
+            .unwrap()
+            .body;
         assert_eq!(state["theme"]["mode"], expected);
         assert_eq!(state["theme"]["effective"]["mode"], "dark");
     }
