@@ -24,7 +24,13 @@ struct SessionIo {
 }
 
 impl SessionIo {
-    async fn call<T>(&self, future: impl std::future::Future<Output = zbus::Result<T>>) -> Result<T> {
+    async fn call<T, E>(
+        &self,
+        future: impl std::future::Future<Output = std::result::Result<T, E>>,
+    ) -> Result<T>
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
         #[cfg(test)]
         if self.semantic {
             return Ok(future.await?);
