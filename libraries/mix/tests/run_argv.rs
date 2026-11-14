@@ -11,39 +11,11 @@ use mix::error::MixError;
 use mix::evaluator::{Evaluator, SharedBuf};
 use mix::lexer::Lexer;
 use mix::parser::Parser;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-struct TestDir(PathBuf);
-
-impl TestDir {
-    fn new(label: &str) -> Self {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system clock before epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "mix-run-argv-{label}-{}-{nonce}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir(&path).expect("create test directory");
-        Self(path)
-    }
-
-    fn path(&self, name: &str) -> PathBuf {
-        self.0.join(name)
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
+#[path = "support/temp_dir.rs"]
+mod temp_dir;
+use temp_dir::TestDir;
 
 fn mix_path(path: &Path) -> String {
     format!("{:?}", path.to_string_lossy())

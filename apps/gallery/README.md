@@ -27,7 +27,7 @@ viu-gallery rust
 viu-gallery mix /path/to/apps/gallery/gallery.mix
 ```
 
-The applications register as `gallery-rust` and `gallery-mix` on the existing
+The applications register as `gallery-rust` and `gallery` on the existing
 native Bus (`MIX_NODED_URL`). There is no application socket or extra broker
 implementation. Both paths have bounded ingress. The Mix interpreter runs on
 its own worker; Rust applies its own controller, without invoking Mix.
@@ -72,10 +72,10 @@ activation also selects that application item; disabled actions refuse.
 
 ```
 send gallery-rust gallery.describe
-send gallery-mix gallery.widget.slider.set body=json_encode({value:72})
+send gallery gallery.execute body=json_encode({id:"slider.set",value:72})
 send gallery-rust gallery.widget.field.submit body=json_encode({value:"Hello"})
-send gallery-mix gallery.widget.dialog.set body=json_encode({value:true})
-send gallery-mix gallery.widget.dialog.accept
+send gallery gallery.execute body=json_encode({id:"dialog.set",value:true})
+send gallery gallery.execute body=json_encode({id:"dialog.accept"})
 send gallery-rust gallery.execute body=json_encode({action:"reset"})
 send gallery-rust gallery.state
 ```
@@ -86,6 +86,14 @@ Mix use the same admission checks and independent state reducers. Successful
 action replies mean the resulting model was applied, not physical presentation.
 Screenshot equality confirms equal models and shared-renderer determinism.
 Mix supplies composition/behaviour; native Viu performs rendering for both.
+
+The Mix app registers as `gallery`, with window app ID `dev.mixos.gallery`.
+`app.describe` and `gallery.describe` return `ctk-app-control.v0` discovery,
+including each widget's admitted actions from the toolkit admission table.
+`gallery.actions` lists labelled, enabled action IDs (for example `slider.set`
+and `reset`); pass an ID and optional value to `gallery.execute`. Refusals
+return a non-zero status and `{error_code, message}` before changing state.
+The named `gallery.widget.ID.ACTION` commands above belong to the Rust reference.
 
 Native egui input can also be driven through the Bus:
 

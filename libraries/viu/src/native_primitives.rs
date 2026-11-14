@@ -363,6 +363,19 @@ pub(crate) fn image_file() -> mix::evaluator::ExtFn {
 }
 
 /// Reuse native widget type/range/enabled admission from any Mix reducer.
+/// Discover the same action table used by Widget::admit.
+pub(crate) fn widget_actions() -> mix::evaluator::ExtFn {
+    mix::sync_ext(|args| {
+        let fail = |msg: String| MixError::RuntimeError { msg, span: None };
+        let [definition] = args.as_slice() else {
+            return Err(fail("viu_widget_actions expects a definition".into()));
+        };
+        let widget =
+            crate::widgets::Widget::decode(&crate::runtime::to_json(definition)?).map_err(fail)?;
+        crate::runtime::from_json(serde_json::json!(widget.actions()))
+    })
+}
+
 pub(crate) fn widget_admit() -> mix::evaluator::ExtFn {
     mix::sync_ext(move |args| {
         let fail = |msg: String| MixError::RuntimeError { msg, span: None };

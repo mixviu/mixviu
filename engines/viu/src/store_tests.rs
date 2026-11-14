@@ -8,6 +8,37 @@ use super::*;
 const STATIC: &str = scene::fixtures::STATIC;
 const FIXTURE: &str = scene::fixtures::CONFORMANCE;
 const CLIPPANEL: &str = scene::fixtures::CLIPPANEL;
+
+#[test]
+fn every_shipped_scene_passes_shell_scene_validate() {
+    let catalogue = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../share/scenes");
+    let mut scenes: Vec<_> = std::fs::read_dir(catalogue)
+        .unwrap()
+        .map(|entry| entry.unwrap().path().join("scene.mix"))
+        .filter(|path| path.is_file())
+        .collect();
+    scenes.sort();
+    assert!(!scenes.is_empty(), "shipped scene catalogue is empty");
+    let mut store = SceneStore::default();
+    let mut failures = Vec::new();
+    for path in scenes {
+        let source = std::fs::read_to_string(&path).unwrap();
+        // The actual shell.scene.validate handler, including size, binding
+        // resolution and list-template preflight; no separate test validator.
+        match store.request(SceneCommand::Validate, &source, &Value::Null) {
+            Ok((reply, _)) => {
+                assert_eq!(reply["valid"], true, "{}: {reply}", path.display());
+                for diagnostic in reply["diagnostics"].as_array().unwrap() {
+                    if diagnostic["severity"] == "Error" {
+                        failures.push(format!("{}: {diagnostic}", path.display()));
+                    }
+                }
+            }
+            Err(error) => failures.push(format!("{}: {error}", path.display())),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
 const SHELL_COMMANDS: &str = include_str!("../tests/fixtures/shell-commands.json");
 
 const TOAST: &str = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"kind\":\"toast\",\"w\":360,\"h\":120}\nmodel: {\"text\":\"hello\"}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
