@@ -229,6 +229,7 @@ struct Shared {
     terminal_shutdown: Mutex<Option<TerminalShutdown>>,
 }
 impl Shared {
+    /// Collect and retain the state lock; never call while already holding it.
     fn collect(&self) -> MutexGuard<'_, State> {
         // SIGCHLD only wakes the monitor. Readers and mutations based on job
         // status must collect first, without releasing the lock before use.
@@ -255,6 +256,22 @@ impl Shared {
         job.filter(|j| j.state() != JobState::Done)
             .cloned()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such live job"))
+    }
+
+    fn signal_abort(&self, id: usize, signal: i32, mut send: impl FnMut(i32, i32)) {
+        let state = self.collect();
+        // Collection may have reaped the last exit and freed the numeric PGID.
+        // Retaining an entry is not evidence that it still owns that group.
+        if let Some(job) = state.jobs.get(&id).filter(|j| j.state() != JobState::Done) {
+            send(-job.pgid, signal);
+            send(-job.pgid, libc::SIGCONT);
+            // A released target may have moved out of its original group.
+            // Only still-owned, nonterminal child PIDs may be signalled too.
+            for member in job.members.iter().filter(|m| !m.state.terminal()) {
+                send(member.pid, signal);
+                send(member.pid, libc::SIGCONT);
+            }
+        }
     }
 }
 
@@ -651,20 +668,18 @@ impl Controller {
     /// lock, the target can finish and a successor's job can take its place.
     /// The job the signal reaches must be the job the caller asked about.
     pub fn interrupt_foreground(&self, evaluation: u64) -> Option<i32> {
-        let pgid = {
-            // Re-validated UNDER the lock, so the identity checked and the pgid
-            // taken come from the same observation of the table.
-            let state = self.shared.collect();
-            state
-                .jobs
-                .values()
-                .find(|job| {
-                    job.foreground
-                        && job.state() == JobState::Running
-                        && job.owner_evaluation == evaluation
-                })
-                .map(|job| job.pgid)?
-        };
+        // Keep the guard through delivery: the monitor must not reap the
+        // selected job's last exit between checking ownership and signalling.
+        let state = self.shared.collect();
+        let pgid = state
+            .jobs
+            .values()
+            .find(|job| {
+                job.foreground
+                    && job.state() == JobState::Running
+                    && job.owner_evaluation == evaluation
+            })
+            .map(|job| job.pgid)?;
         // Never the shell's own group: that would deliver to the evaluator
         // thread and to every sibling, which is precisely the whole-process
         // behaviour per-evaluation cancellation exists to replace.
@@ -726,22 +741,9 @@ impl Controller {
         // Bound both grace periods; a D-state member cannot be synchronously
         // reaped even after SIGKILL. Keep survivors registered with the monitor.
         for signal in [libc::SIGTERM, libc::SIGKILL] {
-            {
-                let s = self.shared.collect();
-                if let Some(j) = s.jobs.get(&id) {
-                    unsafe {
-                        libc::kill(-j.pgid, signal);
-                        libc::kill(-j.pgid, libc::SIGCONT);
-                        // A released target may have moved itself out of the
-                        // original group before a later stage fails. Retain direct
-                        // child ownership and reap those members as well.
-                        for member in j.members.iter().filter(|m| !m.state.terminal()) {
-                            libc::kill(member.pid, signal);
-                            libc::kill(member.pid, libc::SIGCONT);
-                        }
-                    }
-                }
-            }
+            self.shared.signal_abort(id, signal, |pid, signal| unsafe {
+                libc::kill(pid, signal);
+            });
             self.wake();
             let mut s = self.shared.state.lock().unwrap();
             let end = Instant::now() + CLOSE_GRACE;
@@ -1158,7 +1160,13 @@ mod tests {
     }
 
     fn pending_stop() -> (ChildGuard, Shared) {
-        let child = ChildGuard(Command::new("/bin/sleep").arg("60").spawn().unwrap());
+        let child = ChildGuard(
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(0)
+                .spawn()
+                .unwrap(),
+        );
         let pid = child.0.id() as i32;
         assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
         pending_event(pid, libc::WSTOPPED);
@@ -1226,6 +1234,34 @@ mod tests {
         let (_managed, shared) = pending_stop();
         assert_eq!(shared.snapshot()[0].state(), JobState::Stopped);
         assert!(child.0.wait().unwrap().success());
+    }
+
+    #[test]
+    fn abort_does_not_signal_group_or_pid_after_collecting_last_exit() {
+        let (child, shared) = pending_stop();
+        let pid = child.0.id() as i32;
+        let mut sent = Vec::new();
+        // The same decision path must still signal a live stopped job.
+        shared.signal_abort(1, libc::SIGTERM, |pid, sig| sent.push((pid, sig)));
+        assert_eq!(
+            sent,
+            [
+                (-pid, libc::SIGTERM),
+                (-pid, libc::SIGCONT),
+                (pid, libc::SIGTERM),
+                (pid, libc::SIGCONT),
+            ]
+        );
+        sent.clear();
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
+        pending_event(pid, libc::WEXITED);
+        // The table still says Stopped, but the last exit is waitable. Record
+        // attempted signals rather than trying to force numeric PID reuse.
+        for signal in [libc::SIGTERM, libc::SIGKILL] {
+            shared.signal_abort(1, signal, |pid, sig| sent.push((pid, sig)));
+            assert!(sent.is_empty(), "signalled a reaped job: {sent:?}");
+        }
+        assert_eq!(shared.snapshot()[0].state(), JobState::Done);
     }
 
     #[test]
