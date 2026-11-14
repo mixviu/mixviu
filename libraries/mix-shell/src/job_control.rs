@@ -214,8 +214,9 @@ impl Job {
 
     /// Call only under the collector lock, including through delivery. A
     /// nonterminal member is either alive or an unobserved, unreaped zombie:
-    /// no reap occurs outside that lock, and terminal members are never waited
-    /// on or signalled again. Only the leader exit is retained until Done.
+    /// no reap occurs outside that lock, and a consumed terminal member is
+    /// never re-waited or signalled. Only the leader's unconsumed exit is
+    /// retained until Done and consumed once, tracked by leader_reaped.
     /// Its reserved PID makes group delivery safe even after members migrate.
     fn signal(&self, signal: i32, mut send: impl FnMut(i32, i32) -> io::Result<()>) -> io::Result<()> {
         self.signal_with_membership(signal, &mut send, |pid| unsafe { libc::getpgid(pid) })
