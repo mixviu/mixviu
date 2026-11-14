@@ -54,13 +54,29 @@ try
   for $directive in ["CacheDirectory=", "LogsDirectory="]
     if len($guard.violations($directive .. "mix/test")) == 0 then raise("HOST_ROOT_TEST", "missed cache/log escape") end
   end
-  write_file($dir .. "/planted.service", "ListenStream=/run/" .. "mix/bad")
+  mkdir($dir .. "/.hidden")
+  write_file($dir .. "/.hidden/planted.service", "\u{0000}ListenStream=/run/" .. "mix/bad")
   $refused = false
   try $guard.check_bundle($dir) catch $msg, $err
     if $err.code != "HOST_ROOT" then raise("HOST_ROOT_TEST", $msg) end
     $refused = true
   end
   if not $refused then raise("HOST_ROOT_TEST", "accepted bad bundle") end
+  remove_dir($dir .. "/.hidden")
+  if uid() != 0 then
+    mkdir($dir .. "/unreadable")
+    chmod($dir .. "/unreadable", 0o000)
+    $refused = false
+    try
+      $guard.check_bundle($dir)
+    catch $msg, $err
+      if $err.code != "WALK_UNREADABLE" then raise("HOST_ROOT_TEST", $msg) end
+      $refused = true
+    finally
+      chmod($dir .. "/unreadable", 0o700)
+    end
+    if not $refused then raise("HOST_ROOT_TEST", "silently skipped unreadable bundle directory") end
+  end
 finally
   remove_dir($dir)
 end

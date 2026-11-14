@@ -44,7 +44,7 @@ fn check_bundle($stage)
   -- Read errors fail closed. Lossy UTF-8 keeps ASCII path spellings intact
   -- even in binary assets, without requiring a worker-side grep program.
   -- Asset symlinks point at real members, which are scanned separately.
-  for $path in walk($stage)
+  for $path in walk($stage, {strict: true, follow_symlinks: false})
     if stat($path, {follow_symlinks: false}).is_file then
       check_text($path, bytes_to_string(read_file_bytes($path), {lossy: true}))
     end
