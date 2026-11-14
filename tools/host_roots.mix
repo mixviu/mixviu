@@ -41,9 +41,12 @@ fn bundle_text($path)
   return false
 end
 fn check_bundle($stage)
-  -- Include hidden and ignored members too. Do not follow asset symlinks:
-  -- their real targets are members of the same staging tree.
-  $r = run_argv(["rg", "--hidden", "--no-ignore", "-l", pattern(), $stage], {max_output: 4000000})
-  if $r.exit_code == 0 then raise("HOST_ROOT", "root outside the prefix in bundle members: " .. $r.stdout) end
-  if $r.exit_code != 1 then raise("HOST_ROOT", "cannot scan bundle: " .. $r.stderr) end
+  -- Read errors fail closed. Lossy UTF-8 keeps ASCII path spellings intact
+  -- even in binary assets, without requiring a worker-side grep program.
+  -- Asset symlinks point at real members, which are scanned separately.
+  for $path in walk($stage)
+    if stat($path, {follow_symlinks: false}).is_file then
+      check_text($path, bytes_to_string(read_file_bytes($path), {lossy: true}))
+    end
+  end
 end
