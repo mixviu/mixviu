@@ -1,0 +1,9 @@
+-- Every independently shipped binary. Personalities remain in mixd.
+{binaries: [
+  {package: "mix", name: "mix"},
+  {package: "mixd", name: "mixd"},
+  {package: "viu", name: "viu"},
+  {package: "viud", name: "viud"},
+  {package: "inputd", name: "inputd"},
+  {package: "portald", name: "portald"}
+]}

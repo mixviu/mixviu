@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Create instance leaves before maild's filesystem namespace is constructed.
+# This runs as maild, without maild's sandbox, beneath tmpfiles-owned parents.
+[Unit]
+Description=Prepare MixViu mail instance %i directories
+Before=maild@%i.service
+RequiresMountsFor=@{var}/maild @{run}/maild
+
+[Service]
+Type=oneshot
+User=maild
+Group=maild
+ExecStart=/usr/bin/install -d -m 0750 @{var}/maild/%i @{run}/maild/%i

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # Copyright 2026 Mark Constable <mc@mixos.dev>
 [Unit]
+RequiresMountsFor=@{var}/dnsd @{run}/dnsd
 Description=MixViu authoritative WireGuard mesh DNS service
 Documentation=https://mixos.dev/dnsd/
 After=network-online.target noded.service
@@ -9,21 +10,22 @@ Wants=network-online.target noded.service
 # bind addresses itself, independent of the host network manager.
 
 [Service]
+ReadWritePaths=@{var}/dnsd @{run}/dnsd
+Environment=STATE_DIRECTORY=@{var}/dnsd
+ExecStartPre=/usr/bin/mkdir -p @{run}/dnsd
+ExecStartPre=/usr/bin/find @{run}/dnsd -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/dnsd -mindepth 1 -delete
 Type=simple
 User=dnsd
 Group=dnsd
-StateDirectory=mix/dnsd
-StateDirectoryMode=0750
-RuntimeDirectory=mix/dnsd
-RuntimeDirectoryMode=0750
-WorkingDirectory=%S/mix/dnsd
+WorkingDirectory=@{var}/dnsd
 EnvironmentFile=@{etc}/dnsd/service.env
 Environment=MIX_ETC=@{etc}
 Environment=MIX_VAR=@{var}
 Environment=MIX_NODE_CONFIG=@{etc}/node.conf.mix
 Environment=RUST_LOG=dnsd=info
-Environment=HOME=%S/mix/dnsd
-ExecStart=@{prefix}/bin/dnsd --zones @{etc}/dnsd/zones.mix --state %S/mix/dnsd/state --listen ${LISTEN}
+Environment=HOME=@{var}/dnsd
+ExecStart=@{prefix}/bin/dnsd --zones @{etc}/dnsd/zones.mix --state @{var}/dnsd/state --listen ${LISTEN}
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal

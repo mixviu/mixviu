@@ -2,11 +2,14 @@
 # One per host, not per session. Root because write commands change root-owned
 # host configuration.
 [Unit]
+RequiresMountsFor=@{var}/hostd
 Description=MixViu host service
 Requires=hostd.socket
 After=hostd.socket
 
 [Service]
+ReadWritePaths=@{var}/hostd
+Environment=STATE_DIRECTORY=@{var}/hostd
 Type=simple
 ExecStart=@{prefix}/bin/hostd serve
 Restart=on-failure
@@ -19,8 +22,6 @@ TimeoutStopSec=90
 # through net.link.apply and net.wg.apply, only its own 50-hostd-* files
 # in /etc/systemd/network. Each new write command adds exactly the paths it
 # needs.
-StateDirectory=mix/hostd
-StateDirectoryMode=0700
 ReadWritePaths=/etc/systemd/network
 ProtectSystem=strict
 ProtectHome=yes
