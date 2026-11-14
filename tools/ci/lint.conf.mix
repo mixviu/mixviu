@@ -1,7 +1,0 @@
--- The ratchet's analyser is independent of the shell under test.
-{
-  binary: "/opt/mixos/bin/mix",
-  version: "0.119.0",
-  commit: "8779f33284b7d3f1178c3d57a699efb9b0867b22",
-  repository: "https://github.com/markc/mixos.git"
-}

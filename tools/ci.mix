@@ -20,8 +20,8 @@
 -- target/debug/mix, built on demand), never an installed mix.
 -- mix-lint is a ratchet: diagnostics may only shrink against
 -- tools/ci/mix-lint-baseline.json. Regenerate it only in a PR that fixes lint.
--- The lint analyser alone is pinned in tools/ci/lint.conf.mix; --mix selects
--- the shell under test and never changes the ratchet's analyser.
+-- Lint uses the selected --mix analyser too. Source-derived context bridges
+-- native vocabulary differences without depending on an installed version.
 
 $o = getopt(args(), {mix: {arg: true}, dir: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
@@ -63,7 +63,7 @@ end
 -- {file: {code: count}} for every error and warning diagnostic.
 fn lint_counts($mix)
   $context = require("ci/lint_context.mix")
-  $report = $context.report(tracked_mix_files())
+  $report = $context.report($mix, tracked_mix_files())
   $counts = {}
   for $d in $report.diagnostics
     if $d.severity == "error" or $d.severity == "warning" then
@@ -338,8 +338,8 @@ fn stage_foreign($mix)
 end
 
 fn stage_mix_lint($mix)
-  $context = require("ci/lint_context.mix")
-  run_step([$context.binary(), "tools/ci/lint_context_test.mix"])
+  ensure_mix($mix)
+  run_step([$mix, "tools/ci/lint_context_test.mix", $mix])
   $now = lint_counts($mix)
   $base = {}
   if exists($baseline_path) then
@@ -372,6 +372,7 @@ fn stage_mix_lint($mix)
 end
 
 fn stage_mix_lint_baseline($mix)
+  ensure_mix($mix)
   mkdir("tools/ci")
   $json = json_encode(lint_counts($mix)) + "\n"
   write_file($baseline_path, $json)

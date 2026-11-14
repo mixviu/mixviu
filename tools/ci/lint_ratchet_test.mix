@@ -1,0 +1,17 @@
+-- version: 0.1.0
+-- Exercise the real ratchet exit status with the caller's selected analyser.
+-- Run separately from the gate: this temporarily edits a tracked input.
+$mix = args()[0]
+$file = "apps/gallery/gallery.mix"
+$saved = read_file($file)
+try
+  write_file($file, $saved .. "\nratchet_missing_function()\n")
+  $r = run_argv([$mix, "tools/ci.mix", "mix-lint", "--mix", $mix], {timeout: 1800, max_output: 4000000})
+  print($r.stdout .. $r.stderr)
+  if $r.exit_code != 1 or not contains($r.stdout, "mix lint regression " .. $file .. " MIX-E1102") then
+    raise("LINT_CONTROL", "ratchet did not reject a truly undefined function")
+  end
+finally
+  write_file($file, $saved)
+end
+print("ratchet negative control: expected exit 1; tracked input restored")

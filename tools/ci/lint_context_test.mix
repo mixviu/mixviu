@@ -1,5 +1,6 @@
 -- version: 0.1.0
 $context = require("lint_context.mix")
+$mix = args()[0]
 $root = "/var/tmp/mix-lint-context-" .. to_string(pid())
 mkdir($root)
 try
@@ -7,7 +8,7 @@ try
   $shell = $root .. "/shell.mix"
   write_file($host, "-- host: viu\nviu_context()\nratchet_missing_function()\nssh_mix(\"example.test\", \"viu_context()\")\n")
   write_file($shell, "viu_context()\n")
-  $report = $context.report([$host, $shell])
+  $report = $context.report($mix, [$host, $shell])
   $errors = filter($report.diagnostics, fn($d) = $d.code == "MIX-E1102")
   if len($errors) != 3 then raise("LINT_CONTROL", json_encode($errors)) end
   if len(filter($errors, fn($d) = contains($d.message, "ratchet_missing_function"))) != 1 then
