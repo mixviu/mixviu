@@ -5,7 +5,11 @@
 use anyhow::{Context, Result, bail};
 use config::node::WebdConfig;
 use serde::Deserialize;
+use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
+
+const MAX_CREDENTIAL_BYTES: u64 = 64 * 1024;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,15 +33,46 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
     let Some(directory) = directory else {
         return Ok(None);
     };
-    let source = match std::fs::read_to_string(directory.join("webd.vhost-secrets")) {
-        Ok(source) => source,
+    if !directory.is_absolute() || !directory.is_dir() {
+        bail!("CREDENTIALS_DIRECTORY must be an absolute path to an existing directory");
+    }
+    let path = directory.join("webd.vhost-secrets");
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e).context("reading webd.vhost-secrets credential"),
+        Err(e) => return Err(e).context("inspecting webd.vhost-secrets credential"),
     };
+    if !metadata.file_type().is_file() {
+        bail!("webd.vhost-secrets credential must be a regular file (no symlinks)");
+    }
+    // Prevent a replacement between inspection and open from following a link
+    // or blocking on a FIFO; recheck the opened descriptor before reading.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .context("opening webd.vhost-secrets credential")?;
+    if !file.metadata().context("inspecting opened webd.vhost-secrets credential")?.is_file() {
+        bail!("webd.vhost-secrets credential must be a regular file");
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_CREDENTIAL_BYTES + 1).read_to_end(&mut bytes)
+        .context("reading webd.vhost-secrets credential")?;
+    if bytes.len() as u64 > MAX_CREDENTIAL_BYTES {
+        bail!("webd.vhost-secrets credential exceeds 64 KiB");
+    }
+    let source = std::str::from_utf8(&bytes)
+        .map_err(|_| anyhow::anyhow!("webd.vhost-secrets credential must be UTF-8"))?;
+    if source.trim().is_empty() {
+        return Ok(None);
+    }
     // Parser/serde diagnostics may contain source snippets or invalid values.
     // Keep those errors out of the startup log, including their error chain.
-    let secrets: Secrets = config::from_conf_mix_str(&source)
+    let secrets: Secrets = config::from_conf_mix_str(source)
         .map_err(|_| anyhow::anyhow!("invalid webd.vhost-secrets credential: expected strict-data {{vhost: [{{name, optional password fields}}]}}"))?;
+    if secrets.vhost.is_empty() {
+        return Ok(None);
+    }
     let mut rows = config.as_ref().map(|c| c.vhost.clone()).unwrap_or_default();
     let mut seen = std::collections::BTreeSet::new();
     let mut applied = Vec::new();
@@ -49,24 +84,30 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
             bail!("webd.vhost-secrets credential names a vhost absent from node config");
         };
         let mut fields = Vec::new();
-        for (field, value, target) in [
+        for (field, value, target, email) in [
             (
                 "dev_session_password",
                 secret.dev_session_password,
                 &mut row.dev_session_password,
+                &row.dev_session_email,
             ),
             (
                 "public_read_password",
                 secret.public_read_password,
                 &mut row.public_read_password,
+                &row.public_read_email,
             ),
             (
                 "system_sender_password",
                 secret.system_sender_password,
                 &mut row.system_sender_password,
+                &row.system_sender_email,
             ),
         ] {
             if let Some(value) = value {
+                if email.is_none() {
+                    bail!("webd.vhost-secrets: {}: set both {}_email and {field}, or neither", row.host, field.trim_end_matches("_password"));
+                }
                 *target = Some(value);
                 fields.push(field);
             }
@@ -75,31 +116,8 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
             applied.push(format!("{}: {}", row.host, fields.join(", ")));
         }
     }
-    for row in &rows {
-        for (field, email, password) in [
-            (
-                "dev_session",
-                &row.dev_session_email,
-                &row.dev_session_password,
-            ),
-            (
-                "public_read",
-                &row.public_read_email,
-                &row.public_read_password,
-            ),
-            (
-                "system_sender",
-                &row.system_sender_email,
-                &row.system_sender_password,
-            ),
-        ] {
-            if email.is_some() != password.is_some() {
-                bail!(
-                    "webd.vhost-secrets: {}: set both {field}_email and {field}_password, or neither",
-                    row.host
-                );
-            }
-        }
+    if applied.is_empty() {
+        return Ok(None);
     }
     if let Some(config) = config {
         config.vhost = rows;
@@ -212,7 +230,7 @@ mod tests {
             assert!(!error.contains(SECRET));
             cfg.vhost[0].public_read_email = Some("reader@example.com".into());
             let empty = credential("{vhost: []}");
-            assert!(merge(Some(&mut cfg), Some(empty.path())).is_err());
+            assert!(merge(Some(&mut cfg), Some(empty.path())).unwrap().is_none());
         }
     }
 
@@ -223,16 +241,77 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(merge(Some(&mut cfg), None).unwrap().is_none());
         assert!(merge(Some(&mut cfg), Some(dir.path())).unwrap().is_none());
-        assert!(
-            merge(Some(&mut cfg), Some(&dir.path().join("missing")))
-                .unwrap()
-                .is_none()
-        );
         assert_eq!(before, format!("{cfg:?}"));
         assert_eq!(
             cfg.vhost[0].public_read_password.as_deref(),
             Some("old-marker")
         );
+    }
+
+    #[test]
+    fn empty_fallback_preserves_unmigrated_half_pairs() {
+        for source in ["", " \n\t", "{vhost: []}"] {
+            let mut cfg = config(); // dev and sender have an email but no password.
+            let before = serde_json::to_value(&cfg).unwrap();
+            assert!(merge(Some(&mut cfg), None).unwrap().is_none());
+            let dir = credential(source);
+            assert!(merge(Some(&mut cfg), Some(dir.path())).unwrap().is_none());
+            assert_eq!(serde_json::to_value(&cfg).unwrap(), before);
+            assert_eq!(cfg.vhost[0].public_read_password.as_deref(), Some("old-marker"));
+            assert!(cfg.vhost[0].dev_session_password.is_none());
+            assert!(cfg.vhost[0].system_sender_password.is_none());
+        }
+    }
+
+    #[test]
+    fn overlay_checks_only_supplied_fields_and_rows() {
+        let mut cfg = config();
+        cfg.vhost.push(WebdVhostConfig { host: "other.example.com".into(), public_read_email: Some("reader@other.example.com".into()), ..Default::default() });
+        let dir = credential(&format!(r#"{{vhost: [{{name: "example.com", public_read_password: "{SECRET}"}}]}}"#));
+        merge(Some(&mut cfg), Some(dir.path())).unwrap();
+        assert_eq!(cfg.vhost[0].public_read_password.as_deref(), Some(SECRET));
+        assert!(cfg.vhost[0].dev_session_password.is_none());
+        assert!(cfg.vhost[1].public_read_password.is_none());
+    }
+
+    #[test]
+    fn credential_directory_must_be_absolute_and_exist() {
+        let dir = credential("{vhost: []}");
+        for path in [Path::new(""), Path::new("relative"), &dir.path().join("missing"), &dir.path().join("webd.vhost-secrets")] {
+            let error = merge(Some(&mut config()), Some(path)).unwrap_err().to_string();
+            assert!(error.contains("CREDENTIALS_DIRECTORY must be an absolute path to an existing directory"));
+        }
+    }
+
+    #[test]
+    fn rejects_nonregular_files_without_reading_them() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("webd.vhost-secrets");
+        symlink("/dev/zero", &path).unwrap();
+        assert!(merge(None, Some(dir.path())).unwrap_err().to_string().contains("regular file"));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(merge(None, Some(dir.path())).unwrap_err().to_string().contains("regular file"));
+        std::fs::remove_dir(&path).unwrap();
+        let cpath = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: cpath is NUL-terminated and remains valid for this call.
+        assert_eq!(unsafe { libc::mkfifo(cpath.as_ptr(), 0o600) }, 0);
+        assert!(merge(None, Some(dir.path())).unwrap_err().to_string().contains("regular file"));
+    }
+
+    #[test]
+    fn bounded_read_accepts_limit_and_rejects_extra_byte_and_invalid_utf8() {
+        let mut source = "{vhost: []}".to_string();
+        source.push_str(&" ".repeat(MAX_CREDENTIAL_BYTES as usize - source.len()));
+        let dir = credential(&source);
+        assert!(merge(None, Some(dir.path())).unwrap().is_none());
+        source.push(' ');
+        std::fs::write(dir.path().join("webd.vhost-secrets"), &source).unwrap();
+        let error = merge(None, Some(dir.path())).unwrap_err().to_string();
+        assert_eq!(error, "webd.vhost-secrets credential exceeds 64 KiB");
+        std::fs::write(dir.path().join("webd.vhost-secrets"), [0xff]).unwrap();
+        assert_eq!(merge(None, Some(dir.path())).unwrap_err().to_string(), "webd.vhost-secrets credential must be UTF-8");
     }
 
     #[test]
