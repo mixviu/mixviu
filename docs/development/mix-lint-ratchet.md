@@ -2,7 +2,7 @@
 
 The ratchet uses the analyser selected by `--mix`. CI and the full CBC
 recipe use `target/debug/mix` from the branch. Locally run
-`/opt/mixos/bin/mix tools/ci.mix mix-lint --mix /opt/mixos/bin/mix`
+`mix tools/ci.mix mix-lint --mix INSTALLED_MIX`
 to use the installed analyser without building anything. There is no version
 pin or dependency on a worker’s installed shell.
 
