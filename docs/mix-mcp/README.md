@@ -233,7 +233,7 @@ execute with those globals. Source references in `libraries/mix/src/`:
 
 | Path | Enforcement |
 | --- | --- |
-| Generic builtin | `evaluator.rs:15118` checks before dispatch; `call_policy_builtin` at line 16431 also checks internally before `builtins::call_builtin`. |
+| Generic builtin | `evaluator.rs:15179` dispatches through `call_policy_builtin` at line 16431, which owns the named policy check before `builtins::call_builtin`. The generic caller does not repeat it: host policies may be stateful. |
 | HOF | `eval_expr` at line 15088 gates the HOF; `builtins_hof.rs:200` invokes callback bodies through `call_function_public`, returning to the same evaluator. Sync callback eligibility excludes builtin calls. |
 | Mutating builtin | `call_mutating_builtin` at line 17563 checks before mutation or fallback. |
 | Row plans | `rows.rs:53` checks during compilation; `Plan::run` at line 112 uses `bulk_call`, which checks again at `evaluator.rs:16578`. |

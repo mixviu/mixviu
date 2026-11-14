@@ -15111,11 +15111,11 @@ impl Evaluator {
                     // pattern match — cheaper than a clone of even a one-arg
                     // Vec<Value>.
                     if builtins::is_builtin(name) {
-                        // Knob A: gate the builtin before it runs (before the
-                        // arg clone / dispatch). A denied call errors; a
-                        // non-match (call_builtin -> None) falls through to
-                        // the special-form checks below, as before.
-                        self.check_capability(name)?;
+                        // Knob A: call_policy_builtin below owns the named
+                        // policy check before dispatch. Do not also check
+                        // here: host policies may count, block or consume
+                        // authority on each check. A non-match still falls
+                        // through to the special-form checks below.
                         // (Strict arity checked at the top of this arm.)
                         // Conditional capabilities (0.29.0): an option can
                         // add a capability class on top of the builtin's

@@ -436,6 +436,42 @@ async fn generic_and_hof_dispatch_obey_exact_name_policy() {
 }
 
 #[tokio::test]
+async fn generic_dispatch_checks_stateful_policy_exactly_once() {
+    use std::cell::Cell;
+
+    struct CheckOnce {
+        name: &'static str,
+        calls: Cell<usize>,
+    }
+    impl mix::CapabilityPolicy for CheckOnce {
+        fn check_builtin(&self, name: &str) -> Result<(), String> {
+            if name == self.name {
+                self.calls.set(self.calls.get() + 1);
+                if self.calls.get() > 1 {
+                    return Err("duplicate policy check consumed authority twice".into());
+                }
+            }
+            Ok(())
+        }
+    }
+
+    // No deadline or sleep: a stateful host policy is consulted once per
+    // generic builtin dispatch, including calls reached through callbacks.
+    for (source, name) in [
+        ("print(time())", "time"),
+        ("print(abs(-1))", "abs"),
+        ("$f = fn($x) = abs($x)\nprint($f(-1))", "abs"),
+        ("print(map([-1], fn($x) = abs($x)))", "abs"),
+    ] {
+        let policy = Rc::new(CheckOnce { name, calls: Cell::new(0) });
+        run(source, |e| e.set_capability_policy(policy.clone()))
+            .await
+            .unwrap_or_else(|error| panic!("{source}: {error}"));
+        assert_eq!(policy.calls.get(), 1, "{source}");
+    }
+}
+
+#[tokio::test]
 async fn capability_gates_mutating_builtin() {
     // push/pop/shift route through call_mutating_builtin (not the normal
     // builtin dispatch); an exact-name policy must still be able to deny
