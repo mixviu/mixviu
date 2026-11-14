@@ -101,6 +101,13 @@ fn stop_warning($s)
   return any(keys($s.retired),fn($id)=$s.retired[$id].live)
 end
 fn retry_due($s,$now) return $s.connected and $s.subscription_id==nil and $now>=$s.retry_at end
+fn stop_batch($s)
+  $live=filter(keys($s.retired),fn($id)=$s.retired[$id].live)
+  $offset=($s.stop_cursor ?? 0)%max(1,len($live))
+  $ids=take(concat(slice($live,$offset),take($live,$offset)),4)
+  $s.stop_cursor=($offset+len($ids))%max(1,len($live))
+  return {state:$s,ids:$ids}
+end
 fn retire_slot($s)
   if len($s.retired)>=64 then
     $done=filter(keys($s.retired),fn($id)=not $s.retired[$id].live)

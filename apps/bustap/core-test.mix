@@ -121,6 +121,8 @@ $failed=false;try $unused=$core.retire_slot($s) catch $why $failed=true end
 check($failed and len($s.retired)==64,"retired live map refuses overflow")
 $s.retired.a.live=false;$s=$core.retire_slot($s)
 check(len($s.retired)==63 and $s.retired.a==nil,"cap prunes only stopped entries")
+$first=$core.stop_batch($s);$second=$core.stop_batch($first.state)
+check(len($first.ids)==4 and len($second.ids)==4 and not contains($first.ids,$second.ids[0]),"stop retries rotate so persistent failures cannot starve later IDs")
 $s=$core.initial();$s.connected=true;$s.retry_at=10
 check(not $core.retry_due($s,9) and $core.retry_due($s,10),"subscribe retry deadline")
 $s.connected=false;check(not $core.retry_due($s,20),"disconnected never retries")

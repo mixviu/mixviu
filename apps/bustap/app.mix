@@ -59,7 +59,8 @@ on viu.tick
   if $core.retry_due($state,$now) then $out=start_observer($state,$state.filter);$state=$out.state end
   if $state.connected and $now>=$state.stop_retry_at then
     $state.stop_retry_at=$now+2
-    for $id in take(filter(keys($state.retired),fn($id)=$state.retired[$id].live),4)
+    $batch=$core.stop_batch($state);$state=$batch.state
+    for $id in $batch.ids
       if stop_observer($id) then $state.retired[$id].live=false end
     end
     if $core.stop_warning($state) then $state.error="Retired subscriptions could not be stopped"
