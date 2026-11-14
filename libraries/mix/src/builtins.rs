@@ -30028,9 +30028,11 @@ fn http_serve_with_listener(
 
     let listener = match listener {
         Some(listener) => listener,
-        None => std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
-            span: None,
-            msg: format!("http_serve: bind '{host}:{port}': {e}"),
+        None => std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| {
+            MixError::RuntimeError {
+                span: None,
+                msg: format!("http_serve: bind '{host}:{port}': {e}"),
+            }
         })?,
     };
     listener.set_nonblocking(true).ok();
@@ -30458,9 +30460,11 @@ fn http_recv_with_listener(
 
     let listener = match listener {
         Some(listener) => listener,
-        None => std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
-            span: None,
-            msg: format!("http_recv: bind '{host}:{port}': {e}"),
+        None => std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| {
+            MixError::RuntimeError {
+                span: None,
+                msg: format!("http_recv: bind '{host}:{port}': {e}"),
+            }
         })?,
     };
     listener.set_nonblocking(true).ok();
@@ -37782,7 +37786,10 @@ mod bytes_tests {
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(7.0));
             opts.insert("listing".to_string(), Value::Bool(true));
-            match http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener)) {
+            match http_serve_with_listener(
+                vec![Value::String(root), Value::map(opts)],
+                Some(listener),
+            ) {
                 Ok(Some(Value::Number(n))) => Ok(n as u64),
                 other => Err(format!("{other:?}")),
             }
@@ -38178,8 +38185,7 @@ mod bytes_tests {
         let mut opts = indexmap::IndexMap::new();
         opts.insert("respond".to_string(), Value::map(respond));
         opts.insert("timeout".to_string(), Value::Number(0.1));
-        let err = builtin_http_recv(vec![Value::Number(1.0), Value::map(opts)])
-            .unwrap_err();
+        let err = builtin_http_recv(vec![Value::Number(1.0), Value::map(opts)]).unwrap_err();
         assert!(format!("{err}").contains("response splitting"), "{err}");
     }
 
@@ -38187,7 +38193,7 @@ mod bytes_tests {
     fn http_recv_catches_one_request_and_times_out_clean() {
         let (listener, port) = reserved_http_listener();
         let client = std::thread::spawn(move || {
-                http_raw(
+            http_raw(
                 port,
                 "POST /hook?run=42 HTTP/1.1\r\nHost: x\r\nX-Token: abc\r\nContent-Length: 9\r\n\r\npayload=1",
             )
@@ -38198,9 +38204,12 @@ mod bytes_tests {
         respond.insert("status".to_string(), Value::Number(202.0));
         respond.insert("body".to_string(), Value::String("queued\n".into()));
         opts.insert("respond".to_string(), Value::map(respond));
-        let got = http_recv_with_listener(vec![Value::Number(port as f64), Value::map(opts)], Some(listener))
-            .unwrap()
-            .unwrap();
+        let got = http_recv_with_listener(
+            vec![Value::Number(port as f64), Value::map(opts)],
+            Some(listener),
+        )
+        .unwrap()
+        .unwrap();
         let Value::Map(m) = &got else {
             panic!("{got:?}")
         };
@@ -38222,7 +38231,11 @@ mod bytes_tests {
         let mut opts = indexmap::IndexMap::new();
         opts.insert("timeout".to_string(), Value::Number(0.2));
         assert_eq!(
-            http_recv_with_listener(vec![Value::Number(port2 as f64), Value::map(opts)], Some(listener)).unwrap(),
+            http_recv_with_listener(
+                vec![Value::Number(port2 as f64), Value::map(opts)],
+                Some(listener)
+            )
+            .unwrap(),
             Some(Value::Nil)
         );
     }
