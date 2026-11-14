@@ -192,15 +192,16 @@ async fn session_inner(
     // This fresh, one-shot proxy reads only version. A property cache would
     // subscribe to changes and wait for GetAll (including unrelated properties)
     // before answering that single Get, needlessly coupling discovery to them.
-    let proxy: zbus::Proxy<'_> = io.call(
-        zbus::proxy::Builder::new(connection)
-            .destination(owner.as_str())?
-            .path(PATH)?
-            .interface(INTERFACE)?
-            .cache_properties(zbus::proxy::CacheProperties::No)
-            .build(),
-    )
-    .await?;
+    let proxy: zbus::Proxy<'_> = io
+        .call(
+            zbus::proxy::Builder::new(connection)
+                .destination(owner.as_str())?
+                .path(PATH)?
+                .interface(INTERFACE)?
+                .cache_properties(zbus::proxy::CacheProperties::No)
+                .build(),
+        )
+        .await?;
     let version: u32 = io.call(proxy.get_property("version")).await?;
     let required = if request.mode == Mode::SaveFiles {
         4
@@ -228,10 +229,13 @@ async fn session_inner(
         .interface(REQUEST)?
         .member("Response")?
         .build();
-    let mut responses = io.call(
-        MessageStream::for_match_rule(rule.clone(), connection, Some(8)),
-    )
-    .await?;
+    let mut responses = io
+        .call(MessageStream::for_match_rule(
+            rule.clone(),
+            connection,
+            Some(8),
+        ))
+        .await?;
     if *cancel.borrow() {
         return Ok(None);
     }
@@ -403,7 +407,15 @@ pub(super) async fn session_broken_stream(
     breaks: u8,
     stream_rebuilt: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> Result<Option<Outcome>> {
-    session_inner(connection, request, cancel, breaks, stream_rebuilt, SessionIo::default()).await
+    session_inner(
+        connection,
+        request,
+        cancel,
+        breaks,
+        stream_rebuilt,
+        SessionIo::default(),
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -412,5 +424,13 @@ pub(super) async fn session_semantics(
     request: &Request,
     cancel: &mut watch::Receiver<bool>,
 ) -> Result<Option<Outcome>> {
-    session_inner(connection, request, cancel, 0, None, SessionIo { semantic: true }).await
+    session_inner(
+        connection,
+        request,
+        cancel,
+        0,
+        None,
+        SessionIo { semantic: true },
+    )
+    .await
 }

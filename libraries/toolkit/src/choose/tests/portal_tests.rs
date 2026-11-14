@@ -324,7 +324,10 @@ async fn portal_maps_all_methods_and_subscribes_before_early_response() {
             portal::session_semantics(&client, &request, &mut cancel),
             async {
                 gate.entered.notified().await;
-                assert!(calls.try_recv().is_err(), "method preceded version dispatch");
+                assert!(
+                    calls.try_recv().is_err(),
+                    "method preceded version dispatch"
+                );
                 gate.release.send_replace(true);
             }
         );
