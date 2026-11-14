@@ -5,6 +5,7 @@
 # register as the Bus service "blobd" and both hold the lane port.
 
 [Unit]
+RequiresMountsFor=@{var}/blobd @{run}/blobd
 Description=MixViu blob store daemon (blobd)
 After=network-online.target noded.service
 Wants=network-online.target noded.service
@@ -12,23 +13,22 @@ StartLimitIntervalSec=10min
 StartLimitBurst=3
 
 [Service]
+ReadWritePaths=@{var}/blobd @{run}/blobd
+Environment=STATE_DIRECTORY=@{var}/blobd
+ExecStartPre=/usr/bin/mkdir -p @{run}/blobd
+ExecStartPre=/usr/bin/find @{run}/blobd -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/blobd -mindepth 1 -delete
 Type=simple
 User=blobd
 Group=blobd
 SupplementaryGroups=blob
-StateDirectory=mix/blobd
-StateDirectoryMode=0750
-RuntimeDirectory=mix/blobd
-RuntimeDirectoryMode=0750
-ConfigurationDirectory=mix/blobd
-ConfigurationDirectoryMode=0755
-WorkingDirectory=%S/mix/blobd
-ExecStart=@{prefix}/bin/blobd -c %E/mix/blobd/config.conf.mix
+WorkingDirectory=@{var}/blobd
+ExecStart=@{prefix}/bin/blobd -c @{etc}/blobd/config.conf.mix
 Restart=on-failure
 RestartSec=30s
 Environment=RUST_LOG=blobd=info
-Environment=HOME=%S/mix/blobd
-Environment=MIX_NODE_CONFIG=%E/mix/node.conf.mix
+Environment=HOME=@{var}/blobd
+Environment=MIX_NODE_CONFIG=@{etc}/node.conf.mix
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=blobd

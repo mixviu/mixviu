@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
+RequiresMountsFor=@{run}/session/%i/desktop
 Description=MixViu headless compositor for session %i
 # The session target chooses the broker (noded@%i or the system noded.service);
 # this unit only orders after both. Never Wants= or Requires= a broker: on a desk
@@ -8,14 +9,15 @@ After=noded@%i.service noded.service
 PartOf=session-headless@%i.target
 
 [Service]
+ExecStartPre=/usr/bin/install -d -m 0700 @{run}/session/%i/desktop
+ExecStartPre=/usr/bin/find @{run}/session/%i/desktop -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/session/%i/desktop -mindepth 1 -delete
 Type=simple
 User=mix
 SupplementaryGroups=render
 EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
 Environment=MIX_VIUD_CONTAIN_CHILDREN=1
-RuntimeDirectory=mix/session/%i/desktop
-RuntimeDirectoryMode=0700
 # As in viud@, expose the desk's session bus to compositor children.
 ExecStartPre=-/usr/bin/ln -sfn @{run}/session/%i/dbus/bus @{run}/session/%i/desktop/bus
 ExecStart=@{prefix}/bin/viud --headless --socket ${WAYLAND_DISPLAY} --size ${MIX_VIUD_HEADLESS_SIZE} --scale ${MIX_VIUD_OUTPUT_SCALE} --config-file ${MIX_VIUD_CONFIG} --bus-service comp

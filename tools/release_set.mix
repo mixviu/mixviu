@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+fn binaries()
+  return load_data("tools/release-set.conf.mix").binaries
+end
+fn members()
+  return concat(map(binaries(), fn($b) = $b.name), ["apps.tar"])
+end
+fn checksums($dir)
+  $text = ""
+  for $name in members()
+    $text = $text .. hash_file($dir .. "/" .. $name, "sha256") .. "  " .. $name .. "\n"
+  end
+  return $text
+end
