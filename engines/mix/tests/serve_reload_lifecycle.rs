@@ -776,7 +776,6 @@ async fn broker_cut_during_candidate_prep_commit_dispatches_and_reconciles() {
     let _g = lock().await;
     let dir = Dir::new("cut");
     let mut broker = Broker::bounce_stable();
-    let port = broker.tcp_port();
     let variant = Variant {
         legacy_cmd: NORMAL_LEGACY,
         candidate_sleep: 0.6,
