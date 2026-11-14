@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn is_interrupted_returns_false_when_unwired() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         _test_clear();
         // Whether or not init has been called, after _test_clear the
         // helper must report false.
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn init_then_set_propagates_through_helper() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let f = Arc::new(AtomicBool::new(false));
         let _ = init(f.clone());
         // After init, INTERRUPT_FLAG.get() is some flag — it may not
