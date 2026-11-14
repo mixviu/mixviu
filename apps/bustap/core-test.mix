@@ -103,6 +103,10 @@ for $i=1 to 9 $s=$core.remember_reply($s,to_string($i),1) end
 check(len($s.unmatched_replies)==8,"tombstones bounded")
 check($s.unmatched_replies["1"]==nil and $s.unmatched_replies["9"]!=nil,"oldest tombstone evicted at cap")
 $s=$core.tick_rate($s,32);check(len($s.unmatched_replies)==0,"tick expires tombstones")
+$s=$core.initial({pending:2,tombstones:2})
+$s.pending={old:{arrival:1},fresh:{arrival:30}};$s.unmatched_replies={old:1,fresh:30}
+$s=$core.tick_rate($s,33)
+check(len($s.pending)==1 and $s.pending.fresh.arrival==30 and len($s.unmatched_replies)==1 and $s.unmatched_replies.fresh==30,"expiry rebuild preserves fresh survivors")
 $s=$core.initial();$r=frame("request","bustap");$r.dropped_count=5
 $s=$core.observed($s,$r,1);$s=$core.tick_rate($s,1);$s=$core.tick_rate($s,2)
 check($s.seen==0 and len($s.rows)==0 and len($s.counts)==0 and $s.rate==0 and $s.dropped==5,"own frames account loss only")
@@ -176,6 +180,11 @@ for $name in ["one","two","three","four","five"]
   $r=frame("request",nil);$r.to=$name;$s=$core.observed($s,$r,4)
 end
 check(len($s.counts)==4 and $s.counts["(other)"]==3,"counts include overflow within cap")
+$s=$core.initial()
+for $i=1 to 255 $s.counts[to_string($i)]=1 end
+$r=frame("request",nil);$r.to="overflow";$s=$core.observed($s,$r,1)
+$r.to="another";$s=$core.observed($s,$r,1)
+check(len($s.counts)==256 and $s.counts["(other)"]==2,"production counts cap never admits a 257th key")
 $counts={z:9,a:9,b:10,c:1,d:2,e:3,f:4,g:5,h:6,i:7}
 $summary=$view.service_summary($counts)
 check(len($summary)==8 and $summary[0]=="b: 10" and $summary[1]=="a: 9" and $summary[2]=="z: 9","services summary uses top eight counts and alphabetical ties")
