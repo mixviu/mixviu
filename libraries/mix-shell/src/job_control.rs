@@ -245,10 +245,9 @@ impl Job {
         let group_sent = group_pinned && group_result.is_ok();
         let mut result = if members.is_empty() { group_result } else { Ok(()) };
         for (member, was_in_group) in members {
-            if !group_sent || !was_in_group || !in_group(member) {
-                if let Err(error) = send(member.pid, signal) {
-                    result = Err(error);
-                }
+            if (!group_sent || !was_in_group || !in_group(member))
+                && let Err(error) = send(member.pid, signal) {
+                result = Err(error);
             }
         }
         result
@@ -1352,7 +1351,7 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn abort_does_not_signal_abandoned_process_group() {
+    fn abort_pins_abandoned_group_and_signals_escaped_member() {
         let leader = ChildGuard(
             Command::new("/bin/sleep")
                 .arg("60")
@@ -1491,7 +1490,7 @@ mod tests {
             .map(|_| {
                 std::thread::spawn(move || {
                     for _ in 0..repeats {
-                        abort_does_not_signal_abandoned_process_group();
+                        abort_pins_abandoned_group_and_signals_escaped_member();
                         exited_leader_pins_group_while_live_member_remains();
                         normal_group_signal_reaches_unregistered_members();
                         exited_tail_is_reaped_while_leader_runs();
