@@ -102,6 +102,7 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "mesh_trust",
     "mimedb",
     "mix",
+    "mix_mcp",
     "mix_shell",
     "mixos_mcp",
     "mixtrayd",

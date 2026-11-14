@@ -397,8 +397,82 @@ async fn healthy_dispatch_records_nothing() {
 }
 
 /// Count evaluator error records without installing a process-global logger.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct ErrorRecords(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl Default for ErrorRecords {
+    fn default() -> Self {
+        // tracing-core's single-dispatch fast path registers new callsites
+        // against the current thread's default. A sibling test without a
+        // subscriber can therefore cache Interest::never for our ERROR site.
+        // Keep an interested dispatcher alive, even between fixture guards.
+        // Dispatch::new rebuilds existing callsites too, recovering sites first
+        // evaluated before any fixture existed (tracing-core register_dispatch).
+        static ANCHOR: std::sync::OnceLock<tracing::Dispatch> = std::sync::OnceLock::new();
+        ANCHOR.get_or_init(|| tracing::Dispatch::new(Self(Default::default())));
+        Self(Default::default())
+    }
+}
+
+impl ErrorRecords {
+    fn subscribe(&self) -> tracing::subscriber::DefaultGuard {
+        let guard = tracing::subscriber::set_default(self.clone());
+        tracing::callsite::rebuild_interest_cache();
+        guard
+    }
+}
+
+#[test]
+fn error_capture_survives_every_registration_order() {
+    const CHILD: &str = "MIX_TEST_ERROR_REGISTRATION_ORDER";
+    if let Ok(order) = std::env::var(CHILD) {
+        match order.as_str() {
+            "before-fixture" => {
+                // A fresh process guarantees no other test created a fixture.
+                std::thread::spawn(handler_fault_survives_and_is_observable)
+                    .join()
+                    .unwrap();
+            }
+            "anchor-only" => {
+                let _records = ErrorRecords::default();
+                std::thread::spawn(handler_fault_survives_and_is_observable)
+                    .join()
+                    .unwrap();
+            }
+            "active-fixture" => {}
+            _ => panic!("unexpected registration order: {order}"),
+        }
+        let records = ErrorRecords::default();
+        let _guard = records.subscribe();
+        if order == "active-fixture" {
+            std::thread::spawn(handler_fault_survives_and_is_observable)
+                .join()
+                .unwrap();
+        }
+        // #[tokio::test] expands this to a synchronous runtime-driving fn;
+        // calling it executes the body rather than dropping an unpolled future.
+        handler_fault_survives_and_is_observable();
+        assert!(records.0.load(std::sync::atomic::Ordering::Relaxed) >= 1);
+        return;
+    }
+    for order in ["before-fixture", "anchor-only", "active-fixture"] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "error_capture_survives_every_registration_order",
+                "--nocapture",
+            ])
+            .env(CHILD, order)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{order}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
 
 impl tracing::Subscriber for ErrorRecords {
     fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
@@ -497,7 +571,7 @@ async fn shutdown_refusal_stays_drain_visible_without_a_handler_fault() {
         tokio::task::LocalSet::new()
             .run_until(async {
                 let records = ErrorRecords::default();
-                let _guard = tracing::subscriber::set_default(records.clone());
+                let _guard = records.subscribe();
                 let mut s = setup(source).await;
                 let runtime = Rc::new(RecordingRuntime {
                     faults: RefCell::new(Vec::new()),
@@ -543,7 +617,12 @@ async fn a_real_fault_after_a_caught_shutdown_refusal_is_still_a_fault() {
     tokio::task::LocalSet::new()
         .run_until(async {
             let records = ErrorRecords::default();
-            let _guard = tracing::subscriber::set_default(records.clone());
+            let _guard = records.subscribe();
+            // Force the formerly racy ordering: first register the shared
+            // handler ERROR callsite on a thread with no default subscriber.
+            std::thread::spawn(handler_fault_survives_and_is_observable)
+                .join()
+                .unwrap();
             let mut s = setup(
                 "on refresh async\n try\n reply(0, \"ok\")\n catch $err\n end\n raise(\"OTHER\", \"real bug\")\nend\n",
             )
@@ -584,7 +663,7 @@ async fn a_real_fault_after_a_caught_shutdown_refusal_is_still_a_fault() {
 #[tokio::test]
 async fn other_reply_failure_remains_an_observable_handler_fault() {
     let records = ErrorRecords::default();
-    let _guard = tracing::subscriber::set_default(records.clone());
+    let _guard = records.subscribe();
     let mut s = setup("on refresh\n reply(0, \"ok\")\nend\n").await;
     let runtime = Rc::new(RecordingRuntime {
         faults: RefCell::new(Vec::new()),
@@ -621,7 +700,7 @@ async fn other_reply_failure_remains_an_observable_handler_fault() {
 #[tokio::test]
 async fn shutdown_code_raised_by_script_still_records_a_fault() {
     let records = ErrorRecords::default();
-    let _guard = tracing::subscriber::set_default(records.clone());
+    let _guard = records.subscribe();
     let source = "on refresh\n raise(\"BUS_REPLY_SHUTTING_DOWN\", \"script fault\")\nend\n";
     let mut s = setup(source).await;
     let runtime = Rc::new(RecordingRuntime {

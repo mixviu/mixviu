@@ -38,6 +38,7 @@ fn fixture_guard() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|error| error.into_inner())
 }
 const PROMPT: &str = "OWNED> ";
+const COLUMNS: usize = 50;
 
 #[test]
 fn overflow_notice_redo_and_yank_pop_preserve_editing() {
@@ -642,7 +643,7 @@ impl Pty {
         let mut s = -1;
         let size = libc::winsize {
             ws_row: 12,
-            ws_col: 50,
+            ws_col: COLUMNS as u16,
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
@@ -716,6 +717,36 @@ impl Pty {
     }
     fn until(&mut self, marker: &str) -> String {
         self.until_with_reader_ack(marker, None)
+    }
+    fn until_drawn_line(&mut self, line: &str) {
+        // This fixture expects one ASCII logical line. Terminal::draw emits
+        // explicit CRLF at cell boundaries, including a trailing empty row on
+        // an exact fit. Compare a whole redraw, never fragments from successive
+        // edits, and retain row boundaries so a premature hard newline fails.
+        let expected = format!("{PROMPT}{line}");
+        assert!(expected.is_ascii());
+        let mut rows = expected
+            .as_bytes()
+            .chunks(COLUMNS)
+            .map(|row| std::str::from_utf8(row).unwrap())
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        if expected.len().is_multiple_of(COLUMNS) {
+            rows.push_str("\r\n");
+        }
+        let deadline = Instant::now() + LIMIT;
+        loop {
+            // The reset followed by CR ends the painted rows, before cursor
+            // positioning. The prompt's style reset has no following CR.
+            let output = self.until("\x1b[0m\r");
+            if let Some((_, draw)) = output.rsplit_once("\x1b[J") {
+                let visible = editor::render::visible_prompt(draw);
+                if visible.strip_suffix('\r') == Some(rows.as_str()) {
+                    return;
+                }
+            }
+            assert!(Instant::now() < deadline, "waiting for redraw {line:?}");
+        }
     }
     fn until_with_reader_ack(
         &mut self,
@@ -938,7 +969,7 @@ fn completion_snapshot_variables_paths_and_cycle() {
     let directory = p.home.path().join("unique_completion_dir");
     fs::create_dir(&directory).unwrap();
     p.send(format!("cd {}/unique_comp\t", p.home.path().display()).as_bytes());
-    p.until("unique_completion_dir/");
+    p.until_drawn_line(&format!("cd {}/", directory.display()));
     p.send(b"\n");
     p.prompt();
     assert!(p.command("pwd").contains(directory.to_str().unwrap()));

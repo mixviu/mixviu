@@ -1,0 +1,27 @@
+#!/usr/bin/env mix
+-- version: 0.1.0
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC-only fresh-process startup comparison; prefixes have separate env.mx.
+-- run_stream waits directly, avoiding run_argv's capture polling interval.
+$prefixes = args()
+if len($prefixes) != 2 then raise("STARTUP_ARGS", "expected before and after prefixes") end
+fn sample($prefix)
+  $start = monotonic()
+  $rc = run_stream([$prefix .. "/bin/mix", "-c", "print(1)"], {
+    clear_env: true, cwd: $prefix,
+    env: {HOME: $prefix, MIX_PREFIX: $prefix, PATH: "/usr/bin:/bin", LANG: "C"}
+  })
+  $elapsed = (monotonic() - $start) * 1000
+  if $rc != 0 then raise("STARTUP_FAILED", to_string($rc)) end
+  return $elapsed
+end
+$samples = [[], []]
+for $round = 0 to 100
+  for $index in [$round % 2, 1 - $round % 2]
+    $samples[$index] = push($samples[$index], sample($prefixes[$index]))
+  end
+end
+$before = sort($samples[0])
+$after = sort($samples[1])
+print("STARTUP " .. json_encode({before_median_ms: $before[50], after_median_ms: $after[50], samples: 101, alternating: true}))
+if $after[50] > $before[50] + 1 then raise("STARTUP_GROWTH", "median startup grew by more than 1 ms") end

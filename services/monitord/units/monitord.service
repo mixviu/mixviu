@@ -2,10 +2,13 @@
 # One per host, not per session. Unprivileged: monitord only reads, and
 # reads what any user may (docs/docs/decisions/2026-10-16-monitord-and-monitor.md).
 [Unit]
+RequiresMountsFor=@{var}/monitord
 Description=MixViu system monitor
 After=local-fs.target
 
 [Service]
+ReadWritePaths=@{var}/monitord
+Environment=STATE_DIRECTORY=@{var}/monitord
 Type=simple
 User=monitord
 Group=monitord
@@ -13,9 +16,7 @@ ExecStart=@{prefix}/bin/monitord serve
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10
-# The history database (/var/lib/mix/monitord/history.db). It is a cache.
-StateDirectory=mix/monitord
-StateDirectoryMode=0750
+# The history database (@{var}/monitord/history.db). It is a cache.
 # Sandbox. monitord reads /proc and /sys and measures each filesystem with
 # statvfs, so /home stays visible (read-only) and /proc is not hidden.
 ProtectSystem=strict
