@@ -14,11 +14,15 @@ async fn body_collections_round_trip_from_scripts_and_shell_input() {
     service.register_as("honest-probe").await.unwrap();
     let mut incoming = service.incoming_async().await.unwrap();
     let receiver = tokio::spawn(async move {
-        for _ in 0..10 {
+        for _ in 0..12 {
             let command = tokio::time::timeout(std::time::Duration::from_secs(10), incoming.recv())
                 .await
                 .unwrap()
                 .unwrap();
+            if command.command == "probe.changed" {
+                assert_eq!(command.body, r#"{"params":{},"services":["term"]}"#);
+                continue;
+            }
             let body = json!({"args": serde_json::from_str::<Value>(&command.body).ok(),
                 "body": command.body});
             service
@@ -31,7 +35,8 @@ async fn body_collections_round_trip_from_scripts_and_shell_input() {
     let expected = json!({"args": {"params": {}, "services": ["term"]},
         "body": r#"{"params":{},"services":["term"]}"#});
     let source = r#"$body = {params: {}, services: ["term"]}
-send honest-probe probe.args body={params: {}, services: ["term"]}
+emit honest-probe probe.changed body={services: ["term"], params: {}}
+send honest-probe probe.args body={services: ["term"], params: {}}
 print(json_encode($result))
 send honest-probe probe.args body=$body
 print(json_encode($result))

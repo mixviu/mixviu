@@ -148,6 +148,24 @@ async fn publish_opts_command_override_headers_and_retain() {
 }
 
 #[tokio::test]
+async fn publish_collection_bodies_require_explicit_encoding() {
+    let (_, bus, out) = run_with_bus(
+        r#"
+for $body in [{a: 1}, [1, 2]]
+  try
+    publish("probe.changed", $body)
+  catch $message
+    print(contains($message, "must be"))
+  end
+end
+"#,
+    )
+    .await;
+    assert_eq!(out, "true\ntrue\n");
+    assert!(bus.sends.borrow().is_empty());
+}
+
+#[tokio::test]
 async fn publish_refuses_the_silent_wrong_shapes() {
     // Map body: the A2 contract-type gate (0.103.1) now raises first —
     // the declared shape is string|nil, so the json_encode-the-map choice
