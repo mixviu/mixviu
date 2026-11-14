@@ -463,7 +463,10 @@ async fn generic_dispatch_checks_stateful_policy_exactly_once() {
         ("$f = fn($x) = abs($x)\nprint($f(-1))", "abs"),
         ("print(map([-1], fn($x) = abs($x)))", "abs"),
     ] {
-        let policy = Rc::new(CheckOnce { name, calls: Cell::new(0) });
+        let policy = Rc::new(CheckOnce {
+            name,
+            calls: Cell::new(0),
+        });
         run(source, |e| e.set_capability_policy(policy.clone()))
             .await
             .unwrap_or_else(|error| panic!("{source}: {error}"));
