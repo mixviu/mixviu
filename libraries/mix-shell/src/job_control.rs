@@ -1786,9 +1786,16 @@ mod tests {
     /// reader stands in for the trampoline's end of the release gate.
     /// `exec_done` drops every other copy of the error pipe's write end, as a
     /// successful exec would; otherwise the returned writer keeps it open.
+    /// A socket shutdown models that event independently of sibling forks:
+    /// CLOEXEC pipe EOF would wait for their pre-exec inherited writers too.
     fn stage(exec_done: bool) -> (Stage, File, Option<File>) {
         let (gate_read, gate) = pipe().unwrap();
-        let (error, error_write) = pipe().unwrap();
+        let (error, error_write) = std::os::unix::net::UnixStream::pair().unwrap();
+        if exec_done {
+            error_write.shutdown(std::net::Shutdown::Write).unwrap();
+        }
+        let error = File::from(std::os::fd::OwnedFd::from(error));
+        let error_write = File::from(std::os::fd::OwnedFd::from(error_write));
         let gate_reader = gate_read.try_clone().unwrap();
         let trampoline = (!exec_done).then(|| error_write.try_clone().unwrap());
         let stage = Stage {
