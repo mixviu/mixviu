@@ -48,7 +48,7 @@ fn app(name: &str) -> (Bundle, Runtime, mpsc::Receiver<()>) {
 }
 #[test]
 fn all_mix_bundles_publish_models_the_actual_scene_adapter_can_draw() {
-    for name in ["gallery", "backdrop", "monitor"] {
+    for name in ["gallery", "backdrop", "monitor", "bustap"] {
         let (bundle, mut runtime, wakes) = app(name);
         runtime.load(bundle.program).unwrap();
         let model = completion(&runtime, &wakes).model.unwrap();

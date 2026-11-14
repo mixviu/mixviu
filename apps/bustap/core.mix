@@ -1,0 +1,79 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure observation policy. Retain metadata only, never payloads.
+fn initial()
+  return {rows:[],pending:{},seen:0,evicted:0,dropped:0,drop_cursor:0,paused:false,selected:nil,counts:{},rate:0,rate_seen:0,rate_at:0,subscription_id:nil,status:"Connecting",error:nil,connected:false,window_close:false,filter:{services:[],commands:[],directions:[],hide:[],own:false,text:""}}
+end
+fn who($value) return $value ?? "(anon)" end
+fn stamp($ts)
+  if type($ts)!="string" or not re_match($ts,"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}") then return nil end
+  return to_number(substr($ts,11,2))*3600000+to_number(substr($ts,14,2))*60000+to_number(substr($ts,17,2))*1000+to_number(substr($ts,20,3))
+end
+fn visible($r,$f)
+  if not $f.own and ($r.from=="bustap" or $r.to=="bustap" or $r.to=="viu-local" or $r.from=="viu-local") then return false end
+  if contains($f.hide,$r.from) or contains($f.hide,$r.to) then return false end
+  if len($f.services)>0 and not contains($f.services,$r.from) and not contains($f.services,$r.to) then return false end
+  if len($f.commands)>0 and not contains($f.commands,$r.command) then return false end
+  if len($f.directions)>0 and not contains($f.directions,$r.direction) then return false end
+  return contains(lower($r.from.." "..$r.to.." "..($r.command ?? "")),lower($f.text))
+end
+fn rows($s,$limit=2000)
+  $out=filter($s.rows,fn($r)=visible($r,$s.filter))
+  return slice($out,max(0,len($out)-$limit))
+end
+fn filter_edit($f,$a)
+  for $k in keys($a)
+    if not contains(keys($f),$k) then raise("ARGUMENT","Unknown filter key: "..$k) end
+    if contains(["services","commands","directions","hide"],$k) then
+      if type($a[$k])!="list" then raise("ARGUMENT",$k.." must be a list") end
+      if not all($a[$k],fn($v)=type($v)=="string") then raise("ARGUMENT",$k.." must contain strings") end
+    elif $k=="own" then
+      if type($a.own)!="bool" then raise("ARGUMENT","own must be bool") end
+    elif type($a.text)!="string" then raise("ARGUMENT","text must be string") end
+    $f[$k]=$a[$k]
+  end
+  if not all($f.directions,fn($v)=contains(["local","mesh_in","mesh_out"],$v)) then raise("ARGUMENT","Invalid direction") end
+  return $f
+end
+fn broker_filter($f) return {services:$f.services,commands:$f.commands,directions:$f.directions} end
+fn clear_rows($s)
+  $s.rows=[];$s.pending={};$s.selected=nil;$s.evicted=0
+  return $s
+end
+fn tick_rate($s,$now)
+  if $s.rate_at>0 and $now>$s.rate_at then $s.rate=($s.seen-$s.rate_seen)/($now-$s.rate_at) end
+  $s.rate_at=$now;$s.rate_seen=$s.seen
+  return $s
+end
+fn observed($s,$f,$now)
+  $s.seen=$s.seen+1
+  $drops=$f.dropped_count ?? 0
+  if $drops>$s.drop_cursor then $s.dropped=$s.dropped+$drops-$s.drop_cursor end
+  $s.drop_cursor=max($drops,$s.drop_cursor)
+  -- Arrival time expires pairings across midnight, clock changes and quiet gaps.
+  for $k in keys($s.pending)
+    if $now-$s.pending[$k].arrival>30 then $s.pending=delete($s.pending,$k) end
+  end
+  $request=$f.message_type=="request"
+  $service=if $request then $f.to else $f.from end
+  $caller=if $request then $f.from else $f.to end
+  $t=stamp($f.ts);$lat=nil
+  -- Anonymous callers have no safe identity, even when only one was observed.
+  if $caller!=nil and $service!=nil and $f.correlation_id!=nil and $t!=nil then
+    $key=json_encode([$f.correlation_id,$service,$caller])
+    if $request then
+      $old=$s.pending[$key]
+      if len($s.pending)<4096 then $s.pending[$key]={arrival:$now,stamp:$t,ambiguous:$old!=nil} end
+    elif $s.pending[$key]!=nil then
+      $p=$s.pending[$key];$d=($t-$p.stamp+86400000)%86400000
+      if not $p.ambiguous and $d<=30000 then $lat=$d end
+      $s.pending=delete($s.pending,$key)
+    end
+  end
+  $name=$service ?? "(anon)"
+  if $s.counts[$name]!=nil or len($s.counts)<256 then $s.counts[$name]=($s.counts[$name] ?? 0)+1 else $s.counts["(other)"]=($s.counts["(other)"] ?? 0)+1 end
+  if $s.paused then return $s end
+  $r={seq:$f.seq,ts:$f.ts,time:substr($f.ts ?? "",11,12),direction:$f.direction,from:who($f.from),to:who($f.to),command:$f.command,kind:if $request then "request" else "reply" end,rc:$f.rc,outcome:$f.outcome,latency_ms:$lat,size:$f.size,error:$f.outcome=="rejected" or ($f.rc ?? 0)>=10}
+  $s.rows=push($s.rows,$r)
+  if len($s.rows)>2000 then $s.rows=slice($s.rows,1);$s.evicted=$s.evicted+1 end
+  return $s
+end

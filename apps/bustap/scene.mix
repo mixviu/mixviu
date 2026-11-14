@@ -1,0 +1,13 @@
+---
+scene: 1
+name: bustap
+citizen: bustap
+---
+```mix
+{
+root:{widget:"dock",children:["options","counts","traffic"],placements:{options:{edge:"top",size:"design.options_height"},counts:{edge:"bottom",size:26},traffic:{edge:"fill"}}},
+options:{widget:"control",definition:"= $model.options",on_intent:"bustap.intent"},
+counts:{widget:"control",definition:"= $model.summary"},
+traffic:{widget:"control",definition:"= $model.table",on_intent:"bustap.intent"}
+}
+```

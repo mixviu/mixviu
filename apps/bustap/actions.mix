@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$base=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+fn registry($s)
+  $out=[]
+  for $a in $base
+    if $a.id=="view.pause" then $a.checked=$s.paused end
+    if $a.id=="view.own" then $a.checked=$s.filter.own end
+    if $a.id=="view.hide" then $a.enabled=$s.selected!=nil end
+    push($out,$a)
+  end
+  return $out
+end
+fn execute($s,$id)
+  if $id=="view.pause" then $s.paused=not $s.paused
+  elif $id=="view.own" then $s.filter.own=not $s.filter.own
+  elif $id=="view.unhide" then $s.filter.hide=[]
+  elif $id=="file.clear" then
+    $s.rows=[];$s.pending={};$s.selected=nil;$s.evicted=0
+  elif $id=="view.hide" then
+    $r=filter($s.rows,fn($r)=to_string($r.seq)==$s.selected)
+    if len($r)==0 then raise("ARGUMENT","Select a row first") end
+    $service=if $r[0].kind=="request" then $r[0].to else $r[0].from end
+    if not contains($s.filter.hide,$service) then $s.filter.hide=push($s.filter.hide,$service) end
+  elif $id=="file.quit" then $s.window_close=true
+  else raise("ARGUMENT","Unknown action") end
+  return $s
+end

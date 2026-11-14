@@ -1,0 +1,69 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix")
+$view=require("view.mix")
+$actions=require("actions.mix")
+fn check($on,$message) if not $on then raise("TEST",$message) end end
+fn frame($kind,$caller="client",$id="1",$ts="2026-11-15T01:02:03.000Z")
+  $request=$kind=="request"
+  return {seq:1,ts:$ts,message_type:$kind,from:if $request then $caller else "example" end,to:if $request then "example" else $caller end,command:"example.ping",correlation_id:$id,rc:if $request then nil else 0 end,size:42,direction:"local",outcome:"delivered",dropped_count:0,payload:{secret:"must not survive"}}
+end
+$s=$core.initial()
+$s=$core.observed($s,frame("request"),1)
+$s=$core.observed($s,frame("response","client","1","2026-11-15T01:02:03.012Z"),1.012)
+check($s.rows[1].latency_ms==12,"named request/reply")
+check(not contains(json_encode($s),"must not survive"),"metadata only")
+$s=$core.initial()
+$s=$core.observed($s,frame("request",nil),1)
+$s=$core.observed($s,frame("request",nil),1.1)
+$s=$core.observed($s,frame("response",nil),1.2)
+check($s.rows[2].latency_ms==nil and $s.rows[0].from=="(anon)","anonymous collision stays unpaired")
+$s=$core.initial()
+$s=$core.observed($s,frame("request"),1)
+$s=$core.observed($s,frame("request"),1.1)
+$s=$core.observed($s,frame("response"),1.2)
+check($s.rows[2].latency_ms==nil,"duplicate named key ambiguous")
+$s=$core.initial()
+$r=frame("response");$r.command=nil;$r.outcome="rejected";$r.rc=10
+$s=$core.observed($s,$r,1)
+$s=$core.observed($s,frame("request"),1)
+check($s.rows[0].latency_ms==nil and $s.rows[0].error,"reject-first does not pair backwards")
+$s=$core.observed($s,frame("response"),32)
+check($s.rows[2].latency_ms==nil,"expiry uses arrival age")
+$s=$core.initial()
+$s=$core.observed($s,frame("request","client","1","2026-11-15T23:59:59.999Z"),1)
+$s=$core.observed($s,frame("response","client","1","2026-11-16T00:00:00.001Z"),1.002)
+check($s.rows[1].latency_ms==2,"midnight")
+$f=$core.filter_edit($s.filter,{text:"EXAMPLE.PING"})
+check($core.visible($s.rows[0],$f),"case insensitive text")
+$f.hide=["example"];check(not $core.visible($s.rows[0],$f),"hide service")
+$f.hide=[];$f.services=["elsewhere"];check(not $core.visible($s.rows[0],$f),"services")
+$f.services=[];$f.commands=["other"];check(not $core.visible($s.rows[0],$f),"commands")
+$f.commands=[];$f.directions=["mesh_in"];check(not $core.visible($s.rows[0],$f),"directions")
+$f=$core.initial().filter;$r=$s.rows[0];$r.from="bustap"
+check(not $core.visible($r,$f),"own hidden by default")
+$f.own=true;check($core.visible($r,$f),"own toggle")
+for $bad in [{own:1},{text:[]},{hide:"example"},{services:[1]},{directions:["invalid"]},{body:"redacted"}]
+  $failed=false
+  try $unused=$core.filter_edit($f,$bad) catch $why $failed=true end
+  check($failed,"invalid filter refused")
+end
+$s=$core.initial();$s.paused=true
+$r=frame("request");$r.dropped_count=7
+$s=$core.observed($s,$r,1);$s=$core.observed($s,$r,2)
+check($s.dropped==7 and len($s.rows)==0 and $s.seen==2,"pause preserves cumulative loss and totals")
+$s.drop_cursor=0;$r.dropped_count=2;$s=$core.observed($s,$r,3)
+check($s.dropped==9,"new subscription retains lifetime loss")
+$s=$core.clear_rows($s);check($s.dropped==9,"clear preserves loss")
+$s.paused=false
+for $i=1 to 2003
+  $r=frame("request",nil);$r.seq=$i;$s=$core.observed($s,$r,4)
+end
+check(len($s.rows)==2000 and $s.evicted==3 and $s.rows[0].seq==4,"bounded oldest first eviction")
+check($core.rows($s,2)[1].seq==2003 and len($core.rows($s,0))==0,"rows newest last and limit zero")
+$s.selected="2003";$s=$actions.execute($s,"view.hide")
+check(contains($s.filter.hide,"example"),"one action hides selected service")
+$s=$actions.execute($s,"view.unhide")
+$model=$view.project($s)
+check(len($model.table.initial.columns)==9 and $model.table.properties.stick_to_bottom,"table projection")
+$s.paused=true;check(not $view.project($s).table.properties.stick_to_bottom,"pause stops following")
+print("bustap core: pairing, collision, reject-first, expiry, midnight, loss, filtering, bounds and actions passed")

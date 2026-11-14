@@ -1,0 +1,91 @@
+-- host: viu
+-- version: 0.1.0
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix")
+$view=require("view.mix")
+$actions=require("actions.mix")
+$state=$core.initial();$ctx=viu_context()
+fn publish_bustap($s)
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$view.project($s)}
+end
+fn start_observer($s,$filter)
+  send "noded" "noded.observe.start" body={filter:$core.broker_filter($filter),body:"none",capacity:1024} timeout=5
+  if $rc!=0 or type($reply.subscription_id)!="string" then
+    $s.error="Observation subscription refused";$s.status="Unavailable"
+    return {state:$s,ok:false}
+  end
+  $old=$s.subscription_id;$s.subscription_id=$reply.subscription_id
+  $s.filter=$filter;$s.drop_cursor=0;$s.pending={};$s.status="Live";$s.error=nil
+  if $old!=nil then
+    send "noded" "noded.observe.stop" body={subscription_id:$old} timeout=5
+    if $rc!=0 then $s.error="Previous subscription could not be stopped" end
+  end
+  return {state:$s,ok:true}
+end
+publish_bustap($state)
+on bus.connected
+  $state.connected=true
+  $out=start_observer($state,$state.filter);$state=$out.state;publish_bustap($state)
+end
+on bus.disconnected
+  $state.connected=false;$state.subscription_id=nil;$state.pending={};$state.status="Disconnected";$state.error="Bus connection lost"
+  publish_bustap($state)
+end
+on noded.observe.event
+  $state=$core.observed($state,$event.args,time())
+  -- Tick batches model updates: rendering must not amplify every observation.
+end
+on viu.tick
+  $state=$core.tick_rate($state,time());publish_bustap($state)
+end
+on bustap.pause
+  if type($event.args.on)!="bool" then reply(10,json_encode({error_code:"ARGUMENT",message:"on must be bool"}));return end
+  $state.paused=$event.args.on;publish_bustap($state);reply(0,json_encode({paused:$state.paused}))
+end
+on bustap.clear
+  $state=$core.clear_rows($state);publish_bustap($state);reply(0,"{}")
+end
+on bustap.filter
+  try
+    $next=$core.filter_edit($state.filter,$event.args)
+    if not deep_eq($core.broker_filter($next),$core.broker_filter($state.filter)) or $state.subscription_id==nil then
+      $out=start_observer($state,$next);$state=$out.state
+      if not $out.ok then publish_bustap($state);reply(10,json_encode({error_code:"UNAVAILABLE",message:$state.error}));return end
+    else $state.filter=$next end
+    publish_bustap($state);reply(0,json_encode({filter:$state.filter,subscription_id:$state.subscription_id}))
+  catch $why reply(10,json_encode({error_code:"ARGUMENT",message:$why})) end
+end
+on bustap.rows
+  $limit=$event.args.limit ?? 2000
+  if type($limit)!="number" or $limit<0 or $limit>2000 or floor($limit)!=$limit then reply(10,json_encode({error_code:"ARGUMENT",message:"limit must be an integer from 0 to 2000"}));return end
+  reply(0,json_encode({rows:$core.rows($state,$limit)}))
+end
+on bustap.stats
+  reply(0,json_encode({seen:$state.seen,retained:len($state.rows),visible:len($core.rows($state)),history_evicted:$state.evicted,dropped:$state.dropped,rate:$state.rate,services:$state.counts,paused:$state.paused,connected:$state.connected,subscription_id:$state.subscription_id,status:$state.status,error:$state.error,filter:$state.filter}))
+end
+on bustap.actions
+  reply(0,json_encode({actions:$actions.registry($state)}))
+end
+on bustap.execute
+  try
+    $state=$actions.execute($state,$event.args.id);publish_bustap($state);reply(0,json_encode({executed:$event.args.id}))
+  catch $why reply(10,json_encode({error_code:"ARGUMENT",message:$why})) end
+end
+on bustap.intent
+  $a=$event.args
+  if $a.id=="traffic" and $a.action=="select" then $state.selected=$a.value.key
+  elif $a.id=="filter" then $state.filter.text=$a.value
+  elif $a.id=="pause" then $state.paused=$a.value
+  elif $a.id=="own" then $state.filter.own=$a.value
+  elif $a.id=="clear" then $state=$core.clear_rows($state)
+  elif $a.id=="hide" then $state=$actions.execute($state,"view.hide") end
+  publish_bustap($state);reply(0,"{}")
+end
+on viu.frame.intent
+  try
+    $state=$actions.execute($state,$event.args.value.command);publish_bustap($state);reply(0,"{}")
+  catch $why reply(10,json_encode({error_code:"ARGUMENT",message:$why})) end
+end
+on viu.frame.close
+  $state.window_close=true;publish_bustap($state)
+end
