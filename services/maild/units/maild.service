@@ -17,6 +17,7 @@ ReadWritePaths=@{var}/maild @{run}/maild
 Environment=STATE_DIRECTORY=@{var}/maild
 ExecStartPre=/usr/bin/mkdir -p @{run}/maild
 ExecStartPre=/usr/bin/find @{run}/maild -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/maild -mindepth 1 -delete
 Type=simple
 User=maild
 Group=maild

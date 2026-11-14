@@ -1,9 +1,21 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Fixed procfs root; test copies replace it, never Bus arguments.
 $proc_root="/proc"
-fn session_id($run,$vt)
-  $match=re_find($run,"^/.*/session/([0-9]+)/?$")
+-- MIX_RUN below is the candidate session path, not the base to trust.
+$run_root=mix_path("prefix","run")
+fn session_id($run,$vt,$root=nil)
+  $root=$root ?? $run_root
+  -- A configured root is literal text, not a regular expression.
+  $escaped=""
+  for $ch in chars($root)
+    if contains(['\\','.', '+','*','?','(',')','[',']','{','}','^','$','|'],$ch) then $escaped=$escaped..'\\' end
+    $escaped=$escaped..$ch
+  end
+  if contains(split($run,"/"),"..") or contains(split($run,"/"),".") then return nil end
+  $match=re_find($run,"^"..$escaped.."/session/([0-9]+)/?$")
   if len($match)==1 then return $match[0].groups[0] end
+  -- Only an absent runtime path may fall back to the explicit VT.
+  if $run!="" then return nil end
   if re_match($vt,"^[0-9]+$") then return $vt end
   return nil
 end

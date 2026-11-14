@@ -12,6 +12,7 @@ ReadWritePaths=@{var}/webd @{run}/webd
 Environment=STATE_DIRECTORY=@{var}/webd
 ExecStartPre=/usr/bin/mkdir -p @{run}/webd
 ExecStartPre=/usr/bin/find @{run}/webd -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/webd -mindepth 1 -delete
 Type=simple
 User=webd
 Group=webd

@@ -16,6 +16,7 @@ ReadWritePaths=@{var}/noded @{run}/noded
 Environment=STATE_DIRECTORY=@{var}/noded
 ExecStartPre=/usr/bin/mkdir -p @{run}/noded
 ExecStartPre=/usr/bin/find @{run}/noded -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/noded -mindepth 1 -delete
 Type=simple
 User=noded
 Group=noded

@@ -3,6 +3,7 @@
 Description=MixViu host service socket
 
 [Socket]
+RemoveOnStop=yes
 ListenStream=@{run}/hostd/hostd.sock
 SocketUser=root
 SocketMode=0666

@@ -17,6 +17,7 @@ ReadWritePaths=@{var}/blobd @{run}/blobd
 Environment=STATE_DIRECTORY=@{var}/blobd
 ExecStartPre=/usr/bin/mkdir -p @{run}/blobd
 ExecStartPre=/usr/bin/find @{run}/blobd -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/blobd -mindepth 1 -delete
 Type=simple
 User=blobd
 Group=blobd

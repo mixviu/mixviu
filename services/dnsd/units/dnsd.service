@@ -14,6 +14,7 @@ ReadWritePaths=@{var}/dnsd @{run}/dnsd
 Environment=STATE_DIRECTORY=@{var}/dnsd
 ExecStartPre=/usr/bin/mkdir -p @{run}/dnsd
 ExecStartPre=/usr/bin/find @{run}/dnsd -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/dnsd -mindepth 1 -delete
 Type=simple
 User=dnsd
 Group=dnsd

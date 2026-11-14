@@ -7,6 +7,7 @@ PartOf=session@%i.target
 [Service]
 ExecStartPre=/usr/bin/install -d -m 0711 @{run}/session/%i/noded
 ExecStartPre=/usr/bin/find @{run}/session/%i/noded -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/session/%i/noded -mindepth 1 -delete
 Type=simple
 User=mix
 EnvironmentFile=@{etc}/session/%i.env

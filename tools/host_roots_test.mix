@@ -13,8 +13,12 @@ for $path in $paths
     $text = $renderer.external(read_file($path), $roots, "unit")
     $guard.check_text($path, $text)
     if contains($text, "/opt/mix") then raise("HOST_ROOT_TEST", "hardwired prefix in " .. $path) end
+    for $m in re_find(read_file($path), "(?m)^ExecStartPre=/usr/bin/find ([^\n]+) -mindepth 1 -delete$")
+      if not contains(read_file($path), "ExecStopPost=-/usr/bin/find " .. $m.groups[0] .. " -mindepth 1 -delete\n") then raise("HOST_ROOT_TEST", "runtime leaf lacks stop cleanup: " .. $path) end
+    end
   end
 end
+if not contains(read_file("services/hostd/units/hostd.socket"), "RemoveOnStop=yes\n") then raise("HOST_ROOT_TEST", "host socket must be removed on stop") end
 for $entry in $layout.plan("share/layout", $roots)
   $guard.check_text($entry.path, $entry.text)
   if contains($entry.text, "/opt/mix") then raise("HOST_ROOT_TEST", "hardwired layout prefix") end

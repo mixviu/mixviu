@@ -11,6 +11,7 @@ PartOf=session-headless@%i.target
 [Service]
 ExecStartPre=/usr/bin/install -d -m 0700 @{run}/session/%i/desktop
 ExecStartPre=/usr/bin/find @{run}/session/%i/desktop -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/session/%i/desktop -mindepth 1 -delete
 Type=simple
 User=mix
 SupplementaryGroups=render

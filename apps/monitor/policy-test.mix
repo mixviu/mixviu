@@ -90,6 +90,14 @@ $fixture.process($root,80,1,1000,"apps@4.service")
 $fixture.process($root,45,1,1001,"apps@4.service")
 if $p.allowed($s,45) then raise("UID","Ownership change not checked") end
 if $p.session_id("/srv/mixtest/run/session/12","4")!="12" or $p.session_id("","4")!="4" or $p.session_id("","bad")!=nil then raise("SESSION","Environment parsing") end
+if $p.session_id("/srv/mixtest/run/session/4/","")!="4" then raise("SESSION","Trailing slash") end
+for $bad in ["/elsewhere/session/4","/srv/mixtest/runx/session/4","/srv/mixtest/run/../run/session/4","/srv/mixtest/run/./session/4","/srv/mixtest/run/session/4/..","/srv/mixtest/run/session/4/extra"]
+  if $p.session_id($bad,"4")!=nil then raise("SESSION","Accepted runtime path outside configured root: "..$bad) end
+end
+$literal_root='/srv/mixtest.+[x](a){2}^$|?/run'
+if $p.session_id($literal_root.."/session/4","",$literal_root)!="4" or $p.session_id("/srv/mixtestAAxxa2/run/session/4","4",$literal_root)!=nil then raise("SESSION","Run root must be regex-escaped") end
+$backslash_root='/srv/mixtest\literal/run'
+if $p.session_id($backslash_root.."/session/4","",$backslash_root)!="4" then raise("SESSION","Escape a literal backslash") end
 finally
   $removed=run_argv_must(["rm","-r",$root])
 end
