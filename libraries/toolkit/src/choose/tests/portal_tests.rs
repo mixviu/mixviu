@@ -109,6 +109,12 @@ struct Portal {
     calls: tokio::sync::mpsc::UnboundedSender<Call>,
     closed: Arc<AtomicUsize>,
     early: Option<u32>,
+    version_gate: Option<Arc<VersionGate>>,
+}
+
+struct VersionGate {
+    entered: tokio::sync::Notify,
+    release: watch::Sender<bool>,
 }
 
 impl Portal {
@@ -160,7 +166,12 @@ impl Portal {
 #[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
 impl Portal {
     #[zbus(property, name = "version")]
-    fn version(&self) -> u32 {
+    async fn version(&self) -> u32 {
+        if let Some(gate) = &self.version_gate {
+            let mut release = gate.release.subscribe();
+            gate.entered.notify_one();
+            release.wait_for(|ready| *ready).await.unwrap();
+        }
         4
     }
     async fn open_file(
@@ -216,6 +227,18 @@ async fn serve(
     tokio::sync::mpsc::UnboundedReceiver<Call>,
     Arc<AtomicUsize>,
 ) {
+    serve_gated(address, early, None).await
+}
+
+async fn serve_gated(
+    address: &str,
+    early: Option<u32>,
+    version_gate: Option<Arc<VersionGate>>,
+) -> (
+    Connection,
+    tokio::sync::mpsc::UnboundedReceiver<Call>,
+    Arc<AtomicUsize>,
+) {
     let connection = connection(address).await;
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let closed = Arc::new(AtomicUsize::new(0));
@@ -227,6 +250,7 @@ async fn serve(
                 calls: tx,
                 closed: closed.clone(),
                 early,
+                version_gate,
             },
         )
         .await
@@ -262,7 +286,12 @@ async fn portal_hung_method_acknowledgement_is_bounded_and_final() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn portal_maps_all_methods_and_subscribes_before_early_response() {
     let (_process, address) = dbus();
-    let (_server, mut calls, _) = serve(&address, Some(1)).await;
+    let (release, _) = watch::channel(false);
+    let gate = Arc::new(VersionGate {
+        entered: tokio::sync::Notify::new(),
+        release,
+    });
+    let (_server, mut calls, _) = serve_gated(&address, Some(1), Some(gate.clone())).await;
     for (body, method) in [
         (
             json!({"mode":"open","multiple":true,"directory":true}),
@@ -290,9 +319,16 @@ async fn portal_maps_all_methods_and_subscribes_before_early_response() {
         let (_cancel_tx, mut cancel) = watch::channel(false);
         // Mapping and subscribe-before-call are event assertions. Transport
         // deadlines are exercised by the separate hung-method fixture.
-        let result = portal::session_semantics(&client, &request, &mut cancel)
-            .await
-            .unwrap();
+        gate.release.send_replace(false);
+        let (result, ()) = tokio::join!(
+            portal::session_semantics(&client, &request, &mut cancel),
+            async {
+                gate.entered.notified().await;
+                assert!(calls.try_recv().is_err(), "method preceded version dispatch");
+                gate.release.send_replace(true);
+            }
+        );
+        let result = result.unwrap();
         assert_eq!(result, Some(Outcome::Cancelled));
         let call = calls.recv().await.unwrap();
         assert_eq!(call.method, method);
