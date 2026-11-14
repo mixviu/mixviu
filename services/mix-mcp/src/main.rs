@@ -17,11 +17,14 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ServerHandler, ServiceExt, tool, tool_router};
 use serde::Deserialize;
 mod connection;
+#[cfg(test)]
+mod hardening_tests;
 mod domain;
 mod indexd_client;
 mod indexd_transport;
 mod knowledge_settings;
 mod mix_worker;
+mod log_access;
 mod native_tools;
 mod text;
 mod tool_output;
@@ -1101,14 +1104,7 @@ impl MixMcp {
     async fn log_tail(&self, Parameters(p): Parameters<LogTailParams>) -> Result<String, String> {
         let n = p.lines.unwrap_or(50);
         let path = resolve_log_path(&p.file)?;
-        match std::fs::read_to_string(&path) {
-            Ok(content) => {
-                let all: Vec<&str> = content.lines().collect();
-                let start = all.len().saturating_sub(n);
-                Ok(all[start..].join("\n"))
-            }
-            Err(e) => Err(format!("ERROR reading {}: {e}", path.display())),
-        }
+        log_access::tail(&path, n)
     }
 
     /// Search a MixViu log file for a pattern (case-insensitive).
@@ -1117,26 +1113,9 @@ impl MixMcp {
         &self,
         Parameters(p): Parameters<LogSearchParams>,
     ) -> Result<String, String> {
-        let max = p.limit.unwrap_or(20);
         let path = resolve_log_path(&p.file)?;
-        let pat = p.pattern.to_lowercase();
-        match std::fs::read_to_string(&path) {
-            Ok(content) => {
-                let matches: Vec<&str> = content
-                    .lines()
-                    .filter(|line| line.to_lowercase().contains(&pat))
-                    .collect();
-                if matches.is_empty() {
-                    Ok("No matches found".to_string())
-                } else {
-                    let start = matches.len().saturating_sub(max);
-                    Ok(matches[start..].join("\n"))
-                }
-            }
-            Err(e) => Err(format!("ERROR reading {}: {e}", path.display())),
-        }
+        log_access::search(&path, &p.pattern, p.limit.unwrap_or(20))
     }
-
     /// Await an operation through agentd, then end this turn immediately.
     /// agentd resumes this session with the outcome; do not poll or sleep.
     #[tool]
@@ -1734,6 +1713,7 @@ impl MixMcp {
     // ---- Mix execution tool ----
 
     /// Execute a Mix script inline and return its output.
+    /// Trusted-agent tool: runs as the adapter's user with that user's permissions. It is not a sandbox.
     /// Mix has ~300 builtins including JSON, YAML, regex (subject-first re_*), TOML, datetime, crypto, URL parsing.
     /// The script runs with Bus connectivity — `send`/`emit`/`port_exists` route to the broker.
     #[tool]
@@ -1763,30 +1743,7 @@ fn log_dir() -> Result<PathBuf, String> {
 }
 
 fn resolve_log_path(name: &str) -> Result<PathBuf, String> {
-    let dir = log_dir()?;
-    if name == "bus" {
-        return Ok(dir.join("bus.log"));
-    }
-    let exact = dir.join(name);
-    if exact.exists() {
-        return Ok(exact);
-    }
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        let mut m: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| {
-                p.file_name()
-                    .and_then(|f| f.to_str())
-                    .is_some_and(|f| f.starts_with(name))
-            })
-            .collect();
-        m.sort();
-        if let Some(latest) = m.last() {
-            return Ok(latest.clone());
-        }
-    }
-    Ok(dir.join(name))
+    log_access::resolve(&log_dir()?, name)
 }
 
 // ---- Knowledge base helpers ----
@@ -1879,7 +1836,7 @@ fn find_content_dirs(root: &std::path::Path) -> Vec<(std::path::PathBuf, &'stati
 
     for entry in walkdir(root) {
         let name = entry.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if entry.is_dir() {
+        if std::fs::symlink_metadata(&entry).is_ok_and(|m| m.is_dir()) {
             match name {
                 "_doc" => dirs.push((entry, "doc")),
                 // Decision records were elevated out of _decisions/ to a
@@ -1892,7 +1849,7 @@ fn find_content_dirs(root: &std::path::Path) -> Vec<(std::path::PathBuf, &'stati
                 "_spec" => dirs.push((entry, "spec")),
                 _ => {}
             }
-        } else if name == "_notes.md" && entry.is_file() {
+        } else if name == "_notes.md" && confined_md_file(&entry, root) {
             dirs.push((entry, "notes"));
         }
     }
@@ -1926,6 +1883,9 @@ const SKIP_DIRS: &[&str] = &[
 
 fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut results = Vec::new();
+    if !std::fs::symlink_metadata(root).is_ok_and(|m| m.is_dir()) {
+        return results;
+    }
     let mut stack = vec![root.to_path_buf()];
 
     while let Some(dir) = stack.pop() {
@@ -1933,7 +1893,7 @@ fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {
             for entry in entries.flatten() {
                 let path = entry.path();
                 results.push(path.clone());
-                if path.is_dir() {
+                if entry.file_type().is_ok_and(|t| t.is_dir()) {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                     if !SKIP_DIRS.contains(&name) {
                         stack.push(path);
@@ -1955,19 +1915,22 @@ fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {
 /// though `_doc` is in `SPECIAL_DIRS`.
 fn collect_md_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut results = Vec::new();
+    if !std::fs::symlink_metadata(root).is_ok_and(|m| m.is_dir()) {
+        return results;
+    }
     let mut stack = vec![root.to_path_buf()];
 
     while let Some(dir) = stack.pop() {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() {
+                if entry.file_type().is_ok_and(|t| t.is_dir()) {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                     if SKIP_DIRS.contains(&name) || SPECIAL_DIRS.contains(&name) {
                         continue;
                     }
                     stack.push(path);
-                } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                } else if confined_md_file(&path, root) {
                     results.push(path);
                 }
             }
@@ -1975,6 +1938,12 @@ fn collect_md_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
     }
 
     results
+}
+
+fn confined_md_file(path: &std::path::Path, root: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()) == Some("md")
+        && root.canonicalize().ok().zip(path.canonicalize().ok())
+            .is_some_and(|(root, path)| path.starts_with(root) && path.is_file())
 }
 
 /// Split markdown content on ## headings into (title, text) sections.
@@ -2039,8 +2008,16 @@ fn workspace_path(path: Option<&str>) -> Result<std::path::PathBuf, String> {
         Some(p) => std::path::PathBuf::from(p),
         None => std::env::current_dir().map_err(|e| e.to_string())?,
     };
-    path.canonicalize()
-        .map_err(|e| format!("workspace path {}: {e}", path.display()))
+    let domains = crate::knowledge_settings::load_domains().map_err(|e| e.to_string())?;
+    checked_workspace(&path, &domains)
+}
+
+fn checked_workspace(path: &std::path::Path, domains: &crate::knowledge_settings::DomainsSettings) -> Result<PathBuf, String> {
+    let path = path.canonicalize().map_err(|e| format!("workspace path {}: {e}", path.display()))?;
+    if !path.is_dir() || domains.resolve(&path).is_none() {
+        return Err("workspace path refused: outside configured domain roots or not a directory".into());
+    }
+    Ok(path)
 }
 
 /// Per-call deadline for a tool, in seconds (0 = no deadline). The server

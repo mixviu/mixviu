@@ -16429,6 +16429,7 @@ impl Evaluator {
     /// to a builtin/HOF — user functions are never gated. Cloning the
     /// `Option<Rc>` is free when no policy is set.
     fn call_policy_builtin(&self, name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
+        self.check_capability(name)?;
         if name == "has_builtin" && args.len() == 1 {
             if let Value::String(target) = &args[0] {
                 if self.check_capability(target).is_err() {

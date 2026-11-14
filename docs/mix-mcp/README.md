@@ -11,7 +11,8 @@ Paths are resolved by `paths`; no installation path or setting value is
 compiled into this adapter. Script execution uses the prefix's `bin/mix`.
 
 `mix-mcp` is an MCP stdio server for agents. Install the binary at
-`<prefix>/bin/mix-mcp` and register the MCP server as `mix-mcp`.
+`<prefix>/bin/mix-mcp`. Keep the `mcpServers` key `mixos` at cutover:
+renaming it changes every `mcp__<key>__*` permission rule.
 
 ## Connection
 
@@ -56,7 +57,7 @@ reconnecting.
 ```json
 {
   "mcpServers": {
-    "mix-mcp": {
+    "mixos": {
       "command": "<prefix>/bin/mix-mcp",
       "env": {
         "MIX_NODED_URL": "ws://192.0.2.10:4200/ws",
@@ -70,7 +71,7 @@ reconnecting.
 
 ## Tools
 
-Each name below is exposed as `mcp__mix-mcp__<name>` in Claude Code.
+With that key, each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 
 - `bus_call`, `bus_list_services`, `bus_node_info`, `bus_list_peers`, `noded_ping`
   (`bus_list_peers` leaves retired mesh members out unless `include_retired: true`)
@@ -213,10 +214,16 @@ application tools require an exact service and semantic target. Read-only
 tools do not invoke mutations; arbitrary `bus_call` and `mix_execute` can.
 Mix execution runs in an isolated worker with bounded output.
 
-These tools use the adapter user's operating-system permissions, without a
-filesystem sandbox. Inherited log filename handling accepts absolute paths
-and parent components; `log_tail` and `log_search` are not confined to the
-log directory. Application commands and arbitrary scripts can write files.
+`mix_execute` is a trusted-agent tool. It runs as the adapter's user with that
+user's permissions and is not a sandbox. Scripts can run programs, write files
+and mutate Bus services. The builtin fence does not restrict those powers.
+
+Log tools reject absolute paths, parent components and symlink targets outside
+the log directory. Tail seeks into an 8 MiB suffix; search streams lines with a
+64 KiB line limit and retains only the last requested matches. Both refuse
+requests above 10,000 results or their 8 MiB byte budget rather than truncate.
+Indexing requires a configured domain root, never enters directory symlinks,
+and accepts markdown symlinks only within the scanned root.
 
 ## Logging and tests
 

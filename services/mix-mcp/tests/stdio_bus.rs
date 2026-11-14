@@ -485,6 +485,11 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
 
     let workspace = dir.path().join("work~space");
     std::fs::create_dir_all(workspace.join("_doc")).unwrap();
+    std::fs::create_dir_all(dir.path().join("domains")).unwrap();
+    std::fs::write(
+        dir.path().join("domains/domains.conf.mix"),
+        format!("map: {{ {}: \"fixture\" }}\n", serde_json::to_string(&workspace).unwrap()),
+    ).unwrap();
     let file = workspace.join("_doc/2026-10-20-fixture.md");
     std::fs::write(&file, "# Fixture\n\nA document long enough for indexing, with one section to replace stale chunks.\n").unwrap();
     let expected_path = file.canonicalize().unwrap().to_string_lossy().into_owned();

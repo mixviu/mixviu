@@ -421,6 +421,20 @@ impl mix::CapabilityPolicy for DenyByName {
 }
 
 #[tokio::test]
+async fn generic_and_hof_dispatch_obey_exact_name_policy() {
+    for src in [
+        "print(abs(-1))",
+        "$f = abs\nprint($f(-1))",
+        "print(map([-1], abs))",
+        "print(map([-1], fn($x) = abs($x)))",
+    ] {
+        let err = run(src, |e| e.set_capability_policy(Rc::new(DenyByName("abs"))))
+            .await.expect_err("every builtin dispatch must consult policy");
+        assert!(err.contains("capability denied"), "{src}: {err}");
+    }
+}
+
+#[tokio::test]
 async fn capability_gates_mutating_builtin() {
     // push/pop/shift route through call_mutating_builtin (not the normal
     // builtin dispatch); an exact-name policy must still be able to deny
