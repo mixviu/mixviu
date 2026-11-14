@@ -218,11 +218,20 @@ impl Job {
     /// never re-waited or signalled. Only the leader's unconsumed exit is
     /// retained until Done and consumed once, tracked by leader_reaped.
     /// Its reserved PID makes group delivery safe even after members migrate.
-    fn signal(&self, signal: i32, mut send: impl FnMut(i32, i32) -> io::Result<()>) -> io::Result<()> {
+    fn signal(
+        &self,
+        signal: i32,
+        mut send: impl FnMut(i32, i32) -> io::Result<()>,
+    ) -> io::Result<()> {
         self.signal_with_membership(signal, &mut send, |pid| unsafe { libc::getpgid(pid) })
     }
 
-    fn signal_with_membership(&self, signal: i32, mut send: impl FnMut(i32, i32) -> io::Result<()>, mut pgrp: impl FnMut(i32) -> i32) -> io::Result<()> {
+    fn signal_with_membership(
+        &self,
+        signal: i32,
+        mut send: impl FnMut(i32, i32) -> io::Result<()>,
+        mut pgrp: impl FnMut(i32) -> i32,
+    ) -> io::Result<()> {
         if self.state() == JobState::Done {
             return Ok(());
         }
@@ -238,16 +247,29 @@ impl Job {
         let mut in_group = |m: &Member| pgrp(m.pid) == self.pgid;
         // Snapshot before group delivery: a member that joins afterwards still
         // needs its individual signal. Recheck also catches members leaving.
-        let members: Vec<_> = self.members.iter().filter(|m| !m.state.terminal())
-            .map(|m| (m, in_group(m))).collect();
+        let members: Vec<_> = self
+            .members
+            .iter()
+            .filter(|m| !m.state.terminal())
+            .map(|m| (m, in_group(m)))
+            .collect();
         // A pinned zombie leader still owns the group number. Descendants may
         // remain even when every registered live member has left the group.
-        let group_result = if group_pinned { send(-self.pgid, signal) } else { Ok(()) };
+        let group_result = if group_pinned {
+            send(-self.pgid, signal)
+        } else {
+            Ok(())
+        };
         let group_sent = group_pinned && group_result.is_ok();
-        let mut result = if members.is_empty() { group_result } else { Ok(()) };
+        let mut result = if members.is_empty() {
+            group_result
+        } else {
+            Ok(())
+        };
         for (member, was_in_group) in members {
             if (!group_sent || !was_in_group || !in_group(member))
-                && let Err(error) = send(member.pid, signal) {
+                && let Err(error) = send(member.pid, signal)
+            {
                 result = Err(error);
             }
         }
@@ -313,7 +335,12 @@ impl Shared {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such live job"))
     }
 
-    fn signal_abort(&self, id: usize, signal: i32, mut send: impl FnMut(i32, i32) -> io::Result<()>) {
+    fn signal_abort(
+        &self,
+        id: usize,
+        signal: i32,
+        mut send: impl FnMut(i32, i32) -> io::Result<()>,
+    ) {
         let state = self.collect();
         // Collection may have reaped the last exit and freed the numeric PGID.
         // Retaining an entry is not evidence that it still owns that group.
@@ -782,7 +809,11 @@ impl Controller {
         // reaped even after SIGKILL. Keep survivors registered with the monitor.
         for signal in [libc::SIGTERM, libc::SIGKILL] {
             self.shared.signal_abort(id, signal, |pid, signal| unsafe {
-                if libc::kill(pid, signal) < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
+                if libc::kill(pid, signal) < 0 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
             });
             self.wake();
             let mut s = self.shared.state.lock().unwrap();
@@ -951,28 +982,40 @@ fn reap_locked(s: &mut State) {
                 // Consume only the observed nonterminal event. If the child
                 // exits meanwhile, leave that exit (and PID) pinned too.
                 loop {
-                    let rc = unsafe { libc::waitid(
-                        libc::P_PID,
-                        member.pid as libc::id_t,
-                        &mut info,
-                        libc::WNOHANG
-                            | if matches!(member.state, MemberState::Stopped(_)) {
-                                libc::WSTOPPED
-                            } else {
-                                libc::WCONTINUED
-                            },
-                    ) };
-                    if rc >= 0 { break; }
-                    if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) { continue; }
+                    let rc = unsafe {
+                        libc::waitid(
+                            libc::P_PID,
+                            member.pid as libc::id_t,
+                            &mut info,
+                            libc::WNOHANG
+                                | if matches!(member.state, MemberState::Stopped(_)) {
+                                    libc::WSTOPPED
+                                } else {
+                                    libc::WCONTINUED
+                                },
+                        )
+                    };
+                    if rc >= 0 {
+                        break;
+                    }
+                    if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                        continue;
+                    }
                     member.state = MemberState::Lost;
                     mix::builtins::unregister_managed_pid(member.pid);
                     break;
                 }
-                if member.state.terminal() { break; }
+                if member.state.terminal() {
+                    break;
+                }
             }
         }
         if job.state() == JobState::Done && !job.leader_reaped {
-            if let Some(member) = job.members.iter().find(|m| m.pid == job.pgid && m.state != MemberState::Lost) {
+            if let Some(member) = job
+                .members
+                .iter()
+                .find(|m| m.pid == job.pgid && m.state != MemberState::Lost)
+            {
                 loop {
                     if unsafe { libc::waitpid(member.pid, std::ptr::null_mut(), libc::WNOHANG) }
                         >= 0
@@ -994,17 +1037,31 @@ fn reap_member(member: &mut Member) {
     debug_assert!(!member.state.terminal());
     loop {
         let mut status = 0;
-        let rc = unsafe { libc::waitpid(member.pid, &mut status,
-            libc::WNOHANG | libc::WUNTRACED | libc::WCONTINUED) };
-        if rc == 0 { break; }
+        let rc = unsafe {
+            libc::waitpid(
+                member.pid,
+                &mut status,
+                libc::WNOHANG | libc::WUNTRACED | libc::WCONTINUED,
+            )
+        };
+        if rc == 0 {
+            break;
+        }
         if rc < 0 {
-            if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) { continue; }
+            if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                continue;
+            }
             member.state = MemberState::Lost;
         } else {
-            member.state = if libc::WIFEXITED(status) { MemberState::Exited(libc::WEXITSTATUS(status)) }
-            else if libc::WIFSIGNALED(status) { MemberState::Signalled(libc::WTERMSIG(status)) }
-            else if libc::WIFSTOPPED(status) { MemberState::Stopped(libc::WSTOPSIG(status)) }
-            else { MemberState::Running };
+            member.state = if libc::WIFEXITED(status) {
+                MemberState::Exited(libc::WEXITSTATUS(status))
+            } else if libc::WIFSIGNALED(status) {
+                MemberState::Signalled(libc::WTERMSIG(status))
+            } else if libc::WIFSTOPPED(status) {
+                MemberState::Stopped(libc::WSTOPSIG(status))
+            } else {
+                MemberState::Running
+            };
         }
         if member.state.terminal() {
             mix::builtins::unregister_managed_pid(member.pid);
@@ -1382,15 +1439,30 @@ mod tests {
         assert_eq!(unsafe { libc::kill(pgid, libc::SIGKILL) }, 0);
         pending_event(pgid, libc::WEXITED);
         let mut sent = Vec::new();
-        shared.signal_abort(1, libc::SIGTERM, |target, sig| { sent.push((target, sig)); Ok(()) });
+        shared.signal_abort(1, libc::SIGTERM, |target, sig| {
+            sent.push((target, sig));
+            Ok(())
+        });
         eprintln!("original pgid={pgid}, escaped pid/pgrp={pid}, abort targets={sent:?}");
-        assert_eq!(sent, [(-pgid, libc::SIGTERM), (pid, libc::SIGTERM), (-pgid, libc::SIGCONT), (pid, libc::SIGCONT)]);
+        assert_eq!(
+            sent,
+            [
+                (-pgid, libc::SIGTERM),
+                (pid, libc::SIGTERM),
+                (-pgid, libc::SIGCONT),
+                (pid, libc::SIGCONT)
+            ]
+        );
         // Continue, shutdown and foreground interrupt use this same helper.
         let state = shared.collect();
         let job = &state.jobs[&1];
         for signal in [libc::SIGCONT, libc::SIGHUP, libc::SIGINT, libc::SIGKILL] {
             sent.clear();
-            job.signal(signal, |target, sig| { sent.push((target, sig)); Ok(()) }).unwrap();
+            job.signal(signal, |target, sig| {
+                sent.push((target, sig));
+                Ok(())
+            })
+            .unwrap();
             assert_eq!(sent, [(-pgid, signal), (pid, signal)]);
         }
         // The leader's zombie reserves the original number until Done, even
@@ -1429,7 +1501,10 @@ mod tests {
         assert_eq!(unsafe { libc::kill(pgid, libc::SIGKILL) }, 0);
         pending_event(pgid, libc::WEXITED);
         let mut sent = Vec::new();
-        shared.signal_abort(1, libc::SIGTERM, |target, sig| { sent.push((target, sig)); Ok(()) });
+        shared.signal_abort(1, libc::SIGTERM, |target, sig| {
+            sent.push((target, sig));
+            Ok(())
+        });
         assert_eq!(sent, [(-pgid, libc::SIGTERM), (-pgid, libc::SIGCONT)]);
         assert_eq!(unsafe { libc::getpgid(pgid) }, pgid);
         assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
@@ -1506,9 +1581,20 @@ mod tests {
 
     #[test]
     fn exited_tail_is_reaped_while_leader_runs() {
-        let leader = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap());
+        let leader = ChildGuard(
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(0)
+                .spawn()
+                .unwrap(),
+        );
         let pgid = leader.0.id() as i32;
-        let tail = ChildGuard(Command::new("/bin/true").process_group(pgid).spawn().unwrap());
+        let tail = ChildGuard(
+            Command::new("/bin/true")
+                .process_group(pgid)
+                .spawn()
+                .unwrap(),
+        );
         let pid = tail.0.id() as i32;
         let mut pending = job(&[MemberState::Running, MemberState::Running]);
         pending.pgid = pgid;
@@ -1516,7 +1602,10 @@ mod tests {
         pending.members[1].pid = pid;
         let shared = shared_jobs(BTreeMap::from([(1, pending)]));
         pending_event(pid, libc::WEXITED);
-        assert_eq!(shared.snapshot()[0].members[1].state, MemberState::Exited(0));
+        assert_eq!(
+            shared.snapshot()[0].members[1].state,
+            MemberState::Exited(0)
+        );
         assert_eq!(unsafe { libc::getpgid(pid) }, -1, "nonleader left defunct");
         assert_eq!(unsafe { libc::getpgid(pgid) }, pgid);
     }
@@ -1547,7 +1636,12 @@ mod tests {
         pending.pgid = 1;
         pending.members[1].pid = pid;
         let mut sent = Vec::new();
-        pending.signal(libc::SIGCONT, |target, sig| { sent.push((target, sig)); Ok(()) }).unwrap();
+        pending
+            .signal(libc::SIGCONT, |target, sig| {
+                sent.push((target, sig));
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(sent, [(pid, libc::SIGCONT)]);
         drop(shared);
     }
@@ -1561,20 +1655,40 @@ mod tests {
         pending.members[1].pid = 102;
         let joined = std::cell::Cell::new(false);
         let mut sent = Vec::new();
-        pending.signal_with_membership(libc::SIGTERM, |target, sig| {
-            sent.push((target, sig));
-            if target < 0 { joined.set(true); }
-            Ok(())
-        }, |pid| if pid == 101 || joined.get() { 101 } else { 102 }).unwrap();
+        pending
+            .signal_with_membership(
+                libc::SIGTERM,
+                |target, sig| {
+                    sent.push((target, sig));
+                    if target < 0 {
+                        joined.set(true);
+                    }
+                    Ok(())
+                },
+                |pid| if pid == 101 || joined.get() { 101 } else { 102 },
+            )
+            .unwrap();
         assert_eq!(sent, [(-101, libc::SIGTERM), (102, libc::SIGTERM)]);
     }
 
     #[test]
     #[cfg(target_os = "linux")]
     fn pinned_group_reaches_descendants_after_all_live_members_leave() {
-        let leader = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap());
+        let leader = ChildGuard(
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(0)
+                .spawn()
+                .unwrap(),
+        );
         let pgid = leader.0.id() as i32;
-        let mut peer = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(pgid).spawn().unwrap());
+        let mut peer = ChildGuard(
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(pgid)
+                .spawn()
+                .unwrap(),
+        );
         let (escaped, _) = pending_stop();
         let pid = escaped.0.id() as i32;
         let mut pending = job(&[MemberState::Running, MemberState::Stopped(libc::SIGSTOP)]);
@@ -1584,11 +1698,18 @@ mod tests {
         let shared = shared_jobs(BTreeMap::from([(1, pending)]));
         assert_eq!(unsafe { libc::kill(pgid, libc::SIGKILL) }, 0);
         pending_event(pgid, libc::WEXITED);
-        shared.collect().jobs[&1].send_signal(libc::SIGTERM).unwrap();
+        shared.collect().jobs[&1]
+            .send_signal(libc::SIGTERM)
+            .unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         let status = loop {
-            if let Some(status) = peer.0.try_wait().unwrap() { break status; }
-            assert!(Instant::now() < deadline, "unregistered descendant missed group signal");
+            if let Some(status) = peer.0.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "unregistered descendant missed group signal"
+            );
             std::thread::sleep(Duration::from_millis(1));
         };
         use std::os::unix::process::ExitStatusExt;
@@ -1606,10 +1727,18 @@ mod tests {
         let mut sent = Vec::new();
         job.signal(libc::SIGCONT, |target, sig| {
             sent.push((target, sig));
-            if target < 0 { Err(io::Error::from_raw_os_error(libc::EPERM)) } else { Ok(()) }
-        }).unwrap();
+            if target < 0 {
+                Err(io::Error::from_raw_os_error(libc::EPERM))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
         if cfg!(target_os = "linux") {
-            assert_eq!(sent, [(-job.pgid, libc::SIGCONT), (job.pgid, libc::SIGCONT)]);
+            assert_eq!(
+                sent,
+                [(-job.pgid, libc::SIGCONT), (job.pgid, libc::SIGCONT)]
+            );
         } else {
             assert_eq!(sent, [(job.pgid, libc::SIGCONT)]);
         }
@@ -1621,7 +1750,10 @@ mod tests {
         let pid = child.0.id() as i32;
         let mut sent = Vec::new();
         // The same decision path must still signal a live stopped job.
-        shared.signal_abort(1, libc::SIGTERM, |pid, sig| { sent.push((pid, sig)); Ok(()) });
+        shared.signal_abort(1, libc::SIGTERM, |pid, sig| {
+            sent.push((pid, sig));
+            Ok(())
+        });
         let target = if cfg!(target_os = "linux") { -pid } else { pid };
         assert_eq!(sent, [(target, libc::SIGTERM), (target, libc::SIGCONT)]);
         sent.clear();
@@ -1630,7 +1762,10 @@ mod tests {
         // The table still says Stopped, but the last exit is waitable. Record
         // attempted signals rather than trying to force numeric PID reuse.
         for signal in [libc::SIGTERM, libc::SIGKILL] {
-            shared.signal_abort(1, signal, |pid, sig| { sent.push((pid, sig)); Ok(()) });
+            shared.signal_abort(1, signal, |pid, sig| {
+                sent.push((pid, sig));
+                Ok(())
+            });
             assert!(sent.is_empty(), "signalled a reaped job: {sent:?}");
         }
         assert_eq!(shared.snapshot()[0].state(), JobState::Done);
