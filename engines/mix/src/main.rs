@@ -21,7 +21,11 @@ const _: () = assert!(
 
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
-    if args.next().as_deref() == Some(std::ffi::OsStr::new("mesh")) {
+    let command = args.next();
+    if command.as_deref() == Some(std::ffi::OsStr::new(mix_shell::script_worker::ARG)) {
+        return ExitCode::from(mix_shell::script_worker::run() as u8);
+    }
+    if command.as_deref() == Some(std::ffi::OsStr::new("mesh")) {
         return match mesh::run(args.collect()) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {

@@ -89,6 +89,10 @@ arrive on `<service>.record.state`. The clock is CLOCK_MONOTONIC microseconds;
 sidecar and marker times are relative to the first frame, numbered from zero.
 `<path>.frames.jsonl` contains `{frame,t_us}` and `<path>.markers.jsonl` contains
 `{seq,frame,t_us,label,data}`. Keep marker replies as the authoritative timestamps.
+The first frame's `t_us` is exactly zero. Later frame timestamps record submission
+time in monotonic microseconds and may coincide at that resolution. `duration_us`
+is the encoded CFR duration, truncated to whole microseconds:
+`frames * 1_000_000 / fps`; it is not submission wall time.
 
 The intermediate is silent Matroska using ffmpeg/libx264, ultrafast, CRF 14,
 GOP 30 and yuv420p. No hardware encoder is required. The queue holds four

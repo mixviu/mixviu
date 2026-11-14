@@ -1,27 +1,28 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
+RequiresMountsFor=@{var}/maild/%i @{run}/maild/%i
 Description=MixViu mail service using broker instance %i
 Documentation=https://mixos.dev/maild/
-After=network-online.target noded@%i.service
+After=network-online.target noded@%i.service maild-prepare@%i.service
 Wants=network-online.target
-Requires=noded@%i.service
+Requires=noded@%i.service maild-prepare@%i.service
 
 [Service]
+ReadWritePaths=@{var}/maild/%i @{run}/maild/%i
+ExecStartPre=/usr/bin/install -d -m 0750 @{var}/maild/%i
+Environment=STATE_DIRECTORY=@{var}/maild/%i
+ExecStartPre=/usr/bin/install -d -m 0750 @{run}/maild/%i
+ExecStartPre=/usr/bin/find @{run}/maild/%i -mindepth 1 -delete
+ExecStopPost=-/usr/bin/find @{run}/maild/%i -mindepth 1 -delete
 Type=simple
 User=maild
 Group=maild
 EnvironmentFile=@{etc}/session/%i.env
 Environment=MIX_ETC=@{etc}
-Environment=MIX_VAR=%S/mix/maild/%i
-Environment=HOME=%S/mix/maild/%i
+Environment=MIX_VAR=@{var}/maild/%i
+Environment=HOME=@{var}/maild/%i
 Environment=RUST_LOG=maild=info
-StateDirectory=mix/maild/%i
-StateDirectoryMode=0750
-RuntimeDirectory=mix/maild/%i
-RuntimeDirectoryMode=0750
-ConfigurationDirectory=mix/maild
-ConfigurationDirectoryMode=0750
-WorkingDirectory=%S/mix/maild/%i
+WorkingDirectory=-@{var}/maild/%i
 ExecStart=@{prefix}/bin/maild -c @{etc}/maild/config.conf.mix serve
 Restart=on-failure
 RestartSec=5s

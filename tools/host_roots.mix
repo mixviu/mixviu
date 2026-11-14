@@ -1,0 +1,52 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Shared by CI, the bundle builder and negative controls.
+fn pattern()
+  return '/(?:etc/mix|var/lib/mix|run/mix|var/cache/mix|var/log/mix)(?:/|\b)|(?:State|Runtime|Configuration|Cache|Logs)Directory\s*=.*\bmix(?:/|\b)|%[SEtCL]/mix(?:/|\b)'
+end
+fn violations($text)
+  return re_find($text, pattern())
+end
+fn shipped_unit($path)
+  return (starts_with($path, "engines/") or starts_with($path, "services/") or starts_with($path, "apps/")) and not contains($path, "/tests/") and (re_match($path, '\.(service|socket|target|slice|timer|path)$') or (contains($path, "/units/") and ends_with($path, ".conf")))
+end
+fn check_text($path, $text)
+  if len(violations($text)) > 0 then raise("HOST_ROOT", "root outside the prefix in " .. $path) end
+end
+fn check_sources()
+  $history = load_data("tools/host-roots-history.conf.mix").paths
+  for $path in $history
+    if not starts_with($path, "provenance/") then raise("HOST_ROOT", "only provenance history may be exempt: " .. $path) end
+  end
+  for $path in lines(trim(run_argv_must(["git", "ls-files"])))
+    if shipped_unit($path) or (starts_with($path, "share/layout/") and ends_with($path, ".conf")) then
+      check_text($path, read_file($path))
+    end
+    if bundle_text($path) then check_text($path, read_file($path)) end
+  end
+  $layout = require("../share/layout/files.mix")
+  for $entry in $layout.entries("share/layout")
+    check_text($entry.source, read_file("share/layout/" .. $entry.source))
+  end
+end
+fn bundle_text($path)
+  if contains($path, "/tests/") or ends_with($path, "-test.mix") or ends_with($path, "_test.mix") then return false end
+  if not re_match($path, '\.(mix|mx|md|json|desktop)$') then return false end
+  if starts_with($path, "apps/") then
+    return not starts_with($path, "apps/gallery-reference/") and not contains($path, "/src/") and not contains($path, "/rust-core/") and not contains(["gate.mix", "capture-build.mix"], basename($path))
+  end
+  if starts_with($path, "share/") or starts_with($path, "libraries/viu/mix/") or starts_with($path, "engines/viud/scripts/") then return true end
+  for $svc in ["clipd", "notifyd", "exportd", "dlnad", "agentd", "peersd", "releasesd", "daylight"]
+    if starts_with($path, "services/" .. $svc .. "/scripts/") then return true end
+  end
+  return false
+end
+fn check_bundle($stage)
+  -- Read errors fail closed. Lossy UTF-8 keeps ASCII path spellings intact
+  -- even in binary assets, without requiring a worker-side grep program.
+  -- Asset symlinks point at real members, which are scanned separately.
+  for $path in walk($stage, {strict: true, follow_symlinks: false})
+    if stat($path, {follow_symlinks: false}).is_file then
+      check_text($path, bytes_to_string(read_file_bytes($path), {lossy: true}))
+    end
+  end
+end

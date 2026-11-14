@@ -1,0 +1,304 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.4.0
+-- Workspace-unified default features; normal + build edges on rustc's host.
+-- Dev edges/other targets are excluded. The foreign gate retains its separate
+-- all-features/all-target admission checks.
+-- The CBC guard prevents accidental runs; it is not local-attacker authentication.
+$job = env("CBC_BUILD_JOB", "")
+if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") or $job == "" or not re_match($job, '^[A-Za-z0-9_-]+$') or not is_file("/build/.cbc-logs/" .. $job .. ".claim") then
+  raise("CBC_ONLY", "run through cbc-build with its CBC_BUILD_JOB environment and job claim")
+end
+
+fn capture($argv)
+  return run_argv_must($argv, {timeout: 1800, max_output: 256000000})
+end
+
+fn git_capture($argv)
+  return run_argv_must($argv, {timeout: 120, max_output: 1048576})
+end
+
+fn package_id($id, $from, $to)
+  -- Relocate only this checkout's path sources. Retain the complete Cargo ID:
+  -- source URL/revision/path, name and version; distinct paths stay distinct.
+  $prefix = "path+file://" .. $from .. "/"
+  $exact = "path+file://" .. $from .. "#"
+  if starts_with($id, $exact) then
+    return "path+file://" .. $to .. "#" .. slice($id, len($exact))
+  end
+  if starts_with($id, $prefix) then
+    return "path+file://" .. $to .. "/" .. slice($id, len($prefix))
+  end
+  return $id
+end
+
+fn reachable($doc, $engine, $from, $to)
+  $roots = []
+  for $p in $doc.packages
+    if $p.name == $engine and contains($doc.workspace_members, $p.id) then push($roots, $p.id) end
+  end
+  if len($roots) != 1 then raise("GRAPH_ROOT", $engine .. ": expected one workspace package") end
+  $nodes = {}
+  for $node in $doc.resolve.nodes $nodes[$node.id] = $node.deps end
+  $todo = $roots
+  $seen = {}
+  $ids = {}
+  $i = 0
+  while $i < len($todo)
+    $id = $todo[$i]
+    $i = $i + 1
+    if not has_key($seen, $id) then
+      if not has_key($nodes, $id) then raise("GRAPH_NODE", "missing resolved node: " .. $id) end
+      $seen[$id] = true
+      $ids[package_id($id, $from, $to)] = true
+      for $dep in $nodes[$id]
+        $follow = false
+        for $kind in $dep.dep_kinds
+          if $kind.kind == nil or $kind.kind == "build" then $follow = true end
+        end
+        if $follow then push($todo, $dep.pkg) end
+      end
+    end
+  end
+  return $ids
+end
+
+fn compare_graphs($engine, $before, $now, $allowed)
+  if not has_key($now, $allowed) then
+    raise("GRAPH_POSITIVE_CONTROL", $engine .. ": workspace-unified head must reach " .. $allowed)
+  end
+  for $id in sort(keys($now))
+    if not has_key($before, $id) and $id != $allowed then raise("ENGINE_GRAPH_CHANGED", $engine .. ": added " .. $id) end
+  end
+  for $id in sort(keys($before))
+    if not has_key($now, $id) then raise("ENGINE_PACKAGE_REMOVED", $engine .. ": removed " .. $id) end
+  end
+end
+
+fn expect_refusal($label, $before, $now, $allowed, $code)
+  $caught = false
+  try
+    compare_graphs("control", $before, $now, $allowed)
+  catch $message, $error
+    if $error.code != $code then raise("GRAPH_CONTROL", $label .. ": wrong refusal: " .. $error.code) end
+    $caught = true
+  end
+  if not $caught then raise("GRAPH_CONTROL", $label .. ": audit accepted the negative control") end
+  print("NEGATIVE_CONTROL " .. $label .. " REFUSED " .. $code)
+end
+
+fn check_controls($allowed)
+  expect_refusal("missing-const-oid", {}, {}, $allowed, "GRAPH_POSITIVE_CONTROL")
+  for $source in ["git+https://example.invalid/oid?rev=123#123#const-oid@0.10.3", "path+file:///example/oid#const-oid@0.10.3"]
+    $now = {}
+    $now[$allowed] = true
+    $now[$source] = true
+    expect_refusal("alternate-source " .. $source, {}, $now, $allowed, "ENGINE_GRAPH_CHANGED")
+  end
+  $fixture = {workspace_members: ["root"], packages: [{name: "mix", id: "root"}],
+    resolve: {nodes: [
+      {id: "root", deps: [{pkg: $allowed, dep_kinds: [{kind: nil}]},
+        {pkg: "build-only", dep_kinds: [{kind: "build"}]},
+        {pkg: "dev-only", dep_kinds: [{kind: "dev"}]}]},
+      {id: $allowed, deps: []}, {id: "build-only", deps: []}, {id: "dev-only", deps: []}]}}
+  $now = reachable($fixture, "mix", "/base", "/head")
+  if not has_key($now, "build-only") or has_key($now, "dev-only") then raise("GRAPH_CONTROL", "wrong edge selection") end
+  expect_refusal("build-edge", {root: true}, $now, $allowed, "ENGINE_GRAPH_CHANGED")
+  if package_id("path+file:///base/one#same@1", "/base", "/head") != "path+file:///head/one#same@1" or package_id("path+file:///base-two/one#same@1", "/base", "/head") != "path+file:///base-two/one#same@1" then
+    raise("GRAPH_CONTROL", "path identity relocation escaped its checkout boundary")
+  end
+  if package_id("path+file:///base#same@1", "/base", "/head") != "path+file:///head#same@1" or package_id("path+file:///base-two#same@1", "/base", "/head") != "path+file:///base-two#same@1" then
+    raise("GRAPH_CONTROL", "exact-root path identity relocation escaped its checkout boundary")
+  end
+  print("PATH_ID_CONTROL exact-root and descendant relocation PASS; sibling roots unchanged")
+end
+
+fn metadata($root, $target)
+  -- No -p selection: resolve every workspace member together.
+  return json_parse(run_argv_must(["cargo", "metadata", "--locked", "--format-version", "1",
+    "--filter-platform", $target, "--manifest-path", $root .. "/Cargo.toml"],
+    {cwd: $root, timeout: 1800, max_output: 256000000}))
+end
+
+-- Never raise from a cleanup command, including a spawn/runtime failure.
+fn cleanup_step($argv)
+  try
+    return run_argv($argv, {timeout: 120, max_output: 1048576})
+  catch $message
+    return {ok: false, exit_code: nil, stderr: $message, timed_out: false}
+  end
+end
+
+fn cleanup_note($failures, $step, $result)
+  if not $result.ok then
+    push($failures, {step: $step, exit_code: $result.exit_code,
+      timed_out: $result.timed_out, detail: trim(($result.stderr ?? "") .. "\n" .. ($result.error ?? ""))})
+  end
+  return $failures
+end
+
+fn is_registered($listing, $path)
+  return $listing.ok and contains(split($listing.stdout ?? "", "\n"), "worktree " .. $path)
+end
+
+fn cleanup_paths($scratch, $base_root, $remove_failure_control)
+  $failures = []
+  $listing = cleanup_step(["git", "worktree", "list", "--porcelain"])
+  -- Registration can survive a partially failed add even without a directory.
+  -- This first query is informational. A failed query neither fails cleanup
+  -- nor invents a registration; prune and the final query still verify it.
+  $had_directory = exists($base_root)
+  if $had_directory or is_registered($listing, $base_root) then
+    $argv = ["git", "worktree", "remove", "--force", $base_root]
+    if $remove_failure_control then
+      -- A real Git failure before removal; the retry still cleans this own tree.
+      $argv = concat($argv, ["--mcp-graph-cleanup-failure-control"])
+    end
+    $removed = cleanup_step($argv)
+    -- A missing directory can make remove refuse a stale registration. Prune
+    -- is its recovery step; the final query determines whether recovery worked.
+    if $had_directory or $remove_failure_control then
+      $failures = cleanup_note($failures, "worktree-remove", $removed)
+      if not $removed.ok then
+        $failures = cleanup_note($failures, "worktree-remove-retry",
+          cleanup_step(["git", "worktree", "remove", "--force", $base_root]))
+      end
+    end
+  end
+  $failures = cleanup_note($failures, "worktree-prune", cleanup_step(["git", "worktree", "prune"]))
+  -- This path is an exclusively created 0700 directory owned by this case.
+  $failures = cleanup_note($failures, "scratch-remove", cleanup_step(["rm", "-rf", "--", $scratch]))
+  $listing = cleanup_step(["git", "worktree", "list", "--porcelain"])
+  $failures = cleanup_note($failures, "worktree-list-after", $listing)
+  if is_registered($listing, $base_root) then
+    push($failures, {step: "worktree-leftover", detail: $base_root})
+  end
+  if exists($scratch) then push($failures, {step: "scratch-leftover", detail: $scratch}) end
+  return $failures
+end
+
+fn add_base($base_root, $base, $mode)
+  git_capture(["git", "worktree", "add", "--detach", $base_root, $base])
+  if $mode == "half-registered" then
+    run_argv_must(["rm", "-rf", "--", $base_root], {timeout: 120})
+    $listing = git_capture(["git", "worktree", "list", "--porcelain"])
+    if exists($base_root) or not contains(split($listing, "\n"), "worktree " .. $base_root) then
+      raise("GRAPH_CONTROL", "half-registered fixture did not retain only the registration")
+    end
+    -- Raise before add_base returns, so a caller's add-succeeded flag cannot
+    -- be set. The directory is absent while Git still owns the registration.
+    raise("CONTROL_HALF_REGISTERED", "confirmed registration present and directory absent before add returned")
+  end
+end
+
+fn run_case($root, $base, $head, $target, $allowed, $mode)
+  $scratch = "/var/tmp/mcp-graph-" .. uuid()
+  run_argv_must(["mkdir", "-m", "0700", "--", $scratch], {timeout: 120})
+  $base_root = $scratch .. "/base"
+  $verdict = {label: $mode, ok: true, code: nil, message: nil}
+  $failures = []
+  try
+    add_base($base_root, $base, $mode)
+    if $mode == "add-failure" then
+      -- Separate control for a complete tree followed by a setup failure.
+      raise("CONTROL_ADD_FAILED", "injected failure after worktree registration")
+    end
+    if $mode == "audit" then
+      $before_doc = metadata($base_root, $target)
+      $head_doc = metadata($root, $target)
+      print("GRAPH_WORKSPACE_MEMBERS " .. json_encode({base: len($before_doc.workspace_members), head: len($head_doc.workspace_members)}))
+      for $engine in ["mix", "mix-shell"]
+        $before = reachable($before_doc, $engine, $base_root, $root)
+        $now = reachable($head_doc, $engine, $root, $root)
+        compare_graphs($engine, $before, $now, $allowed)
+        if has_key($before, $allowed) then print("POSITIVE_CONTROL_TRIVIAL " .. $engine .. " base already reaches " .. $allowed) end
+        print("POSITIVE_CONTROL " .. $engine .. " REACHES " .. $allowed)
+        for $id in sort(keys($now))
+          print("HEAD_PACKAGE " .. $engine .. " " .. $id)
+          if not has_key($before, $id) then print("WORKSPACE_ADDED " .. $engine .. " " .. $id) end
+        end
+        for $id in sort(keys($before)) print("BASE_PACKAGE " .. $engine .. " " .. $id) end
+        print("WORKSPACE_GRAPH_OK " .. $engine .. " normal,build " .. $target)
+      end
+      print(capture(["cargo", "tree", "--locked", "--workspace", "--target", $target, "-e", "normal,build,dev", "-i", "const-oid@0.10.3"]))
+      print(capture(["cargo", "tree", "--locked", "--workspace", "--target", $target, "-e", "normal,build,dev", "-i", "rmcp"]))
+    end
+    if trim(git_capture(["git", "rev-parse", "HEAD"])) != $head then raise("GRAPH_HEAD", "CBC checkout moved") end
+  catch $message, $error
+    $verdict = {label: $mode, ok: false, code: $error.code, message: $message}
+  finally
+    $failures = cleanup_paths($scratch, $base_root, $mode == "remove-failure")
+  end
+  -- Cleanup output is captured above, never raised. Preserve the audit's
+  -- verdict and print it BEFORE reporting any cleanup failures.
+  print("AUDIT_VERDICT " .. json_encode($verdict))
+  for $failure in $failures
+    print("CLEANUP_FAILURE " .. json_encode({label: $mode, failure: $failure}))
+  end
+  if len($failures) == 0 then print("GRAPH_CLEANUP_OK " .. $mode .. " CBC checkout unchanged; base worktree and scratch removed") end
+  return {verdict: $verdict, cleanup_failures: len($failures), scratch: $scratch, base_root: $base_root,
+    exit_code: if $verdict.ok and len($failures) == 0 then 0 else 1 end}
+end
+
+fn check_cleanup_controls()
+  for $mode in ["add-failure", "half-registered", "remove-failure"]
+    -- A control child has at most 15 sequential 120-second commands (three
+    -- identity reads, mkdir/add, fixture removal/list, HEAD check and cleanup).
+    -- 2400 seconds exceeds that 1800-second bound with scheduling headroom.
+    $r = run_argv([realpath("/proc/self/exe"), script_path(), "--cleanup-control", $mode],
+      {timeout: 2400, max_output: 2097152})
+    print($r.stdout)
+    if $r.exit_code != 1 or not starts_with($r.stdout, "AUDIT_VERDICT ") then
+      raise("GRAPH_CONTROL", $mode .. ": expected nonzero exit with preserved verdict first: " .. $r.stderr)
+    end
+    $report = nil
+    for $line in split($r.stdout, "\n")
+      if starts_with($line, "CASE_RESULT ") then $report = json_parse(slice($line, len("CASE_RESULT "))) end
+    end
+    if $report == nil then raise("GRAPH_CONTROL", $mode .. ": missing case result") end
+    if $mode == "add-failure" or $mode == "half-registered" then
+      $expected = if $mode == "half-registered" then "CONTROL_HALF_REGISTERED" else "CONTROL_ADD_FAILED" end
+      if $report.verdict.ok or $report.verdict.code != $expected or $report.cleanup_failures != 0 or contains($r.stdout, "CLEANUP_FAILURE ") then
+        raise("GRAPH_CONTROL", "post-registration failure was masked or leaked")
+      end
+    else
+      if not $report.verdict.ok or $report.cleanup_failures != 1 or not contains($r.stdout, "CLEANUP_FAILURE ") then
+        raise("GRAPH_CONTROL", "cleanup failure replaced the passing audit verdict or did not fail exit status")
+      end
+    end
+    $listing = git_capture(["git", "worktree", "list", "--porcelain"])
+    if exists($report.scratch) or contains(split($listing, "\n"), "worktree " .. $report.base_root) then
+      raise("GRAPH_CONTROL", $mode .. ": leftover worktree registration or scratch")
+    end
+    print("CLEANUP_CONTROL " .. $mode .. " PASS verdict-first; exit=1; no registration or scratch remains")
+  end
+end
+
+$root = realpath(trim(git_capture(["git", "rev-parse", "--show-toplevel"])))
+$head = trim(git_capture(["git", "rev-parse", "HEAD"]))
+$base = trim(git_capture(["git", "merge-base", "HEAD", "origin/main"]))
+$allowed = "registry+https://github.com/rust-lang/crates.io-index#const-oid@0.10.3"
+$a = args()
+if len($a) != 0 then
+  if len($a) != 2 or $a[0] != "--cleanup-control" or not contains(["add-failure", "half-registered", "remove-failure"], $a[1]) then
+    raise("USAGE", "mcp_graph.mix [--cleanup-control add-failure|half-registered|remove-failure]")
+  end
+  $case = run_case($root, $base, $head, nil, $allowed, $a[1])
+  print("CASE_RESULT " .. json_encode($case))
+  exit($case.exit_code)
+end
+
+$guard_probe = run_argv([realpath("/proc/self/exe"), script_path()], {env: {CBC_BUILD_JOB: ""}, timeout: 30})
+if $guard_probe.exit_code == 0 or not contains($guard_probe.stderr, "CBC_ONLY") then
+  raise("GRAPH_CONTROL", "missing CBC_BUILD_JOB did not trigger the CBC guard")
+end
+print("GUARD_CONTROL missing-CBC_BUILD_JOB REFUSED CBC_ONLY")
+$host = re_find(capture(["rustc", "-vV"]), '(?m)^host: (\S+)$')
+if len($host) != 1 then raise("GRAPH_TARGET", "cannot determine rustc host triple") end
+$target = $host[0].groups[0]
+check_controls($allowed)
+check_cleanup_controls()
+print("GRAPH_CONTEXT " .. json_encode({job: $job, base: $base, head: $head, target: $target,
+  features: "workspace defaults unified", edges: ["normal", "build"], dev_edges: false}))
+$result = run_case($root, $base, $head, $target, $allowed, "audit")
+exit($result.exit_code)
