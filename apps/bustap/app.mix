@@ -6,6 +6,7 @@ $view=require("view.mix")
 $actions=require("actions.mix")
 $state=$core.initial();$ctx=viu_context()
 fn publish_bustap($s)
+  if $s.window_close then $s=close_observer($s) end
   $model=$view.project($s)
   if not deep_eq($model,$s.last_model) then
     send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
@@ -15,9 +16,17 @@ fn publish_bustap($s)
 end
 fn stop_observer($id)
   try
-    send "noded" "noded.observe.stop" body={subscription_id:$id} timeout=2
+    send "noded" "noded.observe.stop" body={subscription_id:$id} timeout=1
     return $rc==0
   catch $why return false end
+end
+fn close_observer($s)
+  if $s.close_stopped!=true and $s.subscription_id!=nil then
+    $s.close_stopped=true
+    $stopped=stop_observer($s.subscription_id)
+    if $stopped then $s.subscription_id=nil end
+  end
+  return $s
 end
 fn start_observer($s,$filter)
   $s.retry_at=time()+2
@@ -28,13 +37,14 @@ fn start_observer($s,$filter)
     if $rc==0 then $started=$reply end
   catch $why $started=nil end
   if type($started)!="map" or type($started.subscription_id)!="string" then
-    $s.error=if $core.stop_warning($s) then "Retired subscriptions could not be stopped; observation subscription refused" else "Observation subscription refused" end;$s.status="Unavailable"
+    $s.error=if $core.stop_warning($s) then "Retired subscriptions could not be stopped; observation subscription refused" else "Observation subscription refused" end
+    if $s.subscription_id==nil then $s.status="Unavailable" end
     return {state:$s,ok:false}
   end
   $old=$s.subscription_id
   if $old!=nil then $s.retired[$old]={cursor:$s.drop_cursor,seq:$s.last_seq,live:true} end
   $s.subscription_id=$started.subscription_id
-  $s.filter=$filter;$s.drop_cursor=0;$s.last_seq=0;$s.pending={};$s.unmatched_replies={};$s.status="Live"
+  $s.filter=$filter;$s.drop_cursor=0;$s.last_seq=0;$s= $core.reset_pairings($s);$s.status="Live"
   if $old!=nil then
     if stop_observer($old) then $s.retired[$old].live=false end
   end
@@ -56,15 +66,16 @@ on noded.observe.event
 end
 on viu.tick
   $now=time();$state=$core.tick_rate($state,$now)
-  if $core.retry_due($state,$now) then $out=start_observer($state,$state.filter);$state=$out.state end
-  if $state.connected and $now>=$state.stop_retry_at then
+  $starting=$core.retry_due($state,$now)
+  if $starting then $out=start_observer($state,$state.filter);$state=$out.state end
+  if not $starting and $state.connected and $now>=$state.stop_retry_at then
     $state.stop_retry_at=$now+2
     $batch=$core.stop_batch($state);$state=$batch.state
     for $id in $batch.ids
       if stop_observer($id) then $state.retired[$id].live=false end
     end
     if $core.stop_warning($state) then $state.error="Retired subscriptions could not be stopped"
-    elif $state.subscription_id!=nil then $state.error=nil end
+    elif $state.subscription_id!=nil and $state.status=="Live" then $state.error=nil end
   end
   $state=publish_bustap($state)
 end

@@ -89,6 +89,11 @@ fn observation(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, id: &str, seq: u6
     runtime.notify_with_headers("noded.observe.event".into(), json!({"seq":seq,"ts":"2026-11-15T01:02:03.000Z","message_type":"request","from":null,"to":"example","command":"example.ping","size":42,"direction":"local","outcome":"rejected","rc":10,"dropped_count":drops}), [("subscription_id".into(),id.into())].into()).unwrap();
     assert!(done(runtime, rx).reply.is_none());
 }
+fn named_frame(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, sub: &str, seq: u64, kind: &str, id: &str) {
+    let request = kind == "request";
+    runtime.notify_with_headers("noded.observe.event".into(), json!({"seq":seq,"ts":"2026-11-15T01:02:03.000Z","message_type":kind,"from":if request {"client"} else {"example"},"to":if request {"example"} else {"client"},"command":"example.ping","correlation_id":id,"rc":0,"size":42,"direction":"local","outcome":"delivered","dropped_count":0}), [("subscription_id".into(),sub.into())].into()).unwrap();
+    done(runtime, rx);
+}
 #[test]
 fn pure_mix_policy_contracts() {
     let (tx, rx) = mpsc::channel();
@@ -130,7 +135,7 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     .unwrap();
     // Deterministic clock for the real tick/retry handlers, no wall-clock sleeps.
     bundle.program.source = format!(
-        "$test_now=100\n{}\non test.clock\n $test_now=$event.args.now\nend\n",
+        "$test_now=100\n{}\non test.clock\n $test_now=$event.args.now\nend\non test.orphan\n $state.retired.orphan={{cursor:0,seq:0,live:true}}\nend\n",
         bundle.program.source.replace("time()", "$test_now")
     );
     runtime.load(bundle.program).unwrap();
@@ -166,6 +171,11 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     assert_eq!(stats["filter"]["services"], json!(["example"]));
     assert_eq!(stats["subscription_id"], "observe-2");
     assert!(!stats["error"].is_null());
+    assert_eq!(stats["status"], "Live");
+    event(&mut runtime, &rx, "viu.tick", json!({}));
+    let s = snapshot_stats(&mut runtime, &rx);
+    assert_eq!(s["status"], "Live");
+    assert!(s["error"].is_null());
     event(&mut runtime, &rx, "bus.disconnected", json!({}));
     keep.lock().unwrap().refused = false;
     event(&mut runtime, &rx, "bus.connected", json!({}));
@@ -239,17 +249,32 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     clock(&mut runtime, &rx, 101);
     event(&mut runtime, &rx, "viu.tick", json!({}));
     assert_eq!(keep.lock().unwrap().calls.len(), calls);
+    let refused = snapshot_stats(&mut runtime, &rx);
+    assert_eq!(refused["status"], "Unavailable");
+    assert!(!refused["error"].is_null());
     keep.lock().unwrap().refused = false;
+    event(&mut runtime, &rx, "test.orphan", json!({}));
     clock(&mut runtime, &rx, 102);
+    let before_retry = keep.lock().unwrap().calls.len();
     event(&mut runtime, &rx, "viu.tick", json!({}));
+    assert_eq!(keep.lock().unwrap().calls.len(), before_retry + 1, "start retry skips stop batch");
     let s = snapshot_stats(&mut runtime, &rx);
     assert_eq!(s["subscription_id"], "observe-4");
     assert_eq!(s["status"], "Live");
-    assert!(s["error"].is_null());
+    assert!(s["error"].as_str().unwrap().contains("could not be stopped"));
     assert_eq!(
         keep.lock().unwrap().calls.last().unwrap().1["body"]["filter"]["services"],
         json!(["queued"])
     );
+    clock(&mut runtime, &rx, 103);
+    let before_stops = keep.lock().unwrap().calls.len();
+    event(&mut runtime, &rx, "viu.tick", json!({}));
+    {
+        let s = keep.lock().unwrap();
+        assert_eq!(s.calls.len(), before_stops + 1);
+        assert_eq!(s.calls.last().unwrap().0, "noded.observe.stop");
+        assert_eq!(s.calls.last().unwrap().1["timeout"], 1);
+    }
 
     // Several failed stops survive further replacements and report late loss.
     keep.lock().unwrap().stop_refused = true;
@@ -285,7 +310,9 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     );
     keep.lock().unwrap().stop_refused = false;
     clock(&mut runtime, &rx, 106);
+    let before_stops = keep.lock().unwrap().calls.len();
     event(&mut runtime, &rx, "viu.tick", json!({}));
+    assert_eq!(keep.lock().unwrap().calls.len(), before_stops + 2, "at most two stops per tick");
     assert!(snapshot_stats(&mut runtime, &rx)["error"].is_null());
     // Stopped subscriptions retain their cursor for already queued frames.
     observation(&mut runtime, &rx, "observe-4", 2, 7);
@@ -302,4 +329,43 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
             .model
             .is_none()
     );
+    // Replacement and clear preserve ambiguity; queued retired replies poison
+    // existing or future pairings without adding traffic rows.
+    event(&mut runtime, &rx, "bustap.pause", json!({"on":false}));
+    event(&mut runtime, &rx, "bustap.filter", json!({"services":[],"text":"","hide":[]}));
+    let old = snapshot_stats(&mut runtime, &rx)["subscription_id"].as_str().unwrap().to_owned();
+    named_frame(&mut runtime, &rx, &old, 1, "request", "first");
+    named_frame(&mut runtime, &rx, &old, 2, "request", "first");
+    event(&mut runtime, &rx, "bustap.filter", json!({"services":["example"]}));
+    let current = snapshot_stats(&mut runtime, &rx)["subscription_id"].as_str().unwrap().to_owned();
+    named_frame(&mut runtime, &rx, &current, 1, "request", "first");
+    named_frame(&mut runtime, &rx, &current, 2, "response", "first");
+    let rows = event(&mut runtime, &rx, "bustap.rows", json!({"limit":1})).reply.unwrap().body;
+    assert!(rows["rows"][0]["latency_ms"].is_null());
+    event(&mut runtime, &rx, "bustap.clear", json!({}));
+    let before = snapshot_stats(&mut runtime, &rx)["seen"].clone();
+    named_frame(&mut runtime, &rx, &old, 3, "response", "second");
+    assert_eq!(snapshot_stats(&mut runtime, &rx)["seen"], before);
+    for (seq, kind, id) in [(3,"request","first"),(4,"response","first"),(5,"request","second"),(6,"response","second")] {
+        named_frame(&mut runtime, &rx, &current, seq, kind, id);
+    }
+    let rows = event(&mut runtime, &rx, "bustap.rows", json!({})).reply.unwrap().body;
+    assert!(rows["rows"][1]["latency_ms"].is_null());
+    assert!(rows["rows"][3]["latency_ms"].is_null());
+
+    for (name, args) in [("bustap.execute",json!({"id":"file.quit"})),("viu.frame.intent",json!({"value":{"command":"file.quit"}})),("viu.frame.close",json!({}))] {
+        let bundle = Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/bustap"), &[]).unwrap();
+        runtime.load(bundle.program).unwrap();
+        done(&runtime, &rx);
+        event(&mut runtime, &rx, "bus.connected", json!({}));
+        let sub = snapshot_stats(&mut runtime, &rx)["subscription_id"].clone();
+        // A refused best-effort close must still publish window_close.
+        keep.lock().unwrap().stop_refused = name == "viu.frame.close";
+        let result = event(&mut runtime, &rx, name, args);
+        assert_eq!(result.model.unwrap()["window_close"], true);
+        let s = keep.lock().unwrap();
+        assert_eq!(s.calls.last().unwrap().0, "noded.observe.stop");
+        assert_eq!(s.calls.last().unwrap().1["body"]["subscription_id"], sub);
+        assert_eq!(s.calls.last().unwrap().1["timeout"], 1);
+    }
 }

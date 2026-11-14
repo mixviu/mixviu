@@ -15,7 +15,8 @@ View > Show hidden services restores them. Own traffic is hidden initially.
 The service summary counts observed messages before display filtering. Own
 frames contribute only broker loss unless Show own traffic is enabled; the
 same predicate governs rows, totals, rate and service counts. Scene models are
-published only when their projection changes.
+published only when their projection changes. The summary shows the top eight
+services by count, with alphabetical ties. Evicting a selected row clears selection.
 
 ## Feed and subscription
 
@@ -29,10 +30,16 @@ It consumes `noded.observe.event` metadata without replying to events:
 
 Changing broker filters starts the replacement before stopping the previous
 subscription. Refusal preserves the previous filter and reports an error.
+If the old subscription is live, a refused replacement keeps Live status.
+Successful replacement discards pending latency measurements, seeding their keys
+into ambiguity tombstones. Clear also preserves these tombstones. Tick expiry
+removes them after 30 seconds; queued retired replies can poison current pairings.
 Disconnect clears the subscription and pairings; reconnect subscribes again.
 Refused connection subscriptions retry on tick at most once every two seconds.
 Display filter edits always apply locally; broker filter edits made while
 disconnected are stored for reconnect without changing the disconnected status.
+Closing or quitting attempts to stop the current subscription (best effort,
+one-second timeout). noded also reaps all subscriptions with their connection.
 Loss is cumulative within a subscription, added to a lifetime total and always
 shown, including while paused or filtered. Replacement resets the loss baseline.
 Models update at 250 ms intervals, rather than once for every observation.
@@ -65,13 +72,14 @@ reuse the same caller name; broker connection identity is a follow-up, outside
 this app. There is no mesh-wide aggregation.
 
 Pending pairs and reply tombstones are each capped at 4,096; expiry sweeps run
-on tick. Service counters are capped at 256 names plus an
-overflow bucket. Paused messages are intentionally omitted, not broker loss.
+on tick. Service counters are capped at 256 keys total: 255 service names plus
+an overflow bucket. Paused messages are intentionally omitted, not broker loss.
 Filter handover retains up to 64 retired subscription records with independent
-loss and sequence cursors. Failed stops retry on tick (up to four every two
-seconds), and the warning persists until all stops succeed. Only stopped entries
+loss and sequence cursors. Failed stops retry on tick (up to two every two
+seconds, one-second timeout each); a tick that retries a start skips the stop
+batch. The warning persists until all stops succeed. Only stopped entries
 can be evicted at the cap; replacement is refused if all 64 are still live.
-Queued retired frames account loss without adding rows. Every subscription
+Queued retired frames account loss and pairing ambiguity without adding rows. Every subscription
 deduplicates by sequence before accounting; new subscriptions reset the sequence.
 The broker always stamps `subscription_id` in the event header; headerless and
 unknown notifications are ignored. Local row IDs survive broker sequence restarts.
@@ -83,3 +91,6 @@ shared grid adds only `stick_to_bottom` and row `tone:"danger"` rendering.
 Run `mix apps/bustap/core-test.mix` for pure policy checks. The Viu `app_ports`
 test draws the actual scene offscreen; the `bustap` hosted runtime test checks
 subscription, reconnect, filter refusal and Bus controls with a fake broker.
+Capacity tests inject small internal limits into the same policy branches and
+assert the production defaults. This exercises full, overflow and expiry cases
+without thousands of copy-heavy test events or increased harness deadlines.
