@@ -843,7 +843,15 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
         client.close().await;
         anyhow::bail!(error.message);
     }
-    let result = run_loop(binding, &client, incoming, projections, status, fetch_timeout).await;
+    let result = run_loop(
+        binding,
+        &client,
+        incoming,
+        projections,
+        status,
+        fetch_timeout,
+    )
+    .await;
     // run_loop has dropped every parked writer before teardown takes the socket
     // lock. A deadline alone cannot release a lock owned by an unpolled future.
     let _ = tokio::time::timeout(DEREGISTER_TIMEOUT, client.deregister()).await;
@@ -866,10 +874,7 @@ async fn run_loop<I: CommandSource>(
     let mut lane = Lane::default();
     loop {
         if reply.is_none() {
-            reply = lane
-                .replies
-                .pop_front()
-                .map(|reply| client.reply(reply));
+            reply = lane.replies.pop_front().map(|reply| client.reply(reply));
         }
         // Sample INITIAL state and every generation before waiting for edges.
         // Follow::connected deduplicates already processed generations.
@@ -892,11 +897,7 @@ async fn run_loop<I: CommandSource>(
                     status::update(&status, |s| s.authority_reads += 1);
                 }
                 Job {
-                    future: client.work(
-                        work.clone(),
-                        follow.binding().clone(),
-                        fetch_timeout,
-                    ),
+                    future: client.work(work.clone(), follow.binding().clone(), fetch_timeout),
                     work,
                 }
             });
@@ -1091,7 +1092,12 @@ mod tests {
             let (tx, mut projections) = mpsc::channel(1);
             let status = status::shared();
             let mut feed = Box::pin(run_loop(
-                binding(), &io, incoming, tx, status.clone(), FETCH_TIMEOUT,
+                binding(),
+                &io,
+                incoming,
+                tx,
+                status.clone(),
+                FETCH_TIMEOUT,
             ));
             assert!(futures_util::poll!(feed.as_mut()).is_pending());
             assert!(io.writer.try_lock().is_err(), "request owns writer");
@@ -1136,12 +1142,15 @@ mod tests {
             io.answer.add_permits(1);
             assert!(futures_util::poll!(feed.as_mut()).is_pending());
             if diagnostic {
-                assert_eq!(status::report(&status)["portal"]["settings_fault"], "scripted read failure");
+                assert_eq!(
+                    status::report(&status)["portal"]["settings_fault"],
+                    "scripted read failure"
+                );
             } else {
                 assert_eq!(projections.try_recv().unwrap().revision, Revision(1));
             }
             assert_eq!(wire.lock().unwrap().replies, ["1"]);
-            io.release_bytes(5);
+            io.release_bytes(6);
             assert!(futures_util::poll!(feed.as_mut()).is_pending());
             assert_eq!(wire.lock().unwrap().bytes, b"get;reply-1;");
             assert_eq!(wire.lock().unwrap().replies, ["1", "2"]);
@@ -1150,8 +1159,14 @@ mod tests {
             assert!(futures_util::poll!(feed.as_mut()).is_pending());
             assert_eq!(wire.lock().unwrap().bytes, b"get;reply-1;re");
             drop(injector);
-            assert!(matches!(futures_util::poll!(feed.as_mut()), std::task::Poll::Ready(Ok(()))));
-            assert!(io.writer.try_lock().is_ok(), "loop exit drops parked writer before teardown");
+            assert!(matches!(
+                futures_util::poll!(feed.as_mut()),
+                std::task::Poll::Ready(Ok(()))
+            ));
+            assert!(
+                io.writer.try_lock().is_ok(),
+                "loop exit drops parked writer before teardown"
+            );
         }
     }
 
