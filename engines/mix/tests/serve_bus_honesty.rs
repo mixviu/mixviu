@@ -263,6 +263,71 @@ task_start("probe_emits", json_encode({}))
 "#;
 
 #[tokio::test]
+async fn body_collections_round_trip_from_scripts_shell_input_and_serve() {
+    let _g = lock().await;
+    let dir = Dir::new("body-json");
+    let broker = Broker::start();
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let receiver = dir.write("svc.mix", r#"-- version: 0.1.0
+on rel.state
+  reply("ok")
+end
+on probe.args
+  reply({args: $event.args, body: $event.body})
+end
+on probe.relay async
+  $body = {params: {}, services: ["term"]}
+  send honest-probe probe.args body=$body
+  reply($result)
+end
+"#);
+    let _citizen = Citizen::spawn(
+        Path::new(env!("CARGO_BIN_EXE_mix")), &dir, &node_conf, &receiver,
+    );
+    let c = connect(&broker).await;
+    wait_service(&c, HARD).await;
+    let expected = json!({"args": {"params": {}, "services": ["term"]},
+        "body": r#"{"params":{},"services":["term"]}"#});
+    assert_eq!(call(&c, "probe.relay", json!({})).await.unwrap(), expected);
+
+    let source = r#"$body = {params: {}, services: ["term"]}
+send honest-probe probe.args body={params: {}, services: ["term"]}
+print(json_encode($result))
+send honest-probe probe.args body=$body
+print(json_encode($result))
+send honest-probe probe.args body=merge($body, {})
+print(json_encode($result))
+send honest-probe probe.args body=[{}, "term"]
+print(json_encode($result))
+send honest-probe probe.args body=" {\"raw\":true} "
+print(json_encode($result))
+"#;
+    let sender = dir.write("sender.mix", source);
+    for shell_input in [false, true] {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
+        cmd.arg("--no-prelude");
+        if shell_input {
+            cmd.args(["-c", source]);
+        } else {
+            cmd.arg(&sender);
+        }
+        let out = cmd.env("HOME", &dir.0)
+            .env("MIX_NODE_CONFIG", &node_conf)
+            .env("MIX_NODED_URL", &broker.url)
+            .env("MIX_STATS", "off")
+            .env_remove("MIX_SESSION_FD")
+            .env_remove("COSMIX_SESSION_FD")
+            .stdin(Stdio::null()).output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{stdout}\n{}", String::from_utf8_lossy(&out.stderr));
+        let values: Vec<Value> = stdout.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(values, vec![expected.clone(), expected.clone(), expected.clone(),
+            json!({"args": [{}, "term"], "body": r#"[{},"term"]"#}),
+            json!({"args": {"raw": true}, "body": " {\"raw\":true} "})]);
+    }
+}
+
+#[tokio::test]
 async fn connection_events_order_broker_loss_reconnect_and_clean_quit() {
     let _g = lock().await;
     let dir = Dir::new("connection-events");

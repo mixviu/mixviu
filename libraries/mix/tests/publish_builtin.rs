@@ -82,6 +82,35 @@ fn map_str(args: &Value, key: &str) -> String {
 }
 
 #[tokio::test]
+async fn send_body_expressions_keep_their_value_until_the_bus_adapter() {
+    let (_, bus, _) = run_with_bus(
+        r#"
+$body = {services: ["term"], params: {}}
+send probe probe.args body={services: ["term"], params: {}}
+send probe probe.args body=$body
+send probe probe.args body=merge($body, {})
+send probe probe.args body=[{}, "term"]
+send probe probe.args body="{\"raw\": true}"
+"#,
+    )
+    .await;
+    let sends = bus.sends.borrow();
+    assert_eq!(sends.len(), 5);
+    let body = |i: usize| match &sends[i].2 {
+        Value::Map(args) => args["body"].clone(),
+        other => panic!("expected args map, got {other:?}"),
+    };
+    let expected = mix::json::json_to_mix(serde_json::json!({
+        "services": ["term"], "params": {}
+    }));
+    for i in 0..3 {
+        assert_eq!(body(i), expected);
+    }
+    assert_eq!(body(3), mix::json::json_to_mix(serde_json::json!([{}, "term"])));
+    assert_eq!(body(4), Value::String(r#"{"raw": true}"#.into()));
+}
+
+#[tokio::test]
 async fn publish_builds_the_wire_frame_and_routes_via_noded() {
     let src = "$rc_out = publish(\"comp.corner.entered\", \"{\\\"corner\\\":\\\"tl\\\"}\")\nprint($rc_out .. \"/\" .. $rc .. \"/\" .. $result)\n";
     let (_eval, bus, out) = run_with_bus(src).await;

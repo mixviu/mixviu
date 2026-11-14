@@ -1531,6 +1531,35 @@ async fn next_connection_change(
 #[cfg(all(test, feature = "serve"))]
 mod connection_events_tests {
     use super::*;
+
+    #[test]
+    fn body_collections_use_json_and_scalars_keep_their_wire_form() {
+        for (value, expected) in [
+            (json_to_value(&serde_json::json!({"params": {}, "services": ["term"]})),
+             r#"{"params":{},"services":["term"]}"#),
+            (json_to_value(&serde_json::json!([{}, [], "a\n\"b", 2])),
+             r#"[{},[],"a\n\"b",2]"#),
+            (Value::map(IndexMap::new()), "{}"),
+            (Value::list(vec![]), "[]"),
+            (Value::String(" {\"raw\": true}\n".into()), " {\"raw\": true}\n"),
+            (Value::Number(2.0), "2"),
+            (Value::Bool(true), "true"),
+            (Value::Nil, "nil"),
+        ] {
+            let args = IndexMap::from([
+                ("body".into(), value),
+                ("label".into(), Value::String("probe".into())),
+            ]);
+            let (headers, body) = split_headers_body(&args).unwrap();
+            assert_eq!(body, expected);
+            assert_eq!(headers, BTreeMap::from([("label".into(), "probe".into())]));
+        }
+        let args = IndexMap::from([(
+            "body".into(),
+            Value::list(vec![Value::Number(f64::INFINITY)]),
+        )]);
+        assert!(split_headers_body(&args).unwrap_err().to_string().contains("non-finite"));
+    }
     use std::{
         future::Future,
         pin::pin,
@@ -2105,7 +2134,23 @@ fn split_headers_body(
                         .to_string(),
                 });
             }
-            body = v.to_mix_string();
+            body = match v {
+                Value::Map(_) | Value::List(_) => {
+                    let json = mix::json::mix_to_json(v).map_err(|msg| {
+                        mix::error::MixError::RuntimeError {
+                            span: None,
+                            msg: format!("bus: body has no JSON form: {msg}"),
+                        }
+                    })?;
+                    serde_json::to_string(&json).map_err(|error| {
+                        mix::error::MixError::RuntimeError {
+                            span: None,
+                            msg: format!("bus: body has no JSON form: {error}"),
+                        }
+                    })?
+                }
+                _ => v.to_mix_string(),
+            };
             continue;
         }
         let header_val = match v {
