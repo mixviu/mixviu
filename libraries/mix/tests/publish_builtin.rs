@@ -100,11 +100,11 @@ send probe probe.args body="{\"raw\": true}"
         Value::Map(args) => args["body"].clone(),
         other => panic!("expected args map, got {other:?}"),
     };
-    let expected = mix::json::json_to_mix(serde_json::json!({
+    let expected = serde_json::json!({
         "services": ["term"], "params": {}
-    }));
+    });
     for i in 0..3 {
-        assert_eq!(body(i), expected);
+        assert_eq!(mix::json::mix_to_json(&body(i)).unwrap(), expected);
     }
     assert_eq!(body(3), mix::json::json_to_mix(serde_json::json!([{}, "term"])));
     assert_eq!(body(4), Value::String(r#"{"raw": true}"#.into()));
