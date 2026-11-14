@@ -25,6 +25,7 @@ mod tls_status;
 #[cfg(test)]
 mod transfer_tests;
 mod vhost_directory;
+mod vhost_secrets;
 mod vhosts_bootstrap;
 mod vhosts_namespace;
 
@@ -7169,7 +7170,13 @@ async fn async_main() -> Result<()> {
             let db_path = db_path.unwrap_or_else(|| var_dir.join("webd").join("web.db"));
 
             // Resolve config: CLI args override node.conf.mix
-            let node_cfg = config::node::load_node_config()?;
+            let mut node_cfg = config::node::load_node_config()?;
+            vhost_secrets::load(
+                node_cfg.as_mut().map(|c| &mut c.webd),
+                std::env::var_os("CREDENTIALS_DIRECTORY")
+                    .as_deref()
+                    .map(std::path::Path::new),
+            )?;
             let assets_dir = cli_assets_dir.or_else(|| {
                 node_cfg
                     .as_ref()
