@@ -92,11 +92,7 @@ fn a_send_after_a_failed_connect_follows_a_new_url() {
 #[test]
 fn a_send_after_a_broker_restart_reconnects() {
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let port = {
-        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        l.local_addr().unwrap().port()
-    };
-    let mut broker = Broker::with_tcp_port(port);
+    let mut broker = Broker::bounce_stable();
     let dir = tempfile::tempdir().unwrap();
     let sent = dir.path().join("sent");
     let go = dir.path().join("go");

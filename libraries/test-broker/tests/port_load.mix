@@ -1,0 +1,39 @@
+#!/opt/mixos/bin/mix
+-- version: 0.1.0
+-- Reproduce the fixture ownership load: 320 fresh processes, eight at a time.
+-- Run only on the build service, from the repository root.
+$targets = [
+  {package: "test-broker", target: "tcp_port", test: "owned_port_survives_bounces_and_stop_is_offline"},
+  {package: "portald", target: "hints", test: "a_reconnect_while_a_read_is_held_converges_on_the_new_connection"}
+]
+for $t in $targets
+  $build = run_argv(["cargo", "test", "--locked", "-p", $t.package, "--test", $t.target,
+    "--no-run", "--message-format=json"], {timeout: 1800, max_output: 64000000})
+  print($build.stderr)
+  if not $build.ok then print($build.stdout); exit(1) end
+  $bins = []
+  for $line in lines($build.stdout)
+    if starts_with($line, "{") then
+      $message = json_parse($line)
+      if $message.reason == "compiler-artifact" and $message.executable != nil and $message.target.name == $t.target then
+        push($bins, $message.executable)
+      end
+    end
+  end
+  if len($bins) != 1 then raise("LOAD_TARGET", "expected exactly one executable") end
+  $jobs = []
+  for $i = 1 to 320
+    push($jobs, {argv: [$bins[0], "--exact", $t.test, "--nocapture"], timeout: 120, stderr: "stdout"})
+  end
+  $results = run_parallel($jobs, {max: 8})
+  $failed = 0
+  for $i = 0 to len($results) - 1
+    $r = $results[$i]
+    if not $r.ok or not contains($r.stdout, "1 passed") then
+      $failed = $failed + 1
+      print("copy " .. to_string($i + 1) .. ": " .. json_encode($r))
+    end
+  end
+  print($t.package .. "/" .. $t.target .. ": " .. to_string(320 - $failed) .. "/320 passed, concurrency 8, no retries")
+  if $failed != 0 then exit(1) end
+end
