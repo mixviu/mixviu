@@ -2,7 +2,7 @@
 -- Fixed procfs root; test copies replace it, never Bus arguments.
 $proc_root="/proc"
 fn session_id($run,$vt)
-  $match=re_find($run,"^/run/mix/session/([0-9]+)/?$")
+  $match=re_find($run,"^/.*/session/([0-9]+)/?$")
   if len($match)==1 then return $match[0].groups[0] end
   if re_match($vt,"^[0-9]+$") then return $vt end
   return nil

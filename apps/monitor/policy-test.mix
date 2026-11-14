@@ -89,7 +89,7 @@ if $p.allowed($s,45) then raise("ANCESTOR","Reparenting not checked") end
 $fixture.process($root,80,1,1000,"apps@4.service")
 $fixture.process($root,45,1,1001,"apps@4.service")
 if $p.allowed($s,45) then raise("UID","Ownership change not checked") end
-if $p.session_id("/run/mix/session/12","4")!="12" or $p.session_id("","4")!="4" or $p.session_id("","bad")!=nil then raise("SESSION","Environment parsing") end
+if $p.session_id("/srv/mixtest/run/session/12","4")!="12" or $p.session_id("","4")!="4" or $p.session_id("","bad")!=nil then raise("SESSION","Environment parsing") end
 finally
   $removed=run_argv_must(["rm","-r",$root])
 end

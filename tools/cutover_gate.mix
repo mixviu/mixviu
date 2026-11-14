@@ -238,11 +238,11 @@ if not $tree.ok or len($egui) != 0 then
   push($failed, "viud egui tree check")
 end
 
--- Release engines, one package per command; cold release builds stay capped.
+-- Release set, one package per command; cold release builds stay capped.
 $release = require("release_set.mix")
 $sizes = {}
 for $binary in $release.binaries()
-  $r = gate_step(["cargo", "build", "--release", "--locked", "-p", $binary.package], "2")
+  $r = gate_step(["cargo", "build", "--release", "--locked", "-p", $binary.package, "--bin", $binary.name], "2")
   if $r.ok then
     $sizes[$binary.name] = stat("target/release/" .. $binary.name).size
   else
@@ -251,7 +251,7 @@ for $binary in $release.binaries()
 end
 print("RELEASE_SIZES " .. json_encode($sizes))
 
--- The release set the desk migration installs: the four engines and apps.tar,
+-- The release table's binaries and apps.tar,
 -- each named in SHA256SUMS, under /build/cutover-artifacts/<sha>.
 if len(keys($sizes)) == len($release.binaries()) then
   $sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
