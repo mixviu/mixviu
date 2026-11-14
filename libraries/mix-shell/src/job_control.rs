@@ -1237,6 +1237,41 @@ mod tests {
     }
 
     #[test]
+    fn abort_does_not_signal_abandoned_process_group() {
+        let leader = ChildGuard(
+            Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap(),
+        );
+        let pgid = leader.0.id() as i32;
+        let mut command = Command::new("/bin/sleep");
+        command.arg("60");
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setpgid(0, pgid) < 0 || libc::setpgid(0, 0) < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let escaped = ChildGuard(command.spawn().unwrap());
+        let pid = escaped.0.id() as i32;
+        assert_eq!(unsafe { libc::getpgid(pid) }, pid);
+        let mut pending = job(&[MemberState::Running, MemberState::Running]);
+        pending.pgid = pgid;
+        pending.members[0].pid = pgid;
+        pending.members[1].pid = pid;
+        let shared = shared_jobs(BTreeMap::from([(1, pending)]));
+        assert_eq!(unsafe { libc::kill(pgid, libc::SIGKILL) }, 0);
+        pending_event(pgid, libc::WEXITED);
+        let mut sent = Vec::new();
+        shared.signal_abort(1, libc::SIGTERM, |target, sig| sent.push((target, sig)));
+        eprintln!("original pgid={pgid}, escaped pid/pgrp={pid}, abort targets={sent:?}");
+        assert_eq!(sent, [(pid, libc::SIGTERM), (pid, libc::SIGCONT)]);
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
+        pending_event(pid, libc::WEXITED);
+        assert_eq!(shared.snapshot()[0].state(), JobState::Done);
+    }
+
+    #[test]
     fn abort_does_not_signal_group_or_pid_after_collecting_last_exit() {
         let (child, shared) = pending_stop();
         let pid = child.0.id() as i32;
