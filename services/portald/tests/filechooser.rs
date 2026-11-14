@@ -295,10 +295,7 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     BufReader::new(dbus.0.stdout.take().unwrap())
         .read_line(&mut address)
         .unwrap();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    let mut broker = test_broker::Broker::with_tcp_port(port);
+    let mut broker = test_broker::Broker::bounce_stable();
     let mut provider = Provider::start(&broker.url).await;
     provider
         .client

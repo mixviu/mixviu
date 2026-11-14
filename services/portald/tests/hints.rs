@@ -66,12 +66,6 @@ fn bound(elapsed: Duration) -> u64 {
     elapsed.as_millis() as u64 / INTERVAL_MS + 2
 }
 
-fn free_port() -> anyhow::Result<u16> {
-    Ok(std::net::TcpListener::bind("127.0.0.1:0")?
-        .local_addr()?
-        .port())
-}
-
 /// The scripted authority's state. A read captures the revision when it arrives,
 /// then waits for a permit, then answers with the captured revision; the palette
 /// read that follows it answers at the same revision.
@@ -213,15 +207,7 @@ impl Harness {
     /// holds a read across a burst passes `HELD_READ_TIMEOUT`; the others pass the
     /// production `service::FETCH_TIMEOUT`.
     async fn start(fetch_timeout: Duration) -> anyhow::Result<Self> {
-        Self::start_on(None, fetch_timeout).await
-    }
-
-    /// `start`, on a fixed TCP port when one is given, so `bounce` returns to it.
-    async fn start_on(port: Option<u16>, fetch_timeout: Duration) -> anyhow::Result<Self> {
-        let broker = match port {
-            Some(port) => test_broker::Broker::with_tcp_port(port),
-            None => test_broker::Broker::start(),
-        };
+        let broker = test_broker::Broker::bounce_stable();
         let url = broker.url.clone();
         let publisher = Arc::new(
             SupervisedClient::connect_options("settingsd", &url)
@@ -863,7 +849,7 @@ async fn a_refusal_flood_is_counted_exactly_and_logged_at_a_bounded_rate() -> an
 /// connection converges on its own read.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_reconnect_while_a_read_is_held_converges_on_the_new_connection() -> anyhow::Result<()> {
-    let mut h = Harness::start_on(Some(free_port()?), HELD_READ_TIMEOUT).await?;
+    let mut h = Harness::start(HELD_READ_TIMEOUT).await?;
     h.wait_reads(1).await?;
     h.allow(1);
     h.expect_revision(1).await?;

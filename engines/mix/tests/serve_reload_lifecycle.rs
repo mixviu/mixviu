@@ -175,13 +175,6 @@ fn broker_tcp_port(broker: &Broker) -> u16 {
         .unwrap()
 }
 
-/// Reserve a loopback port for a bounce-stable broker (bind `:0`, note,
-/// drop — the caller holds the fixture lock until the broker binds it).
-fn reserve_port() -> u16 {
-    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    l.local_addr().unwrap().port()
-}
-
 // ── trace (test-owned file, appended by the real citizen) ────────────────
 
 #[derive(Debug)]
@@ -782,8 +775,7 @@ async fn wire_spoofed_lifecycle_commit_is_refused_without_side_effects() {
 async fn broker_cut_during_candidate_prep_commit_dispatches_and_reconciles() {
     let _g = lock().await;
     let dir = Dir::new("cut");
-    let port = reserve_port();
-    let mut broker = Broker::with_tcp_port(port);
+    let mut broker = Broker::bounce_stable();
     let variant = Variant {
         legacy_cmd: NORMAL_LEGACY,
         candidate_sleep: 0.6,
