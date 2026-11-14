@@ -26,12 +26,21 @@ fn defaults($registry, $commit)
       if contains($v.default, "\n") or contains($v.default, "\r") then
         raise("ENV_MX_DEFAULT", $v.name .. ": an env.mx default cannot contain LF or CR")
       end
+      -- data_encode escapes ~ and ~/ but not ~user; the paths reader
+      -- refuses every unescaped leading tilde. Its string grammar also
+      -- lacks the encoder's ESC (backslash-e) escape: refuse lossy output.
+      if starts_with($v.default, "\~") and $v.default != "\~" and not starts_with($v.default, "\~/") then
+        raise("ENV_MX_DEFAULT", $v.name .. ": leading tilde is not escaped for the env.mx reader")
+      end
+      if contains($v.default, "\u{001b}") then
+        raise("ENV_MX_DEFAULT", $v.name .. ": ESC cannot round-trip through the env.mx reader")
+      end
       if has_key($out, $v.name) then
         raise("ENV_MX_NAME", $v.name .. ": duplicate env.mx setting name")
       end
       $out[$v.name] = $v.default
       -- data_encode supplies the reader's quoted-string grammar, including
-      -- escaped interpolation, leading tilde and Unicode. Bound the actual
+      -- escaped interpolation, supported tildes and Unicode. Bound the actual
       -- encoded UTF-8 bytes, not the number of characters in the default.
       if byte_length(data_encode($out) .. "\n") > 65536 then
         raise("ENV_MX_SIZE", $v.name .. ": env.mx exceeds the reader's 64 KiB limit")

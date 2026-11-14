@@ -34,6 +34,9 @@ try
   for $value in ["line\nbreak", "line\rbreak", "line\r\nbreak"]
     expect_refusal($dir, [{name: fixture_name("NEWLINE"), scope: "runtime", default: $value}], $sha, "ENV_MX_DEFAULT", fixture_name("NEWLINE"))
   end
+  for $value in ["\~literal", "\~\${literal}", "control\u{001b}character"]
+    expect_refusal($dir, [{name: fixture_name("ENCODING"), scope: "runtime", default: $value}], $sha, "ENV_MX_DEFAULT", fixture_name("ENCODING"))
+  end
   expect_refusal($dir, [{name: fixture_name("TYPE"), scope: "runtime", default: 1}], $sha, "ENV_MX_DEFAULT", fixture_name("TYPE"))
   expect_refusal($dir, [{name: fixture_name("SCOPE"), scope: "build", default: "x"}], $sha, "ENV_MX_DEFAULT", fixture_name("SCOPE"))
   $entry = {name: fixture_name("DUPLICATE"), scope: "runtime", default: "x"}
@@ -48,11 +51,12 @@ try
     mkdir($dir .. "/bin", {parents: true})
     copy(args()[0], $dir .. "/bin/mix")
     chmod($dir .. "/bin/mix", 0o755)
-    $value = "\~\${literal} 'quote' \"double\" \\slash\t\u{0000}é\u{feff}"
-    write_file($dir .. "/registry.conf.mix", data_encode({vars: [{name: fixture_name("ROUNDTRIP"), scope: "runtime", default: $value}]}))
-    $generator.write($dir .. "/env.mx", $dir .. "/registry.conf.mix", $sha)
-    $r = run_argv([$dir .. "/bin/mix", "layout", "setting", fixture_name("ROUNDTRIP")], {clear_env: true})
-    if not $r.ok or $r.stdout != $value .. "\n" then raise("ENV_MX_TEST", "reader round-trip failed: " .. $r.stderr) end
+    for $value in ["\~", "\~/directory", "\${literal} 'quote' \"double\" \\slash\t\u{0000}é\u{feff}"]
+      write_file($dir .. "/registry.conf.mix", data_encode({vars: [{name: fixture_name("ROUNDTRIP"), scope: "runtime", default: $value}]}))
+      $generator.write($dir .. "/env.mx", $dir .. "/registry.conf.mix", $sha)
+      $r = run_argv([$dir .. "/bin/mix", "layout", "setting", fixture_name("ROUNDTRIP")], {clear_env: true})
+      if not $r.ok or $r.stdout != $value .. "\n" then raise("ENV_MX_TEST", "reader round-trip failed: " .. $r.stderr) end
+    end
     print("ENV_MX_ROUNDTRIP passed")
   end
   print("ENV_MX_GENERATOR_CONTROLS passed")
