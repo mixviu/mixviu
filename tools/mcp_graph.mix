@@ -1,0 +1,44 @@
+-- version: 0.1.0
+-- CBC job source, carried as the command argument; never run locally.
+$head = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+$base = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
+fn capture($argv)
+  return run_argv_must($argv, {timeout: 1800, max_output: 256000000})
+end
+fn packages($tree)
+  $found = {}
+  for $m in re_find($tree, '(?m)([a-zA-Z0-9_-]+) v([0-9][^ \n]*)')
+    $found[$m.groups[0] .. "@" .. $m.groups[1]] = true
+  end
+  return $found
+end
+$before = {}
+try
+  run_argv_must(["git", "checkout", "-q", $base])
+  print("GRAPH_BASE " .. $base)
+  for $engine in ["mix", "mix-shell"]
+    $tree = capture(["cargo", "tree", "--locked", "-p", $engine, "-e", "normal"])
+    print("TREE_BASE " .. $engine .. "\n" .. $tree)
+    $before[$engine] = packages($tree)
+  end
+finally
+  run_argv_must(["git", "checkout", "-q", $head])
+end
+print("GRAPH_HEAD " .. $head)
+for $engine in ["mix", "mix-shell"]
+  $tree = capture(["cargo", "tree", "--locked", "-p", $engine, "-e", "normal"])
+  print("TREE_HEAD " .. $engine .. "\n" .. $tree)
+  $now = packages($tree)
+  for $key in sort(keys($now))
+    if not has_key($before[$engine], $key) then
+      print("NORMAL_ADDED " .. $engine .. " " .. $key)
+      if $key != "const-oid@0.10.3" then raise("ENGINE_GRAPH_CHANGED", $key) end
+    end
+  end
+  for $key in sort(keys($before[$engine]))
+    if not has_key($now, $key) then raise("ENGINE_PACKAGE_REMOVED", $engine .. " " .. $key) end
+  end
+  print("NORMAL_GRAPH_OK " .. $engine)
+end
+print(capture(["cargo", "tree", "--locked", "--workspace", "-i", "const-oid@0.10.3"]))
+print(capture(["cargo", "tree", "--locked", "--workspace", "-i", "rmcp"]))
