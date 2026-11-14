@@ -47,10 +47,10 @@ fn block($position,$size,$tone,$label="",$glow=0,$motion=[0,0,0],$label_visible=
 end
 fn scene($s)
   $out=[];$gate=current_gate($s);$failing=field($gate,"failing")==true
-  for $pair in [[-5,0],[0,1],[5,2]]
+  for $pair in if $s.queue==nil then [] else [[-5,0],[0,1],[5,2]] end
     push($out,block([$pair[0],0,0],[4.8,0.12,0.6],if $pair[0]==0 and $failing then 3 else $pair[1] end,if $pair[0]==0 then field($gate,"last","") else "" end))
   end
-  push($out,block([4,0,2],[5,0.12,0.6],3))
+  if $s.queue!=nil then push($out,block([4,0,2],[5,0.12,0.6],3)) end
   for $lane in [["queued",-7,0],["batched",-2,1],["recent",3,2]]
     $items=rows($s.queue,$lane[0])
     if $lane[0]=="recent" then $items=filter($items,fn($r)=$r.state=="landed") end
@@ -117,7 +117,7 @@ fn model($s,$renderer,$generation)
   for $key in keys($s.alerts) push($header,{kind:"frame",style:"alert",children:[{kind:"label",text:$s.alerts[$key].text ?? "?",strong:true}]}) end
   push($header,{kind:"heading",text:"Merge train"})
   $state=if $s.queue==nil then "unavailable" elif field($s.queue,"paused")==nil then "running" else "paused" end
-  push($header,text_node("main "..field($s.queue,"main","?").." · "..$state))
+  if $s.queue!=nil then push($header,text_node("main "..field($s.queue,"main","?").." · "..$state)) end
   push($header,text_node("Queue → Gate → Main · Rejections on the siding"))
   $gold=field($s.queue,"gold")
   push($header,text_node(if type(field($gold,"commit"))=="string" then "Gold "..ellipsis($gold.commit,13).." · installed "..to_string($gold.age_minutes ?? "?").." min ago · "..to_string($gold.unlanded ?? "?").." landings awaiting gold" else "Gold status unavailable" end,"warning"))
@@ -128,7 +128,7 @@ fn model($s,$renderer,$generation)
     if $progress!=nil then push($header,{kind:"progress",value:$progress,colour:$colour}) end
     push($header,text_node("Stage "..to_string($gate.stage).." / "..to_string($gate.stages).." · "..($gate.last ?? "?"),if $gate.failing==true then "error" else nil end))
   elif gating($s)!=nil then push($header,text_node("Waiting for the gate stage read")) end
-  if $s.error!=nil then push($header,text_node($s.error)) end
+  if $s.error!=nil or $s.queue==nil or $s.workers==nil or $s.history==nil then push($header,text_node("Some train data is unavailable")) end
   push($nodes,{kind:"frame",style:"popup",children:$header})
   $columns=[]
   for $lane in [["queued","Queue"],["batched","Gating"],["recent","Landed on main"]]
