@@ -12,7 +12,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -229,12 +229,28 @@ struct Shared {
     terminal_shutdown: Mutex<Option<TerminalShutdown>>,
 }
 impl Shared {
+    fn collect(&self) -> MutexGuard<'_, State> {
+        // SIGCHLD only wakes the monitor. Readers and mutations based on job
+        // status must collect first, without releasing the lock before use.
+        let mut state = self.state.lock().unwrap();
+        reap_locked(&mut state);
+        self.changed.notify_all();
+        state
+    }
+
     fn snapshot(&self) -> Vec<Job> {
-        // SIGCHLD wakes the monitor asynchronously. A user asking for jobs
-        // must not depend on that thread having been scheduled already.
-        // reap serialises waitpid with the monitor under the same state lock.
-        reap(self);
-        self.state.lock().unwrap().jobs.values().cloned().collect()
+        self.collect().jobs.values().cloned().collect()
+    }
+
+    fn select(&self, id: Option<usize>) -> io::Result<Job> {
+        let state = self.collect();
+        let job = match id {
+            Some(id) => state.jobs.get(&id),
+            None => state.jobs.values().rev().find(|j| j.state() != JobState::Done),
+        };
+        job.filter(|j| j.state() != JobState::Done)
+            .cloned()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such live job"))
     }
 }
 
@@ -473,7 +489,7 @@ impl Controller {
         let mut s = self.shared.state.lock().unwrap();
         let id = s.next_id;
         s.next_id += 1;
-        // Dropping Child does not reap; from here only the monitor waits.
+        // Dropping Child does not reap; the controller's collector owns waits.
         let members = children
             .into_iter()
             .map(|c| {
@@ -541,6 +557,8 @@ impl Controller {
                 stopped: false,
             });
         }
+        // Waiting deliberately keeps the condvar path: the monitor collects
+        // and notifies under this same lock, so no update/wakeup can be lost.
         let mut s = self.shared.state.lock().unwrap();
         loop {
             let job = &s.jobs[&id];
@@ -632,7 +650,7 @@ impl Controller {
         let pgid = {
             // Re-validated UNDER the lock, so the identity checked and the pgid
             // taken come from the same observation of the table.
-            let state = self.shared.state.lock().unwrap();
+            let state = self.shared.collect();
             state
                 .jobs
                 .values()
@@ -662,20 +680,16 @@ impl Controller {
         Ok(())
     }
     fn select(&self, id: Option<usize>) -> io::Result<Job> {
-        let s = self.shared.state.lock().unwrap();
-        let j = match id {
-            Some(id) => s.jobs.get(&id),
-            None => s.jobs.values().rev().find(|j| j.state() != JobState::Done),
-        };
-        j.filter(|j| j.state() != JobState::Done)
-            .cloned()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such live job"))
+        self.shared.select(id)
     }
     fn continue_job(&self, id: usize, fg: bool) -> io::Result<()> {
-        let mut s = self.shared.state.lock().unwrap();
+        // Consume a pending stop before SIGCONT; otherwise a later monitor
+        // collection could overwrite our Running state with that old stop.
+        let mut s = self.shared.collect();
         let job = s
             .jobs
             .get_mut(&id)
+            .filter(|j| j.state() != JobState::Done)
             .ok_or_else(|| io::Error::other("job disappeared"))?;
         if unsafe { libc::kill(-job.pgid, libc::SIGCONT) } < 0 {
             return Err(io::Error::last_os_error());
@@ -689,7 +703,7 @@ impl Controller {
         Ok(())
     }
     pub fn notify_done(&self) {
-        let mut s = self.shared.state.lock().unwrap();
+        let mut s = self.shared.collect();
         let mut done = Vec::new();
         s.jobs.retain(|id, j| {
             if !j.foreground && j.state() == JobState::Done {
@@ -709,7 +723,7 @@ impl Controller {
         // reaped even after SIGKILL. Keep survivors registered with the monitor.
         for signal in [libc::SIGTERM, libc::SIGKILL] {
             {
-                let s = self.shared.state.lock().unwrap();
+                let s = self.shared.collect();
                 if let Some(j) = s.jobs.get(&id) {
                     unsafe {
                         libc::kill(-j.pgid, signal);
@@ -738,7 +752,7 @@ impl Controller {
                 return;
             }
         }
-        let mut s = self.shared.state.lock().unwrap();
+        let mut s = self.shared.collect();
         if let Some(job) = s.jobs.get_mut(&id) {
             job.foreground = false;
             let survivors: Vec<_> = job
@@ -757,9 +771,7 @@ impl Controller {
     }
     fn launch_stopped(&self, id: usize) -> bool {
         self.shared
-            .state
-            .lock()
-            .unwrap()
+            .collect()
             .jobs
             .get(&id)
             .is_some_and(|j| {
@@ -832,7 +844,14 @@ fn release_foreground(
 }
 
 fn reap(shared: &Shared) {
-    let mut s = shared.state.lock().unwrap();
+    drop(shared.collect());
+}
+
+// Called only with the controller state mutex held, by monitor and readers.
+// Per registered member PID, never waitpid(-1): captured runners and other
+// subsystems retain their own wait statuses. Terminal members are skipped,
+// so a second collector cannot wait again after their exit was consumed.
+fn reap_locked(s: &mut State) {
     for job in s.jobs.values_mut() {
         for member in &mut job.members {
             if member.state.terminal() {
@@ -874,11 +893,10 @@ fn reap(shared: &Shared) {
             }
         }
     }
-    shared.changed.notify_all();
 }
 fn close_jobs(shared: &Shared) {
     {
-        let mut s = shared.state.lock().unwrap();
+        let mut s = shared.collect();
         if s.closed {
             return;
         }
@@ -892,8 +910,7 @@ fn close_jobs(shared: &Shared) {
     }
     let end = Instant::now() + CLOSE_GRACE;
     loop {
-        reap(shared);
-        let mut s = shared.state.lock().unwrap();
+        let mut s = shared.collect();
         if s.jobs.values().all(|j| j.state() == JobState::Done) {
             s.closed = true;
             shared.changed.notify_all();
@@ -1113,21 +1130,16 @@ pub fn stage_entry() {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn snapshot_collects_pending_stop_without_monitor() {
-        // No monitor thread: force the schedule where SIGCHLD has arrived
-        // but its consumer has not run. WNOWAIT proves the stop is waitable
-        // without collecting it on behalf of the snapshot.
-        struct ChildGuard(std::process::Child);
-        impl Drop for ChildGuard {
-            fn drop(&mut self) {
-                let _ = self.0.kill();
-                let _ = self.0.wait();
-            }
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
         }
-        let child = ChildGuard(Command::new("/bin/sleep").arg("60").spawn().unwrap());
-        let pid = child.0.id() as i32;
-        assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
+    }
+
+    fn pending_event(pid: i32, event: i32) {
+        // Prove an event is waitable without consuming it for the collector.
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
         loop {
             let rc = unsafe {
@@ -1135,7 +1147,7 @@ mod tests {
                     libc::P_PID,
                     pid as libc::id_t,
                     &mut info,
-                    libc::WSTOPPED | libc::WNOWAIT,
+                    event | libc::WNOWAIT,
                 )
             };
             if rc == 0 {
@@ -1143,12 +1155,23 @@ mod tests {
             }
             assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EINTR));
         }
+    }
+
+    fn pending_stop() -> (ChildGuard, Shared) {
+        let child = ChildGuard(Command::new("/bin/sleep").arg("60").spawn().unwrap());
+        let pid = child.0.id() as i32;
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
+        pending_event(pid, libc::WSTOPPED);
         let mut pending = job(&[MemberState::Running]);
         pending.pgid = pid;
         pending.members[0].pid = pid;
-        let shared = Shared {
+        (child, shared_jobs(BTreeMap::from([(1, pending)])))
+    }
+
+    fn shared_jobs(jobs: BTreeMap<usize, Job>) -> Shared {
+        Shared {
             state: Mutex::new(State {
-                jobs: BTreeMap::from([(1, pending)]),
+                jobs,
                 next_id: 2,
                 closing: false,
                 closed: false,
@@ -1156,12 +1179,53 @@ mod tests {
             changed: Condvar::new(),
             shell_modes: Mutex::new(unsafe { std::mem::zeroed() }),
             terminal_shutdown: Mutex::new(None),
-        };
+        }
+    }
+
+    #[test]
+    fn snapshot_collects_pending_stop_without_monitor() {
+        // No monitor thread: only snapshot can collect this pending stop.
+        let (_child, shared) = pending_stop();
         assert_eq!(shared.snapshot()[0].state(), JobState::Stopped);
         assert_eq!(
             shared.snapshot()[0].members[0].state,
             MemberState::Stopped(libc::SIGSTOP)
         );
+    }
+
+    #[test]
+    fn fg_bg_selection_collects_pending_stop_and_exit_without_monitor() {
+        // Both fg and bg use this exact selector, for explicit and default IDs.
+        for id in [Some(1), None] {
+            let (child, shared) = pending_stop();
+            let selected = shared.select(id).unwrap();
+            assert_eq!(selected.state(), JobState::Stopped);
+            assert_eq!(selected.members[0].state, MemberState::Stopped(libc::SIGSTOP));
+            // A pending exit must be rejected before fg attempts tty handoff
+            // or bg sends SIGCONT. Repeated reads must retain the exit code,
+            // not wait a second time and replace it with Lost/ECHILD.
+            assert_eq!(
+                unsafe { libc::kill(child.0.id() as i32, libc::SIGKILL) },
+                0
+            );
+            pending_event(child.0.id() as i32, libc::WEXITED);
+            assert!(shared.select(id).is_err());
+            for _ in 0..2 {
+                assert_eq!(
+                    shared.snapshot()[0].members[0].state,
+                    MemberState::Signalled(libc::SIGKILL)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn collection_leaves_unregistered_child_status_for_its_owner() {
+        let mut child = ChildGuard(Command::new("/bin/true").spawn().unwrap());
+        pending_event(child.0.id() as i32, libc::WEXITED);
+        let (_managed, shared) = pending_stop();
+        assert_eq!(shared.snapshot()[0].state(), JobState::Stopped);
+        assert!(child.0.wait().unwrap().success());
     }
 
     #[test]
