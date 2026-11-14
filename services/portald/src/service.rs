@@ -392,14 +392,11 @@ enum Outbound {
 /// park the lock owner (and its timeout) forever. Keep each future across events
 /// as well, so losing a select never cancels a partially sent frame.
 async fn next_outbound(job: &mut Option<Job>, reply: &mut Option<ReplyFuture>) -> Outbound {
-    if let Some(reply) = reply {
-        reply.as_mut().await;
-        return Outbound::Replied;
+    tokio::select! {
+        result = async { job.as_mut().expect("enabled job").future.as_mut().await }, if job.is_some() => Outbound::Completed(result),
+        _ = async { reply.as_mut().expect("enabled reply").as_mut().await }, if reply.is_some() => Outbound::Replied,
+        else => std::future::pending().await,
     }
-    if let Some(job) = job {
-        return Outbound::Completed(job.future.as_mut().await);
-    }
-    std::future::pending().await
 }
 
 async fn retry_after(delay: Option<Duration>) {
