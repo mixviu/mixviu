@@ -235,10 +235,11 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("flow", "string", false, None),
         p("align", "string", false, None),
     ];
-    static IMAGE: [Port; 3] = [
+    static IMAGE: [Port; 4] = [
         p("src", "string", true, None),
         pn("w", false, Some(0.0)),
         pn("h", false, Some(0.0)),
+        p("color", "string", false, None),
     ];
     static SPACER: [Port; 1] = [pn("size", false, None)];
     static CONTROL: [Port; 2] = [

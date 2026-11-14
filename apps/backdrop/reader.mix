@@ -40,10 +40,13 @@ fn received($reader,$snapshot,$live,$key,$results,$now)
   for $r in $results
     if $r.rc==0 and type($r.body)=="map" then
       $snapshot[$r.key]=$r.body;$reader.errors=delete($reader.errors,$r.command)
-    else $reader.errors[$r.command]=$r.command..": "..($r.message ?? to_string($r.body)) end
+    else
+      $snapshot[$r.key]=nil
+      $reader.errors[$r.command]=true
+    end
   end
   if $reader.errors["train.queue"]!=nil or $train.gating($snapshot)==nil then $snapshot.gate=nil;$reader.errors=delete($reader.errors,"train.gate") end
   $snapshot.now=floor($now/60)*60;$snapshot.hours=$live.hours
-  $snapshot.error=if len(keys($reader.errors))==0 then nil else join(map(sort(keys($reader.errors)),fn($key)=$reader.errors[$key]),"; ") end
+  $snapshot.error=if len(keys($reader.errors))==0 then nil else "Some train data is unavailable" end
   return {reader:$reader,snapshot:$snapshot}
 end

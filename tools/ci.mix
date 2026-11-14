@@ -200,6 +200,10 @@ fn git_grep($args)
 end
 
 fn stage_env()
+  -- Build/refresh the default shell before running it, including in `all`.
+  -- An explicit existing --mix (for example the installed shell) skips builds.
+  ensure_mix($mix)
+  run_step([$mix, "tools/serde_json_guard.mix"])
   $reg_path = "etc/env.conf.mix"
   if not exists($reg_path) then
     print("::error::" + $reg_path + " is missing: every MIX_* name must be registered")

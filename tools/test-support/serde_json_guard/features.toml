@@ -1,0 +1,11 @@
+[workspace.dependencies]
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[dependencies]
+serde_json.workspace = true
+renamed = { package = "serde_json", version = "1" }
+
+[features]
+ordered = ["serde_json/preserve_order", "serde_json?/preserve_order",
+  "renamed/preserve_order", "renamed?/preserve_order"]
+unrelated = ["other/preserve_order", "serde_json/raw_value"]
