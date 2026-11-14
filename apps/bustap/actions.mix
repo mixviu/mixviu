@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $base=json_parse(read_file(path_join(dirname(script_path()),"actions.json")))
+$core=require("core.mix")
 fn registry($s)
   $out=[]
   for $a in $base
@@ -15,13 +16,31 @@ fn execute($s,$id)
   elif $id=="view.own" then $s.filter.own=not $s.filter.own
   elif $id=="view.unhide" then $s.filter.hide=[]
   elif $id=="file.clear" then
-    $s.rows=[];$s.pending={};$s.selected=nil;$s.evicted=0
+    $s=$core.clear_rows($s)
   elif $id=="view.hide" then
     $r=filter($s.rows,fn($r)=to_string($r.id)==$s.selected)
     if len($r)==0 then raise("ARGUMENT","Select a row first") end
     $service=if $r[0].kind=="request" then $r[0].to else $r[0].from end
+    if $service=="(anon)" then raise("ARGUMENT","Anonymous service cannot be hidden") end
     if not contains($s.filter.hide,$service) then $s.filter.hide=push($s.filter.hide,$service) end
   elif $id=="file.quit" then $s.window_close=true
   else raise("ARGUMENT","Unknown action") end
+  return $s
+end
+fn intent($s,$a)
+  if type($a)!="map" or type($a.id)!="string" then raise("ARGUMENT","intent id must be a string") end
+  if $a.id=="traffic" then
+    if $a.action!="select" or type($a.value)!="map" then raise("ARGUMENT","traffic requires select and a key object") end
+    if type($a.value.key)!="string" then raise("ARGUMENT","selection key must be a string") end
+    if not any($s.rows,fn($r)=to_string($r.id)==$a.value.key) then raise("ARGUMENT","No such row") end
+    $s.selected=$a.value.key
+  elif $a.id=="filter" then $s.filter=$core.filter_edit($s.filter,{text:$a.value})
+  elif $a.id=="pause" or $a.id=="own" then
+    if type($a.value)!="bool" then raise("ARGUMENT","toggle value must be bool") end
+    if $a.id=="pause" then $s.paused=$a.value else $s.filter=$core.filter_edit($s.filter,{own:$a.value}) end
+  elif $a.id=="clear" or $a.id=="hide" then
+    if $a.value!=nil and type($a.value)!="string" then raise("ARGUMENT","button value must be string or null") end
+    $s=execute($s,if $a.id=="clear" then "file.clear" else "view.hide" end)
+  else raise("ARGUMENT","Unknown intent id") end
   return $s
 end

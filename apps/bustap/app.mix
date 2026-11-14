@@ -6,70 +6,76 @@ $view=require("view.mix")
 $actions=require("actions.mix")
 $state=$core.initial();$ctx=viu_context()
 fn publish_bustap($s)
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$view.project($s)}
+  $model=$view.project($s)
+  if not deep_eq($model,$s.last_model) then
+    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+    $s.last_model=$model
+  end
+  return $s
 end
 fn start_observer($s,$filter)
-  $before=$s
+  $s.retry_at=time()+2
+  try $s=$core.retire_slot($s) catch $why $s.error=$why;return {state:$s,ok:false} end
   send "noded" "noded.observe.start" body={filter:$core.broker_filter($filter),body:"none",capacity:1024} timeout=5
   if $rc!=0 or type($reply.subscription_id)!="string" then
-    $s.error="Observation subscription refused";$s.status="Unavailable"
+    $s.error=if $core.stop_warning($s) then "Retired subscriptions could not be stopped; observation subscription refused" else "Observation subscription refused" end;$s.status="Unavailable"
     return {state:$s,ok:false}
   end
-  $old=$s.subscription_id;$s.previous_id=$old;$s.previous_cursor=$s.drop_cursor;$s.subscription_id=$reply.subscription_id
-  $s.filter=$filter;$s.drop_cursor=0;$s.pending={};$s.status="Live";$s.error=nil
+  $old=$s.subscription_id
+  if $old!=nil then $s.retired[$old]={cursor:$s.drop_cursor,seq:$s.last_seq,live:true} end
+  $s.subscription_id=$reply.subscription_id
+  $s.filter=$filter;$s.drop_cursor=0;$s.last_seq=0;$s.pending={};$s.unmatched_replies={};$s.status="Live"
   if $old!=nil then
     send "noded" "noded.observe.stop" body={subscription_id:$old} timeout=5
-    if $rc!=0 then
-      send "noded" "noded.observe.stop" body={subscription_id:$s.subscription_id} timeout=5
-      if $rc==0 then
-        $before.error="Could not replace observation subscription"
-        return {state:$before,ok:false}
-      end
-      $s.error="Previous subscription and replacement cleanup could not be stopped"
-    end
+    if $rc==0 then $s.retired[$old].live=false end
   end
+  $s.error=if $core.stop_warning($s) then "Retired subscriptions could not be stopped" else nil end
   return {state:$s,ok:true}
 end
-publish_bustap($state)
+$state=publish_bustap($state)
 on bus.connected
   $state.connected=true
-  $out=start_observer($state,$state.filter);$state=$out.state;publish_bustap($state)
+  $out=start_observer($state,$state.filter);$state=$out.state;$state=publish_bustap($state)
 end
 on bus.disconnected
-  $state.connected=false;$state.subscription_id=nil;$state.pending={};$state.status="Disconnected";$state.error="Bus connection lost"
-  publish_bustap($state)
+  $state.connected=false;$state.subscription_id=nil;$state.retired={};$state.pending={};$state.unmatched_replies={};$state.status="Disconnected";$state.error="Bus connection lost"
+  $state=publish_bustap($state)
 end
 on noded.observe.event
-  -- Sequence numbers restart for every subscription. Ignore queued frames from
-  -- the replaced subscription; the new one was started before the stop.
-  if $event.headers.subscription_id!=nil and $event.headers.subscription_id!=$state.subscription_id then
-    if $event.headers.subscription_id==$state.previous_id then
-      $n=$event.args.dropped_count ?? 0
-      if $n>$state.previous_cursor then $state.dropped=$state.dropped+$n-$state.previous_cursor;$state.previous_cursor=$n end
-    end
-    return
-  end
-  $state=$core.observed($state,$event.args,time())
+  $state=$core.received($state,$event.args,time(),$event.headers.subscription_id)
   -- Tick batches model updates: rendering must not amplify every observation.
 end
 on viu.tick
-  $state=$core.tick_rate($state,time());publish_bustap($state)
+  $now=time();$state=$core.tick_rate($state,$now)
+  if $core.retry_due($state,$now) then $out=start_observer($state,$state.filter);$state=$out.state end
+  if $state.connected and $now>=$state.stop_retry_at then
+    $state.stop_retry_at=$now+2
+    for $id in take(filter(keys($state.retired),fn($id)=$state.retired[$id].live),4)
+      send "noded" "noded.observe.stop" body={subscription_id:$id} timeout=2
+      if $rc==0 then $state.retired[$id].live=false end
+    end
+    if $core.stop_warning($state) then $state.error="Retired subscriptions could not be stopped"
+    elif $state.subscription_id!=nil then $state.error=nil end
+  end
+  $state=publish_bustap($state)
 end
 on bustap.pause
   if type($event.args.on)!="bool" then reply(10,json_encode({error_code:"ARGUMENT",message:"on must be bool"}));return end
-  $state.paused=$event.args.on;publish_bustap($state);reply(0,json_encode({paused:$state.paused}))
+  $state.paused=$event.args.on;$state=publish_bustap($state);reply(0,json_encode({paused:$state.paused}))
 end
 on bustap.clear
-  $state=$core.clear_rows($state);publish_bustap($state);reply(0,"{}")
+  $state=$core.clear_rows($state);$state=publish_bustap($state);reply(0,"{}")
 end
 on bustap.filter
   try
     $next=$core.filter_edit($state.filter,$event.args)
-    if not deep_eq($core.broker_filter($next),$core.broker_filter($state.filter)) or $state.subscription_id==nil then
+    -- Display keys always apply, even if a connected broker rejects its edit.
+    $state.filter.text=$next.text;$state.filter.hide=$next.hide;$state.filter.own=$next.own
+    if $state.connected and not deep_eq($core.broker_filter($next),$core.broker_filter($state.filter)) then
       $out=start_observer($state,$next);$state=$out.state
-      if not $out.ok then publish_bustap($state);reply(10,json_encode({error_code:"UNAVAILABLE",message:$state.error}));return end
+      if not $out.ok then $state=publish_bustap($state);reply(10,json_encode({error_code:"UNAVAILABLE",message:$state.error}));return end
     else $state.filter=$next end
-    publish_bustap($state);reply(0,json_encode({filter:$state.filter,subscription_id:$state.subscription_id}))
+    $state=publish_bustap($state);reply(0,json_encode({filter:$state.filter,subscription_id:$state.subscription_id}))
   catch $why reply(10,json_encode({error_code:"ARGUMENT",message:$why})) end
 end
 on bustap.rows
@@ -85,24 +91,20 @@ on bustap.actions
 end
 on bustap.execute
   try
-    $state=$actions.execute($state,$event.args.id);publish_bustap($state);reply(0,json_encode({executed:$event.args.id}))
+    $state=$actions.execute($state,$event.args.id);$state=publish_bustap($state);reply(0,json_encode({executed:$event.args.id}))
   catch $why reply(10,json_encode({error_code:"ARGUMENT",message:$why})) end
 end
 on bustap.intent
-  $a=$event.args
-  if $a.id=="traffic" and $a.action=="select" then $state.selected=$a.value.key
-  elif $a.id=="filter" then $state.filter.text=$a.value
-  elif $a.id=="pause" then $state.paused=$a.value
-  elif $a.id=="own" then $state.filter.own=$a.value
-  elif $a.id=="clear" then $state=$core.clear_rows($state)
-  elif $a.id=="hide" then $state=$actions.execute($state,"view.hide") end
-  publish_bustap($state);reply(0,"{}")
+  try
+    $next=$actions.intent($state,$event.args);$state=$next
+    $state=publish_bustap($state);reply(0,"{}")
+  catch $why reply(10,json_encode({error_code:"ARGUMENT",message:$why})) end
 end
 on viu.frame.intent
   try
-    $state=$actions.execute($state,$event.args.value.command);publish_bustap($state);reply(0,"{}")
+    $state=$actions.execute($state,$event.args.value.command);$state=publish_bustap($state);reply(0,"{}")
   catch $why reply(10,json_encode({error_code:"ARGUMENT",message:$why})) end
 end
 on viu.frame.close
-  $state.window_close=true;publish_bustap($state)
+  $state.window_close=true;$state=publish_bustap($state)
 end

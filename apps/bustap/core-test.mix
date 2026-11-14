@@ -64,6 +64,67 @@ $s.selected=to_string($s.rows[len($s.rows)-1].id);$s=$actions.execute($s,"view.h
 check(contains($s.filter.hide,"example"),"one action hides selected service")
 $s=$actions.execute($s,"view.unhide")
 $model=$view.project($s)
-check(len($model.table.initial.columns)==9 and $model.table.properties.stick_to_bottom,"table projection")
+check(len($model.table.initial.columns)==10 and $model.table.initial.columns[1].id=="direction" and $model.table.properties.stick_to_bottom,"table projection and direction")
 $s.paused=true;check(not $view.project($s).table.properties.stick_to_bottom,"pause stops following")
 print("bustap core: pairing, collision, reject-first, expiry, midnight, loss, filtering, bounds and actions passed")
+
+-- Reject-first, error replies with pending, completion and duplicate tombstones.
+for $error in [true,false]
+  $s=$core.initial();$r=frame("response")
+  if $error then $r.rc=10;$r.outcome="rejected" end
+  $s=$core.observed($s,$r,1)
+  $s=$core.observed($s,frame("request"),1.1)
+  $s=$core.observed($s,frame("response"),1.2)
+  check($s.rows[2].latency_ms==nil,"unmatched reply poisons later pairing")
+end
+$s=$core.initial();$s=$core.observed($s,frame("request"),1)
+$r=frame("response");$r.rc=10
+$s=$core.observed($s,$r,1.1);$s=$core.observed($s,frame("response"),1.2)
+check($s.rows[2].latency_ms==nil,"error reply cannot leave a usable pending pair")
+$s=$core.initial()
+for $i=1 to 4096
+  $key=json_encode([to_string($i),"example","client"])
+  $s.pending[$key]={arrival:1,stamp:3723000,ambiguous:false}
+end
+$s=$core.observed($s,frame("request"),2)
+check($s.pending[json_encode(["1","example","client"])].ambiguous,"full pending map still marks duplicates")
+check(len($s.pending)==4096,"pending bounded")
+$s=$core.tick_rate($s,33);check(len($s.pending)==0,"tick expires pending")
+for $i=1 to 4097 $s=$core.remember_reply($s,to_string($i),1) end
+check(len($s.unmatched_replies)==4096,"tombstones bounded")
+$s=$core.tick_rate($s,32);check(len($s.unmatched_replies)==0,"tick expires tombstones")
+$s=$core.initial();$r=frame("request","bustap");$r.dropped_count=5
+$s=$core.observed($s,$r,1);$s=$core.tick_rate($s,1);$s=$core.tick_rate($s,2)
+check($s.seen==0 and len($s.rows)==0 and len($s.counts)==0 and $s.rate==0 and $s.dropped==5,"own frames account loss only")
+$s.filter.own=true;$s=$core.observed($s,$r,3)
+check($s.seen==1 and len($s.rows)==1 and $s.counts.example==1,"show own counts frames")
+$s=$core.initial();$s.subscription_id="a";$r=frame("request")
+$s=$core.received($s,$r,1,nil);check($s.seen==0,"headerless notification refused")
+$s=$core.received($s,$r,1,"a");$s=$core.received($s,$r,2,"a")
+$r.seq=0;$s=$core.received($s,$r,3,"a")
+check($s.seen==1 and len($s.rows)==1,"duplicate and out of order sequence ignored")
+$s.retired.a={cursor:0,seq:1,live:true};$s.subscription_id="b";$s.last_seq=0;$r.seq=1
+$s=$core.received($s,$r,4,"b");check($s.seen==2,"new subscription resets sequence")
+$s.retired.b={cursor:0,seq:1,live:true};$s.subscription_id="c"
+$r.seq=2;$r.dropped_count=3;$s=$core.received($s,$r,5,"a")
+$r.dropped_count=7;$s=$core.received($s,$r,5,"b")
+$s=$core.received($s,$r,5,"b")
+check($s.dropped==10 and $s.seen==2,"all retired IDs retain independent loss cursors and dedupe")
+for $i=1 to 62 $s.retired[to_string($i)]={cursor:0,seq:0,live:true} end
+$failed=false;try $unused=$core.retire_slot($s) catch $why $failed=true end
+check($failed and len($s.retired)==64,"retired live map refuses overflow")
+$s.retired.a.live=false;$s=$core.retire_slot($s)
+check(len($s.retired)==63 and $s.retired.a==nil,"cap prunes only stopped entries")
+$s=$core.initial();$s.connected=true;$s.retry_at=10
+check(not $core.retry_due($s,9) and $core.retry_due($s,10),"subscribe retry deadline")
+$s.connected=false;check(not $core.retry_due($s,20),"disconnected never retries")
+$s=$core.initial()
+for $bad in [{id:"traffic",action:"select"},{id:"traffic",action:"select",value:{key:1}},{id:"filter",value:123},{id:"pause",value:"yes"},{id:"own",value:1},{id:"clear",value:[]},{id:"hide",value:{}},{id:"missing"},{id:"hide"}]
+  $failed=false
+  try $unused=$actions.intent($s,$bad) catch $why $failed=true end
+  check($failed and deep_eq($s,$core.initial()),"invalid intent refused without mutation")
+end
+$s.rows=[{id:1,kind:"request",to:"(anon)"}];$s.selected="1"
+$failed=false;try $unused=$actions.execute($s,"view.hide") catch $why $failed=true end
+check($failed and len($s.filter.hide)==0,"anonymous service cannot be hidden")
+print("bustap round 2: validation, self exclusion, dedupe, retired loss, retries and pairing regressions passed")

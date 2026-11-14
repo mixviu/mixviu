@@ -51,7 +51,13 @@ fn all_mix_bundles_publish_models_the_actual_scene_adapter_can_draw() {
     for name in ["gallery", "backdrop", "monitor", "bustap"] {
         let (bundle, mut runtime, wakes) = app(name);
         runtime.load(bundle.program).unwrap();
-        let model = completion(&runtime, &wakes).model.unwrap();
+        let mut model = completion(&runtime, &wakes).model.unwrap();
+        if name == "bustap" {
+            model["table"]["initial"]["rows"] = json!([{
+                "key":"danger-row", "tone":"danger", "selected":false,
+                "cells":["01:02:03.000","local","(anon)","example","example.ping","reply","10","rejected","—","42"]
+            }]);
+        }
         let mut view = if bundle.manifest.frame.is_some() {
             viu::gold_frame::mount(&bundle.scene, model)
         } else {
