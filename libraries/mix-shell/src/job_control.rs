@@ -246,7 +246,11 @@ impl Shared {
         let state = self.collect();
         let job = match id {
             Some(id) => state.jobs.get(&id),
-            None => state.jobs.values().rev().find(|j| j.state() != JobState::Done),
+            None => state
+                .jobs
+                .values()
+                .rev()
+                .find(|j| j.state() != JobState::Done),
         };
         job.filter(|j| j.state() != JobState::Done)
             .cloned()
@@ -770,15 +774,11 @@ impl Controller {
         }
     }
     fn launch_stopped(&self, id: usize) -> bool {
-        self.shared
-            .collect()
-            .jobs
-            .get(&id)
-            .is_some_and(|j| {
-                j.members
-                    .iter()
-                    .any(|m| matches!(m.state, MemberState::Stopped(_)))
-            })
+        self.shared.collect().jobs.get(&id).is_some_and(|j| {
+            j.members
+                .iter()
+                .any(|m| matches!(m.state, MemberState::Stopped(_)))
+        })
     }
     /// True once shutdown has been admitted — `shutdown()` for a normal
     /// exit/EOF, `close_jobs` on the HUP path. The monitor reaps jobs in both
@@ -1200,14 +1200,14 @@ mod tests {
             let (child, shared) = pending_stop();
             let selected = shared.select(id).unwrap();
             assert_eq!(selected.state(), JobState::Stopped);
-            assert_eq!(selected.members[0].state, MemberState::Stopped(libc::SIGSTOP));
+            assert_eq!(
+                selected.members[0].state,
+                MemberState::Stopped(libc::SIGSTOP)
+            );
             // A pending exit must be rejected before fg attempts tty handoff
             // or bg sends SIGCONT. Repeated reads must retain the exit code,
             // not wait a second time and replace it with Lost/ECHILD.
-            assert_eq!(
-                unsafe { libc::kill(child.0.id() as i32, libc::SIGKILL) },
-                0
-            );
+            assert_eq!(unsafe { libc::kill(child.0.id() as i32, libc::SIGKILL) }, 0);
             pending_event(child.0.id() as i32, libc::WEXITED);
             assert!(shared.select(id).is_err());
             for _ in 0..2 {
