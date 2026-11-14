@@ -11,6 +11,8 @@
 --         shell is every server's login shell).
 foreign: {
   allow: {
+    "const-oid": {reason: "RustCrypto OID constants; pure Rust, no C, no build script or dependencies; MIT/Apache-2.0; mix reaches it only through digest oid under workspace feature unification (Mark, 2026-11-14)",
+      exit: "none needed: pure-Rust constants"},
     "libsqlite3-sys": {reason: "SQLite; no pure-Rust equivalent yet",
       exit: "the planned Rust SQLite rewrite"},
     "ring": {reason: "TLS crypto primitives (rustls); audited C and assembly",
