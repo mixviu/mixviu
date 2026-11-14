@@ -12,6 +12,9 @@ const DESKTOP: &str = "org.freedesktop.portal.Desktop";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const INTERFACE: &str = "org.freedesktop.portal.FileChooser";
 const REQUEST: &str = "org.freedesktop.portal.Request";
+// Teardown may wait longer than discovery. Recovery must still require a real
+// acknowledgement before another chooser can open, so expiry remains an error.
+pub(super) const CLOSE_BOUND: Duration = Duration::from_secs(10);
 type Options = HashMap<String, OwnedValue>;
 type WireFilter = (String, Vec<(u32, String)>);
 
@@ -308,10 +311,11 @@ async fn session_inner(
 
 pub(super) async fn close(connection: &Connection, owner: &str, path: &str) -> Result<()> {
     let reply = tokio::time::timeout(
-        IO_BOUND,
+        CLOSE_BOUND,
         connection.call_method(Some(owner), path, Some(REQUEST), "Close", &()),
     )
-    .await?;
+    .await
+    .context("portal Close acknowledgement timed out")?;
     match reply {
         Ok(_) => Ok(()),
         Err(zbus::Error::MethodError(name, _, _))
