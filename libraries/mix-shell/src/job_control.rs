@@ -228,6 +228,15 @@ struct Shared {
     shell_modes: Mutex<libc::termios>,
     terminal_shutdown: Mutex<Option<TerminalShutdown>>,
 }
+impl Shared {
+    fn snapshot(&self) -> Vec<Job> {
+        // SIGCHLD wakes the monitor asynchronously. A user asking for jobs
+        // must not depend on that thread having been scheduled already.
+        // reap serialises waitpid with the monitor under the same state lock.
+        reap(self);
+        self.state.lock().unwrap().jobs.values().cloned().collect()
+    }
+}
 
 type TerminalShutdown = Arc<dyn Fn() -> io::Result<()> + Send + Sync>;
 
@@ -439,14 +448,7 @@ impl Controller {
     /// Owned snapshots are the attachment point for stage A; no publication
     /// or external callbacks occur under the controller lock.
     pub fn snapshot(&self) -> Vec<Job> {
-        self.shared
-            .state
-            .lock()
-            .unwrap()
-            .jobs
-            .values()
-            .cloned()
-            .collect()
+        self.shared.snapshot()
     }
 
     pub fn executable(&self) -> &Path {
@@ -1111,6 +1113,57 @@ pub fn stage_entry() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn snapshot_collects_pending_stop_without_monitor() {
+        // No monitor thread: force the schedule where SIGCHLD has arrived
+        // but its consumer has not run. WNOWAIT proves the stop is waitable
+        // without collecting it on behalf of the snapshot.
+        struct ChildGuard(std::process::Child);
+        impl Drop for ChildGuard {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let child = ChildGuard(Command::new("/bin/sleep").arg("60").spawn().unwrap());
+        let pid = child.0.id() as i32;
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGSTOP) }, 0);
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        loop {
+            let rc = unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    pid as libc::id_t,
+                    &mut info,
+                    libc::WSTOPPED | libc::WNOWAIT,
+                )
+            };
+            if rc == 0 {
+                break;
+            }
+            assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EINTR));
+        }
+        let mut pending = job(&[MemberState::Running]);
+        pending.pgid = pid;
+        pending.members[0].pid = pid;
+        let shared = Shared {
+            state: Mutex::new(State {
+                jobs: BTreeMap::from([(1, pending)]),
+                next_id: 2,
+                closing: false,
+                closed: false,
+            }),
+            changed: Condvar::new(),
+            shell_modes: Mutex::new(unsafe { std::mem::zeroed() }),
+            terminal_shutdown: Mutex::new(None),
+        };
+        assert_eq!(shared.snapshot()[0].state(), JobState::Stopped);
+        assert_eq!(
+            shared.snapshot()[0].members[0].state,
+            MemberState::Stopped(libc::SIGSTOP)
+        );
+    }
+
     #[test]
     fn failed_foreground_reclaim_does_not_suppress_later_stops() {
         let managed = super::AtomicBool::new(true);
