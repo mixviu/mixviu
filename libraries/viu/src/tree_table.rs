@@ -906,6 +906,7 @@ fn draw_grid(
             .id_salt(id)
             .auto_shrink([widget.properties["auto_shrink"] == true; 2])
             .vscroll(widget.properties["vscroll"] != false)
+            .stick_to_bottom(widget.properties["stick_to_bottom"] == true)
             .striped(true)
             .resizable(widget.properties["resizable"] != false)
             .sense(if read_only {
@@ -972,7 +973,9 @@ fn draw_grid(
                             }
                             let label =
                                 egui::RichText::new(data["cells"][i].as_str().unwrap_or(""));
-                            let label = if column["weak"] == true {
+                            let label = if data["tone"] == "danger" {
+                                label.color(toolkit::chrome::Chrome::of(ui.ctx()).palette.danger)
+                            } else if column["weak"] == true {
                                 label.color(weak)
                             } else {
                                 label
