@@ -1804,7 +1804,24 @@ mod tests {
         // The ^Z landed after exec closed the pipe: the EOF is already
         // waiting, so the launch succeeded and the job is merely stopped.
         let (stage, _gate, _) = stage(true);
-        assert!(stage.release_with_stop(|| true).is_ok());
+        // Force a sibling fork between fixture creation and release. CLOEXEC
+        // only closes its inherited writer at exec, not while it is stopped.
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0);
+        if pid == 0 {
+            unsafe {
+                libc::raise(libc::SIGSTOP);
+                libc::_exit(0);
+            }
+        }
+        pending_event(pid, libc::WSTOPPED);
+        let result = stage.release_with_stop(|| true);
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+        let mut status = 0;
+        while unsafe { libc::waitpid(pid, &mut status, 0) } < 0 {
+            assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EINTR));
+        }
+        assert!(result.is_ok(), "{result:?}");
     }
     #[test]
     fn stop_with_no_acknowledgement_is_pre_exec() {
