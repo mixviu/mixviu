@@ -2432,13 +2432,20 @@ mod tests {
     #[test]
     fn body_collections_use_json_and_scalars_keep_their_wire_form() {
         for (value, expected) in [
-            (json_to_value(&serde_json::json!({"params": {}, "services": ["term"]})),
-             r#"{"params":{},"services":["term"]}"#),
-            (json_to_value(&serde_json::json!([{}, [], "a\n\"b", 2])),
-             r#"[{},[],"a\n\"b",2]"#),
+            (
+                json_to_value(&serde_json::json!({"params": {}, "services": ["term"]})),
+                r#"{"params":{},"services":["term"]}"#,
+            ),
+            (
+                json_to_value(&serde_json::json!([{}, [], "a\n\"b", 2])),
+                r#"[{},[],"a\n\"b",2]"#,
+            ),
             (Value::map(IndexMap::new()), "{}"),
             (Value::list(vec![]), "[]"),
-            (Value::String(" {\"raw\": true}\n".into()), " {\"raw\": true}\n"),
+            (
+                Value::String(" {\"raw\": true}\n".into()),
+                " {\"raw\": true}\n",
+            ),
             (Value::Number(2.0), "2"),
             (Value::Bool(true), "true"),
             (Value::Nil, "nil"),
@@ -2455,7 +2462,12 @@ mod tests {
             "body".into(),
             Value::list(vec![Value::Number(f64::INFINITY)]),
         )]);
-        assert!(split_headers_body(&args).unwrap_err().to_string().contains("non-finite"));
+        assert!(
+            split_headers_body(&args)
+                .unwrap_err()
+                .to_string()
+                .contains("non-finite")
+        );
     }
 
     impl MixBusHandler {

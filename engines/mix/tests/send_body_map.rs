@@ -16,10 +16,15 @@ async fn body_collections_round_trip_from_scripts_and_shell_input() {
     let receiver = tokio::spawn(async move {
         for _ in 0..10 {
             let command = tokio::time::timeout(std::time::Duration::from_secs(10), incoming.recv())
-                .await.unwrap().unwrap();
+                .await
+                .unwrap()
+                .unwrap();
             let body = json!({"args": serde_json::from_str::<Value>(&command.body).ok(),
                 "body": command.body});
-            service.respond(&command, 0, &body.to_string()).await.unwrap();
+            service
+                .respond(&command, 0, &body.to_string())
+                .await
+                .unwrap();
         }
         service.close().await;
     });
@@ -54,14 +59,29 @@ print(json_encode($result))
             .env_remove("MIX_SESSION_FD")
             .env_remove("COSMIX_SESSION_FD")
             .stdin(Stdio::null());
-        let out = tokio::task::spawn_blocking(move || cmd.output().unwrap()).await.unwrap();
+        let out = tokio::task::spawn_blocking(move || cmd.output().unwrap())
+            .await
+            .unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(out.status.success(), "{stdout}\n{}", String::from_utf8_lossy(&out.stderr));
-        let values: Vec<Value> = stdout.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
-        assert_eq!(values, vec![expected.clone(), expected.clone(), expected.clone(),
-            json!({"args": [{}, "term"], "body": r#"[{},"term"]"#}),
-            json!({"args": {"raw": true}, "body": " {\"raw\":true} "})]);
+        assert!(
+            out.status.success(),
+            "{stdout}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let values: Vec<Value> = stdout
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            values,
+            vec![
+                expected.clone(),
+                expected.clone(),
+                expected.clone(),
+                json!({"args": [{}, "term"], "body": r#"[{},"term"]"#}),
+                json!({"args": {"raw": true}, "body": " {\"raw\":true} "})
+            ]
+        );
     }
     receiver.await.unwrap();
 }
-
