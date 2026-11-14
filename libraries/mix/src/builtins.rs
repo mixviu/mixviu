@@ -29872,6 +29872,15 @@ fn http_accept_next(
 /// `http_serve(root[, opts])` — blocking static file server; returns the
 /// number of requests served once `duration`/`requests` ends it.
 fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
+    http_serve_with_listener(args, None)
+}
+
+// Keep listener ownership across fixture setup and serving, as the broker
+// fixture does. The Mix entry point still binds its requested address itself.
+fn http_serve_with_listener(
+    args: Vec<Value>,
+    listener: Option<std::net::TcpListener>,
+) -> MixResult<Option<Value>> {
     expect_args_between("http_serve", &args, 1, 2)?;
     let root_arg = args[0].to_mix_string();
     let root = std::fs::canonicalize(&root_arg).map_err(|e| MixError::RuntimeError {
@@ -30017,11 +30026,13 @@ fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
         });
     }
 
-    let listener =
-        std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
+    let listener = match listener {
+        Some(listener) => listener,
+        None => std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
             span: None,
             msg: format!("http_serve: bind '{host}:{port}': {e}"),
-        })?;
+        })?,
+    };
     listener.set_nonblocking(true).ok();
     let bound = listener.local_addr().map_err(|e| MixError::RuntimeError {
         span: None,
@@ -30311,6 +30322,13 @@ fn http_send_file(
 /// `http_recv(port[, opts])` — accept ONE request, answer it, return it
 /// as a map (nil on timeout). The OAuth-redirect / webhook-catch shape.
 fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
+    http_recv_with_listener(args, None)
+}
+
+fn http_recv_with_listener(
+    args: Vec<Value>,
+    listener: Option<std::net::TcpListener>,
+) -> MixResult<Option<Value>> {
     expect_args_between("http_recv", &args, 1, 2)?;
     let port = as_exact_integer(
         "http_recv(): port",
@@ -30438,11 +30456,13 @@ fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
         }
     }
 
-    let listener =
-        std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
+    let listener = match listener {
+        Some(listener) => listener,
+        None => std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
             span: None,
             msg: format!("http_recv: bind '{host}:{port}': {e}"),
-        })?;
+        })?,
+    };
     listener.set_nonblocking(true).ok();
     let deadline = (timeout_seconds > 0.0)
         .then(|| std::time::Instant::now() + std::time::Duration::from_secs_f64(timeout_seconds));
@@ -37733,12 +37753,14 @@ mod bytes_tests {
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    fn free_port() -> u16 {
-        std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port()
+    fn reserved_http_listener() -> (std::net::TcpListener, u16) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // Force the old probe-to-bind interleaving: a peer must be unable
+        // to claim the address while the fixture owns its listener.
+        let err = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
+        (listener, port)
     }
 
     #[test]
@@ -37753,19 +37775,18 @@ mod bytes_tests {
         std::fs::write(&outside, "SECRET").unwrap();
         std::os::unix::fs::symlink(&outside, dir.join("leak")).unwrap();
 
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(7.0));
             opts.insert("listing".to_string(), Value::Bool(true));
-            match builtin_http_serve(vec![Value::String(root), Value::map(opts)]) {
+            match http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener)) {
                 Ok(Some(Value::Number(n))) => Ok(n as u64),
                 other => Err(format!("{other:?}")),
             }
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
 
         // 1. Plain file with the right type and body.
         let r = http_raw(port, "GET /hello.txt HTTP/1.1\r\nHost: x\r\n\r\n");
@@ -37826,18 +37847,17 @@ mod bytes_tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("index.html"), "<!doctype html><div id=app></div>").unwrap();
         std::fs::write(dir.join("app.js"), "console.log('router')").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(5.0));
             opts.insert("spa".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         // 1. A real asset still serves as itself.
         let r = http_raw(port, "GET /app.js HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(r.starts_with("HTTP/1.1 200") && r.contains("router"), "{r}");
@@ -37882,18 +37902,17 @@ mod bytes_tests {
         std::fs::create_dir_all(dir.join("bus")).unwrap();
         std::fs::write(dir.join("bus/props-core.html"), "<h1>props-core page</h1>").unwrap();
         std::fs::write(dir.join("plain.txt"), "text").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(4.0));
             opts.insert("clean_urls".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         // Clean URL → the .html page, styled/served as HTML.
         let r = http_raw(port, "GET /bus/props-core HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(
@@ -37928,18 +37947,17 @@ mod bytes_tests {
         std::fs::create_dir_all(dir.join("bus")).unwrap();
         std::fs::write(dir.join("bus.html"), "<h1>bus section</h1>").unwrap();
         std::fs::write(dir.join("bus/props.html"), "<h1>child</h1>").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(3.0));
             opts.insert("clean_urls".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         // /bus (the dir exists, no index) resolves to the sibling bus.html.
         let r = http_raw(port, "GET /bus HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(
@@ -37965,7 +37983,7 @@ mod bytes_tests {
         let dir = std::env::temp_dir().join(format!("mix-http-spa-bad-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut opts = indexmap::IndexMap::new();
-        opts.insert("port".to_string(), Value::Number(free_port() as f64));
+        opts.insert("port".to_string(), Value::Number(1.0));
         opts.insert("spa".to_string(), Value::String("nope.html".into()));
         let err = builtin_http_serve(vec![
             Value::String(dir.to_string_lossy().into_owned()),
@@ -38086,17 +38104,16 @@ mod bytes_tests {
         let dir = std::env::temp_dir().join(format!("mix-http-head-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("f.txt"), "0123456789").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(1.0));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         let r = http_raw(port, "HEAD /f.txt HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(r.starts_with("HTTP/1.1 200"), "{r}");
         assert!(r.contains("Content-Length: 10"), "{r}");
@@ -38116,17 +38133,16 @@ mod bytes_tests {
         let dir = std::env::temp_dir().join(format!("mix-http-refuse-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("f.txt"), "x").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(4.0));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         let r = http_raw(
             port,
             "POST /f.txt HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n",
@@ -38162,17 +38178,16 @@ mod bytes_tests {
         let mut opts = indexmap::IndexMap::new();
         opts.insert("respond".to_string(), Value::map(respond));
         opts.insert("timeout".to_string(), Value::Number(0.1));
-        let err = builtin_http_recv(vec![Value::Number(free_port() as f64), Value::map(opts)])
+        let err = builtin_http_recv(vec![Value::Number(1.0), Value::map(opts)])
             .unwrap_err();
         assert!(format!("{err}").contains("response splitting"), "{err}");
     }
 
     #[test]
     fn http_recv_catches_one_request_and_times_out_clean() {
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let client = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            http_raw(
+                http_raw(
                 port,
                 "POST /hook?run=42 HTTP/1.1\r\nHost: x\r\nX-Token: abc\r\nContent-Length: 9\r\n\r\npayload=1",
             )
@@ -38183,7 +38198,7 @@ mod bytes_tests {
         respond.insert("status".to_string(), Value::Number(202.0));
         respond.insert("body".to_string(), Value::String("queued\n".into()));
         opts.insert("respond".to_string(), Value::map(respond));
-        let got = builtin_http_recv(vec![Value::Number(port as f64), Value::map(opts)])
+        let got = http_recv_with_listener(vec![Value::Number(port as f64), Value::map(opts)], Some(listener))
             .unwrap()
             .unwrap();
         let Value::Map(m) = &got else {
@@ -38203,11 +38218,11 @@ mod bytes_tests {
         assert!(resp.ends_with("queued\n"), "{resp}");
 
         // And a quiet port answers nil, not an error.
-        let port2 = free_port();
+        let (listener, port2) = reserved_http_listener();
         let mut opts = indexmap::IndexMap::new();
         opts.insert("timeout".to_string(), Value::Number(0.2));
         assert_eq!(
-            builtin_http_recv(vec![Value::Number(port2 as f64), Value::map(opts)]).unwrap(),
+            http_recv_with_listener(vec![Value::Number(port2 as f64), Value::map(opts)], Some(listener)).unwrap(),
             Some(Value::Nil)
         );
     }
