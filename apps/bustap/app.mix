@@ -13,21 +13,30 @@ fn publish_bustap($s)
   end
   return $s
 end
+fn stop_observer($id)
+  try
+    send "noded" "noded.observe.stop" body={subscription_id:$id} timeout=2
+    return $rc==0
+  catch $why return false end
+end
 fn start_observer($s,$filter)
   $s.retry_at=time()+2
-  try $s=$core.retire_slot($s) catch $why $s.error=$why;return {state:$s,ok:false} end
-  send "noded" "noded.observe.start" body={filter:$core.broker_filter($filter),body:"none",capacity:1024} timeout=5
-  if $rc!=0 or type($reply.subscription_id)!="string" then
+  try $s=$core.retire_slot($s) catch $why $s.error="Retired subscriptions could not be stopped; "..$why;return {state:$s,ok:false} end
+  $started=nil
+  try
+    send "noded" "noded.observe.start" body={filter:$core.broker_filter($filter),body:"none",capacity:1024} timeout=5
+    if $rc==0 then $started=$reply end
+  catch $why $started=nil end
+  if type($started)!="map" or type($started.subscription_id)!="string" then
     $s.error=if $core.stop_warning($s) then "Retired subscriptions could not be stopped; observation subscription refused" else "Observation subscription refused" end;$s.status="Unavailable"
     return {state:$s,ok:false}
   end
   $old=$s.subscription_id
   if $old!=nil then $s.retired[$old]={cursor:$s.drop_cursor,seq:$s.last_seq,live:true} end
-  $s.subscription_id=$reply.subscription_id
+  $s.subscription_id=$started.subscription_id
   $s.filter=$filter;$s.drop_cursor=0;$s.last_seq=0;$s.pending={};$s.unmatched_replies={};$s.status="Live"
   if $old!=nil then
-    send "noded" "noded.observe.stop" body={subscription_id:$old} timeout=5
-    if $rc==0 then $s.retired[$old].live=false end
+    if stop_observer($old) then $s.retired[$old].live=false end
   end
   $s.error=if $core.stop_warning($s) then "Retired subscriptions could not be stopped" else nil end
   return {state:$s,ok:true}
@@ -51,8 +60,7 @@ on viu.tick
   if $state.connected and $now>=$state.stop_retry_at then
     $state.stop_retry_at=$now+2
     for $id in take(filter(keys($state.retired),fn($id)=$state.retired[$id].live),4)
-      send "noded" "noded.observe.stop" body={subscription_id:$id} timeout=2
-      if $rc==0 then $state.retired[$id].live=false end
+      if stop_observer($id) then $state.retired[$id].live=false end
     end
     if $core.stop_warning($state) then $state.error="Retired subscriptions could not be stopped"
     elif $state.subscription_id!=nil then $state.error=nil end
@@ -84,7 +92,7 @@ on bustap.rows
   reply(0,json_encode({rows:$core.rows($state,$limit)}))
 end
 on bustap.stats
-  reply(0,json_encode({seen:$state.seen,retained:len($state.rows),visible:len($core.rows($state)),history_evicted:$state.evicted,dropped:$state.dropped,rate:$state.rate,services:$state.counts,paused:$state.paused,connected:$state.connected,subscription_id:$state.subscription_id,status:$state.status,error:$state.error,filter:$state.filter}))
+  reply(0,json_encode({seen:$state.seen,retained:len($state.rows),visible:len($core.rows($state)),history_evicted:$state.evicted,dropped:$state.dropped,rate:$state.rate,services:$state.counts,paused:$state.paused,connected:$state.connected,subscription_id:$state.subscription_id,retired:$state.retired,status:$state.status,error:$state.error,filter:$state.filter}))
 end
 on bustap.actions
   reply(0,json_encode({actions:$actions.registry($state)}))

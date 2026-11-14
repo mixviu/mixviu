@@ -81,6 +81,12 @@ $s=$core.initial();$s=$core.observed($s,frame("request"),1)
 $r=frame("response");$r.rc=10
 $s=$core.observed($s,$r,1.1);$s=$core.observed($s,frame("response"),1.2)
 check($s.rows[2].latency_ms==nil,"error reply cannot leave a usable pending pair")
+$s=$core.initial();$s=$core.observed($s,frame("request"),1)
+$s=$core.observed($s,frame("response"),1.1)
+$s=$core.observed($s,frame("response"),1.2)
+$s=$core.observed($s,frame("request"),1.3)
+$s=$core.observed($s,frame("response"),1.4)
+check($s.rows[4].latency_ms==nil,"completed and duplicate reply guard later ID reuse")
 $s=$core.initial()
 for $i=1 to 4096
   $key=json_encode([to_string($i),"example","client"])
@@ -127,4 +133,12 @@ end
 $s.rows=[{id:1,kind:"request",to:"(anon)"}];$s.selected="1"
 $failed=false;try $unused=$actions.execute($s,"view.hide") catch $why $failed=true end
 check($failed and len($s.filter.hide)==0,"anonymous service cannot be hidden")
+$s=$core.initial();$s=$core.observed($s,frame("request"),1)
+$s=$actions.intent($s,{id:"traffic",action:"select",value:{key:"1"}})
+$s=$actions.intent($s,{id:"filter",value:"ping"})
+$s=$actions.intent($s,{id:"pause",value:true})
+$s=$actions.intent($s,{id:"own",value:true})
+$s=$actions.intent($s,{id:"hide",value:nil})
+check($s.selected=="1" and $s.filter.text=="ping" and $s.paused and $s.filter.own and contains($s.filter.hide,"example"),"valid intent values")
+$s=$actions.intent($s,{id:"clear",value:"Clear"});check(len($s.rows)==0,"valid clear button")
 print("bustap round 2: validation, self exclusion, dedupe, retired loss, retries and pairing regressions passed")
