@@ -1,0 +1,125 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Self-test for the foreign gate's admitted list, argument parsing and ELF count.
+--   mix tools/foreign_admission_test.mix [--cargo]
+-- --cargo also runs `cargo tree` on a generated fixture workspace (offline,
+-- path dependencies only): a target-specific edge and a `package =` rename.
+-- CI passes it; without it the fixture cases are reported as not run.
+$admission = require("foreign_admission.mix")
+$entry = {kind: "system", via: "fixture", exit: "fixture", only: ["portal"], by: "Mark", on: "2026-11-12"}
+$policy = {allow: {}, debt: {}, admitted: {native: $entry}, strict: ["shell"]}
+$members = ["portal", "other", "shell"]
+$good = {portal: {native: true}}
+fn assert($ok, $message)
+  if not $ok then raise("TEST_FAILED", $message) end
+end
+fn expect($policy, $members, $closures, $needle)
+  $bad = $admission.check($policy, $members, $closures)
+  if $needle == "" then
+    assert(len($bad) == 0, json_encode($bad))
+  else
+    assert(contains(join($bad, "\n"), $needle), "missing failure: " .. $needle .. " in " .. json_encode($bad))
+  end
+  return 1
+end
+-- One fixture crate with an empty library.
+fn package($dir, $name, $deps)
+  mkdir($dir .. "/" .. $name .. "/src", {parents: true})
+  write_file($dir .. "/" .. $name .. "/src/lib.rs", "")
+  write_file($dir .. "/" .. $name .. "/Cargo.toml", "[package]\nname = \"" .. $name ..
+    "\"\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n\n" .. $deps)
+end
+$cases = 0
+
+-- Policy cases.
+$cases = $cases + expect($policy, $members, $good, "")
+$cases = $cases + expect($policy, $members, {portal: {native: true}, other: {native: true}}, "other reaches admitted native outside only")
+$cases = $cases + expect($policy, $members, {shell: {native: true}}, "strict shell reaches admitted")
+$cases = $cases + expect($policy, $members, {}, "stale admitted")
+$p = $policy
+$p.admitted.native.only = ["shell"]
+$cases = $cases + expect($p, $members, $good, "strict member forbidden in only")
+$p = $policy
+$p.allow.native = {}
+$cases = $cases + expect($p, $members, $good, "exactly one")
+$p = $policy
+$p.debt.native = {}
+$cases = $cases + expect($p, $members, $good, "exactly one")
+$p = $policy
+$p.admitted.native.only = []
+$cases = $cases + expect($p, $members, $good, "nonempty")
+$p = $policy
+$p.admitted.native.only = ["unknown"]
+$cases = $cases + expect($p, $members, $good, "unknown member")
+for $field in ["kind", "via", "exit", "by", "on"]
+  $p = $policy
+  $p.admitted.native[$field] = ""
+  $cases = $cases + expect($p, $members, $good, "missing or invalid " .. $field)
+end
+$p = $policy
+$p.admitted.native.kind = "other"
+$cases = $cases + expect($p, $members, $good, "native: invalid kind")
+$p = $policy
+$p.admitted.native.on = 20261112
+$cases = $cases + expect($p, $members, $good, "missing or invalid on")
+$p = $policy
+$p.admitted.native.by = "Someone"
+$cases = $cases + expect($p, $members, $good, "by Mark")
+$p = $policy
+$p.admitted.native.on = "yesterday"
+$cases = $cases + expect($p, $members, $good, "YYYY-MM-DD")
+$p = {allow: {native: {}}, debt: {native: {}}}
+$cases = $cases + expect($p, $members, {}, "exactly one")
+
+-- Argument parsing: every --elf is kept, and too few scanned is a failure.
+$o = $admission.parse_args(["--locked", "--elf", "/x/mix", "--elf", "/x/mixd", "--min-elf", "2"])
+assert(len($o.errors) == 0, json_encode($o.errors))
+assert(deep_eq($o.elf_bins, ["/x/mix", "/x/mixd"]), "repeated --elf kept " .. json_encode($o.elf_bins))
+assert(deep_eq($o.pass, ["--locked"]) and $o.min_elf == 2, json_encode($o))
+$cases = $cases + 1
+assert($admission.elf_shortfall($o.elf_bins, $o.min_elf) == nil, "two scanned meets --min-elf 2")
+$cases = $cases + 1
+$short = $admission.elf_shortfall(["/x/mix"], 2)
+assert($short != nil and contains($short, "scanned 1 binaries, expected at least 2"), to_string($short))
+$cases = $cases + 1
+$o = $admission.parse_args(["--min-elf", "two"])
+assert(len($o.errors) > 0 and $o.errors[0] == "unknown argument --min-elf", "a non-numeric --min-elf is refused")
+$cases = $cases + 1
+$o = $admission.parse_args(["--elf"])
+assert(len($o.errors) == 1, "--elf without a value is refused")
+$cases = $cases + 1
+
+-- Fixture workspace through the real `cargo tree`.
+$fixtures = "not run (pass --cargo)"
+if contains(args(), "--cargo") then
+  $dir = trim(run_argv_must(["mktemp", "-d", "--tmpdir=/var/tmp", "foreign-admission-XXXXXXXX"]))
+  try
+    write_file($dir .. "/Cargo.toml", "[workspace]\nresolver = \"2\"\nmembers = [\"portal\", \"other\", \"native\"]\n")
+    package($dir, "native", "")
+    -- portal reaches native through a rename; other only on Windows.
+    package($dir, "portal", "[dependencies]\nrenamed = { package = \"native\", path = \"../native\" }\n")
+    package($dir, "other", "[target.'cfg(windows)'.dependencies]\nnative = { path = \"../native\" }\n")
+    $manifest = $dir .. "/Cargo.toml"
+    $fx_members = ["portal", "other", "native"]
+    $closures = {}
+    for $m in $fx_members
+      $closures[$m] = $admission.tree_names($manifest, $m, ["--all-features"], "normal,build,dev", "all", ["--offline"])
+    end
+    assert($closures.portal.native == true, "a package = rename resolves to the real package name: " .. json_encode($closures.portal))
+    assert($closures.portal.renamed == nil, "the rename alias is not a package")
+    $cases = $cases + 1
+    assert($closures.other.native == true, "--target all sees the cfg(windows) edge: " .. json_encode($closures.other))
+    $cases = $cases + 1
+    $linux = $admission.tree_names($manifest, "other", ["--all-features"], "normal,build,dev", "x86_64-unknown-linux-gnu", ["--offline"])
+    assert($linux.native == nil, "one Linux target hides the cfg(windows) edge (the case --target all exists for)")
+    $cases = $cases + 1
+    -- native itself is a member here; it is allowed to "reach" itself.
+    $fx_policy = {allow: {}, debt: {}, admitted: {native: {kind: "system", via: "fixture", exit: "fixture", only: ["portal", "native"], by: "Mark", on: "2026-11-12"}}, strict: []}
+    $cases = $cases + expect($fx_policy, $fx_members, $closures, "other reaches admitted native outside only")
+    $closures.other = {other: true}
+    $cases = $cases + expect($fx_policy, $fx_members, $closures, "")
+    $fixtures = "run"
+  finally
+    remove_dir($dir)
+  end
+end
+print("foreign admission: " .. to_string($cases) .. " cases passed; cargo fixtures " .. $fixtures)

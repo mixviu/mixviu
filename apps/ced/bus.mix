@@ -93,7 +93,7 @@ fn bus_command($s,$e)
   end
   if type($a)!="map" then return refused($s,"INVALID_ARGUMENT","Expected an object","bad_args") end
   if $command=="ced.info" then
-    reply(0,json_encode({version:$ctx.version ?? "0.1.2",git_sha:$ctx.git_sha ?? "unknown",build_time:$ctx.build_time ?? "unknown",headless:false,tabs:len($s.tabs),edit:$s.edit,config_path:nil,session_path:$s.session_path}));return $s
+    reply(0,json_encode({version:$ctx.version ?? "0.1.2",git_sha:$ctx.git_sha ?? "unknown",build_time:$ctx.build_time ?? "unknown",headless:false,theme:{mode:$s.local_theme.mode,effective:$s.look.appearance},tabs:len($s.tabs),edit:$s.edit,config_path:nil,session_path:$s.session_path}));return $s
   elif $command=="ced.tabs" then
     reply(0,json_encode({active:if len($s.tabs)>0 then to_number($ced_core.current($s).document) else nil end,tabs:map($s.tabs,fn($t)=tab_row($t,if $t.language=="markdown" then $s.previews[$t.document] ?? "source" else "source" end))}));return $s
   elif $command=="ced.open" or $command=="ced.new" then
@@ -119,7 +119,8 @@ fn bus_command($s,$e)
     if any($s.tabs,fn($t)=$s.mail[$t.document]!=nil and ($t.dirty or $s.mail[$t.document].sending or $s.mail[$t.document].saving)) then return refused($s,"CONFLICT","Save or discard mail document changes before quitting") end
     $s=$ced_session.save_session($ced_session.session_changed($s));return $ced_core.pump(hold_call($s,$e,{kind:"quit",timeout_ms:30000}))
   elif $command=="ced.show" then
-    $s=hold_call($s,$e,{kind:"job",timeout_ms:10000});return $ced_core.pump($ced_core.queue_job($s,"show",{call:$e.headers["viu-call"]}))
+    -- Four sequential sends have 15-second bounds; leave time for completion.
+    $s=hold_call($s,$e,{kind:"job",timeout_ms:65000});return $ced_core.pump($ced_core.queue_job($s,"show",{call:$e.headers["viu-call"],app_id:$s.launch.app_id ?? "mixviu.ced",comp:$s.launch.comp}))
   elif $command=="ced.stats" then
     $v=viu_ui_state();reply(0,json_encode(merge($v.stats,viu_document("stats","*",{}))));return $s
   elif $command=="ced.diagnostics" then
@@ -165,7 +166,7 @@ fn bus_command($s,$e)
     if $a.text!=nil and type($a.text)!="bool" then return refused($s,"INVALID_ARGUMENT","text must be boolean","bad_args") end
     try
       $v=viu_document("inspect",$t.document,{text:$a.text ?? false})
-      $body={tab:to_number($t.document),preview:$s.previews[$t.document] ?? "source",buffer:$v.buffer,rev:$v.rev,view_gen:$v.view_gen,phase:$v.phase,pending:$v.pending,inflight:$v.inflight,text_hash:$v.text_hash,bytes:$v.bytes,lines:$v.lines,selection:$v.selection,first_line:$v.first_line,last_remote:$v.last_remote,conflicts:$v.conflicts,detached_copy:$v.detached_copy,text:$v.text}
+      $body={theme:{mode:$s.local_theme.mode,effective:$s.look.appearance},tab:to_number($t.document),preview:$s.previews[$t.document] ?? "source",buffer:$v.buffer,rev:$v.rev,view_gen:$v.view_gen,phase:$v.phase,pending:$v.pending,inflight:$v.inflight,text_hash:$v.text_hash,bytes:$v.bytes,lines:$v.lines,selection:$v.selection,first_line:$v.first_line,last_remote:$v.last_remote,conflicts:$v.conflicts,detached_copy:$v.detached_copy,text:$v.text}
       if $s.mail[$t.document]!=nil then $m=$s.mail[$t.document];$body.mail={headers:$m.headers,sending:$m.sending,saving:$m.saving,notice:$m.notice} end
       if $s.notices[$t.document]!=nil then $body.document_notice=$s.notices[$t.document] end
       reply(0,json_encode($body));return $s

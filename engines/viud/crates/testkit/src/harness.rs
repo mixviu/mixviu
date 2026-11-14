@@ -4,7 +4,7 @@
 
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Once};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dispatcher::state::Dispatch;
 use dispatcher::wire::Wire;
@@ -22,8 +22,8 @@ use world::comp::CompState;
 use crate::client::{TestClient, protocol_id};
 use crate::host::TestHost;
 
-/// Pumps a roundtrip may take before the harness calls it hung.
-const ROUNDTRIP_PUMPS: usize = 64;
+/// Scheduling margin for protocol dispatch and asynchronous workers under load.
+const WAIT_BOUND: Duration = Duration::from_secs(10);
 
 pub struct Harness {
     pub clock: world::comp::clock::ManualClock,
@@ -197,15 +197,31 @@ impl Harness {
         index
     }
 
+    /// Pump until the observed state holds, or the wall-clock deadline expires.
+    /// Returns false on timeout so callers can report the state they expected.
+    /// The predicate may poll an external receiver; it is checked after each pump.
+    #[must_use = "a timeout returns false; assert on it"]
+    pub fn pump_until(&mut self, mut ready: impl FnMut(&mut Self) -> bool) -> bool {
+        let deadline = Instant::now() + WAIT_BOUND;
+        loop {
+            self.pump();
+            if ready(self) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     pub fn roundtrip_client(&mut self, index: usize) {
         let target = self.extra_clients[index].sync();
-        for _ in 0..ROUNDTRIP_PUMPS {
-            self.pump();
-            if self.extra_clients[index].state.syncs >= target {
-                return;
-            }
-        }
-        panic!("client {index} roundtrip did not complete in {ROUNDTRIP_PUMPS} pumps");
+        assert!(
+            self.pump_until(|h| h.extra_clients[index].state.syncs >= target),
+            "client {index} sync target {target}, observed {}",
+            self.extra_clients[index].state.syncs
+        );
     }
 
     /// Pump until everything the client sent so far has been handled and
@@ -216,7 +232,8 @@ impl Harness {
         &mut self,
     ) -> wayland_client::backend::protocol::ProtocolError {
         let target = self.client.sync();
-        for _ in 0..ROUNDTRIP_PUMPS {
+        let deadline = Instant::now() + WAIT_BOUND;
+        while Instant::now() < deadline {
             self.client.flush();
             let _ = self
                 .event_loop
@@ -233,8 +250,12 @@ impl Harness {
             if self.client.state.syncs >= target {
                 panic!("the round trip completed without a protocol error");
             }
+            std::thread::sleep(Duration::from_millis(1));
         }
-        panic!("no protocol error within {ROUNDTRIP_PUMPS} pumps");
+        panic!(
+            "no protocol error within {WAIT_BOUND:?}; sync target {target}, observed {}",
+            self.client.state.syncs
+        );
     }
 
     /// Service screencopy as a backend does after rendering a frame of the fake
@@ -354,13 +375,11 @@ impl Harness {
 
     pub fn roundtrip(&mut self) {
         let target = self.client.sync();
-        for _ in 0..ROUNDTRIP_PUMPS {
-            self.pump();
-            if self.client.state.syncs >= target {
-                return;
-            }
-        }
-        panic!("roundtrip did not complete in {ROUNDTRIP_PUMPS} pumps");
+        assert!(
+            self.pump_until(|h| h.client.state.syncs >= target),
+            "sync target {target}, observed {}",
+            self.client.state.syncs
+        );
     }
 
     /// Renderer-free lifecycle service after protocol draining, as on a parked VT.

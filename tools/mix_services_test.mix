@@ -1,0 +1,43 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Headless services: owned loopback brokers, fake agents and HTTP fixtures.
+$g = getopt(args(), {mix: {arg: true}, bin: {arg: true}})
+if len($g.errors) != 0 or $g.opts.mix == nil or $g.opts.bin == nil then
+  raise("USAGE", "mix_services_test.mix --mix EXE --bin DIR")
+end
+$mix = realpath($g.opts.mix)
+$bin = realpath($g.opts.bin)
+$bundle = run_argv([$mix, "tests/mix_services_bundle_test.mix"], {timeout: 30, stdout: "inherit", stderr: "inherit"})
+if not $bundle.ok then raise("BUNDLE", "installed template closure failed") end
+$failed = []
+for $svc in ["agentd", "peersd", "releasesd", "daylight"]
+  $passed_checks = 0
+  $failed_checks = 0
+  $scripts = 0
+  for $case in sort(glob("services/" .. $svc .. "/tests/*_test.mix"))
+    print("::group::" .. $case)
+    -- The installer refuses root; retain the oracle runner's nobody path.
+    $argv = if $svc == "releasesd" and uid() == 0 then
+      ["runuser", "-u", "nobody", "--", $mix, $case]
+    else [$mix, $case] end
+    -- The built noded authenticates <svc>.op.done publishers, so the await
+    -- test's authenticated-operation branch runs too.
+    $r = run_argv($argv, {timeout: 1800, max_output: 16000000,
+      env: {MIX_TEST_MIX_EXE: $mix, MIX_TEST_NODED_EXE: $bin .. "/noded",
+        MIX_TEST_SETTINGSD_EXE: $bin .. "/settingsd", MIX_TEST_AGENTD_AUTH_OPS: "1",
+        MIX_STATS: "off", TZ: "UTC"}})
+    print($r.stdout .. $r.stderr)
+    $case_passed = len(filter(lines($r.stdout), fn($line) = starts_with($line, "PASS ")))
+    $case_failed = len(filter(lines($r.stdout), fn($line) = starts_with($line, "FAIL ")))
+    $passed_checks = $passed_checks + $case_passed
+    $failed_checks = $failed_checks + $case_failed
+    $scripts = $scripts + 1
+    print("SERVICE_TEST " .. json_encode({service: $svc, case: $case, rc: $r.exit_code,
+      passed: $case_passed, failed: $case_failed}))
+    print("::endgroup::")
+    -- A script that prints FAIL but exits 0 still fails the stage.
+    if not $r.ok or $case_failed > 0 then push($failed, $case) end
+  end
+  print("SERVICE_TOTAL " .. json_encode({service: $svc, scripts: $scripts,
+    passed: $passed_checks, failed: $failed_checks}))
+end
+if len($failed) > 0 then raise("SERVICE_TEST", join($failed, ", ")) end

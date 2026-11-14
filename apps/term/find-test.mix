@@ -22,6 +22,11 @@ assert($r.query=="[x]" and not $r.regex and $r.case_sensitive and $r.origin.row=
 $view=$core.framed($s)
 assert($view.find_open and $view.find_bar.kind=="search-bar" and not $view.find_bar.initial.replace,"reuse non-replacing search bar")
 assert(deep_eq($view.terminal.properties.search,$r),"native view receives the same owned request")
+assert($view.find_bar.initial.submit_modifiers==true,"terminal opts in to modifier-aware submit")
+for $shift in [false,true]
+  $submitted=$find.intent($s,{action:"submit",value:{shift:$shift}},$native)
+  assert($submitted.find.backwards==$shift and $submitted.find.request==$s.find.request+1,"Mix maps Enter to next and Shift+Enter to previous")
+end
 $serial=$r.request
 $wrong=$find.observed($s,{handle:"sibling",request:$serial,matched:{start:{row:-4,col:0},end:{row:-4,col:2}}},$forbidden)
 assert($wrong.find.result==nil,"sibling result ignored")

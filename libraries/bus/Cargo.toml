@@ -33,7 +33,7 @@ serde.workspace = true
 libc = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-serde_json = { version = "=1.0.154" }
+serde_json.workspace = true
 strict = { path = "../strict", optional = true }
 tokio = { version = "=1.54.1", features = ["macros", "net", "rt", "sync", "time", "io-util"], optional = true }
 tokio-tungstenite = { version = "=0.26.2", optional = true }

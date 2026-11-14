@@ -19,6 +19,51 @@ use super::{
 };
 use crate::templates::text as port_text;
 
+fn contrast(a: Color32, b: Color32) -> f32 {
+    let luminance = |c: Color32| {
+        let c = egui::Rgba::from(c);
+        0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
+    };
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
+// Semantic scene colours resolve at paint time, so a session update also
+// recolours cached task/tray rows without a behaviour restart or model rebuild.
+fn scene_colour(theme: &toolkit::Theme, role: &str) -> Option<Color32> {
+    if !role.starts_with("panel.") {
+        return hex(role);
+    }
+    let palette = crate::appearance::page(theme, true);
+    let background = colour(palette.base.surface);
+    let selected = colour(palette.secondary.surface);
+    let readable = |surface, foreground| {
+        if contrast(surface, foreground) >= 4.5 {
+            foreground
+        } else if contrast(surface, Color32::BLACK) >= contrast(surface, Color32::WHITE) {
+            Color32::BLACK
+        } else {
+            Color32::WHITE
+        }
+    };
+    match role {
+        "panel.background" => Some(background),
+        "panel.hover" => Some(
+            background.lerp_to_gamma(readable(background, colour(palette.base.foreground)), 0.08),
+        ),
+        "panel.foreground" => Some(readable(background, colour(palette.base.foreground))),
+        "panel.muted" => Some(readable(
+            background,
+            colour(palette.base.foreground).lerp_to_gamma(background, 0.25),
+        )),
+        "panel.selected" => Some(selected),
+        "panel.selected-foreground" => {
+            Some(readable(selected, colour(palette.secondary.foreground)))
+        }
+        _ => None,
+    }
+}
+
 /// The font a scene text draws in: the session's body or display face,
 /// or the independent mono face.
 pub(crate) fn font(size: f32, mono: bool, bold: bool) -> FontId {
@@ -174,8 +219,8 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         }
         match node.family.as_str() {
             "column" | "row" => {
-                let normal = hex(port_text(&node, "background"));
-                let hover = hex(port_text(&node, "hover")).or(normal);
+                let normal = scene_colour(&scene.theme(), port_text(&node, "background"));
+                let hover = scene_colour(&scene.theme(), port_text(&node, "hover")).or(normal);
                 let radius = number(&node, "radius").unwrap_or(0.0);
                 let clickable = node.ports.contains_key("on_click")
                     || node.ports.contains_key("on_context")
@@ -224,7 +269,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let style = if mono { styles.mono } else { styles.ui };
                 let size = style.size(number(&node, "size"));
                 let font = font(size, mono, flag(&node, "bold"));
-                let colour = hex(port_text(&node, "color")).unwrap_or(ink);
+                let colour = scene_colour(&scene.theme(), port_text(&node, "color")).unwrap_or(ink);
                 let mut text = port_text(&node, "text").to_owned();
                 if flag(&node, "wrap") {
                     let lines = super::flex::wrap_text(
@@ -512,6 +557,7 @@ fn paint_image(
     rect: Rect,
     ink: Color32,
 ) -> Option<(u64, u32, u32)> {
+    let ink = scene_colour(&scene.theme(), port_text(node, "color")).unwrap_or(ink);
     let key = match &item.source {
         Source::Tree => (String::new(), String::new(), item.id.clone()),
         Source::Row { list, item: row } => (list.clone(), row.clone(), item.id.clone()),
@@ -561,7 +607,7 @@ fn paint_image(
                 }
             };
             let tint = if svg.symbolic {
-                hex(port_text(node, "color")).unwrap_or(ink)
+                scene_colour(&scene.theme(), port_text(node, "color")).unwrap_or(ink)
             } else {
                 Color32::WHITE
             };
@@ -571,4 +617,56 @@ fn paint_image(
     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
     painter.image(texture, rect, uv, tint);
     Some(cache)
+}
+
+#[cfg(test)]
+mod panel_mode_tests {
+    use super::*;
+    #[test]
+    fn every_scheme_and_mode_has_readable_panel_surfaces() {
+        let doc = scene::parse(include_str!("../../../../share/scenes/panel/scene.mix")).unwrap();
+        assert_eq!(doc.nodes["root"].ports["background"], "panel.background");
+        for scheme in design::Scheme::ALL {
+            for mode in [design::Mode::Light, design::Mode::Dark] {
+                let theme = toolkit::Theme::for_context(design::DesignContext {
+                    scheme,
+                    mode,
+                    ..Default::default()
+                });
+                for (bg, fg) in [
+                    ("panel.background", "panel.foreground"),
+                    ("panel.background", "panel.muted"),
+                    ("panel.selected", "panel.selected-foreground"),
+                ] {
+                    let bg = scene_colour(&theme, bg).unwrap();
+                    let fg = scene_colour(&theme, fg).unwrap();
+                    assert_eq!(bg.a(), 255);
+                    assert!(contrast(bg, fg) >= 4.5, "{scheme:?} {mode:?}");
+                }
+                let bg = scene_colour(&theme, "panel.background").unwrap();
+                let hover = scene_colour(&theme, "panel.hover").unwrap();
+                assert_ne!(bg, hover, "hover feedback {scheme:?} {mode:?}");
+                for role in ["panel.foreground", "panel.muted"] {
+                    assert!(
+                        contrast(hover, scene_colour(&theme, role).unwrap()) >= 4.5,
+                        "hover contrast {scheme:?} {mode:?} {role}"
+                    );
+                }
+                if mode == design::Mode::Light {
+                    assert!(
+                        contrast(bg, Color32::BLACK) > contrast(bg, Color32::WHITE),
+                        "light panel {scheme:?}"
+                    );
+                }
+                for node in doc.nodes.values() {
+                    if let Some(role) = node.ports.get("color").and_then(|v| v.as_str()) {
+                        assert!(
+                            role.starts_with("panel.") || role.starts_with("= "),
+                            "{role}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

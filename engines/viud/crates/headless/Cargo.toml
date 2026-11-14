@@ -17,6 +17,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+recorder.workspace = true
 comp-model.workspace = true
 ledger.workspace = true
 smithay = { workspace = true }

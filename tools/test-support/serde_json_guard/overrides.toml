@@ -1,0 +1,13 @@
+[workspace.dependencies]
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[patch.crates-io]
+serde_json = { path = "example" }
+sj = { package = "serde_json", path = "example" }
+
+[patch.'https://example.org/registry']
+serde_json = { path = "example" }
+
+[replace]
+"serde_json:1.0.0" = { path = "example" }
+"sj:1.0.0" = { package = "serde_json", path = "example" }

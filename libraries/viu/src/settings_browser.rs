@@ -384,6 +384,108 @@ fn search_edited(ctx: &egui::Context, key: egui::Id, accepted: &str, edited: &st
 mod search_input_tests {
     use super::*;
 
+    fn light_frames(check: impl Fn(&Look, &egui::FullOutput)) {
+        for scheme in [
+            design::Scheme::Mixos,
+            design::Scheme::Ocean,
+            design::Scheme::Sunset,
+        ] {
+            for live in [false, true] {
+                let ctx = egui::Context::default();
+                // Keep the former refresh key to prove the renderer ignores it.
+                let value = json!({"title":"Settings","pages":[],"sections":[],
+                    "search_hint":"Search preferences","look_refresh_key":[true,"comfortable","round"]});
+                for mode in if live {
+                    vec![design::Mode::Dark, design::Mode::Light]
+                } else {
+                    vec![design::Mode::Light]
+                } {
+                    let snapshot = json!({"state":{"values":{"appearance.scheme":scheme.name(),"appearance.mode":mode.name()}}});
+                    crate::appearance::install_session(
+                        &ctx,
+                        &snapshot,
+                        "prefs",
+                        &toolkit::Theme::embedded(),
+                        &Default::default(),
+                    )
+                    .unwrap();
+                    let theme = crate::appearance::session_theme(&ctx);
+                    let look = Look::of(&theme, &Value::Null);
+                    let mut output = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                vec2(1040.0, 680.0),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| {
+                            draw(ui, "browser", &value, &mut BTreeMap::new(), &mut Vec::new());
+                        },
+                    );
+                    output.textures_delta.clear();
+                    if mode == design::Mode::Light {
+                        check(&look, &output);
+                    }
+                    output.drop_without_applying_deltas();
+                }
+            }
+        }
+    }
+
+    fn contrast(a: Color32, b: Color32) -> f32 {
+        let luminance = |c: Color32| {
+            let c = egui::Rgba::from(c);
+            0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b()
+        };
+        let (a, b) = (luminance(b.blend(a)), luminance(b));
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    #[test]
+    fn light_body_follows_live_session_and_fresh_start() {
+        light_frames(|look, output| {
+            assert!(!look.dark);
+            assert!(contrast(look.text, look.window) >= 4.5);
+            assert!(contrast(look.text, look.sidebar) >= 4.5);
+            let fills: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Rect(r) if r.rect.width() > 900.0 => Some(r.fill),
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                fills.contains(&look.window),
+                "body retained a previous palette: {fills:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn search_placeholder_contrasts_with_its_painted_background() {
+        light_frames(|_look, output| {
+            let hint = output
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text == "Search preferences" => Some(t),
+                    _ => None,
+                })
+                .expect("search hint painted");
+            let background = output.shapes.iter().take_while(|s| !matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == "Search preferences")).filter_map(|s| match &s.shape { egui::Shape::Rect(r) if r.rect.contains(hint.pos) && r.fill.a() == 255 => Some(r.fill), _ => None }).last().expect("painted search background");
+            for section in &hint.galley.job.sections {
+                assert!(
+                    contrast(section.format.color, background) >= 4.5,
+                    "placeholder {:?} on {:?}",
+                    section.format.color,
+                    background
+                );
+            }
+        });
+    }
+
     #[test]
     fn search_keeps_caret_through_delayed_and_partial_owner_acknowledgements() {
         let ctx = egui::Context::default();
@@ -508,22 +610,13 @@ pub(crate) fn draw(
         }
     });
     crate::media_gallery::begin(ui, id);
-    let mut look = Look::of(
+    let look = Look::of(
         &crate::appearance::session_theme(ui.ctx()),
         &value["settings"],
     );
-    // The author decides when a palette snapshot changes. Other browsers
-    // continue following the live theme on every frame.
-    if let Some(refresh) = value.get("look_refresh_key") {
-        let key = egui::Id::unique((ui.ctx().viewport_id(), id, "browser-look"));
-        if let Some((previous, cached)) = ui.ctx().data(|d| d.get_temp::<(Value, Look)>(key)) {
-            if previous == *refresh {
-                look = cached;
-            }
-        }
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(key, (refresh.clone(), look)));
-    }
+    // Paint from the installed session theme, as the title band does. A
+    // model revision can arrive independently of an effective auto-mode or
+    // window theme change; it cannot be a palette invalidation key.
     ui.painter().rect_filled(area, 0.0, look.window);
     let condensed = area.width() < 648.0;
     let mut content = area;
@@ -562,13 +655,21 @@ pub(crate) fn draw(
                         16.0,
                         look.icon,
                     ));
-                    let r = ui.add(
-                        egui::TextEdit::singleline(&mut query)
-                            .id_salt((id, "query"))
-                            .frame(egui::Frame::NONE)
-                            .hint_text(text(value, "search_hint"))
-                            .desired_width(ui.available_width() - 24.0),
-                    );
+                    let r = ui
+                        .scope(|ui| {
+                            // TextEdit replaces hint colours with weak_text_color;
+                            // keep it opaque and local to this field's surface.
+                            ui.visuals_mut().weak_text_color = Some(look.text);
+                            ui.add(
+                                egui::TextEdit::singleline(&mut query)
+                                    .id_salt((id, "query"))
+                                    .frame(egui::Frame::NONE)
+                                    .hint_text(text(value, "search_hint"))
+                                    .text_color(look.text)
+                                    .desired_width(ui.available_width() - 24.0),
+                            )
+                        })
+                        .inner;
                     record(geometry, id, "search", &r);
                     if value["search_focus"] == true {
                         r.request_focus();

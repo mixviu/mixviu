@@ -34,10 +34,12 @@ fresh one.
 
 ## Evidence before review
 
-The author (human or agent) runs the gate first: `mix tools/ci.mix all`
-on CBC or in CI, plus a smoke run of what changed. The PR body says what was
-run, what was observed, and what was not tested. "Done" without evidence is
-sent back.
+The author (human or agent) checks what changed first: formatting, clippy
+and the tests of the touched crates, plus a smoke run. The full
+`mix tools/ci.mix all` runs once, in the merge gate (`gate-ok`); a PR that
+changes `tools/ci.mix` also runs it once before review. The PR body says
+what was run, what was observed, and what was not tested. "Done" without
+evidence is sent back.
 
 ## Agent review rules
 

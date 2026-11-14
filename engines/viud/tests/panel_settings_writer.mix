@@ -1,0 +1,23 @@
+-- A competing task-scope save, using the behaviour's shared lock contract.
+$dir=args()[0]
+$lock=dirname($dir).."/.settings.lock"
+if (args()[1] ?? "") == "probe" then
+  $held=flock($lock)
+  write_file(dirname($dir).."/.settings-probe",if $held then "acquired" else "busy" end)
+  if $held then $_=funlock($lock) end
+  exit(0)
+end
+if not flock($lock,{wait:1}) then raise("TEST_LOCK","writer could not acquire lock") end
+try
+  write_file($dir.."/.lock-ready","")
+  $until=monotonic()+10
+  while not is_file($dir.."/.lock-release") and monotonic()<$until sleep(0.02) end
+  if not is_file($dir.."/.lock-release") then raise("TEST_LOCK","release deadline exceeded") end
+  $path=$dir.."/settings.conf.mix"
+  $data=if is_file($path) then load_data($path) else {} end
+  $data.tasks_scope="all"
+  write_atomic($path,data_encode($data))
+finally
+  $_=funlock($lock)
+  write_file($dir.."/.lock-done","")
+end

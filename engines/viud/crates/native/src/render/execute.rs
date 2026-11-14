@@ -297,19 +297,27 @@ fn capture_windows_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &
     };
     for pipe in &ctx.outputs {
         let scale = pipe.output.current_scale().fractional_scale();
-        screencopy::offscreen::capture_windows(renderer, &pipe.output, |renderer, target| {
-            let window = world::window::draw::frame::scene::capture_window(
-                state,
-                target.id,
-                target.generation,
-            )
-            .map_err(|error| screencopy::file::ControlReply::WindowTarget {
-                id: target.id,
-                error,
-            })?;
-            world::window::draw::frame::scene::capture(renderer, &window, scale)
+        screencopy::offscreen::capture_windows(
+            renderer,
+            &pipe.output,
+            |renderer, target, recording| {
+                let window = world::window::draw::frame::scene::capture_window(
+                    state,
+                    target.id,
+                    target.generation,
+                )
+                .map_err(|error| screencopy::file::ControlReply::WindowTarget {
+                    id: target.id,
+                    error,
+                })?;
+                if recording {
+                    recorder::interface::render::bus_window_elements(renderer, &window, scale)
+                } else {
+                    world::window::draw::frame::scene::capture(renderer, &window, scale)
+                }
                 .map_err(screencopy::file::capture_failed)
-        });
+            },
+        );
     }
     screencopy::file::fail_windows("no capture output available");
 }
@@ -322,8 +330,10 @@ fn capture_windows_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &
 /// with input still queued for a scene surface. Resume, DPMS-on and output
 /// recovery each request their own frame, which drains what waited.
 pub fn frames_parked(state: &Loop) -> bool {
-    matches!(state.inner.status_session, StatusSession::Paused)
-        || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
+    if matches!(state.inner.status_session, StatusSession::Paused) {
+        return !headless::wire::available();
+    }
+    *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
         || NO_OUTPUT_PARKED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
@@ -339,6 +349,11 @@ pub fn execute(
     scope: RenderScope,
 ) -> FrameOutcome {
     let _ = &loop_handle; // retained for parity with the original signature
+    if matches!(state.inner.status_session, StatusSession::Paused)
+        && headless::wire::arm_inactive(state)
+    {
+        return FrameOutcome::Idle;
+    }
     if (matches!(state.inner.status_session, StatusSession::Paused)
         || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF))
         && let Ok(mut ctx) = ctx_rc.try_borrow_mut()

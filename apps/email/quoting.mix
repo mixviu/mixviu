@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Plain-text quotation and reply/forward policy from pinned gold.
-$addresses=require("addresses.mix");$send=require("sending.mix");$arg=require("arguments.mix")
+$addresses=require("addresses.mix");$send=require("sending.mix");$arg=require("arguments.mix");$dates=require("dates.mix")
 fn unsigned($text)
   $out=[]
   for $line in split(replace($text,"\r\n","\n"),"\n")
@@ -61,7 +61,7 @@ fn make($command,$entry,$email,$args,$options)
   $from=join(map($email.from ?? [],fn($a)=$addresses.format($a)),", ");$recipients=join(map($email.to ?? [],fn($a)=$addresses.format($a)),", ")
   if $command=="email.forward" then
     $subject=$email.subject ?? "";$subject=if starts_with(lower($subject),"fwd:") then $subject elif $email.subject==nil then "Fwd:" else "Fwd: "..$subject end
-    $date="";try $date=date_format(date_parse($email.date ?? $email.receivedAt),"%b %d %H:%M",{utc:true}) catch $bad nil end
+    $date=$dates.display($email.date ?? $email.receivedAt,"%b %d %H:%M")
     $body=rtrim($signature).."\n\n---------- Forwarded message ----------\nFrom: "..$from.."\nDate: "..$date.."\nSubject: "..($email.subject ?? "").."\nTo: "..$recipients.."\n\n"..($email.text ?? "")
     return {account:$entry.id,to:$arg.list($args,"to") ?? [],subject:$subject,body:$body}
   end
@@ -75,7 +75,7 @@ fn make($command,$entry,$email,$args,$options)
   $subject=$email.subject ?? "";$subject=if starts_with(lower($subject),"re:") then $subject elif $email.subject==nil then "Re:" else "Re: "..$subject end
   $body="";$quote=nil
   if ($arg.flag($args,"quote") ?? $options.quote_on_reply) then
-    $date="";try $date=date_format(date_parse($email.date ?? $email.receivedAt),"%a %-d %b %Y, %H:%M") catch $bad nil end
+    $date=$dates.display($email.date ?? $email.receivedAt,"%a %-d %b %Y, %H:%M")
     $first=($email.from ?? [])[0] ?? {};$who=if trim($first.name ?? "")!="" then $first.name else $first.email ?? "" end
     $attribution="On "..$date..", "..$who.." wrote:";$original=$email.text ?? html_text($email.html ?? "")
     $quote=$attribution..(if trim($original)=="" then "" else "\n"..quoted(unsigned($original)) end)

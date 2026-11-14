@@ -76,6 +76,41 @@ pub fn wait_until_active(own: u32, source: &mut impl ActiveVt) -> usize {
 /// for POLLPRI (sysfs notification).
 struct SysfsActive(std::fs::File);
 
+/// Notify each activation without polling or switching consoles. The initial
+/// read also notifies an already active VT. Libseat takes over after attach.
+pub fn watch_own_vt(mut activated: impl FnMut(), ready: impl FnOnce()) -> std::io::Result<()> {
+    let Some(own) = own_vt() else {
+        ready();
+        activated();
+        return Ok(());
+    };
+    let mut source = SysfsActive(std::fs::File::open(ACTIVE)?);
+    ready();
+    watch_changes(own, &mut source, activated)
+}
+
+/// A failed read is a failed watcher, not an immediately-readable poll loop.
+pub fn watch_changes(
+    own: u32,
+    source: &mut impl ActiveVt,
+    mut activated: impl FnMut(),
+) -> std::io::Result<()> {
+    loop {
+        let active = source
+            .read()
+            .ok_or_else(|| std::io::Error::other("VT source unreadable"))?;
+        if active == own {
+            activated();
+        }
+        source.wait()?;
+    }
+}
+
+/// A retry timer may attempt a seat open only while this VT is active.
+pub fn own_vt_active() -> bool {
+    own_vt().is_none_or(|own| active_vt() == Some(own))
+}
+
 impl ActiveVt for SysfsActive {
     fn read(&mut self) -> Option<u32> {
         let mut text = String::new();
@@ -126,6 +161,27 @@ pub fn wait_for_own_vt() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn watcher_waits_for_edges_and_returns_source_failures_for_rearming() {
+        struct Source {
+            at: usize,
+        }
+        impl ActiveVt for Source {
+            fn read(&mut self) -> Option<u32> {
+                [Some(1), Some(4), None][self.at]
+            }
+            fn wait(&mut self) -> std::io::Result<()> {
+                self.at += 1;
+                Ok(())
+            }
+        }
+        let mut source = Source { at: 0 };
+        let mut activated = 0;
+        assert!(watch_changes(4, &mut source, || activated += 1).is_err());
+        assert_eq!(activated, 1);
+        assert_eq!(source.at, 2, "failed reads must not spin on poll");
+    }
 
     /// A scripted active-VT source: each wait advances to the next reading.
     struct Script {

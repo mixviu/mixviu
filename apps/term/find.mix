@@ -30,6 +30,7 @@ fn request($s)
 end
 fn intent($s,$a,$native)
   $s=sync($s)
+  if $a.action=="submit" then $a.action=if $a.value.shift then "prev" else "next" end end
   if not $s.find.open then return $s end
   if $a.action=="close" then
     $s.find.open=false;$s.find.result=nil;$s.layout.focus_serial=$s.layout.focus_serial+1
@@ -80,7 +81,7 @@ fn observed($s,$v,$native)
 end
 fn message($s)
   $v=$s.find.result
-  if $s.find.pattern=="" then return "Search terminal output · Ctrl+Shift+F" end
+  if $s.find.pattern=="" then return "Search terminal output · Ctrl+Shift+F · Enter next · Shift+Enter previous" end
   if $v==nil then return "Searching…" end
   if $v.error!=nil then return $v.error end
   if $v.matched==nil then return if $v.limited then "No match in the search window (10,000 lines)" else "No matches" end end

@@ -219,6 +219,9 @@ pub fn admit(kind: &str, current: &Value, action: &str, payload: &Value) -> Resu
                 .is_some_and(|items| items.iter().any(|i| i["id"] == *payload))
     } else {
         (action == "edit" && validate(kind, payload).is_ok())
+            || (action == "submit"
+                && current["submit_modifiers"] == true
+                && payload["shift"].is_boolean())
             || ["next", "prev", "replace", "replace-all", "close"].contains(&action)
     };
     if valid {
@@ -560,6 +563,21 @@ pub fn draw(
     let add = |ui: &mut Ui| {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
+                let submit_event = ui.input(|i| {
+                    i.events
+                        .iter()
+                        .find(|e| {
+                            matches!(
+                                e,
+                                egui::Event::Key {
+                                    key: egui::Key::Enter,
+                                    pressed: true,
+                                    ..
+                                }
+                            )
+                        })
+                        .cloned()
+                });
                 let field = toolkit::field::search(ui, &mut pattern, "Find", 220.0);
                 let marker = Id::unique((id, "focus-instance"));
                 if !ui.is_sizing_pass()
@@ -570,7 +588,28 @@ pub fn draw(
                     ui.ctx()
                         .data_mut(|d| d.insert_temp(marker, value["instance"].clone()));
                 }
-                if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                let mut handled = false;
+                if value["submit_modifiers"] == true && (field.has_focus() || field.lost_focus()) {
+                    // TextEdit submits the first Enter it sees while it
+                    // owns focus. Consume that press only, never the rest
+                    // of this frame's Enter presses or releases.
+                    if let Some(event @ egui::Event::Key { modifiers, .. }) = submit_event {
+                        let shift = modifiers.shift;
+                        ui.input_mut(|input| {
+                            if let Some(index) = input.events.iter().position(|e| e == &event) {
+                                input.events.remove(index);
+                            }
+                        });
+                        field.request_focus();
+                        emit(events, "submit", json!({"shift":shift}));
+                        handled = true;
+                    }
+                }
+                if !handled
+                    && value["submit_modifiers"] != true
+                    && field.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                {
                     emit(events, "next", Value::Null);
                 }
                 for (action, label) in [("prev", "Previous"), ("next", "Next")] {

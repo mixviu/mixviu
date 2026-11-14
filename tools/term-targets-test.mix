@@ -1,0 +1,30 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$targets=require("term-targets.mix")
+$metadata={workspace_members:["library","binary"],packages:[{id:"library",name:"lib-viu",targets:[{name:"viu",kind:["lib"]},{name:"term_bundle",kind:["test"]}]},{id:"binary",name:"viu",targets:[{name:"viu",kind:["bin"]}]}],target_directory:"/example/target"}
+$empty_refused=false
+try $targets.validate_targets([],$metadata) catch $message $empty_refused=contains($message,"at least one command") end
+if not $empty_refused then raise("TEST","empty command list accepted") end
+for $selector in [["-p","lib-viu"],["--package","lib-viu"],["--package=lib-viu"],["-p=lib-viu"]]
+  $targets.validate_targets([concat(["cargo","test"],$selector,["--lib","--test","term_bundle","--","--package","not-a-package","--test","not-a-target"])],$metadata)
+end
+$targets.validate_targets([["cargo","test","-p","viu","-p","lib-viu","--test","term_bundle","--lib"]],$metadata)
+for $kind in ["test","example","bin"]
+  $fixture=$metadata
+  $fixture.packages[0].targets=push($fixture.packages[0].targets,{name:"known",kind:[$kind]})
+  $targets.validate_targets([["cargo","test","-p","lib-viu","--"..$kind.."=known"]],$fixture)
+  for $value in ["absent",""]
+    $refused=false
+    try $targets.validate_targets([["cargo","test","-p","lib-viu","--"..$kind.."="..$value]],$fixture) catch $message $refused=true end
+    if not $refused then raise("TEST","equals selector accepted missing target/value: "..$kind) end
+  end
+end
+if not deep_eq($targets.prepare_command(["cargo","test","--locked","--","--locked"],true),["cargo","test","--","--locked"]) then raise("TEST","forwarded locked argument changed") end
+for $argv in [["cargo","test","-p","viu","--lib"],["cargo","test","--package=absent"],["cargo","test","-p","viu","-p","lib-viu","--test","absent"],["cargo","test","--package"]]
+  $refused=false
+  try $targets.validate_targets([$argv],$metadata) catch $message $refused=true end
+  if not $refused then raise("TEST","invalid Cargo selector accepted: "..json_encode($argv)) end
+end
+for $argv in [["cargo","metadata","--locked","--no-deps"],["cargo","build","--locked","-p","mix"]]
+  if contains($targets.prepare_command($argv,true),"--locked") or not contains($targets.prepare_command($argv,false),"--locked") then raise("TEST","prepare locking policy") end
+end
+print("term target selectors: aliases, forwarding boundary, library, multi-package and prepare checks pass")

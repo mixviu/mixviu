@@ -1,0 +1,266 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- fake_acp_agent: a minimal ACP v1 agent on stdio for agentd's tests. No
+-- model: it answers initialize and session/new, and a prompt by streaming
+-- text back. Prompt text drives it:
+--   PERMISSION  ask session/request_permission first; echo the answer
+--   BIG         stream one 2 MiB text chunk (framing past 64 KiB lines)
+--   MCP         echo the MIX_AGENTD_SESSION its mixos-mcp entry carries
+--   SLOW        hold the turn open until the next frame (a cancel lands)
+--   LATE        like SLOW, then ask permission after the cancel; echo it
+--   FSREAD P    fs/read_text_file P (whole file); echo read:<text> or err:<code>
+--   FSLINES P   fs/read_text_file P, line 2, limit 1
+--   FSWRITE P|T fs/write_text_file P with text T; echo wrote or err:<code>
+--   CONFIG      echo the config options set so far (config:id=value,...)
+-- session/set_config_option records the value; a value starting slow- is
+-- answered after one second, so a prompt sent behind it has to wait.
+-- For either setting, slow-reply holds its reply until the next setting
+-- has been answered, reversing the two replies without reversing the sets.
+-- readline() is nil at EOF (an older mix gives ""; ACP never sends an
+-- empty line), so either ends the agent.
+
+-- An optional first argument sets what it can do with a past session:
+--   resume  advertise session/resume (no replay)
+--   load    advertise loadSession; session/load replays one old chunk and
+--           a current mode update before answering
+--   refuse  advertise session/resume, then refuse it
+--   stubborn  ignore stdin EOF (keep running), as Gemini CLI does
+-- Modes combine with commas (refuse,stubborn).
+$modes = if len(args()) > 0 then split(args()[0], ",") else [] end
+$sessions = {}
+$next_id = 900
+$config = {}
+$recording_turn = 0
+$delayed_set = nil
+
+fn session_mcp($params)
+  $mcp = "-"
+  for each $s in $params.mcpServers ?? []
+    for each $e in $s.env ?? []
+      if $e.name == "MIX_AGENTD_SESSION" then $mcp = $e.value end
+    end
+  end
+  return $mcp
+end
+
+fn out($m)
+  $m.jsonrpc = "2.0"
+  print(json_encode($m))
+end
+
+fn update($sid, $u)
+  out({method: "session/update", params: {sessionId: $sid, update: $u}})
+end
+
+fn text($sid, $t)
+  update($sid, {sessionUpdate: "agent_message_chunk", content: {type: "text", text: $t}})
+end
+
+fn prompt_text($params)
+  $out = ""
+  for each $b in $params.prompt ?? []
+    if $b.type == "text" then $out = $out .. $b.text end
+  end
+  return $out
+end
+
+loop
+  $line = readline()
+  if $line == nil or $line == "" then
+    if contains($modes, "stubborn") then sleep(120) end
+    break
+  end
+  $m = json_parse($line)
+  if env("FAKE_ACP_CALLS") != "" then
+    append_file(env("FAKE_ACP_CALLS"), $line .. "\n")
+  end
+  if (($m.method == "session/set_mode" and $m.params.modeId == "refused") or
+    ($m.method == "session/set_config_option" and $m.params.value == "refused")) then
+    out({id: $m.id, error: {code: -32602, message: "setting refused"}})
+    continue
+  end
+  if $m.method == "initialize" then
+    $caps = {loadSession: contains($modes, "load")}
+    if contains($modes, "http") then $caps.mcpCapabilities = {http: true} end
+    if contains($modes, "resume") or contains($modes, "refuse") then $caps.sessionCapabilities = {resume: {}} end
+    out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
+      agentCapabilities: $caps, authMethods: []}})
+  elif $m.method == "session/resume" or $m.method == "session/load" then
+    if env("FAKE_ACP_REOPEN_DELAY") != "" then sleep(to_number(env("FAKE_ACP_REOPEN_DELAY"))) end
+    $sid = $m.params.sessionId
+    if env("FAKE_ACP_REFUSE_FILE") != "" and is_file(env("FAKE_ACP_REFUSE_FILE")) and read_file(env("FAKE_ACP_REFUSE_FILE")) == "crash" then exit(1) end
+    if contains($modes, "refuse") or (env("FAKE_ACP_REFUSE_FILE") != "" and is_file(env("FAKE_ACP_REFUSE_FILE"))) then
+      out({id: $m.id, error: {code: -32002, message: "Resource not found: session " .. to_string($sid)}})
+    else
+      $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd, mcp_names: map($m.params.mcpServers ?? [], fn($s) = $s.name)}
+      if $m.method == "session/load" then
+        text($sid, "old history")
+        update($sid, {sessionUpdate: "current_mode_update", currentModeId: "plan"})
+      end
+      out({id: $m.id, result: {modes: {currentModeId: "plan",
+        availableModes: [{id: "default", name: "Default"}, {id: "plan", name: "Plan"}]}}})
+      -- Gemini CLI replays after its answer as well: so does this fake.
+      if $m.method == "session/load" then
+        sleep(0.3)
+        text($sid, "late history")
+      end
+    end
+  elif $m.method == "session/new" then
+    $sid = "fake-" .. to_string(len(keys($sessions)) + 1)
+    $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd, mcp_names: map($m.params.mcpServers ?? [], fn($s) = $s.name)}
+    out({id: $m.id, result: {sessionId: $sid, modes: {currentModeId: "default",
+      availableModes: [{id: "default", name: "Default"}, {id: "plan", name: "Plan"}]}}})
+  elif $m.method == "session/prompt" then
+    $sid = $m.params.sessionId
+    $t = prompt_text($m.params)
+    if env("FAKE_ACP_RECORDING") != "" then
+      $recording = json_parse(read_file(env("FAKE_ACP_RECORDING")))
+      $turn = $recording.turns[$recording_turn]
+      if not deep_eq($m.params.prompt, $turn.prompt) then
+        out({id: $m.id, error: {code: -32602, message: "prompt differs from the recorded input"}})
+      else
+        for $u in $turn.updates update($sid, $u) end
+        out({id: $m.id, result: {stopReason: $turn.stopReason}})
+      end
+      $recording_turn = $recording_turn + 1
+      continue
+    end
+    if starts_with($t, "[await]") and env("FAKE_ACP_ERROR_FILE") != "" and is_file(env("FAKE_ACP_ERROR_FILE")) then
+      -- Hold an outcome error so the real terminal event can arrive during
+      -- the deadline turn. The ordinary hold path below still succeeds.
+      if env("FAKE_ACP_HOLD_FILE") != "" then
+        while is_file(env("FAKE_ACP_HOLD_FILE"))
+          sleep(0.05)
+        end
+      end
+      out({id: $m.id, error: {code: -32000, message: "outcome turn failed"}})
+      continue
+    end
+    if $t == "DIE" then exit(1) end
+    if starts_with($t, "[await]") and env("FAKE_ACP_CRASH_FILE") != "" and is_file(env("FAKE_ACP_CRASH_FILE")) then
+      if read_file(env("FAKE_ACP_CRASH_FILE")) == "once" then run_argv_must(["rm", env("FAKE_ACP_CRASH_FILE")]) end
+      exit(1)
+    end
+    if starts_with($t, "[await]") and env("FAKE_ACP_HOLD_FILE") != "" then
+      while is_file(env("FAKE_ACP_HOLD_FILE"))
+        sleep(0.05)
+      end
+    end
+    if $t == "ERROR" then
+      out({id: $m.id, error: {code: -32000, message: "turn failed"}})
+      continue
+    end
+    $stop = "end_turn"
+    if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
+    if $t == "MCPSERVERS" then text($sid, join($sessions[$sid].mcp_names, ",")) end
+    if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end
+    if contains($t, "DRIP") then
+      -- Text spread over 5 s: a watcher that subscribed late must still
+      -- show every chunk once, in order.
+      text($sid, "d1")
+      sleep(4)
+      text($sid, "d2")
+      sleep(1)
+      text($sid, "d3")
+    end
+    if $t == "TERMRUN" or $t == "TERMKILL" or $t == "TERMOUT" then
+      -- One request at a time; each answer is the next line from agentd.
+      fn call($method, $params)
+        $next_id = $next_id + 1
+        $params.sessionId = $sid
+        out({id: $next_id, method: $method, params: $params})
+        return json_parse(readline())
+      end
+      if $t == "TERMRUN" then
+        $c = call("terminal/create", {command: "sh", args: ["-c", "echo one; echo two >&2; exit 3"]})
+        $tid = $c.result.terminalId
+        $w = call("terminal/wait_for_exit", {terminalId: $tid})
+        $o = call("terminal/output", {terminalId: $tid})
+        call("terminal/release", {terminalId: $tid})
+        $gone = call("terminal/output", {terminalId: $tid})
+        text($sid, "term:" .. to_string($w.result.exitCode) .. ":" .. replace($o.result.output, "\n", "/") ..
+          ":" .. to_string($o.result.exitStatus.exitCode) .. ":gone=" .. to_string($gone.error.code))
+      elif $t == "TERMKILL" then
+        $c = call("terminal/create", {command: "sleep", args: ["30"]})
+        $tid = $c.result.terminalId
+        call("terminal/kill", {terminalId: $tid})
+        $w = call("terminal/wait_for_exit", {terminalId: $tid})
+        call("terminal/release", {terminalId: $tid})
+        text($sid, "killed:" .. to_string($w.result.signal))
+      else
+        $c = call("terminal/create", {command: "true", cwd: "/"})
+        text($sid, "termerr:" .. to_string($c.error.code))
+      end
+    end
+    if starts_with($t, "FSREAD ") or starts_with($t, "FSLINES ") or starts_with($t, "FSWRITE ") then
+      $next_id = $next_id + 1
+      $op = before($t, " ")
+      $arg = after($t, " ")
+      if $op == "FSWRITE" then
+        out({id: $next_id, method: "fs/write_text_file", params: {sessionId: $sid, path: before($arg, "|"), content: after($arg, "|")}})
+      elif $op == "FSLINES" then
+        out({id: $next_id, method: "fs/read_text_file", params: {sessionId: $sid, path: $arg, line: 2, limit: 1}})
+      else
+        out({id: $next_id, method: "fs/read_text_file", params: {sessionId: $sid, path: $arg}})
+      end
+      $r = json_parse(readline())
+      if $r.error != nil then
+        text($sid, "fserr:" .. to_string($r.error.code))
+      elif $op == "FSWRITE" then
+        text($sid, "wrote")
+      else
+        text($sid, "read:" .. $r.result.content)
+      end
+    end
+    if contains($t, "PERMISSION") then
+      $next_id = $next_id + 1
+      out({id: $next_id, method: "session/request_permission", params: {sessionId: $sid,
+        toolCall: {toolCallId: "t1", title: "Write file", kind: "edit"},
+        options: [
+          {optionId: "allow", name: "Allow", kind: "allow_once"},
+          {optionId: "always", name: "Always allow", kind: "allow_always"},
+          {optionId: "deny", name: "Reject", kind: "reject_once"}]}})
+      $answer = json_parse(readline())
+      $o = $answer.result.outcome
+      text($sid, "perm:" .. (if $o.outcome == "selected" then $o.optionId else $o.outcome end))
+    end
+    if contains($t, "SLOW") or contains($t, "LATE") then
+      -- A cancel arrives as a notification while this turn runs.
+      $c = json_parse(readline())
+      if $c.method == "session/cancel" then $stop = "cancelled" end
+    end
+    if contains($t, "LATE") then
+      $next_id = $next_id + 1
+      out({id: $next_id, method: "session/request_permission", params: {sessionId: $sid,
+        toolCall: {toolCallId: "t2", title: "Late write"},
+        options: [{optionId: "allow", name: "Allow", kind: "allow_once"}, {optionId: "deny", name: "Reject", kind: "reject_once"}]}})
+      $late = json_parse(readline()).result.outcome
+      text($sid, "late:" .. (if $late.outcome == "selected" then $late.optionId else $late.outcome end))
+    end
+    if $t == "CONFIG" then
+      text($sid, "config:" .. join(map(sort(keys($config)), fn($k) = $k .. "=" .. to_string($config[$k])), ","))
+    end
+    text($sid, "echo:" .. $t)
+    out({id: $m.id, result: {stopReason: $stop}})
+  elif $m.method == "session/set_config_option" then
+    if starts_with(to_string($m.params.value), "slow-") then sleep(1) end
+    $config[$m.params.configId] = $m.params.value
+    $set_reply = {id: $m.id, result: {configOptions: []}}
+  elif $m.method == "session/set_mode" then
+    update($m.params.sessionId, {sessionUpdate: "current_mode_update", currentModeId: $m.params.modeId})
+    $set_reply = {id: $m.id, result: {}}
+  elif $m.id != nil then
+    out({id: $m.id, error: {code: -32601, message: "method not found: " .. $m.method}})
+  end
+  if $m.method == "session/set_mode" or $m.method == "session/set_config_option" then
+    if ($m.params.modeId ?? $m.params.value) == "slow-reply" then
+      $delayed_set = $set_reply
+    else
+      out($set_reply)
+      if $delayed_set != nil then
+        out($delayed_set)
+        $delayed_set = nil
+      end
+    end
+  end
+end

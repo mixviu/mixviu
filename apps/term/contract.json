@@ -560,9 +560,9 @@
     ],
     "text_replies": true,
     "preserve_request_body": true,
-    "title": "Terminal",
+    "title": "Term",
     "unknown_reply": "unknown command; use HELP",
     "unknown_handler": "term.unknown.request",
-    "window_app_id": "dev.mixos.term"
+    "window_app_id": "mixviu.term"
   }
 }

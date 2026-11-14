@@ -1,1 +1,1 @@
-{"host":{"behaviour":"gallery.mix","service":"gallery-mix","title":"Viu Widget Gallery","size":[740,820],"commands":["gallery.execute","gallery.state","gallery.describe"]}}
+{"host":{"app":"gallery","app_id":"dev.mixos.gallery","behaviour":"gallery.mix","commands":["app.describe","gallery.execute","gallery.state","gallery.describe","gallery.actions"],"frame":"gold","service":"gallery","size":[740,820],"title":"Viu Widget Gallery","window_app_id":"dev.mixos.gallery"}}

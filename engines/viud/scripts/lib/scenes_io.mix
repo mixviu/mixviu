@@ -24,6 +24,22 @@ fn rpc($target, $command, $body)
   end
 end
 
+-- Refuse even a clean open buffer: it could be edited after this snapshot.
+-- Unavailable/malformed registry or editor replies fail closed via rpc.
+fn upgrade_guard($dir)
+  $services = rpc("noded", "noded.props.get", {}).services.registered
+  if type($services) != "list" then raise("SCENES_SNAPSHOT", "missing service registry") end
+  $ced = "ced"
+  if not contains($services, $ced) then return end
+  $tabs = rpc($ced, "ced.tabs", {})
+  if type($tabs.tabs) != "list" then raise("SCENES_SNAPSHOT", "missing editor tabs") end
+  for $tab in $tabs.tabs
+    if type($tab.path) == "string" and starts_with($tab.path, $dir .. "/") then
+      raise("SCENES_EDITOR_OPEN", "close the scene's editor buffers before upgrading", {file:$tab.path})
+    end
+  end
+end
+
 fn interpreter()
   -- This running Mix, via its own /proc/<pid>/exe: the kernel link keeps
   -- naming the inode this process executes after its file has been replaced

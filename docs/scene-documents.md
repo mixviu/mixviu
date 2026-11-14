@@ -37,6 +37,87 @@ hidden, recommended, numeric order and string-list requires; it reports
 installed_as. Requires is display metadata. Other metadata keys are not a
 generic settings contract. (`engines/viud/scripts/lib/scenes.mix:1565`.)
 
+On install and reset, the optional `templates` map in `state.conf.mix`
+records template identity and SHA-256 digests of the rewritten staged files,
+including a separate digest for shipped settings defaults. Malformed optional
+records are discarded without invalidating enablement or origins.
+The reset transaction captures that template baseline before carrying user
+settings; its separate placement fingerprint includes the carried bytes.
+Repeated default changes therefore never enrol a user edit as a default.
+Loader startup and `scenes.upgrade {}` reconcile recorded origins. Unedited
+copies refresh through the reset transaction with a recovery backup.
+Untouched settings follow changed template defaults; edited settings are
+copied byte-for-byte (legacy records without a settings digest conservatively
+carry settings). Edited settings over 256 KiB refuse the refresh without
+changing the original. Settings are excluded from code edit detection. Helpers
+and assets are included. Forks and scenes without a shipped origin remain
+user-owned.
+
+An unrecorded copy is enrolled only when it equals the freshly staged
+template. Other unrecorded or edited copies remain in place and inventory
+reports `stale: true` with an `upgrade` comparison/reason. Scene Editor marks
+these as "template updated: Reset or Keep"; keeping the copy requires no
+action. Close Ced buffers for a copy before refreshing it. The loader checks
+for open buffers and rechecks disk digests after staging under its writer
+lock. After swapping, it verifies both the backup and replacement: a save to
+the old copy restores that copy and flags it; a save into the replacement is
+retained and flagged. When restoring the original, the replacement is moved
+to `.recovery/review-*` rather than deleted, even when both copies were saved.
+These review copies are excluded from the automatic cap until reviewed and
+removed by the user. Optional `reviews` state keeps the stale reason naming
+both locations across restarts; the same recovery path handles crashes
+before or after restoring the original. Directory moves atomically refuse
+overwrite if another save creates a restore destination.
+Inventory exposes the actual refusal reason and only
+top-level comparison digests. Recovery retains at most 16 completed backups
+across scenes, newest first, while protecting unfinished transaction backups.
+Prune failures are warnings in `recovery_prune_error`, not reset failures.
+Settings files use the same symlink refusal and before/after identity checks
+as other fingerprinted files.
+
+The backup is checked again after replacement verification. Successful
+upgrades retain the backup's expected fingerprint in optional `backup_records`
+state. Later writes through an inode held across rename are detected before
+pruning and move that backup into protected review storage. Ordinary backups
+are eligible for pruning only after a loader restart and ten minutes without
+a tree change; the target of 16 may temporarily be exceeded during that quiet
+period. The fingerprint and quiet time are rechecked at deletion.
+
+Inventory reports `review_usage` (count and bytes), both globally and per
+scene. A scene with eight retained copies or 64 MiB of retained data refuses
+new upgrades with `SCENES_REVIEW_LIMIT`; existing copies are never deleted
+automatically. To resume, compare the current scene and every saved location
+named by its stale reason, merge or copy out edits to keep, then manually
+remove only the reviewed `.recovery/review-*` directories. The next upgrade
+recomputes usage; deleted review references are dropped when reading state.
+Backup transaction identities cannot reuse an existing backup, recorded
+fingerprint or retained review prefix.
+
+Backup capture, Ced guarding, post-swap verification and durable fingerprint
+registration live in the common swap path for upgrade, reset, editor reset
+and promote. Removal and promotion's retired sandbox use the same backup
+registry and quarantine checks. A sandbox changed after staging is retained
+rather than silently discarded during promotion.
+
+Per-scene review paths are rebuilt from directory names as well as state, so
+a failed state write after quarantine cannot hide retained data. Recovery
+always keeps copies even above the admission thresholds; inventory reports
+`over_limit` and a warning in that case. Crash-loop and disabled status take
+precedence over the stale marker in Scene Editor; stale details remain visible.
+
+Pruning retains a residual check-to-unlink window: an unsynchronised external
+writer can change an inode after the final fingerprint/quiet-time checks and
+before recursive deletion. The restart and ten-minute quiet floor narrow this
+risk; they cannot eliminate it without a save lock shared by all writers or
+a stronger native deletion primitive. Ced buffer guards protect the mutation
+routes, but do not authenticate or lock arbitrary external writers.
+
+Template metadata may declare `settings_schema`, a field-spec map accepted
+by Mix `validate`. Carried settings must parse as strict data and satisfy
+that spec before refresh; a mismatch flags the installation and retains its
+files. Metadata `requires` lists service dependencies, not settings fields.
+The buffer guard always queries the canonical `ced` service.
+
 ## Document grammar
 
 Minimal document (the outer four-backtick fence here is documentation only):
@@ -131,13 +212,22 @@ widgets today. The ordinary app renderer has a separate implementation.
 | button | label:s!, tone:s=normal (normal/danger/primary), width:n?, on_click:s?, on_context:s? | `libraries/scene/src/schema.rs:202` |
 | toggle | value:b!, label:s!, on_change:s? | `libraries/scene/src/schema.rs:217` |
 | list | rows:l!, row:s!, row_height:n!, gap:n=0, max_rows:n? (>=1), fill:b=false, hidden_if_empty:b=false, on_click:s?, on_context:s?, flow:s? (vertical/horizontal), align:s? | `libraries/scene/src/schema.rs:222` |
-| image | src:s!, w:n?, h:n? | `libraries/scene/src/schema.rs:238` |
+| image | src:s!, w:n?, h:n?, color:s? | `libraries/scene/src/schema.rs:238` |
 | spacer | size:n? | `libraries/scene/src/schema.rs:243` |
 | control | definition:o!, on_intent:s? | `libraries/scene/src/schema.rs:244` |
 | grid | children:l!, columns:n! (integer 1..16), identity:s?, column_gap:n=12, row_gap:n=3, min_column_width:n=0 | `libraries/scene/src/schema.rs:248` |
 | dock | children:l!, placements:o!, clip:b?, on_change:s?, outline:s?, outline_width:n?, passthrough_single:b=false, focus_target:s? | `libraries/scene/src/schema.rs:256` |
 | band | children:l!, groups:o! | `libraries/scene/src/schema.rs:266` |
 | split | children:l!, ratio:n=0.5, axis:s=horizontal (horizontal/vertical), divider:n=6 (>=1), minimum:n=0.1, maximum:n=0.9, on_change:s?; ratio/minimum/maximum <=1 | `libraries/scene/src/schema.rs:270`, `libraries/scene/src/schema.rs:431` |
+
+`image.color` is optional and binding-capable, like `text.color`. Both use
+the shell renderer's colour resolver: hex colours or `panel.background`,
+`panel.hover`, `panel.foreground`, `panel.muted`, `panel.selected` and
+`panel.selected-foreground`. Missing or unrecognised colours use the current
+foreground ink. Image colour tints symbolic SVG icons only; full-colour SVGs
+(including `brand:cyclops`) and raster artwork retain their original colours.
+The schema checks the string type, as it does for `text.color`; colour tokens
+resolve at paint time (`engines/viu/src/view/paint.rs`).
 
 Additional ports (no defaults unless shown):
 

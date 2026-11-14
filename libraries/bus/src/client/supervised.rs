@@ -83,6 +83,17 @@ pub const MAX_INITIAL_ATTEMPTS: u32 = 5;
 const BACKOFF_BASE_MS: u64 = 250;
 const BACKOFF_CAP_MS: u64 = 30_000;
 
+/// Maximum supervisor delay before the next transport attempt.
+pub const RECONNECT_BACKOFF_MAX: Duration = Duration::from_millis(BACKOFF_CAP_MS);
+
+/// Maximum time spent in backoff during an eager initial connection.
+/// Dial and registration time are additional to this budget.
+pub fn initial_connect_backoff_budget() -> Duration {
+    (0..MAX_INITIAL_ATTEMPTS.saturating_sub(1))
+        .map(|attempt| Duration::from_millis(backoff_ceiling_ms(attempt)))
+        .sum()
+}
+
 /// The upper bound of the full-jitter window for `attempt` (0-based):
 /// `min(base * 2^attempt, cap)`. Monotonic non-decreasing, saturating.
 fn backoff_ceiling_ms(attempt: u32) -> u64 {

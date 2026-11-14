@@ -325,6 +325,39 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn injected_keys_pass_through_without_app_policy_filtering() {
+        let mut view = SceneView::new(
+            "---
+scene: 1
+name: input
+citizen: input
+---
+```mix
+{root:{widget:\"text\",text:\"Input\"}}
+```
+",
+        )
+        .unwrap();
+        for args in [
+            json!({"key":"F1"}),
+            json!({"key":"F12","ctrl":true}),
+            json!({"key":"ArrowLeft","ctrl":true}),
+            json!({"key":"ArrowUp","alt":true}),
+        ] {
+            let mut input = Input::default();
+            input.queue("key", &args, &mut view).unwrap();
+            assert_eq!(input.now.len(), 3);
+            assert!(matches!(
+                &input.now[1],
+                egui::Event::Key { pressed: true, .. }
+            ));
+            assert!(matches!(
+                &input.now[2],
+                egui::Event::Key { pressed: false, .. }
+            ));
+        }
+    }
+    #[test]
     fn malformed_gestures_do_not_queue_partial_native_input() {
         let mut view=SceneView::new("---\nscene: 1\nname: input\ncitizen: input\n---\n```mix\n{root:{widget:\"text\",text:\"Input\"}}\n```\n").unwrap();
         let mut input = Input::default();
@@ -372,28 +405,6 @@ mod tests {
 }
 /// Application-authored shortcuts use native key consumption before widgets.
 pub(crate) fn consume_chord(ctx: &egui::Context, chord: &str) -> bool {
-    let parts: Vec<_> = chord.split('+').collect();
-    let Some((key, mods)) = parts.split_last() else {
-        return false;
-    };
-    let mut modifiers = egui::Modifiers::default();
-    for modifier in mods {
-        match *modifier {
-            "Ctrl" => {
-                modifiers.ctrl = true;
-                modifiers.command = true;
-            }
-            "Shift" => modifiers.shift = true,
-            "Alt" => modifiers.alt = true,
-            _ => return false,
-        }
-    }
-    let name = match *key {
-        "=" => "Equals".into(),
-        "-" => "Minus".into(),
-        "/" => "Slash".into(),
-        key if key.len() == 1 => key.to_ascii_uppercase(),
-        key => key.into(),
-    };
-    egui::Key::from_name(&name).is_some_and(|key| ctx.input_mut(|i| i.consume_key(modifiers, key)))
+    toolkit::keymap::parse_chord(chord)
+        .is_some_and(|chord| ctx.input_mut(|i| i.consume_key(chord.modifiers, chord.logical_key)))
 }

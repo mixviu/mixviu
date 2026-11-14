@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Shipped data and generated terminal bindings must respect desk ownership.
+$policy=require("../../tools/reserved-policy.mix")
+$actions=require("actions.mix")
+-- This is the same realistic model used by the terminal action tests.
+$model=require("model.mix")
+$s={closed:false,layout:$model.open_tab($model.initial(),{handle:"vt-1",pid:1},nil),bindings:{},find:{open:true},choice:{},look:{appearance:{mode:"dark"}},effective:{}}
+$policy.inspect_bindings($actions.registry($s),"term actions.mix registry")
+$policy.inspect_bindings($actions.menus($s),"term actions.mix menus")
+for $key in $actions.terminal_shortcuts($s)
+  $chord=(if $key.ctrl then "Ctrl+" else "" end)..(if $key.alt then "Alt+" else "" end)..(if $key.shift then "Shift+" else "" end)..$key.key
+  if $policy.reserved_chord($chord) then raise("RESERVED_KEY","term actions.mix output: "..$chord) end
+end
+print("reserved app bindings: clean")

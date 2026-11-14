@@ -1,0 +1,10 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- A stand-in notifier for the daily tests (notify.via "argv"): appends the
+-- JSON payload from stdin, as one line, to $DAILY_FAKE_NOTIFY.
+$out = env("DAILY_FAKE_NOTIFY", "")
+if $out == "" then
+  eprint("fake_notify: DAILY_FAKE_NOTIFY is not set")
+  exit(2)
+end
+append_file($out, json_encode(json_parse(read_stdin())) .. "\n")

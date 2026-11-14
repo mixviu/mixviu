@@ -128,9 +128,14 @@ impl Saved {
                 }
             }
         }
-        if let Some(appearance) = model["appearance"].as_object() {
+        if let Some(appearance) = model["theme_choice"]
+            .as_object()
+            .or_else(|| model["appearance"].as_object())
+        {
             let mut choice = Value::Object(appearance.clone());
-            choice["captions"] = choice["caption_side"].clone();
+            if !choice["caption_side"].is_null() && choice["captions"].is_null() {
+                choice["captions"] = choice["caption_side"].clone();
+            }
             if let Ok(theme) = serde_json::from_value(choice) {
                 self.store.window.theme = theme;
             }
@@ -188,4 +193,24 @@ async fn native_call(
         return None;
     }
     serde_json::from_str(&body).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn authored_captions_survive_both_choice_spellings() {
+        let mut saved = Saved::load("mode-test", 1, true);
+        for choice in [
+            json!({"captions":"left"}),
+            json!({"caption_side":"left"}),
+            json!({"captions":"left","caption_side":null}),
+        ] {
+            saved.apply(&json!({"theme_choice":choice}));
+            assert_eq!(
+                serde_json::to_value(&saved.store.window.theme).unwrap()["captions"],
+                "left"
+            );
+        }
+    }
 }

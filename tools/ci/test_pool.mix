@@ -1,0 +1,402 @@
+#!/usr/bin/env mix
+-- version: 0.5.0
+-- tools/ci/test_pool.mix: `cargo test` with the test binaries run in
+-- parallel. Called by tools/ci.mix in place of `cargo test`.
+--
+--   mix tools/ci/test_pool.mix [--jobs N] [--serial FILE] -- CARGO_TEST_ARGS...
+--
+-- `cargo test` runs its test binaries one after another; only tests inside a
+-- binary run in parallel. On a 16-core worker the 464 workspace binaries
+-- took 887 s that way and 195 s eight at a time (lab, cbc4, 2026-11-12).
+--
+-- 1. Record. `cargo test --no-fail-fast CARGO_TEST_ARGS`, exactly as given,
+--    runs with tools/ci/test_record.mix as its test runner. Cargo selects
+--    and builds everything it normally would (examples included), then calls
+--    the recorder once per test binary, in its own order, with its own
+--    working directory and environment; the recorder writes those down and
+--    runs nothing. Doc-tests reach the runner too and are skipped there
+--    (through a runner rustdoc would run every merged doc-test in one
+--    process; see test_record.mix).
+-- 2. Replay. Every recorded invocation runs from a pool of N with exactly
+--    the recorded argv, cwd and environment. N defaults to half the cores
+--    `nproc` reports (CPU affinity; NOT a cgroup cpu.max quota, so a
+--    quota-limited container must set TEST_POOL_JOBS), at least 1 and at
+--    most 8, or TEST_POOL_JOBS, or --jobs. Each binary runs its own tests
+--    on every core, so 8 at a time suits a 16-core CBC worker; on a 4-vCPU
+--    hosted runner 8 at a time made the pool slower than one at a time
+--    (1150 s) and timing tests failed (2026-11-12). Values go in the
+--    environment block (Mix's env option with clear_env), never in argv;
+--    only cargo's hyphenated CARGO_BIN_EXE_<bin> paths (name of that form,
+--    value under the target directory), whose names Mix refuses, are set
+--    through `env --`. Any other name Mix refuses (an inherited
+--    BASH_FUNC_f%%, say) fails the step rather than putting its value in
+--    argv: unset it in the CI environment.
+-- 3. Binaries in tools/ci/serial-tests.conf.mix run alone afterwards; an
+--    entry for a selected package that matches none of its binaries is an
+--    error.
+-- 4. Doc-tests: when cargo printed "Doc-tests" lines in the record pass
+--    (that is, when cargo itself would run doc-tests for this selection),
+--    a plain `cargo test --doc --no-fail-fast CARGO_TEST_ARGS` with no
+--    runner runs them, after the binaries, as under cargo.
+--
+-- Refused up front: --doc (the pool runs doc-tests itself), -q/--quiet (no
+-- Running lines), --target (only the host runner is recorded),
+-- --target-dir/--manifest-path/--config (they move what the pool resolves),
+-- and a host without /proc/self/environ. A TMPDIR inside the target
+-- directory would make doc-tests look like test binaries; the count check
+-- refuses that rather than skipping them. Cargo splits the runner setting on
+-- whitespace, so no runner path may contain any. Each binary has 3600 s.
+-- Recorded environments can hold credentials: they live in a 0700
+-- directory under target/, removed on every way out (try/finally; a kill
+-- signal can still leave one behind).
+--
+-- Output: the build as cargo printed it, then each binary with cargo's
+-- "Running" label and its "test result:" lines, then the doc-tests. Any
+-- result that is not ok (non-zero exit, crash, timeout even when the
+-- leader exited 0, spawn failure), failing doc-tests, a failed build or
+-- an empty selection fails the step. Ends with the slowest binaries.
+--
+-- Retry once (merge gate only). Strict unless TEST_POOL_RETRY_REPORT names
+-- a report file, and always strict under GitHub Actions (GITHUB_ACTIONS=true),
+-- so the hosted post-merge and nightly runs, and with them gold, never retry.
+-- Neither control reaches the test binaries. With it set, and TEST_POOL_CHANGED_PATHS_FILE listing the
+-- change's paths (one per line, relative to the workspace root), a run in
+-- which exactly one test binary failed, and nothing else (no doc-test or
+-- build failure), re-runs that binary once, alone. If it passes, the step
+-- passes with a `::warning::FLAKY:` line and a JSON line appended to the
+-- report. No retry when the binary belongs to a package the change touches
+-- (or one that depends on a touched package through a path dependency),
+-- when a changed path lies outside every package (other than *.md), or
+-- when the report already holds an entry (one retry per run, shared by
+-- every step that uses the same report).
+
+$o = getopt(args(), {jobs: {arg: true}, serial: {arg: true}})
+if len($o.errors) > 0 or len($o.rest) == 0 then
+  eprint("usage: mix tools/ci/test_pool.mix [--jobs N] [--serial FILE] -- CARGO_TEST_ARGS...")
+  exit(64)
+end
+fn default_jobs()
+  $n = run_argv(["nproc"], {timeout: 10})
+  $cores = if $n.ok then to_number(trim($n.stdout)) else nil end
+  if $cores == nil or $cores < 1 then
+    print("::warning::test_pool: nproc gave no core count; running one binary at a time (set TEST_POOL_JOBS)")
+    return 1
+  end
+  return max(1, min(8, floor($cores / 2)))
+end
+$jobs_from = if $o.opts.jobs != nil then "--jobs" elif env("TEST_POOL_JOBS") != "" then "TEST_POOL_JOBS" else nil end
+$jobs_text = $o.opts.jobs ?? env("TEST_POOL_JOBS", "")
+$jobs = if $jobs_from == nil then default_jobs() else to_number($jobs_text) end
+if $jobs == nil or $jobs < 1 or $jobs != floor($jobs) then
+  eprint("test_pool: " .. ($jobs_from ?? "the job count") .. " must be a whole number >= 1, got '" .. $jobs_text .. "'")
+  exit(64)
+end
+$cargo_args = $o.rest
+
+-- Refuse what the pool cannot reproduce faithfully, up front.
+fn refuse($why)
+  print("::error::test_pool: " .. $why)
+  exit(64)
+end
+$flag_of = fn($a) = split($a, "=")[0]
+-- Only cargo's own arguments: anything after `--` belongs to the test harness.
+$dashdash = index_of($cargo_args, "--")
+$cargo_own = if $dashdash < 0 then $cargo_args else slice($cargo_args, 0, $dashdash) end
+if contains($cargo_own, "--doc") then refuse("it runs doc-tests itself; do not pass --doc") end
+if len(filter($cargo_own, fn($a) = contains(["-q", "--quiet"], $a))) > 0 then refuse("quiet output hides cargo's Running lines; do not pass -q") end
+if len(filter($cargo_own, fn($a) = $flag_of($a) == "--target")) > 0 then refuse("only the host target is recorded; do not pass --target") end
+-- These move the target directory or the workspace away from what the pool
+-- reads with `cargo metadata` to tell test binaries from doc-tests.
+for $f in ["--target-dir", "--manifest-path", "--config"]
+  if len(filter($cargo_own, fn($a) = $flag_of($a) == $f)) > 0 then refuse($f .. " is not supported (the pool resolves the target directory itself)") end
+end
+if not is_file("/proc/self/environ") then refuse("needs Linux procfs (/proc/self/environ) to record environments") end
+
+$serial_path = $o.opts.serial ?? "tools/ci/serial-tests.conf.mix"
+$serial = if exists($serial_path) then load_data($serial_path).serial_tests ?? [] else [] end
+$root = realpath(".")
+$mix_exe = realpath("/proc/self/exe")
+$recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
+-- The recorder records programs under the target directory (cargo's test
+-- binaries) and runs anything else, i.e. rustdoc's doc-test executables.
+$metadata = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps"], {timeout: 600, max_output: 64000000}))
+$meta_target = $metadata.target_directory
+
+-- Retry-once policy (see header). Decided before anything runs.
+-- The packages a change touches: the package holding each changed path
+-- (longest manifest directory), then every package that depends on one of
+-- those through a path dependency of any kind (normal, dev, build), to a
+-- fixed point. A change to libraries/bus thus marks every crate testing
+-- against bus. `outside` is the first changed path in no package (*.md
+-- excepted), which keeps the whole run strict.
+fn changed_packages($metadata, $paths)
+  $ws = $metadata.workspace_root
+  $dirs = filter(map($metadata.packages, fn($p) = {name: $p.name, dir: dirname($p.manifest_path),
+    deps: map(filter($p.dependencies, fn($d) = $d.path != nil), fn($d) = $d.path)}), fn($d) = $d.dir != $ws)
+  $pkgs = {}
+  for $path in $paths
+    $abs = path_join($ws, $path)
+    $best = nil
+    for $d in $dirs
+      if starts_with($abs, $d.dir .. "/") and ($best == nil or len($d.dir) > len($best.dir)) then $best = $d end
+    end
+    if $best != nil then
+      $pkgs[$best.name] = true
+    elif not ends_with($path, ".md") then
+      return {pkgs: $pkgs, outside: $path}
+    end
+  end
+  $touched_dirs = {}
+  for $d in $dirs
+    if has_key($pkgs, $d.name) then $touched_dirs[$d.dir] = true end
+  end
+  $grew = true
+  while $grew
+    $grew = false
+    for $d in $dirs
+      if not has_key($pkgs, $d.name) and len(filter($d.deps, fn($p) = has_key($touched_dirs, $p))) > 0 then
+        $pkgs[$d.name] = true
+        $touched_dirs[$d.dir] = true
+        $grew = true
+      end
+    end
+  end
+  return {pkgs: $pkgs, outside: nil}
+end
+$retry_report = env("TEST_POOL_RETRY_REPORT", "")
+$retry = {on: false, why: "strict (TEST_POOL_RETRY_REPORT unset)", pkgs: {}}
+-- A hosted Actions run never retries, whatever it sets: main and gold stay strict.
+if $retry_report != "" and env("GITHUB_ACTIONS") == "true" then
+  $retry.why = "strict: GITHUB_ACTIONS is set (hosted runs never retry)"
+elif $retry_report != "" then
+  $paths_file = env("TEST_POOL_CHANGED_PATHS_FILE", "")
+  if $paths_file == "" or not is_file($paths_file) then
+    $retry.why = "strict: TEST_POOL_CHANGED_PATHS_FILE is missing"
+  else
+    $paths = filter(map(lines(read_file($paths_file)), fn($l) = trim($l)), fn($l) = $l != "")
+    $cp = changed_packages($metadata, $paths)
+    if len($paths) == 0 then
+      $retry.why = "strict: the changed-paths file is empty"
+    elif $cp.outside != nil then
+      $retry.why = "strict: " .. $cp.outside .. " is outside every package"
+    else
+      $touched = sort(keys($cp.pkgs))
+      $retry = {on: true, why: (if len($touched) == 0 then "one retry (the change touches no package)" else "one retry, not for " .. join($touched, ", ") end), pkgs: $cp.pkgs}
+    end
+  end
+end
+print("test_pool: retry " .. $retry.why)
+mkdir($meta_target)
+$target_dir = realpath($meta_target)
+if re_match($mix_exe .. $recorder .. $root .. $target_dir, "\\s") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
+-- Brackets break the Running-line match; `=` makes `env --` read a program
+-- path under the target directory as an assignment.
+if re_match($root .. $target_dir .. $meta_target, "[()=]") then refuse("a bracket or '=' in the checkout or target path is not supported") end
+$host = re_find(run_argv_must(["rustc", "-vV"]), "(?m)^host: (\\S+)$")[0].groups[0]
+$runner_var = "CARGO_TARGET_" .. upper(replace(replace($host, "-", "_"), ".", "_")) .. "_RUNNER"
+if env($runner_var) != "" then refuse($runner_var .. " is already set; the pool cannot record through it") end
+
+-- Recorded environments can carry credentials: a private directory and
+-- file, created before anything is written, and removed on every way out.
+$rec_dir = path_join($root, "target/test-pool-" .. to_string(pid()))
+mkdir($rec_dir)
+chmod($rec_dir, 0o700)
+$rec = path_join($rec_dir, "runs.jsonl")
+write_file($rec, "")
+chmod($rec, 0o600)
+
+fn run_spec($jobs)
+  return map($jobs, fn($j) = {argv: $j.argv, env: $j.env, clear_env: true, cwd: $j.cwd,
+    timeout: $j.timeout, max_output: $j.max_output, stdout: $j.stdout, stderr: $j.stderr})
+end
+fn strip_escapes($l)
+  return re_replace($l, "\\x1b\\[[0-9;]*m", "")
+end
+
+try
+  -- 1. Record: cargo builds and records each test binary; doc-tests wait.
+  -- `--color never` is cargo's own flag, so the Running lines parse and the
+  -- recorded environment is untouched (CARGO_TERM_COLOR is passed on to tests).
+  $t_build = monotonic()
+  $record_env = {}
+  $record_env[$runner_var] = $mix_exe .. " " .. $recorder .. " " .. $rec .. " " .. $target_dir
+  $b = run_argv(concat(["cargo", "test", "--no-fail-fast", "--color", "never"], $cargo_args),
+    {timeout: 14400, env: $record_env, stdout: "capture", stderr: "capture", max_output: 256000000})
+  $record_s = monotonic() - $t_build
+  $runs = map(filter(lines(read_file($rec)), fn($l) = trim($l) != ""), fn($l) = json_parse($l))
+  $err_lines = lines($b.stderr)
+  -- Only cargo's test-run status lines: "     Running <source> (<program>)".
+  -- A build script or --verbose line that merely starts with Running does
+  -- not end in a bracketed program path.
+  $run_line = "^\\s+Running .+ \\([^()]+\\)$"
+  $labels = map(filter($err_lines, fn($l) = re_match(strip_escapes($l), $run_line)), fn($l) = trim(re_replace(strip_escapes($l), "^\\s+Running ", "")))
+  -- The build output, without the record pass's Running lines: each binary's
+  -- Running line is printed once, with its result, below.
+  print(join(filter($err_lines, fn($l) = not re_match(strip_escapes($l), $run_line)), "\n"))
+  -- Cargo printed Doc-tests lines when it would run doc-tests here.
+  $has_doc = len(filter($err_lines, fn($l) = re_match(strip_escapes($l), "^\\s+Doc-tests "))) > 0
+  if len($runs) == 0 and not ($b.ok and $has_doc) then
+    -- Nothing recorded: the build failed, or the selection has no tests at
+    -- all. (Doc-tests alone, after a good build, run below as under cargo.)
+    print($b.stdout)
+    if not $b.ok then
+      print("::error::test build failed (rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. "): cargo test " .. join($cargo_args, " "))
+    else
+      print("::error::cargo test " .. join($cargo_args, " ") .. " ran no test binaries; refusing to pass an empty selection")
+    end
+    exit(1)
+  end
+  if len($labels) != len($runs) then
+    print("::error::cargo printed " .. to_string(len($labels)) .. " Running lines for " .. to_string(len($runs)) .. " recorded runs")
+    exit(1)
+  end
+  -- With binaries recorded the build succeeded and the recorder always exits
+  -- 0, so a record pass that is not ok means a doc-test failed to build.
+  $record_failed = not $b.ok
+
+  $pool = []
+  $alone = []
+  $matched = {}
+  $selected_pkgs = {}
+  for $i = 0 to len($runs) - 1
+    $r = $runs[$i]
+    $e = $r.env
+    -- The recorder's own runner variable is not part of cargo's environment.
+    $env = {}
+    for $k in keys($e)
+      -- Nor are the retry controls: a retry-enabled run must give each test
+      -- binary the same environment as a strict one.
+      if $k != $runner_var and $k != "TEST_POOL_RETRY_REPORT" and $k != "TEST_POOL_CHANGED_PATHS_FILE" then $env[$k] = $e[$k] end
+    end
+    $pkg = $env.CARGO_PKG_NAME ?? "?"
+    $selected_pkgs[$pkg] = true
+    $target = re_replace(basename($r.argv[0]), "-[0-9a-f]{16}$", "")
+    $key = $pkg .. "/" .. $target
+    -- Values travel in the environment block, never in argv (argv is world
+    -- readable in /proc/PID/cmdline and recorded values can be tokens).
+    -- Mix's env option with clear_env sets cargo's environment exactly; it
+    -- refuses names outside [A-Za-z_][A-Za-z0-9_]*, and cargo makes such
+    -- names only as CARGO_BIN_EXE_<bin> (a path, not a secret), which go on
+    -- top through `env --` (`--` ends env's options).
+    $plain = {}
+    $odd = []
+    for $k in sort(keys($env))
+      if re_match($k, "^[A-Za-z_][A-Za-z0-9_]*$") then
+        $plain[$k] = $env[$k]
+      elif re_match($k, "^CARGO_BIN_EXE_[A-Za-z0-9_-]+$") and (starts_with($env[$k], $target_dir .. "/") or starts_with($env[$k], $meta_target .. "/")) then
+        push($odd, $k .. "=" .. $env[$k])
+      else
+        print("::error::test_pool: " .. $key .. " has environment name '" .. $k .. "', which can only be passed in argv; refusing to expose its value")
+        exit(1)
+      end
+    end
+    $argv = if len($odd) == 0 then $r.argv else concat(concat(["env", "--"], $odd), $r.argv) end
+    $job = {argv: $argv, env: $plain, cwd: $r.cwd, timeout: 3600, max_output: 64000000,
+            stdout: "capture", stderr: "stdout", label: $labels[$i], key: $key}
+    if len(filter($serial, fn($s) = $s.package == $pkg and $s.target == $target)) > 0 then
+      $matched[$key] = true
+      push($alone, $job)
+    else
+      push($pool, $job)
+    end
+  end
+  -- A serial entry for a package in this selection must name a real test
+  -- target (a renamed or misspelt one would silently rejoin the pool);
+  -- entries for packages outside the selection do not apply here.
+  $stale = filter($serial, fn($s) = has_key($selected_pkgs, $s.package) and not has_key($matched, $s.package .. "/" .. $s.target))
+  for $s in $stale
+    print("::error::" .. $serial_path .. ": " .. $s.package .. "/" .. $s.target .. " matches no test binary of " .. $s.package)
+  end
+
+  -- 2-3. Replay: the pool, then the serial list one at a time.
+  $t_run = monotonic()
+  $pool_rs = run_parallel(run_spec($pool), {max: $jobs})
+  $pool_s = monotonic() - $t_run
+  $t_alone = monotonic()
+  $alone_rs = run_parallel(run_spec($alone), {max: 1})
+  $alone_s = monotonic() - $t_alone
+
+  $all = concat($pool, $alone)
+  $rs = concat($pool_rs, $alone_rs)
+  $failed = []
+  $failed_bins = []
+  $timing = []
+  for $i = 0 to len($all) - 1
+    $j = $all[$i]
+    $r = $rs[$i]
+    print("     Running " .. $j.label)
+    print($r.stdout)
+    if $r.stdout_truncated then print("::warning::" .. $j.key .. ": output over 64 MB was truncated in this log") end
+    -- `ok` is false for a non-zero exit, a timeout (even when the leader
+    -- exited 0 while a descendant held its output open), and a spawn failure.
+    if not $r.ok then
+      push($failed, $j.key .. " (rc " .. to_string($r.exit_code ?? 124) .. (if $r.timed_out then ", timed out" else "" end)
+        .. (if $r.error != nil then ", " .. to_string($r.error) else "" end) .. ")")
+      push($failed_bins, $i)
+    end
+    push($timing, {key: $j.key, s: $r.duration_ms / 1000})
+  end
+  -- 4. Doc-tests, after the binaries, without a runner, as under cargo.
+  $t_doc = monotonic()
+  if $has_doc then
+    $d = run_argv(concat(["cargo", "test", "--doc", "--no-fail-fast"], $cargo_args), {timeout: 7200, stderr: "stdout", max_output: 64000000})
+    print($d.stdout)
+    if not $d.ok then
+      push($failed, "doc-tests (cargo test --doc rc " .. to_string($d.exit_code ?? 124) .. (if $d.timed_out then ", timed out" else "" end) .. ")")
+    end
+  end
+  $doc_s = monotonic() - $t_doc
+  if $record_failed then
+    print($b.stdout)
+    push($failed, "record pass (cargo test rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. ")")
+  end
+
+  -- 5. Retry once (merge gate only; see header).
+  if $retry.on and len($failed_bins) > 0 then
+    $other = len($failed) > len($failed_bins)
+    if len($failed_bins) > 1 or $other then
+      print("::notice::test_pool: no retry: " .. to_string(len($failed_bins)) .. " binaries failed"
+        .. (if $other then ", and doc-tests or the record pass failed" else "" end) .. " (at most one flaky binary per run)")
+    else
+      $i = $failed_bins[0]
+      $j = $all[$i]
+      $first = $rs[$i]
+      $pkg = split($j.key, "/")[0]
+      $used = if is_file($retry_report) then len(filter(lines(read_file($retry_report)), fn($l) = trim($l) != "")) else 0 end
+      if has_key($retry.pkgs, $pkg) then
+        print("::notice::test_pool: no retry: " .. $j.key .. " belongs to a package this change touches")
+      elif $used > 0 then
+        print("::notice::test_pool: no retry: this run already retried a binary (" .. $retry_report .. ")")
+      else
+        print("     Running " .. $j.label .. " (retry, alone)")
+        $again = run_parallel(run_spec([$j]), {max: 1})[0]
+        print($again.stdout)
+        if $again.ok then
+          $out = $first.stdout ?? ""
+          append_file($retry_report, json_encode({key: $j.key, label: $j.label, first_rc: $first.exit_code, first_timed_out: $first.timed_out,
+            cargo_args: $cargo_args, first_tail: substr($out, max(0, len($out) - 4000), 4000)}) .. "\n")
+          $where = if $i < len($pool) then "beside other binaries" else "alone (serial list)" end
+          print("::warning::FLAKY: " .. $j.key .. " failed " .. $where .. " (" .. $failed[0] .. ") and passed when run again alone; recorded for a fix")
+          $failed = []
+        else
+          print("::error::test_pool: " .. $j.key .. " failed again alone (rc " .. to_string($again.exit_code ?? 124) .. ")")
+        end
+      end
+    end
+  end
+
+  print(fmt("test_pool: %d binaries; build+record %.0f s, pool %.0f s (%d at a time), serial %.0f s (%d alone), doc-tests %.0f s",
+    len($all), $record_s, $pool_s, $jobs, $alone_s, len($alone), $doc_s))
+  for $t in slice(reverse(sort_by($timing, fn($t) = $t.s)), 0, 10)
+    print(fmt("  %7.1f s  %s", $t.s, $t.key))
+  end
+  if len($failed) > 0 or len($stale) > 0 then
+    for $f in $failed
+      print("::error::test failed: " .. $f)
+    end
+    exit(1)
+  end
+finally
+  $cleanup = run_argv(["rm", "-rf", $rec_dir])
+  if not $cleanup.ok then print("::warning::could not remove " .. $rec_dir .. " (it holds recorded environments)") end
+end

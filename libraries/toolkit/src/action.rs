@@ -115,16 +115,12 @@ impl<S> Default for Registry<S> {
     }
 }
 
-/// Refuse `shortcut` as a default chord of command `id` when it is on one of
-/// the person's function keys, F1–F12, whatever its modifiers
-/// (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md).
-/// Only [`Registry::rebind`], applying the person's own bindings, may put a
-/// command on one.
+/// Refuse reserved chords in shipped defaults only; user overrides remain unrestricted.
+/// Shipped app shortcuts may not claim F1–F12 or Ctrl/Alt+arrow without Shift.
 fn default_chord(id: &str, shortcut: KeyboardShortcut) {
     assert!(
-        !crate::keymap::user_only(shortcut.logical_key),
-        "command {id:?} has a default chord on {}: F1-F12 belong to the user and only \
-         their keymap may bind them (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md)",
+        !crate::keymap::reserved(shortcut.logical_key, shortcut.modifiers),
+        "command {id:?} has a default chord on {}: F1-F12 belong to the user; Ctrl/Alt+arrow are reserved for the desk",
         crate::keymap::chord_text(&shortcut)
     );
 }
@@ -210,7 +206,7 @@ impl<S> Registry<S> {
     /// # Panics
     /// On a duplicate id or shortcut: both are programming errors that would
     /// otherwise make dispatch ambiguous. On a shortcut on F1–F12, with any
-    /// modifiers: those keys are the person's ([`default_chord`]).
+    /// modifiers, or Ctrl/Alt+arrow without Shift ([`default_chord`]).
     pub fn add(&mut self, command: Action<S>) -> &mut Self {
         assert!(
             self.get(command.id).is_none(),
@@ -1336,7 +1332,10 @@ mod tests {
                 menu: None,
                 submenu: None,
                 group: 0,
-                shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, key)),
+                shortcut: Some(KeyboardShortcut::new(
+                    Modifiers::COMMAND | Modifiers::SHIFT,
+                    key,
+                )),
                 icon: None,
                 enabled: always,
                 run: |_| {},
@@ -1344,24 +1343,27 @@ mod tests {
         }
         r.add_shortcuts(
             "equals",
-            [KeyboardShortcut::new(Modifiers::ALT, Key::ArrowLeft)],
+            [KeyboardShortcut::new(
+                Modifiers::ALT | Modifiers::SHIFT,
+                Key::ArrowLeft,
+            )],
         );
         let rows =
             serde_json::to_value(r.describe(&Counter::default(), &Strings::new(FTL))).unwrap();
         let golden = [
-            "Ctrl+ArrowLeft",
-            "Ctrl+ArrowRight",
-            "Ctrl+ArrowUp",
-            "Ctrl+ArrowDown",
-            "Ctrl+=",
-            "Ctrl+-",
+            "Ctrl+Shift+ArrowLeft",
+            "Ctrl+Shift+ArrowRight",
+            "Ctrl+Shift+ArrowUp",
+            "Ctrl+Shift+ArrowDown",
+            "Ctrl+Shift+=",
+            "Ctrl+Shift+-",
         ];
         for (row, shortcut) in rows.as_array().unwrap().iter().zip(golden) {
             let id = row["id"].as_str().unwrap();
             let mut expected = serde_json::json!({"id": id, "label": id, "menu": null, "shortcut": shortcut,
                 "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null});
             if id == "equals" {
-                expected["more"] = serde_json::json!(["Alt+ArrowLeft"]);
+                expected["more"] = serde_json::json!(["Alt+Shift+ArrowLeft"]);
             }
             assert_eq!(row, &expected);
         }
@@ -1934,6 +1936,39 @@ mod tests {
     fn a_default_bare_function_key_is_refused() {
         let f1 = KeyboardShortcut::new(Modifiers::NONE, Key::F1);
         Registry::new().add(on("help.shortcuts", f1));
+    }
+
+    #[test]
+    fn every_logical_default_uses_the_shared_policy_at_both_registry_entries() {
+        for &key in Key::ALL {
+            for bits in 0..32 {
+                let modifiers = Modifiers {
+                    shift: bits & 1 != 0,
+                    alt: bits & 2 != 0,
+                    ctrl: bits & 4 != 0,
+                    command: bits & 8 != 0,
+                    mac_cmd: bits & 16 != 0,
+                };
+                let chord = KeyboardShortcut::new(modifiers, key);
+                let refused = crate::keymap::reserved(key, modifiers);
+                for extra in [false, true] {
+                    let result = std::panic::catch_unwind(|| {
+                        let mut registry = Registry::<Counter>::new();
+                        if extra {
+                            registry.add(on("x", KeyboardShortcut::new(Modifiers::NONE, Key::A)));
+                            registry.add_shortcuts("x", [chord]);
+                        } else {
+                            registry.add(on("x", chord));
+                        }
+                    });
+                    assert_eq!(
+                        result.is_err(),
+                        refused,
+                        "{key:?} {modifiers:?} extra={extra}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

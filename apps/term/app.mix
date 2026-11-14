@@ -1,12 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- lint: globals app_args app_launch app_startup viu_context viu_terminal viu_timer viu_json_numbers viu_platform viu_action_event viu_reply
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $lifecycle=require("lifecycle.mix")
 $ctx=viu_context();$core=require("core.mix");$wire=require("wire.mix");$model=require("model.mix");$bus=require("bus.mix")
 $native=fn($op,$handle,$args)=viu_terminal($op,$handle,$args)
 $state={look:{appearance:{scheme:"studio",mode:"dark"},values:{}},closed:false,replies:[],watching:false,event_revision:0,zoom:0}
 $context_options=$ctx.options ?? {}
-$state.window_title=$context_options.title ?? "Terminal"
+$state.window_title=$context_options.title ?? "Term"
 $state.headless=$app_startup.headless ?? false
 $state.startup=$app_startup.settings ?? {font_px:14.667,scrollback:1000,cursor:"underline",TERM:"xterm-256color"}
 $state.font_current=$state.startup.font_px;$state.font_profile=$state.startup.font_px;$state.font_base=$state.startup.font_px
@@ -21,7 +22,7 @@ $window_show=require("../../libraries/viu/mix/window-show.mix");$state.shows={};
 $font=require("font-persistence.mix");$state.font=$font.initial();$state.font_job=0
 $state.font_fence={binding:nil,incarnation:nil,revision:nil}
 $settings=require("../../libraries/viu/mix/session.mix")
-$state.version=$ctx.version;$state.build_line=$ctx.build_line;$state.choice={};$state.bindings={};$state.effective={};$state.pastes={}
+$state.version=$ctx.version;$state.build_line=$ctx.build_line;$state.choice={mode:$app_mode.load("term")};$state.bindings={};$state.effective={};$state.pastes={}
 $state.publishing=false;$state.event_job=0
 $notifications=require("notifications.mix");$state.notifications=$notifications.initial(env("TERM_NOTIFY"))
 fn pump_notifications($s)
@@ -54,7 +55,7 @@ fn publish_term($s)
   end
   $s=$find.sync($s)
   $published=$native("metadata","",$model.metadata($s.layout))
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$core.framed($s)}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$app_mode.project($core.framed($s),"term",$s.choice,$s.headless ?? false)}
   return $s
 end
 fn font_event($s,$event)

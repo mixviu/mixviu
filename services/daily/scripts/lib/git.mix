@@ -1,0 +1,165 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- git by argv, always `git -C <repo>`. $g is {path, env, timeout}.
+--
+-- argv alone does not stop an operand being read as an option, and commit
+-- text can hold any byte. So: every revision handed to git is a validated
+-- object id (oid) after --end-of-options; free-form fields are read one
+-- commit at a time, NUL-framed, with an exact field count.
+$OID = "^[0-9a-f]{40}([0-9a-f]{24})?$"
+
+fn ctx($config)
+  return {path: $config.repo.path, env: $config.git.env, timeout: $config.git.timeout_s}
+end
+
+fn oid($s)
+  if type($s) != "string" or not re_match($s, $OID) then raise("GIT_OID", "git returned something that is not an object id") end
+  return $s
+end
+
+fn raw($g, $args, $max = 33554432)
+  -- quotePath off: diff headers carry non-ASCII paths as they are.
+  return run_argv(concat(["git", "-C", $g.path, "-c", "core.quotePath=false"], $args), {env: $g.env, timeout: $g.timeout, max_output: $max})
+end
+
+-- stderr stays out of the message (replies, status and the log carry the
+-- message); it travels in details for the private diagnostics file.
+fn must($g, $args, $max = 33554432)
+  $r = raw($g, $args, $max)
+  if not $r.ok or $r.stdout_truncated then
+    raise("GIT", "git " .. $args[0] .. " failed (rc " .. to_string($r.exit_code ?? -1) .. ")", {stderr: slice($r.stderr ?? "", 0, 4000)})
+  end
+  return $r.stdout
+end
+
+-- The commit a configured ref or a validated sha names, or nil.
+fn commit($g, $ref)
+  $r = raw($g, ["rev-parse", "-q", "--verify", "--end-of-options", $ref .. "^{commit}"])
+  if not $r.ok then return nil end
+  return oid(trim($r.stdout))
+end
+
+fn tags($g, $prefix)
+  $out = []
+  for $t in lines(must($g, ["tag", "--list", "--end-of-options", $prefix .. "*"]))
+    if $t != "" then push($out, $t) end
+  end
+  return sort($out)
+end
+
+-- Exactly $n NUL-separated fields of `git show -s --format=FMT <oid>`.
+fn show_fields($g, $sha, $fmt, $n)
+  $text = must($g, ["show", "-s", "--no-color", "--format=" .. $fmt, "--end-of-options", oid($sha)])
+  if ends_with($text, "\n") then $text = slice($text, 0, len($text) - 1) end
+  $f = split($text, "\x00")
+  if $n > 0 and len($f) != $n then raise("GIT_FORMAT", "commit " .. slice($sha, 0, 12) .. " has an unreadable header") end
+  return $f
+end
+
+-- {sha, time (epoch), iso} for one commit.
+fn stamp($g, $sha)
+  $f = show_fields($g, $sha, "%ct%x00%cI", 2)
+  if not re_match($f[0], "^[0-9]+$") then raise("GIT_FORMAT", "bad commit time") end
+  -- Older git prints a zero offset as +00:00, newer as Z: keep one spelling.
+  return {sha: $sha, time: to_number($f[0]), iso: re_replace($f[1], "[+-]00:00$", "Z")}
+end
+
+-- First-parent commits in (from, to], oldest first.
+fn window($g, $from, $to)
+  $out = []
+  for $s in lines(must($g, ["rev-list", "--first-parent", "--reverse", "--end-of-options", oid($from) .. ".." .. oid($to)]))
+    if $s == "" then continue end
+    $sha = oid($s)
+    $f = show_fields($g, $sha, "%P%x00%ct%x00%an%x00%ae%x00%s", 5)
+    $parents = filter(split($f[0], " "), fn($p) = $p != "")
+    for $p in $parents oid($p) end
+    if not re_match($f[1], "^[0-9]+$") then raise("GIT_FORMAT", "bad commit time") end
+    $co = []
+    for $c in show_fields($g, $sha, "%(trailers:key=Co-authored-by,valueonly,separator=%x00)", 0)
+      if trim($c) != "" then push($co, trim($c)) end
+    end
+    push($out, {sha: $sha, parents: $parents, author: $f[2], email: $f[3], time: to_number($f[1]), subject: $f[4], coauthors: $co})
+  end
+  return $out
+end
+
+-- Commits a first-parent commit brings in: itself, plus a merge's side branch.
+fn brought($g, $c)
+  if len($c.parents) < 2 then return [oid($c.sha)] end
+  $out = []
+  for $s in lines(must($g, ["rev-list", "--reverse", "--end-of-options", oid($c.parents[0]) .. ".." .. oid($c.sha)]))
+    if $s != "" then push($out, oid($s)) end
+  end
+  return $out
+end
+
+-- [{path, ins, del, binary}] between two commits, renames as delete + add.
+fn numstat($g, $a, $b, $paths = [])
+  $args = concat(["diff", "--numstat", "--no-renames", "--no-color", "--no-ext-diff", "-z", "--end-of-options", oid($a), oid($b), "--"], $paths)
+  $out = []
+  for $rec in split(must($g, $args), "\x00")
+    if $rec == "" then continue end
+    $f = split($rec, "\t")
+    if len($f) < 3 then continue end
+    $bin = $f[0] == "-"
+    push($out, {path: $f[2], ins: if $bin then 0 else to_number($f[0]) end, del: if $bin then 0 else to_number($f[1]) end, binary: $bin})
+  end
+  return sort_by($out, fn($x) = $x.path)
+end
+
+-- {path: "A"|"M"|"D"|...} between two commits.
+fn name_status($g, $a, $b, $paths = [])
+  $f = split(must($g, concat(["diff", "--name-status", "--no-renames", "--no-color", "--no-ext-diff", "-z", "--end-of-options", oid($a), oid($b), "--"], $paths)), "\x00")
+  $out = {}
+  $i = 0
+  while $i + 1 < len($f)
+    if $f[$i] == "" then break end
+    $out[$f[$i + 1]] = substr($f[$i], 0, 1)
+    $i = $i + 2
+  end
+  return $out
+end
+
+-- Added-line hunks of one diff: [{file, start, count, lines}] (lines are the added text).
+fn hunks($g, $a, $b)
+  $out = []
+  $file = nil
+  $cur = nil
+  for $l in lines(must($g, ["diff", "-U0", "--no-renames", "--no-color", "--no-ext-diff", "--end-of-options", oid($a), oid($b), "--"]))
+    if starts_with($l, "diff --git ") then
+      if $cur != nil then push($out, $cur) end
+      $cur = nil
+      $file = nil
+    elif starts_with($l, "+++ ") then
+      -- A path git still quotes (tab, newline, quote) is skipped, not misfiled.
+      $file = if $l == "+++ /dev/null" or starts_with($l, "+++ \"") then nil else slice($l, 6) end
+    elif starts_with($l, "@@ ") then
+      if $cur != nil then push($out, $cur) end
+      $cur = nil
+      $m = re_find($l, "^@@ -[0-9]+(?:,[0-9]+)? \\+([0-9]+)(?:,([0-9]+))? @@")
+      if len($m) == 1 and $file != nil then
+        $count = if $m[0].groups[1] == nil or $m[0].groups[1] == "" then 1 else to_number($m[0].groups[1]) end
+        if $count > 0 then $cur = {file: $file, start: to_number($m[0].groups[0]), count: $count, lines: []} end
+      end
+    elif $cur != nil and starts_with($l, "+") then
+      $t = $cur.lines
+      push($t, slice($l, 1))
+      $cur.lines = $t
+    end
+  end
+  if $cur != nil then push($out, $cur) end
+  return $out
+end
+
+-- One file at a commit, or nil. $path is a fixed repository path.
+fn show_file($g, $sha, $path)
+  $r = raw($g, ["show", "--no-color", "--end-of-options", oid($sha) .. ":" .. $path], 4194304)
+  if not $r.ok then return nil end
+  return $r.stdout
+end
+
+fn ls_tree($g, $sha, $dir)
+  $r = raw($g, ["ls-tree", "-r", "--name-only", "-z", "--end-of-options", oid($sha), "--", $dir])
+  if not $r.ok then return [] end
+  return sort(filter(split($r.stdout, "\x00"), fn($p) = $p != ""))
+end

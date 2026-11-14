@@ -4,7 +4,7 @@
 -- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
 --
 --   mix tools/ci.mix STAGE [--mix PATH]
---   STAGE: fmt | env | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
+--   STAGE: fmt | env | mix-services | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
 --   stage-install [--dir DIR] (not in all): copy the built debug engine and
 --   service binaries, by name, into DIR/bin (default target/stage-install,
@@ -23,7 +23,7 @@
 
 $o = getopt(args(), {mix: {arg: true}, dir: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|env|mix-hygiene|clippy|viud|foreign|test|stage-smoke|mix-lint|mix-lint-baseline|release-mix|stage-install|all [--mix PATH] [--dir DIR]")
+  eprint("usage: mix tools/ci.mix fmt|env|mix-services|mix-hygiene|clippy|viud|foreign|test|stage-smoke|mix-lint|mix-lint-baseline|release-mix|stage-install|all [--mix PATH] [--dir DIR]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -95,19 +95,47 @@ fn stage_test($mix)
   -- platform's crates in the cache.
   ensure_mix($mix)
   $abs = realpath($mix)
+  run_step([$mix, "tools/reserved_keys.mix", $abs])
+  run_step([$mix, "tools/reserved-policy-test.mix"])
+  run_step([$mix, "tools/term-targets-test.mix"])
   $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
   run_step(["cargo", "fetch", "--locked"])
-  run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--no-fail-fast"], $test_env)
-  run_step(["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"], $test_env)
+  -- The test binaries run in parallel (tools/ci/test_pool.mix, which adds
+  -- --no-fail-fast); a short serial list (tools/ci/serial-tests.conf.mix)
+  -- runs alone afterwards.
+  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "mix", "--features", "test-hooks"], $test_env)
+  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "--workspace", "--exclude", "mix"], $test_env)
+  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "portald", "--no-default-features"], $test_env)
+  stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
   for $case in sort(glob("apps/term/*-test.mix"))
     run_step([$mix, $case])
   end
-  for $case in ["apps/monitor/core-test.mix", "apps/monitor/history-test.mix", "apps/monitor/wire-test.mix", "apps/monitor/fetch-test.mix", "apps/screenshot/policy-test.mix"]
+  for $case in ["apps/monitor/policy-test.mix", "apps/monitor/core-test.mix", "apps/monitor/history-test.mix", "apps/monitor/wire-test.mix", "apps/monitor/fetch-test.mix", "apps/screenshot/policy-test.mix"]
     if exists($case) then
       run_step([$mix, $case])
     end
   end
+  -- The daily pipeline: a fixture repository and fake gh, then the citizen
+  -- on a private broker (noded is built by the workspace tests above).
+  run_step([$mix, "services/daily/tests/manifest_test.mix"], $test_env)
+  run_step([$mix, "services/daily/tests/serve_test.mix"], merge($test_env, {MIX_TEST_NODED_EXE: realpath("target/debug/noded") ?? "target/debug/noded"}))
+end
+
+fn stage_mix_services($mix)
+  ensure_mix($mix)
+  run_step(["cargo", "build", "--locked", "-p", "mixd", "-p", "noded", "-p", "settingsd"])
+  -- noded and settingsd are where that build put them: the workspace target
+  -- directory's dev-profile output, not wherever --mix happens to live.
+  $meta = json_parse(run_argv_must(["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"]))
+  $bin = $meta.target_directory .. "/debug"
+  for $exe in ["noded", "settingsd"]
+    if not is_file($bin .. "/" .. $exe) then
+      print("::error::mix-services: " .. $exe .. " was not built in " .. $bin)
+      exit(1)
+    end
+  end
+  run_step([$mix, "tools/mix_services_test.mix", "--mix", realpath($mix), "--bin", $bin])
 end
 
 -- Both normal binaries and opt-in fault-injection binaries are exercised.
@@ -172,6 +200,10 @@ fn git_grep($args)
 end
 
 fn stage_env()
+  -- Build/refresh the default shell before running it, including in `all`.
+  -- An explicit existing --mix (for example the installed shell) skips builds.
+  ensure_mix($mix)
+  run_step([$mix, "tools/serde_json_guard.mix"])
   $reg_path = "etc/env.conf.mix"
   if not exists($reg_path) then
     print("::error::" + $reg_path + " is missing: every MIX_* name must be registered")
@@ -185,8 +217,8 @@ fn stage_env()
       exit(1)
     end
     $listed[$v.name] = true
-    if has_key($v, "default") and ($v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
-      print("::error::" .. $v.name .. ": default must be a runtime environment string")
+    if has_key($v, "default") and (not starts_with($v.name, "MIX_") or $v.scope != "runtime" or type($v.default) != "string" or contains($v.meaning, "not an environment variable")) then
+      print("::error::" .. $v.name .. ": default must be a runtime Mix environment string accepted by env.mx")
       exit(1)
     end
   end
@@ -219,7 +251,26 @@ fn stage_env()
       push($bad, "unregistered " + $n)
     end
   end
+  -- A registered standard name (not MIX_*) counts as used where code reads it
+  -- through its read form: `paths::env::IDENT` in Rust (IDENT is the constant
+  -- in env_names.rs whose value is the name) or `env("NAME"` in Mix. A bare
+  -- mention in a comment or string does not count; a comment quoting the
+  -- read form itself still does (the same residue the MIX_ grep accepts).
+  -- Searched outside vendor/, provenance/, env_names.rs and the registry.
+  $consts = {}
+  for $m in re_find(read_file("libraries/paths/src/env_names.rs"), "pub(?:\\(crate\\))? const ([A-Z0-9_]+):\\s*&(?:'static )?str\\s*=\\s*\"([^\"]+)\"")
+    $consts[$m.groups[1]] = $m.groups[0]
+  end
+  $outside = ["--", ":!vendor", ":!provenance", ":!libraries/paths/src/env_names.rs", ":!etc/env.conf.mix"]
   for $n in sort(keys($listed))
+    if not starts_with($n, "MIX_") then
+      $rs = ""
+      if has_key($consts, $n) then
+        $rs = git_grep(concat(["-l", "-F", "-e", "paths::env::" + $consts[$n]], concat($outside, ["*.rs"])))
+      end
+      $mx = git_grep(concat(["-l", "-F", "-e", "env(\"" + $n + "\""], concat($outside, ["*.mix"])))
+      if trim($rs) != "" or trim($mx) != "" then $used[$n] = true end
+    end
     if not has_key($used, $n) then
       push($bad, "registered but unused " + $n)
     end
@@ -280,12 +331,15 @@ fn stage_viud_egui_free()
   print("viud: no egui/toolkit crates in its normal dependency tree")
 end
 
--- Foreign code (tools/foreign.conf.mix): every C-building crate is allowed or
--- debt, the strict mix crates reach allow entries only and no desktop crate,
+-- Foreign code (tools/foreign.conf.mix): every C-building crate is in allow,
+-- debt or admitted, the strict mix crates reach allow entries only and no desktop crate,
 -- and the built shell loads no display, GPU, input or audio library (ldd).
 fn stage_foreign($mix)
   ensure_mix($mix)
-  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix)])
+  run_step(["cargo", "build", "--locked", "-p", "mixd"])
+  run_step([$mix, "tools/foreign_admission_test.mix", "--cargo"])
+  -- Both strict binaries: the gate names each one it scanned and fails on fewer.
+  run_step([$mix, "tools/foreign_gate.mix", "--locked", "--elf", realpath($mix), "--elf", realpath("target/debug/mixd"), "--min-elf", "2"])
 end
 
 fn stage_mix_lint($mix)
@@ -431,11 +485,8 @@ fn stage_install($dir)
   if $commit != $head then
     eprint("stage-install: warning: the tree is dirty and target/debug/mix was built from " .. $commit .. ", not HEAD " .. $head)
   end
-  $defaults = {schema: 1, commit: $commit}
-  for $v in load_data("etc/env.conf.mix").vars
-    if $v.scope == "runtime" and has_key($v, "default") then $defaults[$v.name] = $v.default end
-  end
-  write_file($prefix .. "/env.mx", data_encode($defaults))
+  $env_mx = require("env_mx.mix")
+  $env_mx.write($prefix .. "/env.mx", "etc/env.conf.mix", $commit)
   eprint("staged into " .. $prefix .. "/bin: " .. join($copied, " "))
   return {prefix: $prefix, commit: $commit}
 end
@@ -495,6 +546,8 @@ elif $stage == "clippy" then
   stage_clippy()
 elif $stage == "test" then
   stage_test($mix)
+elif $stage == "mix-services" then
+  stage_mix_services($mix)
 elif $stage == "mix-hygiene" then
   stage_mix_hygiene()
 elif $stage == "release-mix" then
