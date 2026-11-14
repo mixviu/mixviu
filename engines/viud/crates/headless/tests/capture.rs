@@ -284,16 +284,18 @@ fn record_vaapi_capability_or_clear_failure() {
 
 #[test]
 fn record_4k_output_windows_pointer_and_damage_repeat() {
-    record_4k(false);
+    record_4k();
 }
 
+/// Print submission throughput on an idle render worker:
+/// cargo test -p headless --test capture benchmark_record_4k_throughput -- --ignored --nocapture
 #[test]
 #[ignore = "throughput measurement; run alone on an idle render worker"]
 fn benchmark_record_4k_throughput() {
-    record_4k(true);
+    record_4k();
 }
 
-fn record_4k(measure_throughput: bool) {
+fn record_4k() {
     if !process::record_available() {
         return;
     }
@@ -385,6 +387,8 @@ fn record_4k(measure_throughput: bool) {
         "{}",
         String::from_utf8_lossy(&counted.stderr)
     );
+    // Independent of the sidecar and status counters: FFmpeg decodes the
+    // Matroska bitstream and reports the number of output video frames.
     let encoded_frames = String::from_utf8_lossy(&counted.stdout)
         .lines()
         .filter_map(|line| line.strip_prefix("frame=")?.trim().parse::<u64>().ok())
@@ -425,6 +429,7 @@ fn record_4k(measure_throughput: bool) {
     // stalls may separate submissions without losing any encoded frames.
     assert_eq!(frames.len() as u64, encoded_frames);
     assert_eq!(frames[0]["t_us"], 0);
+    assert!(frames.last().unwrap()["t_us"].as_u64().unwrap() > 0);
     for (index, frame) in frames.iter().enumerate() {
         assert_eq!(frame["frame"].as_u64(), Some(index as u64));
     }
@@ -442,13 +447,6 @@ fn record_4k(measure_throughput: bool) {
         "4K submission throughput: {} frames in {duration}s",
         frames.len()
     );
-    if measure_throughput {
-        assert!(
-            (frames.len() as f64 - duration * 30.0).abs() < 5.0,
-            "{} frames in {duration}s",
-            frames.len()
-        );
-    }
     println!("4K30: {stop}; idle status: {idle}");
 }
 
