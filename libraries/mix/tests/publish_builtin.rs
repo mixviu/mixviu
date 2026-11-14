@@ -106,7 +106,7 @@ send probe probe.args body="{\"raw\": true}"
     for i in 0..3 {
         assert_eq!(mix::json::mix_to_json(&body(i)).unwrap(), expected);
     }
-    assert_eq!(body(3), mix::json::json_to_mix(serde_json::json!([{}, "term"])));
+    assert_eq!(mix::json::mix_to_json(&body(3)).unwrap(), serde_json::json!([{}, "term"]));
     assert_eq!(body(4), Value::String(r#"{"raw": true}"#.into()));
 }
 

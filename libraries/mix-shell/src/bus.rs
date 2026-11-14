@@ -2412,6 +2412,23 @@ mod routing_tests {
 
 #[cfg(test)]
 mod tests {
+    //! State-machine tests for `MixBusHandler`. Covers everything that
+    //! does *not* need a live broker on the loopback port: the
+    //! `NeverPresent` (silent-nil) and `Lost` (loud-raise) branches,
+    //! plus `reconnect()`'s reset-to-Unprobed semantic. The
+    //! `Connected → Lost` transition path (a call against a previously
+    //! live broker failing) requires a real WebSocket peer and is
+    //! covered by the live noded integration tests, not here.
+    //!
+    //! The probe itself (`Unprobed → Connected | NeverPresent` via
+    //! `NodedClient::connect_anonymous(&resolve_noded_url())`) is
+    //! intentionally *not* unit-tested: it dials the real loopback
+    //! broker URL on whatever host the tests run on, and a host with
+    //! a `node.conf.mix` present would dial whatever broker that file
+    //! points at. Probe correctness is verified at the integration
+    //! layer instead.
+    use super::*;
+
     #[test]
     fn body_collections_use_json_and_scalars_keep_their_wire_form() {
         for (value, expected) in [
@@ -2440,23 +2457,6 @@ mod tests {
         )]);
         assert!(split_headers_body(&args).unwrap_err().to_string().contains("non-finite"));
     }
-
-    //! State-machine tests for `MixBusHandler`. Covers everything that
-    //! does *not* need a live broker on the loopback port: the
-    //! `NeverPresent` (silent-nil) and `Lost` (loud-raise) branches,
-    //! plus `reconnect()`'s reset-to-Unprobed semantic. The
-    //! `Connected → Lost` transition path (a call against a previously
-    //! live broker failing) requires a real WebSocket peer and is
-    //! covered by the live noded integration tests, not here.
-    //!
-    //! The probe itself (`Unprobed → Connected | NeverPresent` via
-    //! `NodedClient::connect_anonymous(&resolve_noded_url())`) is
-    //! intentionally *not* unit-tested: it dials the real loopback
-    //! broker URL on whatever host the tests run on, and a host with
-    //! a `node.conf.mix` present would dial whatever broker that file
-    //! points at. Probe correctness is verified at the integration
-    //! layer instead.
-    use super::*;
 
     impl MixBusHandler {
         async fn test_force_state(&self, s: MeshState) {
