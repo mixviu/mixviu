@@ -1139,6 +1139,12 @@ mod tests {
             assert!(futures_util::poll!(feed.as_mut()).is_pending());
             assert_eq!(wire.lock().unwrap().bytes, b"get;re");
             assert!(io.writer.try_lock().is_err(), "reply owns writer");
+            for _ in 0..3 {
+                assert!(injector.try_send(event(None)));
+                assert!(futures_util::poll!(feed.as_mut()).is_pending());
+                assert_eq!(wire.lock().unwrap().bytes, b"get;re");
+                assert_eq!(wire.lock().unwrap().replies, ["1"]);
+            }
             io.answer.add_permits(1);
             assert!(futures_util::poll!(feed.as_mut()).is_pending());
             if diagnostic {
