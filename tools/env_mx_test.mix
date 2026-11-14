@@ -1,0 +1,56 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Generator refusals and optional reader round-trip (pass a built mix on CBC).
+$generator = require("env_mx.mix")
+$sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+$dir = realpath(".") .. "/target-env-mx-test-" .. to_string(pid())
+mkdir($dir, {parents: true})
+
+fn expect_refusal($dir, $vars, $commit, $code, $entry)
+  $registry = $dir .. "/registry.conf.mix"
+  $output = $dir .. "/refused.mx"
+  write_file($registry, data_encode({vars: $vars}))
+  $refused = false
+  try
+    $generator.write($output, $registry, $commit)
+  catch $msg, $err
+    if $err.code != $code or not contains($msg, $entry) then
+      raise("ENV_MX_TEST", "wrong refusal: " .. $err.code .. ": " .. $msg)
+    end
+    $refused = true
+    print("ENV_MX_NEGATIVE " .. json_encode($entry) .. " " .. $err.code)
+  end
+  if not $refused or is_file($output) then raise("ENV_MX_TEST", "generator accepted " .. $entry) end
+end
+
+try
+  for $name in ["schema", "commit", "OTHER_NAME", "MIX_", "MIX_lower", "MIX_BAD-NAME", "MIX_É", "MIX_BAD\nNAME"]
+    expect_refusal($dir, [{name: $name, scope: "runtime", default: "x"}], $sha, "ENV_MX_NAME", $name)
+  end
+  for $value in ["line\nbreak", "line\rbreak", "line\r\nbreak"]
+    expect_refusal($dir, [{name: "MIX_NEWLINE", scope: "runtime", default: $value}], $sha, "ENV_MX_DEFAULT", "MIX_NEWLINE")
+  end
+  expect_refusal($dir, [{name: "MIX_TYPE", scope: "runtime", default: 1}], $sha, "ENV_MX_DEFAULT", "MIX_TYPE")
+  expect_refusal($dir, [{name: "MIX_SCOPE", scope: "build", default: "x"}], $sha, "ENV_MX_DEFAULT", "MIX_SCOPE")
+  $entry = {name: "MIX_DUPLICATE", scope: "runtime", default: "x"}
+  expect_refusal($dir, [$entry, $entry], $sha, "ENV_MX_NAME", "MIX_DUPLICATE")
+  expect_refusal($dir, [], "not-a-commit", "ENV_MX_COMMIT", "not-a-commit")
+  expect_refusal($dir, [{name: "MIX_SIZE", scope: "runtime", default: repeat("x", 65536)}], $sha, "ENV_MX_SIZE", "MIX_SIZE")
+  expect_refusal($dir, [{name: "MIX_UTF8_SIZE", scope: "runtime", default: repeat("é", 32768)}], $sha, "ENV_MX_SIZE", "MIX_UTF8_SIZE")
+  expect_refusal($dir, [{name: "MIX_FIRST", scope: "runtime", default: repeat("x", 33000)}, {name: "MIX_SECOND", scope: "runtime", default: repeat("x", 33000)}], $sha, "ENV_MX_SIZE", "MIX_SECOND")
+
+  -- Quoting/escapes the reader permits must survive data_encode unchanged.
+  if len(args()) == 1 then
+    mkdir($dir .. "/bin", {parents: true})
+    copy(args()[0], $dir .. "/bin/mix")
+    chmod($dir .. "/bin/mix", 0o755)
+    $value = "\~\${literal} 'quote' \"double\" \\slash\t\u{0000}é\u{feff}"
+    write_file($dir .. "/registry.conf.mix", data_encode({vars: [{name: "MIX_ROUNDTRIP", scope: "runtime", default: $value}]}))
+    $generator.write($dir .. "/env.mx", $dir .. "/registry.conf.mix", $sha)
+    $r = run_argv([$dir .. "/bin/mix", "layout", "setting", "MIX_ROUNDTRIP"], {clear_env: true})
+    if not $r.ok or $r.stdout != $value .. "\n" then raise("ENV_MX_TEST", "reader round-trip failed: " .. $r.stderr) end
+    print("ENV_MX_ROUNDTRIP passed")
+  end
+  print("ENV_MX_GENERATOR_CONTROLS passed")
+finally
+  remove_dir($dir)
+end

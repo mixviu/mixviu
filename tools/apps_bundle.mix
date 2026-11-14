@@ -44,6 +44,10 @@ if trim(run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"]))
   raise("DIRTY", "apps.tar is built from a committed tree")
 end
 $sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+$mix_sha = json_parse(run_argv_must([$mix, "--version", "--json"], {clear_env: true})).git_sha_full
+if $mix_sha != $sha then
+  raise("ENV_MX_COMMIT", "bundle mix commit " .. to_string($mix_sha) .. " differs from HEAD " .. $sha)
+end
 $when = trim(run_argv_must(["git", "show", "-s", "--format=%ct", "HEAD"]))
 $stage = "/tmp/apps-bundle-" .. $sha .. "-" .. to_string(pid())
 remove_dir($stage)
@@ -210,7 +214,7 @@ for $f in tracked("share/wallpapers") place($stage, $f, $f) end
 -- Installed setting defaults at <prefix>/env.mx, stamped with this commit:
 -- the engines installed beside it must be built from the same one.
 $env_mx = require("env_mx.mix")
-$env_mx.write($stage .. "/env.mx", "etc/env.conf.mix", $sha)
+$env_mx.write($stage .. "/env.mx", "etc/env.conf.mix", $mix_sha)
 
 -- Manifest of everything packed, then the tar (owner 0, commit time, sorted).
 $files = sort_by(filter(walk($stage), fn($p) = true), fn($p) = $p)

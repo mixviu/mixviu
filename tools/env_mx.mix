@@ -17,10 +17,25 @@ fn defaults($registry, $commit)
   $out = {schema: 1, commit: $commit}
   for $v in load_data($registry).vars
     if has_key($v, "default") then
+      if type($v.name) != "string" or contains(["schema", "commit"], $v.name) or not re_match($v.name, "^MIX_[A-Z0-9_]+$") then
+        raise("ENV_MX_NAME", to_string($v.name) .. ": invalid env.mx setting name; expected MIX_[A-Z0-9_]+, never schema or commit")
+      end
       if $v.scope != "runtime" or type($v.default) != "string" then
         raise("ENV_MX_DEFAULT", $v.name .. ": a default must be a runtime string")
       end
+      if contains($v.default, "\n") or contains($v.default, "\r") then
+        raise("ENV_MX_DEFAULT", $v.name .. ": an env.mx default cannot contain LF or CR")
+      end
+      if has_key($out, $v.name) then
+        raise("ENV_MX_NAME", $v.name .. ": duplicate env.mx setting name")
+      end
       $out[$v.name] = $v.default
+      -- data_encode supplies the reader's quoted-string grammar, including
+      -- escaped interpolation, leading tilde and Unicode. Bound the actual
+      -- encoded UTF-8 bytes, not the number of characters in the default.
+      if byte_length(data_encode($out) .. "\n") > 65536 then
+        raise("ENV_MX_SIZE", $v.name .. ": env.mx exceeds the reader's 64 KiB limit")
+      end
     end
   end
   return $out
