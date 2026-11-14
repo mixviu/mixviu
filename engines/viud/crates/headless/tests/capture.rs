@@ -284,6 +284,16 @@ fn record_vaapi_capability_or_clear_failure() {
 
 #[test]
 fn record_4k_output_windows_pointer_and_damage_repeat() {
+    record_4k(false);
+}
+
+#[test]
+#[ignore = "throughput measurement; run alone on an idle render worker"]
+fn benchmark_record_4k_throughput() {
+    record_4k(true);
+}
+
+fn record_4k(measure_throughput: bool) {
     if !process::record_available() {
         return;
     }
@@ -421,7 +431,19 @@ fn record_4k_output_windows_pointer_and_damage_repeat() {
     assert!(frames.windows(2).all(|pair| {
         pair[0]["t_us"].as_u64().unwrap() <= pair[1]["t_us"].as_u64().unwrap()
     }));
-    assert_eq!(stop["duration_us"].as_u64(), Some(encoded_frames * 1_000_000 / 30));
+    assert_eq!(
+        stop["duration_us"].as_u64(),
+        Some(encoded_frames * 1_000_000 / 30)
+    );
+    let duration = frames.last().unwrap()["t_us"].as_u64().unwrap() as f64 / 1_000_000.0;
+    println!("4K submission throughput: {} frames in {duration}s", frames.len());
+    if measure_throughput {
+        assert!(
+            (frames.len() as f64 - duration * 30.0).abs() < 5.0,
+            "{} frames in {duration}s",
+            frames.len()
+        );
+    }
     println!("4K30: {stop}; idle status: {idle}");
 }
 
