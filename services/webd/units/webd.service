@@ -33,10 +33,10 @@ Environment=HOME=@{var}/webd
 # and the noded URL come from the per-host config, not from fallbacks.
 Environment=MIX_ETC=@{etc}
 # Optional root:root 0600 source; systemd supplies webd a private copy.
-# Probed webd.vhost-secrets with real systemd-run units on systemd 262:
-# missing LoadCredential
-# alone exits 243/CREDENTIALS; same-ID SetCredential succeeds when absent,
-# and a present LoadCredential source overrides the fallback (cmp equal).
+# Probed webd.vhost-secrets on systemd 262: missing LoadCredential alone
+# exits 243/CREDENTIALS. The rendered template with its sandbox succeeds
+# with this fallback when absent; a present source overrides it. Same-ID
+# fallback is documented since systemd 247 (see README).
 LoadCredential=webd.vhost-secrets:@{etc}/credstore/webd.vhost-secrets
 SetCredential=webd.vhost-secrets:{vhost:[]}
 # Journald is the sink. Stray stdout and stderr also go there, and the rate

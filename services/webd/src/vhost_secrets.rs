@@ -52,11 +52,16 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
         .context("opening webd.vhost-secrets credential")?;
-    if !file.metadata().context("inspecting opened webd.vhost-secrets credential")?.is_file() {
+    if !file
+        .metadata()
+        .context("inspecting opened webd.vhost-secrets credential")?
+        .is_file()
+    {
         bail!("webd.vhost-secrets credential must be a regular file");
     }
     let mut bytes = Vec::new();
-    file.take(MAX_CREDENTIAL_BYTES + 1).read_to_end(&mut bytes)
+    file.take(MAX_CREDENTIAL_BYTES + 1)
+        .read_to_end(&mut bytes)
         .context("reading webd.vhost-secrets credential")?;
     if bytes.len() as u64 > MAX_CREDENTIAL_BYTES {
         bail!("webd.vhost-secrets credential exceeds 64 KiB");
@@ -106,7 +111,11 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
         ] {
             if let Some(value) = value {
                 if email.is_none() {
-                    bail!("webd.vhost-secrets: {}: set both {}_email and {field}, or neither", row.host, field.trim_end_matches("_password"));
+                    bail!(
+                        "webd.vhost-secrets: {}: set both {}_email and {field}, or neither",
+                        row.host,
+                        field.trim_end_matches("_password")
+                    );
                 }
                 *target = Some(value);
                 fields.push(field);
@@ -257,7 +266,10 @@ mod tests {
             let dir = credential(source);
             assert!(merge(Some(&mut cfg), Some(dir.path())).unwrap().is_none());
             assert_eq!(serde_json::to_value(&cfg).unwrap(), before);
-            assert_eq!(cfg.vhost[0].public_read_password.as_deref(), Some("old-marker"));
+            assert_eq!(
+                cfg.vhost[0].public_read_password.as_deref(),
+                Some("old-marker")
+            );
             assert!(cfg.vhost[0].dev_session_password.is_none());
             assert!(cfg.vhost[0].system_sender_password.is_none());
         }
@@ -266,8 +278,14 @@ mod tests {
     #[test]
     fn overlay_checks_only_supplied_fields_and_rows() {
         let mut cfg = config();
-        cfg.vhost.push(WebdVhostConfig { host: "other.example.com".into(), public_read_email: Some("reader@other.example.com".into()), ..Default::default() });
-        let dir = credential(&format!(r#"{{vhost: [{{name: "example.com", public_read_password: "{SECRET}"}}]}}"#));
+        cfg.vhost.push(WebdVhostConfig {
+            host: "other.example.com".into(),
+            public_read_email: Some("reader@other.example.com".into()),
+            ..Default::default()
+        });
+        let dir = credential(&format!(
+            r#"{{vhost: [{{name: "example.com", public_read_password: "{SECRET}"}}]}}"#
+        ));
         merge(Some(&mut cfg), Some(dir.path())).unwrap();
         assert_eq!(cfg.vhost[0].public_read_password.as_deref(), Some(SECRET));
         assert!(cfg.vhost[0].dev_session_password.is_none());
@@ -277,9 +295,18 @@ mod tests {
     #[test]
     fn credential_directory_must_be_absolute_and_exist() {
         let dir = credential("{vhost: []}");
-        for path in [Path::new(""), Path::new("relative"), &dir.path().join("missing"), &dir.path().join("webd.vhost-secrets")] {
-            let error = merge(Some(&mut config()), Some(path)).unwrap_err().to_string();
-            assert!(error.contains("CREDENTIALS_DIRECTORY must be an absolute path to an existing directory"));
+        for path in [
+            Path::new(""),
+            Path::new("relative"),
+            &dir.path().join("missing"),
+            &dir.path().join("webd.vhost-secrets"),
+        ] {
+            let error = merge(Some(&mut config()), Some(path))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(
+                "CREDENTIALS_DIRECTORY must be an absolute path to an existing directory"
+            ));
         }
     }
 
@@ -289,15 +316,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("webd.vhost-secrets");
         symlink("/dev/zero", &path).unwrap();
-        assert!(merge(None, Some(dir.path())).unwrap_err().to_string().contains("regular file"));
+        assert!(
+            merge(None, Some(dir.path()))
+                .unwrap_err()
+                .to_string()
+                .contains("regular file")
+        );
         std::fs::remove_file(&path).unwrap();
         std::fs::create_dir(&path).unwrap();
-        assert!(merge(None, Some(dir.path())).unwrap_err().to_string().contains("regular file"));
+        assert!(
+            merge(None, Some(dir.path()))
+                .unwrap_err()
+                .to_string()
+                .contains("regular file")
+        );
         std::fs::remove_dir(&path).unwrap();
         let cpath = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
         // SAFETY: cpath is NUL-terminated and remains valid for this call.
         assert_eq!(unsafe { libc::mkfifo(cpath.as_ptr(), 0o600) }, 0);
-        assert!(merge(None, Some(dir.path())).unwrap_err().to_string().contains("regular file"));
+        assert!(
+            merge(None, Some(dir.path()))
+                .unwrap_err()
+                .to_string()
+                .contains("regular file")
+        );
     }
 
     #[test]
@@ -311,7 +353,10 @@ mod tests {
         let error = merge(None, Some(dir.path())).unwrap_err().to_string();
         assert_eq!(error, "webd.vhost-secrets credential exceeds 64 KiB");
         std::fs::write(dir.path().join("webd.vhost-secrets"), [0xff]).unwrap();
-        assert_eq!(merge(None, Some(dir.path())).unwrap_err().to_string(), "webd.vhost-secrets credential must be UTF-8");
+        assert_eq!(
+            merge(None, Some(dir.path())).unwrap_err().to_string(),
+            "webd.vhost-secrets credential must be UTF-8"
+        );
     }
 
     #[test]
