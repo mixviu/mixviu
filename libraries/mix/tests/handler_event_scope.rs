@@ -442,9 +442,17 @@ fn error_capture_survives_every_registration_order() {
             "active-fixture" => {}
             _ => panic!("unexpected registration order: {order}"),
         }
+        let records = ErrorRecords::default();
+        let _guard = records.subscribe();
+        if order == "active-fixture" {
+            std::thread::spawn(handler_fault_survives_and_is_observable)
+                .join()
+                .unwrap();
+        }
         // #[tokio::test] expands this to a synchronous runtime-driving fn;
         // calling it executes the body rather than dropping an unpolled future.
-        a_real_fault_after_a_caught_shutdown_refusal_is_still_a_fault();
+        handler_fault_survives_and_is_observable();
+        assert!(records.0.load(std::sync::atomic::Ordering::Relaxed) >= 1);
         return;
     }
     for order in ["before-fixture", "anchor-only", "active-fixture"] {
