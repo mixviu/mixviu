@@ -2097,15 +2097,29 @@ fn split_headers_body(
 
     for (k, v) in map {
         if k == "body" {
-            if matches!(v, Value::Bytes(_) | Value::Buffer(_)) {
-                return Err(mix::error::MixError::RuntimeError {
-                    span: None,
-                    msg: "bus: `body=` does not accept bytes/buffer; base64_encode($v) first \
-                          (typed bytes body is a future wire-format change)"
-                        .to_string(),
-                });
-            }
-            body = v.to_mix_string();
+            body = match v {
+                Value::Bytes(_) | Value::Buffer(_) => {
+                    return Err(mix::error::MixError::RuntimeError {
+                        span: None,
+                        msg: "bus: body has no JSON form: encode bytes explicitly".to_string(),
+                    });
+                }
+                Value::Map(_) | Value::List(_) => {
+                    let json = mix::json::mix_to_json(v).map_err(|msg| {
+                        mix::error::MixError::RuntimeError {
+                            span: None,
+                            msg: format!("bus: body has no JSON form: {msg}"),
+                        }
+                    })?;
+                    serde_json::to_string(&json).map_err(|error| {
+                        mix::error::MixError::RuntimeError {
+                            span: None,
+                            msg: format!("bus: body has no JSON form: {error}"),
+                        }
+                    })?
+                }
+                _ => v.to_mix_string(),
+            };
             continue;
         }
         let header_val = match v {
@@ -2411,6 +2425,62 @@ mod tests {
     //! points at. Probe correctness is verified at the integration
     //! layer instead.
     use super::*;
+
+    #[test]
+    fn body_bytes_and_buffers_are_refused() {
+        for value in [
+            Value::bytes(vec![0, 255]),
+            Value::Buffer(std::rc::Rc::new(RefCell::new(vec![0, 255]))),
+        ] {
+            let args = IndexMap::from([("body".into(), value)]);
+            let error = split_headers_body(&args).unwrap_err().to_string();
+            assert!(
+                error.contains("body has no JSON form: encode bytes explicitly"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn body_collections_use_json_and_scalars_keep_their_wire_form() {
+        for (value, expected) in [
+            (
+                json_to_value(&serde_json::json!({"params": {}, "services": ["term"]})),
+                r#"{"params":{},"services":["term"]}"#,
+            ),
+            (
+                json_to_value(&serde_json::json!([{}, [], "a\n\"b", 2])),
+                r#"[{},[],"a\n\"b",2]"#,
+            ),
+            (Value::map(IndexMap::new()), "{}"),
+            (Value::list(vec![]), "[]"),
+            (
+                Value::String(" {\"raw\": true}\n".into()),
+                " {\"raw\": true}\n",
+            ),
+            (Value::Number(2.0), "2"),
+            (Value::Bool(true), "true"),
+            (Value::Nil, "nil"),
+        ] {
+            let args = IndexMap::from([
+                ("body".into(), value),
+                ("label".into(), Value::String("probe".into())),
+            ]);
+            let (headers, body) = split_headers_body(&args).unwrap();
+            assert_eq!(body, expected);
+            assert_eq!(headers, BTreeMap::from([("label".into(), "probe".into())]));
+        }
+        let args = IndexMap::from([(
+            "body".into(),
+            Value::list(vec![Value::Number(f64::INFINITY)]),
+        )]);
+        assert!(
+            split_headers_body(&args)
+                .unwrap_err()
+                .to_string()
+                .contains("non-finite")
+        );
+    }
 
     impl MixBusHandler {
         async fn test_force_state(&self, s: MeshState) {

@@ -162,6 +162,22 @@ shape.) Whole-number args serialize as JSON **integers**,
 not floats — so `limit=2` arrives as `2`, and a peer field typed `usize`/`i64`
 accepts it; a fractional value (`2.5`) stays a float.
 
+On the header route, `body=` sends strings unchanged and JSON-encodes maps
+and lists with the same encoder as `json_encode`. This applies equally to
+literals, variables and expressions, in scripts and the interactive shell;
+nested empty maps remain `{}` objects. Other scalars keep their Mix string
+form; bytes/buffers are refused (encode them explicitly first). `emit` uses
+the same body conversion. For example:
+
+```mix
+$params = {}
+send probe probe.args body={services: ["term"], params: $params}
+-- Wire body: {"params":{},"services":["term"]}
+```
+
+`publish` accepts string/nil bodies and requires explicit `json_encode` for
+collections. `bus_call` accepts a structured args map directly.
+
 A `body=`-bearing `send` **awaits its reply** exactly like a positional or
 scalar-header send — the handler's `reply(...)` lands in `$rc`/`$result`. (Only
 `emit` is fire-and-forget; the arg shape never changes whether a reply is
