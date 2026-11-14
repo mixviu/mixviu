@@ -26,7 +26,9 @@ struct VhostSecrets {
 /// Return only field metadata, never credential values. Accept an explicit
 /// directory so tests do not mutate the process environment.
 fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Option<String>> {
-    let Some(directory) = directory else { return Ok(None) };
+    let Some(directory) = directory else {
+        return Ok(None);
+    };
     let source = match std::fs::read_to_string(directory.join("webd-vhost-secrets")) {
         Ok(source) => source,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -48,9 +50,21 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
         };
         let mut fields = Vec::new();
         for (field, value, target) in [
-            ("dev_session_password", secret.dev_session_password, &mut row.dev_session_password),
-            ("public_read_password", secret.public_read_password, &mut row.public_read_password),
-            ("system_sender_password", secret.system_sender_password, &mut row.system_sender_password),
+            (
+                "dev_session_password",
+                secret.dev_session_password,
+                &mut row.dev_session_password,
+            ),
+            (
+                "public_read_password",
+                secret.public_read_password,
+                &mut row.public_read_password,
+            ),
+            (
+                "system_sender_password",
+                secret.system_sender_password,
+                &mut row.system_sender_password,
+            ),
         ] {
             if let Some(value) = value {
                 *target = Some(value);
@@ -63,19 +77,38 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
     }
     for row in &rows {
         for (field, email, password) in [
-            ("dev_session", &row.dev_session_email, &row.dev_session_password),
-            ("public_read", &row.public_read_email, &row.public_read_password),
-            ("system_sender", &row.system_sender_email, &row.system_sender_password),
+            (
+                "dev_session",
+                &row.dev_session_email,
+                &row.dev_session_password,
+            ),
+            (
+                "public_read",
+                &row.public_read_email,
+                &row.public_read_password,
+            ),
+            (
+                "system_sender",
+                &row.system_sender_email,
+                &row.system_sender_password,
+            ),
         ] {
             if email.is_some() != password.is_some() {
-                bail!("webd-vhost-secrets: {}: set both {field}_email and {field}_password, or neither", row.host);
+                bail!(
+                    "webd-vhost-secrets: {}: set both {field}_email and {field}_password, or neither",
+                    row.host
+                );
             }
         }
     }
     if let Some(config) = config {
         config.vhost = rows;
     }
-    Ok(Some(format!("webd-vhost-secrets: {} vhosts took secrets from credential [{}]", applied.len(), applied.join("; "))))
+    Ok(Some(format!(
+        "webd-vhost-secrets: {} vhosts took secrets from credential [{}]",
+        applied.len(),
+        applied.join("; ")
+    )))
 }
 
 pub(crate) fn load(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<()> {
@@ -115,14 +148,24 @@ mod tests {
     #[test]
     fn fills_overrides_redacts_and_reports_fields_only() {
         let mut cfg = config();
-        let dir = credential(&format!(r#"{{vhost: [{{name: "example.com", dev_session_password: "{SECRET}", public_read_password: "{SECRET}", system_sender_password: "{SECRET}"}}]}}"#));
+        let dir = credential(&format!(
+            r#"{{vhost: [{{name: "example.com", dev_session_password: "{SECRET}", public_read_password: "{SECRET}", system_sender_password: "{SECRET}"}}]}}"#
+        ));
         let summary = merge(Some(&mut cfg), Some(dir.path())).unwrap().unwrap();
         let row = &cfg.vhost[0];
         assert_eq!(row.dev_session_password.as_deref(), Some(SECRET));
         assert_eq!(row.public_read_password.as_deref(), Some(SECRET));
         assert_eq!(row.system_sender_password.as_deref(), Some(SECRET));
-        assert_eq!(summary, "webd-vhost-secrets: 1 vhosts took secrets from credential [example.com: dev_session_password, public_read_password, system_sender_password]");
-        for output in [summary, format!("{cfg:?}"), serde_json::to_string(&cfg).unwrap(), config::to_conf_mix_string(&cfg).unwrap()] {
+        assert_eq!(
+            summary,
+            "webd-vhost-secrets: 1 vhosts took secrets from credential [example.com: dev_session_password, public_read_password, system_sender_password]"
+        );
+        for output in [
+            summary,
+            format!("{cfg:?}"),
+            serde_json::to_string(&cfg).unwrap(),
+            config::to_conf_mix_string(&cfg).unwrap(),
+        ] {
             assert!(!output.contains(SECRET));
             assert!(!output.contains("old-marker"));
         }
@@ -130,21 +173,41 @@ mod tests {
 
     #[test]
     fn unknown_and_duplicate_names_refused_without_partial_update() {
-        for names in [r#""example.com", "unknown.example.com""#, r#""example.com", "example.com""#] {
-            let rows = names.split(", ").map(|name| format!("{{name: {name}, public_read_password: \"{SECRET}\"}}")).collect::<Vec<_>>().join(",");
+        for names in [
+            r#""example.com", "unknown.example.com""#,
+            r#""example.com", "example.com""#,
+        ] {
+            let rows = names
+                .split(", ")
+                .map(|name| format!("{{name: {name}, public_read_password: \"{SECRET}\"}}"))
+                .collect::<Vec<_>>()
+                .join(",");
             let dir = credential(&format!("{{vhost: [{rows}]}}"));
             let mut cfg = config();
             assert!(merge(Some(&mut cfg), Some(dir.path())).is_err());
-            assert_eq!(cfg.vhost[0].public_read_password.as_deref(), Some("old-marker"));
+            assert_eq!(
+                cfg.vhost[0].public_read_password.as_deref(),
+                Some("old-marker")
+            );
         }
     }
 
     #[test]
     fn pairing_checked_after_merge_for_each_identity() {
         for field in ["dev_session", "public_read", "system_sender"] {
-            let dir = credential(&format!(r#"{{vhost: [{{name: "example.com", {field}_password: "{SECRET}"}}]}}"#));
-            let mut cfg = WebdConfig { vhost: vec![WebdVhostConfig { host: "example.com".into(), ..Default::default() }], ..Default::default() };
-            let error = merge(Some(&mut cfg), Some(dir.path())).unwrap_err().to_string();
+            let dir = credential(&format!(
+                r#"{{vhost: [{{name: "example.com", {field}_password: "{SECRET}"}}]}}"#
+            ));
+            let mut cfg = WebdConfig {
+                vhost: vec![WebdVhostConfig {
+                    host: "example.com".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let error = merge(Some(&mut cfg), Some(dir.path()))
+                .unwrap_err()
+                .to_string();
             assert!(error.contains(&format!("both {field}_email and {field}_password")));
             assert!(!error.contains(SECRET));
             cfg.vhost[0].public_read_email = Some("reader@example.com".into());
@@ -160,16 +223,31 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(merge(Some(&mut cfg), None).unwrap().is_none());
         assert!(merge(Some(&mut cfg), Some(dir.path())).unwrap().is_none());
-        assert!(merge(Some(&mut cfg), Some(&dir.path().join("missing"))).unwrap().is_none());
+        assert!(
+            merge(Some(&mut cfg), Some(&dir.path().join("missing")))
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(before, format!("{cfg:?}"));
-        assert_eq!(cfg.vhost[0].public_read_password.as_deref(), Some("old-marker"));
+        assert_eq!(
+            cfg.vhost[0].public_read_password.as_deref(),
+            Some("old-marker")
+        );
     }
 
     #[test]
     fn malformed_credential_errors_do_not_echo_values() {
-        for source in [format!("{{vhost: {SECRET}}}"), format!("{{vhost: [{{name: \"example.com\", public_read_password: [{SECRET}]}}]}}"), format!("{{vhost: [], {SECRET}: true}}"), "print(1)".into()] {
+        for source in [
+            format!("{{vhost: {SECRET}}}"),
+            format!("{{vhost: [{{name: \"example.com\", public_read_password: [{SECRET}]}}]}}"),
+            format!("{{vhost: [], {SECRET}: true}}"),
+            "print(1)".into(),
+        ] {
             let dir = credential(&source);
-            let error = format!("{:#}", merge(Some(&mut config()), Some(dir.path())).unwrap_err());
+            let error = format!(
+                "{:#}",
+                merge(Some(&mut config()), Some(dir.path())).unwrap_err()
+            );
             assert!(error.contains("invalid webd-vhost-secrets"));
             assert!(!error.contains(SECRET));
         }
@@ -185,18 +263,38 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         let output = Arc::new(Mutex::new(Vec::new()));
         let capture = output.clone();
-        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
-            .with_writer(move || Writer(capture.clone())).finish();
-        let dir = credential(&format!(r#"{{vhost: [{{name: "example.com", public_read_password: "{SECRET}"}}]}}"#));
-        let mut cfg = WebdConfig { vhost: vec![WebdVhostConfig { host: "example.com".into(), public_read_email: Some("reader@example.com".into()), ..Default::default() }], ..Default::default() };
-        tracing::subscriber::with_default(subscriber, || load(Some(&mut cfg), Some(dir.path())).unwrap());
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || Writer(capture.clone()))
+            .finish();
+        let dir = credential(&format!(
+            r#"{{vhost: [{{name: "example.com", public_read_password: "{SECRET}"}}]}}"#
+        ));
+        let mut cfg = WebdConfig {
+            vhost: vec![WebdVhostConfig {
+                host: "example.com".into(),
+                public_read_email: Some("reader@example.com".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        tracing::subscriber::with_default(subscriber, || {
+            load(Some(&mut cfg), Some(dir.path())).unwrap()
+        });
         let log = String::from_utf8(output.lock().unwrap().clone()).unwrap();
         assert_eq!(log.lines().count(), 1);
-        assert!(log.contains("1 vhosts took secrets from credential [example.com: public_read_password]"));
+        assert!(
+            log.contains(
+                "1 vhosts took secrets from credential [example.com: public_read_password]"
+            )
+        );
         assert!(!log.contains(SECRET));
     }
 }
