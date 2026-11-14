@@ -106,6 +106,26 @@ impl Broker {
     }
 
     pub fn with_grant_limit(grant_limit: usize) -> Self {
+        Self::new(grant_limit, false)
+    }
+
+    /// Choose and own an ephemeral loopback listener atomically, then reuse its
+    /// port on every bounce. No caller-side port probe or initial rebind.
+    pub fn bounce_stable() -> Self {
+        Self::new(32, true)
+    }
+
+    pub fn tcp_port(&self) -> u16 {
+        self.url
+            .strip_prefix("ws://127.0.0.1:")
+            .unwrap()
+            .strip_suffix("/ws")
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+
+    fn new(grant_limit: usize, bounce_stable: bool) -> Self {
         use std::os::unix::fs::DirBuilderExt;
         use std::os::unix::fs::PermissionsExt;
         // This is shared Unix ingress, not private scratch space. TMPDIR may
@@ -141,20 +161,11 @@ impl Broker {
             grant_limit,
             tcp_port: None,
         };
-        broker.boot();
-        broker
-    }
-
-    /// Like [`Broker::start`], but bound to a caller-reserved loopback TCP
-    /// port that survives [`Broker::bounce`]. The caller reserves the port
-    /// immediately before construction (bind `:0`, note the port, drop the
-    /// listener); a lost race to an unrelated process surfaces as the boot
-    /// bind panic above rather than a silent strand.
-    pub fn with_tcp_port(port: u16) -> Self {
-        let mut broker = Self::with_grant_limit(32);
-        broker.tcp_port = Some(port);
-        broker.stop();
-        broker.boot();
+        let tcp = Self::bind_tcp(0);
+        if bounce_stable {
+            broker.tcp_port = Some(tcp.local_addr().unwrap().port());
+        }
+        broker.boot(tcp);
         broker
     }
 
@@ -171,7 +182,7 @@ impl Broker {
         options
     }
 
-    fn boot(&mut self) {
+    fn bind_tcp(port: u16) -> std::net::TcpListener {
         // Bound here and handed to noded as-is. Probing `:0`, dropping the
         // socket and passing only the number let another socket (a parallel
         // test's outbound connection, say) take the port first; noded's bind
@@ -186,11 +197,15 @@ impl Broker {
             .set_reuse_address(true)
             .expect("test-broker reuseaddr");
         socket
-            .bind(&std::net::SocketAddr::from(([127, 0, 0, 1], self.tcp_port.unwrap_or(0))).into())
+            .bind(&std::net::SocketAddr::from(([127, 0, 0, 1], port)).into())
             .expect("test-broker TCP port was taken by another process");
         socket.listen(128).expect("test-broker TCP listen");
         let tcp = std::net::TcpListener::from(socket);
         tcp.set_nonblocking(true).unwrap();
+        tcp
+    }
+
+    fn boot(&mut self, tcp: std::net::TcpListener) {
         let listen = tcp.local_addr().unwrap().to_string();
         self.url = format!("ws://{listen}/ws");
         let endpoint = self.endpoint.clone();
@@ -308,7 +323,7 @@ impl Broker {
 
     pub fn bounce(&mut self) {
         self.stop();
-        self.boot();
+        self.boot(Self::bind_tcp(self.tcp_port.unwrap_or(0)));
     }
 }
 

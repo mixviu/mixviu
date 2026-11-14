@@ -1188,10 +1188,7 @@ async fn native_recovers_when_broker_returns_after_the_initial_attempt_budget() 
 {
     use bus::native_client::{NodedClient, SupervisedClient};
     use serde_json::json;
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-    let port = listener.local_addr()?.port();
-    drop(listener);
-    let mut broker = test_broker::Broker::with_tcp_port(port);
+    let mut broker = test_broker::Broker::bounce_stable();
     let url = broker.url.clone();
     broker.stop();
     let bus = PrivateBus::start()?;
