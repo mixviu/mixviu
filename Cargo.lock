@@ -10867,6 +10867,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-subscriber",
  "webpki-roots 0.26.11",
 ]
 
