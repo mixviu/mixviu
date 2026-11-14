@@ -17,7 +17,7 @@ fn execute($s,$id)
   elif $id=="file.clear" then
     $s.rows=[];$s.pending={};$s.selected=nil;$s.evicted=0
   elif $id=="view.hide" then
-    $r=filter($s.rows,fn($r)=to_string($r.seq)==$s.selected)
+    $r=filter($s.rows,fn($r)=to_string($r.id)==$s.selected)
     if len($r)==0 then raise("ARGUMENT","Select a row first") end
     $service=if $r[0].kind=="request" then $r[0].to else $r[0].from end
     if not contains($s.filter.hide,$service) then $s.filter.hide=push($s.filter.hide,$service) end

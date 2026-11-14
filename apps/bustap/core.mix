@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Pure observation policy. Retain metadata only, never payloads.
 fn initial()
-  return {rows:[],pending:{},seen:0,evicted:0,dropped:0,drop_cursor:0,paused:false,selected:nil,counts:{},rate:0,rate_seen:0,rate_at:0,subscription_id:nil,status:"Connecting",error:nil,connected:false,window_close:false,filter:{services:[],commands:[],directions:[],hide:[],own:false,text:""}}
+  return {rows:[],pending:{},seen:0,evicted:0,dropped:0,drop_cursor:0,paused:false,selected:nil,counts:{},rate:0,rate_seen:0,rate_at:0,previous_id:nil,previous_cursor:0,subscription_id:nil,status:"Connecting",error:nil,connected:false,window_close:false,filter:{services:[],commands:[],directions:[],hide:[],own:false,text:""}}
 end
 fn who($value) return $value ?? "(anon)" end
 fn stamp($ts)
@@ -72,7 +72,7 @@ fn observed($s,$f,$now)
   $name=$service ?? "(anon)"
   if $s.counts[$name]!=nil or len($s.counts)<256 then $s.counts[$name]=($s.counts[$name] ?? 0)+1 else $s.counts["(other)"]=($s.counts["(other)"] ?? 0)+1 end
   if $s.paused then return $s end
-  $r={seq:$f.seq,ts:$f.ts,time:substr($f.ts ?? "",11,12),direction:$f.direction,from:who($f.from),to:who($f.to),command:$f.command,kind:if $request then "request" else "reply" end,rc:$f.rc,outcome:$f.outcome,latency_ms:$lat,size:$f.size,error:$f.outcome=="rejected" or ($f.rc ?? 0)>=10}
+  $r={id:$s.seen,seq:$f.seq,ts:$f.ts,time:substr($f.ts ?? "",11,12),direction:$f.direction,from:who($f.from),to:who($f.to),command:$f.command,kind:if $request then "request" else "reply" end,rc:$f.rc,outcome:$f.outcome,latency_ms:$lat,size:$f.size,error:$f.outcome=="rejected" or ($f.rc ?? 0)>=10}
   $s.rows=push($s.rows,$r)
   if len($s.rows)>2000 then $s.rows=slice($s.rows,1);$s.evicted=$s.evicted+1 end
   return $s

@@ -9,16 +9,24 @@ fn publish_bustap($s)
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$view.project($s)}
 end
 fn start_observer($s,$filter)
+  $before=$s
   send "noded" "noded.observe.start" body={filter:$core.broker_filter($filter),body:"none",capacity:1024} timeout=5
   if $rc!=0 or type($reply.subscription_id)!="string" then
     $s.error="Observation subscription refused";$s.status="Unavailable"
     return {state:$s,ok:false}
   end
-  $old=$s.subscription_id;$s.subscription_id=$reply.subscription_id
+  $old=$s.subscription_id;$s.previous_id=$old;$s.previous_cursor=$s.drop_cursor;$s.subscription_id=$reply.subscription_id
   $s.filter=$filter;$s.drop_cursor=0;$s.pending={};$s.status="Live";$s.error=nil
   if $old!=nil then
     send "noded" "noded.observe.stop" body={subscription_id:$old} timeout=5
-    if $rc!=0 then $s.error="Previous subscription could not be stopped" end
+    if $rc!=0 then
+      send "noded" "noded.observe.stop" body={subscription_id:$s.subscription_id} timeout=5
+      if $rc==0 then
+        $before.error="Could not replace observation subscription"
+        return {state:$before,ok:false}
+      end
+      $s.error="Previous subscription and replacement cleanup could not be stopped"
+    end
   end
   return {state:$s,ok:true}
 end
@@ -32,6 +40,15 @@ on bus.disconnected
   publish_bustap($state)
 end
 on noded.observe.event
+  -- Sequence numbers restart for every subscription. Ignore queued frames from
+  -- the replaced subscription; the new one was started before the stop.
+  if $event.headers.subscription_id!=nil and $event.headers.subscription_id!=$state.subscription_id then
+    if $event.headers.subscription_id==$state.previous_id then
+      $n=$event.args.dropped_count ?? 0
+      if $n>$state.previous_cursor then $state.dropped=$state.dropped+$n-$state.previous_cursor;$state.previous_cursor=$n end
+    end
+    return
+  end
   $state=$core.observed($state,$event.args,time())
   -- Tick batches model updates: rendering must not amplify every observation.
 end

@@ -54,8 +54,9 @@ this app. There is no mesh-wide aggregation.
 
 Pending pairs are capped at 4,096 and service counters at 256 names plus an
 overflow bucket. Paused messages are intentionally omitted, not broker loss.
-Filter handover can briefly receive overlapping observations; frames lack a
-subscription identifier, so loss attribution across overlap is best effort.
+Filter handover ignores queued rows from the previous subscription, identified
+by the event header, while still counting increases in its loss counter. Local
+row IDs remain unique when broker sequence numbers restart.
 
 The gold apps bundler discovers tracked `apps/` runtime files automatically;
 Bus Tap uses that same route as monitor. No per-app Rust host is added. The

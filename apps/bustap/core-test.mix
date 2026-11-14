@@ -60,7 +60,7 @@ for $i=1 to 2003
 end
 check(len($s.rows)==2000 and $s.evicted==3 and $s.rows[0].seq==4,"bounded oldest first eviction")
 check($core.rows($s,2)[1].seq==2003 and len($core.rows($s,0))==0,"rows newest last and limit zero")
-$s.selected="2003";$s=$actions.execute($s,"view.hide")
+$s.selected=to_string($s.rows[len($s.rows)-1].id);$s=$actions.execute($s,"view.hide")
 check(contains($s.filter.hide,"example"),"one action hides selected service")
 $s=$actions.execute($s,"view.unhide")
 $model=$view.project($s)
