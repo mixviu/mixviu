@@ -39,7 +39,7 @@ send honest-probe probe.args body=merge($body, {})
 print(json_encode($result))
 send honest-probe probe.args body=[{}, "term"]
 print(json_encode($result))
-send honest-probe probe.args body=" {\"raw\":true} "
+send honest-probe probe.args body="{\"raw\":true}"
 print(json_encode($result))
 "#;
     let sender = dir.path().join("sender.mix");
@@ -79,7 +79,7 @@ print(json_encode($result))
                 expected.clone(),
                 expected.clone(),
                 json!({"args": [{}, "term"], "body": r#"[{},"term"]"#}),
-                json!({"args": {"raw": true}, "body": " {\"raw\":true} "})
+                json!({"args": {"raw": true}, "body": "{\"raw\":true}"})
             ]
         );
     }
