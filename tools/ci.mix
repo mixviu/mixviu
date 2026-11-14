@@ -485,11 +485,8 @@ fn stage_install($dir)
   if $commit != $head then
     eprint("stage-install: warning: the tree is dirty and target/debug/mix was built from " .. $commit .. ", not HEAD " .. $head)
   end
-  $defaults = {schema: 1, commit: $commit}
-  for $v in load_data("etc/env.conf.mix").vars
-    if $v.scope == "runtime" and has_key($v, "default") then $defaults[$v.name] = $v.default end
-  end
-  write_file($prefix .. "/env.mx", data_encode($defaults))
+  $env_mx = require("env_mx.mix")
+  $env_mx.write($prefix .. "/env.mx", "etc/env.conf.mix", $commit)
   eprint("staged into " .. $prefix .. "/bin: " .. join($copied, " "))
   return {prefix: $prefix, commit: $commit}
 end
