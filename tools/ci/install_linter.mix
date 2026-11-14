@@ -1,0 +1,12 @@
+-- version: 0.1.0
+-- Hosted CI bootstrap only; local/CBC runs use the installed analyser.
+if env("GITHUB_ACTIONS") != "true" then raise("CI_ONLY", "hosted CI bootstrap only") end
+$pin = load_data("tools/ci/lint.conf.mix")
+$source = "target/lint-source"
+run_argv_must(["git", "clone", "--no-checkout", $pin.repository, $source])
+run_argv_must(["git", "-C", $source, "checkout", "--detach", $pin.commit])
+run_argv_must(["cargo", "build", "--locked", "--manifest-path", $source .. "/Cargo.toml", "-p", "system", "--bin", "mix"], {timeout: 14400, stdout: "inherit", stderr: "inherit"})
+mkdir(dirname($pin.binary))
+run_argv_must(["cp", $source .. "/target/debug/mix", $pin.binary])
+$context = require("lint_context.mix")
+print("ratchet analyser: " .. $context.binary())

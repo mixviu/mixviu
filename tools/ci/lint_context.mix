@@ -1,0 +1,72 @@
+-- version: 0.1.0
+-- Compatibility adapter for the pinned analyser; never execute lint inputs.
+fn binary()
+  $pin = load_data("tools/ci/lint.conf.mix")
+  $v = json_parse(run_argv_must([$pin.binary, "--version", "--json"]))
+  if $v.version != $pin.version or $v.git_sha_full != $pin.commit or $v.git_dirty then
+    raise("LINT_PIN", "ratchet requires the clean analyser declared in tools/ci/lint.conf.mix")
+  end
+  return $pin.binary
+end
+
+fn vocabulary()
+  -- Runtime registration sites are also the input to lib-mix/build.rs.
+  $host = []
+  for $m in re_find(read_file("libraries/viu/src/runtime.rs"), 'eval\.register\(\s*"([a-zA-Z_][a-zA-Z0-9_]*)"')
+    push($host, $m.groups[0])
+  end
+  if len($host) == 0 then raise("LINT_CONTEXT", "no viu registrations found") end
+  -- The pinned analyser predates some native primitives and the prefix rename.
+  -- Read actual contract declarations, rather than maintain a second name list.
+  $native = []
+  $installed = map(json_parse(run_argv_must([binary(), "builtins", "--json"])), fn($b) = $b.name)
+  for $file in ["libraries/mix/src/builtins.rs", "libraries/mix/src/builtins_hof.rs"]
+    for $m in re_find(read_file($file), '\("([a-zA-Z_][a-zA-Z0-9_]*)", CapabilityClass::')
+      if not contains($installed, $m.groups[0]) then push($native, $m.groups[0]) end
+    end
+  end
+  return {host: sort(unique($host)), native: sort(unique($native))}
+end
+
+fn report($files)
+  $mix = binary()
+  $v = vocabulary()
+  $result = {diagnostics: []}
+  -- CLI allowances apply to the entire invocation: partition by declared host.
+  for $host in [false, true]
+    $selected = []
+    for $file in $files
+      $header = re_match(read_file($file), '(?m)^-- host: viu\r?$')
+      if $header == $host then push($selected, $file) end
+    end
+    if len($selected) > 0 then
+      $argv = [$mix, "lint", "--json"]
+      $names = if $host then concat($v.native, $v.host) else $v.native end
+      for $name in $names
+        push($argv, "--allow-function")
+        push($argv, $name)
+      end
+      $r = run_argv(concat($argv, $selected), {timeout: 1800, max_output: 256000000})
+      if $r.exit_code != 0 and $r.exit_code != 1 then
+        raise("LINT_FAILED", $r.stderr)
+      end
+      $part = json_parse($r.stdout)
+      if $host then
+        -- Installed allowances also flow into ssh_mix. Recheck remote bodies
+        -- without local host names so that boundary stays independent.
+        $remote_argv = [$mix, "lint", "--json"]
+        for $name in $v.native
+          push($remote_argv, "--allow-function")
+          push($remote_argv, $name)
+        end
+        $remote = run_argv(concat($remote_argv, $selected), {timeout: 1800, max_output: 256000000})
+        if $remote.exit_code != 0 and $remote.exit_code != 1 then raise("LINT_FAILED", $remote.stderr) end
+        $part.diagnostics = concat(
+          filter($part.diagnostics, fn($d) = not starts_with($d.message, "[inside ssh_mix body]")),
+          filter(json_parse($remote.stdout).diagnostics, fn($d) = starts_with($d.message, "[inside ssh_mix body]")))
+      end
+      $result.diagnostics = concat($result.diagnostics, $part.diagnostics)
+    end
+  end
+  return $result
+end
