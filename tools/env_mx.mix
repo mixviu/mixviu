@@ -1,0 +1,59 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- env.mx, the installed setting defaults, from the registry (etc/env.conf.mix).
+-- Library for tools/ci.mix (stage-install) and tools/apps_bundle.mix (gold):
+--
+--   $env_mx = require("env_mx.mix")
+--   $env_mx.write(PREFIX .. "/env.mx", "etc/env.conf.mix", COMMIT)
+--
+-- The file is schema 1, the commit the binaries beside it were built from
+-- (libraries/paths refuses a different one) and one NAME: 'value' entry per
+-- registry variable with a default. Written mode 0644.
+
+-- The env.mx map for COMMIT (a full 40-hex sha) from the registry at REGISTRY.
+fn defaults($registry, $commit)
+  if not re_match($commit, "^[0-9a-f]{40}$") then
+    raise("ENV_MX_COMMIT", "env.mx needs a full commit sha, got: " .. $commit)
+  end
+  $out = {schema: 1, commit: $commit}
+  for $v in load_data($registry).vars
+    if has_key($v, "default") then
+      if type($v.name) != "string" or contains(["schema", "commit"], $v.name) or not re_match($v.name, "^MIX_[A-Z0-9_]+$") then
+        raise("ENV_MX_NAME", to_string($v.name) .. ": invalid env.mx setting name; expected MIX_[A-Z0-9_]+, never schema or commit")
+      end
+      if $v.scope != "runtime" or type($v.default) != "string" then
+        raise("ENV_MX_DEFAULT", $v.name .. ": a default must be a runtime string")
+      end
+      if contains($v.default, "\n") or contains($v.default, "\r") then
+        raise("ENV_MX_DEFAULT", $v.name .. ": an env.mx default cannot contain LF or CR")
+      end
+      -- data_encode escapes ~ and ~/ but not ~user; the paths reader
+      -- refuses every unescaped leading tilde. Its string grammar also
+      -- lacks the encoder's ESC (backslash-e) escape: refuse lossy output.
+      if starts_with($v.default, "\~") and $v.default != "\~" and not starts_with($v.default, "\~/") then
+        raise("ENV_MX_DEFAULT", $v.name .. ": leading tilde is not escaped for the env.mx reader")
+      end
+      if contains($v.default, "\u{001b}") then
+        raise("ENV_MX_DEFAULT", $v.name .. ": ESC cannot round-trip through the env.mx reader")
+      end
+      if has_key($out, $v.name) then
+        raise("ENV_MX_NAME", $v.name .. ": duplicate env.mx setting name")
+      end
+      $out[$v.name] = $v.default
+      -- data_encode supplies the reader's quoted-string grammar, including
+      -- escaped interpolation, supported tildes and Unicode. Bound the actual
+      -- encoded UTF-8 bytes, not the number of characters in the default.
+      if byte_length(data_encode($out) .. "\n") > 65536 then
+        raise("ENV_MX_SIZE", $v.name .. ": env.mx exceeds the reader's 64 KiB limit")
+      end
+    end
+  end
+  return $out
+end
+
+-- Write env.mx to PATH (0644) and return the map written.
+fn write($path, $registry, $commit)
+  $map = defaults($registry, $commit)
+  write_file($path, data_encode($map) .. "\n")
+  chmod($path, 0o644)
+  return $map
+end

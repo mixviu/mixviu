@@ -690,6 +690,24 @@ pub fn run_layout(args: &[String]) -> i32 {
             }
         };
     }
+    // Hidden: resolve one setting (environment, else the installed env.mx
+    // default) and print it. The gold gate's env.mx smoke check uses it.
+    if args.first().map(String::as_str) == Some("setting") {
+        let [_, name] = args else {
+            eprintln!("usage: mix layout setting NAME");
+            return 2;
+        };
+        return match ::paths::env::setting(name) {
+            Ok(value) => {
+                println!("{value}");
+                0
+            }
+            Err(error) => {
+                eprintln!("mix layout setting: {error}");
+                1
+            }
+        };
+    }
     if args.first().map(String::as_str) != Some("apply") {
         eprintln!(
             "usage: mix layout apply [--root DIR] [--dry-run] [--image]\n       mix layout defaults --tier system|user [--prefix DIR] --json"
