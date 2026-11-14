@@ -700,7 +700,9 @@ async fn gated_close(unknown_method: bool, answer: bool) {
         let result = task.await.expect("portal Close task panicked");
         let error = result.expect_err("Close acknowledged a fake that never replied");
         assert!(
-            error.to_string().contains("portal Close acknowledgement timed out"),
+            error
+                .to_string()
+                .contains("portal Close acknowledgement timed out"),
             "received stalled Close error: {error:#}"
         );
         assert!(!*release.borrow(), "never-replying fake was released");
