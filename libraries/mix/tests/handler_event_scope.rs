@@ -449,12 +449,20 @@ fn error_capture_survives_every_registration_order() {
     }
     for order in ["before-fixture", "anchor-only", "active-fixture"] {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "error_capture_survives_every_registration_order", "--nocapture"])
+            .args([
+                "--exact",
+                "error_capture_survives_every_registration_order",
+                "--nocapture",
+            ])
             .env(CHILD, order)
             .output()
             .unwrap();
-        assert!(output.status.success(), "{order}: {}{}",
-            String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{order}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
