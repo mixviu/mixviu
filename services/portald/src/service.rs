@@ -377,10 +377,38 @@ async fn execute(
 
 struct Job {
     work: Work,
-    future: Pin<Box<dyn Future<Output = Result<Option<Projection>, Diagnostic>> + Send>>,
+    future: WorkFuture,
 }
 
+type WorkFuture = Pin<Box<dyn Future<Output = Result<Option<Projection>, Diagnostic>> + Send>>;
 type ReplyFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+/// The feed's transport boundary; tests substitute a writer with controlled
+/// backpressure while exercising the same loop and scheduling as production.
+trait FeedIo {
+    fn state(&self) -> tokio::sync::watch::Receiver<ConnState>;
+    fn generation(&self) -> Option<u64>;
+    fn work(&self, work: Work, binding: Binding, timeout: Duration) -> WorkFuture;
+    fn reply(&self, reply: Reply) -> ReplyFuture;
+}
+
+impl FeedIo for Arc<SupervisedClient> {
+    fn state(&self) -> tokio::sync::watch::Receiver<ConnState> {
+        self.subscribe_state()
+    }
+
+    fn generation(&self) -> Option<u64> {
+        native::live_generation(self)
+    }
+
+    fn work(&self, work: Work, binding: Binding, timeout: Duration) -> WorkFuture {
+        Box::pin(execute(self.clone(), work, binding, timeout))
+    }
+
+    fn reply(&self, reply: Reply) -> ReplyFuture {
+        Box::pin(send_reply(self.clone(), reply))
+    }
+}
 
 enum Outbound {
     Completed(Result<Option<Projection>, Diagnostic>),
@@ -390,12 +418,22 @@ enum Outbound {
 /// Both futures must keep being polled: a partially sent authority request can
 /// hold the Bus write lock that a reply needs. Awaiting the reply alone would
 /// park the lock owner (and its timeout) forever. Keep each future across events
-/// as well, so losing a select never cancels a partially sent frame.
+/// as well: losing a select preserves partially sent frames. Superseding work
+/// or leaving the loop still drops its future; teardown closes the connection.
 async fn next_outbound(job: &mut Option<Job>, reply: &mut Option<ReplyFuture>) -> Outbound {
     tokio::select! {
-        result = async { job.as_mut().expect("enabled job").future.as_mut().await }, if job.is_some() => Outbound::Completed(result),
-        _ = async { reply.as_mut().expect("enabled reply").as_mut().await }, if reply.is_some() => Outbound::Replied,
-        else => std::future::pending().await,
+        result = async {
+            match job {
+                Some(job) => job.future.as_mut().await,
+                None => std::future::pending().await,
+            }
+        } => Outbound::Completed(result),
+        _ = async {
+            match reply {
+                Some(reply) => reply.as_mut().await,
+                None => std::future::pending().await,
+            }
+        } => Outbound::Replied,
     }
 }
 
@@ -796,7 +834,7 @@ pub async fn run<I: CommandSource>(
 pub async fn run_with_fetch_timeout<I: CommandSource>(
     binding: Binding,
     client: Arc<SupervisedClient>,
-    mut incoming: I,
+    incoming: I,
     projections: mpsc::Sender<Projection>,
     status: Shared,
     fetch_timeout: Duration,
@@ -805,17 +843,33 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
         client.close().await;
         anyhow::bail!(error.message);
     }
+    let result = run_loop(binding, &client, incoming, projections, status, fetch_timeout).await;
+    // run_loop has dropped every parked writer before teardown takes the socket
+    // lock. A deadline alone cannot release a lock owned by an unpolled future.
+    let _ = tokio::time::timeout(DEREGISTER_TIMEOUT, client.deregister()).await;
+    client.close().await;
+    result
+}
+
+async fn run_loop<I: CommandSource>(
+    binding: Binding,
+    client: &impl FeedIo,
+    mut incoming: I,
+    projections: mpsc::Sender<Projection>,
+    status: Shared,
+    fetch_timeout: Duration,
+) -> anyhow::Result<()> {
     let mut follow = Follow::new(binding);
-    let mut state = client.subscribe_state();
+    let mut state = client.state();
     let mut job: Option<Job> = None;
     let mut reply: Option<ReplyFuture> = None;
     let mut lane = Lane::default();
-    let result = loop {
+    loop {
         if reply.is_none() {
             reply = lane
                 .replies
                 .pop_front()
-                .map(|reply| Box::pin(send_reply(client.clone(), reply)) as ReplyFuture);
+                .map(|reply| client.reply(reply));
         }
         // Sample INITIAL state and every generation before waiting for edges.
         // Follow::connected deduplicates already processed generations.
@@ -823,7 +877,7 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
         if now == ConnState::Fatal {
             break Err(anyhow::anyhow!("portald registration rejected"));
         }
-        match native::live_generation(&client) {
+        match client.generation() {
             Some(generation) => {
                 follow.connected(generation);
             }
@@ -838,12 +892,11 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
                     status::update(&status, |s| s.authority_reads += 1);
                 }
                 Job {
-                    future: Box::pin(execute(
-                        client.clone(),
+                    future: client.work(
                         work.clone(),
                         follow.binding().clone(),
                         fetch_timeout,
-                    )),
+                    ),
                     work,
                 }
             });
@@ -884,7 +937,7 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
                 }
                 // No await since the drain: the connection is sampled immediately before
                 // the completion it fences.
-                let live = native::live_generation(&client);
+                let live = client.generation();
                 match settle(&mut follow, &completed.work, live, result) {
                     Settled::Stale => {}
                     Settled::Completed(projection) => {
@@ -905,16 +958,202 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
                 lane.hints.tick(&mut follow);
             }
         }
-    };
-    let _ = tokio::time::timeout(DEREGISTER_TIMEOUT, client.deregister()).await;
-    client.close().await;
-    result
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    #[derive(Default)]
+    struct WireState {
+        budget: usize,
+        bytes: Vec<u8>,
+        waiting: Option<std::task::Waker>,
+        replies: Vec<String>,
+    }
+
+    struct ParkedWriter(Arc<std::sync::Mutex<WireState>>);
+
+    impl tokio::io::AsyncWrite for ParkedWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            bytes: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            let mut state = self.0.lock().unwrap();
+            if state.budget == 0 {
+                state.waiting = Some(cx.waker().clone());
+                return std::task::Poll::Pending;
+            }
+            let count = bytes.len().min(state.budget);
+            state.budget -= count;
+            state.bytes.extend_from_slice(&bytes[..count]);
+            std::task::Poll::Ready(Ok(count))
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+
+    struct MockIo {
+        state: tokio::sync::watch::Sender<ConnState>,
+        writer: Arc<tokio::sync::Mutex<ParkedWriter>>,
+        wire: Arc<std::sync::Mutex<WireState>>,
+        answer: Arc<tokio::sync::Semaphore>,
+        diagnostic: bool,
+    }
+
+    impl MockIo {
+        fn release_bytes(&self, count: usize) {
+            let wake = {
+                let mut state = self.wire.lock().unwrap();
+                state.budget += count;
+                state.waiting.take()
+            };
+            if let Some(wake) = wake {
+                wake.wake();
+            }
+        }
+    }
+
+    impl FeedIo for MockIo {
+        fn state(&self) -> tokio::sync::watch::Receiver<ConnState> {
+            self.state.subscribe()
+        }
+
+        fn generation(&self) -> Option<u64> {
+            Some(1)
+        }
+
+        fn work(&self, work: Work, _: Binding, _: Duration) -> WorkFuture {
+            use tokio::io::AsyncWriteExt;
+            let writer = self.writer.clone();
+            let answer = self.answer.clone();
+            let diagnostic = self.diagnostic;
+            Box::pin(async move {
+                if work.kind() == WorkKind::Subscribe {
+                    return Ok(None);
+                }
+                writer.lock().await.write_all(b"get;").await.unwrap();
+                answer.acquire().await.unwrap().forget();
+                if diagnostic {
+                    Err(fault(FETCH_COMMAND, "scripted read failure"))
+                } else {
+                    Ok(Some(projection(1)))
+                }
+            })
+        }
+
+        fn reply(&self, reply: Reply) -> ReplyFuture {
+            use tokio::io::AsyncWriteExt;
+            let id = reply.command.id.unwrap();
+            self.wire.lock().unwrap().replies.push(id.clone());
+            let writer = self.writer.clone();
+            Box::pin(async move {
+                writer
+                    .lock()
+                    .await
+                    .write_all(format!("reply-{id};").as_bytes())
+                    .await
+                    .unwrap();
+            })
+        }
+    }
+
+    /// Exercise the production loop, including event select losses, reply slot
+    /// ownership, completion/error settlement, FIFO and exit. Byte permits park
+    /// actual write_all futures mid-frame under the shared writer lock.
+    #[tokio::test]
+    async fn loop_keeps_partial_writes_across_events_and_completion() {
+        for diagnostic in [false, true] {
+            let wire = Arc::new(std::sync::Mutex::new(WireState::default()));
+            let io = MockIo {
+                state: tokio::sync::watch::channel(ConnState::Connected).0,
+                writer: Arc::new(tokio::sync::Mutex::new(ParkedWriter(wire.clone()))),
+                wire: wire.clone(),
+                answer: Arc::new(tokio::sync::Semaphore::new(0)),
+                diagnostic,
+            };
+            let (injector, incoming) = bus::native_client::bounded_incoming_injector(64);
+            let (tx, mut projections) = mpsc::channel(1);
+            let status = status::shared();
+            let mut feed = Box::pin(run_loop(
+                binding(), &io, incoming, tx, status.clone(), FETCH_TIMEOUT,
+            ));
+            assert!(futures_util::poll!(feed.as_mut()).is_pending());
+            assert!(io.writer.try_lock().is_err(), "request owns writer");
+            let event = |id: Option<&str>| IncomingCommand {
+                generation: 1,
+                from: "client".into(),
+                command: "portald.status".into(),
+                id: id.map(str::to_owned),
+                args: json!({}),
+                body: String::new(),
+                // An unrelated topic wakes the event branch without adding work.
+                headers: if id.is_none() {
+                    BTreeMap::from([("topic".into(), "other".into())])
+                } else {
+                    BTreeMap::new()
+                },
+            };
+            for id in ["1", "2"] {
+                assert!(injector.try_send(event(Some(id))));
+            }
+            assert!(futures_util::poll!(feed.as_mut()).is_pending());
+            assert_eq!(wire.lock().unwrap().replies, ["1"]);
+            io.release_bytes(2);
+            assert!(futures_util::poll!(feed.as_mut()).is_pending());
+            assert_eq!(wire.lock().unwrap().bytes, b"ge");
+            // Repeated event wakeups cannot cancel/restart either partial send,
+            // nor pop the next reply while the current slot is occupied.
+            for _ in 0..3 {
+                assert!(injector.try_send(event(None)));
+                assert!(futures_util::poll!(feed.as_mut()).is_pending());
+                assert_eq!(wire.lock().unwrap().replies, ["1"]);
+            }
+            io.release_bytes(2);
+            assert!(futures_util::poll!(feed.as_mut()).is_pending());
+            assert_eq!(wire.lock().unwrap().bytes, b"get;");
+            // Now the reply holds the writer. Both success and Diagnostic must
+            // settle without trying an inline send behind this parked owner.
+            io.release_bytes(2);
+            assert!(futures_util::poll!(feed.as_mut()).is_pending());
+            assert_eq!(wire.lock().unwrap().bytes, b"get;re");
+            assert!(io.writer.try_lock().is_err(), "reply owns writer");
+            io.answer.add_permits(1);
+            assert!(futures_util::poll!(feed.as_mut()).is_pending());
+            if diagnostic {
+                assert_eq!(status::report(&status)["portal"]["settings_fault"], "scripted read failure");
+            } else {
+                assert_eq!(projections.try_recv().unwrap().revision, Revision(1));
+            }
+            assert_eq!(wire.lock().unwrap().replies, ["1"]);
+            io.release_bytes(5);
+            assert!(futures_util::poll!(feed.as_mut()).is_pending());
+            assert_eq!(wire.lock().unwrap().bytes, b"get;reply-1;");
+            assert_eq!(wire.lock().unwrap().replies, ["1", "2"]);
+            // Replied must clear its slot and continue to the next queued reply.
+            io.release_bytes(2);
+            assert!(futures_util::poll!(feed.as_mut()).is_pending());
+            assert_eq!(wire.lock().unwrap().bytes, b"get;reply-1;re");
+            drop(injector);
+            assert!(matches!(futures_util::poll!(feed.as_mut()), std::task::Poll::Ready(Ok(()))));
+            assert!(io.writer.try_lock().is_ok(), "loop exit drops parked writer before teardown");
+        }
+    }
 
     /// Model a Bus send yielding with its write lock held, then an event queuing
     /// a status reply on that same socket. No network timing or sleeps decide
