@@ -1,0 +1,27 @@
+-- Scoped CBC checks for the panel authority and high-contrast palette.
+$fmt = run_argv(["cargo", "fmt", "-p", "viud", "-p", "lib-viu", "-p", "toolkit", "-p", "design", "-p", "settings", "-p", "settingsd"], {timeout:300, stderr:"stdout"})
+print($fmt.stdout)
+print("FMT_PATCH_BEGIN")
+$diff = run_argv_must(["git", "diff", "--", "engines/viud", "libraries/viu", "libraries/toolkit", "libraries/design", "libraries/settings", "services/settingsd"])
+print($diff)
+print("FMT_PATCH_END")
+run_argv_must(["git", "checkout", "-q", "--", "engines/viud", "libraries/viu", "libraries/toolkit", "libraries/design", "libraries/settings", "services/settingsd"])
+if not $fmt.ok then exit($fmt.exit_code ?? 124) end
+if trim($diff)!="" then eprint("Formatting differs; apply the CBC patch and requeue");exit(1) end
+for $argv in [["/opt/mixos/bin/mix", "engines/viud/tests/scenes_test.mix"],
+  ["cargo", "test", "--locked", "-p", "design"],
+  ["cargo", "test", "--locked", "-p", "settings"],
+  ["cargo", "test", "--locked", "-p", "settingsd", "--test", "transactions"],
+  ["cargo", "test", "--locked", "-p", "settingsd", "--test", "format5"],
+  ["cargo", "test", "--locked", "-p", "lib-viu", "--test", "app_mix", "--", "--nocapture"],
+  ["cargo", "test", "--locked", "-p", "toolkit", "--lib", "session_look"],
+  ["/opt/mixos/bin/mix", "apps/prefs/panel-test.mix"],
+  ["/opt/mixos/bin/mix", "apps/prefs/write-policy-test.mix"],
+  ["/opt/mixos/bin/mix", "apps/prefs/navigation-test.mix"],
+  ["cargo", "clippy", "--locked", "--all-targets", "-p", "viud", "-p", "lib-viu", "-p", "toolkit", "-p", "design", "-p", "settings", "-p", "settingsd"]]
+  print("CHECK " .. join($argv, " "))
+  $test_env=if contains($argv,"app_mix") then {MIX_TEST_VIU_APP_SCRIPT:realpath("apps/prefs/core-test.mix")} else {} end
+  $r = run_argv($argv, {timeout:1800, max_output:16000000, stderr:"stdout",env:$test_env})
+  print($r.stdout)
+  if not $r.ok then exit($r.exit_code ?? 124) end
+end

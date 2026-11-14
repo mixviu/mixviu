@@ -1,1 +1,1 @@
-{"host":{"app":"gallery","app_id":"dev.mixos.gallery","behaviour":"gallery.mix","commands":["app.describe","gallery.execute","gallery.state","gallery.describe","gallery.actions"],"service":"gallery","size":[740,820],"title":"Viu Widget Gallery","window_app_id":"dev.mixos.gallery"}}
+{"host":{"app":"gallery","app_id":"dev.mixos.gallery","behaviour":"gallery.mix","commands":["app.describe","gallery.execute","gallery.state","gallery.describe","gallery.actions"],"frame":"gold","service":"gallery","size":[740,820],"title":"Viu Widget Gallery","window_app_id":"dev.mixos.gallery"}}

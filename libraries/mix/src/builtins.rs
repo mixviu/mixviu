@@ -10830,8 +10830,8 @@ pub(crate) fn group_has_live_members(pgid: i32) -> bool {
 }
 
 /// End process group `pgid`: with a zero `grace`, SIGKILL at once; otherwise
-/// SIGTERM, then wait until the grace deadline OR until no live member is
-/// left, then SIGKILL whatever remains. Waiting on the whole GROUP, not just
+/// SIGCONT then SIGTERM, then wait until the grace deadline OR until no live
+/// member is left, then SIGKILL whatever remains. Waiting on the whole GROUP, not just
 /// its leader, is the point: a TERM-honouring descendant (the `gzip` in
 /// `sh -c "pg_dump | gzip > f"`) gets the full grace to finish, and a
 /// TERM-ignoring one is killed at the deadline.
@@ -10843,12 +10843,16 @@ pub(crate) fn group_has_live_members(pgid: i32) -> bool {
 pub(crate) fn terminate_process_group(pgid: i32, grace: std::time::Duration) {
     use std::time::{Duration, Instant};
     if !grace.is_zero() {
-        // SAFETY: kill(2) on a group whose id the caller holds. SIGCONT right
-        // after SIGTERM, as shells do (review R6): a STOPPED member never
-        // handles its SIGTERM, so without it the grace would be wasted on it.
+        // SAFETY: kill(2) on a group whose id the caller holds. Continue the
+        // group BEFORE SIGTERM: if TERM kills the leader while a member is
+        // stopped, orphan-group SIGHUP+SIGCONT can kill that member before
+        // its TERM trap runs. On Linux, SIGCONT clears the group stop and
+        // wakes tasks in the sender's context before kill returns. Members
+        // can run briefly before TERM; one that re-stops in this window can
+        // still be caught by orphan-group SIGHUP when the leader dies.
         unsafe {
-            libc::kill(-pgid, libc::SIGTERM);
             libc::kill(-pgid, libc::SIGCONT);
+            libc::kill(-pgid, libc::SIGTERM);
         }
         let deadline = Instant::now() + grace;
         while Instant::now() < deadline && group_has_live_members(pgid) {

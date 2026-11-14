@@ -277,6 +277,9 @@ fn compile_flat_source_at(
 
     if let Some(chrome) = chrome.as_mut() {
         crate::seeds::apply_accent(chrome, &context);
+        if context.contrast == crate::Contrast::High {
+            crate::family::chrome::high_contrast(chrome, context.mode);
+        }
     }
 
     let style = match crate::family::style::compile(source, context.scheme, context.style) {

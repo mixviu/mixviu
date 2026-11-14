@@ -2,6 +2,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- Mix application composition and behaviour. No Rust gallery controller called.
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+$choice={mode:$app_mode.load("gallery")};$effective={}
 $widgets = [
  {id:"label",kind:"label",label:"Label",initial:"Shared Viu typography"},
  {id:"button",kind:"button",label:"Button",initial:"Ready"},
@@ -60,6 +63,8 @@ for $widget in $widgets
   $state.values[$widget.id] = $widget.initial
 end
 fn publish_gallery($ctx, $model)
+  $model=$app_mode.project($model,"gallery",$choice)
+  $model=$frame.apply($model,{icon:"layout-grid",title:"Viu Widget Gallery",menus:[{id:"View",label:"View",enabled:true,children:$app_mode.actions($choice.mode)}],toolbar:[],status:nil})
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
   if $rc != 0 then raise("MODEL_PUBLISH",to_string($result)) end
 end
@@ -75,6 +80,10 @@ on gallery.execute
   $a = $event.args
   try
     if type($a)!="map" then raise("ARGUMENT","arguments must be an object") end
+    if starts_with($a.id ?? "","view.mode.") then
+      if not contains(["view.mode.light","view.mode.dark","view.mode.session"],$a.id) then raise("UNKNOWN_ACTION","Unknown gallery action") end
+      $choice.mode=$app_mode.choose($a.id);publish_gallery($ctx,$state);reply(0,json_encode({executed:$a.id}));return
+    end
     if $a.action==nil then
       $commands=filter($actions,fn($c)=$c.id==$a.id)
       if len($commands)!=1 then raise("UNKNOWN_ACTION","Unknown gallery action") end
@@ -127,15 +136,26 @@ on gallery.execute
 end
 publish_gallery($ctx,$state)
 
+on gallery.actions
+  reply(0,json_encode({actions:concat($actions,map($app_mode.actions($choice.mode),fn($a)=merge($a,{keys:[]})))}))
+end
+on viu.frame.intent
+  $id=($event.args.value ?? {}).command ?? $event.args.id
+  if not starts_with($id ?? "","view.mode.") then return end
+  $choice.mode=$app_mode.choose($id);publish_gallery($ctx,$state)
+end
+on viu.theme.changed
+  $effective=$event.args;publish_gallery($ctx,$state)
+end
+on viu.frame.close
+  $state.window_close=true;publish_gallery($ctx,$state)
+end
 on gallery.state
-  reply(0,json_encode($state))
+  reply(0,json_encode(merge($state,{theme:{mode:$choice.mode,effective:$effective}})))
 end
 on gallery.describe
   reply(0,json_encode($description))
 end
 on app.describe
   reply(0,json_encode($description))
-end
-on gallery.actions
-  reply(0,json_encode({actions:$actions}))
 end

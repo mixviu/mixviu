@@ -17,4 +17,4 @@ contract = "none"
 workspace = true
 
 [dependencies]
-serde_json = { version = "=1.0.154" }
+serde_json.workspace = true

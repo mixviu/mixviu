@@ -2,6 +2,7 @@
 -- host: viu
 -- lint: globals app_args app_launch
 -- Embedded Mix entry. Commands use the host's existing native Bus connection.
+$app_mode=require("../../libraries/viu/mix/app-mode.mix")
 $app=require("reducer.mix")
 $projection=require("presentation.mix")
 $core=require("core.mix")
@@ -54,6 +55,7 @@ fn dp_framed($s,$contract,$cache)
   $model.values.palette={open:$search,commands:map($contract.registry_order,fn($id)={id:$id,label:$contract.ui_labels[$id] ?? filter($contract.actions,fn($a)=$a.id==$id)[0].label,enabled:$projection.dp_command($s,$contract,$id).enabled})}
   $model.native_overlays=[{definition:{id:"palette",kind:"command-palette",label:"",initial:{open:false,commands:[]}},command:"dopus.palette"}]
   if $search then $model.values.form.open=false end
+  $model=$app_mode.project($model,"dopus",$s.appearance_choice,$s.headless ?? false)
   $model.local_theme={theme:$s.appearance_choice.scheme,mode:$s.appearance_choice.mode,style:$s.appearance_choice.style,decorations:$s.window_choice["window.decorations"],captions:$s.window_choice["window.caption_side"]}
   $model.native_focus=if $s.focus==nil then nil else {id:$s.focus.id,selection:$s.focus.selection,serial:$s.serial} end
   $model.shortcuts=if $s.form.open then [] else $s.bindings ?? [] end
@@ -65,7 +67,7 @@ fn dp_start($initial)
   $row_cache=[{stamp:nil,rows:[]},{stamp:nil,rows:[]}]
   $state=$app.dp_initialise($initial)
   $state.bus_connected=if viu_context().native_facilities ?? false then false else nil end
-  $state.appearance_choice={}
+  $state.appearance_choice={};$mode=$app_mode.load("dopus");if $mode!=nil then $state.appearance_choice.mode=$mode end
   $state.appearance_session=$state.appearance
   $state.default_keys={}
   $state.window={}
@@ -80,6 +82,7 @@ on dopus.initialise
   reply(0,json_encode({ready:true}))
 end
 fn dp_request($request)
+  if starts_with(($request.args ?? {}).id ?? "","theme.mode-") and $request.args.id!="theme.mode-toggle" then $request.args.id="view.mode."..slice($request.args.id,len("theme.mode-")) end
   global $state, $row_cache, $contract
   if $state==nil then reply(10,json_encode({error_code:"NOT_READY"}))
   else
@@ -200,7 +203,7 @@ fn dp_job_completed($completion)
     elif $state.job==$completion.tag.id then
       $state.busy=false;$state.job=nil
       $result=$completion.body
-      $state.info=if $completion.rc==0 then "Select a file or folder" else $result.message ?? "Operation failed" end
+      $state.info=if $completion.rc==0 then $core.dp_idle_info else $result.message ?? "Operation failed" end
       $panes=$state.panes
       try
         for $i=0 to 1 $panes[$i]=$core.dp_relist($panes[$i]) end
@@ -227,6 +230,7 @@ on dopus.intent
 end
 on dopus.execute
   $a=$event.args
+  if starts_with($a.id ?? "","theme.mode-") and $a.id!="theme.mode-toggle" then $a.id="view.mode."..slice($a.id,len("theme.mode-")) end
   if type($a.id)!="string" or any(keys($a),fn($k)=not contains(["id","params"],$k)) or ($a.params!=nil and type($a.params)!="map") then
     reply(10,json_encode({error_code:"INVALID_ARGUMENT",message:"body: expected id and optional params object",reason:nil}));return
   end
@@ -342,7 +346,9 @@ on dopus.ping
   reply(0,json_encode({pong:true,service:$ctx.name,schema:"dopus.v1",pid:$ctx.pid,headless:$state.headless}))
 end
 on dopus.actions
-  reply(0,json_encode({actions:map(filter($contract.actions,fn($a)=contains($contract.bus_actions,$a.id)),fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})}))
+  $actions=map(filter($contract.actions,fn($a)=contains($contract.bus_actions,$a.id)),fn($a)={id:$a.id,label:$a.label,keys:$a.keys,enabled:$projection.dp_enabled($state,$a.id)})
+  if not $state.headless then $actions=concat($actions,map($app_mode.actions($state.appearance_choice.mode),fn($a)=merge($a,{keys:[]}))) end
+  reply(0,json_encode({actions:$actions}))
 end
 fn dp_wire_panes($s)
   $out=[]
@@ -353,11 +359,11 @@ fn dp_wire_panes($s)
   return $out
 end
 on dopus.state
-  reply(0,json_encode({places:{open:$state.places_open,width:$state.places_width},properties:{open:$state.properties_open,width:$state.properties_width},panes:dp_wire_panes($state),theme_scheme:if $state.headless then "" else $state.appearance.scheme end,theme_mode:if $state.headless then "" else $state.appearance.mode end,appearance:{icons:if $state.headless then "" else "lucide" end,asset_set:nil,font_ui:if $state.headless then "" else "Inter" end,font_mono:if $state.headless then "" else "JetBrains Mono" end,font_ui_weight:if $state.headless then 0 else 400 end,icon_weight:nil}}))
+  reply(0,json_encode({theme:{mode:$state.appearance_choice.mode,effective:$state.appearance},places:{open:$state.places_open,width:$state.places_width},properties:{open:$state.properties_open,width:$state.properties_width},panes:dp_wire_panes($state),theme_scheme:if $state.headless then "" else $state.appearance.scheme end,theme_mode:if $state.headless then "" else $state.appearance.mode end,appearance:{icons:if $state.headless then "" else "lucide" end,asset_set:nil,font_ui:if $state.headless then "" else "Inter" end,font_mono:if $state.headless then "" else "JetBrains Mono" end,font_ui_weight:if $state.headless then 0 else 400 end,icon_weight:nil}}))
 end
 on dopus.info
   $ctx=viu_context()
-  reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:$state.headless,panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
+  reply(0,json_encode({version:$ctx.version,git_sha:$ctx.git_sha,build_time:$ctx.build_time,headless:$state.headless,theme:{mode:$state.appearance_choice.mode,effective:$state.appearance},panes:2,pane_states:dp_wire_panes($state),config_path:$state.config_path}))
 end
 fn dp_describe()
   $description=$contract.describe

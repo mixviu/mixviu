@@ -111,7 +111,7 @@ fn stage_test($mix)
   for $case in sort(glob("apps/term/*-test.mix"))
     run_step([$mix, $case])
   end
-  for $case in ["apps/monitor/core-test.mix", "apps/monitor/history-test.mix", "apps/monitor/wire-test.mix", "apps/monitor/fetch-test.mix", "apps/screenshot/policy-test.mix"]
+  for $case in ["apps/monitor/policy-test.mix", "apps/monitor/core-test.mix", "apps/monitor/history-test.mix", "apps/monitor/wire-test.mix", "apps/monitor/fetch-test.mix", "apps/screenshot/policy-test.mix"]
     if exists($case) then
       run_step([$mix, $case])
     end

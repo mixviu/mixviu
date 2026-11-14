@@ -26,6 +26,7 @@ fn gallery() -> (Runtime, mpsc::Receiver<()>) {
     assert_eq!(bundle.manifest.app(), "gallery");
     assert_eq!(bundle.manifest.app_id.as_deref(), Some("dev.mixos.gallery"));
     assert_eq!(bundle.manifest.window_app_id, bundle.manifest.app_id);
+    assert_eq!(bundle.manifest.frame.as_deref(), Some("gold"));
     for command in [
         "app.describe",
         "gallery.describe",
@@ -110,6 +111,44 @@ fn gallery_discovery_uses_the_admission_table_and_shared_action_ids() {
     assert_eq!(reset.model.unwrap()["values"]["slider"], 35);
 }
 #[test]
+fn gallery_mode_actions_coexist_with_widget_control_and_frame_events() {
+    let (mut runtime, wakes) = gallery();
+    for mode in ["dark", "light", "session"] {
+        let id = format!("view.mode.{mode}");
+        let changed = call(
+            &mut runtime,
+            &wakes,
+            "gallery.execute",
+            json!({"id":id}),
+        );
+        assert_eq!(changed.reply.unwrap().rc, 0);
+        let expected = if mode == "session" { Value::Null } else { json!(mode) };
+        assert_eq!(changed.model.unwrap()["theme_choice"]["mode"], expected);
+        let actions = call(&mut runtime, &wakes, "gallery.actions", json!({}))
+            .reply.unwrap().body;
+        let actions = actions["actions"].as_array().unwrap();
+        assert!(actions.iter().any(|a| a["id"] == "slider.set"));
+        assert!(actions.iter().any(|a| a["id"] == "reset"));
+        assert_eq!(actions.iter().filter(|a| a["checked"] == true).count(), 1);
+        assert!(actions.iter().any(|a| a["id"] == id && a["checked"] == true));
+        assert!(actions.iter().all(|a| a["keys"].is_array()));
+        call(&mut runtime, &wakes, "viu.theme.changed", json!({"mode":"dark"}));
+        let state = call(&mut runtime, &wakes, "gallery.state", json!({}))
+            .reply.unwrap().body;
+        assert_eq!(state["theme"]["mode"], expected);
+        assert_eq!(state["theme"]["effective"]["mode"], "dark");
+    }
+    let frame = call(
+        &mut runtime,
+        &wakes,
+        "viu.frame.intent",
+        json!({"value":{"command":"view.mode.light"}}),
+    );
+    assert_eq!(frame.model.unwrap()["theme_choice"]["mode"], "light");
+    let close = call(&mut runtime, &wakes, "viu.frame.close", json!({}));
+    assert_eq!(close.model.unwrap()["window_close"], true);
+}
+#[test]
 fn gallery_admission_refusals_are_typed_and_leave_state_unchanged() {
     let (mut runtime, wakes) = gallery();
     let before = call(&mut runtime, &wakes, "gallery.state", json!({}))
@@ -131,6 +170,7 @@ fn gallery_admission_refusals_are_typed_and_leave_state_unchanged() {
             "ARGUMENT",
         ),
         (json!({"id":"missing"}), "UNKNOWN_ACTION"),
+        (json!({"id":"view.mode.invalid"}), "UNKNOWN_ACTION"),
         (json!({}), "UNKNOWN_ACTION"),
         (json!(false), "ARGUMENT"),
     ] {

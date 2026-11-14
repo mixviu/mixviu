@@ -1,0 +1,47 @@
+$n=require("navigation.mix")
+fn inactive($s,$key)
+  $parts=split($key,".")
+  for $def in $s.catalog_all ?? $s.catalog ?? []
+    $pattern=split($def.path,".");$matches=len($pattern)==len($parts);$reason=nil
+    if not $matches then continue end
+    for $i=0 to len($parts)-1
+      if starts_with($pattern[$i],"<") then
+        $capture=($def.inactive_captures ?? {})[$parts[$i]]
+        if ($capture ?? {}).write=="refused" then $reason=$capture.reason end
+      elif $pattern[$i]!=$parts[$i] then $matches=false end
+    end
+    if $matches and $reason!=nil then return $reason end
+  end
+  -- Fail closed while an older/partial catalogue has no capture metadata.
+  if starts_with($key,"shell.panels.top.") then return $n.text_for("panel-retired") end
+  return nil
+end
+fn prune($s)
+  $kept={};$dropped=[]
+  for $key in keys($s.queue_changes)
+    $why=inactive($s,$key)
+    if $why==nil then $kept[$key]=$s.queue_changes[$key]
+    else push($dropped,$key..": "..$why) end
+  end
+  $s.queue_changes=$kept
+  if len($dropped)>0 then $s.store_error=$n.text_for("write-dropped").." "..join($dropped,"; ");$s.status=$s.store_error end
+  return $s
+end
+fn refused($s,$answer,$retryable)
+  $bad=map(filter($answer.diagnostics ?? [],fn($d)=type($d.path)=="string"),fn($d)=$d.path)
+  $pending=$s.inflight_changes
+  if not $retryable then
+    if len($bad)==0 then $pending={}
+    else
+      $matched=false
+      for $key in keys($pending)
+        if any($bad,fn($path)=$key==$path or starts_with($key,$path..".")) then $pending=delete($pending,$key);$matched=true end
+      end
+      if not $matched then $pending={} end
+    end
+  end
+  $s.queue_changes=merge($pending,$s.queue_changes)
+  $s.inflight_changes={}
+  $s.store_error=$n.text_for("write-refused").." "..($answer.message ?? json_encode($answer))
+  return prune($s)
+end

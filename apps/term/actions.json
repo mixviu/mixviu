@@ -488,7 +488,7 @@
     "class": "intent",
     "enabled": true,
     "id": "view.mode.session",
-    "label": "Session mode",
+    "label": "Follow session",
     "menu": "View",
     "reason": null,
     "schema": null,

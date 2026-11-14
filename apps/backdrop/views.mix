@@ -4,6 +4,37 @@ $document=require("document.mix")
 fn fresh()
   return {train_service:"train",buildd_service:"buildd",hours:24,renderer:"3d"}
 end
+-- Requirements belong to the view; custom service aliases use the same gate.
+fn requirements($state)
+  return [{name:"wallpaper",needs:[]},{name:"train",needs:[$state.train_service,$state.buildd_service]}]
+end
+fn availability($state)
+  $out=[]
+  for $view in requirements($state)
+    $missing=[]
+    for $service in $view.needs
+      $present=false
+      try $present=port_exists($service) catch $message $present=false end
+      if not $present and not contains($missing,$service) then push($missing,$service) end
+    end
+    $entry={name:$view.name,available:len($missing)==0,needs:$missing}
+    if not $entry.available then $entry.reason="needs Bus services "..join($missing,", ") end
+    push($out,$entry)
+  end
+  return $out
+end
+fn refusal($views,$name)
+  for $view in $views
+    if $view.name==$name and not $view.available then
+      return {error_code:"UNAVAILABLE",message:$view.reason,needs:$view.needs}
+    end
+  end
+  return nil
+end
+fn reconcile($selected,$views)
+  $refusal=refusal($views,$selected)
+  return {view:if $refusal==nil then $selected else "wallpaper" end,reason:$refusal}
+end
 fn choose_view($state,$body)
   if type($body)!="map" then raise("ARGUMENT","expected an object") end
   if any(keys($body),fn($k)=not contains(["view","args"],$k)) then raise("ARGUMENT","unknown field") end

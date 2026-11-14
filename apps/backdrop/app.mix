@@ -26,6 +26,10 @@ try
     return any(values($outputs),fn($output)=$output.visible==true)
   end
   fn train_poll($reader,$snapshot,$live,$busy,$selected,$hint=false)
+    if $views.refusal($views.availability($live),"train")!=nil then
+      viu_timer("backdrop-train",nil,{})
+      return {reader:$reader,busy:$busy}
+    end
     $drawn=$selected=="train" and visible()
     $reader.hint=$reader.hint or $hint
     if $busy!=nil then return {reader:$reader,busy:$busy} end
@@ -65,6 +69,20 @@ try
     $model.layer={strict_callbacks:$s.view=="train",frame_ms:if $s.view=="train" then 100 else 0 end}
     if $s.view=="train" and visible() then $model.layer.content="train" end
     send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+  end
+  fn refresh_views($s)
+    $available=$views.availability($live)
+    $choice=$views.reconcile($s.view,$available)
+    if $choice.reason!=nil then
+      $previous=$s.view;$s.view=$choice.view
+      publish($ctx.citizen..".view.changed",json_encode({view:$s.view,previous:$previous,reason:$choice.reason.message,needs:$choice.reason.needs}))
+      show_state($s)
+    end
+    if not deep_eq($s.view_availability,$available) then
+      $s.view_availability=$available
+      publish($ctx.citizen..".view.availability",json_encode({views:$available,selected:$s.view}))
+    end
+    return $s
   end
   fn answer($owed,$rc,$body)
     if $owed.token!=nil then viu_reply("finish",$owed.token,{rc:$rc,body:$body}) end
@@ -185,11 +203,13 @@ try
   end
   on backdrop.view.list
     if type($event.args)!="map" or len(keys($event.args))!=0 then reply(10,json_encode({error_code:"ARGUMENT",message:"expected {}"}))
-    else reply(0,json_encode({views:["wallpaper","train"],selected:$s.view})) end
+    else $s=refresh_views($s);reply(0,json_encode({views:$s.view_availability,selected:$s.view})) end
   end
   on backdrop.view.set
     try
       $candidate=$views.choose_view($live,$event.args)
+      $refusal=$views.refusal($views.availability($candidate),$event.args.view)
+      if $refusal!=nil then reply(10,json_encode($refusal));return end
       if not deep_eq([$live.train_service,$live.buildd_service,$live.hours],[$candidate.train_service,$candidate.buildd_service,$candidate.hours]) then
         $alerts=$snapshot.alerts;$snapshot=$train.fresh($candidate.hours);$snapshot.alerts=$alerts;$train_generation=$train_generation+1
       end
@@ -202,7 +222,10 @@ try
   end
   on backdrop.view.cycle
     try
-      $s.view=$views.cycle($s.view,$event.args);$view_reply={view:$s.view}
+      $next=$views.cycle($s.view,$event.args)
+      $s=refresh_views($s)
+      if $views.refusal($s.view_availability,$next)!=nil then $next="wallpaper" end
+      $s.view=$next;$view_reply={view:$s.view}
       publish($ctx.citizen..".action.executed",json_encode(viu_action_event("backdrop.view.cycle","bus",$event.args,$view_reply)))
       $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
       show_state($s);reply(0,json_encode($view_reply))
@@ -254,8 +277,19 @@ try
     $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
   end
   on bus.connected
+    subscribe("noded.props.changed")
+    $s=refresh_views($s)
     for $topic in ["train.landed","train.rejected","buildd.started","buildd.done","pipeline.alert","pipeline.clear","pipeline.alerts"] subscribe($topic) end
     $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+  end
+  on props.changed
+    if starts_with($event.args.path ?? "","services.") then
+      $s=refresh_views($s)
+      $poll=train_poll($reader,$snapshot,$live,$train_busy,$s.view,true);$reader=$poll.reader;$train_busy=$poll.busy
+    end
+  end
+  on bus.disconnected
+    $s=refresh_views($s)
   end
   on train.landed
     $reader.generation=$reader.generation+1
