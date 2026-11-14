@@ -1376,6 +1376,24 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
+    #[ignore = "focused process-group load; run explicitly on a build worker"]
+    fn process_group_signal_load_eight() {
+        let workers: Vec<_> = (0..8)
+            .map(|_| std::thread::spawn(|| {
+                for _ in 0..20 {
+                    abort_does_not_signal_abandoned_process_group();
+                    exited_leader_pins_group_while_live_member_remains();
+                    normal_group_signal_reaches_unregistered_members();
+                }
+            }))
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+    }
+
+    #[test]
     fn abort_does_not_signal_group_or_pid_after_collecting_last_exit() {
         let (child, shared) = pending_stop();
         let pid = child.0.id() as i32;
