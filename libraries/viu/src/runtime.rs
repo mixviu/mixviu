@@ -275,6 +275,7 @@ impl Runtime {
                         eval.register("viu_files",crate::file_data::binding());
                         eval.register("viu_process",crate::process::binding());
                         eval.register("viu_widget_admit",crate::native_primitives::widget_admit());
+                        eval.register("viu_widget_actions",crate::native_primitives::widget_actions());
                         eval.register("viu_image",crate::native_primitives::image_file());
                         eval.register("viu_preview",crate::media_preview::binding());
                         eval.register("viu_http",crate::http::binding());

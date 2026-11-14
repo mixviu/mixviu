@@ -456,3 +456,20 @@ dependency) and `20261107-102804-cc529125-a1` (egui test API) were corrected.
 The first appearance-retention repair passed unit tests but failed native
 authority loss (`round3-recipe-5/pair.E01BON`); separate accepted appearance
 state fixes that actual clearing behaviour. No assertion was weakened.
+
+### View availability (2026-11-13)
+
+`backdrop.view.list` returns `{views, selected}`. Each view has `name`,
+`available` and `needs` (missing Bus service names); unavailable views also
+have a plain `reason`. Wallpaper has no dependencies. Train requires its
+configured train and build service names (defaults `train` and `buildd`).
+Availability is read at list/set time and refreshed on broker registry changes
+and reconnection. Cycling skips unavailable views.
+
+Selecting an unavailable view returns rc 10 with
+`{error_code: "UNAVAILABLE", message, needs}` and preserves the selection.
+If a selected view loses a dependency, backdrop selects wallpaper and publishes
+`<citizen>.view.changed` with `view`, `previous`, `reason` and `needs`.
+`<citizen>.view.availability` publishes changed availability with the current
+selection. Failed data reads clear the affected data; partial train views show
+a plain status, omit bars without data and never render raw Bus diagnostics.

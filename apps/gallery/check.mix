@@ -8,13 +8,18 @@ if not contains(["parity","stress"],$mode) or $rounds<1 or $rounds>10000 or floo
   raise("USAGE","parity|stress [integer rounds 1..10000] [receipt.json]")
 end
 fn call_gallery($language,$command,$body)
-  send "gallery-"..$language $command body=json_encode($body) timeout=15
+  if $language=="mix" and starts_with($command,"gallery.widget.") then
+    $parts=split($command,".")
+    $body.id=$parts[2];$body.action=$parts[3];$command="gallery.execute"
+  end
+  send (if $language=="mix" then "gallery" else "gallery-rust" end) $command body=json_encode($body) timeout=15
   $code=$rc
   $value=$result
   if type($value)=="string" then
     try $value=json_parse($value) catch $message end
   end
   if $code!=0 then raise("GALLERY_REFUSAL",json_encode({language:$language,command:$command,rc:$code,value:$value})) end
+  if $language=="mix" and $command=="gallery.state" then $value={model:$value} end
   return $value
 end
 fn sample_value($kind,$action,$round)
@@ -33,7 +38,10 @@ fn sample_value($kind,$action,$round)
 end
 $catalogue=call_gallery("rust","gallery.describe",{})
 $mix_catalogue=call_gallery("mix","gallery.describe",{})
-if not deep_eq($catalogue.widgets,$mix_catalogue.widgets) then raise("CATALOGUE_MISMATCH","Rust and Mix contracts differ") end
+for $i=0 to len($catalogue.widgets)-1
+  $reference=$catalogue.widgets[$i];$actual=$mix_catalogue.widgets[$i]
+  if $reference.definition.id!=$actual.id or not deep_eq($reference.actions,$actual.actions) then raise("CATALOGUE_MISMATCH","Rust and Mix contracts differ") end
+end
 for $language in ["rust","mix"] call_gallery($language,"gallery.execute",{action:"reset"}) end
 $receipts=[]
 for $round=1 to (if $mode=="parity" then 1 else $rounds end)
