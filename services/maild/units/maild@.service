@@ -3,12 +3,12 @@
 RequiresMountsFor=@{var}/maild/%i @{run}/maild/%i
 Description=MixViu mail service using broker instance %i
 Documentation=https://mixos.dev/maild/
-After=network-online.target noded@%i.service
+After=network-online.target noded@%i.service maild-prepare@%i.service
 Wants=network-online.target
-Requires=noded@%i.service
+Requires=noded@%i.service maild-prepare@%i.service
 
 [Service]
-ReadWritePaths=@{var}/maild @{run}/maild
+ReadWritePaths=@{var}/maild/%i @{run}/maild/%i
 ExecStartPre=/usr/bin/install -d -m 0750 @{var}/maild/%i
 Environment=STATE_DIRECTORY=@{var}/maild/%i
 ExecStartPre=/usr/bin/install -d -m 0750 @{run}/maild/%i

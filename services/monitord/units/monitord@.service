@@ -7,7 +7,6 @@ After=noded@%i.service noded.service
 PartOf=session@%i.target
 
 [Service]
-ReadWritePaths=@{var}/session
 ExecStartPre=/usr/bin/install -d -m 0755 @{var}/session/%i/monitord
 Environment=STATE_DIRECTORY=@{var}/session/%i/monitord
 Type=simple

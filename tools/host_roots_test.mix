@@ -19,6 +19,17 @@ for $entry in $layout.plan("share/layout", $roots)
   $guard.check_text($entry.path, $entry.text)
   if contains($entry.text, "/opt/mix") then raise("HOST_ROOT_TEST", "hardwired layout prefix") end
 end
+for $path in $paths
+  if ends_with($path, "tmpfiles.conf") and ($guard.shipped_unit($path) or starts_with($path, "share/layout/")) then
+    for $line in lines(read_file($path))
+      if not starts_with(trim($line), "#") and contains($line, "%") then raise("HOST_ROOT_TEST", "tmpfiles cannot expand unit instances: " .. $path) end
+    end
+  end
+end
+$mail = read_file("services/maild/units/maild@.service")
+if not contains($mail, "ReadWritePaths=@{var}/maild/%i @{run}/maild/%i\n") or not contains($mail, "Requires=noded@%i.service maild-prepare@%i.service") or not contains($mail, "After=network-online.target noded@%i.service maild-prepare@%i.service") then
+  raise("HOST_ROOT_TEST", "mail instance must prepare leaves before applying its exact write whitelist")
+end
 for $bad in ["ListenStream=/run/" .. "mix/hostd.sock", "StateDirectory=" .. "mix/test", "RuntimeDirectory=" .. "mix/test", "Environment=X=/etc/" .. "mix", "d /var/lib/" .. "mix 0750 root root -", "X=/var/cache/" .. "mix", "WorkingDirectory=%S/" .. "mix/test"]
   $refused = false
   try $guard.check_text("planted.service", $bad) catch $msg, $err
@@ -38,6 +49,10 @@ try
   if not deep_eq($names, $release.members()) then raise("HOST_ROOT_TEST", "checksum members differ") end
   for $b in $release.binaries()
     if not is_file("engines/" .. $b.package .. "/Cargo.toml") and not is_file("services/" .. $b.package .. "/Cargo.toml") then raise("HOST_ROOT_TEST", "missing release package") end
+  end
+  $guard.check_bundle($dir)
+  for $directive in ["CacheDirectory=", "LogsDirectory="]
+    if len($guard.violations($directive .. "mix/test")) == 0 then raise("HOST_ROOT_TEST", "missed cache/log escape") end
   end
   write_file($dir .. "/planted.service", "ListenStream=/run/" .. "mix/bad")
   $refused = false

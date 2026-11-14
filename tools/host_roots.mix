@@ -1,7 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Shared by CI, the bundle builder and negative controls.
+fn pattern()
+  return '/(?:etc/mix|var/lib/mix|run/mix|var/cache/mix|var/log/mix)(?:/|\b)|(?:State|Runtime|Configuration|Cache|Logs)Directory\s*=.*\bmix(?:/|\b)|%[SEtCL]/mix(?:/|\b)'
+end
 fn violations($text)
-  return re_find($text, '/(?:etc/mix|var/lib/mix|run/mix|var/cache/mix)(?:/|\b)|(?:State|Runtime|Configuration)Directory\s*=.*\bmix(?:/|\b)|%[SEtC]/mix(?:/|\b)')
+  return re_find($text, pattern())
 end
 fn shipped_unit($path)
   return (starts_with($path, "engines/") or starts_with($path, "services/") or starts_with($path, "apps/")) and not contains($path, "/tests/") and (re_match($path, '\.(service|socket|target|slice|timer|path)$') or (contains($path, "/units/") and ends_with($path, ".conf")))
@@ -40,7 +43,7 @@ end
 fn check_bundle($stage)
   -- Include hidden and ignored members too. Do not follow asset symlinks:
   -- their real targets are members of the same staging tree.
-  $r = run_argv(["rg", "--hidden", "--no-ignore", "-l", '/(etc/mix|var/lib/mix|run/mix|var/cache/mix)(/|\b)|(?:State|Runtime|Configuration)Directory\s*=.*\bmix(/|\b)|%[SEtC]/mix(/|\b)', $stage], {max_output: 4000000})
+  $r = run_argv(["rg", "--hidden", "--no-ignore", "-l", pattern(), $stage], {max_output: 4000000})
   if $r.exit_code == 0 then raise("HOST_ROOT", "root outside the prefix in bundle members: " .. $r.stdout) end
   if $r.exit_code != 1 then raise("HOST_ROOT", "cannot scan bundle: " .. $r.stderr) end
 end

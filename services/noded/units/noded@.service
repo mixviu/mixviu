@@ -5,7 +5,6 @@ Description=Native ABP broker for MixViu session %i
 PartOf=session@%i.target
 
 [Service]
-ReadWritePaths=@{run}/session
 ExecStartPre=/usr/bin/install -d -m 0711 @{run}/session/%i/noded
 ExecStartPre=/usr/bin/find @{run}/session/%i/noded -mindepth 1 -delete
 Type=simple
