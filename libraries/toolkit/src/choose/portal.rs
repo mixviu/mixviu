@@ -15,6 +15,38 @@ const REQUEST: &str = "org.freedesktop.portal.Request";
 type Options = HashMap<String, OwnedValue>;
 type WireFilter = (String, Vec<(u32, String)>);
 
+/// Semantic fixtures await actual D-Bus events; production and deadline tests
+/// retain the transport budget independently of those assertions.
+#[derive(Default)]
+struct SessionIo {
+    #[cfg(test)]
+    semantic: bool,
+}
+
+impl SessionIo {
+    async fn call<T, E>(
+        &self,
+        future: impl std::future::Future<Output = std::result::Result<T, E>>,
+    ) -> Result<T>
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        #[cfg(test)]
+        if self.semantic {
+            return Ok(future.await?);
+        }
+        Ok(tokio::time::timeout(IO_BOUND, future).await??)
+    }
+
+    async fn deadline(&self) {
+        #[cfg(test)]
+        if self.semantic {
+            return std::future::pending().await;
+        }
+        tokio::time::sleep(IO_BOUND).await;
+    }
+}
+
 fn filter(value: &Filter) -> WireFilter {
     (
         value.name.clone(),
@@ -139,6 +171,7 @@ pub(super) async fn session(
         0,
         #[cfg(test)]
         None,
+        SessionIo::default(),
     )
     .await
 }
@@ -149,26 +182,27 @@ async fn session_inner(
     cancel: &mut watch::Receiver<bool>,
     #[cfg(test)] mut break_stream: u8,
     #[cfg(test)] mut stream_rebuilt: Option<tokio::sync::oneshot::Sender<()>>,
+    io: SessionIo,
 ) -> Result<Option<Outcome>> {
-    let dbus = tokio::time::timeout(IO_BOUND, zbus::fdo::DBusProxy::new(connection)).await??;
-    if !tokio::time::timeout(IO_BOUND, dbus.name_has_owner(DESKTOP.try_into()?)).await?? {
+    let dbus = io.call(zbus::fdo::DBusProxy::new(connection)).await?;
+    if !io.call(dbus.name_has_owner(DESKTOP.try_into()?)).await? {
         return Ok(None);
     }
-    let owner = tokio::time::timeout(IO_BOUND, dbus.get_name_owner(DESKTOP.try_into()?)).await??;
+    let owner = io.call(dbus.get_name_owner(DESKTOP.try_into()?)).await?;
     // This fresh, one-shot proxy reads only version. A property cache would
     // subscribe to changes and wait for GetAll (including unrelated properties)
     // before answering that single Get, needlessly coupling discovery to them.
-    let proxy: zbus::Proxy<'_> = tokio::time::timeout(
-        IO_BOUND,
-        zbus::proxy::Builder::new(connection)
-            .destination(owner.as_str())?
-            .path(PATH)?
-            .interface(INTERFACE)?
-            .cache_properties(zbus::proxy::CacheProperties::No)
-            .build(),
-    )
-    .await??;
-    let version: u32 = tokio::time::timeout(IO_BOUND, proxy.get_property("version")).await??;
+    let proxy: zbus::Proxy<'_> = io
+        .call(
+            zbus::proxy::Builder::new(connection)
+                .destination(owner.as_str())?
+                .path(PATH)?
+                .interface(INTERFACE)?
+                .cache_properties(zbus::proxy::CacheProperties::No)
+                .build(),
+        )
+        .await?;
+    let version: u32 = io.call(proxy.get_property("version")).await?;
     let required = if request.mode == Mode::SaveFiles {
         4
     } else if request.directory {
@@ -195,11 +229,13 @@ async fn session_inner(
         .interface(REQUEST)?
         .member("Response")?
         .build();
-    let mut responses = tokio::time::timeout(
-        IO_BOUND,
-        MessageStream::for_match_rule(rule.clone(), connection, Some(8)),
-    )
-    .await??;
+    let mut responses = io
+        .call(MessageStream::for_match_rule(
+            rule.clone(),
+            connection,
+            Some(8),
+        ))
+        .await?;
     if *cancel.borrow() {
         return Ok(None);
     }
@@ -217,7 +253,7 @@ async fn session_inner(
     tokio::pin!(call);
     let reply = tokio::select! {
         reply = &mut call => reply,
-        _ = tokio::time::sleep(IO_BOUND) => {
+        _ = io.deadline() => {
             // The method must acknowledge the Request promptly; the visible
             // dialog itself has no deadline. Try the standard predicted path,
             // then fail finally: a legacy owner may use another handle, so an
@@ -371,5 +407,30 @@ pub(super) async fn session_broken_stream(
     breaks: u8,
     stream_rebuilt: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> Result<Option<Outcome>> {
-    session_inner(connection, request, cancel, breaks, stream_rebuilt).await
+    session_inner(
+        connection,
+        request,
+        cancel,
+        breaks,
+        stream_rebuilt,
+        SessionIo::default(),
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn session_semantics(
+    connection: &Connection,
+    request: &Request,
+    cancel: &mut watch::Receiver<bool>,
+) -> Result<Option<Outcome>> {
+    session_inner(
+        connection,
+        request,
+        cancel,
+        0,
+        None,
+        SessionIo { semantic: true },
+    )
+    .await
 }
