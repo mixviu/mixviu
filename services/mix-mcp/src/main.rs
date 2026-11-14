@@ -17,14 +17,14 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ServerHandler, ServiceExt, tool, tool_router};
 use serde::Deserialize;
 mod connection;
+mod domain;
 #[cfg(test)]
 mod hardening_tests;
-mod domain;
 mod indexd_client;
 mod indexd_transport;
 mod knowledge_settings;
-mod mix_worker;
 mod log_access;
+mod mix_worker;
 mod native_tools;
 mod text;
 mod tool_output;
@@ -1942,7 +1942,10 @@ fn collect_md_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
 
 fn confined_md_file(path: &std::path::Path, root: &std::path::Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("md")
-        && root.canonicalize().ok().zip(path.canonicalize().ok())
+        && root
+            .canonicalize()
+            .ok()
+            .zip(path.canonicalize().ok())
             .is_some_and(|(root, path)| path.starts_with(root) && path.is_file())
 }
 
@@ -2012,10 +2015,17 @@ fn workspace_path(path: Option<&str>) -> Result<std::path::PathBuf, String> {
     checked_workspace(&path, &domains)
 }
 
-fn checked_workspace(path: &std::path::Path, domains: &crate::knowledge_settings::DomainsSettings) -> Result<PathBuf, String> {
-    let path = path.canonicalize().map_err(|e| format!("workspace path {}: {e}", path.display()))?;
+fn checked_workspace(
+    path: &std::path::Path,
+    domains: &crate::knowledge_settings::DomainsSettings,
+) -> Result<PathBuf, String> {
+    let path = path
+        .canonicalize()
+        .map_err(|e| format!("workspace path {}: {e}", path.display()))?;
     if !path.is_dir() || domains.resolve(&path).is_none() {
-        return Err("workspace path refused: outside configured domain roots or not a directory".into());
+        return Err(
+            "workspace path refused: outside configured domain roots or not a directory".into(),
+        );
     }
     Ok(path)
 }

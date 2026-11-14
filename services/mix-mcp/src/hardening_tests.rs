@@ -22,7 +22,10 @@ fn indexing_refuses_directory_links_and_confines_markdown_links() {
     assert_eq!(find_content_dirs(&root), vec![(root.join("_doc"), "doc")]);
     let mut files = collect_md_files(&root.join("_doc"));
     files.sort();
-    assert_eq!(files, vec![root.join("_doc/inside.md"), root.join("_doc/real.md")]);
+    assert_eq!(
+        files,
+        vec![root.join("_doc/inside.md"), root.join("_doc/real.md")]
+    );
     assert!(walkdir(&root.join("linked")).is_empty());
     assert!(collect_md_files(&root.join("linked")).is_empty());
     symlink(root.join("_doc/real.md"), root.join("nested_notes.md")).unwrap();
@@ -31,11 +34,18 @@ fn indexing_refuses_directory_links_and_confines_markdown_links() {
     assert!(find_content_dirs(&root).contains(&(root.join("_notes.md"), "notes")));
 
     let domains = knowledge_settings::DomainsSettings {
-        map: std::collections::BTreeMap::from([(root.to_string_lossy().into_owned(), "fixture".into())]),
+        map: std::collections::BTreeMap::from([(
+            root.to_string_lossy().into_owned(),
+            "fixture".into(),
+        )]),
     };
     assert_eq!(checked_workspace(&root, &domains).unwrap(), root);
     assert!(checked_workspace(&root.join("_doc"), &domains).is_ok());
     for path in [&outside, &root.join("linked"), &root.join("../outside")] {
-        assert!(checked_workspace(path, &domains).unwrap_err().contains("refused"));
+        assert!(
+            checked_workspace(path, &domains)
+                .unwrap_err()
+                .contains("refused")
+        );
     }
 }

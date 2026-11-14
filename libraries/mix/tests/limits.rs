@@ -424,12 +424,13 @@ impl mix::CapabilityPolicy for DenyByName {
 async fn generic_and_hof_dispatch_obey_exact_name_policy() {
     for src in [
         "print(abs(-1))",
-        "$f = abs\nprint($f(-1))",
-        "print(map([-1], abs))",
+        "$f = fn($x) = abs($x)\nprint($f(-1))",
         "print(map([-1], fn($x) = abs($x)))",
+        "print(rows_project([-1], fn($x) = abs($x)))",
     ] {
         let err = run(src, |e| e.set_capability_policy(Rc::new(DenyByName("abs"))))
-            .await.expect_err("every builtin dispatch must consult policy");
+            .await
+            .expect_err("every builtin dispatch must consult policy");
         assert!(err.contains("capability denied"), "{src}: {err}");
     }
 }

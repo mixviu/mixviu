@@ -19227,6 +19227,21 @@ fn dirs_home() -> Option<std::path::PathBuf> {
     std::env::var("HOME").ok().map(std::path::PathBuf::from)
 }
 
+#[cfg(test)]
+mod policy_dispatch_regression {
+    use super::*;
+
+    #[test]
+    fn policy_wrapper_itself_refuses_denied_builtins() {
+        let mut eval = Evaluator::new();
+        eval.set_capability_policy(Rc::new(crate::builtins::CategoryAllowList::new(&[])));
+        let error = eval
+            .call_policy_builtin("read_file", vec![Value::String("absent".into())])
+            .unwrap_err();
+        assert!(error.to_string().contains("capability denied"));
+    }
+}
+
 /// Ordering comparison (`<` `>` `<=` `>=`).
 ///
 /// **Numeric-first, with a lexicographic string fallback.** If both

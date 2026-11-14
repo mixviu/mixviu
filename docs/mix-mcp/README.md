@@ -225,6 +225,29 @@ requests above 10,000 results or their 8 MiB byte budget rather than truncate.
 Indexing requires a configured domain root, never enters directory symlinks,
 and accepts markdown symlinks only within the scanned root.
 
+### Capability dispatch audit
+
+The fence controls builtin availability, not operating-system permissions.
+The evaluator keeps the policy in shared globals; module and handler bodies
+execute with those globals. Source references in `libraries/mix/src/`:
+
+| Path | Enforcement |
+| --- | --- |
+| Generic builtin | `evaluator.rs:15118` checks before dispatch; `call_policy_builtin` at line 16431 also checks internally before `builtins::call_builtin`. |
+| HOF | `eval_expr` at line 15088 gates the HOF; `builtins_hof.rs:200` invokes callback bodies through `call_function_public`, returning to the same evaluator. Sync callback eligibility excludes builtin calls. |
+| Mutating builtin | `call_mutating_builtin` at line 17563 checks before mutation or fallback. |
+| Row plans | `rows.rs:53` checks during compilation; `Plan::run` at line 112 uses `bulk_call`, which checks again at `evaluator.rs:16578`. |
+| Files and modules | `exec_include` at line 18169, `exec_file_in_scope` (including source) at line 18208 and `exec_require` at line 18363 gate FsRead before reading; bodies use the caller's evaluator and policy. |
+| Async special cases | `eval_numeric_socket` at line 13434, `eval_socket_source` at line 13613, `eval_native_source` at line 13793, and async arms in `eval_expr` (sleep at line 14321, HTTP at line 14643, database at line 14701, JMAP at line 14758, Bus at line 15002) check before dispatch. FIFO I/O checks at line 18845. |
+| Shell and Bus syntax | Class checks cover `send`/`emit` at lines 17862/18063, source shell fallback at line 18771, `sh` at line 18821, command substitution at line 18911 and pipes at line 18938. |
+
+The other direct `call_builtin` calls in the evaluator decode clipboard
+base64 or internal directory-entry bytes; they are fixed pure conversions,
+not caller-selected builtin dispatch. HTTP's synchronous fallback is reached
+after the HTTP capability check. Regressions cover the wrapper itself,
+generic/closure/HOF/row dispatch and existing FsRead/module denials in
+`libraries/mix/tests/limits.rs`.
+
 ## Logging and tests
 
 Stdout is reserved for MCP. Logs go to stderr, journald and
