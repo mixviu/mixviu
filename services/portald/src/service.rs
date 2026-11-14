@@ -380,6 +380,28 @@ struct Job {
     future: Pin<Box<dyn Future<Output = Result<Option<Projection>, Diagnostic>> + Send>>,
 }
 
+type ReplyFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+enum Outbound {
+    Completed(Result<Option<Projection>, Diagnostic>),
+    Replied,
+}
+
+/// Both futures must keep being polled: a partially sent authority request can
+/// hold the Bus write lock that a reply needs. Awaiting the reply alone would
+/// park the lock owner (and its timeout) forever. Keep each future across events
+/// as well, so losing a select never cancels a partially sent frame.
+async fn next_outbound(job: &mut Option<Job>, reply: &mut Option<ReplyFuture>) -> Outbound {
+    if let Some(reply) = reply {
+        reply.as_mut().await;
+        return Outbound::Replied;
+    }
+    if let Some(job) = job {
+        return Outbound::Completed(job.future.as_mut().await);
+    }
+    std::future::pending().await
+}
+
 async fn retry_after(delay: Option<Duration>) {
     match delay {
         Some(delay) => tokio::time::sleep(delay).await,
@@ -568,8 +590,7 @@ async fn hint_due(due: Option<tokio::time::Instant>) {
 /// drain bound, so one completion can queue at most one lane's worth of replies.
 const REPLY_QUEUE_LIMIT: usize = 64;
 
-/// A reply classified during a drain, sent later by `send_replies`. Only the send
-/// awaits, and it never runs between a read's fence and its completion.
+/// A reply classified during a drain, sent alongside authority work.
 struct Reply {
     command: IncomingCommand,
     rc: u8,
@@ -587,13 +608,9 @@ struct Lane {
     replies: VecDeque<Reply>,
 }
 
-/// Sends the replies that classification queued. Runs at the top of the loop, after
-/// any completion has been settled, so no await sits between a fence and `complete`.
-async fn send_replies(client: &SupervisedClient, replies: &mut VecDeque<Reply>) {
-    while let Some(reply) = replies.pop_front() {
-        if let Err(error) = client.respond(&reply.command, reply.rc, &reply.body).await {
-            tracing::warn!(%error, "portald reply unavailable");
-        }
+async fn send_reply(client: Arc<SupervisedClient>, reply: Reply) {
+    if let Err(error) = client.respond(&reply.command, reply.rc, &reply.body).await {
+        tracing::warn!(%error, "portald reply unavailable");
     }
 }
 
@@ -630,7 +647,7 @@ fn admit(binding: &Binding, command: &IncomingCommand) -> Admission {
 /// Classifies one event from the bounded lane. Synchronous by design: the completion
 /// drain calls it between a read's result and its completion, so it must not await.
 /// Hints update the feed and hint state at once. Replies are queued for
-/// `send_replies`.
+/// `send_reply`.
 fn handle_event(
     status: &Shared,
     follow: &mut Follow,
@@ -794,10 +811,14 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
     let mut follow = Follow::new(binding);
     let mut state = client.subscribe_state();
     let mut job: Option<Job> = None;
+    let mut reply: Option<ReplyFuture> = None;
     let mut lane = Lane::default();
     let result = loop {
-        // Replies classified by a drain go out here, before any state is sampled.
-        send_replies(&client, &mut lane.replies).await;
+        if reply.is_none() {
+            reply = lane.replies.pop_front().map(|reply| {
+                Box::pin(send_reply(client.clone(), reply)) as ReplyFuture
+            });
+        }
         // Sample INITIAL state and every generation before waiting for edges.
         // Follow::connected deduplicates already processed generations.
         let now = *state.borrow_and_update();
@@ -846,7 +867,14 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
                 if changed.is_err() { break Ok(()); }
             }
             _ = retry_after(retry) => { follow.retry(); }
-            result = async { job.as_mut().expect("enabled job").future.as_mut().await }, if job.is_some() => {
+            outbound = next_outbound(&mut job, &mut reply) => {
+                let result = match outbound {
+                    Outbound::Replied => {
+                        reply = None;
+                        continue;
+                    }
+                    Outbound::Completed(result) => result,
+                };
                 let completed = job.take().expect("completed job");
                 // Queued events count before this completion schedules anything. A
                 // hint already in the lane is part of the same burst, so it must not
@@ -889,6 +917,41 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    /// Model a Bus send yielding with its write lock held, then an event queuing
+    /// a status reply on that same socket. No network timing or sleeps decide
+    /// the interleaving: the request is explicitly parked before the reply.
+    #[tokio::test]
+    async fn a_reply_waiting_on_the_write_lock_keeps_polling_its_owner() {
+        let write_lock = Arc::new(tokio::sync::Mutex::new(()));
+        let request_lock = write_lock.clone();
+        let mut job = Some(Job {
+            work: Work {
+                generation: 1,
+                ticket: 1,
+                kind: WorkKind::Read,
+            },
+            future: Box::pin(async move {
+                let _guard = request_lock.lock().await;
+                tokio::task::yield_now().await;
+                Ok(None)
+            }),
+        });
+        assert!(futures_util::poll!(job.as_mut().unwrap().future.as_mut()).is_pending());
+        assert!(write_lock.try_lock().is_err(), "request holds the socket");
+        let mut reply: Option<ReplyFuture> = Some(Box::pin(async move {
+            let _guard = write_lock.lock().await;
+        }));
+        assert!(futures_util::poll!(reply.as_mut().unwrap().as_mut()).is_pending());
+        // The former top-of-loop reply await cannot get past this point: only
+        // polling the request again can release the lock it is waiting for.
+        let outcome = futures_util::poll!(Box::pin(next_outbound(&mut job, &mut reply)));
+        assert!(matches!(
+            outcome,
+            std::task::Poll::Ready(Outbound::Completed(Ok(None)))
+        ));
+        assert!(futures_util::poll!(reply.as_mut().unwrap().as_mut()).is_ready());
+    }
 
     fn binding() -> Binding {
         Binding {
