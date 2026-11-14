@@ -1,49 +1,155 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.1.0
--- CBC-only comparison under the build service checkout lock.
-if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") then
-  raise("CBC_ONLY", "run through the native CBC build service")
+-- version: 0.2.0
+-- Workspace-unified default features; normal + build edges on rustc's host.
+-- Dev edges/other targets are excluded. The foreign gate retains its separate
+-- all-features/all-target admission checks.
+$job = env("CBC_BUILD_JOB", "")
+if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") or $job == "" or not re_match($job, '^[A-Za-z0-9_-]+$') or not is_file("/build/.cbc-logs/" .. $job .. ".claim") then
+  raise("CBC_ONLY", "run through cbc-build with its CBC_BUILD_JOB environment and job claim")
 end
-$head = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
-$base = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
+
 fn capture($argv)
   return run_argv_must($argv, {timeout: 1800, max_output: 256000000})
 end
-fn packages($tree)
-  $found = {}
-  for $m in re_find($tree, '(?m)([a-zA-Z0-9_-]+) v([0-9][^ \n]*)')
-    $found[$m.groups[0] .. "@" .. $m.groups[1]] = true
+
+fn package_id($id, $from, $to)
+  -- Relocate only this checkout's path sources. Retain the complete Cargo ID:
+  -- source URL/revision/path, name and version; distinct paths stay distinct.
+  $prefix = "path+file://" .. $from .. "/"
+  if starts_with($id, $prefix) then
+    return "path+file://" .. $to .. "/" .. slice($id, len($prefix))
   end
-  return $found
+  return $id
 end
-$before = {}
-try
-  run_argv_must(["git", "checkout", "-q", $base])
-  print("GRAPH_BASE " .. $base)
-  for $engine in ["mix", "mix-shell"]
-    $tree = capture(["cargo", "tree", "--locked", "-p", $engine, "-e", "normal"])
-    print("TREE_BASE " .. $engine .. "\n" .. $tree)
-    $before[$engine] = packages($tree)
+
+fn reachable($doc, $engine, $from, $to)
+  $roots = []
+  for $p in $doc.packages
+    if $p.name == $engine and contains($doc.workspace_members, $p.id) then push($roots, $p.id) end
   end
-finally
-  run_argv_must(["git", "checkout", "-q", $head])
-end
-print("GRAPH_HEAD " .. $head)
-for $engine in ["mix", "mix-shell"]
-  $tree = capture(["cargo", "tree", "--locked", "-p", $engine, "-e", "normal"])
-  print("TREE_HEAD " .. $engine .. "\n" .. $tree)
-  $now = packages($tree)
-  for $key in sort(keys($now))
-    if not has_key($before[$engine], $key) then
-      print("NORMAL_ADDED " .. $engine .. " " .. $key)
-      if $key != "const-oid@0.10.3" then raise("ENGINE_GRAPH_CHANGED", $key) end
+  if len($roots) != 1 then raise("GRAPH_ROOT", $engine .. ": expected one workspace package") end
+  $nodes = {}
+  for $node in $doc.resolve.nodes $nodes[$node.id] = $node.deps end
+  $todo = $roots
+  $seen = {}
+  $ids = {}
+  $i = 0
+  while $i < len($todo)
+    $id = $todo[$i]
+    $i = $i + 1
+    if not has_key($seen, $id) then
+      if not has_key($nodes, $id) then raise("GRAPH_NODE", "missing resolved node: " .. $id) end
+      $seen[$id] = true
+      $ids[package_id($id, $from, $to)] = true
+      for $dep in $nodes[$id]
+        $follow = false
+        for $kind in $dep.dep_kinds
+          if $kind.kind == nil or $kind.kind == "build" then $follow = true end
+        end
+        if $follow then push($todo, $dep.pkg) end
+      end
     end
   end
-  for $key in sort(keys($before[$engine]))
-    if not has_key($now, $key) then raise("ENGINE_PACKAGE_REMOVED", $engine .. " " .. $key) end
-  end
-  print("NORMAL_GRAPH_OK " .. $engine)
+  return $ids
 end
-print(capture(["cargo", "tree", "--locked", "--workspace", "-i", "const-oid@0.10.3"]))
-print(capture(["cargo", "tree", "--locked", "--workspace", "-i", "rmcp"]))
+
+fn compare_graphs($engine, $before, $now, $allowed)
+  if not has_key($now, $allowed) then
+    raise("GRAPH_POSITIVE_CONTROL", $engine .. ": workspace-unified head must reach " .. $allowed)
+  end
+  for $id in sort(keys($now))
+    if not has_key($before, $id) and $id != $allowed then raise("ENGINE_GRAPH_CHANGED", $engine .. ": added " .. $id) end
+  end
+  for $id in sort(keys($before))
+    if not has_key($now, $id) then raise("ENGINE_PACKAGE_REMOVED", $engine .. ": removed " .. $id) end
+  end
+end
+
+fn expect_refusal($label, $before, $now, $allowed, $code)
+  $caught = false
+  try
+    compare_graphs("control", $before, $now, $allowed)
+  catch $message, $error
+    if $error.code != $code then raise("GRAPH_CONTROL", $label .. ": wrong refusal: " .. $error.code) end
+    $caught = true
+  end
+  if not $caught then raise("GRAPH_CONTROL", $label .. ": audit accepted the negative control") end
+  print("NEGATIVE_CONTROL " .. $label .. " REFUSED " .. $code)
+end
+
+fn check_controls($allowed)
+  expect_refusal("missing-const-oid", {}, {}, $allowed, "GRAPH_POSITIVE_CONTROL")
+  for $source in ["git+https://example.invalid/oid?rev=123#123#const-oid@0.10.3", "path+file:///example/oid#const-oid@0.10.3"]
+    $now = {}
+    $now[$allowed] = true
+    $now[$source] = true
+    expect_refusal("alternate-source " .. $source, {}, $now, $allowed, "ENGINE_GRAPH_CHANGED")
+  end
+  $fixture = {workspace_members: ["root"], packages: [{name: "mix", id: "root"}],
+    resolve: {nodes: [
+      {id: "root", deps: [{pkg: $allowed, dep_kinds: [{kind: nil}]},
+        {pkg: "build-only", dep_kinds: [{kind: "build"}]},
+        {pkg: "dev-only", dep_kinds: [{kind: "dev"}]}]},
+      {id: $allowed, deps: []}, {id: "build-only", deps: []}, {id: "dev-only", deps: []}]}}
+  $now = reachable($fixture, "mix", "/base", "/head")
+  if not has_key($now, "build-only") or has_key($now, "dev-only") then raise("GRAPH_CONTROL", "wrong edge selection") end
+  expect_refusal("build-edge", {root: true}, $now, $allowed, "ENGINE_GRAPH_CHANGED")
+  if package_id("path+file:///base/one#same@1", "/base", "/head") != "path+file:///head/one#same@1" or package_id("path+file:///base-two/one#same@1", "/base", "/head") != "path+file:///base-two/one#same@1" then
+    raise("GRAPH_CONTROL", "path identity relocation escaped its checkout boundary")
+  end
+end
+
+fn metadata($root, $target)
+  -- No -p selection: resolve every workspace member together.
+  return json_parse(run_argv_must(["cargo", "metadata", "--locked", "--format-version", "1",
+    "--filter-platform", $target, "--manifest-path", $root .. "/Cargo.toml"],
+    {cwd: $root, timeout: 1800, max_output: 256000000}))
+end
+
+$guard_probe = run_argv([realpath("/proc/self/exe"), script_path()], {env: {CBC_BUILD_JOB: ""}, timeout: 30})
+if $guard_probe.exit_code == 0 or not contains($guard_probe.stderr, "CBC_ONLY") then
+  raise("GRAPH_CONTROL", "missing CBC_BUILD_JOB did not trigger the CBC guard")
+end
+print("GUARD_CONTROL missing-CBC_BUILD_JOB REFUSED CBC_ONLY")
+
+$root = realpath(trim(capture(["git", "rev-parse", "--show-toplevel"])))
+$head = trim(capture(["git", "rev-parse", "HEAD"]))
+$base = trim(capture(["git", "merge-base", "HEAD", "origin/main"]))
+$host = re_find(capture(["rustc", "-vV"]), '(?m)^host: (\S+)$')
+if len($host) != 1 then raise("GRAPH_TARGET", "cannot determine rustc host triple") end
+$target = $host[0].groups[0]
+$allowed = "registry+https://github.com/rust-lang/crates.io-index#const-oid@0.10.3"
+check_controls($allowed)
+print("GRAPH_CONTEXT " .. json_encode({job: $job, base: $base, head: $head, target: $target,
+  features: "workspace defaults unified", edges: ["normal", "build"], dev_edges: false}))
+$scratch = "/var/tmp/mcp-graph-" .. uuid()
+capture(["mkdir", "-m", "0700", "--", $scratch])
+$base_root = $scratch .. "/base"
+$base_added = false
+try
+  capture(["git", "worktree", "add", "--detach", $base_root, $base])
+  $base_added = true
+  $before_doc = metadata($base_root, $target)
+  $head_doc = metadata($root, $target)
+  print("GRAPH_WORKSPACE_MEMBERS " .. json_encode({base: len($before_doc.workspace_members), head: len($head_doc.workspace_members)}))
+  for $engine in ["mix", "mix-shell"]
+    $before = reachable($before_doc, $engine, $base_root, $root)
+    $now = reachable($head_doc, $engine, $root, $root)
+    compare_graphs($engine, $before, $now, $allowed)
+    print("POSITIVE_CONTROL " .. $engine .. " REACHES " .. $allowed)
+    for $id in sort(keys($now))
+      print("HEAD_PACKAGE " .. $engine .. " " .. $id)
+      if not has_key($before, $id) then print("WORKSPACE_ADDED " .. $engine .. " " .. $id) end
+    end
+    for $id in sort(keys($before)) print("BASE_PACKAGE " .. $engine .. " " .. $id) end
+    print("WORKSPACE_GRAPH_OK " .. $engine .. " normal,build " .. $target)
+  end
+  if trim(capture(["git", "rev-parse", "HEAD"])) != $head then raise("GRAPH_HEAD", "CBC checkout moved") end
+finally
+  if $base_added then capture(["git", "worktree", "remove", $base_root]) end
+  capture(["rmdir", "--", $scratch])
+end
+print("GRAPH_CLEANUP_OK CBC checkout unchanged; base worktree removed")
+print(capture(["cargo", "tree", "--locked", "--workspace", "--target", $target, "-e", "normal,build,dev", "-i", "const-oid@0.10.3"]))
+print(capture(["cargo", "tree", "--locked", "--workspace", "--target", $target, "-e", "normal,build,dev", "-i", "rmcp"]))
