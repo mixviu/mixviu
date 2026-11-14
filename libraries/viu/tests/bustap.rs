@@ -119,7 +119,7 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     {
         let s = keep.lock().unwrap();
         assert_eq!(s.calls[0].0, "noded.observe.start");
-        assert_eq!(s.calls[0].1["body"], "none");
+        assert_eq!(s.calls[0].1["body"]["body"], "none");
     }
     event(
         &mut runtime,
@@ -131,7 +131,7 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
         let s = keep.lock().unwrap();
         assert_eq!(s.calls[1].0, "noded.observe.start");
         assert_eq!(s.calls[2].0, "noded.observe.stop");
-        assert_eq!(s.calls[2].1["subscription_id"], "observe-1");
+        assert_eq!(s.calls[2].1["body"]["subscription_id"], "observe-1");
     }
     keep.lock().unwrap().refused = true;
     event(
