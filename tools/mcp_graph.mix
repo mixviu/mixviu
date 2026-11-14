@@ -1,5 +1,10 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- CBC job source, carried as the command argument; never run locally.
+-- CBC-only comparison under the build service checkout lock.
+if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") then
+  raise("CBC_ONLY", "run through the native CBC build service")
+end
 $head = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
 $base = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
 fn capture($argv)
