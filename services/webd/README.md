@@ -1,4 +1,9 @@
-# webd vhost secrets
+# webd
+
+See the manual (manual not included in this source tree) and the preserved
+[Mix CMS example](examples/mix-cms/README.md).
+
+## Vhost secrets
 
 Move JMAP passwords out of the shared `node.conf.mix` into
 `/opt/mix/etc/webd/vhost-secrets.conf.mix`, owned by `root:root` with mode

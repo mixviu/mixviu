@@ -174,4 +174,29 @@ mod tests {
             assert!(!error.contains(SECRET));
         }
     }
+
+    #[test]
+    fn startup_logs_once_without_values() {
+        use std::io::Write;
+        use std::sync::{Arc, Mutex};
+        struct Writer(Arc<Mutex<Vec<u8>>>);
+        impl Write for Writer {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let capture = output.clone();
+        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+            .with_writer(move || Writer(capture.clone())).finish();
+        let dir = credential(&format!(r#"{{vhost: [{{name: "example.com", public_read_password: "{SECRET}"}}]}}"#));
+        let mut cfg = WebdConfig { vhost: vec![WebdVhostConfig { host: "example.com".into(), public_read_email: Some("reader@example.com".into()), ..Default::default() }], ..Default::default() };
+        tracing::subscriber::with_default(subscriber, || load(Some(&mut cfg), Some(dir.path())).unwrap());
+        let log = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+        assert_eq!(log.lines().count(), 1);
+        assert!(log.contains("1 vhosts took secrets from credential [example.com: public_read_password]"));
+        assert!(!log.contains(SECRET));
+    }
 }
