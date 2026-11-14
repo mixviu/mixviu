@@ -1,0 +1,44 @@
+{
+  cases: [
+    {
+      file: "Cargo.toml",
+      expected: [
+        "Cargo.toml: workspace serde_json must enable float_roundtrip",
+        "Cargo.toml: workspace serde_json must not enable preserve_order",
+        "Cargo.toml: dependencies.serde_json must use serde_json.workspace = true",
+        "Cargo.toml: dev-dependencies.serde_json must use serde_json.workspace = true",
+        "Cargo.toml: build-dependencies.renamed must use serde_json.workspace = true",
+        "Cargo.toml: target.cfg(unix): dependencies.serde_json must use serde_json.workspace = true"
+      ]
+    },
+    {
+      file: "aliases.toml",
+      expected: [
+        "Cargo.toml: workspace.dependencies.sj must not alias serde_json",
+        "Cargo.toml: dependencies.sj must use serde_json.workspace = true",
+        "Cargo.toml: features.ordered must not enable sj/preserve_order",
+        "Cargo.toml: features.ordered must not enable sj?/preserve_order"
+      ]
+    },
+    {
+      file: "features.toml",
+      expected: [
+        "Cargo.toml: dependencies.renamed must use serde_json.workspace = true",
+        "Cargo.toml: features.ordered must not enable serde_json/preserve_order",
+        "Cargo.toml: features.ordered must not enable serde_json?/preserve_order",
+        "Cargo.toml: features.ordered must not enable renamed/preserve_order",
+        "Cargo.toml: features.ordered must not enable renamed?/preserve_order"
+      ]
+    },
+    {
+      file: "overrides.toml",
+      expected: [
+        "Cargo.toml: patch.crates-io.serde_json must not override serde_json",
+        "Cargo.toml: patch.crates-io.sj must not override serde_json",
+        "Cargo.toml: patch.https://example.org/registry.serde_json must not override serde_json",
+        "Cargo.toml: replace.serde_json:1.0.0 must not override serde_json",
+        "Cargo.toml: replace.sj:1.0.0 must not override serde_json"
+      ]
+    }
+  ]
+}

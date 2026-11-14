@@ -30,6 +30,7 @@
 --   share/scenes/, share/viud/scripts/
 --   lib/{clipd,notifyd,exportd,dlnad}/   the Mix services
 --   share/icons/, share/assets/, share/wallpapers/, share/layout/, share/daylight/
+--   env.mx                               setting defaults (tools/env_mx.mix), 0644
 $g = getopt(args(), {mix: {arg: true}, assets: {arg: true}})
 if len($g.errors) != 0 or len($g.rest) != 1 or $g.opts.mix == nil or $g.opts.assets == nil then
   raise("USAGE", "apps_bundle.mix OUT.tar --mix MIX --assets DIR")
@@ -43,6 +44,10 @@ if trim(run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"]))
   raise("DIRTY", "apps.tar is built from a committed tree")
 end
 $sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+$mix_sha = json_parse(run_argv_must([$mix, "--version", "--json"], {clear_env: true})).git_sha_full
+if $mix_sha != $sha then
+  raise("ENV_MX_COMMIT", "bundle mix commit " .. to_string($mix_sha) .. " differs from HEAD " .. $sha)
+end
 $when = trim(run_argv_must(["git", "show", "-s", "--format=%ct", "HEAD"]))
 $stage = "/tmp/apps-bundle-" .. $sha .. "-" .. to_string(pid())
 remove_dir($stage)
@@ -206,6 +211,11 @@ for $file in $walls.files
 end
 for $f in tracked("share/wallpapers") place($stage, $f, $f) end
 
+-- Installed setting defaults at <prefix>/env.mx, stamped with this commit:
+-- the engines installed beside it must be built from the same one.
+$env_mx = require("env_mx.mix")
+$env_mx.write($stage .. "/env.mx", "etc/env.conf.mix", $mix_sha)
+
 -- Manifest of everything packed, then the tar (owner 0, commit time, sorted).
 $files = sort_by(filter(walk($stage), fn($p) = true), fn($p) = $p)
 $rows = []
@@ -222,11 +232,11 @@ for $p in $files
 end
 write_file($stage .. "/share/mixviu/BUNDLE.conf.mix", data_encode({schema: 1, source: $sha, prefix: "/opt/mix", apps: $apps, files: $rows}, true) .. "\n")
 mkdir(dirname($out), {parents: true})
-run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "--mtime=@" .. $when, "-C", $stage, "-cf", $out, "bin", "share", "lib"], {timeout: 600})
+run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "--mtime=@" .. $when, "-C", $stage, "-cf", $out, "bin", "share", "lib", "env.mx"], {timeout: 600})
 $tops = {}
 for $r in $rows
   $parts = split($r.path, "/")
-  $top = if $parts[0] == "share" and len($parts) > 2 then $parts[0] .. "/" .. $parts[1] else $parts[0] .. "/" .. ($parts[1] ?? "") end
+  $top = if len($parts) == 1 then $parts[0] elif $parts[0] == "share" and len($parts) > 2 then $parts[0] .. "/" .. $parts[1] else $parts[0] .. "/" .. ($parts[1] ?? "") end
   $tops[$top] = ($tops[$top] ?? 0) + 1
 end
 remove_dir($stage)

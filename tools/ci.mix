@@ -20,6 +20,8 @@
 -- target/debug/mix, built on demand), never an installed mix.
 -- mix-lint is a ratchet: diagnostics may only shrink against
 -- tools/ci/mix-lint-baseline.json. Regenerate it only in a PR that fixes lint.
+-- Lint uses the selected --mix analyser too. Source-derived context bridges
+-- native vocabulary differences without depending on an installed version.
 
 $o = getopt(args(), {mix: {arg: true}, dir: {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
@@ -60,13 +62,10 @@ end
 
 -- {file: {code: count}} for every error and warning diagnostic.
 fn lint_counts($mix)
-  $r = run_argv(concat([$mix, "lint", "--json"], tracked_mix_files()), {timeout: 1800, max_output: 256000000})
-  if $r.stdout == "" then
-    print("::error::mix lint produced no JSON: " + $r.stderr)
-    exit(1)
-  end
+  $context = require("ci/lint_context.mix")
+  $report = $context.report($mix, tracked_mix_files())
   $counts = {}
-  for $d in json_parse($r.stdout).diagnostics
+  for $d in $report.diagnostics
     if $d.severity == "error" or $d.severity == "warning" then
       if not has_key($counts, $d.file) then
         $counts[$d.file] = {}
@@ -200,6 +199,10 @@ fn git_grep($args)
 end
 
 fn stage_env()
+  -- Build/refresh the default shell before running it, including in `all`.
+  -- An explicit existing --mix (for example the installed shell) skips builds.
+  ensure_mix($mix)
+  run_step([$mix, "tools/serde_json_guard.mix"])
   $reg_path = "etc/env.conf.mix"
   if not exists($reg_path) then
     print("::error::" + $reg_path + " is missing: every MIX_* name must be registered")
@@ -340,6 +343,7 @@ end
 
 fn stage_mix_lint($mix)
   ensure_mix($mix)
+  run_step([$mix, "tools/ci/lint_context_test.mix", $mix])
   $now = lint_counts($mix)
   $base = {}
   if exists($baseline_path) then
@@ -481,11 +485,8 @@ fn stage_install($dir)
   if $commit != $head then
     eprint("stage-install: warning: the tree is dirty and target/debug/mix was built from " .. $commit .. ", not HEAD " .. $head)
   end
-  $defaults = {schema: 1, commit: $commit}
-  for $v in load_data("etc/env.conf.mix").vars
-    if $v.scope == "runtime" and has_key($v, "default") then $defaults[$v.name] = $v.default end
-  end
-  write_file($prefix .. "/env.mx", data_encode($defaults))
+  $env_mx = require("env_mx.mix")
+  $env_mx.write($prefix .. "/env.mx", "etc/env.conf.mix", $commit)
   eprint("staged into " .. $prefix .. "/bin: " .. join($copied, " "))
   return {prefix: $prefix, commit: $commit}
 end
