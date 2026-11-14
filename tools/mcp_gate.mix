@@ -1,0 +1,123 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- CBC-only verification for the MCP edge adapter.
+-- resolve: return lock/fmt changes and check; focused: tests and receipts;
+-- all: the full repository gate followed by receipts; receipts: no test repeat.
+$stages = args()
+if len($stages) != 1 or not contains(["resolve", "focused", "all", "receipts"], $stages[0]) then
+  eprint("usage: mix tools/mcp_gate.mix resolve|focused|all|receipts (on CBC)")
+  exit(64)
+end
+$stage = $stages[0]
+if not starts_with(realpath("."), "/build/") or not is_dir("/build/.cbc-logs") then
+  raise("CBC_ONLY", "run this helper through the native CBC build service")
+end
+if trim(run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"])) != "" then
+  raise("DIRTY_CHECKOUT", "CBC verification requires a clean tracked checkout")
+end
+fn checked($argv, $env = {})
+  -- A /build ancestor marks scripts for version lint. Narrow PTY fixtures
+  -- also need a short path for the unchanged 50-column PTY fixture.
+  -- This CBC-only root is unique, cleaned below,
+  -- and outside both the build tree and the worker's /tmp.
+  $scratch = trim(run_argv_must(["mktemp", "-d", "/mXXXX"]))
+  -- Native fixtures require traversable ancestors (BUS-013); their own
+  -- credential files retain their individual permissions.
+  run_argv_must(["chmod", "755", $scratch])
+  $env.TMPDIR = $scratch
+  -- A persistent compiler-cache server can retain this per-step TMPDIR
+  -- after cleanup. Keep CBC verification independent of that daemon.
+  $env.RUSTC_WRAPPER = ""
+  $r = nil
+  try
+    $r = run_argv($argv, {env: $env, timeout: 14400, stdout: "inherit", stderr: "inherit"})
+  finally
+    run_argv_must(["rm", "-rf", "--", $scratch])
+  end
+  if $r.exit_code != 0 then exit($r.exit_code ?? 124) end
+end
+if $stage == "resolve" then
+  try
+    $result = run_argv(["cargo", "metadata", "--format-version", "1"], {max_output: 256000000, timeout: 1800})
+    print($result.stderr)
+    if $result.exit_code != 0 then exit($result.exit_code ?? 124) end
+    $metadata = json_parse($result.stdout)
+    print("RESOLVED_PACKAGES " .. to_string(len($metadata.packages)))
+    checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "paths", "-p", "mix-shell", "-p", "mix"])
+    print("DERIVED_DIFF_BEGIN")
+    print(run_argv_must(["git", "diff"]))
+    print("DERIVED_DIFF_END")
+    checked(["mix", "tools/foreign_gate.mix", "--locked"])
+    checked(["cargo", "check", "--locked", "-p", "mix", "--bin", "mix"])
+    checked(["cargo", "check", "--locked", "-p", "mix-mcp", "--all-targets"])
+  finally
+    checked(["git", "checkout", "-q", "--", "."])
+  end
+  exit(0)
+end
+if $stage == "focused" then
+  -- The focused gate fails on unformatted source: the diff is printed as
+  -- evidence and the checkout restored, then a non-empty diff is an error.
+  $fmt_diff = ""
+  try
+    checked(["cargo", "fmt", "-p", "mix-mcp", "-p", "bus", "-p", "paths", "-p", "mix-shell", "-p", "mix"])
+    $fmt_diff = run_argv_must(["git", "diff"])
+    print("FMT_DIFF_BEGIN")
+    print($fmt_diff)
+    print("FMT_DIFF_END")
+  finally
+    checked(["git", "checkout", "-q", "--", "."])
+  end
+  if trim($fmt_diff) != "" then
+    eprint("mcp_gate: cargo fmt changed files (diff above); apply it and rerun")
+    exit(1)
+  end
+end
+if $stage == "all" then checked(["mix", "tools/ci.mix", "all"]) end
+checked(["cargo", "build", "--locked", "-p", "mix"])
+$prefix = realpath(trim(run_argv_must(["mktemp", "-d", "target/mcp-ci-XXXXXXXX"])))
+try
+  mkdir($prefix .. "/bin")
+  checked(["ln", "-s", realpath("target/debug/mix"), $prefix .. "/bin/mix"])
+  $defaults = {schema: 1, commit: trim(run_argv_must(["git", "rev-parse", "HEAD"]))}
+  for $v in load_data("etc/env.conf.mix").vars
+    if has_key($v, "default") then $defaults[$v.name] = $v.default end
+  end
+  write_file($prefix .. "/env.mx", data_encode($defaults))
+  $env = {MIX_PREFIX: $prefix, MIX_TEST_MIX_EXE: realpath("target/debug/mix")}
+  checked(["cargo", "tree", "--locked", "-i", "rmcp"])
+  checked(["target/debug/mix", "tools/ci.mix", "foreign"], $env)
+  $base_sha = trim(run_argv_must(["git", "merge-base", "HEAD", "origin/main"]))
+  print("BASELINE_SHA " .. $base_sha)
+  $base = toml_parse(run_argv_must(["git", "show", $base_sha .. ":Cargo.lock"]))
+  $known = {}
+  for $p in $base.package $known[$p.name .. " " .. $p.version] = true end
+  $metadata = json_parse(run_argv_must(["cargo", "metadata", "--locked", "--format-version", "1"], {max_output: 256000000}))
+  for $p in $metadata.packages
+    if not has_key($known, $p.name .. " " .. $p.version) then
+      print("ADDED_PACKAGE " .. json_encode({name: $p.name, version: $p.version, license: $p.license}))
+      $inverse = run_argv_must(["cargo", "tree", "--locked", "--workspace", "-i", $p.name .. "@" .. $p.version])
+      print($inverse)
+      if re_match($inverse, '(?m)(lib-mix|mix-shell|mixd|mix) v[0-9]') then
+        if $p.name == "const-oid" and $p.version == "0.10.3" then
+          print("STRICT_EXCEPTION " .. $p.name .. " " .. $p.version)
+        else
+          raise("STRICT_DEPENDENCY", "shell engine reaches a new package: " .. $p.name)
+        end
+      else
+        print("STRICT_ABSENT " .. $p.name .. " " .. $p.version)
+      end
+    end
+  end
+  if $stage == "focused" then
+    checked(["cargo", "test", "--locked", "-p", "mix-mcp", "--no-fail-fast"], $env)
+  end
+  checked(["target/debug/mix", "tools/ci.mix", "release-mix"], $env)
+  checked(["target/debug/mix", "tools/foreign_gate.mix", "--locked", "--elf", realpath("target/release/mix")], $env)
+  checked(["cargo", "build", "--locked", "--release", "-p", "mix-mcp"])
+  print("RELEASE_SIZE " .. to_string(stat("target/release/mix-mcp").size))
+  checked(["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"])
+finally
+  checked(["rm", "-rf", "--", $prefix])
+end

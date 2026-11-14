@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Environment names registered in etc/env.conf.mix.
+pub const AGENT_SESSION: &str = "MIX_AGENT_SESSION";
+pub const MCP_ALLOW_TCP: &str = "MIX_MCP_ALLOW_TCP";
+pub const MCP_TOOL_DEADLINE_SECS: &str = "MIX_MCP_TOOL_DEADLINE_SECS";
+pub const MCP_SCRIPT_DEADLINE_SECS: &str = "MIX_MCP_SCRIPT_DEADLINE_SECS";
+pub const MCP_LOG_FILTER: &str = "MIX_MCP_LOG_FILTER";
+pub const MCP_DOMAINS: &str = "MIX_MCP_DOMAINS";
+pub const MCP_KNOWLEDGE: &str = "MIX_MCP_KNOWLEDGE";
+pub const MCP_INDEXD: &str = "MIX_MCP_INDEXD";
 pub const AGENTD_ACP_AGENT: &str = "MIX_AGENTD_ACP_AGENT";
 pub const AGENTD_ACP_CONNECTION: &str = "MIX_AGENTD_ACP_CONNECTION";
 pub const AGENTD_ACP_SERVICE: &str = "MIX_AGENTD_ACP_SERVICE";
@@ -43,7 +51,6 @@ pub const MACRO_TARGET: &str = "MIX_MACRO_TARGET";
 pub const MACRO_TIER: &str = "MIX_MACRO_TIER";
 pub const MAN_SOURCE: &str = "MIX_MAN_SOURCE";
 pub const MAN_URL: &str = "MIX_MAN_URL";
-pub const MCP_ALLOW_TCP: &str = "MIX_MCP_ALLOW_TCP";
 pub const NODE_CONFIG: &str = "MIX_NODE_CONFIG";
 pub const NODED_EXPECTED_SERVER_PID: &str = "MIX_NODED_EXPECTED_SERVER_PID";
 pub const NODED_SPEC_DIR: &str = "MIX_NODED_SPEC_DIR";

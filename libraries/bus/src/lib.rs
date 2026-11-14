@@ -26,6 +26,8 @@ pub use service_info::{
     SCHEMA_VERSION, ServiceInfo,
 };
 
+#[cfg(feature = "native")]
+pub mod agent_client;
 #[cfg(feature = "client")]
 pub mod client_helpers;
 #[cfg(feature = "client")]

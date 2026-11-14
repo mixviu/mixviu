@@ -44,6 +44,7 @@ mod repl;
 mod repl_editor;
 mod result_fd;
 mod script_meta;
+pub mod script_worker;
 #[cfg(feature = "serve")]
 mod serve_runtime;
 mod session_execute;
