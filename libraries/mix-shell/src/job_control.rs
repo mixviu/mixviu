@@ -1445,6 +1445,23 @@ mod tests {
     }
 
     #[test]
+    fn exited_tail_is_reaped_while_leader_runs() {
+        let leader = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap());
+        let pgid = leader.0.id() as i32;
+        let tail = ChildGuard(Command::new("/bin/true").process_group(pgid).spawn().unwrap());
+        let pid = tail.0.id() as i32;
+        let mut pending = job(&[MemberState::Running, MemberState::Running]);
+        pending.pgid = pgid;
+        pending.members[0].pid = pgid;
+        pending.members[1].pid = pid;
+        let shared = shared_jobs(BTreeMap::from([(1, pending)]));
+        pending_event(pid, libc::WEXITED);
+        assert_eq!(shared.snapshot()[0].members[1].state, MemberState::Exited(0));
+        assert_eq!(unsafe { libc::getpgid(pid) }, -1, "nonleader left defunct");
+        assert_eq!(unsafe { libc::getpgid(pgid) }, pgid);
+    }
+
+    #[test]
     fn abort_does_not_signal_group_or_pid_after_collecting_last_exit() {
         let (child, shared) = pending_stop();
         let pid = child.0.id() as i32;
