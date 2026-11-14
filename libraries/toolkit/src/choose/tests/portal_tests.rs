@@ -288,13 +288,11 @@ async fn portal_maps_all_methods_and_subscribes_before_early_response() {
         let request = request(&body.to_string()).unwrap();
         let client = connection(&address).await;
         let (_cancel_tx, mut cancel) = watch::channel(false);
-        let result = tokio::time::timeout(
-            Duration::from_secs(10),
-            portal::session(&client, &request, &mut cancel),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        // Mapping and subscribe-before-call are event assertions. Transport
+        // deadlines are exercised by the separate hung-method fixture.
+        let result = portal::session_semantics(&client, &request, &mut cancel)
+            .await
+            .unwrap();
         assert_eq!(result, Some(Outcome::Cancelled));
         let call = calls.recv().await.unwrap();
         assert_eq!(call.method, method);
