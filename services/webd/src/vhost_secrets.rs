@@ -29,24 +29,24 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
     let Some(directory) = directory else {
         return Ok(None);
     };
-    let source = match std::fs::read_to_string(directory.join("webd-vhost-secrets")) {
+    let source = match std::fs::read_to_string(directory.join("webd.vhost-secrets")) {
         Ok(source) => source,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e).context("reading webd-vhost-secrets credential"),
+        Err(e) => return Err(e).context("reading webd.vhost-secrets credential"),
     };
     // Parser/serde diagnostics may contain source snippets or invalid values.
     // Keep those errors out of the startup log, including their error chain.
     let secrets: Secrets = config::from_conf_mix_str(&source)
-        .map_err(|_| anyhow::anyhow!("invalid webd-vhost-secrets credential: expected strict-data {{vhost: [{{name, optional password fields}}]}}"))?;
+        .map_err(|_| anyhow::anyhow!("invalid webd.vhost-secrets credential: expected strict-data {{vhost: [{{name, optional password fields}}]}}"))?;
     let mut rows = config.as_ref().map(|c| c.vhost.clone()).unwrap_or_default();
     let mut seen = std::collections::BTreeSet::new();
     let mut applied = Vec::new();
     for secret in secrets.vhost {
         if !seen.insert(secret.name.clone()) {
-            bail!("webd-vhost-secrets credential contains a duplicate vhost name");
+            bail!("webd.vhost-secrets credential contains a duplicate vhost name");
         }
         let Some(row) = rows.iter_mut().find(|r| r.host == secret.name) else {
-            bail!("webd-vhost-secrets credential names a vhost absent from node config");
+            bail!("webd.vhost-secrets credential names a vhost absent from node config");
         };
         let mut fields = Vec::new();
         for (field, value, target) in [
@@ -95,7 +95,7 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
         ] {
             if email.is_some() != password.is_some() {
                 bail!(
-                    "webd-vhost-secrets: {}: set both {field}_email and {field}_password, or neither",
+                    "webd.vhost-secrets: {}: set both {field}_email and {field}_password, or neither",
                     row.host
                 );
             }
@@ -105,7 +105,7 @@ fn merge(config: Option<&mut WebdConfig>, directory: Option<&Path>) -> Result<Op
         config.vhost = rows;
     }
     Ok(Some(format!(
-        "webd-vhost-secrets: {} vhosts took secrets from credential [{}]",
+        "webd.vhost-secrets: {} vhosts took secrets from credential [{}]",
         applied.len(),
         applied.join("; ")
     )))
@@ -141,7 +141,7 @@ mod tests {
 
     fn credential(source: &str) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("webd-vhost-secrets"), source).unwrap();
+        std::fs::write(dir.path().join("webd.vhost-secrets"), source).unwrap();
         dir
     }
 
@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(row.system_sender_password.as_deref(), Some(SECRET));
         assert_eq!(
             summary,
-            "webd-vhost-secrets: 1 vhosts took secrets from credential [example.com: dev_session_password, public_read_password, system_sender_password]"
+            "webd.vhost-secrets: 1 vhosts took secrets from credential [example.com: dev_session_password, public_read_password, system_sender_password]"
         );
         for output in [
             summary,
@@ -248,7 +248,7 @@ mod tests {
                 "{:#}",
                 merge(Some(&mut config()), Some(dir.path())).unwrap_err()
             );
-            assert!(error.contains("invalid webd-vhost-secrets"));
+            assert!(error.contains("invalid webd.vhost-secrets"));
             assert!(!error.contains(SECRET));
         }
     }
