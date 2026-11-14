@@ -1,0 +1,159 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure observation policy. Retain metadata only, never payloads.
+fn initial($limits={})
+  return {limits:{history:$limits.history ?? 2000,pending:$limits.pending ?? 4096,tombstones:$limits.tombstones ?? 4096,services:$limits.services ?? 256},rows:[],pending:{},unmatched_replies:{},seen:0,evicted:0,dropped:0,drop_cursor:0,last_seq:0,retired:{},retry_at:0,stop_retry_at:0,paused:false,selected:nil,counts:{},rate:0,rate_seen:0,rate_at:0,subscription_id:nil,status:"Connecting",error:nil,connected:false,window_close:false,filter:{services:[],commands:[],directions:[],hide:[],own:false,text:""}}
+end
+fn who($value) return $value ?? "(anon)" end
+fn own_traffic($r)
+  return $r.from=="bustap" or $r.to=="bustap" or $r.from=="viu-local" or $r.to=="viu-local"
+end
+fn stamp($ts)
+  if type($ts)!="string" or not re_match($ts,"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}") then return nil end
+  return to_number(substr($ts,11,2))*3600000+to_number(substr($ts,14,2))*60000+to_number(substr($ts,17,2))*1000+to_number(substr($ts,20,3))
+end
+fn visible($r,$f)
+  if not $f.own and own_traffic($r) then return false end
+  if contains($f.hide,$r.from) or contains($f.hide,$r.to) then return false end
+  if len($f.services)>0 and not contains($f.services,$r.from) and not contains($f.services,$r.to) then return false end
+  if len($f.commands)>0 and not contains($f.commands,$r.command) then return false end
+  if len($f.directions)>0 and not contains($f.directions,$r.direction) then return false end
+  return contains(lower($r.from.." "..$r.to.." "..($r.command ?? "")),lower($f.text))
+end
+fn rows($s,$limit=2000)
+  $out=filter($s.rows,fn($r)=visible($r,$s.filter))
+  return slice($out,max(0,len($out)-$limit))
+end
+fn filter_edit($f,$a)
+  for $k in keys($a)
+    if not contains(keys($f),$k) then raise("ARGUMENT","Unknown filter key: "..$k) end
+    if contains(["services","commands","directions","hide"],$k) then
+      if type($a[$k])!="list" then raise("ARGUMENT",$k.." must be a list") end
+      if not all($a[$k],fn($v)=type($v)=="string") then raise("ARGUMENT",$k.." must contain strings") end
+    elif $k=="own" then
+      if type($a.own)!="bool" then raise("ARGUMENT","own must be bool") end
+    elif type($a.text)!="string" then raise("ARGUMENT","text must be string") end
+    $f[$k]=$a[$k]
+  end
+  if not all($f.directions,fn($v)=contains(["local","mesh_in","mesh_out"],$v)) then raise("ARGUMENT","Invalid direction") end
+  return $f
+end
+fn broker_filter($f) return {services:$f.services,commands:$f.commands,directions:$f.directions} end
+fn clear_rows($s)
+  $s=reset_pairings($s)
+  $s.rows=[];$s.selected=nil;$s.evicted=0
+  return $s
+end
+fn tick_rate($s,$now)
+  -- Sweep once per tick, not once per incoming frame.
+  -- Rebuild survivors once: deleting each expired key copies the map each time.
+  $pending={};$replies={}
+  for $k in keys($s.pending)
+    if $now-$s.pending[$k].arrival<=30 then $pending[$k]=$s.pending[$k] end
+  end
+  for $k in keys($s.unmatched_replies)
+    if $now-$s.unmatched_replies[$k]<=30 then $replies[$k]=$s.unmatched_replies[$k] end
+  end
+  $s.pending=$pending;$s.unmatched_replies=$replies
+  if $s.rate_at>0 and $now>$s.rate_at then $s.rate=($s.seen-$s.rate_seen)/($now-$s.rate_at) end
+  $s.rate_at=$now;$s.rate_seen=$s.seen
+  return $s
+end
+fn observed($s,$f,$now)
+  $drops=$f.dropped_count ?? 0
+  if $drops>$s.drop_cursor then $s.dropped=$s.dropped+$drops-$s.drop_cursor end
+  $s.drop_cursor=max($drops,$s.drop_cursor)
+  if not $s.filter.own and own_traffic($f) then return $s end
+  $s.seen=$s.seen+1
+  $request=$f.message_type=="request"
+  $service=if $request then $f.to else $f.from end
+  $caller=if $request then $f.from else $f.to end
+  $t=stamp($f.ts);$lat=nil
+  -- Anonymous callers have no safe identity, even when only one was observed.
+  if $caller!=nil and $service!=nil and $f.correlation_id!=nil and $t!=nil then
+    $key=json_encode([$f.correlation_id,$service,$caller])
+    if $request then
+      $old=$s.pending[$key]
+      $tomb=$s.unmatched_replies[$key]
+      if len($s.pending)<$s.limits.pending or $old!=nil then $s.pending[$key]={arrival:$now,stamp:$t,ambiguous:($old!=nil and $now-$old.arrival<=30) or ($tomb!=nil and $now-$tomb<=30)} end
+    elif $s.pending[$key]!=nil and $f.outcome!="rejected" and ($f.rc ?? 0)<10 then
+      $p=$s.pending[$key];$d=($t-$p.stamp+86400000)%86400000
+      if not $p.ambiguous and $now-$p.arrival<=30 and $d<=30000 then $lat=$d end
+      $s.pending=delete($s.pending,$key)
+      -- Completed keys also guard against a duplicate reply and later ID reuse.
+      $s=remember_reply($s,$key,$now)
+    else
+      $s=remember_reply($s,$key,$now)
+      if $s.pending[$key]!=nil then $s.pending[$key].ambiguous=true end
+    end
+  end
+  $name=$service ?? "(anon)"
+  if $s.counts[$name]!=nil or ($name!="(other)" and len($s.counts)<$s.limits.services-1) then $s.counts[$name]=($s.counts[$name] ?? 0)+1 else $s.counts["(other)"]=($s.counts["(other)"] ?? 0)+1 end
+  if $s.paused then return $s end
+  $r={id:$s.seen,seq:$f.seq,ts:$f.ts,time:substr($f.ts ?? "",11,12),direction:$f.direction,from:who($f.from),to:who($f.to),command:$f.command,kind:if $request then "request" else "reply" end,rc:$f.rc,outcome:$f.outcome,latency_ms:$lat,size:$f.size,error:$f.outcome=="rejected" or ($f.rc ?? 0)>=10}
+  $s.rows=push($s.rows,$r)
+  if len($s.rows)>$s.limits.history then
+    if $s.selected==to_string($s.rows[0].id) then $s.selected=nil end
+    $s.rows=slice($s.rows,1);$s.evicted=$s.evicted+1
+  end
+  return $s
+end
+fn remember_reply($s,$key,$now)
+  if len($s.unmatched_replies)>=$s.limits.tombstones and $s.unmatched_replies[$key]==nil then
+    $s.unmatched_replies=delete($s.unmatched_replies,keys($s.unmatched_replies)[0])
+  end
+  $s.unmatched_replies[$key]=$now
+  return $s
+end
+fn reset_pairings($s)
+  -- History/subscription changes must not erase connection-ID ambiguity.
+  for $key in keys($s.pending)
+    $arrival=$s.pending[$key].arrival
+    $s=remember_reply($s,$key,max($arrival,$s.unmatched_replies[$key] ?? $arrival))
+  end
+  $s.pending={}
+  return $s
+end
+fn poison_reply($s,$f,$now)
+  if $f.message_type!="response" or (not $s.filter.own and own_traffic($f)) then return $s end
+  if $f.from==nil or $f.to==nil or $f.correlation_id==nil or stamp($f.ts)==nil then return $s end
+  $key=json_encode([$f.correlation_id,$f.from,$f.to])
+  $s=remember_reply($s,$key,$now)
+  if $s.pending[$key]!=nil then $s.pending[$key].ambiguous=true end
+  return $s
+end
+fn stop_warning($s)
+  return any(keys($s.retired),fn($id)=$s.retired[$id].live)
+end
+fn retry_due($s,$now) return $s.connected and $s.subscription_id==nil and $now>=$s.retry_at end
+fn stop_batch($s)
+  $live=filter(keys($s.retired),fn($id)=$s.retired[$id].live)
+  $offset=($s.stop_cursor ?? 0)%max(1,len($live))
+  $ids=take(concat(slice($live,$offset),take($live,$offset)),2)
+  $s.stop_cursor=($offset+len($ids))%max(1,len($live))
+  return {state:$s,ids:$ids}
+end
+fn retire_slot($s)
+  if len($s.retired)>=64 then
+    $done=filter(keys($s.retired),fn($id)=not $s.retired[$id].live)
+    if len($done)==0 then raise("UNAVAILABLE","Retired subscription limit reached; waiting for stops") end
+    $s.retired=delete($s.retired,$done[0])
+  end
+  return $s
+end
+fn received($s,$f,$now,$id)
+  -- noded event_wire_template always stamps subscription_id in the header.
+  -- Refuse headerless/unknown notifications rather than treating them as current.
+  if type($id)!="string" or type($f.seq)!="number" then return $s end
+  if $id==$s.subscription_id then
+    if $f.seq<=$s.last_seq then return $s end
+    $s.last_seq=$f.seq
+    return observed($s,$f,$now)
+  elif $s.retired[$id]!=nil then
+    if $f.seq<=$s.retired[$id].seq then return $s end
+    $s.retired[$id].seq=$f.seq
+    $n=$f.dropped_count ?? 0
+    if $n>$s.retired[$id].cursor then $s.dropped=$s.dropped+$n-$s.retired[$id].cursor;$s.retired[$id].cursor=$n end
+    $s=poison_reply($s,$f,$now)
+  end
+  return $s
+end
