@@ -99,6 +99,29 @@ impl RequestWithoutClose {
     }
 }
 
+struct GatedClose {
+    entered: tokio::sync::mpsc::UnboundedSender<()>,
+    release: watch::Receiver<bool>,
+    unknown_method: bool,
+}
+
+#[zbus::interface(name = "org.freedesktop.portal.Request")]
+impl GatedClose {
+    async fn close(&self) -> zbus::fdo::Result<()> {
+        let _ = self.entered.send(());
+        let mut release = self.release.clone();
+        release
+            .wait_for(|released| *released)
+            .await
+            .map_err(|_| zbus::fdo::Error::Failed("test reply gate dropped".into()))?;
+        if self.unknown_method {
+            Err(zbus::fdo::Error::UnknownMethod("request has ended".into()))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 struct Call {
     method: &'static str,
     options: Options,
@@ -597,24 +620,106 @@ async fn portal_close_unknown_method_is_an_acknowledged_end() {
         .await
         .unwrap();
     let client = connection(&address).await;
-    // This checks the meaning of a received reply, not the speed of D-Bus.
-    // Await the actual error before passing it to the production classifier.
-    let reply = client
-        .call_method(
-            Some(server.unique_name().unwrap().as_str()),
+    let result = tokio::time::timeout(
+        portal::CLOSE_BOUND + IO_BOUND,
+        portal::close(&client, server.unique_name().unwrap().as_str(), path),
+    )
+    .await
+    .expect("portal Close exceeded its teardown bound");
+    assert!(result.is_ok(), "received Close result: {result:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_close_fast_success_calls_the_request_close_method() {
+    let (_process, address) = dbus();
+    let server = connection(&address).await;
+    let closed = Arc::new(AtomicUsize::new(0));
+    let path = "/org/freedesktop/portal/desktop/request/fast";
+    server
+        .object_server()
+        .at(path, RequestObject(closed.clone()))
+        .await
+        .unwrap();
+    let client = connection(&address).await;
+    let result = tokio::time::timeout(
+        portal::CLOSE_BOUND + IO_BOUND,
+        portal::close(&client, server.unique_name().unwrap().as_str(), path),
+    )
+    .await
+    .expect("fast portal Close exceeded its teardown bound");
+    assert!(result.is_ok(), "received Close result: {result:?}");
+    assert_eq!(closed.load(Ordering::SeqCst), 1, "Close was not dispatched");
+}
+
+async fn gated_close(unknown_method: bool, answer: bool) {
+    let (_process, address) = dbus();
+    let server = connection(&address).await;
+    let path = "/org/freedesktop/portal/desktop/request/gated";
+    let (entered_tx, mut entered) = tokio::sync::mpsc::unbounded_channel();
+    let (release, gate) = watch::channel(false);
+    server
+        .object_server()
+        .at(
             path,
-            Some(REQUEST),
-            "Close",
-            &(),
+            GatedClose {
+                entered: entered_tx,
+                release: gate,
+                unknown_method,
+            },
         )
-        .await;
-    assert!(matches!(
-        &reply,
-        Err(zbus::Error::MethodError(name, _, _))
-            if name.as_str() == "org.freedesktop.DBus.Error.UnknownMethod"
-    ));
-    let result = portal::close_reply(reply);
-    assert!(result.is_ok(), "{result:?}");
+        .await
+        .unwrap();
+    let client = connection(&address).await;
+    let owner = server.unique_name().unwrap().as_str().to_owned();
+    // Bound the whole call independently of production: a broken Close without
+    // its timeout must fail here even when the fake never releases its reply.
+    let task = tokio::spawn(async move {
+        tokio::time::timeout(
+            portal::CLOSE_BOUND + IO_BOUND,
+            portal::close(&client, &owner, path),
+        )
+        .await
+        .expect("portal Close hung beyond its teardown bound with the reply gate closed")
+    });
+    tokio::time::timeout(portal::CLOSE_BOUND + IO_BOUND, entered.recv())
+        .await
+        .expect("fake portal never received Request.Close; check interface and method")
+        .expect("fake portal Close notification dropped");
+    if answer {
+        // Deliberately withhold the reply beyond the old discovery/Close bound.
+        // The handler-entry signal pins dispatch; only this test opens the gate.
+        tokio::time::sleep(IO_BOUND + Duration::from_millis(100)).await;
+        if task.is_finished() {
+            let result = task.await.expect("portal Close task panicked");
+            panic!("Close ended before the fake reply was released: {result:?}");
+        }
+        release.send_replace(true);
+        let result = task.await.expect("portal Close task panicked");
+        assert!(result.is_ok(), "received delayed Close result: {result:?}");
+    } else {
+        let result = task.await.expect("portal Close task panicked");
+        let error = result.expect_err("Close acknowledged a fake that never replied");
+        assert!(
+            error.to_string().contains("portal Close acknowledgement timed out"),
+            "received stalled Close error: {error:#}"
+        );
+        assert!(!*release.borrow(), "never-replying fake was released");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_close_delayed_unknown_method_is_an_acknowledged_end() {
+    gated_close(true, true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_close_delayed_success_is_an_acknowledged_end() {
+    gated_close(false, true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_close_never_replying_request_is_bounded() {
+    gated_close(false, false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
