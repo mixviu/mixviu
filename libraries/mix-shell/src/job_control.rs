@@ -679,8 +679,8 @@ impl Controller {
         println!("{}", job.command);
         Ok(self.finish(job.id, false, true, Some(lease))?.code)
     }
-    /// Deliver a cancellation to the managed FOREGROUND job group, and report
-    /// the pgid it reached.
+    /// Deliver a cancellation to the managed FOREGROUND job, and report its
+    /// original pgid (escaped members receive individual signals).
     ///
     /// This is the guarantee table's "managed interactive children" row, and it
     /// is the one path where cancellation is not merely cooperative: the
@@ -1284,6 +1284,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn abort_does_not_signal_abandoned_process_group() {
         let leader = ChildGuard(
             Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap(),
@@ -1331,6 +1332,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn exited_leader_pins_group_while_live_member_remains() {
         let leader = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap());
         let pgid = leader.0.id() as i32;
@@ -1355,19 +1357,33 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
+    fn normal_group_signal_reaches_unregistered_members() {
+        let leader = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap());
+        let pgid = leader.0.id() as i32;
+        // Like a grandchild, this process belongs to the group but is absent
+        // from the job table. PID-only delivery would leave it running.
+        let mut peer = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(pgid).spawn().unwrap());
+        let mut pending = job(&[MemberState::Running]);
+        pending.pgid = pgid;
+        pending.members[0].pid = pgid;
+        let shared = shared_jobs(BTreeMap::from([(1, pending)]));
+        shared.collect().jobs[&1].send_signal(libc::SIGTERM).unwrap();
+        pending_event(pgid, libc::WEXITED);
+        assert_eq!(shared.snapshot()[0].state(), JobState::Done);
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(peer.0.wait().unwrap().signal(), Some(libc::SIGTERM));
+    }
+
+    #[test]
     fn abort_does_not_signal_group_or_pid_after_collecting_last_exit() {
         let (child, shared) = pending_stop();
         let pid = child.0.id() as i32;
         let mut sent = Vec::new();
         // The same decision path must still signal a live stopped job.
         shared.signal_abort(1, libc::SIGTERM, |pid, sig| sent.push((pid, sig)));
-        assert_eq!(
-            sent,
-            [
-                (-pid, libc::SIGTERM),
-                (-pid, libc::SIGCONT),
-            ]
-        );
+        let target = if cfg!(target_os = "linux") { -pid } else { pid };
+        assert_eq!(sent, [(target, libc::SIGTERM), (target, libc::SIGCONT)]);
         sent.clear();
         assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
         pending_event(pid, libc::WEXITED);
