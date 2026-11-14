@@ -21,6 +21,7 @@ struct BrokerState {
     calls: Vec<(String, Value)>,
     refused: bool,
     stop_refused: bool,
+    stop_hangs: bool,
     serial: usize,
 }
 struct Broker(Arc<Mutex<BrokerState>>);
@@ -32,6 +33,10 @@ impl BusHandler for Broker {
         body: &'a MixValue,
     ) -> BusFuture<'a, MixResult<(i32, MixValue)>> {
         Box::pin(async move {
+            if command == "noded.observe.stop" && self.0.lock().unwrap().stop_hangs {
+                self.0.lock().unwrap().calls.push((command.into(), viu::runtime::to_json(body)?));
+                return std::future::pending().await;
+            }
             let mut s = self.0.lock().unwrap();
             s.calls.push((command.into(), viu::runtime::to_json(body)?));
             let (rc, value) = match command {
@@ -140,6 +145,8 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
         &[],
     )
     .unwrap();
+    // timeout is evaluator control metadata, not a downstream Bus argument.
+    assert!(bundle.program.source.contains("body={subscription_id:$id} timeout=1"));
     // Deterministic clock for the real tick/retry handlers, no wall-clock sleeps.
     bundle.program.source = format!(
         "$test_now=100\n{}\non test.clock\n $test_now=$event.args.now\nend\non test.orphan\n $state.retired.orphan={{cursor:0,seq:0,live:true}}\nend\n",
@@ -289,7 +296,6 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
         let s = keep.lock().unwrap();
         assert_eq!(s.calls.len(), before_stops + 1);
         assert_eq!(s.calls.last().unwrap().0, "noded.observe.stop");
-        assert_eq!(s.calls.last().unwrap().1["timeout"], 1);
     }
 
     // Several failed stops survive further replacements and report late loss.
@@ -415,12 +421,23 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
         event(&mut runtime, &rx, "bus.connected", json!({}));
         let sub = snapshot_stats(&mut runtime, &rx)["subscription_id"].clone();
         // A refused best-effort close must still publish window_close.
-        keep.lock().unwrap().stop_refused = name == "viu.frame.close";
+        keep.lock().unwrap().stop_hangs = name == "viu.frame.close";
+        let started = std::time::Instant::now();
         let result = event(&mut runtime, &rx, name, args);
+        if name == "viu.frame.close" {
+            assert!(started.elapsed() >= Duration::from_millis(900), "exercise real send timeout");
+        }
         assert_eq!(result.model.unwrap()["window_close"], true);
         let s = keep.lock().unwrap();
         assert_eq!(s.calls.last().unwrap().0, "noded.observe.stop");
         assert_eq!(s.calls.last().unwrap().1["body"]["subscription_id"], sub);
-        assert_eq!(s.calls.last().unwrap().1["timeout"], 1);
+        let calls = s.calls.len();
+        drop(s);
+        event(&mut runtime, &rx, "viu.tick", json!({}));
+        assert_eq!(
+            keep.lock().unwrap().calls.len(),
+            calls,
+            "closing must not subscribe again"
+        );
     }
 }

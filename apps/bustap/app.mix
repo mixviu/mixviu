@@ -65,6 +65,7 @@ on noded.observe.event
   -- Tick batches model updates: rendering must not amplify every observation.
 end
 on viu.tick
+  if $state.window_close then return end
   $now=time();$state=$core.tick_rate($state,$now)
   $starting=$core.retry_due($state,$now)
   if $starting then $out=start_observer($state,$state.filter);$state=$out.state end
