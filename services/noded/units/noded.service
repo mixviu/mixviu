@@ -5,12 +5,17 @@
 # Host-local values come from EnvironmentFile (LISTEN, NODE). It is written
 # per host and is never in the repo.
 [Unit]
+RequiresMountsFor=@{var}/noded @{run}/noded
 Description=MixViu per-node Bus broker (noded)
 Documentation=https://mixos.dev/noded/
 After=network-online.target
 Wants=network-online.target
 
 [Service]
+ReadWritePaths=@{var}/noded @{run}/noded
+Environment=STATE_DIRECTORY=@{var}/noded
+ExecStartPre=/usr/bin/mkdir -p @{run}/noded
+ExecStartPre=/usr/bin/find @{run}/noded -mindepth 1 -delete
 Type=simple
 User=noded
 Group=noded
@@ -19,10 +24,6 @@ EnvironmentFile=@{etc}/noded/service.env
 Environment=MIX_ETC=@{etc}
 Environment=MIX_VAR=@{var}
 Environment=MIX_RUN=@{run}
-RuntimeDirectory=mix/noded
-RuntimeDirectoryMode=0755
-StateDirectory=mix/noded
-StateDirectoryMode=0750
 ExecStart=@{prefix}/bin/noded serve --listen ${LISTEN} --node ${NODE} --mesh-config @{etc}/noded/config.conf.mix --no-monitor --no-log
 Restart=on-failure
 RestartSec=5s

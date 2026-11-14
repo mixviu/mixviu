@@ -1,0 +1,50 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$guard = require("host_roots.mix")
+$layout = require("../share/layout/files.mix")
+$renderer = require("../share/layout/render.mix")
+$release = require("release_set.mix")
+$roots = {prefix: "/srv/mixtest", etc: "/srv/mixtest/etc", var: "/srv/mixtest/var", run: "/srv/mixtest/run", cache: "/srv/mixtest/cache", share: "/srv/mixtest/share", lib: "/srv/mixtest/lib"}
+$guard.check_sources()
+$paths = lines(trim(run_argv_must(["git", "ls-files"])))
+for $path in $paths
+  if $guard.shipped_unit($path) then
+    $text = $renderer.external(read_file($path), $roots, "unit")
+    $guard.check_text($path, $text)
+    if contains($text, "/opt/mix") then raise("HOST_ROOT_TEST", "hardwired prefix in " .. $path) end
+  end
+end
+for $entry in $layout.plan("share/layout", $roots)
+  $guard.check_text($entry.path, $entry.text)
+  if contains($entry.text, "/opt/mix") then raise("HOST_ROOT_TEST", "hardwired layout prefix") end
+end
+for $bad in ["ListenStream=/run/" .. "mix/hostd.sock", "StateDirectory=" .. "mix/test", "RuntimeDirectory=" .. "mix/test", "Environment=X=/etc/" .. "mix", "d /var/lib/" .. "mix 0750 root root -", "X=/var/cache/" .. "mix", "WorkingDirectory=%S/" .. "mix/test"]
+  $refused = false
+  try $guard.check_text("planted.service", $bad) catch $msg, $err
+    if $err.code != "HOST_ROOT" then raise("HOST_ROOT_TEST", $msg) end
+    $refused = true
+  end
+  if not $refused then raise("HOST_ROOT_TEST", "accepted planted unit: " .. $bad) end
+end
+$dir = "/tmp/host-roots-test-" .. to_string(pid())
+mkdir($dir)
+try
+  for $name in $release.members() write_file($dir .. "/" .. $name, $name) end
+  $sums = $release.checksums($dir)
+  write_file($dir .. "/SHA256SUMS", $sums)
+  $names = []
+  for $line in lines(trim($sums)) push($names, split($line, "  ")[1]) end
+  if not deep_eq($names, $release.members()) then raise("HOST_ROOT_TEST", "checksum members differ") end
+  for $b in $release.binaries()
+    if not is_file("engines/" .. $b.package .. "/Cargo.toml") and not is_file("services/" .. $b.package .. "/Cargo.toml") then raise("HOST_ROOT_TEST", "missing release package") end
+  end
+  write_file($dir .. "/planted.service", "ListenStream=/run/" .. "mix/bad")
+  $refused = false
+  try $guard.check_bundle($dir) catch $msg, $err
+    if $err.code != "HOST_ROOT" then raise("HOST_ROOT_TEST", $msg) end
+    $refused = true
+  end
+  if not $refused then raise("HOST_ROOT_TEST", "accepted bad bundle") end
+finally
+  remove_dir($dir)
+end
+print("HOST_ROOTS_TEST passed: relocated templates, planted units/bundle, release checksums")

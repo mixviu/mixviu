@@ -1,0 +1,2 @@
+-- Exact historical paths only. Shipped files can never be exempted.
+{paths: []}

@@ -6,24 +6,25 @@
 # under @{var}/maild. ProtectSystem=strict leaves only the state
 # directories writable, so both are listed.
 [Unit]
+RequiresMountsFor=@{var}/maild @{run}/maild
 Description=MixViu mail service
 Documentation=https://mixos.dev/maild/
 After=network-online.target noded.service
 Wants=network-online.target noded.service
 
 [Service]
+ReadWritePaths=@{var}/maild @{run}/maild
+Environment=STATE_DIRECTORY=@{var}/maild
+ExecStartPre=/usr/bin/mkdir -p @{run}/maild
+ExecStartPre=/usr/bin/find @{run}/maild -mindepth 1 -delete
 Type=simple
 User=maild
 Group=maild
 Environment=MIX_ETC=@{etc}
 Environment=MIX_VAR=@{var}
-Environment=HOME=%S/mix/maild
+Environment=HOME=@{var}/maild
 Environment=RUST_LOG=maild=info
-StateDirectory=mix/maild
-StateDirectoryMode=0750
-RuntimeDirectory=mix/maild
-RuntimeDirectoryMode=0750
-WorkingDirectory=%S/mix/maild
+WorkingDirectory=@{var}/maild
 ExecStart=@{prefix}/bin/maild -c @{etc}/maild/config.conf.mix serve
 Restart=on-failure
 RestartSec=5s

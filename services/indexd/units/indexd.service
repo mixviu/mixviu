@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # Copyright 2026 Mark Constable <mc@mixos.dev>
 [Unit]
+RequiresMountsFor=@{var}/indexd
 Description=MixViu semantic index service
 Documentation=https://mixos.dev/indexd/
 After=noded.service
@@ -9,6 +10,8 @@ StartLimitIntervalSec=10min
 StartLimitBurst=3
 
 [Service]
+ReadWritePaths=@{var}/indexd
+Environment=STATE_DIRECTORY=@{var}/indexd
 Type=simple
 User=indexd
 Group=indexd
@@ -16,13 +19,9 @@ Environment=MIX_ETC=@{etc}
 Environment=MIX_VAR=@{var}
 Environment=MIX_NODE_CONFIG=@{etc}/node.conf.mix
 Environment=MALLOC_ARENA_MAX=2
-Environment=HOME=%S/mix/indexd
+Environment=HOME=@{var}/indexd
 ExecStart=@{prefix}/bin/indexd -c @{etc}/indexd/config.conf.mix serve
-StateDirectory=mix/indexd
-StateDirectoryMode=0750
-ConfigurationDirectory=mix/indexd
-ConfigurationDirectoryMode=0755
-WorkingDirectory=%S/mix/indexd
+WorkingDirectory=@{var}/indexd
 MemoryMax=2G
 MemoryHigh=1536M
 MemorySwapMax=0

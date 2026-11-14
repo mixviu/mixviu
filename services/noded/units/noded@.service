@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
+RequiresMountsFor=@{run}/session/%i/noded
 Description=Native ABP broker for MixViu session %i
 PartOf=session@%i.target
 
 [Service]
+ReadWritePaths=@{run}/session/%i/noded
+ExecStartPre=/usr/bin/install -d -m 0711 @{run}/session/%i/noded
+ExecStartPre=/usr/bin/find @{run}/session/%i/noded -mindepth 1 -delete
 Type=simple
 User=mix
 EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
-RuntimeDirectory=mix/session/%i/noded
-RuntimeDirectoryMode=0711
 ExecStart=@{prefix}/bin/noded serve --no-monitor --no-log
 KillMode=control-group
 TimeoutStopSec=10

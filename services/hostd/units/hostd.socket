@@ -3,7 +3,7 @@
 Description=MixViu host service socket
 
 [Socket]
-ListenStream=/run/mix/hostd/hostd.sock
+ListenStream=@{run}/hostd/hostd.sock
 SocketUser=root
 SocketMode=0666
 DirectoryMode=0755

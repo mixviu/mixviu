@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
+RequiresMountsFor=@{var}/session/%i/monitord
 Description=MixViu system monitor for session %i (mixd personality)
 # The session target chooses the broker; this unit only orders after it.
 After=noded@%i.service noded.service
 PartOf=session@%i.target
 
 [Service]
+ReadWritePaths=@{var}/session
+ExecStartPre=/usr/bin/install -d -m 0755 @{var}/session/%i/monitord
+Environment=STATE_DIRECTORY=@{var}/session/%i/monitord
 Type=simple
 User=mix
 EnvironmentFile=@{etc}/session/%i.env
@@ -14,5 +18,4 @@ Restart=on-failure
 RestartSec=2
 # Each session keeps its own history cache (STATE_DIRECTORY/history.db),
 # apart from the system monitord's mix/monitord.
-StateDirectory=mix/monitord/%i
 Nice=5

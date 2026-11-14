@@ -239,28 +239,28 @@ if not $tree.ok or len($egui) != 0 then
 end
 
 -- Release engines, one package per command; cold release builds stay capped.
+$release = require("release_set.mix")
 $sizes = {}
-for $pair in [["mix", "mix"], ["mixd", "mixd"], ["viu", "viu"], ["viud", "viud"]]
-  $r = gate_step(["cargo", "build", "--release", "--locked", "-p", $pair[0]], "2")
+for $binary in $release.binaries()
+  $r = gate_step(["cargo", "build", "--release", "--locked", "-p", $binary.package], "2")
   if $r.ok then
-    $sizes[$pair[1]] = stat("target/release/" .. $pair[1]).size
+    $sizes[$binary.name] = stat("target/release/" .. $binary.name).size
   else
-    push($failed, "release " .. $pair[0])
+    push($failed, "release " .. $binary.package)
   end
 end
 print("RELEASE_SIZES " .. json_encode($sizes))
 
 -- The release set the desk migration installs: the four engines and apps.tar,
 -- each named in SHA256SUMS, under /build/cutover-artifacts/<sha>.
-if len(keys($sizes)) == 4 then
+if len(keys($sizes)) == len($release.binaries()) then
   $sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
   $art = "/build/cutover-artifacts/" .. $sha
   mkdir($art, {parents: true})
-  for $engine in ["mix", "mixd", "viu", "viud"] copy("target/release/" .. $engine, $art .. "/" .. $engine) end
+  for $binary in $release.binaries() copy("target/release/" .. $binary.name, $art .. "/" .. $binary.name) end
   $b = gate_step(["target/release/mix", "tools/apps_bundle.mix", $art .. "/apps.tar", "--mix", "target/release/mix", "--assets", asset_store()], "2")
   if $b.ok then
-    $sums = ""
-    for $name in ["mix", "mixd", "viud", "viu", "apps.tar"] $sums = $sums .. hash_file($art .. "/" .. $name, "sha256") .. "  " .. $name .. "\n" end
+    $sums = $release.checksums($art)
     write_file($art .. "/SHA256SUMS", $sums)
     print("ARTIFACTS " .. $art .. "\n" .. $sums)
     -- env.mx: a root-owned 0644 member at the archive root, in the manifest,

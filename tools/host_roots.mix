@@ -1,0 +1,36 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Shared by CI, the bundle builder and negative controls.
+fn violations($text)
+  return re_find($text, '/(?:etc/mix|var/lib/mix|run/mix|var/cache/mix)(?:/|\b)|(?:State|Runtime|Configuration)Directory\s*=.*\bmix(?:/|\b)|%[SEtC]/mix(?:/|\b)')
+end
+fn shipped_unit($path)
+  return (starts_with($path, "engines/") or starts_with($path, "services/") or starts_with($path, "apps/")) and not contains($path, "/tests/") and (re_match($path, '\.(service|socket|target|slice|timer|path)$') or (contains($path, "/units/") and ends_with($path, ".conf")))
+end
+fn check_text($path, $text)
+  if len(violations($text)) > 0 then raise("HOST_ROOT", "root outside the prefix in " .. $path) end
+end
+fn check_sources()
+  $history = load_data("tools/host-roots-history.conf.mix").paths
+  for $path in $history
+    if not starts_with($path, "provenance/") then raise("HOST_ROOT", "only provenance history may be exempt: " .. $path) end
+  end
+  for $path in lines(trim(run_argv_must(["git", "ls-files"])))
+    if shipped_unit($path) or (starts_with($path, "share/layout/") and ends_with($path, ".conf")) then
+      check_text($path, read_file($path))
+    end
+  end
+  $layout = require("../share/layout/files.mix")
+  for $entry in $layout.entries("share/layout")
+    check_text($entry.source, read_file("share/layout/" .. $entry.source))
+  end
+end
+fn check_bundle($stage)
+  for $path in walk($stage)
+    if stat($path).is_file then
+      -- rg treats binary assets as non-text; every text member is checked.
+      $r = run_argv(["rg", "-I", "-l", '/(etc/mix|var/lib/mix|run/mix|var/cache/mix)(/|\b)|(?:State|Runtime|Configuration)Directory\s*=.*\bmix(/|\b)|%[SEtC]/mix(/|\b)', $path])
+      if $r.exit_code == 0 then raise("HOST_ROOT", "root outside the prefix in bundle member " .. $path) end
+      if $r.exit_code != 1 then raise("HOST_ROOT", "cannot scan " .. $path .. ": " .. $r.stderr) end
+    end
+  end
+end
