@@ -266,10 +266,8 @@ task_start("probe_emits", json_encode({}))
 async fn connection_events_order_broker_loss_reconnect_and_clean_quit() {
     let _g = lock().await;
     let dir = Dir::new("connection-events");
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    let mut broker = Broker::with_tcp_port(port);
+    let mut broker = Broker::bounce_stable();
+    let port = broker.tcp_port();
     let node_conf = dir.write("node.conf.mix", &node_conf_text(port));
     let script = dir.write(
         "svc.mix",
