@@ -14936,7 +14936,10 @@ fn builtin_fcntl_unlock(args: Vec<Value>) -> MixResult<Option<Value>> {
     // SAFETY: `file` owns a live fd and `fl` describes the whole file.
     if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_OFD_SETLK, &fl) } != 0 {
         let e = std::io::Error::last_os_error();
-        return Err(flock_runtime_error(format!("fcntl_unlock '{}': {}", path, e)));
+        return Err(flock_runtime_error(format!(
+            "fcntl_unlock '{}': {}",
+            path, e
+        )));
     }
     Ok(Some(Value::Bool(true)))
 }
@@ -27966,7 +27969,9 @@ pub(crate) mod socket_sources {
         fn blocking_deadline_send_bounds_the_whole_payload() {
             // The blocking send observes the process-wide Ctrl-C flag.
             // Keep tests that deliberately arm it out of this timeout probe.
-            let _interrupt = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let _interrupt = crate::interrupt::TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             crate::interrupt::_test_clear();
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
@@ -33478,7 +33483,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_completes_normally() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("printf 'hi'; exit 7");
         let outcome = run_with_timeout(&argv, None, 5, "test", None).expect("spawn ok");
@@ -33491,7 +33498,9 @@ mod ssh_helpers_tests {
     #[cfg(unix)]
     #[test]
     fn ssh_capture_limits_each_stream_and_preserves_unbounded_default() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         // Exercise the real SSH capture adapter without a remote: tee copies
         // stdin to both pipes. Exceed pipe capacity to also verify draining.
@@ -33563,7 +33572,9 @@ mod ssh_helpers_tests {
         // character makes the lossy decode insert U+FFFD, so utf8_lossy
         // reads true even though the REMOTE output was valid UTF-8. Pinned
         // here so a future exact-byte check knows what it is changing.
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = vec!["tee".into(), "/dev/stderr".into()];
         let input = "A€Z"; // '€' is 3 bytes; cap after its first byte.
@@ -33579,7 +33590,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_fires_on_deadline() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("printf 'pre'; sleep 5");
         let started = std::time::Instant::now();
@@ -33606,7 +33619,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_interrupt_wins_no_deadline() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // Pre-arm the interrupt flag — the very first poll will see it.
         let f = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let _ = crate::interrupt::init(f.clone());
@@ -33625,7 +33640,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_interrupt_beats_timeout() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let f = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let _ = crate::interrupt::init(f.clone());
         crate::interrupt::INTERRUPT_FLAG
@@ -33644,7 +33661,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_zero_disables_deadline() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         // Quick child; verifies that timeout_s=0 doesn't somehow trip
         // the deadline check on the first poll.
@@ -33680,7 +33699,9 @@ mod ssh_helpers_tests {
     #[test]
     #[cfg(unix)]
     fn run_with_timeout_kills_process_group() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("trap '' TERM; sleep 5");
         let started = std::time::Instant::now();
@@ -33703,7 +33724,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_drains_stderr_separately() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("printf 'OUT'; printf 'ERR' >&2; exit 0");
         let outcome = run_with_timeout(&argv, None, 5, "test", None).expect("spawn ok");
@@ -33714,7 +33737,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_writes_stdin_through() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("cat");
         let outcome =
@@ -33746,7 +33771,9 @@ mod ssh_helpers_tests {
     #[test]
     #[cfg(unix)]
     fn run_with_timeout_interrupt_escalates_through_sigterm_grace() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let f = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let _ = crate::interrupt::init(f.clone());
@@ -33793,7 +33820,9 @@ mod ssh_helpers_tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn run_with_timeout_interrupt_sweeps_a_term_ignoring_descendant() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let f = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let _ = crate::interrupt::init(f.clone());
@@ -33849,7 +33878,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_signal_killed_exit_code() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         // Self-kill via SIGTERM. The child has no `code()`; the
         // outcome should map to 128 + SIGTERM = 143 (Unix), not the
@@ -35844,7 +35875,10 @@ mod flock_tests {
         let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("inherited-description");
         let path = d.join("lock");
-        assert!(bool_result(builtin_fcntl_lock(vec![s(&path), shared_opts()])));
+        assert!(bool_result(builtin_fcntl_lock(vec![
+            s(&path),
+            shared_opts()
+        ])));
         let inherited = {
             let registry = FCNTL_REGISTRY.0.lock().unwrap();
             registry.held[&std::fs::canonicalize(&path).unwrap()]
