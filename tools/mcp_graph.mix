@@ -1,6 +1,6 @@
 #!/usr/bin/env mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.3.0
+-- version: 0.4.0
 -- Workspace-unified default features; normal + build edges on rustc's host.
 -- Dev edges/other targets are excluded. The foreign gate retains its separate
 -- all-features/all-target admission checks.
@@ -12,6 +12,10 @@ end
 
 fn capture($argv)
   return run_argv_must($argv, {timeout: 1800, max_output: 256000000})
+end
+
+fn git_capture($argv)
+  return run_argv_must($argv, {timeout: 120, max_output: 1048576})
 end
 
 fn package_id($id, $from, $to)
@@ -140,20 +144,25 @@ end
 fn cleanup_paths($scratch, $base_root, $remove_failure_control)
   $failures = []
   $listing = cleanup_step(["git", "worktree", "list", "--porcelain"])
-  $failures = cleanup_note($failures, "worktree-list-before", $listing)
   -- Registration can survive a partially failed add even without a directory.
-  -- If the query fails, attempt removal anyway rather than assume no registration.
-  if exists($base_root) or is_registered($listing, $base_root) or not $listing.ok then
+  -- This first query is informational. A failed query neither fails cleanup
+  -- nor invents a registration; prune and the final query still verify it.
+  $had_directory = exists($base_root)
+  if $had_directory or is_registered($listing, $base_root) then
     $argv = ["git", "worktree", "remove", "--force", $base_root]
     if $remove_failure_control then
       -- A real Git failure before removal; the retry still cleans this own tree.
       $argv = concat($argv, ["--mcp-graph-cleanup-failure-control"])
     end
     $removed = cleanup_step($argv)
-    $failures = cleanup_note($failures, "worktree-remove", $removed)
-    if not $removed.ok then
-      $failures = cleanup_note($failures, "worktree-remove-retry",
-        cleanup_step(["git", "worktree", "remove", "--force", $base_root]))
+    -- A missing directory can make remove refuse a stale registration. Prune
+    -- is its recovery step; the final query determines whether recovery worked.
+    if $had_directory or $remove_failure_control then
+      $failures = cleanup_note($failures, "worktree-remove", $removed)
+      if not $removed.ok then
+        $failures = cleanup_note($failures, "worktree-remove-retry",
+          cleanup_step(["git", "worktree", "remove", "--force", $base_root]))
+      end
     end
   end
   $failures = cleanup_note($failures, "worktree-prune", cleanup_step(["git", "worktree", "prune"]))
@@ -168,17 +177,30 @@ fn cleanup_paths($scratch, $base_root, $remove_failure_control)
   return $failures
 end
 
+fn add_base($base_root, $base, $mode)
+  git_capture(["git", "worktree", "add", "--detach", $base_root, $base])
+  if $mode == "half-registered" then
+    run_argv_must(["rm", "-rf", "--", $base_root], {timeout: 120})
+    $listing = git_capture(["git", "worktree", "list", "--porcelain"])
+    if exists($base_root) or not contains(split($listing, "\n"), "worktree " .. $base_root) then
+      raise("GRAPH_CONTROL", "half-registered fixture did not retain only the registration")
+    end
+    -- Raise before add_base returns, so a caller's add-succeeded flag cannot
+    -- be set. The directory is absent while Git still owns the registration.
+    raise("CONTROL_HALF_REGISTERED", "confirmed registration present and directory absent before add returned")
+  end
+end
+
 fn run_case($root, $base, $head, $target, $allowed, $mode)
   $scratch = "/var/tmp/mcp-graph-" .. uuid()
-  capture(["mkdir", "-m", "0700", "--", $scratch])
+  run_argv_must(["mkdir", "-m", "0700", "--", $scratch], {timeout: 120})
   $base_root = $scratch .. "/base"
   $verdict = {label: $mode, ok: true, code: nil, message: nil}
   $failures = []
   try
-    capture(["git", "worktree", "add", "--detach", $base_root, $base])
+    add_base($base_root, $base, $mode)
     if $mode == "add-failure" then
-      -- Simulates add/setup failing after Git registered the worktree, before
-      -- a caller could set an "add succeeded" flag. Cleanup must not need one.
+      -- Separate control for a complete tree followed by a setup failure.
       raise("CONTROL_ADD_FAILED", "injected failure after worktree registration")
     end
     if $mode == "audit" then
@@ -201,7 +223,7 @@ fn run_case($root, $base, $head, $target, $allowed, $mode)
       print(capture(["cargo", "tree", "--locked", "--workspace", "--target", $target, "-e", "normal,build,dev", "-i", "const-oid@0.10.3"]))
       print(capture(["cargo", "tree", "--locked", "--workspace", "--target", $target, "-e", "normal,build,dev", "-i", "rmcp"]))
     end
-    if trim(capture(["git", "rev-parse", "HEAD"])) != $head then raise("GRAPH_HEAD", "CBC checkout moved") end
+    if trim(git_capture(["git", "rev-parse", "HEAD"])) != $head then raise("GRAPH_HEAD", "CBC checkout moved") end
   catch $message, $error
     $verdict = {label: $mode, ok: false, code: $error.code, message: $message}
   finally
@@ -219,9 +241,12 @@ fn run_case($root, $base, $head, $target, $allowed, $mode)
 end
 
 fn check_cleanup_controls()
-  for $mode in ["add-failure", "remove-failure"]
+  for $mode in ["add-failure", "half-registered", "remove-failure"]
+    -- A control child has at most 15 sequential 120-second commands (three
+    -- identity reads, mkdir/add, fixture removal/list, HEAD check and cleanup).
+    -- 2400 seconds exceeds that 1800-second bound with scheduling headroom.
     $r = run_argv([realpath("/proc/self/exe"), script_path(), "--cleanup-control", $mode],
-      {timeout: 600, max_output: 2097152})
+      {timeout: 2400, max_output: 2097152})
     print($r.stdout)
     if $r.exit_code != 1 or not starts_with($r.stdout, "AUDIT_VERDICT ") then
       raise("GRAPH_CONTROL", $mode .. ": expected nonzero exit with preserved verdict first: " .. $r.stderr)
@@ -231,8 +256,9 @@ fn check_cleanup_controls()
       if starts_with($line, "CASE_RESULT ") then $report = json_parse(slice($line, len("CASE_RESULT "))) end
     end
     if $report == nil then raise("GRAPH_CONTROL", $mode .. ": missing case result") end
-    if $mode == "add-failure" then
-      if $report.verdict.ok or $report.verdict.code != "CONTROL_ADD_FAILED" or $report.cleanup_failures != 0 then
+    if $mode == "add-failure" or $mode == "half-registered" then
+      $expected = if $mode == "half-registered" then "CONTROL_HALF_REGISTERED" else "CONTROL_ADD_FAILED" end
+      if $report.verdict.ok or $report.verdict.code != $expected or $report.cleanup_failures != 0 or contains($r.stdout, "CLEANUP_FAILURE ") then
         raise("GRAPH_CONTROL", "post-registration failure was masked or leaked")
       end
     else
@@ -240,7 +266,7 @@ fn check_cleanup_controls()
         raise("GRAPH_CONTROL", "cleanup failure replaced the passing audit verdict or did not fail exit status")
       end
     end
-    $listing = capture(["git", "worktree", "list", "--porcelain"])
+    $listing = git_capture(["git", "worktree", "list", "--porcelain"])
     if exists($report.scratch) or contains(split($listing, "\n"), "worktree " .. $report.base_root) then
       raise("GRAPH_CONTROL", $mode .. ": leftover worktree registration or scratch")
     end
@@ -248,14 +274,14 @@ fn check_cleanup_controls()
   end
 end
 
-$root = realpath(trim(capture(["git", "rev-parse", "--show-toplevel"])))
-$head = trim(capture(["git", "rev-parse", "HEAD"]))
-$base = trim(capture(["git", "merge-base", "HEAD", "origin/main"]))
+$root = realpath(trim(git_capture(["git", "rev-parse", "--show-toplevel"])))
+$head = trim(git_capture(["git", "rev-parse", "HEAD"]))
+$base = trim(git_capture(["git", "merge-base", "HEAD", "origin/main"]))
 $allowed = "registry+https://github.com/rust-lang/crates.io-index#const-oid@0.10.3"
 $a = args()
 if len($a) != 0 then
-  if len($a) != 2 or $a[0] != "--cleanup-control" or not contains(["add-failure", "remove-failure"], $a[1]) then
-    raise("USAGE", "mcp_graph.mix [--cleanup-control add-failure|remove-failure]")
+  if len($a) != 2 or $a[0] != "--cleanup-control" or not contains(["add-failure", "half-registered", "remove-failure"], $a[1]) then
+    raise("USAGE", "mcp_graph.mix [--cleanup-control add-failure|half-registered|remove-failure]")
   end
   $case = run_case($root, $base, $head, nil, $allowed, $a[1])
   print("CASE_RESULT " .. json_encode($case))
