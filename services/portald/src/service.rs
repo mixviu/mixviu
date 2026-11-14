@@ -812,9 +812,10 @@ pub async fn run_with_fetch_timeout<I: CommandSource>(
     let mut lane = Lane::default();
     let result = loop {
         if reply.is_none() {
-            reply = lane.replies.pop_front().map(|reply| {
-                Box::pin(send_reply(client.clone(), reply)) as ReplyFuture
-            });
+            reply = lane
+                .replies
+                .pop_front()
+                .map(|reply| Box::pin(send_reply(client.clone(), reply)) as ReplyFuture);
         }
         // Sample INITIAL state and every generation before waiting for edges.
         // Follow::connected deduplicates already processed generations.
