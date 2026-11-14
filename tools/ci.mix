@@ -139,6 +139,8 @@ end
 
 -- Both normal binaries and opt-in fault-injection binaries are exercised.
 fn stage_mix_hygiene()
+  ensure_mix($mix)
+  run_step([$mix, "tools/host_roots_test.mix"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--test", "mix_hygiene"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--test", "mix_hygiene"])
   run_step(["cargo", "test", "--locked", "-p", "mix", "--features", "test-hooks", "--test", "native_session_pty", "stage_d_"])
