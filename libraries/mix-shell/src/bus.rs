@@ -2430,7 +2430,7 @@ mod tests {
     fn body_bytes_and_buffers_are_refused() {
         for value in [
             Value::bytes(vec![0, 255]),
-            Value::Buffer(Rc::new(RefCell::new(vec![0, 255]))),
+            Value::Buffer(std::rc::Rc::new(RefCell::new(vec![0, 255]))),
         ] {
             let args = IndexMap::from([("body".into(), value)]);
             let error = split_headers_body(&args).unwrap_err().to_string();
