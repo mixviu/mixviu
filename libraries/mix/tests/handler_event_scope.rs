@@ -397,8 +397,21 @@ async fn healthy_dispatch_records_nothing() {
 }
 
 /// Count evaluator error records without installing a process-global logger.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct ErrorRecords(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl Default for ErrorRecords {
+    fn default() -> Self {
+        // tracing-core's single-dispatch fast path registers new callsites
+        // against the current thread's default. A sibling test without a
+        // subscriber can therefore cache Interest::never for our ERROR site.
+        // Keep a second dispatcher alive so registration consults the registry
+        // of live dispatchers, including this test's thread-local subscriber.
+        static ANCHOR: std::sync::OnceLock<tracing::Dispatch> = std::sync::OnceLock::new();
+        ANCHOR.get_or_init(|| tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default()));
+        Self(Default::default())
+    }
+}
 
 impl tracing::Subscriber for ErrorRecords {
     fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
@@ -544,6 +557,11 @@ async fn a_real_fault_after_a_caught_shutdown_refusal_is_still_a_fault() {
         .run_until(async {
             let records = ErrorRecords::default();
             let _guard = tracing::subscriber::set_default(records.clone());
+            // Force the formerly racy ordering: first register the shared
+            // handler ERROR callsite on a thread with no default subscriber.
+            std::thread::spawn(handler_fault_survives_and_is_observable)
+                .join()
+                .unwrap();
             let mut s = setup(
                 "on refresh async\n try\n reply(0, \"ok\")\n catch $err\n end\n raise(\"OTHER\", \"real bug\")\nend\n",
             )

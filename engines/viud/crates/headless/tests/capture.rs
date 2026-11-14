@@ -411,12 +411,17 @@ fn record_4k_output_windows_pointer_and_damage_repeat() {
         .lines()
         .map(|s| serde_json::from_str(s).unwrap())
         .collect();
-    let duration = frames.last().unwrap()["t_us"].as_u64().unwrap() as f64 / 1_000_000.0;
-    assert!(
-        (frames.len() as f64 - duration * 30.0).abs() < 5.0,
-        "{} frames in {duration}s",
-        frames.len()
-    );
+    // t_us is submission wall time, not the encoded CFR timeline. Scheduler
+    // stalls may separate submissions without losing any encoded frames.
+    assert_eq!(frames.len() as u64, encoded_frames);
+    assert_eq!(frames[0]["t_us"], 0);
+    for (index, frame) in frames.iter().enumerate() {
+        assert_eq!(frame["frame"].as_u64(), Some(index as u64));
+    }
+    assert!(frames.windows(2).all(|pair| {
+        pair[0]["t_us"].as_u64().unwrap() <= pair[1]["t_us"].as_u64().unwrap()
+    }));
+    assert_eq!(stop["duration_us"].as_u64(), Some(encoded_frames * 1_000_000 / 30));
     println!("4K30: {stop}; idle status: {idle}");
 }
 
