@@ -89,7 +89,14 @@ fn observation(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, id: &str, seq: u6
     runtime.notify_with_headers("noded.observe.event".into(), json!({"seq":seq,"ts":"2026-11-15T01:02:03.000Z","message_type":"request","from":null,"to":"example","command":"example.ping","size":42,"direction":"local","outcome":"rejected","rc":10,"dropped_count":drops}), [("subscription_id".into(),id.into())].into()).unwrap();
     assert!(done(runtime, rx).reply.is_none());
 }
-fn named_frame(runtime: &mut Runtime, rx: &mpsc::Receiver<()>, sub: &str, seq: u64, kind: &str, id: &str) {
+fn named_frame(
+    runtime: &mut Runtime,
+    rx: &mpsc::Receiver<()>,
+    sub: &str,
+    seq: u64,
+    kind: &str,
+    id: &str,
+) {
     let request = kind == "request";
     runtime.notify_with_headers("noded.observe.event".into(), json!({"seq":seq,"ts":"2026-11-15T01:02:03.000Z","message_type":kind,"from":if request {"client"} else {"example"},"to":if request {"example"} else {"client"},"command":"example.ping","correlation_id":id,"rc":0,"size":42,"direction":"local","outcome":"delivered","dropped_count":0}), [("subscription_id".into(),sub.into())].into()).unwrap();
     done(runtime, rx);
@@ -257,11 +264,20 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     clock(&mut runtime, &rx, 102);
     let before_retry = keep.lock().unwrap().calls.len();
     event(&mut runtime, &rx, "viu.tick", json!({}));
-    assert_eq!(keep.lock().unwrap().calls.len(), before_retry + 1, "start retry skips stop batch");
+    assert_eq!(
+        keep.lock().unwrap().calls.len(),
+        before_retry + 1,
+        "start retry skips stop batch"
+    );
     let s = snapshot_stats(&mut runtime, &rx);
     assert_eq!(s["subscription_id"], "observe-4");
     assert_eq!(s["status"], "Live");
-    assert!(s["error"].as_str().unwrap().contains("could not be stopped"));
+    assert!(
+        s["error"]
+            .as_str()
+            .unwrap()
+            .contains("could not be stopped")
+    );
     assert_eq!(
         keep.lock().unwrap().calls.last().unwrap().1["body"]["filter"]["services"],
         json!(["queued"])
@@ -312,7 +328,11 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     clock(&mut runtime, &rx, 106);
     let before_stops = keep.lock().unwrap().calls.len();
     event(&mut runtime, &rx, "viu.tick", json!({}));
-    assert_eq!(keep.lock().unwrap().calls.len(), before_stops + 2, "at most two stops per tick");
+    assert_eq!(
+        keep.lock().unwrap().calls.len(),
+        before_stops + 2,
+        "at most two stops per tick"
+    );
     assert!(snapshot_stats(&mut runtime, &rx)["error"].is_null());
     // Stopped subscriptions retain their cursor for already queued frames.
     observation(&mut runtime, &rx, "observe-4", 2, 7);
@@ -332,29 +352,64 @@ fn hosted_bustap_subscribes_switches_filters_recovers_and_exposes_rows() {
     // Replacement and clear preserve ambiguity; queued retired replies poison
     // existing or future pairings without adding traffic rows.
     event(&mut runtime, &rx, "bustap.pause", json!({"on":false}));
-    event(&mut runtime, &rx, "bustap.filter", json!({"services":[],"text":"","hide":[]}));
-    let old = snapshot_stats(&mut runtime, &rx)["subscription_id"].as_str().unwrap().to_owned();
+    event(
+        &mut runtime,
+        &rx,
+        "bustap.filter",
+        json!({"services":[],"text":"","hide":[]}),
+    );
+    let old = snapshot_stats(&mut runtime, &rx)["subscription_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     named_frame(&mut runtime, &rx, &old, 1, "request", "first");
     named_frame(&mut runtime, &rx, &old, 2, "request", "first");
-    event(&mut runtime, &rx, "bustap.filter", json!({"services":["example"]}));
-    let current = snapshot_stats(&mut runtime, &rx)["subscription_id"].as_str().unwrap().to_owned();
+    event(
+        &mut runtime,
+        &rx,
+        "bustap.filter",
+        json!({"services":["example"]}),
+    );
+    let current = snapshot_stats(&mut runtime, &rx)["subscription_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     named_frame(&mut runtime, &rx, &current, 1, "request", "first");
     named_frame(&mut runtime, &rx, &current, 2, "response", "first");
-    let rows = event(&mut runtime, &rx, "bustap.rows", json!({"limit":1})).reply.unwrap().body;
+    let rows = event(&mut runtime, &rx, "bustap.rows", json!({"limit":1}))
+        .reply
+        .unwrap()
+        .body;
     assert!(rows["rows"][0]["latency_ms"].is_null());
     event(&mut runtime, &rx, "bustap.clear", json!({}));
     let before = snapshot_stats(&mut runtime, &rx)["seen"].clone();
     named_frame(&mut runtime, &rx, &old, 3, "response", "second");
     assert_eq!(snapshot_stats(&mut runtime, &rx)["seen"], before);
-    for (seq, kind, id) in [(3,"request","first"),(4,"response","first"),(5,"request","second"),(6,"response","second")] {
+    for (seq, kind, id) in [
+        (3, "request", "first"),
+        (4, "response", "first"),
+        (5, "request", "second"),
+        (6, "response", "second"),
+    ] {
         named_frame(&mut runtime, &rx, &current, seq, kind, id);
     }
-    let rows = event(&mut runtime, &rx, "bustap.rows", json!({})).reply.unwrap().body;
+    let rows = event(&mut runtime, &rx, "bustap.rows", json!({}))
+        .reply
+        .unwrap()
+        .body;
     assert!(rows["rows"][1]["latency_ms"].is_null());
     assert!(rows["rows"][3]["latency_ms"].is_null());
 
-    for (name, args) in [("bustap.execute",json!({"id":"file.quit"})),("viu.frame.intent",json!({"value":{"command":"file.quit"}})),("viu.frame.close",json!({}))] {
-        let bundle = Bundle::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/bustap"), &[]).unwrap();
+    for (name, args) in [
+        ("bustap.execute", json!({"id":"file.quit"})),
+        ("viu.frame.intent", json!({"value":{"command":"file.quit"}})),
+        ("viu.frame.close", json!({})),
+    ] {
+        let bundle = Bundle::load(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/bustap"),
+            &[],
+        )
+        .unwrap();
         runtime.load(bundle.program).unwrap();
         done(&runtime, &rx);
         event(&mut runtime, &rx, "bus.connected", json!({}));
