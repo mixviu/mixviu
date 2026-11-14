@@ -15111,11 +15111,11 @@ impl Evaluator {
                     // pattern match — cheaper than a clone of even a one-arg
                     // Vec<Value>.
                     if builtins::is_builtin(name) {
-                        // Knob A: gate the builtin before it runs (before the
-                        // arg clone / dispatch). A denied call errors; a
-                        // non-match (call_builtin -> None) falls through to
-                        // the special-form checks below, as before.
-                        self.check_capability(name)?;
+                        // Knob A: call_policy_builtin below owns the named
+                        // policy check before dispatch. Do not also check
+                        // here: host policies may count, block or consume
+                        // authority on each check. A non-match still falls
+                        // through to the special-form checks below.
                         // (Strict arity checked at the top of this arm.)
                         // Conditional capabilities (0.29.0): an option can
                         // add a capability class on top of the builtin's
@@ -16429,6 +16429,7 @@ impl Evaluator {
     /// to a builtin/HOF — user functions are never gated. Cloning the
     /// `Option<Rc>` is free when no policy is set.
     fn call_policy_builtin(&self, name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
+        self.check_capability(name)?;
         if name == "has_builtin" && args.len() == 1 {
             if let Value::String(target) = &args[0] {
                 if self.check_capability(target).is_err() {
@@ -19224,6 +19225,21 @@ fn num_op(left: &Value, right: &Value, op: fn(f64, f64) -> f64) -> MixResult<Val
 
 fn dirs_home() -> Option<std::path::PathBuf> {
     std::env::var("HOME").ok().map(std::path::PathBuf::from)
+}
+
+#[cfg(test)]
+mod policy_dispatch_regression {
+    use super::*;
+
+    #[test]
+    fn policy_wrapper_itself_refuses_denied_builtins() {
+        let mut eval = Evaluator::new();
+        eval.set_capability_policy(Rc::new(crate::builtins::CategoryAllowList::new(&[])));
+        let error = eval
+            .call_policy_builtin("read_file", vec![Value::String("absent".into())])
+            .unwrap_err();
+        assert!(error.to_string().contains("capability denied"));
+    }
 }
 
 /// Ordering comparison (`<` `>` `<=` `>=`).

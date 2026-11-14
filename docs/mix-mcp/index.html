@@ -243,7 +243,7 @@
 from the environment registry, or explicit registered overrides. Paths are
 resolved by <code>paths</code>; script execution uses the prefix's <code>bin/mix</code>.</p>
 <p><code>mix-mcp</code> is an MCP stdio server for agents. Install the binary at
-<code>&lt;prefix&gt;/bin/mix-mcp</code> and register the MCP server as <code>mix-mcp</code>.</p>
+<code>&lt;prefix&gt;/bin/mix-mcp</code> and keep the <code>mcpServers</code> key <code>mixos</code> at cutover. Renaming it changes every <code>mcp__&lt;key&gt;__*</code> permission rule.</p>
 <h2 id="connection">Connection</h2>
 <p>The server starts without a Bus connection. The first Bus tool connects
 using <code>libraries/bus</code>. <code>MIX_NODED_URL</code> overrides the node configuration URL;
@@ -279,7 +279,7 @@ is to refuse it and list the candidates tried. Calls are never replayed after
 reconnecting.</p>
 <pre><code class="language-json">{
   "mcpServers": {
-    "mix-mcp": {
+    "mixos": {
       "command": "&lt;prefix&gt;/bin/mix-mcp",
       "env": {
         "MIX_NODED_URL": "ws://192.0.2.10:4200/ws",
@@ -291,7 +291,7 @@ reconnecting.</p>
 }
 </code></pre>
 <h2 id="tools">Tools</h2>
-<p>Each name below is exposed as <code>mcp__mix-mcp__&lt;name&gt;</code> in Claude Code.</p>
+<p>Each name below is exposed as <code>mcp__mixos__&lt;name&gt;</code> in Claude Code.</p>
 <ul>
 <li><code>bus_call</code>, <code>bus_list_services</code>, <code>bus_node_info</code>, <code>bus_list_peers</code>, <code>noded_ping</code>
 (<code>bus_list_peers</code> leaves retired mesh members out unless <code>include_retired: true</code>)</li>
@@ -414,11 +414,15 @@ sends absolute file paths and content to indexd.</p>
 application tools require an exact service and semantic target. Read-only
 tools do not invoke mutations; arbitrary <code>bus_call</code> and <code>mix_execute</code> can.
 Mix execution runs in an isolated worker with bounded output.</p>
-<p>Tools use the adapter user's operating-system permissions without a filesystem
-sandbox. Inherited log filename handling accepts absolute paths and parent
-components; log reads are not confined to the log directory. Application
-commands and arbitrary scripts can write files.</p>
-<h2 id="logging-and-tests">Logging and tests</h2>
+<p><code>mix_execute</code> is a trusted-agent tool. It runs as the adapter's user
+with that user's permissions and is not a sandbox. Scripts can run programs,
+write files and mutate Bus services. The builtin fence does not restrict those powers.</p>
+<p>Log tools reject absolute paths, parent components and symlink targets outside
+the log directory. Tail seeks into an 8 MiB suffix; search streams lines with a
+64 KiB line limit and retains only the last requested matches. Both refuse
+requests above 10,000 results or their 8 MiB byte budget rather than truncate.
+Indexing requires a configured domain root, never enters directory symlinks,
+and accepts markdown symlinks only within the scanned root.</p><h2 id="logging-and-tests">Logging and tests</h2>
 <p>Stdout is reserved for MCP. Logs go to stderr, journald and
 <code>&lt;var-root&gt;/log/mix-mcp.log</code>. Arguments and results are redacted by
 default; <code>RUST_LOG=mix_mcp=trace</code> explicitly enables full arguments.
