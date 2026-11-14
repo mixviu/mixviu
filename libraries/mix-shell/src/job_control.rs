@@ -220,10 +220,16 @@ impl Job {
         // Elsewhere stay conservative: address owned children individually.
         let group_pinned = cfg!(target_os = "linux")
             && self.pgid > 0
-            && self.members.iter().any(|m| m.pid == self.pgid && m.state != MemberState::Lost);
+            && self
+                .members
+                .iter()
+                .any(|m| m.pid == self.pgid && m.state != MemberState::Lost);
         let in_group = |m: &Member| unsafe { libc::getpgid(m.pid) == self.pgid };
         let group = group_pinned
-            && self.members.iter().any(|m| !m.state.terminal() && in_group(m));
+            && self
+                .members
+                .iter()
+                .any(|m| !m.state.terminal() && in_group(m));
         if group {
             send(-self.pgid, signal);
         }
@@ -702,15 +708,9 @@ impl Controller {
         // Keep the guard through delivery: the monitor must not reap the
         // selected job's last exit between checking ownership and signalling.
         let state = self.shared.collect();
-        let job = state
-            .jobs
-            .values()
-            .find(|job| {
-                job.foreground
-                    && job.state() == JobState::Running
-                    && job.owner_evaluation == evaluation
-            })
-            ?;
+        let job = state.jobs.values().find(|job| {
+            job.foreground && job.state() == JobState::Running && job.owner_evaluation == evaluation
+        })?;
         let pgid = job.pgid;
         // Never the shell's own group: that would deliver to the evaluator
         // thread and to every sibling, which is precisely the whole-process
@@ -897,7 +897,11 @@ fn reap_locked(s: &mut State) {
                         libc::P_PID,
                         member.pid as libc::id_t,
                         &mut info,
-                        libc::WNOHANG | libc::WSTOPPED | libc::WCONTINUED | libc::WEXITED | libc::WNOWAIT,
+                        libc::WNOHANG
+                            | libc::WSTOPPED
+                            | libc::WCONTINUED
+                            | libc::WEXITED
+                            | libc::WNOWAIT,
                     )
                 };
                 if rc == 0 && unsafe { info.si_pid() } == 0 {
@@ -913,8 +917,12 @@ fn reap_locked(s: &mut State) {
                 }
                 member.state = match info.si_code {
                     libc::CLD_EXITED => MemberState::Exited(unsafe { info.si_status() }),
-                    libc::CLD_KILLED | libc::CLD_DUMPED => MemberState::Signalled(unsafe { info.si_status() }),
-                    libc::CLD_STOPPED | libc::CLD_TRAPPED => MemberState::Stopped(unsafe { info.si_status() }),
+                    libc::CLD_KILLED | libc::CLD_DUMPED => {
+                        MemberState::Signalled(unsafe { info.si_status() })
+                    }
+                    libc::CLD_STOPPED | libc::CLD_TRAPPED => {
+                        MemberState::Stopped(unsafe { info.si_status() })
+                    }
                     _ => MemberState::Running,
                 };
                 if member.state.terminal() {
@@ -923,8 +931,17 @@ fn reap_locked(s: &mut State) {
                 // Consume only the observed nonterminal event. If the child
                 // exits meanwhile, leave that exit (and PID) pinned too.
                 unsafe {
-                    libc::waitid(libc::P_PID, member.pid as libc::id_t, &mut info,
-                        libc::WNOHANG | if matches!(member.state, MemberState::Stopped(_)) { libc::WSTOPPED } else { libc::WCONTINUED });
+                    libc::waitid(
+                        libc::P_PID,
+                        member.pid as libc::id_t,
+                        &mut info,
+                        libc::WNOHANG
+                            | if matches!(member.state, MemberState::Stopped(_)) {
+                                libc::WSTOPPED
+                            } else {
+                                libc::WCONTINUED
+                            },
+                    );
                 }
             }
         }
@@ -935,8 +952,10 @@ fn reap_locked(s: &mut State) {
                 }
                 // The job becomes Done once; later collectors skip it entirely.
                 loop {
-                    if unsafe { libc::waitpid(member.pid, std::ptr::null_mut(), libc::WNOHANG) } >= 0
-                        || io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+                    if unsafe { libc::waitpid(member.pid, std::ptr::null_mut(), libc::WNOHANG) }
+                        >= 0
+                        || io::Error::last_os_error().raw_os_error() != Some(libc::EINTR)
+                    {
                         break;
                     }
                 }
@@ -1287,7 +1306,11 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn abort_does_not_signal_abandoned_process_group() {
         let leader = ChildGuard(
-            Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap(),
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(0)
+                .spawn()
+                .unwrap(),
         );
         let pgid = leader.0.id() as i32;
         let mut command = Command::new("/bin/sleep");
@@ -1334,9 +1357,21 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn exited_leader_pins_group_while_live_member_remains() {
-        let leader = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap());
+        let leader = ChildGuard(
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(0)
+                .spawn()
+                .unwrap(),
+        );
         let pgid = leader.0.id() as i32;
-        let member = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(pgid).spawn().unwrap());
+        let member = ChildGuard(
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(pgid)
+                .spawn()
+                .unwrap(),
+        );
         let pid = member.0.id() as i32;
         let mut pending = job(&[MemberState::Running, MemberState::Running]);
         pending.pgid = pgid;
@@ -1359,16 +1394,30 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn normal_group_signal_reaches_unregistered_members() {
-        let leader = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(0).spawn().unwrap());
+        let leader = ChildGuard(
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(0)
+                .spawn()
+                .unwrap(),
+        );
         let pgid = leader.0.id() as i32;
         // Like a grandchild, this process belongs to the group but is absent
         // from the job table. PID-only delivery would leave it running.
-        let mut peer = ChildGuard(Command::new("/bin/sleep").arg("60").process_group(pgid).spawn().unwrap());
+        let mut peer = ChildGuard(
+            Command::new("/bin/sleep")
+                .arg("60")
+                .process_group(pgid)
+                .spawn()
+                .unwrap(),
+        );
         let mut pending = job(&[MemberState::Running]);
         pending.pgid = pgid;
         pending.members[0].pid = pgid;
         let shared = shared_jobs(BTreeMap::from([(1, pending)]));
-        shared.collect().jobs[&1].send_signal(libc::SIGTERM).unwrap();
+        shared.collect().jobs[&1]
+            .send_signal(libc::SIGTERM)
+            .unwrap();
         pending_event(pgid, libc::WEXITED);
         assert_eq!(shared.snapshot()[0].state(), JobState::Done);
         use std::os::unix::process::ExitStatusExt;
@@ -1380,13 +1429,15 @@ mod tests {
     #[ignore = "focused process-group load; run explicitly on a build worker"]
     fn process_group_signal_load_eight() {
         let workers: Vec<_> = (0..8)
-            .map(|_| std::thread::spawn(|| {
-                for _ in 0..20 {
-                    abort_does_not_signal_abandoned_process_group();
-                    exited_leader_pins_group_while_live_member_remains();
-                    normal_group_signal_reaches_unregistered_members();
-                }
-            }))
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..20 {
+                        abort_does_not_signal_abandoned_process_group();
+                        exited_leader_pins_group_while_live_member_remains();
+                        normal_group_signal_reaches_unregistered_members();
+                    }
+                })
+            })
             .collect();
         for worker in workers {
             worker.join().unwrap();
