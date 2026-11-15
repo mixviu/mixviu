@@ -27,7 +27,8 @@ Use a 2,000-row table for comparable table runs. Definitions live in
 `tools/bench/workloads.conf.mix`, parsed as strict data. `--workloads FILE`
 adds named variants of the supported idle and scroll primitives without
 changing the tool. Definitions in that file override built-ins on a name
-clash; other built-ins remain available. The JSON records the effective definition, including a
+clash; other built-ins remain available. The JSON records the effective
+definition, including a
 `--steps` override. The measured interval includes the workload and its Bus
 round trips, so compare equal definitions and equal fixtures.
 
@@ -78,7 +79,7 @@ Skipped paints are excluded. Wgpu backend and adapter names come from the
 adapter actually selected at runtime. Glow and browser hosts do not currently
 publish these statistics. Idle time is represented by `last_frame_ms`, not
 by adding fake zero-duration frames. Recording and reading arm no timer and
-request no repaint; Bus delivery itself still needs a logic wake.
+request no repaint themselves. Ordinary owner delivery may require a logic wake.
 Native Viu hosts answer root/layer stats directly from registered contexts,
 without waking the UI owner. Multiple layer outputs return a `surfaces` map
 keyed by output name; `{output:"name"}` selects one. Removed outputs disappear

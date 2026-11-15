@@ -3,8 +3,8 @@
 The native wgpu integration publishes its existing CPU-side frame duration
 (excluding measured present waits) to the passive `egui_wgpu::baseline` ring,
 together with the selected adapter and the drawing viewport's own physical
-window size/scale, selected by `viewport_id` (including non-root viewports). It records
-only when the painter's presentation receipt advances, so skipped and
+window size/scale, selected by `viewport_id` (including non-root viewports).
+It records only when the painter's presentation receipt advances, so skipped and
 offscreen paints do not count as drawn surface frames. This schedules no work.
 Toolkit exposes the ring through the read-only `ui.stats` command; see
 `docs/viu-baseline.md` for its limits.

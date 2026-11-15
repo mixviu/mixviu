@@ -36,9 +36,25 @@ mod tests {
     #[test]
     fn empty_ring_is_unavailable() {
         let ctx = egui::Context::default();
-        let sample: Samples = (0, vec![], Instant::now(), [640, 480], 1.0, "Vulkan".into(), "fixture".into());
-        ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("ui.stats.v1", egui::ViewportId::ROOT)), sample));
-        assert_eq!(read(&ctx, egui::ViewportId::ROOT), json!({"available":false}));
+        let sample: Samples = (
+            0,
+            vec![],
+            Instant::now(),
+            [640, 480],
+            1.0,
+            "Vulkan".into(),
+            "fixture".into(),
+        );
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                egui::Id::unique(("ui.stats.v1", egui::ViewportId::ROOT)),
+                sample,
+            )
+        });
+        assert_eq!(
+            read(&ctx, egui::ViewportId::ROOT),
+            json!({"available":false})
+        );
     }
     #[cfg(feature = "layer")]
     #[test]
@@ -67,7 +83,7 @@ mod tests {
         assert_eq!(stats["cpu_frame_ms"]["median"], 171.5);
         assert_eq!(stats["backend"], "Vulkan");
         assert_eq!(stats["adapter"], "fixture GPU");
-        assert_eq!(stats["surface_pixels"], json!([640,480]));
+        assert_eq!(stats["surface_pixels"], json!([640, 480]));
         assert_eq!(stats["scale"], 2.0);
         assert!(stats["last_frame_ms"].as_f64().unwrap() >= 0.0);
         assert_eq!(

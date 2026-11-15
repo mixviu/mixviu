@@ -958,7 +958,9 @@ impl WgpuWinitRunning<'_> {
         let seconds = (frame_timer.total_time_sec() - vsync_secs).max(0.0);
         // Select the viewport that drew, explicitly, rather than relying on
         // the window-id reverse map (or the viewport's parent).
-        let drawing_window = viewports.get(&viewport_id).and_then(|vp| vp.window.as_ref());
+        let drawing_window = viewports
+            .get(&viewport_id)
+            .and_then(|vp| vp.window.as_ref());
         if egui_ctx.data(|d| d.get_temp::<u64>(present_key)) != previous_present
             && let (Some(window), Some(state)) = (drawing_window, painter.render_state())
         {
