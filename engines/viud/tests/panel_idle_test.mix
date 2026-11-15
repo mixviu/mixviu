@@ -56,6 +56,9 @@ fn wait_state($field, $expected)
     if deep_eq($s[$field], $expected) then return end
     sleep(0.05)
   end
+  eprint("last panel state: " .. json_encode($s))
+  eprint(read_file($tmp .. "/calls"))
+  if is_file($tmp .. "/scene-panel.log") then eprint(read_file($tmp .. "/scene-panel.log")) end
   raise("PANEL_IDLE_TEST", "state did not reach " .. $field .. "=" .. json_encode($expected))
 end
 fn wait_tray($expected)

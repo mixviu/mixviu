@@ -1230,6 +1230,29 @@ mod idle_tests {
     async fn shell_comp_props_gap_resends_modes() { recovery_hint("gap").await; }
 
     #[tokio::test]
+    async fn shell_tracks_a_real_comp_reregistration() {
+        let broker = test_broker::Broker::start();
+        let _settings = idle_bus::Service::start(&broker,"settingsd").await;
+        let comp = idle_bus::Service::start(&broker,"comp").await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example","bottom");
+        let (client,incoming,forward)=idle_bus::native(&broker,"shell").await;
+        let (_send,recv)=tokio::sync::mpsc::unbounded_channel();
+        let task=tokio::spawn(worker_connected(client,"shell".into(),"comp".into(),state,recv,incoming));
+        comp.wait("comp.panel.mode",1).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        comp.client.shutdown().await;
+        drop(comp);
+        let replacement=idle_bus::Service::start(&broker,"comp").await;
+        replacement.wait("comp.panel.mode",1).await;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(replacement.count("comp.props.watch"),1);
+        assert_eq!(replacement.count("comp.props.get"),1);
+        assert_eq!(replacement.count("comp.panel.mode"),1);
+        task.abort();forward.abort();
+    }
+
+    #[tokio::test]
     async fn shell_comp_sync_and_modes_survive_missing_settings() {
         let broker = test_broker::Broker::start();
         let comp = idle_bus::Service::start(&broker, "comp").await;
@@ -1256,7 +1279,15 @@ mod idle_tests {
         let observer = idle_bus::Observer::start(&broker).await;
         let state = Arc::new(Mutex::new(State::new()));
         state.lock().unwrap().panel("example", "bottom");
-        let (client, incoming, forward) = idle_bus::native(&broker, "shell").await;
+        let (client, mut incoming, forward) = idle_bus::native(&broker, "shell").await;
+        // Isolate connection recovery counts from independently capped registry
+        // bursts. The registration tests above exercise those deliveries.
+        let (pass, filtered) = tokio::sync::mpsc::unbounded_channel();
+        let filter = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await {
+                if event.topic() != Some("noded.props.changed") && pass.send(event).is_err() { break; }
+            }
+        });
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
         let task = tokio::spawn(worker_connected(
             client,
@@ -1264,7 +1295,7 @@ mod idle_tests {
             "comp".into(),
             state.clone(),
             recv,
-            incoming,
+            filtered,
         ));
         settings.wait("settings.get", 1).await;
         comp.wait("comp.panel.mode", 1).await;
@@ -1340,5 +1371,6 @@ mod idle_tests {
         tokio::time::timeout(Duration::from_secs(3),async {while state.lock().unwrap().outputs != json!([{"name":"after-bounce"}]) {tokio::time::sleep(Duration::from_millis(10)).await;}}).await.unwrap();
         task.abort();
         forward.abort();
+        filter.abort();
     }
 }
