@@ -286,8 +286,10 @@ mod tests {
         let settings = idle_bus::Service::start(&broker, "settingsd").await;
         let app = idle_bus::Service::start(&broker, "example-app").await;
         targets(BTreeSet::from(["example-app".into()]));
-        let client = idle_bus::connect(&broker, "comp-idle").await;
-        let mut incoming = client.incoming().unwrap();
+        let (client, mut incoming, native_forward) = idle_bus::native(&broker, "comp-idle").await;
+        let names = client.call("noded", "noded.props.get", json!({"path":"services.registered"})).await.unwrap();
+        assert!(names.as_array().is_some_and(|names| names.contains(&json!("example-app"))), "registry: {names}");
+        let observer = idle_bus::Observer::start(&broker).await;
         let (send, events) = tokio::sync::mpsc::channel(64);
         let forward = tokio::spawn(async move {
             while let Some(event) = incoming.recv().await {
@@ -316,6 +318,7 @@ mod tests {
         app.wait("example-app.ui.titlebar.form", 1).await;
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
         assert_eq!(settings.count("settings.get"), 1);
+        assert_eq!(observer.registry_reads("comp-idle"), 1, "idle makes no registry read");
         assert_eq!(
             app.count("example-app.ui.titlebar.form"),
             1,
@@ -329,6 +332,7 @@ mod tests {
             1,
             "settings delivery is not a registry hint"
         );
+        assert_eq!(observer.registry_reads("comp-idle"), 1);
         app.publish("example-app.ui.titlebar.changed", json!({}))
             .await;
         app.wait("example-app.ui.titlebar.form", 2).await;
@@ -346,6 +350,7 @@ mod tests {
         );
         task.abort();
         forward.abort();
+        native_forward.abort();
         drop((wiring, starter));
         targets(BTreeSet::new());
     }

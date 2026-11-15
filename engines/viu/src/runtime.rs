@@ -698,7 +698,8 @@ async fn worker(
         .connect()
         .await
         .map_err(|e| e.to_string())?;
-    worker_connected(client, service, comp, state, outgoing).await
+    let incoming = client.incoming().ok_or("Bus incoming already taken")?;
+    worker_connected(client, service, comp, state, outgoing, incoming).await
 }
 
 #[cfg(test)]
@@ -714,9 +715,10 @@ mod idle_tests {
         let mut broker = test_broker::Broker::bounce_stable();
         let settings = idle_bus::Service::start(&broker, "settingsd").await;
         let comp = idle_bus::Service::start(&broker, "comp").await;
+        let observer = idle_bus::Observer::start(&broker).await;
         let state = Arc::new(Mutex::new(State::new()));
         state.lock().unwrap().panel("example", "bottom");
-        let client = idle_bus::connect(&broker, "shell").await;
+        let (client, incoming, forward) = idle_bus::native(&broker, "shell").await;
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
         let task = tokio::spawn(worker_connected(
             client,
@@ -724,6 +726,7 @@ mod idle_tests {
             "comp".into(),
             state.clone(),
             recv,
+            incoming,
         ));
         settings.wait("settings.get", 1).await;
         comp.wait("comp.panel.mode", 1).await;
@@ -732,6 +735,7 @@ mod idle_tests {
         assert_eq!(comp.count("comp.props.watch"), 1);
         assert_eq!(comp.count("comp.props.get"), 1);
         assert_eq!(comp.count("comp.panel.mode"), 1);
+        assert_eq!(observer.registry_reads("shell"), 0);
         settings.settings_changed(2, "first").await;
         tokio::time::timeout(Duration::from_secs(3), async {
             while state.lock().unwrap().look_revision < 2 {
@@ -795,6 +799,7 @@ mod idle_tests {
         );
         assert!(comp.count("comp.props.watch") >= 2);
         task.abort();
+        forward.abort();
     }
 }
 
@@ -804,8 +809,8 @@ async fn worker_connected(
     comp: String,
     state: Shared,
     mut outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
+    mut incoming: tokio::sync::mpsc::UnboundedReceiver<bus::IncomingCommand>,
 ) -> Result<(), String> {
-    let mut incoming = client.incoming().ok_or("Bus incoming already taken")?;
     let scenes = std::env::var("SCENES_SERVICE").unwrap_or_else(|_| "scenes".into());
     client
         .subscribe_topic(&format!("{scenes}.changed"))

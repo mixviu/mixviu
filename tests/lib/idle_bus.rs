@@ -18,6 +18,18 @@ pub async fn connect(broker: &test_broker::Broker, name: &str) -> SupervisedClie
         .unwrap()
 }
 
+pub async fn native(broker: &test_broker::Broker, name: &str) -> (SupervisedClient, tokio::sync::mpsc::UnboundedReceiver<bus::IncomingCommand>, tokio::task::JoinHandle<()>) {
+    let client = SupervisedClient::connect_options(name, &broker.url).verified_unix(broker.options()).connect().await.unwrap();
+    let mut deliveries = client.deliveries().unwrap();
+    let (send, incoming) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        while let Some(delivery) = deliveries.recv().await {
+            if send.send(delivery.into_command()).is_err() { break; }
+        }
+    });
+    (client, incoming, task)
+}
+
 pub fn snapshot(revision: u64, incarnation: &str) -> settings::Snapshot {
     let values = settings::registry::Values::from([("window.gaps".into(), json!(revision * 4))]);
     settings::Snapshot {
@@ -153,3 +165,30 @@ impl Drop for Service {
         self.task.abort();
     }
 }
+
+pub struct Observer {
+    _client: SupervisedClient,
+    events: Arc<Mutex<Vec<Value>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+impl Observer {
+    pub async fn start(broker: &test_broker::Broker) -> Self {
+        let client = connect(broker, "idle-observer").await;
+        let mut incoming = client.incoming().unwrap();
+        client.call("noded", "noded.observe.start", json!({"filter":{"commands":["noded.props.get"]},"body":"none"})).await.unwrap();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let task = tokio::spawn(async move {
+            while let Some(command) = incoming.recv().await {
+                if command.command == "noded.observe.event" {
+                    captured.lock().unwrap().push(serde_json::from_str(&command.body).unwrap());
+                }
+            }
+        });
+        Self { _client:client, events, task }
+    }
+    pub fn registry_reads(&self, from: &str) -> usize {
+        self.events.lock().unwrap().iter().filter(|e| e["message_type"] == "request" && e["from"] == from && e["command"] == "noded.props.get").count()
+    }
+}
+impl Drop for Observer { fn drop(&mut self) { self.task.abort(); } }
