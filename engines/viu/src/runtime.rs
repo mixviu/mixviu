@@ -1290,4 +1290,3 @@ mod idle_tests {
         forward.abort();
     }
 }
-

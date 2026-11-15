@@ -198,11 +198,14 @@ pub(crate) async fn run(
                 .cloned()
                 .collect();
             for service in &dirty {
-                let _ = tokio::time::timeout(
+                let subscribed = tokio::time::timeout(
                     std::time::Duration::from_secs(1),
                     client.subscribe_topic(&format!("{service}.ui.titlebar.changed")),
                 )
                 .await;
+                if !matches!(subscribed, Ok(Ok(()))) {
+                    continue;
+                }
                 if let Ok(Ok(form)) = tokio::time::timeout(
                     std::time::Duration::from_millis(250),
                     client.call(service, &format!("{service}.ui.titlebar.form"), json!({})),
@@ -227,6 +230,10 @@ pub(crate) async fn run(
                 && theme_ready;
             if accepted && let Some(update) = &pending {
                 consumer.acknowledge(update);
+            }
+            if !accepted {
+                // A full engine queue must not discard a fetched titlebar.
+                bars_dirty.extend(dirty);
             }
             presentation_retry = (!accepted || bars_dirty.iter().any(|s| services.contains(s)))
                 .then(|| std::time::Instant::now() + std::time::Duration::from_secs(1));
@@ -353,7 +360,11 @@ mod tests {
         let _newcomer = idle_bus::Service::start(&broker, "late-app").await;
         app.wait("example-app.ui.titlebar.form", 3).await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        assert_eq!(observer.registry_reads("comp-idle"), 2, "one registration hint makes one registry read");
+        assert_eq!(
+            observer.registry_reads("comp-idle"),
+            2,
+            "one registration hint makes one registry read"
+        );
         assert_eq!(app.count("example-app.ui.titlebar.form"), 3);
         settings.fail_reads.store(1, Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;

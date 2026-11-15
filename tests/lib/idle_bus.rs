@@ -167,7 +167,8 @@ impl Service {
         ]);
         let mut inner = bus::BusMessage::new().with_header("command", topic);
         inner.body = body.to_string();
-        let reply = self.client
+        let reply = self
+            .client
             .call_with_headers_raw("noded", "topic.publish", &headers, &inner.to_wire())
             .await
             .unwrap();
