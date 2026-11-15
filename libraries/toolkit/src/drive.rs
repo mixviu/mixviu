@@ -49,6 +49,11 @@ pub const COMMANDS: [&str; 17] = [
     "window.state",
 ];
 
+/// Passive host snapshot, also usable by layer hosts without a drive plugin.
+pub fn frame_stats(ctx: &Context, viewport: egui::ViewportId) -> Value {
+    crate::drive_stats::read(ctx, viewport)
+}
+
 /// Queued input requests beyond this are refused (the Bus holds at most 32
 /// unanswered commands per app anyway).
 const QUEUE_LIMIT: usize = 32;

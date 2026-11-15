@@ -75,6 +75,11 @@ adapter actually selected at runtime. Glow and browser hosts do not currently
 publish these statistics. Idle time is represented by `last_frame_ms`, not
 by adding fake zero-duration frames. Recording and reading arm no timer and
 request no repaint; Bus delivery itself still needs a logic wake.
+Native Viu hosts answer root/layer stats directly from registered contexts,
+without waking the UI owner. Multiple layer outputs return a `surfaces` map
+keyed by output name; `{output:"name"}` selects one. Removed outputs disappear
+from that registry. Other apps using the drive library answer through their
+existing logic wake. Neither route schedules a frame.
 
 This cannot see GPU memory, input-to-photon latency, compositor/scanout delay,
 shared-library disk size, or total system energy. Software rendering under

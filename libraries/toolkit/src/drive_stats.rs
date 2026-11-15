@@ -31,15 +31,24 @@ mod tests {
         let viewport = egui::ViewportId::ROOT;
         let adapter = wgpu::AdapterInfo::new(wgpu::DeviceType::Cpu, wgpu::Backend::Vulkan);
         for i in 0..300 {
-            egui_wgpu::baseline::record(&ctx, viewport, f64::from(i) / 1000.0,
-                [640,480], 2.0, &adapter);
+            egui_wgpu::baseline::record(
+                &ctx,
+                viewport,
+                f64::from(i) / 1000.0,
+                [640, 480],
+                2.0,
+                &adapter,
+            );
         }
         let stats = read(&ctx, viewport);
         assert_eq!(stats["frames_drawn"], 300);
         assert_eq!(stats["sample_count"], 256);
         assert_eq!(stats["cpu_frame_ms"]["max"], 299.0);
         assert_eq!(stats["backend"], "Vulkan");
-        assert_eq!(read(&ctx, egui::ViewportId::from_hash_of("other"))["available"], false);
+        assert_eq!(
+            read(&ctx, egui::ViewportId::from_hash_of("other"))["available"],
+            false
+        );
     }
     #[test]
     fn passive_reads_preserve_counts_and_never_wake() {

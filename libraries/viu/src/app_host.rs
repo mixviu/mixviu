@@ -2360,6 +2360,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             }
             let wake = owner_wake(cc.egui_ctx.clone());
             let mut host = create(bundle, wake.clone());
+            host.bus.stats_surface(String::new(), cc.egui_ctx.clone());
             use raw_window_handle::HasDisplayHandle;
             // SAFETY: eframe keeps its display alive until after Host drops,
             // matching the pinned gold window/selection-worker ownership.
@@ -2622,6 +2623,7 @@ impl crate::layer::LayerProgram for LayerHost {
     fn show(&mut self, ui: &mut egui::Ui, surface: &crate::layer::SurfaceInfo) {
         let host = self.host.as_mut().unwrap();
         let output = surface.output.clone().unwrap_or_default();
+        host.bus.stats_surface(output.clone(), ui.ctx().clone());
         ui.ctx()
             .data_mut(|d| d.insert_temp(egui::Id::unique("viu-layer-output"), output.clone()));
         let frames = host
@@ -2707,6 +2709,7 @@ impl crate::layer::LayerProgram for LayerHost {
         let output = surface.output.clone().unwrap_or_default();
         self.views.remove(&output);
         if let Some(host) = &mut self.host {
+            host.bus.remove_stats_surface(&output);
             host.outputs.remove(&output);
             let _ = host
                 .runtime

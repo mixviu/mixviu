@@ -38,6 +38,26 @@ pub struct Notice {
     pub headers: BTreeMap<String, String>,
 }
 type SharedClient = Arc<Mutex<Option<Arc<SupervisedClient>>>>;
+fn passive_frame_stats(contexts: &Mutex<BTreeMap<String, egui::Context>>, args: &Value) -> (u8, Value) {
+    if !args.is_object() {
+        return (10, json!({"error_code":"ARGUMENT"}));
+    }
+    // Never hold the registry lock while taking an egui context lock: a draw
+    // may register its surface while already inside that context.
+    let contexts = contexts.lock().unwrap().clone();
+    if let Some(output) = args.get("output") {
+        return match output.as_str().and_then(|name| contexts.get(name)) {
+            Some(ctx) => (0, toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT)),
+            None => (10, json!({"error_code":"NOT_FOUND"})),
+        };
+    }
+    if contexts.len() == 1 {
+        return (0, toolkit::drive::frame_stats(contexts.values().next().unwrap(), egui::ViewportId::ROOT));
+    }
+    let surfaces: BTreeMap<_, _> = contexts.iter().map(|(name, ctx)|
+        (name, toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT))).collect();
+    (0, json!({"available":!surfaces.is_empty(), "surfaces":surfaces}))
+}
 struct Hint {
     topic: String,
     body: Value,
@@ -172,6 +192,7 @@ pub struct Endpoint {
     pub startup_error: Arc<Mutex<Option<String>>>,
     pub dropped_notices: Arc<AtomicU64>,
     client: SharedClient,
+    stats: Arc<Mutex<BTreeMap<String, egui::Context>>>,
     hints: tokio::sync::mpsc::Sender<Hint>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
@@ -208,6 +229,7 @@ impl Endpoint {
             close_requested: Arc::new(AtomicBool::new(false)),
             dropped_notices: Arc::new(AtomicU64::new(0)),
             client: Arc::new(Mutex::new(None)),
+            stats: Arc::default(),
             hints,
             stop: None,
             thread: None,
@@ -296,6 +318,11 @@ impl Endpoint {
         let (stop, mut stopped) = oneshot::channel();
         let (hints, mut hint_rx) = tokio::sync::mpsc::channel::<Hint>(1);
         let service_name = name.clone();
+        let stats: Arc<Mutex<BTreeMap<String, egui::Context>>> = Arc::default();
+        let passive_stats = stats.clone();
+        let stats_commands: std::collections::BTreeSet<_> = commands.iter()
+            .filter(|d| d.read_only && d.name.ends_with(".ui.stats"))
+            .map(|d| d.name.clone()).collect();
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
@@ -341,6 +368,11 @@ impl Endpoint {
                             None=>{let body=policy.transport.unknown_reply.clone().unwrap_or_else(||json!({"error_code":"UNKNOWN_COMMAND"}));let _=native.respond(&command,10,&wire_body(&body,text_replies)).await;continue;}
                         }
                     } else {crate::native_registration::rename(&command.command,&registered,&name)};
+                    if stats_commands.contains(&routed) && command.args.get("viewport").is_none() {
+                        let answer = passive_frame_stats(&passive_stats, &command.args);
+                        let _ = native.respond(&command, answer.0, &wire_body(&answer.1,text_replies)).await;
+                        continue;
+                    }
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
@@ -376,10 +408,19 @@ impl Endpoint {
             startup_error,
             dropped_notices,
             client,
+            stats,
             hints,
             stop: Some(stop),
             thread: Some(thread),
         }
+    }
+    /// Register a host surface for read-only snapshots without an owner wake.
+    pub fn stats_surface(&self, output: String, ctx: egui::Context) {
+        self.stats.lock().unwrap().insert(output, ctx);
+    }
+    /// Retire a removed layer surface's passive snapshot.
+    pub fn remove_stats_surface(&self, output: &str) {
+        self.stats.lock().unwrap().remove(output);
     }
     /// Construct on the Mix worker. It shares the existing native connection;
     /// it creates no broker, socket, dispatcher or secondary service identity.
