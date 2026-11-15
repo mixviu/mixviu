@@ -23,7 +23,7 @@ try
   $ready = false
   for $i = 1 to 200
     $s = $n.call("gallery", "gallery.ui.stats", {})
-    if $s.rc == 0 and $s.result.frames_drawn > 0 then $ready = true; break end
+    if $s.rc == 0 and ($s.result.frames_drawn ?? 0) > 0 then $ready = true; break end
     sleep(0.1)
   end
   if not $ready then raise("HEADLESS", "app drew no observed frame: " .. $run.path .. "/app.log") end
