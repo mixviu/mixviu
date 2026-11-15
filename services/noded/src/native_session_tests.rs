@@ -1465,7 +1465,11 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
     }
     let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
     assert!(!output.contains(&private));
-    assert!(!output.contains(&public));
+    assert!(
+        !output.contains(&public),
+        "bootstrap public_key in captured log: {:?}",
+        output.lines().filter(|line| line.contains(&public)).collect::<Vec<_>>()
+    );
     parent.client().close().await;
 }
 
