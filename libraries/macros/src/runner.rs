@@ -358,6 +358,17 @@ mod tests {
     #[test]
     #[ignore]
     fn stress_dropped_runners() {
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let load: Vec<_> = (0..8).map(|_| {
+            let stop = stop.clone();
+            thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let mut command = Command::new("/usr/bin/true");
+                    unsafe { command.pre_exec(|| { libc::usleep(5000); Ok(()) }); }
+                    command.spawn().unwrap().wait().unwrap();
+                }
+            })
+        }).collect();
         let workers: Vec<_> = (0..8)
             .map(|_| thread::spawn(|| {
                 let mut failed = 0;
@@ -370,6 +381,8 @@ mod tests {
             }))
             .collect();
         let failed: usize = workers.into_iter().map(|worker| worker.join().unwrap()).sum();
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        for worker in load { worker.join().unwrap(); }
         eprintln!("STRESS total=16000 failed={failed} concurrency=8");
         assert_eq!(failed, 0);
     }
