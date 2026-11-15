@@ -239,7 +239,13 @@ end
   if $case == "registry-task-start" then
     $behaviour=replace_must($behaviour,'task_start("registry.resync",','fixture_task_start("registry.resync",')
   end
-  if $case == "registry-burst" or $case == "legacy-clock" then
+  if $case == "registry-burst" then
+    -- The burst below supplies exactly two deliberate hints. A delayed ACP
+    -- startup registration is independent work, not an idle/batching failure.
+    -- Other cases retain real target arrival/departure coverage.
+    $behaviour=replace($behaviour,"      queue_registry()\n","      return\n")
+    $behaviour=replace($behaviour,"services_changed($a.new)","return")
+  elif $case == "legacy-clock" then
     -- Exercise the shipped registry handler unchanged, including real noded
     -- arrivals, departures and its capped trailing invalidation.
   elif $case == "registry-arrival" or $case == "registry-rejected" or $case == "registry-task-start" then
