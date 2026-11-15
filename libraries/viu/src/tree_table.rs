@@ -10,27 +10,62 @@ fn table_rows(value: &Value) -> &[Value] {
     value["rows"].as_array().map(Vec::as_slice).unwrap_or(&[])
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Default)]
+struct FontSnapshot {
+    definitions: Option<egui::FontDefinitions>,
+    generation: u64,
+}
+
+fn font_generation(ui: &Ui) -> u64 {
+    let snapshot = ui.data_mut(|data| {
+        data.get_temp_mut_or_default::<std::sync::Arc<std::sync::Mutex<FontSnapshot>>>(
+            Id::unique("tree-table-font-snapshot"),
+        ).clone()
+    });
+    let mut snapshot = snapshot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    ui.fonts(|fonts| {
+        let current = fonts.definitions();
+        let mut same_pointers = true;
+        let unchanged = snapshot.definitions.as_ref().is_some_and(|previous| {
+            previous.families == current.families
+                && previous.font_data.len() == current.font_data.len()
+                && previous.font_data.iter().all(|(name, before)| {
+                    current.font_data.get(name).is_some_and(|after| {
+                        // Retaining the old Arc also makes Arc::make_mut tweaks
+                        // detach, so pointer equality cannot hide an in-place edit.
+                        std::sync::Arc::ptr_eq(before, after) || {
+                            same_pointers = false;
+                            #[cfg(test)]
+                            FONT_DATA_COMPARISONS.set(FONT_DATA_COMPARISONS.get() + 1);
+                            before.as_ref() == after.as_ref()
+                        }
+                    })
+                })
+        });
+        if !unchanged || !same_pointers {
+            #[cfg(test)]
+            FONT_DEFINITION_CLONES.set(FONT_DEFINITION_CLONES.get() + 1);
+            snapshot.definitions = Some(current.clone());
+            if !unchanged {
+                snapshot.generation += 1;
+            }
+        }
+        snapshot.generation
+    })
+}
+
 struct MeasurementKey {
     column: Value,
     fonts: Vec<FontId>,
-    definitions: egui::FontDefinitions,
+    generation: u64,
     scale: f32,
-    spacing: f32,
 }
 
-impl MeasurementKey {
-    fn new(ui: &Ui, column: &Value, fonts: Vec<FontId>) -> Self {
-        Self {
-            column: column.clone(),
-            fonts,
-            // Compare font contents, including face index and tweaks. Arc address
-            // reuse/reallocation is not a font identity contract.
-            definitions: ui.fonts(|fonts| fonts.definitions().clone()),
-            scale: ui.ctx().pixels_per_point(),
-            spacing: ui.spacing().item_spacing.x,
-        }
-    }
+struct MeasurementInputs<'a> {
+    column: &'a Value,
+    fonts: &'a [FontId],
+    generation: u64,
+    scale: f32,
 }
 
 #[derive(Default)]
@@ -43,15 +78,25 @@ struct ColumnMeasurements {
 impl ColumnMeasurements {
     fn update<'a>(
         &mut self,
-        key: MeasurementKey,
+        input: MeasurementInputs<'_>,
         fixed: impl Iterator<Item = &'a str>,
         rows: impl Iterator<Item = &'a str>,
         mut measure: impl FnMut(&str, bool) -> f32,
     ) -> f32 {
-        if self.key.as_ref() != Some(&key) {
+        if !self.key.as_ref().is_some_and(|key| {
+            key.generation == input.generation && key.scale == input.scale
+                && key.fonts == input.fonts && &key.column == input.column
+        }) {
             self.baseline = fixed.map(|text| measure(text, true)).fold(0.0, f32::max);
             self.rows.clear();
-            self.key = Some(key);
+            #[cfg(test)]
+            COLUMN_KEY_CLONES.set(COLUMN_KEY_CLONES.get() + 1);
+            self.key = Some(MeasurementKey {
+                column: input.column.clone(),
+                fonts: input.fonts.to_vec(),
+                generation: input.generation,
+                scale: input.scale,
+            });
         }
         let mut count = 0;
         let mut width = self.baseline;
@@ -70,6 +115,11 @@ impl ColumnMeasurements {
             count += 1;
         }
         self.rows.truncate(count);
+        // Release historical peaks below one quarter utilisation; keep twice
+        // the live length (at least 64 slots) to avoid churn on small streams.
+        if self.rows.capacity() > 64 && count < self.rows.capacity() / 4 {
+            self.rows.shrink_to(count.saturating_mul(2).max(64));
+        }
         width
     }
 }
@@ -88,6 +138,9 @@ thread_local! {
     static SAMPLE_LAYOUTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static UNCACHED_SAMPLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static WIDTH_LAYOUTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static FONT_DEFINITION_CLONES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static FONT_DATA_COMPARISONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static COLUMN_KEY_CLONES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -106,12 +159,14 @@ fn sample_width(ui: &Ui, id: &str, column: &Value, rows: &[Value], index: usize)
             ui, column, samples, rows, index, &body, &strong,
         ));
     }
-    let key = MeasurementKey::new(ui, column, vec![body, strong]);
+    let fonts = [body, strong];
+    let key = MeasurementInputs {
+        column, fonts: &fonts, generation: font_generation(ui), scale: ui.ctx().pixels_per_point(),
+    };
     let cache_id = Id::unique((ui.ctx().viewport_id(), id, index, "sample-width"));
-    let fonts = key.fonts.clone();
     let width = column_cache(ui, cache_id)
         .lock()
-        .expect("column cache")
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .update(
             key,
             std::iter::once(text(column, "label")).chain(samples.iter().filter_map(Value::as_str)),
@@ -189,6 +244,38 @@ mod numeric_state_tests {
     use super::*;
 
     #[test]
+    fn wide_table_steady_frames_clone_no_font_definitions_or_column_keys() {
+        let ctx = egui::Context::default();
+        crate::appearance::install(&ctx);
+        let columns = (0..12).map(|i| json!({"label":format!("Column {i}"), "samples":["sample"]})).collect::<Vec<_>>();
+        let rows = (0..2000).map(|i| json!({"cells":(0..12).map(|j| format!("Cell {i}:{j}")).collect::<Vec<_>>()})).collect::<Vec<_>>();
+        let value = json!({"columns":columns,"rows":rows});
+        for frame in 0..20 {
+            FONT_DEFINITION_CLONES.set(0);
+            FONT_DATA_COMPARISONS.set(0);
+            COLUMN_KEY_CLONES.set(0);
+            WIDTH_LAYOUTS.set(0);
+            SAMPLE_LAYOUTS.set(0);
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                widths(ui, "wide", &value, 1.0);
+                for (index, column) in value["columns"].as_array().unwrap().iter().enumerate() {
+                    sample_width(ui, "wide", column, table_rows(&value), index);
+                }
+            }).drop_without_applying_deltas();
+            if frame > 0 {
+                assert_eq!(FONT_DEFINITION_CLONES.get(), 0);
+                assert_eq!(FONT_DATA_COMPARISONS.get(), 0);
+                assert_eq!(COLUMN_KEY_CLONES.get(), 0);
+                assert_eq!(WIDTH_LAYOUTS.get(), 0);
+                assert_eq!(SAMPLE_LAYOUTS.get(), 0);
+            } else {
+                assert_eq!(FONT_DEFINITION_CLONES.get(), 1);
+                assert_eq!(COLUMN_KEY_CLONES.get(), 24);
+            }
+        }
+    }
+
+    #[test]
     fn streaming_columns_measure_only_changed_cells_and_match_full_layout() {
         let ctx = egui::Context::default();
         crate::appearance::install(&ctx);
@@ -225,11 +312,19 @@ mod numeric_state_tests {
                     }
                     ctx.set_fonts(definitions);
                 }
+                48 => {
+                    let rows = value["rows"].as_array_mut().unwrap();
+                    let last = rows.len() - 1;
+                    rows.swap(0, last);
+                }
                 _ => {}
             }
             SAMPLE_LAYOUTS.set(0);
             WIDTH_LAYOUTS.set(0);
             ctx.run_ui(egui::RawInput::default(), |ui| {
+                if frame == 49 {
+                    ui.spacing_mut().item_spacing.x += 7.0;
+                }
                 let rows = table_rows(&value);
                 let column = &value["columns"][1];
                 let sampled = sample_width(ui, "stream", column, rows, 1).unwrap();
@@ -237,7 +332,7 @@ mod numeric_state_tests {
                 let sample_count = SAMPLE_LAYOUTS.get();
                 let width_count = WIDTH_LAYOUTS.get();
                 match frame {
-                    1..=20 | 43 | 48..=49 => {
+                    1..=20 | 43 | 49 => {
                         assert_eq!(sample_count, 0, "frame {frame}");
                         assert_eq!(width_count, 0, "frame {frame}");
                     }
@@ -249,7 +344,21 @@ mod numeric_state_tests {
                         assert!(sample_count > 0, "frame {frame}");
                         assert!(width_count > 0, "frame {frame}");
                     }
+                    42 => {
+                        // Removing index 17 shifts only the 2,002 following cells.
+                        assert_eq!(sample_count, 4004);
+                        assert_eq!(width_count, 2002);
+                    }
+                    48 => {
+                        // A sort moving two rows must not measure all ten rows.
+                        assert_eq!(sample_count, 4);
+                        assert_eq!(width_count, 2);
+                    }
                     _ => {}
+                }
+                if frame == 43 {
+                    let id = Id::unique((ui.ctx().viewport_id(), "stream", 1_usize, "column-widths"));
+                    assert!(column_cache(ui, id).lock().unwrap().rows.capacity() <= 64);
                 }
                 let body = TextStyle::Body.resolve(ui.style());
                 let strong = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(body.size));
@@ -715,15 +824,19 @@ fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
         font
     };
     let small = TextStyle::Small.resolve(ui.style());
+    let generation = font_generation(ui);
+    let fonts = [body.clone(), small.clone()];
     let mut widths = Vec::with_capacity(columns.len());
     for (i, column) in columns.iter().enumerate() {
-        let key = MeasurementKey::new(ui, column, vec![body.clone(), small.clone()]);
+        let key = MeasurementInputs {
+            column, fonts: &fonts, generation, scale: ui.ctx().pixels_per_point(),
+        };
         let cache_id = Id::unique((ui.ctx().viewport_id(), id, i, "column-widths"));
         let label = format!("{} ▼", text(column, "label"));
         // The fixed header uses Small; row metadata uses the scaled Body font.
         let width = column_cache(ui, cache_id)
             .lock()
-            .expect("column cache")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .update(
                 key,
                 std::iter::once(label.as_str()),
