@@ -122,7 +122,7 @@ policy into Rust. Automatic framing uses the retained native backend detector;
 hosts initialise it with their actual display handle, rather than inferring a
 backend from environment variables alone.
 
-Menu automation opens actual egui popups against fresh geometry. Bar, compact
+Menu automation opens the window's live popups against fresh geometry. Bar, compact
 button and explicit top-content popup forms share the same application command
 data. The native `hosting` adapter projects an application-owned command bar
 into the existing viud wire contract. Disabled/toggled state stays application
