@@ -446,21 +446,31 @@ mod file_tests {
     use std::os::unix::fs::{PermissionsExt, symlink};
     #[test]
     fn readback_deferral_is_not_a_lost_change() {
-        let dir=std::env::temp_dir().join(private_token().unwrap());
+        let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
-        let mut r=Recording::new("debt".into(),dir.join("debt.vfl").to_str().unwrap().into(),2,2,30,"vfl".into()).unwrap();
-        r.frame(Some((2,2,Arc::new(vec![0;12]),14000))).unwrap();
+        let mut r = Recording::new(
+            "debt".into(),
+            dir.join("debt.vfl").to_str().unwrap().into(),
+            2,
+            2,
+            30,
+            "vfl".into(),
+        )
+        .unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 14000))).unwrap();
         assert!(r.skip_readback(true));
-        assert_eq!(r.dropped,0);
-        assert_eq!(r.readback_deferred,1);
+        assert_eq!(r.dropped, 0);
+        assert_eq!(r.readback_deferred, 1);
         r.frame(None).unwrap();
         assert!(!r.skip_readback(false));
-        assert_eq!(r.dropped,0);
+        assert_eq!(r.dropped, 0);
         r.superseded_capture();
-        assert_eq!(r.dropped,1);
-        assert_eq!(r.dropped_capture,1);
+        assert_eq!(r.dropped, 1);
+        assert_eq!(r.dropped_capture, 1);
         r.stop(true);
-        while !r.poll() {std::thread::sleep(std::time::Duration::from_millis(5));}
+        while !r.poll() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

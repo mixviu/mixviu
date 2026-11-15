@@ -370,7 +370,7 @@ fn session_command(op: RecordCommand, answer: Answer) {
                     answer(refused("already finishing"));
                     return;
                 }
-                let changed = stop_stream(&mut s,discard);
+                let changed = stop_stream(&mut s, discard);
                 s.stop_answers.push(answer);
                 if changed {
                     event(&s, "finishing");
@@ -400,10 +400,13 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
     for answer in std::mem::take(&mut s.start_answers) {
         answer(refused(error));
     }
-    let lost = u64::from(std::mem::take(&mut s.pending)) + u64::from(s.deferred_signature.take().is_some());
+    let lost = u64::from(std::mem::take(&mut s.pending))
+        + u64::from(s.deferred_signature.take().is_some());
     if let Some(r) = s.recording.as_mut() {
         r.error = Some(error.into());
-        for _ in 0..lost {r.superseded_capture();}
+        for _ in 0..lost {
+            r.superseded_capture();
+        }
         r.stop(false);
     } else {
         let mut status = empty_status("failed", Some(error));
@@ -431,15 +434,22 @@ fn superseded(pending: &mut Option<Vec<u64>>, current: &[u64]) -> bool {
     if pending.as_ref().is_some_and(|old| old != current) {
         *pending = None;
         true
-    } else {false}
+    } else {
+        false
+    }
 }
 
-fn stop_stream(s:&mut Session,discard:bool)->bool {
-    let lost=u64::from(std::mem::take(&mut s.pending))+u64::from(s.deferred_signature.take().is_some());
-    if let Some(r)=s.recording.as_mut() {
-        for _ in 0..lost {r.superseded_capture();}
+fn stop_stream(s: &mut Session, discard: bool) -> bool {
+    let lost = u64::from(std::mem::take(&mut s.pending))
+        + u64::from(s.deferred_signature.take().is_some());
+    if let Some(r) = s.recording.as_mut() {
+        for _ in 0..lost {
+            r.superseded_capture();
+        }
         r.stop(discard)
-    } else {false}
+    } else {
+        false
+    }
 }
 
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
@@ -528,7 +538,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             .as_ref()
             .is_some_and(|r| now_us.saturating_sub(r.t0_us) >= s.max_seconds * 1_000_000)
         {
-            stop_stream(&mut s,false);
+            stop_stream(&mut s, false);
             event(&s, "finishing");
             return;
         }
@@ -594,7 +604,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     };
     let mut s = session.borrow_mut();
     let unchanged = s.signature == signature;
-    if superseded(&mut s.deferred_signature,&signature) {
+    if superseded(&mut s.deferred_signature, &signature) {
         if let Some(r) = s.recording.as_mut() {
             r.superseded_capture();
         }
@@ -754,13 +764,15 @@ mod tests {
     use super::*;
     #[test]
     fn stable_deferred_content_is_not_dropped_every_tick() {
-        let mut waiting=Some(vec![7]);
-        for _ in 0..602 {assert!(!superseded(&mut waiting,&[7]));}
-        assert!(superseded(&mut waiting,&[8]));
-        assert!(!superseded(&mut waiting,&[8]));
-        waiting=Some(vec![8]);
-        assert!(!superseded(&mut waiting,&[8]));
-        assert!(superseded(&mut waiting,&[9]));
+        let mut waiting = Some(vec![7]);
+        for _ in 0..602 {
+            assert!(!superseded(&mut waiting, &[7]));
+        }
+        assert!(superseded(&mut waiting, &[8]));
+        assert!(!superseded(&mut waiting, &[8]));
+        waiting = Some(vec![8]);
+        assert!(!superseded(&mut waiting, &[8]));
+        assert!(superseded(&mut waiting, &[9]));
     }
     fn stop_reply(id: &str) -> bool {
         let answered = Rc::new(Cell::new(None));

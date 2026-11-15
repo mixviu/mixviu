@@ -108,23 +108,36 @@ fn target(row: &Value) -> Value {
 
 #[test]
 fn record_idle_content_clock_ignores_capture_repaints() {
-    if !process::record_available() {return;}
-    let bus=Bus::start("record-repaints");
-    let mut process=process::spawn(1,None,"record-repaints",Some(&bus.url));
-    let mut pattern=Pattern::named(connect(&mut process),"headless-pattern",false);
-    pattern.wait_callback(0);bus.ready();
-    let row=bus.window();
-    let output=row["output"].as_str().unwrap();
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("record-repaints");
+    let mut process = process::spawn(1, None, "record-repaints", Some(&bus.url));
+    let mut pattern = Pattern::named(connect(&mut process), "headless-pattern", false);
+    pattern.wait_callback(0);
+    bus.ready();
+    let row = bus.window();
+    let output = row["output"].as_str().unwrap();
     let start=bus.call("comp.record.start",json!({"request_id":"repaints","target":{"output":output},"path":process.root.join("idle.vfl"),"max_seconds":20}));
-    let before=bus.call("comp.record.status",json!({"session":start["session"]}));
+    let before = bus.call("comp.record.status", json!({"session":start["session"]}));
     for i in 0..8 {
         bus.call("comp.capture.frame",json!({"output":output,"path":process.root.join(format!("repaint-{i}.ppm")),"format":"ppm"}));
-        pattern.pump();thread::sleep(Duration::from_millis(35));
+        pattern.pump();
+        thread::sleep(Duration::from_millis(35));
     }
-    let stop=bus.call("comp.record.stop",json!({"session":start["session"]}));
-    assert_eq!(stop["readbacks"],before["readbacks"],"capture-only redraws must not resample: {stop}");
-    assert_eq!(stop["dropped"],0,"idle is repeat, even with readback debt or queue pressure: {stop}");
-    assert!(stop["writer"].is_object(),"stage attribution must survive stop");
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    assert_eq!(
+        stop["readbacks"], before["readbacks"],
+        "capture-only redraws must not resample: {stop}"
+    );
+    assert_eq!(
+        stop["dropped"], 0,
+        "idle is repeat, even with readback debt or queue pressure: {stop}"
+    );
+    assert!(
+        stop["writer"].is_object(),
+        "stage attribution must survive stop"
+    );
 }
 
 // Test-only container inspection, independent of the writer's counters. R2
@@ -132,7 +145,7 @@ fn record_idle_content_clock_ignores_capture_repaints() {
 fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
     let manifest: Value =
         serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
-    assert!([json!(1),json!(2)].contains(&manifest["version"]));
+    assert!([json!(1), json!(2)].contains(&manifest["version"]));
     let size = manifest["width"].as_u64().unwrap() as usize
         * manifest["height"].as_u64().unwrap() as usize
         * 4;

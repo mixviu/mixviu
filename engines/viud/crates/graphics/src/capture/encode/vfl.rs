@@ -301,10 +301,14 @@ mod tests {
         assert_eq!(encoder.queue(), 4);
         assert_eq!(encoder.dropped.load(Ordering::Relaxed), 1000);
         for _ in 0..1000 {
-            assert!(!encoder.try_push_rgb_change(Arc::new(vec![0;12]),2,2,false));
+            assert!(!encoder.try_push_rgb_change(Arc::new(vec![0; 12]), 2, 2, false));
         }
-        assert_eq!(encoder.dropped.load(Ordering::Relaxed),1000,"repeat queue pressure is not lost changed content");
-        assert_eq!(encoder.queue_overruns.load(Ordering::Relaxed),2000);
+        assert_eq!(
+            encoder.dropped.load(Ordering::Relaxed),
+            1000,
+            "repeat queue pressure is not lost changed content"
+        );
+        assert_eq!(encoder.queue_overruns.load(Ordering::Relaxed), 2000);
         assert!(begin.elapsed() < std::time::Duration::from_secs(1));
         assert!(
             !encoder.path.join("complete.json").exists(),

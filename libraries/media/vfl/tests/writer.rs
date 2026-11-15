@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use media_vfl::{RECT_DELTA, Frame, KEY, Pixels, REPEAT, Writer};
+use media_vfl::{Frame, KEY, Pixels, RECT_DELTA, REPEAT, Writer};
 use std::{path::PathBuf, sync::Arc};
 fn path(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
@@ -48,13 +48,21 @@ fn key_delta_repeat_round_trip_crc_and_recovery() {
         let payload = &data[at + 17..at + 17 + len];
         if kind != REPEAT {
             if kind == KEY {
-                previous = lz4_flex::block::decompress(payload,64).unwrap();
+                previous = lz4_flex::block::decompress(payload, 64).unwrap();
             } else {
-                let values:Vec<usize>=payload[..16].chunks_exact(4).map(|b|u32::from_le_bytes(b.try_into().unwrap()) as usize).collect();
-                let (x,y,w,h)=(values[0],values[1],values[2],values[3]);
-                let decoded=lz4_flex::block::decompress(&payload[16..],w*h*4).unwrap();
+                let values: Vec<usize> = payload[..16]
+                    .chunks_exact(4)
+                    .map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize)
+                    .collect();
+                let (x, y, w, h) = (values[0], values[1], values[2], values[3]);
+                let decoded = lz4_flex::block::decompress(&payload[16..], w * h * 4).unwrap();
                 for row in 0..h {
-                    for (p,d) in previous[((y+row)*4+x)*4..((y+row)*4+x+w)*4].iter_mut().zip(&decoded[row*w*4..(row+1)*w*4]) {*p^=*d;}
+                    for (p, d) in previous[((y + row) * 4 + x) * 4..((y + row) * 4 + x + w) * 4]
+                        .iter_mut()
+                        .zip(&decoded[row * w * 4..(row + 1) * w * 4])
+                    {
+                        *p ^= *d;
+                    }
                 }
             }
         } else {
@@ -104,15 +112,28 @@ fn rejected_frames_leave_the_log_usable() {
 }
 #[test]
 fn rectangle_boundaries_and_whole_frame_fallback() {
-    let mut delta=vec![0;64];delta[63]=9;
-    let (kind,payload)=media_vfl::compress_delta(&delta,4,4).unwrap();
-    assert_eq!(kind,RECT_DELTA);
-    assert_eq!(&payload[..16],&[3u32,3,1,1].into_iter().flat_map(u32::to_le_bytes).collect::<Vec<_>>());
-    assert_eq!(lz4_flex::block::decompress(&payload[16..],4).unwrap(),vec![0,0,0,9]);
-    delta[0]=1;
-    assert_eq!(media_vfl::compress_delta(&delta,4,4).unwrap().0,media_vfl::DELTA);
-    assert_eq!(media_vfl::compress_delta(&[0;64],4,4).unwrap().0,REPEAT);
-    assert!(media_vfl::compress_delta(&[0;63],4,4).is_err());
+    let mut delta = vec![0; 64];
+    delta[63] = 9;
+    let (kind, payload) = media_vfl::compress_delta(&delta, 4, 4).unwrap();
+    assert_eq!(kind, RECT_DELTA);
+    assert_eq!(
+        &payload[..16],
+        &[3u32, 3, 1, 1]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        lz4_flex::block::decompress(&payload[16..], 4).unwrap(),
+        vec![0, 0, 0, 9]
+    );
+    delta[0] = 1;
+    assert_eq!(
+        media_vfl::compress_delta(&delta, 4, 4).unwrap().0,
+        media_vfl::DELTA
+    );
+    assert_eq!(media_vfl::compress_delta(&[0; 64], 4, 4).unwrap().0, REPEAT);
+    assert!(media_vfl::compress_delta(&[0; 63], 4, 4).is_err());
 }
 #[test]
 #[ignore = "payload measurement on a CBC worker, generated content only"]
@@ -136,9 +157,9 @@ fn measure_small_region_delta_4k() {
         }
         let full = lz4_flex::block::compress(&delta).len();
         let roi = 16 + lz4_flex::block::compress(&rect).len();
-        let (kind,adaptive)=media_vfl::compress_delta(&delta,w as u32,h as u32).unwrap();
-        assert_eq!(kind,RECT_DELTA);
-        assert!(adaptive.len()<=full);
+        let (kind, adaptive) = media_vfl::compress_delta(&delta, w as u32, h as u32).unwrap();
+        assert_eq!(kind, RECT_DELTA);
+        assert!(adaptive.len() <= full);
         println!(
             "VFL_DELTA_COST region={}x{} whole_payload={} rectangle_payload_with_coordinates={} saving={} raw_frame={}",
             rw,
@@ -148,6 +169,12 @@ fn measure_small_region_delta_4k() {
             full - roi,
             original.len()
         );
-        println!("VFL_ADAPTIVE_DELTA region={}x{} kind={} payload={}",rw,rh,kind,adaptive.len());
+        println!(
+            "VFL_ADAPTIVE_DELTA region={}x{} kind={} payload={}",
+            rw,
+            rh,
+            kind,
+            adaptive.len()
+        );
     }
 }

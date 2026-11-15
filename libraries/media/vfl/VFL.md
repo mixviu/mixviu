@@ -43,6 +43,9 @@ the same change until a later tick is not itself a drop. An unchanged tick
 is a repeat even if its queue message is omitted and healed from slot numbers.
 This is not a count of all client commits between sampling ticks or a claim
 to know the pixels of an uncaptured source state.
+Legacy version-1 takes from the previous recorder used an aggregate of
+readback-budget skipped ticks and queue rejection slots for `dropped`; do not
+interpret that historical aggregate as version-2 source-update losses.
 
 A gracefully failed or abandoned take drains and seals its complete records
 but writes `interrupted.json` instead of `complete.json`. It has the same
