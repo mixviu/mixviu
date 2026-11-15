@@ -107,8 +107,13 @@ struct GatedClose {
 
 #[zbus::interface(name = "org.freedesktop.portal.Request")]
 impl GatedClose {
-    async fn close(&self, #[zbus(header)] header: zbus::message::Header<'_>) -> zbus::fdo::Result<()> {
-        let _ = self.entered.send(header.path().unwrap().as_str().to_owned());
+    async fn close(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+    ) -> zbus::fdo::Result<()> {
+        let _ = self
+            .entered
+            .send(header.path().unwrap().as_str().to_owned());
         let mut release = self.release.clone();
         release
             .wait_for(|released| *released)
@@ -264,7 +269,8 @@ async fn teardown_session(recovery: bool) {
             assert_eq!(observed, [predicted.as_str(), actual]);
             // Measure from cancellation, not from the second Close. Both hung
             // calls must still be pending just before the ONE shared deadline.
-            tokio::time::advance(deadline - tokio::time::Instant::now() - Duration::from_millis(1)).await;
+            tokio::time::advance(deadline - tokio::time::Instant::now() - Duration::from_millis(1))
+                .await;
             tokio::select! {
                 biased;
                 result = &mut task => panic!("teardown ended before its budget: {result:?}"),
@@ -277,11 +283,24 @@ async fn teardown_session(recovery: bool) {
         }
         close_release.send_replace(true);
         for path in [predicted.as_str(), actual] {
-            client.call_method(Some(server.unique_name().unwrap().as_str()), path,
-                Some(REQUEST), "Drained", &()).await.unwrap();
+            client
+                .call_method(
+                    Some(server.unique_name().unwrap().as_str()),
+                    path,
+                    Some(REQUEST),
+                    "Drained",
+                    &(),
+                )
+                .await
+                .unwrap();
         }
-        assert!(matches!(closes.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty)),
-            "surplus Close after {observed:?}");
+        assert!(
+            matches!(
+                closes.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ),
+            "surplus Close after {observed:?}"
+        );
     })
     .await;
 }
