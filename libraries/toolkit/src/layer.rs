@@ -22,6 +22,7 @@
 
 mod gpu;
 mod input;
+mod kinetic;
 mod scale;
 mod state;
 mod timing;
