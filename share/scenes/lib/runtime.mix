@@ -27,7 +27,9 @@ fn call($target, $command, $args)
     end
   end
   if $code != 0 then
-    return {ok: false, rc: $code < 0 ? 20 : 21, value: {
+    return {ok: false, rc: $code < 0 ? 20 : 21,
+      absent: $code == 10 and type($body) == "string" and
+        contains(["Service '" .. $target .. "' not found", "Service '" .. $target .. "' disconnected"], $body), value: {
       error_code: $code < 0 ? "upstream_transport" : "upstream_refused",
       message: "Scene request failed: " .. $target .. " " .. $command,
       context: {target: $target, command: $command, rc: $code, reply: $body}

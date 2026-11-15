@@ -1,0 +1,62 @@
+-- Focused private-Bus checks. Run through CBC; never on a desktop.
+$_ = run_argv_must(["cargo","build","--locked","-p","mix","--bin","mix"])
+$_ = run_argv_must(["cargo","build","--locked","-p","noded","--bin","noded"])
+$mix = realpath("target/debug/mix")
+$vars = {MIX_TEST_MIX_EXE:$mix,MIX_TEST_NODED_EXE:realpath("target/debug/noded")}
+$test = "engines/viud/tests/panel_idle_test.mix"
+$path = "share/scenes/panel/behaviour.mix"
+$tmp = trim(run_argv_must(["mktemp","-d","/tmp/panel-registry-proof.XXXXXXXX"]))
+$loads = []
+try
+  $legacy=args()[0] ?? ($tmp .. "/legacy.mix")
+  if args()[0]==nil then write_file($legacy,run_argv_must(["git","show","b215ac4f:" .. $path])) end
+  print(run_argv_must([$mix,$test,"legacy-clock",$legacy],{env:$vars,timeout:90}))
+  -- Same harness and real broker, only the behaviour under test changes.
+  $before = run_argv_must(["git","show","6bb5f9a1:" .. $path])
+  write_file($tmp .. "/before.mix",$before .. "\nfn queue_registry()\n  services_changed([\"tray-stub\"])\nend\n")
+  for $case in ["registry-burst"]
+    $r=run_argv([$mix,$test,$case,$tmp .. "/before.mix"],{env:$vars,timeout:45})
+    print("BEFORE " .. $case .. " rc=" .. to_string($r.exit_code) .. "\n" .. $r.stdout .. $r.stderr)
+    if $r.exit_code==0 or $r.timed_out then raise("PROOF","baseline did not fail an assertion") end
+  end
+  write_file($tmp .. "/round1.mix",run_argv_must(["git","show","3190e0b0:" .. $path]))
+  $r=run_argv([$mix,$test,"registry-arrival",$tmp .. "/round1.mix"],{env:$vars,timeout:45})
+  print("ROUND1 arrival-only rc=" .. to_string($r.exit_code) .. "\n" .. $r.stdout .. $r.stderr)
+  if $r.exit_code==0 or $r.timed_out or not contains($r.stderr,"arrival-only fresh roster did not clear tray rejection") then
+    raise("PROOF","round1 did not fail the arrival-only assertion")
+  end
+  write_file($tmp .. "/round2.mix",run_argv_must(["git","show","2a6afcfd:" .. $path]))
+  $r=run_argv([$mix,$test,"registry-task-start",$tmp .. "/round2.mix"],{env:$vars,timeout:45})
+  print("ROUND2 last-hint rc=" .. to_string($r.exit_code) .. "\n" .. $r.stdout .. $r.stderr)
+  if $r.exit_code==0 or $r.timed_out or not contains($r.stderr,"last hint lost after registry.resync task_start failure") then
+    raise("PROOF","round2 did not fail the last-hint assertion")
+  end
+  for $case in ["registry-burst","registry-rejected","registry-arrival","registry-task-start","idle","tray-retry","notify-retry","comp","clock"]
+    print(run_argv_must([$mix,$test,$case],{env:$vars,timeout:90}))
+  end
+  for $i=1 to 8 push($loads,spawn(["sha256sum","/dev/zero"])) end
+  write_file($tmp .. "/one.mix", "$r=run_argv([$mix,$test,$case],{env:$vars,timeout:120})\nwrite_file($out,json_encode($r))\n")
+  for $wave=1 to 3
+    $outputs=[]
+    for $i=1 to 8
+      $out=$tmp .. "/" .. to_string($wave) .. "-" .. to_string($i)
+      push($outputs,$out)
+      $cases=["registry-burst","registry-rejected","registry-arrival","registry-task-start"]
+      $case=$cases[($i-1)%4]
+      $source="$mix=" .. data_encode($mix) .. "\n$test=" .. data_encode($test) .. "\n$case=" .. data_encode($case) .. "\n$vars=" .. data_encode($vars) .. "\n$out=" .. data_encode($out) .. "\n" .. read_file($tmp .. "/one.mix")
+      write_file($out .. ".mix",$source)
+      $_=spawn([$mix,$out .. ".mix"])
+    end
+    for $out in $outputs
+      $deadline=monotonic()+150
+      while not is_file($out) and monotonic()<$deadline sleep(0.1) end
+      if not is_file($out) then raise("PROOF","load test did not finish") end
+      $r=json_parse(read_file($out))
+      print("LOADED " .. $out .. "\n" .. $r.stdout .. $r.stderr)
+      if $r.exit_code!=0 then raise("PROOF","loaded check failed") end
+    end
+  end
+finally
+  for $pid in $loads $_=kill($pid,15) end
+  remove_dir($tmp)
+end
