@@ -1,0 +1,512 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Shipped panel on the existing private-Bus behaviour harness. Instrument the
+-- runtime adapter so even rejected calls to an absent tray are counted.
+$root = realpath(dirname(realpath($0)) .. "/../../..")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIX_TEST_MIX_EXE", "/opt/mix/bin/mix")
+$noded = env("MIX_TEST_NODED_EXE", "/opt/mix/bin/noded")
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/panel-idle.XXXXXXXX"]))
+$bus = nil
+$pids = []
+$tray_pid = nil
+$vars = {}
+$case = args()[0] ?? "idle"
+fn check($ok, $message)
+  if not $ok then
+    for $file in ["calls","completed","state","registry-events"]
+      if is_file($tmp .. "/" .. $file) then eprint($file .. ": " .. read_file($tmp .. "/" .. $file)) end
+    end
+    raise("PANEL_IDLE_TEST", $message)
+  end
+end
+fn start($name, $path)
+  $pid = spawn([$mix, "--serve", $path, "--name", $name], {detach:true, clear_env:true, env:$vars,
+    stdout:{file:$tmp .. "/" .. $name .. ".log"}, stderr:"stdout"})
+  push($pids, $pid)
+  return $pid
+end
+fn stop($pid)
+  if $pid == nil or not process_alive($pid) then return end
+  $_ = kill($pid, 15)
+  for $i = 1 to 40
+    if not process_alive($pid) then return end
+    sleep(0.05)
+  end
+  $_ = kill($pid, 9)
+end
+fn call($to, $command)
+  return json_parse(run_argv_must([$mix, $tmp .. "/client.mix", $to, $command], {clear_env:true,env:$vars,timeout:10}))
+end
+fn wait_service($name)
+  for $i = 1 to 100
+    if call($name, "INFO").rc == 0 then return end
+    sleep(0.05)
+  end
+  if is_file($tmp .. "/" .. $name .. ".log") then eprint(read_file($tmp .. "/" .. $name .. ".log")) end
+  raise("PANEL_IDLE_TEST", "service did not start: " .. $name)
+end
+fn calls_for($command)
+  $n = 0
+  for $line in split(read_file($tmp .. "/calls"), "\n")
+    if $line != "" and json_parse($line).command == $command then $n = $n + 1 end
+  end
+  return $n
+end
+fn tray_calls()
+  return calls_for("tray.list")
+end
+fn wait_state($field, $expected)
+  for $i = 1 to 400
+    $s = is_file($tmp .. "/state") ? json_parse(read_file($tmp .. "/state")) : {}
+    if deep_eq($s[$field], $expected) then return end
+    sleep(0.05)
+  end
+  eprint("last panel state: " .. json_encode($s))
+  eprint(read_file($tmp .. "/calls"))
+  if is_file($tmp .. "/scene-panel.log") then eprint(read_file($tmp .. "/scene-panel.log")) end
+  raise("PANEL_IDLE_TEST", "state did not reach " .. $field .. "=" .. json_encode($expected))
+end
+-- Restart the quiescence window on every call or state transition. A call
+-- count alone does not mean its response/rebuild/retry has finished.
+fn recorded_calls()
+  return filter(split(read_file($tmp .. "/calls"),"\n"),fn($line) = $line!="" and json_parse($line).command!="scenes.model")
+end
+fn quiet()
+  $last = nil
+  $since = monotonic()
+  for $i = 1 to 400
+    if not is_file($tmp .. "/state") then sleep(0.05); continue end
+    $s = json_parse(read_file($tmp .. "/state"))
+    $now = {calls:recorded_calls(),state:$s}
+    if not deep_eq($now,$last) then $since=monotonic(); $last=$now end
+    $started=len(filter(split(read_file($tmp .. "/calls"),"\n"),fn($line) = $line!=""))
+    $completed=len(filter(split(read_file($tmp .. "/completed"),"\n"),fn($line) = $line!=""))
+    if $started==$completed and not $s.rebuilding and not $s.dirty and not $s.tray_dirty and not $s.notes_dirty and not $s.windows_dirty and monotonic()-$since>=0.3 then return end
+    sleep(0.05)
+  end
+  raise("PANEL_IDLE_TEST","panel did not become quiescent: " .. json_encode($s))
+end
+fn idle($seconds)
+  quiet()
+  $before=recorded_calls()
+  $until=monotonic()+$seconds
+  while monotonic()<$until
+    check(deep_eq(recorded_calls(),$before),"unexpected request during idle observation")
+    sleep(0.05)
+  end
+  check(deep_eq(recorded_calls(),$before),"unexpected request at end of idle observation")
+end
+fn wait_tray($expected)
+  for $i = 1 to 400
+    if tray_calls() >= $expected then break end
+    sleep(0.05)
+  end
+  quiet()
+  check(tray_calls() == $expected, "expected exactly " .. to_string($expected) .. " tray reads, got " .. to_string(tray_calls()))
+end
+try
+  mkdir($tmp .. "/home")
+  write_file($tmp .. "/calls", "")
+  write_file($tmp .. "/completed", "")
+  $_ = run_argv_must(["cp", "-r", $root .. "/share/scenes/lib", $tmp .. "/lib"])
+  $path = $tmp .. "/lib/runtime.mix"
+  write_file($path, replace_must(read_file($path), "fn call($target, $command, $args)\n",
+    "fn call($target, $command, $args)\n  $fixture_call=uuid()\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command,at:monotonic()}) .. \"\\n\")\n  try\n  if $command == \"notify.list\" and is_file(env(\"FIXTURE_DIR\") .. \"/notify-throw\") then remove(env(\"FIXTURE_DIR\") .. \"/notify-throw\"); raise(\"FIXTURE_NOTIFY\",\"injected notify failure\") end\n  if $command == \"noded.props.get\" and is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then return {ok:false,value:nil} end\n"))
+  write_file($path,replace_must(read_file($path),"  return {ok: true, rc: 0, value: $body}\nend","  return {ok: true, rc: 0, value: $body}\n  finally\n    append_file(env(\"FIXTURE_DIR\") .. \"/completed\",$fixture_call .. \"\\n\")\n  end\nend"))
+  write_file($path,replace_must(read_file($path),"  try\n  if $command == \"notify.list\"", '  try
+  if is_file(env("FIXTURE_DIR") .. "/retry-fail") and $command==read_file(env("FIXTURE_DIR") .. "/retry-fail") then return {ok:false,value:nil} end
+  if is_file(env("FIXTURE_DIR") .. "/comp-fail") then
+    $fault=json_parse(read_file(env("FIXTURE_DIR") .. "/comp-fail"))
+    if $command==$fault.command or ($fault.command=="comp.workspaces.list" and $command=="comp.props.get") then
+      if $command!="comp.workspaces.list" then remove(env("FIXTURE_DIR") .. "/comp-fail") end
+      if $fault.kind=="throw" then raise("FIXTURE_COMP","injected comp failure") end
+      return {ok:false,value:nil}
+    end
+  end
+  if $command == "notify.list"'))
+  write_file($tmp .. "/client.mix", 'send $1 $2 body="{}" timeout=5
+print(json_encode({rc:$rc,value:$result}))
+')
+  write_file($tmp .. "/stub.mix", 'on shell.scene.describe
+  reply(0, json_encode([{path:"flow",enum:["horizontal"]},{path:"hidden",type:"bool"}]))
+end
+on scenes.ready
+  reply(0,"{}")
+end
+on scenes.model
+  append_file(env("FIXTURE_DIR") .. "/models", "1\n")
+  write_file(env("FIXTURE_DIR") .. "/model", json_encode($event.args.value))
+  reply(0,"{}")
+end
+on scenes.list
+  reply(0, json_encode({scenes:[]}))
+end
+on comp.props.watch
+  reply(0,"{}")
+end
+on comp.windows.list
+  $windows = is_file(env("FIXTURE_DIR") .. "/windows") ? json_parse(read_file(env("FIXTURE_DIR") .. "/windows")) : []
+  reply(0,json_encode({windows:$windows}))
+end
+on comp.workspaces.list
+  reply(0,is_file(env("FIXTURE_DIR") .. "/workspaces") ? read_file(env("FIXTURE_DIR") .. "/workspaces") : json_encode({count:1,current:1,list:[]}))
+end
+on apps.icon
+  reply(0,json_encode({path:""}))
+end
+on windows.change
+  $_=publish("panel-stub.props.changed",json_encode({path:"windows"}),{command:"props.changed"})
+  reply(0,"{}")
+end
+')
+  write_file($tmp .. "/tray.mix", 'on tray.list
+  if is_file(env("FIXTURE_DIR") .. "/tray-slow") then
+    remove(env("FIXTURE_DIR") .. "/tray-slow")
+    sleep(0.8)
+    write_file(env("FIXTURE_DIR") .. "/tray-completed","1")
+  end
+  if is_file(env("FIXTURE_DIR") .. "/tray-fail") then
+    remove(env("FIXTURE_DIR") .. "/tray-fail")
+    reply(10,"busy")
+    return
+  end
+  reply(0,json_encode({items:[]}))
+end
+on change
+  $_ = publish("tray-stub.item.added", "{}", {command:"tray.item.added"})
+  reply(0,"{}")
+end
+on props
+  $_ = publish("tray-stub.props.changed", "{}", {command:"props.changed"})
+  reply(0,"{}")
+end
+')
+  $bus = $pb.start({dir:$tmp .. "/bus",name:"panel-idle-test",noded:$noded})
+  $vars = merge($pb.client_env($bus), {PATH:"/usr/bin:/bin",HOME:$tmp .. "/home",MIX_STATS:"off",
+    FIXTURE_DIR:$tmp,SCENE_NAME:"panel",SCENE_GENERATION:"1",SCENE_HOST:"panel-stub",
+    SCENES_SERVICE:"panel-stub",COMP_SERVICE:"panel-stub",APPS_SERVICE:"panel-stub",NOTIFY_SERVICE:"notify-stub",
+    TRAY_SERVICE:"tray-stub",SCENES_LIB:$tmp .. "/lib",SCENE_DIR:$tmp .. "/home"})
+  start("panel-stub", $tmp .. "/stub.mix")
+  wait_service("panel-stub")
+  $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+  if starts_with($case,"retry-") then
+    -- Hold a retry at its sleep boundary until the test explicitly permits
+    -- it to finish. No scheduler race or guessed sleep chooses the ordering.
+    for $source in ["windows","tray","notes","registry"]
+      $behaviour=replace_must($behaviour,"sleep($state." .. $source .. "_delay)","fixture_retry_sleep(\"" .. $source .. "\",$state." .. $source .. "_delay)")
+      $behaviour=replace_must($behaviour,'task_start("' .. $source .. '.retry",','fixture_task_start("' .. $source .. '.retry",')
+    end
+    write_file($tmp .. "/notify.mix",'on notify.list
+  reply(0,"[]")
+end
+')
+    start("notify-stub",$tmp .. "/notify.mix")
+    wait_service("notify-stub")
+  end
+  $behaviour=replace_must($behaviour,"fn services_changed($live)\n","fn services_changed($live)\n  append_file(env(\"FIXTURE_DIR\") .. \"/registry-events\",json_encode($live) .. \"\\n\")\n")
+  if $case == "clock" then
+    $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","sleep(0.05)")
+    -- Isolate clock/window events from the independently capped startup
+    -- registration delivery; the comp case covers that path separately.
+    $behaviour=replace_must($behaviour,"services_changed($a.new)","return")
+  elif $case == "registry" then
+    -- Keep the initial cache stale until an item event proves the tray is
+    -- live. Startup registry delivery timing must not repair it first.
+    $behaviour=replace_must($behaviour,"services_changed($a.new)","if not is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then services_changed($a.new) end")
+  else
+    -- Native driver/ACP registration is asynchronous too. Isolate real
+    -- fixture arrivals/departures from that noise; explicit registry hooks
+    -- below exercise conservative same-name/coalesced hints exactly once.
+    $behaviour=replace_must($behaviour,"services_changed($a.new)","fixture_registry($a)")
+  end
+  write_file($tmp .. "/panel.mix", $behaviour .. '
+fn fixture_registry($change)
+  for $name in [$COMP,$APPS,$TRAY,$NOTIFY]
+    if contains($change.old ?? [],$name) != contains($change.new ?? [],$name) then services_changed($change.new); return end
+  end
+end
+fn fixture_task_start($name,$body)
+  $fault=env("FIXTURE_DIR") .. "/task-fail"
+  if is_file($fault) and read_file($fault)==$name then
+    remove($fault)
+    raise("TASK_LIMIT","injected task handle limit")
+  end
+  return task_start($name,$body)
+end
+fn fixture_retry_sleep($source,$delay)
+  $gate=env("FIXTURE_DIR") .. "/retry-hold"
+  write_atomic(env("FIXTURE_DIR") .. "/retry-sleep",$source)
+  while is_file($gate) sleep(0.02) end
+  sleep($delay)
+end
+on panel.test.retry
+  $source=$event.args.source
+  if $source=="windows" then fetch_windows()
+  elif $source=="tray" then fetch_tray()
+  elif $source=="notes" then fetch_notes()
+  elif $source=="registry" then refresh_registry()
+  end
+  reply(0,json_encode({retrying:$state[$source .. "_retrying"],dirty:$state[$source .. "_dirty"],delay:$state[$source .. "_delay"]}))
+end
+-- Local fixture observation does not register another Bus client on each
+-- sample. Atomic files are already the harness model/call observation path.
+on panel.test.observe async
+  while true
+    $retry={}
+    for $source in ["windows","tray","notes","registry"]
+      $retry[$source .. "_retrying"]=$state[$source .. "_retrying"]
+      $retry[$source .. "_delay"]=$state[$source .. "_delay"]
+    end
+    write_atomic(env("FIXTURE_DIR") .. "/state",json_encode(merge($retry,{services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,windows_dirty:$state.windows_dirty,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows,ws_count:$state.ws_count})))
+    sleep(0.02)
+  end
+end
+on panel.test.registry
+  if $event.args.refresh == true then refresh_registry() else services_changed($event.args.new) end
+  reply(0,"{}")
+end
+task_start("panel.test.observe","{}")
+')
+  if $case == "registry" or $case == "tray-retry" or $case == "coalesced" or starts_with($case,"retry-") then
+    if $case == "registry" then write_file($tmp .. "/registry-fail", "1") end
+    $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
+    wait_service("tray-stub")
+  end
+  start("scene-panel", $tmp .. "/panel.mix")
+  wait_service("scene-panel")
+  for $i = 1 to 100
+    if is_file($tmp .. "/model") then break end
+    sleep(0.05)
+  end
+  check(is_file($tmp .. "/model"), "first panel model missing")
+  if $case != "clock" and $case != "registry" then quiet() end
+  if starts_with($case,"retry-") then
+    $parts=split($case,"-")
+    $mode=$parts[1]
+    $source=$parts[2]
+    $commands={windows:"comp.windows.list",tray:"tray.list",notes:"notify.list",registry:"noded.props.get"}
+    $command=$commands[$source]
+    write_file($tmp .. "/retry.mix",'send scene-panel panel.test.retry body={source:"' .. $source .. '"}
+$body=$result
+if $rc==0 and type($body)=="string" then $body=json_parse($body) end
+print(json_encode({rc:$rc,value:$body}))
+')
+    write_file($tmp .. "/retry-fail",$command)
+    if $mode=="reset" then write_file($tmp .. "/retry-hold","1")
+    else write_file($tmp .. "/task-fail",$source .. ".retry") end
+    $result=json_parse(run_argv_must([$mix,$tmp .. "/retry.mix"],{clear_env:true,env:$vars,timeout:10}))
+    check($result.rc==0,"retry task_start exception escaped fetch")
+    if $mode=="start" then
+      check(not $result.value.retrying,"task_start failure stranded retrying flag")
+      check($result.value.dirty,"failed read lost dirty state")
+    else
+      check($result.value.retrying,"failed read did not arm retry")
+      for $i=1 to 400
+        if is_file($tmp .. "/retry-sleep") then break end
+        sleep(0.05)
+      end
+      check(is_file($tmp .. "/retry-sleep"),"retry did not reach sleep fence")
+      wait_state($source .. "_retrying",true)
+    end
+    remove($tmp .. "/retry-fail")
+    if $mode=="start" and $source=="windows" then
+      -- A real props delivery must still reach rebuild after task exhaustion.
+      write_file($tmp .. "/windows",json_encode([{id:11,band:"normal",app_id:"example",title:"after task limit",workspace:1}]))
+      call("panel-stub","windows.change")
+      wait_state("windows",[{id:11,band:"normal",app_id:"example",title:"after task limit",workspace:1}])
+    else
+      $result=json_parse(run_argv_must([$mix,$tmp .. "/retry.mix"],{clear_env:true,env:$vars,timeout:10}))
+      check($result.rc==0 and not $result.value.dirty,"concurrent read did not succeed")
+    end
+    if $mode=="reset" then remove($tmp .. "/retry-hold") end
+    wait_state($source .. "_retrying",false)
+    wait_state($source .. "_delay",0.25)
+    idle(1.2)
+    print("PASS " .. $case .. " preserves retry liveness and base delay")
+    exit(0)
+  elif starts_with($case,"comp-failure-") then
+    $kind=replace($case,"comp-failure-","")
+    $command=if $kind=="watch" or $kind=="watch-throw" then "comp.props.watch" elif $kind=="workspace" then "comp.workspaces.list" else "comp.windows.list" end
+    $registry=calls_for("noded.props.get")
+    $watches=calls_for("comp.props.watch")
+    write_file($tmp .. "/workspaces",json_encode({count:2,current:2,list:[]}))
+    write_file($tmp .. "/windows",json_encode([{id:9,band:"normal",app_id:"example",title:"recovered",workspace:1}]))
+    write_file($tmp .. "/comp-fail",json_encode({command:$command,kind:contains($kind,"throw") ? "throw" : "refuse"}))
+    $payload=contains($kind,"throw") ? "{refresh:true}" : '{old:["panel-stub"],new:["panel-stub","late-app"]}'
+    write_file($tmp .. "/registry.mix", "send scene-panel panel.test.registry body=" .. $payload .. "\n")
+    $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
+    wait_state("windows",[{id:9,band:"normal",app_id:"example",title:"recovered",workspace:1}])
+    wait_state("ws_count",2)
+    quiet()
+    if contains($kind,"watch") then check(calls_for("comp.props.watch")==$watches+2,"failed comp watch was not retried exactly once") end
+    check(calls_for("noded.props.get")==$registry+(contains($kind,"throw") ? 1 : 0),"comp failure was attributed to registry")
+    idle(1.2)
+    print("PASS compositor " .. $kind .. " failure recovers without unrelated events")
+    exit(0)
+  elif $case == "comp" then
+    $watches=calls_for("comp.props.watch")
+    $windows=calls_for("comp.windows.list")
+    $icons=calls_for("apps.icon")
+    write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["panel-stub"],new:["panel-stub","late-app"]}
+')
+    $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
+    quiet()
+    check(calls_for("comp.props.watch")==$watches+1,"coalesced comp restart did not re-watch exactly once")
+    check(calls_for("comp.windows.list")==$windows+1,"coalesced comp restart did not re-read exactly once")
+    check(calls_for("apps.icon")==$icons+1,"coalesced apps restart kept stale icon cache")
+    print("PASS coalesced comp/apps restart watches and refreshes once")
+    exit(0)
+  elif $case == "clock" then
+    $windows=calls_for("comp.windows.list")
+    $workspaces=calls_for("comp.workspaces.list")
+    $models=len(split(read_file($tmp .. "/models"),"\n"))
+    for $i=1 to 400
+      if len(split(read_file($tmp .. "/models"),"\n")) >= $models+5 then break end
+      sleep(0.05)
+    end
+    check(len(split(read_file($tmp .. "/models"),"\n")) >= $models+5,"clock did not repaint")
+    check(calls_for("comp.windows.list")==$windows and calls_for("comp.workspaces.list")==$workspaces,"clock repaint re-read comp")
+    write_file($tmp .. "/windows",json_encode([{id:7,band:"normal",app_id:"example",title:"changed",workspace:1}]))
+    call("panel-stub","windows.change")
+    wait_state("windows",[{id:7,band:"normal",app_id:"example",title:"changed",workspace:1}])
+    check(calls_for("comp.windows.list")==$windows+1,"window change did not refresh cached model")
+    print("PASS clock repaints cached model and window changes still read")
+    exit(0)
+  elif $case == "notify" or $case == "notify-retry" then
+    check(calls_for("notify.list")==0,"absent notify called")
+    write_file($tmp .. "/notify.mix", 'on notify.list
+  if is_file(env("FIXTURE_DIR") .. "/notify-fail") then
+    remove(env("FIXTURE_DIR") .. "/notify-fail")
+    reply(10,"busy")
+    return
+  end
+  reply(0,"[]")
+end
+on change
+  $_=publish("notify-stub.changed","{}",{command:"notification.created"})
+  reply(0,"{}")
+end
+')
+    $notify_pid=start("notify-stub",$tmp .. "/notify.mix")
+    wait_service("notify-stub")
+    wait_state("notify_live",true)
+    quiet()
+    check(calls_for("notify.list")==1,"notify registration must fetch once")
+    if $case == "notify-retry" then
+      $registry=calls_for("noded.props.get")
+      write_file($tmp .. "/notify-throw","1")
+      write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={refresh:true}
+')
+      check(run_argv([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10}).exit_code==0,"notify exception escaped registration handler")
+      quiet()
+      check(calls_for("notify.list")==3,"thrown notify read did not retry once")
+      check(calls_for("noded.props.get")==$registry+1,"notify failure became a registry failure")
+      write_file($tmp .. "/notify-fail","1")
+      call("notify-stub","change")
+      quiet()
+      check(calls_for("notify.list")==5,"refused notify read did not retry once")
+      $reads=[]
+      for $line in split(read_file($tmp .. "/calls"),"\n")
+        if $line!="" then
+          $row=json_parse($line)
+          if $row.command=="notify.list" then push($reads,$row.at) end
+        end
+      end
+      check($reads[2]-$reads[1]>=0.2 and $reads[4]-$reads[3]>=0.2,"notify retry ran before deadline")
+      idle(1.2)
+      check(calls_for("notify.list")==5,"notify kept polling after recovery")
+      print("PASS thrown/refused notify reads retry once without registry recovery")
+      exit(0)
+    end
+    call("notify-stub","change")
+    for $i=1 to 100
+      if calls_for("notify.list")==2 then break end
+      sleep(0.05)
+    end
+    call("scene-panel","panel.refresh")
+    idle(1.2)
+    check(calls_for("notify.list")==2,"notify event/rebuild read count")
+    stop($notify_pid)
+    wait_state("notify_live",false)
+    call("scene-panel","panel.refresh")
+    idle(0.2)
+    check(calls_for("notify.list")==2,"departed notify called")
+    print("PASS absent notify, late registration, notification event and idle quiet")
+    exit(0)
+  elif $case == "registry" then
+    check(tray_calls()==0,"failed registry must not invent a tray")
+    call("tray-stub","change")
+    wait_tray(1)
+    wait_state("tray_live",true)
+    remove($tmp .. "/registry-fail")
+    wait_state("registry_dirty",false)
+    check(calls_for("noded.props.get")>=2,"failed registry read never retried")
+    print("PASS registry recovery and tray event repairs stale cache")
+    exit(0)
+  elif $case == "tray-retry" then
+    wait_state("tray_live",true)
+    quiet()
+    $baseline=tray_calls()
+    write_file($tmp .. "/tray-fail","1")
+    call("tray-stub","change")
+    wait_tray($baseline+2)
+    wait_state("tray_dirty",false)
+    $reads=[]
+    for $line in split(read_file($tmp .. "/calls"),"\n")
+      if $line!="" then
+        $row=json_parse($line)
+        if $row.command=="tray.list" then push($reads,$row.at) end
+      end
+    end
+    check($reads[$baseline+1]-$reads[$baseline]>=0.2,"tray retry ran before its deadline")
+    idle(1.2)
+    check(tray_calls()==$baseline+2,"successful tray recovery kept polling")
+    print("PASS failed tray read retries once at deadline then stays quiet")
+    exit(0)
+  elif $case == "coalesced" then
+    wait_state("tray_live",true)
+    quiet()
+    $baseline=tray_calls()
+    write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["tray-stub","panel-stub"],new:["tray-stub","panel-stub","late-app"]}
+')
+    $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
+    wait_tray($baseline+1)
+    print("PASS coalesced tray restart with unequal registration lists")
+    exit(0)
+  end
+  for $i = 1 to 3 check(call("scene-panel", "panel.refresh").rc == 0, "refresh refused") end
+  idle(1.2)
+  check(tray_calls() == 0, "absent tray called at startup, rebuild or idle")
+  check(calls_for("notify.list")==0,"absent notify called at startup, rebuild or idle")
+  $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
+  wait_service("tray-stub")
+  wait_tray(1)
+  if $case == "slow-tray" then
+    write_file($tmp .. "/tray-slow","1")
+    call("tray-stub","change")
+    wait_tray(2)
+    check(is_file($tmp .. "/tray-completed"),"wait_tray returned before the in-flight read completed")
+    print("PASS wait_tray waits for slow response/rebuild completion")
+    exit(0)
+  end
+  call("tray-stub", "change")
+  wait_tray(2)
+  call("tray-stub", "props")
+  wait_tray(3)
+  for $i = 1 to 3 call("scene-panel", "panel.refresh") end
+  idle(1.2)
+  check(tray_calls() == 3, "idle or unrelated rebuild re-read the tray")
+  stop($tray_pid)
+  wait_state("tray_live",false)
+  call("scene-panel", "panel.refresh")
+  idle(0.3)
+  check(tray_calls() == 3, "departed tray called")
+  $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
+  wait_service("tray-stub")
+  wait_tray(4)
+  print("PASS panel idle: absent tray, late registration, item/props changes once, unrelated rebuilds and idle quiet, remove/re-register")
+finally
+  for $pid in reverse($pids) stop($pid) end
+  if $bus != nil then $pb.stop($bus) end
+  remove_dir($tmp)
+end
