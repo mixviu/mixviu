@@ -3,8 +3,9 @@
 `src/baseline.rs` provides a passive 256-frame ring shared with toolkit's
 `ui.stats` reader through viewport-scoped egui temporary data. The winit
 painter advances a presentation receipt only after presenting a surface.
-Eframe uses that receipt to exclude skipped paints from its existing frame
-timing. Layer hosts record after successful presentation. Neither path arms
+Eframe uses that receipt to gate only the new `baseline::record` call;
+its existing frame timing and post-render bookkeeping are unchanged.
+Layer hosts record after successful presentation. Neither path arms
 a timer or requests a repaint. The storage contract is documented in
 `libraries/toolkit/src/drive_stats.rs`; retain both ends when re-vendoring.
 Toolkit's layer-feature test writes through `baseline::record` and decodes

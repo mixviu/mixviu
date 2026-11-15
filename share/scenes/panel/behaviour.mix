@@ -83,7 +83,8 @@ $state = {ready: false, windows: [], ws_count: 1, ws_current: 1, ws_names: [], t
   net_watch: nil, net_started: 0, net_retry: 5, net_retrying: false,
   audio_watch: nil, audio_started: 0, audio_retry: 5, audio_retrying: false, audio_unavailable: false,
   model: nil, settings_watch: nil,
-  registry_dirty: false, registry_retrying: false, registry_delay: 0.25,
+  registry_dirty: false, registry_retrying: false, registry_delay: 0.25, registry_queued: false,
+  tray_rejected: false,
   tray_dirty: false, tray_retrying: false, tray_delay: 0.25,
   notes_dirty: false, notes_retrying: false, notes_delay: 0.25, windows_dirty: true,
   windows_watch_dirty: true, windows_retrying: false, windows_delay: 0.25}
@@ -268,7 +269,7 @@ fn apply_workspaces($ws)
 end
 
 fn fetch_tray()
-  if not contains($state.services, $TRAY) then
+  if $state.tray_rejected or not contains($state.services, $TRAY) then
     $state.tray = []
     $state.tray_dirty = false
     return
@@ -276,6 +277,13 @@ fn fetch_tray()
   $state.tray_dirty = true
   try
     $out = $r.call($TRAY, "tray.list", {})
+    if $out.absent == true then
+      $state.tray_rejected = true
+      $state.tray = []
+      $state.tray_dirty = false
+      $state.tray_delay = 0.25
+      return
+    end
     if $out.ok and type($out.value) == "map" and type($out.value.items) == "list" then
       $state.tray = $out.value.items
       $state.tray_dirty = false
@@ -313,6 +321,8 @@ on tray.retry async
 end
 
 fn service_seen($name)
+  -- A real item/props event is fresh evidence after a coalesced restart.
+  if $name == $TRAY then $state.tray_rejected = false end
   if not contains($state.services, $name) then $state.services = concat($state.services, [$name]) end
 end
 
@@ -570,12 +580,43 @@ on registry.retry async
   if $state.registry_dirty then refresh_registry() end
 end
 
+-- Registry notifications are invalidations, not authoritative snapshots.
+-- One bounded window combines adjacent deliveries; read the current roster
+-- afterwards so a delayed arrival hint cannot resurrect a departed citizen.
+fn queue_registry()
+  if $state.registry_queued then return end
+  $state.registry_queued = true
+  try
+    task_start("registry.resync", "{}")
+  catch $message
+    $state.registry_queued = false
+    -- Preserve the last hint even when no task handle is available. This
+    -- one read is unbatched; refresh_registry contains failures and arms
+    -- its existing bounded retry if the roster cannot be read.
+    eprint("panel: registry resync not scheduled: " .. to_string($message))
+    refresh_registry()
+  end
+end
+
+on registry.resync async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    sleep(0.025)
+  finally
+    $state.registry_queued = false
+  end
+  refresh_registry()
+end
+
 fn services_changed($live)
   if type($live) != "list" then return end
   $state.registry_dirty = false
   $state.registry_delay = 0.25
   $previous = $state.services
   $state.services = $live
+  -- A successful roster read is newer evidence than a rejected call. Names
+  -- alone can hide a same-name restart, including an empty tray with no events.
+  $state.tray_rejected = false
   -- Names-only deliveries can hide a restart even when old != new. Native
   -- discovery rows do not yet carry registration ids, so every delivery is
   -- conservatively a sync hint for each present service (no idle poll).
@@ -886,9 +927,9 @@ on props.changed
   $a = $r.event_args($event)
   if $event.headers.topic == $NODED .. ".props.changed" then
     if gap($event) then
-      refresh_registry()
+      queue_registry()
     elif $a.path == "services.registered" then
-      services_changed($a.new)
+      queue_registry()
     end
     return
   end
@@ -949,6 +990,7 @@ on bus.connected
   start_clock()
   $state.ready = false
   $state.services = []
+  $state.tray_rejected = false
   $state.icons = empty_icons()
   $ready = $r.ready($ctx)
   $state.ready = $ready.ok

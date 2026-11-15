@@ -739,6 +739,7 @@
     {name:"shell.toast.hide", owner:"viu", version:"0.1.0", status:"draft", class:"intent", schema:"none"},
     {name:"shell.ping", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
     {name:"shell.info", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
+    {name:"shell.ui.stats", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
     {name:"shell.props.get", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
     {name:"shell.panel.state", owner:"viu", version:"0.2.0", status:"accepted", class:"query", schema:"none"},
     {name:"shell.panel.mode", owner:"viu", version:"0.2.0", status:"accepted", class:"intent", schema:"none"},

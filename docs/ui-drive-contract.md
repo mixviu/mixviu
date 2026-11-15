@@ -75,6 +75,10 @@ same fields except `depth` is absent.
 
 ## Roles
 
+Tree-table scroll bodies use `Table`, labelled with their scene node title
+when supplied, otherwise their scene node id. Their rectangle covers the
+scroll body so a driver can target it with `ui.scroll`.
+
 The complete supported role vocabulary follows. It retains existing strings,
 including roles not emitted by every widget. The adapter maps each explicitly;
 new backend roles require a deliberate contract update. A headless fixture
@@ -84,3 +88,21 @@ window also pins the roles actually emitted by representative controls.
 ```json
 ["Unknown","TextRun","Cell","Label","Image","Link","Row","ListItem","ListMarker","TreeItem","ListBoxOption","MenuItem","MenuListOption","Paragraph","GenericContainer","CheckBox","RadioButton","TextInput","Button","DefaultButton","Pane","RowHeader","ColumnHeader","RowGroup","List","Table","LayoutTableCell","LayoutTableRow","LayoutTable","Switch","Menu","MultilineTextInput","SearchInput","DateInput","DateTimeInput","WeekInput","MonthInput","TimeInput","EmailInput","NumberInput","PasswordInput","PhoneNumberInput","UrlInput","Abbr","Alert","AlertDialog","Application","Article","Audio","Banner","Blockquote","Canvas","Caption","Caret","Code","ColorWell","ComboBox","EditableComboBox","Complementary","Comment","ContentDeletion","ContentInsertion","ContentInfo","Definition","DescriptionList","Details","Dialog","DisclosureTriangle","Document","EmbeddedObject","Emphasis","Feed","FigureCaption","Figure","Footer","Form","Grid","GridCell","Group","Header","Heading","Iframe","IframePresentational","ImeCandidate","Keyboard","Legend","LineBreak","ListBox","Log","Main","Mark","Marquee","Math","MenuBar","MenuItemCheckBox","MenuItemRadio","MenuListPopup","Meter","Navigation","Note","PluginObject","ProgressIndicator","RadioGroup","Region","RootWebArea","Ruby","RubyAnnotation","ScrollBar","ScrollView","Search","Section","SectionFooter","SectionHeader","Slider","SpinButton","Splitter","Status","Strong","Suggestion","SvgRoot","Tab","TabList","TabPanel","Term","Time","Timer","TitleBar","Toolbar","Tooltip","Tree","TreeGrid","Video","WebView","Window","PdfActionableHighlight","PdfRoot","GraphicsDocument","GraphicsObject","GraphicsSymbol","DocAbstract","DocAcknowledgements","DocAfterword","DocAppendix","DocBackLink","DocBiblioEntry","DocBibliography","DocBiblioRef","DocChapter","DocColophon","DocConclusion","DocCover","DocCredit","DocCredits","DocDedication","DocEndnote","DocEndnotes","DocEpigraph","DocEpilogue","DocErrata","DocExample","DocFootnote","DocForeword","DocGlossary","DocGlossRef","DocIndex","DocIntroduction","DocNoteRef","DocNotice","DocPageBreak","DocPageFooter","DocPageHeader","DocPageList","DocPart","DocPreface","DocPrologue","DocPullquote","DocQna","DocSubtitle","DocTip","DocToc","ListGrid","Terminal"]
 ```
+
+## Passive frame statistics
+
+`ui.stats` accepts optional `output` (layer output name) and `viewport`
+(window id or `root`). It never wakes or repaints a surface. The shell
+host supports the root viewport and returns `{available, surfaces}`, with
+one `{output, surface, stats}` entry per layer surface; `output` filters
+that list. Native single-surface replies retain their existing shape.
+
+Each available statistics record retains `frames_drawn`, the last 256
+frames in `cpu_frame_ms`, and the existing adapter and surface fields.
+`cpu_frame_total_ms` sums CPU frame time since the surface started;
+`cpu_frame_max_ms` is its maximum since start. Subtract total CPU time and
+frame count between observations to calculate a whole-run mean. The
+lifetime maximum cannot be subtracted to recover an interval maximum.
+The baseline tool stores scroll-only start/end timestamps and statistics
+in `workload_run`, and derives frame rate and mean for single-surface
+replies using that interval, excluding the idle lead-in.
