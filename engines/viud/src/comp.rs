@@ -1051,7 +1051,7 @@ impl CompEngine for Engine<'_> {
             identity(self.context, self.binding_profile),
             scopes,
         );
-        snapshot.session = Some(self.session);
+        snapshot.session = Some(self.session.clone());
         Some(snapshot)
     }
 
