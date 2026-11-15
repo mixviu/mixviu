@@ -128,7 +128,8 @@ impl Log {
                 .to_string()
                 .as_bytes(),
         )?;
-        receipt.sync_all()
+        receipt.sync_all()?;
+        File::open(&self.path)?.sync_all()
     }
     fn frame(&mut self, frame: Frame) -> io::Result<()> {
         while self.next < frame.slot {
@@ -214,9 +215,11 @@ impl VideoEncoder {
             file.write_all(manifest.to_string().as_bytes())?;
             file.sync_all()?;
             let chunk = create(&path.join("chunk-000000.bin"))?;
-            File::open(&path)?.sync_all()?;
             let frames = create(&path.join("frames.jsonl"))?;
             let markers = create(&path.join("markers.jsonl"))?;
+            File::open(&path)?.sync_all()?;
+            let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+            File::open(parent)?.sync_all()?;
             Ok(Log {
                 path: path.clone(),
                 chunk,
@@ -268,6 +271,7 @@ impl VideoEncoder {
                                 .as_bytes(),
                         )?;
                         origin.sync_all()?;
+                        File::open(&log.path)?.sync_all()?;
                         origin_written = true;
                     }
                     log.frame(frame)?;

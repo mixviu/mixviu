@@ -71,6 +71,9 @@ Each sealed chunk has a `chunk-NNNNNN.json` receipt:
 including headers. `next_frame` is the next slot after its last record.
 Chunks are synced before their receipts. Recovery can read a chunk without
 its receipt using the per-record CRCs.
+Sealing also syncs the take directory. Setup syncs the take directory and its
+parent, and the origin entry is synced before the first record, so sealed
+chunks remain discoverable after power loss before finalisation.
 
 ## Reader checks and recovery
 

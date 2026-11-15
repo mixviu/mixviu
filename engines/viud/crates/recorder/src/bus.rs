@@ -143,7 +143,11 @@ impl TakeFiles {
     fn publish_tracked(&self, published: &mut bool) -> Result<(), String> {
         self.publish_with(published, |parent| File::open(parent)?.sync_all())
     }
-    fn publish_with(&self, published: &mut bool, sync_parent: impl FnOnce(&std::path::Path) -> std::io::Result<()>) -> Result<(), String> {
+    fn publish_with(
+        &self,
+        published: &mut bool,
+        sync_parent: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+    ) -> Result<(), String> {
         rename_no_replace(&self.video, &self.path).map_err(|e| e.to_string())?;
         *published = true;
         let parent = std::path::Path::new(&self.path)
@@ -183,6 +187,8 @@ fn read_clock(clock: libc::clockid_t) -> Result<u64, String> {
     Ok(ts.tv_sec as u64 * 1_000_000 + ts.tv_nsec as u64 / 1000)
 }
 
+type FinaliseResult = (Result<(), String>, Option<String>);
+
 pub struct Recording {
     pub session: String,
     pub fps: u32,
@@ -209,7 +215,7 @@ pub struct Recording {
     files: TakeFiles,
     bytes: Arc<std::sync::atomic::AtomicU64>,
     encoder: Option<VideoEncoder>,
-    finishing: Option<Receiver<(Result<(), String>, Option<String>)>>,
+    finishing: Option<Receiver<FinaliseResult>>,
     stop_discard: Option<bool>,
     finaliser: Option<std::thread::JoinHandle<()>>,
 }
@@ -429,9 +435,15 @@ mod file_tests {
         let files = TakeFiles::create(&path).unwrap();
         std::fs::create_dir(&files.video).unwrap();
         let mut published = false;
-        assert!(files.publish_with(&mut published, |_| Err(std::io::Error::from_raw_os_error(libc::EIO))).is_err());
+        assert!(
+            files
+                .publish_with(&mut published, |_| Err(std::io::Error::from_raw_os_error(
+                    libc::EIO
+                )))
+                .is_err()
+        );
         assert!(published);
-        assert_eq!(files.retained_path(published),Some(path));
+        assert_eq!(files.retained_path(published), Some(path));
         assert!(!std::path::Path::new(&files.video).exists());
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -440,13 +452,20 @@ mod file_tests {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
         let path = dir.join("discard.vfl").to_str().unwrap().to_owned();
-        let mut recording = Recording::new("test".into(),path,2,2,30,"vfl".into()).unwrap();
-        recording.frame(Some((2,2,Arc::new(vec![0;12]),0))).unwrap();
+        let mut recording = Recording::new("test".into(), path, 2, 2, 30, "vfl".into()).unwrap();
+        recording
+            .frame(Some((2, 2, Arc::new(vec![0; 12]), 0)))
+            .unwrap();
         recording.error = Some("capture failed".into());
         assert!(recording.stop(true));
-        while !recording.poll() { std::thread::sleep(std::time::Duration::from_millis(5)); }
-        assert_eq!(recording.terminal.as_ref().unwrap()["recovery_path"],Value::Null);
-        assert_eq!(std::fs::read_dir(&dir).unwrap().count(),0);
+        while !recording.poll() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(
+            recording.terminal.as_ref().unwrap()["recovery_path"],
+            Value::Null
+        );
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         std::fs::remove_dir(dir).unwrap();
     }
     #[test]
