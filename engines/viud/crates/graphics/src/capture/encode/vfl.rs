@@ -3,10 +3,7 @@
 use std::{fs::{File, OpenOptions}, io::{self, Write}, os::unix::fs::{OpenOptionsExt, DirBuilderExt}, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicU64, AtomicUsize, Ordering}, mpsc::{sync_channel, SyncSender}}, thread::JoinHandle};
 use serde_json::json;
 
-const CHUNK_BYTES: u64 = 64 * 1024 * 1024;
-const KEY: u8 = 0;
-const DELTA: u8 = 1;
-const REPEAT: u8 = 2;
+use media::vfl::{CHUNK_BYTES, KEY, DELTA, REPEAT};
 
 fn create(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).mode(0o600)
@@ -26,6 +23,8 @@ pub struct VideoEncoder {
     dropped: Arc<AtomicU64>,
     queued: Arc<AtomicUsize>,
     error: Arc<Mutex<Option<String>>>,
+    origin: Arc<AtomicU64>,
+    total_dropped: Arc<AtomicU64>,
 }
 
 struct Log {
@@ -124,6 +123,9 @@ impl VideoEncoder {
         let dropped = Arc::new(AtomicU64::new(0));
         let queued = Arc::new(AtomicUsize::new(0));
         let error = Arc::new(Mutex::new(None));
+        let origin = Arc::new(AtomicU64::new(0));
+        let total_dropped = Arc::new(AtomicU64::new(0));
+        let (o,td) = (origin.clone(),total_dropped.clone());
         let (s,d,q,e) = (scheduled.clone(),dropped.clone(),queued.clone(),error.clone());
         let join = std::thread::spawn(move || {
             let result = (|| -> io::Result<()> {
@@ -132,13 +134,13 @@ impl VideoEncoder {
                 log.chunk.sync_all()?;
                 log.frames.sync_all()?; log.markers.sync_all()?;
                 let mut done = create(&log.path.join("complete.json"))?;
-                done.write_all(json!({"version":1,"frames":log.next,"dropped":d.load(Ordering::Acquire),"chunks":log.index+1,"complete":true}).to_string().as_bytes())?;
+                done.write_all(json!({"version":1,"t0_us":o.load(Ordering::Acquire),"frames":log.next,"dropped":td.load(Ordering::Acquire).max(d.load(Ordering::Acquire)),"chunks":log.index+1,"complete":true}).to_string().as_bytes())?;
                 done.sync_all()?; File::open(&log.path)?.sync_all()
             })();
             if let Err(ref failure) = result { *e.lock().unwrap() = Some(failure.to_string()); }
             result
         });
-        Ok(Self {tx:Some(tx),join:Some(join),path,width,height,scheduled,dropped,queued,error})
+        Ok(Self {tx:Some(tx),join:Some(join),path,width,height,scheduled,dropped,queued,error,origin,total_dropped})
     }
     pub fn dims(&self) -> (u32,u32) { (self.width,self.height) }
     pub fn push(&self, p: Vec<u8>) { let _ = self.try_push(p); }
@@ -159,6 +161,10 @@ impl VideoEncoder {
         }
     }
     pub fn queue(&self) -> usize { self.queued.load(Ordering::Relaxed) }
+    pub fn set_summary(&self, dropped: u64, t0_us: u64) {
+        self.total_dropped.store(dropped,Ordering::Release);
+        self.origin.store(t0_us,Ordering::Release);
+    }
     pub fn marker(&self, row: serde_json::Value) -> Result<(),String> {
         self.queued.fetch_add(1,Ordering::Relaxed);
         if self.tx.as_ref().is_some_and(|tx| tx.try_send(Frame { slot:self.scheduled.load(Ordering::Acquire), pixels:Pixels::Marker(row) }).is_ok()) { Ok(()) } else {

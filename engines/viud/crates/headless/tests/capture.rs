@@ -106,8 +106,39 @@ fn target(row: &Value) -> Value {
     json!({"id":row["id"],"generation":row["generation"]})
 }
 
+// Test-only container inspection, independent of the writer's counters. R2
+// owns a production reader. Retain only the first image so 4K tests stay bounded.
+fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
+    let manifest: Value = serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["version"],1);
+    let size = manifest["width"].as_u64().unwrap() as usize * manifest["height"].as_u64().unwrap() as usize * 4;
+    let mut chunks: Vec<_> = fs::read_dir(path).unwrap().map(|e|e.unwrap().path()).filter(|p|p.extension().is_some_and(|e|e=="bin")).collect();
+    chunks.sort();
+    let mut first = Vec::new();
+    let mut count = 0;
+    for chunk in chunks {
+        let bytes = fs::read(chunk).unwrap();
+        let mut at = 0;
+        while at < bytes.len() {
+            let h = &bytes[at..at+17];
+            let len = u32::from_le_bytes(h[..4].try_into().unwrap()) as usize;
+            let body = &bytes[at+8..at+17+len];
+            assert_eq!(crc32fast::hash(body),u32::from_le_bytes(h[4..8].try_into().unwrap()));
+            assert_eq!(u64::from_le_bytes(h[8..16].try_into().unwrap()),count);
+            if count == 0 {
+                assert_eq!(h[16],0);
+                let bgra = lz4_flex::block::decompress(&body[9..],size).unwrap();
+                first = bgra.chunks_exact(4).flat_map(|p|[p[2],p[1],p[0]]).collect();
+            }
+            count += 1;
+            at += 17+len;
+        }
+    }
+    (first,count)
+}
+
 #[test]
-#[ignore = "needs render node, ffmpeg and same-revision viud/noded/Mix binaries"]
+#[ignore = "measurement; run alone on an idle render worker"]
 fn record_changing_4k_ten_seconds() {
     if !process::record_available() {
         return;
@@ -137,7 +168,7 @@ fn record_changing_4k_ten_seconds() {
     let at = (2100 * width + 3800) * 3;
     assert_eq!(&pixels[at..at + 3], &[0xaa, 0x33, 0x77]);
     for recording in [false, true] {
-        let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.mkv"), "max_seconds":12,"fps":30,"cursor":true})));
+        let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.vfl"), "max_seconds":12,"fps":30,"cursor":true})));
         let begin_us = monotonic_ns() / 1000;
         let begin = Instant::now();
         let mut commits = 0;
@@ -208,7 +239,7 @@ fn record_windows_only_content_and_multiple_targets() {
             place_args(row, json!({"x":100,"y":100,"z":z})),
         );
     }
-    let start=bus.call("comp.record.start",json!({"request_id":"windows","target":{"windows":[target(&br),target(&ar)]},"cursor":false,"path":process.root.join("windows.mkv"),"max_seconds":5}));
+    let start=bus.call("comp.record.start",json!({"request_id":"windows","target":{"windows":[target(&br),target(&ar)]},"cursor":false,"path":process.root.join("windows.vfl"),"max_seconds":5}));
     assert_eq!(
         start["width"], 400,
         "no server frame or shadow is part of a window take"
@@ -217,17 +248,11 @@ fn record_windows_only_content_and_multiple_targets() {
     thread::sleep(Duration::from_millis(150));
     let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
     assert_eq!(stop["error"], Value::Null, "{stop}");
-    let decoded = Command::new("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(start["path"].as_str().unwrap())
-        .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
-        .output()
-        .unwrap();
-    assert!(decoded.status.success());
-    assert_eq!(decoded.stdout.len(), 400 * 160 * 3);
+    let (decoded, _) = vfl_first(Path::new(start["path"].as_str().unwrap()));
+    assert_eq!(decoded.len(),400*160*3);
     for (x, expected) in [(50, rgb(COLOURS[0])), (250, [0xaa, 0x33, 0x77])] {
         let at = (40 * 400 + x) * 3;
-        for (actual, expected) in decoded.stdout[at..at + 3].iter().zip(expected) {
+        for (actual, expected) in decoded[at..at + 3].iter().zip(expected) {
             assert!((i16::from(*actual) - i16::from(expected)).abs() < 20);
         }
     }
@@ -242,44 +267,9 @@ fn record_vaapi_capability_or_clear_failure() {
     let mut process = process::spawn(1, None, "record-vaapi", Some(&bus.url));
     drop(connect(&mut process));
     bus.ready();
-    let probe = Command::new("ffmpeg")
-        .args(["-hide_banner", "-encoders"])
-        .output()
-        .unwrap();
-    let reported = String::from_utf8_lossy(&probe.stdout)
-        .split_whitespace()
-        .any(|word| word == "h264_vaapi");
-    let args = json!({"request_id":"vaapi","target":{"output":"headless-0"},"encoder":"vaapi","path":process.root.join("vaapi.mkv"),"max_seconds":5});
-    if !reported {
-        let error = bus.call_rc("comp.record.start", args, 10);
-        assert!(error["message"].as_str().unwrap().contains("h264_vaapi"));
-        println!("VAAPI not reported by ffmpeg; explicit refusal verified");
-        return;
-    }
-    let start = bus.call("comp.record.start", args);
-    thread::sleep(Duration::from_millis(300));
-    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
-    if let Some(error) = stop["error"].as_str() {
-        assert!(
-            error.contains("ffmpeg"),
-            "device failure must include ffmpeg stderr: {stop}"
-        );
-        println!("VAAPI reported, device unavailable: {error}");
-        assert!(!Path::new(start["path"].as_str().unwrap()).exists());
-        assert_eq!(stop["frames_path"], Value::Null);
-        assert_eq!(stop["markers_path"], Value::Null);
-        assert!(!fs::read_dir(&process.root).unwrap().any(|entry| {
-            entry
-                .unwrap()
-                .file_name()
-                .to_string_lossy()
-                .contains(".part")
-        }));
-    } else {
-        assert_eq!(stop["encoder"], "vaapi");
-        assert!(fs::metadata(start["path"].as_str().unwrap()).unwrap().len() > 0);
-        println!("VAAPI recording completed: {stop}");
-    }
+    assert_eq!(bus.call("comp.record.status",json!({}))["encoders"],json!(["vfl"]));
+    bus.call_rc("comp.record.start", json!({"request_id":"mkv","target":{},"path":process.root.join("refused.mkv"),"max_seconds":1}),10);
+    bus.call_rc("comp.record.start", json!({"request_id":"vaapi","target":{},"path":process.root.join("refused.vfl"),"max_seconds":1,"encoder":"vaapi"}),10);
 }
 
 #[test]
@@ -317,7 +307,7 @@ fn record_4k() {
         json!({"seat":"agent","output":"headless-0","x":1000,"y":500}),
     );
     pump_patterns(&mut [&mut a, &mut b]);
-    let path = process.root.join("4k.mkv");
+    let path = process.root.join("4k.vfl");
     let args = json!({"request_id":"4k","target":{"output":"headless-0"},"cursor":true,"path":path,"fps":30,"max_seconds":10});
     let start = bus.call("comp.record.start", args);
     assert_eq!(start["width"], 3840);
@@ -364,36 +354,8 @@ fn record_4k() {
         "overruns must be repeated on the timeline: {stop}"
     );
     assert!(marker["frame"].as_u64() < stop["frames"].as_u64());
-    let decoded = Command::new("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(&path)
-        .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
-        .output()
-        .unwrap();
-    assert!(
-        decoded.status.success(),
-        "{}",
-        String::from_utf8_lossy(&decoded.stderr)
-    );
-    assert_eq!(decoded.stdout.len(), 3840 * 2160 * 3);
-    let counted = Command::new("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(&path)
-        .args(["-progress", "pipe:1", "-nostats", "-f", "null", "-"])
-        .output()
-        .unwrap();
-    assert!(
-        counted.status.success(),
-        "{}",
-        String::from_utf8_lossy(&counted.stderr)
-    );
-    // Independent of the sidecar and status counters: FFmpeg decodes the
-    // Matroska bitstream and reports the number of output video frames.
-    let encoded_frames = String::from_utf8_lossy(&counted.stdout)
-        .lines()
-        .filter_map(|line| line.strip_prefix("frame=")?.trim().parse::<u64>().ok())
-        .max()
-        .unwrap();
+    let (decoded, encoded_frames) = vfl_first(&path);
+    assert_eq!(decoded.len(),3840*2160*3);
     assert_eq!(
         encoded_frames,
         stop["frames"].as_u64().unwrap(),
@@ -401,7 +363,7 @@ fn record_4k() {
     );
     let at = |x: usize, y: usize| {
         let i = (y * 3840 + x) * 3;
-        &decoded.stdout[i..i + 3]
+        &decoded[i..i + 3]
     };
     // Each independent client must be visible in the whole-output recording.
     for x in [150, 650] {
@@ -460,7 +422,7 @@ fn record_idle_output_lifecycle_and_clock() {
     drop(connect(&mut process));
     bus.ready();
     let observer = BlankObserver::start(&bus);
-    let path = process.root.join("take.mkv");
+    let path = process.root.join("take.vfl");
     let args = json!({"request_id":"take-1","target":{"output":"headless-0"},"path":path,"fps":30,"max_seconds":10});
     fs::write(&path, "existing").unwrap();
     bus.call_rc("comp.record.start", args.clone(), 10);
@@ -486,7 +448,7 @@ fn record_idle_output_lifecycle_and_clock() {
         assert_eq!(live["state"], "recording");
         assert_eq!(live["session"], session);
     }
-    let busy = bus.call_rc("comp.record.start",json!({"request_id":"other","target":{"output":"headless-0"},"path":process.root.join("other.mkv"),"max_seconds":10}),10);
+    let busy = bus.call_rc("comp.record.start",json!({"request_id":"other","target":{"output":"headless-0"},"path":process.root.join("other.vfl"),"max_seconds":10}),10);
     assert_eq!(busy["error"], "record_busy");
     let mut markers = Vec::new();
     for index in 0..4 {
@@ -506,7 +468,7 @@ fn record_idle_output_lifecycle_and_clock() {
     );
     let frames = stop["frames"].as_u64().unwrap();
     use std::os::unix::fs::PermissionsExt;
-    for key in ["path", "frames_path", "markers_path"] {
+    for key in ["frames_path", "markers_path"] {
         assert_eq!(
             fs::metadata(stop[key].as_str().unwrap())
                 .unwrap()
@@ -518,18 +480,8 @@ fn record_idle_output_lifecycle_and_clock() {
     }
     assert!(frames >= 10, "{stop}");
     assert!(fs::metadata(&path).unwrap().len() > 0);
-    let decoded = Command::new("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(&path)
-        .args(["-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
-        .output()
-        .unwrap();
-    assert!(
-        decoded.status.success(),
-        "{}",
-        String::from_utf8_lossy(&decoded.stderr)
-    );
-    assert_eq!(decoded.stdout.len() as u64, frames * 1280 * 720 * 3);
+    let (_, encoded_frames) = vfl_first(&path);
+    assert_eq!(encoded_frames,frames);
     let rows: Vec<Value> = fs::read_to_string(start["frames_path"].as_str().unwrap())
         .unwrap()
         .lines()
@@ -560,7 +512,7 @@ fn record_idle_output_lifecycle_and_clock() {
             assert_eq!(reply[key], row[key]);
         }
     }
-    let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.mkv"),"max_seconds":1}));
+    let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.vfl"),"max_seconds":1}));
     thread::sleep(Duration::from_millis(1300));
     let bounded = bus.call("comp.record.stop", json!({"session":next["session"]}));
     assert!(
@@ -568,7 +520,7 @@ fn record_idle_output_lifecycle_and_clock() {
         "max_seconds did not bound the take: {bounded}"
     );
     assert_eq!(start, bus.call("comp.record.start", args));
-    let discard_path = process.root.join("discard.mkv");
+    let discard_path = process.root.join("discard.vfl");
     let discard = bus.call("comp.record.start", json!({"request_id":"discard", "target":{"output":"headless-0"},"path":discard_path,"max_seconds":1}));
     let discarded = bus.call(
         "comp.record.stop",
@@ -619,7 +571,7 @@ fn record_window_target_gone_fails() {
     bus.ready();
     pattern.wait_callback(0);
     let window = bus.window();
-    let start=bus.call("comp.record.start",json!({"request_id":"gone","target":{"windows":[target(&window)]},"path":process.root.join("gone.mkv"),"max_seconds":10}));
+    let start=bus.call("comp.record.start",json!({"request_id":"gone","target":{"windows":[target(&window)]},"path":process.root.join("gone.vfl"),"max_seconds":10}));
     assert!(start["width"].as_u64().unwrap() > 0);
     drop(pattern);
     thread::sleep(Duration::from_millis(250));

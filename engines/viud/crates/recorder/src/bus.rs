@@ -316,7 +316,9 @@ impl Recording {
         };
         self.stop_discard = Some(discard);
         self.last = Arc::new(Vec::new());
+        encoder.set_summary(self.dropped, self.t0_us);
         let files = self.files.clone();
+        let failed = self.error.is_some();
         let (tx, rx) = channel();
         self.finishing = Some(rx);
         self.finaliser = Some(std::thread::spawn(move || {
@@ -324,6 +326,8 @@ impl Recording {
             let result = if discard {
                 files.cleanup();
                 result.map(|_| ())
+            } else if failed {
+                result.and(Err("recording failed; staged VFL retained for recovery".into()))
             } else {
                 result.and_then(|_| files.publish())
             };
@@ -398,6 +402,7 @@ mod file_tests {
             assert!(files.publish().is_err());
             assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep");
             assert!(!std::path::Path::new(&format!("{path}.frames.jsonl")).exists());
+            files.cleanup();
         }
         assert!(check_destination(&path).is_err());
         std::fs::remove_file(&path).unwrap();
@@ -410,6 +415,7 @@ mod file_tests {
             secure_file(name).unwrap().write_all(b"private").unwrap();
         }
         files.publish().unwrap();
+        files.cleanup();
         drop(files);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "private");
         std::fs::remove_dir_all(dir).unwrap();

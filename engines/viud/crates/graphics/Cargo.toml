@@ -20,7 +20,8 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
-lz4_flex = { version = "=0.11.5", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
+media = { path = "../../../../../libraries/media" }
+lz4_flex = { version = "=0.14.0", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
 crc32fast = "=1.5.0"
 serde_json = { workspace = true }
 libc = { workspace = true }

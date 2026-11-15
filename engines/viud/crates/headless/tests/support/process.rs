@@ -18,13 +18,6 @@ pub fn record_available() -> bool {
     if let Err(error) = fs::OpenOptions::new().read(true).write(true).open(&node) {
         missing.push(format!("render node {node}: {error}"));
     }
-    if !Command::new("ffmpeg")
-        .arg("-version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-    {
-        missing.push("ffmpeg is absent from PATH or cannot run".into());
-    }
     if missing.is_empty() {
         return true;
     }
