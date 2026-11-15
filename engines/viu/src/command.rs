@@ -73,7 +73,11 @@ impl SceneCommand {
             let kind = Self::parse(service, &name).expect("catalogued scene command");
             CommandDescriptor::new(
                 &name,
-                if kind == Self::Stats { &["output", "viewport"] } else { &[] },
+                if kind == Self::Stats {
+                    &["output", "viewport"]
+                } else {
+                    &[]
+                },
                 &format!("Scene host {}", name.split_once('.').unwrap().1),
                 !kind.mutates(),
             )

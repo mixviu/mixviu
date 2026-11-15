@@ -4,7 +4,17 @@ use serde_json::{Value, json};
 use std::time::Instant;
 
 // Shared storage contract with vendor/egui-wgpu/src/baseline.rs.
-type Samples = (u64, Vec<f64>, Instant, [u32; 2], f32, String, String, f64, f64);
+type Samples = (
+    u64,
+    Vec<f64>,
+    Instant,
+    [u32; 2],
+    f32,
+    String,
+    String,
+    f64,
+    f64,
+);
 
 pub(crate) fn read(ctx: &egui::Context, viewport: egui::ViewportId) -> Value {
     let key = egui::Id::unique(("ui.stats.v1", viewport));

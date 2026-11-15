@@ -722,7 +722,10 @@ mod baseline_tests {
         let broker = test_broker::Broker::start();
         let client = host_client("shell", &broker.url).await.unwrap();
         let inventory = client.call("noded", "noded.list", json!({})).await.unwrap();
-        let rows = inventory.as_array().or_else(|| inventory["services"].as_array()).unwrap();
+        let rows = inventory
+            .as_array()
+            .or_else(|| inventory["services"].as_array())
+            .unwrap();
         let shell = rows.iter().find(|row| row["name"] == "shell").unwrap();
         assert_eq!(shell["pid"], std::process::id());
         assert!(shell["git_sha"].is_string());
@@ -739,11 +742,20 @@ mod baseline_tests {
             ctx.set_request_repaint_callback(move |_| {
                 observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             });
-            state.lock().unwrap().contexts.insert(("example".into(), edge.into()), ctx);
+            state
+                .lock()
+                .unwrap()
+                .contexts
+                .insert(("example".into(), edge.into()), ctx);
         }
         let command = bus::IncomingCommand {
-            generation: 0, from: "test".into(), command: "shell.ui.stats".into(),
-            id: None, args: json!({}), body: "{}".into(), headers: BTreeMap::new(),
+            generation: 0,
+            from: "test".into(),
+            command: "shell.ui.stats".into(),
+            id: None,
+            args: json!({}),
+            body: "{}".into(),
+            headers: BTreeMap::new(),
         };
         for _ in 0..2 {
             let (rc, reply) = dispatch(&state, "shell", &command, &json!({}));
@@ -1089,13 +1101,20 @@ fn dispatch(
         // Presentation can register a context while holding its lock.
         // Release the host lock before reading any context data.
         let contexts = state.lock().unwrap().contexts.clone();
-        let surfaces: Vec<_> = contexts.iter()
+        let surfaces: Vec<_> = contexts
+            .iter()
             .filter(|((output, _), _)| args["output"].as_str().is_none_or(|o| o == output))
-            .map(|((output, surface), ctx)| json!({
-                "output":output,"surface":surface,
-                "stats":toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT)
-            })).collect();
-        return (0, json!({"available":!surfaces.is_empty(),"surfaces":surfaces}));
+            .map(|((output, surface), ctx)| {
+                json!({
+                    "output":output,"surface":surface,
+                    "stats":toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT)
+                })
+            })
+            .collect();
+        return (
+            0,
+            json!({"available":!surfaces.is_empty(),"surfaces":surfaces}),
+        );
     }
     let mut shared = state.lock().unwrap();
     let Some(kind) = SceneCommand::parse(service, &command.command) else {

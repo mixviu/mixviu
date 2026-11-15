@@ -258,13 +258,18 @@ mod numeric_state_tests {
         for title in [None, Some("Files")] {
             let value = json!({"columns":[{"label":"Name"}],"rows":[{"key":"a","cells":["A"]}]});
             let mut widget = Widget::new("file-table", "tree-table", "", json!({}));
-            if let Some(title) = title { widget.properties["title"] = json!(title); }
+            if let Some(title) = title {
+                widget.properties["title"] = json!(title);
+            }
             let mut harness = egui_kittest::Harness::new_ui(move |ui| {
+                crate::appearance::install(ui.ctx());
                 draw(ui, &widget, &value, &mut BTreeMap::new(), &mut Vec::new());
             });
             toolkit::drive::install(&harness.ctx, "test");
             harness.run_steps(2);
-            let answer = toolkit::drive::request(&harness.ctx, 1, "ui.tree", &json!({"role":"Table"})).unwrap();
+            let answer =
+                toolkit::drive::request(&harness.ctx, 1, "ui.tree", &json!({"role":"Table"}))
+                    .unwrap();
             assert_eq!(answer.rc, 0);
             let nodes = answer.body["nodes"].as_array().unwrap();
             assert_eq!(nodes.len(), 1, "{}", answer.body);

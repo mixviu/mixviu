@@ -1,7 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Passive frame observations shared with toolkit's ui.stats reader.
 use std::time::Instant;
-type Samples = (u64, Vec<f64>, Instant, [u32; 2], f32, String, String, f64, f64);
+type Samples = (
+    u64,
+    Vec<f64>,
+    Instant,
+    [u32; 2],
+    f32,
+    String,
+    String,
+    f64,
+    f64,
+);
 
 /// Record completed host frame work, without scheduling any work.
 pub fn record(
