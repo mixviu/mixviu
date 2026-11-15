@@ -1251,36 +1251,76 @@ mod idle_tests {
             }
         });
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
-        let task = tokio::spawn(worker_connected(client, "shell".into(), "comp".into(), state, recv, filtered));
+        let task = tokio::spawn(worker_connected(
+            client,
+            "shell".into(),
+            "comp".into(),
+            state,
+            recv,
+            filtered,
+        ));
         comp.checkpoint("shell").await;
-        let times: Vec<_> = comp.calls.lock().unwrap().iter()
-            .filter(|(c, _)| c == command).map(|(_, at)| *at).collect();
+        let times: Vec<_> = comp
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, _)| c == command)
+            .map(|(_, at)| *at)
+            .collect();
         assert_eq!(times.len(), 4);
         for (interval, minimum) in times.windows(2).zip([900, 1900, 3900]) {
-            assert!(interval[1].duration_since(interval[0]) >= Duration::from_millis(minimum), "comp retry interval did not grow");
+            assert!(
+                interval[1].duration_since(interval[0]) >= Duration::from_millis(minimum),
+                "comp retry interval did not grow"
+            );
         }
         // A later mode failure starts at the base delay after recovery, even
         // though it follows a successful sync on each retry round.
-        comp.fail_commands.lock().unwrap().insert("comp.panel.mode".into(), 1);
+        comp.fail_commands
+            .lock()
+            .unwrap()
+            .insert("comp.panel.mode".into(), 1);
         let before = comp.count("comp.panel.mode");
-        send.send(Outgoing::Mode("example".into(), "bottom".into(), "hidden".into())).unwrap();
+        send.send(Outgoing::Mode(
+            "example".into(),
+            "bottom".into(),
+            "hidden".into(),
+        ))
+        .unwrap();
         let (checkpoint, complete) = tokio::sync::oneshot::channel();
         send.send(Outgoing::Checkpoint(checkpoint)).unwrap();
-        tokio::time::timeout(Duration::from_secs(8), complete).await.unwrap().unwrap();
-        let times: Vec<_> = comp.calls.lock().unwrap().iter()
-            .filter(|(c, _)| c == "comp.panel.mode").map(|(_, at)| *at).collect();
+        tokio::time::timeout(Duration::from_secs(8), complete)
+            .await
+            .unwrap()
+            .unwrap();
+        let times: Vec<_> = comp
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, _)| c == "comp.panel.mode")
+            .map(|(_, at)| *at)
+            .collect();
         assert_eq!(times.len(), before + 2);
         let interval = times[before + 1].duration_since(times[before]);
-        assert!(interval >= Duration::from_millis(900) && interval < Duration::from_secs(3), "success did not reset comp delay: {interval:?}");
+        assert!(
+            interval >= Duration::from_millis(900) && interval < Duration::from_secs(3),
+            "success did not reset comp delay: {interval:?}"
+        );
         comp.assert_idle(Duration::from_millis(1200)).await;
         task.abort();
         filter.abort();
         forward.abort();
     }
     #[tokio::test]
-    async fn shell_failed_sync_backs_off() { comp_failure_backoff("comp.props.get").await; }
+    async fn shell_failed_sync_backs_off() {
+        comp_failure_backoff("comp.props.get").await;
+    }
     #[tokio::test]
-    async fn shell_failed_mode_report_backs_off() { comp_failure_backoff("comp.panel.mode").await; }
+    async fn shell_failed_mode_report_backs_off() {
+        comp_failure_backoff("comp.panel.mode").await;
+    }
 
     async fn recovery_hint(kind: &str) {
         let broker = test_broker::Broker::start();

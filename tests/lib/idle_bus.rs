@@ -104,14 +104,23 @@ impl Service {
                     .unwrap()
                     .push((command.command.clone(), Instant::now()));
                 changed.send_modify(|n| *n += 1);
-                let command_refused = command_failures.lock().unwrap()
-                    .get_mut(&command.command).is_some_and(|left| {
-                        if *left == 0 { false } else { *left -= 1; true }
+                let command_refused = command_failures
+                    .lock()
+                    .unwrap()
+                    .get_mut(&command.command)
+                    .is_some_and(|left| {
+                        if *left == 0 {
+                            false
+                        } else {
+                            *left -= 1;
+                            true
+                        }
                     });
-                let refused = command_refused || (command.command.ends_with(".ui.titlebar.form")
-                    && form_failures
-                        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                        .is_ok())
+                let refused = command_refused
+                    || (command.command.ends_with(".ui.titlebar.form")
+                        && form_failures
+                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                            .is_ok())
                     || command.command == "settings.get"
                         && failures
                             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
