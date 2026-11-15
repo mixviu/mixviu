@@ -2,7 +2,6 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Overlay-free recording core. The host owns target validation and scheduling.
 use graphics::capture::encode::VideoEncoder;
-pub use graphics::capture::encode::video::probe_vaapi;
 use serde_json::{Value, json};
 use std::{
     fs::File,
@@ -31,11 +30,7 @@ fn secure_file(path: &str) -> Result<File, String> {
 }
 
 pub fn check_destination(path: &str) -> Result<(), String> {
-    for name in [
-        path.to_owned(),
-        format!("{path}.frames.jsonl"),
-        format!("{path}.markers.jsonl"),
-    ] {
+    for name in [path.to_owned()] {
         match std::fs::symlink_metadata(&name) {
             Ok(_) => return Err("recording destination already exists".into()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -81,14 +76,17 @@ fn probe_publication(
     match rename(&files.video, &files.frames) {
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
         result => {
+            files.cleanup();
             return Err(format!(
                 "destination does not support no-replace publication: {result:?}"
             ));
         }
     }
     std::fs::remove_file(&files.frames).map_err(|e| e.to_string())?;
-    rename(&files.video, &files.frames)
-        .map_err(|e| format!("destination does not support no-replace publication: {e}"))
+    let result = rename(&files.video, &files.frames)
+        .map_err(|e| format!("destination does not support no-replace publication: {e}"));
+    files.cleanup();
+    result
 }
 
 fn readback_skips(readback_us: u64, fps: u32) -> u64 {
@@ -127,32 +125,17 @@ impl TakeFiles {
     }
     fn cleanup(&self) {
         for path in [&self.video, &self.frames, &self.markers] {
-            let _ = std::fs::remove_file(path);
+            if std::path::Path::new(path).is_dir() { let _ = std::fs::remove_dir_all(path); } else { let _ = std::fs::remove_file(path); }
         }
     }
     fn publish(&self) -> Result<(), String> {
-        let mut published = Vec::new();
-        for (src, dst) in [
-            (&self.frames, format!("{}.frames.jsonl", self.path)),
-            (&self.markers, format!("{}.markers.jsonl", self.path)),
-            (&self.video, self.path.clone()),
-        ] {
-            if let Err(error) = rename_no_replace(src, &dst) {
-                for name in published {
-                    let _ = std::fs::remove_file(name);
-                }
-                self.cleanup();
-                return Err(error.to_string());
-            }
-            published.push(dst);
-        }
-        Ok(())
+        rename_no_replace(&self.video, &self.path).map_err(|e| e.to_string())
     }
 }
 
 impl Drop for TakeFiles {
     fn drop(&mut self) {
-        self.cleanup();
+        // Preserve interrupted logs for recovery.
     }
 }
 
@@ -200,8 +183,6 @@ pub struct Recording {
     skipped_readback: bool,
     files: TakeFiles,
     bytes: u64,
-    frames_file: BufWriter<File>,
-    markers_file: File,
     encoder: Option<VideoEncoder>,
     finishing: Option<Receiver<Result<(), String>>>,
     stop_discard: Option<bool>,
@@ -221,8 +202,6 @@ impl Recording {
         let width = width.checked_add(1).ok_or("capture width overflow")? & !1;
         let height = height.checked_add(1).ok_or("capture height overflow")? & !1;
         let files = TakeFiles::create(&path)?;
-        let frames_file = BufWriter::with_capacity(256 * 1024, secure_file(&files.frames)?);
-        let markers_file = secure_file(&files.markers)?;
         let encoder = VideoEncoder::start_with_encoder(
             width,
             height,
@@ -255,8 +234,6 @@ impl Recording {
             readback_max_us: 0,
             readback_debt: 0,
             skipped_readback: false,
-            frames_file,
-            markers_file,
             encoder: Some(encoder),
             finishing: None,
             stop_discard: None,
@@ -265,7 +242,7 @@ impl Recording {
     }
 
     pub fn started(&self) -> Value {
-        json!({"session":self.session,"path":self.path,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path)})
+        json!({"session":self.session,"path":self.path,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}/frames.jsonl",self.path),"markers_path":format!("{}/markers.jsonl",self.path)})
     }
 
     pub fn is_recording(&self) -> bool {
@@ -304,18 +281,6 @@ impl Recording {
                 self.repeated += 1;
             }
         }
-        let now = monotonic_us()?;
-        let t_us = if self.frames == 0 {
-            0
-        } else {
-            now - self.t0_us
-        };
-        writeln!(
-            self.frames_file,
-            "{}",
-            json!({"frame":self.frames,"t_us":t_us})
-        )
-        .map_err(|e| e.to_string())?;
         self.frames += 1;
         Ok(())
     }
@@ -324,10 +289,8 @@ impl Recording {
         if self.encoder.is_none() || self.frames == 0 {
             return Err("session is not recording".into());
         }
-        self.frames_file.flush().map_err(|e| e.to_string())?;
         let row = json!({"seq":self.seq,"frame":self.frames-1,"t_us":monotonic_us()?-self.t0_us,"label":label,"data":data});
-        writeln!(self.markers_file, "{row}").map_err(|e| e.to_string())?;
-        self.markers_file.flush().map_err(|e| e.to_string())?;
+        self.encoder.as_ref().ok_or("recording is finishing")?.marker(row.clone())?;
         self.seq += 1;
         Ok(json!({"session":self.session,"seq":row["seq"],"frame":row["frame"],"t_us":row["t_us"]}))
     }
@@ -344,7 +307,7 @@ impl Recording {
     }
 
     pub fn status(&self) -> Value {
-        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes,"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
+        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes,"encoders":["vfl"],"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
     }
 
     pub fn stop(&mut self, discard: bool) -> bool {
@@ -353,24 +316,16 @@ impl Recording {
         };
         self.stop_discard = Some(discard);
         self.last = Arc::new(Vec::new());
-        if let Err(error) = self
-            .frames_file
-            .flush()
-            .and_then(|_| self.markers_file.flush())
-        {
-            self.error = Some(error.to_string());
-        }
         let files = self.files.clone();
-        let failed = self.error.is_some();
         let (tx, rx) = channel();
         self.finishing = Some(rx);
         self.finaliser = Some(std::thread::spawn(move || {
             let result = encoder.finish_result();
-            let result = if discard || failed || result.is_err() {
+            let result = if discard {
                 files.cleanup();
                 result.map(|_| ())
             } else {
-                files.publish()
+                result.and_then(|_| files.publish())
             };
             let _ = tx.send(result);
         }));
@@ -403,10 +358,10 @@ impl Recording {
             let _ = join.join();
         }
         self.bytes = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
-        let kept = std::path::Path::new(&format!("{}.frames.jsonl", self.path)).exists()
+        let kept = std::path::Path::new(&format!("{}/frames.jsonl", self.path)).exists()
             && self.error.is_none();
         self.terminal = Some(
-            json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}.frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}.markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
+            json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
         true
     }
@@ -430,7 +385,7 @@ mod file_tests {
     fn private_staging_no_clobber_and_cleanup() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("take.mkv").to_str().unwrap().to_owned();
+        let path = dir.join("take.vfl").to_str().unwrap().to_owned();
         {
             let files = TakeFiles::create(&path).unwrap();
             for name in [&files.video, &files.frames, &files.markers] {
@@ -481,7 +436,7 @@ mod file_tests {
     fn unsupported_publication_refused_before_take_without_residue() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("take.mkv").to_str().unwrap().to_owned();
+        let path = dir.join("take.vfl").to_str().unwrap().to_owned();
         let error = probe_publication(&path, |_, _| {
             Err(std::io::Error::from_raw_os_error(libc::EINVAL))
         })
@@ -499,28 +454,16 @@ mod file_tests {
     }
     #[test]
     fn finishing_preserves_original_discard_choice() {
-        if !std::process::Command::new("ffmpeg")
-            .arg("-version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-        {
-            assert!(
-                std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref() != Ok("1"),
-                "recording test requires ffmpeg"
-            );
-            eprintln!("recording test skipped: ffmpeg is absent");
-            return;
-        }
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
         for discard in [false, true] {
             let path = dir
-                .join(format!("{discard}.mkv"))
+                .join(format!("{discard}.vfl"))
                 .to_str()
                 .unwrap()
                 .to_owned();
             let mut recording =
-                Recording::new("test".into(), path, 2, 2, 30, "x264".into()).unwrap();
+                Recording::new("test".into(), path, 2, 2, 30, "vfl".into()).unwrap();
             recording
                 .frame(Some((2, 2, Arc::new(vec![0; 12]), 0)))
                 .unwrap();
@@ -540,7 +483,7 @@ mod file_tests {
     fn failed_encoder_setup_removes_private_sidecars() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("failed.mkv").to_str().unwrap().to_owned();
+        let path = dir.join("failed.vfl").to_str().unwrap().to_owned();
         assert!(Recording::new("failed".into(), path, 2, 2, 30, "invalid".into()).is_err());
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         std::fs::remove_dir(dir).unwrap();

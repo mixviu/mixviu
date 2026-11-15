@@ -19,7 +19,7 @@ pub mod portal;
 pub mod readback;
 pub mod reencode;
 pub mod save;
-pub mod video;
+pub mod vfl;
 
 pub use frame::Frame;
 pub use readback::{AsyncReadback, readback};
@@ -28,4 +28,4 @@ pub use reencode::{
     save_fallback,
 };
 pub use save::{default_path, save_png};
-pub use video::VideoEncoder;
+pub use vfl::VideoEncoder;

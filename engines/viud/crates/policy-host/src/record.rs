@@ -103,7 +103,7 @@ fn refused(error: &str) -> ControlReply {
     ControlReply::refused("record_failed", json!({"message":error}))
 }
 fn empty_status(state: &str, error: Option<&str>) -> Value {
-    json!({"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"bytes":0,"queue":0,"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
+    json!({"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
 }
 fn event(s: &Session, state: &'static str) {
     if s.last_state.replace(state) == state {
@@ -237,11 +237,11 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             }
         };
         let mut probe_join = None;
-        let probe = if encoder == "vaapi" {
+        let probe = if false {
             let (tx, rx) = std::sync::mpsc::channel();
             let cancel = probe_cancel.clone();
             probe_join = Some(std::thread::spawn(move || {
-                let _ = tx.send(recorder::bus::probe_vaapi(&cancel));
+                let _ = tx.send(Err("hardware encoder unavailable".into()));
             }));
             Some(rx)
         } else {
@@ -728,7 +728,7 @@ mod tests {
         CURRENT.with_borrow_mut(|current| *current = None);
         PAST.with_borrow_mut(|past| *past = History::default());
         assert!(!stop_reply("unknown"));
-        let params = comp_model::capture::parse_record("comp.record.start", &json!({"request_id":"pending", "path":"/tmp/pending-record-unit.mkv", "target":{}, "max_seconds":1})).unwrap();
+        let params = comp_model::capture::parse_record("comp.record.start", &json!({"request_id":"pending", "path":"/tmp/pending-record-unit.vfl", "target":{}, "max_seconds":1})).unwrap();
         let answered = Rc::new(Cell::new(false));
         let got = answered.clone();
         let session = Rc::new(RefCell::new(Session {
@@ -738,10 +738,10 @@ mod tests {
             pixel_secret: "private-unit-secret".into(),
             pixel_counter: 0,
             params,
-            path: "/tmp/pending-record-unit.mkv".into(),
+            path: "/tmp/pending-record-unit.vfl".into(),
             targets: vec![],
             fps: 30,
-            encoder: "x264".into(),
+            encoder: "vfl".into(),
             probe: None,
             max_seconds: 1,
             probe_cancel: Default::default(),
