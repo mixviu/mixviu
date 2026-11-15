@@ -511,7 +511,10 @@ mod tests {
     #[test]
     fn role_names_match_spec() {
         let names = spec_list("<!-- role-names -->");
-        assert_eq!(names, ROLES.iter().copied().map(role_name).collect::<Vec<_>>());
+        assert_eq!(
+            names,
+            ROLES.iter().copied().map(role_name).collect::<Vec<_>>()
+        );
         for &role in ROLES {
             assert_eq!(role_name(role), format!("{role:?}"));
         }

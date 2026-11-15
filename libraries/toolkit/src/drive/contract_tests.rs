@@ -63,7 +63,10 @@ fn fixture_window_pins_tree_schema_and_roles() {
         BTreeSet::from(["root", "focus", "nodes"])
     );
     for field in ["root", "focus"] {
-        let id = answer.body.get(field).expect("tree id field must be present");
+        let id = answer
+            .body
+            .get(field)
+            .expect("tree id field must be present");
         assert!(
             id.is_null() || id.as_str().is_some_and(|id| id.parse::<u64>().is_ok()),
             "{field} must be a decimal u64 string or null: {id}"
