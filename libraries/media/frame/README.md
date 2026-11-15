@@ -19,6 +19,8 @@ conversion and also exercises the reverse conversion. Per-plane tolerance:
 max 2 code values, mean 0.6, allowing fixed-point and rounding differences
 without allowing a matrix/range mismatch. First run: Y max 1 / mean 0.003784,
 U 1 / 0.001465, V 1 / 0.002441. This is a small correctness fixture, not VMAF
-or a corpus benchmark. Normal tests require no ffmpeg.
+or a corpus benchmark. Reverse BGRA reconstruction differs by max 2 / mean
+0.004974; its max-5 / mean-1 tolerance allows the inverse matrix to amplify
+one-code-value YUV rounding differences. Normal tests require no ffmpeg.
 
 Original implementation; no imported code or third-party dependencies.
