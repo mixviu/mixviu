@@ -688,6 +688,21 @@ async fn portal_close_fast_success_calls_the_request_close_method() {
     assert_eq!(closed.load(Ordering::SeqCst), 1, "Close was not dispatched");
 }
 
+// Keep the paused clock from auto-advancing while D-Bus needs real I/O.
+// The independent wall-clock guard also catches a removed product timeout.
+async fn real_time_bound<T>(future: impl std::future::Future<Output = T>) -> T {
+    tokio::pin!(future);
+    let start = std::time::Instant::now();
+    loop {
+        tokio::select! {
+            biased;
+            result = &mut future => return result,
+            _ = tokio::task::yield_now() => {}
+        }
+        assert!(start.elapsed() < Duration::from_secs(30), "portal fixture stalled");
+    }
+}
+
 async fn gated_close(unknown_method: bool, answer: bool) {
     let (_process, address) = dbus();
     let server = connection(&address).await;
@@ -710,31 +725,36 @@ async fn gated_close(unknown_method: bool, answer: bool) {
     let owner = server.unique_name().unwrap().as_str().to_owned();
     // Bound the whole call independently of production: a broken Close without
     // its timeout must fail here even when the fake never releases its reply.
-    let task = tokio::spawn(async move {
+    tokio::time::pause();
+    let call = async move {
         tokio::time::timeout(
             portal::CLOSE_BOUND + IO_BOUND,
             portal::close(&client, &owner, path),
         )
         .await
         .expect("portal Close hung beyond its teardown bound with the reply gate closed")
-    });
-    tokio::time::timeout(portal::CLOSE_BOUND + IO_BOUND, entered.recv())
-        .await
-        .expect("fake portal never received Request.Close; check interface and method")
-        .expect("fake portal Close notification dropped");
-    if answer {
+    };
+    tokio::pin!(call);
+    real_time_bound(async {
+        tokio::select! {
+            result = &mut call => panic!("Close ended before dispatch: {result:?}"),
+            entry = entered.recv() => entry.expect("fake portal Close notification dropped"),
+        }
+        if answer {
         // Deliberately withhold the reply beyond the old discovery/Close bound.
         // The handler-entry signal pins dispatch; only this test opens the gate.
-        tokio::time::sleep(IO_BOUND + Duration::from_millis(100)).await;
-        if task.is_finished() {
-            let result = task.await.expect("portal Close task panicked");
-            panic!("Close ended before the fake reply was released: {result:?}");
+        tokio::time::advance(IO_BOUND + Duration::from_millis(100)).await;
+        tokio::select! {
+            biased;
+            result = &mut call => panic!("Close ended before the fake reply was released: {result:?}"),
+            _ = std::future::ready(()) => {}
         }
         release.send_replace(true);
-        let result = task.await.expect("portal Close task panicked");
+        let result = call.await;
         assert!(result.is_ok(), "received delayed Close result: {result:?}");
     } else {
-        let result = task.await.expect("portal Close task panicked");
+        tokio::time::advance(portal::CLOSE_BOUND).await;
+        let result = call.await;
         let error = result.expect_err("Close acknowledged a fake that never replied");
         assert!(
             error
@@ -743,20 +763,21 @@ async fn gated_close(unknown_method: bool, answer: bool) {
             "received stalled Close error: {error:#}"
         );
         assert!(!*release.borrow(), "never-replying fake was released");
-    }
+        }
+    }).await;
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn portal_close_delayed_unknown_method_is_an_acknowledged_end() {
     gated_close(true, true).await;
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn portal_close_delayed_success_is_an_acknowledged_end() {
     gated_close(false, true).await;
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn portal_close_never_replying_request_is_bounded() {
     gated_close(false, false).await;
 }

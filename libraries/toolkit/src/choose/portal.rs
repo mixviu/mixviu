@@ -265,13 +265,20 @@ async fn session_inner(
             return Ok(Some(Outcome::Failed("portal chooser acknowledgement timed out".into())));
         }
         _ = cancelled(cancel) => {
-            // Close the predicted path promptly, then retain the method future
-            // long enough to close a different/late returned handle as well.
-            let _ = close(connection, owner.as_str(), &predicted).await;
-            if let Ok(Ok(reply)) = tokio::time::timeout(IO_BOUND, &mut call).await
-                && let Ok(actual) = reply.body().deserialize::<OwnedObjectPath>() {
-                let _ = close(connection, owner.as_str(), actual.as_str()).await;
-            }
+            // Poll the method while closing the predicted path. Both handles
+            // share one teardown budget, even if neither Close replies.
+            let _ = tokio::time::timeout(CLOSE_BOUND, async {
+                tokio::join!(
+                    close(connection, owner.as_str(), &predicted),
+                    async {
+                        if let Ok(Ok(reply)) = tokio::time::timeout(IO_BOUND, &mut call).await
+                            && let Ok(actual) = reply.body().deserialize::<OwnedObjectPath>()
+                            && actual.as_str() != predicted {
+                            let _ = close(connection, owner.as_str(), actual.as_str()).await;
+                        }
+                    }
+                );
+            }).await;
             return Ok(None);
         }
     };
@@ -332,10 +339,26 @@ async fn session_inner(
                 });
             }
             _ = sweep.tick() => {
-                if recovering && close(connection, owner.as_str(), actual.as_str()).await.is_ok() {
-                    return Err(anyhow!("portal request cancelled after transport failure"));
+                if recovering {
+                    tokio::select! {
+                        biased;
+                        _ = cancelled(cancel) => return Ok(None),
+                        result = close(connection, owner.as_str(), actual.as_str()) => {
+                            if result.is_ok() {
+                                return Err(anyhow!("portal request cancelled after transport failure"));
+                            }
+                        }
+                    }
                 }
-                match tokio::time::timeout(IO_BOUND, dbus.get_name_owner(DESKTOP.try_into()?)).await {
+                let owner_probe = tokio::select! {
+                    biased;
+                    _ = cancelled(cancel) => {
+                        let _ = close(connection, owner.as_str(), actual.as_str()).await;
+                        return Ok(None);
+                    }
+                    result = tokio::time::timeout(IO_BOUND, dbus.get_name_owner(DESKTOP.try_into()?)) => result,
+                };
+                match owner_probe {
                     Ok(Ok(current)) if current == owner => {},
                     Ok(_) => return Err(anyhow!("portal owner lost")),
                     Err(_) => { /* A stalled bus does not end a person's window. */ }
