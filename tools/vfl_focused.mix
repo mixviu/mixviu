@@ -9,6 +9,12 @@ if $mode == "capture" or $mode == "bench" then
   export MIX_TEST_REQUIRE_RECORD=1
   export MIX_TEST_MIX_EXE=realpath("target/debug/mix")
 end
+if $mode == "bench" then
+  -- Measure the optimised compositor, not debug compression throughput.
+  $r = run_argv(["cargo","build","--release","-p","viud"],{timeout:1800,stdout:"inherit",stderr:"inherit"})
+  if not $r.ok then exit($r.exit_code ?? 124) end
+  export MIX_TEST_VIUD_EXE=realpath("target/release/viud")
+end
 $command = if $mode == "fmt" then
   ["cargo","fmt","-p","graphics","-p","recorder","-p","comp-model","-p","policy-host","-p","headless","-p","media"]
 elif $mode == "encoder" then
