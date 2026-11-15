@@ -19,6 +19,6 @@ The only dependency is the existing `cfg-if` crate.
 
 Both are tier-2 pure Rust dependencies under `tools/foreign_gate.mix`:
 neither compiles or binds foreign code, so neither belongs in the exclusive
-foreign allow/debt/admitted lists. Only graphics and headless tests gain
-edges; the media constants crate has no dependencies. No desktop dependency
+foreign allow/debt/admitted lists. The media-vfl core and headless tests carry codec edges; graphics reaches
+the core through its thread adapter. The core has no desktop or Bus dependency. No desktop dependency
 edge is added to Mix or mixd.

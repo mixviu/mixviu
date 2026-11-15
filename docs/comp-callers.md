@@ -53,7 +53,7 @@ right on a fixed canvas.
 | `comp.record.stop` | `session,discard?` | `path,recovery_path,bytes,frames,repeated,dropped,duration_us,frames_path,markers_path,encoder,readbacks,readback_us,readback_mean_us,readback_max_us,error` |
 
 Only VFL is available. Matroska paths, x264 and VAAPI requests are refused.
-The [VFL specification](../engines/viud/crates/graphics/src/capture/encode/VFL.md)
+The [VFL specification](../libraries/media/vfl/VFL.md)
 defines the directory, LZ4 key/delta/repeat records, CRCs and crash recovery.
 
 The destination must not exist, including a dangling symlink. An asynchronous
@@ -77,16 +77,18 @@ arrive on `<service>.record.state`.
 
 The renderer maps its shared export interface synchronously. Recording budgets
 readback to one quarter of the frame period: after an over-budget read,
-following damaged ticks repeat the previous frame and increment `dropped`
-until the debt is repaid. Idle ticks repay debt without counting a dropped
+following changed ticks can defer readback until the debt is repaid. Deferral
+alone does not count as dropped; a sampled source state superseded before
+capture counts once as `dropped_capture`. Idle ticks repay debt without counting a dropped
 capture. Each read itself can still exceed that budget. Single-target pixels
 share one immutable allocation through capture, session and encoder. RGB to
 BGRA conversion, comparison, compression and file I/O run on the writer thread.
 
 Frame/marker admission never waits for disk. Four frame allocations can be
 queued, with four reserved control slots for markers. Full frame admission
-increments `dropped`; the writer fills slot gaps and the dropped tail with
-repeats. A full marker queue explicitly refuses the marker. `frames` includes
+increments `writer.queue_overruns`; a new changed image refused by the queue
+also increments `dropped_queue`. The writer fills slot gaps and the tail with
+repeats. Unchanged ticks and repeated queue pressure are not lost changes. A full marker queue explicitly refuses the marker. `frames` includes
 all scheduled slots; `duration_us = floor(frames * 1000000 / fps)`.
 `bytes` reports binary record bytes while recording and all take file bytes
 after successful finalisation. Markers are acknowledged when queued, and
@@ -106,3 +108,16 @@ Unchanged ticks share the previous source allocation and avoid GPU readback.
 `readback_us` is the latest tick's readback cost (zero for a repeat), with mean
 and maximum over `readbacks` actual reads. Window measurements include the
 offscreen render. These are microseconds, not encoder latency.
+
+Recording accepts either the canonical output id returned by comp.windows.list
+(e.g. `o_hdmi_a_1`) or its backend name (`HDMI-A-1`). Targets are normalised
+to the backend name internally for generation fencing. Recording samples
+scene-change revisions; capture-only redraws and presentation completions do
+not make an idle output look changed.
+
+`dropped = dropped_capture + dropped_queue`. `readback_deferred` counts
+budget waits, and `pending_ticks` counts waits for an in-flight capture. The
+`writer` object reports conversion, XOR/LZ4, file write/seal and queue wait
+timings plus record/payload byte counts. These fields remain in stop replies.
+Uncaptured state pixels cannot be inferred; source loss accounting counts
+distinct observed states, not every client commit between 30 Hz samples.

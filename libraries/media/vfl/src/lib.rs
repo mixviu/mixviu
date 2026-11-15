@@ -82,6 +82,7 @@ pub struct Writer {
     crc: crc32fast::Hasher,
     pub total_bytes: u64,
     pub stats: Stats,
+    origin_written: bool,
 }
 impl Writer {
     fn record(&mut self, kind: u8, payload: &[u8]) -> io::Result<()> {
@@ -249,14 +250,19 @@ impl Writer {
                 crc: crc32fast::Hasher::new(),
                 total_bytes: 0,
                 stats: Stats {setup_us:setup_started.elapsed().as_micros() as u64,..Stats::default()},
+                origin_written:false,
             })
  }
  pub fn origin(&mut self,t0_us:u64)->io::Result<()> {
   let mut file=create(&self.path.join("origin.json"))?;
   file.write_all(json!({"t0_us":t0_us,"clock":"monotonic"}).to_string().as_bytes())?;
-  file.sync_all()?; File::open(&self.path)?.sync_all()
+  file.sync_all()?; File::open(&self.path)?.sync_all()?;
+  self.origin_written=true;
+  Ok(())
  }
  pub fn finish(&mut self,scheduled:u64,dropped:u64,t0_us:u64,error:Option<String>,success:bool)->io::Result<u64> {
+  let success=success&&error.is_none();
+  if success&&!self.origin_written {return Err(io::Error::new(io::ErrorKind::InvalidInput,"missing capture origin"));}
   while self.next<scheduled {self.repeat()?;}
   self.seal()?; self.frames.sync_all()?; self.markers.sync_all()?;
   let name=if success {"complete.json"} else {"interrupted.json"};

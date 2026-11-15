@@ -1,4 +1,9 @@
-# Video frame log, version 1
+# Video frame log, versions 1 and 2
+
+The current writer emits version 2. Version 1 recordings use the same layout
+but permit kinds 0–2 only. Version 2 adds kind 3 rectangle XOR deltas. Readers
+must select supported kinds by version; a version-1 reader must reject version
+2, not interpret its new payload as a whole-frame delta.
 
 VFL is an intermediate lossless capture, not a delivery codec. A take is a
 directory named `video.vfl`. During capture the Bus recorder uses a private
@@ -13,7 +18,7 @@ Directories are 0700; every file is created 0600 with exclusive creation and
 ## Metadata
 
 `manifest.json` is immutable UTF-8 JSON, written and synced before frames:
-`{version:1,width,height,fps,format:"bgra8",encoder:"vfl-lz4",complete:false,key_interval}`.
+`{version:2,width,height,fps,format:"bgra8",encoder:"vfl-lz4",complete:false,key_interval}`.
 Dimensions are positive; width × height × 4 is at most 256 MiB. FPS is an
 integer 1–60. Pixels are row-major BGRA bytes, top to bottom, with no stride.
 Source RGB is converted on the writer thread; padding pixels are zero.
@@ -29,10 +34,15 @@ durability is guaranteed only by successful stop. A full queue refuses a
 marker explicitly; it does not silently discard it.
 
 `complete.json` is written and synced last:
-`{version:1,t0_us,frames,dropped,chunks,complete:true}`. It completes the
+`{version:2,t0_us,frames,dropped,chunks,complete:true,error:null,writer:{...}}`. It completes the
 manifest without overwriting its recoverable initial copy. Its frame count
-includes repeats replacing dropped slots. `dropped` includes queue overruns
-and compositor readback-budget skips, without counting a slot twice.
+includes repeats replacing dropped slots. `dropped` counts sampled changed
+source updates that were superseded before capture (or abandoned at stop),
+plus newly captured changed images refused by the writer queue. Deferring
+the same change until a later tick is not itself a drop. An unchanged tick
+is a repeat even if its queue message is omitted and healed from slot numbers.
+This is not a count of all client commits between sampling ticks or a claim
+to know the pixels of an uncaptured source state.
 
 A gracefully failed or abandoned take drains and seals its complete records
 but writes `interrupted.json` instead of `complete.json`. It has the same
@@ -51,7 +61,7 @@ All integers are unsigned little endian. Each record is:
 | 0 | 4 | Payload length, excluding the 17-byte header |
 | 4 | 4 | IEEE CRC32 of frame number bytes, kind byte, and payload |
 | 8 | 8 | Frame slot, starting at zero and increasing by one |
-| 16 | 1 | Kind: 0 key, 1 delta, 2 repeat |
+| 16 | 1 | Kind: 0 key, 1 whole-frame delta, 2 repeat, 3 rectangle delta (v2) |
 | 17 | length | Payload |
 
 CRC32 is the reflected IEEE polynomial 0xEDB88320, initial/final XOR
@@ -66,6 +76,21 @@ be key. Every `fps*10` slots is key, including unchanged images; all other
 identical images are repeat. A missing submitted slot repeats the last image;
 before any accepted image, missing slots use a zero-filled frame.
 
+Kind 3's payload begins with four little-endian u32 pixel coordinates:
+`x, y, width, height` (16 bytes), followed by one raw LZ4 block. Decompress
+that block to exactly `width*height*4` bytes of tightly packed, top-down BGRA
+XOR pixels, then XOR those rows into the previous frame at `(x,y)`. Pixels
+outside that rectangle remain unchanged. The rectangle is non-empty and
+must fit inside the canvas, with checked coordinate arithmetic. Length must
+be at least 16 before reading coordinates. The normal record CRC covers
+both coordinates and compressed data.
+
+The writer derives the bounding rectangle from the actual XOR pixels, rather
+than trusting compositor damage. It chooses kind 3 when that rectangle covers
+less than three quarters of the canvas; large or dispersed changes retain
+kind 1. Accepted identical frames remain kind 2. Compositor damage rectangles
+are not an input to this format or an assumption a reader may make.
+
 Each sealed chunk has a `chunk-NNNNNN.json` receipt:
 `{bytes,crc32,next_frame}`. CRC covers **every byte** of the binary chunk,
 including headers. `next_frame` is the next slot after its last record.
@@ -78,7 +103,8 @@ chunks remain discoverable after power loss before finalisation.
 ## Reader checks and recovery
 
 Reject unknown versions, encoders, formats, invalid dimensions/FPS, unknown
-kinds, non-contiguous chunks or frame numbers, a delta/repeat before key,
+kinds (including kind 3 in version 1), non-contiguous chunks or frame numbers,
+any delta/repeat before key,
 non-empty repeat, invalid LZ4 or decompressed size. Bound allocations from
 dimensions, never from an unchecked payload length. Before decompressing,
 check the complete record exists and its CRC matches. Verify each available
@@ -95,17 +121,31 @@ binary records determine recovered frame count. Interrupted drop totals are
 unknown, not zero. Do not trust a completion file until all checks pass.
 
 Incompatible layouts require a new version. Unknown JSON fields may be
-ignored. Shared constants live in `libraries/media/src/lib.rs`; R2 owns the
+ignored. The writer core and constants live in `libraries/media/vfl/src/lib.rs`;
+this spec belongs to that same crate. R2 owns the
 production reader and verifier. No reader is shipped by this writer change.
 
 ## Scheduling
 
-One writer thread owns conversion, compression and all frame/marker disk I/O.
+viud's adapter has one writer thread; the shared core owns conversion,
+compression and all frame/marker file I/O, without owning any thread or Bus.
 The channel holds eight messages, with frame admission limited to four
 occupied slots so markers have reserved capacity; admission uses
-`try_send`. A full queue increments the dropped counter and releases that
-frame allocation. The writer fills slot gaps and the dropped tail with repeats,
+`try_send`. A full queue increments `queue_overruns`; only a newly captured
+changed image increments `dropped_queue`. The writer fills slot gaps and the dropped tail with repeats,
 preserving CFR without retaining an unbounded frame backlog. The compositor
 keeps the latest source `Arc` so a subsequent tick can retry changed pixels.
 Stop drains and syncs on a finaliser thread. Disk errors fail the take and
 retain the staged directory. Shutdown does not wait for disk on encoder drop.
+
+Status/stop distinguish `dropped_capture`, `dropped_queue`, `readback_deferred`
+and `pending_ticks`; `dropped` is the sum of the first two. The `writer` object
+reports queue overruns/wait total/max, conversion time, XOR/comparison/LZ4
+total/mean/max time, and file-write total/mean/max time (including CRC/JSON
+append work). `setup_us` covers initial file setup, `sync_us`/`sync_max_us`
+cover chunk sealing; sealing time is also part of a write that rotates a chunk.
+Timing fields are microseconds, accumulated on the worker, not disk work on
+the compositor. Record counts and key/delta/rectangle payload byte totals
+(excluding 17-byte record headers) show the resulting storage cost. Fatal
+writer errors fail the take explicitly; a missing completion receipt never
+promises that its queued tail was stored.
