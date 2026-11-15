@@ -537,6 +537,19 @@ mod tests {
         let forms = app.count("example-app.ui.titlebar.form");
         broker.bounce();
         settings.wait("settings.get", 4).await;
+        // Native citizens reconnect independently. The first snapshot can
+        // precede the app's registration, so explicitly deliver its later
+        // registry hint (the forwarder deliberately filters real ones).
+        tokio::time::timeout(std::time::Duration::from_secs(8), async {
+            loop {
+                if let Ok(names) = settings.client.call("noded", "noded.props.get", json!({"path":"services.registered"})).await
+                    && names.as_array().is_some_and(|names| names.contains(&json!("example-app"))) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        }).await.unwrap();
+        hints.send(idle_bus::Service::registration_hint(&["example-app"])).await.unwrap();
         app.wait("example-app.ui.titlebar.form", forms + 1).await;
         app.checkpoint("comp-idle").await;
         assert_eq!(app.count("example-app.ui.titlebar.form"), forms + 1, "recovery presentation completed");
