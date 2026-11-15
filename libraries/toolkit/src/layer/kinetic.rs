@@ -312,10 +312,13 @@ mod tests {
     #[test]
     fn duplicate_or_unsampled_stops_leave_a_coast_unchanged() {
         let t = Instant::now();
-        let mut k = fling(t);
+        let mut k = Kinetic::default();
+        k.axis(0, t, Some(true), Vec2::splat(10.0), [false; 2]);
+        // Keep y live so another x stop reaches the per-axis stop logic.
+        k.axis(16, t + FRAME, None, Vec2::splat(10.0), [true, false]);
         let mut control = k.clone();
         let at = k.deadline().unwrap();
-        k.axis(24, t + Duration::from_millis(24), None, Vec2::ZERO, [true; 2]);
+        k.axis(24, t + Duration::from_millis(24), None, Vec2::ZERO, [true, false]);
         assert_eq!(k.deadline(), Some(at));
         assert_eq!(k.step(at), control.step(at));
         let mut empty = Kinetic::default();

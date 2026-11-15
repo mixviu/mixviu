@@ -1141,7 +1141,8 @@ mod tests {
             (kinetic::Kinetic::default(), Vec::new(), false,
                 super::super::repaint_timer::RepaintTimer::default()),
         ];
-        assert!(surfaces[0].3.arm(&handle, surfaces[0].0.deadline(), |fired| *fired += 1));
+        let at = surfaces[0].0.deadline();
+        assert!(surfaces[0].3.arm(&handle, at, |fired| *fired += 1));
         // Leave explicitly cancels globally, then push_to sees PointerGone
         // and cancels again. Enter's PointerMoved does not cancel or produce
         // synthetic scroll input; real pointer input is forwarded separately.
