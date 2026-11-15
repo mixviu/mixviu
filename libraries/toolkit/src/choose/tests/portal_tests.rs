@@ -244,6 +244,9 @@ async fn teardown_session(recovery: bool) {
         } else {
             cancel.send_replace(true);
             closes.recv().await.unwrap();
+            // Retain late method replies for the shared teardown budget, even
+            // after discovery's shorter transport bound has elapsed.
+            tokio::time::advance(IO_BOUND + Duration::from_millis(100)).await;
             method_release.send_replace(true);
             // The actual handle must be closed while the first Close is hung.
             closes.recv().await.unwrap();
