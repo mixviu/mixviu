@@ -476,6 +476,29 @@ async fn restart_during_reconnect_backoff_revokes_over_independent_uds() {
 
 #[tokio::test]
 async fn cached_status_delivery_rechecks_broker_suspend_without_notices() {
+    const ISOLATED: &str = "MIX_TEST_CACHED_STATUS_ISOLATED";
+    if std::env::var_os(ISOLATED).is_none() {
+        // The reducer is process-wide, just as it is in a real shell. Tests
+        // running own() publish other attachments into it; they can replace
+        // this test's source between commit and dispatch, correctly producing
+        // REFUSED. Give this simulated shell its own process, not a retry.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "native_session::tests::cached_status_delivery_rechecks_broker_suspend_without_notices",
+                "--nocapture",
+            ])
+            .env(ISOLATED, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated status fixture failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return;
+    }
     use test_broker::Broker;
     let broker = Broker::start();
     async fn connect(broker: &Broker) -> VerifiedConnection {

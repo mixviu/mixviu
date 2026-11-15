@@ -122,12 +122,8 @@ pub(crate) async fn admitted(connection: &VerifiedConnection, bound: &SessionRec
         return false;
     };
     let Ok(current) = connection.session_self(bound.record_id).await else {
-        #[cfg(test)]
-        eprintln!("admitted: self RPC failed");
         return false;
     };
-    #[cfg(test)]
-    eprintln!("admitted: current={:?} bound={:?} started={started:?} now={:?}", current.record, bound, boottime_ms());
     current.record.state == BindingState::Attached
         && Source::from(&current.record) == Source::from(bound)
         && current.record.lease_remaining_ms.is_some_and(|remaining| {
@@ -159,8 +155,6 @@ pub(crate) async fn dispatch(
         return;
     }
     if !stamped(command) {
-        #[cfg(test)]
-        eprintln!("dispatch: unstamped {:?}", command.headers);
         refuse(connection, event).await;
         return;
     }
@@ -179,8 +173,6 @@ pub(crate) async fn dispatch(
         .await
         .unwrap_or(false)
     {
-        #[cfg(test)]
-        eprintln!("dispatch: admission failed or timed out");
         refuse(connection, event).await;
         return;
     }
@@ -209,8 +201,6 @@ pub(crate) async fn dispatch(
                 // Source changes atomically with the reducer's sequence. Never
                 // relabel an old-generation snapshot with a new attachment.
                 if status.snapshot.source.as_ref() != Some(&request.target) {
-                    #[cfg(test)]
-                    eprintln!("dispatch: wrong source {:?} != {:?}", status.snapshot.source, request.target);
                     refuse(connection, event).await;
                     return;
                 }
