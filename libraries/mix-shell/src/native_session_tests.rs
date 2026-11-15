@@ -1186,7 +1186,7 @@ async fn stalled_renewal_keeps_requests_and_restart_live() {
     .await
     .expect("pending renewal must not block request reception");
     match response {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(error) => assert_eq!(error.to_string(), r#"{"error_code":"REFUSED"}"#),
     }
     let current = parent.session_self(bound.record_id).await.unwrap().record;

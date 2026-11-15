@@ -1304,8 +1304,8 @@ fn status_flood_preserves_lease_and_restart_ack() {
                         tokio::task::yield_now().await;
                         continue;
                     }
-                    let result = result
-                        .expect("flood request must be answered or explicitly refused");
+                    let result =
+                        result.expect("flood request must be answered or explicitly refused");
                     match result {
                         Ok(value) => {
                             assert_eq!(
