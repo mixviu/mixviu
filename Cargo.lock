@@ -648,7 +648,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
- "sha1",
+ "sha1 0.10.7",
  "sync_wrapper",
  "tokio",
  "tokio-tungstenite 0.29.0",
@@ -4759,7 +4759,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha-crypt",
- "sha1",
+ "sha1 0.10.7",
  "sha2 0.10.9",
  "signal-hook 0.3.18",
  "socket2",
@@ -4768,7 +4768,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "tracing",
- "tungstenite 0.29.0",
+ "tungstenite 0.30.0",
  "unicode-normalization",
  "unicode-segmentation",
  "unicode-width",
@@ -5605,7 +5605,7 @@ dependencies = [
  "tempfile",
  "test-broker",
  "tokio",
- "tungstenite 0.29.0",
+ "tungstenite 0.30.0",
  "unicode-segmentation",
  "unicode-width",
 ]
@@ -5667,7 +5667,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "tungstenite 0.29.0",
+ "tungstenite 0.30.0",
  "unicode-segmentation",
  "unicode-width",
  "ureq",
@@ -8668,6 +8668,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "sha1_smol"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10079,7 +10090,7 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.5",
- "sha1",
+ "sha1 0.10.7",
  "thiserror 2.0.21",
  "utf-8",
 ]
@@ -10096,9 +10107,25 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.5",
+ "sha1 0.10.7",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.10.2",
  "rustls",
  "rustls-pki-types",
- "sha1",
+ "sha1 0.11.0",
  "thiserror 2.0.21",
  "webpki-roots 0.26.11",
 ]
