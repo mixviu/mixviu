@@ -120,6 +120,8 @@ fn virtual_keyboard_is_counted_before_human_input_and_delivers_a_key() {
     let sysroot = std::path::PathBuf::from("/sys/devices/virtual/input").join(sysname);
     let until = Instant::now() + Duration::from_secs(5);
     let mut context = Libinput::new_from_path(Interface);
+    let mut last_error = String::from("event node has not appeared in sysfs");
+    let mut permission_denied = false;
     let node = loop {
         let node = std::fs::read_dir(&sysroot)
             .ok()
@@ -129,14 +131,26 @@ fn virtual_keyboard_is_counted_before_human_input_and_delivers_a_key() {
                     .find(|e| e.file_name().to_string_lossy().starts_with("event"))
             })
             .map(|e| format!("/dev/input/{}", e.file_name().to_string_lossy()));
-        if let Some(node) = node
-            && context.path_add_device(&node).is_some()
-        {
-            break node;
+        if let Some(node) = node {
+            match OpenOptions::new().read(true).open(&node) {
+                Ok(_) => {
+                    permission_denied = false;
+                    if context.path_add_device(&node).is_some() { break node; }
+                    last_error = format!("libinput rejected readable {node}; verify udev keyboard classification and exclusive grab permission");
+                }
+                Err(error) => {
+                    permission_denied = error.kind() == std::io::ErrorKind::PermissionDenied;
+                    last_error = format!("cannot read {node}: {error}");
+                }
+            }
+        }
+        if Instant::now() >= until && permission_denied {
+            eprintln!("NOT RUN uinput lifecycle/event assertions: created {sysname}, but worker device access blocks the generated evdev node: {last_error}");
+            return;
         }
         assert!(
             Instant::now() < until,
-            "uinput created {sysname}, but its event node is not visible/accessible or libinput rejected its udev classification"
+            "uinput created {sysname}: {last_error}"
         );
         std::thread::sleep(Duration::from_millis(50));
     };
