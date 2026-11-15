@@ -1,8 +1,8 @@
 //! The one-shot timer owner, independent of Wayland/GPU state.
 use std::time::Instant;
 
+use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay_client_toolkit::reexports::calloop::{LoopHandle, RegistrationToken};
-use smithay_client_toolkit::reexports::calloop::timer::{Timer, TimeoutAction};
 
 #[derive(Default)]
 pub(super) struct RepaintTimer {
@@ -17,7 +17,9 @@ impl RepaintTimer {
     }
 
     pub(super) fn cancel<T>(&mut self, handle: &LoopHandle<'_, T>) {
-        if let Some(token) = self.token.take() { handle.remove(token); }
+        if let Some(token) = self.token.take() {
+            handle.remove(token);
+        }
         self.deadline = None;
     }
 
@@ -28,14 +30,20 @@ impl RepaintTimer {
         at: Option<Instant>,
         mut fire: impl FnMut(&mut T) + 'static,
     ) -> bool {
-        if self.deadline == at { return true; }
+        if self.deadline == at {
+            return true;
+        }
         self.cancel(handle);
         let Some(at) = at else { return true };
         match handle.insert_source(Timer::from_deadline(at), move |_, _, state| {
             fire(state);
             TimeoutAction::Drop
         }) {
-            Ok(token) => { self.token = Some(token); self.deadline = Some(at); true }
+            Ok(token) => {
+                self.token = Some(token);
+                self.deadline = Some(at);
+                true
+            }
             Err(_) => false,
         }
     }
@@ -44,7 +52,7 @@ impl RepaintTimer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layer::kinetic::{Kinetic, FRAME};
+    use crate::layer::kinetic::{FRAME, Kinetic};
     use smithay_client_toolkit::reexports::calloop::EventLoop;
     use std::time::Duration;
 
@@ -80,33 +88,51 @@ mod tests {
             k.axis(0, t, Some(true), egui::Vec2::splat(10.0), [false; 2]);
             k.axis(16, t + FRAME, None, egui::Vec2::splat(10.0), [false; 2]);
             k.axis(16, t + FRAME, None, egui::Vec2::ZERO, [true; 2]);
-            let mut s = Harness { timer: RepaintTimer::default(), kinetic: k,
-                now: t, fired: 0, handle: event_loop.handle() };
+            let mut s = Harness {
+                timer: RepaintTimer::default(),
+                kinetic: k,
+                now: t,
+                fired: 0,
+                handle: event_loop.handle(),
+            };
             s.arm();
             match cause {
-                0 => {},
+                0 => {}
                 1 => s.kinetic.cancel(), // output loss drops/cancels the timer owner
                 2..=4 => {
                     let event = match cause {
                         2 => egui::Event::PointerGone,
                         3 => egui::Event::PointerButton {
-                            pos: egui::Pos2::ZERO, button: egui::PointerButton::Primary,
-                            pressed: true, modifiers: egui::Modifiers::NONE,
+                            pos: egui::Pos2::ZERO,
+                            button: egui::PointerButton::Primary,
+                            pressed: true,
+                            modifiers: egui::Modifiers::NONE,
                         },
                         _ => egui::Event::Key {
-                            key: egui::Key::A, physical_key: None, pressed: true,
-                            repeat: false, modifiers: egui::Modifiers::NONE,
+                            key: egui::Key::A,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
                         },
                     };
                     assert!(Kinetic::interrupts(&event));
                     s.kinetic.cancel();
-                },
-                _ => s.kinetic.axis(32, t + FRAME * 2, Some(true), egui::Vec2::splat(1.0), [false; 2]),
+                }
+                _ => s.kinetic.axis(
+                    32,
+                    t + FRAME * 2,
+                    Some(true),
+                    egui::Vec2::splat(1.0),
+                    [false; 2],
+                ),
             }
             s.arm();
             for _ in 0..1000 {
                 event_loop.dispatch(Duration::ZERO, &mut s).unwrap();
-                if s.kinetic.deadline().is_none() { break; }
+                if s.kinetic.deadline().is_none() {
+                    break;
+                }
             }
             assert_eq!(s.kinetic.deadline(), None);
             assert!(s.timer.token.is_none());

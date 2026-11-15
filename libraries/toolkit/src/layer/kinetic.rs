@@ -28,8 +28,10 @@ pub(super) struct Kinetic {
 
 impl Kinetic {
     pub(super) fn interrupts(event: &egui::Event) -> bool {
-        matches!(event, egui::Event::PointerButton { .. }
-            | egui::Event::Key { .. } | egui::Event::PointerGone)
+        matches!(
+            event,
+            egui::Event::PointerButton { .. } | egui::Event::Key { .. } | egui::Event::PointerGone
+        )
     }
     pub(super) fn cancel(&mut self) {
         *self = Self::default();
@@ -82,7 +84,8 @@ impl Kinetic {
             if stop[i] {
                 axis.fling = axis.sample.is_some_and(|(last, last_ms)| {
                     now.saturating_duration_since(last) <= SAMPLE_WINDOW
-                        && Duration::from_millis(u64::from(time_ms.wrapping_sub(last_ms))) <= SAMPLE_WINDOW
+                        && Duration::from_millis(u64::from(time_ms.wrapping_sub(last_ms)))
+                            <= SAMPLE_WINDOW
                 }) && axis.velocity.is_finite()
                     && axis.velocity.abs() >= STOP_SPEED;
                 axis.sample = None;
@@ -101,7 +104,9 @@ impl Kinetic {
         if self.deadline.is_none_or(|at| at > now) {
             return Vec2::ZERO;
         }
-        let dt = now.saturating_duration_since(self.last_step.unwrap()).as_secs_f32();
+        let dt = now
+            .saturating_duration_since(self.last_step.unwrap())
+            .as_secs_f32();
         let decay = (-dt / DECAY_SECONDS).exp();
         let mut delta = Vec2::ZERO;
         for (i, axis) in self.axes.iter_mut().enumerate() {
@@ -170,12 +175,17 @@ mod tests {
         for event in [
             egui::Event::PointerGone,
             egui::Event::PointerButton {
-                pos: egui::Pos2::ZERO, button: egui::PointerButton::Primary,
-                pressed: true, modifiers: egui::Modifiers::NONE,
+                pos: egui::Pos2::ZERO,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
             },
             egui::Event::Key {
-                key: egui::Key::A, physical_key: None, pressed: true,
-                repeat: false, modifiers: egui::Modifiers::NONE,
+                key: egui::Key::A,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
             },
         ] {
             let mut k = fling(t);
@@ -207,7 +217,13 @@ mod tests {
         let mut k = fling(t);
         k.axis(33, t + FRAME * 2, Some(true), Vec2::splat(-2.0), [false; 2]);
         assert_eq!(k.deadline(), None);
-        k.axis(1000, t + Duration::from_secs(1), None, Vec2::ZERO, [true; 2]);
+        k.axis(
+            1000,
+            t + Duration::from_secs(1),
+            None,
+            Vec2::ZERO,
+            [true; 2],
+        );
         assert_eq!(k.deadline(), None);
     }
 

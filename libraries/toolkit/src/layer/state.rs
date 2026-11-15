@@ -332,7 +332,9 @@ impl<P: LayerProgram + 'static> State<P> {
                 self.program.visibility(&surface.ctx, true);
             }
         }
-        for id in hidden { self.arm_timer(id); }
+        for id in hidden {
+            self.arm_timer(id);
+        }
     }
     fn add_surface(
         &mut self,
@@ -512,7 +514,9 @@ impl<P: LayerProgram + 'static> State<P> {
 
     fn arm_timer(&mut self, id: u64) {
         let handle = self.handle.clone();
-        let Some(s) = self.surface_mut(id) else { return };
+        let Some(s) = self.surface_mut(id) else {
+            return;
+        };
         let at = kinetic::deadline(s.repaint_at, s.kinetic.deadline());
         let armed = s.timer.arm(&handle, at, move |state: &mut Self| {
             let now = Instant::now();
@@ -715,7 +719,9 @@ impl<P: LayerProgram + 'static> State<P> {
     }
 
     fn push_to(&mut self, wl: &ObjectId, event: egui::Event) {
-        if kinetic::Kinetic::interrupts(&event) { self.cancel_kinetic(); }
+        if kinetic::Kinetic::interrupts(&event) {
+            self.cancel_kinetic();
+        }
         // A host-controlled background must not acquire a continuous render
         // loop merely because the pointer moves over an otherwise idle plot.
         if !self.input_allowed(wl) {
@@ -776,22 +782,43 @@ impl<P: LayerProgram + 'static> State<P> {
     }
 
     fn cancel_kinetic(&mut self) {
-        let ids: Vec<_> = self.surfaces.iter_mut().map(|s| {
-            let active = s.momentum || s.kinetic.deadline().is_some() || s.events.iter().any(|e|
-                matches!(e, egui::Event::MouseWheel { source: egui::MouseWheelSource::Momentum, .. }));
-            s.kinetic.cancel();
-            s.momentum = false;
-            // A timer may have queued momentum earlier in this dispatch.
-            s.events.retain(|e| !matches!(e, egui::Event::MouseWheel {
-                source: egui::MouseWheelSource::Momentum, ..
-            }));
-            if active {
-                s.events.push(cancel_scroll());
-                s.dirty = true;
-            }
-            s.id
-        }).collect();
-        for id in ids { self.arm_timer(id); }
+        let ids: Vec<_> = self
+            .surfaces
+            .iter_mut()
+            .map(|s| {
+                let active = s.momentum
+                    || s.kinetic.deadline().is_some()
+                    || s.events.iter().any(|e| {
+                        matches!(
+                            e,
+                            egui::Event::MouseWheel {
+                                source: egui::MouseWheelSource::Momentum,
+                                ..
+                            }
+                        )
+                    });
+                s.kinetic.cancel();
+                s.momentum = false;
+                // A timer may have queued momentum earlier in this dispatch.
+                s.events.retain(|e| {
+                    !matches!(
+                        e,
+                        egui::Event::MouseWheel {
+                            source: egui::MouseWheelSource::Momentum,
+                            ..
+                        }
+                    )
+                });
+                if active {
+                    s.events.push(cancel_scroll());
+                    s.dirty = true;
+                }
+                s.id
+            })
+            .collect();
+        for id in ids {
+            self.arm_timer(id);
+        }
     }
 }
 
@@ -822,20 +849,31 @@ mod tests {
     fn cancel_clears_egui_smoothing_tail() {
         let ctx = egui::Context::default();
         let mut delta = egui::Vec2::ZERO;
-        let events = vec![egui::Event::MouseWheel {
-            source: egui::MouseWheelSource::Momentum,
-            unit: egui::MouseWheelUnit::Point,
-            delta: egui::vec2(0.0, 100.0),
-            phase: egui::TouchPhase::Move,
-            modifiers: egui::Modifiers::NONE,
-        }, cancel_scroll()];
-        ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
-            delta = ui.input(|i| i.smooth_scroll_delta());
-        }).drop_without_applying_deltas();
+        let events = vec![
+            egui::Event::MouseWheel {
+                source: egui::MouseWheelSource::Momentum,
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::NONE,
+            },
+            cancel_scroll(),
+        ];
+        ctx.run_ui(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                delta = ui.input(|i| i.smooth_scroll_delta());
+            },
+        )
+        .drop_without_applying_deltas();
         assert_eq!(delta, egui::Vec2::ZERO);
         ctx.run_ui(egui::RawInput::default(), |ui| {
             delta = ui.input(|i| i.smooth_scroll_delta());
-        }).drop_without_applying_deltas();
+        })
+        .drop_without_applying_deltas();
         assert_eq!(delta, egui::Vec2::ZERO);
     }
 
@@ -1313,21 +1351,34 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     };
                     if delta != egui::Vec2::ZERO {
                         for s in &mut self.surfaces {
-                            s.events.retain(|e| !matches!(e, egui::Event::MouseWheel {
-                                source: egui::MouseWheelSource::Momentum, ..
-                            }));
+                            s.events.retain(|e| {
+                                !matches!(
+                                    e,
+                                    egui::Event::MouseWheel {
+                                        source: egui::MouseWheelSource::Momentum,
+                                        ..
+                                    }
+                                )
+                            });
                         }
                     }
                     if self.input_allowed(&wl) {
                         let now = Instant::now();
                         if let Some(s) = self.by_wl(&wl) {
-                            if (s.momentum || s.kinetic.deadline().is_some()) && (delta != egui::Vec2::ZERO
-                                || (source.is_some() && !horizontal.stop && !vertical.stop)) {
+                            if (s.momentum || s.kinetic.deadline().is_some())
+                                && (delta != egui::Vec2::ZERO
+                                    || (source.is_some() && !horizontal.stop && !vertical.stop))
+                            {
                                 s.events.push(cancel_scroll());
                                 s.momentum = false;
                             }
-                            s.kinetic.axis(time, now, source.map(|s| s == wl_pointer::AxisSource::Finger),
-                                delta, [horizontal.stop, vertical.stop]);
+                            s.kinetic.axis(
+                                time,
+                                now,
+                                source.map(|s| s == wl_pointer::AxisSource::Finger),
+                                delta,
+                                [horizontal.stop, vertical.stop],
+                            );
                             let id = s.id;
                             self.arm_timer(id);
                         }
