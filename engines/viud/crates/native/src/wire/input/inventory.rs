@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Devices admitted by libinput, not nodes merely present in /dev/input.
 use comp_model::snapshot::InputDeviceSnapshot;
-use smithay::{backend::{input::InputEvent, libinput::LibinputInputBackend}, reexports::input::{Device, DeviceCapability}};
+use smithay::{
+    backend::{input::InputEvent, libinput::LibinputInputBackend},
+    reexports::input::{Device, DeviceCapability},
+};
 use std::{cell::RefCell, collections::BTreeMap};
 
 #[derive(Default)]
@@ -16,13 +19,19 @@ impl Inventory {
             InputEvent::DeviceAdded { device } => {
                 let row = describe(device);
                 if self.devices.get(device.sysname()) != Some(&row) {
-                    info!("input opened: node={} name={:?} capabilities={:?}", row.node, row.name, row.capabilities);
+                    info!(
+                        "input opened: node={} name={:?} capabilities={:?}",
+                        row.node, row.name, row.capabilities
+                    );
                 }
                 self.devices.insert(device.sysname().to_owned(), row);
             }
             InputEvent::DeviceRemoved { device } => {
                 if let Some(row) = self.devices.remove(device.sysname()) {
-                    info!("input closed: node={} name={:?} capabilities={:?}", row.node, row.name, row.capabilities);
+                    info!(
+                        "input closed: node={} name={:?} capabilities={:?}",
+                        row.node, row.name, row.capabilities
+                    );
                 }
             }
             _ => self.events = self.events.saturating_add(1),
@@ -43,8 +52,16 @@ fn describe(device: &Device) -> InputDeviceSnapshot {
         (DeviceCapability::TabletPad, "tablet_pad"),
         (DeviceCapability::Gesture, "gesture"),
         (DeviceCapability::Switch, "switch"),
-    ].into_iter().filter(|(cap, _)| device.has_capability(*cap)).map(|(_, name)| name.to_owned()).collect();
-    InputDeviceSnapshot { name: device.name().into_owned(), node: format!("/dev/input/{}", device.sysname()), capabilities }
+    ]
+    .into_iter()
+    .filter(|(cap, _)| device.has_capability(*cap))
+    .map(|(_, name)| name.to_owned())
+    .collect();
+    InputDeviceSnapshot {
+        name: device.name().into_owned(),
+        node: format!("/dev/input/{}", device.sysname()),
+        capabilities,
+    }
 }
 
 thread_local! {

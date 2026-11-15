@@ -83,7 +83,9 @@ impl Activation {
                 };
                 WATCH_RUNNING.store(false, Ordering::Relaxed);
                 if stop.load(Ordering::Relaxed) {
-                    info!("VT watcher exited after native attachment; libseat owns VT notifications");
+                    info!(
+                        "VT watcher exited after native attachment; libseat owns VT notifications"
+                    );
                 }
                 let _ = tx.send(Notice::Stopped(error));
             });

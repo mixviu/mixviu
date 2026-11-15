@@ -181,7 +181,11 @@ pub fn register(
     libinput_source: LibinputSource,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
 ) {
-    hotplug::register(event_loop, ctx_rc.borrow().libinput_context.clone(), ctx_rc.borrow().libinput_dispatch.clone());
+    hotplug::register(
+        event_loop,
+        ctx_rc.borrow().libinput_context.clone(),
+        ctx_rc.borrow().libinput_dispatch.clone(),
+    );
     event_loop
         .insert_source(libinput_source, move |event, _, state| {
             inventory::observe(&event);

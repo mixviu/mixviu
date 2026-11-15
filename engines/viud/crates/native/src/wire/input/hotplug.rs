@@ -35,7 +35,11 @@ fn nodes_at(root: &std::path::Path) -> std::io::Result<Nodes> {
         .collect()
 }
 
-pub fn register(handle: &LoopHandle<'static, Loop>, mut input: Libinput, wake: std::rc::Rc<std::cell::Cell<bool>>) {
+pub fn register(
+    handle: &LoopHandle<'static, Loop>,
+    mut input: Libinput,
+    wake: std::rc::Rc<std::cell::Cell<bool>>,
+) {
     let mut known = nodes().unwrap_or_default();
     let mut retry = false;
     handle
