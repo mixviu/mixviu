@@ -518,6 +518,11 @@ mod tests {
             4,
             "reconnect reads once then stays idle"
         );
+        let forms = app.count("example-app.ui.titlebar.form");
+        app.publish("example-app.ui.titlebar.changed", json!({})).await;
+        app.wait("example-app.ui.titlebar.form", forms + 1).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(app.count("example-app.ui.titlebar.form"), forms + 1, "post-bounce titlebar subscription did not resume exactly once");
         task.abort();
         forward.abort();
         native_forward.abort();
