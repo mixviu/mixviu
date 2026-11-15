@@ -272,8 +272,7 @@ async fn session_inner(
                     close(connection, owner.as_str(), &predicted),
                     async {
                         if let Ok(Ok(reply)) = tokio::time::timeout(IO_BOUND, &mut call).await
-                            && let Ok(actual) = reply.body().deserialize::<OwnedObjectPath>()
-                            && actual.as_str() != predicted {
+                            && let Ok(actual) = reply.body().deserialize::<OwnedObjectPath>() {
                             let _ = close(connection, owner.as_str(), actual.as_str()).await;
                         }
                     }
