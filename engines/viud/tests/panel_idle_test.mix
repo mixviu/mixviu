@@ -287,7 +287,9 @@ task_start("panel.test.observe","{}")
     $commands={windows:"comp.windows.list",tray:"tray.list",notes:"notify.list",registry:"noded.props.get"}
     $command=$commands[$source]
     write_file($tmp .. "/retry.mix",'send scene-panel panel.test.retry body={source:"' .. $source .. '"}
-print(json_encode({rc:$rc,value:$rc==0 ? json_parse($result) : $result}))
+$body=$result
+if $rc==0 and type($body)=="string" then $body=json_parse($body) end
+print(json_encode({rc:$rc,value:$body}))
 ')
     write_file($tmp .. "/retry-fail",$command)
     if $mode=="reset" then write_file($tmp .. "/retry-hold","1")
