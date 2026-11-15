@@ -149,6 +149,9 @@ print(json_encode({rc:$rc, value:$v}))
   sleep(2)
   check(len(split(read_file($tmp .. "/scenes.log"), "scenes upgrade:")) == $before, "no idle retry after exhaustion")
   print("PASS scenes boot/reload upgrade: late host, edited copy, validation refusal, bounded exhaustion; load=" .. trim(read_file("/proc/loadavg")))
+catch $message, $error
+  for $path in glob($tmp .. "/*.log") eprint($path .. "\n" .. read_file($path)) end
+  raise($error.code, $message, $error.details)
 finally
   for $child in values($children) stop($child) end
   if $bus != nil then $pb.stop($bus) end
