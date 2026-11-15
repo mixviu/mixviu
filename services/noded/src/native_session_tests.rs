@@ -1407,6 +1407,7 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
     // Match production's log-to-tracing bridge, including transport logs.
     // Depending on a neighbouring test to install it hid payload disclosures.
     let _guard = subscriber.set_default();
+    tracing::trace!("bootstrap log capture active");
     let broker = Broker::start().await;
     let mut observer = broker.tcp().await;
     register(&mut observer, "audit-observer").await;
@@ -1467,11 +1468,19 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
         }
     }
     let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
-    for (field, value) in [("private_key", private.as_str()), ("public_key", public.as_str()), ("signature", "signature")] {
+    assert!(output.contains("bootstrap log capture active"));
+    for (field, value) in [
+        ("private_key", private.as_str()),
+        ("public_key", public.as_str()),
+        ("signature", "signature"),
+    ] {
         assert!(
             !output.contains(value),
             "bootstrap {field} in captured log: {:?}",
-            output.lines().filter(|line| line.contains(value)).collect::<Vec<_>>()
+            output
+                .lines()
+                .filter(|line| line.contains(value))
+                .collect::<Vec<_>>()
         );
     }
     parent.client().close().await;
