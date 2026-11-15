@@ -590,8 +590,11 @@ fn queue_registry()
     task_start("registry.resync", "{}")
   catch $message
     $state.registry_queued = false
-    -- Handle exhaustion drops this hint; the next delivery can queue again.
+    -- Preserve the last hint even when no task handle is available. This
+    -- one read is unbatched; refresh_registry contains failures and arms
+    -- its existing bounded retry if the roster cannot be read.
     eprint("panel: registry resync not scheduled: " .. to_string($message))
+    refresh_registry()
   end
 end
 

@@ -362,16 +362,17 @@ task_start("panel.test.observe","{}")
     exit(0)
   elif $case == "registry-task-start" then
     $registry=calls_for("noded.props.get")
+    $windows=calls_for("comp.windows.list")
     write_file($tmp .. "/task-fail","registry.resync")
     $out=call("scene-panel","panel.test.queue")
     $value=type($out.value)=="string" ? json_parse($out.value) : $out.value
     check($out.rc==0 and not $value.queued,"resync task_start failure stranded queued flag")
+    -- This is the only hint: no second queue/burst or registry delivery is
+    -- allowed to rescue it. The synchronous reply fences fallback completion.
     idle(0.4)
-    check(calls_for("noded.props.get")==$registry,"failed task unexpectedly read registry")
-    call("scene-panel","panel.test.burst")
-    quiet()
-    check(calls_for("noded.props.get")==$registry+1,"next hint did not recover after task_start failure")
-    print("PASS registry.resync task_start failure clears queued and next hint recovers")
+    check(calls_for("noded.props.get")==$registry+1,"last hint lost after registry.resync task_start failure")
+    check(calls_for("comp.windows.list")==$windows+1,"inline registry fallback did not resync windows exactly once")
+    print("PASS registry.resync task_start failure handles last hint inline without another event")
     exit(0)
   elif $case == "registry-rejected" or $case == "registry-arrival" then
     write_file($tmp .. "/registry.mix",'send scene-panel panel.test.registry body={new:["panel-stub","tray-stub"]}
@@ -409,8 +410,8 @@ send scene-panel panel.test.registry body={new:["panel-stub","tray-stub"]}
 ')
     $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
     quiet()
-    check(tray_calls()>=2,"tray return did not clear rejection")
-    print("PASS real broker rejection is absent until departure/arrival")
+    check(tray_calls()==5,"departure/arrival must add exactly one tray read to the four rejected probes")
+    print("PASS four rejected roster probes, no idle retry, departure/arrival reads tray once")
     exit(0)
   elif starts_with($case,"retry-") then
     $parts=split($case,"-")

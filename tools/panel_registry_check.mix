@@ -25,6 +25,12 @@ try
   if $r.exit_code==0 or $r.timed_out or not contains($r.stderr,"arrival-only fresh roster did not clear tray rejection") then
     raise("PROOF","round1 did not fail the arrival-only assertion")
   end
+  write_file($tmp .. "/round2.mix",run_argv_must(["git","show","2a6afcfd:" .. $path]))
+  $r=run_argv([$mix,$test,"registry-task-start",$tmp .. "/round2.mix"],{env:$vars,timeout:45})
+  print("ROUND2 last-hint rc=" .. to_string($r.exit_code) .. "\n" .. $r.stdout .. $r.stderr)
+  if $r.exit_code==0 or $r.timed_out or not contains($r.stderr,"last hint lost after registry.resync task_start failure") then
+    raise("PROOF","round2 did not fail the last-hint assertion")
+  end
   for $case in ["registry-burst","registry-rejected","registry-arrival","registry-task-start","idle","tray-retry","notify-retry","comp","clock"]
     print(run_argv_must([$mix,$test,$case],{env:$vars,timeout:90}))
   end
