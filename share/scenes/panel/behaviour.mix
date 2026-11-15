@@ -321,6 +321,8 @@ on tray.retry async
 end
 
 fn service_seen($name)
+  -- A real item/props event is fresh evidence after a coalesced restart.
+  if $name == $TRAY then $state.tray_rejected = false end
   if not contains($state.services, $name) then $state.services = concat($state.services, [$name]) end
 end
 

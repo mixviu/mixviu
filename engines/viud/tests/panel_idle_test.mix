@@ -195,6 +195,9 @@ end
   $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
   if $case == "legacy-clock" then
     $behaviour=read_file(args()[1])
+    -- The current evaluator requires the first shared-scope promotion at
+    -- top level (#143 already repairs this in the shipped behaviour).
+    $behaviour=replace_must($behaviour,"\nstart_status()\ntry", "\ntask_start(\"toast_ensure\", \"{}\")\nstart_status()\ntry")
     write_file($tmp .. "/legacy-feedback","1")
     write_file($tmp .. "/clock-time",to_string(time()))
     $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","fixture_clock()")
