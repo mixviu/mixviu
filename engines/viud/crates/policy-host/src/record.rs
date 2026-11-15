@@ -232,7 +232,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 return;
             }
         };
-        let mut probe_join = None;
+        let probe_join;
         let probe = {
             let (tx, rx) = std::sync::mpsc::channel();
             let destination = path.clone();

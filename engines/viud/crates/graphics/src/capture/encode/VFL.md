@@ -5,6 +5,8 @@ directory named `video.vfl`. During capture the Bus recorder uses a private
 sibling `video.vfl.<random>.part`; successful stop publishes it with a single
 no-replace directory rename. Interrupted and failed takes retain the staging
 directory for recovery. Explicit discard removes only that take's directory.
+The start reply names the staging directory as `recovery_path`; failed stop
+replies retain that field so callers can locate an interrupted take.
 Directories are 0700; every file is created 0600 with exclusive creation and
 `libc::O_NOFOLLOW`. Existing destinations, including dangling symlinks, fail.
 

@@ -24,7 +24,7 @@ fn secure_file(path: &str) -> Result<File, String> {
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
+        .custom_flags(libc::O_EXCL | libc::O_NOFOLLOW)
         .open(path)
         .map_err(|e| format!("create {path}: {e}"))
 }
@@ -246,7 +246,7 @@ impl Recording {
     }
 
     pub fn started(&self) -> Value {
-        json!({"session":self.session,"path":self.path,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}/frames.jsonl",self.path),"markers_path":format!("{}/markers.jsonl",self.path)})
+        json!({"session":self.session,"path":self.path,"recovery_path":self.files.video,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}/frames.jsonl",self.path),"markers_path":format!("{}/markers.jsonl",self.path)})
     }
 
     pub fn is_recording(&self) -> bool {
@@ -373,7 +373,7 @@ impl Recording {
         }
         let kept = self.stop_discard == Some(false) && self.error.is_none();
         self.terminal = Some(
-            json!({"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
+            json!({"recovery_path":if self.error.is_some() {Some(self.files.video.clone())} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
         true
     }
@@ -381,7 +381,7 @@ impl Recording {
 
 impl Drop for Recording {
     fn drop(&mut self) {
-        // VideoEncoder::drop kills/reaps its process group before returning.
+        // Closing admission leaves an interrupted VFL recoverable on disk.
         drop(self.encoder.take());
         if let Some(join) = self.finaliser.take() {
             let _ = join.join();

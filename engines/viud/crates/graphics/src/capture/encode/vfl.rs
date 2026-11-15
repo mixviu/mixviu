@@ -14,7 +14,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use media::vfl::{CHUNK_BYTES, DELTA, KEY, REPEAT};
+use media::vfl::{CHUNK_BYTES, DELTA, KEY, REPEAT, VERSION, MAX_FRAME_BYTES};
 
 fn create(path: &Path) -> io::Result<File> {
     OpenOptions::new()
@@ -190,7 +190,7 @@ impl VideoEncoder {
         let size = (width as usize)
             .checked_mul(height as usize)
             .and_then(|n| n.checked_mul(4))
-            .filter(|n| *n > 0 && *n <= 256 * 1024 * 1024)
+            .filter(|n| *n > 0 && *n <= MAX_FRAME_BYTES)
             .ok_or("invalid frame dimensions")?;
         if !(1..=60).contains(&fps) {
             return Err("invalid fps".into());
@@ -209,7 +209,7 @@ impl VideoEncoder {
         let setup = move || -> io::Result<Log> {
             let path = worker_path;
             std::fs::DirBuilder::new().mode(0o700).create(&path)?;
-            let manifest = json!({"version":1,"width":width,"height":height,"fps":fps,"format":"bgra8","encoder":"vfl-lz4","complete":false,"key_interval":fps*10});
+            let manifest = json!({"version":VERSION,"width":width,"height":height,"fps":fps,"format":"bgra8","encoder":"vfl-lz4","complete":false,"key_interval":fps*10});
             let mut file = create(&path.join("manifest.json"))?;
             file.write_all(manifest.to_string().as_bytes())?;
             file.sync_all()?;
