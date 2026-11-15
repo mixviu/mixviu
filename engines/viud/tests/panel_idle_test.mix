@@ -134,8 +134,12 @@ on scenes.ready
   reply(0,"{}")
 end
 on scenes.model
+  $old=is_file(env("FIXTURE_DIR") .. "/model") ? read_file(env("FIXTURE_DIR") .. "/model") : ""
   append_file(env("FIXTURE_DIR") .. "/models", "1\n")
   write_file(env("FIXTURE_DIR") .. "/model", json_encode($event.args.value))
+  if is_file(env("FIXTURE_DIR") .. "/legacy-feedback") and $old!=json_encode($event.args.value) then
+    $_=publish("scenes.changed",json_encode({scenes:[]}),{command:"scenes.changed"})
+  end
   reply(0,"{}")
 end
 on scenes.list
@@ -189,6 +193,14 @@ end
   start("panel-stub", $tmp .. "/stub.mix")
   wait_service("panel-stub")
   $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+  if $case == "legacy-clock" then
+    $behaviour=read_file(args()[1])
+    write_file($tmp .. "/legacy-feedback","1")
+    write_file($tmp .. "/clock-time",to_string(time()))
+    $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","fixture_clock()")
+    $behaviour=replace_must($behaviour,"$m.panel(snapshot(), $state.icons, time())","$m.panel(snapshot(), $state.icons, fixture_time())")
+    $behaviour=$behaviour .. '\nfn fixture_time()\n  return to_number(read_file(env("FIXTURE_DIR") .. "/clock-time"))\nend\nfn fixture_clock()\n  $gate=env("FIXTURE_DIR") .. "/clock-release"\n  while not is_file($gate) sleep(0.02) end\n  remove($gate)\n  $path=env("FIXTURE_DIR") .. "/clock-time"\n  write_file($path,to_string(to_number(read_file($path))+60))\nend\n'
+  end
   if starts_with($case,"retry-") then
     -- Hold a retry at its sleep boundary until the test explicitly permits
     -- it to finish. No scheduler race or guessed sleep chooses the ordering.
@@ -204,7 +216,7 @@ end
     wait_service("notify-stub")
   end
   $behaviour=replace_must($behaviour,"fn services_changed($live)\n","fn services_changed($live)\n  append_file(env(\"FIXTURE_DIR\") .. \"/registry-events\",json_encode($live) .. \"\\n\")\n")
-  if $case == "registry-burst" or $case == "registry-rejected" then
+  if $case == "registry-burst" or $case == "registry-rejected" or $case == "legacy-clock" then
     -- Exercise the shipped registry handler unchanged, including real noded
     -- arrivals, departures and its capped trailing invalidation.
   elif $case == "clock" then
@@ -289,7 +301,22 @@ task_start("panel.test.observe","{}")
   end
   check(is_file($tmp .. "/model"), "first panel model missing")
   if $case != "clock" and $case != "registry" then quiet() end
-  if $case == "registry-burst" then
+  if $case == "legacy-clock" then
+    $windows=calls_for("comp.windows.list")
+    $tray=tray_calls()
+    $notes=calls_for("notify.list")
+    $registry=calls_for("noded.props.get")
+    write_file($tmp .. "/clock-release","1")
+    for $i=1 to 400
+      if tray_calls()>=$tray+2 then break end
+      sleep(0.05)
+    end
+    quiet()
+    check(calls_for("comp.windows.list")==$windows+2 and tray_calls()==$tray+2 and calls_for("notify.list")==$notes+2,"legacy clock did not reproduce two complete rounds")
+    check(calls_for("noded.props.get")==$registry,"legacy clock unexpectedly read registry")
+    print("PASS legacy clock + scenes.changed: two windows/tray/notify rounds, no registry read, tray absent")
+    exit(0)
+  elif $case == "registry-burst" then
     $windows=calls_for("comp.windows.list")
     $watches=calls_for("comp.props.watch")
     $registry=calls_for("noded.props.get")

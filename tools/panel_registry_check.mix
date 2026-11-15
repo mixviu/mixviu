@@ -9,6 +9,8 @@ $fixed = read_file($path)
 $tmp = trim(run_argv_must(["mktemp","-d","/tmp/panel-registry-proof.XXXXXXXX"]))
 $loads = []
 try
+  write_file($tmp .. "/legacy.mix",run_argv_must(["git","show","b215ac4f:" .. $path]))
+  print(run_argv_must([$mix,$test,"legacy-clock",$tmp .. "/legacy.mix"],{env:$vars,timeout:90}))
   -- Same harness and real broker, only the behaviour under test changes.
   $before = run_argv_must(["git","show","6bb5f9a1:" .. $path])
   write_file($path,$before .. '\nfn queue_registry($live)\n  services_changed($live)\nend\n')
