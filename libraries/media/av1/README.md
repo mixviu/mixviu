@@ -55,6 +55,10 @@ preparation and output I/O. Bitrate counts AV1 payload bytes over 8/30 seconds.
 These are **first numbers, not the av1enc suite**: no repetitions, p95, VMAF,
 BD-rate, long static stretches, oracle encoder comparison or cut-over claim.
 
+First measurements and every case: [FIRST_NUMBERS.md](FIRST_NUMBERS.md).
+The published [current API](https://docs.rs/rav1e/0.8.1/rav1e/config/struct.EncoderConfig.html)
+also identifies 0.8.1; the local pinned source was the design authority.
+
 ## Provenance
 
 Wrapper and generated fixtures are original. Upstream source is crates.io
