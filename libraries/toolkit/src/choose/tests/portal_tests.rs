@@ -234,6 +234,7 @@ async fn teardown_session(recovery: bool) {
         if recovery {
             closes.recv().await.unwrap();
             cancel.send_replace(true);
+            closes.recv().await.unwrap();
             assert_eq!(task.await.unwrap().unwrap(), None);
         } else {
             cancel.send_replace(true);

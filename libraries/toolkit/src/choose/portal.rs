@@ -342,7 +342,19 @@ async fn session_inner(
                 if recovering {
                     tokio::select! {
                         biased;
-                        _ = cancelled(cancel) => return Ok(None),
+                        _ = cancelled(cancel) => {
+                            // The acknowledgement future may not yet have sent
+                            // anything. Finish a best-effort send, without waiting
+                            // again for the hung portal's reply. Cancellation never
+                            // permits fallback, so no acknowledgement is needed.
+                            let message = zbus::Message::method_call(actual.as_str(), "Close")?
+                                .destination(owner.as_str())?
+                                .interface(REQUEST)?
+                                .with_flags(zbus::message::Flags::NoReplyExpected)?
+                                .build(&())?;
+                            let _ = tokio::time::timeout(IO_BOUND, connection.send(&message)).await;
+                            return Ok(None);
+                        },
                         result = close(connection, owner.as_str(), actual.as_str()) => {
                             if result.is_ok() {
                                 return Err(anyhow!("portal request cancelled after transport failure"));
