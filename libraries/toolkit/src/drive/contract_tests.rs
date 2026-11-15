@@ -15,6 +15,21 @@ pub(super) fn spec_list(marker: &str) -> Vec<String> {
 }
 
 #[test]
+fn bus_keys_accept_the_spec_and_name_invalid_arguments() {
+    for name in spec_list("<!-- key-names -->") {
+        assert!(key(&json!({"key":name})).is_ok(), "{name:?}");
+    }
+    let ctx = Context::default();
+    install(&ctx, "fixture");
+    let answer = request(&ctx, 1, "ui.key", &json!({"key":"Unnamed"})).unwrap();
+    assert_eq!(answer.body["error_code"], "ARGUMENT");
+    assert!(answer.body.to_string().contains("Unnamed"));
+    for modifier in ["ctrl", "command", "shift", "alt"] {
+        assert!(key(&json!({"key":"A", "modifiers":[modifier]})).is_ok());
+    }
+}
+
+#[test]
 fn fixture_window_pins_tree_schema_and_roles() {
     let ctx = Context::default();
     install(&ctx, "fixture");
