@@ -268,7 +268,7 @@ async fn session_inner(
             // Poll the method while closing the predicted path. Both handles
             // share one teardown budget, even if neither Close replies.
             let _ = tokio::time::timeout(CLOSE_BOUND, async {
-                tokio::join!(
+                let _ = tokio::join!(
                     close(connection, owner.as_str(), &predicted),
                     async {
                         if let Ok(Ok(reply)) = tokio::time::timeout(IO_BOUND, &mut call).await

@@ -128,6 +128,95 @@ struct Call {
     path: String,
     owner: String,
 }
+
+struct TeardownPortal {
+    close_entered: tokio::sync::mpsc::UnboundedSender<()>,
+    method_entered: tokio::sync::mpsc::UnboundedSender<()>,
+    method_release: watch::Receiver<bool>,
+    close_release: watch::Receiver<bool>,
+}
+
+#[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
+impl TeardownPortal {
+    #[zbus(property, name = "version")]
+    fn version(&self) -> u32 {
+        4
+    }
+
+    async fn open_file(
+        &self,
+        _parent: &str,
+        _title: &str,
+        options: Options,
+        #[zbus(connection)] connection: &Connection,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
+        let sender = header.sender().unwrap().as_str().trim_start_matches(':').replace('.', "_");
+        let token = String::try_from(options["handle_token"].try_clone().unwrap()).unwrap();
+        let predicted = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
+        let actual = "/org/freedesktop/portal/desktop/request/legacy";
+        for path in [predicted.as_str(), actual] {
+            connection.object_server().at(path, GatedClose {
+                entered: self.close_entered.clone(),
+                release: self.close_release.clone(),
+                unknown_method: false,
+            }).await.unwrap();
+        }
+        self.method_entered.send(()).unwrap();
+        self.method_release.clone().wait_for(|ready| *ready).await.unwrap();
+        Ok(actual.try_into().unwrap())
+    }
+}
+
+#[tokio::test]
+async fn portal_cancel_shares_one_close_budget_and_polls_the_late_handle() {
+    teardown_session(false).await;
+}
+
+#[tokio::test]
+async fn portal_cancel_interrupts_a_hung_recovery_close() {
+    teardown_session(true).await;
+}
+
+async fn teardown_session(recovery: bool) {
+    let (_process, address) = dbus();
+    let server = connection(&address).await;
+    let (close_tx, mut closes) = tokio::sync::mpsc::unbounded_channel();
+    let (method_tx, mut methods) = tokio::sync::mpsc::unbounded_channel();
+    let (method_release, method_gate) = watch::channel(recovery);
+    let (_close_release, close_gate) = watch::channel(false);
+    server.object_server().at(PATH, TeardownPortal {
+        close_entered: close_tx,
+        method_entered: method_tx,
+        method_release: method_gate,
+        close_release: close_gate,
+    }).await.unwrap();
+    server.request_name(DESKTOP).await.unwrap();
+    let client = connection(&address).await;
+    let (cancel, mut cancelled) = watch::channel(false);
+    let req = request("{}").unwrap();
+    tokio::time::pause();
+    real_time_bound(async {
+        let task = tokio::spawn(async move {
+            portal::session_broken_stream(&client, &req, &mut cancelled, if recovery { 2 } else { 0 }, None).await
+        });
+        methods.recv().await.unwrap();
+        if recovery {
+            closes.recv().await.unwrap();
+            cancel.send_replace(true);
+            assert_eq!(task.await.unwrap().unwrap(), None);
+        } else {
+            cancel.send_replace(true);
+            closes.recv().await.unwrap();
+            method_release.send_replace(true);
+            // The actual handle must be closed while the first Close is hung.
+            closes.recv().await.unwrap();
+            tokio::time::advance(portal::CLOSE_BOUND + Duration::from_millis(1)).await;
+            assert_eq!(task.await.unwrap().unwrap(), None);
+        }
+    }).await;
+}
+
 struct Portal {
     calls: tokio::sync::mpsc::UnboundedSender<Call>,
     closed: Arc<AtomicUsize>,
@@ -699,7 +788,10 @@ async fn real_time_bound<T>(future: impl std::future::Future<Output = T>) -> T {
             result = &mut future => return result,
             _ = tokio::task::yield_now() => {}
         }
-        assert!(start.elapsed() < Duration::from_secs(30), "portal fixture stalled");
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "portal fixture stalled"
+        );
     }
 }
 
@@ -753,7 +845,7 @@ async fn gated_close(unknown_method: bool, answer: bool) {
         let result = call.await;
         assert!(result.is_ok(), "received delayed Close result: {result:?}");
     } else {
-        tokio::time::advance(portal::CLOSE_BOUND).await;
+        tokio::time::advance(portal::CLOSE_BOUND + Duration::from_millis(1)).await;
         let result = call.await;
         let error = result.expect_err("Close acknowledged a fake that never replied");
         assert!(
