@@ -225,10 +225,8 @@ pub(crate) async fn run(
                     bars,
                 })
                 && theme_ready;
-            if accepted {
-                if let Some(update) = &pending {
-                    consumer.acknowledge(update);
-                }
+            if accepted && let Some(update) = &pending {
+                consumer.acknowledge(update);
             }
             presentation_retry = (!accepted || bars_dirty.iter().any(|s| services.contains(s)))
                 .then(|| std::time::Instant::now() + std::time::Duration::from_secs(1));
@@ -246,16 +244,14 @@ pub(crate) async fn run(
                 if let Some(next) = consumer.native_delivery(&event) { work = Some(next); }
                 if event.header("broker_origin") == Some("local") {
                     if event.topic() == Some("noded.props.changed") && event.header("broker_service") == Some("noded") {
-                        if let Ok(body) = serde_json::from_str::<Value>(&event.body) {
-                            if body["path"] == "services.registered" || body["gap"] == true || event.header("gap") == Some("true") {
-                                registry_dirty = true;
-                                registry_retry = None;
-                            }
+                        if let Ok(body) = serde_json::from_str::<Value>(&event.body)
+                            && (body["path"] == "services.registered" || body["gap"] == true || event.header("gap") == Some("true")) {
+                            registry_dirty = true;
+                            registry_retry = None;
                         }
-                    } else if let Some(service) = event.header("broker_service") {
-                        if event.topic() == Some(format!("{service}.ui.titlebar.changed").as_str()) && services.contains(service) {
-                            bars_dirty.insert(service.to_owned());
-                        }
+                    } else if let Some(service) = event.header("broker_service")
+                        && event.topic() == Some(format!("{service}.ui.titlebar.changed").as_str()) && services.contains(service) {
+                        bars_dirty.insert(service.to_owned());
                     }
                 }
             }
@@ -354,6 +350,11 @@ mod tests {
         app.wait("example-app.ui.titlebar.form", 2).await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(app.count("example-app.ui.titlebar.form"), 2);
+        let _newcomer = idle_bus::Service::start(&broker, "late-app").await;
+        app.wait("example-app.ui.titlebar.form", 3).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(observer.registry_reads("comp-idle"), 2, "one registration hint makes one registry read");
+        assert_eq!(app.count("example-app.ui.titlebar.form"), 3);
         settings.fail_reads.store(1, Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;
         settings.wait("settings.get", 3).await;

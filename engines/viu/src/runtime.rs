@@ -702,107 +702,6 @@ async fn worker(
     worker_connected(client, service, comp, state, outgoing, incoming).await
 }
 
-#[cfg(test)]
-#[path = "../../../tests/lib/idle_bus.rs"]
-mod idle_bus;
-
-#[cfg(test)]
-mod idle_tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn idle_shell_is_quiet_and_changes_and_registration_report_once() {
-        let mut broker = test_broker::Broker::bounce_stable();
-        let settings = idle_bus::Service::start(&broker, "settingsd").await;
-        let comp = idle_bus::Service::start(&broker, "comp").await;
-        let observer = idle_bus::Observer::start(&broker).await;
-        let state = Arc::new(Mutex::new(State::new()));
-        state.lock().unwrap().panel("example", "bottom");
-        let (client, incoming, forward) = idle_bus::native(&broker, "shell").await;
-        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
-        let task = tokio::spawn(worker_connected(
-            client,
-            "shell".into(),
-            "comp".into(),
-            state.clone(),
-            recv,
-            incoming,
-        ));
-        settings.wait("settings.get", 1).await;
-        comp.wait("comp.panel.mode", 1).await;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-        assert_eq!(settings.count("settings.get"), 1);
-        assert_eq!(comp.count("comp.props.watch"), 1);
-        assert_eq!(comp.count("comp.props.get"), 1);
-        assert_eq!(comp.count("comp.panel.mode"), 1);
-        assert_eq!(observer.registry_reads("shell"), 0);
-        settings.settings_changed(2, "first").await;
-        tokio::time::timeout(Duration::from_secs(3), async {
-            while state.lock().unwrap().look_revision < 2 {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .unwrap();
-        assert_eq!(
-            settings.count("settings.get"),
-            1,
-            "inline change needs no re-read"
-        );
-        settings
-            .fail_reads
-            .store(1, std::sync::atomic::Ordering::SeqCst);
-        settings.settings_changed(3, "restarted").await;
-        settings.wait("settings.get", 3).await;
-        settings.assert_read_retry_deadline();
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-        assert_eq!(
-            settings.count("settings.get"),
-            3,
-            "new authority confirms once after a fenced failed-read retry"
-        );
-        for _ in 0..2 {
-            send.send(Outgoing::Mode(
-                "example".into(),
-                "bottom".into(),
-                "docked".into(),
-            ))
-            .unwrap();
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(comp.count("comp.panel.mode"), 1, "same mode is silent");
-        send.send(Outgoing::Mode(
-            "example".into(),
-            "bottom".into(),
-            "hidden".into(),
-        ))
-        .unwrap();
-        comp.wait("comp.panel.mode", 2).await;
-        send.send(Outgoing::Register("example".into(), "bottom".into()))
-            .unwrap();
-        comp.wait("comp.panel.mode", 3).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(comp.count("comp.panel.mode"), 3);
-        broker.bounce();
-        comp.wait("comp.panel.mode", 4).await;
-        settings.wait("settings.get", 4).await;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-        assert_eq!(
-            comp.count("comp.panel.mode"),
-            4,
-            "reconnect reports each panel once"
-        );
-        assert_eq!(
-            settings.count("settings.get"),
-            4,
-            "reconnect restores settings once"
-        );
-        assert!(comp.count("comp.props.watch") >= 2);
-        task.abort();
-        forward.abort();
-    }
-}
-
 async fn worker_connected(
     client: bus::SupervisedClient,
     service: String,
@@ -967,8 +866,8 @@ async fn worker_connected(
             command=incoming.recv()=>{
                 let Some(command)=command else {break;};
                 if command.is_topic_delivery() {
-                    if command.topic()==Some("noded.props.changed") && command.header("broker_service")==Some("noded") && command.header("broker_origin")==Some("local") {
-                        if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
+                    if command.topic()==Some("noded.props.changed") && command.header("broker_service")==Some("noded") && command.header("broker_origin")==Some("local")
+                        && let Ok(body)=serde_json::from_str::<Value>(&command.body) {
                             let mut arrived = false;
                             if body["path"] == "services.registered" {
                                 let present = body["new"].as_array().is_some_and(|names| names.contains(&json!(comp)));
@@ -976,7 +875,6 @@ async fn worker_connected(
                                 comp_live = present;
                             }
                             if arrived || body["gap"] == true || command.header("gap")==Some("true") {comp_dirty=true;comp_retry=None;reported.clear();}
-                        }
                     }
                     if command.header("broker_service")==Some(scenes.as_str()) && command.header("broker_origin")==Some("local") && command.topic()==Some(format!("{scenes}.changed").as_str()) {
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
@@ -1291,3 +1189,105 @@ fn dispatch(
     };
     (0, result)
 }
+
+#[cfg(test)]
+#[path = "../../../tests/lib/idle_bus.rs"]
+mod idle_bus;
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn idle_shell_is_quiet_and_changes_and_registration_report_once() {
+        let mut broker = test_broker::Broker::bounce_stable();
+        let settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        let observer = idle_bus::Observer::start(&broker).await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, incoming, forward) = idle_bus::native(&broker, "shell").await;
+        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(
+            client,
+            "shell".into(),
+            "comp".into(),
+            state.clone(),
+            recv,
+            incoming,
+        ));
+        settings.wait("settings.get", 1).await;
+        comp.wait("comp.panel.mode", 1).await;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(settings.count("settings.get"), 1);
+        assert_eq!(comp.count("comp.props.watch"), 1);
+        assert_eq!(comp.count("comp.props.get"), 1);
+        assert_eq!(comp.count("comp.panel.mode"), 1);
+        assert_eq!(observer.registry_reads("shell"), 0);
+        settings.settings_changed(2, "first").await;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while state.lock().unwrap().look_revision < 2 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            settings.count("settings.get"),
+            1,
+            "inline change needs no re-read"
+        );
+        settings
+            .fail_reads
+            .store(1, std::sync::atomic::Ordering::SeqCst);
+        settings.settings_changed(3, "restarted").await;
+        settings.wait("settings.get", 3).await;
+        settings.assert_read_retry_deadline();
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(
+            settings.count("settings.get"),
+            3,
+            "new authority confirms once after a fenced failed-read retry"
+        );
+        for _ in 0..2 {
+            send.send(Outgoing::Mode(
+                "example".into(),
+                "bottom".into(),
+                "docked".into(),
+            ))
+            .unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(comp.count("comp.panel.mode"), 1, "same mode is silent");
+        send.send(Outgoing::Mode(
+            "example".into(),
+            "bottom".into(),
+            "hidden".into(),
+        ))
+        .unwrap();
+        comp.wait("comp.panel.mode", 2).await;
+        send.send(Outgoing::Register("example".into(), "bottom".into()))
+            .unwrap();
+        comp.wait("comp.panel.mode", 3).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(comp.count("comp.panel.mode"), 3);
+        broker.bounce();
+        comp.wait("comp.panel.mode", 4).await;
+        settings.wait("settings.get", 4).await;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(
+            comp.count("comp.panel.mode"),
+            4,
+            "reconnect reports each panel once"
+        );
+        assert_eq!(
+            settings.count("settings.get"),
+            4,
+            "reconnect restores settings once"
+        );
+        assert!(comp.count("comp.props.watch") >= 2);
+        task.abort();
+        forward.abort();
+    }
+}
+
