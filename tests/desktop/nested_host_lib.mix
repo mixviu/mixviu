@@ -4,7 +4,7 @@
 $pb = require("../lib/private_bus.mix")
 fn new_run($prefix)
   $r = run_argv_must(["mktemp", "-d", $prefix .. ".XXXXXX"])
-  return {path:trim($r.stdout), owner:pid()}
+  return {path:trim($r), owner:pid()}
 end
 fn private_bus($opts)
   return $pb.start($opts)

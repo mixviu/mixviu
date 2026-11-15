@@ -1,5 +1,13 @@
 # egui-wgpu 0.37.0 local patch
 
+`src/baseline.rs` provides a passive 256-frame ring shared with toolkit's
+`ui.stats` reader through viewport-scoped egui temporary data. The winit
+painter advances a presentation receipt only after presenting a surface.
+Eframe uses that receipt to exclude skipped paints from its existing frame
+timing. Layer hosts record after successful presentation. Neither path arms
+a timer or requests a repaint. The storage contract is documented in
+`libraries/toolkit/src/drive_stats.rs`; retain both ends when re-vendoring.
+
 Base: crates.io `egui-wgpu` 0.37.0, archive SHA-256
 `0309cbe1febed48af5b974e4bcc424b35e9664863a4d402697147b57a488c864`,
 upstream revision `7c0b40402271e8d40cda69f87cf3c2617c2e4382`.

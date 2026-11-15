@@ -33,7 +33,7 @@ fn inventory()
   return $v.services ?? $v
 end
 $hz = run_argv_must(["getconf", "CLK_TCK"])
-$hz = $proc.number(trim($hz.stdout))
+$hz = $proc.number(trim($hz))
 $targets = []
 for $target in $cli.rest
   $pid = nil
@@ -73,7 +73,10 @@ if $work.kind == "scroll" then
     $nodes = $tree.nodes ?? []
     $rect = nil
     for $n in $nodes
-      if to_string($n.id) == $cli.opts.node then $rect = $n.rect end
+      if to_string($n.id) == $cli.opts.node or $n.label == $cli.opts.node then
+        if $rect != nil then raise("WORKLOAD", "ambiguous node; use its id") end
+        $rect = $n.rect
+      end
     end
     if $rect == nil then raise("WORKLOAD", "scroll node is absent or has no rectangle") end
     for $i = 1 to $work.steps

@@ -11,7 +11,7 @@ try
     if $r.exit_code != 0 then exit($r.exit_code) end
   end
   print("BASELINE_FMT_BEGIN")
-  print(run_argv_must(["git", "diff"]).stdout)
+  print(run_argv_must(["git", "diff"]))
   print("BASELINE_FMT_END")
 finally
   run_argv_must(["git", "checkout", "-q", "--", "."])

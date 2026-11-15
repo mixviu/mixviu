@@ -45,6 +45,9 @@
 --
 -- The toolkit drive commands (docs/docs/drive.md) are one family that every egui
 -- app answers under its own prefix: <app>.ui.tree, .ui.click, .ui.pointer,
+-- .ui.stats is a passive query: cumulative drawn frames, last 256 CPU-side
+-- frame durations (median/p95/max), quiet age, surface pixels/scale and the
+-- selected GPU backend/adapter. See docs/viu-baseline.md for units and limits.
 -- .ui.scroll, .ui.key, .ui.type, .ui.menu, .ui.menu.list, .ui.menu.open,
 -- .ui.menu.close, .ui.menu.popup, .ui.menu.form, .ui.capture, <app>.window and
 -- <app>.window.state. Each native app registers its concrete names, owned
