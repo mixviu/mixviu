@@ -47,7 +47,8 @@ fn promptly(mut cmd: Command) -> std::process::Output {
 
 #[test]
 fn two_binaries_one_prefix_and_fail_closed_controls() {
-    let scratch_root = std::env::temp_dir().join(format!("paths-dev-snapshot-{}", std::process::id()));
+    let scratch_root =
+        std::env::temp_dir().join(format!("paths-dev-snapshot-{}", std::process::id()));
     let prefix = scratch_root.join("install");
     std::fs::create_dir_all(prefix.join("bin")).unwrap();
     struct Scratch(std::path::PathBuf);
@@ -262,7 +263,6 @@ fn main() {{
     assert!(out.stderr.is_empty());
 
     // Legacy registration must not even open a marker at its own prefix.
-    std::fs::remove_file(&marker).unwrap();
     assert!(
         Command::new("mkfifo")
             .arg(&marker)
