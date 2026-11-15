@@ -284,15 +284,15 @@ pub fn key_name(name: &str) -> Option<Key> {
 // One list generates both the exhaustive adapter and its spec-check vocabulary.
 // An upstream role addition requires a contract decision before this compiles.
 macro_rules! drive_roles {
-    (*) => {
+    ($($role:ident => $name:literal,)*) => {
         pub(super) fn role_name(role: Role) -> &'static str {
             match role {
-                *
+                $(Role::$role => $name,)*
             }
         }
 
         #[cfg(test)]
-        const ROLES: &[Role] = &[*];
+        const ROLES: &[Role] = &[$(Role::$role,)*];
     };
 }
 
