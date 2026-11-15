@@ -833,28 +833,29 @@ async fn gated_close(unknown_method: bool, answer: bool) {
             entry = entered.recv() => entry.expect("fake portal Close notification dropped"),
         }
         if answer {
-        // Deliberately withhold the reply beyond the old discovery/Close bound.
-        // The handler-entry signal pins dispatch; only this test opens the gate.
-        tokio::time::advance(IO_BOUND + Duration::from_millis(100)).await;
-        tokio::select! {
-            biased;
-            result = &mut call => panic!("Close ended before the fake reply was released: {result:?}"),
-            _ = std::future::ready(()) => {}
-        }
-        release.send_replace(true);
-        let result = call.await;
-        assert!(result.is_ok(), "received delayed Close result: {result:?}");
-    } else {
-        tokio::time::advance(portal::CLOSE_BOUND + Duration::from_millis(1)).await;
-        let result = call.await;
-        let error = result.expect_err("Close acknowledged a fake that never replied");
-        assert!(
-            error
-                .to_string()
-                .contains("portal Close acknowledgement timed out"),
-            "received stalled Close error: {error:#}"
-        );
-        assert!(!*release.borrow(), "never-replying fake was released");
+            // Deliberately withhold the reply beyond the old discovery/Close bound.
+            // The handler-entry signal pins dispatch; only this test opens the gate.
+            tokio::time::advance(IO_BOUND + Duration::from_millis(100)).await;
+            tokio::select! {
+                biased;
+                result = &mut call => panic!("Close ended before the fake reply was released: {result:?}"),
+                _ = std::future::ready(()) => {}
+            }
+            release.send_replace(true);
+            let result = call.await;
+            assert!(result.is_ok(), "received delayed Close result: {result:?}");
+        } else {
+            // Tokio's timer wheel rounds deadlines to millisecond ticks.
+            tokio::time::advance(portal::CLOSE_BOUND + Duration::from_millis(1)).await;
+            let result = call.await;
+            let error = result.expect_err("Close acknowledged a fake that never replied");
+            assert!(
+                error
+                    .to_string()
+                    .contains("portal Close acknowledgement timed out"),
+                "received stalled Close error: {error:#}"
+            );
+            assert!(!*release.borrow(), "never-replying fake was released");
         }
     }).await;
 }

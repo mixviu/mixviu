@@ -325,6 +325,7 @@ async fn session_inner(
                         }
                         responses_live = false;
                         recovering = true;
+                        sweep.reset_immediately();
                         continue;
                     }
                 };
