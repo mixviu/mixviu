@@ -126,7 +126,7 @@ for $t in $targets
   $t.frames_after = if $t.service != nil then rpc($t.service, "ui.stats", {}) else {available:false} end
   push($rows, $t)
 end
-write_file($cli.opts.output, json_encode({schema:"viu.baseline.v1", workload:$name, workload_definition:$work, idle_seconds:$seconds, clk_tck:$hz, targets:$rows}))
+write_file($cli.opts.output, json_encode({schema:"viu.baseline.v1", collector_mix:mix_version(), created_unix_seconds:time(), workload:$name, workload_definition:$work, idle_seconds:$seconds, clk_tck:$hz, targets:$rows}))
 print("| Target | RSS KiB | PSS KiB | Private dirty KiB | Swap KiB | CPU % | voluntary/s | involuntary/s | Threads | Bytes |")
 print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 for $t in $rows

@@ -880,7 +880,10 @@ mod tests {
         assert_eq!(all["surfaces"].as_object().unwrap().len(), 2);
         let (_, selected) = passive_frame_stats(&endpoint.stats, &json!({"output":"first"}));
         assert_eq!(selected["available"], false);
-        assert_eq!(passive_frame_stats(&endpoint.stats, &json!({"output":"absent"})).0, 10);
+        assert_eq!(
+            passive_frame_stats(&endpoint.stats, &json!({"output":"absent"})).0,
+            10
+        );
         assert_eq!(passive_frame_stats(&endpoint.stats, &json!([])).0, 10);
         endpoint.remove_stats_surface("second");
         assert_eq!(endpoint.stats.lock().unwrap().len(), 1);
