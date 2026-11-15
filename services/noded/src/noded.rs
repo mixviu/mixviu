@@ -4956,7 +4956,7 @@ async fn handle_noded_command(
                 )
                 .await;
             let mut resp = respond("0");
-            resp.set("command", "props.watch");
+            resp.set("command", c);
             resp.body = format!(
                 r#"{{"subscription_id": "{sub_id}", "topic": "{topic}", "replayed": {replayed}, "seq": {seq}}}"#
             );
