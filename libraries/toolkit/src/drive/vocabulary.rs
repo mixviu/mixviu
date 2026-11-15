@@ -275,7 +275,10 @@ const KEY_NAMES: &[(&str, Key)] = &[
 ];
 
 pub fn key_name(name: &str) -> Option<Key> {
-    KEY_NAMES.iter().find(|(n, _)| *n == name).map(|(_, key)| *key)
+    KEY_NAMES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, key)| *key)
 }
 
 // Exhaustive: an upstream role addition requires a contract decision.
@@ -479,7 +482,9 @@ mod tests {
             assert_eq!(key_name(name), Some(*key));
             assert_eq!(Key::from_name(name), Some(*key));
         }
-        for name in names { assert!(key_name(&name).is_some(), "{name:?}"); }
+        for name in names {
+            assert!(key_name(&name).is_some(), "{name:?}");
+        }
         assert!(key_name("NoSuchKey").is_none());
     }
     #[test]
@@ -670,6 +675,8 @@ mod tests {
         ];
         let names = spec_list("<!-- role-names -->");
         assert_eq!(names, roles.map(role_name));
-        for role in roles { assert_eq!(role_name(role), format!("{role:?}")); }
+        for role in roles {
+            assert_eq!(role_name(role), format!("{role:?}"));
+        }
     }
 }
