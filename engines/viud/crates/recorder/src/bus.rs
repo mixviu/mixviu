@@ -196,6 +196,10 @@ pub struct Recording {
     pub frames: u64,
     pub repeated: u64,
     pub dropped: u64,
+    dropped_capture: u64,
+    readback_deferred: u64,
+    pending_ticks: u64,
+    writer_metrics: graphics::capture::encode::vfl::Metrics,
     pub error: Option<String>,
     pub terminal: Option<Value>,
     path: String,
@@ -211,7 +215,6 @@ pub struct Recording {
     readbacks: u64,
     readback_max_us: u64,
     readback_debt: u64,
-    skipped_readback: bool,
     files: TakeFiles,
     bytes: Arc<std::sync::atomic::AtomicU64>,
     encoder: Option<VideoEncoder>,
@@ -241,6 +244,7 @@ impl Recording {
             &encoder_name,
         )?;
         let bytes = encoder.bytes_handle();
+        let writer_metrics=encoder.metrics_handle();
         Ok(Self {
             session,
             path,
@@ -255,6 +259,7 @@ impl Recording {
             frames: 0,
             repeated: 0,
             dropped: 0,
+            dropped_capture:0,readback_deferred:0,pending_ticks:0,writer_metrics,
             error: None,
             terminal: None,
             seq: 0,
@@ -265,7 +270,6 @@ impl Recording {
             readbacks: 0,
             readback_max_us: 0,
             readback_debt: 0,
-            skipped_readback: false,
             encoder: Some(encoder),
             finishing: None,
             stop_discard: None,
@@ -282,7 +286,6 @@ impl Recording {
     }
 
     pub fn frame(&mut self, pixels: Option<(u32, u32, Arc<Vec<u8>>, u64)>) -> Result<(), String> {
-        let budget_drop = std::mem::take(&mut self.skipped_readback);
         let changed = pixels.is_some();
         if let Some((w, h, rgb, readback_us)) = pixels {
             self.readback_us = readback_us;
@@ -306,8 +309,8 @@ impl Recording {
         if let Some(error) = encoder.error() {
             return Err(error);
         }
-        if !encoder.try_push_rgb(self.last.clone(), self.source_width, self.source_height) {
-            if !budget_drop {
+        if !encoder.try_push_rgb_change(self.last.clone(), self.source_width, self.source_height,changed) {
+            if changed {
                 self.dropped += 1;
             }
             if changed {
@@ -337,13 +340,17 @@ impl Recording {
         if !spend_readback_budget(&mut self.readback_debt, damaged) {
             return false;
         }
-        self.dropped += 1;
-        self.skipped_readback = true;
+        self.readback_deferred += 1;
         true
     }
+    pub fn superseded_capture(&mut self) {
+        self.dropped+=1;
+        self.dropped_capture+=1;
+    }
+    pub fn pending_tick(&mut self) {self.pending_ticks+=1;}
 
     pub fn status(&self) -> Value {
-        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"encoders":["vfl"],"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
+        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"encoders":["vfl"],"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
     }
 
     pub fn stop(&mut self, discard: bool) -> bool {
@@ -407,7 +414,7 @@ impl Recording {
         }
         let kept = self.stop_discard == Some(false) && self.error.is_none();
         self.terminal = Some(
-            json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
+            json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
         true
     }

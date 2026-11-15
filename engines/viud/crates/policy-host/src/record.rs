@@ -79,6 +79,7 @@ struct Session {
     stop_answers: Vec<Answer>,
     pending: bool,
     signature: Vec<u64>,
+    deferred_signature: Option<Vec<u64>>,
     failed: Option<String>,
     last_state: Cell<&'static str>,
 }
@@ -192,7 +193,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             if target.window.is_none() {
                 let outputs: Vec<_> = lp.inner.space_state().state.outputs().cloned().collect();
                 let output = if let Some(name) = &target.output {
-                    outputs.iter().find(|o| o.name() == *name)
+                    outputs.iter().find(|o| o.name() == *name || comp_model::snapshot::output_key(&o.name()) == *name)
                 } else {
                     outputs
                         .iter()
@@ -265,6 +266,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             stop_answers: Vec::new(),
             pending: false,
             signature: Vec::new(),
+            deferred_signature:None,
             failed: None,
             last_state: Cell::new(""),
         }));
@@ -511,14 +513,6 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             event(&s, "finishing");
             return;
         }
-        if s.pending {
-            let result = s.recording.as_mut().map(|r| r.frame(None));
-            drop(s);
-            if let Some(Err(error)) = result {
-                fail(session, &error);
-            }
-            return;
-        }
     }
     let signature = {
         let s = session.borrow();
@@ -574,26 +568,30 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     fail(session, "output generation changed");
                     return;
                 }
-                signature.push(
-                    lp.inner
-                        .comp
-                        .presentation
-                        .stats
-                        .output(&output.name())
-                        .map(|s| s.frames)
-                        .unwrap_or(0),
-                );
+                signature.push(lp.state.redraw.capture_revision());
             }
         }
         signature
     };
     let mut s = session.borrow_mut();
-    let unchanged = s.recording.is_some() && s.signature == signature;
+    let unchanged = s.signature == signature;
+    if s.deferred_signature.as_ref().is_some_and(|old| *old != signature) {
+        if let Some(r)=s.recording.as_mut() {r.superseded_capture();}
+        s.deferred_signature=None;
+    }
+    if s.pending {
+        if !unchanged {s.deferred_signature=Some(signature);}
+        let result = s.recording.as_mut().map(|r| {r.pending_tick();r.frame(None)});
+        drop(s);
+        if let Some(Err(error))=result {fail(session,&error);}
+        return;
+    }
     let skipped = s
         .recording
         .as_mut()
         .is_some_and(|r| r.skip_readback(!unchanged));
     if unchanged || skipped {
+        if skipped {s.deferred_signature=Some(signature);}
         let result = s.recording.as_mut().unwrap().frame(None);
         drop(s);
         if let Err(error) = result {
@@ -602,6 +600,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         return;
     }
     s.signature = signature;
+    s.deferred_signature=None;
     s.pending = true;
     let targets = s.targets.clone();
     let counter = s.pixel_counter;
@@ -667,6 +666,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             };
             let mut s = session.borrow_mut();
             s.pending = false;
+            if s.deferred_signature.as_ref()==Some(&s.signature) {s.deferred_signature=None;}
             if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
                 return;
             }
@@ -764,6 +764,7 @@ mod tests {
             stop_answers: vec![],
             pending: true,
             signature: vec![],
+            deferred_signature:None,
             failed: None,
             last_state: Cell::new(""),
         }));

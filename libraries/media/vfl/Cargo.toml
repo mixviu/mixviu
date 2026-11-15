@@ -1,5 +1,5 @@
 [package]
-name = "media"
+name = "media-vfl"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,3 +11,9 @@ component = "media"
 kind = "lib"
 layer = "core"
 contract = "none"
+
+[dependencies]
+libc.workspace = true
+serde_json.workspace = true
+lz4_flex = { version = "=0.14.0", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
+crc32fast = "=1.5.4"

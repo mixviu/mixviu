@@ -20,9 +20,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
-media = { path = "../../../../libraries/media" }
-lz4_flex = { version = "=0.14.0", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
-crc32fast = "=1.5.4"
+media-vfl = { path = "../../../../libraries/media/vfl" }
 serde_json = { workspace = true }
 libc = { workspace = true }
 model = { workspace = true }

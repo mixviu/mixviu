@@ -60,6 +60,7 @@ struct Deadline {
 /// ping — see [`Schedule::begin_render`].
 pub struct Schedule {
     epoch: u64,
+    capture_revision: u64,
     pipes: Vec<Pipe>,
     ping: Option<Ping>,
     ledger: FrameLedger,
@@ -79,6 +80,7 @@ impl Schedule {
     pub fn new() -> Self {
         Self {
             epoch: 1,
+            capture_revision: 1,
             pipes: Vec::new(),
             ping: None,
             ledger: FrameLedger::new(monotonic_us()),
@@ -204,6 +206,16 @@ impl Schedule {
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
+    /// Scene changes a recorder must sample. Capture and backend continuation
+    /// requests can repaint identical content; page flips never advance this.
+    pub fn capture_revision(&self) -> u64 {
+        self.capture_revision
+    }
+    fn changed_for_capture(&mut self, reason: RedrawReason) {
+        if !matches!(reason, RedrawReason::Capture | RedrawReason::Rescue | RedrawReason::Watchdog | RedrawReason::Settle | RedrawReason::Rearm) {
+            self.capture_revision = self.capture_revision.wrapping_add(1);
+        }
+    }
 
     /// Forget a pruned pipe — optional hygiene, a stale entry never blocks anything.
     pub fn remove(&mut self, key: &str) {
@@ -220,6 +232,7 @@ impl Schedule {
     /// it now; the rest are in flight and their own vblank renders them. (No pipes
     /// known yet — boot — wakes too: the first render is what creates them.)
     pub fn request_for(&mut self, reason: RedrawReason) {
+        self.changed_for_capture(reason);
         self.ledger.note_request(reason, RequestKind::Wake);
         self.epoch = self.epoch.wrapping_add(1);
         if self.pipes.is_empty() || self.pipes.iter().any(|p| !p.in_flight && !p.deferred) {
@@ -239,6 +252,7 @@ impl Schedule {
     /// and for continuation sources called from INSIDE a render (the parallax),
     /// whose pipe's vblank finds the epoch.
     pub fn request_silent_for(&mut self, reason: RedrawReason) {
+        self.changed_for_capture(reason);
         self.ledger.note_request(reason, RequestKind::Silent);
         self.epoch = self.epoch.wrapping_add(1);
     }
@@ -248,6 +262,7 @@ impl Schedule {
     /// epoch move there would leave idle siblings behind with nothing to wake
     /// them.
     pub fn request_pipe_silent(&mut self, key: &str, reason: RedrawReason) {
+        self.changed_for_capture(reason);
         self.ledger
             .note_pipe_request(key, reason, RequestKind::Silent);
         let epoch = self.epoch;
@@ -259,6 +274,7 @@ impl Schedule {
     /// A request that wakes unconditionally — rescues and re-arms, where an idle
     /// cycle must restart whatever the bookkeeping says.
     pub fn force_for(&mut self, reason: RedrawReason) {
+        self.changed_for_capture(reason);
         self.ledger.note_request(reason, RequestKind::Force);
         self.epoch = self.epoch.wrapping_add(1);
         self.wake();
@@ -371,6 +387,25 @@ mod tests {
     use super::*;
     use smithay::reexports::calloop::EventLoop;
     use std::time::Duration;
+    #[test]
+    fn recording_does_not_observe_its_own_kms_flips_as_content() {
+        let mut schedule = Schedule::new();
+        schedule.register("kms");
+        let original = schedule.capture_revision();
+        for _ in 0..602 {
+            schedule.request_for(RedrawReason::Capture);
+            schedule.rendering("kms");
+            schedule.queued("kms");
+            schedule.frame("kms", false);
+            schedule.vblank("kms");
+        }
+        assert_eq!(schedule.capture_revision(),original);
+        for reason in [RedrawReason::WindowState,RedrawReason::Cursor,RedrawReason::Publish,RedrawReason::Animation,RedrawReason::Background,RedrawReason::Commit] {
+            let before = schedule.capture_revision();
+            schedule.request_for(reason);
+            assert_ne!(schedule.capture_revision(),before);
+        }
+    }
 
     struct Data {
         schedule: Schedule,
