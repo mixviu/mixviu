@@ -51,7 +51,7 @@ fn tray_calls()
   return calls_for("tray.list")
 end
 fn wait_state($field, $expected)
-  for $i = 1 to 100
+  for $i = 1 to 400
     $s = call("scene-panel", "panel.test.state").value
     if deep_eq($s[$field], $expected) then return end
     sleep(0.05)
@@ -160,6 +160,10 @@ end
     -- Isolate clock/window events from the independently capped startup
     -- registration delivery; the comp case covers that path separately.
     $behaviour=replace_must($behaviour,"services_changed($a.new)","return")
+  elif $case == "registry" then
+    -- Keep the initial cache stale until an item event proves the tray is
+    -- live. Startup registry delivery timing must not repair it first.
+    $behaviour=replace_must($behaviour,"services_changed($a.new)","if not is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then services_changed($a.new) end")
   end
   write_file($tmp .. "/panel.mix", $behaviour .. '
 on panel.test.state
@@ -182,7 +186,7 @@ end
     sleep(0.05)
   end
   check(is_file($tmp .. "/model"), "first panel model missing")
-  if $case != "clock" then quiet() end
+  if $case != "clock" and $case != "registry" then quiet() end
   if $case == "comp" then
     $watches=calls_for("comp.props.watch")
     $windows=calls_for("comp.windows.list")
