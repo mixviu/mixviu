@@ -45,6 +45,20 @@ try
   $pid_result = run_argv(["mix", $root .. "/tools/bench/viu_baseline.mix", "--seconds", "0.2", "--output", $pid_out, to_string($app)],
     {timeout:10, env:{MIX_NODED_URL:"ws://127.0.0.1:1/ws"}})
   if $pid_result.exit_code != 0 then raise("GOLD_PROC", $pid_result.stderr) end
+  $tree = $n.call("gallery", "gallery.ui.tree", {})
+  $node = nil
+  for $item in $tree.result.nodes
+    if $item.rect != nil then $node = $item.id; break end
+  end
+  if $node == nil then raise("SCROLL", "no bounded node in real widget tree") end
+  $scroll_out = $run.path .. "/scroll.json"
+  $scroll_result = run_argv([$bin .. "/mix", $root .. "/tools/bench/viu_baseline.mix", "--seconds", "0.1",
+    "--workload", "scroll", "--steps", "2", "--node", $node, "--output", $scroll_out, "gallery"], {timeout:30})
+  if $scroll_result.exit_code != 0 then raise("SCROLL", $scroll_result.stderr) end
+  $scroll_json = json_parse(read_file($scroll_out))
+  $st = $scroll_json.targets[0]
+  if $st.frames_after.frames_drawn <= $st.frames_before.frames_drawn then raise("SCROLL", "named workload drew no frames") end
+  print("PASS idle, named scroll workload, and broker-free installed-Mix process sampling")
   $passed = true
 finally
   if $app != nil and process_alive($app) then kill($app,15) end

@@ -64,7 +64,8 @@ several Bus services.
 For observed surfaces it returns cumulative `frames_drawn`, `sample_count`,
 `cpu_frame_ms` (`median`, `p95`, `max`), `last_frame_ms`, `surface_pixels`,
 `scale`, `backend`, and `adapter`. The ring retains the last 256 completed
-frames; nearest-rank percentiles describe that ring, not the difference
+frames; the median averages the middle pair for even sample counts, and p95
+uses nearest rank. These describe that ring, not the difference
 between two reads. Subtract before/after `frames_drawn` for interval counts.
 Reads preserve the ring and counts. Viewports have separate storage.
 
