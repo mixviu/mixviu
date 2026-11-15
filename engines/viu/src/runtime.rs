@@ -688,6 +688,11 @@ async fn recovery_deadline(deadline: Option<Instant>) {
         None => std::future::pending().await,
     }
 }
+fn comp_retry_after(delay: &mut Duration) -> Instant {
+    let at = Instant::now() + *delay;
+    *delay = (*delay * 2).min(Duration::from_secs(30));
+    at
+}
 async fn worker(
     service: String,
     comp: String,
@@ -742,6 +747,7 @@ async fn worker_connected(
     let mut reported = BTreeMap::new();
     let mut comp_dirty = true;
     let mut comp_retry = None;
+    let mut comp_delay = Duration::from_secs(1);
     #[cfg(test)]
     let mut checkpoints: Vec<bus::IncomingCommand> = Vec::new();
     #[cfg(test)]
@@ -756,6 +762,7 @@ async fn worker_connected(
                 reported.clear();
                 comp_dirty = true;
                 comp_retry = None;
+                comp_delay = Duration::from_secs(1);
             }
         } else {
             generation = None;
@@ -776,7 +783,7 @@ async fn worker_connected(
                 tokio::time::timeout(Duration::from_secs(3), synced).await,
                 Ok(Ok(()))
             );
-            comp_retry = comp_dirty.then(|| Instant::now() + Duration::from_secs(1));
+            comp_retry = comp_dirty.then(|| comp_retry_after(&mut comp_delay));
         }
         while let Some(action) = work.take() {
             let result = settings::native::execute(&client, &action).await;
@@ -835,10 +842,15 @@ async fn worker_connected(
                         reported.insert((output, edge), mode);
                     } else {
                         comp_dirty = true;
-                        comp_retry = Some(Instant::now() + Duration::from_secs(1));
+                        comp_retry = Some(comp_retry_after(&mut comp_delay));
                         break;
                     }
                 }
+            }
+            // Reset only after the whole sync/report round succeeds. A good
+            // outputs read must not reset repeated mode-report failures.
+            if !comp_dirty {
+                comp_delay = Duration::from_secs(1);
             }
         }
         let deadline = consumer
@@ -897,7 +909,7 @@ async fn worker_connected(
                             // which incarnation changed. Re-sync per delivery
                             // until native discovery carries registration ids.
                             let arrived = body["path"] == "services.registered" && body["new"].as_array().is_some_and(|names| names.contains(&json!(comp)));
-                            if arrived || body["gap"] == true || command.header("gap")==Some("true") {comp_dirty=true;comp_retry=None;reported.clear();}
+                            if arrived || body["gap"] == true || command.header("gap")==Some("true") {comp_dirty=true;comp_retry=None;comp_delay=Duration::from_secs(1);reported.clear();}
                     }
                     if command.header("broker_service")==Some(scenes.as_str()) && command.header("broker_origin")==Some("local") && command.topic()==Some(format!("{scenes}.changed").as_str()) {
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
@@ -908,7 +920,7 @@ async fn worker_connected(
                     }
                     if command.header("broker_service")==Some(comp.as_str()) && command.header("broker_origin")==Some("local") {
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
-                            if command.topic()==Some(format!("{comp}.props.changed").as_str()) && (body["gap"]==true || command.header("gap")==Some("true")) {comp_dirty=true;comp_retry=None;reported.clear();}
+                            if command.topic()==Some(format!("{comp}.props.changed").as_str()) && (body["gap"]==true || command.header("gap")==Some("true")) {comp_dirty=true;comp_retry=None;comp_delay=Duration::from_secs(1);reported.clear();}
                             topic(&state,&comp,command.topic().unwrap_or(""),&body);
                         }
                     }
@@ -1219,6 +1231,56 @@ mod idle_bus;
 #[cfg(test)]
 mod idle_tests {
     use super::*;
+
+    async fn comp_failure_backoff(command: &str) {
+        let broker = test_broker::Broker::start();
+        let _settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        comp.fail_commands.lock().unwrap().insert(command.into(), 3);
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, mut incoming, forward) = idle_bus::native(&broker, "shell").await;
+        let (pass, filtered) = tokio::sync::mpsc::unbounded_channel();
+        // Registration has its own tests; no fresh sync hint may bypass the
+        // failure deadlines being measured here.
+        let filter = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await {
+                if event.topic() != Some("noded.props.changed") && pass.send(event).is_err() {
+                    break;
+                }
+            }
+        });
+        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(client, "shell".into(), "comp".into(), state, recv, filtered));
+        comp.checkpoint("shell").await;
+        let times: Vec<_> = comp.calls.lock().unwrap().iter()
+            .filter(|(c, _)| c == command).map(|(_, at)| *at).collect();
+        assert_eq!(times.len(), 4);
+        for (interval, minimum) in times.windows(2).zip([900, 1900, 3900]) {
+            assert!(interval[1].duration_since(interval[0]) >= Duration::from_millis(minimum), "comp retry interval did not grow");
+        }
+        // A later mode failure starts at the base delay after recovery, even
+        // though it follows a successful sync on each retry round.
+        comp.fail_commands.lock().unwrap().insert("comp.panel.mode".into(), 1);
+        let before = comp.count("comp.panel.mode");
+        send.send(Outgoing::Mode("example".into(), "bottom".into(), "hidden".into())).unwrap();
+        let (checkpoint, complete) = tokio::sync::oneshot::channel();
+        send.send(Outgoing::Checkpoint(checkpoint)).unwrap();
+        tokio::time::timeout(Duration::from_secs(8), complete).await.unwrap().unwrap();
+        let times: Vec<_> = comp.calls.lock().unwrap().iter()
+            .filter(|(c, _)| c == "comp.panel.mode").map(|(_, at)| *at).collect();
+        assert_eq!(times.len(), before + 2);
+        let interval = times[before + 1].duration_since(times[before]);
+        assert!(interval >= Duration::from_millis(900) && interval < Duration::from_secs(3), "success did not reset comp delay: {interval:?}");
+        comp.assert_idle(Duration::from_millis(1200)).await;
+        task.abort();
+        filter.abort();
+        forward.abort();
+    }
+    #[tokio::test]
+    async fn shell_failed_sync_backs_off() { comp_failure_backoff("comp.props.get").await; }
+    #[tokio::test]
+    async fn shell_failed_mode_report_backs_off() { comp_failure_backoff("comp.panel.mode").await; }
 
     async fn recovery_hint(kind: &str) {
         let broker = test_broker::Broker::start();

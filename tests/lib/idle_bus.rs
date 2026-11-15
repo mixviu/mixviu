@@ -65,6 +65,8 @@ pub struct Service {
     pub fail_reads: Arc<AtomicUsize>,
     #[allow(dead_code)] // Shared fixture; only chrome exercises form failures.
     pub fail_forms: Arc<AtomicUsize>,
+    #[allow(dead_code)] // Only shell recovery tests refuse compositor commands.
+    pub fail_commands: Arc<Mutex<BTreeMap<String, usize>>>,
     current: Arc<Mutex<settings::Snapshot>>,
     changes: tokio::sync::watch::Receiver<usize>,
     task: tokio::task::JoinHandle<()>,
@@ -88,6 +90,8 @@ impl Service {
         let fail_forms = Arc::new(AtomicUsize::new(0));
         let form_failures = fail_forms.clone();
         let service = client.clone();
+        let fail_commands = Arc::new(Mutex::new(BTreeMap::<String, usize>::new()));
+        let command_failures = fail_commands.clone();
         let (changed, changes) = tokio::sync::watch::channel(0);
         let task = tokio::spawn(async move {
             while let Some(delivery) = incoming.recv().await {
@@ -100,7 +104,11 @@ impl Service {
                     .unwrap()
                     .push((command.command.clone(), Instant::now()));
                 changed.send_modify(|n| *n += 1);
-                let refused = (command.command.ends_with(".ui.titlebar.form")
+                let command_refused = command_failures.lock().unwrap()
+                    .get_mut(&command.command).is_some_and(|left| {
+                        if *left == 0 { false } else { *left -= 1; true }
+                    });
+                let refused = command_refused || (command.command.ends_with(".ui.titlebar.form")
                     && form_failures
                         .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
                         .is_ok())
@@ -135,6 +143,7 @@ impl Service {
             current,
             fail_reads,
             fail_forms,
+            fail_commands,
             task,
             changes,
         }

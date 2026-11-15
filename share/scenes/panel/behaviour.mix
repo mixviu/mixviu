@@ -197,7 +197,12 @@ fn fetch_windows()
   end
   if not $state.windows_retrying then
     $state.windows_retrying = true
-    task_start("windows.retry", "{}")
+    try
+      task_start("windows.retry", "{}")
+    catch $message
+      $state.windows_retrying = false
+      eprint("panel: windows retry not scheduled: " .. to_string($message))
+    end
   end
   return false
 end
@@ -221,7 +226,10 @@ on windows.retry async
   if len(keys($event.headers)) != 0 then return end
   try
     sleep($state.windows_delay)
-    $state.windows_delay = min(30, $state.windows_delay * 2)
+    -- A concurrent successful read cancels the dirty work and resets delay.
+    if $state.windows_dirty then
+      $state.windows_delay = min(30, $state.windows_delay * 2)
+    end
   finally
     $state.windows_retrying = false
   end
@@ -279,7 +287,12 @@ fn fetch_tray()
   end
   if not $state.tray_retrying then
     $state.tray_retrying = true
-    task_start("tray.retry", "{}")
+    try
+      task_start("tray.retry", "{}")
+    catch $message
+      $state.tray_retrying = false
+      eprint("panel: tray retry not scheduled: " .. to_string($message))
+    end
   end
 end
 
@@ -289,7 +302,10 @@ on tray.retry async
   if len(keys($event.headers)) != 0 then return end
   try
     sleep($state.tray_delay)
-    $state.tray_delay = min(30, $state.tray_delay * 2)
+    -- A concurrent successful read cancels the dirty work and resets delay.
+    if $state.tray_dirty then
+      $state.tray_delay = min(30, $state.tray_delay * 2)
+    end
   finally
     $state.tray_retrying = false
   end
@@ -321,7 +337,12 @@ fn fetch_notes()
   end
   if not $state.notes_retrying then
     $state.notes_retrying = true
-    task_start("notes.retry", "{}")
+    try
+      task_start("notes.retry", "{}")
+    catch $message
+      $state.notes_retrying = false
+      eprint("panel: notes retry not scheduled: " .. to_string($message))
+    end
   end
 end
 
@@ -329,7 +350,10 @@ on notes.retry async
   if len(keys($event.headers)) != 0 then return end
   try
     sleep($state.notes_delay)
-    $state.notes_delay = min(30, $state.notes_delay * 2)
+    -- A concurrent successful read cancels the dirty work and resets delay.
+    if $state.notes_dirty then
+      $state.notes_delay = min(30, $state.notes_delay * 2)
+    end
   finally
     $state.notes_retrying = false
   end
@@ -523,7 +547,12 @@ fn refresh_registry()
   end
   if not $state.registry_retrying then
     $state.registry_retrying = true
-    task_start("registry.retry", "{}")
+    try
+      task_start("registry.retry", "{}")
+    catch $message
+      $state.registry_retrying = false
+      eprint("panel: registry retry not scheduled: " .. to_string($message))
+    end
   end
 end
 
@@ -531,7 +560,10 @@ on registry.retry async
   if len(keys($event.headers)) != 0 then return end
   try
     sleep($state.registry_delay)
-    $state.registry_delay = min(30, $state.registry_delay * 2)
+    -- A concurrent successful read cancels the dirty work and resets delay.
+    if $state.registry_dirty then
+      $state.registry_delay = min(30, $state.registry_delay * 2)
+    end
   finally
     $state.registry_retrying = false
   end

@@ -114,6 +114,7 @@ try
     "fn call($target, $command, $args)\n  $fixture_call=uuid()\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command,at:monotonic()}) .. \"\\n\")\n  try\n  if $command == \"notify.list\" and is_file(env(\"FIXTURE_DIR\") .. \"/notify-throw\") then remove(env(\"FIXTURE_DIR\") .. \"/notify-throw\"); raise(\"FIXTURE_NOTIFY\",\"injected notify failure\") end\n  if $command == \"noded.props.get\" and is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then return {ok:false,value:nil} end\n"))
   write_file($path,replace_must(read_file($path),"  return {ok: true, rc: 0, value: $body}\nend","  return {ok: true, rc: 0, value: $body}\n  finally\n    append_file(env(\"FIXTURE_DIR\") .. \"/completed\",$fixture_call .. \"\\n\")\n  end\nend"))
   write_file($path,replace_must(read_file($path),"  try\n  if $command == \"notify.list\"", '  try
+  if is_file(env("FIXTURE_DIR") .. "/retry-fail") and $command==read_file(env("FIXTURE_DIR") .. "/retry-fail") then return {ok:false,value:nil} end
   if is_file(env("FIXTURE_DIR") .. "/comp-fail") then
     $fault=json_parse(read_file(env("FIXTURE_DIR") .. "/comp-fail"))
     if $command==$fault.command or ($fault.command=="comp.workspaces.list" and $command=="comp.props.get") then
@@ -188,6 +189,20 @@ end
   start("panel-stub", $tmp .. "/stub.mix")
   wait_service("panel-stub")
   $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+  if starts_with($case,"retry-") then
+    -- Hold a retry at its sleep boundary until the test explicitly permits
+    -- it to finish. No scheduler race or guessed sleep chooses the ordering.
+    for $source in ["windows","tray","notes","registry"]
+      $behaviour=replace_must($behaviour,"sleep($state." .. $source .. "_delay)","fixture_retry_sleep(\"" .. $source .. "\",$state." .. $source .. "_delay)")
+    end
+    $behaviour=replace($behaviour,"task_start(","fixture_task_start(")
+    write_file($tmp .. "/notify.mix",'on notify.list
+  reply(0,"[]")
+end
+')
+    start("notify-stub",$tmp .. "/notify.mix")
+    wait_service("notify-stub")
+  end
   $behaviour=replace_must($behaviour,"fn services_changed($live)\n","fn services_changed($live)\n  append_file(env(\"FIXTURE_DIR\") .. \"/registry-events\",json_encode($live) .. \"\\n\")\n")
   if $case == "clock" then
     $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","sleep(0.05)")
@@ -210,11 +225,39 @@ fn fixture_registry($change)
     if contains($change.old ?? [],$name) != contains($change.new ?? [],$name) then services_changed($change.new); return end
   end
 end
+fn fixture_task_start($name,$body)
+  $fault=env("FIXTURE_DIR") .. "/task-fail"
+  if is_file($fault) and read_file($fault)==$name then
+    remove($fault)
+    raise("TASK_LIMIT","injected task handle limit")
+  end
+  return task_start($name,$body)
+end
+fn fixture_retry_sleep($source,$delay)
+  $gate=env("FIXTURE_DIR") .. "/retry-hold"
+  write_atomic(env("FIXTURE_DIR") .. "/retry-sleep",$source)
+  while is_file($gate) sleep(0.02) end
+  sleep($delay)
+end
+on panel.test.retry
+  $source=$event.args.source
+  if $source=="windows" then fetch_windows()
+  elif $source=="tray" then fetch_tray()
+  elif $source=="notes" then fetch_notes()
+  elif $source=="registry" then refresh_registry()
+  end
+  reply(0,json_encode({retrying:$state[$source .. "_retrying"],dirty:$state[$source .. "_dirty"],delay:$state[$source .. "_delay"]}))
+end
 -- Local fixture observation does not register another Bus client on each
 -- sample. Atomic files are already the harness model/call observation path.
 on panel.test.observe async
   while true
-    write_atomic(env("FIXTURE_DIR") .. "/state",json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,windows_dirty:$state.windows_dirty,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows,ws_count:$state.ws_count}))
+    $retry={}
+    for $source in ["windows","tray","notes","registry"]
+      $retry[$source .. "_retrying"]=$state[$source .. "_retrying"]
+      $retry[$source .. "_delay"]=$state[$source .. "_delay"]
+    end
+    write_atomic(env("FIXTURE_DIR") .. "/state",json_encode(merge($retry,{services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,windows_dirty:$state.windows_dirty,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows,ws_count:$state.ws_count})))
     sleep(0.02)
   end
 end
@@ -224,7 +267,7 @@ on panel.test.registry
 end
 task_start("panel.test.observe","{}")
 ')
-  if $case == "registry" or $case == "tray-retry" or $case == "coalesced" then
+  if $case == "registry" or $case == "tray-retry" or $case == "coalesced" or starts_with($case,"retry-") then
     if $case == "registry" then write_file($tmp .. "/registry-fail", "1") end
     $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
     wait_service("tray-stub")
@@ -237,7 +280,49 @@ task_start("panel.test.observe","{}")
   end
   check(is_file($tmp .. "/model"), "first panel model missing")
   if $case != "clock" and $case != "registry" then quiet() end
-  if starts_with($case,"comp-failure-") then
+  if starts_with($case,"retry-") then
+    $parts=split($case,"-")
+    $mode=$parts[1]
+    $source=$parts[2]
+    $commands={windows:"comp.windows.list",tray:"tray.list",notes:"notify.list",registry:"noded.props.get"}
+    $command=$commands[$source]
+    write_file($tmp .. "/retry.mix",'send scene-panel panel.test.retry body={source:"' .. $source .. '"}
+print(json_encode({rc:$rc,value:json_parse($result)}))
+')
+    write_file($tmp .. "/retry-fail",$command)
+    if $mode=="reset" then write_file($tmp .. "/retry-hold","1")
+    else write_file($tmp .. "/task-fail",$source .. ".retry") end
+    $result=json_parse(run_argv_must([$mix,$tmp .. "/retry.mix"],{clear_env:true,env:$vars,timeout:10}))
+    check($result.rc==0,"retry task_start exception escaped fetch")
+    if $mode=="start" then
+      check(not $result.value.retrying,"task_start failure stranded retrying flag")
+      check($result.value.dirty,"failed read lost dirty state")
+    else
+      check($result.value.retrying,"failed read did not arm retry")
+      for $i=1 to 400
+        if is_file($tmp .. "/retry-sleep") then break end
+        sleep(0.05)
+      end
+      check(is_file($tmp .. "/retry-sleep"),"retry did not reach sleep fence")
+      wait_state($source .. "_retrying",true)
+    end
+    remove($tmp .. "/retry-fail")
+    if $mode=="start" and $source=="windows" then
+      -- A real props delivery must still reach rebuild after task exhaustion.
+      write_file($tmp .. "/windows",json_encode([{id:11,band:"normal",app_id:"example",title:"after task limit",workspace:1}]))
+      call("panel-stub","windows.change")
+      wait_state("windows",[{id:11,band:"normal",app_id:"example",title:"after task limit",workspace:1}])
+    else
+      $result=json_parse(run_argv_must([$mix,$tmp .. "/retry.mix"],{clear_env:true,env:$vars,timeout:10}))
+      check($result.rc==0 and not $result.value.dirty,"concurrent read did not succeed")
+    end
+    if $mode=="reset" then remove($tmp .. "/retry-hold") end
+    wait_state($source .. "_retrying",false)
+    wait_state($source .. "_delay",0.25)
+    idle(1.2)
+    print("PASS " .. $case .. " preserves retry liveness and base delay")
+    exit(0)
+  elif starts_with($case,"comp-failure-") then
     $kind=replace($case,"comp-failure-","")
     $command=if $kind=="watch" or $kind=="watch-throw" then "comp.props.watch" elif $kind=="workspace" then "comp.workspaces.list" else "comp.windows.list" end
     $registry=calls_for("noded.props.get")
