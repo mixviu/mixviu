@@ -340,7 +340,14 @@ fn benchmark_record_ui_static_10min() {
     };
     let begin = monotonic_ns() / 1000;
     let baseline = Instant::now();
+    let mut redraw_at = Duration::ZERO;
     while baseline.elapsed() < Duration::from_secs(10) {
+        if baseline.elapsed() >= redraw_at {
+            // Unchanged pixels, one controlled redraw per second, equally
+            // in both phases. An idle output otherwise has no CPU samples.
+            p.commit(true);
+            redraw_at += Duration::from_secs(1);
+        }
         p.pump();
         thread::sleep(Duration::from_millis(5));
     }
@@ -348,7 +355,12 @@ fn benchmark_record_ui_static_10min() {
     let start=bus.call("comp.record.start",json!({"request_id":"static-cost","target":{"output":"headless-0"},"path":process.root.join("static.vfl"),"max_seconds":600,"fps":30}));
     let begin = monotonic_ns() / 1000;
     let take = Instant::now();
+    let mut redraw_at = Duration::ZERO;
     while take.elapsed() < Duration::from_secs(600) {
+        if take.elapsed() >= redraw_at {
+            p.commit(true);
+            redraw_at += Duration::from_secs(1);
+        }
         p.pump();
         thread::sleep(Duration::from_millis(5));
     }
