@@ -811,7 +811,7 @@ struct BlankObserver(std::process::Child);
 impl BlankObserver {
     fn start(bus: &Bus) -> Self {
         let child = Command::new(
-            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
         )
         .arg("--serve")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/blank-observer.mix"))
@@ -887,7 +887,7 @@ impl SettingsFixture {
     fn start(bus: &Bus) -> Self {
         let state = bus.root.join("settings-fixture.json");
         let child = Command::new(
-            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
         )
         .arg("--serve")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/settings-fixture.mix"))
@@ -1484,7 +1484,7 @@ fn moved_window_clip_is_local_to_surface_origin() {
 }
 fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output {
     let mut command = Command::new(
-        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+        std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
     );
     command
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/bus.mix"))
