@@ -84,6 +84,7 @@ futures-util = { workspace = true, optional = true }
 rfd = { version = "=0.17.2", default-features = false }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 test-broker = { path = "../test-broker" }
 anyhow.workspace = true
 libc.workspace = true
