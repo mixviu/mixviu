@@ -134,7 +134,7 @@ pub fn ensure_registry(storage: &mut Storage, kernel: &Storage) {
     };
     surface.registry = ui_surface::factory::create(wgpu);
     if surface.registry.is_some() {
-        debug!("UI: built per-world UI registry");
+        info!("UI: built per-world UI registry");
     }
 }
 
