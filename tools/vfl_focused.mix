@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Focused CBC development helper. Does not run the workspace gate.
+$mode = args()[0] ?? "encoder"
+$command = if $mode == "fmt" then
+  ["cargo","fmt","-p","graphics","-p","recorder","-p","comp-model","-p","policy-host","-p","headless","-p","media"]
+elif $mode == "encoder" then
+  ["cargo","test","-p","graphics","-p","recorder","--lib"]
+elif $mode == "capture" then
+  ["cargo","test","-p","headless","--test","capture","record_","--","--nocapture","--test-threads=1"]
+else
+  raise("VFL_CHECK","unknown mode")
+end
+try
+  $r = run_argv($command,{timeout:1800,stdout:"inherit",stderr:"inherit"})
+  exit($r.exit_code ?? 124)
+finally
+  print("VFL_WORKER_DIFF_BEGIN")
+  print(run_argv_must(["git","diff"]))
+  print("VFL_WORKER_DIFF_END")
+  -- Only files this job changed; the worker's checkout is job-owned.
+  print(run_argv(["git","checkout","-q","--","."]).stderr)
+end

@@ -40,24 +40,25 @@ struct Log {
     next: u64,
     frames: File,
     markers: File,
+    crc: crc32fast::Hasher,
 }
 impl Log {
     fn record(&mut self, kind: u8, payload: &[u8]) -> io::Result<()> {
         if self.bytes > 0 && self.bytes + 17 + payload.len() as u64 > CHUNK_BYTES {
-            self.chunk.sync_all()?;
+            self.seal()?;
             self.index += 1;
             self.chunk = create(&self.path.join(format!("chunk-{:06}.bin", self.index)))?;
             self.bytes = 0;
+            self.crc = crc32fast::Hasher::new();
         }
         let mut crc = crc32fast::Hasher::new();
         crc.update(&self.next.to_le_bytes());
         crc.update(&[kind]);
         crc.update(payload);
-        self.chunk.write_all(&(payload.len() as u32).to_le_bytes())?;
-        self.chunk.write_all(&crc.finalize().to_le_bytes())?;
-        self.chunk.write_all(&self.next.to_le_bytes())?;
-        self.chunk.write_all(&[kind])?;
-        self.chunk.write_all(payload)?;
+        for bytes in [&(payload.len() as u32).to_le_bytes()[..], &crc.finalize().to_le_bytes(), &self.next.to_le_bytes(), &[kind], payload] {
+            self.chunk.write_all(bytes)?;
+            self.crc.update(bytes);
+        }
         writeln!(self.frames, "{}", json!({"frame":self.next,"t_us":self.next*1_000_000/u64::from(self.fps)}))?;
         self.bytes += 17 + payload.len() as u64;
         self.next += 1;
@@ -76,6 +77,12 @@ impl Log {
         Ok(())
     }
     fn repeat(&mut self) -> io::Result<()> { self.pixels(self.last.clone()) }
+    fn seal(&mut self) -> io::Result<()> {
+        self.chunk.sync_all()?;
+        let mut receipt = create(&self.path.join(format!("chunk-{:06}.json",self.index)))?;
+        receipt.write_all(json!({"bytes":self.bytes,"crc32":self.crc.clone().finalize(),"next_frame":self.next}).to_string().as_bytes())?;
+        receipt.sync_all()
+    }
     fn frame(&mut self, frame: Frame) -> io::Result<()> {
         while self.next < frame.slot { self.repeat()?; }
         let pixels = match frame.pixels {
@@ -115,7 +122,7 @@ impl VideoEncoder {
             File::open(&path)?.sync_all()?;
             let frames = create(&path.join("frames.jsonl"))?;
             let markers = create(&path.join("markers.jsonl"))?;
-            Ok(Log { path:path.clone(),chunk,index:0,bytes:0,last:vec![0;size].into(),previous_rgb:None,width,height,fps,next:0,frames,markers })
+            Ok(Log { path:path.clone(),chunk,index:0,bytes:0,last:vec![0;size].into(),previous_rgb:None,width,height,fps,next:0,frames,markers,crc:crc32fast::Hasher::new() })
         };
         let mut log = setup().map_err(|e| e.to_string())?;
         let (tx,rx) = sync_channel::<Frame>(4);
@@ -131,7 +138,7 @@ impl VideoEncoder {
             let result = (|| -> io::Result<()> {
                 for frame in rx { q.fetch_sub(1,Ordering::Relaxed); log.frame(frame)?; }
                 while log.next < s.load(Ordering::Acquire) { log.repeat()?; }
-                log.chunk.sync_all()?;
+                log.seal()?;
                 log.frames.sync_all()?; log.markers.sync_all()?;
                 let mut done = create(&log.path.join("complete.json"))?;
                 done.write_all(json!({"version":1,"t0_us":o.load(Ordering::Acquire),"frames":log.next,"dropped":td.load(Ordering::Acquire).max(d.load(Ordering::Acquire)),"chunks":log.index+1,"complete":true}).to_string().as_bytes())?;
