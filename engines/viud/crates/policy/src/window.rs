@@ -403,11 +403,11 @@ pub fn start_force_close<H: Clone + Eq + Hash>(
     id: u64,
     generation: u64,
     session_lock: bool,
-) -> Result<Vec<Effect>, (ControlReply, Vec<Effect>)> {
+) -> Result<Vec<Effect>, Box<(ControlReply, Vec<Effect>)>> {
     if session_lock {
-        return Err((ControlReply::Locked, Vec::new()));
+        return Err(Box::new((ControlReply::Locked, Vec::new())));
     }
-    let record = resolve(registry, id, generation).map_err(|reply| (reply, Vec::new()))?;
+    let record = resolve(registry, id, generation).map_err(|reply| Box::new((reply, Vec::new())))?;
     Ok(vec![Effect::ClosePolite(record.id())])
 }
 

@@ -141,8 +141,11 @@ pub struct PowerSnapshot {
     pub screen_off_s: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SessionSnapshot {
+    pub input_keyboards: usize,
+    pub input_pointers: usize,
+    pub vt_source_available: Option<bool>,
     pub watcher_failed: bool,
     pub active: bool,
     pub vt: Option<u32>,
@@ -2612,6 +2615,9 @@ pub fn dispatch_read_with_limit(
                         "render_state": if session.watcher_failed { "offscreen-retrying" } else if session.active && snapshot.info.backend != "headless" { "active" } else { "offscreen" },
                         "vt": session.vt,
                         "since_ms": session.since_ms,
+                        "input": { "keyboards": session.input_keyboards, "pointers": session.input_pointers },
+                        "vt_source_available": session.vt_source_available,
+                        "activation_error": if session.vt_source_available == Some(false) { Some("no active VT source: expose the session tty (VT_GETSTATE) or /sys/class/tty/tty0/active") } else { None },
                     })
                     .to_string(),
                 ),

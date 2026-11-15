@@ -4,6 +4,14 @@
 //! scheduling. (Ex wire.rs `start()` libinput closure.)
 
 pub mod map;
+mod hotplug;
+
+static KEYBOARDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static POINTERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub fn device_counts() -> (usize, usize) {
+    use std::sync::atomic::Ordering::Relaxed;
+    (KEYBOARDS.load(Relaxed), POINTERS.load(Relaxed))
+}
 
 use crate::context::render::NativeRenderContext;
 use dispatcher::state::Dispatch;
@@ -202,8 +210,23 @@ pub fn register(
     libinput_source: LibinputSource,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
 ) {
+    hotplug::register(event_loop, ctx_rc.borrow().libinput_context.clone());
+    let mut devices = std::collections::BTreeMap::new();
     event_loop
         .insert_source(libinput_source, move |event, _, state| {
+            match &event {
+                InputEvent::DeviceAdded { device } => {
+                    devices.insert(device.sysname().to_owned(), (
+                        device.has_capability(DeviceCapability::Keyboard),
+                        device.has_capability(DeviceCapability::Pointer),
+                    ));
+                }
+                InputEvent::DeviceRemoved { device } => { devices.remove(device.sysname()); }
+                _ => {}
+            }
+            use std::sync::atomic::Ordering::Relaxed;
+            KEYBOARDS.store(devices.values().filter(|(keyboard, _)| *keyboard).count(), Relaxed);
+            POINTERS.store(devices.values().filter(|(_, pointer)| *pointer).count(), Relaxed);
             if let StatusSession::Paused = state.inner.status_session {
                 return;
             }

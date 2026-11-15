@@ -1093,6 +1093,7 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
             active,
             vt,
             since_ms: 1_792_108_800_123,
+            ..SessionSnapshot::default()
         });
         let (rc, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
         assert_eq!(rc, 0);
@@ -1102,6 +1103,9 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
                 "version": 1, "active": active, "vt": vt,
                 "render_state": if active { "active" } else { "offscreen" },
                 "since_ms": 1_792_108_800_123_u64,
+                "input": {"keyboards": 0, "pointers": 0},
+                "vt_source_available": null,
+                "activation_error": null,
             })
         );
         assert_ne!(
@@ -1121,6 +1125,7 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
         active: false,
         vt: Some(4),
         since_ms: 42,
+                ..SessionSnapshot::default()
     });
     let (rc, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
     assert_eq!(rc, 0);

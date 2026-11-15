@@ -49,12 +49,14 @@ struct Activation {
     watcher_alive: bool,
     retry: Backoff,
     timer: Option<RegistrationToken>,
+    stop: std::sync::Arc<AtomicBool>,
 }
 
 impl Activation {
     fn start_watcher(&mut self) {
         self.watcher_alive = true;
         let tx = self.tx.clone();
+        let stop = self.stop.clone();
         let started = std::thread::Builder::new()
             .name("viud-vt-wait".into())
             .spawn(move || {
@@ -66,6 +68,7 @@ impl Activation {
                         || {
                             let _ = tx.send(Notice::Ready);
                         },
+                        &stop,
                     )
                 });
                 let error = match result {
@@ -131,6 +134,7 @@ fn attempt(shared: &Rc<RefCell<Activation>>, state: &mut Loop) {
     );
     native::wire::session::activate(state, &native.ctx);
     *activation.handles.borrow_mut() = Some(native);
+    activation.stop.store(true, Ordering::Relaxed);
     if let Some(timer) = activation.timer.take() {
         activation.handle.remove(timer);
     }
@@ -154,11 +158,14 @@ pub fn install(
         watcher_alive: false,
         retry: Backoff::default(),
         timer: None,
+        stop: Default::default(),
     }));
     let callback = shared.clone();
     handle.insert_source(source, move |event, _, state| {
         let Event::Msg(notice) = event else { return };
         if callback.borrow().handles.borrow().is_some() {
+            // Stopped returns here after attach, so watcher_failed may
+            // outrank active in the session reply only before attachment.
             return;
         }
         match notice {
@@ -170,8 +177,9 @@ pub fn install(
             }
             Notice::Stopped(error) => {
                 callback.borrow_mut().watcher_alive = false;
-                WATCH_FAILED.store(true, Ordering::Relaxed);
-                warn!("VT watcher stopped; offscreen desk will re-arm it: {error}");
+                if !WATCH_FAILED.swap(true, Ordering::Relaxed) {
+                    warn!("VT watcher stopped; offscreen desk will re-arm it: {error}");
+                }
                 arm(&callback);
             }
         }

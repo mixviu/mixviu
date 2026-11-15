@@ -35,7 +35,7 @@ pub fn initial_mode() -> Result<InitialOutput, Box<dyn std::error::Error>> {
             return Ok(InitialOutput {
                 mode: smithay::output::Mode {
                     size: (3840, 2160).into(),
-                    refresh: 60_000,
+                    refresh: discovered.as_ref().map_or(60_000, |(mode, _)| mode.refresh),
                 },
                 output: discovered.map(|(_, output)| output),
             });

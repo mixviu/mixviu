@@ -119,6 +119,10 @@ pub static UI_CONTEXT_MUT: TokenMut<Option<Arc<WgpuGlContext>>> = TokenMut::new(
 /// landed. Called for every world when the context lands, and at world build
 /// for worlds created after that.
 pub fn ensure_registry(storage: &mut Storage, kernel: &Storage) {
+    // viud hosts external scenes and has no in-process widget factory.
+    if !ui_surface::factory::is_registered() {
+        return;
+    }
     let Some(surface) = storage.try_get_mut(&SURFACE_MUT) else {
         return;
     };
@@ -128,8 +132,10 @@ pub fn ensure_registry(storage: &mut Storage, kernel: &Storage) {
     let Some(wgpu) = kernel.try_get(&UI_CONTEXT).and_then(|c| c.clone()) else {
         return;
     };
-    info!("UI: build per-world UI registry");
     surface.registry = ui_surface::factory::create(wgpu);
+    if surface.registry.is_some() {
+        debug!("UI: built per-world UI registry");
+    }
 }
 
 /// Owns the surface slot.

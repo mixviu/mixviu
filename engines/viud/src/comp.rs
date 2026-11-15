@@ -998,7 +998,8 @@ impl Engine<'_> {
             world::comp::session_lock::active(self.lp),
         ) {
             Ok(effects) => effects,
-            Err((refusal, effects)) => {
+            Err(error) => {
+                let (refusal, effects) = *error;
                 policy_host::control::execute(self.lp, effects);
                 reply.send(refusal);
                 return;

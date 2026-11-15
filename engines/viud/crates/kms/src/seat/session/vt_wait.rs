@@ -41,7 +41,23 @@ pub fn parse_active(text: &str) -> Option<u32> {
 
 /// Read the active VT once, if the attribute can be read and parsed.
 pub(super) fn active_vt() -> Option<u32> {
+    // Query the session tty directly: containers need not expose /dev/tty0
+    // and may expose a sysfs mount without working switch notifications.
+    if let Some(active) = ioctl_active() {
+        return Some(active);
+    }
     parse_active(&std::fs::read_to_string(ACTIVE).ok()?)
+}
+
+fn ioctl_active() -> Option<u32> {
+    let mut state = [0u16; 3]; // struct vt_stat
+    // SAFETY: VT_GETSTATE writes three unsigned shorts to valid storage.
+    let result = unsafe { libc::ioctl(0, 0x5603, state.as_mut_ptr()) };
+    (result == 0 && (1..=63).contains(&state[0])).then_some(u32::from(state[0]))
+}
+
+pub fn source_available() -> bool {
+    own_vt().is_none() || active_vt().is_some()
 }
 
 /// Where the active VT is read from and waited on.
@@ -78,15 +94,51 @@ struct SysfsActive(std::fs::File);
 
 /// Notify each activation without polling or switching consoles. The initial
 /// read also notifies an already active VT. Libseat takes over after attach.
-pub fn watch_own_vt(mut activated: impl FnMut(), ready: impl FnOnce()) -> std::io::Result<()> {
+pub fn watch_own_vt(mut activated: impl FnMut(), ready: impl FnOnce(), stop: &std::sync::atomic::AtomicBool) -> std::io::Result<()> {
     let Some(own) = own_vt() else {
         ready();
         activated();
         return Ok(());
     };
-    let mut source = SysfsActive(std::fs::File::open(ACTIVE)?);
+    let file = std::fs::File::open(ACTIVE).ok();
+    if file.is_none() && ioctl_active().is_none() {
+        return Err(std::io::Error::other("no active VT source: expose the session tty (VT_GETSTATE) or /sys/class/tty/tty0/active; /dev/tty0 is not required"));
+    }
+    let mut source = Monitor(file);
     ready();
-    watch_changes(own, &mut source, activated)
+    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+        let active = source.read().ok_or_else(|| std::io::Error::other("VT source unreadable"))?;
+        if active == own {
+            activated();
+        }
+        source.wait()?;
+    }
+    Ok(())
+}
+
+struct Monitor(Option<std::fs::File>);
+impl ActiveVt for Monitor {
+    fn read(&mut self) -> Option<u32> {
+        active_vt()
+    }
+    fn wait(&mut self) -> std::io::Result<()> {
+        if let Some(file) = &self.0 {
+            let mut fd = libc::pollfd { fd: file.as_raw_fd(), events: libc::POLLPRI, revents: 0 };
+            // SAFETY: a valid owned fd; the deadline also covers lost sysfs edges.
+            let rc = unsafe { libc::poll(&mut fd, 1, 200) };
+            if rc < 0 && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                return Err(std::io::Error::last_os_error());
+            }
+            // Clear the sysfs notification before the next wait.
+            let mut text = String::new();
+            let mut file = file;
+            let _ = file.seek(SeekFrom::Start(0));
+            let _ = file.read_to_string(&mut text);
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        Ok(())
+    }
 }
 
 /// A failed read is a failed watcher, not an immediately-readable poll loop.
