@@ -145,8 +145,8 @@ impl Input {
             "key" => {
                 let key = a["key"]
                     .as_str()
-                    .and_then(egui::Key::from_name)
-                    .ok_or("Unknown native key")?;
+                    .and_then(toolkit::drive::key_name)
+                    .ok_or_else(|| format!("unknown key {:?}", a["key"]))?;
                 for pressed in [true, false] {
                     now.push(egui::Event::Key {
                         key,

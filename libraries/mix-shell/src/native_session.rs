@@ -621,12 +621,19 @@ async fn own(
         let mut tick = tokio::time::interval(RENEW_CADENCE);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut requests = tokio::task::JoinSet::new();
+        let mut renewal: Option<
+            std::pin::Pin<Box<dyn std::future::Future<Output = Option<SessionRecord>> + Send>>,
+        > = None;
         let mut refusal: Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>> =
             None;
         let reconnect = loop {
             tokio::select! {
                 biased;
                 Some(ack) = restart.recv() => {
+                    renewal = None;
+                    // A partially written refusal may own the shared sink.
+                    // Release it before revocation needs that same writer.
+                    refusal = None;
                     requests.abort_all();
                     while requests.join_next().await.is_some() {}
                     let revoked = revoke_for_restart(&mut bootstrap, Some(&connection), record.as_ref().or(last_record.as_ref()), &url, &options).await;
@@ -665,11 +672,22 @@ async fn own(
                                 }
                             }
                         }
-                    } else if let Some(bound) = &record {
-                        match renew(&connection, bound).await {
-                            Some(renewed) => record = Some(renewed),
-                            None => { reporter.report("renew: attachment lost; bounded reconnect"); break true; }
-                        }
+                    } else if renewal.is_none() && let Some(bound) = record.clone() {
+                        // A renewal can spend two RPC deadlines contending with
+                        // admissions. Keep receiving/refusing requests and keep
+                        // restart acknowledgements live throughout that wait.
+                        let connection = connection.clone();
+                        renewal = Some(Box::pin(async move { renew(&connection, &bound).await }));
+                    }
+                }
+                renewed = async { renewal.as_mut().unwrap().await }, if renewal.is_some() => {
+                    renewal = None;
+                    match renewed {
+                        // A lifecycle hint may have invalidated the record
+                        // while the renewal was pending. Never undo that hint.
+                        Some(renewed) if record.as_ref().is_some_and(|bound| bound.reference() == renewed.reference()) => record = Some(renewed),
+                        Some(_) => {},
+                        None => { reporter.report("renew: attachment lost; bounded reconnect"); break true; }
                     }
                 }
                 _ = requests.join_next(), if !requests.is_empty() => {}
@@ -697,6 +715,7 @@ async fn own(
                             Err(_) => { reporter.report("notice decode: malformed lifecycle hint dropped"); false }
                         };
                         if relevant {
+                            renewal = None;
                             record = None;
                             crate::session_state::commit(crate::session_state::Transition::AttachmentChanged { source: None });
                             pending.get_or_insert(next_attempt);
@@ -731,6 +750,7 @@ async fn own(
         };
         requests.abort_all();
         while requests.join_next().await.is_some() {}
+        drop(renewal);
         drop(refusal);
         crate::session_state::commit(crate::session_state::Transition::AttachmentChanged {
             source: None,
@@ -750,6 +770,11 @@ async fn own(
 /// leaves room for the extra attempt. Transient contention must delay a
 /// renewal, not drop the attachment and force a full reconnect.
 async fn renew(connection: &VerifiedConnection, bound: &SessionRecord) -> Option<SessionRecord> {
+    #[cfg(test)]
+    if let Ok(entered) = STALLED_RENEWAL.try_with(Clone::clone) {
+        entered.notify_one();
+        std::future::pending::<()>().await;
+    }
     for attempt in 0..2 {
         match rpc(
             "renew: attachment lost",
@@ -771,6 +796,12 @@ async fn renew(connection: &VerifiedConnection, bound: &SessionRecord) -> Option
         }
     }
     None
+}
+
+#[cfg(test)]
+tokio::task_local! {
+    // Scoped to one resident task: sibling tests and production cannot stall.
+    static STALLED_RENEWAL: std::sync::Arc<tokio::sync::Notify>;
 }
 
 async fn reconnect_backoff(

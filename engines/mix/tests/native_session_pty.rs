@@ -1273,6 +1273,7 @@ fn status_flood_preserves_lease_and_restart_ack() {
         let mut flood = tokio::task::JoinSet::new();
         let refused = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let answered = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let restarting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         // All callers, including the parent, share the bounded dispatch slots.
         // Saturation may refuse any of them, but cannot starve lease/restart work.
         let mut ambient = Vec::new();
@@ -1284,6 +1285,7 @@ fn status_flood_preserves_lease_and_restart_ack() {
             let target = bound.clone();
             let refused = refused.clone();
             let answered = answered.clone();
+            let restarting = restarting.clone();
             flood.spawn(async move {
                 loop {
                     let result = tokio::time::timeout(
@@ -1294,8 +1296,16 @@ fn status_flood_preserves_lease_and_restart_ack() {
                             status_request(&target),
                         ),
                     )
-                    .await
-                    .expect("flood request must be answered or explicitly refused");
+                    .await;
+                    // Restart deliberately revokes the recipient and aborts its
+                    // dispatches. Keep the load running, but require status
+                    // replies only while the attachment is meant to be live.
+                    if restarting.load(std::sync::atomic::Ordering::Acquire) {
+                        tokio::task::yield_now().await;
+                        continue;
+                    }
+                    let result =
+                        result.expect("flood request must be answered or explicitly refused");
                     match result {
                         Ok(value) => {
                             assert_eq!(
@@ -1359,6 +1369,7 @@ fn status_flood_preserves_lease_and_restart_ack() {
         assert!(answered.load(std::sync::atomic::Ordering::Relaxed) > 0);
         assert!(refused.load(std::sync::atomic::Ordering::Relaxed) > 0);
         std::fs::write(child.home.path().join(".claude-resume"), "").unwrap();
+        restarting.store(true, std::sync::atomic::Ordering::Release);
         let started = Instant::now();
         child.send("/usr/bin/true\n");
         loop {
@@ -1378,7 +1389,9 @@ fn status_flood_preserves_lease_and_restart_ack() {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
         flood.abort_all();
-        while flood.join_next().await.is_some() {}
+        while let Some(result) = flood.join_next().await {
+            assert!(result.unwrap_err().is_cancelled(), "flood worker panicked");
+        }
         for connection in &ambient {
             connection.client().close().await;
         }
