@@ -304,6 +304,12 @@ impl<P: LayerProgram + 'static> State<P> {
                     surface.pending_since = None;
                     surface.frame_gen = surface.frame_gen.wrapping_add(1);
                     surface.events.clear();
+                    if surface.momentum {
+                        // Consume on reshow, before any new input: an egui
+                        // smoothing tail must not resume after being hidden.
+                        surface.events.push(cancel_scroll());
+                        surface.momentum = false;
+                    }
                     surface.dirty = false;
                     self.program.visibility(&surface.ctx, false);
                 }
@@ -1367,7 +1373,8 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                         if let Some(s) = self.by_wl(&wl) {
                             if (s.momentum || s.kinetic.deadline().is_some())
                                 && (delta != egui::Vec2::ZERO
-                                    || (source.is_some() && !horizontal.stop && !vertical.stop))
+                                    || (source.is_some() && !horizontal.stop && !vertical.stop)
+                                    || source.is_some_and(|s| s != wl_pointer::AxisSource::Finger))
                             {
                                 s.events.push(cancel_scroll());
                                 s.momentum = false;
