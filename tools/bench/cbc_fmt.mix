@@ -1,9 +1,11 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Run on an owned CBC checkout; return formatting as a reviewable patch.
 try
-  for $cmd in [["cargo", "fmt", "-p", "toolkit", "-p", "lib-viu"],
-    ["cargo", "fmt", "--manifest-path", "vendor/eframe/Cargo.toml"],
-    ["cargo", "fmt", "--manifest-path", "vendor/egui-wgpu/Cargo.toml"]]
+  for $cmd in [["rustfmt", "--edition", "2024", "--config", "skip_children=true",
+    "libraries/toolkit/src/drive.rs", "libraries/toolkit/src/drive_stats.rs",
+    "libraries/toolkit/src/lib.rs", "libraries/toolkit/src/layer/state.rs", "libraries/toolkit/src/layer/gpu.rs",
+    "libraries/viu/src/app_host.rs", "vendor/eframe/src/native/wgpu_integration.rs",
+    "vendor/egui-wgpu/src/lib.rs", "vendor/egui-wgpu/src/baseline.rs", "vendor/egui-wgpu/src/winit.rs"]]
     $r = run_argv($cmd, {timeout:120, stderr:"stdout"})
     print($r.stdout)
     if $r.exit_code != 0 then exit($r.exit_code) end

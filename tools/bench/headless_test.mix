@@ -17,7 +17,7 @@ try
   if not $n.wait_ready($session,40) then raise("HEADLESS", "viud failed: " .. $session.log) end
   $client = $n.client_env($session, merge($pb.client_env($bus), {HOME:$run.path .. "/home",
     XDG_CONFIG_HOME:$run.path .. "/config", XDG_STATE_HOME:$run.path .. "/state", XDG_CACHE_HOME:$run.path .. "/cache",
-    LIBGL_ALWAYS_SOFTWARE:"1", WGPU_BACKEND:"gl", MESA_VK_WSI_PRESENT_MODE:"mailbox"}))
+    LIBGL_ALWAYS_SOFTWARE:"1", LP_NUM_THREADS:"2", RAYON_NUM_THREADS:"2", WGPU_BACKEND:"gl", MESA_VK_WSI_PRESENT_MODE:"mailbox"}))
   $app = spawn([$bin .. "/viu", "run", $root .. "/apps/gallery", $run.path .. "/profile"],
     {env:$client, stdout:{file:$run.path .. "/app.log"}, stderr:"stdout", detach:true})
   $ready = false
@@ -27,6 +27,10 @@ try
     sleep(0.1)
   end
   if not $ready then raise("HEADLESS", "app drew no observed frame: " .. $run.path .. "/app.log") end
+  $first = $s.result.frames_drawn
+  $scroll = $n.call("gallery", "gallery.ui.scroll", {x:200,y:200,dx:0,dy:40})
+  $drawn = $n.call("gallery", "gallery.ui.stats", {})
+  if $scroll.rc != 0 or $drawn.result.frames_drawn <= $first then raise("FRAMES", "input did not advance drawn frame count") end
   sleep(3)
   $out = $run.path .. "/baseline.json"
   $result = run_argv(["mix", $root .. "/tools/bench/viu_baseline.mix", "--seconds", "2", "--output", $out, "gallery"], {timeout:30})

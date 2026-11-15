@@ -32,6 +32,7 @@ pub use setup::{
 /// Helpers for capturing screenshots of the UI.
 #[cfg(feature = "capture")]
 pub mod baseline;
+#[cfg(feature = "capture")]
 pub mod capture;
 
 /// Module for painting [`egui`](https://github.com/emilk/egui) with [`wgpu`] on [`winit`].
