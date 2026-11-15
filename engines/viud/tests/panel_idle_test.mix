@@ -13,7 +13,7 @@ $vars = {}
 $case = args()[0] ?? "idle"
 fn check($ok, $message)
   if not $ok then
-    for $file in ["calls","state","registry-events"]
+    for $file in ["calls","completed","state","registry-events"]
       if is_file($tmp .. "/" .. $file) then eprint($file .. ": " .. read_file($tmp .. "/" .. $file)) end
     end
     raise("PANEL_IDLE_TEST", $message)
@@ -79,7 +79,9 @@ fn quiet()
     $s = json_parse(read_file($tmp .. "/state"))
     $now = {calls:recorded_calls(),state:$s}
     if not deep_eq($now,$last) then $since=monotonic(); $last=$now end
-    if not $s.rebuilding and not $s.dirty and not $s.tray_dirty and not $s.notes_dirty and monotonic()-$since>=0.3 then return end
+    $started=len(filter(split(read_file($tmp .. "/calls"),"\n"),fn($line) = $line!=""))
+    $completed=len(filter(split(read_file($tmp .. "/completed"),"\n"),fn($line) = $line!=""))
+    if $started==$completed and not $s.rebuilding and not $s.dirty and not $s.tray_dirty and not $s.notes_dirty and monotonic()-$since>=0.3 then return end
     sleep(0.05)
   end
   raise("PANEL_IDLE_TEST","panel did not become quiescent: " .. json_encode($s))
@@ -105,10 +107,12 @@ end
 try
   mkdir($tmp .. "/home")
   write_file($tmp .. "/calls", "")
+  write_file($tmp .. "/completed", "")
   $_ = run_argv_must(["cp", "-r", $root .. "/share/scenes/lib", $tmp .. "/lib"])
   $path = $tmp .. "/lib/runtime.mix"
   write_file($path, replace_must(read_file($path), "fn call($target, $command, $args)\n",
-    "fn call($target, $command, $args)\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command,at:monotonic()}) .. \"\\n\")\n  if $command == \"notify.list\" and is_file(env(\"FIXTURE_DIR\") .. \"/notify-throw\") then remove(env(\"FIXTURE_DIR\") .. \"/notify-throw\"); raise(\"FIXTURE_NOTIFY\",\"injected notify failure\") end\n  if $command == \"noded.props.get\" and is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then return {ok:false,value:nil} end\n"))
+    "fn call($target, $command, $args)\n  $fixture_call=uuid()\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command,at:monotonic()}) .. \"\\n\")\n  try\n  if $command == \"notify.list\" and is_file(env(\"FIXTURE_DIR\") .. \"/notify-throw\") then remove(env(\"FIXTURE_DIR\") .. \"/notify-throw\"); raise(\"FIXTURE_NOTIFY\",\"injected notify failure\") end\n  if $command == \"noded.props.get\" and is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then return {ok:false,value:nil} end\n"))
+  write_file($path,replace_must(read_file($path),"  return {ok: true, rc: 0, value: $body}\nend","  return {ok: true, rc: 0, value: $body}\n  finally\n    append_file(env(\"FIXTURE_DIR\") .. \"/completed\",$fixture_call .. \"\\n\")\n  end\nend"))
   write_file($tmp .. "/client.mix", 'send $1 $2 body="{}" timeout=5
 print(json_encode({rc:$rc,value:$result}))
 ')
@@ -184,8 +188,18 @@ end
     -- Keep the initial cache stale until an item event proves the tray is
     -- live. Startup registry delivery timing must not repair it first.
     $behaviour=replace_must($behaviour,"services_changed($a.new)","if not is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then services_changed($a.new) end")
+  else
+    -- Native driver/ACP registration is asynchronous too. Isolate real
+    -- fixture arrivals/departures from that noise; explicit registry hooks
+    -- below exercise conservative same-name/coalesced hints exactly once.
+    $behaviour=replace_must($behaviour,"services_changed($a.new)","fixture_registry($a)")
   end
   write_file($tmp .. "/panel.mix", $behaviour .. '
+fn fixture_registry($change)
+  for $name in [$COMP,$APPS,$TRAY,$NOTIFY]
+    if contains($change.old ?? [],$name) != contains($change.new ?? [],$name) then services_changed($change.new); return end
+  end
+end
 -- Local fixture observation does not register another Bus client on each
 -- sample. Atomic files are already the harness model/call observation path.
 on panel.test.observe async
