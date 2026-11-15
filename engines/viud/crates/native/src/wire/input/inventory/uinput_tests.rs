@@ -25,7 +25,13 @@ impl LibinputInterface for Interface {
                 .raw_os_error()
                 .unwrap_or(libc::EIO))
         } else {
-            Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+            // SAFETY: open returned a new owned fd. Grab only our virtual
+            // node so the worker's desktop cannot receive the injected key.
+            let owned = unsafe { OwnedFd::from_raw_fd(fd) };
+            if unsafe { libc::ioctl(fd, 0x40044590, 1) } != 0 {
+                return Err(std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO));
+            }
+            Ok(owned)
         }
     }
     fn close_restricted(&mut self, fd: OwnedFd) {
