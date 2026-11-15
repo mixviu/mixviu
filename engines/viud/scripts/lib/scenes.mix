@@ -1089,6 +1089,7 @@ fn promote_finish($s, $r)
     if $s.desired.forks != nil then $s.desired.forks = delete($s.desired.forks, $from) end
     $s.desired = delete($s.desired, "promoting")
     $s = persist($s)
+    $s.upgrades = delete(delete($s.upgrades ?? {}, $from), $r.to)
     $s = cap_recovery($s, $s.root .. "/" .. $r.backup)
   catch $message, $error
     $s.finish_error = {error_code:$error.code, message:$message,
@@ -2376,6 +2377,7 @@ fn editor_remove($s)
   $s = protected_backup_move($s, $user, $backup, "editor")
   $s.desired.origins = delete($s.desired.origins, "editor")
   $s = persist($s)
+  $s.upgrades = delete($s.upgrades ?? {}, "editor")
   $s.scenes.editor.user_dirty = false
   $s = cap_recovery($s, $backup)
   $s.response = {name:"editor", recovery:$backup}
@@ -2760,9 +2762,23 @@ fn upgrade_pending($s)
   return filter(keys($s.upgrades ?? {}), fn($n) = $s.upgrades[$n].retryable == true)
 end
 
+fn prune_upgrades($s)
+  for $name in keys($s.upgrades ?? {})
+    if not has_key($s.desired.origins, $name) or ($s.desired.forks ?? {})[$name] != nil then
+      $s.upgrades = delete($s.upgrades, $name)
+    end
+  end
+  return $s
+end
+
 fn upgrade($s, $retry = false)
+  $s = prune_upgrades($s)
+  -- A queued task may outlive removal of its last scene. Do not read state
+  -- or perform a recovery/inventory pass when it has nothing left to upgrade.
+  if $retry and len(upgrade_pending($s)) == 0 then return $s end
   $s = load_state($s)
   require_state($s)
+  $s = prune_upgrades($s)
   $pending = upgrade_pending($s)
   if not $retry then
     $s.upgrades = {}
@@ -3012,6 +3028,7 @@ fn request($s, $command, $args)
       if $s.desired.templates != nil then $s.desired.templates = delete($s.desired.templates, $name) end
       if $s.desired.forks != nil then $s.desired.forks = delete($s.desired.forks, $name) end
       $s = persist($s)
+      $s.upgrades = delete($s.upgrades ?? {}, $name)
       $s.response = {name:$name, recovery:$backup}
       $s = cap_recovery($s, $backup)
       return $s

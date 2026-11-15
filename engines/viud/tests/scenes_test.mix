@@ -1308,7 +1308,9 @@ try
   check($s.response.context.phase == "validate-staged" and tree_digest($s.root .. "/alpha") == $original and is_dir($sandbox) and $s.desired.forks["alpha-sandbox"] != nil and $s.desired.promoting == nil and len(stages($s.root)) == 0, "F3: an invalid sandbox moves nothing: " .. json_encode($s.response))
   $_ = refused($s, "promote", {from:"alpha"}, "SCENES_NOT_FORK")
   write_file($sandbox .. "/scene.mix", replace($clean, "tpl alpha", "promoted title"))
+  $s.upgrades = {alpha:{retryable:true}, "alpha-sandbox":{retryable:true}}
   $s = $l.request($s, "promote", {from:"alpha-sandbox"})
+  check($s.upgrades.alpha == nil and $s.upgrades["alpha-sandbox"] == nil, "promote clears replaced and removed upgrade flags")
   check($s.rc == 0 and $s.response.name == "alpha" and $s.response.removed == "alpha-sandbox" and len($s.response.recovery) == 2 and is_dir($s.response.recovery[0]) and is_dir($s.response.recovery[1]), "F4: promote receipt: " .. json_encode($s.response))
   $promoted = $l.document(read_file($s.root .. "/alpha/scene.mix"))
   check(contains($promoted.body, "promoted title") and $promoted.name == "alpha" and $promoted.citizen == "scene-alpha" and $l.candidate($s, "alpha", $s.root .. "/alpha").page == "scene-alpha", "F4: the sandbox is the original now")
@@ -1664,12 +1666,24 @@ try
   $u = $l.upgrade_failure($u, "editor", "unavailable", "SCENES_UPSTREAM", {target:"ced", rc:-2})
   check(deep_eq(sort($l.upgrade_pending($u)), ["late", "timeout"]), "only host availability failures are retried")
   check($l.upgrade_summary($u.upgrades.late).context.rc == 10, "inventory retains upstream rc")
+  $u.desired = {origins:{late:"alpha", invalid:"alpha", editor:"alpha"}, forks:{editor:{from:"late"}}}
+  $u = $l.prune_upgrades($u)
+  check($u.upgrades.timeout == nil and $u.upgrades.editor == nil and deep_eq($l.upgrade_pending($u), ["late"]), "prune removes orphaned and fork-skipped flags")
+  $u.desired.origins = {}
+  $u = $l.prune_upgrades($u)
+  $u.state_ok = false
+  check(deep_eq($l.upgrade($u, true), $u), "queued retry with no work does not even read state or run an upgrade pass")
   $ut = $tmp .. "/upgrade-templates"
   mkdir($ut)
   install_fixture($ut, "alpha", true)
   write_file($ut .. "/alpha/settings.conf.mix", "{value:1}\n")
   mkdir($ut .. "/alpha/assets")
   write_file($ut .. "/alpha/assets/icon", "icon")
+  $removed = se_fresh("upgrade-removed", $ut)
+  $removed = $l.request($removed, "install", {template:"alpha"})
+  $removed.upgrades = {alpha:{retryable:true}}
+  $removed = $l.request($removed, "remove", {name:"alpha"})
+  check($removed.rc == 0 and $removed.upgrades.alpha == nil and len($l.upgrade_pending($removed)) == 0, "remove clears its pending upgrade flag immediately")
   $s = se_fresh("upgrade", $ut)
   $s = $l.request($s, "install", {template:"alpha", name:"renamed"})
   check($s.rc == 0, "upgrade fixture installs")

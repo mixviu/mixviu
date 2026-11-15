@@ -102,6 +102,7 @@ end
 -- failed availability requests, at 1, 2, 4 .. 64 seconds, then retain a flag.
 -- No idle task remains once the work succeeds or the budget is exhausted.
 fn schedule_upgrade($s)
+  $s = $loader.prune_upgrades($s)
   $pending = $loader.upgrade_pending($s)
   if len($pending) == 0 or $s.upgrade_armed then return $s end
   if $s.upgrade_delay > 64 then
@@ -125,7 +126,19 @@ end
 on scenes.upgrade.retry
   if len(keys($event.headers)) != 0 then return end
   $state.upgrade_armed = false
-  $state = $loader.upgrade($state, true)
+  try
+    $state = $loader.upgrade($state, true)
+  catch $message, $error
+    $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
+    eprint("scenes upgrade retry failed: " .. json_encode($state.diagnostic))
+    -- The failed function's state copy did not commit. Keep the diagnostic
+    -- and stop pending work explicitly, rather than leaving retryable flags
+    -- with no task behind them. A manual upgrade can retry after repair.
+    $state = $loader.prune_upgrades($state)
+    for $name in $loader.upgrade_pending($state)
+      $state = $loader.upgrade_failure($state, $name, $message, $error.code, $error.details)
+    end
+  end
   $state = schedule_upgrade($state)
   $state = $loader.changed($state)
 end
