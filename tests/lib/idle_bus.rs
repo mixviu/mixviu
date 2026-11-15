@@ -1,0 +1,322 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Real broker fixtures shared by the shell and compositor idle-traffic tests.
+use bus::SupervisedClient;
+use serde_json::{Value, json};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+pub async fn connect(broker: &test_broker::Broker, name: &str) -> SupervisedClient {
+    SupervisedClient::connect_options(name, &broker.url)
+        .connect()
+        .await
+        .unwrap()
+}
+
+pub async fn native(
+    broker: &test_broker::Broker,
+    name: &str,
+) -> (
+    SupervisedClient,
+    tokio::sync::mpsc::UnboundedReceiver<bus::IncomingCommand>,
+    tokio::task::JoinHandle<()>,
+) {
+    let client = SupervisedClient::connect_options(name, &broker.url)
+        .verified_unix(broker.options())
+        .connect()
+        .await
+        .unwrap();
+    let mut deliveries = client.deliveries().unwrap();
+    let (send, incoming) = tokio::sync::mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        while let Some(delivery) = deliveries.recv().await {
+            if send.send(delivery.into_command()).is_err() {
+                break;
+            }
+        }
+    });
+    (client, incoming, task)
+}
+
+pub fn snapshot(revision: u64, incarnation: &str) -> settings::Snapshot {
+    let values = settings::registry::Values::from([("window.gaps".into(), json!(revision * 4))]);
+    settings::Snapshot {
+        schema: settings::SCHEMA,
+        binding: settings::session::binding().unwrap(),
+        incarnation: incarnation.into(),
+        revision: settings::Revision(revision),
+        design_revision: settings::Revision(1),
+        source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
+        effective: settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE)
+            .unwrap(),
+        desktop: settings::Desktop::default(),
+        values,
+    }
+}
+
+pub struct Service {
+    pub client: Arc<SupervisedClient>,
+    pub calls: Arc<Mutex<Vec<(String, Instant)>>>,
+    pub fail_reads: Arc<AtomicUsize>,
+    #[allow(dead_code)] // Shared fixture; only chrome exercises form failures.
+    pub fail_forms: Arc<AtomicUsize>,
+    #[allow(dead_code)] // Only shell recovery tests refuse compositor commands.
+    pub fail_commands: Arc<Mutex<BTreeMap<String, usize>>>,
+    current: Arc<Mutex<settings::Snapshot>>,
+    changes: tokio::sync::watch::Receiver<usize>,
+    task: tokio::task::JoinHandle<()>,
+}
+impl Service {
+    pub async fn start(broker: &test_broker::Broker, name: &str) -> Self {
+        let client = Arc::new(
+            SupervisedClient::connect_options(name, &broker.url)
+                .verified_unix(broker.options())
+                .connect()
+                .await
+                .unwrap(),
+        );
+        let mut incoming = client.deliveries().unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let captured = calls.clone();
+        let current = Arc::new(Mutex::new(snapshot(1, "first")));
+        let answer = current.clone();
+        let fail_reads = Arc::new(AtomicUsize::new(0));
+        let failures = fail_reads.clone();
+        let fail_forms = Arc::new(AtomicUsize::new(0));
+        let form_failures = fail_forms.clone();
+        let service = client.clone();
+        let fail_commands = Arc::new(Mutex::new(BTreeMap::<String, usize>::new()));
+        let command_failures = fail_commands.clone();
+        let (changed, changes) = tokio::sync::watch::channel(0);
+        let task = tokio::spawn(async move {
+            while let Some(delivery) = incoming.recv().await {
+                let command = delivery.into_command();
+                if command.is_topic_delivery() {
+                    continue;
+                }
+                captured
+                    .lock()
+                    .unwrap()
+                    .push((command.command.clone(), Instant::now()));
+                changed.send_modify(|n| *n += 1);
+                let command_refused = command_failures
+                    .lock()
+                    .unwrap()
+                    .get_mut(&command.command)
+                    .is_some_and(|left| {
+                        if *left == 0 {
+                            false
+                        } else {
+                            *left -= 1;
+                            true
+                        }
+                    });
+                let refused = command_refused
+                    || (command.command.ends_with(".ui.titlebar.form")
+                        && form_failures
+                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                            .is_ok())
+                    || command.command == "settings.get"
+                        && failures
+                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                            .is_ok();
+                let value = if refused {
+                    json!({"status":"busy"})
+                } else if command.command == "settings.get" {
+                    let snapshot = answer.lock().unwrap().clone();
+                    json!({"status":"current", "snapshot":settings::compact::encode_values(&snapshot, &snapshot.values).unwrap()})
+                } else {
+                    json!({})
+                };
+                service
+                    .respond_parts(
+                        command.generation,
+                        &command.from,
+                        &command.command,
+                        command.id.as_deref(),
+                        if refused { 10 } else { 0 },
+                        &value.to_string(),
+                    )
+                    .await
+                    .unwrap();
+            }
+        });
+        Self {
+            client,
+            calls,
+            current,
+            fail_reads,
+            fail_forms,
+            fail_commands,
+            task,
+            changes,
+        }
+    }
+    pub fn count(&self, command: &str) -> usize {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, _)| c.as_str() == command)
+            .count()
+    }
+    pub fn assert_read_retry_deadline(&self) {
+        let calls = self.calls.lock().unwrap();
+        let reads: Vec<_> = calls
+            .iter()
+            .filter(|(c, _)| c == "settings.get")
+            .map(|(_, at)| *at)
+            .collect();
+        assert!(
+            reads[2].duration_since(reads[1]) >= Duration::from_millis(240),
+            "failed read retried before its deadline"
+        );
+    }
+    pub async fn wait(&self, command: &str, count: usize) {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while self.count(command) < count {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "waiting for {command} count {count}; calls: {:?}",
+                self.calls.lock().unwrap()
+            )
+        });
+    }
+    // Test-only worker command, acknowledged after queued recovery has applied.
+    // Counting a request in the stub observes its start, not its completion.
+    pub async fn checkpoint(&self, target: &str) {
+        let result = tokio::time::timeout(
+            Duration::from_secs(20),
+            self.client.call(target, "test.checkpoint", json!({})),
+        )
+        .await
+        .expect("worker did not settle")
+        .unwrap();
+        assert_eq!(result, json!({"settled":true}));
+    }
+
+    // Observe the whole idle interval; any request wakes this assertion and
+    // fails immediately. This is not a guessed wait for positive work.
+    pub async fn assert_idle(&self, duration: Duration) {
+        let mut changes = self.changes.clone();
+        changes.borrow_and_update();
+        assert!(
+            tokio::time::timeout(duration, changes.changed())
+                .await
+                .is_err(),
+            "unexpected idle request: {:?}",
+            self.calls.lock().unwrap()
+        );
+    }
+
+    #[allow(dead_code)] // Shared fixture; only chrome injects names-only hints.
+    pub fn registration_hint(names: &[&str]) -> bus::IncomingCommand {
+        bus::IncomingCommand {
+            generation: 1,
+            from: "noded".into(),
+            command: "props.changed".into(),
+            id: None,
+            args: Value::Null,
+            body: json!({"path":"services.registered","new":names}).to_string(),
+            headers: BTreeMap::from([
+                ("topic".into(), "noded.props.changed".into()),
+                ("broker_service".into(), "noded".into()),
+                ("broker_origin".into(), "local".into()),
+            ]),
+        }
+    }
+    pub async fn publish(&self, topic: &str, body: Value) {
+        let headers = BTreeMap::from([
+            ("name".into(), topic.into()),
+            ("retain".into(), "false".into()),
+        ]);
+        let mut inner = bus::BusMessage::new().with_header("command", topic);
+        inner.body = body.to_string();
+        let reply = self
+            .client
+            .call_with_headers_raw("noded", "topic.publish", &headers, &inner.to_wire())
+            .await
+            .unwrap();
+        assert_eq!(reply.0, 0, "publish refused: {reply:?}");
+    }
+    pub async fn settings_changed(&self, revision: u64, incarnation: &str) {
+        let snapshot = snapshot(revision, incarnation);
+        *self.current.lock().unwrap() = snapshot.clone();
+        self.publish(
+            &settings::topics::snapshot_topic(&snapshot.binding.profile),
+            serde_json::to_value(
+                settings::compact::encode_values(&snapshot, &snapshot.values).unwrap(),
+            )
+            .unwrap(),
+        )
+        .await;
+    }
+}
+impl Drop for Service {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+pub struct Observer {
+    _client: SupervisedClient,
+    events: Arc<Mutex<Vec<Value>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+impl Observer {
+    pub async fn start(broker: &test_broker::Broker) -> Self {
+        let client = connect(broker, "idle-observer").await;
+        let mut incoming = client.incoming().unwrap();
+        client
+            .call(
+                "noded",
+                "noded.observe.start",
+                json!({"filter":{"commands":["noded.props.get"]},"body":"none"}),
+            )
+            .await
+            .unwrap();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let task = tokio::spawn(async move {
+            while let Some(command) = incoming.recv().await {
+                if command.command == "noded.observe.event" {
+                    captured
+                        .lock()
+                        .unwrap()
+                        .push(serde_json::from_str(&command.body).unwrap());
+                }
+            }
+        });
+        Self {
+            _client: client,
+            events,
+            task,
+        }
+    }
+    pub fn registry_reads(&self, from: &str) -> usize {
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| {
+                e["message_type"] == "request"
+                    && e["from"] == from
+                    && e["command"] == "noded.props.get"
+            })
+            .count()
+    }
+}
+impl Drop for Observer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}

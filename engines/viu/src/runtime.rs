@@ -42,7 +42,6 @@ struct State {
     look_revision: u64,
     corner_events: u64,
     corner_phases: Vec<String>,
-    comp_state: Value,
     outputs: Value,
     publish: Vec<String>,
     hover: Value,
@@ -51,6 +50,7 @@ struct State {
     preferences: crate::preferences::Preferences,
     selected: BTreeMap<Key, String>,
     errors: BTreeMap<String, String>,
+    bus_wake: Arc<tokio::sync::Notify>,
 }
 impl State {
     fn new() -> Self {
@@ -65,7 +65,6 @@ impl State {
             look_revision: 0,
             corner_events: 0,
             corner_phases: Vec::new(),
-            comp_state: Value::Null,
             outputs: Value::Null,
             publish: Vec::new(),
             hover: Value::Null,
@@ -73,6 +72,7 @@ impl State {
             output_size: BTreeMap::new(),
             selected: BTreeMap::new(),
             errors: BTreeMap::new(),
+            bus_wake: Arc::new(tokio::sync::Notify::new()),
             preferences: crate::preferences::Preferences::prepare(&settings::view::Panels::of(
                 &Default::default(),
             ))
@@ -124,6 +124,7 @@ impl State {
     fn input(&mut self, output: &str, edge: &str, input: PanelInput) {
         let now = self.started.elapsed();
         let _ = self.panel(output, edge).apply(now, input);
+        self.bus_wake.notify_one();
         self.wake();
     }
     fn content(&self, output: &str, edge: &str) -> Option<(String, Arc<Content>)> {
@@ -167,6 +168,8 @@ impl State {
     }
 }
 enum Outgoing {
+    #[cfg(test)]
+    Checkpoint(tokio::sync::oneshot::Sender<()>),
     Fire(String, String, Value),
     Register(String, String),
     Mode(String, String, String),
@@ -230,12 +233,17 @@ impl LayerProgram for Program {
         if model.snapshot().thickness_px < minimum {
             let _ = model.restore_thickness(minimum);
         }
+        let before = model.snapshot().mode;
         let _ = model.tick(now);
         let snap = model.snapshot();
+        let mode_changed = before != snap.mode;
         if model.wake() == PanelWake::Animate {
             ctx.request_repaint_after(Duration::from_millis(16));
         }
         let offset = ((1.0 - snap.visible_fraction) * snap.thickness_px).round() as i32;
+        if mode_changed {
+            state.bus_wake.notify_one();
+        }
         if !has_content || !snap.mapped {
             if state
                 .tips
@@ -657,25 +665,56 @@ pub fn run(service: String, comp: String) -> Result<(), String> {
     Ok(())
 }
 
-async fn report(client: &bus::SupervisedClient, comp: &str, output: &str, edge: &str, mode: &str) {
+async fn report(
+    client: &bus::SupervisedClient,
+    comp: &str,
+    output: &str,
+    edge: &str,
+    mode: &str,
+) -> bool {
     let args = json!({"output":output,"edge":edge,"surface":format!("viu-panel-{edge}"),"mode":mode,"generation":client.connection_generation()});
-    let _ = tokio::time::timeout(
-        Duration::from_secs(1),
-        client.call(comp, "comp.panel.mode", args),
+    matches!(
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            client.call(comp, "comp.panel.mode", args),
+        )
+        .await,
+        Ok(Ok(_))
     )
-    .await;
+}
+async fn recovery_deadline(deadline: Option<Instant>) {
+    match deadline {
+        Some(at) => tokio::time::sleep_until(at.into()).await,
+        None => std::future::pending().await,
+    }
+}
+fn comp_retry_after(delay: &mut Duration) -> Instant {
+    let at = Instant::now() + *delay;
+    *delay = (*delay * 2).min(Duration::from_secs(30));
+    at
 }
 async fn worker(
     service: String,
     comp: String,
     state: Shared,
-    mut outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
+    outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
 ) -> Result<(), String> {
     let client = bus::SupervisedClient::connect_options(&service, &bus::noded_url())
         .connect()
         .await
         .map_err(|e| e.to_string())?;
-    let mut incoming = client.incoming().ok_or("Bus incoming already taken")?;
+    let incoming = client.incoming().ok_or("Bus incoming already taken")?;
+    worker_connected(client, service, comp, state, outgoing, incoming).await
+}
+
+async fn worker_connected(
+    client: bus::SupervisedClient,
+    service: String,
+    comp: String,
+    state: Shared,
+    mut outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
+    mut incoming: tokio::sync::mpsc::UnboundedReceiver<bus::IncomingCommand>,
+) -> Result<(), String> {
     let scenes = std::env::var("SCENES_SERVICE").unwrap_or_else(|_| "scenes".into());
     client
         .subscribe_topic(&format!("{scenes}.changed"))
@@ -683,12 +722,6 @@ async fn worker(
         .map_err(|e| e.to_string())?;
     if let Ok(body) = client.call(&scenes, "scenes.list", json!({})).await {
         state.lock().unwrap().errors = crate::dev_loop::errors(&body);
-    }
-    if let Ok(outputs) = client
-        .call(&comp, "comp.props.get", json!({"path":"outputs"}))
-        .await
-    {
-        state.lock().unwrap().outputs = outputs;
     }
     for suffix in [
         "corner.input",
@@ -710,17 +743,47 @@ async fn worker(
     let mut work = None;
     let mut generation = None;
     let mut states = client.subscribe_state();
-    let mut retry = tokio::time::interval(Duration::from_secs(1));
-    retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let wake = state.lock().unwrap().bus_wake.clone();
+    let mut reported = BTreeMap::new();
+    let mut comp_dirty = true;
+    let mut comp_retry = None;
+    let mut comp_delay = Duration::from_secs(1);
+    #[cfg(test)]
+    let mut checkpoints: Vec<bus::IncomingCommand> = Vec::new();
+    #[cfg(test)]
+    let mut outgoing_checkpoints: Vec<tokio::sync::oneshot::Sender<()>> = Vec::new();
     loop {
+        // This samples the Bus epoch coherently, not settingsd availability.
+        // Compositor work below is gated directly on the live Bus connection.
         if let Some(live) = settings::native::live_generation(&client) {
             if generation != Some(live) {
                 generation = Some(live);
                 work = consumer.connected(live);
+                reported.clear();
+                comp_dirty = true;
+                comp_retry = None;
+                comp_delay = Duration::from_secs(1);
             }
         } else {
             generation = None;
             consumer.disconnected();
+        }
+        if client.is_connected() && comp_dirty && comp_retry.is_none_or(|at| Instant::now() >= at) {
+            let synced = async {
+                client.subscribe_topic("noded.props.changed").await?;
+                client.call(&comp, "comp.props.watch", json!({})).await?;
+                let outputs = client
+                    .call(&comp, "comp.props.get", json!({"path":"outputs"}))
+                    .await?;
+                let mut shared = state.lock().unwrap();
+                shared.outputs = outputs;
+                Ok::<_, bus::SupervisedError>(())
+            };
+            comp_dirty = !matches!(
+                tokio::time::timeout(Duration::from_secs(3), synced).await,
+                Ok(Ok(()))
+            );
+            comp_retry = comp_dirty.then(|| comp_retry_after(&mut comp_delay));
         }
         while let Some(action) = work.take() {
             let result = settings::native::execute(&client, &action).await;
@@ -762,21 +825,72 @@ async fn worker(
                 consumer.acknowledge(&update);
             }
         }
+        // Compare all local transitions, including UI deadlines and Bus commands.
+        // An unchanged panel generates no RPC. Reconnect clears the cache.
+        if client.is_connected() && !comp_dirty {
+            let reports: Vec<_> = {
+                let shared = state.lock().unwrap();
+                shared
+                    .panels
+                    .iter()
+                    .map(|(key, p)| (key.clone(), p.snapshot().mode.as_str().to_owned()))
+                    .collect()
+            };
+            for ((output, edge), mode) in reports {
+                if reported.get(&(output.clone(), edge.clone())) != Some(&mode) {
+                    if report(&client, &comp, &output, &edge, &mode).await {
+                        reported.insert((output, edge), mode);
+                    } else {
+                        comp_dirty = true;
+                        comp_retry = Some(comp_retry_after(&mut comp_delay));
+                        break;
+                    }
+                }
+            }
+            // Reset only after the whole sync/report round succeeds. A good
+            // outputs read must not reset repeated mode-report failures.
+            if !comp_dirty {
+                comp_delay = Duration::from_secs(1);
+            }
+        }
+        let deadline = consumer
+            .retry_deadline()
+            .into_iter()
+            .chain(comp_retry.filter(|_| client.is_connected()))
+            .min();
+        #[cfg(test)]
+        if !comp_dirty && deadline.is_none() && consumer.pending().is_none() {
+            for checkpoint in outgoing_checkpoints.drain(..) {
+                let _ = checkpoint.send(());
+            }
+            for command in checkpoints.drain(..) {
+                client
+                    .respond_parts(
+                        command.generation,
+                        &command.from,
+                        &command.command,
+                        command.id.as_deref(),
+                        0,
+                        "{\"settled\":true}",
+                    )
+                    .await
+                    .unwrap();
+            }
+        }
         tokio::select! {
             changed=states.changed()=>{if changed.is_err(){break;} states.borrow_and_update();}
-            _=retry.tick()=>{
-                work=consumer.refresh();
-                if let Ok(Ok(props))=tokio::time::timeout(Duration::from_secs(1),client.call(&comp,"comp.props.watch",json!({}))).await {state.lock().unwrap().comp_state=props;}
-                if let Ok(Ok(outputs))=tokio::time::timeout(Duration::from_secs(1),client.call(&comp,"comp.props.get",json!({"path":"outputs"}))).await {state.lock().unwrap().outputs=outputs;}
-                let reports:Vec<_>={let shared=state.lock().unwrap();shared.panels.iter().map(|((o,e),p)|(o.clone(),e.clone(),p.snapshot().mode.as_str().to_owned())).collect()};
-                for (output,edge,mode) in reports {report(&client,&comp,&output,&edge,&mode).await;}
+            _=wake.notified()=>{}
+            _=recovery_deadline(deadline)=>{
+                if consumer.retry_deadline().is_some_and(|at| Instant::now() >= at) {work=consumer.retry();}
             }
             action=outgoing.recv()=>{
                 let Some(action)=action else {break;};
                 match action {
+                    #[cfg(test)]
+                    Outgoing::Checkpoint(checkpoint)=>{outgoing_checkpoints.push(checkpoint);}
                     Outgoing::Fire(to,command,body)=>{let _=client.send(&to,&command,body).await;}
-                    Outgoing::Register(output,edge)=>{let mode={let mut shared=state.lock().unwrap();shared.panel(&output,&edge).snapshot().mode.as_str().to_owned()};report(&client,&comp,&output,&edge,&mode).await;}
-                    Outgoing::Mode(output,edge,mode)=>{if let Some(mode)=PanelMode::parse(&mode) {state.lock().unwrap().input(&output,&edge,PanelInput::SetMode(mode));report(&client,&comp,&output,&edge,mode.as_str()).await;}}
+                    Outgoing::Register(output,edge)=>{state.lock().unwrap().panel(&output,&edge);reported.remove(&(output,edge));}
+                    Outgoing::Mode(output,edge,mode)=>{if let Some(mode)=PanelMode::parse(&mode) {state.lock().unwrap().input(&output,&edge,PanelInput::SetMode(mode));}}
                     Outgoing::Presented(name,_output,revision)=>{state.lock().unwrap().store.set_mounted(&name,Some(Mounted {handle:revision,revision}));}
                     Outgoing::Frame(name,time)=>{
                         let event=state.lock().unwrap().store.frame_event(&name,true,f64::from(time)/1000.0,1.0/60.0);
@@ -786,7 +900,17 @@ async fn worker(
             }
             command=incoming.recv()=>{
                 let Some(command)=command else {break;};
+                #[cfg(test)]
+                if command.command == "test.checkpoint" { checkpoints.push(command); continue; }
                 if command.is_topic_delivery() {
+                    if command.topic()==Some("noded.props.changed") && command.header("broker_service")==Some("noded") && command.header("broker_origin")==Some("local")
+                        && let Ok(body)=serde_json::from_str::<Value>(&command.body) {
+                            // Names-only native registry hints cannot identify
+                            // which incarnation changed. Re-sync per delivery
+                            // until native discovery carries registration ids.
+                            let arrived = body["path"] == "services.registered" && body["new"].as_array().is_some_and(|names| names.contains(&json!(comp)));
+                            if arrived || body["gap"] == true || command.header("gap")==Some("true") {comp_dirty=true;comp_retry=None;comp_delay=Duration::from_secs(1);reported.clear();}
+                    }
                     if command.header("broker_service")==Some(scenes.as_str()) && command.header("broker_origin")==Some("local") && command.topic()==Some(format!("{scenes}.changed").as_str()) {
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
                             let mut shared=state.lock().unwrap();
@@ -795,7 +919,10 @@ async fn worker(
                         }
                     }
                     if command.header("broker_service")==Some(comp.as_str()) && command.header("broker_origin")==Some("local") {
-                        if let Ok(body)=serde_json::from_str::<Value>(&command.body) {topic(&state,&comp,command.topic().unwrap_or(""),&body);}
+                        if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
+                            if command.topic()==Some(format!("{comp}.props.changed").as_str()) && (body["gap"]==true || command.header("gap")==Some("true")) {comp_dirty=true;comp_retry=None;comp_delay=Duration::from_secs(1);reported.clear();}
+                            topic(&state,&comp,command.topic().unwrap_or(""),&body);
+                        }
                     }
                     if let Some(next)=consumer.native_delivery(&command) {work=Some(next);}
                     continue;
@@ -823,7 +950,9 @@ fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {
         return;
     }
     if topic == format!("{comp}.props.changed") {
-        shared.comp_state = body.clone();
+        if body["path"] == "outputs" {
+            shared.outputs = body["new"].clone();
+        }
         return;
     }
     if topic == format!("{comp}.corner.input") {
@@ -1093,4 +1222,381 @@ fn dispatch(
         }
     };
     (0, result)
+}
+
+#[cfg(test)]
+#[path = "../../../tests/lib/idle_bus.rs"]
+mod idle_bus;
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+
+    async fn comp_failure_backoff(command: &str) {
+        let broker = test_broker::Broker::start();
+        let _settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        comp.fail_commands.lock().unwrap().insert(command.into(), 3);
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, mut incoming, forward) = idle_bus::native(&broker, "shell").await;
+        let (pass, filtered) = tokio::sync::mpsc::unbounded_channel();
+        // Registration has its own tests; no fresh sync hint may bypass the
+        // failure deadlines being measured here.
+        let filter = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await {
+                if event.topic() != Some("noded.props.changed") && pass.send(event).is_err() {
+                    break;
+                }
+            }
+        });
+        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(
+            client,
+            "shell".into(),
+            "comp".into(),
+            state,
+            recv,
+            filtered,
+        ));
+        comp.checkpoint("shell").await;
+        let times: Vec<_> = comp
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, _)| c == command)
+            .map(|(_, at)| *at)
+            .collect();
+        assert_eq!(times.len(), 4);
+        for (interval, minimum) in times.windows(2).zip([900, 1900, 3900]) {
+            assert!(
+                interval[1].duration_since(interval[0]) >= Duration::from_millis(minimum),
+                "comp retry interval did not grow"
+            );
+        }
+        // A later mode failure starts at the base delay after recovery, even
+        // though it follows a successful sync on each retry round.
+        comp.fail_commands
+            .lock()
+            .unwrap()
+            .insert("comp.panel.mode".into(), 1);
+        let before = comp.count("comp.panel.mode");
+        send.send(Outgoing::Mode(
+            "example".into(),
+            "bottom".into(),
+            "hidden".into(),
+        ))
+        .unwrap();
+        let (checkpoint, complete) = tokio::sync::oneshot::channel();
+        send.send(Outgoing::Checkpoint(checkpoint)).unwrap();
+        tokio::time::timeout(Duration::from_secs(8), complete)
+            .await
+            .unwrap()
+            .unwrap();
+        let times: Vec<_> = comp
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, _)| c == "comp.panel.mode")
+            .map(|(_, at)| *at)
+            .collect();
+        assert_eq!(times.len(), before + 2);
+        let interval = times[before + 1].duration_since(times[before]);
+        assert!(
+            interval >= Duration::from_millis(900) && interval < Duration::from_secs(3),
+            "success did not reset comp delay: {interval:?}"
+        );
+        comp.assert_idle(Duration::from_millis(1200)).await;
+        task.abort();
+        filter.abort();
+        forward.abort();
+    }
+    #[tokio::test]
+    async fn shell_failed_sync_backs_off() {
+        comp_failure_backoff("comp.props.get").await;
+    }
+    #[tokio::test]
+    async fn shell_failed_mode_report_backs_off() {
+        comp_failure_backoff("comp.panel.mode").await;
+    }
+
+    async fn recovery_hint(kind: &str) {
+        let broker = test_broker::Broker::start();
+        let _settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, mut incoming, native_forward) = idle_bus::native(&broker, "shell").await;
+        let generation = client.connection_generation();
+        let (inject, receive) = tokio::sync::mpsc::unbounded_channel();
+        let forward = inject.clone();
+        let bridge = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await {
+                if forward.send(event).is_err() {
+                    break;
+                }
+            }
+        });
+        let (_send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(
+            client,
+            "shell".into(),
+            "comp".into(),
+            state,
+            recv,
+            receive,
+        ));
+        comp.wait("comp.panel.mode", 1).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let watches = comp.count("comp.props.watch");
+        let reports = comp.count("comp.panel.mode");
+        let (owner, topic, body) = match kind {
+            "coalesced" => (
+                "noded",
+                "noded.props.changed",
+                json!({"path":"services.registered","old":["comp","shell"],"new":["comp","shell","late-app"]}),
+            ),
+            "alone" => (
+                "noded",
+                "noded.props.changed",
+                json!({"path":"services.registered","old":["comp","shell"],"new":["comp","shell"]}),
+            ),
+            _ => ("comp", "comp.props.changed", json!({"gap":true})),
+        };
+        // Deterministic broker delivery shapes: no dependence on the 100ms
+        // registration cap or another process winning the reconnect race.
+        inject
+            .send(bus::IncomingCommand {
+                generation,
+                from: owner.into(),
+                command: "props.changed".into(),
+                id: None,
+                args: Value::Null,
+                body: body.to_string(),
+                headers: BTreeMap::from([
+                    ("topic".into(), topic.into()),
+                    ("broker_service".into(), owner.into()),
+                    ("broker_origin".into(), "local".into()),
+                ]),
+            })
+            .unwrap();
+        comp.wait("comp.props.watch", watches + 1).await;
+        comp.wait("comp.panel.mode", reports + 1).await;
+        comp.assert_idle(Duration::from_millis(1200)).await;
+        assert_eq!(comp.count("comp.props.watch"), watches + 1);
+        assert_eq!(comp.count("comp.panel.mode"), reports + 1);
+        task.abort();
+        bridge.abort();
+        native_forward.abort();
+    }
+    #[tokio::test]
+    async fn shell_coalesced_comp_registration_resends_modes() {
+        recovery_hint("coalesced").await;
+    }
+    #[tokio::test]
+    async fn shell_comp_reregistration_resends_modes() {
+        recovery_hint("alone").await;
+    }
+    #[tokio::test]
+    async fn shell_comp_props_gap_resends_modes() {
+        recovery_hint("gap").await;
+    }
+
+    #[tokio::test]
+    async fn shell_tracks_a_real_comp_reregistration() {
+        let broker = test_broker::Broker::start();
+        let _settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, incoming, forward) = idle_bus::native(&broker, "shell").await;
+        let (_send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(
+            client,
+            "shell".into(),
+            "comp".into(),
+            state,
+            recv,
+            incoming,
+        ));
+        comp.wait("comp.panel.mode", 1).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        comp.client.shutdown().await;
+        drop(comp);
+        let replacement = idle_bus::Service::start(&broker, "comp").await;
+        replacement.wait("comp.panel.mode", 1).await;
+        replacement.assert_idle(Duration::from_millis(1200)).await;
+        assert_eq!(replacement.count("comp.props.watch"), 1);
+        assert_eq!(replacement.count("comp.props.get"), 1);
+        assert_eq!(replacement.count("comp.panel.mode"), 1);
+        task.abort();
+        forward.abort();
+    }
+
+    #[tokio::test]
+    async fn shell_comp_sync_and_modes_survive_missing_settings() {
+        let broker = test_broker::Broker::start();
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, incoming, forward) = idle_bus::native(&broker, "shell").await;
+        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(
+            client,
+            "shell".into(),
+            "comp".into(),
+            state.clone(),
+            recv,
+            incoming,
+        ));
+        comp.wait("comp.panel.mode", 1).await;
+        assert_eq!(comp.count("comp.props.get"), 1);
+        send.send(Outgoing::Mode(
+            "example".into(),
+            "bottom".into(),
+            "hidden".into(),
+        ))
+        .unwrap();
+        comp.wait("comp.panel.mode", 2).await;
+        let settings = idle_bus::Service::start(&broker, "settingsd").await;
+        settings.wait("settings.get", 1).await;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while state.lock().unwrap().look_revision == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        task.abort();
+        forward.abort();
+    }
+
+    #[tokio::test]
+    async fn idle_shell_is_quiet_and_changes_and_registration_report_once() {
+        let mut broker = test_broker::Broker::bounce_stable();
+        let settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        let observer = idle_bus::Observer::start(&broker).await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, mut incoming, forward) = idle_bus::native(&broker, "shell").await;
+        // Isolate connection recovery counts from independently capped registry
+        // bursts. The registration tests above exercise those deliveries.
+        let (pass, filtered) = tokio::sync::mpsc::unbounded_channel();
+        let filter = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await {
+                if event.topic() != Some("noded.props.changed") && pass.send(event).is_err() {
+                    break;
+                }
+            }
+        });
+        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(
+            client,
+            "shell".into(),
+            "comp".into(),
+            state.clone(),
+            recv,
+            filtered,
+        ));
+        settings.wait("settings.get", 1).await;
+        comp.wait("comp.panel.mode", 1).await;
+        settings.checkpoint("shell").await;
+        tokio::join!(
+            settings.assert_idle(Duration::from_millis(1200)),
+            comp.assert_idle(Duration::from_millis(1200))
+        );
+        assert_eq!(settings.count("settings.get"), 1);
+        assert_eq!(comp.count("comp.props.watch"), 1);
+        assert_eq!(comp.count("comp.props.get"), 1);
+        assert_eq!(comp.count("comp.panel.mode"), 1);
+        assert_eq!(observer.registry_reads("shell"), 0);
+        settings.settings_changed(2, "first").await;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while state.lock().unwrap().look_revision < 2 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            settings.count("settings.get"),
+            1,
+            "inline change needs no re-read"
+        );
+        settings
+            .fail_reads
+            .store(1, std::sync::atomic::Ordering::SeqCst);
+        settings.settings_changed(3, "restarted").await;
+        settings.wait("settings.get", 3).await;
+        settings.checkpoint("shell").await;
+        settings.assert_read_retry_deadline();
+        settings.assert_idle(Duration::from_millis(1200)).await;
+        assert_eq!(
+            settings.count("settings.get"),
+            3,
+            "new authority confirms once after a fenced failed-read retry"
+        );
+        for _ in 0..2 {
+            send.send(Outgoing::Mode(
+                "example".into(),
+                "bottom".into(),
+                "docked".into(),
+            ))
+            .unwrap();
+        }
+        let (checkpoint, complete) = tokio::sync::oneshot::channel();
+        send.send(Outgoing::Checkpoint(checkpoint)).unwrap();
+        tokio::time::timeout(Duration::from_secs(20), complete)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(comp.count("comp.panel.mode"), 1, "same mode is silent");
+        send.send(Outgoing::Mode(
+            "example".into(),
+            "bottom".into(),
+            "hidden".into(),
+        ))
+        .unwrap();
+        comp.wait("comp.panel.mode", 2).await;
+        send.send(Outgoing::Register("example".into(), "bottom".into()))
+            .unwrap();
+        comp.wait("comp.panel.mode", 3).await;
+        comp.checkpoint("shell").await;
+        assert_eq!(comp.count("comp.panel.mode"), 3);
+        broker.bounce();
+        comp.wait("comp.panel.mode", 4).await;
+        settings.wait("settings.get", 4).await;
+        // The request counter advances before its reply is applied. Wait
+        // for the worker to finish both comp sync and settings recovery.
+        comp.checkpoint("shell").await;
+        assert_eq!(
+            comp.count("comp.panel.mode"),
+            4,
+            "reconnect reports each panel once"
+        );
+        assert_eq!(
+            settings.count("settings.get"),
+            4,
+            "reconnect restores settings once"
+        );
+        assert_eq!(comp.count("comp.props.watch"), 2);
+        comp.publish(
+            "comp.props.changed",
+            json!({"path":"outputs","new":[{"name":"after-bounce"}]}),
+        )
+        .await;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while state.lock().unwrap().outputs != json!([{"name":"after-bounce"}]) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        task.abort();
+        forward.abort();
+        filter.abort();
+    }
 }

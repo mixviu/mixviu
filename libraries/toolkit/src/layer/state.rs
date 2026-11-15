@@ -1285,6 +1285,34 @@ mod tests {
     }
 }
 
+/// Only detaching a previously attached buffer unmaps the protocol surface.
+fn hide_buffer(has_buffer: &mut bool, unmapped: &mut bool, configured: &mut bool) {
+    if *has_buffer {
+        *has_buffer = false;
+        *unmapped = true;
+        *configured = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hiding_before_first_buffer_preserves_initial_configure() {
+        let (mut buffer, mut unmapped, mut configured) = (false, false, true);
+        hide_buffer(&mut buffer, &mut unmapped, &mut configured);
+        assert_eq!((buffer, unmapped, configured), (false, false, true));
+    }
+
+    #[test]
+    fn hiding_attached_buffer_requires_fresh_configure() {
+        let (mut buffer, mut unmapped, mut configured) = (true, false, true);
+        hide_buffer(&mut buffer, &mut unmapped, &mut configured);
+        assert_eq!((buffer, unmapped, configured), (false, true, false));
+    }
+}
+
 impl<P: LayerProgram + 'static> CompositorHandler for State<P> {
     fn scale_factor_changed(
         &mut self,
