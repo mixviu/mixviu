@@ -218,7 +218,9 @@ async fn teardown_session(recovery: bool) {
     let client = connection(&address).await;
     let (cancel, mut cancelled) = watch::channel(false);
     let req = request("{}").unwrap();
-    tokio::time::pause();
+    if !recovery {
+        tokio::time::pause();
+    }
     real_time_bound(async {
         let task = tokio::spawn(async move {
             portal::session_broken_stream(
@@ -233,6 +235,9 @@ async fn teardown_session(recovery: bool) {
         methods.recv().await.unwrap();
         if recovery {
             closes.recv().await.unwrap();
+            // Let the sweep's real timer dispatch Close, then freeze its hung
+            // acknowledgement: cancellation must not wait for that deadline.
+            tokio::time::pause();
             cancel.send_replace(true);
             closes.recv().await.unwrap();
             assert_eq!(task.await.unwrap().unwrap(), None);
