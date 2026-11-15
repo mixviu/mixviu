@@ -195,7 +195,8 @@ pub(crate) async fn run(
             let dirty: Vec<_> = targets
                 .iter()
                 .filter(|name| services.contains(*name) && bars_dirty.contains(*name))
-                .cloned().collect();
+                .cloned()
+                .collect();
             for service in &dirty {
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(1),
@@ -290,7 +291,9 @@ mod tests {
         let (send, events) = tokio::sync::mpsc::channel(64);
         let forward = tokio::spawn(async move {
             while let Some(event) = incoming.recv().await {
-                if send.send(event).await.is_err() { break; }
+                if send.send(event).await.is_err() {
+                    break;
+                }
             }
         });
         let (wiring, starter) = crate::port::prepare(

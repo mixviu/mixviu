@@ -888,7 +888,6 @@ subscribe($NOTIFY .. ".props.changed")
 subscribe($APPS .. ".changed")
 subscribe($NODED .. ".props.changed")
 subscribe("scenes.changed")
-start_status()
 try
   $state.settings_watch = fs_watch(dirname($SETTINGS), {recursive: false, events: ["created", "modified", "deleted", "moved"]})
 catch $message
@@ -897,6 +896,9 @@ end
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true
-resync()
+-- Start the first task at top level, after all globals exist. Mix's lazy
+-- shared-scope promotion cannot run inside start_status/resync's frames.
 task_start("toast_ensure", "{}")
+start_status()
+resync()
 start_clock()

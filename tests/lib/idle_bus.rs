@@ -4,7 +4,10 @@ use bus::SupervisedClient;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -40,8 +43,9 @@ pub struct Service {
 }
 impl Service {
     pub async fn start(broker: &test_broker::Broker, name: &str) -> Self {
-        let client = Arc::new(connect(broker, name).await);
-        let mut incoming = client.incoming().unwrap();
+        let client = Arc::new(SupervisedClient::connect_options(name, &broker.url)
+            .verified_unix(broker.options()).connect().await.unwrap());
+        let mut incoming = client.deliveries().unwrap();
         let calls = Arc::new(Mutex::new(Vec::new()));
         let captured = calls.clone();
         let current = Arc::new(Mutex::new(snapshot(1, "first")));
@@ -50,13 +54,22 @@ impl Service {
         let failures = fail_reads.clone();
         let service = client.clone();
         let task = tokio::spawn(async move {
-            while let Some(command) = incoming.recv().await {
+            while let Some(delivery) = incoming.recv().await {
+                let command = delivery.into_command();
                 if command.is_topic_delivery() {
                     continue;
                 }
-                captured.lock().unwrap().push((command.command.clone(), Instant::now()));
-                let refused = command.command == "settings.get" && failures.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok();
-                let value = if refused { json!({"status":"busy"}) } else if command.command == "settings.get" {
+                captured
+                    .lock()
+                    .unwrap()
+                    .push((command.command.clone(), Instant::now()));
+                let refused = command.command == "settings.get"
+                    && failures
+                        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                        .is_ok();
+                let value = if refused {
+                    json!({"status":"busy"})
+                } else if command.command == "settings.get" {
                     let snapshot = answer.lock().unwrap().clone();
                     json!({"status":"current", "snapshot":settings::compact::encode_values(&snapshot, &snapshot.values).unwrap()})
                 } else {
@@ -93,8 +106,15 @@ impl Service {
     }
     pub fn assert_read_retry_deadline(&self) {
         let calls = self.calls.lock().unwrap();
-        let reads: Vec<_> = calls.iter().filter(|(c,_)| c == "settings.get").map(|(_,at)| *at).collect();
-        assert!(reads[2].duration_since(reads[1]) >= Duration::from_millis(240), "failed read retried before its deadline");
+        let reads: Vec<_> = calls
+            .iter()
+            .filter(|(c, _)| c == "settings.get")
+            .map(|(_, at)| *at)
+            .collect();
+        assert!(
+            reads[2].duration_since(reads[1]) >= Duration::from_millis(240),
+            "failed read retried before its deadline"
+        );
     }
     pub async fn wait(&self, command: &str, count: usize) {
         tokio::time::timeout(Duration::from_secs(8), async {
@@ -103,7 +123,7 @@ impl Service {
             }
         })
         .await
-        .unwrap();
+        .unwrap_or_else(|_| panic!("waiting for {command} count {count}; calls: {:?}", self.calls.lock().unwrap()));
     }
     pub async fn publish(&self, topic: &str, body: Value) {
         let headers = BTreeMap::from([

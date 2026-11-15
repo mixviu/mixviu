@@ -745,7 +745,9 @@ mod idle_tests {
             1,
             "inline change needs no re-read"
         );
-        settings.fail_reads.store(1, std::sync::atomic::Ordering::SeqCst);
+        settings
+            .fail_reads
+            .store(1, std::sync::atomic::Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;
         settings.wait("settings.get", 3).await;
         settings.assert_read_retry_deadline();
@@ -781,8 +783,16 @@ mod idle_tests {
         comp.wait("comp.panel.mode", 4).await;
         settings.wait("settings.get", 4).await;
         tokio::time::sleep(Duration::from_millis(1200)).await;
-        assert_eq!(comp.count("comp.panel.mode"), 4, "reconnect reports each panel once");
-        assert_eq!(settings.count("settings.get"), 4, "reconnect restores settings once");
+        assert_eq!(
+            comp.count("comp.panel.mode"),
+            4,
+            "reconnect reports each panel once"
+        );
+        assert_eq!(
+            settings.count("settings.get"),
+            4,
+            "reconnect restores settings once"
+        );
         assert!(comp.count("comp.props.watch") >= 2);
         task.abort();
     }
