@@ -727,6 +727,8 @@ mod tests {
             run(&client, ingress, events, live).await;
         });
 
+        app.wait("example-app.ui.titlebar.form", 1).await;
+        settings.settings_changed(2, "first").await;
         tokio::time::timeout(std::time::Duration::from_secs(20), async {
             while app.count("example-app.ui.titlebar.form") < 4 { tokio::time::sleep(std::time::Duration::from_millis(10)).await; }
         }).await.unwrap();

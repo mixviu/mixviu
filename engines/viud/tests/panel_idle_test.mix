@@ -148,7 +148,7 @@ on comp.windows.list
   reply(0,json_encode({windows:$windows}))
 end
 on comp.workspaces.list
-  reply(0,json_encode({count:1,current:1,list:[]}))
+  reply(0,is_file(env("FIXTURE_DIR") .. "/workspaces") ? read_file(env("FIXTURE_DIR") .. "/workspaces") : json_encode({count:1,current:1,list:[]}))
 end
 on apps.icon
   reply(0,json_encode({path:""}))
@@ -214,7 +214,7 @@ end
 -- sample. Atomic files are already the harness model/call observation path.
 on panel.test.observe async
   while true
-    write_atomic(env("FIXTURE_DIR") .. "/state",json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows}))
+    write_atomic(env("FIXTURE_DIR") .. "/state",json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows,ws_count:$state.ws_count}))
     sleep(0.02)
   end
 end
@@ -241,12 +241,14 @@ task_start("panel.test.observe","{}")
     $kind=replace($case,"comp-failure-","")
     $command=if $kind=="watch" or $kind=="watch-throw" then "comp.props.watch" elif $kind=="workspace" then "comp.workspaces.list" else "comp.windows.list" end
     $registry=calls_for("noded.props.get")
+    write_file($tmp .. "/workspaces",json_encode({count:2,current:2,list:[]}))
     write_file($tmp .. "/windows",json_encode([{id:9,band:"normal",app_id:"example",title:"recovered",workspace:1}]))
     write_file($tmp .. "/comp-fail",json_encode({command:$command,kind:contains($kind,"throw") ? "throw" : "refuse"}))
     write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["panel-stub"],new:["panel-stub","late-app"]}
 ')
     $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
     wait_state("windows",[{id:9,band:"normal",app_id:"example",title:"recovered",workspace:1}])
+    wait_state("ws_count",2)
     quiet()
     check(calls_for("noded.props.get")==$registry,"comp failure was attributed to registry")
     idle(1.2)
