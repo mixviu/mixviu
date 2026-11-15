@@ -587,12 +587,20 @@ async fn cached_status_delivery_rechecks_broker_suspend_without_notices() {
     assert!(output.contains("client native trace active"));
     let hello = parent.session_hello().await.unwrap();
     let parent_key = SigningKey::from_bytes(&[21; 32]);
-    let signature = serde_json::to_value(HexBytes(parent_key.sign(&encode_allocate(
-        hello.broker_epoch,
-        hello.connection_id,
-        HexBytes(parent_key.verifying_key().to_bytes()),
-        Policy::DefaultOpen,
-    )).to_bytes())).unwrap().as_str().unwrap().to_owned();
+    let signature = serde_json::to_value(HexBytes(
+        parent_key
+            .sign(&encode_allocate(
+                hello.broker_epoch,
+                hello.connection_id,
+                HexBytes(parent_key.verifying_key().to_bytes()),
+                Policy::DefaultOpen,
+            ))
+            .to_bytes(),
+    ))
+    .unwrap()
+    .as_str()
+    .unwrap()
+    .to_owned();
     for (field, value) in [
         (
             "private_key",

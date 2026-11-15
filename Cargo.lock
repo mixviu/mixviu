@@ -983,6 +983,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "libc",
+ "log",
  "paths",
  "rand 0.8.8",
  "serde",
@@ -991,6 +992,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
+ "tungstenite 0.29.0",
 ]
 
 [[package]]

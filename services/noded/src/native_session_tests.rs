@@ -1465,12 +1465,19 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
         .unwrap()
         .to_owned();
     let hello = parent.session_hello().await.unwrap();
-    let signature = serde_json::to_value(HexBytes(key.sign(&encode_allocate(
-        hello.broker_epoch,
-        hello.connection_id,
-        HexBytes(key.verifying_key().to_bytes()),
-        Policy::DefaultOpen,
-    )).to_bytes())).unwrap().as_str().unwrap().to_owned();
+    let signature = serde_json::to_value(HexBytes(
+        key.sign(&encode_allocate(
+            hello.broker_epoch,
+            hello.connection_id,
+            HexBytes(key.verifying_key().to_bytes()),
+            Policy::DefaultOpen,
+        ))
+        .to_bytes(),
+    ))
+    .unwrap()
+    .as_str()
+    .unwrap()
+    .to_owned();
     for _ in 0..6 {
         let event = receive(&mut observer).await;
         let wire = event.to_wire();
