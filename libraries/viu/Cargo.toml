@@ -40,12 +40,10 @@ tiny-skia = { version = "=0.11.4", default-features = false, features = ["std", 
 uuid.workspace = true
 egui_plot.workspace = true
 libc.workspace = true
-toolkit = { path = "../toolkit", default-features = false }
+toolkit = { path = "../toolkit", default-features = false, features = ["layer"] }
 eframe = { version = "=0.37.0", default-features = false, features = ["default_fonts", "wayland", "wgpu_no_default_features"] }
 smithay-client-toolkit = "=0.20.0"
 wayland-backend = { version = "=0.3.17", features = ["client_system"] }
-xkbcommon = { version = "0.7", default-features = false }
-futures = "0.3"
 wgpu = { version = "30.0", default-features = false, features = ["std", "vulkan", "gles", "wgsl"] }
 egui-wgpu = { version = "=0.37.0", default-features = false }
 raw-window-handle = "=0.6.2"

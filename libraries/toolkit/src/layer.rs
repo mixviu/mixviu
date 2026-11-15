@@ -84,6 +84,10 @@ pub struct SurfaceInfo {
 
 /// An egui program drawn on layer surfaces.
 pub trait LayerProgram {
+    /// End the host after a pass (for example after an application quit action).
+    fn should_close(&self) -> bool {
+        false
+    }
     /// Wake presentation state even before a hidden surface has run egui.
     /// This is event-driven and does not request continuous rendering.
     fn set_waker(&mut self, _wake: std::sync::Arc<dyn Fn() + Send + Sync>) {}

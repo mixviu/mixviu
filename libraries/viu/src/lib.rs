@@ -67,7 +67,7 @@ pub mod window_frame;
 pub mod calls;
 pub mod decorations;
 pub mod input;
-pub mod layer;
+pub use toolkit::layer;
 pub mod platform;
 pub mod ui_state;
 
