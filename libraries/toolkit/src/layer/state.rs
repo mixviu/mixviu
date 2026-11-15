@@ -239,6 +239,9 @@ pub(super) fn run<P: LayerProgram + 'static>(
         state.expire_frames();
         state.presentations();
         state.draw_due(&qh);
+        if state.program.should_close() {
+            break;
+        }
     }
     Ok(())
 }
@@ -285,10 +288,12 @@ impl<P: LayerProgram + 'static> State<P> {
                     if surface.has_buffer {
                         surface.layer.wl_surface().attach(None, 0, 0);
                         surface.layer.commit();
-                        surface.has_buffer = false;
-                        surface.unmapped = true;
-                        surface.configured = false;
                     }
+                    hide_buffer(
+                        &mut surface.has_buffer,
+                        &mut surface.unmapped,
+                        &mut surface.configured,
+                    );
                     surface.visible = false;
                     surface.frame_pending = false;
                     surface.pending_since = None;
@@ -746,6 +751,34 @@ impl<P: LayerProgram + 'static> State<P> {
         if pressed && let Some(text) = input::typed(text, &self.modifiers) {
             self.push_to(&focus, egui::Event::Text(text));
         }
+    }
+}
+
+/// Only detaching a previously attached buffer unmaps the protocol surface.
+fn hide_buffer(has_buffer: &mut bool, unmapped: &mut bool, configured: &mut bool) {
+    if *has_buffer {
+        *has_buffer = false;
+        *unmapped = true;
+        *configured = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hiding_before_first_buffer_preserves_initial_configure() {
+        let (mut buffer, mut unmapped, mut configured) = (false, false, true);
+        hide_buffer(&mut buffer, &mut unmapped, &mut configured);
+        assert_eq!((buffer, unmapped, configured), (false, false, true));
+    }
+
+    #[test]
+    fn hiding_attached_buffer_requires_fresh_configure() {
+        let (mut buffer, mut unmapped, mut configured) = (true, false, true);
+        hide_buffer(&mut buffer, &mut unmapped, &mut configured);
+        assert_eq!((buffer, unmapped, configured), (false, true, false));
     }
 }
 
