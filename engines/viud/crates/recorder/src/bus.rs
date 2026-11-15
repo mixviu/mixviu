@@ -332,11 +332,15 @@ impl Recording {
         self.last = Arc::new(Vec::new());
         encoder.set_summary(self.dropped, self.t0_us);
         let files = self.files.clone();
-        let failed = self.error.is_some();
+        let failure = self.error.clone();
+        let failed = failure.is_some();
         let (tx, rx) = channel();
         self.finishing = Some(rx);
         self.finaliser = Some(std::thread::spawn(move || {
-            let result = encoder.finish_result();
+            let result = match failure {
+                Some(error) => encoder.finish_failed(error),
+                None => encoder.finish_result(),
+            };
             let result = if discard {
                 files.cleanup();
                 result.map(|_| ())

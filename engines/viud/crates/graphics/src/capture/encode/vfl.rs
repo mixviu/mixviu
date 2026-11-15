@@ -280,6 +280,10 @@ impl VideoEncoder {
                 log.frames.sync_all()?;
                 log.markers.sync_all()?;
                 if !finish.load(Ordering::Acquire) {
+                    let mut interrupted = create(&log.path.join("interrupted.json"))?;
+                    interrupted.write_all(json!({"version":VERSION,"complete":false,"t0_us":o.load(Ordering::Acquire),"frames":log.next,"chunks":log.index+1,"dropped":td.load(Ordering::Acquire).max(d.load(Ordering::Acquire)),"error":e.lock().unwrap().clone()}).to_string().as_bytes())?;
+                    interrupted.sync_all()?;
+                    File::open(&log.path)?.sync_all()?;
                     return Ok(());
                 }
                 let mut done = create(&log.path.join("complete.json"))?;
@@ -388,8 +392,15 @@ impl VideoEncoder {
     pub fn error(&self) -> Option<String> {
         self.error.lock().unwrap().clone()
     }
-    pub fn finish_result(mut self) -> Result<PathBuf, String> {
-        self.finishing.store(true, Ordering::Release);
+    pub fn finish_result(self) -> Result<PathBuf, String> {
+        self.finish_inner(true)
+    }
+    pub fn finish_failed(self, error: String) -> Result<PathBuf, String> {
+        *self.error.lock().unwrap() = Some(error);
+        self.finish_inner(false)
+    }
+    fn finish_inner(mut self, success: bool) -> Result<PathBuf, String> {
+        self.finishing.store(success, Ordering::Release);
         self.tx = None;
         if let Some(join) = self.join.take() {
             join.join()

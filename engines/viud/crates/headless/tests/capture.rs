@@ -147,6 +147,10 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
             at += 17 + len;
         }
     }
+    let complete: Value =
+        serde_json::from_slice(&fs::read(path.join("complete.json")).unwrap()).unwrap();
+    assert_eq!(complete["complete"], true);
+    assert_eq!(complete["frames"], count);
     (first, count)
 }
 
@@ -430,6 +434,9 @@ fn record_4k() {
         json!({"session":session,"label":"4k-done"}),
     );
     let stop = bus.call("comp.record.stop", json!({"session":session}));
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(path.join("complete.json")).unwrap()).unwrap();
+    assert_eq!(manifest["dropped"], stop["dropped"]);
     assert!(
         stop["repeated"].as_u64() >= stop["dropped"].as_u64(),
         "overruns must be repeated on the timeline: {stop}"
@@ -662,6 +669,13 @@ fn record_window_target_gone_fails() {
     let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
     assert_eq!(stop["frames_path"], Value::Null);
     assert!(!Path::new(start["path"].as_str().unwrap()).exists());
+    let recovery = Path::new(stop["recovery_path"].as_str().unwrap());
+    assert!(!recovery.join("complete.json").exists());
+    let interrupted: Value =
+        serde_json::from_slice(&fs::read(recovery.join("interrupted.json")).unwrap()).unwrap();
+    assert_eq!(interrupted["complete"],false);
+    assert_eq!(interrupted["dropped"],stop["dropped"]);
+    assert!(interrupted["error"].as_str().unwrap().contains("gone"));
 }
 #[test]
 fn inactive_seat_maps_clients_and_captures_output_and_window() {

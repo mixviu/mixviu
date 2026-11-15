@@ -34,6 +34,11 @@ manifest without overwriting its recoverable initial copy. Its frame count
 includes repeats replacing dropped slots. `dropped` includes queue overruns
 and compositor readback-budget skips, without counting a slot twice.
 
+A gracefully failed or abandoned take drains and seals its complete records
+but writes `interrupted.json` instead of `complete.json`. It has the same
+counts and origin, `complete:false`, and `error` (a string for a known capture
+failure, otherwise null). This is recovery evidence, never a success receipt.
+
 ## Chunks and records
 
 Chunks are `chunk-000000.bin`, `chunk-000001.bin`, etc., in numeric order.
@@ -48,6 +53,10 @@ All integers are unsigned little endian. Each record is:
 | 8 | 8 | Frame slot, starting at zero and increasing by one |
 | 16 | 1 | Kind: 0 key, 1 delta, 2 repeat |
 | 17 | length | Payload |
+
+CRC32 is the reflected IEEE polynomial 0xEDB88320, initial/final XOR
+0xFFFFFFFF (the CRC of ASCII `123456789` is 0xCBF43926). Readers must bound a
+compressed payload length to `raw_bytes + raw_bytes/255 + 32` before allocation.
 
 Key payloads are raw LZ4 **blocks**, without an LZ4 frame header or prepended
 size. Decompress to exactly width × height × 4 bytes. Delta payloads decompress
