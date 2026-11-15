@@ -36,6 +36,7 @@ fn wait_service($name)
     if call($name, "INFO").rc == 0 then return end
     sleep(0.05)
   end
+  if is_file($tmp .. "/" .. $name .. ".log") then eprint(read_file($tmp .. "/" .. $name .. ".log")) end
   raise("PANEL_IDLE_TEST", "service did not start: " .. $name)
 end
 fn tray_calls()

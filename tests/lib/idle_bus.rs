@@ -4,13 +4,12 @@ use bus::SupervisedClient;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex},
-    time::Duration,
+    sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}},
+    time::{Duration, Instant},
 };
 
 pub async fn connect(broker: &test_broker::Broker, name: &str) -> SupervisedClient {
     SupervisedClient::connect_options(name, &broker.url)
-        .verified_unix(broker.options())
         .connect()
         .await
         .unwrap()
@@ -34,7 +33,8 @@ pub fn snapshot(revision: u64, incarnation: &str) -> settings::Snapshot {
 
 pub struct Service {
     pub client: Arc<SupervisedClient>,
-    pub calls: Arc<Mutex<Vec<String>>>,
+    pub calls: Arc<Mutex<Vec<(String, Instant)>>>,
+    pub fail_reads: Arc<AtomicUsize>,
     current: Arc<Mutex<settings::Snapshot>>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -46,14 +46,17 @@ impl Service {
         let captured = calls.clone();
         let current = Arc::new(Mutex::new(snapshot(1, "first")));
         let answer = current.clone();
+        let fail_reads = Arc::new(AtomicUsize::new(0));
+        let failures = fail_reads.clone();
         let service = client.clone();
         let task = tokio::spawn(async move {
             while let Some(command) = incoming.recv().await {
                 if command.is_topic_delivery() {
                     continue;
                 }
-                captured.lock().unwrap().push(command.command.clone());
-                let value = if command.command == "settings.get" {
+                captured.lock().unwrap().push((command.command.clone(), Instant::now()));
+                let refused = command.command == "settings.get" && failures.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok();
+                let value = if refused { json!({"status":"busy"}) } else if command.command == "settings.get" {
                     let snapshot = answer.lock().unwrap().clone();
                     json!({"status":"current", "snapshot":settings::compact::encode_values(&snapshot, &snapshot.values).unwrap()})
                 } else {
@@ -65,7 +68,7 @@ impl Service {
                         &command.from,
                         &command.command,
                         command.id.as_deref(),
-                        0,
+                        if refused { 10 } else { 0 },
                         &value.to_string(),
                     )
                     .await
@@ -76,6 +79,7 @@ impl Service {
             client,
             calls,
             current,
+            fail_reads,
             task,
         }
     }
@@ -84,8 +88,13 @@ impl Service {
             .lock()
             .unwrap()
             .iter()
-            .filter(|c| c.as_str() == command)
+            .filter(|(c, _)| c.as_str() == command)
             .count()
+    }
+    pub fn assert_read_retry_deadline(&self) {
+        let calls = self.calls.lock().unwrap();
+        let reads: Vec<_> = calls.iter().filter(|(c,_)| c == "settings.get").map(|(_,at)| *at).collect();
+        assert!(reads[2].duration_since(reads[1]) >= Duration::from_millis(240), "failed read retried before its deadline");
     }
     pub async fn wait(&self, command: &str, count: usize) {
         tokio::time::timeout(Duration::from_secs(8), async {

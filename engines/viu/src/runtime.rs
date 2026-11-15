@@ -711,7 +711,7 @@ mod idle_tests {
 
     #[tokio::test]
     async fn idle_shell_is_quiet_and_changes_and_registration_report_once() {
-        let broker = test_broker::Broker::start();
+        let mut broker = test_broker::Broker::bounce_stable();
         let settings = idle_bus::Service::start(&broker, "settingsd").await;
         let comp = idle_bus::Service::start(&broker, "comp").await;
         let state = Arc::new(Mutex::new(State::new()));
@@ -745,13 +745,15 @@ mod idle_tests {
             1,
             "inline change needs no re-read"
         );
+        settings.fail_reads.store(1, std::sync::atomic::Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;
-        settings.wait("settings.get", 2).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        settings.wait("settings.get", 3).await;
+        settings.assert_read_retry_deadline();
+        tokio::time::sleep(Duration::from_millis(1200)).await;
         assert_eq!(
             settings.count("settings.get"),
-            2,
-            "new authority confirms exactly once"
+            3,
+            "new authority confirms once after a fenced failed-read retry"
         );
         for _ in 0..2 {
             send.send(Outgoing::Mode(
@@ -775,6 +777,13 @@ mod idle_tests {
         comp.wait("comp.panel.mode", 3).await;
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(comp.count("comp.panel.mode"), 3);
+        broker.bounce();
+        comp.wait("comp.panel.mode", 4).await;
+        settings.wait("settings.get", 4).await;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(comp.count("comp.panel.mode"), 4, "reconnect reports each panel once");
+        assert_eq!(settings.count("settings.get"), 4, "reconnect restores settings once");
+        assert!(comp.count("comp.props.watch") >= 2);
         task.abort();
     }
 }

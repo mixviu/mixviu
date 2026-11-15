@@ -331,13 +331,15 @@ mod tests {
         app.wait("example-app.ui.titlebar.form", 2).await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(app.count("example-app.ui.titlebar.form"), 2);
+        settings.fail_reads.store(1, Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;
-        settings.wait("settings.get", 2).await;
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        settings.wait("settings.get", 3).await;
+        settings.assert_read_retry_deadline();
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
         assert_eq!(
             settings.count("settings.get"),
-            2,
-            "authority recovery reads once"
+            3,
+            "authority recovery reads once after a fenced failed-read retry"
         );
         task.abort();
         forward.abort();
