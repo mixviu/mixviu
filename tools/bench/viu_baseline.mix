@@ -101,12 +101,13 @@ if $work.kind == "scroll" then
       sleep($work.pause_seconds)
     end
     $ended = monotonic()
+    $ended_unix = time()
     $frames_end = rpc($t.service, "ui.stats", {})
-    $run = {started_unix_seconds:$started_unix, ended_unix_seconds:time(), elapsed_seconds:$ended-$started,
+    $run = {started_unix_seconds:$started_unix, ended_unix_seconds:$ended_unix, elapsed_seconds:$ended-$started,
       frames_before:$frames_start, frames_after:$frames_end}
     if $frames_start.available == true and $frames_end.available == true and $frames_start.frames_drawn != nil and $frames_end.frames_drawn != nil then
       $run.frames_drawn = $frames_end.frames_drawn - $frames_start.frames_drawn
-      $run.frames_per_second = $run.frames_drawn / $run.elapsed_seconds
+      if $run.elapsed_seconds > 0 then $run.frames_per_second = $run.frames_drawn / $run.elapsed_seconds end
       if $frames_start.cpu_frame_total_ms != nil and $frames_end.cpu_frame_total_ms != nil then
         $run.cpu_frame_total_ms = $frames_end.cpu_frame_total_ms - $frames_start.cpu_frame_total_ms
         if $run.frames_drawn > 0 then $run.cpu_frame_mean_ms = $run.cpu_frame_total_ms / $run.frames_drawn end
