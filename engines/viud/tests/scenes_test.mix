@@ -2141,6 +2141,28 @@ try
   write_file($ut.."/panel/scene.mix",replace($source,"window: "..$l.document($source).headers.window,""))
   $s=$l.request($s,"upgrade",{})
   check($s.rc==0 and $s.upgrades.panel==nil and $s.scenes.panel.mounted and panel_row($s).position_supported==false and read_file($settings_path)==$panel_settings,"headerless template upgrade degrades position support while preserving user settings")
+  -- Direct reset on a fresh loader must retain the actual settings refusal.
+  -- Its first carry-settings catch rethrows; exercise the shared failure
+  -- writer with that same refusal too, before any upgrade has made its map.
+  $pt = $tmp .. "/fresh-panel-templates"
+  mkdir($pt)
+  install_fixture($pt, "panel", false)
+  write_file($pt .. "/panel/template.conf.mix", "{title:'Panel',settings_schema:{value:{type:'string'}}}\n")
+  write_file($pt .. "/panel/settings.conf.mix", "{value:'default'}\n")
+  for $case in [{name:"oversized", bytes:repeat("x", 262145), code:"SCENES_LIMIT"}, {name:"invalid", bytes:"{value:123}\n", code:"VALIDATION_TYPE"}]
+    $fresh = se_fresh("fresh-panel-" .. $case.name, $pt)
+    $fresh = $l.request($fresh, "install", {template:"panel"})
+    check($fresh.rc == 0 and $fresh.upgrades == nil, "direct panel reset starts without an upgrade map")
+    $path = $fresh.root .. "/panel/settings.conf.mix"
+    write_file($path, $case.bytes)
+    $before = state_bytes($fresh)
+    $code_before = read_file($fresh.root .. "/panel/scene.mix")
+    $fresh = $l.request($fresh, "reset", {name:"panel"})
+    check($fresh.rc == 10 and $fresh.response.error_code == $case.code, "direct panel reset returns the settings refusal: " .. $case.name)
+    check(read_file($path) == $case.bytes and state_bytes($fresh) == $before and read_file($fresh.root .. "/panel/scene.mix") == $code_before, "refused panel reset preserves settings, desired state and scene")
+    $fresh = $l.upgrade_failure($fresh, "panel", $fresh.response.message, $fresh.response.error_code, $fresh.response.context)
+    check($fresh.upgrades.panel.error_code == $case.code and not $fresh.upgrades.panel.retryable, "failure writer initialises its own map with the settings refusal")
+  end
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
 finally
   remove_dir($tmp)

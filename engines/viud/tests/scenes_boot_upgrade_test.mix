@@ -118,7 +118,6 @@ print(json_encode({rc:$rc, value:$v}))
   check(rows().removed.upgrade.retryable == true, "boot flags the scene before removal")
   check(call("scenes", "scenes.remove", {name:"removed"}).rc == 0, "remove while host is absent")
   check(rows().removed == nil, "removed scene leaves inventory")
-  $removal_log = len(read_file($tmp .. "/scenes.log"))
   $children.host = start("fakeshell", $host_script)
   wait_service("fakeshell")
   $done = false
@@ -168,6 +167,17 @@ print(json_encode({rc:$rc, value:$v}))
   sleep(2)
   check(len(split(read_file($tmp .. "/scenes.log"), "scenes upgrade:")) == $before, "no idle retry after exhaustion")
   check(not contains(slice(read_file($tmp .. "/scenes.log"), $removal_log), '"scene":"removed"'), "removed scene has no later retry failures or exhaustion log through the entire ladder")
+  -- Reproduce the window before a separate fs.changed callback refreshes
+  -- state_ok: run the shipped loader with only that callback renamed. All
+  -- retry, command and persistence code stays unchanged. Relative modules
+  -- still come from the real script directory, not this temporary fixture.
+  stop($children.loader)
+  $retry_fixture = replace(read_file($loader_script), 'on fs.changed', 'on fixture.fs.changed')
+  $retry_fixture = replace($retry_fixture, 'require("lib/', 'require("' .. dirname($loader_script) .. '/lib/')
+  write_file($tmp .. "/retry-state.mix", $retry_fixture)
+  $children.loader = start("scenes", $tmp .. "/retry-state.mix")
+  wait_service("scenes")
+  wait_failure(false)
   -- Corrupt durable state while a new retry is pending. The task must record
   -- a diagnostic and terminal flags instead of silently abandoning the work.
   check(call("scenes", "scenes.upgrade").rc == 0, "re-arm before unreadable state")
@@ -181,6 +191,12 @@ print(json_encode({rc:$rc, value:$v}))
     sleep(0.1)
   end
   check($done, "raised retry records diagnostic and stops retryable flags")
+  check($view.state_ok == false, "retry catch commits the unreadable-state guard")
+  for $command in ["scenes.enable", "scenes.remove", "scenes.reset"]
+    $refused = call("scenes", $command, {name:"alpha"})
+    check($refused.rc == 10 and $refused.value.error_code == "SCENES_STATE_UNREADABLE", "mutation after failed retry must refuse: " .. $command)
+    check(read_file($tmp .. "/scenes/state.conf.mix") == "{not valid state", "refused mutation preserves unreadable bytes: " .. $command)
+  end
   check(contains(read_file($tmp .. "/scenes.log"), "scenes upgrade retry failed:"), "raised retry is logged")
   write_file($tmp .. "/scenes/state.conf.mix", $saved)
   print("PASS scenes boot/reload upgrade: late host, edited copy, validation refusal, bounded exhaustion; load_workers=" .. to_string(len($load_children)) .. " load=" .. trim(read_file("/proc/loadavg")))
