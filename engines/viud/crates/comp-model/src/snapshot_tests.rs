@@ -1105,6 +1105,7 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
                 "since_ms": 1_792_108_800_123_u64,
                 "input": {"keyboards": 0, "pointers": 0},
                 "vt_source_available": null,
+                "tty0_available": null,
                 "activation_error": null,
             })
         );
