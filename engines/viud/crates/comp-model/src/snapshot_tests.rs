@@ -1136,6 +1136,27 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
 }
 
 #[test]
+fn session_reports_input_presence_and_seat_failure_even_with_a_working_vt_source() {
+    let mut snapshot = fixture();
+    snapshot.session = Some(SessionSnapshot {
+        input_keyboards: 1,
+        input_pointers: 0,
+        vt_source_available: Some(true),
+        seat_error: Some("libseat creation failed and /dev/tty0 is missing"),
+        ..SessionSnapshot::default()
+    });
+    let (rc, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
+    assert_eq!(rc, 0);
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["input"], json!({"keyboards": 1, "pointers": 0}));
+    assert_eq!(body["activation_error"], "libseat creation failed and /dev/tty0 is missing");
+    snapshot.session.as_mut().unwrap().vt_source_available = Some(false);
+    let (_, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert!(body["activation_error"].as_str().unwrap().starts_with("no active VT source"));
+}
+
+#[test]
 fn info_and_windows_list_bodies_are_comps() {
     let snapshot = fixture();
     let (rc, body) = dispatch_read(&snapshot, "comp.info", &Value::Null);
