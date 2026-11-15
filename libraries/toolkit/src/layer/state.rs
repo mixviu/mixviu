@@ -656,7 +656,8 @@ impl<P: LayerProgram + 'static> State<P> {
         });
         match painted {
             Ok(()) => {
-                self.gpu.record_baseline(&s.ctx, baseline_start.elapsed().as_secs_f64(), &info);
+                self.gpu
+                    .record_baseline(&s.ctx, baseline_start.elapsed().as_secs_f64(), &info);
                 s.has_buffer = true;
                 s.frame_pending = true;
                 s.pending_since = Some(Instant::now());

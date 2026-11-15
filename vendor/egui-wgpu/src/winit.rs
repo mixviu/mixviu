@@ -950,7 +950,7 @@ impl Painter {
             render_state.queue.present(output_frame);
             vsync_sec += start.elapsed().as_secs_f32();
             self.context.data_mut(|data| {
-                let key = egui::Id::new(("ui.stats.present.v1", viewport_id));
+                let key = egui::Id::unique(("ui.stats.present.v1", viewport_id));
                 let serial = data.get_temp_mut_or_default::<u64>(key);
                 *serial += 1;
             });

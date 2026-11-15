@@ -30,7 +30,8 @@ fn inventory()
   if $rc != 0 then raise("BUS", "cannot read local service inventory") end
   $v = $result
   if type($v) == "string" then $v = json_parse($v) end
-  return $v.services ?? $v
+  if type($v) == "map" then return $v.services end
+  return $v
 end
 $hz = run_argv_must(["getconf", "CLK_TCK"])
 $hz = $proc.number(trim($hz))

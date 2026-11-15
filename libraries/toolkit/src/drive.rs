@@ -102,7 +102,12 @@ fn capture_submission_key(viewport: egui::ViewportId) -> egui::Id {
 /// Every drive command under `app`, as `HELP` / `app.describe` list them.
 pub fn describe(app: &str) -> Vec<Value> {
     let command_names = [
-        ("ui.stats", Value::Null, "Passive bounded frame statistics and GPU adapter identity", true),
+        (
+            "ui.stats",
+            Value::Null,
+            "Passive bounded frame statistics and GPU adapter identity",
+            true,
+        ),
         (
             "ui.tree",
             json!({"label":"optional substring","exact":"optional bool: the label must equal it","role":"optional role name"}),

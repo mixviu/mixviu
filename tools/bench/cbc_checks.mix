@@ -2,8 +2,8 @@
 -- Run through CBC, never on a workstation.
 for $cmd in [
   ["mix", "tools/bench/proc_test.mix"],
-  ["cargo", "test", "-p", "toolkit", "--lib", "--features", "layer"],
-  ["cargo", "clippy", "-p", "toolkit", "--features", "layer", "--", "-D", "warnings"],
+  ["cargo", "test", "-p", "toolkit", "--lib", "--features", "layer", "drive"],
+  ["cargo", "clippy", "-p", "toolkit", "-p", "lib-viu", "--features", "toolkit/layer", "--", "-D", "warnings"],
   ["cargo", "check", "-p", "viu"]
 ]
   $r = run_argv($cmd, {timeout:3600, stderr:"stdout"})
