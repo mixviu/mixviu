@@ -11,6 +11,10 @@ pub(super) struct RepaintTimer {
 }
 
 impl RepaintTimer {
+    #[cfg(test)]
+    pub(super) fn is_armed(&self) -> bool {
+        self.token.is_some()
+    }
     pub(super) fn fired(&mut self) {
         self.deadline = None;
         self.token = None;

@@ -16,17 +16,22 @@ struct Axis {
     sample: Option<(Instant, u32)>,
     velocity: f32,
     fling: bool,
+    last_step: Option<Instant>,
 }
 
 #[derive(Default)]
 pub(super) struct Kinetic {
     finger: bool,
     axes: [Axis; 2],
-    last_step: Option<Instant>,
     deadline: Option<Instant>,
 }
 
 impl Kinetic {
+    pub(super) fn restarts(finger: Option<bool>, delta: Vec2, stop: [bool; 2]) -> bool {
+        finger == Some(false)
+            || delta != Vec2::ZERO
+            || (finger.is_some() && !stop.iter().any(|s| *s))
+    }
     pub(super) fn interrupts(event: &egui::Event) -> bool {
         matches!(
             event,
@@ -53,7 +58,7 @@ impl Kinetic {
             self.cancel();
             return;
         }
-        if delta != Vec2::ZERO || (finger.is_some() && !stop.iter().any(|s| *s)) {
+        if Self::restarts(finger, delta, stop) {
             // New movement cancels every coasting axis, retaining only live
             // finger samples. A fresh gesture never inherits fling velocity.
             for axis in &mut self.axes {
@@ -89,10 +94,10 @@ impl Kinetic {
                 }) && axis.velocity.is_finite()
                     && axis.velocity.abs() >= STOP_SPEED;
                 axis.sample = None;
+                axis.last_step = axis.fling.then_some(now);
             }
         }
         if self.axes.iter().any(|a| a.fling) && self.deadline.is_none() {
-            self.last_step = Some(now);
             self.deadline = Some(now + FRAME);
         }
         if stop.iter().any(|s| *s) && self.axes.iter().all(|a| a.sample.is_none()) {
@@ -104,20 +109,18 @@ impl Kinetic {
         if self.deadline.is_none_or(|at| at > now) {
             return Vec2::ZERO;
         }
-        let dt = now
-            .saturating_duration_since(self.last_step.unwrap())
-            .as_secs_f32();
-        let decay = (-dt / DECAY_SECONDS).exp();
         let mut delta = Vec2::ZERO;
         for (i, axis) in self.axes.iter_mut().enumerate() {
             if axis.fling {
+                let dt = now.saturating_duration_since(axis.last_step.unwrap()).as_secs_f32();
+                let decay = (-dt / DECAY_SECONDS).exp();
                 let next = axis.velocity * decay;
                 delta[i] = DECAY_SECONDS * (axis.velocity - next);
                 axis.velocity = next;
                 axis.fling = next.abs() >= STOP_SPEED;
+                axis.last_step = axis.fling.then_some(now);
             }
         }
-        self.last_step = Some(now);
         self.deadline = self.axes.iter().any(|a| a.fling).then_some(now + FRAME);
         delta
     }
@@ -258,5 +261,29 @@ mod tests {
         let mut k = fling(t);
         k.axis(0, t + FRAME, Some(true), Vec2::ZERO, [false; 2]);
         assert_eq!(k.deadline(), None);
+    }
+
+    #[test]
+    fn staggered_axis_stops_decay_from_each_release() {
+        let t = Instant::now();
+        let mut k = Kinetic::default();
+        k.axis(0, t, Some(true), Vec2::splat(10.0), [false; 2]);
+        k.axis(16, t + Duration::from_millis(16), None, Vec2::splat(10.0), [false; 2]);
+        let x_release = t + Duration::from_millis(16);
+        let y_release = t + Duration::from_millis(32);
+        k.axis(16, x_release, None, Vec2::ZERO, [true, false]);
+        k.axis(32, y_release, None, Vec2::ZERO, [false, true]);
+        let at = k.deadline().unwrap();
+        let delta = k.step(at);
+        let distance = |since: Instant, until: Instant| {
+            DECAY_SECONDS * 625.0 * (1.0 - (-(until - since).as_secs_f32() / DECAY_SECONDS).exp())
+        };
+        assert!((delta.x - distance(x_release, at)).abs() < 0.0001);
+        assert!((delta.y - distance(y_release, at)).abs() < 0.0001);
+        assert!(delta.y < delta.x);
+        let next = k.deadline().unwrap();
+        let total = delta + k.step(next);
+        assert!((total.x - distance(x_release, next)).abs() < 0.0001);
+        assert!((total.y - distance(y_release, next)).abs() < 0.0001);
     }
 }
