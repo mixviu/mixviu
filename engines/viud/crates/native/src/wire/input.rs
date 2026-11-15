@@ -124,31 +124,6 @@ fn pad_button_edge(button: u32, pressed: bool) -> world::comp::blank::Edge {
     }
 }
 
-#[cfg(test)]
-mod pad_blank_tests {
-    use super::pad_button_edge;
-    use world::comp::blank::{BlankPolicy, Edge};
-
-    #[test]
-    fn waking_pad_button_and_its_release_do_not_pass_to_bindings() {
-        let mut policy = BlankPolicy::default();
-        policy.blanked = true;
-        assert!(policy.consume_edge(pad_button_edge(3, true)));
-        policy.blanked = false;
-        assert!(policy.consume_edge(pad_button_edge(3, false)));
-        assert!(!policy.consume_edge(pad_button_edge(3, true)));
-    }
-
-    #[test]
-    fn waking_pad_ring_strip_or_dial_does_not_reach_its_action() {
-        let mut policy = BlankPolicy::default();
-        policy.blanked = true;
-        assert!(policy.consume_edge(Edge::Other));
-        policy.blanked = false;
-        assert!(!policy.consume_edge(Edge::Other));
-    }
-}
-
 /// Should the dial zoom now? Reuses the pen input layer's check — true in the Hand
 /// tool (canvas grab OR touch pane) AND while any canvas pan is in progress.
 fn dial_zoom_active(state: &Loop) -> bool {
@@ -374,3 +349,29 @@ pub fn register(
         })
         .unwrap();
 }
+
+#[cfg(test)]
+mod pad_blank_tests {
+    use super::pad_button_edge;
+    use world::comp::blank::{BlankPolicy, Edge};
+
+    #[test]
+    fn waking_pad_button_and_its_release_do_not_pass_to_bindings() {
+        let mut policy = BlankPolicy::default();
+        policy.blanked = true;
+        assert!(policy.consume_edge(pad_button_edge(3, true)));
+        policy.blanked = false;
+        assert!(policy.consume_edge(pad_button_edge(3, false)));
+        assert!(!policy.consume_edge(pad_button_edge(3, true)));
+    }
+
+    #[test]
+    fn waking_pad_ring_strip_or_dial_does_not_reach_its_action() {
+        let mut policy = BlankPolicy::default();
+        policy.blanked = true;
+        assert!(policy.consume_edge(Edge::Other));
+        policy.blanked = false;
+        assert!(!policy.consume_edge(Edge::Other));
+    }
+}
+
