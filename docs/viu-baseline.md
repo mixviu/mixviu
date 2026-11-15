@@ -90,9 +90,12 @@ the CBC harness validates the path; it is not a desktop performance baseline.
 
 ## Headless checks
 
-On a build worker, build `viu`, `viud`, and `mixd`, then run
-`mix tools/bench/proc_test.mix` and `mix tools/bench/headless_test.mix`.
-`MIX_TEST_BIN` can select another binary directory. The smoke test uses the
+Through CBC, build each of `mix`, `viu`, `viud`, and `mixd` separately with
+its own `cargo build -p` command. `mix tools/bench/cbc_headless.mix` does this
+and runs the smoke test with the matching `target/debug/mix`; this avoids
+mixing older Bus clients with a newly built broker. The process parser fixtures
+also run with installed Mix: `mix tools/bench/proc_test.mix`.
+`MIX_TEST_BIN` can select another matching binary directory. The smoke test uses the
 chooser test's `tests/desktop/nested_host_lib.mix` interface: an owned broker,
 headless Weston, nested viud, and a real gallery window entirely inside that
 private headless session. It retains JSON and logs in its printed run directory.
