@@ -630,6 +630,7 @@ async fn own(
             tokio::select! {
                 biased;
                 Some(ack) = restart.recv() => {
+                    renewal = None;
                     requests.abort_all();
                     while requests.join_next().await.is_some() {}
                     let revoked = revoke_for_restart(&mut bootstrap, Some(&connection), record.as_ref().or(last_record.as_ref()), &url, &options).await;
@@ -711,6 +712,7 @@ async fn own(
                             Err(_) => { reporter.report("notice decode: malformed lifecycle hint dropped"); false }
                         };
                         if relevant {
+                            renewal = None;
                             record = None;
                             crate::session_state::commit(crate::session_state::Transition::AttachmentChanged { source: None });
                             pending.get_or_insert(next_attempt);
@@ -745,6 +747,7 @@ async fn own(
         };
         requests.abort_all();
         while requests.join_next().await.is_some() {}
+        drop(renewal);
         drop(refusal);
         crate::session_state::commit(crate::session_state::Transition::AttachmentChanged {
             source: None,
