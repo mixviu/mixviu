@@ -374,4 +374,3 @@ mod pad_blank_tests {
         assert!(!policy.consume_edge(Edge::Other));
     }
 }
-
