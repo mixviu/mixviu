@@ -1396,17 +1396,34 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CaptureLog {
 
 #[tokio::test]
 async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_logs() {
+    const ISOLATED: &str = "MIX_TEST_BOOTSTRAP_LOG_ISOLATED";
+    if std::env::var_os(ISOLATED).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "noded::native_session_tests::p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_logs",
+                "--nocapture",
+            ])
+            .env(ISOLATED, "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{stdout}\n{}", String::from_utf8_lossy(&output.stderr));
+        assert_eq!(stdout.matches("test result:").count(), 1, "{stdout}");
+        assert!(stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"), "{stdout}");
+        return;
+    }
     use bus::native_session::*;
-    use tracing_subscriber::util::SubscriberInitExt;
     let logs = CaptureLog(Default::default());
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
         .with_writer(logs.clone())
         .without_time()
         .finish();
-    // Match production's log-to-tracing bridge, including transport logs.
-    // Depending on a neighbouring test to install it hid payload disclosures.
-    let _guard = subscriber.set_default();
+    // Global bridge state is safe only in this exact-test subprocess.
+    tracing_log::LogTracer::init().expect("fresh process must install the log bridge");
+    let _guard = tracing::subscriber::set_default(subscriber);
+    log::trace!("bootstrap legacy log bridge active");
     tracing::trace!("bootstrap log capture active");
     let broker = Broker::start().await;
     let mut observer = broker.tcp().await;
@@ -1469,6 +1486,7 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
     }
     let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
     assert!(output.contains("bootstrap log capture active"));
+    assert!(output.contains("bootstrap legacy log bridge active"));
     for (field, value) in [
         ("private_key", private.as_str()),
         ("public_key", public.as_str()),

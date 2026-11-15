@@ -42,10 +42,6 @@ clap.workspace = true
 ed25519-dalek.workspace = true
 futures-util.workspace = true
 libc.workspace = true
-# Tungstenite's log TRACE events dump complete frames, including native-session
-# keys and proofs. A runtime filter can be raised, so compile legacy log output
-# below INFO out of the broker (and its mixd host). Native tracing is unaffected.
-log = { version = "0.4", features = ["max_level_info"] }
 mimalloc.workspace = true
 notify.workspace = true
 rand.workspace = true
@@ -61,6 +57,8 @@ tracing-subscriber.workspace = true
 buildinfo.workspace = true
 
 [dev-dependencies]
+log = "0.4"
+tracing-log = "0.2"
 test-broker = { path = "../../libraries/test-broker" }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-tungstenite.workspace = true
