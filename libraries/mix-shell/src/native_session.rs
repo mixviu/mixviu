@@ -621,6 +621,9 @@ async fn own(
         let mut tick = tokio::time::interval(RENEW_CADENCE);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut requests = tokio::task::JoinSet::new();
+        let mut renewal: Option<
+            std::pin::Pin<Box<dyn std::future::Future<Output = Option<SessionRecord>> + Send>>,
+        > = None;
         let mut refusal: Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>> =
             None;
         let reconnect = loop {
@@ -665,11 +668,22 @@ async fn own(
                                 }
                             }
                         }
-                    } else if let Some(bound) = &record {
-                        match renew(&connection, bound).await {
-                            Some(renewed) => record = Some(renewed),
-                            None => { reporter.report("renew: attachment lost; bounded reconnect"); break true; }
-                        }
+                    } else if renewal.is_none() && let Some(bound) = record.clone() {
+                        // A renewal can spend two RPC deadlines contending with
+                        // admissions. Keep receiving/refusing requests and keep
+                        // restart acknowledgements live throughout that wait.
+                        let connection = connection.clone();
+                        renewal = Some(Box::pin(async move { renew(&connection, &bound).await }));
+                    }
+                }
+                renewed = async { renewal.as_mut().unwrap().await }, if renewal.is_some() => {
+                    renewal = None;
+                    match renewed {
+                        // A lifecycle hint may have invalidated the record
+                        // while the renewal was pending. Never undo that hint.
+                        Some(renewed) if record.as_ref().is_some_and(|bound| bound.reference() == renewed.reference()) => record = Some(renewed),
+                        Some(_) => {},
+                        None => { reporter.report("renew: attachment lost; bounded reconnect"); break true; }
                     }
                 }
                 _ = requests.join_next(), if !requests.is_empty() => {}
