@@ -13,11 +13,11 @@
 -- - wallpapers: downloaded from the pinned GitHub release named in
 --   share/wallpapers/manifest.conf.mix (asset name = path with / as --),
 --   following at most 3 redirects, and stored only when size and SHA-256 match
---   the pin; the gold install (/opt/mixos/share/wallpapers, read only) is the
+--   the pin; the gold install (/opt/mix/share/wallpapers, read only) is the
 --   last resort. They are not rebuilt from Commons: the photos are 3840x2160
 --   crops re-encoded at JPEG quality 92 and the generated ones plasma fields
 --   with unrecorded seeds.
--- Gold /opt/mixos/share/assets is the last resort for fonts too. Every byte is
+-- Gold /opt/mix/share/assets is the last resort for fonts too. Every byte is
 -- checked against share/assets/core.conf.mix and share/wallpapers/
 -- manifest.conf.mix before it is stored and again before it is packed.
 --
@@ -39,7 +39,7 @@ $out = $g.rest[0]
 $mix = realpath($g.opts.mix) ?? raise("USAGE", "no such mix: " .. $g.opts.mix)
 mkdir($g.opts.assets, {parents: true})
 $store = realpath($g.opts.assets) ?? raise("ASSETS", "cannot create the asset store at " .. $g.opts.assets)
-$gold = "/opt/mixos/share"
+$gold = "/opt/mix/share"
 if trim(run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"])) != "" then
   raise("DIRTY", "apps.tar is built from a committed tree")
 end

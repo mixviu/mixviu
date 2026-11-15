@@ -49,13 +49,13 @@ elif $mode=="tests" then
   p2_run(["cargo","test","--locked","-p","mixd","-p","noded","-p","settingsd","-p","editd","-p","monitord","-p","dnsd","-p","blobd","-p","hostd","-p","mixtrayd","-p","maild","-p","webd","-p","indexd"])
   p2_run(["cargo","test","--locked","-p","lib-viu","-p","viu"])
   p2_run(["cargo","clippy","--locked","--all-targets","-p","lib-viu","-p","viu"])
-  p2_run(["/opt/mixos/bin/mix","tools/engine_split_smoke.mix",$art.."/mix",$art.."/mixd"])
+  p2_run(["/opt/mix/bin/mix","tools/engine_split_smoke.mix",$art.."/mix",$art.."/mixd"])
 elif $mode=="furniture" then
   p2_run(["env","COMPD_NATIVE_TEST_BINARY="..$art.."/viud","COMPD_INPROC_TEST_BINARY="..$art.."/compd-oracle","cargo","test","--locked","-p","viu","--test","furniture","--","--ignored","--nocapture","--test-threads=1"])
 elif $mode=="native" then
-  p2_run(["/opt/mixos/bin/mix","tools/gate_comp_split.mix","native"])
+  p2_run(["/opt/mix/bin/mix","tools/gate_comp_split.mix","native"])
 elif $mode=="oracle" then
-  p2_run(["/opt/mixos/bin/mix","tools/gate_comp_split.mix","default"])
+  p2_run(["/opt/mix/bin/mix","tools/gate_comp_split.mix","default"])
 else
   raise("USAGE","p2_gate.mix build|tests|furniture|native|oracle")
 end

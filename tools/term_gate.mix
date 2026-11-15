@@ -21,31 +21,31 @@ try
   $mix_exe=realpath($mix_path)
   if $mix_exe==nil or not is_file($mix_exe) then raise("TERM_FIXTURE","missing built Mix test interpreter: "..$mix_path) end
   $test_env={MIX_TEST_MIX_EXE:$mix_exe,MIX_TEST_E2E_EXE:$mix_exe}
-  $mix_tests=run_argv(["/opt/mixos/bin/mix","apps/term/core-test.mix"]);print($mix_tests)
+  $mix_tests=run_argv(["/opt/mix/bin/mix","apps/term/core-test.mix"]);print($mix_tests)
   if not $mix_tests.ok then exit($mix_tests.exit_code ?? 1) end
-  $wire_tests=run_argv(["/opt/mixos/bin/mix","apps/term/wire-test.mix"]);print($wire_tests)
+  $wire_tests=run_argv(["/opt/mix/bin/mix","apps/term/wire-test.mix"]);print($wire_tests)
   if not $wire_tests.ok then exit($wire_tests.exit_code ?? 1) end
-  $model_tests=run_argv(["/opt/mixos/bin/mix","apps/term/model-test.mix"]);print($model_tests)
+  $model_tests=run_argv(["/opt/mix/bin/mix","apps/term/model-test.mix"]);print($model_tests)
   if not $model_tests.ok then exit($model_tests.exit_code ?? 1) end
-  $layout_tests=run_argv(["/opt/mixos/bin/mix","apps/term/protected-layout-test.mix"]);print($layout_tests)
+  $layout_tests=run_argv(["/opt/mix/bin/mix","apps/term/protected-layout-test.mix"]);print($layout_tests)
   if not $layout_tests.ok then exit($layout_tests.exit_code ?? 1) end
-  $bus_tests=run_argv(["/opt/mixos/bin/mix","apps/term/bus-test.mix"]);print($bus_tests)
+  $bus_tests=run_argv(["/opt/mix/bin/mix","apps/term/bus-test.mix"]);print($bus_tests)
   if not $bus_tests.ok then exit($bus_tests.exit_code ?? 1) end
-  $actions_tests=run_argv(["/opt/mixos/bin/mix","apps/term/actions-test.mix"]);print($actions_tests)
+  $actions_tests=run_argv(["/opt/mix/bin/mix","apps/term/actions-test.mix"]);print($actions_tests)
   if not $actions_tests.ok then exit($actions_tests.exit_code ?? 1) end
-  $font_tests=run_argv(["/opt/mixos/bin/mix","apps/term/font-persistence-test.mix"]);print($font_tests)
+  $font_tests=run_argv(["/opt/mix/bin/mix","apps/term/font-persistence-test.mix"]);print($font_tests)
   if not $font_tests.ok then exit($font_tests.exit_code ?? 1) end
-  $clipboard_tests=run_argv(["/opt/mixos/bin/mix","apps/term/clipboard-test.mix"]);print($clipboard_tests)
+  $clipboard_tests=run_argv(["/opt/mix/bin/mix","apps/term/clipboard-test.mix"]);print($clipboard_tests)
   if not $clipboard_tests.ok then exit($clipboard_tests.exit_code ?? 1) end
-  $show_tests=run_argv(["/opt/mixos/bin/mix","apps/term/show-test.mix"]);print($show_tests)
+  $show_tests=run_argv(["/opt/mix/bin/mix","apps/term/show-test.mix"]);print($show_tests)
   if not $show_tests.ok then exit($show_tests.exit_code ?? 1) end
-  $discovery_tests=run_argv(["/opt/mixos/bin/mix","apps/term/discovery-test.mix"]);print($discovery_tests)
+  $discovery_tests=run_argv(["/opt/mix/bin/mix","apps/term/discovery-test.mix"]);print($discovery_tests)
   if not $discovery_tests.ok then exit($discovery_tests.exit_code ?? 1) end
-  $find_tests=run_argv(["/opt/mixos/bin/mix","apps/term/find-test.mix"]);print($find_tests)
+  $find_tests=run_argv(["/opt/mix/bin/mix","apps/term/find-test.mix"]);print($find_tests)
   if not $find_tests.ok then exit($find_tests.exit_code ?? 1) end
-  $notify_tests=run_argv(["/opt/mixos/bin/mix","apps/term/notifications-test.mix"]);print($notify_tests)
+  $notify_tests=run_argv(["/opt/mix/bin/mix","apps/term/notifications-test.mix"]);print($notify_tests)
   if not $notify_tests.ok then exit($notify_tests.exit_code ?? 1) end
-  $startup_tests=run_argv(["/opt/mixos/bin/mix","apps/term/startup-policy-test.mix"]);print($startup_tests)
+  $startup_tests=run_argv(["/opt/mix/bin/mix","apps/term/startup-policy-test.mix"]);print($startup_tests)
   if not $startup_tests.ok then exit($startup_tests.exit_code ?? 1) end
   $bootstrap_tests=run_argv($bootstrap_argv,{timeout:1800,max_output:16000000,env:$test_env});print($bootstrap_tests)
   if not $bootstrap_tests.ok then exit($bootstrap_tests.exit_code ?? 1) end
@@ -56,7 +56,7 @@ try
     if not $r.ok then $rc=$r.exit_code ?? 124;break end
   end
   if $rc==0 then
-    $foreign=run_argv($targets.prepare_command(["/opt/mixos/bin/mix","tools/foreign_gate.mix","--locked"],$prepare),{timeout:1800,max_output:16000000});print($foreign)
+    $foreign=run_argv($targets.prepare_command(["/opt/mix/bin/mix","tools/foreign_gate.mix","--locked"],$prepare),{timeout:1800,max_output:16000000});print($foreign)
     if not $foreign.ok then $rc=$foreign.exit_code ?? 124 end
   end
   if $rc==0 then
