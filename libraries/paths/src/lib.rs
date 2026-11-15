@@ -5,6 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
 pub mod env;
+mod dev_marker;
 
 pub type Result<T> = std::result::Result<T, String>;
 pub const ROOT_VAR: &str = env::ROOT;

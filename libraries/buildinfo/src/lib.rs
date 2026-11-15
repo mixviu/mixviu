@@ -209,6 +209,9 @@ macro_rules! build_info {
         static MIX_BUILDINFO_MARKER: ::core::option::Option<&str> =
             $crate::paths::stamp!(BUILDINFO_MARKER);
         let _ = ::core::hint::black_box(&MIX_BUILDINFO_MARKER);
+        #[used]
+        static DEV_SNAPSHOT_CAPABILITY: &str = $crate::paths::env::DEV_SNAPSHOT_CAPABILITY;
+        let _ = ::core::hint::black_box(&DEV_SNAPSHOT_CAPABILITY);
         let info = $crate::BuildInfo {
             pkg: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),
@@ -218,7 +221,7 @@ macro_rules! build_info {
             build_time: $crate::paths::stamp!(BUILD_TIME).unwrap_or("unknown"),
         };
         if info.git_sha_full != "unknown" {
-            $crate::paths::env::register_snapshot(info.git_sha_full);
+            $crate::paths::env::register_member_snapshot(info.pkg, info.git_sha_full);
         }
         info
     }};

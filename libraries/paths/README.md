@@ -24,7 +24,8 @@ in a `bin` directory (a cargo tree) has no installed defaults, so a test
 binary never reads a host install's file.
 
 `stamp!` expands at the caller's compile site; buildinfo uses it for consumer
-provenance and registers the binary's full SHA with `env::register_snapshot`
+provenance and registers the binary's package name and full SHA with
+`env::register_member_snapshot`
 when `build_info!` runs. Every engine and service does that first thing in
 `main`. The first registration wins. A registration after the first
 installed-default read panics in debug builds (that read skipped the commit
@@ -71,3 +72,53 @@ Security: `env.mx` is trusted like `layout.mx`. It must be installed
 root-owned, mode 0644, in a root-owned prefix. The commit check is a
 consistency check (binaries and defaults from one snapshot), not integrity:
 anyone who can write the file can write a matching commit.
+
+## `DEV.json`, schema 1 (dev snapshot capability)
+
+This is the marker contract for installers, including `dev_ship`. It grants
+only a named development member permission to read its base gold's `env.mx`.
+It does not grant integrity or authorise an install.
+
+```json
+{"schema":1,"gold":"0123456789abcdef0123456789abcdef01234567","members":{"viu":"fedcba9876543210fedcba9876543210fedcba98"}}
+```
+
+The marker is `<executable-prefix>/DEV.json`, alongside `env.mx`. An
+environment variable or flag cannot select another marker. If `MIX_PREFIX`
+redirects defaults away from the executable's prefix, the exception is
+refused. Executable symlinks resolve to the real binary before prefix lookup.
+
+The file is a restricted JSON object, at most 64 KiB of UTF-8. Exactly three
+fields are required, in any order: numeric `schema: 1`, string `gold`, and
+non-empty object `members`. `gold` and every member value are full, lower-case
+40-hex commits. Member keys match `[a-z][a-z0-9-]*` and identify the binary's
+compile-time package name (the release table's binary/package names currently
+agree). Each value is that member's own build commit. List only replaced
+binaries; app archives do not belong here. Strings use unescaped printable
+ASCII only. JSON whitespace is allowed; duplicate keys, unknown fields,
+comments, escapes, trailing commas/data, a BOM and other schema versions are
+refused. Keep timestamps, receipts and app selection in the private receipt,
+not this marker. Write atomically with the same ownership and trust as env.mx.
+
+The normal stamp-equals-snapshot path never opens the marker. Only a mismatch
+reads it. Acceptance requires both `gold == env.mx.commit` and
+`members[registered_member] == registered_stamp`. Old `register_snapshot`
+callers have no member identity and remain strict. Missing markers preserve
+the existing `SnapshotMismatch` result and diagnostic. A malformed, unreadable
+or non-matching marker returns the same error and adds a stderr diagnostic
+naming the marker. Accepted exceptions emit one stderr startup diagnostic at
+the first installed-default read, cached once per process, naming member,
+build commit, base commit and marker path. Service stderr belongs in its log.
+
+`build_info!` retains the exact ASCII token `mixviu-dev-snapshot:1` in the
+artifact. `dev_ship` must scan each built binary for that token (for example,
+`rg -a -F -q mixviu-dev-snapshot:1 ARTIFACT`) and verify the matching embedded
+buildinfo full SHA before installing it. This requires no engine execution,
+display or desk access. Absence refuses engine replacement across snapshots;
+older binaries cannot use this contract. Rebase branch builds onto a commit
+containing this capability. A source-file check alone is insufficient.
+
+The paths integration test compiles two small binaries with different fixed
+build stamps against the real reader, starts both under one temporary prefix,
+and checks acceptance, strict gold behaviour, logging and refusal controls.
+Run it with the focused paths tests on a build worker.
