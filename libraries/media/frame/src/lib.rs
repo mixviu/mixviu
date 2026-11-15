@@ -20,124 +20,232 @@ pub struct Yuv420 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvalidFrame;
 impl std::fmt::Display for InvalidFrame {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("invalid frame dimensions or storage") }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("invalid frame dimensions or storage")
+    }
 }
 impl std::error::Error for InvalidFrame {}
 
 fn size(w: usize, h: usize) -> Result<usize, InvalidFrame> {
-    if w == 0 || h == 0 { return Err(InvalidFrame); }
-    w.checked_mul(h).and_then(|n| n.checked_mul(4)).ok_or(InvalidFrame)
+    if w == 0 || h == 0 {
+        return Err(InvalidFrame);
+    }
+    w.checked_mul(h)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or(InvalidFrame)
 }
 
 impl Bgra {
     pub fn new(width: usize, height: usize, pixels: Vec<u8>) -> Result<Self, InvalidFrame> {
-        if pixels.len() != size(width, height)? { return Err(InvalidFrame); }
-        Ok(Self { width, height, pixels })
+        if pixels.len() != size(width, height)? {
+            return Err(InvalidFrame);
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels,
+        })
     }
     pub fn solid(width: usize, height: usize, colour: [u8; 4]) -> Result<Self, InvalidFrame> {
         let mut pixels = vec![0; size(width, height)?];
-        for p in pixels.chunks_exact_mut(4) { p.copy_from_slice(&colour); }
+        for p in pixels.chunks_exact_mut(4) {
+            p.copy_from_slice(&colour);
+        }
         Self::new(width, height, pixels)
     }
-    pub fn width(&self) -> usize { self.width }
-    pub fn height(&self) -> usize { self.height }
-    pub fn pixels(&self) -> &[u8] { &self.pixels }
+    pub fn width(&self) -> usize {
+        self.width
+    }
+    pub fn height(&self) -> usize {
+        self.height
+    }
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
+    }
     /// Nearest-neighbour, top-left aligned integer mapping. Preserves UI colours.
     pub fn scale(&self, width: usize, height: usize) -> Result<Self, InvalidFrame> {
         let mut out = Self::solid(width, height, [0; 4])?;
-        for y in 0..height { for x in 0..width {
-            let src = ((y as u128 * self.height as u128 / height as u128) as usize * self.width
-                + (x as u128 * self.width as u128 / width as u128) as usize) * 4;
-            out.pixels[(y*width+x)*4..(y*width+x+1)*4].copy_from_slice(&self.pixels[src..src+4]);
-        }}
+        for y in 0..height {
+            for x in 0..width {
+                let src = ((y as u128 * self.height as u128 / height as u128) as usize
+                    * self.width
+                    + (x as u128 * self.width as u128 / width as u128) as usize)
+                    * 4;
+                out.pixels[(y * width + x) * 4..(y * width + x + 1) * 4]
+                    .copy_from_slice(&self.pixels[src..src + 4]);
+            }
+        }
         Ok(out)
     }
-    pub fn pad(&self, width: usize, height: usize, x: usize, y: usize, colour: [u8;4]) -> Result<Self, InvalidFrame> {
-        if x.checked_add(self.width).is_none_or(|v| v > width) || y.checked_add(self.height).is_none_or(|v| v > height) { return Err(InvalidFrame); }
+    pub fn pad(
+        &self,
+        width: usize,
+        height: usize,
+        x: usize,
+        y: usize,
+        colour: [u8; 4],
+    ) -> Result<Self, InvalidFrame> {
+        if x.checked_add(self.width).is_none_or(|v| v > width)
+            || y.checked_add(self.height).is_none_or(|v| v > height)
+        {
+            return Err(InvalidFrame);
+        }
         let mut out = Self::solid(width, height, colour)?;
         for row in 0..self.height {
-            let dst = ((y+row)*width+x)*4;
-            out.pixels[dst..dst+self.width*4].copy_from_slice(&self.pixels[row*self.width*4..(row+1)*self.width*4]);
+            let dst = ((y + row) * width + x) * 4;
+            out.pixels[dst..dst + self.width * 4]
+                .copy_from_slice(&self.pixels[row * self.width * 4..(row + 1) * self.width * 4]);
         }
         Ok(out)
     }
     /// Straight-alpha source-over, same-sized frames; rounded integer arithmetic.
     pub fn blend(&self, foreground: &Self) -> Result<Self, InvalidFrame> {
-        if (self.width,self.height) != (foreground.width,foreground.height) { return Err(InvalidFrame); }
+        if (self.width, self.height) != (foreground.width, foreground.height) {
+            return Err(InvalidFrame);
+        }
         let mut out = self.clone();
-        for ((b,f),o) in self.pixels.chunks_exact(4).zip(foreground.pixels.chunks_exact(4)).zip(out.pixels.chunks_exact_mut(4)) {
-            let a = u32::from(f[3]); let ba = u32::from(b[3]);
-            let den = a*255 + ba*(255-a);
-            for c in 0..3 { o[c] = (u32::from(f[c])*a*255 + u32::from(b[c])*ba*(255-a)+den/2).checked_div(den).unwrap_or(0) as u8; }
-            o[3] = ((den+127)/255) as u8;
+        for ((b, f), o) in self
+            .pixels
+            .chunks_exact(4)
+            .zip(foreground.pixels.chunks_exact(4))
+            .zip(out.pixels.chunks_exact_mut(4))
+        {
+            let a = u32::from(f[3]);
+            let ba = u32::from(b[3]);
+            let den = a * 255 + ba * (255 - a);
+            for c in 0..3 {
+                o[c] = (u32::from(f[c]) * a * 255 + u32::from(b[c]) * ba * (255 - a) + den / 2)
+                    .checked_div(den)
+                    .unwrap_or(0) as u8;
+            }
+            o[3] = ((den + 127) / 255) as u8;
         }
         Ok(out)
     }
     /// Linear interpolation in encoded BGRA, weight 0..=255 (not linear light).
     pub fn crossfade(&self, other: &Self, weight: u8) -> Result<Self, InvalidFrame> {
-        if (self.width,self.height) != (other.width,other.height) { return Err(InvalidFrame); }
-        let mut out = self.clone(); let w = u32::from(weight);
-        for ((a,b),o) in self.pixels.iter().zip(&other.pixels).zip(&mut out.pixels) { *o = ((u32::from(*a)*(255-w)+u32::from(*b)*w+127)/255) as u8; }
+        if (self.width, self.height) != (other.width, other.height) {
+            return Err(InvalidFrame);
+        }
+        let mut out = self.clone();
+        let w = u32::from(weight);
+        for ((a, b), o) in self.pixels.iter().zip(&other.pixels).zip(&mut out.pixels) {
+            *o = ((u32::from(*a) * (255 - w) + u32::from(*b) * w + 127) / 255) as u8;
+        }
         Ok(out)
     }
     /// Alpha is ignored: composite onto the intended background before conversion.
     /// Chroma is a 2x2 box at (0.5,0.5); odd edges replicate the last pixel.
     pub fn to_yuv420(&self) -> Yuv420 {
-        let mut out = Yuv420 { width:self.width, height:self.height, y:Vec::with_capacity(self.width*self.height), u:Vec::new(), v:Vec::new() };
-        fn matrix(r:f64,g:f64,b:f64) -> [f64;3] {
-            [16.0+(0.2126*r+0.7152*g+0.0722*b)*219.0/255.0,
-             128.0+(-0.114572106*r-0.385427894*g+0.5*b)*224.0/255.0,
-             128.0+(0.5*r-0.454152908*g-0.045847092*b)*224.0/255.0]
+        let mut out = Yuv420 {
+            width: self.width,
+            height: self.height,
+            y: Vec::with_capacity(self.width * self.height),
+            u: Vec::new(),
+            v: Vec::new(),
+        };
+        fn matrix(r: f64, g: f64, b: f64) -> [f64; 3] {
+            [
+                16.0 + (0.2126 * r + 0.7152 * g + 0.0722 * b) * 219.0 / 255.0,
+                128.0 + (-0.114572106 * r - 0.385427894 * g + 0.5 * b) * 224.0 / 255.0,
+                128.0 + (0.5 * r - 0.454152908 * g - 0.045847092 * b) * 224.0 / 255.0,
+            ]
         }
-        for p in self.pixels.chunks_exact(4) { out.y.push(matrix(p[2] as f64,p[1] as f64,p[0] as f64)[0].round() as u8); }
-        for y in (0..self.height).step_by(2) { for x in (0..self.width).step_by(2) {
-            let mut rgb = [0.0;3];
-            for dy in 0..2 { for dx in 0..2 {
-                let i = (((y+dy).min(self.height-1))*self.width+(x+dx).min(self.width-1))*4;
-                for (c, value) in rgb.iter_mut().enumerate() { *value += self.pixels[i+2-c] as f64/4.0; }
-            }}
-            let m = matrix(rgb[0],rgb[1],rgb[2]); out.u.push(m[1].round() as u8); out.v.push(m[2].round() as u8);
-        }}
+        for p in self.pixels.chunks_exact(4) {
+            out.y
+                .push(matrix(p[2] as f64, p[1] as f64, p[0] as f64)[0].round() as u8);
+        }
+        for y in (0..self.height).step_by(2) {
+            for x in (0..self.width).step_by(2) {
+                let mut rgb = [0.0; 3];
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let i = (((y + dy).min(self.height - 1)) * self.width
+                            + (x + dx).min(self.width - 1))
+                            * 4;
+                        for (c, value) in rgb.iter_mut().enumerate() {
+                            *value += self.pixels[i + 2 - c] as f64 / 4.0;
+                        }
+                    }
+                }
+                let m = matrix(rgb[0], rgb[1], rgb[2]);
+                out.u.push(m[1].round() as u8);
+                out.v.push(m[2].round() as u8);
+            }
+        }
         out
     }
 }
 
 impl Yuv420 {
-    pub fn validate(&self) -> Result<(),InvalidFrame> {
-        size(self.width,self.height)?;
-        let c = self.width.div_ceil(2)*self.height.div_ceil(2);
-        if self.y.len()!=self.width*self.height || self.u.len()!=c || self.v.len()!=c { return Err(InvalidFrame); }
+    pub fn validate(&self) -> Result<(), InvalidFrame> {
+        size(self.width, self.height)?;
+        let c = self.width.div_ceil(2) * self.height.div_ceil(2);
+        if self.y.len() != self.width * self.height || self.u.len() != c || self.v.len() != c {
+            return Err(InvalidFrame);
+        }
         Ok(())
     }
 }
 
 /// A hold shares immutable storage; duration/timestamps belong to the caller.
-pub fn still_hold(frame: Arc<Bgra>, count: usize) -> impl Iterator<Item=Arc<Bgra>> {
-    std::iter::repeat_n(frame,count)
+pub fn still_hold(frame: Arc<Bgra>, count: usize) -> impl Iterator<Item = Arc<Bgra>> {
+    std::iter::repeat_n(frame, count)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test] fn primaries_and_odd_edges() {
-        for (bgra,y,u,v) in [([0,0,0,255],16,128,128),([255,255,255,255],235,128,128),([0,0,255,255],63,102,240),([0,255,0,255],173,42,26),([255,0,0,255],32,240,118)] {
-            let f=Bgra::solid(3,1,bgra).unwrap().to_yuv420();
-            assert_eq!(f.y,vec![y;3]); assert_eq!(f.u,vec![u;2]); assert_eq!(f.v,vec![v;2]); f.validate().unwrap();
+    #[test]
+    fn primaries_and_odd_edges() {
+        for (bgra, y, u, v) in [
+            ([0, 0, 0, 255], 16, 128, 128),
+            ([255, 255, 255, 255], 235, 128, 128),
+            ([0, 0, 255, 255], 63, 102, 240),
+            ([0, 255, 0, 255], 173, 42, 26),
+            ([255, 0, 0, 255], 32, 240, 118),
+        ] {
+            let f = Bgra::solid(3, 1, bgra).unwrap().to_yuv420();
+            assert_eq!(f.y, vec![y; 3]);
+            assert_eq!(f.u, vec![u; 2]);
+            assert_eq!(f.v, vec![v; 2]);
+            f.validate().unwrap();
         }
     }
-    #[test] fn box_filter() {
-        let f=Bgra::new(2,2,vec![0,0,255,255,0,255,0,255,255,0,0,255,255,255,255,255]).unwrap().to_yuv420();
-        assert_eq!(f.y,[63,173,32,235]); assert_eq!(f.u,[128]); assert_eq!(f.v,[128]);
+    #[test]
+    fn box_filter() {
+        let f = Bgra::new(
+            2,
+            2,
+            vec![
+                0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255,
+            ],
+        )
+        .unwrap()
+        .to_yuv420();
+        assert_eq!(f.y, [63, 173, 32, 235]);
+        assert_eq!(f.u, [128]);
+        assert_eq!(f.v, [128]);
     }
-    #[test] fn operations() {
-        let b=Bgra::solid(1,1,[0,0,0,255]).unwrap(); let f=Bgra::solid(1,1,[255,0,0,128]).unwrap();
-        assert_eq!(b.blend(&f).unwrap().pixels(),[128,0,0,255]);
-        assert_eq!(b.crossfade(&f,255).unwrap(),f);
-        assert_eq!(b.crossfade(&f,0).unwrap(),b);
-        assert_eq!(b.crossfade(&f,128).unwrap().pixels(),[128,0,0,191]);
-        assert_eq!(f.scale(2,1).unwrap().pixels(),[255,0,0,128,255,0,0,128]);
-        assert_eq!(f.pad(2,1,1,0,[0;4]).unwrap().pixels(),[0,0,0,0,255,0,0,128]);
-        let a=Arc::new(f); assert!(still_hold(a.clone(),2).all(|f|Arc::ptr_eq(&a,&f)));
-        assert!(b.pad(1,1,1,0,[0;4]).is_err()); assert!(Bgra::new(0,1,vec![]).is_err());
+    #[test]
+    fn operations() {
+        let b = Bgra::solid(1, 1, [0, 0, 0, 255]).unwrap();
+        let f = Bgra::solid(1, 1, [255, 0, 0, 128]).unwrap();
+        assert_eq!(b.blend(&f).unwrap().pixels(), [128, 0, 0, 255]);
+        assert_eq!(b.crossfade(&f, 255).unwrap(), f);
+        assert_eq!(b.crossfade(&f, 0).unwrap(), b);
+        assert_eq!(b.crossfade(&f, 128).unwrap().pixels(), [128, 0, 0, 191]);
+        assert_eq!(
+            f.scale(2, 1).unwrap().pixels(),
+            [255, 0, 0, 128, 255, 0, 0, 128]
+        );
+        assert_eq!(
+            f.pad(2, 1, 1, 0, [0; 4]).unwrap().pixels(),
+            [0, 0, 0, 0, 255, 0, 0, 128]
+        );
+        let a = Arc::new(f);
+        assert!(still_hold(a.clone(), 2).all(|f| Arc::ptr_eq(&a, &f)));
+        assert!(b.pad(1, 1, 1, 0, [0; 4]).is_err());
+        assert!(Bgra::new(0, 1, vec![]).is_err());
     }
 }
