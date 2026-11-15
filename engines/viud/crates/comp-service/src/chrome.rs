@@ -308,9 +308,23 @@ pub(crate) async fn run(
             .chain(presentation_retry.filter(|_| generation.is_some()))
             .min();
         #[cfg(test)]
-        if !registry_dirty && bars_dirty.is_empty() && deadline.is_none() && consumer.pending().is_none() {
+        if !registry_dirty
+            && bars_dirty.is_empty()
+            && deadline.is_none()
+            && consumer.pending().is_none()
+        {
             for command in checkpoints.drain(..) {
-                client.respond_parts(command.generation, &command.from, &command.command, command.id.as_deref(), 0, "{\"settled\":true}").await.unwrap();
+                client
+                    .respond_parts(
+                        command.generation,
+                        &command.from,
+                        &command.command,
+                        command.id.as_deref(),
+                        0,
+                        "{\"settled\":true}",
+                    )
+                    .await
+                    .unwrap();
             }
         }
         tokio::select! {
@@ -477,7 +491,10 @@ mod tests {
         settings.wait("settings.get", 1).await;
         app.wait("example-app.ui.titlebar.form", 1).await;
         settings.checkpoint("comp-idle").await;
-        tokio::join!(settings.assert_idle(std::time::Duration::from_millis(1200)), app.assert_idle(std::time::Duration::from_millis(1200)));
+        tokio::join!(
+            settings.assert_idle(std::time::Duration::from_millis(1200)),
+            app.assert_idle(std::time::Duration::from_millis(1200))
+        );
         assert_eq!(settings.count("settings.get"), 1);
         assert_eq!(
             observer.registry_reads("comp-idle"),
@@ -505,13 +522,21 @@ mod tests {
         app.checkpoint("comp-idle").await;
         assert_eq!(app.count("example-app.ui.titlebar.form"), 2);
         let _newcomer = idle_bus::Service::start(&broker, "late-app").await;
-        hints.send(idle_bus::Service::registration_hint(&["example-app", "late-app"])).await.unwrap();
+        hints
+            .send(idle_bus::Service::registration_hint(&[
+                "example-app",
+                "late-app",
+            ]))
+            .await
+            .unwrap();
         app.checkpoint("comp-idle").await;
         tokio::time::timeout(std::time::Duration::from_secs(8), async {
             while observer.registry_reads("comp-idle") < 2 {
                 tokio::task::yield_now().await;
             }
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         assert_eq!(
             observer.registry_reads("comp-idle"),
             2,
@@ -526,7 +551,14 @@ mod tests {
         drop(app);
         app = idle_bus::Service::start(&broker, "example-app").await;
         let _coalesced = idle_bus::Service::start(&broker, "coalesced-app").await;
-        hints.send(idle_bus::Service::registration_hint(&["example-app", "late-app", "coalesced-app"])).await.unwrap();
+        hints
+            .send(idle_bus::Service::registration_hint(&[
+                "example-app",
+                "late-app",
+                "coalesced-app",
+            ]))
+            .await
+            .unwrap();
         app.wait("example-app.ui.titlebar.form", 1).await;
         app.checkpoint("comp-idle").await;
         assert_eq!(
@@ -552,17 +584,36 @@ mod tests {
         // registry hint (the forwarder deliberately filters real ones).
         tokio::time::timeout(std::time::Duration::from_secs(8), async {
             loop {
-                if let Ok(names) = settings.client.call("noded", "noded.props.get", json!({"path":"services.registered"})).await
-                    && names.as_array().is_some_and(|names| names.contains(&json!("example-app"))) {
+                if let Ok(names) = settings
+                    .client
+                    .call(
+                        "noded",
+                        "noded.props.get",
+                        json!({"path":"services.registered"}),
+                    )
+                    .await
+                    && names
+                        .as_array()
+                        .is_some_and(|names| names.contains(&json!("example-app")))
+                {
                     break;
                 }
                 tokio::task::yield_now().await;
             }
-        }).await.unwrap();
-        hints.send(idle_bus::Service::registration_hint(&["example-app"])).await.unwrap();
+        })
+        .await
+        .unwrap();
+        hints
+            .send(idle_bus::Service::registration_hint(&["example-app"]))
+            .await
+            .unwrap();
         app.wait("example-app.ui.titlebar.form", forms + 1).await;
         app.checkpoint("comp-idle").await;
-        assert_eq!(app.count("example-app.ui.titlebar.form"), forms + 1, "recovery presentation completed");
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            forms + 1,
+            "recovery presentation completed"
+        );
         assert_eq!(
             settings.count("settings.get"),
             4,

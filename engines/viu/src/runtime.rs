@@ -848,9 +848,21 @@ async fn worker_connected(
             .min();
         #[cfg(test)]
         if !comp_dirty && deadline.is_none() && consumer.pending().is_none() {
-            for checkpoint in outgoing_checkpoints.drain(..) { let _ = checkpoint.send(()); }
+            for checkpoint in outgoing_checkpoints.drain(..) {
+                let _ = checkpoint.send(());
+            }
             for command in checkpoints.drain(..) {
-                client.respond_parts(command.generation, &command.from, &command.command, command.id.as_deref(), 0, "{\"settled\":true}").await.unwrap();
+                client
+                    .respond_parts(
+                        command.generation,
+                        &command.from,
+                        &command.command,
+                        command.id.as_deref(),
+                        0,
+                        "{\"settled\":true}",
+                    )
+                    .await
+                    .unwrap();
             }
         }
         tokio::select! {
@@ -1390,7 +1402,10 @@ mod idle_tests {
         settings.wait("settings.get", 1).await;
         comp.wait("comp.panel.mode", 1).await;
         settings.checkpoint("shell").await;
-        tokio::join!(settings.assert_idle(Duration::from_millis(1200)), comp.assert_idle(Duration::from_millis(1200)));
+        tokio::join!(
+            settings.assert_idle(Duration::from_millis(1200)),
+            comp.assert_idle(Duration::from_millis(1200))
+        );
         assert_eq!(settings.count("settings.get"), 1);
         assert_eq!(comp.count("comp.props.watch"), 1);
         assert_eq!(comp.count("comp.props.get"), 1);
@@ -1432,7 +1447,10 @@ mod idle_tests {
         }
         let (checkpoint, complete) = tokio::sync::oneshot::channel();
         send.send(Outgoing::Checkpoint(checkpoint)).unwrap();
-        tokio::time::timeout(Duration::from_secs(20), complete).await.unwrap().unwrap();
+        tokio::time::timeout(Duration::from_secs(20), complete)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(comp.count("comp.panel.mode"), 1, "same mode is silent");
         send.send(Outgoing::Mode(
             "example".into(),

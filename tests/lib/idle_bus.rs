@@ -182,7 +182,13 @@ impl Service {
     pub async fn assert_idle(&self, duration: Duration) {
         let mut changes = self.changes.clone();
         changes.borrow_and_update();
-        assert!(tokio::time::timeout(duration, changes.changed()).await.is_err(), "unexpected idle request: {:?}", self.calls.lock().unwrap());
+        assert!(
+            tokio::time::timeout(duration, changes.changed())
+                .await
+                .is_err(),
+            "unexpected idle request: {:?}",
+            self.calls.lock().unwrap()
+        );
     }
 
     #[allow(dead_code)] // Shared fixture; only chrome injects names-only hints.
