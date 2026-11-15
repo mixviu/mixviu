@@ -1,0 +1,147 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Shipped panel on the existing private-Bus behaviour harness. Instrument the
+-- runtime adapter so even rejected calls to an absent tray are counted.
+$root = realpath(dirname(realpath($0)) .. "/../../..")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIX_TEST_MIX_EXE", "/opt/mix/bin/mix")
+$noded = env("MIX_TEST_NODED_EXE", "/opt/mix/bin/noded")
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/panel-idle.XXXXXXXX"]))
+$bus = nil
+$pids = []
+$tray_pid = nil
+$vars = {}
+fn check($ok, $message)
+  if not $ok then raise("PANEL_IDLE_TEST", $message) end
+end
+fn start($name, $path)
+  $pid = spawn([$mix, "--serve", $path, "--name", $name], {detach:true, clear_env:true, env:$vars,
+    stdout:{file:$tmp .. "/" .. $name .. ".log"}, stderr:"stdout"})
+  push($pids, $pid)
+  return $pid
+end
+fn stop($pid)
+  if $pid == nil or not process_alive($pid) then return end
+  $_ = kill($pid, 15)
+  for $i = 1 to 40
+    if not process_alive($pid) then return end
+    sleep(0.05)
+  end
+  $_ = kill($pid, 9)
+end
+fn call($to, $command)
+  return json_parse(run_argv_must([$mix, $tmp .. "/client.mix", $to, $command], {clear_env:true,env:$vars,timeout:10}))
+end
+fn wait_service($name)
+  for $i = 1 to 100
+    if call($name, "INFO").rc == 0 then return end
+    sleep(0.05)
+  end
+  raise("PANEL_IDLE_TEST", "service did not start: " .. $name)
+end
+fn tray_calls()
+  $n = 0
+  for $line in split(read_file($tmp .. "/calls"), "\n")
+    if $line != "" and json_parse($line).command == "tray.list" then $n = $n + 1 end
+  end
+  return $n
+end
+fn wait_tray($expected)
+  for $i = 1 to 100
+    if tray_calls() >= $expected then break end
+    sleep(0.05)
+  end
+  sleep(0.3)
+  check(tray_calls() == $expected, "expected exactly " .. to_string($expected) .. " tray reads, got " .. to_string(tray_calls()))
+end
+try
+  mkdir($tmp .. "/home")
+  write_file($tmp .. "/calls", "")
+  $_ = run_argv_must(["cp", "-r", $root .. "/share/scenes/lib", $tmp .. "/lib"])
+  $path = $tmp .. "/lib/runtime.mix"
+  write_file($path, replace_must(read_file($path), "fn call($target, $command, $args)\n",
+    "fn call($target, $command, $args)\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command}) .. \"\\n\")\n"))
+  write_file($tmp .. "/client.mix", 'send $1 $2 body="{}" timeout=5
+print(json_encode({rc:$rc,value:$result}))
+')
+  write_file($tmp .. "/stub.mix", 'on shell.scene.describe
+  reply(0, json_encode([{path:"flow",enum:["horizontal"]},{path:"hidden",type:"bool"}]))
+end
+on scenes.ready
+  reply(0,"{}")
+end
+on scenes.model
+  write_file(env("FIXTURE_DIR") .. "/model", json_encode($event.args.value))
+  reply(0,"{}")
+end
+on scenes.list
+  reply(0, json_encode({scenes:[]}))
+end
+on comp.props.watch
+  reply(0,"{}")
+end
+on comp.windows.list
+  reply(0,json_encode({windows:[]}))
+end
+on comp.workspaces.list
+  reply(0,json_encode({count:1,current:1,list:[]}))
+end
+on apps.icon
+  reply(0,json_encode({path:""}))
+end
+on notify.list
+  reply(0,"[]")
+end
+')
+  write_file($tmp .. "/tray.mix", 'on tray.list
+  reply(0,json_encode({items:[]}))
+end
+on change
+  $_ = publish("tray-stub.item.added", "{}", {command:"tray.item.added"})
+  reply(0,"{}")
+end
+on props
+  $_ = publish("tray-stub.props.changed", "{}", {command:"props.changed"})
+  reply(0,"{}")
+end
+')
+  $bus = $pb.start({dir:$tmp .. "/bus",name:"panel-idle-test",noded:$noded})
+  $vars = merge($pb.client_env($bus), {PATH:"/usr/bin:/bin",HOME:$tmp .. "/home",MIX_STATS:"off",
+    FIXTURE_DIR:$tmp,SCENE_NAME:"panel",SCENE_GENERATION:"1",SCENE_HOST:"panel-stub",
+    SCENES_SERVICE:"panel-stub",COMP_SERVICE:"panel-stub",APPS_SERVICE:"panel-stub",NOTIFY_SERVICE:"panel-stub",
+    TRAY_SERVICE:"tray-stub",SCENES_LIB:$tmp .. "/lib",SCENE_DIR:$tmp .. "/home"})
+  start("panel-stub", $tmp .. "/stub.mix")
+  wait_service("panel-stub")
+  start("scene-panel", $root .. "/share/scenes/panel/behaviour.mix")
+  wait_service("scene-panel")
+  for $i = 1 to 100
+    if is_file($tmp .. "/model") then break end
+    sleep(0.05)
+  end
+  check(is_file($tmp .. "/model"), "first panel model missing")
+  for $i = 1 to 3 check(call("scene-panel", "panel.refresh").rc == 0, "refresh refused") end
+  sleep(1.2)
+  check(tray_calls() == 0, "absent tray called at startup, rebuild or idle")
+  $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
+  wait_service("tray-stub")
+  wait_tray(1)
+  call("tray-stub", "change")
+  wait_tray(2)
+  call("tray-stub", "props")
+  wait_tray(3)
+  for $i = 1 to 3 call("scene-panel", "panel.refresh") end
+  sleep(1.2)
+  check(tray_calls() == 3, "idle or unrelated rebuild re-read the tray")
+  stop($tray_pid)
+  sleep(0.3)
+  call("scene-panel", "panel.refresh")
+  sleep(0.3)
+  check(tray_calls() == 3, "departed tray called")
+  $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
+  wait_service("tray-stub")
+  wait_tray(4)
+  print("PASS panel idle: absent tray, late registration, item/props changes once, unrelated rebuilds and idle quiet, remove/re-register")
+finally
+  for $pid in reverse($pids) stop($pid) end
+  if $bus != nil then $pb.stop($bus) end
+  remove_dir($tmp)
+end

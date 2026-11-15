@@ -111,8 +111,9 @@ pub(crate) async fn run(
         return;
     };
     let mut states = client.subscribe_state();
-    let mut retry = tokio::time::interval(std::time::Duration::from_secs(1));
-    retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut registry_dirty = true;
+    let mut registry_retry = None;
+    let mut bars_dirty = BTreeSet::new();
     let mut generation = None;
     let mut work = None;
     let mut services = BTreeSet::new();
@@ -121,6 +122,9 @@ pub(crate) async fn run(
             if generation != Some(now) {
                 generation = Some(now);
                 work = consumer.connected(now);
+                registry_dirty = true;
+                registry_retry = None;
+                bars_dirty.clear();
             }
         } else {
             generation = None;
@@ -156,28 +160,33 @@ pub(crate) async fn run(
         }
         // Read only on recovery/event/retry. Calls stay off the compositor loop.
         if let Some(epoch) = generation {
-            if let Ok(Ok(names)) = tokio::time::timeout(
+            if registry_dirty && registry_retry.is_none_or(|at| std::time::Instant::now() >= at) {
+            let result = tokio::time::timeout(
                 std::time::Duration::from_secs(1),
+                async { client.call("noded", "noded.props.watch", json!({})).await?;
                 client.call(
                     "noded",
                     "noded.props.get",
                     json!({"path":"services.registered"}),
-                ),
+                ).await },
             )
-            .await
-            {
-                if let Some(names) = names.as_array().and_then(|names| {
+            .await;
+                let names = result.ok().and_then(Result::ok).and_then(|names| names.as_array().and_then(|names| {
                     names
                         .iter()
                         .map(|name| name.as_str().map(str::to_owned))
                         .collect::<Option<BTreeSet<String>>>()
-                }) {
+                }));
+                if let Some(names) = names {
                     services = names;
+                    registry_dirty = false;
+                    bars_dirty.extend(TARGETS.lock().unwrap().iter().cloned());
                 }
+                registry_retry = registry_dirty.then(|| std::time::Instant::now() + std::time::Duration::from_secs(1));
             }
             let mut bars = BTreeMap::new();
             let targets = TARGETS.lock().unwrap().clone();
-            for service in targets.iter().filter(|name| services.contains(*name)) {
+            for service in targets.iter().filter(|name| services.contains(*name) && bars_dirty.contains(*name)) {
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(1),
                     client.subscribe_topic(&format!("{service}.ui.titlebar.changed")),
@@ -190,6 +199,7 @@ pub(crate) async fn run(
                 .await
                 {
                     bars.insert(service.clone(), form);
+                    bars_dirty.remove(service);
                 }
             }
             let theme_ready = pending.is_none() || theme.is_some();
@@ -210,20 +220,83 @@ pub(crate) async fn run(
                 }
             }
         }
+        let deadline = consumer.retry_deadline().into_iter().chain(registry_retry.filter(|_| generation.is_some())).min();
         tokio::select! {
             changed = states.changed() => { if changed.is_err() { break; } states.borrow_and_update(); }
             event = events.recv() => {
                 let Some(event) = event else { break; };
-                work = consumer.native_delivery(&event);
+                if let Some(next) = consumer.native_delivery(&event) { work = Some(next); }
+                if event.header("broker_origin") == Some("local") {
+                    if event.topic() == Some("noded.props.changed") && event.header("broker_service") == Some("noded") {
+                        if let Ok(body) = serde_json::from_str::<Value>(&event.body) {
+                            if body["path"] == "services.registered" || body["gap"] == true || event.header("gap") == Some("true") {
+                                registry_dirty = true;
+                                registry_retry = None;
+                            }
+                        }
+                    } else if let Some(service) = event.header("broker_service") {
+                        if event.topic() == Some(format!("{service}.ui.titlebar.changed").as_str()) && services.contains(service) {
+                            bars_dirty.insert(service.to_owned());
+                        }
+                    }
+                }
             }
-            _ = retry.tick() => { work = consumer.refresh(); }
+            _ = recovery_deadline(deadline) => {
+                if consumer.retry_deadline().is_some_and(|at| std::time::Instant::now() >= at) { work = consumer.retry(); }
+            }
         }
     }
 }
 
+async fn recovery_deadline(deadline: Option<std::time::Instant>) {
+    match deadline {
+        Some(at) => tokio::time::sleep_until(at.into()).await,
+        None => std::future::pending().await,
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../../../tests/lib/idle_bus.rs"]
+mod idle_bus;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn idle_chrome_reads_once_and_titlebar_changes_read_once() {
+        let broker = test_broker::Broker::start();
+        let settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let app = idle_bus::Service::start(&broker, "example-app").await;
+        targets(BTreeSet::from(["example-app".into()]));
+        let client = idle_bus::connect(&broker, "comp-idle").await;
+        let events = client.incoming().unwrap();
+        let (wiring, starter) = crate::port::prepare(crate::port::PortIdentity {
+            service: "comp-idle".into(), version: "test".into(), backend: "nested", engine: "test", noded_url: broker.url.clone(),
+        }, crate::channel::no_waker()).unwrap();
+        let ingress = starter.ingress().clone();
+        let live = Arc::new(AtomicU64::new(client.connection_generation()));
+        let task = tokio::spawn(async move { run(&client, ingress, events, live).await; });
+        settings.wait("settings.get", 1).await;
+        app.wait("example-app.ui.titlebar.form", 1).await;
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        assert_eq!(settings.count("settings.get"), 1);
+        assert_eq!(app.count("example-app.ui.titlebar.form"), 1, "idle does not re-read registrations/titlebars");
+        settings.settings_changed(2, "first").await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(settings.count("settings.get"), 1);
+        assert_eq!(app.count("example-app.ui.titlebar.form"), 1, "settings delivery is not a registry hint");
+        app.publish("example-app.ui.titlebar.changed", json!({})).await;
+        app.wait("example-app.ui.titlebar.form", 2).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(app.count("example-app.ui.titlebar.form"), 2);
+        settings.settings_changed(3, "restarted").await;
+        settings.wait("settings.get", 2).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(settings.count("settings.get"), 2, "authority recovery reads once");
+        task.abort();
+        drop((wiring, starter));
+        targets(BTreeSet::new());
+    }
     #[test]
     fn titlebar_routes_keep_application_viewport_contracts() {
         assert_eq!(

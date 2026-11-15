@@ -51,6 +51,7 @@ struct State {
     preferences: crate::preferences::Preferences,
     selected: BTreeMap<Key, String>,
     errors: BTreeMap<String, String>,
+    bus_wake: Arc<tokio::sync::Notify>,
 }
 impl State {
     fn new() -> Self {
@@ -73,6 +74,7 @@ impl State {
             output_size: BTreeMap::new(),
             selected: BTreeMap::new(),
             errors: BTreeMap::new(),
+            bus_wake: Arc::new(tokio::sync::Notify::new()),
             preferences: crate::preferences::Preferences::prepare(&settings::view::Panels::of(
                 &Default::default(),
             ))
@@ -124,6 +126,7 @@ impl State {
     fn input(&mut self, output: &str, edge: &str, input: PanelInput) {
         let now = self.started.elapsed();
         let _ = self.panel(output, edge).apply(now, input);
+        self.bus_wake.notify_one();
         self.wake();
     }
     fn content(&self, output: &str, edge: &str) -> Option<(String, Arc<Content>)> {
@@ -230,12 +233,17 @@ impl LayerProgram for Program {
         if model.snapshot().thickness_px < minimum {
             let _ = model.restore_thickness(minimum);
         }
+        let before = model.snapshot().mode;
         let _ = model.tick(now);
         let snap = model.snapshot();
+        let mode_changed = before != snap.mode;
         if model.wake() == PanelWake::Animate {
             ctx.request_repaint_after(Duration::from_millis(16));
         }
         let offset = ((1.0 - snap.visible_fraction) * snap.thickness_px).round() as i32;
+        if mode_changed {
+            state.bus_wake.notify_one();
+        }
         if !has_content || !snap.mapped {
             if state
                 .tips
@@ -657,24 +665,87 @@ pub fn run(service: String, comp: String) -> Result<(), String> {
     Ok(())
 }
 
-async fn report(client: &bus::SupervisedClient, comp: &str, output: &str, edge: &str, mode: &str) {
+async fn report(client: &bus::SupervisedClient, comp: &str, output: &str, edge: &str, mode: &str) -> bool {
     let args = json!({"output":output,"edge":edge,"surface":format!("viu-panel-{edge}"),"mode":mode,"generation":client.connection_generation()});
-    let _ = tokio::time::timeout(
+    matches!(tokio::time::timeout(
         Duration::from_secs(1),
         client.call(comp, "comp.panel.mode", args),
     )
-    .await;
+    .await, Ok(Ok(_)))
+}
+async fn recovery_deadline(deadline: Option<Instant>) {
+    match deadline {
+        Some(at) => tokio::time::sleep_until(at.into()).await,
+        None => std::future::pending().await,
+    }
 }
 async fn worker(
     service: String,
     comp: String,
     state: Shared,
-    mut outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
+    outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
 ) -> Result<(), String> {
     let client = bus::SupervisedClient::connect_options(&service, &bus::noded_url())
         .connect()
         .await
         .map_err(|e| e.to_string())?;
+    worker_connected(client, service, comp, state, outgoing).await
+}
+
+#[cfg(test)]
+#[path = "../../../tests/lib/idle_bus.rs"]
+mod idle_bus;
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn idle_shell_is_quiet_and_changes_and_registration_report_once() {
+        let broker = test_broker::Broker::start();
+        let settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let client = idle_bus::connect(&broker, "shell").await;
+        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(client, "shell".into(), "comp".into(), state.clone(), recv));
+        settings.wait("settings.get", 1).await;
+        comp.wait("comp.panel.mode", 1).await;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(settings.count("settings.get"), 1);
+        assert_eq!(comp.count("comp.props.watch"), 1);
+        assert_eq!(comp.count("comp.props.get"), 1);
+        assert_eq!(comp.count("comp.panel.mode"), 1);
+        settings.settings_changed(2, "first").await;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while state.lock().unwrap().look_revision < 2 { tokio::time::sleep(Duration::from_millis(10)).await; }
+        }).await.unwrap();
+        assert_eq!(settings.count("settings.get"), 1, "inline change needs no re-read");
+        settings.settings_changed(3, "restarted").await;
+        settings.wait("settings.get", 2).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(settings.count("settings.get"), 2, "new authority confirms exactly once");
+        for _ in 0..2 { send.send(Outgoing::Mode("example".into(), "bottom".into(), "docked".into())).unwrap(); }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(comp.count("comp.panel.mode"), 1, "same mode is silent");
+        send.send(Outgoing::Mode("example".into(), "bottom".into(), "hidden".into())).unwrap();
+        comp.wait("comp.panel.mode", 2).await;
+        send.send(Outgoing::Register("example".into(), "bottom".into())).unwrap();
+        comp.wait("comp.panel.mode", 3).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(comp.count("comp.panel.mode"), 3);
+        task.abort();
+    }
+}
+
+async fn worker_connected(
+    client: bus::SupervisedClient,
+    service: String,
+    comp: String,
+    state: Shared,
+    mut outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
+) -> Result<(), String> {
     let mut incoming = client.incoming().ok_or("Bus incoming already taken")?;
     let scenes = std::env::var("SCENES_SERVICE").unwrap_or_else(|_| "scenes".into());
     client
@@ -683,12 +754,6 @@ async fn worker(
         .map_err(|e| e.to_string())?;
     if let Ok(body) = client.call(&scenes, "scenes.list", json!({})).await {
         state.lock().unwrap().errors = crate::dev_loop::errors(&body);
-    }
-    if let Ok(outputs) = client
-        .call(&comp, "comp.props.get", json!({"path":"outputs"}))
-        .await
-    {
-        state.lock().unwrap().outputs = outputs;
     }
     for suffix in [
         "corner.input",
@@ -710,17 +775,35 @@ async fn worker(
     let mut work = None;
     let mut generation = None;
     let mut states = client.subscribe_state();
-    let mut retry = tokio::time::interval(Duration::from_secs(1));
-    retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let wake = state.lock().unwrap().bus_wake.clone();
+    let mut reported = BTreeMap::new();
+    let mut comp_dirty = true;
+    let mut comp_retry = None;
     loop {
         if let Some(live) = settings::native::live_generation(&client) {
             if generation != Some(live) {
                 generation = Some(live);
                 work = consumer.connected(live);
+                reported.clear();
+                comp_dirty = true;
+                comp_retry = None;
             }
         } else {
             generation = None;
             consumer.disconnected();
+        }
+        if generation.is_some() && comp_dirty && comp_retry.is_none_or(|at| Instant::now() >= at) {
+            let synced = async {
+                client.call("noded", "noded.props.watch", json!({})).await?;
+                let props = client.call(&comp, "comp.props.watch", json!({})).await?;
+                let outputs = client.call(&comp, "comp.props.get", json!({"path":"outputs"})).await?;
+                let mut shared = state.lock().unwrap();
+                shared.comp_state = props;
+                shared.outputs = outputs;
+                Ok::<_, bus::SupervisedError>(())
+            };
+            comp_dirty = !matches!(tokio::time::timeout(Duration::from_secs(3), synced).await, Ok(Ok(())));
+            comp_retry = comp_dirty.then(|| Instant::now() + Duration::from_secs(1));
         }
         while let Some(action) = work.take() {
             let result = settings::native::execute(&client, &action).await;
@@ -762,21 +845,35 @@ async fn worker(
                 consumer.acknowledge(&update);
             }
         }
+        // Compare all local transitions, including UI deadlines and Bus commands.
+        // An unchanged panel generates no RPC. Reconnect clears the cache.
+        if generation.is_some() && !comp_dirty {
+            let reports: Vec<_> = { let shared = state.lock().unwrap(); shared.panels.iter().map(|(key,p)| (key.clone(), p.snapshot().mode.as_str().to_owned())).collect() };
+            for ((output, edge), mode) in reports {
+                if reported.get(&(output.clone(), edge.clone())) != Some(&mode) {
+                    if report(&client, &comp, &output, &edge, &mode).await {
+                        reported.insert((output, edge), mode);
+                    } else {
+                        comp_dirty = true;
+                        comp_retry = Some(Instant::now() + Duration::from_secs(1));
+                        break;
+                    }
+                }
+            }
+        }
+        let deadline = consumer.retry_deadline().into_iter().chain(comp_retry.filter(|_| generation.is_some())).min();
         tokio::select! {
             changed=states.changed()=>{if changed.is_err(){break;} states.borrow_and_update();}
-            _=retry.tick()=>{
-                work=consumer.refresh();
-                if let Ok(Ok(props))=tokio::time::timeout(Duration::from_secs(1),client.call(&comp,"comp.props.watch",json!({}))).await {state.lock().unwrap().comp_state=props;}
-                if let Ok(Ok(outputs))=tokio::time::timeout(Duration::from_secs(1),client.call(&comp,"comp.props.get",json!({"path":"outputs"}))).await {state.lock().unwrap().outputs=outputs;}
-                let reports:Vec<_>={let shared=state.lock().unwrap();shared.panels.iter().map(|((o,e),p)|(o.clone(),e.clone(),p.snapshot().mode.as_str().to_owned())).collect()};
-                for (output,edge,mode) in reports {report(&client,&comp,&output,&edge,&mode).await;}
+            _=wake.notified()=>{}
+            _=recovery_deadline(deadline)=>{
+                if consumer.retry_deadline().is_some_and(|at| Instant::now() >= at) {work=consumer.retry();}
             }
             action=outgoing.recv()=>{
                 let Some(action)=action else {break;};
                 match action {
                     Outgoing::Fire(to,command,body)=>{let _=client.send(&to,&command,body).await;}
-                    Outgoing::Register(output,edge)=>{let mode={let mut shared=state.lock().unwrap();shared.panel(&output,&edge).snapshot().mode.as_str().to_owned()};report(&client,&comp,&output,&edge,&mode).await;}
-                    Outgoing::Mode(output,edge,mode)=>{if let Some(mode)=PanelMode::parse(&mode) {state.lock().unwrap().input(&output,&edge,PanelInput::SetMode(mode));report(&client,&comp,&output,&edge,mode.as_str()).await;}}
+                    Outgoing::Register(output,edge)=>{state.lock().unwrap().panel(&output,&edge);reported.remove(&(output,edge));}
+                    Outgoing::Mode(output,edge,mode)=>{if let Some(mode)=PanelMode::parse(&mode) {state.lock().unwrap().input(&output,&edge,PanelInput::SetMode(mode));}}
                     Outgoing::Presented(name,_output,revision)=>{state.lock().unwrap().store.set_mounted(&name,Some(Mounted {handle:revision,revision}));}
                     Outgoing::Frame(name,time)=>{
                         let event=state.lock().unwrap().store.frame_event(&name,true,f64::from(time)/1000.0,1.0/60.0);
@@ -787,6 +884,12 @@ async fn worker(
             command=incoming.recv()=>{
                 let Some(command)=command else {break;};
                 if command.is_topic_delivery() {
+                    if command.topic()==Some("noded.props.changed") && command.header("broker_service")==Some("noded") && command.header("broker_origin")==Some("local") {
+                        if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
+                            let arrived = body["path"] == "services.registered" && body["new"].as_array().is_some_and(|names| names.contains(&json!(comp))) && !body["old"].as_array().is_some_and(|names| names.contains(&json!(comp)));
+                            if arrived || body["gap"] == true || command.header("gap")==Some("true") {comp_dirty=true;comp_retry=None;reported.clear();}
+                        }
+                    }
                     if command.header("broker_service")==Some(scenes.as_str()) && command.header("broker_origin")==Some("local") && command.topic()==Some(format!("{scenes}.changed").as_str()) {
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
                             let mut shared=state.lock().unwrap();
@@ -795,7 +898,10 @@ async fn worker(
                         }
                     }
                     if command.header("broker_service")==Some(comp.as_str()) && command.header("broker_origin")==Some("local") {
-                        if let Ok(body)=serde_json::from_str::<Value>(&command.body) {topic(&state,&comp,command.topic().unwrap_or(""),&body);}
+                        if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
+                            if command.topic()==Some(format!("{comp}.props.changed").as_str()) && (body["gap"]==true || command.header("gap")==Some("true")) {comp_dirty=true;comp_retry=None;}
+                            topic(&state,&comp,command.topic().unwrap_or(""),&body);
+                        }
                     }
                     if let Some(next)=consumer.native_delivery(&command) {work=Some(next);}
                     continue;
@@ -823,6 +929,9 @@ fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {
         return;
     }
     if topic == format!("{comp}.props.changed") {
+        if body["path"] == "outputs" {
+            shared.outputs = body["new"].clone();
+        }
         shared.comp_state = body.clone();
         return;
     }

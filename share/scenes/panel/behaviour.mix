@@ -220,6 +220,10 @@ fn apply_workspaces($ws)
 end
 
 fn fetch_tray()
+  if not contains($state.services, $TRAY) then
+    $state.tray = []
+    return
+  end
   $out = $r.call($TRAY, "tray.list", {})
   $ok = $out.ok and type($out.value) == "map" and type($out.value.items) == "list"
   $state.tray = $ok ? $out.value.items : []
@@ -327,7 +331,6 @@ fn rebuild()
   $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return end
   fetch_windows()
-  fetch_tray()
   fetch_notes()
   resolve_icons()
   $model = $m.panel(snapshot(), $state.icons, time())
@@ -371,6 +374,10 @@ on panel.rebuild async
 end
 
 fn resync()
+  $r.call($NODED, "noded.props.watch", {})
+  $had_tray = contains($state.services, $TRAY)
+  services_changed(registered())
+  if $had_tray then fetch_tray() end
   $r.call($COMP, "comp.props.watch", {})
   sync_popups()
   refresh_status()
@@ -412,6 +419,8 @@ fn services_changed($live)
   if type($live) != "list" then return end
   $previous = $state.services
   $state.services = $live
+  if contains($live, $TRAY) and not contains($previous, $TRAY) then fetch_tray() end
+  if not contains($live, $TRAY) then $state.tray = [] end
   if contains($live, $APPS) and not contains($previous, $APPS) then $state.icons = empty_icons() end
   if contains($live, $COMP) and not contains($previous, $COMP) then $r.call($COMP, "comp.props.watch", {}) end
   -- notifyd arrived after the panel: bring the toast up now.
@@ -718,7 +727,12 @@ on props.changed
     end
     return
   end
-  if gap($event) then resync() else schedule() end
+  if gap($event) then
+    resync()
+  else
+    if $event.headers.topic == $TRAY .. ".props.changed" then fetch_tray() end
+    schedule()
+  end
 end
 
 -- comp.workspace.changed: count, current or a name moved. The rebuild
@@ -728,9 +742,11 @@ on workspace.changed
 end
 
 on tray.item.added
+  fetch_tray()
   schedule()
 end
 on tray.item.removed
+  fetch_tray()
   schedule()
 end
 on notification.created
@@ -756,6 +772,7 @@ on bus.connected
   if len(keys($event.headers)) != 0 then return end
   start_clock()
   $state.ready = false
+  $state.services = []
   $state.icons = empty_icons()
   $ready = $r.ready($ctx)
   $state.ready = $ready.ok
@@ -872,7 +889,6 @@ try
 catch $message
   eprint("panel: settings watch unavailable (" .. to_string($message) .. "); edits apply on the next start")
 end
-$state.services = registered() ?? []
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true
