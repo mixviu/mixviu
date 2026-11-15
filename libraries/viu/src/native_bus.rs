@@ -939,6 +939,8 @@ mod tests {
                                 1.5_f32,
                                 "fixture backend".to_owned(),
                                 "passive route".to_owned(),
+                                21.0_f64,
+                                3.0_f64,
                             ),
                         )
                     });
