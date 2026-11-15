@@ -22,6 +22,8 @@
 
 mod gpu;
 mod input;
+mod kinetic;
+mod repaint_timer;
 mod scale;
 mod state;
 mod timing;

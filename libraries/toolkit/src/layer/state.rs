@@ -47,7 +47,7 @@ use smithay_client_toolkit::{
 };
 
 use super::gpu::{Gpu, Skipped, Target};
-use super::{LayerOptions, LayerProgram, Outputs, SurfaceInfo, input, scale, timing};
+use super::{LayerOptions, LayerProgram, Outputs, SurfaceInfo, input, kinetic, scale, timing};
 
 /// A repaint asked for: which surface, and in how long.
 type Repaint = (u64, Duration);
@@ -96,8 +96,9 @@ struct Surface {
     /// The watchdog already redrew once without a callback coming back.
     rescued: bool,
     /// The earliest delayed repaint a timer is armed for, and that timer.
-    deadline: Option<Instant>,
-    timer: Option<RegistrationToken>,
+    repaint_at: Option<Instant>,
+    kinetic: kinetic::Kinetic,
+    timer: super::repaint_timer::RepaintTimer,
     focused: bool,
     started: Instant,
 }
@@ -248,6 +249,7 @@ pub(super) fn run<P: LayerProgram + 'static>(
 
 impl<P: LayerProgram + 'static> State<P> {
     fn presentations(&mut self) {
+        let mut hidden = Vec::new();
         for surface in &mut self.surfaces {
             let info = SurfaceInfo {
                 output: surface.output_name.clone(),
@@ -281,6 +283,7 @@ impl<P: LayerProgram + 'static> State<P> {
                 next.layer = layer;
             }
             if !desired.visible {
+                hidden.push(surface.id);
                 if surface.visible {
                     // A surface hidden before its first buffer has not been
                     // unmapped by the server. Keep its initial configure;
@@ -298,8 +301,12 @@ impl<P: LayerProgram + 'static> State<P> {
                     surface.frame_pending = false;
                     surface.pending_since = None;
                     surface.frame_gen = surface.frame_gen.wrapping_add(1);
-                    surface.events.clear();
-                    surface.dirty = false;
+                    hide_fling(
+                        &mut surface.kinetic,
+                        &mut surface.events,
+                        &mut surface.repaint_at,
+                        &mut surface.dirty,
+                    );
                     self.program.visibility(&surface.ctx, false);
                 }
                 surface.requested = next;
@@ -326,6 +333,9 @@ impl<P: LayerProgram + 'static> State<P> {
                 surface.requested = next;
                 self.program.visibility(&surface.ctx, true);
             }
+        }
+        for id in hidden {
+            self.arm_timer(id);
         }
     }
     fn add_surface(
@@ -397,8 +407,9 @@ impl<P: LayerProgram + 'static> State<P> {
             skips: 0,
             retry_at: None,
             rescued: false,
-            deadline: None,
-            timer: None,
+            repaint_at: None,
+            kinetic: kinetic::Kinetic::default(),
+            timer: super::repaint_timer::RepaintTimer::default(),
             focused: false,
             started: Instant::now(),
         });
@@ -443,9 +454,7 @@ impl<P: LayerProgram + 'static> State<P> {
         let program = &mut self.program;
         self.surfaces.retain_mut(|s| {
             if gone(s) {
-                if let Some(timer) = s.timer.take() {
-                    handle.remove(timer);
-                }
+                s.timer.cancel(&handle);
                 program.removed(
                     &s.ctx,
                     &SurfaceInfo {
@@ -478,12 +487,11 @@ impl<P: LayerProgram + 'static> State<P> {
         let Some(delay) = self
             .surfaces
             .iter()
-            .find(|s| s.id == id)
+            .find(|s| s.id == id && s.visible)
             .and_then(|s| self.program.repaint_delay(&s.ctx, delay))
         else {
             return;
         };
-        let handle = self.handle.clone();
         let Some(s) = self.surface_mut(id) else {
             return;
         };
@@ -493,25 +501,27 @@ impl<P: LayerProgram + 'static> State<P> {
             }
             // Now: any delayed repaint is moot.
             s.dirty = true;
-            s.deadline = None;
-            if let Some(timer) = s.timer.take() {
-                handle.remove(timer);
-            }
+            s.repaint_at = None;
+            self.arm_timer(id);
             return;
         }
         // egui uses Duration::MAX for "not until something happens".
         let Some(at) = Instant::now().checked_add(delay) else {
             return;
         };
-        if s.deadline.is_some_and(|d| d <= at) {
+        s.repaint_at = Some(s.repaint_at.map_or(at, |old| old.min(at)));
+        self.arm_timer(id);
+    }
+
+    fn arm_timer(&mut self, id: u64) {
+        let handle = self.handle.clone();
+        let Some(s) = self.surface_mut(id) else {
             return;
-        }
-        // One timer per surface: an earlier deadline replaces the armed one.
-        if let Some(timer) = s.timer.take() {
-            handle.remove(timer);
-        }
-        s.deadline = Some(at);
-        let armed = handle.insert_source(Timer::from_deadline(at), move |_, _, state| {
+        };
+        let at = kinetic::deadline(s.repaint_at, s.kinetic.deadline());
+        let armed = s.timer.arm(&handle, at, move |state: &mut Self| {
+            let now = Instant::now();
+            let modifiers = input::modifiers(&state.modifiers);
             let allowed = state.surfaces.iter().find(|s| s.id == id).is_some_and(|s| {
                 state
                     .program
@@ -519,19 +529,34 @@ impl<P: LayerProgram + 'static> State<P> {
                     .is_some()
             });
             if let Some(s) = state.surface_mut(id) {
-                s.deadline = None;
-                s.timer = None;
-                s.dirty |= allowed;
+                s.timer.fired();
+                if s.repaint_at.is_some_and(|at| at <= now) {
+                    s.repaint_at = None;
+                    s.dirty |= allowed;
+                }
+                if !allowed || !s.visible {
+                    s.repaint_at = None;
+                    s.dirty = false;
+                }
+                tick_fling(
+                    &mut s.kinetic,
+                    &mut s.events,
+                    now,
+                    modifiers,
+                    allowed && s.visible,
+                    &mut s.dirty,
+                );
             }
-            TimeoutAction::Drop
+            state.arm_timer(id);
         });
-        match armed {
-            Ok(timer) => s.timer = Some(timer),
-            Err(_) => {
-                // No timer: draw now rather than never.
-                s.deadline = None;
-                s.dirty = true;
-            }
+        if !armed {
+            failed_timer(
+                &mut s.kinetic,
+                &mut s.events,
+                &mut s.repaint_at,
+                s.visible,
+                &mut s.dirty,
+            );
         }
     }
 
@@ -698,6 +723,9 @@ impl<P: LayerProgram + 'static> State<P> {
     }
 
     fn push_to(&mut self, wl: &ObjectId, event: egui::Event) {
+        if kinetic::Kinetic::interrupts(&event) {
+            self.cancel_kinetic();
+        }
         // A host-controlled background must not acquire a continuous render
         // loop merely because the pointer moves over an otherwise idle plot.
         if !self.input_allowed(wl) {
@@ -713,10 +741,15 @@ impl<P: LayerProgram + 'static> State<P> {
         self.surfaces
             .iter()
             .find(|s| s.layer.wl_surface().id() == *wl)
-            .is_some_and(|s| self.program.repaint_delay(&s.ctx, Duration::ZERO).is_some())
+            .is_some_and(|s| {
+                s.visible && self.program.repaint_delay(&s.ctx, Duration::ZERO).is_some()
+            })
     }
 
     fn key(&mut self, event: &KeyEvent, pressed: bool, repeat: bool) {
+        // Accepted policy: keys also drop live drag samples. A key in the
+        // release frame therefore suppresses that gesture's pending fling.
+        self.cancel_kinetic();
         let Some(focus) = self.keyboard_focus.clone() else {
             return;
         };
@@ -755,6 +788,135 @@ impl<P: LayerProgram + 'static> State<P> {
             self.push_to(&focus, egui::Event::Text(text));
         }
     }
+
+    fn cancel_kinetic(&mut self) {
+        let ids: Vec<_> = self
+            .surfaces
+            .iter_mut()
+            .map(|s| {
+                cancel_fling(&mut s.kinetic, &mut s.events, s.visible, &mut s.dirty);
+                s.id
+            })
+            .collect();
+        for id in ids {
+            self.arm_timer(id);
+        }
+    }
+}
+
+/// Only deltas are queued momentum. A pending Cancel must never cancel itself.
+fn is_momentum(event: &egui::Event) -> bool {
+    matches!(
+        event,
+        egui::Event::MouseWheel {
+            source: egui::MouseWheelSource::Momentum,
+            phase: egui::TouchPhase::Move,
+            ..
+        }
+    )
+}
+
+fn cancel_fling(
+    kinetic: &mut kinetic::Kinetic,
+    events: &mut Vec<egui::Event>,
+    visible: bool,
+    dirty: &mut bool,
+) {
+    let active = kinetic.deadline().is_some() || events.iter().any(is_momentum);
+    kinetic.cancel();
+    events.retain(|e| !is_momentum(e));
+    if active {
+        if !events.contains(&cancel_scroll()) {
+            events.push(cancel_scroll());
+        }
+        *dirty |= visible;
+    }
+}
+
+fn hide_fling(
+    kinetic: &mut kinetic::Kinetic,
+    events: &mut Vec<egui::Event>,
+    repaint_at: &mut Option<Instant>,
+    dirty: &mut bool,
+) {
+    cancel_fling(kinetic, events, false, dirty);
+    // Preserve the one Cancel for egui to consume on reshow, clearing other
+    // pending input. Later interrupts leave this queue and dirty bit untouched.
+    events.retain(|e| *e == cancel_scroll());
+    *repaint_at = None;
+    *dirty = false;
+}
+
+fn restart_fling(
+    kinetic: &mut kinetic::Kinetic,
+    events: &mut Vec<egui::Event>,
+    finger: Option<bool>,
+    delta: egui::Vec2,
+    stop: [bool; 2],
+    visible: bool,
+    dirty: &mut bool,
+) {
+    if kinetic::Kinetic::restarts(finger, delta, stop)
+        && (kinetic.deadline().is_some() || events.iter().any(is_momentum))
+    {
+        // Cancel the coast and its egui tail, but preserve samples from any
+        // axis still moving under the finger (a diagonal gesture).
+        let live = if delta != egui::Vec2::ZERO && finger != Some(false) {
+            kinetic.live_drag()
+        } else {
+            kinetic::Kinetic::default()
+        };
+        cancel_fling(kinetic, events, visible, dirty);
+        *kinetic = live;
+    }
+}
+
+fn tick_fling(
+    kinetic: &mut kinetic::Kinetic,
+    events: &mut Vec<egui::Event>,
+    now: Instant,
+    modifiers: egui::Modifiers,
+    can_draw: bool,
+    dirty: &mut bool,
+) {
+    if !can_draw {
+        cancel_fling(kinetic, events, false, dirty);
+        return;
+    }
+    let delta = kinetic.step(now);
+    if delta != egui::Vec2::ZERO {
+        events.push(egui::Event::MouseWheel {
+            source: egui::MouseWheelSource::Momentum,
+            unit: egui::MouseWheelUnit::Point,
+            delta,
+            phase: egui::TouchPhase::Move,
+            modifiers,
+        });
+        *dirty = true;
+    }
+}
+
+fn failed_timer(
+    kinetic: &mut kinetic::Kinetic,
+    events: &mut Vec<egui::Event>,
+    repaint_at: &mut Option<Instant>,
+    visible: bool,
+    dirty: &mut bool,
+) {
+    *repaint_at = None;
+    cancel_fling(kinetic, events, visible, dirty);
+    // A visible surface can service the failed repaint immediately.
+    *dirty |= visible;
+}
+
+fn cancel_scroll() -> egui::Event {
+    egui::Event::MouseWheel {
+        source: egui::MouseWheelSource::Momentum,
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::Vec2::ZERO,
+        phase: egui::TouchPhase::Cancel,
+        modifiers: egui::Modifiers::NONE,
+    }
 }
 
 /// Only detaching a previously attached buffer unmaps the protocol surface.
@@ -769,6 +931,347 @@ fn hide_buffer(has_buffer: &mut bool, unmapped: &mut bool, configured: &mut bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_fling(t: Instant) -> kinetic::Kinetic {
+        let mut k = kinetic::Kinetic::default();
+        k.axis(0, t, Some(true), egui::Vec2::splat(10.0), [false; 2]);
+        k.axis(
+            16,
+            t + kinetic::FRAME,
+            None,
+            egui::Vec2::splat(10.0),
+            [false; 2],
+        );
+        k.axis(16, t + kinetic::FRAME, None, egui::Vec2::ZERO, [true; 2]);
+        k
+    }
+
+    fn momentum_event(delta: egui::Vec2) -> egui::Event {
+        egui::Event::MouseWheel {
+            source: egui::MouseWheelSource::Momentum,
+            unit: egui::MouseWheelUnit::Point,
+            delta,
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn interrupts() -> [egui::Event; 3] {
+        [
+            egui::Event::PointerGone,
+            egui::Event::Key {
+                key: egui::Key::A,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::PointerButton {
+                pos: egui::Pos2::ZERO,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    }
+
+    #[test]
+    fn hidden_cancel_is_quiet_under_repeated_interrupts() {
+        let mut event_loop: EventLoop<'static, usize> = EventLoop::try_new().unwrap();
+        let handle = event_loop.handle();
+        let mut timer = super::super::repaint_timer::RepaintTimer::default();
+        let mut k = test_fling(Instant::now());
+        let mut events = vec![momentum_event(egui::Vec2::splat(4.0))];
+        let mut dirty = true;
+        let mut repaint_at = Some(Instant::now() + Duration::from_secs(2));
+        assert!(timer.arm(
+            &handle,
+            kinetic::deadline(repaint_at, k.deadline()),
+            |fired| *fired += 1
+        ));
+        assert!(timer.is_armed());
+        hide_fling(&mut k, &mut events, &mut repaint_at, &mut dirty);
+        assert!(timer.arm(
+            &handle,
+            kinetic::deadline(repaint_at, k.deadline()),
+            |fired| *fired += 1
+        ));
+        let hidden_events = events.clone();
+        assert_eq!(hidden_events, vec![cancel_scroll()]);
+        for _ in 0..20 {
+            for event in interrupts() {
+                assert!(kinetic::Kinetic::interrupts(&event));
+                cancel_fling(&mut k, &mut events, false, &mut dirty);
+                assert!(timer.arm(
+                    &handle,
+                    kinetic::deadline(repaint_at, k.deadline()),
+                    |fired| *fired += 1
+                ));
+                assert!(!dirty);
+                assert_eq!(events, hidden_events);
+                assert!(!timer.is_armed());
+            }
+        }
+        let mut fired = 0;
+        event_loop.dispatch(Duration::ZERO, &mut fired).unwrap();
+        assert_eq!(fired, 0);
+    }
+
+    #[test]
+    fn settled_and_consumed_momentum_does_not_dirty_an_unrelated_surface() {
+        let mut k = test_fling(Instant::now());
+        let mut events = Vec::new();
+        while let Some(at) = k.deadline() {
+            events.push(momentum_event(k.step(at)));
+        }
+        // The draw path transfers all pending events into egui's RawInput.
+        let _consumed = std::mem::take(&mut events);
+        let mut dirty = false;
+        for event in interrupts() {
+            assert!(kinetic::Kinetic::interrupts(&event));
+            cancel_fling(&mut k, &mut events, true, &mut dirty);
+            assert!(!dirty);
+            assert!(events.is_empty());
+            assert_eq!(k.deadline(), None);
+        }
+    }
+
+    #[test]
+    fn zero_delta_restarts_purge_queued_movement_before_cancel() {
+        for finger in [Some(true), Some(false)] {
+            let mut k = test_fling(Instant::now());
+            let mut events = vec![momentum_event(egui::Vec2::splat(4.0))];
+            let mut dirty = false;
+            let delta = egui::Vec2::ZERO;
+            assert!(kinetic::Kinetic::restarts(finger, delta, [false; 2]));
+            restart_fling(
+                &mut k,
+                &mut events,
+                finger,
+                delta,
+                [false; 2],
+                true,
+                &mut dirty,
+            );
+            k.axis(32, Instant::now(), finger, delta, [false; 2]);
+            assert_eq!(events, vec![cancel_scroll()]);
+            assert!(!events.iter().any(is_momentum));
+            assert!(dirty);
+            assert_eq!(k.deadline(), None);
+        }
+    }
+
+    #[test]
+    fn ordinary_finger_updates_keep_velocity_samples_until_release() {
+        let t = Instant::now();
+        let mut k = kinetic::Kinetic::default();
+        let mut events = Vec::new();
+        let mut dirty = false;
+        for ms in [0, 16] {
+            let delta = egui::Vec2::splat(10.0);
+            restart_fling(
+                &mut k,
+                &mut events,
+                Some(true),
+                delta,
+                [false; 2],
+                true,
+                &mut dirty,
+            );
+            k.axis(
+                ms,
+                t + Duration::from_millis(u64::from(ms)),
+                Some(true),
+                delta,
+                [false; 2],
+            );
+        }
+        k.axis(16, t + kinetic::FRAME, None, egui::Vec2::ZERO, [true; 2]);
+        assert!(k.deadline().is_some());
+        assert!(events.is_empty());
+        assert!(!dirty);
+    }
+
+    #[test]
+    fn diagonal_restart_cancels_x_but_y_flings_from_live_samples() {
+        let t = Instant::now();
+        let mut k = kinetic::Kinetic::default();
+        let mut events = Vec::new();
+        let mut dirty = false;
+        k.axis(0, t, Some(true), egui::Vec2::splat(10.0), [false; 2]);
+        k.axis(
+            16,
+            t + Duration::from_millis(16),
+            None,
+            egui::Vec2::splat(10.0),
+            [true, false],
+        );
+        assert!(k.deadline().is_some());
+        let delta = egui::vec2(0.0, 12.0);
+        restart_fling(
+            &mut k,
+            &mut events,
+            None,
+            delta,
+            [false; 2],
+            true,
+            &mut dirty,
+        );
+        assert_eq!(events, vec![cancel_scroll()]);
+        assert_eq!(k.deadline(), None);
+        k.axis(32, t + Duration::from_millis(32), None, delta, [false; 2]);
+        // Release immediately after this one update: losing the sample from
+        // t=16 would leave y with no velocity and fail to start its fling.
+        let release = t + Duration::from_millis(33);
+        k.axis(33, release, None, egui::Vec2::ZERO, [false, true]);
+        let at = k.deadline().unwrap();
+        let coast = k.step(at);
+        assert_eq!(coast.x, 0.0);
+        let expected = 0.5 * 750.0 * (1.0 - (-(at - release).as_secs_f32() / 0.5).exp());
+        assert!((coast.y - expected).abs() < 0.0001);
+    }
+
+    #[test]
+    fn denied_or_hidden_timer_tick_cancels_queued_and_delivered_momentum() {
+        let t = Instant::now();
+        for queued in [false, true] {
+            let mut k = test_fling(t);
+            let at = k.deadline().unwrap();
+            let delta = k.step(at);
+            let mut events = if queued {
+                vec![momentum_event(delta)]
+            } else {
+                Vec::new()
+            };
+            let mut dirty = false;
+            tick_fling(
+                &mut k,
+                &mut events,
+                at + kinetic::FRAME,
+                egui::Modifiers::NONE,
+                false,
+                &mut dirty,
+            );
+            assert_eq!(events, vec![cancel_scroll()]);
+            assert_eq!(k.deadline(), None);
+            assert!(!dirty);
+            tick_fling(
+                &mut k,
+                &mut events,
+                at + kinetic::FRAME,
+                egui::Modifiers::NONE,
+                false,
+                &mut dirty,
+            );
+            assert_eq!(events, vec![cancel_scroll()]);
+            assert!(!dirty);
+        }
+    }
+
+    #[test]
+    fn timer_registration_failure_cancels_queued_and_delivered_momentum() {
+        let t = Instant::now();
+        for visible in [false, true] {
+            for queued in [false, true] {
+                let mut k = test_fling(t);
+                let at = k.deadline().unwrap();
+                let delta = k.step(at);
+                let mut events = if queued {
+                    vec![momentum_event(delta)]
+                } else {
+                    Vec::new()
+                };
+                let mut repaint_at = Some(at + Duration::from_secs(1));
+                let mut dirty = false;
+                failed_timer(&mut k, &mut events, &mut repaint_at, visible, &mut dirty);
+                assert_eq!(events, vec![cancel_scroll()]);
+                assert_eq!(k.deadline(), None);
+                assert_eq!(repaint_at, None);
+                assert_eq!(dirty, visible);
+            }
+        }
+    }
+
+    #[test]
+    fn leave_a_enter_b_cancels_only_a_once_and_disarms_its_timer() {
+        let mut event_loop: EventLoop<'static, usize> = EventLoop::try_new().unwrap();
+        let handle = event_loop.handle();
+        let mut surfaces = [
+            (
+                test_fling(Instant::now()),
+                Vec::new(),
+                false,
+                super::super::repaint_timer::RepaintTimer::default(),
+            ),
+            (
+                kinetic::Kinetic::default(),
+                Vec::new(),
+                false,
+                super::super::repaint_timer::RepaintTimer::default(),
+            ),
+        ];
+        let at = surfaces[0].0.deadline();
+        assert!(surfaces[0].3.arm(&handle, at, |fired| *fired += 1));
+        // Leave explicitly cancels globally, then push_to sees PointerGone
+        // and cancels again. Enter's PointerMoved does not cancel or produce
+        // synthetic scroll input; real pointer input is forwarded separately.
+        for event in [
+            egui::Event::PointerGone,
+            egui::Event::PointerGone,
+            egui::Event::PointerMoved(egui::Pos2::ZERO),
+        ] {
+            if kinetic::Kinetic::interrupts(&event) {
+                for (k, events, dirty, timer) in &mut surfaces {
+                    cancel_fling(k, events, true, dirty);
+                    assert!(timer.arm(&handle, k.deadline(), |fired| *fired += 1));
+                }
+            }
+        }
+        assert_eq!(surfaces[0].1, vec![cancel_scroll()]);
+        assert!(surfaces[0].2);
+        assert!(surfaces[1].1.is_empty());
+        assert!(!surfaces[1].2);
+        assert!(
+            surfaces
+                .iter()
+                .all(|(k, _, _, timer)| k.deadline().is_none() && !timer.is_armed())
+        );
+        let mut fired = 0;
+        event_loop.dispatch(Duration::ZERO, &mut fired).unwrap();
+        assert_eq!(fired, 0);
+    }
+
+    #[test]
+    fn cancel_clears_egui_smoothing_tail() {
+        let ctx = egui::Context::default();
+        let mut delta = egui::Vec2::ZERO;
+        let events = vec![
+            egui::Event::MouseWheel {
+                source: egui::MouseWheelSource::Momentum,
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: egui::Modifiers::NONE,
+            },
+            cancel_scroll(),
+        ];
+        ctx.run_ui(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                delta = ui.input(|i| i.smooth_scroll_delta());
+            },
+        )
+        .drop_without_applying_deltas();
+        assert_eq!(delta, egui::Vec2::ZERO);
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            delta = ui.input(|i| i.smooth_scroll_delta());
+        })
+        .drop_without_applying_deltas();
+        assert_eq!(delta, egui::Vec2::ZERO);
+    }
 
     #[test]
     fn hiding_before_first_buffer_preserves_initial_configure() {
@@ -846,6 +1349,7 @@ impl<P: LayerProgram + 'static> CompositorHandler for State<P> {
         _: &wl_surface::WlSurface,
         _: &wl_output::WlOutput,
     ) {
+        self.cancel_kinetic();
     }
 }
 
@@ -1039,6 +1543,7 @@ impl<P: LayerProgram + 'static> State<P> {
         {
             return;
         }
+        self.cancel_kinetic();
         if let Some(device) = self.shape_device.take() {
             device.destroy();
         }
@@ -1182,6 +1687,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     self.push_to(&wl, egui::Event::PointerMoved(pos));
                 }
                 PointerEventKind::Leave { .. } => {
+                    self.cancel_kinetic();
                     if self.pointer_over.as_ref().is_some_and(|(o, _)| *o == wl) {
                         self.pointer_over = None;
                     }
@@ -1193,6 +1699,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                 }
                 PointerEventKind::Press { button, .. }
                 | PointerEventKind::Release { button, .. } => {
+                    self.cancel_kinetic();
                     if let Some(button) = input::button(button) {
                         let pressed = matches!(event.kind, PointerEventKind::Press { .. });
                         self.buttons.retain(|b| *b != button);
@@ -1215,6 +1722,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     }
                 }
                 PointerEventKind::Axis {
+                    time,
                     ref horizontal,
                     ref vertical,
                     source,
@@ -1237,14 +1745,37 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                             input::wheel(horizontal.absolute, vertical.absolute) / zoom,
                         )
                     };
+                    if self.input_allowed(&wl) {
+                        let now = Instant::now();
+                        if let Some(s) = self.by_wl(&wl) {
+                            restart_fling(
+                                &mut s.kinetic,
+                                &mut s.events,
+                                source.map(|s| s == wl_pointer::AxisSource::Finger),
+                                delta,
+                                [horizontal.stop, vertical.stop],
+                                s.visible,
+                                &mut s.dirty,
+                            );
+                            s.kinetic.axis(
+                                time,
+                                now,
+                                source.map(|s| s == wl_pointer::AxisSource::Finger),
+                                delta,
+                                [horizontal.stop, vertical.stop],
+                            );
+                            let id = s.id;
+                            self.arm_timer(id);
+                        }
+                    }
                     self.push_to(
                         &wl,
                         egui::Event::MouseWheel {
                             source: input::wheel_source(source),
                             unit,
                             delta,
-                            // Movement only: an End phase would drop the
-                            // frame's delta, and egui has no kinetic scroll.
+                            // Movement only: End would discard this frame's
+                            // delta. The host owns finger momentum and its timer.
                             phase: egui::TouchPhase::Move,
                             modifiers,
                         },
