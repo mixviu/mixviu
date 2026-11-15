@@ -41,3 +41,10 @@ for $svc in ["agentd", "peersd", "releasesd", "daylight"]
     passed: $passed_checks, failed: $failed_checks}))
 end
 if len($failed) > 0 then raise("SERVICE_TEST", join($failed, ", ")) end
+
+-- The scene loader is a headless Mix citizen too. Exercise its real startup
+-- ordering without bringing up a compositor or touching a desktop Bus.
+$case = "engines/viud/tests/scenes_boot_upgrade_test.mix"
+$r = run_argv([$mix, $case], {timeout:600, stdout:"inherit", stderr:"inherit",
+  env:{MIX_TEST_MIX_EXE:$mix, MIX_TEST_NODED_EXE:$bin .. "/noded", MIX_STATS:"off"}})
+if not $r.ok then raise("SCENES_TEST", "scene loader boot upgrade regression failed") end

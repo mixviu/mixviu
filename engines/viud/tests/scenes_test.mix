@@ -1308,7 +1308,9 @@ try
   check($s.response.context.phase == "validate-staged" and tree_digest($s.root .. "/alpha") == $original and is_dir($sandbox) and $s.desired.forks["alpha-sandbox"] != nil and $s.desired.promoting == nil and len(stages($s.root)) == 0, "F3: an invalid sandbox moves nothing: " .. json_encode($s.response))
   $_ = refused($s, "promote", {from:"alpha"}, "SCENES_NOT_FORK")
   write_file($sandbox .. "/scene.mix", replace($clean, "tpl alpha", "promoted title"))
+  $s.upgrades = {alpha:{retryable:true}, "alpha-sandbox":{retryable:true}}
   $s = $l.request($s, "promote", {from:"alpha-sandbox"})
+  check($s.upgrades.alpha == nil and $s.upgrades["alpha-sandbox"] == nil, "promote clears replaced and removed upgrade flags")
   check($s.rc == 0 and $s.response.name == "alpha" and $s.response.removed == "alpha-sandbox" and len($s.response.recovery) == 2 and is_dir($s.response.recovery[0]) and is_dir($s.response.recovery[1]), "F4: promote receipt: " .. json_encode($s.response))
   $promoted = $l.document(read_file($s.root .. "/alpha/scene.mix"))
   check(contains($promoted.body, "promoted title") and $promoted.name == "alpha" and $promoted.citizen == "scene-alpha" and $l.candidate($s, "alpha", $s.root .. "/alpha").page == "scene-alpha", "F4: the sandbox is the original now")
@@ -1657,12 +1659,31 @@ try
   check($s.response.templates[2].diagnostic.error_code == "SCENES_METADATA" and $s.response.templates[2].order == 1000, "T1: an invalid template is a row with a diagnostic")
 
   -- Upgrade-aware copies: real staging/rewriting, persistence and swaps.
+  $u = {host:"test-shell", upgrades:{}}
+  $u = $l.upgrade_failure($u, "late", "absent", "SCENES_UPSTREAM", {target:"test-shell", rc:10, upstream:"Service 'test-shell' not found"})
+  $u = $l.upgrade_failure($u, "invalid", "invalid", "SCENES_UPSTREAM", {target:"test-shell", rc:10, upstream:{error_code:"SCENE_REFUSED"}})
+  $u = $l.upgrade_failure($u, "timeout", "timeout", "SCENES_UPSTREAM", {target:"test-shell", rc:-2})
+  $u = $l.upgrade_failure($u, "editor", "unavailable", "SCENES_UPSTREAM", {target:"ced", rc:-2})
+  check(deep_eq(sort($l.upgrade_pending($u)), ["late", "timeout"]), "only host availability failures are retried")
+  check($l.upgrade_summary($u.upgrades.late).context.rc == 10, "inventory retains upstream rc")
+  $u.desired = {origins:{late:"alpha", invalid:"alpha", editor:"alpha"}, forks:{editor:{from:"late"}}}
+  $u = $l.prune_upgrades($u)
+  check($u.upgrades.timeout == nil and $u.upgrades.editor == nil and deep_eq($l.upgrade_pending($u), ["late"]), "prune removes orphaned and fork-skipped flags")
+  $u.desired.origins = {}
+  $u = $l.prune_upgrades($u)
+  $u.state_ok = false
+  check(deep_eq($l.upgrade($u, true), $u), "queued retry with no work does not even read state or run an upgrade pass")
   $ut = $tmp .. "/upgrade-templates"
   mkdir($ut)
   install_fixture($ut, "alpha", true)
   write_file($ut .. "/alpha/settings.conf.mix", "{value:1}\n")
   mkdir($ut .. "/alpha/assets")
   write_file($ut .. "/alpha/assets/icon", "icon")
+  $removed = se_fresh("upgrade-removed", $ut)
+  $removed = $l.request($removed, "install", {template:"alpha"})
+  $removed.upgrades = {alpha:{retryable:true}}
+  $removed = $l.request($removed, "remove", {name:"alpha"})
+  check($removed.rc == 0 and $removed.upgrades.alpha == nil and len($l.upgrade_pending($removed)) == 0, "remove clears its pending upgrade flag immediately")
   $s = se_fresh("upgrade", $ut)
   $s = $l.request($s, "install", {template:"alpha", name:"renamed"})
   check($s.rc == 0, "upgrade fixture installs")
@@ -2120,6 +2141,28 @@ try
   write_file($ut.."/panel/scene.mix",replace($source,"window: "..$l.document($source).headers.window,""))
   $s=$l.request($s,"upgrade",{})
   check($s.rc==0 and $s.upgrades.panel==nil and $s.scenes.panel.mounted and panel_row($s).position_supported==false and read_file($settings_path)==$panel_settings,"headerless template upgrade degrades position support while preserving user settings")
+  -- Direct reset on a fresh loader must retain the actual settings refusal.
+  -- Its first carry-settings catch rethrows; exercise the shared failure
+  -- writer with that same refusal too, before any upgrade has made its map.
+  $pt = $tmp .. "/fresh-panel-templates"
+  mkdir($pt)
+  install_fixture($pt, "panel", false)
+  write_file($pt .. "/panel/template.conf.mix", "{title:'Panel',settings_schema:{value:{type:'string'}}}\n")
+  write_file($pt .. "/panel/settings.conf.mix", "{value:'default'}\n")
+  for $case in [{name:"oversized", bytes:repeat("x", 262145), code:"SCENES_LIMIT"}, {name:"invalid", bytes:"{value:123}\n", code:"VALIDATION_TYPE"}]
+    $fresh = se_fresh("fresh-panel-" .. $case.name, $pt)
+    $fresh = $l.request($fresh, "install", {template:"panel"})
+    check($fresh.rc == 0 and $fresh.upgrades == nil, "direct panel reset starts without an upgrade map")
+    $path = $fresh.root .. "/panel/settings.conf.mix"
+    write_file($path, $case.bytes)
+    $before = state_bytes($fresh)
+    $code_before = read_file($fresh.root .. "/panel/scene.mix")
+    $fresh = $l.request($fresh, "reset", {name:"panel"})
+    check($fresh.rc == 10 and $fresh.response.error_code == $case.code, "direct panel reset returns the settings refusal: " .. $case.name)
+    check(read_file($path) == $case.bytes and state_bytes($fresh) == $before and read_file($fresh.root .. "/panel/scene.mix") == $code_before, "refused panel reset preserves settings, desired state and scene")
+    $fresh = $l.upgrade_failure($fresh, "panel", $fresh.response.message, $fresh.response.error_code, $fresh.response.context)
+    check($fresh.upgrades.panel.error_code == $case.code and not $fresh.upgrades.panel.retryable, "failure writer initialises its own map with the settings refusal")
+  end
   print("PASS scenes loader: " .. to_string($checks.count) .. " assertions covering startup, commands/refusals, last-good, generations, exit races, crash loop, snapshots, popup receipts, persistence, recovery and deduplication")
 finally
   remove_dir($tmp)
