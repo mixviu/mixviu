@@ -386,6 +386,9 @@ mod tests {
         }
         let final_status = status.lock().unwrap().clone();
         // Signal termination is Exited(None); spawn/wait failures are not a reap.
-        assert!(matches!(final_status, Status::Exited(_)), "{final_status:?}");
+        assert!(
+            matches!(final_status, Status::Exited(_)),
+            "{final_status:?}"
+        );
     }
 }
