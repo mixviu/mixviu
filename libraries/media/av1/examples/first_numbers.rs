@@ -40,7 +40,12 @@ fn main() {
                     [55, 48, 42, 255]
                 };
                 // Coloured glyph-like one-pixel strokes, including sharp edges.
-                if x > 220 && x < 900 && source_y % 28 > 8 && source_y % 28 < 20 && (x + row * 3) % 11 < 2 {
+                if x > 220
+                    && x < 900
+                    && source_y % 28 > 8
+                    && source_y % 28 < 20
+                    && (x + row * 3) % 11 < 2
+                {
                     c = [220, 180, 85, 255];
                 }
                 if scene == "static" && t >= 4 && x > 930 && x < 933 && (80..104).contains(&y) {
