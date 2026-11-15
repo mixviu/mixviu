@@ -241,12 +241,21 @@ fn main() {{
         "missing marker preserves strict diagnostics"
     );
     // Every non-regular marker at the real member prefix refuses promptly.
-    assert!(Command::new("mkfifo").arg(&marker).status().unwrap().success());
+    assert!(
+        Command::new("mkfifo")
+            .arg(&marker)
+            .status()
+            .unwrap()
+            .success()
+    );
     let out = promptly(command(&prefix.join("bin/viu")));
     assert_eq!(out.status.code(), Some(42));
     assert!(String::from_utf8_lossy(&out.stderr).contains(marker.to_str().unwrap()));
     std::fs::remove_file(&marker).unwrap();
-    for target in [prefix.join("marker-source.json"), scratch_root.join("outside-marker.json")] {
+    for target in [
+        prefix.join("marker-source.json"),
+        scratch_root.join("outside-marker.json"),
+    ] {
         std::fs::write(&target, &valid).unwrap();
         symlink(&target, &marker).unwrap();
         let out = promptly(command(&prefix.join("bin/viu")));
