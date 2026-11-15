@@ -860,7 +860,7 @@ async fn worker_connected(
         }
         if generation.is_some() && comp_dirty && comp_retry.is_none_or(|at| Instant::now() >= at) {
             let synced = async {
-                client.call("noded", "noded.props.watch", json!({})).await?;
+                client.subscribe_topic("noded.props.changed").await?;
                 let props = client.call(&comp, "comp.props.watch", json!({})).await?;
                 let outputs = client
                     .call(&comp, "comp.props.get", json!({"path":"outputs"}))

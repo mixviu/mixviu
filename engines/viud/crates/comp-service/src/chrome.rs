@@ -164,7 +164,7 @@ pub(crate) async fn run(
         if let Some(epoch) = generation {
             if registry_dirty && registry_retry.is_none_or(|at| std::time::Instant::now() >= at) {
                 let result = tokio::time::timeout(std::time::Duration::from_secs(1), async {
-                    client.call("noded", "noded.props.watch", json!({})).await?;
+                    client.subscribe_topic("noded.props.changed").await?;
                     client
                         .call(
                             "noded",
@@ -282,7 +282,7 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn idle_chrome_reads_once_and_titlebar_changes_read_once() {
-        let broker = test_broker::Broker::start();
+        let mut broker = test_broker::Broker::bounce_stable();
         let settings = idle_bus::Service::start(&broker, "settingsd").await;
         let app = idle_bus::Service::start(&broker, "example-app").await;
         targets(BTreeSet::from(["example-app".into()]));
@@ -348,6 +348,10 @@ mod tests {
             3,
             "authority recovery reads once after a fenced failed-read retry"
         );
+        broker.bounce();
+        settings.wait("settings.get", 4).await;
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        assert_eq!(settings.count("settings.get"), 4, "reconnect reads once then stays idle");
         task.abort();
         forward.abort();
         native_forward.abort();
