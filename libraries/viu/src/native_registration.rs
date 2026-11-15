@@ -7,7 +7,11 @@ pub(crate) fn provenance() -> bus::RegisterProvenance {
     static STARTED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let build = buildinfo::build_info!();
     bus::RegisterProvenance::from_parts(
-        "viu", build.version, build.git_sha, build.git_dirty, build.build_time,
+        "viu",
+        build.version,
+        build.git_sha,
+        build.git_dirty,
+        build.build_time,
         STARTED.get_or_init(buildinfo::now_rfc3339).clone(),
     )
 }
