@@ -102,7 +102,11 @@ mod tests {
                         } else {
                             None
                         },
-                        tty0_available: if cfg!(feature = "backend-native") { Some(std::path::Path::new("/dev/tty0").exists()) } else { None },
+                        tty0_available: if cfg!(feature = "backend-native") {
+                            Some(std::path::Path::new("/dev/tty0").exists())
+                        } else {
+                            None
+                        },
                         ..SessionSnapshot::default()
                     }
                 );

@@ -1150,11 +1150,19 @@ fn session_reports_input_presence_and_seat_failure_even_with_a_working_vt_source
     assert_eq!(rc, 0);
     let body: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(body["input"], json!({"keyboards": 1, "pointers": 0}));
-    assert_eq!(body["activation_error"], "libseat creation failed and /dev/tty0 is missing");
+    assert_eq!(
+        body["activation_error"],
+        "libseat creation failed and /dev/tty0 is missing"
+    );
     snapshot.session.as_mut().unwrap().vt_source_available = Some(false);
     let (_, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
     let body: Value = serde_json::from_str(&body).unwrap();
-    assert!(body["activation_error"].as_str().unwrap().starts_with("no active VT source"));
+    assert!(
+        body["activation_error"]
+            .as_str()
+            .unwrap()
+            .starts_with("no active VT source")
+    );
 }
 
 #[test]

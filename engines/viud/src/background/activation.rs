@@ -147,7 +147,9 @@ pub fn install(
     output: Output,
 ) -> Result<Handles, Box<dyn std::error::Error>> {
     if !std::path::Path::new("/dev/tty0").exists() {
-        warn!("/dev/tty0 is not exposed: the VT monitor can use the session tty, but seatd console access may fail; check comp.session.get activation_error when the VT activates");
+        warn!(
+            "/dev/tty0 is not exposed: the VT monitor can use the session tty, but seatd console access may fail; check comp.session.get activation_error when the VT activates"
+        );
     }
     let handles = Rc::new(RefCell::new(None));
     let handle = state.loop_handle.clone();
