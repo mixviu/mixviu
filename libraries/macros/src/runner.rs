@@ -356,39 +356,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[ignore]
-    fn stress_dropped_runners() {
-        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let load: Vec<_> = (0..8).map(|_| {
-            let stop = stop.clone();
-            thread::spawn(move || {
-                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-                    let mut command = Command::new("/usr/bin/true");
-                    unsafe { command.pre_exec(|| { libc::usleep(5000); Ok(()) }); }
-                    command.spawn().unwrap().wait().unwrap();
-                }
-            })
-        }).collect();
-        let workers: Vec<_> = (0..8)
-            .map(|_| thread::spawn(|| {
-                let mut failed = 0;
-                for _ in 0..2000 {
-                    if std::panic::catch_unwind(dropping_a_runner_requests_termination_and_the_manager_reaps).is_err() {
-                        failed += 1;
-                    }
-                }
-                failed
-            }))
-            .collect();
-        let failed: usize = workers.into_iter().map(|worker| worker.join().unwrap()).sum();
-        stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        for worker in load { worker.join().unwrap(); }
-        eprintln!("STRESS total=16000 failed={failed} concurrency=8");
-        assert_eq!(failed, 0);
-    }
-
-    #[cfg(unix)]
-    #[test]
     fn dropping_a_runner_requests_termination_and_the_manager_reaps() {
         let temp = tempfile::tempdir().unwrap();
         // Use an existing executable: a concurrent fork can inherit a freshly
@@ -418,7 +385,6 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         let final_status = status.lock().unwrap().clone();
-        eprintln!("dropped runner status: {final_status:?}");
         // Signal termination is Exited(None); spawn/wait failures are not a reap.
         assert!(matches!(final_status, Status::Exited(_)), "{final_status:?}");
     }
