@@ -287,8 +287,20 @@ mod tests {
         let app = idle_bus::Service::start(&broker, "example-app").await;
         targets(BTreeSet::from(["example-app".into()]));
         let (client, mut incoming, native_forward) = idle_bus::native(&broker, "comp-idle").await;
-        let names = client.call("noded", "noded.props.get", json!({"path":"services.registered"})).await.unwrap();
-        assert!(names.as_array().is_some_and(|names| names.contains(&json!("example-app"))), "registry: {names}");
+        let names = client
+            .call(
+                "noded",
+                "noded.props.get",
+                json!({"path":"services.registered"}),
+            )
+            .await
+            .unwrap();
+        assert!(
+            names
+                .as_array()
+                .is_some_and(|names| names.contains(&json!("example-app"))),
+            "registry: {names}"
+        );
         let observer = idle_bus::Observer::start(&broker).await;
         let (send, events) = tokio::sync::mpsc::channel(64);
         let forward = tokio::spawn(async move {
@@ -318,7 +330,11 @@ mod tests {
         app.wait("example-app.ui.titlebar.form", 1).await;
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
         assert_eq!(settings.count("settings.get"), 1);
-        assert_eq!(observer.registry_reads("comp-idle"), 1, "idle makes no registry read");
+        assert_eq!(
+            observer.registry_reads("comp-idle"),
+            1,
+            "idle makes no registry read"
+        );
         assert_eq!(
             app.count("example-app.ui.titlebar.form"),
             1,
@@ -351,7 +367,11 @@ mod tests {
         broker.bounce();
         settings.wait("settings.get", 4).await;
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-        assert_eq!(settings.count("settings.get"), 4, "reconnect reads once then stays idle");
+        assert_eq!(
+            settings.count("settings.get"),
+            4,
+            "reconnect reads once then stays idle"
+        );
         task.abort();
         forward.abort();
         native_forward.abort();

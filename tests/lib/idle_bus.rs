@@ -18,13 +18,26 @@ pub async fn connect(broker: &test_broker::Broker, name: &str) -> SupervisedClie
         .unwrap()
 }
 
-pub async fn native(broker: &test_broker::Broker, name: &str) -> (SupervisedClient, tokio::sync::mpsc::UnboundedReceiver<bus::IncomingCommand>, tokio::task::JoinHandle<()>) {
-    let client = SupervisedClient::connect_options(name, &broker.url).verified_unix(broker.options()).connect().await.unwrap();
+pub async fn native(
+    broker: &test_broker::Broker,
+    name: &str,
+) -> (
+    SupervisedClient,
+    tokio::sync::mpsc::UnboundedReceiver<bus::IncomingCommand>,
+    tokio::task::JoinHandle<()>,
+) {
+    let client = SupervisedClient::connect_options(name, &broker.url)
+        .verified_unix(broker.options())
+        .connect()
+        .await
+        .unwrap();
     let mut deliveries = client.deliveries().unwrap();
     let (send, incoming) = tokio::sync::mpsc::unbounded_channel();
     let task = tokio::spawn(async move {
         while let Some(delivery) = deliveries.recv().await {
-            if send.send(delivery.into_command()).is_err() { break; }
+            if send.send(delivery.into_command()).is_err() {
+                break;
+            }
         }
     });
     (client, incoming, task)
@@ -55,8 +68,13 @@ pub struct Service {
 }
 impl Service {
     pub async fn start(broker: &test_broker::Broker, name: &str) -> Self {
-        let client = Arc::new(SupervisedClient::connect_options(name, &broker.url)
-            .verified_unix(broker.options()).connect().await.unwrap());
+        let client = Arc::new(
+            SupervisedClient::connect_options(name, &broker.url)
+                .verified_unix(broker.options())
+                .connect()
+                .await
+                .unwrap(),
+        );
         let mut incoming = client.deliveries().unwrap();
         let calls = Arc::new(Mutex::new(Vec::new()));
         let captured = calls.clone();
@@ -135,17 +153,25 @@ impl Service {
             }
         })
         .await
-        .unwrap_or_else(|_| panic!("waiting for {command} count {count}; calls: {:?}", self.calls.lock().unwrap()));
+        .unwrap_or_else(|_| {
+            panic!(
+                "waiting for {command} count {count}; calls: {:?}",
+                self.calls.lock().unwrap()
+            )
+        });
     }
     pub async fn publish(&self, topic: &str, body: Value) {
         let headers = BTreeMap::from([
             ("name".into(), topic.into()),
             ("retain".into(), "false".into()),
         ]);
-        self.client
-            .call_with_headers_raw("noded", "topic.publish", &headers, &body.to_string())
+        let mut inner = bus::BusMessage::new().with_header("command", topic);
+        inner.body = body.to_string();
+        let reply = self.client
+            .call_with_headers_raw("noded", "topic.publish", &headers, &inner.to_wire())
             .await
             .unwrap();
+        assert_eq!(reply.0, 0, "publish refused: {reply:?}");
     }
     pub async fn settings_changed(&self, revision: u64, incarnation: &str) {
         let snapshot = snapshot(revision, incarnation);
@@ -175,20 +201,47 @@ impl Observer {
     pub async fn start(broker: &test_broker::Broker) -> Self {
         let client = connect(broker, "idle-observer").await;
         let mut incoming = client.incoming().unwrap();
-        client.call("noded", "noded.observe.start", json!({"filter":{"commands":["noded.props.get"]},"body":"none"})).await.unwrap();
+        client
+            .call(
+                "noded",
+                "noded.observe.start",
+                json!({"filter":{"commands":["noded.props.get"]},"body":"none"}),
+            )
+            .await
+            .unwrap();
         let events = Arc::new(Mutex::new(Vec::new()));
         let captured = events.clone();
         let task = tokio::spawn(async move {
             while let Some(command) = incoming.recv().await {
                 if command.command == "noded.observe.event" {
-                    captured.lock().unwrap().push(serde_json::from_str(&command.body).unwrap());
+                    captured
+                        .lock()
+                        .unwrap()
+                        .push(serde_json::from_str(&command.body).unwrap());
                 }
             }
         });
-        Self { _client:client, events, task }
+        Self {
+            _client: client,
+            events,
+            task,
+        }
     }
     pub fn registry_reads(&self, from: &str) -> usize {
-        self.events.lock().unwrap().iter().filter(|e| e["message_type"] == "request" && e["from"] == from && e["command"] == "noded.props.get").count()
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| {
+                e["message_type"] == "request"
+                    && e["from"] == from
+                    && e["command"] == "noded.props.get"
+            })
+            .count()
     }
 }
-impl Drop for Observer { fn drop(&mut self) { self.task.abort(); } }
+impl Drop for Observer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
