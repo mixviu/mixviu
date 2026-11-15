@@ -133,8 +133,10 @@ pub(crate) async fn run(
     let mut states = client.subscribe_state();
     let mut registry_dirty = true;
     let mut registry_retry = None;
+    let mut registry_delay = std::time::Duration::from_secs(1);
     let mut bars_dirty = BTreeSet::new();
     let mut presentation_retry = None;
+    let mut presentation_delay = std::time::Duration::from_secs(1);
     let mut generation = None;
     let mut work = None;
     let mut services = BTreeSet::new();
@@ -148,12 +150,14 @@ pub(crate) async fn run(
                 work = consumer.connected(now);
                 registry_dirty = true;
                 registry_retry = None;
+                registry_delay = std::time::Duration::from_secs(1);
                 // This is the Bus epoch, not a settingsd restart. The next
                 // registry snapshot must refresh every live target on a new
                 // connection, even if its registration identity stayed equal.
                 incarnations.clear();
                 bars_dirty.clear();
                 presentation_retry = None;
+                presentation_delay = std::time::Duration::from_secs(1);
             }
         } else {
             generation = None;
@@ -242,6 +246,8 @@ pub(crate) async fn run(
                         // as on older brokers. There is still no idle poll.
                         if identity.is_none() || incarnations.get(target) != identity.as_ref() {
                             bars_dirty.insert(target.clone());
+                            presentation_retry = None;
+                            presentation_delay = std::time::Duration::from_secs(1);
                         }
                         if let Some(identity) = identity {
                             next.insert(target.clone(), identity);
@@ -250,14 +256,19 @@ pub(crate) async fn run(
                     incarnations = next;
                     bars_dirty.retain(|name| services.contains(name));
                 }
-                registry_retry = registry_dirty
-                    .then(|| std::time::Instant::now() + std::time::Duration::from_secs(1));
+                registry_retry = if registry_dirty {
+                    Some(next_retry(&mut registry_delay))
+                } else {
+                    registry_delay = std::time::Duration::from_secs(1);
+                    None
+                };
             }
+            let presentation_due = presentation_retry.is_none_or(|at| std::time::Instant::now() >= at);
             let mut bars = BTreeMap::new();
             let targets = TARGETS.lock().unwrap().clone();
             let dirty: Vec<_> = targets
                 .iter()
-                .filter(|name| services.contains(*name) && bars_dirty.contains(*name))
+                .filter(|name| presentation_due && services.contains(*name) && bars_dirty.contains(*name))
                 .cloned()
                 .collect();
             for service in &dirty {
@@ -298,8 +309,12 @@ pub(crate) async fn run(
                 // A full engine queue must not discard a fetched titlebar.
                 bars_dirty.extend(dirty);
             }
-            presentation_retry = (!accepted || bars_dirty.iter().any(|s| services.contains(s)))
-                .then(|| std::time::Instant::now() + std::time::Duration::from_secs(1));
+            if accepted && !bars_dirty.iter().any(|s| services.contains(s)) {
+                presentation_retry = None;
+                presentation_delay = std::time::Duration::from_secs(1);
+            } else if presentation_due {
+                presentation_retry = Some(next_retry(&mut presentation_delay));
+            }
         }
         let deadline = consumer
             .retry_deadline()
@@ -343,10 +358,13 @@ pub(crate) async fn run(
                             && (body["path"] == "services.registered" || body["gap"] == true || event.header("gap") == Some("true")) {
                             registry_dirty = true;
                             registry_retry = None;
+                            registry_delay = std::time::Duration::from_secs(1);
                         }
                     } else if let Some(service) = event.header("broker_service")
                         && event.topic() == Some(format!("{service}.ui.titlebar.changed").as_str()) && services.contains(service) {
                         bars_dirty.insert(service.to_owned());
+                        presentation_retry = None;
+                        presentation_delay = std::time::Duration::from_secs(1);
                     }
                 }
             }
@@ -362,6 +380,14 @@ async fn recovery_deadline(deadline: Option<std::time::Instant>) {
         Some(at) => tokio::time::sleep_until(at.into()).await,
         None => std::future::pending().await,
     }
+}
+
+// Failure-only recovery: fresh hints/success reset the delay; unrelated
+// worker wakes neither advance the deadline nor bypass it.
+fn next_retry(delay: &mut std::time::Duration) -> std::time::Instant {
+    let at = std::time::Instant::now() + *delay;
+    *delay = (*delay * 2).min(std::time::Duration::from_secs(30));
+    at
 }
 
 #[cfg(test)]
@@ -636,6 +662,78 @@ mod tests {
         drop(starter);
         targets(BTreeSet::new());
     }
+    #[tokio::test]
+    async fn failed_titlebar_reads_back_off() {
+        let mut broker = test_broker::Broker::bounce_stable();
+        let settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let mut app = idle_bus::Service::start(&broker, "example-app").await;
+        targets(BTreeSet::from(["example-app".into()]));
+        let (client, mut incoming, native_forward) = idle_bus::native(&broker, "comp-idle").await;
+        let names = client
+            .call(
+                "noded",
+                "noded.props.get",
+                json!({"path":"services.registered"}),
+            )
+            .await
+            .unwrap();
+        assert!(
+            names
+                .as_array()
+                .is_some_and(|names| names.contains(&json!("example-app"))),
+            "registry: {names}"
+        );
+        let observer = idle_bus::Observer::start(&broker).await;
+        let (send, events) = tokio::sync::mpsc::channel(64);
+        let hints = send.clone();
+        // Registrations are capped/coalesced independently by the broker.
+        // Drive one explicit hint after each completed registration below,
+        // so exact per-delivery counts do not depend on that timer's phase.
+        let forward = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await {
+                if event.topic() != Some("noded.props.changed") && send.send(event).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let engine_wake = Arc::new(tokio::sync::Notify::new());
+        let notify = engine_wake.clone();
+        let (wiring, starter) = crate::port::prepare(
+            crate::port::PortIdentity {
+                service: "comp-idle".into(),
+                version: "test".into(),
+                backend: "nested",
+                engine: "test",
+                noded_url: broker.url.clone(),
+            },
+            Arc::new(move || notify.notify_one()),
+        )
+        .unwrap();
+        let ingress = starter.ingress().clone();
+        // Consume the bounded engine lane as a real compositor does. Merely
+        // keeping its receiver alive eventually stalls recovery checkpoints.
+        let engine = tokio::spawn(async move {
+            loop {
+                engine_wake.notified().await;
+                wiring.service.drain_chrome_fixture();
+            }
+        });
+        app.fail_forms.store(3, Ordering::SeqCst);
+        let live = Arc::new(AtomicU64::new(client.connection_generation()));
+        let task = tokio::spawn(async move {
+            run(&client, ingress, events, live).await;
+        });
+
+        app.wait("example-app.ui.titlebar.form", 4).await;
+        app.checkpoint("comp-idle").await;
+        let times: Vec<_> = app.calls.lock().unwrap().iter().filter(|(c,_)| c.ends_with(".ui.titlebar.form")).map(|(_,at)| *at).collect();
+        assert!(times[1].duration_since(times[0]) >= std::time::Duration::from_millis(900));
+        assert!(times[2].duration_since(times[1]) >= std::time::Duration::from_millis(1900));
+        assert!(times[3].duration_since(times[2]) >= std::time::Duration::from_millis(3900));
+        app.assert_idle(std::time::Duration::from_millis(1200)).await;
+        task.abort(); forward.abort(); native_forward.abort(); engine.abort(); drop(starter); targets(BTreeSet::new());
+    }
+
     #[test]
     fn titlebar_routes_keep_application_viewport_contracts() {
         assert_eq!(

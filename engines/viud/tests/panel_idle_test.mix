@@ -113,6 +113,16 @@ try
   write_file($path, replace_must(read_file($path), "fn call($target, $command, $args)\n",
     "fn call($target, $command, $args)\n  $fixture_call=uuid()\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command,at:monotonic()}) .. \"\\n\")\n  try\n  if $command == \"notify.list\" and is_file(env(\"FIXTURE_DIR\") .. \"/notify-throw\") then remove(env(\"FIXTURE_DIR\") .. \"/notify-throw\"); raise(\"FIXTURE_NOTIFY\",\"injected notify failure\") end\n  if $command == \"noded.props.get\" and is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then return {ok:false,value:nil} end\n"))
   write_file($path,replace_must(read_file($path),"  return {ok: true, rc: 0, value: $body}\nend","  return {ok: true, rc: 0, value: $body}\n  finally\n    append_file(env(\"FIXTURE_DIR\") .. \"/completed\",$fixture_call .. \"\\n\")\n  end\nend"))
+  write_file($path,replace_must(read_file($path),"  try\n  if $command == \"notify.list\"", '  try
+  if is_file(env("FIXTURE_DIR") .. "/comp-fail") then
+    $fault=json_parse(read_file(env("FIXTURE_DIR") .. "/comp-fail"))
+    if $command==$fault.command or ($fault.command=="comp.workspaces.list" and $command=="comp.props.get") then
+      if $command!="comp.workspaces.list" then remove(env("FIXTURE_DIR") .. "/comp-fail") end
+      if $fault.kind=="throw" then raise("FIXTURE_COMP","injected comp failure") end
+      return {ok:false,value:nil}
+    end
+  end
+  if $command == "notify.list"'))
   write_file($tmp .. "/client.mix", 'send $1 $2 body="{}" timeout=5
 print(json_encode({rc:$rc,value:$result}))
 ')
@@ -227,7 +237,22 @@ task_start("panel.test.observe","{}")
   end
   check(is_file($tmp .. "/model"), "first panel model missing")
   if $case != "clock" and $case != "registry" then quiet() end
-  if $case == "comp" then
+  if starts_with($case,"comp-failure-") then
+    $kind=replace($case,"comp-failure-","")
+    $command=if $kind=="watch" or $kind=="watch-throw" then "comp.props.watch" elif $kind=="workspace" then "comp.workspaces.list" else "comp.windows.list" end
+    $registry=calls_for("noded.props.get")
+    write_file($tmp .. "/windows",json_encode([{id:9,band:"normal",app_id:"example",title:"recovered",workspace:1}]))
+    write_file($tmp .. "/comp-fail",json_encode({command:$command,kind:contains($kind,"throw") ? "throw" : "refuse"}))
+    write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["panel-stub"],new:["panel-stub","late-app"]}
+')
+    $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
+    wait_state("windows",[{id:9,band:"normal",app_id:"example",title:"recovered",workspace:1}])
+    quiet()
+    check(calls_for("noded.props.get")==$registry,"comp failure was attributed to registry")
+    idle(1.2)
+    print("PASS compositor " .. $kind .. " failure recovers without unrelated events")
+    exit(0)
+  elif $case == "comp" then
     $watches=calls_for("comp.props.watch")
     $windows=calls_for("comp.windows.list")
     $icons=calls_for("apps.icon")

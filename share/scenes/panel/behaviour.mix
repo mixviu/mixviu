@@ -85,7 +85,8 @@ $state = {ready: false, windows: [], ws_count: 1, ws_current: 1, ws_names: [], t
   model: nil, settings_watch: nil,
   registry_dirty: false, registry_retrying: false, registry_delay: 0.25,
   tray_dirty: false, tray_retrying: false, tray_delay: 0.25,
-  notes_dirty: false, notes_retrying: false, notes_delay: 0.25, windows_dirty: true}
+  notes_dirty: false, notes_retrying: false, notes_delay: 0.25, windows_dirty: true,
+  windows_watch_dirty: true, windows_retrying: false, windows_delay: 0.25}
 $first = read_settings()
 $state.tasks_scope = $first.scope ?? "all"
 if $first.scope == nil then eprint("panel: " .. $SETTINGS .. ": " .. $first.why .. "; using \"all\"") end
@@ -184,11 +185,47 @@ end
 
 -- ── service state (events are hints; these reads are the truth) ─────────
 fn fetch_windows()
+  $state.windows_dirty = true
+  try
+    if read_windows() then
+      $state.windows_dirty = false
+      $state.windows_delay = 0.25
+      return true
+    end
+  catch $message
+    eprint("panel: compositor read failed: " .. to_string($message))
+  end
+  if not $state.windows_retrying then
+    $state.windows_retrying = true
+    task_start("windows.retry", "{}")
+  end
+  return false
+end
+
+fn read_windows()
+  if $state.windows_watch_dirty then
+    $watch = $r.call($COMP, "comp.props.watch", {})
+    if not $watch.ok then return false end
+    $state.windows_watch_dirty = false
+  end
   $out = $r.call($COMP, "comp.windows.list", {})
   if not $out.ok or type($out.value) != "map" or type($out.value.windows) != "list" then return false end
+  $ws = read_workspaces()
+  if $ws == nil then return false end
   $state.windows = $t.normal_windows($out.value.windows)
-  apply_workspaces(read_workspaces())
+  apply_workspaces($ws)
   return true
+end
+
+on windows.retry async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    sleep($state.windows_delay)
+    $state.windows_delay = min(30, $state.windows_delay * 2)
+  finally
+    $state.windows_retrying = false
+  end
+  if $state.windows_dirty then fetch_windows(); schedule() end
 end
 
 -- comp.workspaces.list: count, current and one {index, windows, name} row per
@@ -393,9 +430,8 @@ end
 fn rebuild()
   $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return end
-  if $state.windows_dirty then
-    $state.windows_dirty = false
-    fetch_windows()
+  if $state.windows_dirty and not $state.windows_retrying then
+    $state.windows_dirty = not fetch_windows()
   end
   resolve_icons()
   $model = $m.panel(snapshot(), $state.icons, time())
@@ -515,9 +551,8 @@ fn services_changed($live)
   fetch_notes()
   if contains($live, $APPS) then $state.icons = empty_icons() end
   if contains($live, $COMP) then
-    $r.call($COMP, "comp.props.watch", {})
-    fetch_windows()
-    $state.windows_dirty = false
+    $state.windows_watch_dirty = true
+    $state.windows_dirty = not fetch_windows()
   end
   -- notifyd arrived after the panel: bring the toast up now.
   if contains($live, $NOTIFY) and not contains($previous, $NOTIFY) then task_start("toast_ensure", "{}") end
