@@ -7,7 +7,6 @@
 
 use crate::edid::identity::MonitorIdentity;
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
-use smithay::reexports::drm::control::connector;
 use smithay::utils::{Size, Transform};
 use std::sync::atomic::{AtomicU64, Ordering};
 

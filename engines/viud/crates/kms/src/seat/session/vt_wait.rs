@@ -151,7 +151,7 @@ impl ActiveVt for Monitor {
 pub fn watch_changes(
     own: u32,
     source: &mut impl ActiveVt,
-    mut activated: impl FnMut(),
+    activated: impl FnMut(),
 ) -> std::io::Result<()> {
     watch_until_stopped(
         own,
