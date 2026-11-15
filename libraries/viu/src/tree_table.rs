@@ -5,22 +5,86 @@ use crate::widgets::{Intent, Widget};
 use egui::{Align2, FontId, Id, Rect, Sense, TextStyle, Ui, pos2, vec2};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use std::hash::{Hash, Hasher};
 
 fn table_rows(value: &Value) -> &[Value] {
     value["rows"].as_array().map(Vec::as_slice).unwrap_or(&[])
 }
 
-#[derive(Clone)]
-struct SampleWidthCache {
-    key: u64,
-    width: f32,
+#[derive(Clone, PartialEq)]
+struct MeasurementKey {
+    column: Value,
+    fonts: Vec<FontId>,
+    definitions: egui::FontDefinitions,
+    scale: f32,
+    spacing: f32,
+}
+
+impl MeasurementKey {
+    fn new(ui: &Ui, column: &Value, fonts: Vec<FontId>) -> Self {
+        Self {
+            column: column.clone(),
+            fonts,
+            // Compare font contents, including face index and tweaks. Arc address
+            // reuse/reallocation is not a font identity contract.
+            definitions: ui.fonts(|fonts| fonts.definitions().clone()),
+            scale: ui.ctx().pixels_per_point(),
+            spacing: ui.spacing().item_spacing.x,
+        }
+    }
+}
+
+#[derive(Default)]
+struct ColumnMeasurements {
+    key: Option<MeasurementKey>,
+    baseline: f32,
+    rows: Vec<(String, f32)>,
+}
+
+impl ColumnMeasurements {
+    fn update<'a>(
+        &mut self,
+        key: MeasurementKey,
+        fixed: impl Iterator<Item = &'a str>,
+        rows: impl Iterator<Item = &'a str>,
+        mut measure: impl FnMut(&str, bool) -> f32,
+    ) -> f32 {
+        if self.key.as_ref() != Some(&key) {
+            self.baseline = fixed.map(|text| measure(text, true)).fold(0.0, f32::max);
+            self.rows.clear();
+            self.key = Some(key);
+        }
+        let mut count = 0;
+        let mut width = self.baseline;
+        for (index, text) in rows.enumerate() {
+            if let Some((previous, measured)) = self.rows.get_mut(index) {
+                if previous != text {
+                    *measured = measure(text, false);
+                    text.clone_into(previous);
+                }
+                width = width.max(*measured);
+            } else {
+                let measured = measure(text, false);
+                self.rows.push((text.to_owned(), measured));
+                width = width.max(measured);
+            }
+            count += 1;
+        }
+        self.rows.truncate(count);
+        width
+    }
+}
+
+// egui temp storage clones on read. Share the row snapshots rather than cloning
+// the entire table each frame. The lock is held only during this column update.
+fn column_cache(ui: &Ui, id: Id) -> std::sync::Arc<std::sync::Mutex<ColumnMeasurements>> {
+    ui.data_mut(|data| data.get_temp_mut_or_default::<std::sync::Arc<std::sync::Mutex<ColumnMeasurements>>>(id).clone())
 }
 
 #[cfg(test)]
 thread_local! {
     static SAMPLE_LAYOUTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static UNCACHED_SAMPLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static WIDTH_LAYOUTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -39,43 +103,23 @@ fn sample_width(ui: &Ui, id: &str, column: &Value, rows: &[Value], index: usize)
             ui, column, samples, rows, index, &body, &strong,
         ));
     }
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    body.hash(&mut hash);
-    strong.hash(&mut hash);
-    ui.ctx().pixels_per_point().to_bits().hash(&mut hash);
-    ui.spacing().item_spacing.x.to_bits().hash(&mut hash);
-    // Family names alone do not detect replacement faces under the same name.
-    ui.fonts(|fonts| {
-        let definitions = fonts.definitions();
-        for family in [&body.family, &strong.family] {
-            if let Some(names) = definitions.families.get(family) {
-                for name in names {
-                    name.hash(&mut hash);
-                    if let Some(data) = definitions.font_data.get(name) {
-                        std::sync::Arc::as_ptr(data).hash(&mut hash);
-                    }
-                }
-            }
-        }
-    });
-    for value in std::iter::once(text(column, "label"))
-        .chain(samples.iter().filter_map(Value::as_str))
-        .chain(rows.iter().filter_map(|row| row["cells"][index].as_str()))
-    {
-        value.hash(&mut hash);
-    }
-    let key = hash.finish();
+    let key = MeasurementKey::new(ui, column, vec![body, strong]);
     let cache_id = Id::unique((ui.ctx().viewport_id(), id, index, "sample-width"));
-    if let Some(cache) = ui.data(|data| data.get_temp::<SampleWidthCache>(cache_id))
-        && cache.key == key
-    {
-        return Some(cache.width);
-    }
-    let width = measure_sample_width(ui, column, samples, rows, index, &body, &strong);
-    ui.data_mut(|data| data.insert_temp(cache_id, SampleWidthCache { key, width }));
-    Some(width)
+    let fonts = key.fonts.clone();
+    let width = column_cache(ui, cache_id).lock().expect("column cache").update(
+        key,
+        std::iter::once(text(column, "label")).chain(samples.iter().filter_map(Value::as_str)),
+        rows.iter().map(|row| row["cells"][index].as_str().unwrap_or("")),
+        |text, _| fonts.iter().map(|font| {
+            #[cfg(test)]
+            SAMPLE_LAYOUTS.set(SAMPLE_LAYOUTS.get() + 1);
+            ui.painter().layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color()).size().x
+        }).fold(0.0, f32::max),
+    );
+    Some(width + ui.spacing().item_spacing.x + 2.0)
 }
 
+#[cfg(test)]
 fn measure_sample_width(
     ui: &Ui,
     column: &Value,
@@ -128,6 +172,76 @@ fn native_table_state(value: &Value) -> Result<toolkit::datatable::TableState, S
 #[cfg(test)]
 mod numeric_state_tests {
     use super::*;
+
+    #[test]
+    fn streaming_columns_measure_only_changed_cells_and_match_full_layout() {
+        let ctx = egui::Context::default();
+        crate::appearance::install(&ctx);
+        let column = json!({"label":"Metadata", "samples":["sample"]});
+        let mut value = json!({"columns":[column.clone(), column.clone()], "rows":
+            (0..2000).map(|i| json!({"cells":[format!("Name {i}"),format!("Value {i}")]})).collect::<Vec<_>>()});
+        for frame in 0..50 {
+            match frame {
+                21..=40 => value["rows"].as_array_mut().unwrap().push(json!({"cells":["new",format!("Append {frame}")]})),
+                41 => value["rows"][17]["cells"][1] = json!("The widest cell, removed on the next frame"),
+                42 => { value["rows"].as_array_mut().unwrap().remove(17); }
+                43 => { value["rows"].as_array_mut().unwrap().truncate(10); }
+                44 => ctx.set_pixels_per_point(2.5),
+                45 => ctx.all_styles_mut(|style| {
+                    style.text_styles.insert(TextStyle::Body, FontId::monospace(22.0));
+                }),
+                46 => value["columns"][1]["label"] = json!("A wider header"),
+                47 => {
+                    let mut definitions = egui::FontDefinitions::default();
+                    for data in definitions.font_data.values_mut() {
+                        std::sync::Arc::make_mut(data).tweak.scale = 1.25;
+                    }
+                    ctx.set_fonts(definitions);
+                }
+                _ => {}
+            }
+            SAMPLE_LAYOUTS.set(0);
+            WIDTH_LAYOUTS.set(0);
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let rows = table_rows(&value);
+                let column = &value["columns"][1];
+                let sampled = sample_width(ui, "stream", column, rows, 1).unwrap();
+                let measured = widths(ui, "stream", &value, 0.85);
+                let sample_count = SAMPLE_LAYOUTS.get();
+                let width_count = WIDTH_LAYOUTS.get();
+                match frame {
+                    1..=20 | 43 | 48..=49 => {
+                        assert_eq!(sample_count, 0, "frame {frame}");
+                        assert_eq!(width_count, 0, "frame {frame}");
+                    }
+                    21..=41 => {
+                        assert_eq!(sample_count, 2, "frame {frame}");
+                        assert_eq!(width_count, 1, "frame {frame}");
+                    }
+                    0 | 44..=47 => {
+                        assert!(sample_count > 0, "frame {frame}");
+                        assert!(width_count > 0, "frame {frame}");
+                    }
+                    _ => {}
+                }
+                let body = TextStyle::Body.resolve(ui.style());
+                let strong = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(body.size));
+                assert_eq!(sampled, measure_sample_width(ui, column, column["samples"].as_array().unwrap(), rows, 1, &body, &strong));
+                let small = TextStyle::Small.resolve(ui.style());
+                let mut metadata = body;
+                metadata.size *= 0.85;
+                for (index, column) in value["columns"].as_array().unwrap().iter().enumerate() {
+                    let mut full = ui.painter().layout_no_wrap(format!("{} ▼", text(column, "label")), small.clone(), ui.visuals().text_color()).size().x;
+                    if index > 0 {
+                        for row in rows {
+                            full = full.max(ui.painter().layout_no_wrap(row["cells"][index].as_str().unwrap().into(), metadata.clone(), ui.visuals().text_color()).size().x);
+                        }
+                    }
+                    assert_eq!(measured[index], (full.ceil() + 12.0).max(number(column, "min_width", 40.0)), "frame {frame}");
+                }
+            }).drop_without_applying_deltas();
+        }
+    }
 
     #[test]
     fn sampled_columns_cache_layout_and_invalidate_on_render_inputs() {
@@ -530,77 +644,34 @@ pub fn admit(value: &Value, action: &str, payload: &Value) -> Result<(), String>
     Ok(())
 }
 
-#[derive(Clone, PartialEq)]
-struct WidthKey {
-    revision: Value,
-    columns: Value,
-    rows: usize,
-    body: FontId,
-    small: FontId,
-}
-#[derive(Clone)]
-struct WidthCache {
-    key: WidthKey,
-    widths: Vec<f32>,
-}
 fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
     let columns = value["columns"].as_array().expect("validated columns");
     let rows = table_rows(value);
-    let key = WidthKey {
-        revision: value["revision"].clone(),
-        columns: value["columns"].clone(),
-        rows: rows.len(),
-        body: {
+    let body = {
             let mut font = TextStyle::Body.resolve(ui.style());
             font.size *= metadata_scale;
             font
-        },
-        small: TextStyle::Small.resolve(ui.style()),
     };
-    let cache_id = Id::unique((ui.ctx().viewport_id(), id, "column-widths"));
-    if let Some(cache) = ui.data(|d| d.get_temp::<WidthCache>(cache_id)) {
-        if cache.key == key {
-            return cache.widths;
-        }
-    }
+    let small = TextStyle::Small.resolve(ui.style());
     let mut widths = Vec::with_capacity(columns.len());
     for (i, column) in columns.iter().enumerate() {
-        let mut width = ui
-            .painter()
-            .layout_no_wrap(
-                format!("{} ▼", text(column, "label")),
-                key.small.clone(),
-                ui.visuals().text_color(),
-            )
-            .size()
-            .x
-            + 12.0;
-        if i != 0 {
-            for row in rows {
-                width = width.max(
-                    ui.painter()
-                        .layout_no_wrap(
-                            row["cells"][i].as_str().unwrap_or("").into(),
-                            key.body.clone(),
-                            ui.visuals().text_color(),
-                        )
-                        .size()
-                        .x
-                        + 12.0,
-                );
-            }
-        }
-        widths.push(((width - 12.0).ceil() + 12.0).max(number(column, "min_width", 40.0)));
-    }
-    ui.data_mut(|d| {
-        d.insert_temp(
-            cache_id,
-            WidthCache {
-                key,
-                widths: widths.clone(),
+        let key = MeasurementKey::new(ui, column, vec![body.clone(), small.clone()]);
+        let cache_id = Id::unique((ui.ctx().viewport_id(), id, i, "column-widths"));
+        let label = format!("{} ▼", text(column, "label"));
+        // The fixed header uses Small; row metadata uses the scaled Body font.
+        let width = column_cache(ui, cache_id).lock().expect("column cache").update(
+            key,
+            std::iter::once(label.as_str()),
+            rows.iter().filter(|_| i != 0).map(|row| row["cells"][i].as_str().unwrap_or("")),
+            |text, header| {
+                let font = if header { &small } else { &body };
+                #[cfg(test)]
+                WIDTH_LAYOUTS.set(WIDTH_LAYOUTS.get() + 1);
+                ui.painter().layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color()).size().x
             },
-        )
-    });
+        );
+        widths.push((width.ceil() + 12.0).max(number(column, "min_width", 40.0)));
+    }
     widths
 }
 
