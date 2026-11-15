@@ -695,7 +695,11 @@ async fn portal_close_fast_success_calls_the_request_close_method() {
             }
             _ = tokio::task::yield_now() => {}
         }
-        assert!(start.elapsed() < Duration::from_secs(60), "fast portal Close fixture stalled; dispatched={}", closed.load(Ordering::SeqCst));
+        assert!(
+            start.elapsed() < Duration::from_secs(60),
+            "fast portal Close fixture stalled; dispatched={}",
+            closed.load(Ordering::SeqCst)
+        );
     }
     assert_eq!(closed.load(Ordering::SeqCst), 1, "Close was not dispatched");
 }
