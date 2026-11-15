@@ -14,7 +14,8 @@ case folding or whitespace trimming is performed. Unknown keys produce an
 successive passes, with modifiers held around it. A key event does not itself
 insert printable text; use `ui.type` for text entry.
 
-Aliases in the list are compatibility names, including literal space, arrow
+This list is exactly what the Bus accepted before this document existed.
+It includes compatibility aliases such as literal space, arrow
 symbols, browser key codes and numpad spellings. Numpad aliases do not identify
 a separate physical key. Digits use `0` or `Digit0`, not `Num0`.
 
