@@ -1399,8 +1399,9 @@ impl NodedClient {
             }
             let msg = match crate::parse(&data) {
                 Ok(m) => m,
-                Err(e) => {
-                    tracing::debug!("{service_name}: failed to parse Bus message: {e}");
+                Err(_) => {
+                    // ParseError includes a raw input prefix; never log it.
+                    tracing::debug!("{service_name}: failed to parse Bus message (invalid envelope)");
                     continue;
                 }
             };
