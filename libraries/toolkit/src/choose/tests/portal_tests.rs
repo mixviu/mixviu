@@ -100,15 +100,15 @@ impl RequestWithoutClose {
 }
 
 struct GatedClose {
-    entered: tokio::sync::mpsc::UnboundedSender<()>,
+    entered: tokio::sync::mpsc::UnboundedSender<String>,
     release: watch::Receiver<bool>,
     unknown_method: bool,
 }
 
 #[zbus::interface(name = "org.freedesktop.portal.Request")]
 impl GatedClose {
-    async fn close(&self) -> zbus::fdo::Result<()> {
-        let _ = self.entered.send(());
+    async fn close(&self, #[zbus(header)] header: zbus::message::Header<'_>) -> zbus::fdo::Result<()> {
+        let _ = self.entered.send(header.path().unwrap().as_str().to_owned());
         let mut release = self.release.clone();
         release
             .wait_for(|released| *released)
@@ -120,6 +120,10 @@ impl GatedClose {
             Ok(())
         }
     }
+
+    // A write-lock barrier: reply only after earlier Close handlers have left
+    // their read locks, so their path notifications can be drained exactly.
+    fn drained(&mut self) {}
 }
 
 struct Call {
@@ -130,8 +134,8 @@ struct Call {
 }
 
 struct TeardownPortal {
-    close_entered: tokio::sync::mpsc::UnboundedSender<()>,
-    method_entered: tokio::sync::mpsc::UnboundedSender<()>,
+    close_entered: tokio::sync::mpsc::UnboundedSender<String>,
+    method_entered: tokio::sync::mpsc::UnboundedSender<String>,
     method_release: watch::Receiver<bool>,
     close_release: watch::Receiver<bool>,
 }
@@ -174,7 +178,7 @@ impl TeardownPortal {
                 .await
                 .unwrap();
         }
-        self.method_entered.send(()).unwrap();
+        self.method_entered.send(predicted).unwrap();
         self.method_release
             .clone()
             .wait_for(|ready| *ready)
@@ -200,7 +204,7 @@ async fn teardown_session(recovery: bool) {
     let (close_tx, mut closes) = tokio::sync::mpsc::unbounded_channel();
     let (method_tx, mut methods) = tokio::sync::mpsc::unbounded_channel();
     let (method_release, method_gate) = watch::channel(recovery);
-    let (_close_release, close_gate) = watch::channel(false);
+    let (close_release, close_gate) = watch::channel(false);
     server
         .object_server()
         .at(
@@ -222,9 +226,10 @@ async fn teardown_session(recovery: bool) {
         tokio::time::pause();
     }
     real_time_bound(async {
-        let task = tokio::spawn(async move {
+        let session_client = client.clone();
+        let mut task = tokio::spawn(async move {
             portal::session_broken_stream(
-                &client,
+                &session_client,
                 &req,
                 &mut cancelled,
                 if recovery { 2 } else { 0 },
@@ -232,27 +237,51 @@ async fn teardown_session(recovery: bool) {
             )
             .await
         });
-        methods.recv().await.unwrap();
+        let predicted = methods.recv().await.unwrap();
+        let actual = "/org/freedesktop/portal/desktop/request/legacy";
+        let mut observed = Vec::new();
         if recovery {
-            closes.recv().await.unwrap();
+            observed.push(closes.recv().await.unwrap());
+            assert_eq!(observed, [actual]);
             // Let the sweep's real timer dispatch Close, then freeze its hung
             // acknowledgement: cancellation must not wait for that deadline.
             tokio::time::pause();
             cancel.send_replace(true);
-            closes.recv().await.unwrap();
+            observed.push(closes.recv().await.unwrap());
             assert_eq!(task.await.unwrap().unwrap(), None);
+            assert_eq!(observed, [actual, actual]);
         } else {
+            let deadline = tokio::time::Instant::now() + portal::CLOSE_BOUND;
             cancel.send_replace(true);
-            closes.recv().await.unwrap();
+            observed.push(closes.recv().await.unwrap());
+            assert_eq!(observed, [predicted.as_str()]);
             // Retain late method replies for the shared teardown budget, even
             // after discovery's shorter transport bound has elapsed.
             tokio::time::advance(IO_BOUND + Duration::from_millis(100)).await;
             method_release.send_replace(true);
             // The actual handle must be closed while the first Close is hung.
-            closes.recv().await.unwrap();
-            tokio::time::advance(portal::CLOSE_BOUND + Duration::from_millis(1)).await;
+            observed.push(closes.recv().await.unwrap());
+            assert_eq!(observed, [predicted.as_str(), actual]);
+            // Measure from cancellation, not from the second Close. Both hung
+            // calls must still be pending just before the ONE shared deadline.
+            tokio::time::advance(deadline - tokio::time::Instant::now() - Duration::from_millis(1)).await;
+            tokio::select! {
+                biased;
+                result = &mut task => panic!("teardown ended before its budget: {result:?}"),
+                _ = std::future::ready(()) => {}
+            }
+            // Cross only the timer-wheel rounding tick. An independently timed
+            // late Close still has 2.1 seconds left and must fail this assertion.
+            tokio::time::advance(Duration::from_millis(2)).await;
             assert_eq!(task.await.unwrap().unwrap(), None);
         }
+        close_release.send_replace(true);
+        for path in [predicted.as_str(), actual] {
+            client.call_method(Some(server.unique_name().unwrap().as_str()), path,
+                Some(REQUEST), "Drained", &()).await.unwrap();
+        }
+        assert!(matches!(closes.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty)),
+            "surplus Close after {observed:?}");
     })
     .await;
 }
@@ -870,7 +899,7 @@ async fn gated_close(unknown_method: bool, answer: bool) {
     real_time_bound(async {
         tokio::select! {
             result = &mut call => panic!("Close ended before dispatch: {result:?}"),
-            entry = entered.recv() => entry.expect("fake portal Close notification dropped"),
+            entry = entered.recv() => assert_eq!(entry.expect("fake portal Close notification dropped"), path),
         }
         if answer {
             // Deliberately withhold the reply beyond the old discovery/Close bound.

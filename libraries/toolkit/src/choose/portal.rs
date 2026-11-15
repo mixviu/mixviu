@@ -12,7 +12,8 @@ const DESKTOP: &str = "org.freedesktop.portal.Desktop";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const INTERFACE: &str = "org.freedesktop.portal.FileChooser";
 const REQUEST: &str = "org.freedesktop.portal.Request";
-// Teardown may wait longer than discovery. Recovery must still require a real
+// One teardown may wait longer than discovery; its handles share this budget.
+// Recovery must still require a real
 // acknowledgement before another chooser can open, so expiry remains an error.
 pub(super) const CLOSE_BOUND: Duration = Duration::from_secs(10);
 type Options = HashMap<String, OwnedValue>;
@@ -343,16 +344,12 @@ async fn session_inner(
                     tokio::select! {
                         biased;
                         _ = cancelled(cancel) => {
-                            // The acknowledgement future may not yet have sent
-                            // anything. Finish a best-effort send, without waiting
-                            // again for the hung portal's reply. Cancellation never
-                            // permits fallback, so no acknowledgement is needed.
-                            let message = zbus::Message::method_call(actual.as_str(), "Close")?
-                                .destination(owner.as_str())?
-                                .interface(REQUEST)?
-                                .with_flags(zbus::message::Flags::NoReplyExpected)?
-                                .build(&())?;
-                            let _ = tokio::time::timeout(IO_BOUND, connection.send(&message)).await;
+                            // Dropping close() may precede its send, so retry once.
+                            // This can duplicate an already-sent Close: an ended
+                            // handle answers UnknownObject/UnknownMethod (as close()
+                            // accepts below). NoReplyExpected means nobody waits
+                            // for that answer. Cancellation never permits fallback.
+                            best_effort_close(connection, owner.as_str(), actual.as_str()).await;
                             return Ok(None);
                         },
                         result = close(connection, owner.as_str(), actual.as_str()) => {
@@ -365,7 +362,7 @@ async fn session_inner(
                 let owner_probe = tokio::select! {
                     biased;
                     _ = cancelled(cancel) => {
-                        let _ = close(connection, owner.as_str(), actual.as_str()).await;
+                        best_effort_close(connection, owner.as_str(), actual.as_str()).await;
                         return Ok(None);
                     }
                     result = tokio::time::timeout(IO_BOUND, dbus.get_name_owner(DESKTOP.try_into()?)) => result,
@@ -378,6 +375,19 @@ async fn session_inner(
             }
         }
     }
+}
+
+async fn best_effort_close(connection: &Connection, owner: &str, path: &str) {
+    let send = async {
+        let message = zbus::Message::method_call(path, "Close")?
+            .destination(owner)?
+            .interface(REQUEST)?
+            .with_flags(zbus::message::Flags::NoReplyExpected)?
+            .build(&())?;
+        connection.send(&message).await
+    };
+    // Build and transport failures cannot turn cancellation into an error.
+    let _ = tokio::time::timeout(IO_BOUND, send).await;
 }
 
 pub(super) async fn close(connection: &Connection, owner: &str, path: &str) -> Result<()> {
