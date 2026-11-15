@@ -218,7 +218,10 @@ impl VideoEncoder {
             let frames = create(&path.join("frames.jsonl"))?;
             let markers = create(&path.join("markers.jsonl"))?;
             File::open(&path)?.sync_all()?;
-            let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+            let parent = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(Path::new("."));
             File::open(parent)?.sync_all()?;
             Ok(Log {
                 path: path.clone(),
