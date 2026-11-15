@@ -176,6 +176,13 @@ pub struct PortService {
 }
 
 impl PortService {
+    #[cfg(test)]
+    pub(crate) fn drain_chrome_fixture(&self) {
+        while let Ok(command) = self.source.try_recv() {
+            assert!(matches!(command, PortCommand::Chrome(_)), "chrome fixture received a control");
+        }
+    }
+
     pub fn new(source: CommandSource, context: Arc<PortContext>, waker: Waker) -> Self {
         Self {
             source,

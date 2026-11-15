@@ -448,6 +448,8 @@ mod tests {
                 }
             }
         });
+        let engine_wake = Arc::new(tokio::sync::Notify::new());
+        let notify = engine_wake.clone();
         let (wiring, starter) = crate::port::prepare(
             crate::port::PortIdentity {
                 service: "comp-idle".into(),
@@ -456,10 +458,18 @@ mod tests {
                 engine: "test",
                 noded_url: broker.url.clone(),
             },
-            crate::channel::no_waker(),
+            Arc::new(move || notify.notify_one()),
         )
         .unwrap();
         let ingress = starter.ingress().clone();
+        // Consume the bounded engine lane as a real compositor does. Merely
+        // keeping its receiver alive eventually stalls recovery checkpoints.
+        let engine = tokio::spawn(async move {
+            loop {
+                engine_wake.notified().await;
+                wiring.service.drain_chrome_fixture();
+            }
+        });
         let live = Arc::new(AtomicU64::new(client.connection_generation()));
         let task = tokio::spawn(async move {
             run(&client, ingress, events, live).await;
@@ -571,7 +581,8 @@ mod tests {
         task.abort();
         forward.abort();
         native_forward.abort();
-        drop((wiring, starter));
+        engine.abort();
+        drop(starter);
         targets(BTreeSet::new());
     }
     #[test]
