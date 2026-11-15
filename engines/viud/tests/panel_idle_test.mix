@@ -194,8 +194,8 @@ end
     -- it to finish. No scheduler race or guessed sleep chooses the ordering.
     for $source in ["windows","tray","notes","registry"]
       $behaviour=replace_must($behaviour,"sleep($state." .. $source .. "_delay)","fixture_retry_sleep(\"" .. $source .. "\",$state." .. $source .. "_delay)")
+      $behaviour=replace_must($behaviour,'task_start("' .. $source .. '.retry",','fixture_task_start("' .. $source .. '.retry",')
     end
-    $behaviour=replace($behaviour,"task_start(","fixture_task_start(")
     write_file($tmp .. "/notify.mix",'on notify.list
   reply(0,"[]")
 end
