@@ -95,7 +95,7 @@ and `reset`); pass an ID and optional value to `gallery.execute`. Refusals
 return a non-zero status and `{error_code, message}` before changing state.
 The named `gallery.widget.ID.ACTION` commands above belong to the Rust reference.
 
-Native egui input can also be driven through the Bus:
+Native window input can also be driven through the Bus:
 
 - `gallery.ui.tree` returns model and widget/subwidget rectangles.
 - `gallery.ui.focus {id}` and `gallery.ui.hover {id}`.
