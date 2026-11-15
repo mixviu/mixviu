@@ -1,0 +1,111 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$proc = require("proc.mix")
+$cli = getopt(args(), {seconds:{arg:true}, output:{arg:true}, workload:{arg:true}, node:{arg:true}, workloads:{arg:true}})
+if len($cli.errors) > 0 or len($cli.rest) == 0 or $cli.opts.output == nil then
+  raise("USAGE", "mix tools/bench/viu_baseline.mix --output result.json [--seconds 60] [--workload idle|scroll --node ID] PID|SERVICE ...")
+end
+$seconds = to_number($cli.opts.seconds ?? "60")
+if $seconds <= 0 or $seconds > 86400 then raise("ARGUMENT", "seconds must be in (0, 86400]") end
+$name = $cli.opts.workload ?? "idle"
+$workloads = load_data($cli.opts.workloads ?? (dirname(realpath($0)) .. "/workloads.conf.mix"))
+$work = $workloads[$name]
+if $work == nil or not contains(["idle", "scroll"], $work.kind) then raise("WORKLOAD", "unknown workload") end
+if $work.kind == "scroll" and $cli.opts.node == nil then raise("WORKLOAD", "scroll requires --node (AccessKit id)") end
+fn rpc($service, $suffix, $body)
+  $command = $service .. "." .. $suffix
+  $payload = json_encode($body)
+  send $service $command body=$payload timeout=2
+  if $rc != 0 then return {available:false, rc:$rc} end
+  $value = $result
+  if type($value) == "string" then $value = json_parse($value) end
+  return $value
+end
+fn inventory()
+  send noded noded.list timeout=2
+  if $rc != 0 then raise("BUS", "cannot read local service inventory") end
+  $v = $result
+  if type($v) == "string" then $v = json_parse($v) end
+  return $v.services ?? $v
+end
+$hz = run_argv_must(["getconf", "CLK_TCK"])
+$hz = $proc.number(trim($hz.stdout))
+$targets = []
+for $target in $cli.rest
+  $pid = nil
+  $service = nil
+  $sha = nil
+  if re_match($target, "^[0-9]+$") then
+    $pid = $proc.number($target)
+  else
+    for $entry in inventory()
+      if type($entry) == "map" and $entry.name == $target then
+        $pid = $entry.pid
+        $sha = $entry.git_sha
+        $service = $target
+      end
+    end
+  end
+  if $pid == nil or $pid <= 0 then raise("TARGET", "no readable local pid for " .. $target) end
+  $exe = read_link("/proc/" .. to_string($pid) .. "/exe")
+  $size = stat("/proc/" .. to_string($pid) .. "/exe").size
+  $build_id = nil
+  if which("readelf") != nil then
+    $r = run_argv(["readelf", "-n", "/proc/" .. to_string($pid) .. "/exe"])
+    $matches = re_find($r.stdout, "Build ID: ([0-9a-fA-F]+)")
+    if len($matches) > 0 then $build_id = $matches[0].groups[0] end
+  end
+  $stats = {available:false}
+  if $service != nil then $stats = rpc($service, "ui.stats", {}) end
+  if $work.kind == "scroll" and $service == nil then raise("WORKLOAD", "scroll needs a service target") end
+  push($targets, {target:$target, pid:$pid, service:$service, executable:$exe, executable_bytes:$size,
+    build_id:$build_id, git_sha:$sha, frames_before:$stats, before:$proc.snapshot($pid)})
+end
+sleep($seconds)
+if $work.kind == "scroll" then
+  for $t in $targets
+    $tree = rpc($t.service, "ui.tree", {id:$cli.opts.node})
+    -- Locate the explicit node; the drive's scroll contract takes a point.
+    $nodes = $tree.nodes ?? []
+    $rect = nil
+    for $n in $nodes
+      if to_string($n.id) == $cli.opts.node then $rect = $n.rect end
+    end
+    if $rect == nil then raise("WORKLOAD", "scroll node is absent or has no rectangle") end
+    for $i = 1 to $work.steps
+      $r = rpc($t.service, "ui.scroll", {x:($rect[0]+$rect[2])/2, y:($rect[1]+$rect[3])/2, dx:0, dy:$work.dy})
+      if $r.available == false then raise("WORKLOAD", "ui.scroll failed") end
+      sleep($work.pause_seconds)
+    end
+  end
+end
+$rows = []
+for $t in $targets
+  $after = $proc.snapshot($t.pid)
+  $b = $t.before
+  if $b.cpu.start != $after.cpu.start then raise("TARGET", "pid reused") end
+  $elapsed = $after.at - $b.at
+  $cpu_seconds = ($after.cpu.ticks - $b.cpu.ticks) / $hz
+  $switches = {}
+  for $key in ["voluntary_ctxt_switches", "nonvoluntary_ctxt_switches"]
+    $total = 0
+    for $tid in keys($b.threads)
+      if $after.threads[$tid] == nil then raise("TARGET", "thread exited during sample; retry") end
+      $total = $total + $after.threads[$tid][$key] - $b.threads[$tid][$key]
+    end
+    $switches[$key] = $total / $elapsed
+  end
+  $t.elapsed_seconds = $elapsed
+  $t.cpu_seconds = $cpu_seconds
+  $t.cpu_percent_one_core = 100 * $cpu_seconds / $elapsed
+  $t.context_switches_per_second = $switches
+  $t.after = $after
+  $t.frames_after = if $t.service != nil then rpc($t.service, "ui.stats", {}) else {available:false} end
+  push($rows, $t)
+end
+write_file($cli.opts.output, json_encode({schema:"viu.baseline.v1", workload:$name, workload_definition:$work, idle_seconds:$seconds, clk_tck:$hz, targets:$rows}))
+print("| Target | RSS KiB | PSS KiB | Private dirty KiB | Swap KiB | CPU % | voluntary/s | involuntary/s | Threads | Bytes |")
+print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+for $t in $rows
+  $m = $t.after.memory_kib
+  print("| " .. $t.target .. " | " .. $m.Rss .. " | " .. $m.Pss .. " | " .. $m.Private_Dirty .. " | " .. $m.Swap .. " | " .. $t.cpu_percent_one_core .. " | " .. $t.context_switches_per_second.voluntary_ctxt_switches .. " | " .. $t.context_switches_per_second.nonvoluntary_ctxt_switches .. " | " .. $t.after.status.Threads .. " | " .. $t.executable_bytes .. " |")
+end

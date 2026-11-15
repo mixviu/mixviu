@@ -66,6 +66,13 @@ pub(crate) enum Skipped {
 }
 
 impl Gpu {
+    pub(crate) fn record_baseline(&self, ctx: &egui::Context, seconds: f64, info: &super::SurfaceInfo) {
+        if let Some(d) = &self.device {
+            egui_wgpu::baseline::record(ctx, egui::ViewportId::ROOT, seconds,
+                [(info.width as f32 * info.scale) as u32, (info.height as f32 * info.scale) as u32],
+                info.scale, &d.adapter.get_info());
+        }
+    }
     /// A GL instance on `display` (the connection's `wl_display`).
     pub(crate) fn new(display: *mut c_void) -> Result<Gpu, String> {
         let display = NonNull::new(display).ok_or("no wl_display pointer")?;

@@ -29,7 +29,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// The drive commands, after the app's prefix.
-pub const COMMANDS: [&str; 16] = [
+pub const COMMANDS: [&str; 17] = [
+    "ui.stats",
     "ui.tree",
     "ui.click",
     "ui.pointer",
@@ -101,6 +102,7 @@ fn capture_submission_key(viewport: egui::ViewportId) -> egui::Id {
 /// Every drive command under `app`, as `HELP` / `app.describe` list them.
 pub fn describe(app: &str) -> Vec<Value> {
     let command_names = [
+        ("ui.stats", Value::Null, "Passive bounded frame statistics and GPU adapter identity", true),
         (
             "ui.tree",
             json!({"label":"optional substring","exact":"optional bool: the label must equal it","role":"optional role name"}),
@@ -1017,6 +1019,7 @@ impl Drive {
             return Some(refusal(id, "ARGUMENT", "arguments must be a JSON object"));
         }
         let job = match command_name {
+            "ui.stats" => return Some(ok(id, crate::drive_stats::read(ctx))),
             "ui.tree" => return Some(self.tree_answer(id, args)),
             "ui.menu" => return Some(ok(id, json!({"menu":menu_state(ctx)}))),
             "ui.menu.list" => {

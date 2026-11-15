@@ -55,6 +55,7 @@ pub mod choose;
 pub mod decorations;
 pub mod dialog;
 pub mod drive;
+mod drive_stats;
 pub mod executed;
 pub mod field;
 pub mod file_chooser;

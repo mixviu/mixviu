@@ -953,7 +953,15 @@ impl WgpuWinitRunning<'_> {
             .and_then(|id| viewports.get(id))
             .and_then(|vp| vp.window.as_ref());
 
-        integration.report_frame_time(frame_timer.total_time_sec() - vsync_secs); // don't count auto-save time as part of regular frame time
+        let seconds = frame_timer.total_time_sec() - vsync_secs;
+        if is_visible {
+            if let (Some(window), Some(state)) = (window, painter.render_state()) {
+                let size = window.inner_size();
+                egui_wgpu::baseline::record(&egui_ctx, viewport_id, f64::from(seconds),
+                    [size.width, size.height], window.scale_factor() as f32, &state.adapter.get_info());
+            }
+        }
+        integration.report_frame_time(seconds); // don't count auto-save time as part of regular frame time
 
         let window_for_autosave = if viewport_id == ViewportId::ROOT {
             window.map(|window| window.as_ref())
