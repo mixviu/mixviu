@@ -361,7 +361,7 @@ mod tests {
         let workers: Vec<_> = (0..8)
             .map(|_| thread::spawn(|| {
                 let mut failed = 0;
-                for _ in 0..200 {
+                for _ in 0..2000 {
                     if std::panic::catch_unwind(dropping_a_runner_requests_termination_and_the_manager_reaps).is_err() {
                         failed += 1;
                     }
@@ -370,7 +370,7 @@ mod tests {
             }))
             .collect();
         let failed: usize = workers.into_iter().map(|worker| worker.join().unwrap()).sum();
-        eprintln!("STRESS total=1600 failed={failed} concurrency=8");
+        eprintln!("STRESS total=16000 failed={failed} concurrency=8");
         assert_eq!(failed, 0);
     }
 
