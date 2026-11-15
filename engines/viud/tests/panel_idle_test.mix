@@ -192,9 +192,15 @@ end
     TRAY_SERVICE:"tray-stub",SCENES_LIB:$tmp .. "/lib",SCENE_DIR:$tmp .. "/home"})
   start("panel-stub", $tmp .. "/stub.mix")
   wait_service("panel-stub")
-  $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+  -- Optional specimen path keeps historical before/after runs out of the
+  -- checkout's behaviour file, even if the proof process is killed.
+  $behaviour = read_file(args()[1] ?? ($root .. "/share/scenes/panel/behaviour.mix"))
+  -- Normalise the old unused parameter for historical specimens.
+  $behaviour=replace($behaviour,"fn queue_registry($live)","fn queue_registry()")
+  $behaviour=replace($behaviour,"queue_registry($a.new)","queue_registry()")
+  $behaviour=replace($behaviour,"queue_registry(nil)","queue_registry()")
+  $behaviour=replace($behaviour,"if gap($event) then\n      queue_registry()", "if gap($event) then\n      queue_registry() -- gap recovery")
   if $case == "legacy-clock" then
-    $behaviour=read_file(args()[1])
     -- The current evaluator requires the first shared-scope promotion at
     -- top level (#143 already repairs this in the shipped behaviour).
     $behaviour=replace_must($behaviour,"\nstart_status()\ntry", "\ntask_start(\"toast_ensure\", \"{}\")\nstart_status()\ntry")
@@ -230,23 +236,30 @@ end
     wait_service("notify-stub")
   end
   $behaviour=replace_must($behaviour,"fn services_changed($live)\n","fn services_changed($live)\n  append_file(env(\"FIXTURE_DIR\") .. \"/registry-events\",json_encode($live) .. \"\\n\")\n")
-  if $case == "registry-burst" or $case == "registry-rejected" or $case == "legacy-clock" then
+  if $case == "registry-task-start" then
+    $behaviour=replace_must($behaviour,'task_start("registry.resync",','fixture_task_start("registry.resync",')
+  end
+  if $case == "registry-burst" or $case == "legacy-clock" then
     -- Exercise the shipped registry handler unchanged, including real noded
     -- arrivals, departures and its capped trailing invalidation.
+  elif $case == "registry-arrival" or $case == "registry-rejected" or $case == "registry-task-start" then
+    -- Explicit roster checkpoints below control arrival ordering and counts;
+    -- real broker/ACP startup hints must not repair the negative cache first.
+    $behaviour=replace_must($behaviour,"      queue_registry()\n","      return\n")
   elif $case == "clock" then
     $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","sleep(0.05)")
     -- Isolate clock/window events from the independently capped startup
     -- registration delivery; the comp case covers that path separately.
-    $behaviour=replace_must($behaviour,"queue_registry($a.new)","return")
+    $behaviour=replace_must($behaviour,"      queue_registry()\n","      return\n")
   elif $case == "registry" then
     -- Keep the initial cache stale until an item event proves the tray is
     -- live. Startup registry delivery timing must not repair it first.
-    $behaviour=replace_must($behaviour,"queue_registry($a.new)","if not is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then services_changed($a.new) end")
+    $behaviour=replace_must($behaviour,"      queue_registry()\n","      if not is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then services_changed($a.new) end\n")
   else
     -- Native driver/ACP registration is asynchronous too. Isolate real
     -- fixture arrivals/departures from that noise; explicit registry hooks
     -- below exercise conservative same-name/coalesced hints exactly once.
-    $behaviour=replace_must($behaviour,"queue_registry($a.new)","fixture_registry($a)")
+    $behaviour=replace_must($behaviour,"      queue_registry()\n","      fixture_registry($a)\n")
   end
   write_file($tmp .. "/panel.mix", $behaviour .. '
 fn fixture_registry($change)
@@ -296,9 +309,13 @@ on panel.test.registry
 end
 on panel.test.burst
   -- Both invalidations are accepted before the deferred task can run.
-  queue_registry(["tray-stub"])
-  queue_registry(["tray-stub","departed"])
+  queue_registry()
+  queue_registry()
   reply(0,"{}")
+end
+on panel.test.queue
+  queue_registry()
+  reply(0,json_encode({queued:$state.registry_queued}))
 end
 task_start("panel.test.observe","{}")
 ')
@@ -343,17 +360,47 @@ task_start("panel.test.observe","{}")
     idle(1.2)
     print("PASS two registry deliveries: one resync, zero absent tray calls")
     exit(0)
-  elif $case == "registry-rejected" then
+  elif $case == "registry-task-start" then
+    $registry=calls_for("noded.props.get")
+    write_file($tmp .. "/task-fail","registry.resync")
+    $out=call("scene-panel","panel.test.queue")
+    $value=type($out.value)=="string" ? json_parse($out.value) : $out.value
+    check($out.rc==0 and not $value.queued,"resync task_start failure stranded queued flag")
+    idle(0.4)
+    check(calls_for("noded.props.get")==$registry,"failed task unexpectedly read registry")
+    call("scene-panel","panel.test.burst")
+    quiet()
+    check(calls_for("noded.props.get")==$registry+1,"next hint did not recover after task_start failure")
+    print("PASS registry.resync task_start failure clears queued and next hint recovers")
+    exit(0)
+  elif $case == "registry-rejected" or $case == "registry-arrival" then
     write_file($tmp .. "/registry.mix",'send scene-panel panel.test.registry body={new:["panel-stub","tray-stub"]}
 ')
     $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
     quiet()
     check(tray_calls()==1,"stale roster must discover rejection exactly once")
+    if $case == "registry-arrival" then
+      -- Empty tray: no item or props event, no departure roster. Only the
+      -- arrival-only fresh roster below may clear the cached rejection.
+      $tray_pid=start("tray-stub",$tmp .. "/tray.mix")
+      wait_service("tray-stub")
+      quiet()
+      check(tray_calls()==1,"fixture repaired rejection before arrival-only roster")
+      $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
+      quiet()
+      check(tray_calls()==2,"arrival-only fresh roster did not clear tray rejection")
+      idle(1.2)
+      check(tray_calls()==2,"arrival-only recovery kept polling")
+      print("PASS arrival-only fresh roster recovers empty same-name tray after rejection")
+      exit(0)
+    end
     for $i=1 to 3
       $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
+      quiet()
+      check(tray_calls()==$i+1,"fresh roster must probe rejected tray exactly once")
     end
     idle(1.2)
-    check(tray_calls()==1,"broker rejection retried on repeated deliveries or timer")
+    check(tray_calls()==4,"broker rejection retried without a fresh roster")
     $tray_pid=start("tray-stub",$tmp .. "/tray.mix")
     wait_service("tray-stub")
     -- A confirmed departure then arrival clears the negative cache.

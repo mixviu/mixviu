@@ -583,13 +583,14 @@ end
 -- Registry notifications are invalidations, not authoritative snapshots.
 -- One bounded window combines adjacent deliveries; read the current roster
 -- afterwards so a delayed arrival hint cannot resurrect a departed citizen.
-fn queue_registry($live)
+fn queue_registry()
   if $state.registry_queued then return end
   $state.registry_queued = true
   try
     task_start("registry.resync", "{}")
   catch $message
     $state.registry_queued = false
+    -- Handle exhaustion drops this hint; the next delivery can queue again.
     eprint("panel: registry resync not scheduled: " .. to_string($message))
   end
 end
@@ -610,7 +611,9 @@ fn services_changed($live)
   $state.registry_delay = 0.25
   $previous = $state.services
   $state.services = $live
-  if not contains($live, $TRAY) then $state.tray_rejected = false end
+  -- A successful roster read is newer evidence than a rejected call. Names
+  -- alone can hide a same-name restart, including an empty tray with no events.
+  $state.tray_rejected = false
   -- Names-only deliveries can hide a restart even when old != new. Native
   -- discovery rows do not yet carry registration ids, so every delivery is
   -- conservatively a sync hint for each present service (no idle poll).
@@ -921,9 +924,9 @@ on props.changed
   $a = $r.event_args($event)
   if $event.headers.topic == $NODED .. ".props.changed" then
     if gap($event) then
-      queue_registry(nil)
+      queue_registry()
     elif $a.path == "services.registered" then
-      queue_registry($a.new)
+      queue_registry()
     end
     return
   end
