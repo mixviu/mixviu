@@ -4053,7 +4053,7 @@ async fn handle_noded_command(
                     bus::RegisterProvenance::default()
                 })
             };
-            let info = bus::ServiceInfo {
+            let mut info = bus::ServiceInfo {
                 native_session: None,
                 name: from.clone(),
                 binary: prov.binary,
@@ -4069,6 +4069,13 @@ async fn handle_noded_command(
                 schema_version: bus::SCHEMA_VERSION,
                 meta: prov.meta,
             };
+            // Broker-owned incarnation, stable until this name registers
+            // again. Names and second-resolution timestamps cannot reveal a
+            // restart hidden in a coalesced services.registered delivery.
+            info.meta.insert(
+                "noded.registration_id".into(),
+                serde_json::json!(format!("{:032x}", rand::random::<u128>())),
+            );
 
             // Atomic check-collision / remove-old / insert-new under a
             // single write lock. The collision check happens BEFORE
@@ -4895,7 +4902,7 @@ async fn handle_noded_command(
         // SPEC 07 §2 — uniform property surface (L1).
         // `noded.props.{get,list,describe}` against the consolidated
         // node daemon's observable state.
-        c if c.starts_with("noded.props.") => {
+        c if c.starts_with("noded.props.") && c != "noded.props.watch" => {
             let suffix = &c["noded.props.".len()..];
             let snapshot = crate::props::collect(
                 state.started,
@@ -4936,7 +4943,7 @@ async fn handle_noded_command(
         // SPEC 07 §3 — subscribe to property change events. Sugar over
         // `topic.subscribe name=noded.props.changed` so callers don't have
         // to know the topic name.
-        "props.watch" => {
+        "props.watch" | "noded.props.watch" => {
             let topic = crate::props::PROPS_CHANGED_TOPIC;
             let (sub_id, replayed, seq, notices) = state
                 .broker
@@ -4949,7 +4956,7 @@ async fn handle_noded_command(
                 )
                 .await;
             let mut resp = respond("0");
-            resp.set("command", "props.watch");
+            resp.set("command", command);
             resp.body = format!(
                 r#"{{"subscription_id": "{sub_id}", "topic": "{topic}", "replayed": {replayed}, "seq": {seq}}}"#
             );
