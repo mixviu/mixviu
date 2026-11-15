@@ -142,9 +142,15 @@ fn rectangle_boundaries_and_whole_frame_fallback() {
     assert_eq!(kind, RECT_DELTA);
     assert_eq!(
         &payload[..16],
-        &[1u32, 1, 2, 2].into_iter().flat_map(u32::to_le_bytes).collect::<Vec<_>>()
+        &[1u32, 1, 2, 2]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<_>>()
     );
-    assert_eq!(lz4_flex::block::decompress(&payload[16..], 16).unwrap(), (1..=16).collect::<Vec<u8>>());
+    assert_eq!(
+        lz4_flex::block::decompress(&payload[16..], 16).unwrap(),
+        (1..=16).collect::<Vec<u8>>()
+    );
 }
 #[test]
 #[ignore = "payload measurement on a CBC worker, generated content only"]

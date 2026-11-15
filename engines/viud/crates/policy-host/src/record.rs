@@ -604,7 +604,9 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     // real scene requests; capture requests are excluded here too.
                     lp.state.redraw.capture_request_revision()
                 } else {
-                    lp.state.redraw.capture_revision(&world::state::output_key(output))
+                    lp.state
+                        .redraw
+                        .capture_revision(&world::state::output_key(output))
                 });
             }
         }
