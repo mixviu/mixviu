@@ -29,9 +29,10 @@ pub use setup::{
     WgpuSetupExisting,
 };
 
-/// Helpers for capturing screenshots of the UI.
+/// Passive native frame observations for host statistics.
 #[cfg(feature = "capture")]
 pub mod baseline;
+/// Helpers for capturing screenshots of the UI.
 #[cfg(feature = "capture")]
 pub mod capture;
 

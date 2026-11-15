@@ -33,7 +33,7 @@ try
   if $scroll.rc != 0 or $drawn.result.frames_drawn <= $first then raise("FRAMES", "input did not advance drawn frame count") end
   sleep(3)
   $out = $run.path .. "/baseline.json"
-  $result = run_argv(["mix", $root .. "/tools/bench/viu_baseline.mix", "--seconds", "2", "--output", $out, "gallery"], {timeout:30})
+  $result = run_argv([$bin .. "/mix", $root .. "/tools/bench/viu_baseline.mix", "--seconds", "2", "--output", $out, "gallery"], {timeout:30})
   print($result.stdout)
   if $result.exit_code != 0 then raise("BASELINE", $result.stderr) end
   $json = json_parse(read_file($out))
