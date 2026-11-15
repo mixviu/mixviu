@@ -248,4 +248,17 @@ mod tests {
         assert!(b.pad(1, 1, 1, 0, [0; 4]).is_err());
         assert!(Bgra::new(0, 1, vec![]).is_err());
     }
+    #[test]
+    fn nonuniform_geometry_and_transparency() {
+        let f=Bgra::new(2,2,vec![1,0,0,255,2,0,0,255,3,0,0,255,4,0,0,255]).unwrap();
+        let scaled=f.scale(3,3).unwrap();
+        assert_eq!(scaled.pixels().chunks_exact(4).map(|p|p[0]).collect::<Vec<_>>(),[1,1,2,1,1,2,3,3,4]);
+        let padded=f.pad(3,3,1,1,[0;4]).unwrap();
+        assert_eq!(padded.pixels().chunks_exact(4).map(|p|p[0]).collect::<Vec<_>>(),[0,0,0,0,1,2,0,3,4]);
+        let clear=Bgra::solid(1,1,[99,88,77,0]).unwrap();
+        assert_eq!(clear.blend(&clear).unwrap().pixels(),[0;4]);
+        let a=Bgra::solid(1,1,[0,0,0,128]).unwrap();
+        let b=Bgra::solid(1,1,[255,0,0,128]).unwrap();
+        assert_eq!(a.blend(&b).unwrap().pixels(),[170,0,0,192]);
+    }
 }
