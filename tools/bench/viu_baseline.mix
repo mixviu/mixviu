@@ -35,6 +35,8 @@ fn inventory()
 end
 $hz = run_argv_must(["getconf", "CLK_TCK"])
 $hz = $proc.number(trim($hz))
+$services = []
+try $services = inventory() catch $m $services = [] end
 $targets = []
 for $target in $cli.rest
   $pid = nil
@@ -42,8 +44,14 @@ for $target in $cli.rest
   $sha = nil
   if re_match($target, "^[0-9]+$") then
     $pid = $proc.number($target)
+    for $entry in $services
+      if type($entry) == "map" and $entry.pid == $pid and $service == nil then
+        $service = $entry.name
+        $sha = $entry.git_sha
+      end
+    end
   else
-    for $entry in inventory()
+    for $entry in $services
       if type($entry) == "map" and $entry.name == $target then
         $pid = $entry.pid
         $sha = $entry.git_sha

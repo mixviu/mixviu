@@ -12,7 +12,8 @@ mix tools/bench/viu_baseline.mix --seconds 2 --workload scroll --node 42 --steps
 
 The default window is 60 seconds. Service names resolve through the local
 Bus's read-only `noded.list` inventory, including its reported source SHA.
-Numeric PIDs need no Bus. JSON contains before/after raw counters and monotonic
+Numeric PIDs need no Bus; when local discovery succeeds they also use the
+first registered service for that PID to request frame stats. JSON contains before/after raw counters and monotonic
 timestamps; stdout contains a Markdown summary. Output paths are caller-owned;
 take care before replacing an existing file. Captures can contain local paths
 and service names: review them before publishing.
@@ -56,8 +57,9 @@ a count of hardware interrupts, timer expirations or scheduler wake events.
 `<app>.ui.stats` is a read-only drive command, advertised beside the other
 `ui.*` commands. It returns `available:false` before any observed frame or
 when instrumentation is unsupported. A failed Bus call is represented as
-`available:false` with its return code. Numeric PID targets currently record
-frame statistics as unavailable; use a service target for those statistics.
+`available:false` with its return code. Undiscovered PID targets record frame
+statistics as unavailable; service targets are preferred when a process owns
+several Bus services.
 
 For observed surfaces it returns cumulative `frames_drawn`, `sample_count`,
 `cpu_frame_ms` (`median`, `p95`, `max`), `last_frame_ms`, `surface_pixels`,

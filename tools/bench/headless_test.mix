@@ -40,6 +40,11 @@ try
   $t = $json.targets[0]
   if $t.frames_before.frames_drawn != $t.frames_after.frames_drawn then raise("IDLE", "idle app drew frames") end
   print(read_file($out))
+  -- The process-only path also runs with installed gold Mix and no broker.
+  $pid_out = $run.path .. "/pid.json"
+  $pid_result = run_argv(["mix", $root .. "/tools/bench/viu_baseline.mix", "--seconds", "0.2", "--output", $pid_out, to_string($app)],
+    {timeout:10, env:{MIX_NODED_URL:"ws://127.0.0.1:1/ws"}})
+  if $pid_result.exit_code != 0 then raise("GOLD_PROC", $pid_result.stderr) end
   $passed = true
 finally
   if $app != nil and process_alive($app) then kill($app,15) end

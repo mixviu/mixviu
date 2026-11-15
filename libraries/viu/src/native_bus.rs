@@ -38,7 +38,10 @@ pub struct Notice {
     pub headers: BTreeMap<String, String>,
 }
 type SharedClient = Arc<Mutex<Option<Arc<SupervisedClient>>>>;
-fn passive_frame_stats(contexts: &Mutex<BTreeMap<String, egui::Context>>, args: &Value) -> (u8, Value) {
+fn passive_frame_stats(
+    contexts: &Mutex<BTreeMap<String, egui::Context>>,
+    args: &Value,
+) -> (u8, Value) {
     if !args.is_object() {
         return (10, json!({"error_code":"ARGUMENT"}));
     }
@@ -52,11 +55,24 @@ fn passive_frame_stats(contexts: &Mutex<BTreeMap<String, egui::Context>>, args: 
         };
     }
     if contexts.len() == 1 {
-        return (0, toolkit::drive::frame_stats(contexts.values().next().unwrap(), egui::ViewportId::ROOT));
+        return (
+            0,
+            toolkit::drive::frame_stats(contexts.values().next().unwrap(), egui::ViewportId::ROOT),
+        );
     }
-    let surfaces: BTreeMap<_, _> = contexts.iter().map(|(name, ctx)|
-        (name, toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT))).collect();
-    (0, json!({"available":!surfaces.is_empty(), "surfaces":surfaces}))
+    let surfaces: BTreeMap<_, _> = contexts
+        .iter()
+        .map(|(name, ctx)| {
+            (
+                name,
+                toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT),
+            )
+        })
+        .collect();
+    (
+        0,
+        json!({"available":!surfaces.is_empty(), "surfaces":surfaces}),
+    )
 }
 struct Hint {
     topic: String,
@@ -320,9 +336,11 @@ impl Endpoint {
         let service_name = name.clone();
         let stats: Arc<Mutex<BTreeMap<String, egui::Context>>> = Arc::default();
         let passive_stats = stats.clone();
-        let stats_commands: std::collections::BTreeSet<_> = commands.iter()
+        let stats_commands: std::collections::BTreeSet<_> = commands
+            .iter()
             .filter(|d| d.read_only && d.name.ends_with(".ui.stats"))
-            .map(|d| d.name.clone()).collect();
+            .map(|d| d.name.clone())
+            .collect();
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
@@ -852,6 +870,22 @@ fn reply_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn passive_stats_select_outputs_without_owner_requests() {
+        let endpoint = Endpoint::offline();
+        let ctx = egui::Context::default();
+        endpoint.stats_surface("first".into(), ctx.clone());
+        endpoint.stats_surface("second".into(), egui::Context::default());
+        let (_, all) = passive_frame_stats(&endpoint.stats, &json!({}));
+        assert_eq!(all["surfaces"].as_object().unwrap().len(), 2);
+        let (_, selected) = passive_frame_stats(&endpoint.stats, &json!({"output":"first"}));
+        assert_eq!(selected["available"], false);
+        assert_eq!(passive_frame_stats(&endpoint.stats, &json!({"output":"absent"})).0, 10);
+        assert_eq!(passive_frame_stats(&endpoint.stats, &json!([])).0, 10);
+        endpoint.remove_stats_surface("second");
+        assert_eq!(endpoint.stats.lock().unwrap().len(), 1);
+        assert!(endpoint.requests.try_recv().is_err());
+    }
     #[test]
     fn raw_transport_failure_keeps_delivery_uncertainty_and_never_claims_retry() {
         for unknown in [false, true] {
