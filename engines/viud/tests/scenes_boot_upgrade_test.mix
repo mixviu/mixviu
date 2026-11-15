@@ -148,10 +148,19 @@ print(json_encode({rc:$rc, value:$v}))
   end
   check($done, "reload commit refreshes when host arrives")
   check(call("scenes", "scenes.upgrade.retry", {delay:0}).rc != 0, "wire cannot trigger local retry")
-  -- Real bounded give-up, without shortening production delays for the test.
+  -- Start a fresh boot with the host absent, then remove one pending scene.
+  -- Other scenes run the entire real ladder, so the removed scene cannot be
+  -- hidden by a later manual upgrade/reload clearing all flags for it.
+  check(call("scenes", "scenes.install", {template:"removed"}).rc == 0, "reinstall removal fixture")
+  stop($children.loader)
   stop($children.host)
   $children.host = nil
-  check(call("scenes", "scenes.upgrade").rc == 0, "manual upgrade starts availability budget")
+  $children.loader = start("scenes", $loader_script)
+  wait_service("scenes")
+  wait_failure(false)
+  check(rows().removed.upgrade.retryable == true, "fresh boot flags scene for removal")
+  check(call("scenes", "scenes.remove", {name:"removed"}).rc == 0, "remove during final boot ladder")
+  $removal_log = len(read_file($tmp .. "/scenes.log"))
   wait_failure(true)
   $log = read_file($tmp .. "/scenes.log")
   check(contains($log, "scenes upgrade exhausted:") and contains($log, '"scene":"alpha"') and contains($log, '"error_code":"SCENES_UPSTREAM"'), "exhaustion logged with scene, code and rc")
