@@ -1,0 +1,16 @@
+-- Focused worker-only check; ffmpeg never participates in normal crate tests.
+fn checked($cmd)
+  $r = run_argv($cmd, {timeout: 1800, max_output: 1048576})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then exit(1) end
+end
+checked(["cargo", "test", "-p", "media-frame"])
+checked(["cargo", "clippy", "-p", "media-frame", "--all-targets", "--", "-D", "warnings"])
+checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", "/tmp/media-frame-oracle"])
+checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "bgra", "-video_size", "128x64", "-i", "/tmp/media-frame-oracle/source.bgra", "-vf", "scale=in_range=full:out_range=limited:out_color_matrix=bt709:flags=area+accurate_rnd,format=yuv420p", "-frames:v", "1", "-f", "rawvideo", "/tmp/media-frame-oracle/oracle.yuv"])
+checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", "/tmp/media-frame-oracle", "compare"])
+checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", "128x64", "-i", "/tmp/media-frame-oracle/source.yuv", "-vf", "scale=in_range=limited:in_color_matrix=bt709:out_range=full,format=bgra", "-frames:v", "1", "-f", "rawvideo", "/tmp/media-frame-oracle/roundtrip.bgra"])
+checked(["cargo", "fmt", "-p", "media-frame"])
+checked(["git", "diff"])
+checked(["git", "checkout", "-q", "--", "."])
