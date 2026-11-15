@@ -4805,7 +4805,6 @@ dependencies = [
  "egui_plot",
  "files",
  "fontdb",
- "futures",
  "icons",
  "image",
  "lib-mix",
@@ -4842,7 +4841,6 @@ dependencies = [
  "wayland-client",
  "wayland-protocols-misc",
  "wgpu",
- "xkbcommon 0.7.0",
  "zeroize",
 ]
 
