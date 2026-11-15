@@ -2798,8 +2798,13 @@ fn upgrade($s, $retry = false)
       elif not deep_eq($old, $new) then
         -- Synchronous loader handler owns the writer lock through reset.
         $s.upgrade_expected = $local
+        $s.rc = 0
         $s = reset_scene($s, $name, $s.scenes[$name] ?? entry($name))
         $s.upgrade_expected = nil
+        if $s.rc != 0 then
+          $d = $s.response
+          $s = upgrade_failure($s, $name, $d.message, $d.error_code, $d.context)
+        end
       end
     catch $message, $error
       if $tmp != nil and is_dir($tmp) then remove_dir($tmp) end

@@ -1657,6 +1657,13 @@ try
   check($s.response.templates[2].diagnostic.error_code == "SCENES_METADATA" and $s.response.templates[2].order == 1000, "T1: an invalid template is a row with a diagnostic")
 
   -- Upgrade-aware copies: real staging/rewriting, persistence and swaps.
+  $u = {host:"test-shell", upgrades:{}}
+  $u = $l.upgrade_failure($u, "late", "absent", "SCENES_UPSTREAM", {target:"test-shell", rc:10, upstream:"Service 'test-shell' not found"})
+  $u = $l.upgrade_failure($u, "invalid", "invalid", "SCENES_UPSTREAM", {target:"test-shell", rc:10, upstream:{error_code:"SCENE_REFUSED"}})
+  $u = $l.upgrade_failure($u, "timeout", "timeout", "SCENES_UPSTREAM", {target:"test-shell", rc:-2})
+  $u = $l.upgrade_failure($u, "editor", "unavailable", "SCENES_UPSTREAM", {target:"ced", rc:-2})
+  check(deep_eq(sort($l.upgrade_pending($u)), ["late", "timeout"]), "only host availability failures are retried")
+  check($l.upgrade_summary($u.upgrades.late).context.rc == 10, "inventory retains upstream rc")
   $ut = $tmp .. "/upgrade-templates"
   mkdir($ut)
   install_fixture($ut, "alpha", true)

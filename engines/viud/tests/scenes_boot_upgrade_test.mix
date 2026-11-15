@@ -10,6 +10,7 @@ $noded = env("MIX_TEST_NODED_EXE", mix_path("prefix") .. "/bin/noded")
 $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/scenes-boot-upgrade.XXXXXXXX"]))
 $bus = nil
 $children = {loader:nil, host:nil}
+$load_children = []
 $vars = {}
 
 fn check($ok, $message)
@@ -70,6 +71,11 @@ fn fixture_source($name, $text)
 end
 
 try
+  if env("SCENES_BOOT_LOAD", "0") == "1" then
+    for $i = 1 to 4
+      push($load_children, spawn([$mix, "-c", '$until=monotonic()+300; $n=0; while monotonic() < $until $n=$n+1 end'], {die_with_parent:true}))
+    end
+  end
   write_file($tmp .. "/client.mix", '$body = json_parse($3)
 send $1 $2 body=json_encode($body) timeout=10
 $v = $result
@@ -148,11 +154,12 @@ print(json_encode({rc:$rc, value:$v}))
   $before = len(split($log, "scenes upgrade:"))
   sleep(2)
   check(len(split(read_file($tmp .. "/scenes.log"), "scenes upgrade:")) == $before, "no idle retry after exhaustion")
-  print("PASS scenes boot/reload upgrade: late host, edited copy, validation refusal, bounded exhaustion; load=" .. trim(read_file("/proc/loadavg")))
+  print("PASS scenes boot/reload upgrade: late host, edited copy, validation refusal, bounded exhaustion; load_workers=" .. to_string(len($load_children)) .. " load=" .. trim(read_file("/proc/loadavg")))
 catch $message, $error
   for $path in glob($tmp .. "/*.log") eprint($path .. "\n" .. read_file($path)) end
   raise($error.code, $message, $error.details)
 finally
+  for $child in $load_children stop($child) end
   for $child in values($children) stop($child) end
   if $bus != nil then $pb.stop($bus) end
   if env("SCENES_BOOT_KEEP", "0") != "1" then remove_dir($tmp) else print("evidence: " .. $tmp) end
