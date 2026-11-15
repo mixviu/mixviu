@@ -7,7 +7,7 @@ $prepare=contains(args(),"--prepare")
 if $prepare then print(run_argv(["cargo","fmt","-p","lib-viu","-p","viu"])) end
 try
   for $case in ["core-test.mix","history-test.mix","wire-test.mix","fetch-test.mix"]
-    $result=run_argv(["/opt/mixos/bin/mix","apps/monitor/"..$case]);print($result)
+    $result=run_argv(["/opt/mix/bin/mix","apps/monitor/"..$case]);print($result)
     if not $result.ok then exit($result.exit_code ?? 1) end
   end
   for $a in [["cargo","fmt","-p","lib-viu","-p","viu","--","--check"],["cargo","check","--locked","-p","lib-viu","-p","viu","--all-targets"],["cargo","test","--locked","-p","lib-viu","-p","viu"],["cargo","clippy","--locked","-p","lib-viu","-p","viu","--all-targets"],["cargo","build","--locked","-p","viu","--bin","viu"]]

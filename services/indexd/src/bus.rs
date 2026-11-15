@@ -279,7 +279,7 @@ mod tests {
             if std::path::Path::new(built).is_file() {
                 built.into()
             } else {
-                "/opt/mixos/bin/mix".into()
+                "/opt/mix/bin/mix".into()
             }
         });
         let output = tokio::process::Command::new(mix)

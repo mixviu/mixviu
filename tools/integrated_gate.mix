@@ -35,10 +35,10 @@ try
   end
   checked_step(["cargo","test","--locked","-p","viu","--no-default-features","--test","shell_profile"])
   checked_step(["cargo","test","--locked","-p","lib-viu","--test","bulk_profile","--test","ports_round5","--","--nocapture"])
-  checked_step(["/opt/mixos/bin/mix","tools/p2_gate.mix","build"])
-  checked_step(["/opt/mixos/bin/mix","tools/p2_gate.mix","furniture"])
+  checked_step(["/opt/mix/bin/mix","tools/p2_gate.mix","build"])
+  checked_step(["/opt/mix/bin/mix","tools/p2_gate.mix","furniture"])
   $sha=trim(run_argv_must(["git","rev-parse","HEAD"]));$art="/build/es-artifacts/"..$sha
-  checked_step(["/opt/mixos/bin/mix","tools/engine_split_smoke.mix",$art.."/mix",$art.."/mixd"])
+  checked_step(["/opt/mix/bin/mix","tools/engine_split_smoke.mix",$art.."/mix",$art.."/mixd"])
   $sums=""
   for $engine in ["mix","mixd","viud","viu"] $sums=$sums..hash_file($art.."/"..$engine,"sha256").."  "..$engine.."\n" end
   write_file($art.."/SHA256SUMS",$sums);print({artifact:$art,sums:$sums})
