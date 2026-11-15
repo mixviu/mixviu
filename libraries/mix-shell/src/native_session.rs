@@ -767,6 +767,11 @@ async fn own(
 /// leaves room for the extra attempt. Transient contention must delay a
 /// renewal, not drop the attachment and force a full reconnect.
 async fn renew(connection: &VerifiedConnection, bound: &SessionRecord) -> Option<SessionRecord> {
+    #[cfg(test)]
+    if let Ok(entered) = STALLED_RENEWAL.try_with(Clone::clone) {
+        entered.notify_one();
+        std::future::pending::<()>().await;
+    }
     for attempt in 0..2 {
         match rpc(
             "renew: attachment lost",
@@ -788,6 +793,12 @@ async fn renew(connection: &VerifiedConnection, bound: &SessionRecord) -> Option
         }
     }
     None
+}
+
+#[cfg(test)]
+tokio::task_local! {
+    // Scoped to one resident task: sibling tests and production cannot stall.
+    static STALLED_RENEWAL: std::sync::Arc<tokio::sync::Notify>;
 }
 
 async fn reconnect_backoff(

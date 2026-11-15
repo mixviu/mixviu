@@ -1083,3 +1083,122 @@ async fn recipient_freshness_costs_one_round_trip() {
     request.abort();
     let _ = request.await;
 }
+
+#[tokio::test]
+async fn stalled_renewal_keeps_requests_and_restart_live() {
+    use test_broker::{Broker, session_fd::LaunchFd};
+    let broker = Broker::start();
+    let UnixConnectOutcome::VerifiedUnix(parent) =
+        NodedClient::connect_unix("", &broker.url, &broker.options(), None)
+            .await
+            .unwrap()
+    else {
+        panic!("verified parent required")
+    };
+    let parent_key = SigningKey::from_bytes(&[23; 32]);
+    let parent_record = parent
+        .session_allocate(&parent_key, Policy::DefaultOpen)
+        .await
+        .unwrap()
+        .record;
+    let child_key = SigningKey::from_bytes(&[42; 32]);
+    let grant = parent
+        .session_grant_create(&GrantCreateArgs {
+            parent: parent_record.reference(),
+            pane_id: DecimalU64(1),
+            pane_generation: DecimalU64(1),
+            public_key: HexBytes(child_key.verifying_key().to_bytes()),
+            role: Role::PaneShell,
+            capabilities: vec![Capability::ReadState],
+        })
+        .await
+        .unwrap();
+    let launch = LaunchFd::new(&grant, &child_key).unwrap();
+    let raw = unsafe { libc::fcntl(launch.mapping().0, libc::F_DUPFD_CLOEXEC, 3) };
+    assert!(raw >= 3);
+    let file = unsafe { File::from_raw_fd(raw) };
+    let bootstrap = parse(&file).ok().unwrap();
+    drop(file);
+    drop(launch);
+
+    let mut options = broker.options();
+    options.require_native_session = true;
+    options.incoming_capacity = Some(64);
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let url = broker.url.clone();
+    let entered = std::sync::Arc::new(tokio::sync::Notify::new());
+    let stalled = entered.clone();
+    let resident = tokio::spawn(STALLED_RENEWAL.scope(stalled, async move {
+        let mut reporter = Reporter::default();
+        own(bootstrap, options, url, &mut reporter, receiver).await;
+        reporter.reported
+    }));
+
+    let parent = std::sync::Arc::new(parent);
+    // The Term half of the fixture owes its own lease; its reference is stable
+    // across renewals, so one retained reference keeps it alive throughout.
+    let keepalive = tokio::spawn({
+        let renewing = parent.clone();
+        let reference = parent_record.reference();
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                if renewing.session_renew(reference.clone()).await.is_err() {
+                    return;
+                }
+            }
+        }
+    });
+
+    let started = Instant::now();
+    let bound = loop {
+        let record = parent
+            .session_self(grant.record.record_id)
+            .await
+            .unwrap()
+            .record;
+        if record.state == BindingState::Attached {
+            break record;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "child did not attach through the relay"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert_eq!(bound.binding_generation, DecimalU64(1));
+    let request = serde_json::json!({"version":1,"target":{
+        "broker_epoch":bound.broker_epoch,"record":bound.reference(),
+        "instance_id":bound.instance_id,"pane_id":bound.pane_id,
+        "pane_generation":bound.pane_generation
+    }});
+
+    // Hold renewal indefinitely while the real broker and socket reader stay
+    // live. An inline await in the receive arm cannot answer this request or
+    // acknowledge restart; neither assertion depends on CPU load or a sleep.
+    tokio::time::timeout(Duration::from_secs(10), entered.notified())
+        .await
+        .expect("resident did not enter renewal");
+    let response = tokio::time::timeout(
+        Duration::from_secs(3),
+        parent.client().call(&bound.name, "shell.status", request),
+    )
+    .await
+    .expect("pending renewal must not block request reception");
+    match response {
+        Ok(_) => {},
+        Err(error) => assert_eq!(error.to_string(), r#"{"error_code":"REFUSED"}"#),
+    }
+    let current = parent.session_self(bound.record_id).await.unwrap().record;
+    assert_eq!(current.state, BindingState::Attached);
+    assert_eq!(current.reference(), bound.reference());
+    let (ack, received) = std::sync::mpsc::sync_channel(1);
+    sender.send(ack).unwrap();
+    let reported = tokio::time::timeout(Duration::from_secs(3), resident)
+        .await
+        .expect("pending renewal must not block restart")
+        .unwrap();
+    assert!(!reported);
+    assert!(received.try_recv().unwrap());
+    keepalive.abort();
+}
