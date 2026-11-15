@@ -47,5 +47,21 @@ fn main() {
             assert!(max <= 2 && mean <= 0.6);
             offset += n;
         }
+        if args.len() > 3 {
+            let a = std::fs::read(dir.join("roundtrip.bgra")).unwrap();
+            let b = std::fs::read(dir.join("oracle-roundtrip.bgra")).unwrap();
+            assert_eq!(a.len(), 128 * 64 * 4);
+            assert_eq!(a.len(), b.len());
+            let mut sum = 0usize;
+            let mut max = 0u8;
+            for (a, b) in a.iter().zip(b) {
+                let d = a.abs_diff(b);
+                sum += d as usize;
+                max = max.max(d);
+            }
+            let mean = sum as f64 / a.len() as f64;
+            println!("reverse BGRA: max={max} mean={mean:.6}");
+            assert!(max <= 5 && mean <= 1.0);
+        }
     }
 }

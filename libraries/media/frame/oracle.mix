@@ -11,6 +11,8 @@ checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", "/tmp
 checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "bgra", "-video_size", "128x64", "-i", "/tmp/media-frame-oracle/source.bgra", "-vf", "scale=in_range=full:out_range=limited:out_color_matrix=bt709:flags=area+accurate_rnd,format=yuv420p", "-frames:v", "1", "-f", "rawvideo", "/tmp/media-frame-oracle/oracle.yuv"])
 checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", "/tmp/media-frame-oracle", "compare"])
 checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", "128x64", "-i", "/tmp/media-frame-oracle/source.yuv", "-vf", "scale=in_range=limited:in_color_matrix=bt709:out_range=full,format=bgra", "-frames:v", "1", "-f", "rawvideo", "/tmp/media-frame-oracle/roundtrip.bgra"])
+checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", "128x64", "-i", "/tmp/media-frame-oracle/oracle.yuv", "-vf", "scale=in_range=limited:in_color_matrix=bt709:out_range=full,format=bgra", "-frames:v", "1", "-f", "rawvideo", "/tmp/media-frame-oracle/oracle-roundtrip.bgra"])
+checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", "/tmp/media-frame-oracle", "compare", "reverse"])
 checked(["cargo", "fmt", "-p", "media-frame"])
 checked(["git", "diff"])
 checked(["git", "checkout", "-q", "--", "."])
