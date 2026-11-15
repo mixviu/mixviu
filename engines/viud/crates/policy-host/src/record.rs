@@ -59,6 +59,7 @@ impl History {
     }
 }
 struct Session {
+    frames_parked: fn(&Loop) -> bool,
     request_id: String,
     admitted: Instant,
     id: String,
@@ -118,7 +119,7 @@ fn event(s: &Session, state: &'static str) {
     });
 }
 
-pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlReply) + 'static) {
+pub fn command(lp: &mut Loop, op: RecordCommand, frames_parked: fn(&Loop) -> bool, answer: impl FnOnce(ControlReply) + 'static) {
     let answer: Answer = Box::new(answer);
     let params = op.clone();
     if let RecordCommand::Start { request_id, .. } = &op {
@@ -248,6 +249,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             Some(rx)
         };
         let session = Rc::new(RefCell::new(Session {
+            frames_parked,
             request_id,
             admitted: Instant::now(),
             params,
@@ -597,9 +599,10 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     fail(session, "output generation changed");
                     return;
                 }
-                let paused = matches!(lp.inner.status_session, world::state::StatusSession::Paused);
-                signature.push(u64::from(paused));
-                signature.push(if paused {
+                let parked = matches!(lp.inner.status_session, world::state::StatusSession::Paused)
+                    || (s.frames_parked)(lp);
+                signature.push(u64::from(parked));
+                signature.push(if parked {
                     // No presentation clock while paused. Conservatively sample
                     // real scene requests; capture requests are excluded here too.
                     lp.state.redraw.capture_request_revision()
@@ -805,6 +808,7 @@ mod tests {
         let answered = Rc::new(Cell::new(false));
         let got = answered.clone();
         let session = Rc::new(RefCell::new(Session {
+            frames_parked: |_| false,
             request_id: "pending".into(),
             admitted: Instant::now() - Duration::from_secs(2),
             id: "pending-session".into(),

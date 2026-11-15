@@ -155,7 +155,8 @@ promises that its queued tail was stored.
 
 Active output sampling follows that output's submitted scene changes, excluding
 capture and backend continuation requests. Empty renders caused by another
-output do not advance it. Paused outputs have no submitted-frame clock and use
+output do not advance it. Paused outputs and parked presentation (DPMS off or
+unavailable scanout) have no submitted-frame clock and use
 the conservative scene-request clock instead, with capture requests excluded;
 unrelated changes on another output can still cause an extra paused readback.
 Switching between those clocks forces a fresh sample. Neither clock is a pixel

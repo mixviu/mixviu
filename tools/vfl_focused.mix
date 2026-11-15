@@ -16,7 +16,7 @@ if $mode == "bench" then
   export MIX_TEST_VIUD_EXE=realpath("target/release/viud")
 end
 $command = if $mode == "fmt" then
-  ["cargo","fmt","-p","graphics","-p","recorder","-p","comp-model","-p","policy-host","-p","headless","-p","media-vfl","-p","protocols"]
+  ["cargo","fmt","-p","graphics","-p","recorder","-p","comp-model","-p","policy-host","-p","headless","-p","media-vfl","-p","protocols","-p","viud"]
 elif $mode == "encoder" then
   ["cargo","test","-p","media-vfl","-p","recorder","-p","graphics"]
 elif $mode == "capture" then

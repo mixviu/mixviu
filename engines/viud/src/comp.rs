@@ -1078,7 +1078,13 @@ impl CompEngine for Engine<'_> {
         };
         match op {
             LongOp::Record(command) => {
-                policy_host::record::command(self.lp, command, move |answer| reply.send(answer));
+                // Use the same backend predicate as the render loop: DPMS and
+                // unavailable scanout park submissions even with an active seat.
+                #[cfg(feature = "backend-native")]
+                let parked: fn(&Loop) -> bool = native::render::execute::frames_parked;
+                #[cfg(not(feature = "backend-native"))]
+                let parked: fn(&Loop) -> bool = |_| false;
+                policy_host::record::command(self.lp, command, parked, move |answer| reply.send(answer));
             }
             LongOp::CaptureFrame(spec) => {
                 policy_host::capture::start(self.lp, spec, admitted, move |answer| {
