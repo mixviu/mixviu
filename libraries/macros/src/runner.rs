@@ -390,28 +390,21 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn dropping_a_runner_requests_termination_and_the_manager_reaps() {
-        use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
-        let mix = temp.path().join("runner-stub");
-        std::fs::write(
-            &mix,
-            "#!/bin/sh\n# SPDX-License-Identifier: MIT OR Apache-2.0\nexec /bin/sleep 120\n",
-        )
-        .unwrap();
-        std::fs::set_permissions(&mix, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // Use an existing executable: a concurrent fork can inherit a freshly
+        // written stub's writable descriptor until exec, causing ETXTBSY.
+        // Runner passes entry.path as the first argument, here sleep's duration.
         let roots = Roots {
             user: temp.path().join("user"),
             builtin: temp.path().join("builtin"),
             home: temp.path().into(),
-            mix,
+            mix: "/usr/bin/sleep".into(),
         };
-        let path = temp.path().join("drop.mix");
-        std::fs::write(&path, "-- title: Drop\n").unwrap();
         let entry = Entry {
             id: "drop".into(),
             title: "Drop".into(),
             tier: Tier::UserApp,
-            path,
+            path: "120".into(),
             shadows: vec![],
             targets: None,
         };
@@ -426,6 +419,7 @@ mod tests {
         }
         let final_status = status.lock().unwrap().clone();
         eprintln!("dropped runner status: {final_status:?}");
+        // Signal termination is Exited(None); spawn/wait failures are not a reap.
         assert!(matches!(final_status, Status::Exited(_)), "{final_status:?}");
     }
 }
