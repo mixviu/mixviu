@@ -64,6 +64,7 @@ pub struct Service {
     pub calls: Arc<Mutex<Vec<(String, Instant)>>>,
     pub fail_reads: Arc<AtomicUsize>,
     current: Arc<Mutex<settings::Snapshot>>,
+    changes: tokio::sync::watch::Receiver<usize>,
     task: tokio::task::JoinHandle<()>,
 }
 impl Service {
@@ -83,6 +84,7 @@ impl Service {
         let fail_reads = Arc::new(AtomicUsize::new(0));
         let failures = fail_reads.clone();
         let service = client.clone();
+        let (changed, changes) = tokio::sync::watch::channel(0);
         let task = tokio::spawn(async move {
             while let Some(delivery) = incoming.recv().await {
                 let command = delivery.into_command();
@@ -93,6 +95,7 @@ impl Service {
                     .lock()
                     .unwrap()
                     .push((command.command.clone(), Instant::now()));
+                changed.send_modify(|n| *n += 1);
                 let refused = command.command == "settings.get"
                     && failures
                         .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
@@ -124,6 +127,7 @@ impl Service {
             current,
             fail_reads,
             task,
+            changes,
         }
     }
     pub fn count(&self, command: &str) -> usize {
@@ -171,6 +175,14 @@ impl Service {
         .expect("worker did not settle")
         .unwrap();
         assert_eq!(result, json!({"settled":true}));
+    }
+
+    // Observe the whole idle interval; any request wakes this assertion and
+    // fails immediately. This is not a guessed wait for positive work.
+    pub async fn assert_idle(&self, duration: Duration) {
+        let mut changes = self.changes.clone();
+        changes.borrow_and_update();
+        assert!(tokio::time::timeout(duration, changes.changed()).await.is_err(), "unexpected idle request: {:?}", self.calls.lock().unwrap());
     }
 
     #[allow(dead_code)] // Shared fixture; only chrome injects names-only hints.

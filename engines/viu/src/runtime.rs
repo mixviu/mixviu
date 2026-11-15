@@ -168,6 +168,8 @@ impl State {
     }
 }
 enum Outgoing {
+    #[cfg(test)]
+    Checkpoint(tokio::sync::oneshot::Sender<()>),
     Fire(String, String, Value),
     Register(String, String),
     Mode(String, String, String),
@@ -742,6 +744,8 @@ async fn worker_connected(
     let mut comp_retry = None;
     #[cfg(test)]
     let mut checkpoints: Vec<bus::IncomingCommand> = Vec::new();
+    #[cfg(test)]
+    let mut outgoing_checkpoints: Vec<tokio::sync::oneshot::Sender<()>> = Vec::new();
     loop {
         // This samples the Bus epoch coherently, not settingsd availability.
         // Compositor work below is gated directly on the live Bus connection.
@@ -844,6 +848,7 @@ async fn worker_connected(
             .min();
         #[cfg(test)]
         if !comp_dirty && deadline.is_none() && consumer.pending().is_none() {
+            for checkpoint in outgoing_checkpoints.drain(..) { let _ = checkpoint.send(()); }
             for command in checkpoints.drain(..) {
                 client.respond_parts(command.generation, &command.from, &command.command, command.id.as_deref(), 0, "{\"settled\":true}").await.unwrap();
             }
@@ -857,6 +862,8 @@ async fn worker_connected(
             action=outgoing.recv()=>{
                 let Some(action)=action else {break;};
                 match action {
+                    #[cfg(test)]
+                    Outgoing::Checkpoint(checkpoint)=>{outgoing_checkpoints.push(checkpoint);}
                     Outgoing::Fire(to,command,body)=>{let _=client.send(&to,&command,body).await;}
                     Outgoing::Register(output,edge)=>{state.lock().unwrap().panel(&output,&edge);reported.remove(&(output,edge));}
                     Outgoing::Mode(output,edge,mode)=>{if let Some(mode)=PanelMode::parse(&mode) {state.lock().unwrap().input(&output,&edge,PanelInput::SetMode(mode));}}
@@ -1263,7 +1270,7 @@ mod idle_tests {
             .unwrap();
         comp.wait("comp.props.watch", watches + 1).await;
         comp.wait("comp.panel.mode", reports + 1).await;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        comp.assert_idle(Duration::from_millis(1200)).await;
         assert_eq!(comp.count("comp.props.watch"), watches + 1);
         assert_eq!(comp.count("comp.panel.mode"), reports + 1);
         task.abort();
@@ -1306,7 +1313,7 @@ mod idle_tests {
         drop(comp);
         let replacement = idle_bus::Service::start(&broker, "comp").await;
         replacement.wait("comp.panel.mode", 1).await;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        replacement.assert_idle(Duration::from_millis(1200)).await;
         assert_eq!(replacement.count("comp.props.watch"), 1);
         assert_eq!(replacement.count("comp.props.get"), 1);
         assert_eq!(replacement.count("comp.panel.mode"), 1);
@@ -1383,7 +1390,7 @@ mod idle_tests {
         settings.wait("settings.get", 1).await;
         comp.wait("comp.panel.mode", 1).await;
         settings.checkpoint("shell").await;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        tokio::join!(settings.assert_idle(Duration::from_millis(1200)), comp.assert_idle(Duration::from_millis(1200)));
         assert_eq!(settings.count("settings.get"), 1);
         assert_eq!(comp.count("comp.props.watch"), 1);
         assert_eq!(comp.count("comp.props.get"), 1);
@@ -1409,7 +1416,7 @@ mod idle_tests {
         settings.wait("settings.get", 3).await;
         settings.checkpoint("shell").await;
         settings.assert_read_retry_deadline();
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        settings.assert_idle(Duration::from_millis(1200)).await;
         assert_eq!(
             settings.count("settings.get"),
             3,
@@ -1423,7 +1430,9 @@ mod idle_tests {
             ))
             .unwrap();
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        let (checkpoint, complete) = tokio::sync::oneshot::channel();
+        send.send(Outgoing::Checkpoint(checkpoint)).unwrap();
+        tokio::time::timeout(Duration::from_secs(20), complete).await.unwrap().unwrap();
         assert_eq!(comp.count("comp.panel.mode"), 1, "same mode is silent");
         send.send(Outgoing::Mode(
             "example".into(),

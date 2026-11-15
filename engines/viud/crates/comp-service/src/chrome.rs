@@ -477,7 +477,7 @@ mod tests {
         settings.wait("settings.get", 1).await;
         app.wait("example-app.ui.titlebar.form", 1).await;
         settings.checkpoint("comp-idle").await;
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        tokio::join!(settings.assert_idle(std::time::Duration::from_millis(1200)), app.assert_idle(std::time::Duration::from_millis(1200)));
         assert_eq!(settings.count("settings.get"), 1);
         assert_eq!(
             observer.registry_reads("comp-idle"),
