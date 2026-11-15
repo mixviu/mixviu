@@ -69,7 +69,7 @@ foreign: {
   -- A trailing * matches a prefix.
   strict_forbid: ["pipewire*", "libspa*", "lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
     "glow", "glutin*", "smithay*", "wayland-*", "x11*", "xkbcommon*", "calloop-wayland-source",
-    "iced*", "bevy*", "vello*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
+    "iced*", "bevy*", "vello*", "gpui*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
   -- Shared libraries a built strict binary must not need (DT_NEEDED prefix).
   strict_forbid_so: ["libwayland", "libX", "libxcb", "libxkbcommon", "libEGL", "libGL",
     "libvulkan", "libgbm", "libdrm", "libinput", "libudev", "libseat", "libpipewire",

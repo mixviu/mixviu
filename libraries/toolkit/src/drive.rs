@@ -18,6 +18,10 @@
 //! the menu, focus and pointer the input left, so a caller can step the
 //! window deterministically.
 use crate::menu;
+mod vocabulary;
+pub use vocabulary::key_name;
+#[cfg(test)]
+mod contract_tests;
 use egui::accesskit::{Node, NodeId, Role, Toggled, TreeUpdate};
 use egui::{
     ColorImage, Context, Event, FullOutput, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2,
@@ -127,7 +131,7 @@ pub fn describe(app: &str) -> Vec<Value> {
         ),
         (
             "ui.key",
-            json!({"key":"egui key name (Enter, Escape, ArrowDown, Tab, A, …)","modifiers":"optional [ctrl|shift|alt|command]"}),
+            json!({"key":"MixViu key name (docs/ui-drive-contract.md)","modifiers":"optional [ctrl|shift|alt|command]"}),
             "Press and release one key with modifiers, one pass each",
             false,
         ),
@@ -1736,7 +1740,7 @@ impl Drive {
         });
         let rect = node.bounds().map(|r| [r.x0, r.y0, r.x1, r.y1]);
         let children: Vec<String> = node.children().iter().map(|c| node_id(*c)).collect();
-        let mut out = json!({"id":node_id(id),"role":format!("{:?}",node.role()),"label":label(node),"value":node.value(),
+        let mut out = json!({"id":node_id(id),"role":vocabulary::role_name(node.role()),"label":label(node),"value":node.value(),
             "placeholder":node.placeholder(),"rect":rect,"enabled":!node.is_disabled(),"focused":self.focus() == Some(id),
             "selected":node.is_selected(),"checked":checked,"children":children});
         if let Some(depth) = depth {
@@ -1785,7 +1789,7 @@ impl Drive {
                 continue;
             };
             let label_matches = filter.is_none() || label(node).is_some_and(matches_label);
-            let role_matches = role.is_none_or(|r| format!("{:?}", node.role()) == r);
+            let role_matches = role.is_none_or(|r| vocabulary::role_name(node.role()) == r);
             if label_matches && role_matches {
                 out.push(self.node_json(node_id, node, Some(depth)));
             }
@@ -1997,7 +2001,7 @@ fn key(args: &Value) -> Result<Job, String> {
         .get("key")
         .and_then(Value::as_str)
         .ok_or("key must be a key name")?;
-    let key = Key::from_name(name).ok_or_else(|| format!("unknown key {name:?}"))?;
+    let key = vocabulary::key_name(name).ok_or_else(|| format!("unknown key {name:?}"))?;
     let mut modifiers = Modifiers::NONE;
     let names = match args.get("modifiers") {
         None => &[][..],
