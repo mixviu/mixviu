@@ -38,6 +38,45 @@ pub struct Notice {
     pub headers: BTreeMap<String, String>,
 }
 type SharedClient = Arc<Mutex<Option<Arc<SupervisedClient>>>>;
+fn passive_frame_stats(
+    contexts: &Mutex<BTreeMap<String, egui::Context>>,
+    args: &Value,
+) -> (u8, Value) {
+    if !args.is_object() {
+        return (10, json!({"error_code":"ARGUMENT"}));
+    }
+    // Never hold the registry lock while taking an egui context lock: a draw
+    // may register its surface while already inside that context.
+    let contexts = contexts.lock().unwrap().clone();
+    if let Some(output) = args.get("output") {
+        let Some(output) = output.as_str() else {
+            return (10, json!({"error_code":"ARGUMENT"}));
+        };
+        return match contexts.get(output) {
+            Some(ctx) => (0, toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT)),
+            None => (10, json!({"error_code":"NOT_FOUND"})),
+        };
+    }
+    if contexts.len() == 1 {
+        return (
+            0,
+            toolkit::drive::frame_stats(contexts.values().next().unwrap(), egui::ViewportId::ROOT),
+        );
+    }
+    let surfaces: BTreeMap<_, _> = contexts
+        .iter()
+        .map(|(name, ctx)| {
+            (
+                name,
+                toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT),
+            )
+        })
+        .collect();
+    (
+        0,
+        json!({"available":!surfaces.is_empty(), "surfaces":surfaces}),
+    )
+}
 struct Hint {
     topic: String,
     body: Value,
@@ -172,6 +211,7 @@ pub struct Endpoint {
     pub startup_error: Arc<Mutex<Option<String>>>,
     pub dropped_notices: Arc<AtomicU64>,
     client: SharedClient,
+    stats: Arc<Mutex<BTreeMap<String, egui::Context>>>,
     hints: tokio::sync::mpsc::Sender<Hint>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
@@ -208,6 +248,7 @@ impl Endpoint {
             close_requested: Arc::new(AtomicBool::new(false)),
             dropped_notices: Arc::new(AtomicU64::new(0)),
             client: Arc::new(Mutex::new(None)),
+            stats: Arc::default(),
             hints,
             stop: None,
             thread: None,
@@ -296,6 +337,13 @@ impl Endpoint {
         let (stop, mut stopped) = oneshot::channel();
         let (hints, mut hint_rx) = tokio::sync::mpsc::channel::<Hint>(1);
         let service_name = name.clone();
+        let stats: Arc<Mutex<BTreeMap<String, egui::Context>>> = Arc::default();
+        let passive_stats = stats.clone();
+        let stats_commands: std::collections::BTreeSet<_> = commands
+            .iter()
+            .filter(|d| d.read_only && d.name.ends_with(".ui.stats"))
+            .map(|d| d.name.clone())
+            .collect();
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
             rt.block_on(async move{
@@ -304,7 +352,7 @@ impl Endpoint {
                 let (registered,native)=if pid_fallback {
                     tokio::select!{_=&mut stopped=>return,c=crate::native_registration::connect(&name,&url,&commands,help.is_none() && !owner_help,true)=>match c{Ok((registered,c))=>(registered,Arc::new(c)),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(true,Ordering::Release);wake();return;}}}
                 } else {
-                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
+                let options=SupervisedClient::connect_options(&name,&url).with_provenance(crate::native_registration::provenance()).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
                 let options=if help.is_none() && !owner_help{options.with_commands(commands)}else{options};
                 let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(e.registration_rejection_typed().is_some(),Ordering::Release);wake();return;}}};
 
@@ -341,6 +389,11 @@ impl Endpoint {
                             None=>{let body=policy.transport.unknown_reply.clone().unwrap_or_else(||json!({"error_code":"UNKNOWN_COMMAND"}));let _=native.respond(&command,10,&wire_body(&body,text_replies)).await;continue;}
                         }
                     } else {crate::native_registration::rename(&command.command,&registered,&name)};
+                    if stats_commands.contains(&routed) && command.args.get("viewport").is_none() {
+                        let answer = passive_frame_stats(&passive_stats, &command.args);
+                        let _ = native.respond(&command, answer.0, &wire_body(&answer.1,text_replies)).await;
+                        continue;
+                    }
                     let (reply,response)=oneshot::channel();
                     let close_after_reply=Arc::new(AtomicBool::new(false));
                     let delivery=Arc::new(AtomicU8::new(0));
@@ -376,10 +429,19 @@ impl Endpoint {
             startup_error,
             dropped_notices,
             client,
+            stats,
             hints,
             stop: Some(stop),
             thread: Some(thread),
         }
+    }
+    /// Register a host surface for read-only snapshots without an owner wake.
+    pub fn stats_surface(&self, output: String, ctx: egui::Context) {
+        self.stats.lock().unwrap().insert(output, ctx);
+    }
+    /// Retire a removed layer surface's passive snapshot.
+    pub fn remove_stats_surface(&self, output: &str) {
+        self.stats.lock().unwrap().remove(output);
     }
     /// Construct on the Mix worker. It shares the existing native connection;
     /// it creates no broker, socket, dispatcher or secondary service identity.
@@ -811,6 +873,151 @@ fn reply_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn passive_stats_native_loop_plain_namespaced_and_multi_instance() {
+        use ::bus::native_client::{NodedClient, UnixConnectOutcome};
+        for namespace in [None, Some("gallery")] {
+            for multi_instance in [false, true] {
+                let broker = test_broker::Broker::start();
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                runtime.block_on(async {
+                    let base = if namespace.is_some() {
+                        "gallery-wire"
+                    } else {
+                        "gallery"
+                    };
+                    // Hold the base registration to force the real PID-suffix
+                    // ladder, rather than manufacturing a renamed command.
+                    let occupied = if multi_instance {
+                        let UnixConnectOutcome::VerifiedUnix(client) =
+                            NodedClient::connect_unix(base, &broker.url, &broker.options(), None)
+                                .await
+                                .unwrap()
+                        else {
+                            panic!("native fixture required");
+                        };
+                        Some(client)
+                    } else {
+                        None
+                    };
+                    let endpoint = Endpoint::start_policy(
+                        base.into(),
+                        broker.url.clone(),
+                        vec![bus::CommandDescriptor::new(
+                            "gallery.ui.stats",
+                            &[],
+                            "Passive frame statistics",
+                            true,
+                        )],
+                        "app.quit".into(),
+                        Arc::new(|| {}),
+                        RequestPolicy {
+                            // Authored namespaces supply their own discovery;
+                            // plain registrations use the native manifest.
+                            owner_help: namespace.is_some(),
+                            timeout: Duration::from_secs(2),
+                            transport: Policy {
+                                namespace: namespace.map(str::to_owned),
+                                pid_fallback: multi_instance,
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                    );
+                    let ctx = egui::Context::default();
+                    ctx.data_mut(|data| {
+                        data.insert_temp(
+                            egui::Id::unique(("ui.stats.v1", egui::ViewportId::ROOT)),
+                            (
+                                7_u64,
+                                vec![3.0_f64],
+                                std::time::Instant::now(),
+                                [321_u32, 123],
+                                1.5_f32,
+                                "fixture backend".to_owned(),
+                                "passive route".to_owned(),
+                            ),
+                        )
+                    });
+                    endpoint.stats_surface(String::new(), ctx);
+                    tokio::time::timeout(Duration::from_secs(5), async {
+                        while endpoint.client().is_none() {
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                        }
+                    })
+                    .await
+                    .unwrap();
+                    let registered = endpoint.client().unwrap().service_name().to_owned();
+                    assert_eq!(
+                        registered,
+                        if multi_instance {
+                            format!("{base}-{}", std::process::id())
+                        } else {
+                            base.into()
+                        }
+                    );
+                    let UnixConnectOutcome::VerifiedUnix(caller) =
+                        NodedClient::connect_unix("", &broker.url, &broker.options(), None)
+                            .await
+                            .unwrap()
+                    else {
+                        panic!("native fixture required");
+                    };
+                    // No owner pump or responder exists. A successful bounded
+                    // reply plus an empty owner channel proves interception.
+                    let (rc, body, _) = caller
+                        .client()
+                        .call_with_headers_raw_within(
+                            &registered,
+                            &format!("{registered}.ui.stats"),
+                            &BTreeMap::new(),
+                            "{}",
+                            Duration::from_secs(1),
+                        )
+                        .await
+                        .unwrap();
+                    assert!(
+                        endpoint.requests.try_recv().is_err(),
+                        "stats reached owner: {namespace:?}, {multi_instance}"
+                    );
+                    assert_eq!(rc, 0);
+                    let answer: Value = serde_json::from_str(&body).unwrap();
+                    assert_eq!(answer["frames_drawn"], 7);
+                    assert_eq!(answer["adapter"], "passive route");
+                    caller.client().close().await;
+                    if let Some(occupied) = occupied {
+                        occupied.client().close().await;
+                    }
+                });
+            }
+        }
+    }
+    #[test]
+    fn passive_stats_select_outputs_without_owner_requests() {
+        let endpoint = Endpoint::offline();
+        let ctx = egui::Context::default();
+        endpoint.stats_surface("first".into(), ctx.clone());
+        endpoint.stats_surface("second".into(), egui::Context::default());
+        let (_, all) = passive_frame_stats(&endpoint.stats, &json!({}));
+        assert_eq!(all["surfaces"].as_object().unwrap().len(), 2);
+        let (_, selected) = passive_frame_stats(&endpoint.stats, &json!({"output":"first"}));
+        assert_eq!(selected["available"], false);
+        assert_eq!(
+            passive_frame_stats(&endpoint.stats, &json!({"output":"absent"})).0,
+            10
+        );
+        assert_eq!(passive_frame_stats(&endpoint.stats, &json!([])).0, 10);
+        assert_eq!(
+            passive_frame_stats(&endpoint.stats, &json!({"output":42})).1["error_code"],
+            "ARGUMENT"
+        );
+        endpoint.remove_stats_surface("second");
+        assert_eq!(endpoint.stats.lock().unwrap().len(), 1);
+        assert!(endpoint.requests.try_recv().is_err());
+    }
     #[test]
     fn raw_transport_failure_keeps_delivery_uncertainty_and_never_claims_retry() {
         for unknown in [false, true] {

@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Strict parsers shared by the collector and fixture tests.
+fn number($s)
+  if not re_match($s, "^[0-9]+$") then raise("PROC", "invalid counter: " .. $s) end
+  return to_number($s)
+end
+fn proc_fields($text, $wanted)
+  $out = {}
+  for $line in split($text, "\n")
+    $parts = split($line, ":")
+    if len($parts) == 2 and contains($wanted, $parts[0]) then
+      $words = re_split(trim($parts[1]), "\\s+")
+      $out[$parts[0]] = number($words[0])
+    end
+  end
+  for $key in $wanted
+    if $out[$key] == nil then raise("PROC", "missing counter: " .. $key) end
+  end
+  return $out
+end
+fn memory($text)
+  return proc_fields($text, ["Rss", "Pss", "Private_Dirty", "Swap"])
+end
+fn status($text)
+  return proc_fields($text, ["Threads", "voluntary_ctxt_switches", "nonvoluntary_ctxt_switches"])
+end
+fn cpu($text)
+  -- comm can contain spaces and closing parentheses: remove through LAST ') '.
+  $tail = re_replace(trim($text), "^[0-9]+ \\(.*\\) ", "")
+  $f = re_split($tail, "\\s+")
+  if $tail == trim($text) or len($f) < 20 then raise("PROC", "malformed stat") end
+  return {ticks:number($f[11]) + number($f[12]), start:number($f[19])}
+end
+fn snapshot($pid)
+  $base = "/proc/" .. to_string($pid)
+  $first = cpu(read_file($base .. "/stat"))
+  $s = status(read_file($base .. "/status"))
+  $m = memory(read_file($base .. "/smaps_rollup"))
+  $threads = {}
+  for $path in glob($base .. "/task/*/status")
+    -- A disappearing thread is refused; do not fabricate a zero delta.
+    $threads[basename(dirname($path))] = proc_fields(read_file($path), ["voluntary_ctxt_switches", "nonvoluntary_ctxt_switches"])
+  end
+  $last = cpu(read_file($base .. "/stat"))
+  if $first.start != $last.start then raise("PROC", "process identity changed") end
+  return {at:monotonic(), cpu:$last, status:$s, memory_kib:$m, threads:$threads}
+end

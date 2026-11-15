@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run through CBC, never on a workstation.
+for $cmd in [
+  ["mix", "tools/bench/proc_test.mix"],
+  ["mix", "tools/bench/workloads_test.mix"],
+  ["cargo", "test", "-p", "toolkit", "--lib", "--features", "layer", "drive"],
+  ["cargo", "test", "-p", "lib-viu", "--lib", "native_bus::tests::passive_stats"],
+  ["cargo", "clippy", "-p", "toolkit", "--features", "layer", "--no-deps", "--", "-D", "warnings"],
+  ["cargo", "clippy", "-p", "lib-viu", "--no-deps"],
+  ["cargo", "check", "-p", "viu"]
+]
+  $r = run_argv($cmd, {timeout:3600, stderr:"stdout"})
+  print($r.stdout)
+  if $r.exit_code != 0 then exit($r.exit_code) end
+end
