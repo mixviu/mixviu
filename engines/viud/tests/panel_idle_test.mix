@@ -127,8 +127,9 @@ end
   start("panel-stub", $tmp .. "/stub.mix")
   wait_service("panel-stub")
   $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
-  write_file($tmp .. "/panel.mix", $behaviour .. '\non panel.test.state
-  reply(0,json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty}))
+  write_file($tmp .. "/panel.mix", $behaviour .. '
+on panel.test.state
+  reply(0,json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty}))
 end
 on panel.test.registry
   services_changed($event.args.new)
@@ -148,7 +149,36 @@ end
     sleep(0.05)
   end
   check(is_file($tmp .. "/model"), "first panel model missing")
-  if $case == "registry" then
+  if $case == "notify" then
+    check(calls_for("notify.list")==0,"absent notify called")
+    write_file($tmp .. "/notify.mix", 'on notify.list
+  reply(0,"[]")
+end
+on change
+  $_=publish("notify-stub.changed","{}",{command:"notification.created"})
+  reply(0,"{}")
+end
+')
+    $notify_pid=start("notify-stub",$tmp .. "/notify.mix")
+    wait_service("notify-stub")
+    wait_state("notify_live",true)
+    check(calls_for("notify.list")==1,"notify registration must fetch once")
+    call("notify-stub","change")
+    for $i=1 to 100
+      if calls_for("notify.list")==2 then break end
+      sleep(0.05)
+    end
+    call("scene-panel","panel.refresh")
+    sleep(1.2)
+    check(calls_for("notify.list")==2,"notify event/rebuild read count")
+    stop($notify_pid)
+    wait_state("notify_live",false)
+    call("scene-panel","panel.refresh")
+    sleep(0.2)
+    check(calls_for("notify.list")==2,"departed notify called")
+    print("PASS absent notify, late registration, notification event and idle quiet")
+    exit(0)
+  elif $case == "registry" then
     check(tray_calls()==0,"failed registry must not invent a tray")
     call("tray-stub","change")
     wait_tray(1)
