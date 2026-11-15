@@ -59,9 +59,19 @@ fn registration_identity(row: &Value) -> Option<String> {
         return Some(id.to_owned());
     }
     let session = &row["native_session"];
-    let identity: Vec<_> = ["broker_epoch", "record_id", "incarnation", "binding_generation"]
-        .iter().map(|key| session[*key].clone()).collect();
-    identity.iter().all(|v| !v.is_null()).then(|| json!(identity).to_string())
+    let identity: Vec<_> = [
+        "broker_epoch",
+        "record_id",
+        "incarnation",
+        "binding_generation",
+    ]
+    .iter()
+    .map(|key| session[*key].clone())
+    .collect();
+    identity
+        .iter()
+        .all(|v| !v.is_null())
+        .then(|| json!(identity).to_string())
 }
 
 pub struct Update {
@@ -193,13 +203,16 @@ pub(crate) async fn run(
                     let identities = if TARGETS.lock().unwrap().is_empty() {
                         Value::Null
                     } else {
-                        client.call("noded", "noded.list", json!({})).await.unwrap_or(Value::Null)
+                        client
+                            .call("noded", "noded.list", json!({}))
+                            .await
+                            .unwrap_or(Value::Null)
                     };
                     Ok::<_, bus::SupervisedError>((names, identities))
                 })
                 .await;
                 let snapshot = result.ok().and_then(Result::ok);
-                let names = snapshot.as_ref().and_then(|(names,_)| {
+                let names = snapshot.as_ref().and_then(|(names, _)| {
                     names.as_array().and_then(|names| {
                         names
                             .iter()
@@ -210,18 +223,25 @@ pub(crate) async fn run(
                 if let Some(names) = names {
                     services = names;
                     registry_dirty = false;
-                    let identities = snapshot.as_ref().map(|(_,identities)| identities);
+                    let identities = snapshot.as_ref().map(|(_, identities)| identities);
                     let targets = TARGETS.lock().unwrap().clone();
                     let mut next = BTreeMap::new();
                     for target in targets.iter().filter(|name| services.contains(*name)) {
-                        let identity = identities.and_then(Value::as_array).and_then(|rows| rows.iter().find(|row| row["name"].as_str()==Some(target.as_str())))
+                        let identity = identities
+                            .and_then(Value::as_array)
+                            .and_then(|rows| {
+                                rows.iter()
+                                    .find(|row| row["name"].as_str() == Some(target.as_str()))
+                            })
                             .and_then(registration_identity);
                         // Older brokers lack an identity: a conservative hint
                         // refresh is necessary; there is still no idle poll.
                         if identity.is_none() || incarnations.get(target) != identity.as_ref() {
                             bars_dirty.insert(target.clone());
                         }
-                        if let Some(identity) = identity { next.insert(target.clone(),identity); }
+                        if let Some(identity) = identity {
+                            next.insert(target.clone(), identity);
+                        }
                     }
                     incarnations = next;
                     bars_dirty.retain(|name| services.contains(name));
@@ -323,25 +343,58 @@ mod idle_bus;
 mod tests {
     use super::*;
     #[tokio::test]
+    async fn native_props_watch_echoes_the_requested_command() {
+        let broker = test_broker::Broker::start();
+        let reader = idle_bus::connect(&broker, "watch-reader").await;
+        let reply = reader.call("noded", "noded.props.watch", json!({})).await.unwrap();
+        assert_eq!(reply["topic"], "noded.props.changed");
+    }
+    #[tokio::test]
     async fn registration_identity_is_stable_until_reregistered() {
         let broker = test_broker::Broker::start();
-        let app = idle_bus::Service::start(&broker,"example-app").await;
-        let reader = idle_bus::connect(&broker,"registry-reader").await;
+        let app = idle_bus::Service::start(&broker, "example-app").await;
+        let reader = idle_bus::connect(&broker, "registry-reader").await;
         async fn identity(reader: &SupervisedClient) -> Value {
-            let list = reader.call("noded","noded.list",json!({})).await.unwrap();
-            list.as_array().unwrap().iter().find(|row| row["name"]=="example-app").unwrap()["meta"]["noded.registration_id"].clone()
+            let list = reader.call("noded", "noded.list", json!({})).await.unwrap();
+            list.as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["name"] == "example-app")
+                .unwrap()["meta"]["noded.registration_id"]
+                .clone()
         }
         let first = identity(&reader).await;
-        assert!(first.as_str().is_some_and(|id| !id.is_empty()),"broker registration identity missing");
-        assert_eq!(identity(&reader).await,first);
-        app.client.call("noded","noded.register",json!({"meta":{"noded.registration_id":"forged"}})).await.unwrap();
+        assert!(
+            first.as_str().is_some_and(|id| !id.is_empty()),
+            "broker registration identity missing"
+        );
+        assert_eq!(identity(&reader).await, first);
+        app.client
+            .call(
+                "noded",
+                "noded.register",
+                json!({"meta":{"noded.registration_id":"forged"}}),
+            )
+            .await
+            .unwrap();
         let second = identity(&reader).await;
-        assert_ne!(second,json!("forged"),"caller replaced the broker-owned identity");
-        assert_ne!(second,first,"explicit same-name re-registration kept the old identity");
+        assert_ne!(
+            second,
+            json!("forged"),
+            "caller replaced the broker-owned identity"
+        );
+        assert_ne!(
+            second, first,
+            "explicit same-name re-registration kept the old identity"
+        );
         app.client.shutdown().await;
         drop(app);
-        let _app = idle_bus::Service::start(&broker,"example-app").await;
-        assert_ne!(identity(&reader).await,second,"same-name registration reused an incarnation");
+        let _app = idle_bus::Service::start(&broker, "example-app").await;
+        assert_ne!(
+            identity(&reader).await,
+            second,
+            "same-name registration reused an incarnation"
+        );
     }
     #[tokio::test]
     async fn idle_chrome_reads_once_and_titlebar_changes_read_once() {
@@ -418,21 +471,35 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(app.count("example-app.ui.titlebar.form"), 2);
         let _newcomer = idle_bus::Service::start(&broker, "late-app").await;
-        tokio::time::timeout(std::time::Duration::from_secs(5),async {while observer.registry_reads("comp-idle")<2 {tokio::time::sleep(std::time::Duration::from_millis(10)).await;}}).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while observer.registry_reads("comp-idle") < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(
             observer.registry_reads("comp-idle"),
             2,
             "one registration hint makes one registry read"
         );
-        assert_eq!(app.count("example-app.ui.titlebar.form"), 2,"unrelated registration re-read an unchanged target");
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            2,
+            "unrelated registration re-read an unchanged target"
+        );
         app.client.shutdown().await;
         drop(app);
-        app = idle_bus::Service::start(&broker,"example-app").await;
-        let _coalesced = idle_bus::Service::start(&broker,"coalesced-app").await;
-        app.wait("example-app.ui.titlebar.form",1).await;
+        app = idle_bus::Service::start(&broker, "example-app").await;
+        let _coalesced = idle_bus::Service::start(&broker, "coalesced-app").await;
+        app.wait("example-app.ui.titlebar.form", 1).await;
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        assert_eq!(app.count("example-app.ui.titlebar.form"),1,"coalesced restart fetched target more than once");
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            1,
+            "coalesced restart fetched target more than once"
+        );
         settings.fail_reads.store(1, Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;
         settings.wait("settings.get", 3).await;
