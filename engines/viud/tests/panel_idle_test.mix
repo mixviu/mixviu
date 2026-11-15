@@ -138,7 +138,6 @@ end
 ')
   if $case == "registry" or $case == "tray-retry" or $case == "coalesced" then
     if $case == "registry" then write_file($tmp .. "/registry-fail", "1") end
-    if $case == "tray-retry" then write_file($tmp .. "/tray-fail", "1") end
     $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
     wait_service("tray-stub")
   end
@@ -189,7 +188,12 @@ end
     print("PASS registry recovery and tray event repairs stale cache")
     exit(0)
   elif $case == "tray-retry" then
-    wait_tray(2)
+    wait_state("tray_live",true)
+    sleep(0.3)
+    $baseline=tray_calls()
+    write_file($tmp .. "/tray-fail","1")
+    call("tray-stub","change")
+    wait_tray($baseline+2)
     wait_state("tray_dirty",false)
     $reads=[]
     for $line in split(read_file($tmp .. "/calls"),"\n")
@@ -198,17 +202,19 @@ end
         if $row.command=="tray.list" then push($reads,$row.at) end
       end
     end
-    check($reads[1]-$reads[0]>=0.2,"tray retry ran before its deadline")
+    check($reads[$baseline+1]-$reads[$baseline]>=0.2,"tray retry ran before its deadline")
     sleep(1.2)
-    check(tray_calls()==2,"successful tray recovery kept polling")
+    check(tray_calls()==$baseline+2,"successful tray recovery kept polling")
     print("PASS failed tray read retries once at deadline then stays quiet")
     exit(0)
   elif $case == "coalesced" then
-    wait_tray(1)
+    wait_state("tray_live",true)
+    sleep(0.3)
+    $baseline=tray_calls()
     write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["tray-stub","panel-stub"],new:["tray-stub","panel-stub","late-app"]}
 ')
     $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
-    wait_tray(2)
+    wait_tray($baseline+1)
     print("PASS coalesced tray restart with unequal registration lists")
     exit(0)
   end

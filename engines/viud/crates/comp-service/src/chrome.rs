@@ -54,6 +54,16 @@ fn action_args(viewport: Option<&str>, command: &str) -> Value {
     args
 }
 
+fn registration_identity(row: &Value) -> Option<String> {
+    if let Some(id) = row["meta"]["noded.registration_id"].as_str() {
+        return Some(id.to_owned());
+    }
+    let session = &row["native_session"];
+    let identity: Vec<_> = ["broker_epoch", "record_id", "incarnation", "binding_generation"]
+        .iter().map(|key| session[*key].clone()).collect();
+    identity.iter().all(|v| !v.is_null()).then(|| json!(identity).to_string())
+}
+
 pub struct Update {
     generation: u64,
     live: Arc<AtomicU64>,
@@ -118,6 +128,7 @@ pub(crate) async fn run(
     let mut generation = None;
     let mut work = None;
     let mut services = BTreeSet::new();
+    let mut incarnations = BTreeMap::new();
     loop {
         if let Some(now) = settings::native::live_generation(client) {
             if generation != Some(now) {
@@ -125,6 +136,10 @@ pub(crate) async fn run(
                 work = consumer.connected(now);
                 registry_dirty = true;
                 registry_retry = None;
+                // This is the Bus epoch, not a settingsd restart. The next
+                // registry snapshot must refresh every live target on a new
+                // connection, even if its registration identity stayed equal.
+                incarnations.clear();
                 bars_dirty.clear();
                 presentation_retry = None;
             }
@@ -165,16 +180,26 @@ pub(crate) async fn run(
             if registry_dirty && registry_retry.is_none_or(|at| std::time::Instant::now() >= at) {
                 let result = tokio::time::timeout(std::time::Duration::from_secs(1), async {
                     client.subscribe_topic("noded.props.changed").await?;
-                    client
+                    let names = client
                         .call(
                             "noded",
                             "noded.props.get",
                             json!({"path":"services.registered"}),
                         )
-                        .await
+                        .await?;
+                    // Discovery is event-driven too. The broker's registration
+                    // identity distinguishes unchanged targets from restarts
+                    // hidden by the names-only property delivery.
+                    let identities = if TARGETS.lock().unwrap().is_empty() {
+                        Value::Null
+                    } else {
+                        client.call("noded", "noded.list", json!({})).await.unwrap_or(Value::Null)
+                    };
+                    Ok::<_, bus::SupervisedError>((names, identities))
                 })
                 .await;
-                let names = result.ok().and_then(Result::ok).and_then(|names| {
+                let snapshot = result.ok().and_then(Result::ok);
+                let names = snapshot.as_ref().and_then(|(names,_)| {
                     names.as_array().and_then(|names| {
                         names
                             .iter()
@@ -185,7 +210,21 @@ pub(crate) async fn run(
                 if let Some(names) = names {
                     services = names;
                     registry_dirty = false;
-                    bars_dirty.extend(TARGETS.lock().unwrap().iter().cloned());
+                    let identities = snapshot.as_ref().map(|(_,identities)| identities);
+                    let targets = TARGETS.lock().unwrap().clone();
+                    let mut next = BTreeMap::new();
+                    for target in targets.iter().filter(|name| services.contains(*name)) {
+                        let identity = identities.and_then(Value::as_array).and_then(|rows| rows.iter().find(|row| row["name"].as_str()==Some(target.as_str())))
+                            .and_then(registration_identity);
+                        // Older brokers lack an identity: a conservative hint
+                        // refresh is necessary; there is still no idle poll.
+                        if identity.is_none() || incarnations.get(target) != identity.as_ref() {
+                            bars_dirty.insert(target.clone());
+                        }
+                        if let Some(identity) = identity { next.insert(target.clone(),identity); }
+                    }
+                    incarnations = next;
+                    bars_dirty.retain(|name| services.contains(name));
                 }
                 registry_retry = registry_dirty
                     .then(|| std::time::Instant::now() + std::time::Duration::from_secs(1));
@@ -295,10 +334,14 @@ mod tests {
         let first = identity(&reader).await;
         assert!(first.as_str().is_some_and(|id| !id.is_empty()),"broker registration identity missing");
         assert_eq!(identity(&reader).await,first);
+        app.client.call("noded","noded.register",json!({"meta":{"noded.registration_id":"forged"}})).await.unwrap();
+        let second = identity(&reader).await;
+        assert_ne!(second,json!("forged"),"caller replaced the broker-owned identity");
+        assert_ne!(second,first,"explicit same-name re-registration kept the old identity");
         app.client.shutdown().await;
         drop(app);
         let _app = idle_bus::Service::start(&broker,"example-app").await;
-        assert_ne!(identity(&reader).await,first,"same-name registration reused an incarnation");
+        assert_ne!(identity(&reader).await,second,"same-name registration reused an incarnation");
     }
     #[tokio::test]
     async fn idle_chrome_reads_once_and_titlebar_changes_read_once() {

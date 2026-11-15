@@ -4053,7 +4053,7 @@ async fn handle_noded_command(
                     bus::RegisterProvenance::default()
                 })
             };
-            let info = bus::ServiceInfo {
+            let mut info = bus::ServiceInfo {
                 native_session: None,
                 name: from.clone(),
                 binary: prov.binary,
@@ -4069,6 +4069,13 @@ async fn handle_noded_command(
                 schema_version: bus::SCHEMA_VERSION,
                 meta: prov.meta,
             };
+            // Broker-owned incarnation, stable until this name registers
+            // again. Names and second-resolution timestamps cannot reveal a
+            // restart hidden in a coalesced services.registered delivery.
+            info.meta.insert(
+                "noded.registration_id".into(),
+                serde_json::json!(format!("{:032x}", rand::random::<u128>())),
+            );
 
             // Atomic check-collision / remove-old / insert-new under a
             // single write lock. The collision check happens BEFORE
