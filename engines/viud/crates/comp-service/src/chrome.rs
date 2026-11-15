@@ -284,10 +284,27 @@ mod idle_bus;
 mod tests {
     use super::*;
     #[tokio::test]
+    async fn registration_identity_is_stable_until_reregistered() {
+        let broker = test_broker::Broker::start();
+        let app = idle_bus::Service::start(&broker,"example-app").await;
+        let reader = idle_bus::connect(&broker,"registry-reader").await;
+        async fn identity(reader: &SupervisedClient) -> Value {
+            let list = reader.call("noded","noded.list",json!({})).await.unwrap();
+            list.as_array().unwrap().iter().find(|row| row["name"]=="example-app").unwrap()["meta"]["noded.registration_id"].clone()
+        }
+        let first = identity(&reader).await;
+        assert!(first.as_str().is_some_and(|id| !id.is_empty()),"broker registration identity missing");
+        assert_eq!(identity(&reader).await,first);
+        app.client.shutdown().await;
+        drop(app);
+        let _app = idle_bus::Service::start(&broker,"example-app").await;
+        assert_ne!(identity(&reader).await,first,"same-name registration reused an incarnation");
+    }
+    #[tokio::test]
     async fn idle_chrome_reads_once_and_titlebar_changes_read_once() {
         let mut broker = test_broker::Broker::bounce_stable();
         let settings = idle_bus::Service::start(&broker, "settingsd").await;
-        let app = idle_bus::Service::start(&broker, "example-app").await;
+        let mut app = idle_bus::Service::start(&broker, "example-app").await;
         targets(BTreeSet::from(["example-app".into()]));
         let (client, mut incoming, native_forward) = idle_bus::native(&broker, "comp-idle").await;
         let names = client
@@ -358,14 +375,21 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(app.count("example-app.ui.titlebar.form"), 2);
         let _newcomer = idle_bus::Service::start(&broker, "late-app").await;
-        app.wait("example-app.ui.titlebar.form", 3).await;
+        tokio::time::timeout(std::time::Duration::from_secs(5),async {while observer.registry_reads("comp-idle")<2 {tokio::time::sleep(std::time::Duration::from_millis(10)).await;}}).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert_eq!(
             observer.registry_reads("comp-idle"),
             2,
             "one registration hint makes one registry read"
         );
-        assert_eq!(app.count("example-app.ui.titlebar.form"), 3);
+        assert_eq!(app.count("example-app.ui.titlebar.form"), 2,"unrelated registration re-read an unchanged target");
+        app.client.shutdown().await;
+        drop(app);
+        app = idle_bus::Service::start(&broker,"example-app").await;
+        let _coalesced = idle_bus::Service::start(&broker,"coalesced-app").await;
+        app.wait("example-app.ui.titlebar.form",1).await;
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert_eq!(app.count("example-app.ui.titlebar.form"),1,"coalesced restart fetched target more than once");
         settings.fail_reads.store(1, Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;
         settings.wait("settings.get", 3).await;
