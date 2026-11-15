@@ -1,6 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- CBC worker with the headless Weston capability.
-for $cmd in [["cargo", "build", "-p", "mix", "-p", "viu", "-p", "viud", "-p", "mixd"],
+for $cmd in [["cargo", "build", "-p", "mix"],
+  ["cargo", "build", "-p", "viu"],
+  ["cargo", "build", "-p", "viud"],
+  ["cargo", "build", "-p", "mixd"],
   ["target/debug/mix", "tools/bench/headless_test.mix"]]
   $r = run_argv($cmd, {timeout:3600, stderr:"stdout"})
   print($r.stdout)
