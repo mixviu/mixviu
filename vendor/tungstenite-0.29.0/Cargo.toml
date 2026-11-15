@@ -205,7 +205,3 @@ version = "0.6.0"
 
 [profile.bench]
 lto = "thin"
-
-[[test]]
-name = "log_redaction"
-path = "tests/log_redaction.rs"

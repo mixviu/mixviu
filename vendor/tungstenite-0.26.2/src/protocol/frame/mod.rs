@@ -217,7 +217,11 @@ impl FrameCodec {
         }
 
         let frame = Frame::from_payload(header, payload.freeze());
-        trace!("received frame: opcode={:?} length={}", frame.header().opcode, frame.payload().len());
+        trace!(
+            "received frame: opcode={:?} length={}",
+            frame.header().opcode,
+            frame.payload().len()
+        );
         Ok(Some(frame))
     }
 
@@ -246,7 +250,11 @@ impl FrameCodec {
             return Err(Error::WriteBufferFull(Message::Frame(frame)));
         }
 
-        trace!("writing frame: opcode={:?} length={}", frame.header().opcode, frame.payload().len());
+        trace!(
+            "writing frame: opcode={:?} length={}",
+            frame.header().opcode,
+            frame.payload().len()
+        );
 
         self.out_buffer.reserve(frame.len());
         frame.format_into_buf(&mut self.out_buffer).expect("Bug: can't write to vector");

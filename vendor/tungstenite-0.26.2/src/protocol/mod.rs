@@ -467,7 +467,18 @@ impl WebSocketContext {
             // If we get here, either write blocks or we have nothing to write.
             // Thus if read blocks, just let it return WouldBlock.
             if let Some(message) = self.read_message_frame(stream)? {
-                trace!("Received message: opcode={} length={}", match &message { Message::Text(_) => "Text", Message::Binary(_) => "Binary", Message::Ping(_) => "Ping", Message::Pong(_) => "Pong", Message::Close(_) => "Close", Message::Frame(_) => "Frame" }, message.len());
+                trace!(
+                    "Received message: opcode={} length={}",
+                    match &message {
+                        Message::Text(_) => "Text",
+                        Message::Binary(_) => "Binary",
+                        Message::Ping(_) => "Ping",
+                        Message::Pong(_) => "Pong",
+                        Message::Close(_) => "Close",
+                        Message::Frame(_) => "Frame",
+                    },
+                    message.len()
+                );
                 return Ok(message);
             }
         }
@@ -716,7 +727,10 @@ impl WebSocketContext {
     /// Received a close frame. Tells if we need to return a close frame to the user.
     #[allow(clippy::option_option)]
     fn do_close(&mut self, close: Option<CloseFrame>) -> Option<Option<CloseFrame>> {
-        debug!("Received close frame: opcode=Close length={}", close.as_ref().map_or(0, |frame| frame.reason.len() + 2));
+        debug!(
+            "Received close frame: opcode=Close length={}",
+            close.as_ref().map_or(0, |frame| frame.reason.len() + 2)
+        );
         match self.state {
             WebSocketState::Active => {
                 self.state = WebSocketState::ClosedByPeer;
@@ -733,7 +747,11 @@ impl WebSocketContext {
                 });
 
                 let reply = Frame::close(close.clone());
-                debug!("Replying to close: opcode={:?} length={}", reply.header().opcode, reply.payload().len());
+                debug!(
+                    "Replying to close: opcode={:?} length={}",
+                    reply.header().opcode,
+                    reply.payload().len()
+                );
                 self.set_additional(reply);
 
                 Some(close)
@@ -765,7 +783,11 @@ impl WebSocketContext {
             }
         }
 
-        trace!("Sending frame: opcode={:?} length={}", frame.header().opcode, frame.payload().len());
+        trace!(
+            "Sending frame: opcode={:?} length={}",
+            frame.header().opcode,
+            frame.payload().len()
+        );
         self.frame.buffer_frame(stream, frame).check_connection_reset(self.state)
     }
 

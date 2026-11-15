@@ -202,7 +202,3 @@ rustls-tls-webpki-roots = [
     "webpki-roots",
 ]
 url = ["dep:url"]
-
-[[test]]
-name = "log_redaction"
-path = "tests/log_redaction.rs"

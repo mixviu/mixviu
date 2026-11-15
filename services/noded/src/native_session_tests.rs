@@ -1408,12 +1408,20 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
             .output()
             .unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(output.status.success(), "{stdout}\n{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         assert_eq!(stdout.matches("test result:").count(), 1, "{stdout}");
-        assert!(stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"), "{stdout}");
+        assert!(
+            stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
+            "{stdout}"
+        );
         return;
     }
     use bus::native_session::*;
+    use ed25519_dalek::Signer;
     let logs = CaptureLog(Default::default());
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
@@ -1456,6 +1464,13 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
         .as_str()
         .unwrap()
         .to_owned();
+    let hello = parent.session_hello().await.unwrap();
+    let signature = serde_json::to_value(HexBytes(key.sign(&encode_allocate(
+        hello.broker_epoch,
+        hello.connection_id,
+        HexBytes(key.verifying_key().to_bytes()),
+        Policy::DefaultOpen,
+    )).to_bytes())).unwrap().as_str().unwrap().to_owned();
     for _ in 0..6 {
         let event = receive(&mut observer).await;
         let wire = event.to_wire();
@@ -1490,6 +1505,7 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
     for (field, value) in [
         ("private_key", private.as_str()),
         ("public_key", public.as_str()),
+        ("signature_bytes", signature.as_str()),
         ("signature", "signature"),
     ] {
         assert!(
@@ -1501,6 +1517,8 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
                 .collect::<Vec<_>>()
         );
     }
+    assert!(output.contains("Sending frame: opcode="));
+    assert!(output.contains("Received message: opcode="));
     parent.client().close().await;
 }
 

@@ -1401,7 +1401,9 @@ impl NodedClient {
                 Ok(m) => m,
                 Err(_) => {
                     // ParseError includes a raw input prefix; never log it.
-                    tracing::debug!("{service_name}: failed to parse Bus message (invalid envelope)");
+                    tracing::debug!(
+                        "{service_name}: failed to parse Bus message (invalid envelope)"
+                    );
                     continue;
                 }
             };

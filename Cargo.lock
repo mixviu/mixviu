@@ -5651,6 +5651,7 @@ dependencies = [
  "indexmap",
  "lib-mix",
  "libc",
+ "log",
  "logging",
  "paths",
  "props",
@@ -5667,6 +5668,8 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-log",
+ "tracing-subscriber",
  "tungstenite 0.29.0",
  "unicode-segmentation",
  "unicode-width",
@@ -6007,6 +6010,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
+ "tracing-log",
  "tracing-subscriber",
 ]
 
@@ -10068,8 +10072,6 @@ dependencies = [
 [[package]]
 name = "tungstenite"
 version = "0.26.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4793cb5e56680ecbb1d843515b23b6de9a75eb04b66643e256a396d43be33c13"
 dependencies = [
  "bytes",
  "data-encoding",
@@ -10085,8 +10087,6 @@ dependencies = [
 [[package]]
 name = "tungstenite"
 version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
 dependencies = [
  "bytes",
  "data-encoding",

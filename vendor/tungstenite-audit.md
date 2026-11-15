@@ -32,7 +32,7 @@ Inspected all logging call sites in Tungstenite and tokio-tungstenite 0.26.2 and
 
 Guards: isolated noded bootstrap capture (Bus allocation/renewal and server
 traffic), isolated mix-shell capture (Bus allocation and real shell attach),
-and each vendored version's `log_redaction` test. Captures install LogTracer
+and Bus integration targets including each vendored version's `log_redaction` test. Captures install LogTracer
 explicitly, assert a legacy TRACE witness reaches the buffer, and assert native
 tracing still works. Subprocess parents require exactly one passing test.
 

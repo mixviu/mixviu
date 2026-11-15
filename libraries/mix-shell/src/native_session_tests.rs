@@ -499,7 +499,10 @@ async fn cached_status_delivery_rechecks_broker_suspend_without_notices() {
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert_eq!(stdout.matches("test result:").count(), 1, "{stdout}");
-        assert!(stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"), "{stdout}");
+        assert!(
+            stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
+            "{stdout}"
+        );
         return;
     }
     use test_broker::Broker;
@@ -512,21 +515,28 @@ async fn cached_status_delivery_rechecks_broker_suspend_without_notices() {
             self.0.lock().unwrap().extend_from_slice(bytes);
             Ok(bytes.len())
         }
-        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
     impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CaptureLog {
         type Writer = Self;
-        fn make_writer(&'a self) -> Self { self.clone() }
+        fn make_writer(&'a self) -> Self {
+            self.clone()
+        }
     }
     let logs = CaptureLog(Default::default());
     tracing_log::LogTracer::init().expect("fresh process must install the log bridge");
-    let _guard = tracing::subscriber::set_default(tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
-        .with_writer(logs.clone())
-        .without_time()
-        .finish());
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(logs.clone())
+            .without_time()
+            .finish(),
+    );
     log::trace!("client legacy log bridge active");
     tracing::trace!("client native trace active");
+    use ed25519_dalek::Signer;
     let broker = Broker::start();
     async fn connect(broker: &Broker) -> VerifiedConnection {
         let UnixConnectOutcome::VerifiedUnix(connection) =
@@ -575,13 +585,45 @@ async fn cached_status_delivery_rechecks_broker_suspend_without_notices() {
     let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
     assert!(output.contains("client legacy log bridge active"));
     assert!(output.contains("client native trace active"));
+    let hello = parent.session_hello().await.unwrap();
+    let parent_key = SigningKey::from_bytes(&[21; 32]);
+    let signature = serde_json::to_value(HexBytes(parent_key.sign(&encode_allocate(
+        hello.broker_epoch,
+        hello.connection_id,
+        HexBytes(parent_key.verifying_key().to_bytes()),
+        Policy::DefaultOpen,
+    )).to_bytes())).unwrap().as_str().unwrap().to_owned();
     for (field, value) in [
-        ("private_key", serde_json::to_value(HexBytes([42u8; 32])).unwrap().as_str().unwrap().to_owned()),
-        ("public_key", serde_json::to_value(HexBytes(child_key.verifying_key().to_bytes())).unwrap().as_str().unwrap().to_owned()),
+        (
+            "private_key",
+            serde_json::to_value(HexBytes([42u8; 32]))
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        ),
+        (
+            "public_key",
+            serde_json::to_value(HexBytes(child_key.verifying_key().to_bytes()))
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        ),
+        ("signature_bytes", signature),
         ("proof", "signature".to_owned()),
     ] {
-        assert!(!output.contains(&value), "client {field} leaked: {:?}", output.lines().filter(|line| line.contains(&value)).collect::<Vec<_>>());
+        assert!(
+            !output.contains(&value),
+            "client {field} leaked: {:?}",
+            output
+                .lines()
+                .filter(|line| line.contains(&value))
+                .collect::<Vec<_>>()
+        );
     }
+    assert!(output.contains("Sending frame: opcode="));
+    assert!(output.contains("Received message: opcode="));
     let observer = std::sync::Arc::new(connect(&broker).await);
 
     // A TCP caller carries broker provenance but no Unix principal. It can

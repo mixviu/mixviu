@@ -11,7 +11,7 @@ Local changes:
   length, without formatting the message or frame payload.
 - Close receive/reply DEBUG logs retain length/opcode, without the close reason.
 - The handshake request TRACE log retains length, without raw HTTP headers.
-- An explicit `log_redaction` integration target tests text, binary, ping, pong,
+- A `log_redaction` test included by Bus integration targets tests text, binary, ping, pong,
   raw frame and close payloads in both client and server roles. It requires TRACE
   to be compiled in and verifies each redacted diagnostic still appears.
 
