@@ -391,6 +391,8 @@ mod tests {
             assert!(Instant::now() < deadline, "dropped runner failed to reap");
             thread::sleep(Duration::from_millis(10));
         }
-        assert!(matches!(*status.lock().unwrap(), Status::Exited(_)));
+        let final_status = status.lock().unwrap().clone();
+        eprintln!("dropped runner status: {final_status:?}");
+        assert!(matches!(final_status, Status::Exited(_)), "{final_status:?}");
     }
 }
