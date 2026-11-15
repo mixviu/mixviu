@@ -42,7 +42,6 @@ struct State {
     look_revision: u64,
     corner_events: u64,
     corner_phases: Vec<String>,
-    comp_state: Value,
     outputs: Value,
     publish: Vec<String>,
     hover: Value,
@@ -66,7 +65,6 @@ impl State {
             look_revision: 0,
             corner_events: 0,
             corner_phases: Vec::new(),
-            comp_state: Value::Null,
             outputs: Value::Null,
             publish: Vec::new(),
             hover: Value::Null,
@@ -741,9 +739,10 @@ async fn worker_connected(
     let wake = state.lock().unwrap().bus_wake.clone();
     let mut reported = BTreeMap::new();
     let mut comp_dirty = true;
-    let mut comp_live = false;
     let mut comp_retry = None;
     loop {
+        // This samples the Bus epoch coherently, not settingsd availability.
+        // Compositor work below is gated directly on the live Bus connection.
         if let Some(live) = settings::native::live_generation(&client) {
             if generation != Some(live) {
                 generation = Some(live);
@@ -754,18 +753,16 @@ async fn worker_connected(
             }
         } else {
             generation = None;
-            comp_live = false;
             consumer.disconnected();
         }
-        if generation.is_some() && comp_dirty && comp_retry.is_none_or(|at| Instant::now() >= at) {
+        if client.is_connected() && comp_dirty && comp_retry.is_none_or(|at| Instant::now() >= at) {
             let synced = async {
                 client.subscribe_topic("noded.props.changed").await?;
-                let props = client.call(&comp, "comp.props.watch", json!({})).await?;
+                client.call(&comp, "comp.props.watch", json!({})).await?;
                 let outputs = client
                     .call(&comp, "comp.props.get", json!({"path":"outputs"}))
                     .await?;
                 let mut shared = state.lock().unwrap();
-                shared.comp_state = props;
                 shared.outputs = outputs;
                 Ok::<_, bus::SupervisedError>(())
             };
@@ -774,7 +771,6 @@ async fn worker_connected(
                 Ok(Ok(()))
             );
             comp_retry = comp_dirty.then(|| Instant::now() + Duration::from_secs(1));
-            comp_live = !comp_dirty;
         }
         while let Some(action) = work.take() {
             let result = settings::native::execute(&client, &action).await;
@@ -818,7 +814,7 @@ async fn worker_connected(
         }
         // Compare all local transitions, including UI deadlines and Bus commands.
         // An unchanged panel generates no RPC. Reconnect clears the cache.
-        if generation.is_some() && !comp_dirty {
+        if client.is_connected() && !comp_dirty {
             let reports: Vec<_> = {
                 let shared = state.lock().unwrap();
                 shared
@@ -842,7 +838,7 @@ async fn worker_connected(
         let deadline = consumer
             .retry_deadline()
             .into_iter()
-            .chain(comp_retry.filter(|_| generation.is_some()))
+            .chain(comp_retry.filter(|_| client.is_connected()))
             .min();
         tokio::select! {
             changed=states.changed()=>{if changed.is_err(){break;} states.borrow_and_update();}
@@ -868,12 +864,7 @@ async fn worker_connected(
                 if command.is_topic_delivery() {
                     if command.topic()==Some("noded.props.changed") && command.header("broker_service")==Some("noded") && command.header("broker_origin")==Some("local")
                         && let Ok(body)=serde_json::from_str::<Value>(&command.body) {
-                            let mut arrived = false;
-                            if body["path"] == "services.registered" {
-                                let present = body["new"].as_array().is_some_and(|names| names.contains(&json!(comp)));
-                                arrived = present && (!comp_live || body["old"] == body["new"]);
-                                comp_live = present;
-                            }
+                            let arrived = body["path"] == "services.registered" && body["new"].as_array().is_some_and(|names| names.contains(&json!(comp)));
                             if arrived || body["gap"] == true || command.header("gap")==Some("true") {comp_dirty=true;comp_retry=None;reported.clear();}
                     }
                     if command.header("broker_service")==Some(scenes.as_str()) && command.header("broker_origin")==Some("local") && command.topic()==Some(format!("{scenes}.changed").as_str()) {
@@ -885,7 +876,7 @@ async fn worker_connected(
                     }
                     if command.header("broker_service")==Some(comp.as_str()) && command.header("broker_origin")==Some("local") {
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
-                            if command.topic()==Some(format!("{comp}.props.changed").as_str()) && (body["gap"]==true || command.header("gap")==Some("true")) {comp_dirty=true;comp_retry=None;}
+                            if command.topic()==Some(format!("{comp}.props.changed").as_str()) && (body["gap"]==true || command.header("gap")==Some("true")) {comp_dirty=true;comp_retry=None;reported.clear();}
                             topic(&state,&comp,command.topic().unwrap_or(""),&body);
                         }
                     }
@@ -918,7 +909,6 @@ fn topic(state: &Shared, comp: &str, topic: &str, body: &Value) {
         if body["path"] == "outputs" {
             shared.outputs = body["new"].clone();
         }
-        shared.comp_state = body.clone();
         return;
     }
     if topic == format!("{comp}.corner.input") {

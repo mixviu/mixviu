@@ -82,7 +82,9 @@ $state = {ready: false, windows: [], ws_count: 1, ws_current: 1, ws_names: [], t
   icons: empty_icons(), services: [], dirty: false, rebuilding: false, clock_armed: false, status_refreshing: false,
   net_watch: nil, net_started: 0, net_retry: 5, net_retrying: false,
   audio_watch: nil, audio_started: 0, audio_retry: 5, audio_retrying: false, audio_unavailable: false,
-  model: nil, settings_watch: nil}
+  model: nil, settings_watch: nil,
+  registry_dirty: false, registry_retrying: false, registry_delay: 0.25,
+  tray_dirty: false, tray_retrying: false, tray_delay: 0.25}
 $first = read_settings()
 $state.tasks_scope = $first.scope ?? "all"
 if $first.scope == nil then eprint("panel: " .. $SETTINGS .. ": " .. $first.why .. "; using \"all\"") end
@@ -222,15 +224,47 @@ end
 fn fetch_tray()
   if not contains($state.services, $TRAY) then
     $state.tray = []
+    $state.tray_dirty = false
     return
   end
-  $out = $r.call($TRAY, "tray.list", {})
-  $ok = $out.ok and type($out.value) == "map" and type($out.value.items) == "list"
-  $state.tray = $ok ? $out.value.items : []
+  $state.tray_dirty = true
+  try
+    $out = $r.call($TRAY, "tray.list", {})
+    if $out.ok and type($out.value) == "map" and type($out.value.items) == "list" then
+      $state.tray = $out.value.items
+      $state.tray_dirty = false
+      $state.tray_delay = 0.25
+      return
+    end
+  catch $message
+    eprint("panel: tray read failed: " .. to_string($message))
+  end
+  if not $state.tray_retrying then
+    $state.tray_retrying = true
+    task_start("tray.retry", "{}")
+  end
+end
+
+-- One failure deadline, never an idle poll. A departure/success cancels the
+-- dirty work; repeated failures back off to thirty seconds.
+on tray.retry async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    sleep($state.tray_delay)
+    $state.tray_delay = min(30, $state.tray_delay * 2)
+  finally
+    $state.tray_retrying = false
+  end
+  if $state.tray_dirty then fetch_tray(); schedule() end
+end
+
+fn service_seen($name)
+  if not contains($state.services, $name) then $state.services = concat($state.services, [$name]) end
 end
 
 -- notify.list: the open notifications (notifyd).
 fn fetch_notes()
+  if not contains($state.services, $NOTIFY) then $state.notes_count = 0; return end
   $out = $r.call($NOTIFY, "notify.list", {})
   $ok = $out.ok and type($out.value) == "list"
   $state.notes_count = $ok ? length($out.value) : 0
@@ -331,7 +365,6 @@ fn rebuild()
   $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return end
   fetch_windows()
-  fetch_notes()
   resolve_icons()
   $model = $m.panel(snapshot(), $state.icons, time())
   $out = $r.publish_model($ctx, $model)
@@ -374,10 +407,7 @@ on panel.rebuild async
 end
 
 fn resync()
-  $r.call($NODED, "noded.props.watch", {})
-  $had_tray = contains($state.services, $TRAY)
-  services_changed(registered())
-  if $had_tray then fetch_tray() end
+  refresh_registry()
   $r.call($COMP, "comp.props.watch", {})
   sync_popups()
   refresh_status()
@@ -415,12 +445,41 @@ fn registered()
   return $out.value.services.registered
 end
 
+fn refresh_registry()
+  $state.registry_dirty = true
+  try
+    $watch = $r.call($NODED, "noded.props.watch", {})
+    $live = registered()
+    if $watch.ok and type($live) == "list" then services_changed($live); return end
+  catch $message
+    eprint("panel: registry read failed: " .. to_string($message))
+  end
+  if not $state.registry_retrying then
+    $state.registry_retrying = true
+    task_start("registry.retry", "{}")
+  end
+end
+
+on registry.retry async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    sleep($state.registry_delay)
+    $state.registry_delay = min(30, $state.registry_delay * 2)
+  finally
+    $state.registry_retrying = false
+  end
+  if $state.registry_dirty then refresh_registry() end
+end
+
 fn services_changed($live)
   if type($live) != "list" then return end
+  $state.registry_dirty = false
+  $state.registry_delay = 0.25
   $previous = $state.services
   $state.services = $live
-  if contains($live, $TRAY) and not contains($previous, $TRAY) then fetch_tray() end
-  if not contains($live, $TRAY) then $state.tray = [] end
+  -- A registration delivery can hide a restart even when old != new.
+  if contains($live, $TRAY) then fetch_tray() else $state.tray = []; $state.tray_dirty = false end
+  fetch_notes()
   if contains($live, $APPS) and not contains($previous, $APPS) then $state.icons = empty_icons() end
   if contains($live, $COMP) and not contains($previous, $COMP) then $r.call($COMP, "comp.props.watch", {}) end
   -- notifyd arrived after the panel: bring the toast up now.
@@ -721,21 +780,17 @@ on props.changed
   $a = $r.event_args($event)
   if $event.headers.topic == $NODED .. ".props.changed" then
     if gap($event) then
-      $had_tray = contains($state.services, $TRAY)
-      services_changed(registered())
-      if $had_tray then fetch_tray() end
+      refresh_registry()
     elif $a.path == "services.registered" then
-      -- A capped remove/register burst can end with the same name list.
-      $restart = deep_eq($a.old, $a.new) and contains($state.services, $TRAY)
       services_changed($a.new)
-      if $restart then fetch_tray() end
     end
     return
   end
   if gap($event) then
     resync()
   else
-    if $event.headers.topic == $TRAY .. ".props.changed" then fetch_tray() end
+    if $event.headers.topic == $TRAY .. ".props.changed" then service_seen($TRAY); fetch_tray() end
+    if $event.headers.topic == $NOTIFY .. ".props.changed" then service_seen($NOTIFY); fetch_notes() end
     schedule()
   end
 end
@@ -747,20 +802,28 @@ on workspace.changed
 end
 
 on tray.item.added
+  service_seen($TRAY)
   fetch_tray()
   schedule()
 end
 on tray.item.removed
+  service_seen($TRAY)
   fetch_tray()
   schedule()
 end
 on notification.created
+  service_seen($NOTIFY)
+  fetch_notes()
   schedule()
 end
 on notification.closed
+  service_seen($NOTIFY)
+  fetch_notes()
   schedule()
 end
 on notification.answered
+  service_seen($NOTIFY)
+  fetch_notes()
   schedule()
 end
 on apps.changed
