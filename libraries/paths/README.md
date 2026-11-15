@@ -86,7 +86,10 @@ It does not grant integrity or authorise an install.
 The marker is `<executable-prefix>/DEV.json`, alongside `env.mx`. An
 environment variable or flag cannot select another marker. If `MIX_PREFIX`
 redirects defaults away from the executable's prefix, the exception is
-refused. Executable symlinks resolve to the real binary before prefix lookup.
+refused before any marker access, with the original strict error and no marker
+diagnostic. Executable symlinks resolve to the real binary before prefix lookup:
+launching an in-prefix binary through either an inside or foreign symlink uses
+the real binary's prefix. Symlink location does not impose a launch-path policy.
 
 The file is a restricted JSON object, at most 64 KiB of UTF-8. Exactly three
 fields are required, in any order: numeric `schema: 1`, string `gold`, and
@@ -103,7 +106,8 @@ not this marker. Write atomically with the same ownership and trust as env.mx.
 The normal stamp-equals-snapshot path never opens the marker. Only a mismatch
 reads it. Acceptance requires both `gold == env.mx.commit` and
 `members[registered_member] == registered_stamp`. Old `register_snapshot`
-callers have no member identity and remain strict. Missing markers preserve
+callers have no member identity and remain strict and silent, without opening
+the marker. Missing markers preserve
 the existing `SnapshotMismatch` result and diagnostic. A malformed, unreadable
 or non-matching marker returns the same error and adds a stderr diagnostic
 naming the marker. Accepted exceptions emit one stderr startup diagnostic at
@@ -118,7 +122,9 @@ display or desk access. Absence refuses engine replacement across snapshots;
 older binaries cannot use this contract. Rebase branch builds onto a commit
 containing this capability. A source-file check alone is insufficient.
 
-The paths integration test compiles two small binaries with different fixed
-build stamps against the real reader, starts both under one temporary prefix,
-and checks acceptance, strict gold behaviour, logging and refusal controls.
+The paths integration test compiles separate gold/dev and strict-only binaries
+against the real reader, starts gold/dev under one temporary prefix, and checks
+acceptance, strict gold behaviour, logging, copied member identity, symlink
+resolution, parser boundaries and refusals. FIFO probes have a deadline and
+prove redirected and strict-only marker paths are not opened.
 Run it with the focused paths tests on a build worker.

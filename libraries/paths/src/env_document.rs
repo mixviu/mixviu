@@ -59,25 +59,27 @@ pub(super) fn read(prefix: &Path) -> Result<Option<Defaults>, Error> {
     let snapshot = super::env::SNAPSHOT.get();
     let result = parse(source, snapshot.map(|s| s.0));
     if let Err(Error::SnapshotMismatch { expected, actual }) = &result {
-        let marker = prefix.join("DEV.json");
         // A setting-prefix override must never redirect marker authority.
         let installed_prefix = super::inputs()
             .exe
             .as_ref()
             .and_then(|exe| super::prefix_from_exe_strict(exe).ok());
-        let member = snapshot.and_then(|s| s.1).unwrap_or("");
+        if installed_prefix.as_deref() != Some(prefix) {
+            return result.map(Some);
+        }
+        // Strict-only callers must not touch or diagnose a dev marker.
+        let Some(member) = snapshot.and_then(|s| s.1) else {
+            return result.map(Some);
+        };
+        let marker = prefix.join("DEV.json");
         match super::dev_marker::accepts(prefix, member, expected, actual) {
-            Ok(true) if installed_prefix.as_deref() == Some(prefix) => {
+            Ok(true) => {
                 eprintln!(
                     "paths: dev snapshot exception: member {member}, commit {expected}, base {actual}, marker {}",
                     marker.display()
                 );
                 return parse(source, None).map(Some);
             }
-            Ok(true) => eprintln!(
-                "paths: marker {} refused: outside executable prefix",
-                marker.display()
-            ),
             Ok(false) => {} // Preserve the missing-marker strict path exactly.
             Err(detail) => eprintln!("paths: marker {} refused: {detail}", marker.display()),
         }

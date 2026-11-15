@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Real, separately compiled gold/dev processes sharing one temporary prefix.
 use std::{
+    os::unix::fs::symlink,
     path::Path,
     process::{Command, Stdio},
+    time::{Duration, Instant},
 };
 
 const GOLD: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -23,6 +25,24 @@ fn command(exe: &Path) -> Command {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     cmd
+}
+
+// Bound probes that would hang if a marker FIFO were opened. Kill and reap
+// on failure so a regression cannot leave a process on the build worker.
+fn promptly(mut cmd: Command) -> std::process::Output {
+    let mut child = cmd.spawn().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            return child.wait_with_output().unwrap();
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("strict mismatch probe blocked on a marker");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]
@@ -47,18 +67,26 @@ fn two_binaries_one_prefix_and_fail_closed_controls() {
         "-o",
         library.to_str().unwrap(),
     ]);
-    for (name, stamp) in [("mixd", GOLD), ("viu", DEV)] {
+    for (name, stamp) in [("mixd", GOLD), ("viu", DEV), ("legacy", DEV)] {
+        let registration = if name == "legacy" {
+            format!("paths::env::register_snapshot(\"{stamp}\");")
+        } else {
+            format!("paths::env::register_member_snapshot(\"{name}\", \"{stamp}\");")
+        };
         let source = prefix.join(format!("{name}.rs"));
         std::fs::write(
             &source,
             format!(
                 r#"
 fn main() {{
-    paths::env::register_member_snapshot("{name}", "{stamp}");
+    {registration}
     for _ in 0..2 {{
         match paths::env::setting(paths::env::NODED_SERVICE) {{
             Ok(value) => assert_eq!(value, "shared-default"),
-            Err(paths::env::SettingError::SnapshotMismatch {{ .. }}) => std::process::exit(42),
+            Err(e @ paths::env::SettingError::SnapshotMismatch {{ .. }}) => {{
+                assert_eq!(e.to_string(), "MIX_NODED_SERVICE: env.mx snapshot {GOLD} differs from binary {DEV}");
+                std::process::exit(42);
+            }}
             Err(e) => panic!("unexpected error: {{e}}"),
         }}
     }}
@@ -102,6 +130,15 @@ fn main() {{
         assert!(log.contains(expected));
     }
 
+    // Whitespace and field order do not change the marker's meaning.
+    let formatted = format!("{{\n\t\"members\" : {{ \"viu\" : \"{DEV}\" }},\r\n\"gold\" : \"{GOLD}\", \"schema\" : 1\n}}\n");
+    std::fs::write(&marker, &formatted).unwrap();
+    assert!(command(&prefix.join("bin/viu")).output().unwrap().status.success());
+    // Pin both sides of the size bound with otherwise valid JSON whitespace.
+    let at_limit = format!("{valid}{}", " ".repeat(65536 - valid.len()));
+    std::fs::write(&marker, &at_limit).unwrap();
+    assert!(command(&prefix.join("bin/viu")).output().unwrap().status.success());
+
     for invalid in [
         valid.replace("viu", "mixd"),
         valid.replace(DEV, GOLD),
@@ -112,7 +149,13 @@ fn main() {{
         valid.replace("\"members\"", "\"unknown\""),
         valid.replace("}}", ",}}"),
         format!("{valid} trailing"),
-        "x".repeat(65537),
+        format!("{at_limit} "),
+        valid.replace("\"viu\"", "\"v\\u0069u\""),
+        valid.replace("\"viu\"", "\"-viu\""),
+        valid.replace("\"viu\"", "\"Viu\""),
+        valid.replace("}}", &format!(",\"viu\":\"{DEV}\"}}}}")),
+        format!("\u{feff}{valid}"),
+        format!("/* comment */{valid}"),
     ] {
         std::fs::write(&marker, invalid).unwrap();
         let out = command(&prefix.join("bin/viu")).output().unwrap();
@@ -121,6 +164,37 @@ fn main() {{
         let out = command(&prefix.join("bin/mixd")).output().unwrap();
         assert!(out.status.success());
         assert!(out.stderr.is_empty(), "gold must not read DEV.json");
+    }
+    let mut non_utf8 = valid.as_bytes().to_vec();
+    non_utf8.push(0xff);
+    std::fs::write(&marker, non_utf8).unwrap();
+    let out = command(&prefix.join("bin/viu")).output().unwrap();
+    assert_eq!(out.status.code(), Some(42));
+    assert!(String::from_utf8_lossy(&out.stderr).contains(marker.to_str().unwrap()));
+
+    // Identity is compiled in: copying viu under another member's filename
+    // cannot make a marker naming that member authorise it.
+    std::fs::write(&marker, valid.replace("viu", "inputd")).unwrap();
+    std::fs::copy(prefix.join("bin/viu"), prefix.join("bin/inputd")).unwrap();
+    let out = command(&prefix.join("bin/inputd")).output().unwrap();
+    assert_eq!(out.status.code(), Some(42));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("member viu"));
+
+    std::fs::write(&marker, &valid).unwrap();
+    let out = command(&prefix.join("bin/legacy")).output().unwrap();
+    assert_eq!(out.status.code(), Some(42));
+    assert!(out.stderr.is_empty(), "strict-only registration stays silent");
+
+    // Existing prefix derivation follows the real /proc/self/exe target.
+    // Both inside and foreign launch symlinks therefore use the target's
+    // marker, not a marker beside the symlink. Do not infer launch-path policy.
+    let foreign = prefix.join("foreign/bin");
+    std::fs::create_dir_all(&foreign).unwrap();
+    for link in [prefix.join("bin/viu-link"), foreign.join("viu")] {
+        symlink(prefix.join("bin/viu"), &link).unwrap();
+        let out = command(&link).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(String::from_utf8_lossy(&out.stderr).contains(marker.to_str().unwrap()));
     }
     std::fs::remove_file(&marker).unwrap();
     let out = command(&prefix.join("bin/viu")).output().unwrap();
@@ -139,11 +213,27 @@ fn main() {{
     let other = prefix.join("other");
     std::fs::create_dir(&other).unwrap();
     std::fs::copy(prefix.join("env.mx"), other.join("env.mx")).unwrap();
-    std::fs::write(other.join("DEV.json"), valid).unwrap();
-    let out = command(&prefix.join("bin/viu"))
-        .env("MIX_PREFIX", &other)
-        .output()
-        .unwrap();
+    let redirected = other.join("DEV.json");
+    for content in [&valid, "{\"caller-chosen-secret\":1}"] {
+        std::fs::write(&redirected, content).unwrap();
+        let mut cmd = command(&prefix.join("bin/viu"));
+        cmd.env("MIX_PREFIX", &other);
+        let out = promptly(cmd);
+        assert_eq!(out.status.code(), Some(42));
+        assert!(out.stderr.is_empty(), "redirected marker must not be diagnosed");
+    }
+    std::fs::remove_file(&redirected).unwrap();
+    assert!(Command::new("mkfifo").arg(&redirected).status().unwrap().success());
+    let mut cmd = command(&prefix.join("bin/viu"));
+    cmd.env("MIX_PREFIX", &other);
+    let out = promptly(cmd);
     assert_eq!(out.status.code(), Some(42));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("outside executable prefix"));
+    assert!(out.stderr.is_empty());
+
+    // Legacy registration must not even open a marker at its own prefix.
+    std::fs::remove_file(&marker).unwrap();
+    assert!(Command::new("mkfifo").arg(&marker).status().unwrap().success());
+    let out = promptly(command(&prefix.join("bin/legacy")));
+    assert_eq!(out.status.code(), Some(42));
+    assert!(out.stderr.is_empty());
 }
