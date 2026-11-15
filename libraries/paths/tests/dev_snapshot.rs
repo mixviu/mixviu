@@ -47,7 +47,8 @@ fn promptly(mut cmd: Command) -> std::process::Output {
 
 #[test]
 fn two_binaries_one_prefix_and_fail_closed_controls() {
-    let prefix = std::env::temp_dir().join(format!("paths-dev-snapshot-{}", std::process::id()));
+    let scratch_root = std::env::temp_dir().join(format!("paths-dev-snapshot-{}", std::process::id()));
+    let prefix = scratch_root.join("install");
     std::fs::create_dir_all(prefix.join("bin")).unwrap();
     struct Scratch(std::path::PathBuf);
     impl Drop for Scratch {
@@ -55,7 +56,7 @@ fn two_binaries_one_prefix_and_fail_closed_controls() {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
-    let _scratch = Scratch(prefix.clone());
+    let _scratch = Scratch(scratch_root.clone());
     // Compile the real paths reader once, then two immutable build identities.
     // This test runs on the build worker; no desktop Rust build is involved.
     let library = prefix.join("libpaths.rlib");
@@ -131,13 +132,27 @@ fn main() {{
     }
 
     // Whitespace and field order do not change the marker's meaning.
-    let formatted = format!("{{\n\t\"members\" : {{ \"viu\" : \"{DEV}\" }},\r\n\"gold\" : \"{GOLD}\", \"schema\" : 1\n}}\n");
+    let formatted = format!(
+        "{{\n\t\"members\" : {{ \"viu\" : \"{DEV}\" }},\r\n\"gold\" : \"{GOLD}\", \"schema\" : 1\n}}\n"
+    );
     std::fs::write(&marker, &formatted).unwrap();
-    assert!(command(&prefix.join("bin/viu")).output().unwrap().status.success());
+    assert!(
+        command(&prefix.join("bin/viu"))
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
     // Pin both sides of the size bound with otherwise valid JSON whitespace.
     let at_limit = format!("{valid}{}", " ".repeat(65536 - valid.len()));
     std::fs::write(&marker, &at_limit).unwrap();
-    assert!(command(&prefix.join("bin/viu")).output().unwrap().status.success());
+    assert!(
+        command(&prefix.join("bin/viu"))
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
 
     for invalid in [
         valid.replace("viu", "mixd"),
@@ -183,17 +198,24 @@ fn main() {{
     std::fs::write(&marker, &valid).unwrap();
     let out = command(&prefix.join("bin/legacy")).output().unwrap();
     assert_eq!(out.status.code(), Some(42));
-    assert!(out.stderr.is_empty(), "strict-only registration stays silent");
+    assert!(
+        out.stderr.is_empty(),
+        "strict-only registration stays silent"
+    );
 
     // Existing prefix derivation follows the real /proc/self/exe target.
     // Both inside and foreign launch symlinks therefore use the target's
     // marker, not a marker beside the symlink. Do not infer launch-path policy.
-    let foreign = prefix.join("foreign/bin");
+    let foreign = scratch_root.join("foreign/bin");
     std::fs::create_dir_all(&foreign).unwrap();
     for link in [prefix.join("bin/viu-link"), foreign.join("viu")] {
         symlink(prefix.join("bin/viu"), &link).unwrap();
         let out = command(&link).output().unwrap();
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         assert!(String::from_utf8_lossy(&out.stderr).contains(marker.to_str().unwrap()));
     }
     std::fs::remove_file(&marker).unwrap();
@@ -210,7 +232,7 @@ fn main() {{
     assert!(String::from_utf8_lossy(&out.stderr).contains(marker.to_str().unwrap()));
     std::fs::remove_dir(&marker).unwrap();
     // A caller-controlled settings prefix cannot supply marker authority.
-    let other = prefix.join("other");
+    let other = scratch_root.join("other");
     std::fs::create_dir(&other).unwrap();
     std::fs::copy(prefix.join("env.mx"), other.join("env.mx")).unwrap();
     let redirected = other.join("DEV.json");
@@ -220,10 +242,19 @@ fn main() {{
         cmd.env("MIX_PREFIX", &other);
         let out = promptly(cmd);
         assert_eq!(out.status.code(), Some(42));
-        assert!(out.stderr.is_empty(), "redirected marker must not be diagnosed");
+        assert!(
+            out.stderr.is_empty(),
+            "redirected marker must not be diagnosed"
+        );
     }
     std::fs::remove_file(&redirected).unwrap();
-    assert!(Command::new("mkfifo").arg(&redirected).status().unwrap().success());
+    assert!(
+        Command::new("mkfifo")
+            .arg(&redirected)
+            .status()
+            .unwrap()
+            .success()
+    );
     let mut cmd = command(&prefix.join("bin/viu"));
     cmd.env("MIX_PREFIX", &other);
     let out = promptly(cmd);
@@ -232,7 +263,13 @@ fn main() {{
 
     // Legacy registration must not even open a marker at its own prefix.
     std::fs::remove_file(&marker).unwrap();
-    assert!(Command::new("mkfifo").arg(&marker).status().unwrap().success());
+    assert!(
+        Command::new("mkfifo")
+            .arg(&marker)
+            .status()
+            .unwrap()
+            .success()
+    );
     let out = promptly(command(&prefix.join("bin/legacy")));
     assert_eq!(out.status.code(), Some(42));
     assert!(out.stderr.is_empty());
