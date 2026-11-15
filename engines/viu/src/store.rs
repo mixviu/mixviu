@@ -696,6 +696,7 @@ impl SceneStore {
                 Ok((json!({"scene":name,"unloaded":true}), None))
             }
             SceneCommand::Frame
+            | SceneCommand::Stats
             | SceneCommand::Layout
             | SceneCommand::List
             | SceneCommand::DialogShow

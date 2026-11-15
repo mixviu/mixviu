@@ -254,6 +254,31 @@ mod numeric_state_tests {
     use super::*;
 
     #[test]
+    fn scroll_body_is_a_labelled_table_in_the_drive_tree() {
+        for title in [None, Some("Files")] {
+            let value = json!({"columns":[{"label":"Name"}],"rows":[{"key":"a","cells":["A"]}]});
+            let mut widget = Widget::new("file-table", "tree-table", "", json!({}));
+            if let Some(title) = title {
+                widget.properties["title"] = json!(title);
+            }
+            let mut harness = egui_kittest::Harness::new_ui(move |ui| {
+                crate::appearance::install(ui.ctx());
+                draw(ui, &widget, &value, &mut BTreeMap::new(), &mut Vec::new());
+            });
+            toolkit::drive::install(&harness.ctx, "test");
+            harness.run_steps(2);
+            let answer =
+                toolkit::drive::request(&harness.ctx, 1, "ui.tree", &json!({"role":"Table"}))
+                    .unwrap();
+            assert_eq!(answer.rc, 0);
+            let nodes = answer.body["nodes"].as_array().unwrap();
+            assert_eq!(nodes.len(), 1, "{}", answer.body);
+            assert_eq!(nodes[0]["label"], title.unwrap_or("file-table"));
+            assert!(nodes[0]["rect"].is_array());
+        }
+    }
+
+    #[test]
     fn wide_table_steady_frames_clone_no_font_definitions_or_column_keys() {
         let ctx = egui::Context::default();
         crate::appearance::install(&ctx);
@@ -1073,6 +1098,14 @@ pub(crate) fn draw(
         if background.clicked(){background.request_focus();emit(events,id,"activate-pane",Value::Null);}
         background.context_menu(|ui|context(ui,&value["background_context"],&Value::Null,id,geometry,events));
         egui::ScrollArea::vertical().id_salt((id,"rows")).auto_shrink([false,false]).max_height(list_h).show_rows(ui,row_h,rows.len(),|ui,range|{
+            ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+                node.set_role(egui::accesskit::Role::Table);
+                node.set_label(widget.properties["title"].as_str().unwrap_or(id));
+                node.set_bounds(egui::accesskit::Rect {
+                    x0: body.left() as f64, y0: body.top() as f64,
+                    x1: body.right() as f64, y1: body.bottom() as f64,
+                });
+            });
             for index in range {
                 let row=&rows[index];
                 let key=text(row,"key");

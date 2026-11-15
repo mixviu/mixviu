@@ -113,7 +113,7 @@ pub fn describe(app: &str) -> Vec<Value> {
     let command_names = [
         (
             "ui.stats",
-            Value::Null,
+            json!({"output":"optional layer output name", "viewport":"optional viewport id or root"}),
             "Passive bounded frame statistics and GPU adapter identity",
             true,
         ),

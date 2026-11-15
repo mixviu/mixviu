@@ -4,11 +4,21 @@ use serde_json::{Value, json};
 use std::time::Instant;
 
 // Shared storage contract with vendor/egui-wgpu/src/baseline.rs.
-type Samples = (u64, Vec<f64>, Instant, [u32; 2], f32, String, String);
+type Samples = (
+    u64,
+    Vec<f64>,
+    Instant,
+    [u32; 2],
+    f32,
+    String,
+    String,
+    f64,
+    f64,
+);
 
 pub(crate) fn read(ctx: &egui::Context, viewport: egui::ViewportId) -> Value {
     let key = egui::Id::unique(("ui.stats.v1", viewport));
-    let Some((frames, mut times, last, size, scale, backend, adapter)) =
+    let Some((frames, mut times, last, size, scale, backend, adapter, total_ms, max_ms)) =
         ctx.data(|d| d.get_temp::<Samples>(key))
     else {
         return json!({"available": false});
@@ -25,6 +35,7 @@ pub(crate) fn read(ctx: &egui::Context, viewport: egui::ViewportId) -> Value {
         times[mid]
     };
     json!({"available":true,"frames_drawn":frames,"sample_count":times.len(),
+        "cpu_frame_total_ms":total_ms,"cpu_frame_max_ms":max_ms,
         "cpu_frame_ms":{"median":median,"p95":percentile(0.95),"max":times.last()},
         "last_frame_ms":last.elapsed().as_secs_f64()*1000.0,"surface_pixels":size,
         "scale":scale,"backend":backend,"adapter":adapter})
@@ -44,6 +55,8 @@ mod tests {
             1.0,
             "Vulkan".into(),
             "fixture".into(),
+            0.0,
+            0.0,
         );
         ctx.data_mut(|d| {
             d.insert_temp(
@@ -66,6 +79,7 @@ mod tests {
         // import the renderer's type in builds without its optional GPU dep.
         let mut adapter = wgpu::AdapterInfo::new(wgpu::DeviceType::Cpu, wgpu::Backend::Vulkan);
         adapter.name = "fixture GPU".into();
+        egui_wgpu::baseline::record(&ctx, viewport, 1.0, [640, 480], 2.0, &adapter);
         for i in 0..300 {
             egui_wgpu::baseline::record(
                 &ctx,
@@ -77,8 +91,10 @@ mod tests {
             );
         }
         let stats = read(&ctx, viewport);
-        assert_eq!(stats["frames_drawn"], 300);
+        assert_eq!(stats["frames_drawn"], 301);
         assert_eq!(stats["sample_count"], 256);
+        assert_eq!(stats["cpu_frame_total_ms"], 45850.0);
+        assert_eq!(stats["cpu_frame_max_ms"], 1000.0);
         assert_eq!(stats["cpu_frame_ms"]["max"], 299.0);
         assert_eq!(stats["cpu_frame_ms"]["median"], 171.5);
         assert_eq!(stats["backend"], "Vulkan");
@@ -111,6 +127,8 @@ mod tests {
                     1.0_f32,
                     "Vulkan".to_owned(),
                     "fixture".to_owned(),
+                    12.0_f64,
+                    9.0_f64,
                 ),
             )
         });
