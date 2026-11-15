@@ -10,6 +10,7 @@ $bus = nil
 $pids = []
 $tray_pid = nil
 $vars = {}
+$case = args()[0] ?? "idle"
 fn check($ok, $message)
   if not $ok then raise("PANEL_IDLE_TEST", $message) end
 end
@@ -39,12 +40,23 @@ fn wait_service($name)
   if is_file($tmp .. "/" .. $name .. ".log") then eprint(read_file($tmp .. "/" .. $name .. ".log")) end
   raise("PANEL_IDLE_TEST", "service did not start: " .. $name)
 end
-fn tray_calls()
+fn calls_for($command)
   $n = 0
   for $line in split(read_file($tmp .. "/calls"), "\n")
-    if $line != "" and json_parse($line).command == "tray.list" then $n = $n + 1 end
+    if $line != "" and json_parse($line).command == $command then $n = $n + 1 end
   end
   return $n
+end
+fn tray_calls()
+  return calls_for("tray.list")
+end
+fn wait_state($field, $expected)
+  for $i = 1 to 100
+    $s = call("scene-panel", "panel.test.state").value
+    if deep_eq($s[$field], $expected) then return end
+    sleep(0.05)
+  end
+  raise("PANEL_IDLE_TEST", "state did not reach " .. $field .. "=" .. json_encode($expected))
 end
 fn wait_tray($expected)
   for $i = 1 to 100
@@ -60,7 +72,7 @@ try
   $_ = run_argv_must(["cp", "-r", $root .. "/share/scenes/lib", $tmp .. "/lib"])
   $path = $tmp .. "/lib/runtime.mix"
   write_file($path, replace_must(read_file($path), "fn call($target, $command, $args)\n",
-    "fn call($target, $command, $args)\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command}) .. \"\\n\")\n"))
+    "fn call($target, $command, $args)\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command,at:monotonic()}) .. \"\\n\")\n  if $command == \"noded.props.get\" and is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then return {ok:false,value:nil} end\n"))
   write_file($tmp .. "/client.mix", 'send $1 $2 body="{}" timeout=5
 print(json_encode({rc:$rc,value:$result}))
 ')
@@ -89,11 +101,13 @@ end
 on apps.icon
   reply(0,json_encode({path:""}))
 end
-on notify.list
-  reply(0,"[]")
-end
 ')
   write_file($tmp .. "/tray.mix", 'on tray.list
+  if is_file(env("FIXTURE_DIR") .. "/tray-fail") then
+    remove(env("FIXTURE_DIR") .. "/tray-fail")
+    reply(10,"busy")
+    return
+  end
   reply(0,json_encode({items:[]}))
 end
 on change
@@ -108,20 +122,70 @@ end
   $bus = $pb.start({dir:$tmp .. "/bus",name:"panel-idle-test",noded:$noded})
   $vars = merge($pb.client_env($bus), {PATH:"/usr/bin:/bin",HOME:$tmp .. "/home",MIX_STATS:"off",
     FIXTURE_DIR:$tmp,SCENE_NAME:"panel",SCENE_GENERATION:"1",SCENE_HOST:"panel-stub",
-    SCENES_SERVICE:"panel-stub",COMP_SERVICE:"panel-stub",APPS_SERVICE:"panel-stub",NOTIFY_SERVICE:"panel-stub",
+    SCENES_SERVICE:"panel-stub",COMP_SERVICE:"panel-stub",APPS_SERVICE:"panel-stub",NOTIFY_SERVICE:"notify-stub",
     TRAY_SERVICE:"tray-stub",SCENES_LIB:$tmp .. "/lib",SCENE_DIR:$tmp .. "/home"})
   start("panel-stub", $tmp .. "/stub.mix")
   wait_service("panel-stub")
-  start("scene-panel", $root .. "/share/scenes/panel/behaviour.mix")
+  $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+  write_file($tmp .. "/panel.mix", $behaviour .. '\non panel.test.state
+  reply(0,json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty}))
+end
+on panel.test.registry
+  services_changed($event.args.new)
+  reply(0,"{}")
+end
+')
+  if $case == "registry" or $case == "tray-retry" or $case == "coalesced" then
+    if $case == "registry" then write_file($tmp .. "/registry-fail", "1") end
+    if $case == "tray-retry" then write_file($tmp .. "/tray-fail", "1") end
+    $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
+    wait_service("tray-stub")
+  end
+  start("scene-panel", $tmp .. "/panel.mix")
   wait_service("scene-panel")
   for $i = 1 to 100
     if is_file($tmp .. "/model") then break end
     sleep(0.05)
   end
   check(is_file($tmp .. "/model"), "first panel model missing")
+  if $case == "registry" then
+    check(tray_calls()==0,"failed registry must not invent a tray")
+    call("tray-stub","change")
+    wait_tray(1)
+    wait_state("tray_live",true)
+    remove($tmp .. "/registry-fail")
+    wait_state("registry_dirty",false)
+    check(calls_for("noded.props.get")>=2,"failed registry read never retried")
+    print("PASS registry recovery and tray event repairs stale cache")
+    exit(0)
+  elif $case == "tray-retry" then
+    wait_tray(2)
+    wait_state("tray_dirty",false)
+    $reads=[]
+    for $line in split(read_file($tmp .. "/calls"),"\n")
+      if $line!="" then
+        $row=json_parse($line)
+        if $row.command=="tray.list" then push($reads,$row.at) end
+      end
+    end
+    check($reads[1]-$reads[0]>=0.2,"tray retry ran before its deadline")
+    sleep(1.2)
+    check(tray_calls()==2,"successful tray recovery kept polling")
+    print("PASS failed tray read retries once at deadline then stays quiet")
+    exit(0)
+  elif $case == "coalesced" then
+    wait_tray(1)
+    write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["tray-stub","panel-stub"],new:["tray-stub","panel-stub","late-app"]}
+')
+    $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
+    wait_tray(2)
+    print("PASS coalesced tray restart with unequal registration lists")
+    exit(0)
+  end
   for $i = 1 to 3 check(call("scene-panel", "panel.refresh").rc == 0, "refresh refused") end
   sleep(1.2)
   check(tray_calls() == 0, "absent tray called at startup, rebuild or idle")
+  check(calls_for("notify.list")==0,"absent notify called at startup, rebuild or idle")
   $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
   wait_service("tray-stub")
   wait_tray(1)
@@ -133,7 +197,7 @@ end
   sleep(1.2)
   check(tray_calls() == 3, "idle or unrelated rebuild re-read the tray")
   stop($tray_pid)
-  sleep(0.3)
+  wait_state("tray_live",false)
   call("scene-panel", "panel.refresh")
   sleep(0.3)
   check(tray_calls() == 3, "departed tray called")

@@ -1198,6 +1198,66 @@ mod idle_bus;
 mod idle_tests {
     use super::*;
 
+    async fn recovery_hint(kind: &str) {
+        let broker = test_broker::Broker::start();
+        let _settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, mut incoming, native_forward) = idle_bus::native(&broker, "shell").await;
+        let generation = client.connection_generation();
+        let (inject, receive) = tokio::sync::mpsc::unbounded_channel();
+        let forward = inject.clone();
+        let bridge = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await { if forward.send(event).is_err() { break; } }
+        });
+        let (_send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(client, "shell".into(), "comp".into(), state, recv, receive));
+        comp.wait("comp.panel.mode", 1).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let watches = comp.count("comp.props.watch");
+        let reports = comp.count("comp.panel.mode");
+        let (owner, topic, body) = match kind {
+            "coalesced" => ("noded", "noded.props.changed", json!({"path":"services.registered","old":["comp","shell"],"new":["comp","shell","late-app"]})),
+            "alone" => ("noded", "noded.props.changed", json!({"path":"services.registered","old":["comp","shell"],"new":["comp","shell"]})),
+            _ => ("comp", "comp.props.changed", json!({"gap":true})),
+        };
+        // Deterministic broker delivery shapes: no dependence on the 100ms
+        // registration cap or another process winning the reconnect race.
+        inject.send(bus::IncomingCommand { generation, from:owner.into(), command:"props.changed".into(), id:None, args:Value::Null, body:body.to_string(), headers:BTreeMap::from([("topic".into(),topic.into()),("broker_service".into(),owner.into()),("broker_origin".into(),"local".into())]) }).unwrap();
+        comp.wait("comp.props.watch", watches + 1).await;
+        comp.wait("comp.panel.mode", reports + 1).await;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(comp.count("comp.props.watch"), watches + 1);
+        assert_eq!(comp.count("comp.panel.mode"), reports + 1);
+        task.abort(); bridge.abort(); native_forward.abort();
+    }
+    #[tokio::test]
+    async fn shell_coalesced_comp_registration_resends_modes() { recovery_hint("coalesced").await; }
+    #[tokio::test]
+    async fn shell_comp_reregistration_resends_modes() { recovery_hint("alone").await; }
+    #[tokio::test]
+    async fn shell_comp_props_gap_resends_modes() { recovery_hint("gap").await; }
+
+    #[tokio::test]
+    async fn shell_comp_sync_and_modes_survive_missing_settings() {
+        let broker = test_broker::Broker::start();
+        let comp = idle_bus::Service::start(&broker, "comp").await;
+        let state = Arc::new(Mutex::new(State::new()));
+        state.lock().unwrap().panel("example", "bottom");
+        let (client, incoming, forward) = idle_bus::native(&broker, "shell").await;
+        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(worker_connected(client,"shell".into(),"comp".into(),state.clone(),recv,incoming));
+        comp.wait("comp.panel.mode",1).await;
+        assert_eq!(comp.count("comp.props.get"),1);
+        send.send(Outgoing::Mode("example".into(),"bottom".into(),"hidden".into())).unwrap();
+        comp.wait("comp.panel.mode",2).await;
+        let settings = idle_bus::Service::start(&broker,"settingsd").await;
+        settings.wait("settings.get",1).await;
+        tokio::time::timeout(Duration::from_secs(5),async {while state.lock().unwrap().look_revision==0 {tokio::time::sleep(Duration::from_millis(10)).await;}}).await.unwrap();
+        task.abort();forward.abort();
+    }
+
     #[tokio::test]
     async fn idle_shell_is_quiet_and_changes_and_registration_report_once() {
         let mut broker = test_broker::Broker::bounce_stable();
@@ -1285,7 +1345,9 @@ mod idle_tests {
             4,
             "reconnect restores settings once"
         );
-        assert!(comp.count("comp.props.watch") >= 2);
+        assert_eq!(comp.count("comp.props.watch"), 2);
+        comp.publish("comp.props.changed",json!({"path":"outputs","new":[{"name":"after-bounce"}]})).await;
+        tokio::time::timeout(Duration::from_secs(3),async {while state.lock().unwrap().outputs != json!([{"name":"after-bounce"}]) {tokio::time::sleep(Duration::from_millis(10)).await;}}).await.unwrap();
         task.abort();
         forward.abort();
     }
