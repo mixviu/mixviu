@@ -68,7 +68,7 @@ impl Bgra {
         for ((b,f),o) in self.pixels.chunks_exact(4).zip(foreground.pixels.chunks_exact(4)).zip(out.pixels.chunks_exact_mut(4)) {
             let a = u32::from(f[3]); let ba = u32::from(b[3]);
             let den = a*255 + ba*(255-a);
-            for c in 0..3 { o[c] = if den == 0 { 0 } else { ((u32::from(f[c])*a*255 + u32::from(b[c])*ba*(255-a)+den/2)/den) as u8 }; }
+            for c in 0..3 { o[c] = (u32::from(f[c])*a*255 + u32::from(b[c])*ba*(255-a)+den/2).checked_div(den).unwrap_or(0) as u8; }
             o[3] = ((den+127)/255) as u8;
         }
         Ok(out)
@@ -94,7 +94,7 @@ impl Bgra {
             let mut rgb = [0.0;3];
             for dy in 0..2 { for dx in 0..2 {
                 let i = (((y+dy).min(self.height-1))*self.width+(x+dx).min(self.width-1))*4;
-                for c in 0..3 { rgb[c] += self.pixels[i+2-c] as f64/4.0; }
+                for (c, value) in rgb.iter_mut().enumerate() { *value += self.pixels[i+2-c] as f64/4.0; }
             }}
             let m = matrix(rgb[0],rgb[1],rgb[2]); out.u.push(m[1].round() as u8); out.v.push(m[2].round() as u8);
         }}
