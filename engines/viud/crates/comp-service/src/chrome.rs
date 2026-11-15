@@ -54,6 +54,26 @@ fn action_args(viewport: Option<&str>, command: &str) -> Value {
     args
 }
 
+fn registration_identity(row: &Value) -> Option<String> {
+    if let Some(id) = row["meta"]["noded.registration_id"].as_str() {
+        return Some(id.to_owned());
+    }
+    let session = &row["native_session"];
+    let identity: Vec<_> = [
+        "broker_epoch",
+        "record_id",
+        "incarnation",
+        "binding_generation",
+    ]
+    .iter()
+    .map(|key| session[*key].clone())
+    .collect();
+    identity
+        .iter()
+        .all(|v| !v.is_null())
+        .then(|| json!(identity).to_string())
+}
+
 pub struct Update {
     generation: u64,
     live: Arc<AtomicU64>,
@@ -111,16 +131,33 @@ pub(crate) async fn run(
         return;
     };
     let mut states = client.subscribe_state();
-    let mut retry = tokio::time::interval(std::time::Duration::from_secs(1));
-    retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut registry_dirty = true;
+    let mut registry_retry = None;
+    let mut registry_delay = std::time::Duration::from_secs(1);
+    let mut bars_dirty = BTreeSet::new();
+    let mut presentation_retry = None;
+    let mut presentation_delay = std::time::Duration::from_secs(1);
     let mut generation = None;
     let mut work = None;
     let mut services = BTreeSet::new();
+    let mut incarnations = BTreeMap::new();
+    #[cfg(test)]
+    let mut checkpoints: Vec<IncomingCommand> = Vec::new();
     loop {
         if let Some(now) = settings::native::live_generation(client) {
             if generation != Some(now) {
                 generation = Some(now);
                 work = consumer.connected(now);
+                registry_dirty = true;
+                registry_retry = None;
+                registry_delay = std::time::Duration::from_secs(1);
+                // This is the Bus epoch, not a settingsd restart. The next
+                // registry snapshot must refresh every live target on a new
+                // connection, even if its registration identity stayed equal.
+                incarnations.clear();
+                bars_dirty.clear();
+                presentation_retry = None;
+                presentation_delay = std::time::Duration::from_secs(1);
             }
         } else {
             generation = None;
@@ -156,33 +193,96 @@ pub(crate) async fn run(
         }
         // Read only on recovery/event/retry. Calls stay off the compositor loop.
         if let Some(epoch) = generation {
-            if let Ok(Ok(names)) = tokio::time::timeout(
-                std::time::Duration::from_secs(1),
-                client.call(
-                    "noded",
-                    "noded.props.get",
-                    json!({"path":"services.registered"}),
-                ),
-            )
-            .await
-            {
-                if let Some(names) = names.as_array().and_then(|names| {
-                    names
-                        .iter()
-                        .map(|name| name.as_str().map(str::to_owned))
-                        .collect::<Option<BTreeSet<String>>>()
-                }) {
+            if registry_dirty && registry_retry.is_none_or(|at| std::time::Instant::now() >= at) {
+                let result = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                    client.subscribe_topic("noded.props.changed").await?;
+                    let names = client
+                        .call(
+                            "noded",
+                            "noded.props.get",
+                            json!({"path":"services.registered"}),
+                        )
+                        .await?;
+                    // Discovery is event-driven too. The broker's registration
+                    // identity distinguishes unchanged targets from restarts
+                    // hidden by the names-only property delivery.
+                    let identities = if TARGETS.lock().unwrap().is_empty() {
+                        Value::Null
+                    } else {
+                        client
+                            .call("noded", "noded.list", json!({}))
+                            .await
+                            .unwrap_or(Value::Null)
+                    };
+                    Ok::<_, bus::SupervisedError>((names, identities))
+                })
+                .await;
+                let snapshot = result.ok().and_then(Result::ok);
+                let names = snapshot.as_ref().and_then(|(names, _)| {
+                    names.as_array().and_then(|names| {
+                        names
+                            .iter()
+                            .map(|name| name.as_str().map(str::to_owned))
+                            .collect::<Option<BTreeSet<String>>>()
+                    })
+                });
+                if let Some(names) = names {
                     services = names;
+                    registry_dirty = false;
+                    let identities = snapshot.as_ref().map(|(_, identities)| identities);
+                    let targets = TARGETS.lock().unwrap().clone();
+                    let mut next = BTreeMap::new();
+                    for target in targets.iter().filter(|name| services.contains(*name)) {
+                        let identity = identities
+                            .and_then(Value::as_array)
+                            .and_then(|rows| {
+                                rows.iter()
+                                    .find(|row| row["name"].as_str() == Some(target.as_str()))
+                            })
+                            .and_then(registration_identity);
+                        // Native discovery rows currently lack a registration
+                        // id too. Use their session identity when available;
+                        // otherwise conservatively refresh per delivery, just
+                        // as on older brokers. There is still no idle poll.
+                        if identity.is_none() || incarnations.get(target) != identity.as_ref() {
+                            bars_dirty.insert(target.clone());
+                            presentation_retry = None;
+                            presentation_delay = std::time::Duration::from_secs(1);
+                        }
+                        if let Some(identity) = identity {
+                            next.insert(target.clone(), identity);
+                        }
+                    }
+                    incarnations = next;
+                    bars_dirty.retain(|name| services.contains(name));
                 }
+                registry_retry = if registry_dirty {
+                    Some(next_retry(&mut registry_delay))
+                } else {
+                    registry_delay = std::time::Duration::from_secs(1);
+                    None
+                };
             }
+            let presentation_due =
+                presentation_retry.is_none_or(|at| std::time::Instant::now() >= at);
             let mut bars = BTreeMap::new();
             let targets = TARGETS.lock().unwrap().clone();
-            for service in targets.iter().filter(|name| services.contains(*name)) {
-                let _ = tokio::time::timeout(
+            let dirty: Vec<_> = targets
+                .iter()
+                .filter(|name| {
+                    presentation_due && services.contains(*name) && bars_dirty.contains(*name)
+                })
+                .cloned()
+                .collect();
+            for service in &dirty {
+                let subscribed = tokio::time::timeout(
                     std::time::Duration::from_secs(1),
                     client.subscribe_topic(&format!("{service}.ui.titlebar.changed")),
                 )
                 .await;
+                if !matches!(subscribed, Ok(Ok(()))) {
+                    continue;
+                }
                 if let Ok(Ok(form)) = tokio::time::timeout(
                     std::time::Duration::from_millis(250),
                     client.call(service, &format!("{service}.ui.titlebar.form"), json!({})),
@@ -190,10 +290,11 @@ pub(crate) async fn run(
                 .await
                 {
                     bars.insert(service.clone(), form);
+                    bars_dirty.remove(service);
                 }
             }
             let theme_ready = pending.is_none() || theme.is_some();
-            if settings::native::live_generation(client) == Some(epoch)
+            let accepted = settings::native::live_generation(client) == Some(epoch)
                 && ingress.chrome(Update {
                     generation: epoch,
                     live: live.clone(),
@@ -203,27 +304,463 @@ pub(crate) async fn run(
                     services: services.clone(),
                     bars,
                 })
-                && theme_ready
-            {
-                if let Some(update) = &pending {
-                    consumer.acknowledge(update);
-                }
+                && theme_ready;
+            if accepted && let Some(update) = &pending {
+                consumer.acknowledge(update);
+            }
+            if !accepted {
+                // A full engine queue must not discard a fetched titlebar.
+                bars_dirty.extend(dirty);
+            }
+            if accepted && !bars_dirty.iter().any(|s| services.contains(s)) {
+                presentation_retry = None;
+                presentation_delay = std::time::Duration::from_secs(1);
+            } else if presentation_due {
+                presentation_retry = Some(next_retry(&mut presentation_delay));
+            }
+        }
+        let deadline = consumer
+            .retry_deadline()
+            .into_iter()
+            .chain(registry_retry.filter(|_| generation.is_some()))
+            .chain(presentation_retry.filter(|_| generation.is_some()))
+            .min();
+        #[cfg(test)]
+        if !registry_dirty
+            && bars_dirty.is_empty()
+            && deadline.is_none()
+            && consumer.pending().is_none()
+        {
+            for command in checkpoints.drain(..) {
+                client
+                    .respond_parts(
+                        command.generation,
+                        &command.from,
+                        &command.command,
+                        command.id.as_deref(),
+                        0,
+                        "{\"settled\":true}",
+                    )
+                    .await
+                    .unwrap();
             }
         }
         tokio::select! {
             changed = states.changed() => { if changed.is_err() { break; } states.borrow_and_update(); }
             event = events.recv() => {
                 let Some(event) = event else { break; };
-                work = consumer.native_delivery(&event);
+                #[cfg(test)]
+                if event.command == "test.checkpoint" {
+                    checkpoints.push(event);
+                    continue;
+                }
+                if let Some(next) = consumer.native_delivery(&event) { work = Some(next); }
+                if event.header("broker_origin") == Some("local") {
+                    if event.topic() == Some("noded.props.changed") && event.header("broker_service") == Some("noded") {
+                        if let Ok(body) = serde_json::from_str::<Value>(&event.body)
+                            && (body["path"] == "services.registered" || body["gap"] == true || event.header("gap") == Some("true")) {
+                            registry_dirty = true;
+                            registry_retry = None;
+                            registry_delay = std::time::Duration::from_secs(1);
+                        }
+                    } else if let Some(service) = event.header("broker_service")
+                        && event.topic() == Some(format!("{service}.ui.titlebar.changed").as_str()) && services.contains(service) {
+                        bars_dirty.insert(service.to_owned());
+                        presentation_retry = None;
+                        presentation_delay = std::time::Duration::from_secs(1);
+                    }
+                }
             }
-            _ = retry.tick() => { work = consumer.refresh(); }
+            _ = recovery_deadline(deadline) => {
+                if consumer.retry_deadline().is_some_and(|at| std::time::Instant::now() >= at) { work = consumer.retry(); }
+            }
         }
     }
 }
 
+async fn recovery_deadline(deadline: Option<std::time::Instant>) {
+    match deadline {
+        Some(at) => tokio::time::sleep_until(at.into()).await,
+        None => std::future::pending().await,
+    }
+}
+
+// Failure-only recovery: fresh hints/success reset the delay; unrelated
+// worker wakes neither advance the deadline nor bypass it.
+fn next_retry(delay: &mut std::time::Duration) -> std::time::Instant {
+    let at = std::time::Instant::now() + *delay;
+    *delay = (*delay * 2).min(std::time::Duration::from_secs(30));
+    at
+}
+
+#[cfg(test)]
+#[path = "../../../../../tests/lib/idle_bus.rs"]
+mod idle_bus;
+
 #[cfg(test)]
 mod tests {
+    static IDLE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     use super::*;
+    #[tokio::test]
+    async fn native_props_watch_echoes_the_requested_command() {
+        let broker = test_broker::Broker::start();
+        let reader = idle_bus::connect(&broker, "watch-reader").await;
+        let reply = reader
+            .call("noded", "noded.props.watch", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(reply["topic"], "noded.props.changed");
+    }
+    #[tokio::test]
+    async fn registration_identity_is_stable_until_reregistered() {
+        let broker = test_broker::Broker::start();
+        let app = idle_bus::Service::start(&broker, "example-app").await;
+        let reader = idle_bus::connect(&broker, "registry-reader").await;
+        async fn identity(reader: &SupervisedClient) -> Value {
+            let list = reader.call("noded", "noded.list", json!({})).await.unwrap();
+            list.as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["name"] == "example-app")
+                .unwrap()["meta"]["noded.registration_id"]
+                .clone()
+        }
+        let first = identity(&reader).await;
+        assert!(
+            first.as_str().is_some_and(|id| !id.is_empty()),
+            "broker registration identity missing"
+        );
+        assert_eq!(identity(&reader).await, first);
+        app.client
+            .call(
+                "noded",
+                "noded.register",
+                json!({"meta":{"noded.registration_id":"forged"}}),
+            )
+            .await
+            .unwrap();
+        let second = identity(&reader).await;
+        assert_ne!(
+            second,
+            json!("forged"),
+            "caller replaced the broker-owned identity"
+        );
+        assert_ne!(
+            second, first,
+            "explicit same-name re-registration kept the old identity"
+        );
+        app.client.shutdown().await;
+        drop(app);
+        let _app = idle_bus::Service::start(&broker, "example-app").await;
+        assert_ne!(
+            identity(&reader).await,
+            second,
+            "same-name registration reused an incarnation"
+        );
+    }
+    #[tokio::test]
+    async fn idle_chrome_reads_once_and_titlebar_changes_read_once() {
+        let _guard = IDLE_LOCK.lock().await;
+        let mut broker = test_broker::Broker::bounce_stable();
+        let settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let mut app = idle_bus::Service::start(&broker, "example-app").await;
+        targets(BTreeSet::from(["example-app".into()]));
+        let (client, mut incoming, native_forward) = idle_bus::native(&broker, "comp-idle").await;
+        let names = client
+            .call(
+                "noded",
+                "noded.props.get",
+                json!({"path":"services.registered"}),
+            )
+            .await
+            .unwrap();
+        assert!(
+            names
+                .as_array()
+                .is_some_and(|names| names.contains(&json!("example-app"))),
+            "registry: {names}"
+        );
+        let observer = idle_bus::Observer::start(&broker).await;
+        let (send, events) = tokio::sync::mpsc::channel(64);
+        let hints = send.clone();
+        // Registrations are capped/coalesced independently by the broker.
+        // Drive one explicit hint after each completed registration below,
+        // so exact per-delivery counts do not depend on that timer's phase.
+        let forward = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await {
+                if event.topic() != Some("noded.props.changed") && send.send(event).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let engine_wake = Arc::new(tokio::sync::Notify::new());
+        let notify = engine_wake.clone();
+        let (wiring, starter) = crate::port::prepare(
+            crate::port::PortIdentity {
+                service: "comp-idle".into(),
+                version: "test".into(),
+                backend: "nested",
+                engine: "test",
+                noded_url: broker.url.clone(),
+            },
+            Arc::new(move || notify.notify_one()),
+        )
+        .unwrap();
+        let ingress = starter.ingress().clone();
+        // Consume the bounded engine lane as a real compositor does. Merely
+        // keeping its receiver alive eventually stalls recovery checkpoints.
+        let engine = tokio::spawn(async move {
+            loop {
+                engine_wake.notified().await;
+                wiring.service.drain_chrome_fixture();
+            }
+        });
+        let live = Arc::new(AtomicU64::new(client.connection_generation()));
+        let task = tokio::spawn(async move {
+            run(&client, ingress, events, live).await;
+        });
+        settings.wait("settings.get", 1).await;
+        app.wait("example-app.ui.titlebar.form", 1).await;
+        settings.checkpoint("comp-idle").await;
+        tokio::join!(
+            settings.assert_idle(std::time::Duration::from_millis(1200)),
+            app.assert_idle(std::time::Duration::from_millis(1200))
+        );
+        assert_eq!(settings.count("settings.get"), 1);
+        assert_eq!(
+            observer.registry_reads("comp-idle"),
+            1,
+            "idle makes no registry read"
+        );
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            1,
+            "idle does not re-read registrations/titlebars"
+        );
+        settings.settings_changed(2, "first").await;
+        // A titlebar event below also orders the settings delivery on the
+        // same connection; checkpoint waits for the resulting presentation.
+        assert_eq!(settings.count("settings.get"), 1);
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            1,
+            "settings delivery is not a registry hint"
+        );
+        assert_eq!(observer.registry_reads("comp-idle"), 1);
+        app.publish("example-app.ui.titlebar.changed", json!({}))
+            .await;
+        app.wait("example-app.ui.titlebar.form", 2).await;
+        app.checkpoint("comp-idle").await;
+        assert_eq!(app.count("example-app.ui.titlebar.form"), 2);
+        let _newcomer = idle_bus::Service::start(&broker, "late-app").await;
+        hints
+            .send(idle_bus::Service::registration_hint(&[
+                "example-app",
+                "late-app",
+            ]))
+            .await
+            .unwrap();
+        app.checkpoint("comp-idle").await;
+        tokio::time::timeout(std::time::Duration::from_secs(8), async {
+            while observer.registry_reads("comp-idle") < 2 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            observer.registry_reads("comp-idle"),
+            2,
+            "one registration hint makes one registry read"
+        );
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            2,
+            "unrelated registration re-read an unchanged target"
+        );
+        app.client.shutdown().await;
+        drop(app);
+        app = idle_bus::Service::start(&broker, "example-app").await;
+        let _coalesced = idle_bus::Service::start(&broker, "coalesced-app").await;
+        hints
+            .send(idle_bus::Service::registration_hint(&[
+                "example-app",
+                "late-app",
+                "coalesced-app",
+            ]))
+            .await
+            .unwrap();
+        app.wait("example-app.ui.titlebar.form", 1).await;
+        app.checkpoint("comp-idle").await;
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            1,
+            "coalesced restart fetched target more than once"
+        );
+        settings.fail_reads.store(1, Ordering::SeqCst);
+        settings.settings_changed(3, "restarted").await;
+        settings.wait("settings.get", 3).await;
+        settings.checkpoint("comp-idle").await;
+        settings.assert_read_retry_deadline();
+        assert_eq!(
+            settings.count("settings.get"),
+            3,
+            "authority recovery reads once after a fenced failed-read retry"
+        );
+        let forms = app.count("example-app.ui.titlebar.form");
+        broker.bounce();
+        settings.wait("settings.get", 4).await;
+        // Native citizens reconnect independently. The first snapshot can
+        // precede the app's registration, so explicitly deliver its later
+        // registry hint (the forwarder deliberately filters real ones).
+        tokio::time::timeout(std::time::Duration::from_secs(8), async {
+            loop {
+                if let Ok(names) = settings
+                    .client
+                    .call(
+                        "noded",
+                        "noded.props.get",
+                        json!({"path":"services.registered"}),
+                    )
+                    .await
+                    && names
+                        .as_array()
+                        .is_some_and(|names| names.contains(&json!("example-app")))
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        hints
+            .send(idle_bus::Service::registration_hint(&["example-app"]))
+            .await
+            .unwrap();
+        app.wait("example-app.ui.titlebar.form", forms + 1).await;
+        app.checkpoint("comp-idle").await;
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            forms + 1,
+            "recovery presentation completed"
+        );
+        assert_eq!(
+            settings.count("settings.get"),
+            4,
+            "reconnect reads once then stays idle"
+        );
+        let forms = app.count("example-app.ui.titlebar.form");
+        app.publish("example-app.ui.titlebar.changed", json!({}))
+            .await;
+        app.wait("example-app.ui.titlebar.form", forms + 1).await;
+        app.checkpoint("comp-idle").await;
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            forms + 1,
+            "post-bounce titlebar subscription did not resume exactly once"
+        );
+        task.abort();
+        forward.abort();
+        native_forward.abort();
+        engine.abort();
+        drop(starter);
+        targets(BTreeSet::new());
+    }
+    #[tokio::test]
+    async fn failed_titlebar_reads_back_off() {
+        let _guard = IDLE_LOCK.lock().await;
+        let broker = test_broker::Broker::bounce_stable();
+        let settings = idle_bus::Service::start(&broker, "settingsd").await;
+        let app = idle_bus::Service::start(&broker, "example-app").await;
+        targets(BTreeSet::from(["example-app".into()]));
+        let (client, mut incoming, native_forward) = idle_bus::native(&broker, "comp-idle").await;
+        let names = client
+            .call(
+                "noded",
+                "noded.props.get",
+                json!({"path":"services.registered"}),
+            )
+            .await
+            .unwrap();
+        assert!(
+            names
+                .as_array()
+                .is_some_and(|names| names.contains(&json!("example-app"))),
+            "registry: {names}"
+        );
+        let _observer = idle_bus::Observer::start(&broker).await;
+        let (send, events) = tokio::sync::mpsc::channel(64);
+        let _hints = send.clone();
+        // Registrations are capped/coalesced independently by the broker.
+        // Drive one explicit hint after each completed registration below,
+        // so exact per-delivery counts do not depend on that timer's phase.
+        let forward = tokio::spawn(async move {
+            while let Some(event) = incoming.recv().await {
+                if event.topic() != Some("noded.props.changed") && send.send(event).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let engine_wake = Arc::new(tokio::sync::Notify::new());
+        let notify = engine_wake.clone();
+        let (wiring, starter) = crate::port::prepare(
+            crate::port::PortIdentity {
+                service: "comp-idle".into(),
+                version: "test".into(),
+                backend: "nested",
+                engine: "test",
+                noded_url: broker.url.clone(),
+            },
+            Arc::new(move || notify.notify_one()),
+        )
+        .unwrap();
+        let ingress = starter.ingress().clone();
+        // Consume the bounded engine lane as a real compositor does. Merely
+        // keeping its receiver alive eventually stalls recovery checkpoints.
+        let engine = tokio::spawn(async move {
+            loop {
+                engine_wake.notified().await;
+                wiring.service.drain_chrome_fixture();
+            }
+        });
+        app.fail_forms.store(3, Ordering::SeqCst);
+        let live = Arc::new(AtomicU64::new(client.connection_generation()));
+        let task = tokio::spawn(async move {
+            run(&client, ingress, events, live).await;
+        });
+
+        app.wait("example-app.ui.titlebar.form", 1).await;
+        settings.settings_changed(2, "first").await;
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while app.count("example-app.ui.titlebar.form") < 4 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        app.checkpoint("comp-idle").await;
+        let times: Vec<_> = app
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, _)| c.ends_with(".ui.titlebar.form"))
+            .map(|(_, at)| *at)
+            .collect();
+        assert!(times[1].duration_since(times[0]) >= std::time::Duration::from_millis(900));
+        assert!(times[2].duration_since(times[1]) >= std::time::Duration::from_millis(1900));
+        assert!(times[3].duration_since(times[2]) >= std::time::Duration::from_millis(3900));
+        app.assert_idle(std::time::Duration::from_millis(1200))
+            .await;
+        task.abort();
+        forward.abort();
+        native_forward.abort();
+        engine.abort();
+        drop(starter);
+        targets(BTreeSet::new());
+    }
+
     #[test]
     fn titlebar_routes_keep_application_viewport_contracts() {
         assert_eq!(
