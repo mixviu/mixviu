@@ -2,24 +2,50 @@
 //! VFL container and lossless writer, shared by viud and the future reader.
 use serde_json::{Value,json};
 use std::{fs::{File,OpenOptions},io::{self,Write},os::unix::fs::{OpenOptionsExt,DirBuilderExt},path::{Path,PathBuf},sync::Arc,time::Instant};
-pub const VERSION:u32=1;
+pub const VERSION:u32=2;
+pub const LEGACY_VERSION:u32=1;
 pub const RECORD_HEADER_BYTES:usize=17;
 pub const KEY:u8=0;
 pub const DELTA:u8=1;
 pub const REPEAT:u8=2;
+pub const RECT_DELTA:u8=3;
 pub const MAX_FRAME_BYTES:usize=256*1024*1024;
 pub const CHUNK_BYTES:u64=64*1024*1024;
 #[derive(Clone,Copy,Debug,Default)]
 pub struct Stats {
+ pub rect_records:u64,pub rect_bytes:u64,pub delta_max_bytes:u64,
  pub setup_us:u64, pub sync_us:u64, pub sync_max_us:u64,
  pub encode_us:u64, pub encode_max_us:u64, pub convert_us:u64,
  pub write_us:u64, pub write_max_us:u64, pub keys:u64, pub deltas:u64,
  pub repeats:u64, pub key_bytes:u64, pub delta_bytes:u64,
 }
-impl Stats { pub fn json(self)->Value {json!({"setup_us":self.setup_us,"sync_us":self.sync_us,"sync_max_us":self.sync_max_us,"encode_mean_us":self.encode_us/(self.keys+self.deltas+self.repeats).max(1),"write_mean_us":self.write_us/(self.keys+self.deltas+self.repeats).max(1),"encode_us":self.encode_us,"encode_max_us":self.encode_max_us,"convert_us":self.convert_us,"write_us":self.write_us,"write_max_us":self.write_max_us,"key_records":self.keys,"delta_records":self.deltas,"repeat_records":self.repeats,"key_bytes":self.key_bytes,"delta_bytes":self.delta_bytes})} }
+impl Stats { pub fn json(self)->Value {json!({"rectangle_records":self.rect_records,"rectangle_bytes":self.rect_bytes,"delta_mean_bytes":self.delta_bytes/self.deltas.max(1),"delta_max_bytes":self.delta_max_bytes,"setup_us":self.setup_us,"sync_us":self.sync_us,"sync_max_us":self.sync_max_us,"encode_mean_us":self.encode_us/(self.keys+self.deltas+self.repeats).max(1),"write_mean_us":self.write_us/(self.keys+self.deltas+self.repeats).max(1),"encode_us":self.encode_us,"encode_max_us":self.encode_max_us,"convert_us":self.convert_us,"write_us":self.write_us,"write_max_us":self.write_max_us,"key_records":self.keys,"delta_records":self.deltas,"repeat_records":self.repeats,"key_bytes":self.key_bytes,"delta_bytes":self.delta_bytes})} }
 pub fn frame_bytes(width:u32,height:u32,fps:u32)->io::Result<usize> {
  if !(1..=60).contains(&fps) {return Err(io::Error::new(io::ErrorKind::InvalidInput,"invalid fps"));}
  (width as usize).checked_mul(height as usize).and_then(|n|n.checked_mul(4)).filter(|n|*n>0&&*n<=MAX_FRAME_BYTES).ok_or_else(||io::Error::new(io::ErrorKind::InvalidInput,"invalid dimensions"))
+}
+/// Derive a changed rectangle from XOR pixels, never from trusted damage.
+pub fn compress_delta(delta:&[u8],width:u32,height:u32)->io::Result<(u8,Vec<u8>)> {
+    if delta.len()!=frame_bytes(width,height,30)? {return Err(io::Error::new(io::ErrorKind::InvalidInput,"invalid delta size"));}
+    let Some(first)=delta.iter().position(|b|*b!=0) else {return Ok((REPEAT,Vec::new()));};
+    let last=delta.iter().rposition(|b|*b!=0).unwrap();
+    let stride=width as usize*4;
+    let (top,bottom)=(first/stride,last/stride+1);
+    let (mut left,mut right)=(width as usize,0usize);
+    for row in delta[top*stride..bottom*stride].chunks_exact(stride) {
+        if let Some(x)=row.iter().position(|b|*b!=0) {
+            left=left.min(x/4);
+            right=right.max(row.iter().rposition(|b|*b!=0).unwrap()/4+1);
+        }
+    }
+    let (w,h)=(right-left,bottom-top);
+    if w*h>=width as usize*height as usize*3/4 {return Ok((DELTA,lz4_flex::block::compress(delta)));}
+    let mut rectangle=Vec::with_capacity(w*h*4);
+    for y in top..bottom {rectangle.extend_from_slice(&delta[y*stride+left*4..y*stride+right*4]);}
+    let mut payload=Vec::new();
+    for coordinate in [left,top,w,h] {payload.extend_from_slice(&(coordinate as u32).to_le_bytes());}
+    payload.extend_from_slice(&lz4_flex::block::compress(&rectangle));
+    Ok((RECT_DELTA,payload))
 }
 fn create(path: &Path) -> io::Result<File> {
     OpenOptions::new()
@@ -94,7 +120,11 @@ impl Writer {
         self.stats.write_max_us = self.stats.write_max_us.max(elapsed);
         match kind {
             KEY => { self.stats.keys+=1;self.stats.key_bytes+=payload.len() as u64; }
-            DELTA => { self.stats.deltas+=1;self.stats.delta_bytes+=payload.len() as u64; }
+            DELTA | RECT_DELTA => {
+                self.stats.deltas+=1;self.stats.delta_bytes+=payload.len() as u64;
+                self.stats.delta_max_bytes=self.stats.delta_max_bytes.max(payload.len() as u64);
+                if kind==RECT_DELTA {self.stats.rect_records+=1;self.stats.rect_bytes+=payload.len() as u64;}
+            }
             _ => self.stats.repeats+=1,
         }
         Ok(())
@@ -112,7 +142,7 @@ impl Writer {
                 .zip(pixels.iter())
                 .map(|(a, b)| a ^ b)
                 .collect();
-            (DELTA, lz4_flex::block::compress(&delta))
+            compress_delta(&delta,self.width,self.height)?
         };
         let elapsed = started.elapsed().as_micros() as u64;
         self.stats.encode_us+=elapsed;

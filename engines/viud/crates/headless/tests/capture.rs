@@ -132,7 +132,7 @@ fn record_idle_content_clock_ignores_capture_repaints() {
 fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
     let manifest: Value =
         serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
-    assert_eq!(manifest["version"], 1);
+    assert!([json!(1),json!(2)].contains(&manifest["version"]));
     let size = manifest["width"].as_u64().unwrap() as usize
         * manifest["height"].as_u64().unwrap() as usize
         * 4;
