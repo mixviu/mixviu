@@ -134,6 +134,17 @@ fn rectangle_boundaries_and_whole_frame_fallback() {
     );
     assert_eq!(media_vfl::compress_delta(&[0; 64], 4, 4).unwrap().0, REPEAT);
     assert!(media_vfl::compress_delta(&[0; 63], 4, 4).is_err());
+    // Off-origin, multirow ROI: rows must be packed without canvas stride.
+    let mut delta = vec![0; 64];
+    delta[20..28].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+    delta[36..44].copy_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
+    let (kind, payload) = media_vfl::compress_delta(&delta, 4, 4).unwrap();
+    assert_eq!(kind, RECT_DELTA);
+    assert_eq!(
+        &payload[..16],
+        &[1u32, 1, 2, 2].into_iter().flat_map(u32::to_le_bytes).collect::<Vec<_>>()
+    );
+    assert_eq!(lz4_flex::block::decompress(&payload[16..], 16).unwrap(), (1..=16).collect::<Vec<u8>>());
 }
 #[test]
 #[ignore = "payload measurement on a CBC worker, generated content only"]

@@ -597,7 +597,15 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     fail(session, "output generation changed");
                     return;
                 }
-                signature.push(lp.state.redraw.capture_revision());
+                let paused = matches!(lp.inner.status_session, world::state::StatusSession::Paused);
+                signature.push(u64::from(paused));
+                signature.push(if paused {
+                    // No presentation clock while paused. Conservatively sample
+                    // real scene requests; capture requests are excluded here too.
+                    lp.state.redraw.capture_request_revision()
+                } else {
+                    lp.state.redraw.capture_revision(&world::state::output_key(output))
+                });
             }
         }
         signature

@@ -44,6 +44,7 @@ struct Pipe {
     in_flight: bool,
     deferred: bool,
     flips: u64,
+    capture_revision: u64,
 }
 
 /// A frame wanted at an instant rather than now: one
@@ -206,20 +207,28 @@ impl Schedule {
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
-    /// Scene changes a recorder must sample. Capture and backend continuation
-    /// requests can repaint identical content; page flips never advance this.
-    pub fn capture_revision(&self) -> u64 {
+    /// Conservative scene-request clock for paused outputs, which have no
+    /// submitted frames. Capture and backend continuations never advance it.
+    pub fn capture_request_revision(&self) -> u64 {
         self.capture_revision
     }
-    fn changed_for_capture(&mut self, reason: RedrawReason) {
-        if !matches!(
+    /// Changed submitted scenes on this output. A sibling's empty render and
+    /// capture-only redraws do not invalidate an idle recording.
+    pub fn capture_revision(&self, key: &str) -> u64 {
+        self.get(key).map_or(0, |p| p.capture_revision)
+    }
+    fn scene_reason(reason: RedrawReason) -> bool {
+        !matches!(
             reason,
             RedrawReason::Capture
                 | RedrawReason::Rescue
                 | RedrawReason::Watchdog
                 | RedrawReason::Settle
                 | RedrawReason::Rearm
-        ) {
+        )
+    }
+    fn changed_for_capture(&mut self, reason: RedrawReason) {
+        if Self::scene_reason(reason) {
             self.capture_revision = self.capture_revision.wrapping_add(1);
         }
     }
@@ -357,7 +366,12 @@ impl Schedule {
     /// rendered with nothing to submit (`empty == true`). Returns the reasons
     /// it answered; empty means nobody asked for it.
     pub fn frame(&mut self, key: &str, empty: bool) -> ReasonSet {
-        self.ledger.note_frame(key, empty)
+        let reasons = self.ledger.note_frame(key, empty);
+        if !empty && reasons.iter().any(Self::scene_reason) {
+            let pipe = self.entry(key);
+            pipe.capture_revision = pipe.capture_revision.wrapping_add(1);
+        }
+        reasons
     }
     /// The per-reason frame ledger.
     pub fn ledger(&self) -> &FrameLedger {
@@ -381,6 +395,7 @@ impl Schedule {
                     in_flight: false,
                     deferred: false,
                     flips: 0,
+                    capture_revision: 0,
                 });
                 self.pipes.len() - 1
             }
@@ -398,7 +413,9 @@ mod tests {
     fn recording_does_not_observe_its_own_kms_flips_as_content() {
         let mut schedule = Schedule::new();
         schedule.register("kms");
-        let original = schedule.capture_revision();
+        schedule.frame("kms", false); // Answer FirstFrame before recording.
+        let original = schedule.capture_revision("kms");
+        let requested = schedule.capture_request_revision();
         for _ in 0..602 {
             schedule.request_for(RedrawReason::Capture);
             schedule.rendering("kms");
@@ -406,7 +423,8 @@ mod tests {
             schedule.frame("kms", false);
             schedule.vblank("kms");
         }
-        assert_eq!(schedule.capture_revision(), original);
+        assert_eq!(schedule.capture_revision("kms"), original);
+        assert_eq!(schedule.capture_request_revision(), requested);
         for reason in [
             RedrawReason::WindowState,
             RedrawReason::Cursor,
@@ -415,10 +433,29 @@ mod tests {
             RedrawReason::Background,
             RedrawReason::Commit,
         ] {
-            let before = schedule.capture_revision();
+            let before = schedule.capture_revision("kms");
             schedule.request_for(reason);
-            assert_ne!(schedule.capture_revision(), before);
+            schedule.frame("kms", false);
+            assert_ne!(schedule.capture_revision("kms"), before);
         }
+    }
+
+    #[test]
+    fn sibling_changes_do_not_invalidate_an_idle_output() {
+        let mut schedule = Schedule::new();
+        schedule.frame("a", false);
+        schedule.frame("b", false);
+        let a = schedule.capture_revision("a");
+        let b = schedule.capture_revision("b");
+        schedule.request_for(RedrawReason::Commit);
+        schedule.frame("a", true);
+        schedule.frame("b", false);
+        assert_eq!(schedule.capture_revision("a"), a);
+        assert_ne!(schedule.capture_revision("b"), b);
+        // Capture can still submit a full KMS frame without changing content.
+        schedule.request_for(RedrawReason::Capture);
+        schedule.frame("a", false);
+        assert_eq!(schedule.capture_revision("a"), a);
     }
 
     struct Data {

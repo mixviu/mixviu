@@ -152,3 +152,11 @@ the compositor. Record counts and key/delta/rectangle payload byte totals
 (excluding 17-byte record headers) show the resulting storage cost. Fatal
 writer errors fail the take explicitly; a missing completion receipt never
 promises that its queued tail was stored.
+
+Active output sampling follows that output's submitted scene changes, excluding
+capture and backend continuation requests. Empty renders caused by another
+output do not advance it. Paused outputs have no submitted-frame clock and use
+the conservative scene-request clock instead, with capture requests excluded;
+unrelated changes on another output can still cause an extra paused readback.
+Switching between those clocks forces a fresh sample. Neither clock is a pixel
+hash; the writer determines repeats from the actual accepted pixels.
