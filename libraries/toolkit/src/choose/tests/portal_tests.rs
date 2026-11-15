@@ -83,6 +83,25 @@ pub(super) async fn connection(address: &str) -> Connection {
         .unwrap()
 }
 
+async fn serve_interface<I: zbus::object_server::Interface>(
+    address: &str,
+    path: &str,
+    interface: I,
+) -> Connection {
+    // Lazy object_server().at() only stores the object: its dispatcher can
+    // still be waiting to install the local MethodCall subscription. A call
+    // read before that subscription exists is discarded, not queued for it.
+    // Builder::build waits for dispatcher readiness before starting its socket
+    // reader, so the first request is safe without a sleep or a warm-up call.
+    zbus::connection::Builder::address(address)
+        .unwrap()
+        .serve_at(path, interface)
+        .unwrap()
+        .build()
+        .await
+        .unwrap()
+}
+
 struct RequestObject(Arc<AtomicUsize>);
 #[zbus::interface(name = "org.freedesktop.portal.Request")]
 impl RequestObject {
@@ -205,14 +224,12 @@ async fn portal_cancel_interrupts_a_hung_recovery_close() {
 
 async fn teardown_session(recovery: bool) {
     let (_process, address) = dbus();
-    let server = connection(&address).await;
     let (close_tx, mut closes) = tokio::sync::mpsc::unbounded_channel();
     let (method_tx, mut methods) = tokio::sync::mpsc::unbounded_channel();
     let (method_release, method_gate) = watch::channel(recovery);
     let (close_release, close_gate) = watch::channel(false);
-    server
-        .object_server()
-        .at(
+    let server = serve_interface(
+            &address,
             PATH,
             TeardownPortal {
                 close_entered: close_tx,
@@ -220,9 +237,7 @@ async fn teardown_session(recovery: bool) {
                 method_release: method_gate,
                 close_release: close_gate,
             },
-        )
-        .await
-        .unwrap();
+        ).await;
     server.request_name(DESKTOP).await.unwrap();
     let client = connection(&address).await;
     let (cancel, mut cancelled) = watch::channel(false);
@@ -439,12 +454,10 @@ async fn serve_gated(
     tokio::sync::mpsc::UnboundedReceiver<Call>,
     Arc<AtomicUsize>,
 ) {
-    let connection = connection(address).await;
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let closed = Arc::new(AtomicUsize::new(0));
-    connection
-        .object_server()
-        .at(
+    let connection = serve_interface(
+            address,
             PATH,
             Portal {
                 calls: tx,
@@ -452,9 +465,7 @@ async fn serve_gated(
                 early,
                 version_gate,
             },
-        )
-        .await
-        .unwrap();
+        ).await;
     connection.request_name(DESKTOP).await.unwrap();
     (connection, rx, closed)
 }
@@ -846,14 +857,9 @@ async fn portal_close_unknown_method_is_an_acknowledged_end() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn portal_close_fast_success_calls_the_request_close_method() {
     let (_process, address) = dbus();
-    let server = connection(&address).await;
     let closed = Arc::new(AtomicUsize::new(0));
     let path = "/org/freedesktop/portal/desktop/request/fast";
-    server
-        .object_server()
-        .at(path, RequestObject(closed.clone()))
-        .await
-        .unwrap();
+    let server = serve_interface(&address, path, RequestObject(closed.clone())).await;
     let client = connection(&address).await;
     let result = tokio::time::timeout(
         portal::CLOSE_BOUND + IO_BOUND,
@@ -885,22 +891,18 @@ async fn real_time_bound<T>(future: impl std::future::Future<Output = T>) -> T {
 
 async fn gated_close(unknown_method: bool, answer: bool) {
     let (_process, address) = dbus();
-    let server = connection(&address).await;
     let path = "/org/freedesktop/portal/desktop/request/gated";
     let (entered_tx, mut entered) = tokio::sync::mpsc::unbounded_channel();
     let (release, gate) = watch::channel(false);
-    server
-        .object_server()
-        .at(
+    let server = serve_interface(
+            &address,
             path,
             GatedClose {
                 entered: entered_tx,
                 release: gate,
                 unknown_method,
             },
-        )
-        .await
-        .unwrap();
+        ).await;
     let client = connection(&address).await;
     let owner = server.unique_name().unwrap().as_str().to_owned();
     // Bound the whole call independently of production: a broken Close without
