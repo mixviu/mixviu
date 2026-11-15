@@ -244,7 +244,7 @@ impl Recording {
             &encoder_name,
         )?;
         let bytes = encoder.bytes_handle();
-        let writer_metrics=encoder.metrics_handle();
+        let writer_metrics = encoder.metrics_handle();
         Ok(Self {
             session,
             path,
@@ -259,7 +259,10 @@ impl Recording {
             frames: 0,
             repeated: 0,
             dropped: 0,
-            dropped_capture:0,readback_deferred:0,pending_ticks:0,writer_metrics,
+            dropped_capture: 0,
+            readback_deferred: 0,
+            pending_ticks: 0,
+            writer_metrics,
             error: None,
             terminal: None,
             seq: 0,
@@ -309,7 +312,12 @@ impl Recording {
         if let Some(error) = encoder.error() {
             return Err(error);
         }
-        if !encoder.try_push_rgb_change(self.last.clone(), self.source_width, self.source_height,changed) {
+        if !encoder.try_push_rgb_change(
+            self.last.clone(),
+            self.source_width,
+            self.source_height,
+            changed,
+        ) {
             if changed {
                 self.dropped += 1;
             }
@@ -344,10 +352,12 @@ impl Recording {
         true
     }
     pub fn superseded_capture(&mut self) {
-        self.dropped+=1;
-        self.dropped_capture+=1;
+        self.dropped += 1;
+        self.dropped_capture += 1;
     }
-    pub fn pending_tick(&mut self) {self.pending_ticks+=1;}
+    pub fn pending_tick(&mut self) {
+        self.pending_ticks += 1;
+    }
 
     pub fn status(&self) -> Value {
         json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"encoders":["vfl"],"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
@@ -434,6 +444,25 @@ impl Drop for Recording {
 mod file_tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
+    #[test]
+    fn readback_deferral_is_not_a_lost_change() {
+        let dir=std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let mut r=Recording::new("debt".into(),dir.join("debt.vfl").to_str().unwrap().into(),2,2,30,"vfl".into()).unwrap();
+        r.frame(Some((2,2,Arc::new(vec![0;12]),14000))).unwrap();
+        assert!(r.skip_readback(true));
+        assert_eq!(r.dropped,0);
+        assert_eq!(r.readback_deferred,1);
+        r.frame(None).unwrap();
+        assert!(!r.skip_readback(false));
+        assert_eq!(r.dropped,0);
+        r.superseded_capture();
+        assert_eq!(r.dropped,1);
+        assert_eq!(r.dropped_capture,1);
+        r.stop(true);
+        while !r.poll() {std::thread::sleep(std::time::Duration::from_millis(5));}
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn failed_parent_sync_reports_published_directory() {
         let dir = std::env::temp_dir().join(private_token().unwrap());

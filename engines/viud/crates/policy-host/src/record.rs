@@ -193,7 +193,9 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             if target.window.is_none() {
                 let outputs: Vec<_> = lp.inner.space_state().state.outputs().cloned().collect();
                 let output = if let Some(name) = &target.output {
-                    outputs.iter().find(|o| o.name() == *name || comp_model::snapshot::output_key(&o.name()) == *name)
+                    outputs.iter().find(|o| {
+                        o.name() == *name || comp_model::snapshot::output_key(&o.name()) == *name
+                    })
                 } else {
                     outputs
                         .iter()
@@ -266,7 +268,7 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             stop_answers: Vec::new(),
             pending: false,
             signature: Vec::new(),
-            deferred_signature:None,
+            deferred_signature: None,
             failed: None,
             last_state: Cell::new(""),
         }));
@@ -423,6 +425,13 @@ fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) {
     fail(session, message);
 }
 
+fn superseded(pending: &mut Option<Vec<u64>>, current: &[u64]) -> bool {
+    if pending.as_ref().is_some_and(|old| old != current) {
+        *pending = None;
+        true
+    } else {false}
+}
+
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     let clock = recorder::bus::monotonic_us();
     {
@@ -575,15 +584,24 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     };
     let mut s = session.borrow_mut();
     let unchanged = s.signature == signature;
-    if s.deferred_signature.as_ref().is_some_and(|old| *old != signature) {
-        if let Some(r)=s.recording.as_mut() {r.superseded_capture();}
-        s.deferred_signature=None;
+    if superseded(&mut s.deferred_signature,&signature) {
+        if let Some(r) = s.recording.as_mut() {
+            r.superseded_capture();
+        }
+        s.deferred_signature = None;
     }
     if s.pending {
-        if !unchanged {s.deferred_signature=Some(signature);}
-        let result = s.recording.as_mut().map(|r| {r.pending_tick();r.frame(None)});
+        if !unchanged {
+            s.deferred_signature = Some(signature);
+        }
+        let result = s.recording.as_mut().map(|r| {
+            r.pending_tick();
+            r.frame(None)
+        });
         drop(s);
-        if let Some(Err(error))=result {fail(session,&error);}
+        if let Some(Err(error)) = result {
+            fail(session, &error);
+        }
         return;
     }
     let skipped = s
@@ -591,7 +609,9 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         .as_mut()
         .is_some_and(|r| r.skip_readback(!unchanged));
     if unchanged || skipped {
-        if skipped {s.deferred_signature=Some(signature);}
+        if skipped {
+            s.deferred_signature = Some(signature);
+        }
         let result = s.recording.as_mut().unwrap().frame(None);
         drop(s);
         if let Err(error) = result {
@@ -600,7 +620,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         return;
     }
     s.signature = signature;
-    s.deferred_signature=None;
+    s.deferred_signature = None;
     s.pending = true;
     let targets = s.targets.clone();
     let counter = s.pixel_counter;
@@ -666,7 +686,9 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             };
             let mut s = session.borrow_mut();
             s.pending = false;
-            if s.deferred_signature.as_ref()==Some(&s.signature) {s.deferred_signature=None;}
+            if s.deferred_signature.as_ref() == Some(&s.signature) {
+                s.deferred_signature = None;
+            }
             if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
                 return;
             }
@@ -720,6 +742,16 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stable_deferred_content_is_not_dropped_every_tick() {
+        let mut waiting=Some(vec![7]);
+        for _ in 0..602 {assert!(!superseded(&mut waiting,&[7]));}
+        assert!(superseded(&mut waiting,&[8]));
+        assert!(!superseded(&mut waiting,&[8]));
+        waiting=Some(vec![8]);
+        assert!(!superseded(&mut waiting,&[8]));
+        assert!(superseded(&mut waiting,&[9]));
+    }
     fn stop_reply(id: &str) -> bool {
         let answered = Rc::new(Cell::new(None));
         let got = answered.clone();
@@ -764,7 +796,7 @@ mod tests {
             stop_answers: vec![],
             pending: true,
             signature: vec![],
-            deferred_signature:None,
+            deferred_signature: None,
             failed: None,
             last_state: Cell::new(""),
         }));

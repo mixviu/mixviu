@@ -212,7 +212,14 @@ impl Schedule {
         self.capture_revision
     }
     fn changed_for_capture(&mut self, reason: RedrawReason) {
-        if !matches!(reason, RedrawReason::Capture | RedrawReason::Rescue | RedrawReason::Watchdog | RedrawReason::Settle | RedrawReason::Rearm) {
+        if !matches!(
+            reason,
+            RedrawReason::Capture
+                | RedrawReason::Rescue
+                | RedrawReason::Watchdog
+                | RedrawReason::Settle
+                | RedrawReason::Rearm
+        ) {
             self.capture_revision = self.capture_revision.wrapping_add(1);
         }
     }
@@ -399,11 +406,18 @@ mod tests {
             schedule.frame("kms", false);
             schedule.vblank("kms");
         }
-        assert_eq!(schedule.capture_revision(),original);
-        for reason in [RedrawReason::WindowState,RedrawReason::Cursor,RedrawReason::Publish,RedrawReason::Animation,RedrawReason::Background,RedrawReason::Commit] {
+        assert_eq!(schedule.capture_revision(), original);
+        for reason in [
+            RedrawReason::WindowState,
+            RedrawReason::Cursor,
+            RedrawReason::Publish,
+            RedrawReason::Animation,
+            RedrawReason::Background,
+            RedrawReason::Commit,
+        ] {
             let before = schedule.capture_revision();
             schedule.request_for(reason);
-            assert_ne!(schedule.capture_revision(),before);
+            assert_ne!(schedule.capture_revision(), before);
         }
     }
 

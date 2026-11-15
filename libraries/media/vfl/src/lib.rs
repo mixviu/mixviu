@@ -11,11 +11,12 @@ pub const MAX_FRAME_BYTES:usize=256*1024*1024;
 pub const CHUNK_BYTES:u64=64*1024*1024;
 #[derive(Clone,Copy,Debug,Default)]
 pub struct Stats {
+ pub setup_us:u64, pub sync_us:u64, pub sync_max_us:u64,
  pub encode_us:u64, pub encode_max_us:u64, pub convert_us:u64,
  pub write_us:u64, pub write_max_us:u64, pub keys:u64, pub deltas:u64,
  pub repeats:u64, pub key_bytes:u64, pub delta_bytes:u64,
 }
-impl Stats { pub fn json(self)->Value {json!({"encode_us":self.encode_us,"encode_max_us":self.encode_max_us,"convert_us":self.convert_us,"write_us":self.write_us,"write_max_us":self.write_max_us,"key_records":self.keys,"delta_records":self.deltas,"repeat_records":self.repeats,"key_bytes":self.key_bytes,"delta_bytes":self.delta_bytes})} }
+impl Stats { pub fn json(self)->Value {json!({"setup_us":self.setup_us,"sync_us":self.sync_us,"sync_max_us":self.sync_max_us,"encode_mean_us":self.encode_us/(self.keys+self.deltas+self.repeats).max(1),"write_mean_us":self.write_us/(self.keys+self.deltas+self.repeats).max(1),"encode_us":self.encode_us,"encode_max_us":self.encode_max_us,"convert_us":self.convert_us,"write_us":self.write_us,"write_max_us":self.write_max_us,"key_records":self.keys,"delta_records":self.deltas,"repeat_records":self.repeats,"key_bytes":self.key_bytes,"delta_bytes":self.delta_bytes})} }
 pub fn frame_bytes(width:u32,height:u32,fps:u32)->io::Result<usize> {
  if !(1..=60).contains(&fps) {return Err(io::Error::new(io::ErrorKind::InvalidInput,"invalid fps"));}
  (width as usize).checked_mul(height as usize).and_then(|n|n.checked_mul(4)).filter(|n|*n>0&&*n<=MAX_FRAME_BYTES).ok_or_else(||io::Error::new(io::ErrorKind::InvalidInput,"invalid dimensions"))
@@ -124,6 +125,7 @@ impl Writer {
         self.pixels(self.last.clone())
     }
     fn seal(&mut self) -> io::Result<()> {
+        let started=Instant::now();
         self.chunk.sync_all()?;
         let mut receipt = create(&self.path.join(format!("chunk-{:06}.json", self.index)))?;
         receipt.write_all(
@@ -132,7 +134,10 @@ impl Writer {
                 .as_bytes(),
         )?;
         receipt.sync_all()?;
-        File::open(&self.path)?.sync_all()
+        File::open(&self.path)?.sync_all()?;
+        let elapsed=started.elapsed().as_micros() as u64;
+        self.stats.sync_us+=elapsed;self.stats.sync_max_us=self.stats.sync_max_us.max(elapsed);
+        Ok(())
     }
     pub fn frame(&mut self, frame: Frame) -> io::Result<()> {
         if frame.slot < self.next {return Err(io::Error::new(io::ErrorKind::InvalidInput,"frame slots out of order"));}
@@ -183,6 +188,7 @@ impl Writer {
 impl Writer {
  pub fn new(path:PathBuf,width:u32,height:u32,fps:u32)->io::Result<Self> {
   let size=frame_bytes(width,height,fps)?;
+  let setup_started=Instant::now();
             std::fs::DirBuilder::new().mode(0o700).create(&path)?;
             let manifest = json!({"version":VERSION,"width":width,"height":height,"fps":fps,"format":"bgra8","encoder":"vfl-lz4","complete":false,"key_interval":fps*10});
             let mut file = create(&path.join("manifest.json"))?;
@@ -212,7 +218,7 @@ impl Writer {
                 markers,
                 crc: crc32fast::Hasher::new(),
                 total_bytes: 0,
-                stats: Stats::default(),
+                stats: Stats {setup_us:setup_started.elapsed().as_micros() as u64,..Stats::default()},
             })
  }
  pub fn origin(&mut self,t0_us:u64)->io::Result<()> {

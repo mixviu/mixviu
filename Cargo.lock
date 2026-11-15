@@ -3507,13 +3507,11 @@ version = "0.1.2"
 dependencies = [
  "bindgen 0.71.1",
  "cc",
- "crc32fast",
  "gbm",
  "glow",
  "image",
  "libc",
- "lz4_flex",
- "media",
+ "media-vfl",
  "model",
  "pkg-config",
  "pollster 1.0.1",
@@ -5373,8 +5371,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "media"
+name = "media-vfl"
 version = "0.1.2"
+dependencies = [
+ "crc32fast",
+ "libc",
+ "lz4_flex",
+ "serde_json",
+]
 
 [[package]]
 name = "memchr"
