@@ -1125,7 +1125,7 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
         active: false,
         vt: Some(4),
         since_ms: 42,
-                ..SessionSnapshot::default()
+        ..SessionSnapshot::default()
     });
     let (rc, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
     assert_eq!(rc, 0);

@@ -407,7 +407,8 @@ pub fn start_force_close<H: Clone + Eq + Hash>(
     if session_lock {
         return Err(Box::new((ControlReply::Locked, Vec::new())));
     }
-    let record = resolve(registry, id, generation).map_err(|reply| Box::new((reply, Vec::new())))?;
+    let record =
+        resolve(registry, id, generation).map_err(|reply| Box::new((reply, Vec::new())))?;
     Ok(vec![Effect::ClosePolite(record.id())])
 }
 

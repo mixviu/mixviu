@@ -50,7 +50,8 @@ impl Session {
         #[cfg(feature = "backend-native")]
         {
             snapshot.watcher_failed = crate::background::watcher_failed();
-            (snapshot.input_keyboards, snapshot.input_pointers) = native::wire::input::device_counts();
+            (snapshot.input_keyboards, snapshot.input_pointers) =
+                native::wire::input::device_counts();
             snapshot.vt_source_available = Some(kms::seat::session::vt_wait::source_available());
         }
         snapshot
@@ -94,7 +95,11 @@ mod tests {
                         active,
                         vt: Some(3),
                         since_ms,
-                        vt_source_available: if cfg!(feature = "backend-native") { Some(kms::seat::session::vt_wait::source_available()) } else { None },
+                        vt_source_available: if cfg!(feature = "backend-native") {
+                            Some(kms::seat::session::vt_wait::source_available())
+                        } else {
+                            None
+                        },
                         ..SessionSnapshot::default()
                     }
                 );

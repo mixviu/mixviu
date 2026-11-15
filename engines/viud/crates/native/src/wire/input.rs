@@ -3,8 +3,8 @@
 //! Input wiring: the libinput source -> compositor lifecycle + redraw
 //! scheduling. (Ex wire.rs `start()` libinput closure.)
 
-pub mod map;
 mod hotplug;
+pub mod map;
 
 static KEYBOARDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static POINTERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -216,17 +216,28 @@ pub fn register(
         .insert_source(libinput_source, move |event, _, state| {
             match &event {
                 InputEvent::DeviceAdded { device } => {
-                    devices.insert(device.sysname().to_owned(), (
-                        device.has_capability(DeviceCapability::Keyboard),
-                        device.has_capability(DeviceCapability::Pointer),
-                    ));
+                    devices.insert(
+                        device.sysname().to_owned(),
+                        (
+                            device.has_capability(DeviceCapability::Keyboard),
+                            device.has_capability(DeviceCapability::Pointer),
+                        ),
+                    );
                 }
-                InputEvent::DeviceRemoved { device } => { devices.remove(device.sysname()); }
+                InputEvent::DeviceRemoved { device } => {
+                    devices.remove(device.sysname());
+                }
                 _ => {}
             }
             use std::sync::atomic::Ordering::Relaxed;
-            KEYBOARDS.store(devices.values().filter(|(keyboard, _)| *keyboard).count(), Relaxed);
-            POINTERS.store(devices.values().filter(|(_, pointer)| *pointer).count(), Relaxed);
+            KEYBOARDS.store(
+                devices.values().filter(|(keyboard, _)| *keyboard).count(),
+                Relaxed,
+            );
+            POINTERS.store(
+                devices.values().filter(|(_, pointer)| *pointer).count(),
+                Relaxed,
+            );
             if let StatusSession::Paused = state.inner.status_session {
                 return;
             }
