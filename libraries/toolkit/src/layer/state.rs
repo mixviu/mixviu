@@ -301,7 +301,7 @@ impl<P: LayerProgram + 'static> State<P> {
                     surface.frame_pending = false;
                     surface.pending_since = None;
                     surface.frame_gen = surface.frame_gen.wrapping_add(1);
-                    hide_fling(&mut surface.kinetic, &mut surface.events, &mut surface.dirty);
+                    hide_fling(&mut surface.kinetic, &mut surface.events, &mut surface.repaint_at, &mut surface.dirty);
                     self.program.visibility(&surface.ctx, false);
                 }
                 surface.requested = next;
@@ -482,7 +482,7 @@ impl<P: LayerProgram + 'static> State<P> {
         let Some(delay) = self
             .surfaces
             .iter()
-            .find(|s| s.id == id)
+            .find(|s| s.id == id && s.visible)
             .and_then(|s| self.program.repaint_delay(&s.ctx, delay))
         else {
             return;
@@ -817,11 +817,12 @@ fn cancel_fling(
     }
 }
 
-fn hide_fling(kinetic: &mut kinetic::Kinetic, events: &mut Vec<egui::Event>, dirty: &mut bool) {
+fn hide_fling(kinetic: &mut kinetic::Kinetic, events: &mut Vec<egui::Event>, repaint_at: &mut Option<Instant>, dirty: &mut bool) {
     cancel_fling(kinetic, events, false, dirty);
     // Preserve the one Cancel for egui to consume on reshow, clearing other
     // pending input. Later interrupts leave this queue and dirty bit untouched.
     events.retain(|e| *e == cancel_scroll());
+    *repaint_at = None;
     *dirty = false;
 }
 
@@ -899,17 +900,18 @@ mod tests {
         let mut k = test_fling(Instant::now());
         let mut events = vec![momentum_event(egui::Vec2::splat(4.0))];
         let mut dirty = true;
-        assert!(timer.arm(&handle, k.deadline(), |fired| *fired += 1));
+        let mut repaint_at = Some(Instant::now() + Duration::from_secs(2));
+        assert!(timer.arm(&handle, kinetic::deadline(repaint_at, k.deadline()), |fired| *fired += 1));
         assert!(timer.is_armed());
-        hide_fling(&mut k, &mut events, &mut dirty);
-        assert!(timer.arm(&handle, k.deadline(), |fired| *fired += 1));
+        hide_fling(&mut k, &mut events, &mut repaint_at, &mut dirty);
+        assert!(timer.arm(&handle, kinetic::deadline(repaint_at, k.deadline()), |fired| *fired += 1));
         let hidden_events = events.clone();
         assert_eq!(hidden_events, vec![cancel_scroll()]);
         for _ in 0..20 {
             for event in interrupts() {
                 assert!(kinetic::Kinetic::interrupts(&event));
                 cancel_fling(&mut k, &mut events, false, &mut dirty);
-                assert!(timer.arm(&handle, k.deadline(), |fired| *fired += 1));
+                assert!(timer.arm(&handle, kinetic::deadline(repaint_at, k.deadline()), |fired| *fired += 1));
                 assert!(!dirty);
                 assert_eq!(events, hidden_events);
                 assert!(!timer.is_armed());
@@ -954,6 +956,23 @@ mod tests {
             assert!(dirty);
             assert_eq!(k.deadline(), None);
         }
+    }
+
+    #[test]
+    fn ordinary_finger_updates_keep_velocity_samples_until_release() {
+        let t = Instant::now();
+        let mut k = kinetic::Kinetic::default();
+        let mut events = Vec::new();
+        let mut dirty = false;
+        for ms in [0, 16] {
+            let delta = egui::Vec2::splat(10.0);
+            restart_fling(&mut k, &mut events, Some(true), delta, [false; 2], true, &mut dirty);
+            k.axis(ms, t + Duration::from_millis(u64::from(ms)), Some(true), delta, [false; 2]);
+        }
+        k.axis(16, t + kinetic::FRAME, None, egui::Vec2::ZERO, [true; 2]);
+        assert!(k.deadline().is_some());
+        assert!(events.is_empty());
+        assert!(!dirty);
     }
 
     #[test]
