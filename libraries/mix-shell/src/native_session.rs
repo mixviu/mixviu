@@ -631,6 +631,9 @@ async fn own(
                 biased;
                 Some(ack) = restart.recv() => {
                     renewal = None;
+                    // A partially written refusal may own the shared sink.
+                    // Release it before revocation needs that same writer.
+                    refusal = None;
                     requests.abort_all();
                     while requests.join_next().await.is_some() {}
                     let revoked = revoke_for_restart(&mut bootstrap, Some(&connection), record.as_ref().or(last_record.as_ref()), &url, &options).await;
