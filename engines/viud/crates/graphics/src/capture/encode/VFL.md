@@ -87,7 +87,8 @@ production reader and verifier. No reader is shipped by this writer change.
 ## Scheduling
 
 One writer thread owns conversion, compression and all frame/marker disk I/O.
-The channel holds four messages (frames or markers); admission uses
+The channel holds eight messages, with frame admission limited to four
+occupied slots so markers have reserved capacity; admission uses
 `try_send`. A full queue increments the dropped counter and releases that
 frame allocation. The writer fills slot gaps and the dropped tail with repeats,
 preserving CFR without retaining an unbounded frame backlog. The compositor

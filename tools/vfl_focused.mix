@@ -17,6 +17,10 @@ elif $mode == "capture" then
   ["cargo","test","-p","headless","--test","capture","record_","--","--nocapture","--test-threads=1"]
 elif $mode == "bench" then
   ["cargo","test","-p","headless","--test","capture","benchmark_record_ui_static_10min","--","--ignored","--nocapture","--test-threads=1"]
+elif $mode == "foreign" then
+  ["mix","tools/foreign_gate.mix"]
+elif $mode == "clippy" then
+  ["cargo","clippy","--locked","-p","graphics","-p","recorder","-p","comp-model","-p","policy-host","-p","headless","-p","media","--all-targets"]
 else
   raise("VFL_CHECK","unknown mode")
 end

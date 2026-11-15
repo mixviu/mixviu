@@ -439,6 +439,18 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 Ok(Err(error)) => {
                     drop(s);
                     fail(session, &error);
+                    // Destination preflight has not admitted a take. Preserve
+                    // the previous retry contract for an existing path.
+                    let key = session.borrow().request_id.clone();
+                    PAST.with_borrow_mut(|past| {
+                        past.entries.remove(&key);
+                        past.order.retain(|entry| entry != &key);
+                    });
+                    CURRENT.with_borrow_mut(|current| {
+                        if current.as_ref().is_some_and(|s| Rc::ptr_eq(s, session)) {
+                            *current = None;
+                        }
+                    });
                     return;
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {

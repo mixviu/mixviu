@@ -124,7 +124,11 @@ impl TakeFiles {
     }
     fn cleanup(&self) {
         for path in [&self.video, &self.frames, &self.markers] {
-            if std::path::Path::new(path).is_dir() { let _ = std::fs::remove_dir_all(path); } else { let _ = std::fs::remove_file(path); }
+            if std::path::Path::new(path).is_dir() {
+                let _ = std::fs::remove_dir_all(path);
+            } else {
+                let _ = std::fs::remove_file(path);
+            }
         }
     }
     fn publish(&self) -> Result<(), String> {
@@ -291,7 +295,10 @@ impl Recording {
             return Err("session is not recording".into());
         }
         let row = json!({"seq":self.seq,"frame":self.frames-1,"t_us":monotonic_us()?-self.t0_us,"label":label,"data":data});
-        self.encoder.as_ref().ok_or("recording is finishing")?.marker(row.clone())?;
+        self.encoder
+            .as_ref()
+            .ok_or("recording is finishing")?
+            .marker(row.clone())?;
         self.seq += 1;
         Ok(json!({"session":self.session,"seq":row["seq"],"frame":row["frame"],"t_us":row["t_us"]}))
     }
@@ -328,7 +335,9 @@ impl Recording {
                 files.cleanup();
                 result.map(|_| ())
             } else if failed {
-                result.and(Err("recording failed; staged VFL retained for recovery".into()))
+                result.and(Err(
+                    "recording failed; staged VFL retained for recovery".into()
+                ))
             } else {
                 result.and_then(|_| files.publish())
             };
@@ -356,7 +365,7 @@ impl Recording {
             Err(std::sync::mpsc::TryRecvError::Empty) => return false,
         };
         if let Err(error) = result {
-            self.error = Some(error);
+            self.error.get_or_insert(error);
         }
         self.finishing = None;
         if let Some(join) = self.finaliser.take() {
@@ -364,7 +373,7 @@ impl Recording {
         }
         let kept = self.stop_discard == Some(false) && self.error.is_none();
         self.terminal = Some(
-            json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
+            json!({"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
         true
     }

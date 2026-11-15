@@ -109,10 +109,17 @@ fn target(row: &Value) -> Value {
 // Test-only container inspection, independent of the writer's counters. R2
 // owns a production reader. Retain only the first image so 4K tests stay bounded.
 fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
-    let manifest: Value = serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
-    assert_eq!(manifest["version"],1);
-    let size = manifest["width"].as_u64().unwrap() as usize * manifest["height"].as_u64().unwrap() as usize * 4;
-    let mut chunks: Vec<_> = fs::read_dir(path).unwrap().map(|e|e.unwrap().path()).filter(|p|p.extension().is_some_and(|e|e=="bin")).collect();
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["version"], 1);
+    let size = manifest["width"].as_u64().unwrap() as usize
+        * manifest["height"].as_u64().unwrap() as usize
+        * 4;
+    let mut chunks: Vec<_> = fs::read_dir(path)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "bin"))
+        .collect();
     chunks.sort();
     let mut first = Vec::new();
     let mut count = 0;
@@ -120,21 +127,27 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
         let bytes = fs::read(chunk).unwrap();
         let mut at = 0;
         while at < bytes.len() {
-            let h = &bytes[at..at+17];
+            let h = &bytes[at..at + 17];
             let len = u32::from_le_bytes(h[..4].try_into().unwrap()) as usize;
-            let body = &bytes[at+8..at+17+len];
-            assert_eq!(crc32fast::hash(body),u32::from_le_bytes(h[4..8].try_into().unwrap()));
-            assert_eq!(u64::from_le_bytes(h[8..16].try_into().unwrap()),count);
+            let body = &bytes[at + 8..at + 17 + len];
+            assert_eq!(
+                crc32fast::hash(body),
+                u32::from_le_bytes(h[4..8].try_into().unwrap())
+            );
+            assert_eq!(u64::from_le_bytes(h[8..16].try_into().unwrap()), count);
             if count == 0 {
-                assert_eq!(h[16],0);
-                let bgra = lz4_flex::block::decompress(&body[9..],size).unwrap();
-                first = bgra.chunks_exact(4).flat_map(|p|[p[2],p[1],p[0]]).collect();
+                assert_eq!(h[16], 0);
+                let bgra = lz4_flex::block::decompress(&body[9..], size).unwrap();
+                first = bgra
+                    .chunks_exact(4)
+                    .flat_map(|p| [p[2], p[1], p[0]])
+                    .collect();
             }
             count += 1;
-            at += 17+len;
+            at += 17 + len;
         }
     }
-    (first,count)
+    (first, count)
 }
 
 #[test]
@@ -249,7 +262,7 @@ fn record_windows_only_content_and_multiple_targets() {
     let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
     assert_eq!(stop["error"], Value::Null, "{stop}");
     let (decoded, _) = vfl_first(Path::new(start["path"].as_str().unwrap()));
-    assert_eq!(decoded.len(),400*160*3);
+    assert_eq!(decoded.len(), 400 * 160 * 3);
     for (x, expected) in [(50, rgb(COLOURS[0])), (250, [0xaa, 0x33, 0x77])] {
         let at = (40 * 400 + x) * 3;
         for (actual, expected) in decoded[at..at + 3].iter().zip(expected) {
@@ -267,7 +280,10 @@ fn record_vaapi_capability_or_clear_failure() {
     let mut process = process::spawn(1, None, "record-vaapi", Some(&bus.url));
     drop(connect(&mut process));
     bus.ready();
-    assert_eq!(bus.call("comp.record.status",json!({}))["encoders"],json!(["vfl"]));
+    assert_eq!(
+        bus.call("comp.record.status", json!({}))["encoders"],
+        json!(["vfl"])
+    );
     bus.call_rc("comp.record.start", json!({"request_id":"mkv","target":{},"path":process.root.join("refused.mkv"),"max_seconds":1}),10);
     bus.call_rc("comp.record.start", json!({"request_id":"vaapi","target":{},"path":process.root.join("refused.vfl"),"max_seconds":1,"encoder":"vaapi"}),10);
 }
@@ -295,30 +311,62 @@ fn benchmark_record_ui_static_10min() {
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
-    let row=bus.window();
-    bus.call("comp.window.place",place_args(&row,json!({"x":100,"y":100})));
-    let measure = |begin:u64,end:u64| -> (u64,u64,usize) {
-        let trace=fs::read_to_string(process.root.join("frames.log")).unwrap();
-        let field=|line:&str,key:&str| -> u64 { line.split_whitespace().find_map(|w|w.strip_prefix(key)?.parse().ok()).unwrap() };
-        let mut times:Vec<u64>=trace.lines().filter(|l|l.contains("stage=headless_frame_cpu ")).filter(|l|(begin..end).contains(&field(l,"start_us="))).map(|l|field(l,"duration_us=")).collect();
-        assert!(!times.is_empty()); times.sort_unstable();
-        (times[times.len()/2],times[times.len()*95/100],times.len())
+    let row = bus.window();
+    bus.call(
+        "comp.window.place",
+        place_args(&row, json!({"x":100,"y":100})),
+    );
+    let measure = |begin: u64, end: u64| -> (u64, u64, usize) {
+        let trace = fs::read_to_string(process.root.join("frames.log")).unwrap();
+        let field = |line: &str, key: &str| -> u64 {
+            line.split_whitespace()
+                .find_map(|w| w.strip_prefix(key)?.parse().ok())
+                .unwrap()
+        };
+        let mut times: Vec<u64> = trace
+            .lines()
+            .filter(|l| l.contains("stage=headless_frame_cpu "))
+            .filter(|l| (begin..end).contains(&field(l, "start_us=")))
+            .map(|l| field(l, "duration_us="))
+            .collect();
+        assert!(!times.is_empty());
+        times.sort_unstable();
+        (
+            times[times.len() / 2],
+            times[times.len() * 95 / 100],
+            times.len(),
+        )
     };
-    let begin=monotonic_ns()/1000;
-    let baseline=Instant::now();
-    while baseline.elapsed()<Duration::from_secs(10) {p.pump();thread::sleep(Duration::from_millis(5));}
-    let before=measure(begin,monotonic_ns()/1000);
+    let begin = monotonic_ns() / 1000;
+    let baseline = Instant::now();
+    while baseline.elapsed() < Duration::from_secs(10) {
+        p.pump();
+        thread::sleep(Duration::from_millis(5));
+    }
+    let before = measure(begin, monotonic_ns() / 1000);
     let start=bus.call("comp.record.start",json!({"request_id":"static-cost","target":{"output":"headless-0"},"path":process.root.join("static.vfl"),"max_seconds":600,"fps":30}));
-    let begin=monotonic_ns()/1000;
-    let take=Instant::now();
-    while take.elapsed()<Duration::from_secs(600) {p.pump();thread::sleep(Duration::from_millis(5));}
-    let end=monotonic_ns()/1000;
-    let stop=bus.call("comp.record.stop",json!({"session":start["session"]}));
-    let during=measure(begin,end);
-    assert_eq!(stop["error"],Value::Null,"{stop}");
-    println!("VFL_STATIC_10MIN generated_static_proxy=true baseline_median_us={} baseline_p95_us={} record_median_us={} record_p95_us={} delta_median_us={} bytes={} dropped={} stats={stop}",before.0,before.1,during.0,during.1,during.0 as i64-before.0 as i64,stop["bytes"],stop["dropped"]);
-    assert_eq!(stop["dropped"],0,"{stop}");
-    assert!(during.0 as i64-before.0 as i64<=2000);
+    let begin = monotonic_ns() / 1000;
+    let take = Instant::now();
+    while take.elapsed() < Duration::from_secs(600) {
+        p.pump();
+        thread::sleep(Duration::from_millis(5));
+    }
+    let end = monotonic_ns() / 1000;
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    let during = measure(begin, end);
+    assert_eq!(stop["error"], Value::Null, "{stop}");
+    println!(
+        "VFL_STATIC_10MIN generated_static_proxy=true baseline_median_us={} baseline_p95_us={} record_median_us={} record_p95_us={} delta_median_us={} bytes={} dropped={} stats={stop}",
+        before.0,
+        before.1,
+        during.0,
+        during.1,
+        during.0 as i64 - before.0 as i64,
+        stop["bytes"],
+        stop["dropped"]
+    );
+    assert_eq!(stop["dropped"], 0, "{stop}");
+    assert!(during.0 as i64 - before.0 as i64 <= 2000);
 }
 
 fn record_4k() {
@@ -391,7 +439,7 @@ fn record_4k() {
     );
     assert!(marker["frame"].as_u64() < stop["frames"].as_u64());
     let (decoded, encoded_frames) = vfl_first(&path);
-    assert_eq!(decoded.len(),3840*2160*3);
+    assert_eq!(decoded.len(), 3840 * 2160 * 3);
     assert_eq!(
         encoded_frames,
         stop["frames"].as_u64().unwrap(),
@@ -517,7 +565,7 @@ fn record_idle_output_lifecycle_and_clock() {
     assert!(frames >= 10, "{stop}");
     assert!(fs::metadata(&path).unwrap().len() > 0);
     let (_, encoded_frames) = vfl_first(&path);
-    assert_eq!(encoded_frames,frames);
+    assert_eq!(encoded_frames, frames);
     let rows: Vec<Value> = fs::read_to_string(start["frames_path"].as_str().unwrap())
         .unwrap()
         .lines()
