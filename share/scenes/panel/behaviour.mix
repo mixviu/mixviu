@@ -84,7 +84,8 @@ $state = {ready: false, windows: [], ws_count: 1, ws_current: 1, ws_names: [], t
   audio_watch: nil, audio_started: 0, audio_retry: 5, audio_retrying: false, audio_unavailable: false,
   model: nil, settings_watch: nil,
   registry_dirty: false, registry_retrying: false, registry_delay: 0.25,
-  tray_dirty: false, tray_retrying: false, tray_delay: 0.25}
+  tray_dirty: false, tray_retrying: false, tray_delay: 0.25,
+  notes_dirty: false, notes_retrying: false, notes_delay: 0.25, windows_dirty: true}
 $first = read_settings()
 $state.tasks_scope = $first.scope ?? "all"
 if $first.scope == nil then eprint("panel: " .. $SETTINGS .. ": " .. $first.why .. "; using \"all\"") end
@@ -264,10 +265,38 @@ end
 
 -- notify.list: the open notifications (notifyd).
 fn fetch_notes()
-  if not contains($state.services, $NOTIFY) then $state.notes_count = 0; return end
-  $out = $r.call($NOTIFY, "notify.list", {})
-  $ok = $out.ok and type($out.value) == "list"
-  $state.notes_count = $ok ? length($out.value) : 0
+  if not contains($state.services, $NOTIFY) then
+    $state.notes_count = 0
+    $state.notes_dirty = false
+    return
+  end
+  $state.notes_dirty = true
+  try
+    $out = $r.call($NOTIFY, "notify.list", {})
+    if $out.ok and type($out.value) == "list" then
+      $state.notes_count = length($out.value)
+      $state.notes_dirty = false
+      $state.notes_delay = 0.25
+      return
+    end
+  catch $message
+    eprint("panel: notification read failed: " .. to_string($message))
+  end
+  if not $state.notes_retrying then
+    $state.notes_retrying = true
+    task_start("notes.retry", "{}")
+  end
+end
+
+on notes.retry async
+  if len(keys($event.headers)) != 0 then return end
+  try
+    sleep($state.notes_delay)
+    $state.notes_delay = min(30, $state.notes_delay * 2)
+  finally
+    $state.notes_retrying = false
+  end
+  if $state.notes_dirty then fetch_notes(); schedule() end
 end
 
 -- Desired popup state is the loader's; applied completion arrives through
@@ -364,7 +393,10 @@ end
 fn rebuild()
   $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return end
-  fetch_windows()
+  if $state.windows_dirty then
+    $state.windows_dirty = false
+    fetch_windows()
+  end
   resolve_icons()
   $model = $m.panel(snapshot(), $state.icons, time())
   $out = $r.publish_model($ctx, $model)
@@ -408,7 +440,6 @@ end
 
 fn resync()
   refresh_registry()
-  $r.call($COMP, "comp.props.watch", {})
   sync_popups()
   refresh_status()
   schedule()
@@ -477,11 +508,17 @@ fn services_changed($live)
   $state.registry_delay = 0.25
   $previous = $state.services
   $state.services = $live
-  -- A registration delivery can hide a restart even when old != new.
+  -- Names-only deliveries can hide a restart even when old != new. Native
+  -- discovery rows do not yet carry registration ids, so every delivery is
+  -- conservatively a sync hint for each present service (no idle poll).
   if contains($live, $TRAY) then fetch_tray() else $state.tray = []; $state.tray_dirty = false end
   fetch_notes()
-  if contains($live, $APPS) and not contains($previous, $APPS) then $state.icons = empty_icons() end
-  if contains($live, $COMP) and not contains($previous, $COMP) then $r.call($COMP, "comp.props.watch", {}) end
+  if contains($live, $APPS) then $state.icons = empty_icons() end
+  if contains($live, $COMP) then
+    $r.call($COMP, "comp.props.watch", {})
+    fetch_windows()
+    $state.windows_dirty = false
+  end
   -- notifyd arrived after the panel: bring the toast up now.
   if contains($live, $NOTIFY) and not contains($previous, $NOTIFY) then task_start("toast_ensure", "{}") end
   if not $state.ready then
@@ -652,6 +689,7 @@ on ws async
   $index = $t.workspace_index($r.event_args($event).item)
   if $index == nil then $r.respond($r.failure("invalid_args", "item.index must be a workspace number")); return end
   $out = $r.call($COMP, "comp.workspace.switch", {index: $index})
+  $state.windows_dirty = true
   schedule()
   $r.respond($out)
 end
@@ -765,6 +803,7 @@ on panel.tasks_scope desc "set the task scope {scope: all|current}, or toggle it
 end
 
 on panel.refresh desc "queue one rebuild from fresh service state {}"
+  $state.windows_dirty = true
   schedule()
   reply(0, json_encode({queued: $state.ready}))
 end
@@ -789,6 +828,7 @@ on props.changed
   if gap($event) then
     resync()
   else
+    if $event.headers.topic == $COMP .. ".props.changed" then $state.windows_dirty = true end
     if $event.headers.topic == $TRAY .. ".props.changed" then service_seen($TRAY); fetch_tray() end
     if $event.headers.topic == $NOTIFY .. ".props.changed" then service_seen($NOTIFY); fetch_notes() end
     schedule()
@@ -798,6 +838,7 @@ end
 -- comp.workspace.changed: count, current or a name moved. The rebuild
 -- re-reads comp.workspaces.list, so the event is only the hint.
 on workspace.changed
+  $state.windows_dirty = true
   if gap($event) then resync() else schedule() end
 end
 

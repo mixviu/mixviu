@@ -740,6 +740,8 @@ async fn worker_connected(
     let mut reported = BTreeMap::new();
     let mut comp_dirty = true;
     let mut comp_retry = None;
+    #[cfg(test)]
+    let mut checkpoints: Vec<bus::IncomingCommand> = Vec::new();
     loop {
         // This samples the Bus epoch coherently, not settingsd availability.
         // Compositor work below is gated directly on the live Bus connection.
@@ -840,6 +842,12 @@ async fn worker_connected(
             .into_iter()
             .chain(comp_retry.filter(|_| client.is_connected()))
             .min();
+        #[cfg(test)]
+        if !comp_dirty && deadline.is_none() && consumer.pending().is_none() {
+            for command in checkpoints.drain(..) {
+                client.respond_parts(command.generation, &command.from, &command.command, command.id.as_deref(), 0, "{\"settled\":true}").await.unwrap();
+            }
+        }
         tokio::select! {
             changed=states.changed()=>{if changed.is_err(){break;} states.borrow_and_update();}
             _=wake.notified()=>{}
@@ -861,9 +869,14 @@ async fn worker_connected(
             }
             command=incoming.recv()=>{
                 let Some(command)=command else {break;};
+                #[cfg(test)]
+                if command.command == "test.checkpoint" { checkpoints.push(command); continue; }
                 if command.is_topic_delivery() {
                     if command.topic()==Some("noded.props.changed") && command.header("broker_service")==Some("noded") && command.header("broker_origin")==Some("local")
                         && let Ok(body)=serde_json::from_str::<Value>(&command.body) {
+                            // Names-only native registry hints cannot identify
+                            // which incarnation changed. Re-sync per delivery
+                            // until native discovery carries registration ids.
                             let arrived = body["path"] == "services.registered" && body["new"].as_array().is_some_and(|names| names.contains(&json!(comp)));
                             if arrived || body["gap"] == true || command.header("gap")==Some("true") {comp_dirty=true;comp_retry=None;reported.clear();}
                     }
@@ -1369,6 +1382,7 @@ mod idle_tests {
         ));
         settings.wait("settings.get", 1).await;
         comp.wait("comp.panel.mode", 1).await;
+        settings.checkpoint("shell").await;
         tokio::time::sleep(Duration::from_millis(1200)).await;
         assert_eq!(settings.count("settings.get"), 1);
         assert_eq!(comp.count("comp.props.watch"), 1);
@@ -1393,6 +1407,7 @@ mod idle_tests {
             .store(1, std::sync::atomic::Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;
         settings.wait("settings.get", 3).await;
+        settings.checkpoint("shell").await;
         settings.assert_read_retry_deadline();
         tokio::time::sleep(Duration::from_millis(1200)).await;
         assert_eq!(
@@ -1420,12 +1435,14 @@ mod idle_tests {
         send.send(Outgoing::Register("example".into(), "bottom".into()))
             .unwrap();
         comp.wait("comp.panel.mode", 3).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        comp.checkpoint("shell").await;
         assert_eq!(comp.count("comp.panel.mode"), 3);
         broker.bounce();
         comp.wait("comp.panel.mode", 4).await;
         settings.wait("settings.get", 4).await;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        // The request counter advances before its reply is applied. Wait
+        // for the worker to finish both comp sync and settings recovery.
+        comp.checkpoint("shell").await;
         assert_eq!(
             comp.count("comp.panel.mode"),
             4,

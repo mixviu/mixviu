@@ -61,12 +61,26 @@ fn wait_state($field, $expected)
   if is_file($tmp .. "/scene-panel.log") then eprint(read_file($tmp .. "/scene-panel.log")) end
   raise("PANEL_IDLE_TEST", "state did not reach " .. $field .. "=" .. json_encode($expected))
 end
+-- Restart the quiescence window on every call or state transition. A call
+-- count alone does not mean its response/rebuild/retry has finished.
+fn quiet()
+  $last = nil
+  $since = monotonic()
+  for $i = 1 to 400
+    $s = call("scene-panel", "panel.test.state").value
+    $now = {calls:filter(split(read_file($tmp .. "/calls"),"\n"),fn($line) = $line!="" and json_parse($line).command!="scenes.model"),state:$s}
+    if not deep_eq($now,$last) then $since=monotonic(); $last=$now end
+    if not $s.rebuilding and not $s.dirty and not $s.tray_dirty and not $s.notes_dirty and monotonic()-$since>=0.3 then return end
+    sleep(0.05)
+  end
+  raise("PANEL_IDLE_TEST","panel did not become quiescent: " .. json_encode($s))
+end
 fn wait_tray($expected)
-  for $i = 1 to 100
+  for $i = 1 to 400
     if tray_calls() >= $expected then break end
     sleep(0.05)
   end
-  sleep(0.3)
+  quiet()
   check(tray_calls() == $expected, "expected exactly " .. to_string($expected) .. " tray reads, got " .. to_string(tray_calls()))
 end
 try
@@ -75,7 +89,7 @@ try
   $_ = run_argv_must(["cp", "-r", $root .. "/share/scenes/lib", $tmp .. "/lib"])
   $path = $tmp .. "/lib/runtime.mix"
   write_file($path, replace_must(read_file($path), "fn call($target, $command, $args)\n",
-    "fn call($target, $command, $args)\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command,at:monotonic()}) .. \"\\n\")\n  if $command == \"noded.props.get\" and is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then return {ok:false,value:nil} end\n"))
+    "fn call($target, $command, $args)\n  append_file(env(\"FIXTURE_DIR\") .. \"/calls\", json_encode({target:$target,command:$command,at:monotonic()}) .. \"\\n\")\n  if $command == \"notify.list\" and is_file(env(\"FIXTURE_DIR\") .. \"/notify-throw\") then remove(env(\"FIXTURE_DIR\") .. \"/notify-throw\"); raise(\"FIXTURE_NOTIFY\",\"injected notify failure\") end\n  if $command == \"noded.props.get\" and is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then return {ok:false,value:nil} end\n"))
   write_file($tmp .. "/client.mix", 'send $1 $2 body="{}" timeout=5
 print(json_encode({rc:$rc,value:$result}))
 ')
@@ -86,6 +100,7 @@ on scenes.ready
   reply(0,"{}")
 end
 on scenes.model
+  append_file(env("FIXTURE_DIR") .. "/models", "1\n")
   write_file(env("FIXTURE_DIR") .. "/model", json_encode($event.args.value))
   reply(0,"{}")
 end
@@ -96,13 +111,18 @@ on comp.props.watch
   reply(0,"{}")
 end
 on comp.windows.list
-  reply(0,json_encode({windows:[]}))
+  $windows = is_file(env("FIXTURE_DIR") .. "/windows") ? json_parse(read_file(env("FIXTURE_DIR") .. "/windows")) : []
+  reply(0,json_encode({windows:$windows}))
 end
 on comp.workspaces.list
   reply(0,json_encode({count:1,current:1,list:[]}))
 end
 on apps.icon
   reply(0,json_encode({path:""}))
+end
+on windows.change
+  $_=publish("panel-stub.props.changed",json_encode({path:"windows"}),{command:"props.changed"})
+  reply(0,"{}")
 end
 ')
   write_file($tmp .. "/tray.mix", 'on tray.list
@@ -130,9 +150,10 @@ end
   start("panel-stub", $tmp .. "/stub.mix")
   wait_service("panel-stub")
   $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+  if $case == "clock" then $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","sleep(0.05)") end
   write_file($tmp .. "/panel.mix", $behaviour .. '
 on panel.test.state
-  reply(0,json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty}))
+  reply(0,json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows}))
 end
 on panel.test.registry
   services_changed($event.args.new)
@@ -151,9 +172,44 @@ end
     sleep(0.05)
   end
   check(is_file($tmp .. "/model"), "first panel model missing")
-  if $case == "notify" then
+  quiet()
+  if $case == "comp" then
+    $watches=calls_for("comp.props.watch")
+    $windows=calls_for("comp.windows.list")
+    $icons=calls_for("apps.icon")
+    write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["panel-stub"],new:["panel-stub","late-app"]}
+')
+    $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
+    quiet()
+    check(calls_for("comp.props.watch")==$watches+1,"coalesced comp restart did not re-watch exactly once")
+    check(calls_for("comp.windows.list")==$windows+1,"coalesced comp restart did not re-read exactly once")
+    check(calls_for("apps.icon")==$icons+1,"coalesced apps restart kept stale icon cache")
+    print("PASS coalesced comp/apps restart watches and refreshes once")
+    exit(0)
+  elif $case == "clock" then
+    $windows=calls_for("comp.windows.list")
+    $workspaces=calls_for("comp.workspaces.list")
+    $models=len(split(read_file($tmp .. "/models"),"\n"))
+    for $i=1 to 400
+      if len(split(read_file($tmp .. "/models"),"\n")) >= $models+5 then break end
+      sleep(0.05)
+    end
+    check(len(split(read_file($tmp .. "/models"),"\n")) >= $models+5,"clock did not repaint")
+    check(calls_for("comp.windows.list")==$windows and calls_for("comp.workspaces.list")==$workspaces,"clock repaint re-read comp")
+    write_file($tmp .. "/windows",json_encode([{id:7,band:"normal",app_id:"example",title:"changed",workspace:1}]))
+    call("panel-stub","windows.change")
+    wait_state("windows",[{id:7,band:"normal",app_id:"example",title:"changed",workspace:1}])
+    check(calls_for("comp.windows.list")==$windows+1,"window change did not refresh cached model")
+    print("PASS clock repaints cached model and window changes still read")
+    exit(0)
+  elif $case == "notify" or $case == "notify-retry" then
     check(calls_for("notify.list")==0,"absent notify called")
     write_file($tmp .. "/notify.mix", 'on notify.list
+  if is_file(env("FIXTURE_DIR") .. "/notify-fail") then
+    remove(env("FIXTURE_DIR") .. "/notify-fail")
+    reply(10,"busy")
+    return
+  end
   reply(0,"[]")
 end
 on change
@@ -164,7 +220,35 @@ end
     $notify_pid=start("notify-stub",$tmp .. "/notify.mix")
     wait_service("notify-stub")
     wait_state("notify_live",true)
+    quiet()
     check(calls_for("notify.list")==1,"notify registration must fetch once")
+    if $case == "notify-retry" then
+      $registry=calls_for("noded.props.get")
+      write_file($tmp .. "/notify-throw","1")
+      write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={new:["panel-stub","notify-stub"]}
+')
+      check(run_argv([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10}).exit_code==0,"notify exception escaped registration handler")
+      quiet()
+      check(calls_for("notify.list")==3,"thrown notify read did not retry once")
+      check(calls_for("noded.props.get")==$registry,"notify failure became a registry failure")
+      write_file($tmp .. "/notify-fail","1")
+      call("notify-stub","change")
+      quiet()
+      check(calls_for("notify.list")==5,"refused notify read did not retry once")
+      $reads=[]
+      for $line in split(read_file($tmp .. "/calls"),"\n")
+        if $line!="" then
+          $row=json_parse($line)
+          if $row.command=="notify.list" then push($reads,$row.at) end
+        end
+      end
+      check($reads[2]-$reads[1]>=0.2 and $reads[4]-$reads[3]>=0.2,"notify retry ran before deadline")
+      sleep(1.2)
+      quiet()
+      check(calls_for("notify.list")==5,"notify kept polling after recovery")
+      print("PASS thrown/refused notify reads retry once without registry recovery")
+      exit(0)
+    end
     call("notify-stub","change")
     for $i=1 to 100
       if calls_for("notify.list")==2 then break end
@@ -192,7 +276,7 @@ end
     exit(0)
   elif $case == "tray-retry" then
     wait_state("tray_live",true)
-    sleep(0.3)
+    quiet()
     $baseline=tray_calls()
     write_file($tmp .. "/tray-fail","1")
     call("tray-stub","change")
@@ -212,7 +296,7 @@ end
     exit(0)
   elif $case == "coalesced" then
     wait_state("tray_live",true)
-    sleep(0.3)
+    quiet()
     $baseline=tray_calls()
     write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["tray-stub","panel-stub"],new:["tray-stub","panel-stub","late-app"]}
 ')

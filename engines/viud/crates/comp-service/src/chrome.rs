@@ -139,6 +139,8 @@ pub(crate) async fn run(
     let mut work = None;
     let mut services = BTreeSet::new();
     let mut incarnations = BTreeMap::new();
+    #[cfg(test)]
+    let mut checkpoints: Vec<IncomingCommand> = Vec::new();
     loop {
         if let Some(now) = settings::native::live_generation(client) {
             if generation != Some(now) {
@@ -234,8 +236,10 @@ pub(crate) async fn run(
                                     .find(|row| row["name"].as_str() == Some(target.as_str()))
                             })
                             .and_then(registration_identity);
-                        // Older brokers lack an identity: a conservative hint
-                        // refresh is necessary; there is still no idle poll.
+                        // Native discovery rows currently lack a registration
+                        // id too. Use their session identity when available;
+                        // otherwise conservatively refresh per delivery, just
+                        // as on older brokers. There is still no idle poll.
                         if identity.is_none() || incarnations.get(target) != identity.as_ref() {
                             bars_dirty.insert(target.clone());
                         }
@@ -303,10 +307,21 @@ pub(crate) async fn run(
             .chain(registry_retry.filter(|_| generation.is_some()))
             .chain(presentation_retry.filter(|_| generation.is_some()))
             .min();
+        #[cfg(test)]
+        if !registry_dirty && bars_dirty.is_empty() && deadline.is_none() && consumer.pending().is_none() {
+            for command in checkpoints.drain(..) {
+                client.respond_parts(command.generation, &command.from, &command.command, command.id.as_deref(), 0, "{\"settled\":true}").await.unwrap();
+            }
+        }
         tokio::select! {
             changed = states.changed() => { if changed.is_err() { break; } states.borrow_and_update(); }
             event = events.recv() => {
                 let Some(event) = event else { break; };
+                #[cfg(test)]
+                if event.command == "test.checkpoint" {
+                    checkpoints.push(event);
+                    continue;
+                }
                 if let Some(next) = consumer.native_delivery(&event) { work = Some(next); }
                 if event.header("broker_origin") == Some("local") {
                     if event.topic() == Some("noded.props.changed") && event.header("broker_service") == Some("noded") {
@@ -422,9 +437,13 @@ mod tests {
         );
         let observer = idle_bus::Observer::start(&broker).await;
         let (send, events) = tokio::sync::mpsc::channel(64);
+        let hints = send.clone();
+        // Registrations are capped/coalesced independently by the broker.
+        // Drive one explicit hint after each completed registration below,
+        // so exact per-delivery counts do not depend on that timer's phase.
         let forward = tokio::spawn(async move {
             while let Some(event) = incoming.recv().await {
-                if send.send(event).await.is_err() {
+                if event.topic() != Some("noded.props.changed") && send.send(event).await.is_err() {
                     break;
                 }
             }
@@ -447,6 +466,7 @@ mod tests {
         });
         settings.wait("settings.get", 1).await;
         app.wait("example-app.ui.titlebar.form", 1).await;
+        settings.checkpoint("comp-idle").await;
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
         assert_eq!(settings.count("settings.get"), 1);
         assert_eq!(
@@ -460,7 +480,8 @@ mod tests {
             "idle does not re-read registrations/titlebars"
         );
         settings.settings_changed(2, "first").await;
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        // A titlebar event below also orders the settings delivery on the
+        // same connection; checkpoint waits for the resulting presentation.
         assert_eq!(settings.count("settings.get"), 1);
         assert_eq!(
             app.count("example-app.ui.titlebar.form"),
@@ -471,17 +492,16 @@ mod tests {
         app.publish("example-app.ui.titlebar.changed", json!({}))
             .await;
         app.wait("example-app.ui.titlebar.form", 2).await;
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        app.checkpoint("comp-idle").await;
         assert_eq!(app.count("example-app.ui.titlebar.form"), 2);
         let _newcomer = idle_bus::Service::start(&broker, "late-app").await;
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        hints.send(idle_bus::Service::registration_hint(&["example-app", "late-app"])).await.unwrap();
+        app.checkpoint("comp-idle").await;
+        tokio::time::timeout(std::time::Duration::from_secs(8), async {
             while observer.registry_reads("comp-idle") < 2 {
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                tokio::task::yield_now().await;
             }
-        })
-        .await
-        .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }).await.unwrap();
         assert_eq!(
             observer.registry_reads("comp-idle"),
             2,
@@ -496,8 +516,9 @@ mod tests {
         drop(app);
         app = idle_bus::Service::start(&broker, "example-app").await;
         let _coalesced = idle_bus::Service::start(&broker, "coalesced-app").await;
+        hints.send(idle_bus::Service::registration_hint(&["example-app", "late-app", "coalesced-app"])).await.unwrap();
         app.wait("example-app.ui.titlebar.form", 1).await;
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        app.checkpoint("comp-idle").await;
         assert_eq!(
             app.count("example-app.ui.titlebar.form"),
             1,
@@ -506,16 +527,19 @@ mod tests {
         settings.fail_reads.store(1, Ordering::SeqCst);
         settings.settings_changed(3, "restarted").await;
         settings.wait("settings.get", 3).await;
+        settings.checkpoint("comp-idle").await;
         settings.assert_read_retry_deadline();
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
         assert_eq!(
             settings.count("settings.get"),
             3,
             "authority recovery reads once after a fenced failed-read retry"
         );
+        let forms = app.count("example-app.ui.titlebar.form");
         broker.bounce();
         settings.wait("settings.get", 4).await;
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        app.wait("example-app.ui.titlebar.form", forms + 1).await;
+        app.checkpoint("comp-idle").await;
+        assert_eq!(app.count("example-app.ui.titlebar.form"), forms + 1, "recovery presentation completed");
         assert_eq!(
             settings.count("settings.get"),
             4,
@@ -525,7 +549,7 @@ mod tests {
         app.publish("example-app.ui.titlebar.changed", json!({}))
             .await;
         app.wait("example-app.ui.titlebar.form", forms + 1).await;
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        app.checkpoint("comp-idle").await;
         assert_eq!(
             app.count("example-app.ui.titlebar.form"),
             forms + 1,

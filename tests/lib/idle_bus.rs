@@ -160,6 +160,34 @@ impl Service {
             )
         });
     }
+    // Test-only worker command, acknowledged after queued recovery has applied.
+    // Counting a request in the stub observes its start, not its completion.
+    pub async fn checkpoint(&self, target: &str) {
+        let result = tokio::time::timeout(
+            Duration::from_secs(20),
+            self.client.call(target, "test.checkpoint", json!({})),
+        )
+        .await
+        .expect("worker did not settle")
+        .unwrap();
+        assert_eq!(result, json!({"settled":true}));
+    }
+
+    pub fn registration_hint(names: &[&str]) -> bus::IncomingCommand {
+        bus::IncomingCommand {
+            generation: 1,
+            from: "noded".into(),
+            command: "props.changed".into(),
+            id: None,
+            args: Value::Null,
+            body: json!({"path":"services.registered","new":names}).to_string(),
+            headers: BTreeMap::from([
+                ("topic".into(), "noded.props.changed".into()),
+                ("broker_service".into(), "noded".into()),
+                ("broker_origin".into(), "local".into()),
+            ]),
+        }
+    }
     pub async fn publish(&self, topic: &str, body: Value) {
         let headers = BTreeMap::from([
             ("name".into(), topic.into()),
