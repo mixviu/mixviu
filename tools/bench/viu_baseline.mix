@@ -2,7 +2,7 @@
 $proc = require("proc.mix")
 $cli = getopt(args(), {seconds:{arg:true}, output:{arg:true}, workload:{arg:true}, node:{arg:true}, steps:{arg:true}, workloads:{arg:true}})
 if len($cli.errors) > 0 or len($cli.rest) == 0 or $cli.opts.output == nil then
-  raise("USAGE", "mix tools/bench/viu_baseline.mix --output result.json [--seconds 60] [--workload idle|scroll --node ID --steps N] [--workloads FILE] PID|SERVICE ...")
+  raise("USAGE", "mix tools/bench/viu_baseline.mix --output result.json [--seconds 60] [--workload NAME] [--node ID --steps N] [--workloads FILE] PID|SERVICE ...")
 end
 $seconds = to_number($cli.opts.seconds ?? "60")
 if $seconds <= 0 or $seconds > 86400 then raise("ARGUMENT", "seconds must be in (0, 86400]") end
