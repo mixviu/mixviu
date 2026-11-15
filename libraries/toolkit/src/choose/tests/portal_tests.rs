@@ -666,7 +666,7 @@ async fn portal_close_unknown_method_is_an_acknowledged_end() {
     assert!(result.is_ok(), "received Close result: {result:?}");
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn portal_close_fast_success_calls_the_request_close_method() {
     let (_process, address) = dbus();
     let server = connection(&address).await;
@@ -678,13 +678,25 @@ async fn portal_close_fast_success_calls_the_request_close_method() {
         .await
         .unwrap();
     let client = connection(&address).await;
-    let result = tokio::time::timeout(
-        portal::CLOSE_BOUND + IO_BOUND,
-        portal::close(&client, server.unique_name().unwrap().as_str(), path),
-    )
-    .await
-    .expect("fast portal Close exceeded its teardown bound");
-    assert!(result.is_ok(), "received Close result: {result:?}");
+    // This is a dispatch/reply assertion, not a wall-clock benchmark. Freeze
+    // the product timer until the real D-Bus reply completes. Keep yielding
+    // runnable work so Tokio cannot auto-advance while waiting for external
+    // I/O. The gated tests below independently exercise Close's deadline.
+    tokio::time::pause();
+    let call = portal::close(&client, server.unique_name().unwrap().as_str(), path);
+    tokio::pin!(call);
+    let start = std::time::Instant::now();
+    loop {
+        tokio::select! {
+            biased;
+            result = &mut call => {
+                assert!(result.is_ok(), "received Close result: {result:?}");
+                break;
+            }
+            _ = tokio::task::yield_now() => {}
+        }
+        assert!(start.elapsed() < Duration::from_secs(60), "fast portal Close fixture stalled; dispatched={}", closed.load(Ordering::SeqCst));
+    }
     assert_eq!(closed.load(Ordering::SeqCst), 1, "Close was not dispatched");
 }
 
