@@ -23,7 +23,7 @@ for $variant in ["asm", "rust"]
         if to_number($stream.nb_read_frames) != 8 or $stream.width != $dimensions[0] or $stream.height != $dimensions[1] then
           raise("DECODE", "wrong decoded count or dimensions")
         end
-        checked(["ffmpeg", "-v", "info", "-c:v", "libdav1d", "-i", $dir .. "/encoded.ivf", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", $w .. "x" .. $h, "-framerate", "30", "-i", $dir .. "/source.yuv", "-lavfi", "psnr", "-f", "null", "-"])
+        checked(["ffmpeg", "-xerror", "-v", "info", "-c:v", "libdav1d", "-i", $dir .. "/encoded.ivf", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", $w .. "x" .. $h, "-framerate", "30", "-i", $dir .. "/source.yuv", "-lavfi", "psnr", "-f", "null", "-"])
       end
     end
   end

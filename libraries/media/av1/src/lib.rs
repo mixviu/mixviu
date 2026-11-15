@@ -60,6 +60,9 @@ impl Encoder {
             || s.fps_den == 0
             || s.key_interval == 0
             || s.threads == 0
+            || s.threads > 64
+            || s.tile_cols > 64
+            || s.tile_rows > 64
             || !s.tile_cols.is_power_of_two()
             || !s.tile_rows.is_power_of_two()
         {
@@ -228,6 +231,12 @@ mod tests {
         assert!(Encoder::new(s).is_err());
         s = settings();
         s.target = Target::Bitrate(0);
+        assert!(Encoder::new(s).is_err());
+        s = settings();
+        s.threads = usize::MAX;
+        assert!(Encoder::new(s).is_err());
+        s = settings();
+        s.tile_rows = 128;
         assert!(Encoder::new(s).is_err());
     }
 }

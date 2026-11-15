@@ -30,11 +30,8 @@ fn main() {
         let mut pixels = vec![0; w * h * 4];
         for y in 0..h {
             for x in 0..w {
-                let row = if scene == "scroll" {
-                    (y + t * 13) / 28
-                } else {
-                    y / 28
-                };
+                let source_y = if scene == "scroll" { y + t * 13 } else { y };
+                let row = source_y / 28;
                 let mut c = if x < 200 {
                     [42, 38, 34, 255]
                 } else if row % 2 == 0 {
@@ -43,7 +40,7 @@ fn main() {
                     [55, 48, 42, 255]
                 };
                 // Coloured glyph-like one-pixel strokes, including sharp edges.
-                if x > 220 && x < 900 && y % 28 > 8 && y % 28 < 20 && (x + row * 3) % 11 < 2 {
+                if x > 220 && x < 900 && source_y % 28 > 8 && source_y % 28 < 20 && (x + row * 3) % 11 < 2 {
                     c = [220, 180, 85, 255];
                 }
                 if scene == "static" && t >= 4 && x > 930 && x < 933 && (80..104).contains(&y) {
