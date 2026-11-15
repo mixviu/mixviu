@@ -45,13 +45,13 @@
 --
 -- The toolkit drive commands (docs/docs/drive.md) are one family that every egui
 -- app answers under its own prefix: <app>.ui.tree, .ui.click, .ui.pointer,
--- .ui.stats is a passive query: cumulative drawn frames, last 256 CPU-side
--- frame durations (median/p95/max), quiet age, surface pixels/scale and the
--- selected GPU backend/adapter. See docs/viu-baseline.md for units and limits.
 -- .ui.scroll, .ui.key, .ui.type, .ui.menu, .ui.menu.list, .ui.menu.open,
 -- .ui.menu.close, .ui.menu.popup, .ui.menu.form, .ui.capture, <app>.window and
 -- <app>.window.state. Each native app registers its concrete names, owned
 -- by the app that answers them. Schema 3 added the families list below.
+-- .ui.stats is a passive query: cumulative drawn frames, last 256 CPU-side
+-- frame durations (median/p95/max), quiet age, surface pixels/scale and the
+-- selected GPU backend/adapter. See docs/viu-baseline.md for units and limits.
 -- HELP and app.describe are protocol commands every service answers; they are
 -- not registered per component.
 -- HELP succeeds at rc 0 with a JSON list of bus::CommandDescriptor objects:
@@ -224,6 +224,7 @@
     {name:"workshop.traffic", owner:"workshop", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"workshop.observe", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"workshop.macros.open", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"workshop.ui.stats", owner:"workshop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"workshop.ui.tree", owner:"workshop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"workshop.ui.click", owner:"workshop", version:"0.1.1", status:"accepted", class:"input", schema:"pending"},
     {name:"workshop.ui.pointer", owner:"workshop", version:"0.1.1", status:"accepted", class:"input", schema:"pending"},
@@ -272,6 +273,7 @@
     {name:"monitor.rows", owner:"monitor", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"monitor.dialog", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"monitor.theme", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
+    {name:"monitor.ui.stats", owner:"monitor", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"monitor.ui.tree", owner:"monitor", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"monitor.ui.click", owner:"monitor", version:"0.1.0", status:"draft", class:"input", schema:"pending"},
     {name:"monitor.ui.pointer", owner:"monitor", version:"0.1.0", status:"draft", class:"input", schema:"pending"},
@@ -359,6 +361,7 @@
     {name:"prefs.email", owner:"prefs", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"prefs.email.set", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"prefs.email.password", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"prefs.ui.stats", owner:"prefs", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"prefs.ui.tree", owner:"prefs", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"prefs.ui.click", owner:"prefs", version:"0.1.0", status:"accepted", class:"input", schema:"pending"},
     {name:"prefs.ui.pointer", owner:"prefs", version:"0.1.0", status:"accepted", class:"input", schema:"pending"},
@@ -421,6 +424,7 @@
     {name:"ced.diagnostics", owner:"ced", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"ced.problems", owner:"ced", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"app.quit", owner:"ced", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"ced.ui.stats", owner:"ced", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"ced.ui.tree", owner:"ced", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"ced.ui.click", owner:"ced", version:"0.1.0", status:"accepted", class:"input", schema:"pending"},
     {name:"ced.ui.pointer", owner:"ced", version:"0.1.0", status:"accepted", class:"input", schema:"pending"},
@@ -463,6 +467,7 @@
     {name:"dopus.open", owner:"dopus", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"dopus.show", owner:"dopus", version:"0.1.3", status:"accepted", class:"system", schema:"none"},
     {name:"dopus.quit", owner:"dopus", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
+    {name:"dopus.ui.stats", owner:"dopus", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"dopus.ui.tree", owner:"dopus", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"dopus.ui.click", owner:"dopus", version:"0.1.1", status:"accepted", class:"input", schema:"pending"},
     {name:"dopus.ui.pointer", owner:"dopus", version:"0.1.1", status:"accepted", class:"input", schema:"pending"},
@@ -556,6 +561,7 @@
     {name:"email.contact.create", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.contact.update", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.contact.delete", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"email.ui.stats", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"email.ui.tree", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"email.ui.click", owner:"email", version:"0.1.0", status:"accepted", class:"input", schema:"pending"},
     {name:"email.ui.pointer", owner:"email", version:"0.1.0", status:"accepted", class:"input", schema:"pending"},
@@ -621,6 +627,7 @@
     {name:"screenshot.macros.remove", owner:"screenshot", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"screenshot.macros.move", owner:"screenshot", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"screenshot.macros.copy", owner:"screenshot", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"screenshot.ui.stats", owner:"screenshot", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"screenshot.ui.tree", owner:"screenshot", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"screenshot.ui.click", owner:"screenshot", version:"0.1.1", status:"accepted", class:"input", schema:"pending"},
     {name:"screenshot.ui.pointer", owner:"screenshot", version:"0.1.1", status:"accepted", class:"input", schema:"pending"},
@@ -792,6 +799,7 @@
     {name:"term.execute", owner:"term", version:"0.5.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"term.show", owner:"term", version:"0.5.0", status:"accepted", class:"system", schema:"none"},
     {name:"term.dialog", owner:"term", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
+    {name:"term.ui.stats", owner:"term", version:"0.4.0", status:"accepted", class:"query", schema:"pending"},
     {name:"term.ui.tree", owner:"term", version:"0.4.0", status:"accepted", class:"query", schema:"pending"},
     {name:"term.ui.click", owner:"term", version:"0.4.0", status:"accepted", class:"input", schema:"pending"},
     {name:"term.ui.pointer", owner:"term", version:"0.4.0", status:"accepted", class:"input", schema:"pending"},

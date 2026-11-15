@@ -3,6 +3,15 @@
 use bus::{CommandDescriptor, SupervisedClient};
 use std::{future::Future, time::Duration};
 
+pub(crate) fn provenance() -> bus::RegisterProvenance {
+    static STARTED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let build = buildinfo::build_info!();
+    bus::RegisterProvenance::from_parts(
+        "viu", build.version, build.git_sha, build.git_dirty, build.build_time,
+        STARTED.get_or_init(buildinfo::now_rfc3339).clone(),
+    )
+}
+
 pub(crate) struct Failure {
     pub refused: bool,
     pub message: String,
@@ -53,6 +62,7 @@ pub(crate) async fn connect(
         }
         async move {
             let options = SupervisedClient::connect_options(&name, url)
+                .with_provenance(provenance())
                 .bounded_incoming_rpc(32)
                 .fatal_on_registration_rejection(true);
             let options = if with_commands {

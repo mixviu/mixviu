@@ -4,7 +4,7 @@ try
   for $cmd in [["rustfmt", "--edition", "2024", "--config", "skip_children=true",
     "libraries/toolkit/src/drive.rs", "libraries/toolkit/src/drive_stats.rs",
     "libraries/toolkit/src/lib.rs", "libraries/toolkit/src/layer/state.rs", "libraries/toolkit/src/layer/gpu.rs",
-    "libraries/viu/src/app_host.rs", "libraries/viu/src/native_bus.rs", "vendor/eframe/src/native/wgpu_integration.rs",
+    "libraries/viu/src/app_host.rs", "libraries/viu/src/native_bus.rs", "libraries/viu/src/native_registration.rs", "vendor/eframe/src/native/wgpu_integration.rs",
     "vendor/egui-wgpu/src/lib.rs", "vendor/egui-wgpu/src/baseline.rs", "vendor/egui-wgpu/src/winit.rs"]]
     $r = run_argv($cmd, {timeout:120, stderr:"stdout"})
     print($r.stdout)

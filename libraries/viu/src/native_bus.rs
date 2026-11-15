@@ -349,7 +349,7 @@ impl Endpoint {
                 let (registered,native)=if pid_fallback {
                     tokio::select!{_=&mut stopped=>return,c=crate::native_registration::connect(&name,&url,&commands,help.is_none() && !owner_help,true)=>match c{Ok((registered,c))=>(registered,Arc::new(c)),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(true,Ordering::Release);wake();return;}}}
                 } else {
-                let options=SupervisedClient::connect_options(&name,&url).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
+                let options=SupervisedClient::connect_options(&name,&url).with_provenance(crate::native_registration::provenance()).bounded_incoming_rpc(32).fatal_on_registration_rejection(true);
                 let options=if help.is_none() && !owner_help{options.with_commands(commands)}else{options};
                 let native=tokio::select!{_=&mut stopped=>return,c=options.connect()=>match c{Ok(c)=>Arc::new(c),Err(e)=>{eprintln!("native Bus: {e}");failed.store(true,Ordering::Release);*startup_failed.lock().unwrap_or_else(|e|e.into_inner())=Some(e.to_string());close.store(e.registration_rejection_typed().is_some(),Ordering::Release);wake();return;}}};
 
