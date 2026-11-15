@@ -2,11 +2,17 @@
 
 The native wgpu integration publishes its existing CPU-side frame duration
 (excluding measured present waits) to the passive `egui_wgpu::baseline` ring,
-together with the selected adapter and physical surface geometry. It records
+together with the selected adapter and the drawing viewport's own physical
+window size/scale, selected by `viewport_id` (including non-root viewports). It records
 only when the painter's presentation receipt advances, so skipped and
 offscreen paints do not count as drawn surface frames. This schedules no work.
 Toolkit exposes the ring through the read-only `ui.stats` command; see
 `docs/viu-baseline.md` for its limits.
+
+Drop the baseline additions when upstream supplies equivalent passive
+per-viewport samples, selected-adapter identity and drawing-window geometry,
+and toolkit's reader has migrated to that contract. The hidden-painting patch
+below has its separate drop condition.
 
 Base: crates.io `eframe` 0.37.0, archive SHA-256
 `9c5642501a65ca657d05f00c643a5c14ff2346cb3818032bfe23d58e1f8e5f84`,

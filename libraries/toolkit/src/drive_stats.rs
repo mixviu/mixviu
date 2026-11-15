@@ -13,6 +13,9 @@ pub(crate) fn read(ctx: &egui::Context, viewport: egui::ViewportId) -> Value {
     else {
         return json!({"available": false});
     };
+    if times.is_empty() {
+        return json!({"available": false});
+    }
     times.sort_by(f64::total_cmp);
     let percentile = |p: f64| times[((times.len() as f64 * p).ceil() as usize).saturating_sub(1)];
     let mid = times.len() / 2;
@@ -30,12 +33,23 @@ pub(crate) fn read(ctx: &egui::Context, viewport: egui::ViewportId) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn empty_ring_is_unavailable() {
+        let ctx = egui::Context::default();
+        let sample: Samples = (0, vec![], Instant::now(), [640, 480], 1.0, "Vulkan".into(), "fixture".into());
+        ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("ui.stats.v1", egui::ViewportId::ROOT)), sample));
+        assert_eq!(read(&ctx, egui::ViewportId::ROOT), json!({"available":false}));
+    }
     #[cfg(feature = "layer")]
     #[test]
     fn completed_frames_advance_a_bounded_viewport_ring() {
         let ctx = egui::Context::default();
         let viewport = egui::ViewportId::ROOT;
-        let adapter = wgpu::AdapterInfo::new(wgpu::DeviceType::Cpu, wgpu::Backend::Vulkan);
+        // Storage ABI guard: use the real writer, then decode every field
+        // through the reader's independent tuple definition. Toolkit cannot
+        // import the renderer's type in builds without its optional GPU dep.
+        let mut adapter = wgpu::AdapterInfo::new(wgpu::DeviceType::Cpu, wgpu::Backend::Vulkan);
+        adapter.name = "fixture GPU".into();
         for i in 0..300 {
             egui_wgpu::baseline::record(
                 &ctx,
@@ -52,6 +66,10 @@ mod tests {
         assert_eq!(stats["cpu_frame_ms"]["max"], 299.0);
         assert_eq!(stats["cpu_frame_ms"]["median"], 171.5);
         assert_eq!(stats["backend"], "Vulkan");
+        assert_eq!(stats["adapter"], "fixture GPU");
+        assert_eq!(stats["surface_pixels"], json!([640,480]));
+        assert_eq!(stats["scale"], 2.0);
+        assert!(stats["last_frame_ms"].as_f64().unwrap() >= 0.0);
         assert_eq!(
             read(&ctx, egui::ViewportId::from_hash_of("other"))["available"],
             false

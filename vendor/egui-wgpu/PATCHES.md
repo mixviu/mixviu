@@ -7,6 +7,12 @@ Eframe uses that receipt to exclude skipped paints from its existing frame
 timing. Layer hosts record after successful presentation. Neither path arms
 a timer or requests a repaint. The storage contract is documented in
 `libraries/toolkit/src/drive_stats.rs`; retain both ends when re-vendoring.
+Toolkit's layer-feature test writes through `baseline::record` and decodes
+every field through its independent reader definition, guarding layout drift
+without forcing the optional renderer into toolkit builds that omit GPU support.
+Drop these baseline/receipt additions when upstream supplies the equivalent
+passive contract and both eframe's producer and toolkit's reader have migrated.
+The existing capture and window-frame additions retain their own drop conditions.
 
 Base: crates.io `egui-wgpu` 0.37.0, archive SHA-256
 `0309cbe1febed48af5b974e4bcc424b35e9664863a4d402697147b57a488c864`,

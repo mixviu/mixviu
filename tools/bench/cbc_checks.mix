@@ -2,6 +2,7 @@
 -- Run through CBC, never on a workstation.
 for $cmd in [
   ["mix", "tools/bench/proc_test.mix"],
+  ["mix", "tools/bench/workloads_test.mix"],
   ["cargo", "test", "-p", "toolkit", "--lib", "--features", "layer", "drive"],
   ["cargo", "test", "-p", "lib-viu", "--lib", "native_bus::tests::passive_stats"],
   ["cargo", "clippy", "-p", "toolkit", "--features", "layer", "--no-deps", "--", "-D", "warnings"],

@@ -26,7 +26,8 @@ The target table's row count belongs to the fixture, not the collector.
 Use a 2,000-row table for comparable table runs. Definitions live in
 `tools/bench/workloads.conf.mix`, parsed as strict data. `--workloads FILE`
 adds named variants of the supported idle and scroll primitives without
-changing the tool. The JSON records the effective definition, including a
+changing the tool. Definitions in that file override built-ins on a name
+clash; other built-ins remain available. The JSON records the effective definition, including a
 `--steps` override. The measured interval includes the workload and its Bus
 round trips, so compare equal definitions and equal fixtures.
 
@@ -81,8 +82,12 @@ request no repaint; Bus delivery itself still needs a logic wake.
 Native Viu hosts answer root/layer stats directly from registered contexts,
 without waking the UI owner. Multiple layer outputs return a `surfaces` map
 keyed by output name; `{output:"name"}` selects one. Removed outputs disappear
-from that registry. Other apps using the drive library answer through their
-existing logic wake. Neither route schedules a frame.
+from that registry. A non-string `output` is an `ARGUMENT` error; an unknown
+output name is `NOT_FOUND`. A `viewport` argument bypasses the native passive
+intercept and takes the normal delivery route, which may draw a frame
+(particularly on a layer host). Other apps using the drive library answer
+through their existing logic wake. Root/layer passive snapshots and ordinary
+drive reads schedule no frame themselves; viewport delivery has the caveat above.
 
 This cannot see GPU memory, input-to-photon latency, compositor/scanout delay,
 shared-library disk size, or total system energy. Software rendering under

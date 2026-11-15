@@ -7,7 +7,10 @@ end
 $seconds = to_number($cli.opts.seconds ?? "60")
 if $seconds <= 0 or $seconds > 86400 then raise("ARGUMENT", "seconds must be in (0, 86400]") end
 $name = $cli.opts.workload ?? "idle"
-$workloads = load_data($cli.opts.workloads ?? (dirname(realpath($0)) .. "/workloads.conf.mix"))
+$workloads = load_data(dirname(realpath($0)) .. "/workloads.conf.mix")
+if $cli.opts.workloads != nil then
+  $workloads = merge($workloads, load_data($cli.opts.workloads))
+end
 $work = $workloads[$name]
 if $work == nil or not contains(["idle", "scroll"], $work.kind) then raise("WORKLOAD", "unknown workload") end
 if $cli.opts.steps != nil then $work.steps = $proc.number($cli.opts.steps) end
