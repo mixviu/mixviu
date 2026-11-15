@@ -285,6 +285,42 @@ fn benchmark_record_4k_throughput() {
     record_4k();
 }
 
+#[test]
+#[ignore = "10-minute generated static recording cost; run alone on a render worker"]
+fn benchmark_record_ui_static_10min() {
+    assert!(process::record_available());
+    let bus = Bus::start("vfl-static-cost");
+    let mut process = process::spawn_4k("vfl-static-cost", &bus.url);
+    process.extend_watchdog(Duration::from_secs(660));
+    let mut p = Pattern::new(connect(&mut process));
+    p.wait_callback(0);
+    bus.ready();
+    let row=bus.window();
+    bus.call("comp.window.place",place_args(&row,json!({"x":100,"y":100})));
+    let measure = |begin:u64,end:u64| -> (u64,u64,usize) {
+        let trace=fs::read_to_string(process.root.join("frames.log")).unwrap();
+        let field=|line:&str,key:&str| -> u64 { line.split_whitespace().find_map(|w|w.strip_prefix(key)?.parse().ok()).unwrap() };
+        let mut times:Vec<u64>=trace.lines().filter(|l|l.contains("stage=headless_frame_cpu ")).filter(|l|(begin..end).contains(&field(l,"start_us="))).map(|l|field(l,"duration_us=")).collect();
+        assert!(!times.is_empty()); times.sort_unstable();
+        (times[times.len()/2],times[times.len()*95/100],times.len())
+    };
+    let begin=monotonic_ns()/1000;
+    let baseline=Instant::now();
+    while baseline.elapsed()<Duration::from_secs(10) {p.pump();thread::sleep(Duration::from_millis(5));}
+    let before=measure(begin,monotonic_ns()/1000);
+    let start=bus.call("comp.record.start",json!({"request_id":"static-cost","target":{"output":"headless-0"},"path":process.root.join("static.vfl"),"max_seconds":600,"fps":30}));
+    let begin=monotonic_ns()/1000;
+    let take=Instant::now();
+    while take.elapsed()<Duration::from_secs(600) {p.pump();thread::sleep(Duration::from_millis(5));}
+    let end=monotonic_ns()/1000;
+    let stop=bus.call("comp.record.stop",json!({"session":start["session"]}));
+    let during=measure(begin,end);
+    assert_eq!(stop["error"],Value::Null,"{stop}");
+    println!("VFL_STATIC_10MIN generated_static_proxy=true baseline_median_us={} baseline_p95_us={} record_median_us={} record_p95_us={} delta_median_us={} bytes={} dropped={} stats={stop}",before.0,before.1,during.0,during.1,during.0 as i64-before.0 as i64,stop["bytes"],stop["dropped"]);
+    assert_eq!(stop["dropped"],0,"{stop}");
+    assert!(during.0 as i64-before.0 as i64<=2000);
+}
+
 fn record_4k() {
     if !process::record_available() {
         return;

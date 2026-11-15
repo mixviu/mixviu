@@ -5,7 +5,7 @@ use graphics::capture::encode::VideoEncoder;
 use serde_json::{Value, json};
 use std::{
     fs::File,
-    io::{BufWriter, Read, Write},
+    io::{Read, Write},
     os::unix::fs::OpenOptionsExt,
     sync::Arc,
     sync::mpsc::{Receiver, channel},
@@ -114,7 +114,6 @@ struct TakeFiles {
 }
 impl TakeFiles {
     fn create(path: &str) -> Result<Self, String> {
-        check_destination(path)?;
         let base = format!("{path}.{}.part", private_token()?);
         Ok(Self {
             path: path.into(),
@@ -182,7 +181,7 @@ pub struct Recording {
     readback_debt: u64,
     skipped_readback: bool,
     files: TakeFiles,
-    bytes: u64,
+    bytes: Arc<std::sync::atomic::AtomicU64>,
     encoder: Option<VideoEncoder>,
     finishing: Option<Receiver<Result<(), String>>>,
     stop_discard: Option<bool>,
@@ -209,6 +208,7 @@ impl Recording {
             Some(files.video.clone().into()),
             &encoder_name,
         )?;
+        let bytes = encoder.bytes_handle();
         Ok(Self {
             session,
             path,
@@ -219,7 +219,7 @@ impl Recording {
             fps,
             t0_us: monotonic_us()?,
             files,
-            bytes: 0,
+            bytes,
             frames: 0,
             repeated: 0,
             dropped: 0,
@@ -270,6 +270,7 @@ impl Recording {
             self.repeated += 1;
         }
         let encoder = self.encoder.as_ref().ok_or("recording is finishing")?;
+        encoder.set_summary(self.dropped, self.t0_us);
         if let Some(error) = encoder.error() {
             return Err(error);
         }
@@ -307,7 +308,7 @@ impl Recording {
     }
 
     pub fn status(&self) -> Value {
-        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes,"encoders":["vfl"],"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
+        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"encoders":["vfl"],"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
     }
 
     pub fn stop(&mut self, discard: bool) -> bool {
@@ -361,9 +362,7 @@ impl Recording {
         if let Some(join) = self.finaliser.take() {
             let _ = join.join();
         }
-        self.bytes = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
-        let kept = std::path::Path::new(&format!("{}/frames.jsonl", self.path)).exists()
-            && self.error.is_none();
+        let kept = self.stop_discard == Some(false) && self.error.is_none();
         self.terminal = Some(
             json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );

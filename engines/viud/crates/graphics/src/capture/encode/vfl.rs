@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Lossless frame log. See VFL.md for the on-disk contract.
-use std::{fs::{File, OpenOptions}, io::{self, Write}, os::unix::fs::{OpenOptionsExt, DirBuilderExt}, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicU64, AtomicUsize, Ordering}, mpsc::{sync_channel, SyncSender}}, thread::JoinHandle};
+use std::{fs::{File, OpenOptions}, io::{self, Write}, os::unix::fs::{OpenOptionsExt, DirBuilderExt}, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering}, mpsc::{sync_channel, SyncSender}}, thread::JoinHandle};
 use serde_json::json;
 
 use media::vfl::{CHUNK_BYTES, KEY, DELTA, REPEAT};
@@ -25,6 +25,8 @@ pub struct VideoEncoder {
     error: Arc<Mutex<Option<String>>>,
     origin: Arc<AtomicU64>,
     total_dropped: Arc<AtomicU64>,
+    finishing: Arc<AtomicBool>,
+    written: Arc<AtomicU64>,
 }
 
 struct Log {
@@ -41,6 +43,7 @@ struct Log {
     frames: File,
     markers: File,
     crc: crc32fast::Hasher,
+    total_bytes: u64,
 }
 impl Log {
     fn record(&mut self, kind: u8, payload: &[u8]) -> io::Result<()> {
@@ -61,6 +64,7 @@ impl Log {
         }
         writeln!(self.frames, "{}", json!({"frame":self.next,"t_us":self.next*1_000_000/u64::from(self.fps)}))?;
         self.bytes += 17 + payload.len() as u64;
+        self.total_bytes += 17 + payload.len() as u64;
         self.next += 1;
         Ok(())
     }
@@ -113,8 +117,10 @@ impl VideoEncoder {
         let size = (width as usize).checked_mul(height as usize).and_then(|n| n.checked_mul(4)).filter(|n| *n > 0 && *n <= 256 * 1024 * 1024).ok_or("invalid frame dimensions")?;
         if !(1..=60).contains(&fps) { return Err("invalid fps".into()); }
         let path = path.unwrap_or_else(|| std::env::temp_dir().join(format!("viud-{}-{}.vfl",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos())));
-        std::fs::DirBuilder::new().mode(0o700).create(&path).map_err(|e| e.to_string())?;
-        let setup = || -> io::Result<Log> {
+        let worker_path = path.clone();
+        let setup = move || -> io::Result<Log> {
+            let path = worker_path;
+            std::fs::DirBuilder::new().mode(0o700).create(&path)?;
             let manifest = json!({"version":1,"width":width,"height":height,"fps":fps,"format":"bgra8","encoder":"vfl-lz4","complete":false,"key_interval":fps*10});
             let mut file = create(&path.join("manifest.json"))?;
             file.write_all(manifest.to_string().as_bytes())?; file.sync_all()?;
@@ -122,9 +128,8 @@ impl VideoEncoder {
             File::open(&path)?.sync_all()?;
             let frames = create(&path.join("frames.jsonl"))?;
             let markers = create(&path.join("markers.jsonl"))?;
-            Ok(Log { path:path.clone(),chunk,index:0,bytes:0,last:vec![0;size].into(),previous_rgb:None,width,height,fps,next:0,frames,markers,crc:crc32fast::Hasher::new() })
+            Ok(Log { path:path.clone(),chunk,index:0,bytes:0,last:vec![0;size].into(),previous_rgb:None,width,height,fps,next:0,frames,markers,crc:crc32fast::Hasher::new(),total_bytes:0 })
         };
-        let mut log = setup().map_err(|e| e.to_string())?;
         let (tx,rx) = sync_channel::<Frame>(4);
         let scheduled = Arc::new(AtomicU64::new(0));
         let dropped = Arc::new(AtomicU64::new(0));
@@ -133,21 +138,42 @@ impl VideoEncoder {
         let origin = Arc::new(AtomicU64::new(0));
         let total_dropped = Arc::new(AtomicU64::new(0));
         let (o,td) = (origin.clone(),total_dropped.clone());
+        let finishing = Arc::new(AtomicBool::new(false));
+        let finish = finishing.clone();
+        let written = Arc::new(AtomicU64::new(0));
+        let bytes = written.clone();
         let (s,d,q,e) = (scheduled.clone(),dropped.clone(),queued.clone(),error.clone());
         let join = std::thread::spawn(move || {
             let result = (|| -> io::Result<()> {
-                for frame in rx { q.fetch_sub(1,Ordering::Relaxed); log.frame(frame)?; }
+                let mut log = setup()?;
+                let mut origin_written = false;
+                for frame in rx {
+                    q.fetch_sub(1,Ordering::Relaxed);
+                    if !origin_written {
+                        let mut origin = create(&log.path.join("origin.json"))?;
+                        origin.write_all(json!({"t0_us":o.load(Ordering::Acquire),"clock":"monotonic"}).to_string().as_bytes())?;
+                        origin.sync_all()?;
+                        origin_written = true;
+                    }
+                    log.frame(frame)?;
+                    bytes.store(log.total_bytes,Ordering::Relaxed);
+                }
                 while log.next < s.load(Ordering::Acquire) { log.repeat()?; }
                 log.seal()?;
                 log.frames.sync_all()?; log.markers.sync_all()?;
+                if !finish.load(Ordering::Acquire) { return Ok(()); }
                 let mut done = create(&log.path.join("complete.json"))?;
                 done.write_all(json!({"version":1,"t0_us":o.load(Ordering::Acquire),"frames":log.next,"dropped":td.load(Ordering::Acquire).max(d.load(Ordering::Acquire)),"chunks":log.index+1,"complete":true}).to_string().as_bytes())?;
-                done.sync_all()?; File::open(&log.path)?.sync_all()
+                done.sync_all()?; File::open(&log.path)?.sync_all()?;
+                let mut total = 0;
+                for file in std::fs::read_dir(&log.path)? { total += file?.metadata()?.len(); }
+                bytes.store(total,Ordering::Release);
+                Ok(())
             })();
             if let Err(ref failure) = result { *e.lock().unwrap() = Some(failure.to_string()); }
             result
         });
-        Ok(Self {tx:Some(tx),join:Some(join),path,width,height,scheduled,dropped,queued,error,origin,total_dropped})
+        Ok(Self {tx:Some(tx),join:Some(join),path,width,height,scheduled,dropped,queued,error,origin,total_dropped,finishing,written})
     }
     pub fn dims(&self) -> (u32,u32) { (self.width,self.height) }
     pub fn push(&self, p: Vec<u8>) { let _ = self.try_push(p); }
@@ -168,6 +194,7 @@ impl VideoEncoder {
         }
     }
     pub fn queue(&self) -> usize { self.queued.load(Ordering::Relaxed) }
+    pub fn bytes_handle(&self) -> Arc<AtomicU64> { self.written.clone() }
     pub fn set_summary(&self, dropped: u64, t0_us: u64) {
         self.total_dropped.store(dropped,Ordering::Release);
         self.origin.store(t0_us,Ordering::Release);
@@ -180,9 +207,72 @@ impl VideoEncoder {
     }
     pub fn error(&self) -> Option<String> { self.error.lock().unwrap().clone() }
     pub fn finish_result(mut self) -> Result<PathBuf,String> {
+        self.finishing.store(true,Ordering::Release);
         self.tx = None;
         if let Some(join) = self.join.take() { join.join().map_err(|_| "VFL writer panicked")?.map_err(|e| e.to_string())?; }
         Ok(self.path.clone())
     }
 }
 impl Drop for VideoEncoder { fn drop(&mut self) { self.tx = None; /* crash recovery preserves the log; never wait on disk here */ } }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn key_delta_repeat_crc_and_no_clobber() {
+        let encoder = VideoEncoder::start_result(4,4,30).unwrap();
+        let path = encoder.path.clone();
+        let first: Arc<[u8]> = vec![1;64].into();
+        let mut changed = vec![1;64]; changed[3] = 2;
+        assert!(encoder.try_push_shared(first.clone()));
+        assert!(encoder.try_push_shared(first));
+        assert!(encoder.try_push(changed.clone()));
+        let path = encoder.finish_result().unwrap();
+        assert!(create(&path.join("manifest.json")).is_err());
+        let bytes = std::fs::read(path.join("chunk-000000.bin")).unwrap();
+        let mut at = 0;
+        let mut previous = vec![0;64];
+        for (slot,kind) in [KEY,REPEAT,DELTA].into_iter().enumerate() {
+            let n = u32::from_le_bytes(bytes[at..at+4].try_into().unwrap()) as usize;
+            let crc = u32::from_le_bytes(bytes[at+4..at+8].try_into().unwrap());
+            assert_eq!(crc,crc32fast::hash(&bytes[at+8..at+17+n]));
+            assert_eq!(bytes[at+16],kind);
+            assert_eq!(u64::from_le_bytes(bytes[at+8..at+16].try_into().unwrap()),slot as u64);
+            let payload = &bytes[at+17..at+17+n];
+            match kind {
+                KEY => previous=lz4_flex::block::decompress(payload,64).unwrap(),
+                DELTA => { let delta=lz4_flex::block::decompress(payload,64).unwrap(); for (p,d) in previous.iter_mut().zip(delta) { *p ^= d; } },
+                _ => assert!(payload.is_empty()),
+            }
+            assert_eq!(previous,if slot==2 {changed.clone()} else {vec![1;64]});
+            at += 17+n;
+        }
+        assert_eq!(at,bytes.len());
+        let receipt: serde_json::Value=serde_json::from_slice(&std::fs::read(path.join("chunk-000000.json")).unwrap()).unwrap();
+        assert_eq!(receipt["crc32"],crc32fast::hash(&bytes));
+        // A torn tail has no complete payload and a changed byte fails CRC.
+        let mut corrupt=bytes.clone(); corrupt[17]^=1;
+        let n=u32::from_le_bytes(corrupt[..4].try_into().unwrap()) as usize;
+        assert_ne!(crc32fast::hash(&corrupt[8..17+n]),u32::from_le_bytes(corrupt[4..8].try_into().unwrap()));
+        std::fs::remove_dir_all(path).unwrap();
+    }
+    #[test]
+    fn bounded_queue_reports_dropped_tail_and_never_waits() {
+        let mut encoder=VideoEncoder::start_result(2,2,30).unwrap();
+        // Replace the channel with a receiver held still for deterministic overload.
+        let old_tx=encoder.tx.take();
+        drop(old_tx);
+        encoder.join.take().unwrap().join().unwrap().unwrap();
+        let (tx,rx)=sync_channel(4);
+        encoder.tx=Some(tx);
+        let begin=std::time::Instant::now();
+        for _ in 0..4 { assert!(encoder.try_push(vec![0;16])); }
+        for _ in 0..1000 { assert!(!encoder.try_push(vec![0;16])); }
+        assert_eq!(encoder.queue(),4);
+        assert_eq!(encoder.dropped.load(Ordering::Relaxed),1000);
+        assert!(begin.elapsed()<std::time::Duration::from_secs(1));
+        assert!(!encoder.path.join("complete.json").exists(),"drop must leave an interrupted manifest");
+        drop(rx);
+        std::fs::remove_dir_all(&encoder.path).unwrap();
+    }
+}

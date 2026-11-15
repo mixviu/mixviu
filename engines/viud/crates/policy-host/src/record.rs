@@ -185,10 +185,6 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
                 return;
             }
         }
-        if let Err(error) = recorder::bus::check_destination(&path) {
-            answer(refused(&error));
-            return;
-        }
         for target in &mut targets {
             if target.window.is_none() {
                 let outputs: Vec<_> = lp.inner.space_state().state.outputs().cloned().collect();
@@ -237,15 +233,13 @@ pub fn command(lp: &mut Loop, op: RecordCommand, answer: impl FnOnce(ControlRepl
             }
         };
         let mut probe_join = None;
-        let probe = if false {
+        let probe = {
             let (tx, rx) = std::sync::mpsc::channel();
-            let cancel = probe_cancel.clone();
+            let destination = path.clone();
             probe_join = Some(std::thread::spawn(move || {
-                let _ = tx.send(Err("hardware encoder unavailable".into()));
+                let _ = tx.send(recorder::bus::check_destination(&destination));
             }));
             Some(rx)
-        } else {
-            None
         };
         let session = Rc::new(RefCell::new(Session {
             request_id,
