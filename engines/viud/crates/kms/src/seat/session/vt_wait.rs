@@ -8,8 +8,8 @@
 //! 4, minor 1–63. Anything else (a pipe, a pty, no tty: a nested or
 //! dev run) does not wait. The kernel notifies `/sys/class/tty/tty0/active`
 //! (POLLPRI) on every console switch — the attribute systemd-logind watches
-//! the same way — so the wait is a blocking poll with no timeout: no clock,
-//! no restart loop. Nothing here switches VT; only a human does.
+//! the same way. Before attachment, a bounded poll also covers missing
+//! notifications in containers. Nothing here switches VT; only a human does.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
@@ -106,14 +106,7 @@ pub fn watch_own_vt(mut activated: impl FnMut(), ready: impl FnOnce(), stop: &st
     }
     let mut source = Monitor(file);
     ready();
-    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-        let active = source.read().ok_or_else(|| std::io::Error::other("VT source unreadable"))?;
-        if active == own {
-            activated();
-        }
-        source.wait()?;
-    }
-    Ok(())
+    watch_until_stopped(own, &mut source, stop, activated)
 }
 
 struct Monitor(Option<std::fs::File>);
@@ -147,7 +140,16 @@ pub fn watch_changes(
     source: &mut impl ActiveVt,
     mut activated: impl FnMut(),
 ) -> std::io::Result<()> {
-    loop {
+    watch_until_stopped(own, source, &std::sync::atomic::AtomicBool::new(false), activated)
+}
+
+fn watch_until_stopped(
+    own: u32,
+    source: &mut impl ActiveVt,
+    stop: &std::sync::atomic::AtomicBool,
+    mut activated: impl FnMut(),
+) -> std::io::Result<()> {
+    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
         let active = source
             .read()
             .ok_or_else(|| std::io::Error::other("VT source unreadable"))?;
@@ -156,6 +158,7 @@ pub fn watch_changes(
         }
         source.wait()?;
     }
+    Ok(())
 }
 
 /// A retry timer may attempt a seat open only while this VT is active.
@@ -213,6 +216,19 @@ pub fn wait_for_own_vt() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lost_notification_recheck_attaches_and_stops_after_handover() {
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let mut source = Script { readings: vec![Some(1), Some(4)], at: 0, waits: 0 };
+        let mut attached = 0;
+        watch_until_stopped(4, &mut source, &stop, || {
+            attached += 1;
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        }).unwrap();
+        assert_eq!(attached, 1);
+        assert_eq!(source.at, 2, "a timed recheck can replace the lost sysfs edge");
+    }
 
     #[test]
     fn watcher_waits_for_edges_and_returns_source_failures_for_rearming() {
