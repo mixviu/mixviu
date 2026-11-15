@@ -53,6 +53,7 @@ end
 fn wait_ready($session, $seconds)
   $until = monotonic() + $seconds
   while monotonic() < $until
+    if not process_alive($session.pids[0]) then return false end
     if exists($session.runtime .. "/" .. $session.socket) then
       $r = call($session.service, "comp.ping", {})
       if $r.rc == 0 then return true end

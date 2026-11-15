@@ -1,1 +1,21 @@
-{"depth":8,"hdr":false,"log_level":"info","vrr":false}
+{
+  "version": 7,
+  "renderer_sync": "sync",
+  "hdr": false,
+  "depth": 8,
+  "vrr": false,
+  "late_latch": false,
+  "late_latch_margin_us": 0,
+  "render_node": "/dev/dri/renderD128",
+  "scanout_node": "",
+  "desktop_name": "MixViu Test",
+  "log_level": "info",
+  "capture_encoder": "vaapi",
+  "capture_codec": "av1",
+  "capture_quality": "optimized",
+  "capture_refresh_rate_max": 60,
+  "capture_background_encoder": "",
+  "capture_nvenc_allow_readback_fallback": false,
+  "capture_variable_frame_rate": true,
+  "priority": ""
+}
