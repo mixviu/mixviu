@@ -601,16 +601,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 let parked = matches!(lp.inner.status_session, world::state::StatusSession::Paused)
                     || (s.frames_parked)(lp);
-                signature.push(u64::from(parked));
-                signature.push(if parked {
-                    // No presentation clock while paused. Conservatively sample
-                    // real scene requests; capture requests are excluded here too.
-                    lp.state.redraw.capture_request_revision()
-                } else {
-                    lp.state
-                        .redraw
-                        .capture_revision(&world::state::output_key(output))
-                });
+                signature.extend(lp.state.redraw.capture_stamp(&world::state::output_key(output), parked));
             }
         }
         signature
