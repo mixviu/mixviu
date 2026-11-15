@@ -15,5 +15,9 @@ kind = "lib"
 layer = "bus"
 contract = "none"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Already workspace-pinned and used by mix; constants only, no C build helper.
+libc.workspace = true
+
 [lints.clippy]
 mod_module_files = "deny"

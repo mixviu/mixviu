@@ -1,6 +1,7 @@
 # buildinfo: compile-time build provenance (version, git sha, dirty bit,
 # build time) for every MixViu binary, plus the `--version` contract. No
-# external dependencies: `emit()` uses std and paths, and the RFC3339 formatter is
+# direct external dependencies: `emit()` uses std and paths (whose Linux open
+# constants come from the workspace's libc), and the RFC3339 formatter is
 # hand-rolled so the build script stays SOURCE_DATE_EPOCH-reproducible.
 [package]
 name = "buildinfo"
