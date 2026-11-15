@@ -112,7 +112,9 @@ impl Kinetic {
         let mut delta = Vec2::ZERO;
         for (i, axis) in self.axes.iter_mut().enumerate() {
             if axis.fling {
-                let dt = now.saturating_duration_since(axis.last_step.unwrap()).as_secs_f32();
+                let dt = now
+                    .saturating_duration_since(axis.last_step.unwrap())
+                    .as_secs_f32();
                 let decay = (-dt / DECAY_SECONDS).exp();
                 let next = axis.velocity * decay;
                 delta[i] = DECAY_SECONDS * (axis.velocity - next);
@@ -268,7 +270,13 @@ mod tests {
         let t = Instant::now();
         let mut k = Kinetic::default();
         k.axis(0, t, Some(true), Vec2::splat(10.0), [false; 2]);
-        k.axis(16, t + Duration::from_millis(16), None, Vec2::splat(10.0), [false; 2]);
+        k.axis(
+            16,
+            t + Duration::from_millis(16),
+            None,
+            Vec2::splat(10.0),
+            [false; 2],
+        );
         let x_release = t + Duration::from_millis(16);
         let y_release = t + Duration::from_millis(32);
         k.axis(16, x_release, None, Vec2::ZERO, [true, false]);
