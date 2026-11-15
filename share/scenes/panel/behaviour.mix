@@ -721,9 +721,14 @@ on props.changed
   $a = $r.event_args($event)
   if $event.headers.topic == $NODED .. ".props.changed" then
     if gap($event) then
+      $had_tray = contains($state.services, $TRAY)
       services_changed(registered())
+      if $had_tray then fetch_tray() end
     elif $a.path == "services.registered" then
+      -- A capped remove/register burst can end with the same name list.
+      $restart = deep_eq($a.old, $a.new) and contains($state.services, $TRAY)
       services_changed($a.new)
+      if $restart then fetch_tray() end
     end
     return
   end

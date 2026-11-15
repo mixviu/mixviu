@@ -665,13 +665,22 @@ pub fn run(service: String, comp: String) -> Result<(), String> {
     Ok(())
 }
 
-async fn report(client: &bus::SupervisedClient, comp: &str, output: &str, edge: &str, mode: &str) -> bool {
+async fn report(
+    client: &bus::SupervisedClient,
+    comp: &str,
+    output: &str,
+    edge: &str,
+    mode: &str,
+) -> bool {
     let args = json!({"output":output,"edge":edge,"surface":format!("viu-panel-{edge}"),"mode":mode,"generation":client.connection_generation()});
-    matches!(tokio::time::timeout(
-        Duration::from_secs(1),
-        client.call(comp, "comp.panel.mode", args),
+    matches!(
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            client.call(comp, "comp.panel.mode", args),
+        )
+        .await,
+        Ok(Ok(_))
     )
-    .await, Ok(Ok(_)))
 }
 async fn recovery_deadline(deadline: Option<Instant>) {
     match deadline {
@@ -709,7 +718,13 @@ mod idle_tests {
         state.lock().unwrap().panel("example", "bottom");
         let client = idle_bus::connect(&broker, "shell").await;
         let (send, recv) = tokio::sync::mpsc::unbounded_channel();
-        let task = tokio::spawn(worker_connected(client, "shell".into(), "comp".into(), state.clone(), recv));
+        let task = tokio::spawn(worker_connected(
+            client,
+            "shell".into(),
+            "comp".into(),
+            state.clone(),
+            recv,
+        ));
         settings.wait("settings.get", 1).await;
         comp.wait("comp.panel.mode", 1).await;
         tokio::time::sleep(Duration::from_millis(1200)).await;
@@ -719,19 +734,44 @@ mod idle_tests {
         assert_eq!(comp.count("comp.panel.mode"), 1);
         settings.settings_changed(2, "first").await;
         tokio::time::timeout(Duration::from_secs(3), async {
-            while state.lock().unwrap().look_revision < 2 { tokio::time::sleep(Duration::from_millis(10)).await; }
-        }).await.unwrap();
-        assert_eq!(settings.count("settings.get"), 1, "inline change needs no re-read");
+            while state.lock().unwrap().look_revision < 2 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            settings.count("settings.get"),
+            1,
+            "inline change needs no re-read"
+        );
         settings.settings_changed(3, "restarted").await;
         settings.wait("settings.get", 2).await;
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(settings.count("settings.get"), 2, "new authority confirms exactly once");
-        for _ in 0..2 { send.send(Outgoing::Mode("example".into(), "bottom".into(), "docked".into())).unwrap(); }
+        assert_eq!(
+            settings.count("settings.get"),
+            2,
+            "new authority confirms exactly once"
+        );
+        for _ in 0..2 {
+            send.send(Outgoing::Mode(
+                "example".into(),
+                "bottom".into(),
+                "docked".into(),
+            ))
+            .unwrap();
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(comp.count("comp.panel.mode"), 1, "same mode is silent");
-        send.send(Outgoing::Mode("example".into(), "bottom".into(), "hidden".into())).unwrap();
+        send.send(Outgoing::Mode(
+            "example".into(),
+            "bottom".into(),
+            "hidden".into(),
+        ))
+        .unwrap();
         comp.wait("comp.panel.mode", 2).await;
-        send.send(Outgoing::Register("example".into(), "bottom".into())).unwrap();
+        send.send(Outgoing::Register("example".into(), "bottom".into()))
+            .unwrap();
         comp.wait("comp.panel.mode", 3).await;
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(comp.count("comp.panel.mode"), 3);
@@ -778,6 +818,7 @@ async fn worker_connected(
     let wake = state.lock().unwrap().bus_wake.clone();
     let mut reported = BTreeMap::new();
     let mut comp_dirty = true;
+    let mut comp_live = false;
     let mut comp_retry = None;
     loop {
         if let Some(live) = settings::native::live_generation(&client) {
@@ -790,20 +831,27 @@ async fn worker_connected(
             }
         } else {
             generation = None;
+            comp_live = false;
             consumer.disconnected();
         }
         if generation.is_some() && comp_dirty && comp_retry.is_none_or(|at| Instant::now() >= at) {
             let synced = async {
                 client.call("noded", "noded.props.watch", json!({})).await?;
                 let props = client.call(&comp, "comp.props.watch", json!({})).await?;
-                let outputs = client.call(&comp, "comp.props.get", json!({"path":"outputs"})).await?;
+                let outputs = client
+                    .call(&comp, "comp.props.get", json!({"path":"outputs"}))
+                    .await?;
                 let mut shared = state.lock().unwrap();
                 shared.comp_state = props;
                 shared.outputs = outputs;
                 Ok::<_, bus::SupervisedError>(())
             };
-            comp_dirty = !matches!(tokio::time::timeout(Duration::from_secs(3), synced).await, Ok(Ok(())));
+            comp_dirty = !matches!(
+                tokio::time::timeout(Duration::from_secs(3), synced).await,
+                Ok(Ok(()))
+            );
             comp_retry = comp_dirty.then(|| Instant::now() + Duration::from_secs(1));
+            comp_live = !comp_dirty;
         }
         while let Some(action) = work.take() {
             let result = settings::native::execute(&client, &action).await;
@@ -848,7 +896,14 @@ async fn worker_connected(
         // Compare all local transitions, including UI deadlines and Bus commands.
         // An unchanged panel generates no RPC. Reconnect clears the cache.
         if generation.is_some() && !comp_dirty {
-            let reports: Vec<_> = { let shared = state.lock().unwrap(); shared.panels.iter().map(|(key,p)| (key.clone(), p.snapshot().mode.as_str().to_owned())).collect() };
+            let reports: Vec<_> = {
+                let shared = state.lock().unwrap();
+                shared
+                    .panels
+                    .iter()
+                    .map(|(key, p)| (key.clone(), p.snapshot().mode.as_str().to_owned()))
+                    .collect()
+            };
             for ((output, edge), mode) in reports {
                 if reported.get(&(output.clone(), edge.clone())) != Some(&mode) {
                     if report(&client, &comp, &output, &edge, &mode).await {
@@ -861,7 +916,11 @@ async fn worker_connected(
                 }
             }
         }
-        let deadline = consumer.retry_deadline().into_iter().chain(comp_retry.filter(|_| generation.is_some())).min();
+        let deadline = consumer
+            .retry_deadline()
+            .into_iter()
+            .chain(comp_retry.filter(|_| generation.is_some()))
+            .min();
         tokio::select! {
             changed=states.changed()=>{if changed.is_err(){break;} states.borrow_and_update();}
             _=wake.notified()=>{}
@@ -886,7 +945,12 @@ async fn worker_connected(
                 if command.is_topic_delivery() {
                     if command.topic()==Some("noded.props.changed") && command.header("broker_service")==Some("noded") && command.header("broker_origin")==Some("local") {
                         if let Ok(body)=serde_json::from_str::<Value>(&command.body) {
-                            let arrived = body["path"] == "services.registered" && body["new"].as_array().is_some_and(|names| names.contains(&json!(comp))) && !body["old"].as_array().is_some_and(|names| names.contains(&json!(comp)));
+                            let mut arrived = false;
+                            if body["path"] == "services.registered" {
+                                let present = body["new"].as_array().is_some_and(|names| names.contains(&json!(comp)));
+                                arrived = present && (!comp_live || body["old"] == body["new"]);
+                                comp_live = present;
+                            }
                             if arrived || body["gap"] == true || command.header("gap")==Some("true") {comp_dirty=true;comp_retry=None;reported.clear();}
                         }
                     }
