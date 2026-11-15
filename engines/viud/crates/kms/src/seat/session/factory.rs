@@ -14,6 +14,24 @@
 
 use smithay::backend::session::Session;
 use smithay::backend::session::libseat::{LibSeatSession, LibSeatSessionNotifier};
+use std::sync::atomic::{AtomicU8, Ordering};
+
+static SEAT_ERROR: AtomicU8 = AtomicU8::new(0);
+
+pub fn seat_error() -> Option<&'static str> {
+    match SEAT_ERROR.load(Ordering::Relaxed) {
+        1 => Some("libseat creation failed; check backend and device permissions"),
+        2 => Some("libseat remained inactive while this VT was active; check backend VT binding"),
+        3 => Some("libseat creation failed and /dev/tty0 is missing; check seatd console access or use a supported logind session"),
+        4 => Some("libseat remained inactive while this VT was active and /dev/tty0 is missing; check seatd console access"),
+        _ => None,
+    }
+}
+
+fn failed(code: u8) -> bool {
+    let code = code + if std::path::Path::new("/dev/tty0").exists() { 0 } else { 2 };
+    SEAT_ERROR.swap(code, Ordering::Relaxed) != code
+}
 
 /// Never wait on the compositor thread. A switch racing this attempt leaves
 /// the offscreen desk running until the next activation notification.
@@ -26,13 +44,19 @@ pub fn try_create() -> Option<(LibSeatSession, LibSeatSessionNotifier)> {
     let (session, notifier) = match LibSeatSession::new() {
         Ok(session) => session,
         Err(error) => {
-            warn!("seat creation deferred; keeping the offscreen desk alive: {error}");
+            if failed(1) {
+                warn!("seat creation deferred; keeping the offscreen desk alive: {error}; {}", seat_error().unwrap());
+            }
             return None;
         }
     };
     if crate::seat::session::vt_wait::own_vt().is_some() && !session.is_active() {
+        if failed(2) {
+            warn!("{}", seat_error().unwrap());
+        }
         return None;
     }
+    SEAT_ERROR.store(0, Ordering::Relaxed);
     Some((session, notifier))
 }
 

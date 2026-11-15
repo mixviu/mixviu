@@ -53,6 +53,7 @@ impl Session {
             (snapshot.input_keyboards, snapshot.input_pointers) =
                 native::wire::input::device_counts();
             snapshot.vt_source_available = Some(kms::seat::session::vt_wait::source_available());
+            snapshot.seat_error = kms::seat::session::factory::seat_error();
         }
         snapshot
     }
