@@ -72,7 +72,8 @@ mod tests {
 
     #[test]
     fn real_registration_is_removed_after_settle_or_cancel() {
-        for cancel in [false, true] {
+        // Natural completion, output loss, leave, button, key and new scroll.
+        for cause in 0..6 {
             let mut event_loop: EventLoop<'static, Harness> = EventLoop::try_new().unwrap();
             let t = Instant::now();
             let mut k = Kinetic::default();
@@ -82,7 +83,27 @@ mod tests {
             let mut s = Harness { timer: RepaintTimer::default(), kinetic: k,
                 now: t, fired: 0, handle: event_loop.handle() };
             s.arm();
-            if cancel { s.kinetic.cancel(); s.arm(); }
+            match cause {
+                0 => {},
+                1 => s.kinetic.cancel(), // output loss drops/cancels the timer owner
+                2..=4 => {
+                    let event = match cause {
+                        2 => egui::Event::PointerGone,
+                        3 => egui::Event::PointerButton {
+                            pos: egui::Pos2::ZERO, button: egui::PointerButton::Primary,
+                            pressed: true, modifiers: egui::Modifiers::NONE,
+                        },
+                        _ => egui::Event::Key {
+                            key: egui::Key::A, physical_key: None, pressed: true,
+                            repeat: false, modifiers: egui::Modifiers::NONE,
+                        },
+                    };
+                    assert!(Kinetic::interrupts(&event));
+                    s.kinetic.cancel();
+                },
+                _ => s.kinetic.axis(32, t + FRAME * 2, Some(true), egui::Vec2::splat(1.0), [false; 2]),
+            }
+            s.arm();
             for _ in 0..1000 {
                 event_loop.dispatch(Duration::ZERO, &mut s).unwrap();
                 if s.kinetic.deadline().is_none() { break; }
@@ -93,7 +114,7 @@ mod tests {
             let fired = s.fired;
             event_loop.dispatch(Duration::ZERO, &mut s).unwrap();
             assert_eq!(s.fired, fired);
-            assert_eq!(fired == 0, cancel);
+            assert_eq!(fired == 0, cause != 0);
         }
     }
 }

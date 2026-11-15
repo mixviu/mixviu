@@ -98,6 +98,7 @@ struct Surface {
     /// The earliest delayed repaint a timer is armed for, and that timer.
     repaint_at: Option<Instant>,
     kinetic: kinetic::Kinetic,
+    momentum: bool,
     timer: super::repaint_timer::RepaintTimer,
     focused: bool,
     started: Instant,
@@ -404,6 +405,7 @@ impl<P: LayerProgram + 'static> State<P> {
             rescued: false,
             repaint_at: None,
             kinetic: kinetic::Kinetic::default(),
+            momentum: false,
             timer: super::repaint_timer::RepaintTimer::default(),
             focused: false,
             started: Instant::now(),
@@ -530,6 +532,7 @@ impl<P: LayerProgram + 'static> State<P> {
                 if allowed && s.visible {
                     let delta = s.kinetic.step(now);
                     if delta != egui::Vec2::ZERO {
+                        s.momentum = true;
                         s.events.push(egui::Event::MouseWheel {
                             source: egui::MouseWheelSource::Momentum,
                             unit: egui::MouseWheelUnit::Point,
@@ -774,9 +777,10 @@ impl<P: LayerProgram + 'static> State<P> {
 
     fn cancel_kinetic(&mut self) {
         let ids: Vec<_> = self.surfaces.iter_mut().map(|s| {
-            let active = s.kinetic.deadline().is_some() || s.events.iter().any(|e|
+            let active = s.momentum || s.kinetic.deadline().is_some() || s.events.iter().any(|e|
                 matches!(e, egui::Event::MouseWheel { source: egui::MouseWheelSource::Momentum, .. }));
             s.kinetic.cancel();
+            s.momentum = false;
             // A timer may have queued momentum earlier in this dispatch.
             s.events.retain(|e| !matches!(e, egui::Event::MouseWheel {
                 source: egui::MouseWheelSource::Momentum, ..
@@ -1317,9 +1321,10 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     if self.input_allowed(&wl) {
                         let now = Instant::now();
                         if let Some(s) = self.by_wl(&wl) {
-                            if s.kinetic.deadline().is_some() && (delta != egui::Vec2::ZERO
+                            if (s.momentum || s.kinetic.deadline().is_some()) && (delta != egui::Vec2::ZERO
                                 || (source.is_some() && !horizontal.stop && !vertical.stop)) {
                                 s.events.push(cancel_scroll());
+                                s.momentum = false;
                             }
                             s.kinetic.axis(time, now, source.map(|s| s == wl_pointer::AxisSource::Finger),
                                 delta, [horizontal.stop, vertical.stop]);
