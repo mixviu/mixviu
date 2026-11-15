@@ -8,6 +8,6 @@ publish = false
 
 [package.metadata.mixviu]
 component = "media"
-kind = "library"
-layer = "shared"
+kind = "lib"
+layer = "core"
 contract = "none"

@@ -133,9 +133,12 @@ impl TakeFiles {
     }
     fn publish(&self) -> Result<(), String> {
         rename_no_replace(&self.video, &self.path).map_err(|e| e.to_string())?;
-        let parent = std::path::Path::new(&self.path).parent().ok_or("take has no parent")?;
-        File::open(parent).and_then(|directory| directory.sync_all())
-            .map_err(|e| format!("take published at {}; parent sync failed: {e}",self.path))
+        let parent = std::path::Path::new(&self.path)
+            .parent()
+            .ok_or("take has no parent")?;
+        File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|e| format!("take published at {}; parent sync failed: {e}", self.path))
     }
 }
 
