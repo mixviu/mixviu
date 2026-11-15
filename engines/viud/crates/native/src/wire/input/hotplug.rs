@@ -35,7 +35,7 @@ fn nodes_at(root: &std::path::Path) -> std::io::Result<Nodes> {
         .collect()
 }
 
-pub fn register(handle: &LoopHandle<'static, Loop>, mut input: Libinput) {
+pub fn register(handle: &LoopHandle<'static, Loop>, mut input: Libinput, wake: std::rc::Rc<std::cell::Cell<bool>>) {
     let mut known = nodes().unwrap_or_default();
     let mut retry = false;
     handle
@@ -51,6 +51,7 @@ pub fn register(handle: &LoopHandle<'static, Loop>, mut input: Libinput) {
                     seat::modifier::clear::clear_held_modifiers(state);
                     input.suspend();
                     retry = input.resume().is_err();
+                    wake.set(true);
                     if !retry {
                         known = current;
                     }

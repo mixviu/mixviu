@@ -5865,6 +5865,7 @@ checksum = "11ec1bc47d34ae756616f387c11fd0595f86f2cc7e6473bde9e3ded30cb902a1"
 name = "native"
 version = "0.1.2"
 dependencies = [
+ "comp-model",
  "decor",
  "dispatcher",
  "drivers",
@@ -5874,6 +5875,7 @@ dependencies = [
  "headless",
  "kms",
  "ledger",
+ "libc",
  "model",
  "outputs",
  "protocols",

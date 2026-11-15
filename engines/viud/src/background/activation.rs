@@ -18,6 +18,10 @@ use std::{
 use world::state::Loop;
 
 static WATCH_FAILED: AtomicBool = AtomicBool::new(false);
+static WATCH_RUNNING: AtomicBool = AtomicBool::new(false);
+pub fn watcher_running() -> bool {
+    WATCH_RUNNING.load(Ordering::Relaxed)
+}
 pub fn watcher_failed() -> bool {
     WATCH_FAILED.load(Ordering::Relaxed)
 }
@@ -60,6 +64,7 @@ impl Activation {
         let started = std::thread::Builder::new()
             .name("viud-vt-wait".into())
             .spawn(move || {
+                WATCH_RUNNING.store(true, Ordering::Relaxed);
                 let result = std::panic::catch_unwind(|| {
                     kms::seat::session::vt_wait::watch_own_vt(
                         || {
@@ -76,6 +81,10 @@ impl Activation {
                     Ok(Ok(())) => "VT source ended".into(),
                     Err(_) => "VT source panicked".into(),
                 };
+                WATCH_RUNNING.store(false, Ordering::Relaxed);
+                if stop.load(Ordering::Relaxed) {
+                    info!("VT watcher exited after native attachment; libseat owns VT notifications");
+                }
                 let _ = tx.send(Notice::Stopped(error));
             });
         if let Err(error) = started {

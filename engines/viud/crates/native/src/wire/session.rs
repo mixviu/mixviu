@@ -184,7 +184,9 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
             resume_input: || {
                 libinput
                     .resume()
-                    .map_err(|e| format!("libinput resume failed: {e:?}"))
+                    .map_err(|e| format!("libinput resume failed: {e:?}"))?;
+                ctx_ref.libinput_dispatch.set(true);
+                Ok(())
             },
             activate_display: |force| {
                 kms::scanout::surface::output::activate(&mut manager.borrow_mut(), force)

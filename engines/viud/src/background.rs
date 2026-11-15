@@ -5,6 +5,7 @@ use smithay::reexports::calloop::EventLoop;
 mod activation;
 mod test_seat;
 pub(crate) use activation::watcher_failed;
+pub(crate) use activation::watcher_running;
 use std::{cell::RefCell, ffi::OsString, rc::Rc};
 use world::state::{Loop, StatusSession};
 

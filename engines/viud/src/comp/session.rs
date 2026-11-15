@@ -46,12 +46,14 @@ impl Session {
     }
 
     pub(super) fn snapshot(&self) -> SessionSnapshot {
-        let mut snapshot = self.snapshot;
+        let mut snapshot = self.snapshot.clone();
         #[cfg(feature = "backend-native")]
         {
             snapshot.watcher_failed = crate::background::watcher_failed();
-            (snapshot.input_keyboards, snapshot.input_pointers) =
-                native::wire::input::device_counts();
+            (snapshot.input_devices, snapshot.input_events) = native::wire::input::device_snapshot();
+            snapshot.input_keyboards = snapshot.input_devices.iter().filter(|d| d.capabilities.iter().any(|c| c == "keyboard")).count();
+            snapshot.input_pointers = snapshot.input_devices.iter().filter(|d| d.capabilities.iter().any(|c| c == "pointer")).count();
+            snapshot.vt_watcher_running = Some(crate::background::watcher_running());
             snapshot.vt_source_available = Some(kms::seat::session::vt_wait::source_available());
             snapshot.seat_error = kms::seat::session::factory::seat_error();
             snapshot.tty0_available = Some(std::path::Path::new("/dev/tty0").exists());
@@ -107,6 +109,7 @@ mod tests {
                         } else {
                             None
                         },
+                        vt_watcher_running: if cfg!(feature = "backend-native") { Some(crate::background::watcher_running()) } else { None },
                         ..SessionSnapshot::default()
                     }
                 );

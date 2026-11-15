@@ -141,8 +141,18 @@ pub struct PowerSnapshot {
     pub screen_off_s: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct InputDeviceSnapshot {
+    pub name: String,
+    pub node: String,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SessionSnapshot {
+    pub input_devices: Vec<InputDeviceSnapshot>,
+    pub input_events: u64,
+    pub vt_watcher_running: Option<bool>,
     pub seat_error: Option<&'static str>,
     pub tty0_available: Option<bool>,
     pub input_keyboards: usize,
@@ -2604,7 +2614,7 @@ pub fn dispatch_read_with_limit(
     limit_bytes: usize,
 ) -> (u8, Arc<str>) {
     if command == "comp.session.get" {
-        let Some(session) = snapshot.session else {
+        let Some(session) = snapshot.session.as_ref() else {
             return error("busy");
         };
         return enforce_reply_limit(
@@ -2617,7 +2627,8 @@ pub fn dispatch_read_with_limit(
                         "render_state": if session.watcher_failed { "offscreen-retrying" } else if session.active && snapshot.info.backend != "headless" { "active" } else { "offscreen" },
                         "vt": session.vt,
                         "since_ms": session.since_ms,
-                        "input": { "keyboards": session.input_keyboards, "pointers": session.input_pointers },
+                        "input": { "keyboards": session.input_keyboards, "pointers": session.input_pointers, "devices": session.input_devices, "events": session.input_events },
+                        "vt_watcher_running": session.vt_watcher_running,
                         "vt_source_available": session.vt_source_available,
                         "tty0_available": session.tty0_available,
                         "activation_error": if session.vt_source_available == Some(false) { Some("no active VT source: expose the session tty (VT_GETSTATE) or /sys/class/tty/tty0/active") } else { session.seat_error },

@@ -1103,8 +1103,9 @@ fn session_get_returns_the_last_transition_with_a_nullable_vt() {
                 "version": 1, "active": active, "vt": vt,
                 "render_state": if active { "active" } else { "offscreen" },
                 "since_ms": 1_792_108_800_123_u64,
-                "input": {"keyboards": 0, "pointers": 0},
+                "input": {"keyboards": 0, "pointers": 0, "devices": [], "events": 0},
                 "vt_source_available": null,
+                "vt_watcher_running": null,
                 "tty0_available": null,
                 "activation_error": null,
             })
@@ -1149,7 +1150,7 @@ fn session_reports_input_presence_and_seat_failure_even_with_a_working_vt_source
     let (rc, body) = dispatch_read(&snapshot, "comp.session.get", &json!({}));
     assert_eq!(rc, 0);
     let body: Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(body["input"], json!({"keyboards": 1, "pointers": 0}));
+    assert_eq!(body["input"], json!({"keyboards": 1, "pointers": 0, "devices": [], "events": 0}));
     assert_eq!(
         body["activation_error"],
         "libseat creation failed and /dev/tty0 is missing"
