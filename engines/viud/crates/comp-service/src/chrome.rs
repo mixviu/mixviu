@@ -396,6 +396,7 @@ mod idle_bus;
 
 #[cfg(test)]
 mod tests {
+    static IDLE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     use super::*;
     #[tokio::test]
     async fn native_props_watch_echoes_the_requested_command() {
@@ -456,6 +457,7 @@ mod tests {
     }
     #[tokio::test]
     async fn idle_chrome_reads_once_and_titlebar_changes_read_once() {
+        let _guard = IDLE_LOCK.lock().await;
         let mut broker = test_broker::Broker::bounce_stable();
         let settings = idle_bus::Service::start(&broker, "settingsd").await;
         let mut app = idle_bus::Service::start(&broker, "example-app").await;
@@ -664,6 +666,7 @@ mod tests {
     }
     #[tokio::test]
     async fn failed_titlebar_reads_back_off() {
+        let _guard = IDLE_LOCK.lock().await;
         let mut broker = test_broker::Broker::bounce_stable();
         let settings = idle_bus::Service::start(&broker, "settingsd").await;
         let mut app = idle_bus::Service::start(&broker, "example-app").await;
@@ -724,7 +727,9 @@ mod tests {
             run(&client, ingress, events, live).await;
         });
 
-        app.wait("example-app.ui.titlebar.form", 4).await;
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while app.count("example-app.ui.titlebar.form") < 4 { tokio::time::sleep(std::time::Duration::from_millis(10)).await; }
+        }).await.unwrap();
         app.checkpoint("comp-idle").await;
         let times: Vec<_> = app.calls.lock().unwrap().iter().filter(|(c,_)| c.ends_with(".ui.titlebar.form")).map(|(_,at)| *at).collect();
         assert!(times[1].duration_since(times[0]) >= std::time::Duration::from_millis(900));
