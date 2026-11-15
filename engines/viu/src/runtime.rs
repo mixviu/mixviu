@@ -699,12 +699,65 @@ async fn worker(
     state: Shared,
     outgoing: tokio::sync::mpsc::UnboundedReceiver<Outgoing>,
 ) -> Result<(), String> {
-    let client = bus::SupervisedClient::connect_options(&service, &bus::noded_url())
-        .connect()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = host_client(&service, &bus::noded_url()).await?;
     let incoming = client.incoming().ok_or("Bus incoming already taken")?;
     worker_connected(client, service, comp, state, outgoing, incoming).await
+}
+
+async fn host_client(service: &str, url: &str) -> Result<bus::SupervisedClient, String> {
+    bus::SupervisedClient::connect_options(service, url)
+        .with_provenance(viu::registration_provenance())
+        .with_commands(SceneCommand::manifest(service))
+        .connect()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod baseline_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn host_registration_carries_process_and_build_identity() {
+        let broker = test_broker::Broker::start();
+        let client = host_client("shell", &broker.url).await.unwrap();
+        let inventory = client.call("noded", "noded.list", json!({})).await.unwrap();
+        let rows = inventory.as_array().or_else(|| inventory["services"].as_array()).unwrap();
+        let shell = rows.iter().find(|row| row["name"] == "shell").unwrap();
+        assert_eq!(shell["pid"], std::process::id());
+        assert!(shell["git_sha"].is_string());
+        client.close().await;
+    }
+
+    #[test]
+    fn stats_lists_two_surfaces_without_waking_or_drawing() {
+        let state = Arc::new(Mutex::new(State::new()));
+        let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        for edge in ["top", "left"] {
+            let ctx = egui::Context::default();
+            let observed = wakes.clone();
+            ctx.set_request_repaint_callback(move |_| {
+                observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            });
+            state.lock().unwrap().contexts.insert(("example".into(), edge.into()), ctx);
+        }
+        let command = bus::IncomingCommand {
+            generation: 0, from: "test".into(), command: "shell.ui.stats".into(),
+            id: None, args: json!({}), body: "{}".into(), headers: BTreeMap::new(),
+        };
+        for _ in 0..2 {
+            let (rc, reply) = dispatch(&state, "shell", &command, &json!({}));
+            assert_eq!(rc, 0);
+            let surfaces = reply["surfaces"].as_array().unwrap();
+            assert_eq!(surfaces.len(), 2);
+            assert_eq!(surfaces[0]["surface"], "left");
+            assert_eq!(surfaces[1]["surface"], "top");
+        }
+        assert_eq!(wakes.load(std::sync::atomic::Ordering::SeqCst), 0);
+        for ctx in state.lock().unwrap().contexts.values() {
+            assert_eq!(ctx.cumulative_pass_nr(), 0);
+        }
+    }
 }
 
 async fn worker_connected(
@@ -1026,6 +1079,24 @@ fn dispatch(
             json!({"error_code":"FORBIDDEN","message":"Furniture authority requires a local broker caller"}),
         );
     }
+    if SceneCommand::parse(service, &command.command) == Some(SceneCommand::Stats) {
+        if !args.is_object()
+            || args.get("output").is_some_and(|v| !v.is_string())
+            || args.get("viewport").is_some_and(|v| v != "root")
+        {
+            return (10, json!({"error_code":"ARGUMENT"}));
+        }
+        // Presentation can register a context while holding its lock.
+        // Release the host lock before reading any context data.
+        let contexts = state.lock().unwrap().contexts.clone();
+        let surfaces: Vec<_> = contexts.iter()
+            .filter(|((output, _), _)| args["output"].as_str().is_none_or(|o| o == output))
+            .map(|((output, surface), ctx)| json!({
+                "output":output,"surface":surface,
+                "stats":toolkit::drive::frame_stats(ctx, egui::ViewportId::ROOT)
+            })).collect();
+        return (0, json!({"available":!surfaces.is_empty(),"surfaces":surfaces}));
+    }
     let mut shared = state.lock().unwrap();
     let Some(kind) = SceneCommand::parse(service, &command.command) else {
         return (10, json!({"error_code":"UNKNOWN_COMMAND"}));
@@ -1078,6 +1149,7 @@ fn dispatch(
         );
     }
     let result = match kind {
+        SceneCommand::Stats => unreachable!("passive query handled before locking"),
         SceneCommand::Ping => json!({"service":service,"status":"ok","engine":"viu"}),
         SceneCommand::Info => {
             json!({"service":service,"engine":"viu","commands":SceneCommand::names(service),"pending":["dialogs","corner menus"],"window_previews":false})

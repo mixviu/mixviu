@@ -5,6 +5,11 @@ pub fn register_build_snapshot() {
     let _ = buildinfo::build_info!();
 }
 
+/// Build and process identity shared by native applications and the shell host.
+pub fn registration_provenance() -> bus::RegisterProvenance {
+    native_registration::provenance()
+}
+
 pub mod annotation;
 pub mod app_facilities;
 pub mod app_host;

@@ -8,6 +8,7 @@ use crate::panels::PanelCommand;
 /// plus the `shell.scenes.list` inventory.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SceneCommand {
+    Stats,
     Load,
     Validate,
     Patch,
@@ -72,7 +73,7 @@ impl SceneCommand {
             let kind = Self::parse(service, &name).expect("catalogued scene command");
             CommandDescriptor::new(
                 &name,
-                &[],
+                if kind == Self::Stats { &["output", "viewport"] } else { &[] },
                 &format!("Scene host {}", name.split_once('.').unwrap().1),
                 !kind.mutates(),
             )
@@ -89,6 +90,7 @@ impl SceneCommand {
         }
         let kind = under(command, "shell").or_else(|| under(command, service))?;
         Some(match kind {
+            "ui.stats" => Self::Stats,
             "scene.load" => Self::Load,
             "scene.validate" => Self::Validate,
             "scene.patch" => Self::Patch,
@@ -189,6 +191,7 @@ impl SceneCommand {
     /// Every command name under `service`, for HELP and the tests.
     pub fn names(service: &str) -> Vec<String> {
         [
+            "ui.stats",
             "scene.load",
             "scene.validate",
             "scene.patch",

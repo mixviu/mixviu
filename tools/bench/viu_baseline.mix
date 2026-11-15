@@ -2,7 +2,7 @@
 $proc = require("proc.mix")
 $cli = getopt(args(), {seconds:{arg:true}, output:{arg:true}, workload:{arg:true}, node:{arg:true}, steps:{arg:true}, workloads:{arg:true}})
 if len($cli.errors) > 0 or len($cli.rest) == 0 or $cli.opts.output == nil then
-  raise("USAGE", "mix tools/bench/viu_baseline.mix --output result.json [--seconds 60] [--workload idle|scroll --node ID] PID|SERVICE ...")
+  raise("USAGE", "mix tools/bench/viu_baseline.mix --output result.json [--seconds 60] [--workload idle|scroll --node ID --steps N] [--workloads FILE] PID|SERVICE ...")
 end
 $seconds = to_number($cli.opts.seconds ?? "60")
 if $seconds <= 0 or $seconds > 86400 then raise("ARGUMENT", "seconds must be in (0, 86400]") end
@@ -78,6 +78,7 @@ for $target in $cli.rest
     build_id:$build_id, git_sha:$sha, frames_before:$stats, before:$proc.snapshot($pid)})
 end
 sleep($seconds)
+$runs = {}
 if $work.kind == "scroll" then
   for $t in $targets
     $tree = rpc($t.service, "ui.tree", {id:$cli.opts.node})
@@ -91,11 +92,27 @@ if $work.kind == "scroll" then
       end
     end
     if $rect == nil then raise("WORKLOAD", "scroll node is absent or has no rectangle") end
+    $frames_start = rpc($t.service, "ui.stats", {})
+    $started = monotonic()
+    $started_unix = time()
     for $i = 1 to $work.steps
       $r = rpc($t.service, "ui.scroll", {x:($rect[0]+$rect[2])/2, y:($rect[1]+$rect[3])/2, dx:0, dy:$work.dy})
       if $r.available == false then raise("WORKLOAD", "ui.scroll failed") end
       sleep($work.pause_seconds)
     end
+    $ended = monotonic()
+    $frames_end = rpc($t.service, "ui.stats", {})
+    $run = {started_unix_seconds:$started_unix, ended_unix_seconds:time(), elapsed_seconds:$ended-$started,
+      frames_before:$frames_start, frames_after:$frames_end}
+    if $frames_start.available == true and $frames_end.available == true and $frames_start.frames_drawn != nil and $frames_end.frames_drawn != nil then
+      $run.frames_drawn = $frames_end.frames_drawn - $frames_start.frames_drawn
+      $run.frames_per_second = $run.frames_drawn / $run.elapsed_seconds
+      if $frames_start.cpu_frame_total_ms != nil and $frames_end.cpu_frame_total_ms != nil then
+        $run.cpu_frame_total_ms = $frames_end.cpu_frame_total_ms - $frames_start.cpu_frame_total_ms
+        if $run.frames_drawn > 0 then $run.cpu_frame_mean_ms = $run.cpu_frame_total_ms / $run.frames_drawn end
+      end
+    end
+    $runs[to_string($t.pid)] = $run
   end
 end
 $rows = []
@@ -126,6 +143,7 @@ for $t in $targets
   $t.context_switches_per_second = $switches
   $t.thread_context_switches_per_second = $thread_rates
   $t.after = $after
+  $t.workload_run = $runs[to_string($t.pid)]
   $t.frames_after = if $t.service != nil then rpc($t.service, "ui.stats", {}) else {available:false} end
   push($rows, $t)
 end
