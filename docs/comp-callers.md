@@ -49,8 +49,8 @@ right on a fixed canvas.
 |---|---|---|
 | `comp.record.start` | `request_id`, `target:{output?,output_generation?,window?:{id,generation},region?:{x,y,width,height}}` or `target:{windows:[{id,generation}]}`, absolute `.vfl` directory `path`, `fps?` (30; 1–60), `cursor?` (true), `encoder?` (`vfl`), `max_seconds` (1–86400) | `session,path,recovery_path,width,height,fps,clock:"monotonic",t0_us,frames_path,markers_path` |
 | `comp.record.marker` | `session,label,data?` | `session,seq,frame,t_us` |
-| `comp.record.status` | `session?` | `session,state,frames,repeated,dropped,duration_us,bytes,queue,encoders:["vfl"],readbacks,readback_us,readback_mean_us,readback_max_us,encoder,error` |
-| `comp.record.stop` | `session,discard?` | `path,recovery_path,bytes,frames,repeated,dropped,duration_us,frames_path,markers_path,encoder,readbacks,readback_us,readback_mean_us,readback_max_us,error` |
+| `comp.record.status` | `session?` | `session,state,frames,repeated,dropped,dropped_capture,dropped_queue,readback_deferred,pending_ticks,duration_us,bytes,queue,encoders:["vfl"],readbacks,readback_us,readback_mean_us,readback_max_us,writer,encoder,error` |
+| `comp.record.stop` | `session,discard?` | `path,recovery_path,bytes,frames,repeated,dropped,dropped_capture,dropped_queue,readback_deferred,pending_ticks,duration_us,frames_path,markers_path,encoder,readbacks,readback_us,readback_mean_us,readback_max_us,writer,error` |
 
 Only VFL is available. Matroska paths, x264 and VAAPI requests are refused.
 The [VFL specification](../libraries/media/vfl/VFL.md)
@@ -112,8 +112,11 @@ offscreen render. These are microseconds, not encoder latency.
 Recording accepts either the canonical output id returned by comp.windows.list
 (e.g. `o_hdmi_a_1`) or its backend name (`HDMI-A-1`). Targets are normalised
 to the backend name internally for generation fencing. Recording samples
-scene-change revisions; capture-only redraws and presentation completions do
-not make an idle output look changed.
+the selected output's submitted scene changes; capture-only redraws and
+presentation completions do not make an idle output look changed. Paused or
+parked presentation (including DPMS off) uses a conservative scene-request
+clock instead. Changes on another output can cause an extra offscreen sample;
+the writer still compares accepted pixels before deciding whether to repeat.
 
 `dropped = dropped_capture + dropped_queue`. `readback_deferred` counts
 budget waits, and `pending_ticks` counts waits for an in-flight capture. The

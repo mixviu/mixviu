@@ -220,7 +220,14 @@ impl Schedule {
     /// Include the clock identity so parking/resuming always requests a sample,
     /// even when the two independent revisions happen to have the same value.
     pub fn capture_stamp(&self, key: &str, parked: bool) -> [u64; 2] {
-        [u64::from(parked), if parked { self.capture_request_revision() } else { self.capture_revision(key) }]
+        [
+            u64::from(parked),
+            if parked {
+                self.capture_request_revision()
+            } else {
+                self.capture_revision(key)
+            },
+        ]
     }
     fn scene_reason(reason: RedrawReason) -> bool {
         !matches!(
@@ -474,7 +481,11 @@ mod tests {
         assert_eq!(schedule.capture_stamp("a", true), parked);
         schedule.request_for(RedrawReason::WindowState);
         assert_ne!(schedule.capture_stamp("a", true), parked);
-        assert_eq!(schedule.capture_stamp("a", false), live, "no submission while parked");
+        assert_eq!(
+            schedule.capture_stamp("a", false),
+            live,
+            "no submission while parked"
+        );
     }
 
     struct Data {

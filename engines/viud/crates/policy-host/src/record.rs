@@ -119,7 +119,12 @@ fn event(s: &Session, state: &'static str) {
     });
 }
 
-pub fn command(lp: &mut Loop, op: RecordCommand, frames_parked: fn(&Loop) -> bool, answer: impl FnOnce(ControlReply) + 'static) {
+pub fn command(
+    lp: &mut Loop,
+    op: RecordCommand,
+    frames_parked: fn(&Loop) -> bool,
+    answer: impl FnOnce(ControlReply) + 'static,
+) {
     let answer: Answer = Box::new(answer);
     let params = op.clone();
     if let RecordCommand::Start { request_id, .. } = &op {
@@ -601,7 +606,11 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 let parked = matches!(lp.inner.status_session, world::state::StatusSession::Paused)
                     || (s.frames_parked)(lp);
-                signature.extend(lp.state.redraw.capture_stamp(&world::state::output_key(output), parked));
+                signature.extend(
+                    lp.state
+                        .redraw
+                        .capture_stamp(&world::state::output_key(output), parked),
+                );
             }
         }
         signature
