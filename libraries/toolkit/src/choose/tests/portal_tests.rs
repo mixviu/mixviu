@@ -229,15 +229,16 @@ async fn teardown_session(recovery: bool) {
     let (method_release, method_gate) = watch::channel(recovery);
     let (close_release, close_gate) = watch::channel(false);
     let server = serve_interface(
-            &address,
-            PATH,
-            TeardownPortal {
-                close_entered: close_tx,
-                method_entered: method_tx,
-                method_release: method_gate,
-                close_release: close_gate,
-            },
-        ).await;
+        &address,
+        PATH,
+        TeardownPortal {
+            close_entered: close_tx,
+            method_entered: method_tx,
+            method_release: method_gate,
+            close_release: close_gate,
+        },
+    )
+    .await;
     server.request_name(DESKTOP).await.unwrap();
     let client = connection(&address).await;
     let (cancel, mut cancelled) = watch::channel(false);
@@ -457,15 +458,16 @@ async fn serve_gated(
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let closed = Arc::new(AtomicUsize::new(0));
     let connection = serve_interface(
-            address,
-            PATH,
-            Portal {
-                calls: tx,
-                closed: closed.clone(),
-                early,
-                version_gate,
-            },
-        ).await;
+        address,
+        PATH,
+        Portal {
+            calls: tx,
+            closed: closed.clone(),
+            early,
+            version_gate,
+        },
+    )
+    .await;
     connection.request_name(DESKTOP).await.unwrap();
     (connection, rx, closed)
 }
@@ -895,14 +897,15 @@ async fn gated_close(unknown_method: bool, answer: bool) {
     let (entered_tx, mut entered) = tokio::sync::mpsc::unbounded_channel();
     let (release, gate) = watch::channel(false);
     let server = serve_interface(
-            &address,
-            path,
-            GatedClose {
-                entered: entered_tx,
-                release: gate,
-                unknown_method,
-            },
-        ).await;
+        &address,
+        path,
+        GatedClose {
+            entered: entered_tx,
+            release: gate,
+            unknown_method,
+        },
+    )
+    .await;
     let client = connection(&address).await;
     let owner = server.unique_name().unwrap().as_str().to_owned();
     // Bound the whole call independently of production: a broken Close without
