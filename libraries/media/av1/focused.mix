@@ -1,0 +1,12 @@
+fn checked($cmd)
+  $r = run_argv($cmd, {timeout: 7200, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then exit(1) end
+end
+checked(["cargo", "test", "-p", "media-av1"])
+checked(["cargo", "test", "-p", "media-av1", "--no-default-features"])
+checked(["cargo", "clippy", "-p", "media-av1", "--all-targets", "--", "-D", "warnings"])
+checked(["cargo", "fmt", "-p", "media-av1"])
+checked(["git", "diff"])
+checked(["git", "checkout", "-q", "--", "."])
