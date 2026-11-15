@@ -29,7 +29,9 @@ impl LibinputInterface for Interface {
             // node so the worker's desktop cannot receive the injected key.
             let owned = unsafe { OwnedFd::from_raw_fd(fd) };
             if unsafe { libc::ioctl(fd, 0x40044590, 1) } != 0 {
-                return Err(std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO));
+                return Err(std::io::Error::last_os_error()
+                    .raw_os_error()
+                    .unwrap_or(libc::EIO));
             }
             Ok(owned)
         }
@@ -135,8 +137,12 @@ fn virtual_keyboard_is_counted_before_human_input_and_delivers_a_key() {
             match OpenOptions::new().read(true).open(&node) {
                 Ok(_) => {
                     permission_denied = false;
-                    if context.path_add_device(&node).is_some() { break node; }
-                    last_error = format!("libinput rejected readable {node}; verify udev keyboard classification and exclusive grab permission");
+                    if context.path_add_device(&node).is_some() {
+                        break node;
+                    }
+                    last_error = format!(
+                        "libinput rejected readable {node}; verify udev keyboard classification and exclusive grab permission"
+                    );
                 }
                 Err(error) => {
                     permission_denied = error.kind() == std::io::ErrorKind::PermissionDenied;
@@ -145,7 +151,9 @@ fn virtual_keyboard_is_counted_before_human_input_and_delivers_a_key() {
             }
         }
         if Instant::now() >= until && permission_denied {
-            eprintln!("NOT RUN uinput lifecycle/event assertions: created {sysname}, but worker device access blocks the generated evdev node: {last_error}");
+            eprintln!(
+                "NOT RUN uinput lifecycle/event assertions: created {sysname}, but worker device access blocks the generated evdev node: {last_error}"
+            );
             return;
         }
         assert!(

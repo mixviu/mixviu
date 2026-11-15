@@ -10,10 +10,10 @@ use input::event;
 
 use std::{
     cell::Cell,
-    rc::Rc,
     io,
     os::unix::io::{AsFd, BorrowedFd},
     path::PathBuf,
+    rc::Rc,
     // compd: opt-in per-turn dispatch budget
     time::{Duration, Instant},
 };
