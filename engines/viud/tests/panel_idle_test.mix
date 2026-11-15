@@ -199,7 +199,18 @@ end
     write_file($tmp .. "/clock-time",to_string(time()))
     $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","fixture_clock()")
     $behaviour=replace_must($behaviour,"$m.panel(snapshot(), $state.icons, time())","$m.panel(snapshot(), $state.icons, fixture_time())")
-    $behaviour=$behaviour .. '\nfn fixture_time()\n  return to_number(read_file(env("FIXTURE_DIR") .. "/clock-time"))\nend\nfn fixture_clock()\n  $gate=env("FIXTURE_DIR") .. "/clock-release"\n  while not is_file($gate) sleep(0.02) end\n  remove($gate)\n  $path=env("FIXTURE_DIR") .. "/clock-time"\n  write_file($path,to_string(to_number(read_file($path))+60))\nend\n'
+    $behaviour=$behaviour .. '
+fn fixture_time()
+  return to_number(read_file(env("FIXTURE_DIR") .. "/clock-time"))
+end
+fn fixture_clock()
+  $gate=env("FIXTURE_DIR") .. "/clock-release"
+  while not is_file($gate) sleep(0.02) end
+  remove($gate)
+  $path=env("FIXTURE_DIR") .. "/clock-time"
+  write_file($path,to_string(to_number(read_file($path))+60))
+end
+'
   end
   if starts_with($case,"retry-") then
     -- Hold a retry at its sleep boundary until the test explicitly permits
@@ -330,7 +341,8 @@ task_start("panel.test.observe","{}")
     print("PASS two registry deliveries: one resync, zero absent tray calls")
     exit(0)
   elif $case == "registry-rejected" then
-    write_file($tmp .. "/registry.mix",'send scene-panel panel.test.registry body={new:["panel-stub","tray-stub"]}\n')
+    write_file($tmp .. "/registry.mix",'send scene-panel panel.test.registry body={new:["panel-stub","tray-stub"]}
+')
     $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
     quiet()
     check(tray_calls()==1,"stale roster must discover rejection exactly once")
@@ -342,7 +354,9 @@ task_start("panel.test.observe","{}")
     $tray_pid=start("tray-stub",$tmp .. "/tray.mix")
     wait_service("tray-stub")
     -- A confirmed departure then arrival clears the negative cache.
-    write_file($tmp .. "/registry.mix",'send scene-panel panel.test.registry body={new:["panel-stub"]}\nsend scene-panel panel.test.registry body={new:["panel-stub","tray-stub"]}\n')
+    write_file($tmp .. "/registry.mix",'send scene-panel panel.test.registry body={new:["panel-stub"]}
+send scene-panel panel.test.registry body={new:["panel-stub","tray-stub"]}
+')
     $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
     quiet()
     check(tray_calls()>=2,"tray return did not clear rejection")

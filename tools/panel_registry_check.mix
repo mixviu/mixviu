@@ -13,7 +13,7 @@ try
   print(run_argv_must([$mix,$test,"legacy-clock",$tmp .. "/legacy.mix"],{env:$vars,timeout:90}))
   -- Same harness and real broker, only the behaviour under test changes.
   $before = run_argv_must(["git","show","6bb5f9a1:" .. $path])
-  write_file($path,$before .. '\nfn queue_registry($live)\n  services_changed($live)\nend\n')
+  write_file($path,$before .. "\nfn queue_registry($live)\n  services_changed($live)\nend\n")
   for $case in ["registry-burst","registry-rejected"]
     $r=run_argv([$mix,$test,$case],{env:$vars,timeout:45})
     print("BEFORE " .. $case .. " rc=" .. to_string($r.exit_code) .. "\n" .. $r.stdout .. $r.stderr)
@@ -24,14 +24,14 @@ try
     print(run_argv_must([$mix,$test,$case],{env:$vars,timeout:90}))
   end
   for $i=1 to 8 push($loads,spawn(["sha256sum","/dev/zero"])) end
-  write_file($tmp .. "/one.mix", '$r=run_argv([$mix,$test,$case],{env:$vars,timeout:120})\nwrite_file($out,json_encode($r))\n')
+  write_file($tmp .. "/one.mix", "$r=run_argv([$mix,$test,$case],{env:$vars,timeout:120})\nwrite_file($out,json_encode($r))\n")
   for $wave=1 to 2
     $outputs=[]
     for $i=1 to 8
       $out=$tmp .. "/" .. to_string($wave) .. "-" .. to_string($i)
       push($outputs,$out)
       $case=$i%2==0 ? "registry-burst" : "registry-rejected"
-      $source='$mix=' .. data_encode($mix) .. '\n$test=' .. data_encode($test) .. '\n$case=' .. data_encode($case) .. '\n$vars=' .. data_encode($vars) .. '\n$out=' .. data_encode($out) .. '\n' .. read_file($tmp .. "/one.mix")
+      $source="$mix=" .. data_encode($mix) .. "\n$test=" .. data_encode($test) .. "\n$case=" .. data_encode($case) .. "\n$vars=" .. data_encode($vars) .. "\n$out=" .. data_encode($out) .. "\n" .. read_file($tmp .. "/one.mix")
       write_file($out .. ".mix",$source)
       $_=spawn([$mix,$out .. ".mix"])
     end
