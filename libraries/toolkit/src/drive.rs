@@ -491,6 +491,9 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
         let Some(target) = target else {
             return Some(refusal(id, "NOT_FOUND", "viewport is not open"));
         };
+        if command_name == "ui.stats" {
+            return Some(ok(id, crate::drive_stats::read(ctx, target)));
+        }
         if target == egui::ViewportId::ROOT {
             let mut args = args.clone();
             args.as_object_mut()
@@ -1019,7 +1022,7 @@ impl Drive {
             return Some(refusal(id, "ARGUMENT", "arguments must be a JSON object"));
         }
         let job = match command_name {
-            "ui.stats" => return Some(ok(id, crate::drive_stats::read(ctx))),
+            "ui.stats" => return Some(ok(id, crate::drive_stats::read(ctx, ctx.viewport_id()))),
             "ui.tree" => return Some(self.tree_answer(id, args)),
             "ui.menu" => return Some(ok(id, json!({"menu":menu_state(ctx)}))),
             "ui.menu.list" => {

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $proc = require("proc.mix")
-$cli = getopt(args(), {seconds:{arg:true}, output:{arg:true}, workload:{arg:true}, node:{arg:true}, workloads:{arg:true}})
+$cli = getopt(args(), {seconds:{arg:true}, output:{arg:true}, workload:{arg:true}, node:{arg:true}, steps:{arg:true}, workloads:{arg:true}})
 if len($cli.errors) > 0 or len($cli.rest) == 0 or $cli.opts.output == nil then
   raise("USAGE", "mix tools/bench/viu_baseline.mix --output result.json [--seconds 60] [--workload idle|scroll --node ID] PID|SERVICE ...")
 end
@@ -10,6 +10,11 @@ $name = $cli.opts.workload ?? "idle"
 $workloads = load_data($cli.opts.workloads ?? (dirname(realpath($0)) .. "/workloads.conf.mix"))
 $work = $workloads[$name]
 if $work == nil or not contains(["idle", "scroll"], $work.kind) then raise("WORKLOAD", "unknown workload") end
+if $cli.opts.steps != nil then $work.steps = $proc.number($cli.opts.steps) end
+if $work.kind == "scroll" then
+  $work = validate($work, {kind:{type:"string"}, steps:{type:"number"}, dy:{type:"number"}, pause_seconds:{type:"number"}})
+  if $work.steps < 1 or $work.steps > 100000 or floor($work.steps) != $work.steps or $work.pause_seconds < 0 then raise("WORKLOAD", "invalid scroll bounds") end
+end
 if $work.kind == "scroll" and $cli.opts.node == nil then raise("WORKLOAD", "scroll requires --node (AccessKit id)") end
 fn rpc($service, $suffix, $body)
   $command = $service .. "." .. $suffix
@@ -86,11 +91,17 @@ for $t in $targets
   $elapsed = $after.at - $b.at
   $cpu_seconds = ($after.cpu.ticks - $b.cpu.ticks) / $hz
   $switches = {}
+  $thread_rates = {}
+  if len(keys($b.threads)) != len(keys($after.threads)) then raise("TARGET", "thread set changed during sample; retry") end
   for $key in ["voluntary_ctxt_switches", "nonvoluntary_ctxt_switches"]
     $total = 0
     for $tid in keys($b.threads)
       if $after.threads[$tid] == nil then raise("TARGET", "thread exited during sample; retry") end
-      $total = $total + $after.threads[$tid][$key] - $b.threads[$tid][$key]
+      $delta = $after.threads[$tid][$key] - $b.threads[$tid][$key]
+      if $delta < 0 then raise("TARGET", "thread identity changed; retry") end
+      if $thread_rates[$tid] == nil then $thread_rates[$tid] = {} end
+      $thread_rates[$tid][$key] = $delta / $elapsed
+      $total = $total + $delta
     end
     $switches[$key] = $total / $elapsed
   end
@@ -98,6 +109,7 @@ for $t in $targets
   $t.cpu_seconds = $cpu_seconds
   $t.cpu_percent_one_core = 100 * $cpu_seconds / $elapsed
   $t.context_switches_per_second = $switches
+  $t.thread_context_switches_per_second = $thread_rates
   $t.after = $after
   $t.frames_after = if $t.service != nil then rpc($t.service, "ui.stats", {}) else {available:false} end
   push($rows, $t)

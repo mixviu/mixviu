@@ -1202,7 +1202,7 @@ impl Host {
                     .strip_prefix(&format!("{}.", self.app))
                     .or_else(|| request.command.strip_prefix("viu."))
                     .unwrap_or(&request.command);
-                let geometry = toolkit::drive::COMMANDS.contains(&command)
+                let geometry = (toolkit::drive::COMMANDS.contains(&command) && command != "ui.stats")
                     || request.command == "viu.state"
                     || request.command.starts_with("viu.ui.")
                     || command == "capture";
@@ -1815,6 +1815,9 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         let mut native = Vec::new();
         if bundle.manifest.native_drive {
             native.extend(toolkit::drive::describe(&bundle.manifest.service));
+        } else {
+            native.extend(toolkit::drive::describe(&bundle.manifest.service).into_iter()
+                .filter(|d| d["name"].as_str().is_some_and(|n| n.ends_with(".ui.stats"))));
         }
         if bundle.manifest.macros {
             native.extend(macros::commands::describe(&bundle.manifest.service));

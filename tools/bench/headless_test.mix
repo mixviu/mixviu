@@ -1,0 +1,45 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC-only end-to-end collector test through the chooser's native harness.
+$n = require("../../tests/desktop/nested_host_lib.mix")
+$pb = require("../../tests/lib/private_bus.mix")
+$root = dirname(dirname(dirname(realpath($0))))
+$bin = env("MIX_TEST_BIN", $root .. "/target/debug")
+$run = $n.new_run("/tmp/viu-baseline")
+$bus = nil
+$session = nil
+$app = nil
+$passed = false
+try
+  -- mixd dispatches by executable name.
+  run_argv_must(["ln", "-s", $bin .. "/mixd", $run.path .. "/noded"])
+  $bus = $n.private_bus({dir:$run.path .. "/broker", name:"baseline-test", noded:$run.path .. "/noded"})
+  $session = $n.start({bin:$bin .. "/viud", run:$run, config:$root .. "/tests/desktop/smoke-settings.json"})
+  if not $n.wait_ready($session,40) then raise("HEADLESS", "viud failed: " .. $session.log) end
+  $client = $n.client_env($session, merge($pb.client_env($bus), {HOME:$run.path .. "/home",
+    XDG_CONFIG_HOME:$run.path .. "/config", XDG_STATE_HOME:$run.path .. "/state", XDG_CACHE_HOME:$run.path .. "/cache",
+    LIBGL_ALWAYS_SOFTWARE:"1", WGPU_BACKEND:"gl", MESA_VK_WSI_PRESENT_MODE:"mailbox"}))
+  $app = spawn([$bin .. "/viu", "run", $root .. "/apps/gallery", $run.path .. "/profile"],
+    {env:$client, stdout:{file:$run.path .. "/app.log"}, stderr:"stdout", detach:true})
+  $ready = false
+  for $i = 1 to 200
+    $s = $n.call("gallery", "gallery.ui.stats", {})
+    if $s.rc == 0 and $s.result.frames_drawn > 0 then $ready = true; break end
+    sleep(0.1)
+  end
+  if not $ready then raise("HEADLESS", "app drew no observed frame: " .. $run.path .. "/app.log") end
+  sleep(3)
+  $out = $run.path .. "/baseline.json"
+  $result = run_argv(["mix", $root .. "/tools/bench/viu_baseline.mix", "--seconds", "2", "--output", $out, "gallery"], {timeout:30})
+  print($result.stdout)
+  if $result.exit_code != 0 then raise("BASELINE", $result.stderr) end
+  $json = json_parse(read_file($out))
+  $t = $json.targets[0]
+  if $t.frames_before.frames_drawn != $t.frames_after.frames_drawn then raise("IDLE", "idle app drew frames") end
+  print(read_file($out))
+  $passed = true
+finally
+  if $app != nil and process_alive($app) then kill($app,15) end
+  if $session != nil then $n.stop($session) end
+  if $bus != nil then $pb.stop($bus) end
+  $n.finish_run($run,$passed)
+end
