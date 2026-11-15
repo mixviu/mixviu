@@ -1,0 +1,25 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix")
+$actions=require("actions.mix")
+$frame=require("../../libraries/viu/mix/gold-frame.mix")
+fn service_summary($counts)
+  -- Stable alphabetical ties, highest counts first, bounded to eight entries.
+  $names=sort_by(sort(keys($counts)),fn($name)=0-$counts[$name])
+  return map(take($names,8),fn($name)=$name..": "..to_string($counts[$name]))
+end
+fn project($s)
+  $rows=[]
+  for $r in $core.rows($s)
+    push($rows,{key:to_string($r.id),depth:0,branch:false,expanded:false,focused:to_string($r.id)==$s.selected,selected:to_string($r.id)==$s.selected,tone:if $r.error then "danger" else nil end,cells:[$r.time,$r.direction ?? "",$r.from,$r.to,$r.command ?? "—",$r.kind,if $r.rc==nil then "" else to_string($r.rc) end,$r.outcome ?? "",if $r.latency_ms==nil then "—" else to_string($r.latency_ms) end,to_string($r.size ?? 0)]})
+  end
+  $columns=[]
+  for $pair in [["time","Time",112],["direction","Direction",76],["from","From",100],["to","To",100],["command","Command",220],["kind","Kind",64],["rc","RC",40],["outcome","Outcome",110],["latency","ms",60],["size","Bytes",70]]
+    push($columns,{id:$pair[0],label:$pair[1],width:$pair[2],min_width:35,sortable:false,remainder:$pair[0]=="command",align:if contains(["rc","latency","size"],$pair[0]) then "right" else "left" end})
+  end
+  $registry=$actions.registry($s);$menus=[]
+  for $name in ["File","View"] push($menus,{id:$name,label:$name,enabled:true,children:filter($registry,fn($a)=$a.menu==$name)}) end
+  $counts=service_summary($s.counts)
+  $model={window_close:$s.window_close,shortcuts:filter($registry,fn($a)=$a.shortcut!=nil),values:{filter:$s.filter.text},options:{id:"options",kind:"widget-row",label:"Traffic controls",initial:{left:[{id:"pause",kind:"toggle",label:"Pause",initial:$s.paused,properties:{text:"Pause"}},{id:"clear",kind:"button",label:"Clear",initial:"Clear",properties:{text:"Clear"}},{id:"hide",kind:"button",label:"Hide selected service",initial:"Hide service",properties:{text:"Hide service",enabled:$s.selected!=nil}},{id:"own",kind:"toggle",label:"Own traffic",initial:$s.filter.own,properties:{text:"Own traffic"}}],right:[{id:"filter",kind:"field",label:"Filter traffic",initial:$s.filter.text,properties:{search:true,placeholder:"From, to or command",width:220}}]},properties:{chrome:"options",scroll_below:800,scroll_width:1000}},table:{id:"traffic",kind:"tree-table",label:"Bus messages",initial:{key:"traffic",rows:$rows,columns:$columns},properties:{style:"grid",frame:"dock",stick_to_bottom:not $s.paused}},summary:{id:"counts",kind:"label",label:"",initial:"Services · "..join($counts," · "),properties:{weak:true}}}
+  $status={left:(if $s.paused then "Paused · " else "" end)..$s.status,icon:if $s.connected then "plug" else "unplug" end,error:$s.error!=nil,message:$s.error,right:[fmt("%.1f msg/s",$s.rate),to_string($s.seen).." total",to_string(len($rows)).." shown",to_string($s.evicted).." history evicted",to_string($s.dropped).." broker dropped"]}
+  return $frame.apply($model,{icon:"plug",title:"Bus Tap",menus:$menus,toolbar:[],status:$status})
+end

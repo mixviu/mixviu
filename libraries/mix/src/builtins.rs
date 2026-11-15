@@ -14909,6 +14909,8 @@ fn builtin_fcntl_lock(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// `true` when held, `false` when not; mirrors `funlock` exactly
 /// (including the unlinked-lock-file key recovery).
 fn builtin_fcntl_unlock(args: Vec<Value>) -> MixResult<Option<Value>> {
+    use std::os::fd::AsRawFd;
+
     expect_args_between("fcntl_unlock", &args, 1, 1)?;
     let path = args[0].to_mix_string();
     let Some(canonical) = canonical_path_for_funlock(std::path::Path::new(&path)) else {
@@ -14925,10 +14927,20 @@ fn builtin_fcntl_unlock(args: Vec<Value>) -> MixResult<Option<Value>> {
         return Ok(Some(Value::Bool(false)));
     };
 
-    // Dropping the fd releases every OFD lock on that open file description
-    // — the kernel's own cleanup path, so no explicit F_UNLCK is needed and
-    // there is no error case to misreport.
-    drop(file);
+    // A concurrent fork can retain this open file description until exec,
+    // even with CLOEXEC. Explicitly unlock it before closing our fd, otherwise
+    // an immediate acquire through a fresh open can still see contention.
+    let mut fl: libc::flock = unsafe { std::mem::zeroed() };
+    fl.l_type = libc::F_UNLCK as libc::c_short;
+    fl.l_whence = libc::SEEK_SET as libc::c_short;
+    // SAFETY: `file` owns a live fd and `fl` describes the whole file.
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_OFD_SETLK, &fl) } != 0 {
+        let e = std::io::Error::last_os_error();
+        return Err(flock_runtime_error(format!(
+            "fcntl_unlock '{}': {}",
+            path, e
+        )));
+    }
     Ok(Some(Value::Bool(true)))
 }
 
@@ -27957,7 +27969,9 @@ pub(crate) mod socket_sources {
         fn blocking_deadline_send_bounds_the_whole_payload() {
             // The blocking send observes the process-wide Ctrl-C flag.
             // Keep tests that deliberately arm it out of this timeout probe.
-            let _interrupt = crate::interrupt::TEST_LOCK.lock().unwrap();
+            let _interrupt = crate::interrupt::TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             crate::interrupt::_test_clear();
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
@@ -29872,6 +29886,15 @@ fn http_accept_next(
 /// `http_serve(root[, opts])` — blocking static file server; returns the
 /// number of requests served once `duration`/`requests` ends it.
 fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
+    http_serve_with_listener(args, None)
+}
+
+// Keep listener ownership across fixture setup and serving, as the broker
+// fixture does. The Mix entry point still binds its requested address itself.
+fn http_serve_with_listener(
+    args: Vec<Value>,
+    listener: Option<std::net::TcpListener>,
+) -> MixResult<Option<Value>> {
     expect_args_between("http_serve", &args, 1, 2)?;
     let root_arg = args[0].to_mix_string();
     let root = std::fs::canonicalize(&root_arg).map_err(|e| MixError::RuntimeError {
@@ -30017,11 +30040,15 @@ fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
         });
     }
 
-    let listener =
-        std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
-            span: None,
-            msg: format!("http_serve: bind '{host}:{port}': {e}"),
-        })?;
+    let listener = match listener {
+        Some(listener) => listener,
+        None => std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| {
+            MixError::RuntimeError {
+                span: None,
+                msg: format!("http_serve: bind '{host}:{port}': {e}"),
+            }
+        })?,
+    };
     listener.set_nonblocking(true).ok();
     let bound = listener.local_addr().map_err(|e| MixError::RuntimeError {
         span: None,
@@ -30311,6 +30338,13 @@ fn http_send_file(
 /// `http_recv(port[, opts])` — accept ONE request, answer it, return it
 /// as a map (nil on timeout). The OAuth-redirect / webhook-catch shape.
 fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
+    http_recv_with_listener(args, None)
+}
+
+fn http_recv_with_listener(
+    args: Vec<Value>,
+    listener: Option<std::net::TcpListener>,
+) -> MixResult<Option<Value>> {
     expect_args_between("http_recv", &args, 1, 2)?;
     let port = as_exact_integer(
         "http_recv(): port",
@@ -30438,11 +30472,15 @@ fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
         }
     }
 
-    let listener =
-        std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
-            span: None,
-            msg: format!("http_recv: bind '{host}:{port}': {e}"),
-        })?;
+    let listener = match listener {
+        Some(listener) => listener,
+        None => std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| {
+            MixError::RuntimeError {
+                span: None,
+                msg: format!("http_recv: bind '{host}:{port}': {e}"),
+            }
+        })?,
+    };
     listener.set_nonblocking(true).ok();
     let deadline = (timeout_seconds > 0.0)
         .then(|| std::time::Instant::now() + std::time::Duration::from_secs_f64(timeout_seconds));
@@ -33445,7 +33483,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_completes_normally() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("printf 'hi'; exit 7");
         let outcome = run_with_timeout(&argv, None, 5, "test", None).expect("spawn ok");
@@ -33458,7 +33498,9 @@ mod ssh_helpers_tests {
     #[cfg(unix)]
     #[test]
     fn ssh_capture_limits_each_stream_and_preserves_unbounded_default() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         // Exercise the real SSH capture adapter without a remote: tee copies
         // stdin to both pipes. Exceed pipe capacity to also verify draining.
@@ -33530,7 +33572,9 @@ mod ssh_helpers_tests {
         // character makes the lossy decode insert U+FFFD, so utf8_lossy
         // reads true even though the REMOTE output was valid UTF-8. Pinned
         // here so a future exact-byte check knows what it is changing.
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = vec!["tee".into(), "/dev/stderr".into()];
         let input = "A€Z"; // '€' is 3 bytes; cap after its first byte.
@@ -33546,7 +33590,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_fires_on_deadline() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("printf 'pre'; sleep 5");
         let started = std::time::Instant::now();
@@ -33573,7 +33619,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_interrupt_wins_no_deadline() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // Pre-arm the interrupt flag — the very first poll will see it.
         let f = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let _ = crate::interrupt::init(f.clone());
@@ -33592,7 +33640,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_interrupt_beats_timeout() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let f = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let _ = crate::interrupt::init(f.clone());
         crate::interrupt::INTERRUPT_FLAG
@@ -33611,7 +33661,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_zero_disables_deadline() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         // Quick child; verifies that timeout_s=0 doesn't somehow trip
         // the deadline check on the first poll.
@@ -33647,7 +33699,9 @@ mod ssh_helpers_tests {
     #[test]
     #[cfg(unix)]
     fn run_with_timeout_kills_process_group() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("trap '' TERM; sleep 5");
         let started = std::time::Instant::now();
@@ -33670,7 +33724,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_drains_stderr_separately() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("printf 'OUT'; printf 'ERR' >&2; exit 0");
         let outcome = run_with_timeout(&argv, None, 5, "test", None).expect("spawn ok");
@@ -33681,7 +33737,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_writes_stdin_through() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let argv = sh("cat");
         let outcome =
@@ -33713,7 +33771,9 @@ mod ssh_helpers_tests {
     #[test]
     #[cfg(unix)]
     fn run_with_timeout_interrupt_escalates_through_sigterm_grace() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let f = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let _ = crate::interrupt::init(f.clone());
@@ -33760,7 +33820,9 @@ mod ssh_helpers_tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn run_with_timeout_interrupt_sweeps_a_term_ignoring_descendant() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         let f = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let _ = crate::interrupt::init(f.clone());
@@ -33816,7 +33878,9 @@ mod ssh_helpers_tests {
 
     #[test]
     fn run_with_timeout_signal_killed_exit_code() {
-        let _g = crate::interrupt::TEST_LOCK.lock().unwrap();
+        let _g = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::interrupt::_test_clear();
         // Self-kill via SIGTERM. The child has no `code()`; the
         // outcome should map to 128 + SIGTERM = 143 (Unix), not the
@@ -35610,7 +35674,7 @@ mod flock_tests {
 
     #[test]
     fn flock_acquire_succeeds() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("acquire");
         let path = d.join("lock");
         assert!(bool_result(builtin_flock(vec![s(&path)])));
@@ -35620,7 +35684,7 @@ mod flock_tests {
 
     #[test]
     fn second_acquire_in_same_process_is_true_without_a_second_retained_fd() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("idempotent");
         let path = d.join("lock");
         assert!(bool_result(builtin_flock(vec![s(&path)])));
@@ -35654,7 +35718,7 @@ mod flock_tests {
 
     #[test]
     fn funlock_returns_true_then_false() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("unlock");
         let path = d.join("lock");
         assert!(bool_result(builtin_flock(vec![s(&path)])));
@@ -35665,7 +35729,7 @@ mod flock_tests {
 
     #[test]
     fn contention_from_a_second_process_returns_false() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("contended");
         let path = d.join("lock");
         let holder = spawn_lock_holder(&path, &d, false);
@@ -35676,7 +35740,7 @@ mod flock_tests {
 
     #[test]
     fn process_exit_releases_the_lock() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("exit-release");
         let path = d.join("lock");
         let holder = spawn_lock_holder(&path, &d, false);
@@ -35695,7 +35759,7 @@ mod flock_tests {
 
     #[test]
     fn wait_returns_false_after_roughly_the_requested_time() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("wait");
         let path = d.join("lock");
         let holder = spawn_lock_holder(&path, &d, false);
@@ -35716,7 +35780,7 @@ mod flock_tests {
 
     #[test]
     fn shared_option_allows_a_real_second_process_to_acquire() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("shared");
         let path = d.join("lock");
         assert!(bool_result(builtin_flock(vec![s(&path), shared_opts()])));
@@ -35728,7 +35792,7 @@ mod flock_tests {
 
     #[test]
     fn directory_path_raises_instead_of_reporting_contention() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("directory");
         let err = builtin_flock(vec![s(&d)]).expect_err("opening a directory must raise");
         assert!(format!("{err}").contains("flock"), "wrong error: {err}");
@@ -35758,7 +35822,7 @@ mod flock_tests {
     #[test]
     fn a_shared_lock_needs_only_read_access() {
         use std::os::unix::fs::PermissionsExt;
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("shared-readonly");
         for (name, lock, unlock) in [
             (
@@ -35784,7 +35848,7 @@ mod flock_tests {
 
     #[test]
     fn a_shared_lock_on_a_fifo_raises_instead_of_hanging() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("shared-fifo");
         let fifo = d.join("fifo");
         let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
@@ -35807,8 +35871,35 @@ mod flock_tests {
     }
 
     #[test]
+    fn fcntl_unlock_releases_a_lock_with_an_inherited_description() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let d = tmpdir("inherited-description");
+        let path = d.join("lock");
+        assert!(bool_result(builtin_fcntl_lock(vec![
+            s(&path),
+            shared_opts()
+        ])));
+        let inherited = {
+            let registry = FCNTL_REGISTRY.0.lock().unwrap();
+            registry.held[&std::fs::canonicalize(&path).unwrap()]
+                .try_clone()
+                .unwrap()
+        };
+        // dup and fork retain the same open file description. Keep that
+        // description alive across unlock, just as a child does before exec.
+        assert!(bool_result(builtin_fcntl_unlock(vec![s(&path)])));
+        assert!(bool_result(builtin_fcntl_lock(vec![
+            s(&path),
+            lock_opts(&[("create", Value::Bool(false))]),
+        ])));
+        assert!(bool_result(builtin_fcntl_unlock(vec![s(&path)])));
+        drop(inherited);
+        std::fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
     fn create_false_refuses_a_missing_lock_file_and_creates_nothing() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let d = tmpdir("create-false");
         for (name, lock, unlock) in [
             (
@@ -37733,12 +37824,14 @@ mod bytes_tests {
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    fn free_port() -> u16 {
-        std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port()
+    fn reserved_http_listener() -> (std::net::TcpListener, u16) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // Force the old probe-to-bind interleaving: a peer must be unable
+        // to claim the address while the fixture owns its listener.
+        let err = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
+        (listener, port)
     }
 
     #[test]
@@ -37753,19 +37846,21 @@ mod bytes_tests {
         std::fs::write(&outside, "SECRET").unwrap();
         std::os::unix::fs::symlink(&outside, dir.join("leak")).unwrap();
 
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(7.0));
             opts.insert("listing".to_string(), Value::Bool(true));
-            match builtin_http_serve(vec![Value::String(root), Value::map(opts)]) {
+            match http_serve_with_listener(
+                vec![Value::String(root), Value::map(opts)],
+                Some(listener),
+            ) {
                 Ok(Some(Value::Number(n))) => Ok(n as u64),
                 other => Err(format!("{other:?}")),
             }
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
 
         // 1. Plain file with the right type and body.
         let r = http_raw(port, "GET /hello.txt HTTP/1.1\r\nHost: x\r\n\r\n");
@@ -37826,18 +37921,17 @@ mod bytes_tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("index.html"), "<!doctype html><div id=app></div>").unwrap();
         std::fs::write(dir.join("app.js"), "console.log('router')").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(5.0));
             opts.insert("spa".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         // 1. A real asset still serves as itself.
         let r = http_raw(port, "GET /app.js HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(r.starts_with("HTTP/1.1 200") && r.contains("router"), "{r}");
@@ -37882,18 +37976,17 @@ mod bytes_tests {
         std::fs::create_dir_all(dir.join("bus")).unwrap();
         std::fs::write(dir.join("bus/props-core.html"), "<h1>props-core page</h1>").unwrap();
         std::fs::write(dir.join("plain.txt"), "text").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(4.0));
             opts.insert("clean_urls".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         // Clean URL → the .html page, styled/served as HTML.
         let r = http_raw(port, "GET /bus/props-core HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(
@@ -37928,18 +38021,17 @@ mod bytes_tests {
         std::fs::create_dir_all(dir.join("bus")).unwrap();
         std::fs::write(dir.join("bus.html"), "<h1>bus section</h1>").unwrap();
         std::fs::write(dir.join("bus/props.html"), "<h1>child</h1>").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(3.0));
             opts.insert("clean_urls".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         // /bus (the dir exists, no index) resolves to the sibling bus.html.
         let r = http_raw(port, "GET /bus HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(
@@ -37965,7 +38057,7 @@ mod bytes_tests {
         let dir = std::env::temp_dir().join(format!("mix-http-spa-bad-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut opts = indexmap::IndexMap::new();
-        opts.insert("port".to_string(), Value::Number(free_port() as f64));
+        opts.insert("port".to_string(), Value::Number(1.0));
         opts.insert("spa".to_string(), Value::String("nope.html".into()));
         let err = builtin_http_serve(vec![
             Value::String(dir.to_string_lossy().into_owned()),
@@ -38086,17 +38178,16 @@ mod bytes_tests {
         let dir = std::env::temp_dir().join(format!("mix-http-head-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("f.txt"), "0123456789").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(1.0));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         let r = http_raw(port, "HEAD /f.txt HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(r.starts_with("HTTP/1.1 200"), "{r}");
         assert!(r.contains("Content-Length: 10"), "{r}");
@@ -38116,17 +38207,16 @@ mod bytes_tests {
         let dir = std::env::temp_dir().join(format!("mix-http-refuse-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("f.txt"), "x").unwrap();
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let root = dir.to_string_lossy().to_string();
         let server = std::thread::spawn(move || {
             let mut opts = indexmap::IndexMap::new();
             opts.insert("port".to_string(), Value::Number(port as f64));
             opts.insert("requests".to_string(), Value::Number(4.0));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
+            http_serve_with_listener(vec![Value::String(root), Value::map(opts)], Some(listener))
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
         let r = http_raw(
             port,
             "POST /f.txt HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n",
@@ -38162,16 +38252,14 @@ mod bytes_tests {
         let mut opts = indexmap::IndexMap::new();
         opts.insert("respond".to_string(), Value::map(respond));
         opts.insert("timeout".to_string(), Value::Number(0.1));
-        let err = builtin_http_recv(vec![Value::Number(free_port() as f64), Value::map(opts)])
-            .unwrap_err();
+        let err = builtin_http_recv(vec![Value::Number(1.0), Value::map(opts)]).unwrap_err();
         assert!(format!("{err}").contains("response splitting"), "{err}");
     }
 
     #[test]
     fn http_recv_catches_one_request_and_times_out_clean() {
-        let port = free_port();
+        let (listener, port) = reserved_http_listener();
         let client = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(150));
             http_raw(
                 port,
                 "POST /hook?run=42 HTTP/1.1\r\nHost: x\r\nX-Token: abc\r\nContent-Length: 9\r\n\r\npayload=1",
@@ -38183,9 +38271,12 @@ mod bytes_tests {
         respond.insert("status".to_string(), Value::Number(202.0));
         respond.insert("body".to_string(), Value::String("queued\n".into()));
         opts.insert("respond".to_string(), Value::map(respond));
-        let got = builtin_http_recv(vec![Value::Number(port as f64), Value::map(opts)])
-            .unwrap()
-            .unwrap();
+        let got = http_recv_with_listener(
+            vec![Value::Number(port as f64), Value::map(opts)],
+            Some(listener),
+        )
+        .unwrap()
+        .unwrap();
         let Value::Map(m) = &got else {
             panic!("{got:?}")
         };
@@ -38203,11 +38294,15 @@ mod bytes_tests {
         assert!(resp.ends_with("queued\n"), "{resp}");
 
         // And a quiet port answers nil, not an error.
-        let port2 = free_port();
+        let (listener, port2) = reserved_http_listener();
         let mut opts = indexmap::IndexMap::new();
         opts.insert("timeout".to_string(), Value::Number(0.2));
         assert_eq!(
-            builtin_http_recv(vec![Value::Number(port2 as f64), Value::map(opts)]).unwrap(),
+            http_recv_with_listener(
+                vec![Value::Number(port2 as f64), Value::map(opts)],
+                Some(listener)
+            )
+            .unwrap(),
             Some(Value::Nil)
         );
     }

@@ -104,7 +104,6 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "mix",
     "mix_mcp",
     "mix_shell",
-    "mixos_mcp",
     "mixtrayd",
     "model",
     "monitor",

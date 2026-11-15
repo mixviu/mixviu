@@ -478,9 +478,20 @@ Looks fine to me. The file is my_notes_final.txt in the share.
         assert!(!link("[é](ftp://x.invalid) ](") && web_target(" mailto:a@x.invalid"));
     }
 
-    /// The most a 1 MB crafted input may take, in a debug build on a build
-    /// worker. The quadratic scan took minutes on the first of these.
+    /// CPU budget for a crafted input in a debug build. Descheduling under
+    /// parallel CI load is not scanner work. The quadratic scan took minutes
+    /// of CPU on the first case; keep that regression budget unchanged.
     const BOUND: std::time::Duration = std::time::Duration::from_secs(2);
+
+    fn thread_cpu_time() -> std::time::Duration {
+        let mut time = std::mem::MaybeUninit::<libc::timespec>::uninit();
+        assert_eq!(
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, time.as_mut_ptr()) },
+            0
+        );
+        let time = unsafe { time.assume_init() };
+        std::time::Duration::new(time.tv_sec as u64, time.tv_nsec as u32)
+    }
 
     #[test]
     fn crafted_one_megabyte_inputs_are_scanned_in_linear_time() {
@@ -501,10 +512,10 @@ Looks fine to me. The file is my_notes_final.txt in the share.
             ("pipes and dashes", fill("|---")),
         ];
         for (name, text) in &cases {
-            let started = std::time::Instant::now();
+            let started = thread_cpu_time();
             let _ = looks_like_markdown(text);
-            let elapsed = started.elapsed();
-            eprintln!("{name}: {} bytes in {elapsed:?}", text.len());
+            let elapsed = thread_cpu_time() - started;
+            eprintln!("{name}: {} bytes in {elapsed:?} thread CPU", text.len());
             assert!(elapsed < BOUND, "{name}: {elapsed:?}");
         }
     }

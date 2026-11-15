@@ -1,0 +1,8 @@
+[
+  {"id":"file.clear","label":"Clear history","menu":"File","class":"intent","enabled":true,"checked":null,"shortcut":"Ctrl+L","schema":null,"reason":null},
+  {"id":"file.quit","label":"Quit","menu":"File","class":"intent","enabled":true,"checked":null,"shortcut":"Ctrl+Q","schema":null,"reason":null},
+  {"id":"view.pause","label":"Pause","menu":"View","class":"intent","enabled":true,"checked":false,"shortcut":"Ctrl+P","schema":null,"reason":null},
+  {"id":"view.hide","label":"Hide selected service","menu":"View","class":"intent","enabled":false,"checked":null,"shortcut":null,"schema":null,"reason":null},
+  {"id":"view.unhide","label":"Show hidden services","menu":"View","class":"intent","enabled":true,"checked":null,"shortcut":null,"schema":null,"reason":null},
+  {"id":"view.own","label":"Show own traffic","menu":"View","class":"intent","enabled":true,"checked":false,"shortcut":null,"schema":null,"reason":null}
+]

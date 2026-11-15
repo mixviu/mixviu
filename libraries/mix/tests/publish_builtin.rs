@@ -82,6 +82,38 @@ fn map_str(args: &Value, key: &str) -> String {
 }
 
 #[tokio::test]
+async fn send_body_expressions_keep_their_value_until_the_bus_adapter() {
+    let (_, bus, _) = run_with_bus(
+        r#"
+$body = {services: ["term"], params: {}}
+send probe probe.args body={services: ["term"], params: {}}
+send probe probe.args body=$body
+send probe probe.args body=merge($body, {})
+send probe probe.args body=[{}, "term"]
+send probe probe.args body="{\"raw\": true}"
+"#,
+    )
+    .await;
+    let sends = bus.sends.borrow();
+    assert_eq!(sends.len(), 5);
+    let body = |i: usize| match &sends[i].2 {
+        Value::Map(args) => args["body"].clone(),
+        other => panic!("expected args map, got {other:?}"),
+    };
+    let expected = serde_json::json!({
+        "services": ["term"], "params": {}
+    });
+    for i in 0..3 {
+        assert_eq!(mix::json::mix_to_json(&body(i)).unwrap(), expected);
+    }
+    assert_eq!(
+        mix::json::mix_to_json(&body(3)).unwrap(),
+        serde_json::json!([{}, "term"])
+    );
+    assert_eq!(body(4), Value::String(r#"{"raw": true}"#.into()));
+}
+
+#[tokio::test]
 async fn publish_builds_the_wire_frame_and_routes_via_noded() {
     let src = "$rc_out = publish(\"comp.corner.entered\", \"{\\\"corner\\\":\\\"tl\\\"}\")\nprint($rc_out .. \"/\" .. $rc .. \"/\" .. $result)\n";
     let (_eval, bus, out) = run_with_bus(src).await;
@@ -113,6 +145,24 @@ async fn publish_opts_command_override_headers_and_retain() {
         map_str(args, "body"),
         "---\ncommand: corner.entered\nevent_seq: 1042\n---\npayload"
     );
+}
+
+#[tokio::test]
+async fn publish_collection_bodies_require_explicit_encoding() {
+    let (_, bus, out) = run_with_bus(
+        r#"
+for $body in [{a: 1}, [1, 2]]
+  try
+    publish("probe.changed", $body)
+  catch $message
+    print(contains($message, "must be"))
+  end
+end
+"#,
+    )
+    .await;
+    assert_eq!(out, "true\ntrue\n");
+    assert!(bus.sends.borrow().is_empty());
 }
 
 #[tokio::test]

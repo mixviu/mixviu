@@ -11,7 +11,8 @@ Paths are resolved by `paths`; no installation path or setting value is
 compiled into this adapter. Script execution uses the prefix's `bin/mix`.
 
 `mix-mcp` is an MCP stdio server for agents. Install the binary at
-`<prefix>/bin/mix-mcp` and register the MCP server as `mix-mcp`.
+`<prefix>/bin/mix-mcp`. Keep the `mcpServers` key `mixos` at cutover:
+renaming it changes every `mcp__<key>__*` permission rule.
 
 ## Connection
 
@@ -56,7 +57,7 @@ reconnecting.
 ```json
 {
   "mcpServers": {
-    "mix-mcp": {
+    "mixos": {
       "command": "<prefix>/bin/mix-mcp",
       "env": {
         "MIX_NODED_URL": "ws://192.0.2.10:4200/ws",
@@ -70,7 +71,7 @@ reconnecting.
 
 ## Tools
 
-Each name below is exposed as `mcp__mix-mcp__<name>` in Claude Code.
+With that key, each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 
 - `bus_call`, `bus_list_services`, `bus_node_info`, `bus_list_peers`, `noded_ping`
   (`bus_list_peers` leaves retired mesh members out unless `include_retired: true`)
@@ -213,10 +214,39 @@ application tools require an exact service and semantic target. Read-only
 tools do not invoke mutations; arbitrary `bus_call` and `mix_execute` can.
 Mix execution runs in an isolated worker with bounded output.
 
-These tools use the adapter user's operating-system permissions, without a
-filesystem sandbox. Inherited log filename handling accepts absolute paths
-and parent components; `log_tail` and `log_search` are not confined to the
-log directory. Application commands and arbitrary scripts can write files.
+`mix_execute` is a trusted-agent tool. It runs as the adapter's user with that
+user's permissions and is not a sandbox. Scripts can run programs, write files
+and mutate Bus services. The builtin fence does not restrict those powers.
+
+Log tools reject absolute paths, parent components and symlink targets outside
+the log directory. Tail seeks into an 8 MiB suffix; search streams lines with a
+64 KiB line limit and retains only the last requested matches. Both refuse
+requests above 10,000 results or their 8 MiB byte budget rather than truncate.
+Indexing requires a configured domain root, never enters directory symlinks,
+and accepts markdown symlinks only within the scanned root.
+
+### Capability dispatch audit
+
+The fence controls builtin availability, not operating-system permissions.
+The evaluator keeps the policy in shared globals; module and handler bodies
+execute with those globals. Source references in `libraries/mix/src/`:
+
+| Path | Enforcement |
+| --- | --- |
+| Generic builtin | `evaluator.rs:15179` dispatches through `call_policy_builtin` at line 16431, which owns the named policy check before `builtins::call_builtin`. The generic caller does not repeat it: host policies may be stateful. |
+| HOF | `eval_expr` at line 15088 gates the HOF; `builtins_hof.rs:200` invokes callback bodies through `call_function_public`, returning to the same evaluator. Sync callback eligibility excludes builtin calls. |
+| Mutating builtin | `call_mutating_builtin` at line 17563 checks before mutation or fallback. |
+| Row plans | `rows.rs:53` checks during compilation; `Plan::run` at line 112 uses `bulk_call`, which checks again at `evaluator.rs:16578`. |
+| Files and modules | `exec_include` at line 18169, `exec_file_in_scope` (including source) at line 18208 and `exec_require` at line 18363 gate FsRead before reading; bodies use the caller's evaluator and policy. |
+| Async special cases | `eval_numeric_socket` at line 13434, `eval_socket_source` at line 13613, `eval_native_source` at line 13793, and async arms in `eval_expr` (sleep at line 14321, HTTP at line 14643, database at line 14701, JMAP at line 14758, Bus at line 15002) check before dispatch. FIFO I/O checks at line 18845. |
+| Shell and Bus syntax | Class checks cover `send`/`emit` at lines 17862/18063, source shell fallback at line 18771, `sh` at line 18821, command substitution at line 18911 and pipes at line 18938. |
+
+The other direct `call_builtin` calls in the evaluator decode clipboard
+base64 or internal directory-entry bytes; they are fixed pure conversions,
+not caller-selected builtin dispatch. HTTP's synchronous fallback is reached
+after the HTTP capability check. Regressions cover the wrapper itself,
+generic/closure/HOF/row dispatch and existing FsRead/module denials in
+`libraries/mix/tests/limits.rs`.
 
 ## Logging and tests
 
