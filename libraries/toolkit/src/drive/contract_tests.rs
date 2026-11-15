@@ -118,9 +118,12 @@ fn fixture_window_pins_tree_schema_and_roles() {
             "Label",
             "Button",
             "CheckBox",
+            "GenericContainer",
             "RadioButton",
             "TextInput",
             "Slider",
+            "SpinButton",
+            "TextRun",
         ])
     );
 }
