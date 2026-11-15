@@ -1397,13 +1397,16 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CaptureLog {
 #[tokio::test]
 async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_logs() {
     use bus::native_session::*;
+    use tracing_subscriber::util::SubscriberInitExt;
     let logs = CaptureLog(Default::default());
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
         .with_writer(logs.clone())
         .without_time()
         .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    // Match production's log-to-tracing bridge, including transport logs.
+    // Depending on a neighbouring test to install it hid payload disclosures.
+    let _guard = subscriber.set_default();
     let broker = Broker::start().await;
     let mut observer = broker.tcp().await;
     register(&mut observer, "audit-observer").await;
