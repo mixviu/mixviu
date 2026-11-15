@@ -151,7 +151,6 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
 }
 
 #[test]
-#[ignore = "measurement; run alone on an idle render worker"]
 fn record_changing_4k_ten_seconds() {
     if !process::record_available() {
         return;

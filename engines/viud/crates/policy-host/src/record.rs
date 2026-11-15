@@ -87,7 +87,10 @@ impl Drop for Session {
         self.probe_cancel
             .store(true, std::sync::atomic::Ordering::Release);
         if let Some(join) = self.probe_join.take() {
-            let _ = join.join();
+            // A cancelled preflight may still be waiting on its filesystem.
+            // Its owned inputs and cleanup stay on the worker; never join a
+            // disk operation from the compositor thread.
+            drop(join);
         }
     }
 }

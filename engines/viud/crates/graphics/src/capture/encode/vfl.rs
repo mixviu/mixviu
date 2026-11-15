@@ -14,7 +14,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use media::vfl::{CHUNK_BYTES, DELTA, KEY, REPEAT, VERSION, MAX_FRAME_BYTES};
+use media::vfl::{CHUNK_BYTES, DELTA, KEY, MAX_FRAME_BYTES, REPEAT, VERSION};
 
 fn create(path: &Path) -> io::Result<File> {
     OpenOptions::new()
