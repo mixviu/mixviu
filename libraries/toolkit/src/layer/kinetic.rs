@@ -11,7 +11,7 @@ const STOP_SPEED: f32 = 0.5 / DECAY_SECONDS;
 pub(super) const FRAME: Duration = Duration::from_nanos(16_666_667);
 const SAMPLE_WINDOW: Duration = Duration::from_millis(100);
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Axis {
     sample: Option<(Instant, u32)>,
     velocity: f32,
@@ -19,7 +19,7 @@ struct Axis {
     last_step: Option<Instant>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Kinetic {
     finger: bool,
     axes: [Axis; 2],
@@ -28,6 +28,8 @@ pub(super) struct Kinetic {
 
 impl Kinetic {
     pub(super) fn restarts(finger: Option<bool>, delta: Vec2, stop: [bool; 2]) -> bool {
+        // A fling belongs to a lifted finger. Movement on either axis means
+        // the finger is down again, so no axis may keep coasting.
         finger == Some(false)
             || delta != Vec2::ZERO
             || (finger.is_some() && !stop.iter().any(|s| *s))
@@ -40,6 +42,16 @@ impl Kinetic {
     }
     pub(super) fn cancel(&mut self) {
         *self = Self::default();
+    }
+
+    /// Retain only samples belonging to axes still driven by the finger.
+    pub(super) fn live_drag(&self) -> Self {
+        let mut live = self.clone();
+        for axis in &mut live.axes {
+            if axis.fling { *axis = Axis::default(); }
+        }
+        live.deadline = None;
+        live
     }
 
     pub(super) fn deadline(&self) -> Option<Instant> {
@@ -86,8 +98,10 @@ impl Kinetic {
                 });
                 axis.sample = Some((now, time_ms));
             }
-            if stop[i] {
+            if stop[i] && axis.sample.is_some() {
                 axis.fling = axis.sample.is_some_and(|(last, last_ms)| {
+                    // Also reject dispatch stalls: starting a fling late is
+                    // worse than omitting it, even with fresh protocol times.
                     now.saturating_duration_since(last) <= SAMPLE_WINDOW
                         && Duration::from_millis(u64::from(time_ms.wrapping_sub(last_ms)))
                             <= SAMPLE_WINDOW
@@ -293,5 +307,29 @@ mod tests {
         let total = delta + k.step(next);
         assert!((total.x - distance(x_release, next)).abs() < 0.0001);
         assert!((total.y - distance(y_release, next)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn duplicate_or_unsampled_stops_leave_a_coast_unchanged() {
+        let t = Instant::now();
+        let mut k = fling(t);
+        let mut control = k.clone();
+        let at = k.deadline().unwrap();
+        k.axis(24, t + Duration::from_millis(24), None, Vec2::ZERO, [true; 2]);
+        assert_eq!(k.deadline(), Some(at));
+        assert_eq!(k.step(at), control.step(at));
+        let mut empty = Kinetic::default();
+        empty.axis(0, t, Some(true), Vec2::ZERO, [true; 2]);
+        assert_eq!(empty.deadline(), None);
+    }
+
+    #[test]
+    fn fresh_protocol_release_after_dispatch_stall_does_not_fling() {
+        let t = Instant::now();
+        let mut k = Kinetic::default();
+        k.axis(0, t, Some(true), Vec2::splat(10.0), [false; 2]);
+        k.axis(16, t + FRAME, None, Vec2::splat(10.0), [false; 2]);
+        k.axis(17, t + Duration::from_millis(200), None, Vec2::ZERO, [true; 2]);
+        assert_eq!(k.deadline(), None);
     }
 }
