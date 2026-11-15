@@ -476,7 +476,7 @@ fn process_lifetime_negative_controls() {
         "negative controls require explicit opt-in on a build worker"
     );
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let output = std::process::Command::new("/opt/mixos/bin/mix")
+    let output = std::process::Command::new("/opt/mix/bin/mix")
         .arg("libraries/mix/tests/process_lifetime_negative.mix")
         .current_dir(root)
         .output()

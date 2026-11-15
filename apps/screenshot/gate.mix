@@ -3,7 +3,7 @@ $prepare=contains(args(),"--prepare")
 $release=contains(args(),"--release")
 if $prepare then print(run_argv(["cargo","fmt","-p","scene","-p","lib-viu","-p","viu"])) end
 try
-  for $a in [["/opt/mixos/bin/mix","apps/screenshot/policy-test.mix"],["cargo","fmt","-p","scene","-p","lib-viu","-p","viu","--","--check"],["cargo","check","--locked","-p","scene","-p","lib-viu","-p","viu","--all-targets"],["cargo","test","--locked","-p","scene","-p","lib-viu","-p","viu"],["cargo","test","--locked","-p","viu","--no-default-features","--test","shell_profile"],["cargo","clippy","--locked","-p","scene","-p","lib-viu","-p","viu","--all-targets"],["cargo","build","--locked","-p","viu","--bin","viu"]]
+  for $a in [["/opt/mix/bin/mix","apps/screenshot/policy-test.mix"],["cargo","fmt","-p","scene","-p","lib-viu","-p","viu","--","--check"],["cargo","check","--locked","-p","scene","-p","lib-viu","-p","viu","--all-targets"],["cargo","test","--locked","-p","scene","-p","lib-viu","-p","viu"],["cargo","test","--locked","-p","viu","--no-default-features","--test","shell_profile"],["cargo","clippy","--locked","-p","scene","-p","lib-viu","-p","viu","--all-targets"],["cargo","build","--locked","-p","viu","--bin","viu"]]
     if contains(args(),"--smoke") and $a[1]=="test" and not contains($a,"shell_profile") then $a=["cargo","test","--locked","-p","lib-viu","--test","screenshot_policy","--test","raster_document","--test","job_envelope"] end
     if contains(args(),"--frame-only") and $a[1]=="test" then $a=["cargo","test","--locked","-p","lib-viu","--test","gold_frame"] end
     if $prepare and $a[1]=="check" then $a=filter($a,fn($arg)=$arg!="--locked") end

@@ -205,7 +205,7 @@ fn every_app_executes_the_mode_contract_and_restores_its_choice() {
     let home = tempfile::tempdir().unwrap();
     let prefix = home.path().join("prefix");
     std::fs::create_dir_all(prefix.join("bin")).unwrap();
-    let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+    let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mix/bin/mix".into());
     std::os::unix::fs::symlink(&mix, prefix.join("bin/mix")).unwrap();
     std::os::unix::fs::symlink(
         std::path::Path::new(&mix).parent().unwrap().join("mixd"),

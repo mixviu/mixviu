@@ -13,7 +13,7 @@ try
   $expected = {"main.rs":"preexisting touched edit\n", "untouched.rs":"preexisting untouched edit\n", "untracked.rs":"preexisting untracked module\n"}
   for $name, $value in $expected write_file($tmp .. "/engines/viu/src/" .. $name, $value) end
   write_file($tmp .. "/outside.txt", "unrelated work\n")
-  write_file($tmp .. "/bin/cargo", "#!/opt/mixos/bin/mix\nif args()[0] == \"fmt\" and env(\"FORMAT_TEST_DRIFT\") == \"1\" then\n  write_file(\"engines/viu/src/main.rs\", \"formatted\\n\")\n  write_file(\"engines/viu/src/untracked.rs\", \"formatted\\n\")\nend\n")
+  write_file($tmp .. "/bin/cargo", "#!/opt/mix/bin/mix\nif args()[0] == \"fmt\" and env(\"FORMAT_TEST_DRIFT\") == \"1\" then\n  write_file(\"engines/viu/src/main.rs\", \"formatted\\n\")\n  write_file(\"engines/viu/src/untracked.rs\", \"formatted\\n\")\nend\n")
   chmod($tmp .. "/bin/cargo", 0o755)
   for $drift in ["1", "0"]
     $r = run_argv([$mix, $driver], {cwd:$tmp, env:{PATH:$tmp .. "/bin:" .. env("PATH"), FORMAT_TEST_DRIFT:$drift}, timeout:60})

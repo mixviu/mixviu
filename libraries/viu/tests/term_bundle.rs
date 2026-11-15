@@ -50,7 +50,7 @@ fn isolated_term_bundle_load() {
     let root = tempfile::tempdir().unwrap();
     let prefix = root.path().join("prefix");
     std::fs::create_dir_all(prefix.join("bin")).unwrap();
-    let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+    let mix = std::env::var("MIX_TEST_MIX_EXE").unwrap_or_else(|_| "/opt/mix/bin/mix".into());
     std::os::unix::fs::symlink(&mix, prefix.join("bin/mix")).unwrap();
     std::os::unix::fs::symlink(
         std::path::Path::new(&mix).parent().unwrap().join("mixd"),

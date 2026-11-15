@@ -1,4 +1,4 @@
-#!/opt/mixos/bin/mix
+#!/opt/mix/bin/mix
 -- version: 0.1.0
 -- Reproduce the fixture ownership load: 320 fresh processes, eight at a time.
 -- Run only on the build service, from the repository root.
