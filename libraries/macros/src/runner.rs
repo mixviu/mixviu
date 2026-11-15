@@ -356,6 +356,26 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    #[ignore]
+    fn stress_dropped_runners() {
+        let workers: Vec<_> = (0..8)
+            .map(|_| thread::spawn(|| {
+                let mut failed = 0;
+                for _ in 0..200 {
+                    if std::panic::catch_unwind(dropping_a_runner_requests_termination_and_the_manager_reaps).is_err() {
+                        failed += 1;
+                    }
+                }
+                failed
+            }))
+            .collect();
+        let failed: usize = workers.into_iter().map(|worker| worker.join().unwrap()).sum();
+        eprintln!("STRESS total=1600 failed={failed} concurrency=8");
+        assert_eq!(failed, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn dropping_a_runner_requests_termination_and_the_manager_reaps() {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
