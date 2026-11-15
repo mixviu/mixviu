@@ -2750,6 +2750,7 @@ end
 -- Only availability failures are retryable. A host's validation/generation/
 -- ownership refusal (also rc 10) must never become a retry loop.
 fn upgrade_failure($s, $name, $message, $code, $context)
+  if $s.upgrades == nil then $s.upgrades = {} end
   $c = $context ?? {}
   $missing = $c.rc == 10 and $c.upstream == ("Service '" .. $s.host .. "' not found")
   $retry = $code == "SCENES_UPSTREAM" and $c.target == $s.host and ($missing or (type($c.rc) == "number" and $c.rc < 0))

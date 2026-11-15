@@ -129,6 +129,10 @@ on scenes.upgrade.retry
   try
     $state = $loader.upgrade($state, true)
   catch $message, $error
+    -- Commit the read guard on the surviving state: the failed call's copy
+    -- was discarded. A later command must not persist stale desired state
+    -- over the file this retry could not read.
+    $state = $loader.load_state($state)
     $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
     eprint("scenes upgrade retry failed: " .. json_encode($state.diagnostic))
     -- The failed function's state copy did not commit. Keep the diagnostic
