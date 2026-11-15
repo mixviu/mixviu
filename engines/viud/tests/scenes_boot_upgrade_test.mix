@@ -187,7 +187,7 @@ print(json_encode({rc:$rc, value:$v}))
   for $i = 1 to 400
     $view = call("scenes", "scenes.list").value
     $r = rows().alpha
-    if $view.diagnostic.error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.retryable == false then $done = true; break end
+    if ($view.diagnostic ?? {}).error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.retryable == false then $done = true; break end
     sleep(0.1)
   end
   check($done, "raised retry records diagnostic and stops retryable flags")
