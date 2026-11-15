@@ -538,14 +538,25 @@ impl<P: LayerProgram + 'static> State<P> {
                     s.repaint_at = None;
                     s.dirty = false;
                 }
-                tick_fling(&mut s.kinetic, &mut s.events, now, modifiers,
-                    allowed && s.visible, &mut s.dirty);
+                tick_fling(
+                    &mut s.kinetic,
+                    &mut s.events,
+                    now,
+                    modifiers,
+                    allowed && s.visible,
+                    &mut s.dirty,
+                );
             }
             state.arm_timer(id);
         });
         if !armed {
-            failed_timer(&mut s.kinetic, &mut s.events, &mut s.repaint_at,
-                s.visible, &mut s.dirty);
+            failed_timer(
+                &mut s.kinetic,
+                &mut s.events,
+                &mut s.repaint_at,
+                s.visible,
+                &mut s.dirty,
+            );
         }
     }
 
@@ -857,8 +868,14 @@ fn restart_fling(
     }
 }
 
-fn tick_fling(kinetic: &mut kinetic::Kinetic, events: &mut Vec<egui::Event>,
-    now: Instant, modifiers: egui::Modifiers, can_draw: bool, dirty: &mut bool) {
+fn tick_fling(
+    kinetic: &mut kinetic::Kinetic,
+    events: &mut Vec<egui::Event>,
+    now: Instant,
+    modifiers: egui::Modifiers,
+    can_draw: bool,
+    dirty: &mut bool,
+) {
     if !can_draw {
         cancel_fling(kinetic, events, false, dirty);
         return;
@@ -868,14 +885,21 @@ fn tick_fling(kinetic: &mut kinetic::Kinetic, events: &mut Vec<egui::Event>,
         events.push(egui::Event::MouseWheel {
             source: egui::MouseWheelSource::Momentum,
             unit: egui::MouseWheelUnit::Point,
-            delta, phase: egui::TouchPhase::Move, modifiers,
+            delta,
+            phase: egui::TouchPhase::Move,
+            modifiers,
         });
         *dirty = true;
     }
 }
 
-fn failed_timer(kinetic: &mut kinetic::Kinetic, events: &mut Vec<egui::Event>,
-    repaint_at: &mut Option<Instant>, visible: bool, dirty: &mut bool) {
+fn failed_timer(
+    kinetic: &mut kinetic::Kinetic,
+    events: &mut Vec<egui::Event>,
+    repaint_at: &mut Option<Instant>,
+    visible: bool,
+    dirty: &mut bool,
+) {
     *repaint_at = None;
     cancel_fling(kinetic, events, visible, dirty);
     // A visible surface can service the failed repaint immediately.
@@ -1072,10 +1096,24 @@ mod tests {
         let mut events = Vec::new();
         let mut dirty = false;
         k.axis(0, t, Some(true), egui::Vec2::splat(10.0), [false; 2]);
-        k.axis(16, t + Duration::from_millis(16), None, egui::Vec2::splat(10.0), [true, false]);
+        k.axis(
+            16,
+            t + Duration::from_millis(16),
+            None,
+            egui::Vec2::splat(10.0),
+            [true, false],
+        );
         assert!(k.deadline().is_some());
         let delta = egui::vec2(0.0, 12.0);
-        restart_fling(&mut k, &mut events, None, delta, [false; 2], true, &mut dirty);
+        restart_fling(
+            &mut k,
+            &mut events,
+            None,
+            delta,
+            [false; 2],
+            true,
+            &mut dirty,
+        );
         assert_eq!(events, vec![cancel_scroll()]);
         assert_eq!(k.deadline(), None);
         k.axis(32, t + Duration::from_millis(32), None, delta, [false; 2]);
@@ -1097,15 +1135,31 @@ mod tests {
             let mut k = test_fling(t);
             let at = k.deadline().unwrap();
             let delta = k.step(at);
-            let mut events = if queued { vec![momentum_event(delta)] } else { Vec::new() };
+            let mut events = if queued {
+                vec![momentum_event(delta)]
+            } else {
+                Vec::new()
+            };
             let mut dirty = false;
-            tick_fling(&mut k, &mut events, at + kinetic::FRAME,
-                egui::Modifiers::NONE, false, &mut dirty);
+            tick_fling(
+                &mut k,
+                &mut events,
+                at + kinetic::FRAME,
+                egui::Modifiers::NONE,
+                false,
+                &mut dirty,
+            );
             assert_eq!(events, vec![cancel_scroll()]);
             assert_eq!(k.deadline(), None);
             assert!(!dirty);
-            tick_fling(&mut k, &mut events, at + kinetic::FRAME,
-                egui::Modifiers::NONE, false, &mut dirty);
+            tick_fling(
+                &mut k,
+                &mut events,
+                at + kinetic::FRAME,
+                egui::Modifiers::NONE,
+                false,
+                &mut dirty,
+            );
             assert_eq!(events, vec![cancel_scroll()]);
             assert!(!dirty);
         }
@@ -1119,7 +1173,11 @@ mod tests {
                 let mut k = test_fling(t);
                 let at = k.deadline().unwrap();
                 let delta = k.step(at);
-                let mut events = if queued { vec![momentum_event(delta)] } else { Vec::new() };
+                let mut events = if queued {
+                    vec![momentum_event(delta)]
+                } else {
+                    Vec::new()
+                };
                 let mut repaint_at = Some(at + Duration::from_secs(1));
                 let mut dirty = false;
                 failed_timer(&mut k, &mut events, &mut repaint_at, visible, &mut dirty);
@@ -1136,18 +1194,29 @@ mod tests {
         let mut event_loop: EventLoop<'static, usize> = EventLoop::try_new().unwrap();
         let handle = event_loop.handle();
         let mut surfaces = [
-            (test_fling(Instant::now()), Vec::new(), false,
-                super::super::repaint_timer::RepaintTimer::default()),
-            (kinetic::Kinetic::default(), Vec::new(), false,
-                super::super::repaint_timer::RepaintTimer::default()),
+            (
+                test_fling(Instant::now()),
+                Vec::new(),
+                false,
+                super::super::repaint_timer::RepaintTimer::default(),
+            ),
+            (
+                kinetic::Kinetic::default(),
+                Vec::new(),
+                false,
+                super::super::repaint_timer::RepaintTimer::default(),
+            ),
         ];
         let at = surfaces[0].0.deadline();
         assert!(surfaces[0].3.arm(&handle, at, |fired| *fired += 1));
         // Leave explicitly cancels globally, then push_to sees PointerGone
         // and cancels again. Enter's PointerMoved does not cancel or produce
         // synthetic scroll input; real pointer input is forwarded separately.
-        for event in [egui::Event::PointerGone, egui::Event::PointerGone,
-            egui::Event::PointerMoved(egui::Pos2::ZERO)] {
+        for event in [
+            egui::Event::PointerGone,
+            egui::Event::PointerGone,
+            egui::Event::PointerMoved(egui::Pos2::ZERO),
+        ] {
             if kinetic::Kinetic::interrupts(&event) {
                 for (k, events, dirty, timer) in &mut surfaces {
                     cancel_fling(k, events, true, dirty);
@@ -1159,7 +1228,11 @@ mod tests {
         assert!(surfaces[0].2);
         assert!(surfaces[1].1.is_empty());
         assert!(!surfaces[1].2);
-        assert!(surfaces.iter().all(|(k, _, _, timer)| k.deadline().is_none() && !timer.is_armed()));
+        assert!(
+            surfaces
+                .iter()
+                .all(|(k, _, _, timer)| k.deadline().is_none() && !timer.is_armed())
+        );
         let mut fired = 0;
         event_loop.dispatch(Duration::ZERO, &mut fired).unwrap();
         assert_eq!(fired, 0);

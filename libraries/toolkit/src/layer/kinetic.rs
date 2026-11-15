@@ -48,7 +48,9 @@ impl Kinetic {
     pub(super) fn live_drag(&self) -> Self {
         let mut live = self.clone();
         for axis in &mut live.axes {
-            if axis.fling { *axis = Axis::default(); }
+            if axis.fling {
+                *axis = Axis::default();
+            }
         }
         live.deadline = None;
         live
@@ -318,7 +320,13 @@ mod tests {
         k.axis(16, t + FRAME, None, Vec2::splat(10.0), [true, false]);
         let mut control = k.clone();
         let at = k.deadline().unwrap();
-        k.axis(24, t + Duration::from_millis(24), None, Vec2::ZERO, [true, false]);
+        k.axis(
+            24,
+            t + Duration::from_millis(24),
+            None,
+            Vec2::ZERO,
+            [true, false],
+        );
         assert_eq!(k.deadline(), Some(at));
         assert_eq!(k.step(at), control.step(at));
         let mut empty = Kinetic::default();
@@ -332,7 +340,13 @@ mod tests {
         let mut k = Kinetic::default();
         k.axis(0, t, Some(true), Vec2::splat(10.0), [false; 2]);
         k.axis(16, t + FRAME, None, Vec2::splat(10.0), [false; 2]);
-        k.axis(17, t + Duration::from_millis(200), None, Vec2::ZERO, [true; 2]);
+        k.axis(
+            17,
+            t + Duration::from_millis(200),
+            None,
+            Vec2::ZERO,
+            [true; 2],
+        );
         assert_eq!(k.deadline(), None);
     }
 }
