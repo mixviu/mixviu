@@ -91,13 +91,26 @@ diagnostic. Executable symlinks resolve to the real binary before prefix lookup:
 launching an in-prefix binary through either an inside or foreign symlink uses
 the real binary's prefix. Symlink location does not impose a launch-path policy.
 
+The marker itself must be a regular file, never a symlink (even to another
+file inside the prefix). FIFOs, directories and other special files refuse
+promptly. The reader checks the path type, opens with `O_NOFOLLOW | O_NONBLOCK`,
+then checks the open handle's type before reading. Safe opening currently
+supports Linux x86/x86-64, ARM/AArch64 and RISC-V 64; other targets refuse
+existing markers rather than use a potentially blocking or following open.
+
 The file is a restricted JSON object, at most 64 KiB of UTF-8. Exactly three
 fields are required, in any order: numeric `schema: 1`, string `gold`, and
 non-empty object `members`. `gold` and every member value are full, lower-case
 40-hex commits. Member keys match `[a-z][a-z0-9-]*` and identify the binary's
 compile-time package name (the release table's binary/package names currently
-agree). Each value is that member's own build commit. List only replaced
-binaries; app archives do not belong here. Strings use unescaped printable
+agree). This grammar is deliberately restricted: package names containing
+underscores or upper-case letters cannot be authorised, even if their binary
+has the capability token. Installers must check the embedded component name
+against the grammar as well as checking the token and commit. A test checks
+every binary and package name in the release table against the grammar.
+Each value is that member's own build commit. List only replaced
+binaries; app archives do not belong here. An apps-only `dev_ship` writes no
+`DEV.json`; an empty `members` object is refused. Strings use unescaped printable
 ASCII only. JSON whitespace is allowed; duplicate keys, unknown fields,
 comments, escapes, trailing commas/data, a BOM and other schema versions are
 refused. Keep timestamps, receipts and app selection in the private receipt,

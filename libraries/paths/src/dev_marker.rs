@@ -5,6 +5,29 @@ use std::{collections::BTreeMap, io::Read, path::Path};
 
 pub(crate) const CAPABILITY: &str = "mixviu-dev-snapshot:1";
 
+fn open_marker(path: &Path) -> std::io::Result<std::fs::File> {
+    // Reject special files before opening, then repeat the check on the handle.
+    // The open flags below also close the replacement race between these checks.
+    if !std::fs::symlink_metadata(path)?.file_type().is_file() {
+        return Err(std::io::Error::other("marker must be a regular file, not a symlink"));
+    }
+    #[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64", target_arch = "arm", target_arch = "riscv64")))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Linux UAPI values for these architectures. Keep paths dependency-free.
+        const O_NOFOLLOW: i32 = 0o400000;
+        const O_NONBLOCK: i32 = 0o4000;
+        let file = std::fs::OpenOptions::new().read(true)
+            .custom_flags(O_NOFOLLOW | O_NONBLOCK).open(path)?;
+        if !file.metadata()?.file_type().is_file() {
+            return Err(std::io::Error::other("opened marker is not a regular file"));
+        }
+        Ok(file)
+    }
+    #[cfg(not(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64", target_arch = "arm", target_arch = "riscv64"))))]
+    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "safe dev marker open is unsupported on this target"))
+}
+
 pub(super) fn accepts(
     prefix: &Path,
     member: &str,
@@ -12,7 +35,7 @@ pub(super) fn accepts(
     base: &str,
 ) -> Result<bool, String> {
     let path = prefix.join("DEV.json");
-    let file = match std::fs::File::open(&path) {
+    let file = match open_marker(&path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => return Err(e.to_string()),
@@ -35,6 +58,11 @@ fn commit(s: &str) -> bool {
     s.len() == 40
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+fn member_name(name: &str) -> bool {
+    name.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 fn parse(source: &str) -> Result<(String, BTreeMap<String, String>), String> {
@@ -66,11 +94,7 @@ fn parse(source: &str) -> Result<(String, BTreeMap<String, String>), String> {
                 let mut map = BTreeMap::new();
                 loop {
                     let name = p.string()?;
-                    if !name.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-                        || !name
-                            .bytes()
-                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-                    {
+                    if !member_name(&name) {
                         return Err("invalid member name".into());
                     }
                     p.token(b':')?;
@@ -146,5 +170,29 @@ impl Json<'_> {
             self.token(b',')?;
             Ok(false)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn string_reader_refuses_escapes_before_member_validation() {
+        let mut p = super::Json(br#""v\u0069u""#);
+        assert_eq!(p.string().unwrap_err(), "strings must be unescaped printable ASCII");
+    }
+
+    #[test]
+    fn every_release_binary_and_package_has_an_authorisable_name() {
+        let table = include_str!("../../../tools/release-set.conf.mix");
+        let mut names = 0;
+        for line in table.lines().filter(|line| line.trim_start().starts_with("{package:")) {
+            let fields: Vec<_> = line.split('"').collect();
+            assert_eq!(fields.len(), 5, "release table row shape changed: {line}");
+            for name in [fields[1], fields[3]] {
+                assert!(super::member_name(name), "unsupported release member: {name}");
+                names += 1;
+            }
+        }
+        assert!(names > 0, "release table rows must be checked");
     }
 }

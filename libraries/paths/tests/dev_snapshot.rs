@@ -166,9 +166,7 @@ fn main() {{
         valid.replace("}}", ",}}"),
         format!("{valid} trailing"),
         format!("{at_limit} "),
-        valid.replace("\"viu\"", "\"v\\u0069u\""),
-        valid.replace("\"viu\"", "\"-viu\""),
-        valid.replace("\"viu\"", "\"Viu\""),
+        valid.replace(&format!("\"viu\":\"{DEV}\""), ""), // empty members
         valid.replace("}}", &format!(",\"viu\":\"{DEV}\"}}}}")),
         format!("\u{feff}{valid}"),
         format!("/* comment */{valid}"),
@@ -180,6 +178,22 @@ fn main() {{
         let out = command(&prefix.join("bin/mixd")).output().unwrap();
         assert!(out.status.success());
         assert!(out.stderr.is_empty(), "gold must not read DEV.json");
+    }
+    // A matching entry remains intact: ignoring an invalid sibling would
+    // authorise this process. Pin the parser error, not member mismatch.
+    for (name, reason) in [
+        ("v\\u0069u", "strings must be unescaped printable ASCII"),
+        ("-tool", "invalid member name"),
+        ("Tool", "invalid member name"),
+        ("my_tool", "invalid member name"),
+    ] {
+        let invalid = valid.replace("}}", &format!(",\"{name}\":\"{DEV}\"}}}}"));
+        std::fs::write(&marker, invalid).unwrap();
+        let out = command(&prefix.join("bin/viu")).output().unwrap();
+        assert_eq!(out.status.code(), Some(42));
+        let log = String::from_utf8_lossy(&out.stderr);
+        assert!(log.contains(reason), "{log}");
+        assert!(log.contains(marker.to_str().unwrap()));
     }
     let mut non_utf8 = valid.as_bytes().to_vec();
     non_utf8.push(0xff);
@@ -226,9 +240,22 @@ fn main() {{
         out.stderr.is_empty(),
         "missing marker preserves strict diagnostics"
     );
-    // An unreadable marker (directory works even under a privileged test user).
+    // Every non-regular marker at the real member prefix refuses promptly.
+    assert!(Command::new("mkfifo").arg(&marker).status().unwrap().success());
+    let out = promptly(command(&prefix.join("bin/viu")));
+    assert_eq!(out.status.code(), Some(42));
+    assert!(String::from_utf8_lossy(&out.stderr).contains(marker.to_str().unwrap()));
+    std::fs::remove_file(&marker).unwrap();
+    for target in [prefix.join("marker-source.json"), scratch_root.join("outside-marker.json")] {
+        std::fs::write(&target, &valid).unwrap();
+        symlink(&target, &marker).unwrap();
+        let out = promptly(command(&prefix.join("bin/viu")));
+        assert_eq!(out.status.code(), Some(42));
+        assert!(String::from_utf8_lossy(&out.stderr).contains(marker.to_str().unwrap()));
+        std::fs::remove_file(&marker).unwrap();
+    }
     std::fs::create_dir(&marker).unwrap();
-    let out = command(&prefix.join("bin/viu")).output().unwrap();
+    let out = promptly(command(&prefix.join("bin/viu")));
     assert_eq!(out.status.code(), Some(42));
     assert!(String::from_utf8_lossy(&out.stderr).contains(marker.to_str().unwrap()));
     std::fs::remove_dir(&marker).unwrap();
@@ -256,6 +283,14 @@ fn main() {{
             .unwrap()
             .success()
     );
+    let mut cmd = command(&prefix.join("bin/viu"));
+    cmd.env("MIX_PREFIX", &other);
+    let out = promptly(cmd);
+    assert_eq!(out.status.code(), Some(42));
+    assert!(out.stderr.is_empty());
+    // A directory is literally unreadable as marker data, even for root.
+    std::fs::remove_file(&redirected).unwrap();
+    std::fs::create_dir(&redirected).unwrap();
     let mut cmd = command(&prefix.join("bin/viu"));
     cmd.env("MIX_PREFIX", &other);
     let out = promptly(cmd);
