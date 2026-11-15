@@ -1,0 +1,4 @@
+{
+  idle: {kind: "idle"},
+  scroll: {kind: "scroll", steps: 100, dy: 40, pause_seconds: 0.02}
+}

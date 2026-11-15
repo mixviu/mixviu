@@ -29,15 +29,18 @@ pub use setup::{
     WgpuSetupExisting,
 };
 
+/// Passive native frame observations for host statistics.
+#[cfg(feature = "capture")]
+pub mod baseline;
 /// Helpers for capturing screenshots of the UI.
 #[cfg(feature = "capture")]
 pub mod capture;
 
+#[cfg(feature = "winit")]
+mod window_frame;
 /// Module for painting [`egui`](https://github.com/emilk/egui) with [`wgpu`] on [`winit`].
 #[cfg(feature = "winit")]
 pub mod winit;
-#[cfg(feature = "winit")]
-mod window_frame;
 
 use std::sync::Arc;
 

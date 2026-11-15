@@ -856,6 +856,8 @@ impl WgpuWinitRunning<'_> {
         super::winit_integration::show_window_menu(&egui_ctx, viewport_id, &window);
         egui_winit.handle_platform_output_with_event_loop(window, event_loop, platform_output);
 
+        let present_key = egui::Id::unique(("ui.stats.present.v1", viewport_id));
+        let previous_present = egui_ctx.data(|d| d.get_temp::<u64>(present_key));
         let vsync_secs = if is_visible {
             let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
 
@@ -953,7 +955,26 @@ impl WgpuWinitRunning<'_> {
             .and_then(|id| viewports.get(id))
             .and_then(|vp| vp.window.as_ref());
 
-        integration.report_frame_time(frame_timer.total_time_sec() - vsync_secs); // don't count auto-save time as part of regular frame time
+        let seconds = (frame_timer.total_time_sec() - vsync_secs).max(0.0);
+        // Select the viewport that drew, explicitly, rather than relying on
+        // the window-id reverse map (or the viewport's parent).
+        let drawing_window = viewports
+            .get(&viewport_id)
+            .and_then(|vp| vp.window.as_ref());
+        if egui_ctx.data(|d| d.get_temp::<u64>(present_key)) != previous_present
+            && let (Some(window), Some(state)) = (drawing_window, painter.render_state())
+        {
+            let size = window.inner_size();
+            egui_wgpu::baseline::record(
+                &egui_ctx,
+                viewport_id,
+                f64::from(seconds),
+                [size.width, size.height],
+                window.scale_factor() as f32,
+                &state.adapter.get_info(),
+            );
+        }
+        integration.report_frame_time(seconds); // don't count auto-save time as part of regular frame time
 
         let window_for_autosave = if viewport_id == ViewportId::ROOT {
             window.map(|window| window.as_ref())

@@ -1,0 +1,25 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Exercise CLI overlay semantics against this test's readable process.
+$root = dirname(realpath($0))
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/viu-workloads.XXXXXX"]))
+try
+  $config = $tmp .. "/custom.conf.mix"
+  for $case in [
+    {data:{custom_idle:{kind:"idle"}}, name:"idle", expected:{kind:"idle"}},
+    {data:{custom_idle:{kind:"idle"}}, name:"custom_idle", expected:{kind:"idle"}},
+    {data:{idle:{kind:"idle", marker:"override"}}, name:"idle", expected:{kind:"idle", marker:"override"}}
+  ]
+    write_file($config, json_encode($case.data))
+    $out = $tmp .. "/result.json"
+    $r = run_argv(["mix", $root .. "/viu_baseline.mix", "--seconds", "0.01", "--output", $out,
+      "--workloads", $config, "--workload", $case.name, to_string(pid())],
+      {env:{MIX_NODED_URL:"ws://127.0.0.1:1/ws"}, timeout:10})
+    if $r.exit_code != 0 then raise("WORKLOAD_TEST", $r.stderr) end
+    if not deep_eq(json_parse(read_file($out)).workload_definition, $case.expected) then
+      raise("WORKLOAD_TEST", "wrong effective workload: " .. $case.name)
+    end
+  end
+  print("PASS workload overlays: retain built-ins, add variants, override names")
+finally
+  remove_dir($tmp)
+end

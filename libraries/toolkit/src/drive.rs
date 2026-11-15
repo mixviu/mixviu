@@ -33,7 +33,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// The drive commands, after the app's prefix.
-pub const COMMANDS: [&str; 16] = [
+pub const COMMANDS: [&str; 17] = [
+    "ui.stats",
     "ui.tree",
     "ui.click",
     "ui.pointer",
@@ -51,6 +52,11 @@ pub const COMMANDS: [&str; 16] = [
     "window",
     "window.state",
 ];
+
+/// Passive host snapshot, also usable by layer hosts without a drive plugin.
+pub fn frame_stats(ctx: &Context, viewport: egui::ViewportId) -> Value {
+    crate::drive_stats::read(ctx, viewport)
+}
 
 /// Queued input requests beyond this are refused (the Bus holds at most 32
 /// unanswered commands per app anyway).
@@ -105,6 +111,12 @@ fn capture_submission_key(viewport: egui::ViewportId) -> egui::Id {
 /// Every drive command under `app`, as `HELP` / `app.describe` list them.
 pub fn describe(app: &str) -> Vec<Value> {
     let command_names = [
+        (
+            "ui.stats",
+            Value::Null,
+            "Passive bounded frame statistics and GPU adapter identity",
+            true,
+        ),
         (
             "ui.tree",
             json!({"label":"optional substring","exact":"optional bool: the label must equal it","role":"optional role name"}),
@@ -493,6 +505,9 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
         let Some(target) = target else {
             return Some(refusal(id, "NOT_FOUND", "viewport is not open"));
         };
+        if command_name == "ui.stats" {
+            return Some(ok(id, crate::drive_stats::read(ctx, target)));
+        }
         if target == egui::ViewportId::ROOT {
             let mut args = args.clone();
             args.as_object_mut()
@@ -1021,6 +1036,7 @@ impl Drive {
             return Some(refusal(id, "ARGUMENT", "arguments must be a JSON object"));
         }
         let job = match command_name {
+            "ui.stats" => return Some(ok(id, crate::drive_stats::read(ctx, ctx.viewport_id()))),
             "ui.tree" => return Some(self.tree_answer(id, args)),
             "ui.menu" => return Some(ok(id, json!({"menu":menu_state(ctx)}))),
             "ui.menu.list" => {

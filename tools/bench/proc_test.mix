@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$p = require("proc.mix")
+fn check($condition)
+  if not $condition then raise("TEST", "proc fixture assertion failed") end
+end
+check(deep_eq($p.memory("Rss: 123 kB\nPss: 101 kB\nPrivate_Dirty: 20 kB\nSwap: 0 kB\n"), {Rss:123,Pss:101,Private_Dirty:20,Swap:0}))
+check($p.status("Threads:\t4\nvoluntary_ctxt_switches:\t42\nnonvoluntary_ctxt_switches:\t7\n").Threads == 4)
+check(deep_eq($p.cpu("42 (a tricky ) name) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19"), {ticks:23,start:19}))
+for $bad in ["Rss: 0 kB", "Rss: nope kB\nPss: 1 kB\nPrivate_Dirty: 1 kB\nSwap: 0 kB"]
+  $refused = false
+  try $p.memory($bad) catch $m $refused = true end
+  check($refused)
+end
+print("PASS proc fixtures: comm parentheses, CPU indices, counters and refusal")

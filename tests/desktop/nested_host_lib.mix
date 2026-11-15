@@ -1,0 +1,79 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Bounded native subset of the historical nested_host_lib test harness.
+-- Private headless Weston, viud and broker only; no live desktop connection.
+$pb = require("../lib/private_bus.mix")
+fn new_run($prefix)
+  $r = run_argv_must(["mktemp", "-d", $prefix .. ".XXXXXX"])
+  return {path:trim($r), owner:pid()}
+end
+fn private_bus($opts)
+  return $pb.start($opts)
+end
+fn call($service, $command, $body)
+  $payload = json_encode($body)
+  send $service $command body=$payload timeout=2
+  $v = $result
+  if type($v) == "string" and starts_with($v, "{") then $v = json_parse($v) end
+  return {rc:$rc, result:$v}
+end
+fn start($opts)
+  $root = $opts.run.path
+  $runtime = $root .. "/wayland"
+  mkdir($runtime, {parents:true})
+  chmod($runtime, 0o700)
+  $environment = {XDG_RUNTIME_DIR:$runtime, WAYLAND_DISPLAY:"wl-host", DISPLAY:nil,
+    DBUS_SESSION_BUS_ADDRESS:nil, DBUS_STARTER_ADDRESS:nil, DBUS_STARTER_BUS_TYPE:nil,
+    DBUS_SYSTEM_BUS_ADDRESS:nil, NOTIFY_SOCKET:nil, HOME:$root .. "/home",
+    MIX_ETC:$root .. "/etc", MIX_VAR:$root .. "/var", MIX_RUN:env("MIX_RUN"),
+    MIX_NODE_CONFIG:env("MIX_NODE_CONFIG"), MIX_NODED_URL:env("MIX_NODED_URL"),
+    LIBGL_ALWAYS_SOFTWARE:"1", WINIT_UNIX_BACKEND:"wayland", MESA_VK_WSI_PRESENT_MODE:"mailbox"}
+  for $path in [$environment.HOME, $environment.MIX_ETC, $environment.MIX_VAR] mkdir($path, {parents:true}) end
+  $host = spawn(["weston", "--backend=headless", "--renderer=gl", "--socket=wl-host", "--idle-time=0"],
+    {env:$environment, stdout:{file:$root .. "/weston.log"}, stderr:"stdout", detach:true})
+  $comp = nil
+  try
+    $ready = false
+    for $i = 1 to 100
+      if exists($runtime .. "/wl-host") then $ready = true; break end
+      if not process_alive($host) then break end
+      sleep(0.1)
+    end
+    if not $ready then raise("HEADLESS", "Weston failed: " .. $root .. "/weston.log") end
+    $socket = "baseline"
+    $service = "comp-baseline"
+    $comp = spawn([$opts.bin, "--nested", "--socket", $socket, "--bus-service", $service, "--config-file=" .. $opts.config],
+      {env:$environment, stdout:{file:$root .. "/viud.log"}, stderr:"stdout", detach:true})
+    return {runtime:$runtime, socket:$socket, service:$service, log:$root .. "/viud.log", pids:[$comp,$host]}
+  catch $m
+    if $comp != nil and process_alive($comp) then kill($comp,15) end
+    if process_alive($host) then kill($host,15) end
+    raise("HEADLESS", $m)
+  end
+end
+fn wait_ready($session, $seconds)
+  $until = monotonic() + $seconds
+  while monotonic() < $until
+    if not process_alive($session.pids[0]) then return false end
+    if exists($session.runtime .. "/" .. $session.socket) then
+      $r = call($session.service, "comp.ping", {})
+      if $r.rc == 0 then return true end
+    end
+    sleep(0.2)
+  end
+  return false
+end
+fn client_env($session, $extra)
+  return merge({XDG_RUNTIME_DIR:$session.runtime, WAYLAND_DISPLAY:$session.socket, DISPLAY:nil,
+    DBUS_SESSION_BUS_ADDRESS:nil, DBUS_STARTER_ADDRESS:nil, DBUS_STARTER_BUS_TYPE:nil, DBUS_SYSTEM_BUS_ADDRESS:nil}, $extra)
+end
+fn stop($session)
+  for $p in $session.pids if process_alive($p) then kill($p,15) end end
+  sleep(1)
+  for $p in $session.pids if process_alive($p) then kill($p,9) end end
+end
+fn finish_run($run, $ok)
+  -- Keep benchmark evidence, including logs, even on success.
+  if $run.owner != pid() then raise("OWNERSHIP", "foreign run") end
+  print({passed:$ok, evidence:$run.path})
+end

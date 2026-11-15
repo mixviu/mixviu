@@ -615,6 +615,7 @@ impl<P: LayerProgram + 'static> State<P> {
 
     /// One egui pass on one surface, painted and presented.
     fn draw(&mut self, qh: &QueueHandle<Self>, id: u64) {
+        let baseline_start = Instant::now();
         let max_texture_side = self.gpu.max_texture_side();
         let Some(at) = self.surfaces.iter().position(|s| s.id == id) else {
             return;
@@ -660,6 +661,8 @@ impl<P: LayerProgram + 'static> State<P> {
         });
         match painted {
             Ok(()) => {
+                self.gpu
+                    .record_baseline(&s.ctx, baseline_start.elapsed().as_secs_f64(), &info);
                 s.has_buffer = true;
                 s.frame_pending = true;
                 s.pending_since = Some(Instant::now());
