@@ -70,15 +70,16 @@ pub fn register(handle: &LoopHandle<'static, Loop>, mut input: Libinput) {
             move |_, _, state| {
                 if matches!(state.inner.status_session, StatusSession::Active)
                     && let Ok(current) = nodes()
-                    && (retry || current != known) {
-                            // One context owns every device, on both netlink and node
-                            // changes. Resume re-enumerates; it cannot double-open one.
-                            seat::modifier::clear::clear_held_modifiers(state);
-                            input.suspend();
-                            retry = input.resume().is_err();
-                            if !retry {
-                                known = current;
-                            }
+                    && (retry || current != known)
+                {
+                    // One context owns every device, on both netlink and node
+                    // changes. Resume re-enumerates; it cannot double-open one.
+                    seat::modifier::clear::clear_held_modifiers(state);
+                    input.suspend();
+                    retry = input.resume().is_err();
+                    if !retry {
+                        known = current;
+                    }
                 }
                 TimeoutAction::ToDuration(Duration::from_millis(250))
             },

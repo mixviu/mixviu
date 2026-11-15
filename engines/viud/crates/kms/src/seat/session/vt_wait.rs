@@ -112,7 +112,9 @@ pub fn watch_own_vt(
     }
     let mut source = Monitor(file);
     if source.read().is_none() {
-        return Err(std::io::Error::other("VT source unreadable: expose the session tty or /sys/class/tty/tty0/active"));
+        return Err(std::io::Error::other(
+            "VT source unreadable: expose the session tty or /sys/class/tty/tty0/active",
+        ));
     }
     ready();
     watch_until_stopped(own, &mut source, stop, activated)
