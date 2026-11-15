@@ -12,7 +12,12 @@ $tray_pid = nil
 $vars = {}
 $case = args()[0] ?? "idle"
 fn check($ok, $message)
-  if not $ok then raise("PANEL_IDLE_TEST", $message) end
+  if not $ok then
+    for $file in ["calls","state","registry-events"]
+      if is_file($tmp .. "/" .. $file) then eprint($file .. ": " .. read_file($tmp .. "/" .. $file)) end
+    end
+    raise("PANEL_IDLE_TEST", $message)
+  end
 end
 fn start($name, $path)
   $pid = spawn([$mix, "--serve", $path, "--name", $name], {detach:true, clear_env:true, env:$vars,
@@ -52,7 +57,7 @@ fn tray_calls()
 end
 fn wait_state($field, $expected)
   for $i = 1 to 400
-    $s = call("scene-panel", "panel.test.state").value
+    $s = is_file($tmp .. "/state") ? json_parse(read_file($tmp .. "/state")) : {}
     if deep_eq($s[$field], $expected) then return end
     sleep(0.05)
   end
@@ -70,7 +75,8 @@ fn quiet()
   $last = nil
   $since = monotonic()
   for $i = 1 to 400
-    $s = call("scene-panel", "panel.test.state").value
+    if not is_file($tmp .. "/state") then sleep(0.05); continue end
+    $s = json_parse(read_file($tmp .. "/state"))
     $now = {calls:recorded_calls(),state:$s}
     if not deep_eq($now,$last) then $since=monotonic(); $last=$now end
     if not $s.rebuilding and not $s.dirty and not $s.tray_dirty and not $s.notes_dirty and monotonic()-$since>=0.3 then return end
@@ -168,6 +174,7 @@ end
   start("panel-stub", $tmp .. "/stub.mix")
   wait_service("panel-stub")
   $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
+  $behaviour=replace_must($behaviour,"fn services_changed($live)\n","fn services_changed($live)\n  append_file(env(\"FIXTURE_DIR\") .. \"/registry-events\",json_encode($live) .. \"\\n\")\n")
   if $case == "clock" then
     $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","sleep(0.05)")
     -- Isolate clock/window events from the independently capped startup
@@ -179,13 +186,19 @@ end
     $behaviour=replace_must($behaviour,"services_changed($a.new)","if not is_file(env(\"FIXTURE_DIR\") .. \"/registry-fail\") then services_changed($a.new) end")
   end
   write_file($tmp .. "/panel.mix", $behaviour .. '
-on panel.test.state
-  reply(0,json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows}))
+-- Local fixture observation does not register another Bus client on each
+-- sample. Atomic files are already the harness model/call observation path.
+on panel.test.observe async
+  while true
+    write_atomic(env("FIXTURE_DIR") .. "/state",json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows}))
+    sleep(0.02)
+  end
 end
 on panel.test.registry
   if $event.args.refresh == true then refresh_registry() else services_changed($event.args.new) end
   reply(0,"{}")
 end
+task_start("panel.test.observe","{}")
 ')
   if $case == "registry" or $case == "tray-retry" or $case == "coalesced" then
     if $case == "registry" then write_file($tmp .. "/registry-fail", "1") end
