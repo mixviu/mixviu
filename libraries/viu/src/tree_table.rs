@@ -77,7 +77,10 @@ impl ColumnMeasurements {
 // egui temp storage clones on read. Share the row snapshots rather than cloning
 // the entire table each frame. The lock is held only during this column update.
 fn column_cache(ui: &Ui, id: Id) -> std::sync::Arc<std::sync::Mutex<ColumnMeasurements>> {
-    ui.data_mut(|data| data.get_temp_mut_or_default::<std::sync::Arc<std::sync::Mutex<ColumnMeasurements>>>(id).clone())
+    ui.data_mut(|data| {
+        data.get_temp_mut_or_default::<std::sync::Arc<std::sync::Mutex<ColumnMeasurements>>>(id)
+            .clone()
+    })
 }
 
 #[cfg(test)]
@@ -106,16 +109,28 @@ fn sample_width(ui: &Ui, id: &str, column: &Value, rows: &[Value], index: usize)
     let key = MeasurementKey::new(ui, column, vec![body, strong]);
     let cache_id = Id::unique((ui.ctx().viewport_id(), id, index, "sample-width"));
     let fonts = key.fonts.clone();
-    let width = column_cache(ui, cache_id).lock().expect("column cache").update(
-        key,
-        std::iter::once(text(column, "label")).chain(samples.iter().filter_map(Value::as_str)),
-        rows.iter().map(|row| row["cells"][index].as_str().unwrap_or("")),
-        |text, _| fonts.iter().map(|font| {
-            #[cfg(test)]
-            SAMPLE_LAYOUTS.set(SAMPLE_LAYOUTS.get() + 1);
-            ui.painter().layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color()).size().x
-        }).fold(0.0, f32::max),
-    );
+    let width = column_cache(ui, cache_id)
+        .lock()
+        .expect("column cache")
+        .update(
+            key,
+            std::iter::once(text(column, "label")).chain(samples.iter().filter_map(Value::as_str)),
+            rows.iter()
+                .map(|row| row["cells"][index].as_str().unwrap_or("")),
+            |text, _| {
+                fonts
+                    .iter()
+                    .map(|font| {
+                        #[cfg(test)]
+                        SAMPLE_LAYOUTS.set(SAMPLE_LAYOUTS.get() + 1);
+                        ui.painter()
+                            .layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color())
+                            .size()
+                            .x
+                    })
+                    .fold(0.0, f32::max)
+            },
+        );
     Some(width + ui.spacing().item_spacing.x + 2.0)
 }
 
@@ -182,13 +197,25 @@ mod numeric_state_tests {
             (0..2000).map(|i| json!({"cells":[format!("Name {i}"),format!("Value {i}")]})).collect::<Vec<_>>()});
         for frame in 0..50 {
             match frame {
-                21..=40 => value["rows"].as_array_mut().unwrap().push(json!({"cells":["new",format!("Append {frame}")]})),
-                41 => value["rows"][17]["cells"][1] = json!("The widest cell, removed on the next frame"),
-                42 => { value["rows"].as_array_mut().unwrap().remove(17); }
-                43 => { value["rows"].as_array_mut().unwrap().truncate(10); }
+                21..=40 => value["rows"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"cells":["new",format!("Append {frame}")]})),
+                41 => {
+                    value["rows"][17]["cells"][1] =
+                        json!("The widest cell, removed on the next frame")
+                }
+                42 => {
+                    value["rows"].as_array_mut().unwrap().remove(17);
+                }
+                43 => {
+                    value["rows"].as_array_mut().unwrap().truncate(10);
+                }
                 44 => ctx.set_pixels_per_point(2.5),
                 45 => ctx.all_styles_mut(|style| {
-                    style.text_styles.insert(TextStyle::Body, FontId::monospace(22.0));
+                    style
+                        .text_styles
+                        .insert(TextStyle::Body, FontId::monospace(22.0));
                 }),
                 46 => value["columns"][1]["label"] = json!("A wider header"),
                 47 => {
@@ -226,20 +253,55 @@ mod numeric_state_tests {
                 }
                 let body = TextStyle::Body.resolve(ui.style());
                 let strong = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::medium(body.size));
-                assert_eq!(sampled, measure_sample_width(ui, column, column["samples"].as_array().unwrap(), rows, 1, &body, &strong));
+                assert_eq!(
+                    sampled,
+                    measure_sample_width(
+                        ui,
+                        column,
+                        column["samples"].as_array().unwrap(),
+                        rows,
+                        1,
+                        &body,
+                        &strong
+                    )
+                );
                 let small = TextStyle::Small.resolve(ui.style());
                 let mut metadata = body;
                 metadata.size *= 0.85;
                 for (index, column) in value["columns"].as_array().unwrap().iter().enumerate() {
-                    let mut full = ui.painter().layout_no_wrap(format!("{} ▼", text(column, "label")), small.clone(), ui.visuals().text_color()).size().x;
+                    let mut full = ui
+                        .painter()
+                        .layout_no_wrap(
+                            format!("{} ▼", text(column, "label")),
+                            small.clone(),
+                            ui.visuals().text_color(),
+                        )
+                        .size()
+                        .x
+                        + 12.0;
                     if index > 0 {
                         for row in rows {
-                            full = full.max(ui.painter().layout_no_wrap(row["cells"][index].as_str().unwrap().into(), metadata.clone(), ui.visuals().text_color()).size().x);
+                            full = full.max(
+                                ui.painter()
+                                    .layout_no_wrap(
+                                        row["cells"][index].as_str().unwrap().into(),
+                                        metadata.clone(),
+                                        ui.visuals().text_color(),
+                                    )
+                                    .size()
+                                    .x
+                                    + 12.0,
+                            );
                         }
                     }
-                    assert_eq!(measured[index], (full.ceil() + 12.0).max(number(column, "min_width", 40.0)), "frame {frame}");
+                    assert_eq!(
+                        measured[index],
+                        ((full - 12.0).ceil() + 12.0).max(number(column, "min_width", 40.0)),
+                        "frame {frame}"
+                    );
                 }
-            }).drop_without_applying_deltas();
+            })
+            .drop_without_applying_deltas();
         }
     }
 
@@ -648,9 +710,9 @@ fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
     let columns = value["columns"].as_array().expect("validated columns");
     let rows = table_rows(value);
     let body = {
-            let mut font = TextStyle::Body.resolve(ui.style());
-            font.size *= metadata_scale;
-            font
+        let mut font = TextStyle::Body.resolve(ui.style());
+        font.size *= metadata_scale;
+        font
     };
     let small = TextStyle::Small.resolve(ui.style());
     let mut widths = Vec::with_capacity(columns.len());
@@ -659,18 +721,27 @@ fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
         let cache_id = Id::unique((ui.ctx().viewport_id(), id, i, "column-widths"));
         let label = format!("{} ▼", text(column, "label"));
         // The fixed header uses Small; row metadata uses the scaled Body font.
-        let width = column_cache(ui, cache_id).lock().expect("column cache").update(
-            key,
-            std::iter::once(label.as_str()),
-            rows.iter().filter(|_| i != 0).map(|row| row["cells"][i].as_str().unwrap_or("")),
-            |text, header| {
-                let font = if header { &small } else { &body };
-                #[cfg(test)]
-                WIDTH_LAYOUTS.set(WIDTH_LAYOUTS.get() + 1);
-                ui.painter().layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color()).size().x
-            },
-        );
-        widths.push((width.ceil() + 12.0).max(number(column, "min_width", 40.0)));
+        let width = column_cache(ui, cache_id)
+            .lock()
+            .expect("column cache")
+            .update(
+                key,
+                std::iter::once(label.as_str()),
+                rows.iter()
+                    .filter(|_| i != 0)
+                    .map(|row| row["cells"][i].as_str().unwrap_or("")),
+                |text, header| {
+                    let font = if header { &small } else { &body };
+                    #[cfg(test)]
+                    WIDTH_LAYOUTS.set(WIDTH_LAYOUTS.get() + 1);
+                    ui.painter()
+                        .layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color())
+                        .size()
+                        .x
+                        + 12.0
+                },
+            );
+        widths.push(((width - 12.0).ceil() + 12.0).max(number(column, "min_width", 40.0)));
     }
     widths
 }
