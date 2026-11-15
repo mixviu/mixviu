@@ -96,10 +96,9 @@ struct Surface {
     /// The watchdog already redrew once without a callback coming back.
     rescued: bool,
     /// The earliest delayed repaint a timer is armed for, and that timer.
-    deadline: Option<Instant>,
     repaint_at: Option<Instant>,
     kinetic: kinetic::Kinetic,
-    timer: Option<RegistrationToken>,
+    timer: super::repaint_timer::RepaintTimer,
     focused: bool,
     started: Instant,
 }
@@ -403,10 +402,9 @@ impl<P: LayerProgram + 'static> State<P> {
             skips: 0,
             retry_at: None,
             rescued: false,
-            deadline: None,
             repaint_at: None,
             kinetic: kinetic::Kinetic::default(),
-            timer: None,
+            timer: super::repaint_timer::RepaintTimer::default(),
             focused: false,
             started: Instant::now(),
         });
@@ -451,9 +449,7 @@ impl<P: LayerProgram + 'static> State<P> {
         let program = &mut self.program;
         self.surfaces.retain_mut(|s| {
             if gone(s) {
-                if let Some(timer) = s.timer.take() {
-                    handle.remove(timer);
-                }
+                s.timer.cancel(&handle);
                 program.removed(
                     &s.ctx,
                     &SurfaceInfo {
@@ -516,14 +512,7 @@ impl<P: LayerProgram + 'static> State<P> {
         let handle = self.handle.clone();
         let Some(s) = self.surface_mut(id) else { return };
         let at = kinetic::deadline(s.repaint_at, s.kinetic.deadline());
-        if s.deadline == at { return; }
-        // One timer per surface: an earlier deadline replaces the armed one.
-        if let Some(timer) = s.timer.take() {
-            handle.remove(timer);
-        }
-        s.deadline = at;
-        let Some(at) = at else { return };
-        let armed = handle.insert_source(Timer::from_deadline(at), move |_, _, state| {
+        let armed = s.timer.arm(&handle, at, move |state: &mut Self| {
             let now = Instant::now();
             let modifiers = input::modifiers(&state.modifiers);
             let allowed = state.surfaces.iter().find(|s| s.id == id).is_some_and(|s| {
@@ -533,8 +522,7 @@ impl<P: LayerProgram + 'static> State<P> {
                     .is_some()
             });
             if let Some(s) = state.surface_mut(id) {
-                s.deadline = None;
-                s.timer = None;
+                s.timer.fired();
                 if s.repaint_at.is_some_and(|at| at <= now) {
                     s.repaint_at = None;
                     s.dirty |= allowed;
@@ -556,17 +544,11 @@ impl<P: LayerProgram + 'static> State<P> {
                 }
             }
             state.arm_timer(id);
-            TimeoutAction::Drop
         });
-        match armed {
-            Ok(timer) => s.timer = Some(timer),
-            Err(_) => {
-                // No timer: draw now rather than never.
-                s.deadline = None;
-                s.repaint_at = None;
-                s.kinetic.cancel();
-                s.dirty = true;
-            }
+        if !armed {
+            s.repaint_at = None;
+            s.kinetic.cancel();
+            s.dirty = true;
         }
     }
 
@@ -730,6 +712,7 @@ impl<P: LayerProgram + 'static> State<P> {
     }
 
     fn push_to(&mut self, wl: &ObjectId, event: egui::Event) {
+        if kinetic::Kinetic::interrupts(&event) { self.cancel_kinetic(); }
         // A host-controlled background must not acquire a continuous render
         // loop merely because the pointer moves over an otherwise idle plot.
         if !self.input_allowed(wl) {
@@ -791,14 +774,30 @@ impl<P: LayerProgram + 'static> State<P> {
 
     fn cancel_kinetic(&mut self) {
         let ids: Vec<_> = self.surfaces.iter_mut().map(|s| {
+            let active = s.kinetic.deadline().is_some() || s.events.iter().any(|e|
+                matches!(e, egui::Event::MouseWheel { source: egui::MouseWheelSource::Momentum, .. }));
             s.kinetic.cancel();
             // A timer may have queued momentum earlier in this dispatch.
             s.events.retain(|e| !matches!(e, egui::Event::MouseWheel {
                 source: egui::MouseWheelSource::Momentum, ..
             }));
+            if active {
+                s.events.push(cancel_scroll());
+                s.dirty = true;
+            }
             s.id
         }).collect();
         for id in ids { self.arm_timer(id); }
+    }
+}
+
+fn cancel_scroll() -> egui::Event {
+    egui::Event::MouseWheel {
+        source: egui::MouseWheelSource::Momentum,
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::Vec2::ZERO,
+        phase: egui::TouchPhase::Cancel,
+        modifiers: egui::Modifiers::NONE,
     }
 }
 
@@ -814,6 +813,27 @@ fn hide_buffer(has_buffer: &mut bool, unmapped: &mut bool, configured: &mut bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancel_clears_egui_smoothing_tail() {
+        let ctx = egui::Context::default();
+        let mut delta = egui::Vec2::ZERO;
+        let events = vec![egui::Event::MouseWheel {
+            source: egui::MouseWheelSource::Momentum,
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, 100.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        }, cancel_scroll()];
+        ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+            delta = ui.input(|i| i.smooth_scroll_delta());
+        }).drop_without_applying_deltas();
+        assert_eq!(delta, egui::Vec2::ZERO);
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            delta = ui.input(|i| i.smooth_scroll_delta());
+        }).drop_without_applying_deltas();
+        assert_eq!(delta, egui::Vec2::ZERO);
+    }
 
     #[test]
     fn hiding_before_first_buffer_preserves_initial_configure() {
@@ -1264,6 +1284,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     }
                 }
                 PointerEventKind::Axis {
+                    time,
                     ref horizontal,
                     ref vertical,
                     source,
@@ -1296,7 +1317,11 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     if self.input_allowed(&wl) {
                         let now = Instant::now();
                         if let Some(s) = self.by_wl(&wl) {
-                            s.kinetic.axis(now, source.map(|s| s == wl_pointer::AxisSource::Finger),
+                            if s.kinetic.deadline().is_some() && (delta != egui::Vec2::ZERO
+                                || (source.is_some() && !horizontal.stop && !vertical.stop)) {
+                                s.events.push(cancel_scroll());
+                            }
+                            s.kinetic.axis(time, now, source.map(|s| s == wl_pointer::AxisSource::Finger),
                                 delta, [horizontal.stop, vertical.stop]);
                             let id = s.id;
                             self.arm_timer(id);

@@ -13,7 +13,7 @@ const SAMPLE_WINDOW: Duration = Duration::from_millis(100);
 
 #[derive(Default)]
 struct Axis {
-    sample: Option<Instant>,
+    sample: Option<(Instant, u32)>,
     velocity: f32,
     fling: bool,
 }
@@ -27,6 +27,10 @@ pub(super) struct Kinetic {
 }
 
 impl Kinetic {
+    pub(super) fn interrupts(event: &egui::Event) -> bool {
+        matches!(event, egui::Event::PointerButton { .. }
+            | egui::Event::Key { .. } | egui::Event::PointerGone)
+    }
     pub(super) fn cancel(&mut self) {
         *self = Self::default();
     }
@@ -37,6 +41,7 @@ impl Kinetic {
 
     pub(super) fn axis(
         &mut self,
+        time_ms: u32,
         now: Instant,
         finger: Option<bool>,
         delta: Vec2,
@@ -46,7 +51,7 @@ impl Kinetic {
             self.cancel();
             return;
         }
-        if delta != Vec2::ZERO {
+        if delta != Vec2::ZERO || (finger.is_some() && !stop.iter().any(|s| *s)) {
             // New movement cancels every coasting axis, retaining only live
             // finger samples. A fresh gesture never inherits fling velocity.
             for axis in &mut self.axes {
@@ -62,19 +67,22 @@ impl Kinetic {
         }
         for (i, axis) in self.axes.iter_mut().enumerate() {
             if delta[i] != 0.0 {
-                axis.velocity = axis.sample.map_or(0.0, |last| {
-                    let dt = now.saturating_duration_since(last);
+                axis.velocity = axis.sample.map_or(0.0, |(_, last_ms)| {
+                    // Wayland timestamps, not dispatch intervals: queued frames
+                    // can be delivered microseconds apart. Wrap is protocol-defined.
+                    let dt = Duration::from_millis(u64::from(time_ms.wrapping_sub(last_ms)));
                     if dt.is_zero() || dt > SAMPLE_WINDOW {
                         0.0
                     } else {
                         delta[i] / dt.as_secs_f32()
                     }
                 });
-                axis.sample = Some(now);
+                axis.sample = Some((now, time_ms));
             }
             if stop[i] {
-                axis.fling = axis.sample.is_some_and(|last| {
+                axis.fling = axis.sample.is_some_and(|(last, last_ms)| {
                     now.saturating_duration_since(last) <= SAMPLE_WINDOW
+                        && Duration::from_millis(u64::from(time_ms.wrapping_sub(last_ms))) <= SAMPLE_WINDOW
                 }) && axis.velocity.is_finite()
                     && axis.velocity.abs() >= STOP_SPEED;
                 axis.sample = None;
@@ -121,9 +129,9 @@ mod tests {
 
     fn fling(t: Instant) -> Kinetic {
         let mut k = Kinetic::default();
-        k.axis(t, Some(true), Vec2::splat(10.0), [false; 2]);
-        k.axis(t + FRAME, Some(true), Vec2::splat(10.0), [false; 2]);
-        k.axis(t + FRAME, None, Vec2::ZERO, [true; 2]);
+        k.axis(0, t, Some(true), Vec2::splat(10.0), [false; 2]);
+        k.axis(16, t + FRAME, Some(true), Vec2::splat(10.0), [false; 2]);
+        k.axis(16, t + FRAME, None, Vec2::ZERO, [true; 2]);
         k
     }
 
@@ -152,8 +160,30 @@ mod tests {
         k.cancel();
         assert_eq!(deadline(None, k.deadline()), None);
         assert_eq!(k.step(t + Duration::from_secs(1)), Vec2::ZERO);
-        k.axis(t + FRAME, Some(true), Vec2::ZERO, [true; 2]);
+        k.axis(16, t + FRAME, Some(true), Vec2::ZERO, [true; 2]);
         assert_eq!(k.deadline(), None);
+    }
+
+    #[test]
+    fn each_input_cancel_cause_stops_before_the_next_tick() {
+        let t = Instant::now();
+        for event in [
+            egui::Event::PointerGone,
+            egui::Event::PointerButton {
+                pos: egui::Pos2::ZERO, button: egui::PointerButton::Primary,
+                pressed: true, modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::Key {
+                key: egui::Key::A, physical_key: None, pressed: true,
+                repeat: false, modifiers: egui::Modifiers::NONE,
+            },
+        ] {
+            let mut k = fling(t);
+            assert!(Kinetic::interrupts(&event));
+            k.cancel();
+            assert_eq!(k.step(t + FRAME * 2), Vec2::ZERO);
+            assert_eq!(deadline(None, k.deadline()), None);
+        }
     }
 
     #[test]
@@ -161,11 +191,11 @@ mod tests {
         let t = Instant::now();
         for finger in [None, Some(false), Some(true)] {
             let mut k = Kinetic::default();
-            k.axis(t, finger, Vec2::splat(10.0), [false; 2]);
-            k.axis(t + FRAME, finger, Vec2::splat(10.0), [false; 2]);
+            k.axis(0, t, finger, Vec2::splat(10.0), [false; 2]);
+            k.axis(16, t + FRAME, finger, Vec2::splat(10.0), [false; 2]);
             assert_eq!(k.deadline(), None);
             if finger != Some(true) {
-                k.axis(t + FRAME, finger, Vec2::ZERO, [true; 2]);
+                k.axis(16, t + FRAME, finger, Vec2::ZERO, [true; 2]);
                 assert_eq!(k.deadline(), None);
             }
         }
@@ -175,9 +205,9 @@ mod tests {
     fn new_scroll_and_stale_release_do_not_reuse_velocity() {
         let t = Instant::now();
         let mut k = fling(t);
-        k.axis(t + FRAME * 2, Some(true), Vec2::splat(-2.0), [false; 2]);
+        k.axis(33, t + FRAME * 2, Some(true), Vec2::splat(-2.0), [false; 2]);
         assert_eq!(k.deadline(), None);
-        k.axis(t + Duration::from_secs(1), None, Vec2::ZERO, [true; 2]);
+        k.axis(1000, t + Duration::from_secs(1), None, Vec2::ZERO, [true; 2]);
         assert_eq!(k.deadline(), None);
     }
 
@@ -185,13 +215,32 @@ mod tests {
     fn axis_stops_are_independent_and_egui_deadline_survives() {
         let t = Instant::now();
         let mut k = Kinetic::default();
-        k.axis(t, Some(true), Vec2::splat(10.0), [false; 2]);
-        k.axis(t + FRAME, None, Vec2::splat(10.0), [true, false]);
+        k.axis(0, t, Some(true), Vec2::splat(10.0), [false; 2]);
+        k.axis(16, t + FRAME, None, Vec2::splat(10.0), [true, false]);
         let at = k.deadline().unwrap();
         assert!(k.step(at).x > 0.0);
         assert_eq!(k.step(at).y, 0.0);
         assert_eq!(deadline(Some(t), k.deadline()), Some(t));
         k.cancel();
         assert_eq!(deadline(Some(t), k.deadline()), Some(t));
+    }
+
+    #[test]
+    fn buffered_events_use_wrapping_protocol_time_not_dispatch_time() {
+        let t = Instant::now();
+        let mut k = Kinetic::default();
+        k.axis(u32::MAX - 7, t, Some(true), Vec2::splat(10.0), [false; 2]);
+        k.axis(8, t, None, Vec2::splat(10.0), [false; 2]);
+        k.axis(8, t, None, Vec2::ZERO, [true; 2]);
+        let d = k.step(t + FRAME);
+        assert!(d.x > 9.0 && d.x < 11.0, "{d:?}");
+    }
+
+    #[test]
+    fn source_only_restart_cancels_fling() {
+        let t = Instant::now();
+        let mut k = fling(t);
+        k.axis(0, t + FRAME, Some(true), Vec2::ZERO, [false; 2]);
+        assert_eq!(k.deadline(), None);
     }
 }
