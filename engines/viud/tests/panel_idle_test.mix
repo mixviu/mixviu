@@ -245,14 +245,14 @@ task_start("panel.test.observe","{}")
     write_file($tmp .. "/workspaces",json_encode({count:2,current:2,list:[]}))
     write_file($tmp .. "/windows",json_encode([{id:9,band:"normal",app_id:"example",title:"recovered",workspace:1}]))
     write_file($tmp .. "/comp-fail",json_encode({command:$command,kind:contains($kind,"throw") ? "throw" : "refuse"}))
-    write_file($tmp .. "/registry.mix", 'send scene-panel panel.test.registry body={old:["panel-stub"],new:["panel-stub","late-app"]}
-')
+    $payload=contains($kind,"throw") ? "{refresh:true}" : '{old:["panel-stub"],new:["panel-stub","late-app"]}'
+    write_file($tmp .. "/registry.mix", "send scene-panel panel.test.registry body=" .. $payload .. "\n")
     $_=run_argv_must([$mix,$tmp .. "/registry.mix"],{clear_env:true,env:$vars,timeout:10})
     wait_state("windows",[{id:9,band:"normal",app_id:"example",title:"recovered",workspace:1}])
     wait_state("ws_count",2)
     quiet()
     if contains($kind,"watch") then check(calls_for("comp.props.watch")==$watches+2,"failed comp watch was not retried exactly once") end
-    check(calls_for("noded.props.get")==$registry,"comp failure was attributed to registry")
+    check(calls_for("noded.props.get")==$registry+(contains($kind,"throw") ? 1 : 0),"comp failure was attributed to registry")
     idle(1.2)
     print("PASS compositor " .. $kind .. " failure recovers without unrelated events")
     exit(0)
