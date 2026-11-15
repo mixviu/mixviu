@@ -685,8 +685,8 @@ fn record_window_target_gone_fails() {
     assert!(!recovery.join("complete.json").exists());
     let interrupted: Value =
         serde_json::from_slice(&fs::read(recovery.join("interrupted.json")).unwrap()).unwrap();
-    assert_eq!(interrupted["complete"],false);
-    assert_eq!(interrupted["dropped"],stop["dropped"]);
+    assert_eq!(interrupted["complete"], false);
+    assert_eq!(interrupted["dropped"], stop["dropped"]);
     assert!(interrupted["error"].as_str().unwrap().contains("gone"));
 }
 #[test]

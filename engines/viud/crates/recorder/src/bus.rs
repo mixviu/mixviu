@@ -76,7 +76,7 @@ fn probe_publication(
     match rename(&files.video, &files.frames) {
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
         result => {
-            files.cleanup();
+            let _ = files.cleanup();
             return Err(format!(
                 "destination does not support no-replace publication: {result:?}"
             ));
@@ -85,7 +85,7 @@ fn probe_publication(
     std::fs::remove_file(&files.frames).map_err(|e| e.to_string())?;
     let result = rename(&files.video, &files.frames)
         .map_err(|e| format!("destination does not support no-replace publication: {e}"));
-    files.cleanup();
+    let _ = files.cleanup();
     result
 }
 
@@ -122,23 +122,39 @@ impl TakeFiles {
             markers: format!("{base}.markers"),
         })
     }
-    fn cleanup(&self) {
+    fn cleanup(&self) -> Result<(), String> {
         for path in [&self.video, &self.frames, &self.markers] {
-            if std::path::Path::new(path).is_dir() {
-                let _ = std::fs::remove_dir_all(path);
+            let result = if std::path::Path::new(path).is_dir() {
+                std::fs::remove_dir_all(path)
             } else {
-                let _ = std::fs::remove_file(path);
+                std::fs::remove_file(path)
+            };
+            if let Err(error) = result {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    return Err(format!("remove private take: {error}"));
+                }
             }
         }
+        Ok(())
     }
     fn publish(&self) -> Result<(), String> {
+        self.publish_tracked(&mut false)
+    }
+    fn publish_tracked(&self, published: &mut bool) -> Result<(), String> {
+        self.publish_with(published, |parent| File::open(parent)?.sync_all())
+    }
+    fn publish_with(&self, published: &mut bool, sync_parent: impl FnOnce(&std::path::Path) -> std::io::Result<()>) -> Result<(), String> {
         rename_no_replace(&self.video, &self.path).map_err(|e| e.to_string())?;
+        *published = true;
         let parent = std::path::Path::new(&self.path)
             .parent()
             .ok_or("take has no parent")?;
-        File::open(parent)
-            .and_then(|directory| directory.sync_all())
+        sync_parent(parent)
             .map_err(|e| format!("take published at {}; parent sync failed: {e}", self.path))
+    }
+    fn retained_path(&self, published: bool) -> Option<String> {
+        let path = if published { &self.path } else { &self.video };
+        std::path::Path::new(path).is_dir().then(|| path.clone())
     }
 }
 
@@ -193,7 +209,7 @@ pub struct Recording {
     files: TakeFiles,
     bytes: Arc<std::sync::atomic::AtomicU64>,
     encoder: Option<VideoEncoder>,
-    finishing: Option<Receiver<Result<(), String>>>,
+    finishing: Option<Receiver<(Result<(), String>, Option<String>)>>,
     stop_discard: Option<bool>,
     finaliser: Option<std::thread::JoinHandle<()>>,
 }
@@ -337,21 +353,23 @@ impl Recording {
         let (tx, rx) = channel();
         self.finishing = Some(rx);
         self.finaliser = Some(std::thread::spawn(move || {
+            let mut published = false;
             let result = match failure {
                 Some(error) => encoder.finish_failed(error),
                 None => encoder.finish_result(),
             };
             let result = if discard {
-                files.cleanup();
-                result.map(|_| ())
+                let cleanup = files.cleanup();
+                result.map(|_| ()).and(cleanup)
             } else if failed {
                 result.and(Err(
                     "recording failed; staged VFL retained for recovery".into()
                 ))
             } else {
-                result.and_then(|_| files.publish())
+                result.and_then(|_| files.publish_tracked(&mut published))
             };
-            let _ = tx.send(result);
+            let recovery = files.retained_path(published);
+            let _ = tx.send((result, recovery));
         }));
         true
     }
@@ -367,10 +385,10 @@ impl Recording {
         let Some(rx) = &self.finishing else {
             return false;
         };
-        let result = match rx.try_recv() {
+        let (result, recovery_path) = match rx.try_recv() {
             Ok(result) => result,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                Err("encoder finaliser disconnected".into())
+                (Err("encoder finaliser disconnected".into()), None)
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => return false,
         };
@@ -383,7 +401,7 @@ impl Recording {
         }
         let kept = self.stop_discard == Some(false) && self.error.is_none();
         self.terminal = Some(
-            json!({"recovery_path":if self.error.is_some() {Some(self.files.video.clone())} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
+            json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
         true
     }
@@ -404,6 +422,34 @@ mod file_tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
     #[test]
+    fn failed_parent_sync_reports_published_directory() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("sync.vfl").to_str().unwrap().to_owned();
+        let files = TakeFiles::create(&path).unwrap();
+        std::fs::create_dir(&files.video).unwrap();
+        let mut published = false;
+        assert!(files.publish_with(&mut published, |_| Err(std::io::Error::from_raw_os_error(libc::EIO))).is_err());
+        assert!(published);
+        assert_eq!(files.retained_path(published),Some(path));
+        assert!(!std::path::Path::new(&files.video).exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn failed_discard_reports_no_recovery_directory() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("discard.vfl").to_str().unwrap().to_owned();
+        let mut recording = Recording::new("test".into(),path,2,2,30,"vfl".into()).unwrap();
+        recording.frame(Some((2,2,Arc::new(vec![0;12]),0))).unwrap();
+        recording.error = Some("capture failed".into());
+        assert!(recording.stop(true));
+        while !recording.poll() { std::thread::sleep(std::time::Duration::from_millis(5)); }
+        assert_eq!(recording.terminal.as_ref().unwrap()["recovery_path"],Value::Null);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(),0);
+        std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
     fn private_staging_no_clobber_and_cleanup() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
@@ -420,7 +466,7 @@ mod file_tests {
             assert!(files.publish().is_err());
             assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep");
             assert!(!std::path::Path::new(&format!("{path}.frames.jsonl")).exists());
-            files.cleanup();
+            let _ = files.cleanup();
         }
         assert!(check_destination(&path).is_err());
         std::fs::remove_file(&path).unwrap();
@@ -433,7 +479,7 @@ mod file_tests {
             secure_file(name).unwrap().write_all(b"private").unwrap();
         }
         files.publish().unwrap();
-        files.cleanup();
+        let _ = files.cleanup();
         drop(files);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "private");
         std::fs::remove_dir_all(dir).unwrap();
