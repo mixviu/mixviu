@@ -346,7 +346,10 @@ mod tests {
     async fn native_props_watch_echoes_the_requested_command() {
         let broker = test_broker::Broker::start();
         let reader = idle_bus::connect(&broker, "watch-reader").await;
-        let reply = reader.call("noded", "noded.props.watch", json!({})).await.unwrap();
+        let reply = reader
+            .call("noded", "noded.props.watch", json!({}))
+            .await
+            .unwrap();
         assert_eq!(reply["topic"], "noded.props.changed");
     }
     #[tokio::test]
@@ -519,10 +522,15 @@ mod tests {
             "reconnect reads once then stays idle"
         );
         let forms = app.count("example-app.ui.titlebar.form");
-        app.publish("example-app.ui.titlebar.changed", json!({})).await;
+        app.publish("example-app.ui.titlebar.changed", json!({}))
+            .await;
         app.wait("example-app.ui.titlebar.form", forms + 1).await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        assert_eq!(app.count("example-app.ui.titlebar.form"), forms + 1, "post-bounce titlebar subscription did not resume exactly once");
+        assert_eq!(
+            app.count("example-app.ui.titlebar.form"),
+            forms + 1,
+            "post-bounce titlebar subscription did not resume exactly once"
+        );
         task.abort();
         forward.abort();
         native_forward.abort();
