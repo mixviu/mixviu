@@ -2649,7 +2649,7 @@ end
 
 fn upgrade_summary($u)
   if $u == nil then return nil end
-  $out = {reason:$u.reason, error_code:$u.error_code}
+  $out = {reason:$u.reason, error_code:$u.error_code, context:$u.context, retryable:$u.retryable}
   for $key in ["old", "local", "new"]
     $r = $u[$key]
     if type($r) == "map" then $out[$key] = {template:$r.template, digest:$r.digest,
@@ -2745,11 +2745,32 @@ fn cap_recovery_inner($s, $keep)
   return $s
 end
 
-fn upgrade($s)
+-- Only availability failures are retryable. A host's validation/generation/
+-- ownership refusal (also rc 10) must never become a retry loop.
+fn upgrade_failure($s, $name, $message, $code, $context)
+  $c = $context ?? {}
+  $missing = $c.rc == 10 and $c.upstream == ("Service '" .. $s.host .. "' not found")
+  $retry = $code == "SCENES_UPSTREAM" and $c.target == $s.host and ($missing or (type($c.rc) == "number" and $c.rc < 0))
+  $s.upgrades[$name] = {reason:$message, error_code:$code, context:$c, retryable:$retry}
+  eprint("scenes upgrade: " .. json_encode({scene:$name, error_code:$code, rc:$c.rc, reason:$message, context:$c}))
+  return $s
+end
+
+fn upgrade_pending($s)
+  return filter(keys($s.upgrades ?? {}), fn($n) = $s.upgrades[$n].retryable == true)
+end
+
+fn upgrade($s, $retry = false)
   $s = load_state($s)
   require_state($s)
-  $s.upgrades = {}
+  $pending = upgrade_pending($s)
+  if not $retry then
+    $s.upgrades = {}
+    $s.upgrade_delay = 1
+  end
   for $name in keys($s.desired.origins)
+    if $retry and not contains($pending, $name) then continue end
+    $s.upgrades = delete($s.upgrades, $name)
     if ($s.desired.forks ?? {})[$name] != nil then continue end
     $dir = $s.root .. "/" .. $name
     if not is_dir($dir) then continue end
@@ -2770,7 +2791,10 @@ fn upgrade($s)
           $s = persist($s)
         end
       elif $old == nil or not code_equal($local, $old) then
-        $s.upgrades[$name] = {reason:"template updated: Reset or Keep", old:$old, local:$local, new:$new}
+        $s = upgrade_failure($s, $name, "template updated: Reset or Keep", "SCENES_EDITED", {})
+        $s.upgrades[$name].old = $old
+        $s.upgrades[$name].local = $local
+        $s.upgrades[$name].new = $new
       elif not deep_eq($old, $new) then
         -- Synchronous loader handler owns the writer lock through reset.
         $s.upgrade_expected = $local
@@ -2783,7 +2807,7 @@ fn upgrade($s)
       $flags = $s.upgrades
       $s = load_state($s)
       $s.upgrades = $flags
-      $s.upgrades[$name] = {reason:$message, error_code:$error.code}
+      $s = upgrade_failure($s, $name, $message, $error.code, $error.details)
       -- A placed reset must finish (or roll back) before the next scene.
       $s = recover_records($s, $name)
       if $s.scenes[$name] != nil then $s = reconcile_safe($s, $name, true) end
@@ -2849,7 +2873,7 @@ fn reset_scene_locked($s, $name, $e)
       carry_settings($s, $name, $installation, $tmp, $name == "panel")
     catch $message, $error
       remove_dir($tmp)
-      $s.upgrades[$name] = {reason:$message, error_code:$error.code}
+      $s = upgrade_failure($s, $name, $message, $error.code, $error.details)
       return reconcile_safe($s, $name, true)
     end
   end

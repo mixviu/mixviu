@@ -1,0 +1,156 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Real loader + adapter on an owned private Bus. Host arrival is ordered by
+-- observing the loader's failure, never by a guessed startup sleep. Deadlines
+-- bound the harness only; no assertion depends on a narrow timing interval.
+$here = dirname(realpath($0))
+$repo = realpath($here .. "/../../..")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIX_TEST_MIX_EXE", "/proc/" .. to_string(pid()) .. "/exe")
+$noded = env("MIX_TEST_NODED_EXE", mix_path("prefix") .. "/bin/noded")
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/scenes-boot-upgrade.XXXXXXXX"]))
+$bus = nil
+$children = {loader:nil, host:nil}
+$vars = {}
+
+fn check($ok, $message)
+  if not $ok then raise("SCENES_BOOT_TEST", $message .. "; evidence: " .. $tmp) end
+end
+
+fn start($name, $script)
+  return spawn([$mix, "--serve", $script, "--name", $name], {detach:true, clear_env:true, env:$vars,
+    stdout:{file:$tmp .. "/" .. $name .. ".log"}, stderr:"stdout"})
+end
+
+fn stop($child)
+  if $child == nil or not process_alive($child) then return end
+  $_ = kill($child, 15)
+  for $i = 1 to 100
+    if not process_alive($child) then return end
+    sleep(0.05)
+  end
+  $_ = kill($child, 9)
+end
+
+fn call($target, $command, $body = {})
+  $r = run_argv([$mix, $tmp .. "/client.mix", $target, $command, json_encode($body)], {clear_env:true, env:$vars, timeout:15})
+  check($r.ok, "client failed: " .. $r.stderr)
+  return json_parse($r.stdout)
+end
+
+fn wait_service($target)
+  for $i = 1 to 200
+    if call($target, "INFO").rc == 0 then return end
+    sleep(0.1)
+  end
+  check(false, "service missing: " .. $target)
+end
+
+fn rows()
+  $r = call("scenes", "scenes.list")
+  check($r.rc == 0, "list refused")
+  $out = {}
+  for $row in $r.value.scenes $out[$row.name] = $row end
+  return $out
+end
+
+fn wait_failure($terminal)
+  $deadline = monotonic() + 200
+  while monotonic() < $deadline
+    $r = rows().alpha
+    if $r.stale and $r.upgrade.error_code == "SCENES_UPSTREAM" then
+      if not $terminal or $r.upgrade.retryable == false then return $r end
+    end
+    sleep(0.1)
+  end
+  check(false, "missing availability flag")
+end
+
+fn fixture_source($name, $text)
+  return "---\nscene: 1\nname: " .. $name .. "\ncitizen: scene-" .. $name .. "\nwindow: {\"kind\":\"edge\",\"edge\":\"right\"}\n---\n```mix\nroot: {widget: text, text: '" .. $text .. "'}\n```\n"
+end
+
+try
+  write_file($tmp .. "/client.mix", '$body = json_parse($3)
+send $1 $2 body=json_encode($body) timeout=10
+$v = $result
+if type($v) == "string" then
+  try $v = json_parse($v) catch $ignored end
+end
+print(json_encode({rc:$rc, value:$v}))
+')
+  mkdir($tmp .. "/templates")
+  mkdir($tmp .. "/scenes")
+  for $name in ["alpha", "beta", "gamma"]
+    mkdir($tmp .. "/templates/" .. $name)
+    write_file($tmp .. "/templates/" .. $name .. "/scene.mix", fixture_source($name, "old"))
+    write_file($tmp .. "/templates/" .. $name .. "/template.conf.mix", "{title:'Test'}\n")
+  end
+  $bus = $pb.start({dir:$tmp .. "/bus", name:"scenes-boot-test", noded:$noded})
+  $vars = merge($pb.client_env($bus), {PATH:env("PATH"), HOME:$tmp .. "/home", MIX_STATS:"off",
+    SCENES_DIR:$tmp .. "/scenes", SCENES_TEMPLATES:$tmp .. "/templates", SCENES_FIRST_RUN:"0",
+    SCENES_EDITOR_APP:"0", SCENE_HOST:"fakeshell", FAKE_SHELL_OWNER:"scenes"})
+  $host_script = $here .. "/fixtures/scene-editor/fake_shell.mix"
+  $loader_script = env("SCENES_BOOT_REPO", $repo) .. "/engines/viud/scripts/scenes.mix"
+  $children.host = start("fakeshell", $host_script)
+  wait_service("fakeshell")
+  $children.loader = start("scenes", $loader_script)
+  wait_service("scenes")
+  for $name in ["alpha", "beta", "gamma"]
+    $r = call("scenes", "scenes.install", {template:$name})
+    check($r.rc == 0, "install " .. $name .. ": " .. json_encode($r))
+  end
+  stop($children.loader)
+  stop($children.host)
+  $children.host = nil
+  write_file($tmp .. "/scenes/beta/scene.mix", fixture_source("beta", "edited"))
+  for $name in ["alpha", "beta", "gamma"]
+    write_file($tmp .. "/templates/" .. $name .. "/scene.mix", fixture_source($name, $name == "gamma" ? "BROKEN" : "new"))
+  end
+  $children.loader = start("scenes", $loader_script)
+  wait_service("scenes")
+  wait_failure(false)
+  $children.host = start("fakeshell", $host_script)
+  wait_service("fakeshell")
+  $done = false
+  for $i = 1 to 400
+    $r = rows()
+    if not $r.alpha.stale and $r.beta.upgrade.error_code == "SCENES_EDITED" and $r.gamma.upgrade.retryable == false then $done = true; break end
+    sleep(0.1)
+  end
+  check($done, "late host refreshes unedited copy and retains terminal flags")
+  check(contains(read_file($tmp .. "/scenes/alpha/scene.mix"), "new"), "new shipped bytes installed")
+  check(contains($r.beta.upgrade.reason, "Reset or Keep") and contains(read_file($tmp .. "/scenes/beta/scene.mix"), "edited"), "edited bytes retained")
+  check($r.gamma.upgrade.context.rc == 10 and not contains(read_file($tmp .. "/scenes/gamma/scene.mix"), "BROKEN"), "validation refusal is terminal")
+  check(contains(read_file($tmp .. "/scenes.log"), '"rc":10'), "boot failure logged")
+  -- Passive reload with disabled scenes succeeds while the host is absent;
+  -- lifecycle.commit must re-arm upgrade work in the new generation.
+  stop($children.host)
+  $children.host = nil
+  write_file($tmp .. "/templates/alpha/scene.mix", fixture_source("alpha", "reload-new"))
+  check(call("scenes", "RELOAD").rc == 0, "loader reload accepted")
+  wait_failure(false)
+  $children.host = start("fakeshell", $host_script)
+  wait_service("fakeshell")
+  $done = false
+  for $i = 1 to 400
+    if not rows().alpha.stale and contains(read_file($tmp .. "/scenes/alpha/scene.mix"), "reload-new") then $done = true; break end
+    sleep(0.1)
+  end
+  check($done, "reload commit refreshes when host arrives")
+  check(call("scenes", "scenes.upgrade.retry", {delay:0}).rc != 0, "wire cannot trigger local retry")
+  -- Real bounded give-up, without shortening production delays for the test.
+  stop($children.host)
+  $children.host = nil
+  check(call("scenes", "scenes.upgrade").rc == 0, "manual upgrade starts availability budget")
+  wait_failure(true)
+  $log = read_file($tmp .. "/scenes.log")
+  check(contains($log, "scenes upgrade exhausted:") and contains($log, '"scene":"alpha"') and contains($log, '"error_code":"SCENES_UPSTREAM"'), "exhaustion logged with scene, code and rc")
+  $before = len(split($log, "scenes upgrade:"))
+  sleep(2)
+  check(len(split(read_file($tmp .. "/scenes.log"), "scenes upgrade:")) == $before, "no idle retry after exhaustion")
+  print("PASS scenes boot/reload upgrade: late host, edited copy, validation refusal, bounded exhaustion; load=" .. trim(read_file("/proc/loadavg")))
+finally
+  for $child in values($children) stop($child) end
+  if $bus != nil then $pb.stop($bus) end
+  if env("SCENES_BOOT_KEEP", "0") != "1" then remove_dir($tmp) else print("evidence: " .. $tmp) end
+end

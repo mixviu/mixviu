@@ -26,6 +26,7 @@ $ROOT = $state.root
 
 $state.handover_delay = 1
 $state.handover_armed = false
+$state.upgrade_armed = false
 $state.editor_diagnostics_armed = false
 $state.editor_activation_armed = false
 $state.editor_activation_seq = 0
@@ -95,6 +96,38 @@ fn refresh_services($s, $reconnect)
   $r = $s.io.rpc("noded", "noded.props.get", {})
   $s = schedule_handover($loader.services($s, (($r ?? {}).services ?? {}).registered, $reconnect))
   return schedule_editor_activation($s)
+end
+
+-- Local one-shot tasks release the writer while waiting. Retry only the
+-- failed availability requests, at 1, 2, 4 .. 64 seconds, then retain a flag.
+-- No idle task remains once the work succeeds or the budget is exhausted.
+fn schedule_upgrade($s)
+  $pending = $loader.upgrade_pending($s)
+  if len($pending) == 0 or $s.upgrade_armed then return $s end
+  if $s.upgrade_delay > 64 then
+    for $name in $pending
+      $s.upgrades[$name].retryable = false
+      eprint("scenes upgrade exhausted: " .. json_encode({scene:$name, error_code:$s.upgrades[$name].error_code, rc:$s.upgrades[$name].context.rc}))
+    end
+    return $s
+  end
+  $s.upgrade_armed = true
+  task_start("scenes.upgrade.retry", json_encode({delay:$s.upgrade_delay}))
+  $s.upgrade_delay = $s.upgrade_delay * 2
+  return $s
+end
+
+on scenes.upgrade.retry async
+  if len(keys($event.headers)) != 0 then return end
+  sleep($event.args.delay)
+end
+
+on scenes.upgrade.retry
+  if len(keys($event.headers)) != 0 then return end
+  $state.upgrade_armed = false
+  $state = $loader.upgrade($state, true)
+  $state = schedule_upgrade($state)
+  $state = $loader.changed($state)
 end
 
 fn schedule_library_retry($s)
@@ -231,7 +264,7 @@ on lifecycle.commit
     -- service reconciliation: mount accepted content, start each enabled
     -- behaviour exactly once (fresh generations, no retiring tombstones).
     $state = $loader.rescan($state, true)
-    $state = $loader.upgrade($state)
+    $state = schedule_upgrade($loader.upgrade($state))
     $state = refresh_services($state, true)
   catch $message, $error
     $state.diagnostic = {error_code:$error.code, message:$message, context:$error.details}
@@ -334,6 +367,7 @@ end
 
 on scenes.upgrade desc "Refresh unedited template copies; flag edited copies for review"
   $state = $loader.request($state, "upgrade", $event.args ?? {})
+  $state = schedule_upgrade($state)
   reply($state.rc, json_encode($state.response))
   $state = $loader.changed($state)
 end
@@ -444,7 +478,7 @@ if is_reload_candidate() then
   $state = $loader.prepare_reload($state)
 else
   $state = $loader.rescan($state, false)
-  if $state.state_ok then $state = $loader.upgrade($state) end
+  if $state.state_ok then $state = schedule_upgrade($loader.upgrade($state)) end
   $state = refresh_services($state, false)
   $state = $loader.changed($state)
 end
