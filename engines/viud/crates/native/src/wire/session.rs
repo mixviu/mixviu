@@ -103,7 +103,10 @@ pub fn register(
                                 &mut manager.borrow_mut(),
                             )
                         },
-                        || libinput.suspend(),
+                        || {
+                            libinput.suspend();
+                            ctx_ref.libinput_dispatch.set(true);
+                        },
                     );
 
                     *state.inner.kernel.get_mut(&drivers::resume::base::VBLANK_SEEN_MUT) = false;
@@ -182,11 +185,10 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
 
         kms::seat::lifecycle::resume::resume(kms::seat::lifecycle::resume::ResumeSteps {
             resume_input: || {
+                ctx_ref.libinput_dispatch.set(true);
                 libinput
                     .resume()
-                    .map_err(|e| format!("libinput resume failed: {e:?}"))?;
-                ctx_ref.libinput_dispatch.set(true);
-                Ok(())
+                    .map_err(|e| format!("libinput resume failed: {e:?}"))
             },
             activate_display: |force| {
                 kms::scanout::surface::output::activate(&mut manager.borrow_mut(), force)
