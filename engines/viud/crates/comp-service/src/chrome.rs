@@ -263,12 +263,15 @@ pub(crate) async fn run(
                     None
                 };
             }
-            let presentation_due = presentation_retry.is_none_or(|at| std::time::Instant::now() >= at);
+            let presentation_due =
+                presentation_retry.is_none_or(|at| std::time::Instant::now() >= at);
             let mut bars = BTreeMap::new();
             let targets = TARGETS.lock().unwrap().clone();
             let dirty: Vec<_> = targets
                 .iter()
-                .filter(|name| presentation_due && services.contains(*name) && bars_dirty.contains(*name))
+                .filter(|name| {
+                    presentation_due && services.contains(*name) && bars_dirty.contains(*name)
+                })
                 .cloned()
                 .collect();
             for service in &dirty {
@@ -667,9 +670,9 @@ mod tests {
     #[tokio::test]
     async fn failed_titlebar_reads_back_off() {
         let _guard = IDLE_LOCK.lock().await;
-        let mut broker = test_broker::Broker::bounce_stable();
+        let broker = test_broker::Broker::bounce_stable();
         let settings = idle_bus::Service::start(&broker, "settingsd").await;
-        let mut app = idle_bus::Service::start(&broker, "example-app").await;
+        let app = idle_bus::Service::start(&broker, "example-app").await;
         targets(BTreeSet::from(["example-app".into()]));
         let (client, mut incoming, native_forward) = idle_bus::native(&broker, "comp-idle").await;
         let names = client
@@ -686,9 +689,9 @@ mod tests {
                 .is_some_and(|names| names.contains(&json!("example-app"))),
             "registry: {names}"
         );
-        let observer = idle_bus::Observer::start(&broker).await;
+        let _observer = idle_bus::Observer::start(&broker).await;
         let (send, events) = tokio::sync::mpsc::channel(64);
-        let hints = send.clone();
+        let _hints = send.clone();
         // Registrations are capped/coalesced independently by the broker.
         // Drive one explicit hint after each completed registration below,
         // so exact per-delivery counts do not depend on that timer's phase.
@@ -730,15 +733,32 @@ mod tests {
         app.wait("example-app.ui.titlebar.form", 1).await;
         settings.settings_changed(2, "first").await;
         tokio::time::timeout(std::time::Duration::from_secs(20), async {
-            while app.count("example-app.ui.titlebar.form") < 4 { tokio::time::sleep(std::time::Duration::from_millis(10)).await; }
-        }).await.unwrap();
+            while app.count("example-app.ui.titlebar.form") < 4 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         app.checkpoint("comp-idle").await;
-        let times: Vec<_> = app.calls.lock().unwrap().iter().filter(|(c,_)| c.ends_with(".ui.titlebar.form")).map(|(_,at)| *at).collect();
+        let times: Vec<_> = app
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, _)| c.ends_with(".ui.titlebar.form"))
+            .map(|(_, at)| *at)
+            .collect();
         assert!(times[1].duration_since(times[0]) >= std::time::Duration::from_millis(900));
         assert!(times[2].duration_since(times[1]) >= std::time::Duration::from_millis(1900));
         assert!(times[3].duration_since(times[2]) >= std::time::Duration::from_millis(3900));
-        app.assert_idle(std::time::Duration::from_millis(1200)).await;
-        task.abort(); forward.abort(); native_forward.abort(); engine.abort(); drop(starter); targets(BTreeSet::new());
+        app.assert_idle(std::time::Duration::from_millis(1200))
+            .await;
+        task.abort();
+        forward.abort();
+        native_forward.abort();
+        engine.abort();
+        drop(starter);
+        targets(BTreeSet::new());
     }
 
     #[test]

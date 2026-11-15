@@ -63,6 +63,7 @@ pub struct Service {
     pub client: Arc<SupervisedClient>,
     pub calls: Arc<Mutex<Vec<(String, Instant)>>>,
     pub fail_reads: Arc<AtomicUsize>,
+    #[allow(dead_code)] // Shared fixture; only chrome exercises form failures.
     pub fail_forms: Arc<AtomicUsize>,
     current: Arc<Mutex<settings::Snapshot>>,
     changes: tokio::sync::watch::Receiver<usize>,
@@ -99,10 +100,14 @@ impl Service {
                     .unwrap()
                     .push((command.command.clone(), Instant::now()));
                 changed.send_modify(|n| *n += 1);
-                let refused = (command.command.ends_with(".ui.titlebar.form") && form_failures.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok()) || command.command == "settings.get"
-                    && failures
+                let refused = (command.command.ends_with(".ui.titlebar.form")
+                    && form_failures
                         .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                        .is_ok();
+                        .is_ok())
+                    || command.command == "settings.get"
+                        && failures
+                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                            .is_ok();
                 let value = if refused {
                     json!({"status":"busy"})
                 } else if command.command == "settings.get" {
