@@ -126,6 +126,11 @@ on windows.change
 end
 ')
   write_file($tmp .. "/tray.mix", 'on tray.list
+  if is_file(env("FIXTURE_DIR") .. "/tray-slow") then
+    remove(env("FIXTURE_DIR") .. "/tray-slow")
+    sleep(0.8)
+    write_file(env("FIXTURE_DIR") .. "/tray-completed","1")
+  end
   if is_file(env("FIXTURE_DIR") .. "/tray-fail") then
     remove(env("FIXTURE_DIR") .. "/tray-fail")
     reply(10,"busy")
@@ -150,7 +155,12 @@ end
   start("panel-stub", $tmp .. "/stub.mix")
   wait_service("panel-stub")
   $behaviour = read_file($root .. "/share/scenes/panel/behaviour.mix")
-  if $case == "clock" then $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","sleep(0.05)") end
+  if $case == "clock" then
+    $behaviour=replace_must($behaviour,"sleep($p.seconds_to_next_minute(time()))","sleep(0.05)")
+    -- Isolate clock/window events from the independently capped startup
+    -- registration delivery; the comp case covers that path separately.
+    $behaviour=replace_must($behaviour,"services_changed($a.new)","return")
+  end
   write_file($tmp .. "/panel.mix", $behaviour .. '
 on panel.test.state
   reply(0,json_encode({services:$state.services,tray_live:contains($state.services,$TRAY),notify_live:contains($state.services,$NOTIFY),registry_dirty:$state.registry_dirty,tray_dirty:$state.tray_dirty,notes_dirty:$state.notes_dirty ?? false,dirty:$state.dirty,rebuilding:$state.rebuilding,windows:$state.windows}))
@@ -172,7 +182,7 @@ end
     sleep(0.05)
   end
   check(is_file($tmp .. "/model"), "first panel model missing")
-  quiet()
+  if $case != "clock" then quiet() end
   if $case == "comp" then
     $watches=calls_for("comp.props.watch")
     $windows=calls_for("comp.windows.list")
@@ -312,6 +322,14 @@ end
   $tray_pid = start("tray-stub", $tmp .. "/tray.mix")
   wait_service("tray-stub")
   wait_tray(1)
+  if $case == "slow-tray" then
+    write_file($tmp .. "/tray-slow","1")
+    call("tray-stub","change")
+    wait_tray(2)
+    check(is_file($tmp .. "/tray-completed"),"wait_tray returned before the in-flight read completed")
+    print("PASS wait_tray waits for slow response/rebuild completion")
+    exit(0)
+  end
   call("tray-stub", "change")
   wait_tray(2)
   call("tray-stub", "props")

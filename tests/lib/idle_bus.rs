@@ -173,6 +173,7 @@ impl Service {
         assert_eq!(result, json!({"settled":true}));
     }
 
+    #[allow(dead_code)] // Shared fixture; only chrome injects names-only hints.
     pub fn registration_hint(names: &[&str]) -> bus::IncomingCommand {
         bus::IncomingCommand {
             generation: 1,
