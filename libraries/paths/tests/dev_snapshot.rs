@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Real, separately compiled gold/dev processes sharing one temporary prefix.
+#![cfg(target_os = "linux")]
 use std::{
     os::unix::fs::symlink,
     path::Path,
@@ -60,12 +61,24 @@ fn two_binaries_one_prefix_and_fail_closed_controls() {
     let _scratch = Scratch(scratch_root.clone());
     // Compile the real paths reader once, then two immutable build identities.
     // This test runs on the build worker; no desktop Rust build is involved.
+    // The standalone rustc fixture uses the same platform-selected libc
+    // constants as the Cargo-built reader, without guessing a Cargo rlib path.
+    let fixture_source = prefix.join("reader.rs");
+    std::fs::write(&fixture_source, format!(r#"
+extern crate self as libc;
+pub const O_NOFOLLOW: i32 = {};
+pub const O_NONBLOCK: i32 = {};
+#[path = {:?}]
+mod implementation;
+pub use implementation::*;
+"#, libc::O_NOFOLLOW, libc::O_NONBLOCK,
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))).unwrap();
     let library = prefix.join("libpaths.rlib");
     rustc(&[
         "--edition=2024",
         "--crate-name=paths",
         "--crate-type=rlib",
-        concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"),
+        fixture_source.to_str().unwrap(),
         "-o",
         library.to_str().unwrap(),
     ]);
@@ -194,6 +207,20 @@ fn main() {{
         let log = String::from_utf8_lossy(&out.stderr);
         assert!(log.contains(reason), "{log}");
         assert!(log.contains(marker.to_str().unwrap()));
+    }
+    // Nothing but the commit format is wrong in the named entry. Assert
+    // the parser reason so an eventual authorisation mismatch cannot pass.
+    for malformed in [DEV[..39].to_owned(), DEV.to_uppercase(), "g".repeat(40)] {
+        for (source, reason) in [
+            (valid.replace(DEV, &malformed), "invalid or duplicate member commit"),
+            (valid.replace("}}", &format!(",\"other\":\"{malformed}\"}}}}")), "invalid or duplicate member commit"),
+            (valid.replace(GOLD, &malformed), "invalid gold commit"),
+        ] {
+            std::fs::write(&marker, source).unwrap();
+            let out = command(&prefix.join("bin/viu")).output().unwrap();
+            assert_eq!(out.status.code(), Some(42));
+            assert!(String::from_utf8_lossy(&out.stderr).contains(reason));
+        }
     }
     let mut non_utf8 = valid.as_bytes().to_vec();
     non_utf8.push(0xff);

@@ -6,6 +6,33 @@ use std::{collections::BTreeMap, io::Read, path::Path};
 pub(crate) const CAPABILITY: &str = "mixviu-dev-snapshot:1";
 
 fn open_marker(path: &Path) -> std::io::Result<std::fs::File> {
+    #[cfg(not(target_os = "linux"))]
+    return unsupported_open(path);
+    #[cfg(target_os = "linux")]
+    open_linux_marker(path)
+}
+
+#[cfg(any(test, not(target_os = "linux")))]
+fn unsupported_open(path: &Path) -> std::io::Result<std::fs::File> {
+    // Missing markers must remain NotFound before the unsupported reason.
+    std::fs::symlink_metadata(path)?;
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "safe dev marker open is unsupported on this target",
+    ))
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn require_regular(file: std::fs::File) -> std::io::Result<std::fs::File> {
+    if !file.metadata()?.file_type().is_file() {
+        return Err(std::io::Error::other("opened marker is not a regular file"));
+    }
+    Ok(file)
+}
+
+#[cfg(target_os = "linux")]
+fn open_linux_marker(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
     // Reject special files before opening, then repeat the check on the handle.
     // The open flags below also close the replacement race between these checks.
     if !std::fs::symlink_metadata(path)?.file_type().is_file() {
@@ -13,44 +40,11 @@ fn open_marker(path: &Path) -> std::io::Result<std::fs::File> {
             "marker must be a regular file, not a symlink",
         ));
     }
-    #[cfg(all(
-        target_os = "linux",
-        any(
-            target_arch = "x86_64",
-            target_arch = "x86",
-            target_arch = "aarch64",
-            target_arch = "arm",
-            target_arch = "riscv64"
-        )
-    ))]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // Linux UAPI values for these architectures. Keep paths dependency-free.
-        const O_NOFOLLOW: i32 = 0o400000;
-        const O_NONBLOCK: i32 = 0o4000;
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(O_NOFOLLOW | O_NONBLOCK)
-            .open(path)?;
-        if !file.metadata()?.file_type().is_file() {
-            return Err(std::io::Error::other("opened marker is not a regular file"));
-        }
-        Ok(file)
-    }
-    #[cfg(not(all(
-        target_os = "linux",
-        any(
-            target_arch = "x86_64",
-            target_arch = "x86",
-            target_arch = "aarch64",
-            target_arch = "arm",
-            target_arch = "riscv64"
-        )
-    )))]
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "safe dev marker open is unsupported on this target",
-    ))
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    require_regular(file)
 }
 
 pub(super) fn accepts(
@@ -202,6 +196,46 @@ impl Json<'_> {
 
 #[cfg(test)]
 mod tests {
+    struct Scratch(std::path::PathBuf);
+    impl Scratch {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("paths-marker-{label}-{}", std::process::id()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    }
+
+    #[test]
+    fn unsupported_open_preserves_not_found_before_unsupported() {
+        let scratch = Scratch::new("unsupported");
+        let marker = scratch.0.join("DEV.json");
+        assert_eq!(super::unsupported_open(&marker).unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        std::fs::write(&marker, "{}").unwrap();
+        let err = super::unsupported_open(&marker).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::Unsupported);
+        assert_eq!(err.to_string(), "safe dev marker open is unsupported on this target");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn handle_check_refuses_open_fifo_and_directory_before_reading() {
+        use std::os::unix::fs::OpenOptionsExt;
+        let scratch = Scratch::new("handles");
+        let fifo = scratch.0.join("fifo");
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        let fifo = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(fifo).unwrap();
+        let dir = std::fs::File::open(&scratch.0).unwrap();
+        for file in [fifo, dir] {
+            assert_eq!(super::require_regular(file).unwrap_err().to_string(), "opened marker is not a regular file");
+        }
+        let regular = scratch.0.join("regular");
+        std::fs::write(&regular, "{}").unwrap();
+        assert!(super::require_regular(std::fs::File::open(regular).unwrap()).is_ok());
+    }
+
     #[test]
     fn string_reader_refuses_escapes_before_member_validation() {
         let mut p = super::Json(br#""v\u0069u""#);
