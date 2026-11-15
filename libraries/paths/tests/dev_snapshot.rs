@@ -64,15 +64,23 @@ fn two_binaries_one_prefix_and_fail_closed_controls() {
     // The standalone rustc fixture uses the same platform-selected libc
     // constants as the Cargo-built reader, without guessing a Cargo rlib path.
     let fixture_source = prefix.join("reader.rs");
-    std::fs::write(&fixture_source, format!(r#"
+    std::fs::write(
+        &fixture_source,
+        format!(
+            r#"
 extern crate self as libc;
 pub const O_NOFOLLOW: i32 = {};
 pub const O_NONBLOCK: i32 = {};
 #[path = {:?}]
 mod implementation;
 pub use implementation::*;
-"#, libc::O_NOFOLLOW, libc::O_NONBLOCK,
-        concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))).unwrap();
+"#,
+            libc::O_NOFOLLOW,
+            libc::O_NONBLOCK,
+            concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs")
+        ),
+    )
+    .unwrap();
     let library = prefix.join("libpaths.rlib");
     rustc(&[
         "--edition=2024",
@@ -212,8 +220,14 @@ fn main() {{
     // the parser reason so an eventual authorisation mismatch cannot pass.
     for malformed in [DEV[..39].to_owned(), DEV.to_uppercase(), "g".repeat(40)] {
         for (source, reason) in [
-            (valid.replace(DEV, &malformed), "invalid or duplicate member commit"),
-            (valid.replace("}}", &format!(",\"other\":\"{malformed}\"}}}}")), "invalid or duplicate member commit"),
+            (
+                valid.replace(DEV, &malformed),
+                "invalid or duplicate member commit",
+            ),
+            (
+                valid.replace("}}", &format!(",\"other\":\"{malformed}\"}}}}")),
+                "invalid or duplicate member commit",
+            ),
             (valid.replace(GOLD, &malformed), "invalid gold commit"),
         ] {
             std::fs::write(&marker, source).unwrap();

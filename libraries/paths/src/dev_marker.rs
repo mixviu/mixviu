@@ -199,24 +199,33 @@ mod tests {
     struct Scratch(std::path::PathBuf);
     impl Scratch {
         fn new(label: &str) -> Self {
-            let path = std::env::temp_dir().join(format!("paths-marker-{label}-{}", std::process::id()));
+            let path =
+                std::env::temp_dir().join(format!("paths-marker-{label}-{}", std::process::id()));
             std::fs::create_dir(&path).unwrap();
             Self(path)
         }
     }
     impl Drop for Scratch {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
     fn unsupported_open_preserves_not_found_before_unsupported() {
         let scratch = Scratch::new("unsupported");
         let marker = scratch.0.join("DEV.json");
-        assert_eq!(super::unsupported_open(&marker).unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(
+            super::unsupported_open(&marker).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
         std::fs::write(&marker, "{}").unwrap();
         let err = super::unsupported_open(&marker).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::Unsupported);
-        assert_eq!(err.to_string(), "safe dev marker open is unsupported on this target");
+        assert_eq!(
+            err.to_string(),
+            "safe dev marker open is unsupported on this target"
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -225,11 +234,24 @@ mod tests {
         use std::os::unix::fs::OpenOptionsExt;
         let scratch = Scratch::new("handles");
         let fifo = scratch.0.join("fifo");
-        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
-        let fifo = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(fifo).unwrap();
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let fifo = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(fifo)
+            .unwrap();
         let dir = std::fs::File::open(&scratch.0).unwrap();
         for file in [fifo, dir] {
-            assert_eq!(super::require_regular(file).unwrap_err().to_string(), "opened marker is not a regular file");
+            assert_eq!(
+                super::require_regular(file).unwrap_err().to_string(),
+                "opened marker is not a regular file"
+            );
         }
         let regular = scratch.0.join("regular");
         std::fs::write(&regular, "{}").unwrap();
