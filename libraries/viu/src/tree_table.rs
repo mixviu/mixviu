@@ -16,13 +16,18 @@ struct FontSnapshot {
     generation: u64,
 }
 
+// Compare family/name maps and FontData Arc identities first. Only replaced
+// FontData values need egui's index/tweak/blob equality; snapshot only on change.
 fn font_generation(ui: &Ui) -> u64 {
     let snapshot = ui.data_mut(|data| {
-        data.get_temp_mut_or_default::<std::sync::Arc<std::sync::Mutex<FontSnapshot>>>(
-            Id::unique("tree-table-font-snapshot"),
-        ).clone()
+        data.get_temp_mut_or_default::<std::sync::Arc<std::sync::Mutex<FontSnapshot>>>(Id::unique(
+            "tree-table-font-snapshot",
+        ))
+        .clone()
     });
-    let mut snapshot = snapshot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut snapshot = snapshot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     ui.fonts(|fonts| {
         let current = fonts.definitions();
         let mut same_pointers = true;
@@ -84,8 +89,10 @@ impl ColumnMeasurements {
         mut measure: impl FnMut(&str, bool) -> f32,
     ) -> f32 {
         if !self.key.as_ref().is_some_and(|key| {
-            key.generation == input.generation && key.scale == input.scale
-                && key.fonts == input.fonts && &key.column == input.column
+            key.generation == input.generation
+                && key.scale == input.scale
+                && key.fonts == input.fonts
+                && &key.column == input.column
         }) {
             self.baseline = fixed.map(|text| measure(text, true)).fold(0.0, f32::max);
             self.rows.clear();
@@ -161,7 +168,10 @@ fn sample_width(ui: &Ui, id: &str, column: &Value, rows: &[Value], index: usize)
     }
     let fonts = [body, strong];
     let key = MeasurementInputs {
-        column, fonts: &fonts, generation: font_generation(ui), scale: ui.ctx().pixels_per_point(),
+        column,
+        fonts: &fonts,
+        generation: font_generation(ui),
+        scale: ui.ctx().pixels_per_point(),
     };
     let cache_id = Id::unique((ui.ctx().viewport_id(), id, index, "sample-width"));
     let width = column_cache(ui, cache_id)
@@ -247,8 +257,12 @@ mod numeric_state_tests {
     fn wide_table_steady_frames_clone_no_font_definitions_or_column_keys() {
         let ctx = egui::Context::default();
         crate::appearance::install(&ctx);
-        let columns = (0..12).map(|i| json!({"label":format!("Column {i}"), "samples":["sample"]})).collect::<Vec<_>>();
-        let rows = (0..2000).map(|i| json!({"cells":(0..12).map(|j| format!("Cell {i}:{j}")).collect::<Vec<_>>()})).collect::<Vec<_>>();
+        let columns = (0..12)
+            .map(|i| json!({"label":format!("Column {i}"), "samples":["sample"]}))
+            .collect::<Vec<_>>();
+        let rows = (0..2000)
+            .map(|i| json!({"cells":(0..12).map(|j| format!("Cell {i}:{j}")).collect::<Vec<_>>()}))
+            .collect::<Vec<_>>();
         let value = json!({"columns":columns,"rows":rows});
         for frame in 0..20 {
             FONT_DEFINITION_CLONES.set(0);
@@ -261,7 +275,8 @@ mod numeric_state_tests {
                 for (index, column) in value["columns"].as_array().unwrap().iter().enumerate() {
                     sample_width(ui, "wide", column, table_rows(&value), index);
                 }
-            }).drop_without_applying_deltas();
+            })
+            .drop_without_applying_deltas();
             if frame > 0 {
                 assert_eq!(FONT_DEFINITION_CLONES.get(), 0);
                 assert_eq!(FONT_DATA_COMPARISONS.get(), 0);
@@ -357,7 +372,8 @@ mod numeric_state_tests {
                     _ => {}
                 }
                 if frame == 43 {
-                    let id = Id::unique((ui.ctx().viewport_id(), "stream", 1_usize, "column-widths"));
+                    let id =
+                        Id::unique((ui.ctx().viewport_id(), "stream", 1_usize, "column-widths"));
                     assert!(column_cache(ui, id).lock().unwrap().rows.capacity() <= 64);
                 }
                 let body = TextStyle::Body.resolve(ui.style());
@@ -829,7 +845,10 @@ fn widths(ui: &Ui, id: &str, value: &Value, metadata_scale: f32) -> Vec<f32> {
     let mut widths = Vec::with_capacity(columns.len());
     for (i, column) in columns.iter().enumerate() {
         let key = MeasurementInputs {
-            column, fonts: &fonts, generation, scale: ui.ctx().pixels_per_point(),
+            column,
+            fonts: &fonts,
+            generation,
+            scale: ui.ctx().pixels_per_point(),
         };
         let cache_id = Id::unique((ui.ctx().viewport_id(), id, i, "column-widths"));
         let label = format!("{} ▼", text(column, "label"));
