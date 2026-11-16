@@ -4,6 +4,7 @@
 -- Run from the checkout root with target/debug/mix after building mix + noded.
 $mix = realpath("/proc/self/exe")
 $suite = "services/releasesd/tests/releasesd_test.mix"
+$suite_argv = if uid() == 0 then ["runuser", "-u", "nobody", "--", $mix, $suite] else [$mix, $suite] end
 $env = {MIX_TEST_NODED_EXE: realpath("target/debug/noded")}
 $held = tcp_listen("127.0.0.1", 0)
 $port = tcp_local_addr($held).port
@@ -15,7 +16,7 @@ try
     raise("COLLISION_PROOF", "expected bind refusal on held port: " .. json_encode($old))
   end
   print("Forced old pick " .. to_string($port) .. ": " .. $old.stdout)
-  $proof = run_argv([$mix, $suite], {env: $env, stderr: "stdout", timeout: 300})
+  $proof = run_argv($suite_argv, {env: $env, stderr: "stdout", timeout: 300})
   print($proof.stdout)
   if not $proof.ok then raise("COLLISION_PROOF", "suite failed while old pick was occupied") end
   print("PASS collision: suite passed with old pick still held")
@@ -23,7 +24,7 @@ finally
   $closed = tcp_close($held)
 end
 for $iteration = 1 to 20
-  $result = run_argv([$mix, $suite], {env: $env, stderr: "stdout", timeout: 300})
+  $result = run_argv($suite_argv, {env: $env, stderr: "stdout", timeout: 300})
   print($result.stdout)
   if not $result.ok then raise("PORT_STRESS", "suite failed at repetition " .. to_string($iteration)) end
   print("PASS repetition " .. to_string($iteration) .. "/20")
