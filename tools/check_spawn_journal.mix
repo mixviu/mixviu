@@ -17,7 +17,7 @@ $entries=[]
 for $attempt in range(0,40)
   sleep(0.1)
   $result=run_argv_must(["journalctl","--no-pager","-o","json","SYSLOG_IDENTIFIER="..$identifier])
-  $entries=filter(split(trim($result.stdout),"\n"),fn($line)=$line!="")
+  $entries=filter(split(trim($result),"\n"),fn($line)=$line!="")
   if len($entries)>0 then break end
 end
 check(len($entries)==1,"one journal entry, without a stray zero")
