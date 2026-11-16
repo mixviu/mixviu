@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
+mod dev_marker;
 pub mod env;
 
 pub type Result<T> = std::result::Result<T, String>;

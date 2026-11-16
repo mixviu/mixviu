@@ -56,7 +56,35 @@ pub(super) fn read(prefix: &Path) -> Result<Option<Defaults>, Error> {
         .read_to_end(&mut bytes)
         .map_err(|e| Error::Unreadable(e.to_string()))?;
     let source = std::str::from_utf8(&bytes).map_err(|e| Error::Malformed(e.to_string()))?;
-    parse(source, super::env::SNAPSHOT.get().copied()).map(Some)
+    let snapshot = super::env::SNAPSHOT.get();
+    let result = parse(source, snapshot.map(|s| s.0));
+    if let Err(Error::SnapshotMismatch { expected, actual }) = &result {
+        // A setting-prefix override must never redirect marker authority.
+        let installed_prefix = super::inputs()
+            .exe
+            .as_ref()
+            .and_then(|exe| super::prefix_from_exe_strict(exe).ok());
+        if installed_prefix.as_deref() != Some(prefix) {
+            return result.map(Some);
+        }
+        // Strict-only callers must not touch or diagnose a dev marker.
+        let Some(member) = snapshot.and_then(|s| s.1) else {
+            return result.map(Some);
+        };
+        let marker = prefix.join("DEV.json");
+        match super::dev_marker::accepts(prefix, member, expected, actual) {
+            Ok(true) => {
+                eprintln!(
+                    "paths: dev snapshot exception: member {member}, commit {expected}, base {actual}, marker {}",
+                    marker.display()
+                );
+                return parse(source, None).map(Some);
+            }
+            Ok(false) => {} // Preserve the missing-marker strict path exactly.
+            Err(detail) => eprintln!("paths: marker {} refused: {detail}", marker.display()),
+        }
+    }
+    result.map(Some)
 }
 pub(super) fn parse(source: &str, stamp: Option<&str>) -> Result<Defaults, Error> {
     if source.len() > 65536 {

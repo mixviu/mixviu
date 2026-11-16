@@ -97,7 +97,15 @@ impl std::error::Error for SettingError {}
 static DEFAULTS: OnceLock<
     std::result::Result<Option<super::env_document::Defaults>, super::env_document::Error>,
 > = OnceLock::new();
-pub(super) static SNAPSHOT: OnceLock<&'static str> = OnceLock::new();
+pub(super) static SNAPSHOT: OnceLock<(&'static str, Option<&'static str>)> = OnceLock::new();
+/// Offline artifact scanners may require this exact token before dev shipping.
+pub const DEV_SNAPSHOT_CAPABILITY: &str = super::dev_marker::CAPABILITY;
+
+/// Register compile-time member identity as well as its snapshot. Never use
+/// argv[0], an executable basename or environment data for this identity.
+pub fn register_member_snapshot(member: &'static str, commit: &'static str) {
+    register(commit, Some(member));
+}
 /// Set when the first read of an installed env.mx starts.
 static DEFAULTS_READ: AtomicBool = AtomicBool::new(false);
 static CONFLICT_REPORTED: AtomicBool = AtomicBool::new(false);
@@ -112,14 +120,18 @@ static CONFLICT_REPORTED: AtomicBool = AtomicBool::new(false);
 /// stderr. With no registration, installed defaults are read without a
 /// commit check.
 pub fn register_snapshot(commit: &'static str) {
-    match SNAPSHOT.set(commit) {
+    register(commit, None);
+}
+
+fn register(commit: &'static str, member: Option<&'static str>) {
+    match SNAPSHOT.set((commit, member)) {
         Ok(()) => {
             if cfg!(debug_assertions) && DEFAULTS_READ.load(Ordering::SeqCst) {
                 panic!("paths: build snapshot registered after the first installed setting read");
             }
         }
         Err(_) => {
-            let first = SNAPSHOT.get().copied().unwrap_or_default();
+            let first = SNAPSHOT.get().map(|s| s.0).unwrap_or_default();
             if cfg!(debug_assertions)
                 && first != commit
                 && !CONFLICT_REPORTED.swap(true, Ordering::SeqCst)
