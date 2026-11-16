@@ -631,9 +631,19 @@ mod file_tests {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
         let path = dir.join("limited.vfl").to_str().unwrap().to_owned();
-        let mut r = Recording::new_bounded("limited".into(), path.clone(), 2, 2, 30, "vfl".into(), Some(1024)).unwrap();
+        let mut r = Recording::new_bounded(
+            "limited".into(),
+            path.clone(),
+            2,
+            2,
+            30,
+            "vfl".into(),
+            Some(1024),
+        )
+        .unwrap();
         r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
-        r.marker("oversized".into(), json!("x".repeat(2048))).unwrap();
+        r.marker("oversized".into(), json!("x".repeat(2048)))
+            .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while r.encoder.as_ref().unwrap().error().is_none() {
             assert!(std::time::Instant::now() < deadline);
@@ -646,10 +656,16 @@ mod file_tests {
         }
         assert!(r.error.as_ref().unwrap().contains("max_bytes"));
         assert!(!std::path::Path::new(&path).exists());
-        let recovery = r.terminal.as_ref().unwrap()["recovery_path"].as_str().unwrap();
+        let recovery = r.terminal.as_ref().unwrap()["recovery_path"]
+            .as_str()
+            .unwrap();
         assert!(recovery.ends_with(".part"));
         assert!(std::path::Path::new(recovery).is_dir());
-        assert!(!std::path::Path::new(recovery).join("complete.json").exists());
+        assert!(
+            !std::path::Path::new(recovery)
+                .join("complete.json")
+                .exists()
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

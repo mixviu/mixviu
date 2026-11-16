@@ -5517,16 +5517,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "media-vfl"
-version = "0.1.2"
-dependencies = [
- "crc32fast",
- "libc",
- "lz4_flex",
- "serde_json",
-]
-
-[[package]]
 name = "media-av1"
 version = "0.1.2"
 dependencies = [
@@ -5537,6 +5527,16 @@ dependencies = [
 [[package]]
 name = "media-frame"
 version = "0.1.2"
+
+[[package]]
+name = "media-vfl"
+version = "0.1.2"
+dependencies = [
+ "crc32fast",
+ "libc",
+ "lz4_flex",
+ "serde_json",
+]
 
 [[package]]
 name = "memchr"
