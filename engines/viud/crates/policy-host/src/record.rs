@@ -442,13 +442,22 @@ fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) {
 
 // A false result gates all capture scheduling, including the very first readback.
 fn preflight_ready(session: &Rc<RefCell<Session>>) -> bool {
-    let result = session.borrow().probe.as_ref().map(|probe| probe.try_recv());
+    let result = session
+        .borrow()
+        .probe
+        .as_ref()
+        .map(|probe| probe.try_recv());
     let error = match result {
         None => return true,
-        Some(Ok(Ok(()))) => { session.borrow_mut().probe = None; return true; }
+        Some(Ok(Ok(()))) => {
+            session.borrow_mut().probe = None;
+            return true;
+        }
         Some(Ok(Err(error))) => error,
         Some(Err(std::sync::mpsc::TryRecvError::Empty)) => return false,
-        Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => "encoder preflight disconnected".into(),
+        Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+            "encoder preflight disconnected".into()
+        }
     };
     fail(session, &error);
     // A refused preflight has not admitted a take; allow a corrected retry.
@@ -458,7 +467,9 @@ fn preflight_ready(session: &Rc<RefCell<Session>>) -> bool {
         past.order.retain(|entry| entry != &key);
     });
     CURRENT.with_borrow_mut(|current| {
-        if current.as_ref().is_some_and(|s| Rc::ptr_eq(s, session)) { *current = None; }
+        if current.as_ref().is_some_and(|s| Rc::ptr_eq(s, session)) {
+            *current = None;
+        }
     });
     false
 }
@@ -498,7 +509,9 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             return;
         }
     }
-    if !preflight_ready(session) { return; }
+    if !preflight_ready(session) {
+        return;
+    }
     {
         let mut s = session.borrow_mut();
         if let Some(r) = s.recording.as_mut() {
@@ -780,12 +793,22 @@ mod tests {
         CURRENT.with_borrow_mut(|current| *current = None);
         let status = Rc::new(RefCell::new(Value::Null));
         let got = status.clone();
-        session_command(RecordCommand::Status { session: None }, Box::new(move |reply| {
-            let ControlReply::Body(body) = reply else { panic!("status refused") };
-            *got.borrow_mut() = body;
-        }));
+        session_command(
+            RecordCommand::Status { session: None },
+            Box::new(move |reply| {
+                let ControlReply::Body(body) = reply else {
+                    panic!("status refused")
+                };
+                *got.borrow_mut() = body;
+            }),
+        );
         let status = status.borrow();
-        for key in ["dropped_capture", "dropped_queue", "readback_deferred", "pending_ticks"] {
+        for key in [
+            "dropped_capture",
+            "dropped_queue",
+            "readback_deferred",
+            "pending_ticks",
+        ] {
             assert_eq!(status[key], 0, "{key}");
         }
         for key in ["writer", "encoder"] {
@@ -893,7 +916,10 @@ mod tests {
         // Inject the asynchronous publication probe failure at the same gate
         // used by tick, before it can schedule any capture.
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(Err("destination does not support no-replace publication: EINVAL".into())).unwrap();
+        tx.send(Err(
+            "destination does not support no-replace publication: EINVAL".into(),
+        ))
+        .unwrap();
         answered.set(false);
         {
             let mut s = session.borrow_mut();
@@ -910,7 +936,14 @@ mod tests {
         assert!(answered.get());
         assert!(!session.borrow().pending);
         assert!(session.borrow().recording.is_none());
-        assert!(session.borrow().failed.as_ref().unwrap().contains("no-replace publication"));
+        assert!(
+            session
+                .borrow()
+                .failed
+                .as_ref()
+                .unwrap()
+                .contains("no-replace publication")
+        );
         assert!(CURRENT.with_borrow(|current| current.is_none()));
         let mut history = History::default();
         for i in 0..128 {

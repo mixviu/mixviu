@@ -32,7 +32,10 @@ fn secure_file(path: &str) -> Result<File, String> {
 pub fn check_destination(path: &str) -> Result<(), String> {
     check_destination_with(path, rename_no_replace)
 }
-fn check_destination_with(path: &str, rename: impl Fn(&str, &str) -> std::io::Result<()>) -> Result<(), String> {
+fn check_destination_with(
+    path: &str,
+    rename: impl Fn(&str, &str) -> std::io::Result<()>,
+) -> Result<(), String> {
     for name in [path.to_owned()] {
         match std::fs::symlink_metadata(&name) {
             Ok(_) => return Err("recording destination already exists".into()),
@@ -40,7 +43,9 @@ fn check_destination_with(path: &str, rename: impl Fn(&str, &str) -> std::io::Re
             Err(e) => return Err(e.to_string()),
         }
     }
-    let parent = std::path::Path::new(path).parent().ok_or("take has no parent")?;
+    let parent = std::path::Path::new(path)
+        .parent()
+        .ok_or("take has no parent")?;
     graphics::capture::encode::vfl::check_free_space(parent).map_err(|e| e.to_string())?;
     probe_publication(path, rename)
 }
@@ -240,8 +245,13 @@ impl Recording {
         Self::new_bounded(session, path, width, height, fps, encoder_name, None)
     }
     pub fn new_bounded(
-        session: String, path: String, width: u32, height: u32, fps: u32,
-        encoder_name: String, max_bytes: Option<u64>,
+        session: String,
+        path: String,
+        width: u32,
+        height: u32,
+        fps: u32,
+        encoder_name: String,
+        max_bytes: Option<u64>,
     ) -> Result<Self, String> {
         let (source_width, source_height) = (width, height);
         let width = width.checked_add(1).ok_or("capture width overflow")? & !1;
@@ -607,9 +617,12 @@ mod file_tests {
         let marker = r.marker("aligned".into(), Value::Null).unwrap();
         assert!(marker["t_us"].as_u64().unwrap() <= monotonic_us().unwrap() - captured_us);
         r.stop(false);
-        while !r.poll() { std::thread::sleep(std::time::Duration::from_millis(5)); }
+        while !r.poll() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         assert!(r.error.is_none(), "{:?}", r.error);
-        let origin: Value = serde_json::from_slice(&std::fs::read(format!("{path}/origin.json")).unwrap()).unwrap();
+        let origin: Value =
+            serde_json::from_slice(&std::fs::read(format!("{path}/origin.json")).unwrap()).unwrap();
         assert_eq!(origin["t0_us"], captured_us);
         std::fs::remove_dir_all(dir).unwrap();
     }

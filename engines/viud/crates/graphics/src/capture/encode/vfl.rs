@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! viud admission/thread adapter; format and file I/O live in media-vfl.
-use media_vfl::{Frame, Pixels, Writer};
 pub use media_vfl::check_free_space;
+use media_vfl::{Frame, Pixels, Writer};
 use serde_json::json;
 use std::{
     io,
@@ -70,7 +70,11 @@ impl VideoEncoder {
         Self::start_bounded(width, height, fps, path, encoder, None)
     }
     pub fn start_bounded(
-        width: u32, height: u32, fps: u32, path: Option<PathBuf>, encoder: &str,
+        width: u32,
+        height: u32,
+        fps: u32,
+        path: Option<PathBuf>,
+        encoder: &str,
         max_bytes: Option<u64>,
     ) -> Result<Self, String> {
         if encoder != "vfl" {

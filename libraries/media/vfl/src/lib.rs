@@ -38,7 +38,9 @@ fn check_space(file: &File, incoming: u64) -> io::Result<()> {
 
 fn check_available(available: u64, incoming: u64) -> io::Result<()> {
     if available.saturating_sub(incoming) < FREE_SPACE_FLOOR {
-        return Err(io::Error::other("VFL free-space floor: requires 1 GiB remaining"));
+        return Err(io::Error::other(
+            "VFL free-space floor: requires 1 GiB remaining",
+        ));
     }
     Ok(())
 }
@@ -54,9 +56,14 @@ struct BoundedFile {
 }
 impl BoundedFile {
     fn create(path: &Path, budget: &Budget) -> io::Result<Self> {
-        Ok(Self { file: create(path)?, budget: budget.clone() })
+        Ok(Self {
+            file: create(path)?,
+            budget: budget.clone(),
+        })
     }
-    fn sync_all(&self) -> io::Result<()> { self.file.sync_all() }
+    fn sync_all(&self) -> io::Result<()> {
+        self.file.sync_all()
+    }
 }
 impl Write for BoundedFile {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -66,10 +73,14 @@ impl Write for BoundedFile {
         }
         check_space(&self.file, buf.len() as u64)?;
         let n = self.file.write(buf)?;
-        self.budget.written.set(self.budget.written.get() + n as u64);
+        self.budget
+            .written
+            .set(self.budget.written.get() + n as u64);
         Ok(n)
     }
-    fn flush(&mut self) -> io::Result<()> { self.file.flush() }
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
 }
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Stats {
@@ -185,7 +196,10 @@ impl Writer {
         if self.bytes > 0 && self.bytes + 17 + payload.len() as u64 > CHUNK_BYTES {
             self.seal()?;
             self.index += 1;
-            self.chunk = BoundedFile::create(&self.path.join(format!("chunk-{:06}.bin", self.index)), &self.budget)?;
+            self.chunk = BoundedFile::create(
+                &self.path.join(format!("chunk-{:06}.bin", self.index)),
+                &self.budget,
+            )?;
             self.bytes = 0;
             self.crc = crc32fast::Hasher::new();
         }
@@ -261,7 +275,10 @@ impl Writer {
     fn seal(&mut self) -> io::Result<()> {
         let started = Instant::now();
         self.chunk.sync_all()?;
-        let mut receipt = BoundedFile::create(&self.path.join(format!("chunk-{:06}.json", self.index)), &self.budget)?;
+        let mut receipt = BoundedFile::create(
+            &self.path.join(format!("chunk-{:06}.json", self.index)),
+            &self.budget,
+        )?;
         receipt.write_all(
             json!({"bytes":self.bytes,"crc32":self.crc.clone().finalize(),"next_frame":self.next})
                 .to_string()
@@ -344,7 +361,12 @@ mod disk_tests {
     use super::*;
     #[test]
     fn free_space_floor_refuses_start_and_crossing_write() {
-        assert!(check_available(FREE_SPACE_FLOOR - 1, 0).unwrap_err().to_string().contains("free-space floor"));
+        assert!(
+            check_available(FREE_SPACE_FLOOR - 1, 0)
+                .unwrap_err()
+                .to_string()
+                .contains("free-space floor")
+        );
         assert!(check_available(FREE_SPACE_FLOOR + 16, 17).is_err());
         assert!(check_available(FREE_SPACE_FLOOR + 17, 17).is_ok());
     }
@@ -354,12 +376,24 @@ impl Writer {
     pub fn new(path: PathBuf, width: u32, height: u32, fps: u32) -> io::Result<Self> {
         Self::new_bounded(path, width, height, fps, None)
     }
-    pub fn new_bounded(path: PathBuf, width: u32, height: u32, fps: u32, max_bytes: Option<u64>) -> io::Result<Self> {
+    pub fn new_bounded(
+        path: PathBuf,
+        width: u32,
+        height: u32,
+        fps: u32,
+        max_bytes: Option<u64>,
+    ) -> io::Result<Self> {
         let size = frame_bytes(width, height, fps)?;
         let setup_started = Instant::now();
-        let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
         check_free_space(parent)?;
-        let budget = Budget { written: Default::default(), max_bytes };
+        let budget = Budget {
+            written: Default::default(),
+            max_bytes,
+        };
         std::fs::DirBuilder::new().mode(0o700).create(&path)?;
         let manifest = json!({"version":VERSION,"width":width,"height":height,"fps":fps,"format":"bgra8","encoder":"vfl-lz4","complete":false,"key_interval":fps*10});
         let mut file = BoundedFile::create(&path.join("manifest.json"), &budget)?;
