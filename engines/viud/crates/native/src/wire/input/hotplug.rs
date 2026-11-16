@@ -110,18 +110,16 @@ pub fn register(
             move |_, _, state| {
                 if matches!(state.inner.status_session, StatusSession::Active)
                     && let Ok(current) = nodes()
-                {
-                    // One context owns every device, on both netlink and node
-                    // changes. Resume re-enumerates; it cannot double-open one.
-                    if let Some(delay) = reconcile(current, &mut retry, || {
+                    && let Some(delay) = reconcile(current, &mut retry, || {
+                        // One context owns every device; resume re-enumerates.
                         super::release_held(state);
                         input.suspend();
                         let success = input.resume().is_ok();
                         wake.set(true);
                         success
-                    }) {
-                        return TimeoutAction::ToDuration(delay);
-                    }
+                    })
+                {
+                    return TimeoutAction::ToDuration(delay);
                 }
                 TimeoutAction::ToDuration(Duration::from_millis(250))
             },

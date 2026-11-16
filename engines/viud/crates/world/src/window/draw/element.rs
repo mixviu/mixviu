@@ -296,7 +296,7 @@ where
     }
 }
 
-/// Final per-window crop, shared by presentation and captures.
+// Final per-window crop, shared by presentation and captures.
 smithay::render_elements! {
     pub Element<R> where R: ImportAll + ImportMem + SceneDispatch;
     Plain = RawElement<R>,
