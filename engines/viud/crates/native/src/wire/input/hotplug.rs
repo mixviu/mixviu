@@ -60,6 +60,18 @@ impl Retry {
 fn needs_reconcile(current: &Nodes, known: &Nodes, retry: &Retry) -> bool {
     retry.failures != 0 || current != known
 }
+
+fn reconcile(current: Nodes, retry: &mut Retry, reset: impl FnOnce() -> bool) -> Option<Duration> {
+    if !KNOWN.with_borrow(|known| needs_reconcile(&current, known, retry)) {
+        return None;
+    }
+    let success = reset();
+    let delay = retry.completed(success);
+    if success {
+        KNOWN.with_borrow_mut(|known| *known = current);
+    }
+    Some(delay)
+}
 fn nodes() -> std::io::Result<Nodes> {
     nodes_at(std::path::Path::new("/dev/input"))
 }
@@ -98,19 +110,18 @@ pub fn register(
             move |_, _, state| {
                 if matches!(state.inner.status_session, StatusSession::Active)
                     && let Ok(current) = nodes()
-                    && KNOWN.with_borrow(|known| needs_reconcile(&current, known, &retry))
                 {
                     // One context owns every device, on both netlink and node
                     // changes. Resume re-enumerates; it cannot double-open one.
-                    super::release_held(state);
-                    input.suspend();
-                    let success = input.resume().is_ok();
-                    let delay = retry.completed(success);
-                    wake.set(true);
-                    if success {
-                        KNOWN.with_borrow_mut(|known| *known = current);
+                    if let Some(delay) = reconcile(current, &mut retry, || {
+                        super::release_held(state);
+                        input.suspend();
+                        let success = input.resume().is_ok();
+                        wake.set(true);
+                        success
+                    }) {
+                        return TimeoutAction::ToDuration(delay);
                     }
-                    return TimeoutAction::ToDuration(delay);
                 }
                 TimeoutAction::ToDuration(Duration::from_millis(250))
             },
@@ -127,25 +138,28 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         let path = root.join("event0");
         KNOWN.with_borrow_mut(|known| known.clear());
-        let retry = Retry::default();
+        let mut retry = Retry::default();
+        let mut suspends = 0;
+        let mut resumes = 0;
+        let mut reset = || {
+            suspends += 1;
+            resumes += 1;
+            true
+        };
         std::fs::write(&path, []).unwrap();
         observed_path(path.clone(), true); // DeviceAdded before the scan.
         let handled = nodes_at(&root).unwrap();
-        assert!(!KNOWN.with_borrow(|known| needs_reconcile(&handled, known, &retry)));
+        assert_eq!(reconcile(handled, &mut retry, &mut reset), None);
         std::fs::remove_file(&path).unwrap();
         observed_path(path.clone(), false); // DeviceRemoved before the scan.
         let handled = nodes_at(&root).unwrap();
-        assert!(!KNOWN.with_borrow(|known| needs_reconcile(&handled, known, &retry)));
+        assert_eq!(reconcile(handled, &mut retry, &mut reset), None);
         std::fs::write(&path, []).unwrap(); // No DeviceAdded: CT lost udev.
         let current = nodes_at(&root).unwrap();
-        let mut resets = 0;
         for _ in 0..4 {
-            if KNOWN.with_borrow(|known| needs_reconcile(&current, known, &retry)) {
-                resets += 1;
-                KNOWN.with_borrow_mut(|known| known.clone_from(&current));
-            }
+            reconcile(current.clone(), &mut retry, &mut reset);
         }
-        assert_eq!(resets, 1);
+        assert_eq!((suspends, resumes), (1, 1));
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(root).unwrap();
         KNOWN.with_borrow_mut(|known| known.clear());
