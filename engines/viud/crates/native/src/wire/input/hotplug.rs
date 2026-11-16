@@ -30,7 +30,10 @@ fn observed_path(path: PathBuf, added: bool) {
                         (meta.rdev(), meta.ino(), meta.ctime(), meta.ctime_nsec()),
                     );
                 }
-                Err(error) => debug!("input DeviceAdded metadata failed for {}: {error}", path.display()),
+                Err(error) => debug!(
+                    "input DeviceAdded metadata failed for {}: {error}",
+                    path.display()
+                ),
             }
         } else {
             known.remove(&path);
@@ -158,14 +161,26 @@ mod tests {
         KNOWN.with_borrow_mut(|known| known.clear());
         let mut retry = Retry::default();
         // DeviceAdded is queued when the first scan sees the new node.
-        assert_eq!(reconcile(added.clone(), &mut retry, || panic!("suspend/resume")), None);
+        assert_eq!(
+            reconcile(added.clone(), &mut retry, || panic!("suspend/resume")),
+            None
+        );
         observed_path(path.clone(), true);
-        assert_eq!(reconcile(added, &mut retry, || panic!("suspend/resume")), None);
+        assert_eq!(
+            reconcile(added, &mut retry, || panic!("suspend/resume")),
+            None
+        );
         // Likewise for a queued DeviceRemoved.
         std::fs::remove_file(&path).unwrap();
-        assert_eq!(reconcile(Nodes::new(), &mut retry, || panic!("suspend/resume")), None);
+        assert_eq!(
+            reconcile(Nodes::new(), &mut retry, || panic!("suspend/resume")),
+            None
+        );
         observed_path(path, false);
-        assert_eq!(reconcile(Nodes::new(), &mut retry, || panic!("suspend/resume")), None);
+        assert_eq!(
+            reconcile(Nodes::new(), &mut retry, || panic!("suspend/resume")),
+            None
+        );
         std::fs::remove_dir(root).unwrap();
     }
 
@@ -174,10 +189,22 @@ mod tests {
         let current = Nodes::from([(PathBuf::from("/dev/input/event0"), (1, 2, 3, 4))]);
         KNOWN.with_borrow_mut(|known| known.clear());
         let mut retry = Retry::default();
-        assert_eq!(reconcile(current.clone(), &mut retry, || panic!("first scan")), None);
+        assert_eq!(
+            reconcile(current.clone(), &mut retry, || panic!("first scan")),
+            None
+        );
         let mut resets = 0;
-        assert_eq!(reconcile(current.clone(), &mut retry, || { resets += 1; true }), Some(Duration::from_millis(250)));
-        assert_eq!(reconcile(current, &mut retry, || panic!("already reconciled")), None);
+        assert_eq!(
+            reconcile(current.clone(), &mut retry, || {
+                resets += 1;
+                true
+            }),
+            Some(Duration::from_millis(250))
+        );
+        assert_eq!(
+            reconcile(current, &mut retry, || panic!("already reconciled")),
+            None
+        );
         assert_eq!(resets, 1);
         KNOWN.with_borrow_mut(|known| known.clear());
     }
@@ -242,7 +269,10 @@ mod tests {
             retry.completed(false);
         }
         KNOWN.with_borrow_mut(|known| known.clear());
-        assert_eq!(reconcile(Nodes::new(), &mut retry, || true), Some(Duration::from_millis(250)));
+        assert_eq!(
+            reconcile(Nodes::new(), &mut retry, || true),
+            Some(Duration::from_millis(250))
+        );
         assert_eq!(retry.failures, 0);
         assert!(retry.pending.is_none());
     }
