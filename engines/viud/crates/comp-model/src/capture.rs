@@ -59,6 +59,7 @@ pub enum RecordCommand {
         fps: u32,
         encoder: String,
         max_seconds: u64,
+        max_bytes: Option<u64>,
     },
     Marker {
         session: String,
@@ -86,6 +87,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
             "fps",
             "cursor",
             "max_seconds",
+            "max_bytes",
             "encoder",
         ],
         "comp.record.marker" => &["session", "label", "data"],
@@ -135,6 +137,11 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 None => true,
                 Some(Value::Bool(b)) => *b,
                 _ => return Err(invalid_argument("cursor", "boolean", "true|false")),
+            };
+            let max_bytes = match fields.get("max_bytes") {
+                None => None,
+                Some(value) => Some(value.as_u64().filter(|n| *n > 0)
+                    .ok_or_else(|| invalid_argument("max_bytes", "positive integer", "bytes"))?),
             };
             let target = fields
                 .get("target")
@@ -189,6 +196,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 fps,
                 encoder,
                 max_seconds,
+                max_bytes,
             })
         }
         "comp.record.marker" => Ok(RecordCommand::Marker {
@@ -410,6 +418,9 @@ mod tests {
             ("fps", json!(0)),
             ("fps", json!(61)),
             ("max_seconds", json!(0)),
+            ("max_bytes", json!(0)),
+            ("max_bytes", json!(-1)),
+            ("max_bytes", json!(null)),
             ("request_id", json!("")),
             ("cursor", json!("false")),
             ("unknown", json!(true)),

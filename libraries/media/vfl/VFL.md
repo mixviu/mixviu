@@ -25,7 +25,9 @@ Source RGB is converted on the writer thread; padding pixels are zero.
 
 `origin.json` is written before the first record:
 `{t0_us,clock:"monotonic"}`. The origin is the compositor's first capture
-timestamp, in microseconds. `frames.jsonl` has `{frame,t_us}` per output slot;
+completion timestamp (last callback for multi-window capture), in microseconds,
+before writer setup, not start/admission time. Content can precede it by the
+readback duration. `frames.jsonl` has `{frame,t_us}` per output slot;
 its times are the exact constant-rate timeline `floor(frame*1000000/fps)`.
 `markers.jsonl` has `{seq,label,data,t_us,frame}`: marker times are compositor
 monotonic timestamps relative to the origin, and frame is the last scheduled

@@ -30,6 +30,9 @@ fn secure_file(path: &str) -> Result<File, String> {
 }
 
 pub fn check_destination(path: &str) -> Result<(), String> {
+    check_destination_with(path, rename_no_replace)
+}
+fn check_destination_with(path: &str, rename: impl Fn(&str, &str) -> std::io::Result<()>) -> Result<(), String> {
     for name in [path.to_owned()] {
         match std::fs::symlink_metadata(&name) {
             Ok(_) => return Err("recording destination already exists".into()),
@@ -37,7 +40,9 @@ pub fn check_destination(path: &str) -> Result<(), String> {
             Err(e) => return Err(e.to_string()),
         }
     }
-    probe_publication(path, rename_no_replace)
+    let parent = std::path::Path::new(path).parent().ok_or("take has no parent")?;
+    graphics::capture::encode::vfl::check_free_space(parent).map_err(|e| e.to_string())?;
+    probe_publication(path, rename)
 }
 
 fn rename_no_replace(src: &str, dst: &str) -> std::io::Result<()> {
@@ -232,16 +237,23 @@ impl Recording {
         fps: u32,
         encoder_name: String,
     ) -> Result<Self, String> {
+        Self::new_bounded(session, path, width, height, fps, encoder_name, None)
+    }
+    pub fn new_bounded(
+        session: String, path: String, width: u32, height: u32, fps: u32,
+        encoder_name: String, max_bytes: Option<u64>,
+    ) -> Result<Self, String> {
         let (source_width, source_height) = (width, height);
         let width = width.checked_add(1).ok_or("capture width overflow")? & !1;
         let height = height.checked_add(1).ok_or("capture height overflow")? & !1;
         let files = TakeFiles::create(&path)?;
-        let encoder = VideoEncoder::start_with_encoder(
+        let encoder = VideoEncoder::start_bounded(
             width,
             height,
             fps,
             Some(files.video.clone().into()),
             &encoder_name,
+            max_bytes,
         )?;
         let bytes = encoder.bytes_handle();
         let writer_metrics = encoder.metrics_handle();
@@ -572,7 +584,7 @@ mod file_tests {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
         let path = dir.join("take.vfl").to_str().unwrap().to_owned();
-        let error = probe_publication(&path, |_, _| {
+        let error = check_destination_with(&path, |_, _| {
             Err(std::io::Error::from_raw_os_error(libc::EINVAL))
         })
         .unwrap_err();
@@ -581,6 +593,25 @@ mod file_tests {
         check_destination(&path).unwrap();
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
+    fn origin_uses_first_capture_completion_for_marker_alignment() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("origin.vfl").to_str().unwrap().to_owned();
+        let mut r = Recording::new("origin".into(), path.clone(), 2, 2, 30, "vfl".into()).unwrap();
+        // The host supplies this timestamp from the first capture callback.
+        let captured_us = monotonic_us().unwrap();
+        r.t0_us = captured_us;
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+        let marker = r.marker("aligned".into(), Value::Null).unwrap();
+        assert!(marker["t_us"].as_u64().unwrap() <= monotonic_us().unwrap() - captured_us);
+        r.stop(false);
+        while !r.poll() { std::thread::sleep(std::time::Duration::from_millis(5)); }
+        assert!(r.error.is_none(), "{:?}", r.error);
+        let origin: Value = serde_json::from_slice(&std::fs::read(format!("{path}/origin.json")).unwrap()).unwrap();
+        assert_eq!(origin["t0_us"], captured_us);
+        std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn invalid_clock_reports_error_without_panic() {

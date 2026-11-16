@@ -94,12 +94,38 @@ all scheduled slots; `duration_us = floor(frames * 1000000 / fps)`.
 after successful finalisation. Markers are acknowledged when queued, and
 successful stop guarantees they have been synced.
 
-The origin is CLOCK_MONOTONIC microseconds at first capture. Marker timestamps
+The origin is CLOCK_MONOTONIC microseconds when the first capture completes
+(the last callback for a multi-window capture), before writer setup. It is
+not start/admission time. Marker timestamps
 are relative to that origin; marker frame numbers identify the last scheduled
 slot. Frame sidecar timestamps describe the constant-rate timeline, starting
 at zero. Sidecars are `<path>/frames.jsonl` and `<path>/markers.jsonl`;
 their paths become usable at successful stop. Content can lead the first
 capture timestamp by the measured readback time.
+
+`comp.record.start` also accepts optional `max_bytes` (positive integer;
+omitted means no byte ceiling). It caps total file-content bytes, including
+sidecars, manifests and receipts; it excludes filesystem allocation overhead.
+Preflight requires at least 1 GiB free for the calling user. Every writer
+write checks that its bytes would leave at least 1 GiB free. This headroom
+protects other session work and exceeds the maximum 256 MiB raw frame.
+These checks are not a reservation against concurrent writers. A floor or
+byte-limit failure fails the take and prevents publication.
+
+Failed takes remain at the `recovery_path` returned by start/failed stop:
+`<path>.<token>.part`, beside the requested destination. After a compositor
+crash, find that sibling by its destination prefix and `.part` suffix. Once
+the take is terminal (or viud has exited), inspect or recover it, then remove
+that exact directory recursively, for example with Mix
+`run_argv(["rm","-r","--",recovery_path])` using the returned path as a value.
+Do not delete an active take. `discard:true` removes the active take on stop.
+
+Recording continues offscreen while the VT is switched away or the display
+is parked, if session clients keep updating. It records only viud's scene.
+Intermediate destination path symlinks resolve normally. The caller is a
+trusted session client of the same user and must trust the parent directories.
+An idle status retains every status key; counters are zero and `writer` and
+`encoder` are null until a writer exists.
 
 Whole-output capture includes every client window and optionally the pointer:
 `{target:{output:"headless-0"},cursor:true,fps:30}` records 3840×2160 on a 4K

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! viud admission/thread adapter; format and file I/O live in media-vfl.
 use media_vfl::{Frame, Pixels, Writer};
+pub use media_vfl::check_free_space;
 use serde_json::json;
 use std::{
     io,
@@ -66,6 +67,12 @@ impl VideoEncoder {
         path: Option<PathBuf>,
         encoder: &str,
     ) -> Result<Self, String> {
+        Self::start_bounded(width, height, fps, path, encoder, None)
+    }
+    pub fn start_bounded(
+        width: u32, height: u32, fps: u32, path: Option<PathBuf>, encoder: &str,
+        max_bytes: Option<u64>,
+    ) -> Result<Self, String> {
         if encoder != "vfl" {
             return Err("available encoder: vfl".into());
         }
@@ -109,7 +116,7 @@ impl VideoEncoder {
         );
         let join = std::thread::spawn(move || {
             let result = (|| -> io::Result<()> {
-                let mut log = Writer::new(worker_path, width, height, fps)?;
+                let mut log = Writer::new_bounded(worker_path, width, height, fps, max_bytes)?;
                 let mut origin_written = false;
                 for (frame, admitted) in rx {
                     q.fetch_sub(1, Ordering::Relaxed);

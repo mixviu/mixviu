@@ -74,6 +74,7 @@ struct Session {
     probe_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     probe_join: Option<std::thread::JoinHandle<()>>,
     max_seconds: u64,
+    max_bytes: Option<u64>,
     recording: Option<Recording>,
     start: Option<Value>,
     start_answers: Vec<Answer>,
@@ -108,7 +109,7 @@ fn refused(error: &str) -> ControlReply {
     ControlReply::refused("record_failed", json!({"message":error}))
 }
 fn empty_status(state: &str, error: Option<&str>) -> Value {
-    json!({"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
+    json!({"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"dropped_capture":0,"dropped_queue":0,"readback_deferred":0,"pending_ticks":0,"writer":null,"encoder":null,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
 }
 fn event(s: &Session, state: &'static str) {
     if s.last_state.replace(state) == state {
@@ -166,6 +167,7 @@ pub fn command(
         fps,
         encoder,
         max_seconds,
+        max_bytes,
     } = op
     {
         let previous = CURRENT.with_borrow(Clone::clone);
@@ -269,6 +271,7 @@ pub fn command(
             probe_cancel,
             probe_join,
             max_seconds,
+            max_bytes,
             recording: None,
             start: None,
             start_answers: vec![answer],
@@ -437,6 +440,29 @@ fn cancel_pending(session: &Rc<RefCell<Session>>, message: &str) {
     fail(session, message);
 }
 
+// A false result gates all capture scheduling, including the very first readback.
+fn preflight_ready(session: &Rc<RefCell<Session>>) -> bool {
+    let result = session.borrow().probe.as_ref().map(|probe| probe.try_recv());
+    let error = match result {
+        None => return true,
+        Some(Ok(Ok(()))) => { session.borrow_mut().probe = None; return true; }
+        Some(Ok(Err(error))) => error,
+        Some(Err(std::sync::mpsc::TryRecvError::Empty)) => return false,
+        Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => "encoder preflight disconnected".into(),
+    };
+    fail(session, &error);
+    // A refused preflight has not admitted a take; allow a corrected retry.
+    let key = session.borrow().request_id.clone();
+    PAST.with_borrow_mut(|past| {
+        past.entries.remove(&key);
+        past.order.retain(|entry| entry != &key);
+    });
+    CURRENT.with_borrow_mut(|current| {
+        if current.as_ref().is_some_and(|s| Rc::ptr_eq(s, session)) { *current = None; }
+    });
+    false
+}
+
 fn superseded(pending: &mut Option<Vec<u64>>, current: &[u64]) -> bool {
     if pending.as_ref().is_some_and(|old| old != current) {
         *pending = None;
@@ -472,36 +498,9 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             return;
         }
     }
+    if !preflight_ready(session) { return; }
     {
         let mut s = session.borrow_mut();
-        if let Some(probe) = &s.probe {
-            match probe.try_recv() {
-                Ok(Ok(())) => s.probe = None,
-                Ok(Err(error)) => {
-                    drop(s);
-                    fail(session, &error);
-                    // Destination preflight has not admitted a take. Preserve
-                    // the previous retry contract for an existing path.
-                    let key = session.borrow().request_id.clone();
-                    PAST.with_borrow_mut(|past| {
-                        past.entries.remove(&key);
-                        past.order.retain(|entry| entry != &key);
-                    });
-                    CURRENT.with_borrow_mut(|current| {
-                        if current.as_ref().is_some_and(|s| Rc::ptr_eq(s, session)) {
-                            *current = None;
-                        }
-                    });
-                    return;
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    drop(s);
-                    fail(session, "encoder preflight disconnected");
-                    return;
-                }
-                _ => return,
-            }
-        }
         if let Some(r) = s.recording.as_mut() {
             if r.poll() {
                 let reply = r.terminal.clone().unwrap();
@@ -726,13 +725,14 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 return;
             }
             if s.recording.is_none() {
-                match Recording::new(
+                match Recording::new_bounded(
                     s.id.clone(),
                     s.path.clone(),
                     width,
                     height,
                     s.fps,
                     s.encoder.clone(),
+                    s.max_bytes,
                 ) {
                     Ok(mut recording) => {
                         recording.t0_us = captured_us;
@@ -775,6 +775,24 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn no_session_status_has_uniform_keys() {
+        CURRENT.with_borrow_mut(|current| *current = None);
+        let status = Rc::new(RefCell::new(Value::Null));
+        let got = status.clone();
+        session_command(RecordCommand::Status { session: None }, Box::new(move |reply| {
+            let ControlReply::Body(body) = reply else { panic!("status refused") };
+            *got.borrow_mut() = body;
+        }));
+        let status = status.borrow();
+        for key in ["dropped_capture", "dropped_queue", "readback_deferred", "pending_ticks"] {
+            assert_eq!(status[key], 0, "{key}");
+        }
+        for key in ["writer", "encoder"] {
+            assert!(status.as_object().unwrap().contains_key(key));
+            assert_eq!(status[key], Value::Null);
+        }
+    }
     #[test]
     fn stable_deferred_content_is_not_dropped_every_tick() {
         let mut waiting = Some(vec![7]);
@@ -821,6 +839,7 @@ mod tests {
             encoder: "vfl".into(),
             probe: None,
             max_seconds: 1,
+            max_bytes: None,
             probe_cancel: Default::default(),
             probe_join: None,
             recording: None,
@@ -871,6 +890,28 @@ mod tests {
             "evicted session must be refused"
         );
         assert_eq!(session.borrow().id, "session-255");
+        // Inject the asynchronous publication probe failure at the same gate
+        // used by tick, before it can schedule any capture.
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(Err("destination does not support no-replace publication: EINVAL".into())).unwrap();
+        answered.set(false);
+        {
+            let mut s = session.borrow_mut();
+            s.failed = None;
+            s.pending = false;
+            s.probe = Some(rx);
+            let got = answered.clone();
+            s.start_answers.push(Box::new(move |reply| {
+                assert!(!matches!(reply, ControlReply::Body(_)));
+                got.set(true);
+            }));
+        }
+        assert!(!preflight_ready(&session));
+        assert!(answered.get());
+        assert!(!session.borrow().pending);
+        assert!(session.borrow().recording.is_none());
+        assert!(session.borrow().failed.as_ref().unwrap().contains("no-replace publication"));
+        assert!(CURRENT.with_borrow(|current| current.is_none()));
         let mut history = History::default();
         for i in 0..128 {
             history.insert(format!("key-{i}"), past.clone());

@@ -13,6 +13,19 @@ fn path(label: &str) -> PathBuf {
     ))
 }
 #[test]
+fn byte_limit_covers_markers_and_retains_incomplete_take() {
+    let path = path("byte-limit");
+    let mut writer = Writer::new_bounded(path.clone(), 2, 2, 30, Some(1024)).unwrap();
+    writer.origin(123).unwrap();
+    let error = writer.frame(Frame { slot: 0, pixels: Pixels::Marker(serde_json::json!({"data":"x".repeat(2048)})) }).unwrap_err();
+    assert!(error.to_string().contains("max_bytes"));
+    assert!(!path.join("complete.json").exists());
+    let bytes: u64 = std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().metadata().unwrap().len()).sum();
+    assert!(bytes <= 1024);
+    drop(writer);
+    std::fs::remove_dir_all(path).unwrap();
+}
+#[test]
 fn key_delta_repeat_round_trip_crc_and_recovery() {
     let path = path("roundtrip");
     let mut writer = Writer::new(path.clone(), 4, 4, 30).unwrap();

@@ -18,6 +18,59 @@ pub const REPEAT: u8 = 2;
 pub const RECT_DELTA: u8 = 3;
 pub const MAX_FRAME_BYTES: usize = 256 * 1024 * 1024;
 pub const CHUNK_BYTES: u64 = 64 * 1024 * 1024;
+/// Keep headroom for the session and filesystem metadata. This is not a reservation.
+pub const FREE_SPACE_FLOOR: u64 = 1024 * 1024 * 1024;
+
+pub fn check_free_space(path: &Path) -> io::Result<()> {
+    check_space(&File::open(path)?, 0)
+}
+
+fn check_space(file: &File, incoming: u64) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // The fd remains live and stat points to writable storage for the syscall.
+    if unsafe { libc::fstatvfs(file.as_raw_fd(), stat.as_mut_ptr()) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let stat = unsafe { stat.assume_init() };
+    check_available(stat.f_bavail.saturating_mul(stat.f_frsize), incoming)
+}
+
+fn check_available(available: u64, incoming: u64) -> io::Result<()> {
+    if available.saturating_sub(incoming) < FREE_SPACE_FLOOR {
+        return Err(io::Error::other("VFL free-space floor: requires 1 GiB remaining"));
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
+struct Budget {
+    written: std::rc::Rc<std::cell::Cell<u64>>,
+    max_bytes: Option<u64>,
+}
+struct BoundedFile {
+    file: File,
+    budget: Budget,
+}
+impl BoundedFile {
+    fn create(path: &Path, budget: &Budget) -> io::Result<Self> {
+        Ok(Self { file: create(path)?, budget: budget.clone() })
+    }
+    fn sync_all(&self) -> io::Result<()> { self.file.sync_all() }
+}
+impl Write for BoundedFile {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let next = self.budget.written.get().saturating_add(buf.len() as u64);
+        if self.budget.max_bytes.is_some_and(|max| next > max) {
+            return Err(io::Error::other("VFL max_bytes exceeded"));
+        }
+        check_space(&self.file, buf.len() as u64)?;
+        let n = self.file.write(buf)?;
+        self.budget.written.set(self.budget.written.get() + n as u64);
+        Ok(n)
+    }
+    fn flush(&mut self) -> io::Result<()> { self.file.flush() }
+}
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Stats {
     pub rect_records: u64,
@@ -109,7 +162,7 @@ pub struct Frame {
 
 pub struct Writer {
     path: PathBuf,
-    chunk: File,
+    chunk: BoundedFile,
     index: u64,
     bytes: u64,
     last: Arc<[u8]>,
@@ -118,8 +171,9 @@ pub struct Writer {
     height: u32,
     fps: u32,
     next: u64,
-    frames: File,
-    markers: File,
+    frames: BoundedFile,
+    markers: BoundedFile,
+    budget: Budget,
     crc: crc32fast::Hasher,
     pub total_bytes: u64,
     pub stats: Stats,
@@ -131,7 +185,7 @@ impl Writer {
         if self.bytes > 0 && self.bytes + 17 + payload.len() as u64 > CHUNK_BYTES {
             self.seal()?;
             self.index += 1;
-            self.chunk = create(&self.path.join(format!("chunk-{:06}.bin", self.index)))?;
+            self.chunk = BoundedFile::create(&self.path.join(format!("chunk-{:06}.bin", self.index)), &self.budget)?;
             self.bytes = 0;
             self.crc = crc32fast::Hasher::new();
         }
@@ -207,7 +261,7 @@ impl Writer {
     fn seal(&mut self) -> io::Result<()> {
         let started = Instant::now();
         self.chunk.sync_all()?;
-        let mut receipt = create(&self.path.join(format!("chunk-{:06}.json", self.index)))?;
+        let mut receipt = BoundedFile::create(&self.path.join(format!("chunk-{:06}.json", self.index)), &self.budget)?;
         receipt.write_all(
             json!({"bytes":self.bytes,"crc32":self.crc.clone().finalize(),"next_frame":self.next})
                 .to_string()
@@ -285,18 +339,35 @@ impl Writer {
     }
 }
 
+#[cfg(test)]
+mod disk_tests {
+    use super::*;
+    #[test]
+    fn free_space_floor_refuses_start_and_crossing_write() {
+        assert!(check_available(FREE_SPACE_FLOOR - 1, 0).unwrap_err().to_string().contains("free-space floor"));
+        assert!(check_available(FREE_SPACE_FLOOR + 16, 17).is_err());
+        assert!(check_available(FREE_SPACE_FLOOR + 17, 17).is_ok());
+    }
+}
+
 impl Writer {
     pub fn new(path: PathBuf, width: u32, height: u32, fps: u32) -> io::Result<Self> {
+        Self::new_bounded(path, width, height, fps, None)
+    }
+    pub fn new_bounded(path: PathBuf, width: u32, height: u32, fps: u32, max_bytes: Option<u64>) -> io::Result<Self> {
         let size = frame_bytes(width, height, fps)?;
         let setup_started = Instant::now();
+        let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        check_free_space(parent)?;
+        let budget = Budget { written: Default::default(), max_bytes };
         std::fs::DirBuilder::new().mode(0o700).create(&path)?;
         let manifest = json!({"version":VERSION,"width":width,"height":height,"fps":fps,"format":"bgra8","encoder":"vfl-lz4","complete":false,"key_interval":fps*10});
-        let mut file = create(&path.join("manifest.json"))?;
+        let mut file = BoundedFile::create(&path.join("manifest.json"), &budget)?;
         file.write_all(manifest.to_string().as_bytes())?;
         file.sync_all()?;
-        let chunk = create(&path.join("chunk-000000.bin"))?;
-        let frames = create(&path.join("frames.jsonl"))?;
-        let markers = create(&path.join("markers.jsonl"))?;
+        let chunk = BoundedFile::create(&path.join("chunk-000000.bin"), &budget)?;
+        let frames = BoundedFile::create(&path.join("frames.jsonl"), &budget)?;
+        let markers = BoundedFile::create(&path.join("markers.jsonl"), &budget)?;
         File::open(&path)?.sync_all()?;
         let parent = path
             .parent()
@@ -316,6 +387,7 @@ impl Writer {
             next: 0,
             frames,
             markers,
+            budget,
             crc: crc32fast::Hasher::new(),
             total_bytes: 0,
             stats: Stats {
@@ -326,7 +398,7 @@ impl Writer {
         })
     }
     pub fn origin(&mut self, t0_us: u64) -> io::Result<()> {
-        let mut file = create(&self.path.join("origin.json"))?;
+        let mut file = BoundedFile::create(&self.path.join("origin.json"), &self.budget)?;
         file.write_all(
             json!({"t0_us":t0_us,"clock":"monotonic"})
                 .to_string()
@@ -363,7 +435,7 @@ impl Writer {
         } else {
             "interrupted.json"
         };
-        let mut file = create(&self.path.join(name))?;
+        let mut file = BoundedFile::create(&self.path.join(name), &self.budget)?;
         file.write_all(json!({"version":VERSION,"complete":success,"t0_us":t0_us,"frames":self.next,"chunks":self.index+1,"dropped":dropped,"error":error,"writer":self.stats.json()}).to_string().as_bytes())?;
         file.sync_all()?;
         File::open(&self.path)?.sync_all()?;

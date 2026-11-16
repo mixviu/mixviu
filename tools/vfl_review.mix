@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Scoped PR 162 review checks, run only on a CBC worker.
+$crates = ["-p","media-vfl","-p","graphics","-p","recorder","-p","comp-model","-p","policy-host"]
+function checked($argv)
+  $result = run_argv($argv, {timeout:1800,stdout:"inherit",stderr:"inherit"})
+  if not $result.ok then exit($result.exit_code ?? 124) end
+end
+if (args()[0] ?? "check") == "fmt" then
+  try
+    checked(concat(["cargo","fmt"], $crates))
+  finally
+    print("VFL_WORKER_DIFF_BEGIN")
+    print(run_argv_must(["git","diff"]))
+    print("VFL_WORKER_DIFF_END")
+    print(run_argv(["git","checkout","-q","--","."]).stderr)
+  end
+else
+  checked(concat(["cargo","test","--locked"], $crates))
+  checked(concat(concat(["cargo","clippy","--locked"], $crates), ["--all-targets"]))
+  checked(["cargo","build","--locked","-p","mix"])
+  checked(["target/debug/mix","tools/ci.mix","mix-lint-baseline"])
+end
