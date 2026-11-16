@@ -17,6 +17,10 @@ thread_local! {
 // Called on the same loop thread as the timer, after libinput handled udev.
 pub(super) fn observed(sysname: &str, added: bool) {
     let path = PathBuf::from("/dev/input").join(sysname);
+    observed_path(path, added);
+}
+
+fn observed_path(path: PathBuf, added: bool) {
     KNOWN.with_borrow_mut(|known| {
         if added {
             if let Ok(meta) = std::fs::metadata(&path) {
@@ -119,25 +123,32 @@ mod tests {
     use super::*;
     #[test]
     fn handled_hotplug_is_noop_and_missed_hotplug_reconciles_once() {
-        let mut known = Nodes::new();
-        let mut current = Nodes::new();
-        current.insert(PathBuf::from("/dev/input/event0"), (1, 2, 3, 4));
-        // DeviceAdded updates the remembered identity before the scan.
-        known.clone_from(&current);
+        let root = std::env::temp_dir().join(format!("viud-handled-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("event0");
+        KNOWN.with_borrow_mut(|known| known.clear());
         let retry = Retry::default();
-        assert!(!needs_reconcile(&current, &known, &retry));
-        current.clear();
-        known.clear(); // DeviceRemoved handled by libinput.
-        assert!(!needs_reconcile(&current, &known, &retry));
-        current.insert(PathBuf::from("/dev/input/event1"), (2, 3, 4, 5));
+        std::fs::write(&path, []).unwrap();
+        observed_path(path.clone(), true); // DeviceAdded before the scan.
+        let handled = nodes_at(&root).unwrap();
+        assert!(!KNOWN.with_borrow(|known| needs_reconcile(&handled, known, &retry)));
+        std::fs::remove_file(&path).unwrap();
+        observed_path(path.clone(), false); // DeviceRemoved before the scan.
+        let handled = nodes_at(&root).unwrap();
+        assert!(!KNOWN.with_borrow(|known| needs_reconcile(&handled, known, &retry)));
+        std::fs::write(&path, []).unwrap(); // No DeviceAdded: CT lost udev.
+        let current = nodes_at(&root).unwrap();
         let mut resets = 0;
         for _ in 0..4 {
-            if needs_reconcile(&current, &known, &retry) {
+            if KNOWN.with_borrow(|known| needs_reconcile(&current, known, &retry)) {
                 resets += 1;
-                known.clone_from(&current);
+                KNOWN.with_borrow_mut(|known| known.clone_from(&current));
             }
         }
         assert_eq!(resets, 1);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+        KNOWN.with_borrow_mut(|known| known.clear());
     }
 
     #[test]
