@@ -43,6 +43,9 @@ tracing = { version = "=0.1.44", optional = true }
 # The stub broker in tests/ needs a multi-thread runtime and the server side
 # of the WebSocket handshake.
 [dev-dependencies]
+log = "0.4"
+# Test both locked wire transports, including Axum's server-side version.
+tungstenite_029 = { package = "tungstenite", version = "=0.29.0" }
 tokio = { version = "=1.54.1", features = ["macros", "net", "rt", "rt-multi-thread", "sync", "time", "test-util"] }
 tokio-tungstenite = { version = "=0.26.2" }
 futures-util = { version = "=0.3.34" }
