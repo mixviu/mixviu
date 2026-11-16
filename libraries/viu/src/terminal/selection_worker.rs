@@ -154,7 +154,6 @@ fn run(
         clipboard: DataDeviceManagerState::bind(&globals, &qh).ok(),
         primary: PrimarySelectionManagerState::bind(&globals, &qh).ok(),
         seats: HashMap::new(),
-        latest: None,
         qh,
         handle: event_loop.handle(),
         clipboard_text: Rc::from([]),
@@ -194,6 +193,7 @@ fn run(
 /// The read in progress, if any, and where answers go. Generic over the
 /// loop's state so the bounds are tested without a compositor.
 pub struct Reads {
+    last_error_log: std::cell::Cell<Option<std::time::Instant>>,
     current: Option<Current>,
     answers: Sender<Answer>,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -215,6 +215,7 @@ pub trait HasReads: 'static {
 impl Reads {
     pub fn new(answers: Sender<Answer>, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
         Self {
+            last_error_log: std::cell::Cell::new(None),
             current: None,
             answers,
             wake,
@@ -226,7 +227,35 @@ impl Reads {
         self.current.is_some()
     }
 
+    // Share one budget across refusal and read diagnostics, including no-focus
+    // paths. Never log an upstream diagnostic or selection payload.
+    fn allow_error_log(&self) -> bool {
+        let now = std::time::Instant::now();
+        if self
+            .last_error_log
+            .get()
+            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(5))
+        {
+            return false;
+        }
+        self.last_error_log.set(Some(now));
+        true
+    }
+
     pub fn answer(&self, id: u64, result: Result<String, ReadError>) {
+        if let Err(error) = &result
+            && self.allow_error_log()
+        {
+            let reason = match error {
+                ReadError::Failed(_) => "Failed: clipboard read failed",
+                ReadError::TimedOut => "TimedOut: clipboard read timed out",
+                ReadError::Empty => "Empty: nothing to paste",
+                ReadError::Busy => "Busy: clipboard read in progress",
+                ReadError::TooLarge => "TooLarge: clipboard size limit exceeded",
+                ReadError::NoFocus => "NoFocus: copy refused",
+            };
+            eprintln!("selection: answer id={id} error={reason}");
+        }
         let _ = self.answers.send(Answer { id, result });
         (self.wake)();
     }
@@ -395,6 +424,14 @@ struct SeatData {
     focused: bool,
     /// The latest input serial: a selection is set with it.
     serial: u32,
+    last_input: u64,
+}
+
+fn focused_seat<K>(seats: &HashMap<K, SeatData>) -> Option<&SeatData> {
+    seats
+        .values()
+        .filter(|s| s.focused)
+        .max_by_key(|s| s.last_input)
 }
 
 struct Selection {
@@ -403,8 +440,6 @@ struct Selection {
     clipboard: Option<DataDeviceManagerState>,
     primary: Option<PrimarySelectionManagerState>,
     seats: HashMap<ObjectId, SeatData>,
-    /// The seat that saw input last.
-    latest: Option<ObjectId>,
     qh: QueueHandle<Self>,
     handle: LoopHandle<'static, Self>,
     clipboard_text: Rc<[u8]>,
@@ -423,7 +458,30 @@ impl HasReads for Selection {
 
 impl Selection {
     fn seat(&self) -> Option<&SeatData> {
-        self.seats.get(self.latest.as_ref()?).filter(|s| s.focused)
+        focused_seat(&self.seats)
+    }
+
+    fn log_no_focus(&self, operation: &str, primary: bool) {
+        if !self.reads.allow_error_log() {
+            return;
+        }
+        let seats: Vec<_> = self
+            .seats
+            .iter()
+            .map(|(id, s)| {
+                let name = self
+                    .seat_state
+                    .seats()
+                    .find(|seat| seat.id() == *id)
+                    .and_then(|seat| self.seat_state.info(&seat))
+                    .and_then(|info| info.name);
+                format!("{name:?}({id:?}):focused={}", s.focused)
+            })
+            .collect();
+        eprintln!(
+            "selection: {operation}: no keyboard focus; primary={primary}; seats=[{}]",
+            seats.join(", ")
+        );
     }
 
     fn write(&mut self, text: String, primary: bool) {
@@ -431,8 +489,7 @@ impl Selection {
             // No keyboard focus: the compositor would refuse the selection. Say
             // so rather than drop it silently; a refused copy (not a primary
             // selection, which every unfocused drag would refuse) is shown.
-            let what = if primary { "primary selection" } else { "copy" };
-            eprintln!("term: warning: {what} not taken: the window does not have the keyboard");
+            self.log_no_focus("write refused", primary);
             if !primary {
                 self.reads.answer(WRITE_ANSWER, Err(ReadError::NoFocus));
             }
@@ -460,7 +517,10 @@ impl Selection {
     }
 
     fn receive(&self, primary: bool) -> Result<ReadPipe, ReadError> {
-        let seat = self.seat().ok_or(ReadError::Empty)?;
+        let Some(seat) = self.seat() else {
+            self.log_no_focus("read Empty", primary);
+            return Err(ReadError::Empty);
+        };
         if primary {
             let offer = seat
                 .primary
@@ -585,6 +645,7 @@ impl SeatHandler for Selection {
         };
         match capability {
             Capability::Keyboard => {
+                data.focused = false;
                 data.clipboard = None;
                 data.primary = None;
                 if let Some(keyboard) = data.keyboard.take()
@@ -620,6 +681,7 @@ impl PointerHandler for Selection {
         let Some(seat) = pointer.data::<PointerData>().map(|d| d.seat().id()) else {
             return;
         };
+        let next_input = self.seats.values().map(|s| s.last_input).max().unwrap_or(0) + 1;
         let Some(data) = self.seats.get_mut(&seat) else {
             return;
         };
@@ -628,7 +690,7 @@ impl PointerHandler for Selection {
             | PointerEventKind::Release { serial, .. } = event.kind
             {
                 data.serial = serial;
-                self.latest = Some(seat.clone());
+                data.last_input = next_input;
             }
         }
     }
@@ -643,6 +705,13 @@ impl Dispatch<WlKeyboard, ObjectId> for Selection {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        let next_input = state
+            .seats
+            .values()
+            .map(|s| s.last_input)
+            .max()
+            .unwrap_or(0)
+            + 1;
         let Some(data) = state.seats.get_mut(seat) else {
             return;
         };
@@ -650,12 +719,12 @@ impl Dispatch<WlKeyboard, ObjectId> for Selection {
             wl_keyboard::Event::Key { serial, .. }
             | wl_keyboard::Event::Modifiers { serial, .. } => {
                 data.serial = serial;
-                state.latest = Some(seat.clone());
+                data.last_input = next_input;
             }
             wl_keyboard::Event::Enter { serial, .. } => {
                 data.serial = serial;
                 data.focused = true;
-                state.latest = Some(seat.clone());
+                data.last_input = next_input;
             }
             wl_keyboard::Event::Leave { .. } => {
                 data.serial = 0;
@@ -778,6 +847,51 @@ delegate_registry!(Selection);
 mod tests {
     use super::*;
     use std::os::fd::{FromRawFd, OwnedFd};
+
+    #[test]
+    fn error_storm_shares_one_diagnostic_budget_without_losing_answers() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let reads = Reads::new(tx, Arc::new(|| {}));
+        assert!(reads.allow_error_log());
+        for id in 0..100 {
+            assert!(!reads.allow_error_log());
+            reads.answer(id, Err(ReadError::Failed("private diagnostic".into())));
+        }
+        assert_eq!(rx.try_iter().count(), 100);
+        reads
+            .last_error_log
+            .set(Some(std::time::Instant::now() - Duration::from_secs(6)));
+        assert!(reads.allow_error_log());
+    }
+
+    #[test]
+    fn latest_unfocused_seat_does_not_hide_focused_seat() {
+        let mut seats = HashMap::from([
+            (
+                0,
+                SeatData {
+                    focused: true,
+                    last_input: 1,
+                    serial: 42,
+                    ..Default::default()
+                },
+            ),
+            (
+                1,
+                SeatData {
+                    focused: false,
+                    last_input: 2,
+                    ..Default::default()
+                },
+            ),
+        ]);
+        assert_eq!(focused_seat(&seats).unwrap().serial, 42);
+        seats.get_mut(&1).unwrap().focused = true;
+        assert_eq!(focused_seat(&seats).unwrap().last_input, 2);
+        seats.get_mut(&1).unwrap().focused = false;
+        seats.get_mut(&0).unwrap().focused = false;
+        assert!(focused_seat(&seats).is_none(), "both unfocused must refuse");
+    }
 
     /// A pipe: (read end, write end).
     fn pipe() -> (OwnedFd, std::fs::File) {

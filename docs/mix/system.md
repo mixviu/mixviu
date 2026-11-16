@@ -2497,3 +2497,20 @@ mix builtins system   list every system builtin with its one-line description
 mix what NAME         one-line description of a single builtin (e.g. mix what run_rc)
 mix help              the full categorized builtin reference
 ```
+
+### Desktop application stderr
+
+`spawn(argv, {detach:true, journal:"app.id"})` connects stderr directly to
+journald at warning priority with `SYSLOG_IDENTIFIER=app.id`. The identifier
+must be 1–255 bytes without control characters; invalid identifiers refuse the
+spawn. Journal setup is best effort: a nonblocking connect (no backlog wait)
+and a header write with a 200 ms timeout. If either fails, spawn prints one
+warning on its own stderr and keeps the configured stderr route (null by
+default). A successful journal route overrides stderr. Stdout is unchanged.
+
+After setup, stderr is a blocking stream: a slow journal can back-pressure a
+chatty child; a disconnected journal can cause write errors. All child stderr
+may be persisted and read by journal administrators. Do not print secrets.
+The launcher establishes the stream, so peer credentials identify the launcher,
+while SYSLOG_IDENTIFIER names the app. This is acceptable for desk diagnostics
+for now; the identifier is caller-supplied metadata, not a security identity.

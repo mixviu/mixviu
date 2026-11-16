@@ -60,3 +60,5 @@ check($wire.unknown("NOPE",repeat("中",2731))=="request exceeds 8192 bytes","ba
 check($wire.unknown("other.nope",repeat(" ",8191).."{}")=="unknown command; use HELP","foreign namespace refusal precedes body budget")
 check($wire.unknown("term.nope","malformed")=="unknown command; use HELP","own unknown name precedes JSON parsing")
 print("term wire: selector and replay checks passed")
+
+check($wire.action_targets({id:"edit.paste",args:{primary:true}},{}).primary==true,"execute preserves nested primary paste argument")
