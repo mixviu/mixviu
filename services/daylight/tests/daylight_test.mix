@@ -158,17 +158,22 @@ for each $bin in [$mix, $noded, $settingsd]
   end
 end
 
--- Zones with opposite skies right now, so every flip below is real.
+-- Keep both skies away from an event for the ordinary reconciliation checks.
+-- Sampling only "right now" can pick a zone just before sunrise: the sun
+-- timer then flips it while the test still expects the sampled state.
+-- The separate clock-offset section below deliberately exercises an event.
 $candidates = ["Australia/Brisbane", "Europe/London", "America/New_York", "Asia/Tokyo", "America/Los_Angeles", "Asia/Kolkata", "Pacific/Auckland", "Africa/Lagos",
   "Asia/Dubai", "Europe/Berlin", "America/Chicago", "Asia/Shanghai", "America/Sao_Paulo", "Pacific/Honolulu", "Africa/Cairo", "Asia/Karachi"]
 fn sky($zone, $t)
   $p = $Z.zones[$zone]
   return $sun.at($p[0], $p[1], $t)
 end
-$A = $candidates[0]
+$selection_time = time()
+$stable = filter($candidates, fn($z) = sky($z, $selection_time).next > $selection_time + 3600)
+$A = $stable[0]
 $B = nil
-for $z in $candidates
-  if $B == nil and sky($z, time()).daylight != sky($A, time()).daylight then $B = $z end
+for $z in $stable
+  if $B == nil and sky($z, $selection_time).daylight != sky($A, $selection_time).daylight then $B = $z end
 end
 
 $bus = nil
@@ -329,7 +334,13 @@ try
   apply({}, ["time.zone"])
   check("unset time.zone falls back to /etc/localtime", wait_state(fn($s) = $s.values["state.appearance.daylight"] == $want, 20).ok)
   link_zone($B)
-  check("a replaced /etc/localtime is followed", wait_state(fn($s) = $s.values["state.appearance.daylight"] == $wantB, 20).ok)
+  $ws = wait_status(fn($x) = $x.zone == $B and $x.zone_from == "localtime" and $x.last_reason == "localtime" and $x.last_error == nil, 20)
+  $s = state()
+  $followed = $ws.ok and $ws.s.localtime_watch and $s.values["state.appearance.daylight"] == $wantB
+  check("a replaced /etc/localtime is followed", $followed)
+  if not $followed then
+    print("localtime replacement: " .. json_encode({expected_zone: $B, expected_daylight: $wantB, status: $ws.s, state: $s}))
+  end
 
   -- The timer, and supersession: stand the citizen 6 s before B's next
   -- event with time.zone = A (a long timer), then switch to B.
