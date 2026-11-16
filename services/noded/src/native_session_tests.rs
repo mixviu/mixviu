@@ -1396,14 +1396,43 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CaptureLog {
 
 #[tokio::test]
 async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_logs() {
+    const ISOLATED: &str = "MIX_TEST_BOOTSTRAP_LOG_ISOLATED";
+    if std::env::var_os(ISOLATED).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "noded::native_session_tests::p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_logs",
+                "--nocapture",
+            ])
+            .env(ISOLATED, "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(stdout.matches("test result:").count(), 1, "{stdout}");
+        assert!(
+            stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
+            "{stdout}"
+        );
+        return;
+    }
     use bus::native_session::*;
+    use ed25519_dalek::Signer;
     let logs = CaptureLog(Default::default());
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
         .with_writer(logs.clone())
         .without_time()
         .finish();
+    // Global bridge state is safe only in this exact-test subprocess.
+    tracing_log::LogTracer::init().expect("fresh process must install the log bridge");
     let _guard = tracing::subscriber::set_default(subscriber);
+    log::trace!("bootstrap legacy log bridge active");
+    tracing::trace!("bootstrap log capture active");
     let broker = Broker::start().await;
     let mut observer = broker.tcp().await;
     register(&mut observer, "audit-observer").await;
@@ -1435,6 +1464,20 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
         .as_str()
         .unwrap()
         .to_owned();
+    let hello = parent.session_hello().await.unwrap();
+    let signature = serde_json::to_value(HexBytes(
+        key.sign(&encode_allocate(
+            hello.broker_epoch,
+            hello.connection_id,
+            HexBytes(key.verifying_key().to_bytes()),
+            Policy::DefaultOpen,
+        ))
+        .to_bytes(),
+    ))
+    .unwrap()
+    .as_str()
+    .unwrap()
+    .to_owned();
     for _ in 0..6 {
         let event = receive(&mut observer).await;
         let wire = event.to_wire();
@@ -1464,8 +1507,25 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
         }
     }
     let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
-    assert!(!output.contains(&private));
-    assert!(!output.contains(&public));
+    assert!(output.contains("bootstrap log capture active"));
+    assert!(output.contains("bootstrap legacy log bridge active"));
+    for (field, value) in [
+        ("private_key", private.as_str()),
+        ("public_key", public.as_str()),
+        ("signature_bytes", signature.as_str()),
+        ("signature", "signature"),
+    ] {
+        assert!(
+            !output.contains(value),
+            "bootstrap {field} in captured log: {:?}",
+            output
+                .lines()
+                .filter(|line| line.contains(value))
+                .collect::<Vec<_>>()
+        );
+    }
+    assert!(output.contains("Sending frame: opcode="));
+    assert!(output.contains("Received message: opcode="));
     parent.client().close().await;
 }
 
