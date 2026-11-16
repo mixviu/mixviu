@@ -5234,8 +5234,12 @@ fn spawn_detached(mut command: std::process::Command) -> MixResult<Option<Value>
 
 fn spawn_route_journal(command: &mut std::process::Command, identifier: &str, path: &str) {
     match spawn_journal_at(identifier, path) {
-        Ok(fd) => { command.stderr(fd); }
-        Err(error) => eprintln!("spawn: journal unavailable for {identifier}; keeping stderr route: {error}"),
+        Ok(fd) => {
+            command.stderr(fd);
+        }
+        Err(error) => {
+            eprintln!("spawn: journal unavailable for {identifier}; keeping stderr route: {error}")
+        }
     }
 }
 
@@ -5246,15 +5250,35 @@ fn spawn_journal_at(identifier: &str, path: &str) -> std::io::Result<std::os::fd
     let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
     addr.sun_family = libc::AF_UNIX as _;
     if path.len() >= addr.sun_path.len() || path.as_bytes().contains(&0) {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid journal path"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid journal path",
+        ));
     }
-    for (out, byte) in addr.sun_path.iter_mut().zip(path.bytes()) { *out = byte as _; }
+    for (out, byte) in addr.sun_path.iter_mut().zip(path.bytes()) {
+        *out = byte as _;
+    }
     // AF_UNIX nonblocking connect fails immediately on a full backlog (EAGAIN).
     // Degrade rather than wait/retry: launching must not wait on journald.
-    let raw = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, 0) };
-    if raw < 0 { return Err(std::io::Error::last_os_error()); }
+    let raw = unsafe {
+        libc::socket(
+            libc::AF_UNIX,
+            libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+            0,
+        )
+    };
+    if raw < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
-    if unsafe { libc::connect(fd.as_raw_fd(), (&addr as *const libc::sockaddr_un).cast(), std::mem::size_of_val(&addr) as _) } < 0 {
+    if unsafe {
+        libc::connect(
+            fd.as_raw_fd(),
+            (&addr as *const libc::sockaddr_un).cast(),
+            std::mem::size_of_val(&addr) as _,
+        )
+    } < 0
+    {
         return Err(std::io::Error::last_os_error());
     }
     let mut stream = UnixStream::from(fd);
@@ -42325,12 +42349,21 @@ mod spawn_journal_tests {
     #[test]
     fn unavailable_journal_preserves_child_stderr_route() {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
-        child.args(["--exact", "builtins::spawn_journal_tests::child_stderr_marker", "--ignored", "--nocapture"]);
+        child.args([
+            "--exact",
+            "builtins::spawn_journal_tests::child_stderr_marker",
+            "--ignored",
+            "--nocapture",
+        ]);
         child.stderr(std::process::Stdio::piped());
         super::spawn_route_journal(&mut child, "term", "/nonexistent-mix-journal-test");
         let output = child.output().unwrap();
         assert!(output.status.success());
-        assert!(String::from_utf8(output.stderr).unwrap().contains("child-fd-two-marker"));
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("child-fd-two-marker")
+        );
     }
 
     #[test]
@@ -42349,17 +42382,19 @@ mod spawn_journal_tests {
         let listener = UnixListener::bind(&path).unwrap();
         let fd = super::spawn_journal_at("mixviu.term", path.to_str().unwrap()).unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
-        child.args(["--exact", "builtins::spawn_journal_tests::child_stderr_marker", "--ignored", "--nocapture"]);
+        child.args([
+            "--exact",
+            "builtins::spawn_journal_tests::child_stderr_marker",
+            "--ignored",
+            "--nocapture",
+        ]);
         child.stderr(fd);
         assert!(child.status().unwrap().success());
         drop(child);
         let (mut stream, _) = listener.accept().unwrap();
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();
-        assert_eq!(
-            text,
-            "mixviu.term\n\n4\n0\n0\n0\n0\nchild-fd-two-marker\n"
-        );
+        assert_eq!(text, "mixviu.term\n\n4\n0\n0\n0\n0\nchild-fd-two-marker\n");
         assert!(super::spawn_journal_at("term", dir.join("absent").to_str().unwrap()).is_err());
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(dir).unwrap();

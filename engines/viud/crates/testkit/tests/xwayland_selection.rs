@@ -17,8 +17,15 @@ fn agent_focus_excludes_xwayland_selection_bridge() {
     h.mark_client_xwayland(bridge);
     h.focus_agent_keyboard_client(bridge, &surface);
     h.roundtrip_client(bridge);
-    assert!(h.extra_clients[bridge].state.clipboard.primary_selections
-        .get(&1).is_none_or(|offer| offer.is_none()), "X11 must not receive agent PRIMARY");
+    assert!(
+        h.extra_clients[bridge]
+            .state
+            .clipboard
+            .primary_selections
+            .get(&1)
+            .is_none_or(|offer| offer.is_none()),
+        "X11 must not receive agent PRIMARY"
+    );
     // The same identity can still receive the human seat's offer.
     h.focus_keyboard(&target);
     let _human = h.client.set_primary_selection(0, b"human-primary");

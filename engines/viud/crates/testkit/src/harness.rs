@@ -628,8 +628,20 @@ impl Harness {
         let server: ServerSurface = self.extra_server_clients[index]
             .object_from_protocol_id(&self.display.handle(), protocol_id(surface))
             .expect("the server knows this client's surface");
-        let keyboard = self.wire.state.seat.agent.as_ref().unwrap().get_keyboard().unwrap();
-        keyboard.set_focus(&mut self.wire.state, Some(server), smithay::utils::SERIAL_COUNTER.next_serial());
+        let keyboard = self
+            .wire
+            .state
+            .seat
+            .agent
+            .as_ref()
+            .unwrap()
+            .get_keyboard()
+            .unwrap();
+        keyboard.set_focus(
+            &mut self.wire.state,
+            Some(server),
+            smithay::utils::SERIAL_COUNTER.next_serial(),
+        );
         self.roundtrip_client(index);
     }
 
