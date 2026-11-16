@@ -147,7 +147,7 @@ tokio-tungstenite = "=0.26.2"
 tracing = { version = "=0.1.44" }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
-uuid = { version = "=1.29.0", features = ["fast-rng", "serde", "v7"] }
+uuid = { version = "=1.29.2", features = ["fast-rng", "serde", "v7"] }
 # D-Bus for the session portal (services/portald). Pinned to the version the
 # lock already resolves; the tokio backend only, no async-io or blocking API.
 zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }
@@ -193,7 +193,7 @@ wgpu = { version = "=30.0.1", default-features = false, features = ["gles", "par
 egui-wgpu = { version = "=0.37.0", default-features = false }
 bindgen = "=0.71.1"
 bitflags = "=2.13.2"
-cc = "=1.11.0"
+cc = "=1.11.1"
 crossbeam-channel = "=0.5.17"
 drm-ffi = "=0.9.1"
 gbm = "=0.18.0"

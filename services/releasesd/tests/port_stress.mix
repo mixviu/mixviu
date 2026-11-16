@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- CBC-only collision proof followed by 20 independent suite runs.
+-- Run from the checkout root with target/debug/mix after building mix + noded.
+$mix = realpath("/proc/self/exe")
+$suite = "services/releasesd/tests/releasesd_test.mix"
+$suite_argv = if uid() == 0 then ["runuser", "-u", "nobody", "--", $mix, $suite] else [$mix, $suite] end
+$env = {MIX_TEST_NODED_EXE: realpath("target/debug/noded")}
+$held = tcp_listen("127.0.0.1", 0)
+$port = tcp_local_addr($held).port
+try
+  -- Force the old fixture's pick to our held port: it must fail to bind.
+  $old = run_argv([$mix, "-c", "http_serve(\".\", {port: " .. to_string($port) .. ", duration: 1})"],
+    {stderr: "stdout", timeout: 5})
+  if $old.ok or not contains($old.stdout, "Address already in use") then
+    raise("COLLISION_PROOF", "expected bind refusal on held port: " .. json_encode($old))
+  end
+  print("Forced old pick " .. to_string($port) .. ": " .. $old.stdout)
+  $proof = run_argv($suite_argv, {env: $env, stderr: "stdout", timeout: 300})
+  print($proof.stdout)
+  if not $proof.ok then raise("COLLISION_PROOF", "suite failed while old pick was occupied") end
+  print("PASS collision: suite passed with old pick still held")
+finally
+  $closed = tcp_close($held)
+end
+for $iteration = 1 to 20
+  $result = run_argv($suite_argv, {env: $env, stderr: "stdout", timeout: 300})
+  print($result.stdout)
+  if not $result.ok then raise("PORT_STRESS", "suite failed at repetition " .. to_string($iteration)) end
+  print("PASS repetition " .. to_string($iteration) .. "/20")
+end
+print("PASS port stress: forced collision + 20/20 suites")
