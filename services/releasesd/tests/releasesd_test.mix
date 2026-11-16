@@ -74,14 +74,40 @@ fn release($base, $repo, $tag, $tarname, $dl, $tamper)
 end
 
 $bus = nil
+$complete = false
 mkdir($tmp, {parents: true})
 try
-  -- The stand-in API.
-  $port = random(48000, 48999)
-  $base = "http://127.0.0.1:" .. to_string($port)
+  -- Let the child bind its own ephemeral port; never reserve then release one.
   $api = $tmp .. "/api"
   $dl = $api .. "/dl"
   mkdir($dl, {parents: true})
+  $token = uuid()
+  write_file($api .. "/ready", $token)
+  $http = spawn([(realpath("/proc/self/exe")), "-c",
+    "http_serve(" .. json_encode($api) .. ", {port: 0, host: \"127.0.0.1\", duration: 300})"],
+    {detach: true, stdout: {file: $tmp .. "/http.log"}, stderr: "stdout"})
+  push($pids, $http)
+  $base = nil
+  $serving = false
+  for $ready = 1 to 100
+    if not process_alive($http) then break end
+    $line = read_file($tmp .. "/http.log")
+    $url = re_find($line, "http_serve: (http://127\\.0\\.0\\.1:[0-9]+)/")
+    if len($url) > 0 then
+      $base = $url[0].groups[0]
+      try
+        $response = http_get($base .. "/ready", {}, {timeout: 1})
+        $serving = $response.status == 200 and $response.body == $token
+      catch $m
+      end
+      if $serving then break end
+    end
+    sleep(0.1)
+  end
+  if not $serving then
+    raise("SETUP", "HTTP fixture did not serve its ready token; " .. $tmp .. "/http.log: " .. read_file($tmp .. "/http.log"))
+  end
+  print("HTTP fixture ready: " .. $base)
   $t1 = make_tarball($dl, "1.0")
   $t2 = make_tarball($dl, "2.0")
   for $spec in [["example/demo", "v1.0", $t1, ""], ["example/demo", "v2.0", $t2, ""], ["example/bad", "v2.0", $t2, "digest"], ["example/big", "v2.0", $t2, "size"]]
@@ -90,9 +116,6 @@ try
     write_file($api .. "/repos/" .. $spec[0] .. "/releases/tags/" .. $spec[1], json_encode($rel))
     write_file($api .. "/repos/" .. $spec[0] .. "/releases/latest", json_encode($rel))
   end
-  push($pids, spawn([(realpath("/proc/self/exe")), "-c", "http_serve(\"" .. $api .. "\", {port: " .. to_string($port) .. ", host: \"127.0.0.1\", duration: 300})"],
-    {detach: true, stdout: {file: $tmp .. "/http.log"}, stderr: "stdout"}))
-
   -- The broker and the citizen.
   $bus = $pb.start({dir: $tmp .. "/bus", name: "releasesd-test", noded: $noded})
   write_file($tmp .. "/releases.mx", "{schema: 1, apps: [{name: \"demo\", repo: \"example/demo\"}, {name: \"bad\", repo: \"example/bad\"}, {name: \"big\", repo: \"example/big\"}]}\n")
@@ -173,12 +196,13 @@ try
 
   $rm = call("releases.remove", {app: "demo"})
   check("remove: gone", $rm.rc == 0 and $rm.v.action == "removed" and not is_dir($tmp .. "/root/opt/demo"))
+  $complete = true
 finally
   for $p in $pids
     kill($p, 15)
   end
   if $bus != nil then $pb.stop($bus) end
-  if len(filter($results, fn($x) = not $x.ok)) == 0 then remove_dir($tmp) else print("kept for inspection: " .. $tmp) end
+  if $complete and len(filter($results, fn($x) = not $x.ok)) == 0 then remove_dir($tmp) else print("kept for inspection: " .. $tmp) end
 end
 
 $failed = filter($results, fn($x) = not $x.ok)
