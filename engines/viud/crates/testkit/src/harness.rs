@@ -623,15 +623,37 @@ impl Harness {
         use smithay::input::pointer::{ButtonEvent, MotionEvent};
         use smithay::utils::{Point, SERIAL_COUNTER};
         self.focus_agent_keyboard(surface);
-        let server: ServerSurface = self.server_client
-            .object_from_protocol_id(&self.display.handle(), protocol_id(surface)).unwrap();
-        let pointer = self.wire.state.seat.agent.as_ref().unwrap().get_pointer().unwrap();
-        pointer.motion(&mut self.wire.state, Some((server, Point::from((0.0, 0.0)))),
-            &MotionEvent { location: Point::from((1.0, 1.0)), serial: SERIAL_COUNTER.next_serial(), time: 0 });
-        pointer.button(&mut self.wire.state, &ButtonEvent {
-            serial: SERIAL_COUNTER.next_serial(), time: 0, button,
-            state: smithay::backend::input::ButtonState::Pressed,
-        });
+        let server: ServerSurface = self
+            .server_client
+            .object_from_protocol_id(&self.display.handle(), protocol_id(surface))
+            .unwrap();
+        let pointer = self
+            .wire
+            .state
+            .seat
+            .agent
+            .as_ref()
+            .unwrap()
+            .get_pointer()
+            .unwrap();
+        pointer.motion(
+            &mut self.wire.state,
+            Some((server, Point::from((0.0, 0.0)))),
+            &MotionEvent {
+                location: Point::from((1.0, 1.0)),
+                serial: SERIAL_COUNTER.next_serial(),
+                time: 0,
+            },
+        );
+        pointer.button(
+            &mut self.wire.state,
+            &ButtonEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time: 0,
+                button,
+                state: smithay::backend::input::ButtonState::Pressed,
+            },
+        );
         pointer.frame(&mut self.wire.state);
         self.roundtrip();
     }

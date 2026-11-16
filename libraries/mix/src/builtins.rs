@@ -4624,7 +4624,7 @@ pub(crate) fn spawn_argv_native(
                     return Err(opt_invalid(
                         caller,
                         format!(
-                            "unknown option '{}' (supported: detach, die_with_parent, exit_event, tag, cwd, env, clear_env, stdout, stderr)",
+                            "unknown option '{}' (supported: detach, die_with_parent, exit_event, tag, cwd, env, clear_env, stdout, stderr, journal)",
                             sanitize_for_diag(other)
                         ),
                     ));
@@ -4804,7 +4804,8 @@ pub(crate) fn spawn_argv_native(
     if let Some(id) = journal {
         // Connect before exec; a detached child must never silently lose stderr.
         // Failure refuses the launch rather than claiming it was logged.
-        command.stderr(spawn_journal(&id).map_err(|e| opt_invalid(caller, format!("journal: {e}")))?);
+        command
+            .stderr(spawn_journal(&id).map_err(|e| opt_invalid(caller, format!("journal: {e}")))?);
     }
     if detach {
         return spawn_detached(command);
@@ -5234,8 +5235,6 @@ fn spawn_detached(mut command: std::process::Command) -> MixResult<Option<Value>
     Ok(Some(Value::Number(libc::pid_t::from_ne_bytes(buf) as f64)))
 }
 
-/// Open a stdout route's file (if it is a file route) once, so a stderr:stdout
-/// merge can clone the same handle. `None` for null/inherit.
 fn spawn_journal(identifier: &str) -> std::io::Result<std::os::fd::OwnedFd> {
     spawn_journal_at(identifier, "/run/systemd/journal/stdout")
 }
@@ -5248,6 +5247,8 @@ fn spawn_journal_at(identifier: &str, path: &str) -> std::io::Result<std::os::fd
     Ok(std::os::fd::OwnedFd::from(stream))
 }
 
+/// Open a stdout route's file (if it is a file route) once, so a stderr:stdout
+/// merge can clone the same handle. `None` for null/inherit.
 fn spawn_open_output(out: &RunArgvOutput) -> MixResult<Option<std::fs::File>> {
     match out {
         RunArgvOutput::File(f) => Ok(Some(spawn_create_file(f)?)),
@@ -42313,7 +42314,10 @@ mod spawn_journal_tests {
         let (mut stream, _) = listener.accept().unwrap();
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();
-        assert_eq!(text, "mixviu.term\n\n4\n0\n0\n0\n0\nselection: write refused\n");
+        assert_eq!(
+            text,
+            "mixviu.term\n\n4\n0\n0\n0\n0\nselection: write refused\n"
+        );
         assert!(super::spawn_journal_at("term", dir.join("absent").to_str().unwrap()).is_err());
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(dir).unwrap();

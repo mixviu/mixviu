@@ -161,6 +161,7 @@ on "apps.launch" desc "launch an application by id, detached (uris optional)"
           $pid = spawn($launch.argv, $opts)
           reply(0, json_encode({id: $id, pid: $pid, argv: $argv}))
         catch $err
+          eprint("apps.launch " .. $id .. ": spawn_failed: " .. $err)
           reply(11, json_encode({error: "spawn_failed", id: $id}))
         end
       end

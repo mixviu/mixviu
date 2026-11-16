@@ -401,7 +401,10 @@ struct SeatData {
 }
 
 fn focused_seat<K>(seats: &HashMap<K, SeatData>) -> Option<&SeatData> {
-    seats.values().filter(|s| s.focused).max_by_key(|s| s.last_input)
+    seats
+        .values()
+        .filter(|s| s.focused)
+        .max_by_key(|s| s.last_input)
 }
 
 struct Selection {
@@ -432,13 +435,23 @@ impl Selection {
     }
 
     fn log_no_focus(&self, operation: &str, primary: bool) {
-        let seats: Vec<_> = self.seats.iter().map(|(id, s)| {
-            let name = self.seat_state.seats().find(|seat| seat.id() == *id)
-                .and_then(|seat| self.seat_state.info(&seat))
-                .and_then(|info| info.name);
-            format!("{name:?}({id:?}):focused={}", s.focused)
-        }).collect();
-        eprintln!("selection: {operation}: no keyboard focus; primary={primary}; seats=[{}]", seats.join(", "));
+        let seats: Vec<_> = self
+            .seats
+            .iter()
+            .map(|(id, s)| {
+                let name = self
+                    .seat_state
+                    .seats()
+                    .find(|seat| seat.id() == *id)
+                    .and_then(|seat| self.seat_state.info(&seat))
+                    .and_then(|info| info.name);
+                format!("{name:?}({id:?}):focused={}", s.focused)
+            })
+            .collect();
+        eprintln!(
+            "selection: {operation}: no keyboard focus; primary={primary}; seats=[{}]",
+            seats.join(", ")
+        );
     }
 
     fn write(&mut self, text: String, primary: bool) {
@@ -662,7 +675,13 @@ impl Dispatch<WlKeyboard, ObjectId> for Selection {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        let next_input = state.seats.values().map(|s| s.last_input).max().unwrap_or(0) + 1;
+        let next_input = state
+            .seats
+            .values()
+            .map(|s| s.last_input)
+            .max()
+            .unwrap_or(0)
+            + 1;
         let Some(data) = state.seats.get_mut(seat) else {
             return;
         };
@@ -802,10 +821,28 @@ mod tests {
     #[test]
     fn latest_unfocused_seat_does_not_hide_focused_seat() {
         let mut seats = HashMap::from([
-            (0, SeatData { focused: true, last_input: 1, serial: 42, ..Default::default() }),
-            (1, SeatData { focused: false, last_input: 2, ..Default::default() }),
+            (
+                0,
+                SeatData {
+                    focused: true,
+                    last_input: 1,
+                    serial: 42,
+                    ..Default::default()
+                },
+            ),
+            (
+                1,
+                SeatData {
+                    focused: false,
+                    last_input: 2,
+                    ..Default::default()
+                },
+            ),
         ]);
         assert_eq!(focused_seat(&seats).unwrap().serial, 42);
+        seats.get_mut(&1).unwrap().focused = true;
+        assert_eq!(focused_seat(&seats).unwrap().last_input, 2);
+        seats.get_mut(&1).unwrap().focused = false;
         seats.get_mut(&0).unwrap().focused = false;
         assert!(focused_seat(&seats).is_none(), "both unfocused must refuse");
     }

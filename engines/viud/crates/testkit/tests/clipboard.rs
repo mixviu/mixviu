@@ -29,9 +29,19 @@ fn agent_primary_offer_follows_only_agent_keyboard_focus() {
     h.roundtrip();
     h.roundtrip_client(other);
     let offer = h.client.state.clipboard.primary_selections.get(&AGENT);
-    assert!(offer.is_some_and(|offer| offer.is_some()), "agent owner receives its own offer");
-    assert!(h.extra_clients[other].state.clipboard.primary_selections.get(&AGENT)
-        .is_none_or(|offer| offer.is_none()), "physical focus cannot grant an agent offer");
+    assert!(
+        offer.is_some_and(|offer| offer.is_some()),
+        "agent owner receives its own offer"
+    );
+    assert!(
+        h.extra_clients[other]
+            .state
+            .clipboard
+            .primary_selections
+            .get(&AGENT)
+            .is_none_or(|offer| offer.is_none()),
+        "physical focus cannot grant an agent offer"
+    );
     // The physically focused client cannot replace the agent selection either.
     let _refused = h.extra_clients[other].set_primary_selection(AGENT, b"wrong-seat");
     h.roundtrip_client(other);
