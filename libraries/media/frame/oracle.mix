@@ -1,0 +1,28 @@
+-- Focused worker-only check; ffmpeg never participates in normal crate tests.
+-- Works in a fresh private directory and leaves the tree as it found it.
+$dir = trim(run_argv_must(["mktemp", "-d", "/tmp/media-frame-oracle-XXXXXX"]))
+fn checked($cmd, $dir)
+  $r = run_argv($cmd, {timeout: 1800, max_output: 1048576})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then
+    $gone = run_argv(["rm", "-rf", "--", $dir])
+    exit(1)
+  end
+end
+$scale_in = "scale=in_range=full:out_range=limited:out_color_matrix=bt709:flags=area+accurate_rnd,format=yuv420p"
+$scale_back = "scale=in_range=limited:in_color_matrix=bt709:out_range=full,format=bgra"
+checked(["cargo", "test", "-p", "media-frame"], $dir)
+checked(["cargo", "clippy", "-p", "media-frame", "--all-targets", "--", "-D", "warnings"], $dir)
+checked(["cargo", "fmt", "-p", "media-frame", "--", "--check"], $dir)
+checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", $dir], $dir)
+checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "bgra", "-video_size", "128x64", "-i", $dir .. "/source.bgra", "-vf", $scale_in, "-frames:v", "1", "-f", "rawvideo", $dir .. "/oracle.yuv"], $dir)
+checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", $dir, "compare"], $dir)
+checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", "128x64", "-i", $dir .. "/source.yuv", "-vf", $scale_back, "-frames:v", "1", "-f", "rawvideo", $dir .. "/roundtrip.bgra"], $dir)
+checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", "128x64", "-i", $dir .. "/oracle.yuv", "-vf", $scale_back, "-frames:v", "1", "-f", "rawvideo", $dir .. "/oracle-roundtrip.bgra"], $dir)
+checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", $dir, "compare", "reverse"], $dir)
+$gone = run_argv(["rm", "-rf", "--", $dir])
+if not $gone.ok then
+  print("could not remove " .. $dir .. ": " .. $gone.stderr)
+  exit(1)
+end
