@@ -33,6 +33,9 @@ paths = [
 [[allowlists]]
 description = "RFC 6455 section 1.3 sample handshake nonce (base64 of 'the sample nonce') in unmodified upstream tungstenite server tests, not a key"
 targetRules = ["generic-api-key"]
+# AND: only that exact line in those two files. The default OR would skip
+# every finding in the files, and the nonce line anywhere.
+condition = "AND"
 regexTarget = "line"
 regexes = ['''Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==''']
 paths = [
