@@ -42302,8 +42302,9 @@ mod spawn_journal_tests {
     fn stderr_stream_has_app_identifier_and_warning_priority() {
         use std::io::{Read, Write};
         use std::os::unix::net::UnixListener;
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("journal");
+        let dir = std::env::temp_dir().join(format!("mix-journal-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("journal");
         let listener = UnixListener::bind(&path).unwrap();
         let fd = super::spawn_journal_at("mixviu.term", path.to_str().unwrap()).unwrap();
         let mut file = std::fs::File::from(fd);
@@ -42313,6 +42314,8 @@ mod spawn_journal_tests {
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();
         assert_eq!(text, "mixviu.term\n\n4\n0\n0\n0\n0\nselection: write refused\n");
-        assert!(super::spawn_journal_at("term", dir.path().join("absent").to_str().unwrap()).is_err());
+        assert!(super::spawn_journal_at("term", dir.join("absent").to_str().unwrap()).is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }

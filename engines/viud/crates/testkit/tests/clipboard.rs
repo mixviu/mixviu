@@ -37,6 +37,11 @@ fn agent_primary_offer_follows_only_agent_keyboard_focus() {
     h.roundtrip_client(other);
     h.roundtrip();
     assert!(h.client.state.clipboard.primary_selections[&AGENT].is_some());
+    h.agent_press(&target, 0x112);
+    let (_, seat, read) = h.client.state.clipboard.primary_pastes.pop().unwrap();
+    assert_eq!(seat, AGENT);
+    let mut read = read.expect("agent middle press receives its own offer");
+    assert_eq!(finish(&mut h, &mut read), b"agent-primary");
 }
 
 /// Pump until the paste's pipe closes, and return what it carried.
