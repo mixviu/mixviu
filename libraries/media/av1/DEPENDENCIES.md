@@ -72,4 +72,12 @@ unicode-ident 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/
 v_frame 0.3.9 | BSD-2-Clause | https://github.com/rust-av/v_frame
 y4m 0.8.0 | MIT | https://github.com/image-rs/y4m.git
 ```
-\nAssembly is opt-in (--features asm); the default and --no-default-features\nbuilds are pure Rust. focused.mix tests both and oracle.mix builds and measures\nboth explicitly. dependencies.mix includes the asm closure for this inventory.\n\nThe extra pastey 0.1.1 comes from rav1e -> av-scenechange 0.14.1, whose\nmanifest requires ^0.1.0. Existing pastey 0.2.3 is semver-incompatible with\nthat requirement. Cargo cannot unify them without an upstream dependency\nchange or a fork; neither is justified for this scoped wrapper fix.\n
+
+Assembly is opt-in (--features asm); the default and --no-default-features
+builds are pure Rust. focused.mix tests both and oracle.mix builds and measures
+both explicitly. dependencies.mix includes the asm closure for this inventory.
+
+The extra pastey 0.1.1 comes from rav1e -> av-scenechange 0.14.1, whose
+manifest requires ^0.1.0. Existing pastey 0.2.3 is semver-incompatible with
+that requirement. Cargo cannot unify them without an upstream dependency
+change or a fork; neither is justified for this scoped wrapper fix.

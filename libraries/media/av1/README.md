@@ -2,13 +2,14 @@
 
 `media-av1` pins rav1e **0.8.1**, default features disabled. Only threading and
 optional asm are enabled. `cargo test -p media-av1 --no-default-features` tests
-the pure-Rust default; --features asm opts into nasm-built x86 kernels.\nShipping binaries must enable asm explicitly when approved. No C encoder,
+the pure-Rust default; --features asm opts into nasm-built x86 kernels.
+Shipping binaries must enable asm explicitly when approved. No C encoder,
 ffmpeg, container, transport or application policy is linked here.
 
 `Settings` chooses dimensions, rational fps, preset 0–10, quantizer 0–255
 (lower is better) or positive bits/second target, fixed key interval,
-power-of-two tile columns/rows (1–64), and threads (1–64). Upstream validates
-frame sizes (video 16–65535), rate and key interval. Extremely large frames
+power-of-two tile columns/rows (1–64), and threads (1–64). The wrapper validates
+frame sizes (16–65535) before tiling, plus rate and key interval. Extremely large frames
 can still exhaust memory; rav1e's pool creation can panic on OS thread failure.
 Use a worker admission budget. Requested tiles are adjusted by rav1e's tiler;
 `Encoder::tiles()` reports the actual grid. Threads bound the encoder Rayon
@@ -17,7 +18,10 @@ available; even one 3840×2160 tile fits AV1's 4096-pixel width and area limit.
 
 The API accepts validated L6 `Yuv420`, copies/pads once into `Prepared`, and
 permits cheap clones of that immutable frame for repeated submissions. That
-saves repeated BGRA-to-YUV conversion and copying/padding into rav1e input\nplanes. Pinned rav1e uses Arc::get_mut (not make_mut) in internal send_frame:\na shared frame is checked for padding and queued without a deep copy. This\ndoes not save lookahead or encoding. Every CFR input
+saves repeated BGRA-to-YUV conversion and copying/padding into rav1e input
+planes. Pinned rav1e uses Arc::get_mut (not make_mut) in internal send_frame:
+a shared frame is checked for padding and queued without a deep copy. This
+does not save lookahead or encoding. Every CFR input
 still produces a displayed frame. `submit` drains available packets; `finish`
 flushes once. Packets contain temporal-unit bytes, zero-based presentation
 ticks (`fps_den / fps_num` seconds), duration 1 and a key-frame flag. Low
@@ -48,7 +52,9 @@ Examined the pinned upstream `src/api/config/{encoder,speedsettings,mod}.rs`,
 
 The opt-in `oracle.mix` runs generated static/blinking-cursor, scrolling-list
 and window-drag sequences at 1080p and 4K, presets 6/8/10, asm on/off, then
-checks decode, frame counts and dimensions with ffmpeg on a worker.\nIt prints PSNR for the record; it does not enforce a quality floor. The\nsingle-run measurements do not yet establish per-case acceptance floors.
+checks decode, frame counts and dimensions with ffmpeg on a worker.
+It prints PSNR for the record; it does not enforce a quality floor. The
+single-run measurements do not yet establish per-case acceptance floors.
 Eight frames per case, q100, 30fps, two threads, requested 2×2 tiles.
 FPS times only submissions plus flush; excludes generation, conversion,
 preparation and output I/O. Bitrate counts AV1 payload bytes over 8/30 seconds.
