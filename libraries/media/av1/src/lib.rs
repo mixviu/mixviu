@@ -151,7 +151,8 @@ impl Encoder {
         {
             return Err(Error("closed encoder or frame size mismatch".into()));
         }
-        let result = self.ctx
+        let result = self
+            .ctx
             .send_frame(frame.frame.clone())
             .map_err(|e| Error(e.to_string()));
         self.remember_failure(result)?;
@@ -165,7 +166,10 @@ impl Encoder {
     /// context cannot complete the stream, so callers must discard that stream.
     pub fn finish(&mut self) -> Result<Vec<Packet>, Error> {
         self.finish_using(|encoder| {
-            encoder.ctx.send_frame(None).map_err(|e| Error(e.to_string()))?;
+            encoder
+                .ctx
+                .send_frame(None)
+                .map_err(|e| Error(e.to_string()))?;
             encoder.drain(true)
         })
     }
@@ -179,7 +183,11 @@ impl Encoder {
         if self.flushed {
             return Ok(Vec::new());
         }
-        let result = if self.submitted == 0 { Ok(Vec::new()) } else { flush(self) };
+        let result = if self.submitted == 0 {
+            Ok(Vec::new())
+        } else {
+            flush(self)
+        };
         let packets = self.remember_failure(result)?;
         self.flushed = true;
         Ok(packets)
@@ -191,15 +199,23 @@ impl Encoder {
         result
     }
     fn drain(&mut self, finishing: bool) -> Result<Vec<Packet>, Error> {
+        Self::drain_using(finishing, || {
+            self.ctx.receive_packet().map(|p| Packet {
+                data: p.data,
+                pts: p.input_frameno,
+                duration: 1,
+                key_frame: p.frame_type == FrameType::KEY,
+            })
+        })
+    }
+    fn drain_using(
+        finishing: bool,
+        mut receive: impl FnMut() -> Result<Packet, EncoderStatus>,
+    ) -> Result<Vec<Packet>, Error> {
         let mut packets = Vec::new();
         loop {
-            match self.ctx.receive_packet() {
-                Ok(p) => packets.push(Packet {
-                    data: p.data,
-                    pts: p.input_frameno,
-                    duration: 1,
-                    key_frame: p.frame_type == FrameType::KEY,
-                }),
+            match receive() {
+                Ok(p) => packets.push(p),
                 Err(EncoderStatus::Encoded) => continue,
                 Err(EncoderStatus::NeedMoreData) if !finishing => break,
                 Err(EncoderStatus::LimitReached) if finishing => break,
@@ -266,12 +282,27 @@ mod tests {
         for stage in ["send_frame(None)", "drain after packet"] {
             let mut enc = Encoder::new(settings()).unwrap();
             enc.submitted = 1;
-            let result = enc.finish_using(|_| Err(Error(stage.into())));
-            assert_eq!(result.unwrap_err().0, stage);
+            let result = enc.finish_using(|_| {
+                if stage == "send_frame(None)" {
+                    return Err(Error(stage.into()));
+                }
+                let mut events = [
+                    Ok(Packet { data: vec![1], pts: 0, duration: 1, key_frame: true }),
+                    Err(EncoderStatus::Failure),
+                ].into_iter();
+                Encoder::drain_using(true, || events.next().unwrap())
+            });
+            let error = result.unwrap_err().0;
             assert!(!enc.flushed);
-            assert_eq!(enc.finish().unwrap_err().0, stage);
-            let prepared = enc.prepare(&media_frame::Bgra::solid(32, 32, [0, 0, 0, 255]).unwrap().to_yuv420()).unwrap();
-            assert_eq!(enc.submit(&prepared).unwrap_err().0, stage);
+            assert_eq!(enc.finish().unwrap_err().0, error);
+            let prepared = enc
+                .prepare(
+                    &media_frame::Bgra::solid(32, 32, [0, 0, 0, 255])
+                        .unwrap()
+                        .to_yuv420(),
+                )
+                .unwrap();
+            assert_eq!(enc.submit(&prepared).unwrap_err().0, error);
         }
     }
     #[test]
@@ -280,7 +311,9 @@ mod tests {
         s.width = 33;
         s.height = 17;
         let mut enc = Encoder::new(s).unwrap();
-        let source = media_frame::Bgra::solid(33, 17, [20, 40, 60, 255]).unwrap().to_yuv420();
+        let source = media_frame::Bgra::solid(33, 17, [20, 40, 60, 255])
+            .unwrap()
+            .to_yuv420();
         let prepared = enc.prepare(&source).unwrap();
         let mut packets = enc.submit(&prepared).unwrap();
         packets.extend(enc.submit(&prepared).unwrap());
@@ -295,7 +328,11 @@ mod tests {
         for dimension in [0, 1, 65536] {
             for width in [true, false] {
                 let mut s = settings();
-                if width { s.width = dimension; } else { s.height = dimension; }
+                if width {
+                    s.width = dimension;
+                } else {
+                    s.height = dimension;
+                }
                 assert!(Encoder::new(s).is_err());
             }
         }
