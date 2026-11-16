@@ -30,7 +30,7 @@ fn observed_path(path: PathBuf, added: bool) {
                         (meta.rdev(), meta.ino(), meta.ctime(), meta.ctime_nsec()),
                     );
                 }
-                Err(error) => debug!(
+                Err(error) => warn!(
                     "input DeviceAdded metadata failed for {}: {error}",
                     path.display()
                 ),
