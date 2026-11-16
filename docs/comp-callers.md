@@ -117,7 +117,7 @@ Failed takes remain at the `recovery_path` returned by start/failed stop:
 crash, find that sibling by its destination prefix and `.part` suffix. Once
 the take is terminal (or viud has exited), inspect or recover it, then remove
 that exact directory recursively, for example with Mix
-`run_argv(["rm","-r","--",recovery_path])` using the returned path as a value.
+`run_argv(["rm","-r","--",$recovery_path])` using the returned path as a value.
 Do not delete an active take. `discard:true` removes the active take on stop.
 
 Recording continues offscreen while the VT is switched away or the display
