@@ -23,11 +23,14 @@ pub(super) fn observed(sysname: &str, added: bool) {
 fn observed_path(path: PathBuf, added: bool) {
     KNOWN.with_borrow_mut(|known| {
         if added {
-            if let Ok(meta) = std::fs::metadata(&path) {
-                known.insert(
-                    path,
-                    (meta.rdev(), meta.ino(), meta.ctime(), meta.ctime_nsec()),
-                );
+            match std::fs::metadata(&path) {
+                Ok(meta) => {
+                    known.insert(
+                        path,
+                        (meta.rdev(), meta.ino(), meta.ctime(), meta.ctime_nsec()),
+                    );
+                }
+                Err(error) => debug!("input DeviceAdded metadata failed for {}: {error}", path.display()),
             }
         } else {
             known.remove(&path);
@@ -38,6 +41,7 @@ fn observed_path(path: PathBuf, added: bool) {
 #[derive(Default)]
 struct Retry {
     failures: u32,
+    pending: Option<(Nodes, Nodes)>,
 }
 impl Retry {
     fn completed(&mut self, success: bool) -> Duration {
@@ -57,8 +61,21 @@ impl Retry {
     }
 }
 
-fn needs_reconcile(current: &Nodes, known: &Nodes, retry: &Retry) -> bool {
-    retry.failures != 0 || current != known
+fn needs_reconcile(current: &Nodes, known: &Nodes, retry: &mut Retry) -> bool {
+    // A failed resume must retry even if the nodes have since converged.
+    if retry.failures != 0 {
+        return true;
+    }
+    if current == known {
+        retry.pending = None;
+        return false;
+    }
+    // The scan can precede a queued libinput lifecycle event. Give it one
+    // full tick to arrive, and restart the grace period if either map changes.
+    let disagreement = (current.clone(), known.clone());
+    let confirmed = retry.pending.as_ref() == Some(&disagreement);
+    retry.pending = Some(disagreement);
+    confirmed
 }
 
 fn reconcile(current: Nodes, retry: &mut Retry, reset: impl FnOnce() -> bool) -> Option<Duration> {
@@ -68,6 +85,7 @@ fn reconcile(current: Nodes, retry: &mut Retry, reset: impl FnOnce() -> bool) ->
     let success = reset();
     let delay = retry.completed(success);
     if success {
+        retry.pending = None;
         KNOWN.with_borrow_mut(|known| *known = current);
     }
     Some(delay)
@@ -131,6 +149,49 @@ pub fn register(
 mod tests {
     use super::*;
     #[test]
+    fn scan_before_lifecycle_event_does_not_reset_input() {
+        let root = std::env::temp_dir().join(format!("viud-scan-first-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("event0");
+        std::fs::write(&path, []).unwrap();
+        let added = nodes_at(&root).unwrap();
+        KNOWN.with_borrow_mut(|known| known.clear());
+        let mut retry = Retry::default();
+        // DeviceAdded is queued when the first scan sees the new node.
+        assert_eq!(reconcile(added.clone(), &mut retry, || panic!("suspend/resume")), None);
+        observed_path(path.clone(), true);
+        assert_eq!(reconcile(added, &mut retry, || panic!("suspend/resume")), None);
+        // Likewise for a queued DeviceRemoved.
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(reconcile(Nodes::new(), &mut retry, || panic!("suspend/resume")), None);
+        observed_path(path, false);
+        assert_eq!(reconcile(Nodes::new(), &mut retry, || panic!("suspend/resume")), None);
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn missed_lifecycle_event_resets_once_on_next_scan() {
+        let current = Nodes::from([(PathBuf::from("/dev/input/event0"), (1, 2, 3, 4))]);
+        KNOWN.with_borrow_mut(|known| known.clear());
+        let mut retry = Retry::default();
+        assert_eq!(reconcile(current.clone(), &mut retry, || panic!("first scan")), None);
+        let mut resets = 0;
+        assert_eq!(reconcile(current.clone(), &mut retry, || { resets += 1; true }), Some(Duration::from_millis(250)));
+        assert_eq!(reconcile(current, &mut retry, || panic!("already reconciled")), None);
+        assert_eq!(resets, 1);
+        KNOWN.with_borrow_mut(|known| known.clear());
+    }
+
+    #[test]
+    fn changed_disagreement_restarts_grace_period() {
+        let first = Nodes::from([(PathBuf::from("/dev/input/event0"), (1, 2, 3, 4))]);
+        let replacement = Nodes::from([(PathBuf::from("/dev/input/event0"), (1, 5, 6, 7))]);
+        let mut retry = Retry::default();
+        assert!(!needs_reconcile(&first, &Nodes::new(), &mut retry));
+        assert!(!needs_reconcile(&replacement, &Nodes::new(), &mut retry));
+        assert!(needs_reconcile(&replacement, &Nodes::new(), &mut retry));
+    }
+    #[test]
     fn handled_hotplug_is_noop_and_missed_hotplug_reconciles_once() {
         let root = std::env::temp_dir().join(format!("viud-handled-{}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
@@ -173,6 +234,17 @@ mod tests {
         }
         assert_eq!(retry.completed(true), Duration::from_millis(250));
         assert_eq!(retry.failures, 0);
+    }
+    #[test]
+    fn successful_resume_rearms_fast_scan_even_after_maximum_backoff() {
+        let mut retry = Retry::default();
+        for _ in 0..32 {
+            retry.completed(false);
+        }
+        KNOWN.with_borrow_mut(|known| known.clear());
+        assert_eq!(reconcile(Nodes::new(), &mut retry, || true), Some(Duration::from_millis(250)));
+        assert_eq!(retry.failures, 0);
+        assert!(retry.pending.is_none());
     }
     #[test]
     fn node_snapshot_detects_add_remove_and_same_path_replacement() {
