@@ -197,6 +197,12 @@ impl Harness {
         index
     }
 
+    /// Stand in for the XWayland bridge's client identity in selection tests.
+    /// Run in a separate test binary: the production visibility filter is global.
+    pub fn mark_client_xwayland(&self, index: usize) {
+        protocols::xwm::base::set_filter_client(self.extra_server_clients[index].id());
+    }
+
     /// Pump until the observed state holds, or the wall-clock deadline expires.
     /// Returns false on timeout so callers can report the state they expected.
     /// The predicate may poll an external receiver; it is checked after each pump.
@@ -615,6 +621,67 @@ impl Harness {
             Some(server),
             SERIAL_COUNTER.next_serial(),
         );
+        self.roundtrip();
+    }
+
+    pub fn focus_agent_keyboard_client(&mut self, index: usize, surface: &WlSurface) {
+        let server: ServerSurface = self.extra_server_clients[index]
+            .object_from_protocol_id(&self.display.handle(), protocol_id(surface))
+            .expect("the server knows this client's surface");
+        let keyboard = self
+            .wire
+            .state
+            .seat
+            .agent
+            .as_ref()
+            .unwrap()
+            .get_keyboard()
+            .unwrap();
+        keyboard.set_focus(
+            &mut self.wire.state,
+            Some(server),
+            smithay::utils::SERIAL_COUNTER.next_serial(),
+        );
+        self.roundtrip_client(index);
+    }
+
+    /// Agent-seat press through the real pointer handler, with its own keyboard focus.
+    pub fn agent_press(&mut self, surface: &WlSurface, button: u32) {
+        use smithay::input::pointer::{ButtonEvent, MotionEvent};
+        use smithay::utils::{Point, SERIAL_COUNTER};
+        self.focus_agent_keyboard(surface);
+        let server: ServerSurface = self
+            .server_client
+            .object_from_protocol_id(&self.display.handle(), protocol_id(surface))
+            .unwrap();
+        let pointer = self
+            .wire
+            .state
+            .seat
+            .agent
+            .as_ref()
+            .unwrap()
+            .get_pointer()
+            .unwrap();
+        pointer.motion(
+            &mut self.wire.state,
+            Some((server, Point::from((0.0, 0.0)))),
+            &MotionEvent {
+                location: Point::from((1.0, 1.0)),
+                serial: SERIAL_COUNTER.next_serial(),
+                time: 0,
+            },
+        );
+        pointer.button(
+            &mut self.wire.state,
+            &ButtonEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time: 0,
+                button,
+                state: smithay::backend::input::ButtonState::Pressed,
+            },
+        );
+        pointer.frame(&mut self.wire.state);
         self.roundtrip();
     }
 

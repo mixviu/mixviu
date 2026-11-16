@@ -96,3 +96,8 @@ check($controls.about_text($about,"fallback")=="Terminal\nviu 0.1.2 (example-sha
 $about.settings_connected=false
 check(ends_with($controls.about_text($about,"fallback"),"settingsd not connected"),"About follows settings source loss")
 print("term actions: catalogue, menus, targets, directional focus, theme and zoom checked")
+
+$wire=require("wire.mix")
+$params=$wire.action_targets({id:"edit.paste",args:{primary:true}}, {})
+$paste=$a.invoke($s,"edit.paste",$params,$n)
+check($paste.effects[0].primary==true,"execute envelope reaches primary selection read effect")

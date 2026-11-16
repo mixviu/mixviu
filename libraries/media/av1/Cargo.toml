@@ -1,0 +1,16 @@
+[package]
+name = "media-av1"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+asm = ["rav1e/asm"]
+
+[dependencies]
+media-frame = { path = "../frame" }
+rav1e = { version = "=0.8.1", default-features = false, features = ["threading"] }
+
+[lints]
+workspace = true

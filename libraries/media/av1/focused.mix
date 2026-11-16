@@ -1,0 +1,18 @@
+$root = trim(run_argv_must(["mktemp", "-d", "/tmp/media-av1-focused-XXXXXX"]))
+fn checked($cmd)
+  $r = run_argv($cmd, {timeout: 7200, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then raise("CHECK", "command failed: " .. join($cmd, " ")) end
+end
+try
+  checked(["cargo", "test", "--locked", "-p", "media-av1"])
+  checked(["cargo", "test", "--locked", "-p", "media-av1", "--features", "asm"])
+  checked(["cargo", "test", "--locked", "-p", "media-av1", "--no-default-features"])
+  checked(["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets", "--", "-D", "warnings"])
+  checked(["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets", "--features", "asm", "--", "-D", "warnings"])
+  checked(["cargo", "fmt", "-p", "media-av1", "--", "--check"])
+finally
+  $gone = run_argv(["rm", "-rf", "--", $root])
+  if not $gone.ok then raise("CLEANUP", "could not remove " .. $root .. ": " .. $gone.stderr) end
+end
