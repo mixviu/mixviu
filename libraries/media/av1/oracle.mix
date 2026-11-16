@@ -1,30 +1,31 @@
--- Opt-in focused worker correctness/first-numbers job; not the av1enc suite.
+-- PSNR is recorded only: single-run FIRST_NUMBERS does not establish quality floors.\n$root = trim(run_argv_must(["mktemp", "-d", "/tmp/media-av1-oracle-XXXXXX"]))\n-- Opt-in focused worker correctness/first-numbers job; not the av1enc suite.
 fn checked($cmd)
   $r = run_argv($cmd, {timeout: 7200, max_output: 16777216})
   print($r.stdout)
   print($r.stderr)
-  if not $r.ok then exit(1) end
+  if not $r.ok then raise("CHECK", "command failed: " .. join($cmd, " ")) end
   return $r
 end
-checked(["ffmpeg", "-version"])
+try\n$version = checked(["ffmpeg", "-version"])
 for $variant in ["asm", "rust"]
-  $cmd = ["cargo", "build", "-j", "2", "--profile", "release-fast", "-p", "media-av1", "--example", "first_numbers"]
+  $cmd = ["cargo", "build", "--locked", "-j", "2", "--profile", "release-fast", "-p", "media-av1", "--example", "first_numbers"]
   if $variant == "rust" then push($cmd, "--no-default-features") end
-  checked($cmd)
+  if $variant == "asm" then push($cmd, "--features"); push($cmd, "asm") end\n  $built = checked($cmd)
   for $dimensions in [[1920, 1080], [3840, 2160]]
     for $speed in [6, 8, 10]
       for $scene in ["static", "scroll", "drag"]
         $w = to_string($dimensions[0])
         $h = to_string($dimensions[1])
-        $dir = "/tmp/media-av1-" .. $variant .. "-" .. $w .. "-" .. to_string($speed) .. "-" .. $scene
-        checked(["target/release-fast/examples/first_numbers", $dir, $w, $h, to_string($speed), $scene])
+        $dir = $root .. "/" .. $variant .. "-" .. $w .. "x" .. $h .. "-" .. to_string($speed) .. "-" .. $scene
+        $encoded = checked(["target/release-fast/examples/first_numbers", $dir, $w, $h, to_string($speed), $scene])
         $probe = checked(["ffprobe", "-v", "error", "-count_frames", "-show_entries", "stream=nb_read_frames,width,height", "-of", "json", $dir .. "/encoded.ivf"])
         $stream = json_parse($probe.stdout).streams[0]
         if to_number($stream.nb_read_frames) != 8 or $stream.width != $dimensions[0] or $stream.height != $dimensions[1] then
           raise("DECODE", "wrong decoded count or dimensions")
         end
-        checked(["ffmpeg", "-xerror", "-v", "info", "-c:v", "libdav1d", "-i", $dir .. "/encoded.ivf", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", $w .. "x" .. $h, "-framerate", "30", "-i", $dir .. "/source.yuv", "-lavfi", "psnr", "-f", "null", "-"])
+        $psnr = checked(["ffmpeg", "-xerror", "-v", "info", "-c:v", "libdav1d", "-i", $dir .. "/encoded.ivf", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", $w .. "x" .. $h, "-framerate", "30", "-i", $dir .. "/source.yuv", "-lavfi", "psnr", "-f", "null", "-"])
       end
     end
   end
 end
+\nfinally\n  $gone = run_argv(["rm", "-rf", "--", $root])\n  if not $gone.ok then raise("CLEANUP", "could not remove " .. $root .. ": " .. $gone.stderr) end\nend\n

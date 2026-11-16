@@ -50,11 +50,16 @@ pub struct Encoder {
     ctx: Context<u8>,
     settings: Settings,
     flushed: bool,
+    failed: Option<String>,
+    submitted: u64,
     tiles: (usize, usize),
 }
 impl Encoder {
     pub fn new(settings: Settings) -> Result<Self, Error> {
         let s = settings;
+        if !(16..=65535).contains(&s.width) || !(16..=65535).contains(&s.height) {
+            return Err(Error("dimensions must be 16..=65535".into()));
+        }
         if s.speed > 10
             || s.fps_num == 0
             || s.fps_den == 0
@@ -105,6 +110,8 @@ impl Encoder {
             ctx,
             settings,
             flushed: false,
+            failed: None,
+            submitted: 0,
             tiles,
         })
     }
@@ -136,28 +143,54 @@ impl Encoder {
     }
     /// Returns all currently available packets; callers should mux them promptly.
     pub fn submit(&mut self, frame: &Prepared) -> Result<Vec<Packet>, Error> {
+        if let Some(error) = &self.failed {
+            return Err(Error(error.clone()));
+        }
         if self.flushed
             || (frame.width, frame.height) != (self.settings.width, self.settings.height)
         {
             return Err(Error("closed encoder or frame size mismatch".into()));
         }
-        self.ctx
+        let result = self.ctx
             .send_frame(frame.frame.clone())
-            .map_err(|e| Error(e.to_string()))?;
-        self.drain()
+            .map_err(|e| Error(e.to_string()));
+        self.remember_failure(result)?;
+        self.submitted += 1;
+        let result = self.drain(false);
+        self.remember_failure(result)
     }
-    /// Idempotent end-of-input. No further submissions are accepted.
+    /// Idempotent end-of-input, including an empty input. No further submissions
+    /// are accepted. Flush/drain errors are permanent and repeated on later calls.
+    /// A fatal drain error discards packets collected during that call: the
+    /// context cannot complete the stream, so callers must discard that stream.
     pub fn finish(&mut self) -> Result<Vec<Packet>, Error> {
+        self.finish_using(|encoder| {
+            encoder.ctx.send_frame(None).map_err(|e| Error(e.to_string()))?;
+            encoder.drain(true)
+        })
+    }
+    fn finish_using(
+        &mut self,
+        flush: impl FnOnce(&mut Self) -> Result<Vec<Packet>, Error>,
+    ) -> Result<Vec<Packet>, Error> {
+        if let Some(error) = &self.failed {
+            return Err(Error(error.clone()));
+        }
         if self.flushed {
             return Ok(Vec::new());
         }
+        let result = if self.submitted == 0 { Ok(Vec::new()) } else { flush(self) };
+        let packets = self.remember_failure(result)?;
         self.flushed = true;
-        self.ctx
-            .send_frame(None)
-            .map_err(|e| Error(e.to_string()))?;
-        self.drain()
+        Ok(packets)
     }
-    fn drain(&mut self) -> Result<Vec<Packet>, Error> {
+    fn remember_failure<T>(&mut self, result: Result<T, Error>) -> Result<T, Error> {
+        if let Err(error) = &result {
+            self.failed = Some(error.0.clone());
+        }
+        result
+    }
+    fn drain(&mut self, finishing: bool) -> Result<Vec<Packet>, Error> {
         let mut packets = Vec::new();
         loop {
             match self.ctx.receive_packet() {
@@ -168,8 +201,8 @@ impl Encoder {
                     key_frame: p.frame_type == FrameType::KEY,
                 }),
                 Err(EncoderStatus::Encoded) => continue,
-                Err(EncoderStatus::NeedMoreData) if !self.flushed => break,
-                Err(EncoderStatus::LimitReached) if self.flushed => break,
+                Err(EncoderStatus::NeedMoreData) if !finishing => break,
+                Err(EncoderStatus::LimitReached) if finishing => break,
                 Err(e) => return Err(Error(e.to_string())),
             }
         }
@@ -220,6 +253,61 @@ mod tests {
         );
         assert!(enc.finish().unwrap().is_empty());
         assert!(enc.submit(&prepared).is_err());
+    }
+    #[test]
+    fn empty_finish() {
+        let mut enc = Encoder::new(settings()).unwrap();
+        assert!(enc.finish().unwrap().is_empty());
+        assert!(enc.finish().unwrap().is_empty());
+        assert!(enc.flushed);
+    }
+    #[test]
+    fn finish_failures_stay_errors() {
+        for stage in ["send_frame(None)", "drain after packet"] {
+            let mut enc = Encoder::new(settings()).unwrap();
+            enc.submitted = 1;
+            let result = enc.finish_using(|_| Err(Error(stage.into())));
+            assert_eq!(result.unwrap_err().0, stage);
+            assert!(!enc.flushed);
+            assert_eq!(enc.finish().unwrap_err().0, stage);
+            let prepared = enc.prepare(&media_frame::Bgra::solid(32, 32, [0, 0, 0, 255]).unwrap().to_yuv420()).unwrap();
+            assert_eq!(enc.submit(&prepared).unwrap_err().0, stage);
+        }
+    }
+    #[test]
+    fn odd_dimensions_and_size_mismatches() {
+        let mut s = settings();
+        s.width = 33;
+        s.height = 17;
+        let mut enc = Encoder::new(s).unwrap();
+        let source = media_frame::Bgra::solid(33, 17, [20, 40, 60, 255]).unwrap().to_yuv420();
+        let prepared = enc.prepare(&source).unwrap();
+        let mut packets = enc.submit(&prepared).unwrap();
+        packets.extend(enc.submit(&prepared).unwrap());
+        packets.extend(enc.finish().unwrap());
+        assert_eq!(packets.iter().map(|p| p.pts).collect::<Vec<_>>(), [0, 1]);
+        let mut other = Encoder::new(settings()).unwrap();
+        assert!(other.prepare(&source).is_err());
+        assert!(other.submit(&prepared).is_err());
+    }
+    #[test]
+    fn dimensions_rejected_before_tiling() {
+        for dimension in [0, 1, 65536] {
+            for width in [true, false] {
+                let mut s = settings();
+                if width { s.width = dimension; } else { s.height = dimension; }
+                assert!(Encoder::new(s).is_err());
+            }
+        }
+    }
+    #[test]
+    fn actual_4k_tiles() {
+        let mut s = settings();
+        s.width = 3840;
+        s.height = 2160;
+        s.tile_cols = 2;
+        s.tile_rows = 2;
+        assert_eq!(Encoder::new(s).unwrap().tiles(), (2, 2));
     }
     #[test]
     fn invalid_settings() {

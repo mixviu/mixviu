@@ -1,5 +1,5 @@
 -- Worker inspection of the actual locked normal/build closure.
-$tree = run_argv_must(["cargo", "tree", "--locked", "-p", "media-av1", "-e", "normal,build", "--prefix", "none", "-f", "{p}"])
+$tree = run_argv_must(["cargo", "tree", "--locked", "-p", "media-av1", "--features", "asm", "-e", "normal,build", "--prefix", "none", "-f", "{p}"])
 $names = {}
 for $line in split($tree, "\n")
   $names[split(trim($line), " ")[0]] = true
