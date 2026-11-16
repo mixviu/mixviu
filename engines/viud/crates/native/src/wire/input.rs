@@ -357,15 +357,17 @@ pub(super) fn release_held(state: &mut world::state::Loop) {
     seat::pointer::input::tablet::revoke::flush(state, 0);
     if let Some(pointer) = state.state.seat.seat.get_pointer() {
         for button in pointer.current_pressed() {
-            pointer.button(&mut state.state, &smithay::input::pointer::ButtonEvent {
-                serial: smithay::utils::SERIAL_COUNTER.next_serial(),
-                time: world::seat::event_time_ms(),
-                button,
-                state: smithay::backend::input::ButtonState::Released,
-            });
+            pointer.button(
+                &mut state.state,
+                &smithay::input::pointer::ButtonEvent {
+                    serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                    time: world::seat::event_time_ms(),
+                    button,
+                    state: smithay::backend::input::ButtonState::Released,
+                },
+            );
         }
         pointer.frame(&mut state.state);
     }
     seat::modifier::clear::clear_held_modifiers(state);
 }
-

@@ -135,7 +135,11 @@ impl ActiveVt for Monitor {
             poll_monitor(&mut fd, |fd| {
                 // SAFETY: a valid owned fd; the deadline covers lost sysfs edges.
                 let rc = unsafe { libc::poll(fd, 1, 200) };
-                if rc < 0 { Err(std::io::Error::last_os_error()) } else { Ok(()) }
+                if rc < 0 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
             })?;
             // Clear the sysfs notification before the next wait.
             let mut text = String::new();
@@ -160,7 +164,9 @@ fn poll_monitor(
             result => result?,
         }
         if fd.revents & (libc::POLLERR | libc::POLLNVAL | libc::POLLHUP) != 0 {
-            return Err(std::io::Error::other("VT monitor poll error; re-arm watcher"));
+            return Err(std::io::Error::other(
+                "VT monitor poll error; re-arm watcher",
+            ));
         }
         return Ok(());
     }
@@ -259,23 +265,34 @@ mod tests {
     #[test]
     fn monitor_retries_eintr_and_rejects_poll_error_bits() {
         for bit in [libc::POLLERR, libc::POLLNVAL, libc::POLLHUP] {
-            let mut fd = libc::pollfd { fd: -1, events: libc::POLLPRI, revents: 0 };
+            let mut fd = libc::pollfd {
+                fd: -1,
+                events: libc::POLLPRI,
+                revents: 0,
+            };
             let mut calls = 0;
-            assert!(poll_monitor(&mut fd, |fd| {
-                calls += 1;
-                if calls == 1 {
-                    return Err(std::io::Error::from_raw_os_error(libc::EINTR));
-                }
-                fd.revents = bit;
-                Ok(())
-            }).is_err());
+            assert!(
+                poll_monitor(&mut fd, |fd| {
+                    calls += 1;
+                    if calls == 1 {
+                        return Err(std::io::Error::from_raw_os_error(libc::EINTR));
+                    }
+                    fd.revents = bit;
+                    Ok(())
+                })
+                .is_err()
+            );
             assert_eq!(calls, 2);
         }
     }
 
     #[test]
     fn repeated_active_reads_notify_only_on_changes() {
-        let mut source = Script { readings: vec![Some(4), Some(4), Some(1), Some(4), Some(4), None], at: 0, waits: 0 };
+        let mut source = Script {
+            readings: vec![Some(4), Some(4), Some(1), Some(4), Some(4), None],
+            at: 0,
+            waits: 0,
+        };
         let mut notices = 0;
         assert!(watch_changes(4, &mut source, || notices += 1).is_err());
         assert_eq!(notices, 2);

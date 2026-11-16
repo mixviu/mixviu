@@ -20,7 +20,10 @@ pub(super) fn observed(sysname: &str, added: bool) {
     KNOWN.with_borrow_mut(|known| {
         if added {
             if let Ok(meta) = std::fs::metadata(&path) {
-                known.insert(path, (meta.rdev(), meta.ino(), meta.ctime(), meta.ctime_nsec()));
+                known.insert(
+                    path,
+                    (meta.rdev(), meta.ino(), meta.ctime(), meta.ctime_nsec()),
+                );
             }
         } else {
             known.remove(&path);
