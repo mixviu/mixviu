@@ -31,6 +31,7 @@ pub(crate) const FAILURE_TARGET: &str = "logging::failure";
 
 /// Own targets use Rust crate names (hyphens become underscores).
 const WORKSPACE_TARGETS: &[&str] = &[
+    "media_frame",
     "viu_gallery",
     "viu_dopus",
     "ui_surface",
