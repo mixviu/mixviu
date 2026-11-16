@@ -2497,3 +2497,11 @@ mix builtins system   list every system builtin with its one-line description
 mix what NAME         one-line description of a single builtin (e.g. mix what run_rc)
 mix help              the full categorized builtin reference
 ```
+
+### Desktop application stderr
+
+`spawn(argv, {detach:true, journal:"app.id"})` connects stderr directly to
+journald at warning priority with `SYSLOG_IDENTIFIER=app.id`. The identifier
+must be 1–255 bytes without control characters. A missing journal socket or
+failed header write refuses the spawn; output is never silently discarded.
+The journal route overrides the stderr option. Stdout keeps its chosen route.

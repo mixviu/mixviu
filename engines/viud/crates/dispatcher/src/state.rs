@@ -831,7 +831,7 @@ impl SeatHandler for Dispatch {
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let client = focused.and_then(|s| self.output.display_handle.get_client(s.id()).ok());
         // Selection authority follows THIS seat only, before pointer delivery.
- immediately in the client. Publish
+        // A first middle press reads PRIMARY immediately. Publish
         // its offer before returning to pointer delivery, not in the later drain.
         // These helpers only update selection SeatData and enqueue protocol
         // events: they do not re-enter the keyboard/pointer locks held here.

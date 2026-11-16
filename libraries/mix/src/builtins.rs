@@ -5236,12 +5236,16 @@ fn spawn_detached(mut command: std::process::Command) -> MixResult<Option<Value>
 
 /// Open a stdout route's file (if it is a file route) once, so a stderr:stdout
 /// merge can clone the same handle. `None` for null/inherit.
-fn spawn_journal(identifier: &str) -> std::io::Result<std::process::Stdio> {
+fn spawn_journal(identifier: &str) -> std::io::Result<std::os::fd::OwnedFd> {
+    spawn_journal_at(identifier, "/run/systemd/journal/stdout")
+}
+
+fn spawn_journal_at(identifier: &str, path: &str) -> std::io::Result<std::os::fd::OwnedFd> {
     use std::io::Write;
     use std::os::unix::net::UnixStream;
-    let mut stream = UnixStream::connect("/run/systemd/journal/stdout")?;
+    let mut stream = UnixStream::connect(path)?;
     stream.write_all(format!("{identifier}\n\n4\n0\n0\n0\n0\n").as_bytes())?;
-    Ok(std::process::Stdio::from(std::os::fd::OwnedFd::from(stream)))
+    Ok(std::os::fd::OwnedFd::from(stream))
 }
 
 fn spawn_open_output(out: &RunArgvOutput) -> MixResult<Option<std::fs::File>> {
@@ -42289,5 +42293,26 @@ mod strict_write_and_bool_option_tests {
             assert!(format!("{err}").contains(key), "{err}");
         }
         let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+#[cfg(test)]
+mod spawn_journal_tests {
+    #[test]
+    fn stderr_stream_has_app_identifier_and_warning_priority() {
+        use std::io::{Read, Write};
+        use std::os::unix::net::UnixListener;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("journal");
+        let listener = UnixListener::bind(&path).unwrap();
+        let fd = super::spawn_journal_at("mixviu.term", path.to_str().unwrap()).unwrap();
+        let mut file = std::fs::File::from(fd);
+        file.write_all(b"selection: write refused\n").unwrap();
+        drop(file);
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut text = String::new();
+        stream.read_to_string(&mut text).unwrap();
+        assert_eq!(text, "mixviu.term\n\n4\n0\n0\n0\n0\nselection: write refused\n");
+        assert!(super::spawn_journal_at("term", dir.path().join("absent").to_str().unwrap()).is_err());
     }
 }

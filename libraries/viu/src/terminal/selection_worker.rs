@@ -154,7 +154,6 @@ fn run(
         clipboard: DataDeviceManagerState::bind(&globals, &qh).ok(),
         primary: PrimarySelectionManagerState::bind(&globals, &qh).ok(),
         seats: HashMap::new(),
-        latest: None,
         qh,
         handle: event_loop.handle(),
         clipboard_text: Rc::from([]),
@@ -411,8 +410,6 @@ struct Selection {
     clipboard: Option<DataDeviceManagerState>,
     primary: Option<PrimarySelectionManagerState>,
     seats: HashMap<ObjectId, SeatData>,
-    /// The seat that saw input last.
-    latest: Option<ObjectId>,
     qh: QueueHandle<Self>,
     handle: LoopHandle<'static, Self>,
     clipboard_text: Rc<[u8]>,
@@ -651,7 +648,6 @@ impl PointerHandler for Selection {
             {
                 data.serial = serial;
                 data.last_input = next_input;
-                self.latest = Some(seat.clone());
             }
         }
     }
@@ -675,13 +671,11 @@ impl Dispatch<WlKeyboard, ObjectId> for Selection {
             | wl_keyboard::Event::Modifiers { serial, .. } => {
                 data.serial = serial;
                 data.last_input = next_input;
-                state.latest = Some(seat.clone());
             }
             wl_keyboard::Event::Enter { serial, .. } => {
                 data.serial = serial;
                 data.focused = true;
                 data.last_input = next_input;
-                state.latest = Some(seat.clone());
             }
             wl_keyboard::Event::Leave { .. } => {
                 data.serial = 0;
