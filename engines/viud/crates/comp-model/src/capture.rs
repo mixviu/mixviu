@@ -407,13 +407,17 @@ mod tests {
     #[test]
     fn recording_validation_and_read_only_classification() {
         let args = json!({"request_id":"take","target":{"windows":[{"id":1,"generation":2},{"id":3,"generation":4}]},"path":"/tmp/take.vfl","max_seconds":60});
-        let RecordCommand::Start { targets, fps, .. } =
+        let RecordCommand::Start { targets, fps, max_bytes, .. } =
             parse_record("comp.record.start", &args).unwrap()
         else {
             panic!()
         };
         assert_eq!(targets.len(), 2);
         assert_eq!(fps, 30);
+        assert_eq!(max_bytes, None);
+        let mut bounded = args.clone();
+        bounded["max_bytes"] = json!(1048576);
+        assert!(matches!(parse_record("comp.record.start", &bounded).unwrap(), RecordCommand::Start { max_bytes: Some(1048576), .. }));
         assert!(targets[0].cursor);
         for (key, value) in [
             ("path", json!("relative.vfl")),

@@ -356,22 +356,6 @@ impl Writer {
     }
 }
 
-#[cfg(test)]
-mod disk_tests {
-    use super::*;
-    #[test]
-    fn free_space_floor_refuses_start_and_crossing_write() {
-        assert!(
-            check_available(FREE_SPACE_FLOOR - 1, 0)
-                .unwrap_err()
-                .to_string()
-                .contains("free-space floor")
-        );
-        assert!(check_available(FREE_SPACE_FLOOR + 16, 17).is_err());
-        assert!(check_available(FREE_SPACE_FLOOR + 17, 17).is_ok());
-    }
-}
-
 impl Writer {
     pub fn new(path: PathBuf, width: u32, height: u32, fps: u32) -> io::Result<Self> {
         Self::new_bounded(path, width, height, fps, None)
@@ -478,5 +462,21 @@ impl Writer {
             bytes += entry?.metadata()?.len();
         }
         Ok(bytes)
+    }
+}
+
+#[cfg(test)]
+mod disk_tests {
+    use super::*;
+    #[test]
+    fn free_space_floor_refuses_start_and_crossing_write() {
+        assert!(
+            check_available(FREE_SPACE_FLOOR - 1, 0)
+                .unwrap_err()
+                .to_string()
+                .contains("free-space floor")
+        );
+        assert!(check_available(FREE_SPACE_FLOOR + 16, 17).is_err());
+        assert!(check_available(FREE_SPACE_FLOOR + 17, 17).is_ok());
     }
 }

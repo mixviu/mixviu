@@ -15,8 +15,15 @@ if (args()[0] ?? "check") == "fmt" then
     print(run_argv(["git","checkout","-q","--","."]).stderr)
   end
 else
+  try
   checked(concat(["cargo","test","--locked"], $crates))
   checked(concat(concat(["cargo","clippy","--locked"], $crates), ["--all-targets"]))
   checked(["cargo","build","--locked","-p","mix"])
   checked(["target/debug/mix","tools/ci.mix","mix-lint-baseline"])
+  finally
+    print("VFL_WORKER_DIFF_BEGIN")
+    print(run_argv_must(["git","diff"]))
+    print("VFL_WORKER_DIFF_END")
+    print(run_argv(["git","checkout","-q","--","."]).stderr)
+  end
 end

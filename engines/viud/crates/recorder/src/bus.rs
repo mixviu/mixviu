@@ -627,6 +627,32 @@ mod file_tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    fn byte_limit_failure_reports_retained_part_without_publication() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("limited.vfl").to_str().unwrap().to_owned();
+        let mut r = Recording::new_bounded("limited".into(), path.clone(), 2, 2, 30, "vfl".into(), Some(1024)).unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+        r.marker("oversized".into(), json!("x".repeat(2048))).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while r.encoder.as_ref().unwrap().error().is_none() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        r.stop(false);
+        while !r.poll() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(r.error.as_ref().unwrap().contains("max_bytes"));
+        assert!(!std::path::Path::new(&path).exists());
+        let recovery = r.terminal.as_ref().unwrap()["recovery_path"].as_str().unwrap();
+        assert!(recovery.ends_with(".part"));
+        assert!(std::path::Path::new(recovery).is_dir());
+        assert!(!std::path::Path::new(recovery).join("complete.json").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn invalid_clock_reports_error_without_panic() {
         assert!(read_clock(-1).is_err());
         assert!(monotonic_us().unwrap() > 0);
