@@ -6,7 +6,7 @@ fn checked($cmd, $dir)
   print($r.stdout)
   print($r.stderr)
   if not $r.ok then
-    run_argv(["rm", "-rf", "--", $dir])
+    $gone = run_argv(["rm", "-rf", "--", $dir])
     exit(1)
   end
 end
@@ -21,4 +21,8 @@ checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", $dir,
 checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", "128x64", "-i", $dir .. "/source.yuv", "-vf", $scale_back, "-frames:v", "1", "-f", "rawvideo", $dir .. "/roundtrip.bgra"], $dir)
 checked(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", "128x64", "-i", $dir .. "/oracle.yuv", "-vf", $scale_back, "-frames:v", "1", "-f", "rawvideo", $dir .. "/oracle-roundtrip.bgra"], $dir)
 checked(["cargo", "run", "-p", "media-frame", "--example", "oracle", "--", $dir, "compare", "reverse"], $dir)
-run_argv(["rm", "-rf", "--", $dir])
+$gone = run_argv(["rm", "-rf", "--", $dir])
+if not $gone.ok then
+  print("could not remove " .. $dir .. ": " .. $gone.stderr)
+  exit(1)
+end

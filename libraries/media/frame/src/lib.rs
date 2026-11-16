@@ -222,6 +222,13 @@ mod tests {
         assert_eq!(f.y, [16, 16, 63]);
         assert_eq!(f.u, [128, 102]);
         assert_eq!(f.v, [128, 240]);
+        // The same column stood on end pins the last row for odd heights.
+        let g = Bgra::new(1, 3, vec![0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 255, 255])
+            .unwrap()
+            .to_yuv420();
+        assert_eq!(g.y, [16, 16, 63]);
+        assert_eq!(g.u, [128, 102]);
+        assert_eq!(g.v, [128, 240]);
     }
     #[test]
     fn box_filter() {
