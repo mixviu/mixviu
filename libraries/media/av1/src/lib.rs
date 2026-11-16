@@ -287,9 +287,15 @@ mod tests {
                     return Err(Error(stage.into()));
                 }
                 let mut events = [
-                    Ok(Packet { data: vec![1], pts: 0, duration: 1, key_frame: true }),
+                    Ok(Packet {
+                        data: vec![1],
+                        pts: 0,
+                        duration: 1,
+                        key_frame: true,
+                    }),
                     Err(EncoderStatus::Failure),
-                ].into_iter();
+                ]
+                .into_iter();
                 Encoder::drain_using(true, || events.next().unwrap())
             });
             let error = result.unwrap_err().0;

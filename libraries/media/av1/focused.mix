@@ -6,15 +6,12 @@ fn checked($cmd)
   if not $r.ok then raise("CHECK", "command failed: " .. join($cmd, " ")) end
 end
 try
-checked(["cargo", "test", "--locked", "-p", "media-av1"])
-checked(["cargo", "test", "--locked", "-p", "media-av1", "--features", "asm"])
-checked(["cargo", "test", "-p", "media-av1", "--no-default-features"])
-checked(["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets", "--", "-D", "warnings"])
-checked(["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets", "--features", "asm", "--", "-D", "warnings"])
-checked(["cargo", "fmt", "-p", "media-av1", "--", "--check"])
-
-
-
+  checked(["cargo", "test", "--locked", "-p", "media-av1"])
+  checked(["cargo", "test", "--locked", "-p", "media-av1", "--features", "asm"])
+  checked(["cargo", "test", "--locked", "-p", "media-av1", "--no-default-features"])
+  checked(["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets", "--", "-D", "warnings"])
+  checked(["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets", "--features", "asm", "--", "-D", "warnings"])
+  checked(["cargo", "fmt", "-p", "media-av1", "--", "--check"])
 finally
   $gone = run_argv(["rm", "-rf", "--", $root])
   if not $gone.ok then raise("CLEANUP", "could not remove " .. $root .. ": " .. $gone.stderr) end

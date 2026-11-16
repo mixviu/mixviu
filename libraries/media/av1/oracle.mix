@@ -9,30 +9,29 @@ fn checked($cmd)
   return $r
 end
 try
-$version = checked(["ffmpeg", "-version"])
-for $variant in ["asm", "rust"]
-  $cmd = ["cargo", "build", "--locked", "-j", "2", "--profile", "release-fast", "-p", "media-av1", "--example", "first_numbers"]
-  if $variant == "rust" then push($cmd, "--no-default-features") end
-  if $variant == "asm" then push($cmd, "--features"); push($cmd, "asm") end
-  $built = checked($cmd)
-  for $dimensions in [[1920, 1080], [3840, 2160]]
-    for $speed in [6, 8, 10]
-      for $scene in ["static", "scroll", "drag"]
-        $w = to_string($dimensions[0])
-        $h = to_string($dimensions[1])
-        $dir = $root .. "/" .. $variant .. "-" .. $w .. "x" .. $h .. "-" .. to_string($speed) .. "-" .. $scene
-        $encoded = checked(["target/release-fast/examples/first_numbers", $dir, $w, $h, to_string($speed), $scene])
-        $probe = checked(["ffprobe", "-v", "error", "-count_frames", "-show_entries", "stream=nb_read_frames,width,height", "-of", "json", $dir .. "/encoded.ivf"])
-        $stream = json_parse($probe.stdout).streams[0]
-        if to_number($stream.nb_read_frames) != 8 or $stream.width != $dimensions[0] or $stream.height != $dimensions[1] then
-          raise("DECODE", "wrong decoded count or dimensions")
+  $version = checked(["ffmpeg", "-version"])
+  for $variant in ["asm", "rust"]
+    $cmd = ["cargo", "build", "--locked", "-j", "2", "--profile", "release-fast", "-p", "media-av1", "--example", "first_numbers"]
+    if $variant == "rust" then push($cmd, "--no-default-features") end
+    if $variant == "asm" then push($cmd, "--features"); push($cmd, "asm") end
+    $built = checked($cmd)
+    for $dimensions in [[1920, 1080], [3840, 2160]]
+      for $speed in [6, 8, 10]
+        for $scene in ["static", "scroll", "drag"]
+          $w = to_string($dimensions[0])
+          $h = to_string($dimensions[1])
+          $dir = $root .. "/" .. $variant .. "-" .. $w .. "x" .. $h .. "-" .. to_string($speed) .. "-" .. $scene
+          $encoded = checked(["target/release-fast/examples/first_numbers", $dir, $w, $h, to_string($speed), $scene])
+          $probe = checked(["ffprobe", "-v", "error", "-count_frames", "-show_entries", "stream=nb_read_frames,width,height", "-of", "json", $dir .. "/encoded.ivf"])
+          $stream = json_parse($probe.stdout).streams[0]
+          if to_number($stream.nb_read_frames) != 8 or $stream.width != $dimensions[0] or $stream.height != $dimensions[1] then
+            raise("DECODE", "wrong decoded count or dimensions")
+          end
+          $psnr = checked(["ffmpeg", "-xerror", "-v", "info", "-c:v", "libdav1d", "-i", $dir .. "/encoded.ivf", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", $w .. "x" .. $h, "-framerate", "30", "-i", $dir .. "/source.yuv", "-lavfi", "psnr", "-f", "null", "-"])
         end
-        $psnr = checked(["ffmpeg", "-xerror", "-v", "info", "-c:v", "libdav1d", "-i", $dir .. "/encoded.ivf", "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", $w .. "x" .. $h, "-framerate", "30", "-i", $dir .. "/source.yuv", "-lavfi", "psnr", "-f", "null", "-"])
       end
     end
   end
-end
-
 finally
   $gone = run_argv(["rm", "-rf", "--", $root])
   if not $gone.ok then raise("CLEANUP", "could not remove " .. $root .. ": " .. $gone.stderr) end
