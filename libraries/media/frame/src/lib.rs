@@ -213,6 +213,17 @@ mod tests {
         }
     }
     #[test]
+    fn odd_edge_replicates_the_last_pixel() {
+        // black, black, red: the second chroma sample is red alone, not red
+        // averaged with a wrapped or zero neighbour.
+        let f = Bgra::new(3, 1, vec![0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 255, 255])
+            .unwrap()
+            .to_yuv420();
+        assert_eq!(f.y, [16, 16, 63]);
+        assert_eq!(f.u, [128, 102]);
+        assert_eq!(f.v, [128, 240]);
+    }
+    #[test]
     fn box_filter() {
         let f = Bgra::new(
             2,
