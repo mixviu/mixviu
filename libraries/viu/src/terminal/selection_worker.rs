@@ -227,18 +227,29 @@ impl Reads {
         self.current.is_some()
     }
 
+    // Share one budget across refusal and read diagnostics, including no-focus
+    // paths. Never log an upstream diagnostic or selection payload.
+    fn allow_error_log(&self) -> bool {
+        let now = std::time::Instant::now();
+        if self.last_error_log.get().is_some_and(|last| now.duration_since(last) < Duration::from_secs(5)) {
+            return false;
+        }
+        self.last_error_log.set(Some(now));
+        true
+    }
+
     pub fn answer(&self, id: u64, result: Result<String, ReadError>) {
         if let Err(error) = &result {
-            let now = std::time::Instant::now();
-            if self.last_error_log.get().is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5)) {
+            if self.allow_error_log() {
                 let reason = match error {
                     ReadError::Failed(_) => "Failed: clipboard read failed",
                     ReadError::TimedOut => "TimedOut: clipboard read timed out",
                     ReadError::Empty => "Empty: nothing to paste",
-                    _ => "Refused: clipboard read refused",
+                    ReadError::Busy => "Busy: clipboard read in progress",
+                    ReadError::TooLarge => "TooLarge: clipboard size limit exceeded",
+                    ReadError::NoFocus => "NoFocus: copy refused",
                 };
                 eprintln!("selection: answer id={id} error={reason}");
-                self.last_error_log.set(Some(now));
             }
         }
         let _ = self.answers.send(Answer { id, result });
@@ -447,6 +458,7 @@ impl Selection {
     }
 
     fn log_no_focus(&self, operation: &str, primary: bool) {
+        if !self.reads.allow_error_log() { return; }
         let seats: Vec<_> = self
             .seats
             .iter()
@@ -829,6 +841,20 @@ delegate_registry!(Selection);
 mod tests {
     use super::*;
     use std::os::fd::{FromRawFd, OwnedFd};
+
+    #[test]
+    fn error_storm_shares_one_diagnostic_budget_without_losing_answers() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let reads = Reads::new(tx, Arc::new(|| {}));
+        assert!(reads.allow_error_log());
+        for id in 0..100 {
+            assert!(!reads.allow_error_log());
+            reads.answer(id, Err(ReadError::Failed("private diagnostic".into())));
+        }
+        assert_eq!(rx.try_iter().count(), 100);
+        reads.last_error_log.set(Some(std::time::Instant::now() - Duration::from_secs(6)));
+        assert!(reads.allow_error_log());
+    }
 
     #[test]
     fn latest_unfocused_seat_does_not_hide_focused_seat() {
