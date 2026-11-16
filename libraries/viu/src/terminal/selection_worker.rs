@@ -243,18 +243,18 @@ impl Reads {
     }
 
     pub fn answer(&self, id: u64, result: Result<String, ReadError>) {
-        if let Err(error) = &result {
-            if self.allow_error_log() {
-                let reason = match error {
-                    ReadError::Failed(_) => "Failed: clipboard read failed",
-                    ReadError::TimedOut => "TimedOut: clipboard read timed out",
-                    ReadError::Empty => "Empty: nothing to paste",
-                    ReadError::Busy => "Busy: clipboard read in progress",
-                    ReadError::TooLarge => "TooLarge: clipboard size limit exceeded",
-                    ReadError::NoFocus => "NoFocus: copy refused",
-                };
-                eprintln!("selection: answer id={id} error={reason}");
-            }
+        if let Err(error) = &result
+            && self.allow_error_log()
+        {
+            let reason = match error {
+                ReadError::Failed(_) => "Failed: clipboard read failed",
+                ReadError::TimedOut => "TimedOut: clipboard read timed out",
+                ReadError::Empty => "Empty: nothing to paste",
+                ReadError::Busy => "Busy: clipboard read in progress",
+                ReadError::TooLarge => "TooLarge: clipboard size limit exceeded",
+                ReadError::NoFocus => "NoFocus: copy refused",
+            };
+            eprintln!("selection: answer id={id} error={reason}");
         }
         let _ = self.answers.send(Answer { id, result });
         (self.wake)();
