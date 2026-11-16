@@ -29,6 +29,10 @@ pub(super) fn fixture_watcher_failed(failed: bool) {
     WATCH_FAILED.store(failed, Ordering::Relaxed);
 }
 
+fn attached() {
+    WATCH_FAILED.store(false, Ordering::Relaxed);
+}
+
 enum Notice {
     Ready,
     Active,
@@ -149,7 +153,7 @@ fn attempt(shared: &Rc<RefCell<Activation>>, state: &mut Loop) {
     if let Some(timer) = activation.timer.take() {
         activation.handle.remove(timer);
     }
-    WATCH_FAILED.store(false, Ordering::Relaxed);
+    attached();
 }
 
 pub fn install(
@@ -180,8 +184,8 @@ pub fn install(
     handle.insert_source(source, move |event, _, state| {
         let Event::Msg(notice) = event else { return };
         if callback.borrow().handles.borrow().is_some() {
-            // Stopped returns here after attach, so watcher_failed may
-            // outrank active in the session reply only before attachment.
+            // Ignore queued notices after handover. Successful attachment
+            // explicitly clears any failure left by an earlier watcher.
             return;
         }
         match notice {
@@ -210,6 +214,12 @@ pub fn install(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn successful_attach_clears_a_previous_watcher_failure() {
+        fixture_watcher_failed(true);
+        attached();
+        assert!(!watcher_failed());
+    }
     #[test]
     fn seat_and_watcher_retries_are_bounded_and_do_not_require_another_edge() {
         let mut retry = Backoff::default();

@@ -132,11 +132,11 @@ impl ActiveVt for Monitor {
                 events: libc::POLLPRI,
                 revents: 0,
             };
-            // SAFETY: a valid owned fd; the deadline also covers lost sysfs edges.
-            let rc = unsafe { libc::poll(&mut fd, 1, 200) };
-            if rc < 0 && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
-                return Err(std::io::Error::last_os_error());
-            }
+            poll_monitor(&mut fd, |fd| {
+                // SAFETY: a valid owned fd; the deadline covers lost sysfs edges.
+                let rc = unsafe { libc::poll(fd, 1, 200) };
+                if rc < 0 { Err(std::io::Error::last_os_error()) } else { Ok(()) }
+            })?;
             // Clear the sysfs notification before the next wait.
             let mut text = String::new();
             let mut file = file;
@@ -146,6 +146,23 @@ impl ActiveVt for Monitor {
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
         Ok(())
+    }
+}
+
+fn poll_monitor(
+    fd: &mut libc::pollfd,
+    mut poll: impl FnMut(&mut libc::pollfd) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    loop {
+        fd.revents = 0;
+        match poll(fd) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        }
+        if fd.revents & (libc::POLLERR | libc::POLLNVAL | libc::POLLHUP) != 0 {
+            return Err(std::io::Error::other("VT monitor poll error; re-arm watcher"));
+        }
+        return Ok(());
     }
 }
 
@@ -169,13 +186,15 @@ fn watch_until_stopped(
     stop: &std::sync::atomic::AtomicBool,
     mut activated: impl FnMut(),
 ) -> std::io::Result<()> {
+    let mut previous = None;
     while !stop.load(std::sync::atomic::Ordering::Relaxed) {
         let active = source
             .read()
             .ok_or_else(|| std::io::Error::other("VT source unreadable"))?;
-        if active == own {
+        if active == own && previous != Some(active) {
             activated();
         }
+        previous = Some(active);
         source.wait()?;
     }
     Ok(())
@@ -236,6 +255,31 @@ pub fn wait_for_own_vt() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monitor_retries_eintr_and_rejects_poll_error_bits() {
+        for bit in [libc::POLLERR, libc::POLLNVAL, libc::POLLHUP] {
+            let mut fd = libc::pollfd { fd: -1, events: libc::POLLPRI, revents: 0 };
+            let mut calls = 0;
+            assert!(poll_monitor(&mut fd, |fd| {
+                calls += 1;
+                if calls == 1 {
+                    return Err(std::io::Error::from_raw_os_error(libc::EINTR));
+                }
+                fd.revents = bit;
+                Ok(())
+            }).is_err());
+            assert_eq!(calls, 2);
+        }
+    }
+
+    #[test]
+    fn repeated_active_reads_notify_only_on_changes() {
+        let mut source = Script { readings: vec![Some(4), Some(4), Some(1), Some(4), Some(4), None], at: 0, waits: 0 };
+        let mut notices = 0;
+        assert!(watch_changes(4, &mut source, || notices += 1).is_err());
+        assert_eq!(notices, 2);
+    }
 
     #[test]
     fn lost_notification_recheck_attaches_and_stops_after_handover() {

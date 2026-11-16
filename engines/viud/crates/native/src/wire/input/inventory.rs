@@ -69,10 +69,19 @@ thread_local! {
 }
 
 pub(super) fn observe(event: &InputEvent<LibinputInputBackend>) {
+    match event {
+        InputEvent::DeviceAdded { device } => super::hotplug::observed(device.sysname(), true),
+        InputEvent::DeviceRemoved { device } => super::hotplug::observed(device.sysname(), false),
+        _ => {}
+    }
     DEVICES.with_borrow_mut(|devices| devices.observe(event));
 }
 
 pub fn snapshot() -> (Vec<InputDeviceSnapshot>, u64) {
+    // Both libinput callbacks and the Bus session responder run serially on
+    // calloop's thread. Do not move this read to a responder worker: DEVICES
+    // is thread-local. After resume, lifecycle data may lag by one dispatch;
+    // this bounded window describes observed events, not a synchronous probe.
     DEVICES.with_borrow(Inventory::snapshot)
 }
 

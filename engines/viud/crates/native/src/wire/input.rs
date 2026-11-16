@@ -350,3 +350,22 @@ mod pad_blank_tests {
         assert!(!policy.consume_edge(Edge::Other));
     }
 }
+/// Input ownership is about to be lost. Send releases before closing devices,
+/// while grabs and focused clients can still consume them.
+pub(super) fn release_held(state: &mut world::state::Loop) {
+    seat::keyboard::input::keyboard::release_held_keys(state);
+    seat::pointer::input::tablet::revoke::flush(state, 0);
+    if let Some(pointer) = state.state.seat.seat.get_pointer() {
+        for button in pointer.current_pressed() {
+            pointer.button(&mut state.state, &smithay::input::pointer::ButtonEvent {
+                serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                time: world::seat::event_time_ms(),
+                button,
+                state: smithay::backend::input::ButtonState::Released,
+            });
+        }
+        pointer.frame(&mut state.state);
+    }
+    seat::modifier::clear::clear_held_modifiers(state);
+}
+

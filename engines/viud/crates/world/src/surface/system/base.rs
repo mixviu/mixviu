@@ -120,6 +120,8 @@ pub static UI_CONTEXT_MUT: TokenMut<Option<Arc<WgpuGlContext>>> = TokenMut::new(
 /// for worlds created after that.
 pub fn ensure_registry(storage: &mut Storage, kernel: &Storage) {
     // viud hosts external scenes and has no in-process widget factory.
+    // frames::scene::gpu calls this on every frame; a factory registered
+    // later is picked up on the next frame. Do not cache the absent case.
     if !ui_surface::factory::is_registered() {
         return;
     }

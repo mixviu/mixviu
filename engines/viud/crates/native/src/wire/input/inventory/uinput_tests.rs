@@ -77,15 +77,11 @@ fn write_event(file: &mut File, kind: u16, code: u16, value: i32) {
 }
 
 #[test]
+#[ignore = "requires writable /dev/uinput, readable generated evdev nodes and udev classification; run explicitly with --ignored"]
 fn virtual_keyboard_is_counted_before_human_input_and_delivers_a_key() {
     let mut device = match OpenOptions::new().write(true).open("/dev/uinput") {
         Ok(device) => device,
-        Err(error) => {
-            eprintln!(
-                "NOT RUN uinput lifecycle/event test: cannot open /dev/uinput for writing: {error}; worker must expose writable uinput plus /dev/input and udev classification"
-            );
-            return;
-        }
+        Err(error) => panic!("uinput test requires writable /dev/uinput: {error}"),
     };
     let mut setup = Setup {
         id: [3, 0x1234, 0x5678, 1],
@@ -123,7 +119,6 @@ fn virtual_keyboard_is_counted_before_human_input_and_delivers_a_key() {
     let until = Instant::now() + Duration::from_secs(5);
     let mut context = Libinput::new_from_path(Interface);
     let mut last_error = String::from("event node has not appeared in sysfs");
-    let mut permission_denied = false;
     let node = loop {
         let node = std::fs::read_dir(&sysroot)
             .ok()
@@ -136,7 +131,6 @@ fn virtual_keyboard_is_counted_before_human_input_and_delivers_a_key() {
         if let Some(node) = node {
             match OpenOptions::new().read(true).open(&node) {
                 Ok(_) => {
-                    permission_denied = false;
                     if context.path_add_device(&node).is_some() {
                         break node;
                     }
@@ -145,16 +139,9 @@ fn virtual_keyboard_is_counted_before_human_input_and_delivers_a_key() {
                     );
                 }
                 Err(error) => {
-                    permission_denied = error.kind() == std::io::ErrorKind::PermissionDenied;
                     last_error = format!("cannot read {node}: {error}");
                 }
             }
-        }
-        if Instant::now() >= until && permission_denied {
-            eprintln!(
-                "NOT RUN uinput lifecycle/event assertions: created {sysname}, but worker device access blocks the generated evdev node: {last_error}"
-            );
-            return;
         }
         assert!(
             Instant::now() < until,

@@ -2631,7 +2631,7 @@ pub fn dispatch_read_with_limit(
                         "vt_watcher_running": session.vt_watcher_running,
                         "vt_source_available": session.vt_source_available,
                         "tty0_available": session.tty0_available,
-                        "activation_error": if session.vt_source_available == Some(false) { Some("no active VT source: expose the session tty (VT_GETSTATE) or /sys/class/tty/tty0/active") } else { session.seat_error },
+                        "activation_error": session.seat_error.or_else(|| (session.vt_source_available == Some(false)).then_some("no active VT source: expose the session tty (VT_GETSTATE) or /sys/class/tty/tty0/active")),
                     })
                     .to_string(),
                 ),
