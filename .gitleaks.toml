@@ -31,6 +31,15 @@ paths = [
 ]
 
 [[allowlists]]
+description = "RFC 6455 section 1.3 sample handshake nonce (base64 of 'the sample nonce') in unmodified upstream tungstenite server tests, not a key"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = ['''Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==''']
+paths = [
+  '''^vendor/tungstenite-0\.(26\.2|29\.0)/src/handshake/server\.rs$''',
+]
+
+[[allowlists]]
 description = "Vendor patch records: SHA-256 hashes of upstream source and patch hunks, not keys"
 targetRules = ["generic-api-key"]
 paths = [
