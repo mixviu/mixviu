@@ -231,7 +231,11 @@ impl Reads {
     // paths. Never log an upstream diagnostic or selection payload.
     fn allow_error_log(&self) -> bool {
         let now = std::time::Instant::now();
-        if self.last_error_log.get().is_some_and(|last| now.duration_since(last) < Duration::from_secs(5)) {
+        if self
+            .last_error_log
+            .get()
+            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(5))
+        {
             return false;
         }
         self.last_error_log.set(Some(now));
@@ -458,7 +462,9 @@ impl Selection {
     }
 
     fn log_no_focus(&self, operation: &str, primary: bool) {
-        if !self.reads.allow_error_log() { return; }
+        if !self.reads.allow_error_log() {
+            return;
+        }
         let seats: Vec<_> = self
             .seats
             .iter()
@@ -852,7 +858,9 @@ mod tests {
             reads.answer(id, Err(ReadError::Failed("private diagnostic".into())));
         }
         assert_eq!(rx.try_iter().count(), 100);
-        reads.last_error_log.set(Some(std::time::Instant::now() - Duration::from_secs(6)));
+        reads
+            .last_error_log
+            .set(Some(std::time::Instant::now() - Duration::from_secs(6)));
         assert!(reads.allow_error_log());
     }
 
