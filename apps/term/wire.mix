@@ -7,6 +7,7 @@ end
 -- absent, while a valid large unsigned value must never fall back to active.
 fn action_targets($args,$numbers)
   $out={}
+  if type($args.args)=="map" and type($args.args.primary)=="bool" then $out.primary=$args.args.primary end
   for $key in ["tab","pane"]
     $number=$numbers[$key]
     if $number!=nil and $number.kind=="u64" then

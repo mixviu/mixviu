@@ -138,7 +138,7 @@ on "apps.launch" desc "launch an application by id, detached (uris optional)"
       -- apps.terminal may carry arguments (e.g. "kitty -e"), so it goes
       -- through the same Exec parser: terminal argv first, then app argv.
       if $e.terminal then $argv = concat($a.parse_exec($terminal_cmd), $argv) end
-      $opts = {detach: true}
+      $opts = {detach: true, journal: $id}
       if $e.workdir != "" and is_dir($e.workdir) then $opts.cwd = $e.workdir end
       -- DISPLAY for X11 apps, read from comp's live XWayland descriptor at
       -- each launch (TODO-comp C8). No descriptor: DISPLAY is removed, never
@@ -161,6 +161,7 @@ on "apps.launch" desc "launch an application by id, detached (uris optional)"
           $pid = spawn($launch.argv, $opts)
           reply(0, json_encode({id: $id, pid: $pid, argv: $argv}))
         catch $err
+          eprint("apps.launch " .. $id .. ": spawn_failed: " .. $err)
           reply(11, json_encode({error: "spawn_failed", id: $id}))
         end
       end
