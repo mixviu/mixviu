@@ -345,7 +345,7 @@ builtin_table! {
     ("run_argv_must", CapabilityClass::Process,   "system",  "Fail-fast run_argv with the same structured stdio opts: returns captured stdout unchanged when ok and no captured stream truncated (\"\" when stdout is routed), else raises PROCESS_EXIT_NONZERO / PROCESS_TIMEOUT / PROCESS_SIGNAL / PROCESS_INTERRUPTED / PROCESS_OUTPUT_LIMIT or the result's setup/lifecycle error_code (PROCESS_STDIO / PROCESS_SPAWN / PROCESS_IO / PROCESS_INTERNAL) with the complete result map in $err.details.result", contract!((argv: list(string), opts?: any_of(map("run_argv_options", {timeout: number, grace: number, stdin: any_of(string, bytes, buffer, map, nil), stdout: any_of(string, map), stderr: any_of(string, map), cwd: any_of(string, nil), env: map, clear_env: bool, max_output: number, stream: bool}), nil)) -> string; effects[blocking]; failure[raises])),
     ("run_pipeline", CapabilityClass::Process,    "system",  "Run one or more argv stages without a shell, connecting each stdout to the next stdin. Stage maps accept argv/cwd/env/clear_env/stderr, plus stdin on the first stage and stdout on the last, using run_argv's stdio grammar. Every route and pipe is prepared before any stage runs, so PIPELINE_STDIO means no stage ran. Returns a distinct pipeline_result with final stdout/exit fields and per-stage outcomes. One whole-call deadline starts before route opening; captured output abandoned at that deadline is partial with its truncation flag true. Non-final SIGPIPE is NOT accepted by default: any stage killed by a signal makes the pipeline not-ok, matching `set -o pipefail`. Pass allow_signal:true to accept a non-final SIGPIPE when every downstream stage succeeded (the `yes | head -1` idiom). Every stage carries status ok|exit_nonzero|signal|broken_pipe|timeout|interrupted|setup_error and broken_pipe (killed by SIGPIPE: its reader closed); the result carries status ok|exit_nonzero|signal|broken_pipe|timeout|interrupted|setup_error, failed_stage (the RIGHTMOST non-ok stage, pipefail's rule; nil when none) and a one-line human summary — gates branch on status, never on text. Ordinary failure is encoded in the VALUE — never raises", contract!((stages: list, opts?: any_of(map("run_pipeline_options", {timeout: number, max_output: number, allow_signal: bool}), nil)) -> map("pipeline_result", {ok: bool, exit_code: any, stdout: string, stderr: string, timed_out: bool, interrupted: bool, signal: any, duration_ms: number, stdout_truncated: bool, stderr_truncated: bool, utf8_lossy: bool, error_code: any, error: any, stages: list(map("pipeline_stage_result", {index: number, argv: list(string), ok: bool, exit_code: any, signal: any, duration_ms: number, stderr: string, stderr_truncated: bool, utf8_lossy: bool, accepted_signal: bool, status: string, broken_pipe: bool})), status: string, failed_stage: any, summary: string}); effects[must_use, blocking]; failure[returns_result])),
     ("run_pipeline_must", CapabilityClass::Process, "system", "Fail-fast run_pipeline twin: returns final stdout unchanged when the pipeline is ok and no captured output truncated; otherwise raises PIPELINE_* with the complete pipeline_result in $err.details.result", contract!((stages: list, opts?: any_of(map("run_pipeline_options", {timeout: number, max_output: number, allow_signal: bool}), nil)) -> string; effects[blocking]; failure[raises])),
-    ("spawn", CapabilityClass::Process, "system", "Start a child and return its PID. String form uses a shell and optional stdout/stderr paths. Argv form runs directly with options: detach, die_with_parent, exit_event, tag, cwd, env, clear_env, stdout, stderr. exit_event:true (Linux pidfd) registers the sole reaper in this evaluator and emits proc.exited {pid,tag,exit_code,signal}; tag is a string up to 4096 bytes, default empty. Cannot detach a managed child. Managed children are killed and reaped when their evaluator retires, after handler drain; failed reload leaves old managed children intact. die_with_parent additionally arms kernel parent-death SIGKILL. Without exit_event, existing detached/owned/plain spawn semantics apply. Stdio defaults null, capture is refused; cwd/env/clear_env match run_argv. See system manual for lifetime rules", contract!((cmd: any_of(string, list(string)), stdout?: any_of(string, map("spawn_options", {detach: bool, die_with_parent: bool, exit_event: bool, tag: string, cwd: any_of(string, nil), env: map, clear_env: bool, stdout: any_of(string, map), stderr: any_of(string, map)})), stderr?: string) -> number; effects[shell]; failure[raises])),
+    ("spawn", CapabilityClass::Process, "system", "Start a child and return its PID. String form uses a shell and optional stdout/stderr paths. Argv form runs directly with options: detach, die_with_parent, exit_event, tag, cwd, env, clear_env, stdout, stderr. exit_event:true (Linux pidfd) registers the sole reaper in this evaluator and emits proc.exited {pid,tag,exit_code,signal}; tag is a string up to 4096 bytes, default empty. Cannot detach a managed child. Managed children are killed and reaped when their evaluator retires, after handler drain; failed reload leaves old managed children intact. die_with_parent additionally arms kernel parent-death SIGKILL. Without exit_event, existing detached/owned/plain spawn semantics apply. Stdio defaults null, capture is refused; journal optionally routes stderr to journald under an identifier (1-255 bytes, no control characters), failing launch if unavailable; cwd/env/clear_env match run_argv. See system manual for lifetime rules", contract!((cmd: any_of(string, list(string)), stdout?: any_of(string, map("spawn_options", {detach: bool, die_with_parent: bool, exit_event: bool, tag: string, cwd: any_of(string, nil), env: map, clear_env: bool, journal: string, stdout: any_of(string, map), stderr: any_of(string, map)})), stderr?: string) -> number; effects[shell]; failure[raises])),
     ("kill", CapabilityClass::Process,            "system",  "Send signal to process (default SIGTERM); returns false when the signal could not be delivered. Both arguments must be whole NUMBERS and neither is coerced — a bool/string pid raises TYPE_MISMATCH rather than becoming 0 (which signals this process's whole group), and an unrecognised signal raises rather than silently defaulting to SIGTERM (strict since v0.52.0)", contract!((pid: number, signal?: number) -> bool; effects[must_use]; failure[returns_result]; hints[pid: "no coercion — a coerced pid of 0 addresses this process's entire group", signal: "no coercion — pass the signal number, e.g. 9 for SIGKILL; names are not accepted"])),
     ("shell_quote", CapabilityClass::Pure,     "system",  "Single-quote-wrap a string for safe interpolation into a POSIX shell command", contract!((s: string) -> string)),
     ("sql_quote", CapabilityClass::Pure,       "system",  "Escape a string for SQL string literals: doubles ' and escapes \\ (MySQL/MariaDB-safe — the documented target; also safe for SQLite, where a literal backslash arrives doubled — use sqlexec binds for exact bytes); NUL bytes stripped", contract!((s: string) -> string)),
@@ -4444,6 +4444,7 @@ pub(crate) fn spawn_argv_native(
 
     // Options.
     let mut detach = false;
+    let mut journal: Option<String> = None;
     let mut die_with_parent = false;
     let mut exit_event = false;
     let mut tag = String::new();
@@ -4468,6 +4469,15 @@ pub(crate) fn spawn_argv_native(
         };
         for (key, val) in map.iter() {
             match key.as_str() {
+                "journal" => {
+                    let Value::String(id) = val else {
+                        return Err(opt_invalid(caller, "journal must be an identifier string"));
+                    };
+                    if id.is_empty() || id.len() > 255 || id.chars().any(char::is_control) {
+                        return Err(opt_invalid(caller, "invalid journal identifier"));
+                    }
+                    journal = Some(id.clone());
+                }
                 "exit_event" => {
                     let Value::Bool(v) = val else {
                         return Err(opt_invalid(caller, "exit_event must be a bool"));
@@ -4791,6 +4801,11 @@ pub(crate) fn spawn_argv_native(
         RunArgvStderr::Capture => unreachable!("rejected above"),
     }
 
+    if let Some(id) = journal {
+        // Connect before exec; a detached child must never silently lose stderr.
+        // Failure refuses the launch rather than claiming it was logged.
+        command.stderr(spawn_journal(&id).map_err(|e| opt_invalid(caller, format!("journal: {e}")))?);
+    }
     if detach {
         return spawn_detached(command);
     }
@@ -5221,6 +5236,14 @@ fn spawn_detached(mut command: std::process::Command) -> MixResult<Option<Value>
 
 /// Open a stdout route's file (if it is a file route) once, so a stderr:stdout
 /// merge can clone the same handle. `None` for null/inherit.
+fn spawn_journal(identifier: &str) -> std::io::Result<std::process::Stdio> {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    let mut stream = UnixStream::connect("/run/systemd/journal/stdout")?;
+    stream.write_all(format!("{identifier}\n\n4\n0\n0\n0\n0\n").as_bytes())?;
+    Ok(std::process::Stdio::from(std::os::fd::OwnedFd::from(stream)))
+}
+
 fn spawn_open_output(out: &RunArgvOutput) -> MixResult<Option<std::fs::File>> {
     match out {
         RunArgvOutput::File(f) => Ok(Some(spawn_create_file(f)?)),

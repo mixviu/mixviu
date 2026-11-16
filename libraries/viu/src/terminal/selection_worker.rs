@@ -227,6 +227,9 @@ impl Reads {
     }
 
     pub fn answer(&self, id: u64, result: Result<String, ReadError>) {
+        if let Err(error @ (ReadError::Failed(_) | ReadError::TimedOut)) = &result {
+            eprintln!("selection: answer id={id} error={error:?}");
+        }
         let _ = self.answers.send(Answer { id, result });
         (self.wake)();
     }
@@ -395,6 +398,11 @@ struct SeatData {
     focused: bool,
     /// The latest input serial: a selection is set with it.
     serial: u32,
+    last_input: u64,
+}
+
+fn focused_seat<K>(seats: &HashMap<K, SeatData>) -> Option<&SeatData> {
+    seats.values().filter(|s| s.focused).max_by_key(|s| s.last_input)
 }
 
 struct Selection {
@@ -423,7 +431,17 @@ impl HasReads for Selection {
 
 impl Selection {
     fn seat(&self) -> Option<&SeatData> {
-        self.seats.get(self.latest.as_ref()?).filter(|s| s.focused)
+        focused_seat(&self.seats)
+    }
+
+    fn log_no_focus(&self, operation: &str, primary: bool) {
+        let seats: Vec<_> = self.seats.iter().map(|(id, s)| {
+            let name = self.seat_state.seats().find(|seat| seat.id() == *id)
+                .and_then(|seat| self.seat_state.info(&seat))
+                .and_then(|info| info.name);
+            format!("{name:?}({id:?}):focused={}", s.focused)
+        }).collect();
+        eprintln!("selection: {operation}: no keyboard focus; primary={primary}; seats=[{}]", seats.join(", "));
     }
 
     fn write(&mut self, text: String, primary: bool) {
@@ -431,8 +449,7 @@ impl Selection {
             // No keyboard focus: the compositor would refuse the selection. Say
             // so rather than drop it silently; a refused copy (not a primary
             // selection, which every unfocused drag would refuse) is shown.
-            let what = if primary { "primary selection" } else { "copy" };
-            eprintln!("term: warning: {what} not taken: the window does not have the keyboard");
+            self.log_no_focus("write refused", primary);
             if !primary {
                 self.reads.answer(WRITE_ANSWER, Err(ReadError::NoFocus));
             }
@@ -460,7 +477,10 @@ impl Selection {
     }
 
     fn receive(&self, primary: bool) -> Result<ReadPipe, ReadError> {
-        let seat = self.seat().ok_or(ReadError::Empty)?;
+        let Some(seat) = self.seat() else {
+            self.log_no_focus("read Empty", primary);
+            return Err(ReadError::Empty);
+        };
         if primary {
             let offer = seat
                 .primary
@@ -585,6 +605,7 @@ impl SeatHandler for Selection {
         };
         match capability {
             Capability::Keyboard => {
+                data.focused = false;
                 data.clipboard = None;
                 data.primary = None;
                 if let Some(keyboard) = data.keyboard.take()
@@ -620,6 +641,7 @@ impl PointerHandler for Selection {
         let Some(seat) = pointer.data::<PointerData>().map(|d| d.seat().id()) else {
             return;
         };
+        let next_input = self.seats.values().map(|s| s.last_input).max().unwrap_or(0) + 1;
         let Some(data) = self.seats.get_mut(&seat) else {
             return;
         };
@@ -628,6 +650,7 @@ impl PointerHandler for Selection {
             | PointerEventKind::Release { serial, .. } = event.kind
             {
                 data.serial = serial;
+                data.last_input = next_input;
                 self.latest = Some(seat.clone());
             }
         }
@@ -643,6 +666,7 @@ impl Dispatch<WlKeyboard, ObjectId> for Selection {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        let next_input = state.seats.values().map(|s| s.last_input).max().unwrap_or(0) + 1;
         let Some(data) = state.seats.get_mut(seat) else {
             return;
         };
@@ -650,11 +674,13 @@ impl Dispatch<WlKeyboard, ObjectId> for Selection {
             wl_keyboard::Event::Key { serial, .. }
             | wl_keyboard::Event::Modifiers { serial, .. } => {
                 data.serial = serial;
+                data.last_input = next_input;
                 state.latest = Some(seat.clone());
             }
             wl_keyboard::Event::Enter { serial, .. } => {
                 data.serial = serial;
                 data.focused = true;
+                data.last_input = next_input;
                 state.latest = Some(seat.clone());
             }
             wl_keyboard::Event::Leave { .. } => {
@@ -778,6 +804,17 @@ delegate_registry!(Selection);
 mod tests {
     use super::*;
     use std::os::fd::{FromRawFd, OwnedFd};
+
+    #[test]
+    fn latest_unfocused_seat_does_not_hide_focused_seat() {
+        let mut seats = HashMap::from([
+            (0, SeatData { focused: true, last_input: 1, serial: 42, ..Default::default() }),
+            (1, SeatData { focused: false, last_input: 2, ..Default::default() }),
+        ]);
+        assert_eq!(focused_seat(&seats).unwrap().serial, 42);
+        seats.get_mut(&0).unwrap().focused = false;
+        assert!(focused_seat(&seats).is_none(), "both unfocused must refuse");
+    }
 
     /// A pipe: (read end, write end).
     fn pipe() -> (OwnedFd, std::fs::File) {

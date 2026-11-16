@@ -829,8 +829,24 @@ impl SeatHandler for Dispatch {
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
-        // X11 focus, constraints, clipboard and tablet-pad focus all follow the
-        // PRIMARY seat. The agent seat must not move any of them.
+        let client = focused.and_then(|s| self.output.display_handle.get_client(s.id()).ok());
+        // Selection authority follows THIS seat only, before pointer delivery.
+ immediately in the client. Publish
+        // its offer before returning to pointer delivery, not in the later drain.
+        // These helpers only update selection SeatData and enqueue protocol
+        // events: they do not re-enter the keyboard/pointer locks held here.
+        smithay::wayland::selection::data_device::set_data_device_focus(
+            &self.output.display_handle,
+            seat,
+            client.clone(),
+        );
+        smithay::wayland::selection::primary_selection::set_primary_focus(
+            &self.output.display_handle,
+            seat,
+            client,
+        );
+
+        // X11, constraints, registry and tablet-pad focus stay primary-only.
         if *seat != self.seat.seat {
             return;
         }
@@ -838,8 +854,6 @@ impl SeatHandler for Dispatch {
         self.push_surface_event(crate::wire::trait_::surface_event::SurfaceEvent::Focus(
             focused.map(crate::wire::trait_::surface_event::SurfaceHandle::resolve),
         ));
-        let client = focused.and_then(|s| self.output.display_handle.get_client(s.id()).ok());
-
         // The X11 half of focus. `KeyboardFocus` here is the plain `WlSurface`, so
         // smithay's `KeyboardTarget for X11Surface` — which does this for a compositor
         // whose focus target is an enum — is never reached, and without it the X server
@@ -910,21 +924,6 @@ impl SeatHandler for Dispatch {
             self.arm_drain();
             self.seat.previous_focus = focused.cloned();
         }
-
-        // A first middle press reads PRIMARY immediately in the client. Publish
-        // its offer before returning to pointer delivery, not in the later drain.
-        // These helpers only update selection SeatData and enqueue protocol
-        // events: they do not re-enter the keyboard/pointer locks held here.
-        smithay::wayland::selection::data_device::set_data_device_focus(
-            &self.output.display_handle,
-            seat,
-            client.clone(),
-        );
-        smithay::wayland::selection::primary_selection::set_primary_focus(
-            &self.output.display_handle,
-            seat,
-            client,
-        );
 
         // Follow keyboard focus with tablet-pad focus: `leave` the old client's pad,
         // `enter` the new one, so pad button/ring/strip/dial/mode events are gated to

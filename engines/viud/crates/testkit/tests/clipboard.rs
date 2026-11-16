@@ -12,6 +12,33 @@ const TEXT: &str = "text/plain;charset=utf-8";
 const PRIMARY: usize = 0;
 const AGENT: usize = 1;
 
+#[test]
+fn agent_primary_offer_follows_only_agent_keyboard_focus() {
+    let mut h = Harness::new();
+    h.client.bind_primary_devices();
+    let (target, ..) = h.mapped_toplevel(64, 48);
+    let other = h.add_client();
+    h.extra_clients[other].bind_primary_devices();
+    let surface = h.extra_clients[other].create_surface();
+    h.extra_clients[other].commit(&surface);
+    h.roundtrip_client(other);
+    // Physical focus on the other client grants no agent-seat offer.
+    h.focus_keyboard_client(other, &surface);
+    h.agent_press(&target, 0x110);
+    let _source = h.client.set_primary_selection(AGENT, b"agent-primary");
+    h.roundtrip();
+    h.roundtrip_client(other);
+    let offer = h.client.state.clipboard.primary_selections.get(&AGENT);
+    assert!(offer.is_some_and(|offer| offer.is_some()), "agent owner receives its own offer");
+    assert!(h.extra_clients[other].state.clipboard.primary_selections.get(&AGENT)
+        .is_none_or(|offer| offer.is_none()), "physical focus cannot grant an agent offer");
+    // The physically focused client cannot replace the agent selection either.
+    let _refused = h.extra_clients[other].set_primary_selection(AGENT, b"wrong-seat");
+    h.roundtrip_client(other);
+    h.roundtrip();
+    assert!(h.client.state.clipboard.primary_selections[&AGENT].is_some());
+}
+
 /// Pump until the paste's pipe closes, and return what it carried.
 fn finish(h: &mut Harness, read: &mut ClipboardRead) -> Vec<u8> {
     assert!(

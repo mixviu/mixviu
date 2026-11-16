@@ -14,7 +14,7 @@ end
 $no=fn($op,$handle,$args)=forbidden($op,$handle,$args)
 $yes=fn($op,$handle,$args)=paste_ok($op,$handle,$args)
 $s={layout:{panes:{"1":{handle:"vt-original"},"2":{handle:"vt-focused"}}},pastes:{first:"vt-original",second:"vt-focused"},notice:"previous"}
-for $case in [{reason:"Empty",expected:"previous"},{reason:"TooLarge",expected:"Paste exceeds 16 MiB limit"},{reason:"TimedOut",expected:"The clipboard did not answer in time"},{reason:"Busy",expected:"A paste is still being read"},{reason:"NoFocus",expected:"Not copied: click in the terminal first, then copy again"},{reason:'Failed("private diagnostic")',expected:"The clipboard could not be read"}]
+for $case in [{reason:"Empty",expected:"Nothing to paste"},{reason:"TooLarge",expected:"Paste exceeds 16 MiB limit"},{reason:"TimedOut",expected:"The clipboard did not answer in time"},{reason:"Busy",expected:"A paste is still being read"},{reason:"NoFocus",expected:"Not copied: click in the terminal first, then copy again"},{reason:'Failed("private diagnostic")',expected:"The clipboard could not be read"}]
   $out=$clipboard.completed($s,{id:"first",text:"",reason:$case.reason},$no)
   check($out.notice==$case.expected,"gold completion notice for "..$case.reason)
   check($out.pastes.first==nil and $out.pastes.second=="vt-focused","only the answered read retires")
