@@ -2227,7 +2227,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             match bus::parse(&text) {
                 Ok(m) => m,
                 Err(e) => {
-                    tracing::debug!("Invalid Bus message: {e}");
+                    // ParseError contains raw input, including arbitrary payload
+                    // bytes when the opening fence is missing.
+                    tracing::debug!("Invalid Bus message (invalid envelope)");
                     let err = BusMessage::new()
                         .with_header("rc", "10")
                         .with_header("error", &format!("Invalid Bus message: {e}"));

@@ -13,18 +13,23 @@ fn paste_ok($op,$handle,$args)
 end
 $no=fn($op,$handle,$args)=forbidden($op,$handle,$args)
 $yes=fn($op,$handle,$args)=paste_ok($op,$handle,$args)
-$s={layout:{panes:{"1":{handle:"vt-original"},"2":{handle:"vt-focused"}}},pastes:{first:"vt-original",second:"vt-focused"},notice:"previous"}
-for $case in [{reason:"Empty",expected:"previous"},{reason:"TooLarge",expected:"Paste exceeds 16 MiB limit"},{reason:"TimedOut",expected:"The clipboard did not answer in time"},{reason:"Busy",expected:"A paste is still being read"},{reason:"NoFocus",expected:"Not copied: click in the terminal first, then copy again"},{reason:'Failed("private diagnostic")',expected:"The clipboard could not be read"}]
+$s={layout:{panes:{"1":{handle:"vt-original"},"2":{handle:"vt-focused"}}},pastes:{first:{handle:"vt-original",pointer:false},second:{handle:"vt-focused",pointer:false}},notice:"previous"}
+for $case in [{reason:"Empty",expected:"Nothing to paste"},{reason:"TooLarge",expected:"Paste exceeds 16 MiB limit"},{reason:"TimedOut",expected:"The clipboard did not answer in time"},{reason:"Busy",expected:"A paste is still being read"},{reason:"NoFocus",expected:"Not copied: click in the terminal first, then copy again"},{reason:'Failed("private diagnostic")',expected:"The clipboard could not be read"}]
   $out=$clipboard.completed($s,{id:"first",text:"",reason:$case.reason},$no)
   check($out.notice==$case.expected,"gold completion notice for "..$case.reason)
-  check($out.pastes.first==nil and $out.pastes.second=="vt-focused","only the answered read retires")
+  check($out.pastes.first==nil and $out.pastes.second.handle=="vt-focused","only the answered read retires")
 end
 $out=$clipboard.completed($s,{kind:"copy",reason:"NoFocus"},$no)
 check($out.notice=="Not copied: click in the terminal first, then copy again" and deep_eq($out.pastes,$s.pastes),"copy refusal shows notice without ending a pending read")
+$pointer=$s;$pointer.pastes.first.pointer=true
+for $reason in ["Empty","TimedOut",'Failed("private diagnostic")']
+  $out=$clipboard.completed($pointer,{id:"first",reason:$reason},$no)
+  check($out.notice==if $reason=="Empty" then "previous" else $clipboard.notice($reason) end,"pointer empty is silent; real failures remain visible")
+end
 $out=$clipboard.completed($s,{id:"absent",reason:"Busy"},$no)
 check(deep_eq($out,$s),"stale completion does not replace notice or retire another read")
 $out=$clipboard.completed($s,{id:"first",text:"wide: 中\n"},$yes)
-check($out.notice==nil and $out.pastes.first==nil and $out.pastes.second=="vt-focused","successful paste clears notice and owns its captured handle")
+check($out.notice==nil and $out.pastes.first==nil and $out.pastes.second.handle=="vt-focused","successful paste clears notice and owns its captured handle")
 $out=$clipboard.completed($out,{id:"first",text:"duplicate"},$no)
 check($out.notice==nil,"duplicate successful completion is ignored")
 $closed=$s;$closed.layout.panes=delete($closed.layout.panes,"1")

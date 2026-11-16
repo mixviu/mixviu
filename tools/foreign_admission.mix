@@ -79,7 +79,8 @@ fn check($policy, $members, $closures)
         push($bad, $name .. ": missing or invalid " .. $field)
       end
     end
-    if not contains(["system", "vendored"], $entry.kind) then
+    -- "asm": hand-written assembly built by an assembler, no C (rav1e, rav1d).
+    if not contains(["system", "vendored", "asm"], $entry.kind) then
       push($bad, $name .. ": invalid kind")
     end
     if $entry.by != "Mark" then push($bad, $name .. ": admission must be by Mark") end

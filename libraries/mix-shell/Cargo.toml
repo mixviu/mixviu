@@ -91,6 +91,9 @@ service-builtins = ["mix/dkim", "mix/serde", "mix/markdown", "mix/datastar", "mi
 serve = []
 
 [dev-dependencies]
+log = "0.4"
+tracing-log = "0.2"
+tracing-subscriber.workspace = true
 # Property-based testing for the shell-dispatch tokenizer (P0 of the mix
 # tokenizer fuzz/property corpus — see _doc/planned/mix-tokenizer-fuzz-corpus.md
 # in the mixos hub). Test-only; never linked into the shipped binary.

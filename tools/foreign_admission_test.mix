@@ -35,6 +35,14 @@ $cases = $cases + expect($policy, $members, $good, "")
 $cases = $cases + expect($policy, $members, {portal: {native: true}, other: {native: true}}, "other reaches admitted native outside only")
 $cases = $cases + expect($policy, $members, {shell: {native: true}}, "strict shell reaches admitted")
 $cases = $cases + expect($policy, $members, {}, "stale admitted")
+-- An asm-kind admission is valid and obeys the same reach rules.
+$p = $policy
+$p.admitted.native.kind = "asm"
+$cases = $cases + expect($p, $members, $good, "")
+$cases = $cases + expect($p, $members, {portal: {native: true}, other: {native: true}}, "outside only")
+$cases = $cases + expect($p, $members, {shell: {native: true}}, "strict shell reaches admitted")
+$p.admitted.native.kind = "c"
+$cases = $cases + expect($p, $members, $good, "invalid kind")
 $p = $policy
 $p.admitted.native.only = ["shell"]
 $cases = $cases + expect($p, $members, $good, "strict member forbidden in only")

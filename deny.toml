@@ -44,6 +44,9 @@ confidence-threshold = 0.9
 exceptions = [
   { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
   { crate = "libbz2-rs-sys", allow = ["bzip2-1.0.6"] },
+  # rav1e lists libfuzzer-sys for cfg(fuzzing) only; it is never built here.
+  # "(MIT OR Apache-2.0) AND NCSA". Allowed by Mark, 2026-11-16.
+  { crate = "libfuzzer-sys", allow = ["NCSA"] },
 ]
 
 [licenses.private]

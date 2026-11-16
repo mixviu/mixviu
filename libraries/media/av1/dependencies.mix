@@ -1,0 +1,16 @@
+-- Worker inspection of the actual locked normal/build closure.
+$tree = run_argv_must(["cargo", "tree", "--locked", "-p", "media-av1", "--features", "asm", "-e", "normal,build", "--prefix", "none", "-f", "{p}"])
+$names = {}
+for $line in split($tree, "\n")
+  $names[split(trim($line), " ")[0]] = true
+end
+$meta = json_parse(run_argv_must(["cargo", "metadata", "--locked", "--format-version", "1"], {max_output: 268435456}))
+for $p in $meta.packages
+  if $names[$p.name] == true then
+    print($p.name .. " " .. $p.version .. " | " .. ($p.license ?? "UNKNOWN") .. " | " .. ($p.repository ?? "workspace"))
+  end
+end
+$r = run_argv(["/opt/mix/bin/mix", "tools/foreign_gate.mix", "--locked"], {timeout: 1800, max_output: 16777216})
+print($r.stdout)
+print($r.stderr)
+exit($r.exit_code)

@@ -7,7 +7,7 @@ fn intent_action($kind,$active)
   return nil
 end
 fn notice($reason)
-  if $reason=="Empty" then return nil end
+  if $reason=="Empty" then return "Nothing to paste" end
   if $reason=="TooLarge" then return "Paste exceeds 16 MiB limit" end
   if $reason=="TimedOut" then return "The clipboard did not answer in time" end
   if $reason=="Busy" then return "A paste is still being read" end
@@ -28,11 +28,12 @@ fn completed($s,$answer,$native)
     if $message!=nil then $s.notice=$message end
     return $s
   end
-  $handle=$s.pastes[$answer.id]
-  if $handle==nil then return $s end
+  $pending=$s.pastes[$answer.id]
+  if $pending==nil then return $s end
+  $handle=$pending.handle
   $s.pastes=delete($s.pastes,$answer.id)
   if $answer.reason!=nil then
-    $message=notice($answer.reason)
+    $message=if $answer.reason=="Empty" and $pending.pointer then nil else notice($answer.reason) end
     if $message!=nil then $s.notice=$message end
   else
     $s=apply_text($s,$handle,$answer.text,$native)
