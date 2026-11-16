@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Worker-only integration check; requires a running, readable journald.
+fn check($ok,$message) if not $ok then raise("TEST",$message) end end
+for $id in ["",repeat("x",256),"bad\nheader","bad\rheader","bad\u{0}header","bad\tname"]
+  $refused=false
+  try
+    $pid=spawn(["/nonexistent-mix-journal-test"],{journal:$id})
+  catch $error
+    $refused=contains(to_string($error),"invalid journal identifier")
+  end
+  check($refused,"identifier validation must refuse before spawning")
+end
+$identifier="mix-spawn-check-"..uuid()
+$message="exact stderr line "..$identifier
+$pid=spawn(["target/debug/mix","-c","eprint("..json_encode($message)..")"],{journal:$identifier})
+$entries=[]
+for $attempt in range(0,40)
+  sleep(0.1)
+  $result=run_argv_must(["journalctl","--no-pager","-o","json","SYSLOG_IDENTIFIER="..$identifier])
+  $entries=filter(split(trim($result.stdout),"\n"),fn($line)=$line!="")
+  if len($entries)>0 then break end
+end
+check(len($entries)==1,"one journal entry, without a stray zero")
+$entry=json_parse($entries[0])
+check($entry.MESSAGE==$message and $entry.PRIORITY=="4" and $entry.SYSLOG_IDENTIFIER==$identifier,"child fd 2, exact message, identifier and priority")
+print("spawn journal: identifier refusals and real child fd 2 journal protocol PASS "..$identifier)

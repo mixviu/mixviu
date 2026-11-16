@@ -104,10 +104,10 @@ fn command($s,$name,$args)
   $out.state=pump_events($out.state);$out.state=publish_term($out.state);reply($out.rc,$out.body)
   return $out.state
 end
-fn request_paste($s,$handle,$primary)
+fn request_paste($s,$handle,$primary,$pointer)
   $s.paste_seq=($s.paste_seq ?? 0)+1
   $token="terminal-paste-"..to_string($s.identity.instance).."-"..to_string($s.paste_seq)
-  $s.pastes[$token]=$handle
+  $s.pastes[$token]={handle:$handle,pointer:$pointer}
   viu_platform("paste",$token,{primary:$primary})
   return $s
 end
@@ -120,7 +120,7 @@ fn act($s,$id,$args,$origin)
     elif $effect.kind=="copy" and $effect.text!=nil then viu_platform("copy","terminal-copy",{text:$effect.text})
     elif $effect.kind=="paste" then
       if $effect.supplied then $s=$clipboard.apply_text($s,$effect.handle,$effect.text,$native)
-      else $s=request_paste($s,$effect.handle,$effect.primary) end
+      else $s=request_paste($s,$effect.handle,$effect.primary,false) end
     elif $effect.kind=="font" then $s=font_event($s,{kind:if $effect.reset then "reset" else "zoom" end,size:$effect.size}) end
   end
   if $out.rc==0 then
@@ -272,7 +272,7 @@ on term.intent
     if len($target)==1 then
       $kind=$a.value.kind
       if $kind=="read" then
-        $state=request_paste($state,$a.value.handle,$a.value.primary==true)
+        $state=request_paste($state,$a.value.handle,$a.value.primary==true,true)
       else
         $action=$clipboard.intent_action($kind,$bus.target_handle($state,$bus.active($state))==$a.value.handle)
         if $action==nil then return end

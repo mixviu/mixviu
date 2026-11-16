@@ -829,7 +829,12 @@ impl SeatHandler for Dispatch {
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
-        let client = focused.and_then(|s| self.output.display_handle.get_client(s.id()).ok());
+        let client = focused
+            .and_then(|s| self.output.display_handle.get_client(s.id()).ok())
+            // X11 PRIMARY/CLIPBOARD are global, not per-seat. Only the primary
+            // seat may grant selection focus to the XWayland bridge. Passing
+            // None also revokes any previous Wayland focus on the agent seat.
+            .filter(|client| *seat == self.seat.seat || !protocols::xwm::base::is_xwayland(client));
         // Selection authority follows THIS seat only, before pointer delivery.
         // A first middle press reads PRIMARY immediately. Publish
         // its offer before returning to pointer delivery, not in the later drain.

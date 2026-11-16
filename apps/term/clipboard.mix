@@ -28,11 +28,12 @@ fn completed($s,$answer,$native)
     if $message!=nil then $s.notice=$message end
     return $s
   end
-  $handle=$s.pastes[$answer.id]
-  if $handle==nil then return $s end
+  $pending=$s.pastes[$answer.id]
+  if $pending==nil then return $s end
+  $handle=$pending.handle
   $s.pastes=delete($s.pastes,$answer.id)
   if $answer.reason!=nil then
-    $message=notice($answer.reason)
+    $message=if $answer.reason=="Empty" and $pending.pointer then nil else notice($answer.reason) end
     if $message!=nil then $s.notice=$message end
   else
     $s=apply_text($s,$handle,$answer.text,$native)

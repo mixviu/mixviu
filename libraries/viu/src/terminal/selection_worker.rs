@@ -193,6 +193,7 @@ fn run(
 /// The read in progress, if any, and where answers go. Generic over the
 /// loop's state so the bounds are tested without a compositor.
 pub struct Reads {
+    last_error_log: std::cell::Cell<Option<std::time::Instant>>,
     current: Option<Current>,
     answers: Sender<Answer>,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -214,6 +215,7 @@ pub trait HasReads: 'static {
 impl Reads {
     pub fn new(answers: Sender<Answer>, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
         Self {
+            last_error_log: std::cell::Cell::new(None),
             current: None,
             answers,
             wake,
@@ -226,8 +228,18 @@ impl Reads {
     }
 
     pub fn answer(&self, id: u64, result: Result<String, ReadError>) {
-        if let Err(error @ (ReadError::Failed(_) | ReadError::TimedOut)) = &result {
-            eprintln!("selection: answer id={id} error={error:?}");
+        if let Err(error) = &result {
+            let now = std::time::Instant::now();
+            if self.last_error_log.get().is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5)) {
+                let reason = match error {
+                    ReadError::Failed(_) => "Failed: clipboard read failed",
+                    ReadError::TimedOut => "TimedOut: clipboard read timed out",
+                    ReadError::Empty => "Empty: nothing to paste",
+                    _ => "Refused: clipboard read refused",
+                };
+                eprintln!("selection: answer id={id} error={reason}");
+                self.last_error_log.set(Some(now));
+            }
         }
         let _ = self.answers.send(Answer { id, result });
         (self.wake)();
