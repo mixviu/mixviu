@@ -45,20 +45,23 @@ fn observed_path(path: PathBuf, added: bool) {
         if added {
             match std::fs::metadata(&path) {
                 Ok(meta) => {
-                    METADATA_RETRY.with_borrow_mut(|pending| { pending.remove(&path); });
-                    known.insert(
-                        path,
-                        (meta.rdev(), meta.ino()),
-                    );
+                    METADATA_RETRY.with_borrow_mut(|pending| {
+                        pending.remove(&path);
+                    });
+                    known.insert(path, (meta.rdev(), meta.ino()));
                 }
                 Err(error) => {
-                    METADATA_RETRY.with_borrow_mut(|pending| { pending.insert(path.clone()); });
+                    METADATA_RETRY.with_borrow_mut(|pending| {
+                        pending.insert(path.clone());
+                    });
                     metadata_failed(&path, error);
                 }
             }
         } else {
             known.remove(&path);
-            METADATA_RETRY.with_borrow_mut(|pending| { pending.remove(&path); });
+            METADATA_RETRY.with_borrow_mut(|pending| {
+                pending.remove(&path);
+            });
         }
     });
 }
@@ -118,7 +121,9 @@ fn reconcile(current: Nodes, retry: &mut Retry, reset: impl FnOnce() -> bool) ->
     let pending = METADATA_RETRY.with_borrow_mut(std::mem::take);
     for path in pending {
         match std::fs::metadata(&path) {
-            Ok(meta) => KNOWN.with_borrow_mut(|known| { known.insert(path, (meta.rdev(), meta.ino())); }),
+            Ok(meta) => KNOWN.with_borrow_mut(|known| {
+                known.insert(path, (meta.rdev(), meta.ino()));
+            }),
             Err(error) => metadata_failed(&path, error),
         }
     }
@@ -133,9 +138,16 @@ fn reconcile(current: Nodes, retry: &mut Retry, reset: impl FnOnce() -> bool) ->
             }
         });
     }
-    KNOWN.with_borrow(|known| retry.declined.retain(|path, id| current.get(path) == Some(id) && known.get(path) != Some(id)));
-    let admitted = current.iter().filter(|(path, id)| retry.declined.get(*path) != Some(*id))
-        .map(|(path, id)| (path.clone(), *id)).collect();
+    KNOWN.with_borrow(|known| {
+        retry
+            .declined
+            .retain(|path, id| current.get(path) == Some(id) && known.get(path) != Some(id))
+    });
+    let admitted = current
+        .iter()
+        .filter(|(path, id)| retry.declined.get(*path) != Some(*id))
+        .map(|(path, id)| (path.clone(), *id))
+        .collect();
     if !KNOWN.with_borrow(|known| needs_reconcile(&admitted, known, retry)) {
         return None;
     }
@@ -166,10 +178,7 @@ fn nodes_at(root: &std::path::Path) -> std::io::Result<Nodes> {
                 return None;
             }
             let meta = entry.metadata().ok()?;
-            Some(Ok((
-                entry.path(),
-                (meta.rdev(), meta.ino()),
-            )))
+            Some(Ok((entry.path(), (meta.rdev(), meta.ino()))))
         })
         .collect()
 }
@@ -179,7 +188,10 @@ pub fn register(
     mut input: Libinput,
     wake: std::rc::Rc<std::cell::Cell<bool>>,
 ) {
-    let mut retry = Retry { probed: Some(nodes().unwrap_or_default()), ..Default::default() };
+    let mut retry = Retry {
+        probed: Some(nodes().unwrap_or_default()),
+        ..Default::default()
+    };
     handle
         .insert_source(
             Timer::from_duration(Duration::from_millis(250)),
@@ -210,13 +222,19 @@ mod tests {
     impl TempDir {
         fn new() -> Self {
             static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            let path = std::env::temp_dir().join(format!("viud-hotplug-{}-{}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+            let path = std::env::temp_dir().join(format!(
+                "viud-hotplug-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
             std::fs::create_dir(&path).unwrap();
             Self(path)
         }
     }
     impl Drop for TempDir {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
@@ -224,11 +242,17 @@ mod tests {
         KNOWN.with_borrow_mut(|known| known.clear());
         let node = Nodes::from([(PathBuf::from("/dev/input/event0"), (1, 2))]);
         let mut retry = Retry::default();
-        assert_eq!(reconcile(node.clone(), &mut retry, || panic!("grace")), None);
+        assert_eq!(
+            reconcile(node.clone(), &mut retry, || panic!("grace")),
+            None
+        );
         assert!(reconcile(node.clone(), &mut retry, || true).is_some());
         assert_eq!(reconcile(node, &mut retry, || panic!("declined")), None);
         for _ in 0..3 {
-            assert_eq!(reconcile(Nodes::new(), &mut retry, || panic!("declined removal")), None);
+            assert_eq!(
+                reconcile(Nodes::new(), &mut retry, || panic!("declined removal")),
+                None
+            );
         }
         assert!(retry.declined.is_empty());
     }
@@ -241,14 +265,25 @@ mod tests {
         observed_path(path.clone(), true); // First stat fails.
         std::fs::write(&path, []).unwrap();
         let mut retry = Retry::default();
-        assert_eq!(reconcile(nodes_at(&root.0).unwrap(), &mut retry, || panic!("metadata recovered")), None);
+        assert_eq!(
+            reconcile(nodes_at(&root.0).unwrap(), &mut retry, || panic!(
+                "metadata recovered"
+            )),
+            None
+        );
         assert!(KNOWN.with_borrow(|known| known.contains_key(&path)));
         assert!(METADATA_RETRY.with_borrow(|pending| pending.is_empty()));
         let now = std::time::Instant::now();
         let mut last = None;
         assert!(metadata_warning_due(&mut last, now));
-        assert!(!metadata_warning_due(&mut last, now + Duration::from_secs(1)));
-        assert!(metadata_warning_due(&mut last, now + Duration::from_secs(30)));
+        assert!(!metadata_warning_due(
+            &mut last,
+            now + Duration::from_secs(1)
+        ));
+        assert!(metadata_warning_due(
+            &mut last,
+            now + Duration::from_secs(30)
+        ));
         KNOWN.with_borrow_mut(|known| known.clear());
     }
 

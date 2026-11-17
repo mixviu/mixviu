@@ -204,8 +204,14 @@ pub fn register(
     event_loop
         .insert_source(libinput_source, move |event, _, state| {
             inventory::observe(&event);
-            let lifecycle = matches!(&event, InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. });
-            if drop_paused_event(matches!(state.inner.status_session, StatusSession::Paused), lifecycle) {
+            let lifecycle = matches!(
+                &event,
+                InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. }
+            );
+            if drop_paused_event(
+                matches!(state.inner.status_session, StatusSession::Paused),
+                lifecycle,
+            ) {
                 return;
             }
             let cursor_before = (
@@ -387,7 +393,9 @@ mod pad_blank_tests {
             for device in [1, 2] {
                 assert!(!super::drop_paused_event(false, true));
                 super::remember_device(&mut keyboards, device);
-                if device == 2 { super::remember_device(&mut touch, device); }
+                if device == 2 {
+                    super::remember_device(&mut touch, device);
+                }
             }
         }
         assert_eq!(keyboards, [1, 2]);

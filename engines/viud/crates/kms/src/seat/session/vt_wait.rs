@@ -268,15 +268,28 @@ mod tests {
     #[test]
     fn monitor_accepts_kernfs_priority_edges_with_or_without_pollerr() {
         for bits in [libc::POLLPRI, libc::POLLERR | libc::POLLPRI] {
-            let mut fd = libc::pollfd { fd: -1, events: libc::POLLPRI, revents: 0 };
-            poll_monitor(&mut fd, |fd| { fd.revents = bits; Ok(()) }).unwrap();
+            let mut fd = libc::pollfd {
+                fd: -1,
+                events: libc::POLLPRI,
+                revents: 0,
+            };
+            poll_monitor(&mut fd, |fd| {
+                fd.revents = bits;
+                Ok(())
+            })
+            .unwrap();
         }
     }
 
     #[test]
     fn monitor_retries_eintr_and_rejects_poll_error_bits() {
-        for bit in [libc::POLLERR, libc::POLLNVAL, libc::POLLHUP,
-            libc::POLLNVAL | libc::POLLPRI, libc::POLLHUP | libc::POLLPRI] {
+        for bit in [
+            libc::POLLERR,
+            libc::POLLNVAL,
+            libc::POLLHUP,
+            libc::POLLNVAL | libc::POLLPRI,
+            libc::POLLHUP | libc::POLLPRI,
+        ] {
             let mut fd = libc::pollfd {
                 fd: -1,
                 events: libc::POLLPRI,
