@@ -56,16 +56,31 @@ fn property($unit, $name)
   return trim(run_argv_must(["systemctl","show",$unit,"--property=" .. $name,"--value"],{timeout:10}))
 end
 
-fn unit_properties($unit)
-  $text = run_argv_must(["systemctl","show",$unit,"--property=User","--property=EnvironmentFiles","--property=UnsetEnvironment","--property=ExecStart","--property=Type","--property=KillMode","--property=RuntimeDirectory","--property=RequiresMountsFor","--property=ExecStartPre","--no-pager"],{timeout:10})
+fn unit_property_names($transport)
+  $names = ["User","EnvironmentFiles","UnsetEnvironment","ExecStart","Type","KillMode","RuntimeDirectory"]
+  if $transport == "pct" then $names = concat($names,["RequiresMountsFor","ExecStartPre"]) end
+  return $names
+end
+
+fn parse_unit_properties($text,$transport)
+  $names = unit_property_names($transport)
   $out = {}
   for $line in lines($text)
     $key = split($line,"=")[0]
-    if not contains(["User","EnvironmentFiles","UnsetEnvironment","ExecStart","Type","KillMode","RuntimeDirectory","RequiresMountsFor","ExecStartPre"],$key) or has_key($out,$key) then refuse("unexpected or duplicate unit property") end
+    if not contains($names,$key) or has_key($out,$key) then refuse("unexpected or duplicate unit property") end
     $out[$key] = substr($line,len($key)+1)
   end
-  if len(keys($out)) != 9 then refuse("unit property reply incomplete") end
+  if len(keys($out)) != len($names) then refuse("unit property reply incomplete") end
   return $out
+end
+
+fn unit_properties($unit,$transport = nil)
+  $argv = ["systemctl","show",$unit]
+  for $name in unit_property_names($transport)
+    push($argv,"--property=" .. $name)
+  end
+  push($argv,"--no-pager")
+  return parse_unit_properties(run_argv_must($argv,{timeout:10}),$transport)
 end
 
 fn stable_text($path,$state)
@@ -119,7 +134,7 @@ end
 fn service_binding($target,$gid)
   $path = $target.etc .. "/noded/service.env"
   $state = file_state($path)
-  return validate_service($target,$gid,$state,unit_properties($target.unit),stable_text($path,$state))
+  return validate_service($target,$gid,$state,unit_properties($target.unit,$target.transport),stable_text($path,$state))
 end
 
 fn namespace_context($request)

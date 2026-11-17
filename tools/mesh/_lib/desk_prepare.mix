@@ -23,11 +23,24 @@ end
 fn files($request)
   $t = $targets.checked_target($request.target)
   if $t.transport != "pct" or $t.identity_schema == 2 or $t.admission == nil then $w.refuse("preparation requires an explicit single-account CT target") end
-  if not re_match($request.endpoint,"^[A-Za-z0-9.-]+:[0-9]{1,5}$") or not re_match($request.hub_key,"^[A-Za-z0-9+/]{43}=$") or not re_match($request.ip,"^[0-9.]+$") or not re_match($request.subnet,"^[0-9.]+/[0-9]{1,2}$") then $w.refuse("invalid WireGuard preparation plan") end
+  if type($request.endpoint) != "string" or not re_match($request.endpoint,"^[A-Za-z0-9.-]+:[0-9]{1,5}$") or not re_match($request.hub_key,"^[A-Za-z0-9+/]{43}=$") or not valid_ipv4($request.ip) or not re_match($request.subnet,"^[0-9.]+/[0-9]{1,2}$") then $w.refuse("invalid WireGuard preparation plan") end
+  if not valid_port(to_number(split($request.endpoint,":")[1])) or not valid_port($request.port) then $w.refuse("endpoint and broker ports must be integers from 1 to 65535") end
   $config = {node:$t.node,mesh:$request.mesh,wg_ip:$request.ip,noded:{port:$request.port,mesh_config:$t.etc .. "/noded/config.conf.mix",unix_socket:$t.run .. "/noded/bus.sock",admission:$t.admission}}
   return [{path:$t.etc .. "/noded/service.env",bytes:service_text($t)},
     {path:$t.etc .. "/node.conf.mix",bytes:data_encode($config)},
     {path:"/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf",bytes:"[Service]\nEnvironmentFile=" .. $t.etc .. "/noded/service.env\n"}]
+end
+
+fn valid_port($value)
+  return type($value) == "number" and floor($value) == $value and $value >= 1 and $value <= 65535
+end
+
+fn valid_ipv4($value)
+  if type($value) != "string" or not re_match($value,"^[0-9]{1,3}(\\.[0-9]{1,3}){3}$") then return false end
+  for $octet in split($value,".")
+    if to_number($octet) > 255 then return false end
+  end
+  return true
 end
 
 -- Existing objects must already match. Never adopt/reset an old profile,
@@ -60,14 +73,16 @@ fn wireguard_text($request,$key,$public)
 end
 
 fn apply($request)
+  $t = $targets.checked_target($request.target)
+  $native = $targets.checked_native($t,$request.native)
+  if $request.mix_bin != $native.mix_bin then $w.refuse("preparation interpreter differs from native plan") end
   $planned = files($request)
-  $t = $request.target
   if trim(run_argv_must(["id","-u"])) != "0" then $w.refuse("preparation requires CT root") end
   $uid = to_number(trim(run_argv_must(["id","-u",$t.account])))
   $gid = to_number(trim(run_argv_must(["id","-g",$t.account])))
   if $uid == 0 or $gid == 0 then $w.refuse("unprivileged session ids required") end
-  $w.native_binary($request.mix_bin,$request.native.prefix,"mix")
-  $w.native_binary($request.native.prefix .. "/bin/noded",$request.native.prefix,"noded")
+  $w.native_binary($native.mix_bin,$native.prefix,"mix")
+  $w.native_binary($native.prefix .. "/bin/noded",$native.prefix,"noded")
   -- The release owns /opt/mix and its state ancestors. Do not chmod them.
   $ancestor = dirname($t.profile)
   for $parent in ["/opt/mix/var","/opt/mix/var/lib",$ancestor]
