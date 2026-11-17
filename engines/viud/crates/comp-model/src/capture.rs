@@ -116,7 +116,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
             if !std::path::Path::new(&path).is_absolute() || !path.ends_with(".vfl") {
                 return Err(invalid_argument(
                     "path",
-                    "VFL directory",
+                    "absolute path to a VFL directory",
                     "absolute .vfl path",
                 ));
             }

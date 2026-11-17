@@ -563,7 +563,7 @@ fn install_stop_waker<D: 'static>(
                     && s.recording.as_ref().is_some_and(|r| !r.is_recording())
                 {
                     let delay = s.finalise_delay;
-                    s.finalise_delay = (delay * 2).min(Duration::from_secs(1));
+                    s.finalise_delay = (delay * 2).min(Duration::from_millis(100));
                     schedule_stop(&mut s, Instant::now() + delay);
                 }
             }
@@ -627,12 +627,6 @@ fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
 }
 
 fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
-    for output in lp.inner.space_state().state.outputs() {
-        screencopy::file::set_paused(
-            output,
-            matches!(lp.inner.status_session, world::state::StatusSession::Paused),
-        );
-    }
     let clock = recorder::bus::monotonic_us();
     {
         let mut s = session.borrow_mut();
@@ -971,13 +965,7 @@ mod tests {
         use smithay::output::{Output, PhysicalProperties, Subpixel};
         use smithay::reexports::calloop::EventLoop;
         use std::sync::atomic::Ordering;
-        let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| {
-            EGLDevice::enumerate()
-                .ok()
-                .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "/dev/dri/no-render-device".into())
-        });
+        let node = screencopy::file::testing::render_node();
         if !std::path::Path::new(&node).exists() {
             assert_ne!(
                 std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref(),
@@ -1107,7 +1095,10 @@ mod tests {
         install_stop_waker(&old, events.handle());
         let fence = screencopy::file::testing::stall_next_read();
         submit(&old, &mut renderer, &outputs[0]);
-        screencopy::file::set_paused(&outputs[0], true);
+        let (_probe_tx, probe_rx) = std::sync::mpsc::channel();
+        old.borrow_mut().probe = Some(probe_rx);
+        screencopy::file::session_paused(true);
+        tick(&old, || panic!("preflight is still pending"));
         std::thread::sleep(Duration::from_millis(1100));
         screencopy::file::poll(&mut renderer, &outputs[1]);
         assert_eq!(
@@ -1115,7 +1106,8 @@ mod tests {
             1,
             "inactive output keeps its read beyond READ_TIMEOUT"
         );
-        screencopy::file::set_paused(&outputs[0], false);
+        screencopy::file::session_paused(false);
+        old.borrow_mut().probe = None;
         assert!(screencopy::file::pending(&outputs[0]));
         assert!(!screencopy::file::requested(&outputs[0]));
         assert!(!screencopy::file::pending_picture(&outputs[0], true));
@@ -1169,6 +1161,7 @@ mod tests {
         }
         let s = drain_fixture("discard", &root);
         install_stop_waker(&s, events.handle());
+        screencopy::file::session_paused(true);
         let fence = screencopy::file::testing::stall_next_read();
         submit(&s, &mut renderer, &outputs[0]);
         let reply = stop(&s, true);
@@ -1178,7 +1171,9 @@ mod tests {
             "discard must release immediately"
         );
         assert_eq!(fence.load(Ordering::Relaxed), 1);
+        assert_eq!(screencopy::file::testing::paused_count(), 0, "stopping a paused take must retire its output entries");
         await_reply(&mut events, &reply);
+        screencopy::file::session_paused(false);
 
         let s = drain_fixture("expire", &root);
         install_stop_waker(&s, events.handle());
@@ -1233,6 +1228,25 @@ mod tests {
             assert_eq!(status[key], Value::Null);
         }
     }
+    #[test]
+    fn slow_finaliser_stop_reply_is_observed_within_one_hundred_ms() {
+        let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());
+        std::fs::create_dir(&root).unwrap();
+        let session = drain_fixture("slow-finaliser", &root);
+        let mut events = smithay::reexports::calloop::EventLoop::<()>::try_new().unwrap();
+        install_stop_waker(&session, events.handle());
+        let began = Instant::now();
+        assert!(stop_stream(&mut session.borrow_mut(), false));
+        session.borrow_mut().recording.as_mut().unwrap().delay_finaliser_for_test(Duration::from_millis(650));
+        while session.borrow().recording.as_ref().unwrap().terminal.is_none() {
+            assert!(began.elapsed() < Duration::from_secs(2));
+            events.dispatch(Some(Duration::from_millis(10)), &mut ()).unwrap();
+        }
+        assert!(began.elapsed() < Duration::from_millis(850), "650ms finaliser reply took {:?}", began.elapsed());
+        drop(session);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn failure_during_drain_clears_capture_and_drain_state() {
         let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());

@@ -58,12 +58,29 @@ thread_local! {
     static READS: RefCell<Vec<PendingRead>> = const { RefCell::new(Vec::new()) };
     static NEXT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static PAUSED: RefCell<std::collections::HashMap<String, Instant>> = RefCell::new(std::collections::HashMap::new());
+    static SESSION_PAUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Session authority, independent of recording admission and pacing timers.
+pub fn session_paused(paused: bool) {
+    if SESSION_PAUSED.replace(paused) == paused { return; }
+    if paused {
+        let mut names = REQUESTS.with_borrow(|requests| requests.iter().map(|r| r.output.clone()).collect::<Vec<_>>());
+        READS.with_borrow(|reads| names.extend(reads.iter().flat_map(|r| r.requests.iter().map(|r| r.output.clone()))));
+        for name in names { set_paused_name(name, true); }
+    } else {
+        let names = PAUSED.with_borrow(|outputs| outputs.keys().cloned().collect::<Vec<_>>());
+        for name in names { set_paused_name(name, false); }
+    }
 }
 
 /// Stop the fence clock while a session cannot service this output. Keep
 /// ownership of the snapshot, and preserve its remaining active-time budget.
 pub fn set_paused(output: &Output, paused: bool) {
-    let name = output.name();
+    set_paused_name(output.name(), paused);
+}
+
+fn set_paused_name(name: String, paused: bool) {
     let now = Instant::now();
     let resumed = PAUSED.with_borrow_mut(|outputs| {
         if paused {
@@ -124,6 +141,15 @@ pub mod testing {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+    pub fn render_node() -> String {
+        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| {
+            smithay::backend::egl::EGLDevice::enumerate().ok()
+                .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "/dev/dri/no-render-device".into())
+        })
+    }
+    pub fn paused_count() -> usize { PAUSED.with_borrow(|outputs| outputs.len()) }
     thread_local! {
         static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
     }
@@ -181,6 +207,7 @@ pub fn enqueue(
     spec: CaptureFrameSpec,
     answer: impl FnOnce(Result<Value, ControlReply>) + 'static,
 ) -> u64 {
+    if SESSION_PAUSED.get() { set_paused(output, true); }
     let id = NEXT_ID.with(|next| {
         let id = next.get();
         next.set(id.wrapping_add(1));
@@ -311,6 +338,9 @@ fn clear_idle_pool() {
 /// the writer still owns the first image, spending the live sampling budget.
 pub fn prepare_raw_pool(first: &std::sync::Arc<Vec<u8>>) {
     PIXEL_POOL.with_borrow_mut(|pool| {
+        // Stitched multi-target frames have their own allocation. Warming from
+        // one would copy bytes that this per-source conversion pool cannot use.
+        if !pool.iter().any(|frame| std::sync::Arc::ptr_eq(frame, first)) { return; }
         while pool.len() < 3 {
             pool.push(std::sync::Arc::new(first.as_ref().clone()));
         }
@@ -330,6 +360,12 @@ pub fn release_raw(prefix: &str) {
         }
         reads.retain(|read| !read.requests.is_empty());
     });
+    // Completed reads no longer have tokens in READS, so prune idle outputs
+    // too. New reads inherit SESSION_PAUSED directly on admission.
+    PAUSED.with_borrow_mut(|outputs| outputs.retain(|name, _| {
+        REQUESTS.with_borrow(|requests| requests.iter().any(|r| &r.output == name))
+            || READS.with_borrow(|reads| reads.iter().any(|read| read.requests.iter().any(|r| &r.output == name)))
+    }));
     RELEASE_POOL.set(true);
     clear_idle_pool();
 }
@@ -1018,6 +1054,13 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn stitched_pixels_do_not_warm_the_source_pool() {
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+        prepare_raw_pool(&std::sync::Arc::new(vec![1; 24]));
+        assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 0);
     }
 
     #[test]

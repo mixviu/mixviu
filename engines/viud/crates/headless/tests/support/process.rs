@@ -12,13 +12,7 @@ use std::{
 
 #[allow(dead_code)]
 pub fn render_node() -> String {
-    std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| {
-        smithay::backend::egl::EGLDevice::enumerate()
-            .ok()
-            .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "/dev/dri/no-render-device".into())
-    })
+    screencopy::file::testing::render_node()
 }
 
 #[allow(dead_code)] // Only recording tests need these optional host facilities.

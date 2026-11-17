@@ -22,13 +22,15 @@ pub const CHUNK_BYTES: u64 = 64 * 1024 * 1024;
 pub const FREE_SPACE_FLOOR: u64 = 1024 * 1024 * 1024;
 
 pub fn check_free_space(path: &Path) -> io::Result<()> {
-    match File::open(path) {
-        Ok(file) => check_space(&file, 0),
-        // A searchable, writable parent need not be readable. The new files
-        // still get the mandatory fd-based check before their first write.
-        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Ok(()),
-        Err(error) => Err(error),
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
+    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // statvfs resolves a searchable path without opening it for reading.
+    if unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) } != 0 {
+        return Err(io::Error::last_os_error());
     }
+    let stat = unsafe { stat.assume_init() };
+    check_available(stat.f_bavail.saturating_mul(stat.f_frsize), 0)
 }
 
 fn check_space(file: &File, incoming: u64) -> io::Result<()> {

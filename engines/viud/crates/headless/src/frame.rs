@@ -138,6 +138,7 @@ impl Context {
 }
 
 pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
+    screencopy::file::session_paused(matches!(state.inner.status_session, world::state::StatusSession::Paused));
     let mut ctx = context.borrow_mut();
     if route(
         ctx.vt_session,
