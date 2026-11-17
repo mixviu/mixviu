@@ -1098,7 +1098,8 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
                 status["state"], "recording",
                 "pause take unexpectedly sealed: {status}"
             );
-            if status["readbacks"].as_u64().unwrap() > paused_before["readbacks"].as_u64().unwrap() {
+            if status["readbacks"].as_u64().unwrap() > paused_before["readbacks"].as_u64().unwrap()
+            {
                 break;
             }
             assert!(
