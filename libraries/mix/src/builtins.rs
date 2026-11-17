@@ -42369,7 +42369,8 @@ mod spawn_journal_tests {
     impl TestDir {
         fn new() -> Self {
             loop {
-                let path = std::env::temp_dir().join(format!("mix-journal-{:016x}", rand::random::<u64>()));
+                let path = std::env::temp_dir()
+                    .join(format!("mix-journal-{:016x}", rand::random::<u64>()));
                 match std::fs::create_dir(&path) {
                     Ok(()) => return Self(path),
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -42438,7 +42439,11 @@ mod spawn_journal_tests {
         assert!(!received.is_empty());
         let output = child.output().unwrap();
         assert!(output.status.success());
-        assert!(String::from_utf8(output.stderr).unwrap().contains("child-fd-two-marker"));
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("child-fd-two-marker")
+        );
     }
 
     #[test]
@@ -42453,7 +42458,11 @@ mod spawn_journal_tests {
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
-        assert!(String::from_utf8(output.stdout).unwrap().contains("SIGPIPE=SIG_IGN; fd2=EPIPE"));
+        assert!(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .contains("SIGPIPE=SIG_IGN; fd2=EPIPE")
+        );
     }
 
     #[test]
@@ -42463,7 +42472,10 @@ mod spawn_journal_tests {
         use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
         // SAFETY: query the disposition without changing it in this subprocess.
         let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
-        assert_eq!(unsafe { libc::sigaction(libc::SIGPIPE, std::ptr::null(), &mut action) }, 0);
+        assert_eq!(
+            unsafe { libc::sigaction(libc::SIGPIPE, std::ptr::null(), &mut action) },
+            0
+        );
         assert_eq!(action.sa_sigaction, libc::SIG_IGN);
         let mut fds = [-1; 2];
         // SAFETY: valid storage for two fresh descriptors, owned below.
@@ -42474,7 +42486,13 @@ mod spawn_journal_tests {
         assert_eq!(unsafe { libc::dup2(write.as_raw_fd(), 2) }, 2);
         drop(read);
         drop(write);
-        assert_eq!(std::io::stderr().write_all(b"probe").unwrap_err().raw_os_error(), Some(libc::EPIPE));
+        assert_eq!(
+            std::io::stderr()
+                .write_all(b"probe")
+                .unwrap_err()
+                .raw_os_error(),
+            Some(libc::EPIPE)
+        );
         println!("SIGPIPE=SIG_IGN; fd2=EPIPE");
         unavailable_journal_preserves_child_stderr_route();
     }
