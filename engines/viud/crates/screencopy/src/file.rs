@@ -364,6 +364,13 @@ fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
     READS.with_borrow_mut(|reads| reads.extend(waiting));
 }
 
+/// Complete ready recording copies before deciding whether another capture
+/// render is needed. Unsignalled fences remain queued without a GPU wait.
+pub fn poll(renderer: &mut GlesRenderer, output: &Output) {
+    poll_reads(renderer, output, false);
+    poll_reads(renderer, output, true);
+}
+
 fn start_pixels<R: ExportMem>(
     renderer: &mut R,
     source: Source<'_, '_, R>,
@@ -607,6 +614,16 @@ fn rgb_into(
     pixels.resize(len / 4 * 3, 0);
     for (y, out) in pixels.chunks_exact_mut(width * 3).enumerate() {
         let at = source_row(y, height, bottom_up) * row;
+        let mut packed = 0;
+        #[cfg(target_arch = "x86_64")]
+        if std::arch::is_x86_feature_detected!("ssse3") {
+            // SAFETY: runtime feature check; input and output are complete
+            // rows with respectively four and three bytes per pixel.
+            packed = unsafe { pack_rgb_ssse3(&bytes[at..at + row], out, rgba) };
+        }
+        let at = at + packed * 4;
+        let out = &mut out[packed * 3..];
+        let width = width - packed;
         // Four pixels expose a fixed byte shuffle to LLVM, rather than a
         // succession of three-byte copies with loop-carried bounds checks.
         let bulk = width / 4;
@@ -646,6 +663,36 @@ fn rgb_into(
         }
     }
     Ok(())
+}
+
+/// Pack sixteen pixels with four loads and three stores, including BGRA
+/// channel reversal. Other CPUs retain the portable fixed-size shuffle.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "ssse3")]
+unsafe fn pack_rgb_ssse3(input: &[u8], output: &mut [u8], rgba: bool) -> usize {
+    use std::arch::x86_64::*;
+    let mask = if rgba {
+        _mm_setr_epi8(0,1,2,4,5,6,8,9,10,12,13,14,-1,-1,-1,-1)
+    } else {
+        _mm_setr_epi8(2,1,0,6,5,4,10,9,8,14,13,12,-1,-1,-1,-1)
+    };
+    let groups = (input.len() / 64).min(output.len() / 48);
+    for i in 0..groups {
+        // SAFETY: each iteration reads exactly 64 available bytes and writes
+        // exactly 48 available bytes. Loads and stores permit unaligned rows.
+        unsafe {
+            let src = input.as_ptr().add(i * 64);
+            let dst = output.as_mut_ptr().add(i * 48);
+            let a = _mm_shuffle_epi8(_mm_loadu_si128(src.cast()), mask);
+            let b = _mm_shuffle_epi8(_mm_loadu_si128(src.add(16).cast()), mask);
+            let c = _mm_shuffle_epi8(_mm_loadu_si128(src.add(32).cast()), mask);
+            let d = _mm_shuffle_epi8(_mm_loadu_si128(src.add(48).cast()), mask);
+            _mm_storeu_si128(dst.cast(), _mm_or_si128(a, _mm_slli_si128::<12>(b)));
+            _mm_storeu_si128(dst.add(16).cast(), _mm_or_si128(_mm_srli_si128::<4>(b), _mm_slli_si128::<8>(c)));
+            _mm_storeu_si128(dst.add(32).cast(), _mm_or_si128(_mm_srli_si128::<8>(c), _mm_slli_si128::<4>(d)));
+        }
+    }
+    groups * 16
 }
 
 fn write(spec: &CaptureFrameSpec, width: u32, height: u32, pixels: &[u8]) -> Result<(), String> {
@@ -753,6 +800,19 @@ mod tests {
         assert_eq!(rgb(&bgra, 1, 2, false, true).unwrap(), [4, 5, 6, 1, 2, 3]);
         assert_eq!(rgb(&bgra, 1, 2, true, false).unwrap(), [3, 2, 1, 6, 5, 4]);
         assert!(rgb(&bgra[..3], 1, 1, false, false).is_err());
+        for width in 1..=65 {
+            let bytes: Vec<u8> = (0..width * 3 * 4).map(|i| i as u8).collect();
+            for rgba in [false, true] {
+                for flipped in [false, true] {
+                    let expected: Vec<u8> = (0..3).flat_map(|y| {
+                        let at = source_row(y, 3, flipped) * width * 4;
+                        bytes[at..at + width * 4].chunks_exact(4).flat_map(|px|
+                            if rgba { [px[0], px[1], px[2]] } else { [px[2], px[1], px[0]] })
+                    }).collect();
+                    assert_eq!(rgb(&bytes, width, 3, rgba, flipped).unwrap(), expected);
+                }
+            }
+        }
     }
 
     #[test]

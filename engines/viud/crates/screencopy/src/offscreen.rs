@@ -40,6 +40,7 @@ pub fn capture<E>(
 ) where
     E: RenderElement<GlesRenderer>,
 {
+    file::poll(renderer, output);
     // A snapshot is not output damage. Damage copies stay queued for a real
     // output frame, even when an explicit file capture renders the same scene.
     let due = if serve_plain_copies {

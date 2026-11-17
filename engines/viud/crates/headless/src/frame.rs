@@ -290,6 +290,7 @@ fn compose(
     visible: &mut Vec<Window>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     use frames::draw::plan::frame::{FramePass, plan};
+    screencopy::file::poll(renderer, &ctx.output);
     let capture =
         screencopy::wants_full_frame(&ctx.output) || screencopy::file::pending(&ctx.output);
     if !plan(&state.inner.status).has_pass(FramePass::Scene) && !capture {
