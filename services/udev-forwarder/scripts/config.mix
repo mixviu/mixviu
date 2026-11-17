@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+fn load($path)
+  $c = load_data($path)
+  if type($c) != "map" or len(keys($c)) != 2 then die("config requires only cts and subsystems") end
+  if type($c.cts) != "list" or len($c.cts) == 0 or len($c.cts) > 128 then die("cts must contain 1..128 IDs") end
+  $seen = []
+  for $id in $c.cts
+    if type($id) != "string" or not re_match($id, "^[1-9][0-9]{2,8}$") or contains($seen, $id) then die("invalid/duplicate CT ID") end
+    push($seen, $id)
+  end
+  if type($c.subsystems) != "list" or len($c.subsystems) == 0 then die("subsystems must be nonempty") end
+  for $s in $c.subsystems
+    if type($s) != "string" or not re_match($s, "^[a-z][a-z0-9_]*$") then die("invalid subsystem") end
+  end
+  return $c
+end
+{load: load}
