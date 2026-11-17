@@ -22,6 +22,8 @@ try
   write_file($root .. "/etc/noded/genesis.pub",$genesis .. chr(10))
   $signed = $root .. "/signed"
   run_argv_must(concat($command,["sign",$authored,"--out",$signed,"--recovery-generation","0"]))
+  $verification = json_parse(run_argv_must(concat($command,["verify",$signed,"--genesis-pub-base64",$genesis,"--json"])))
+  write_file($root .. "/_etc/mesh/epoch.baseline.mix",data_encode({baseline:{mesh:"example.org",epoch:1,recovery_generation:0,canonical_blake3:$verification.canonical_blake3}}))
   write_file($root .. "/_etc/mesh_gen.conf.mix",data_encode({mesh_gen:{schema_version:1,expected_mesh:"example.org"}}))
   write_file($root .. "/_etc/mesh_targets.conf.mix",data_encode({schema_version:1,project:"example",targets:[{node:"desk",host:"pve-host",kind:"desk",transport:"pct",ct:123,profile:"/opt/mix/var/lib/example/desk-bus",session:5,account:"desktop",admission:"enforce"}]}))
   $settings = $root .. "/nodes.mix"
