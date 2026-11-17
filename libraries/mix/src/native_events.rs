@@ -599,11 +599,17 @@ impl Queue {
             return None;
         }
         if s.command == "uevent.received" {
-            let mut body = s.changes.pop_first().map(|(_, v)| v).unwrap_or_else(|| serde_json::json!({}));
+            let mut body = s
+                .changes
+                .pop_first()
+                .map(|(_, v)| v)
+                .unwrap_or_else(|| serde_json::json!({}));
             body["watch"] = handle.into();
             body["overflow"] = std::mem::take(&mut s.overflow).into();
             body["dropped"] = std::mem::take(&mut s.dropped).into();
-            if s.changes.is_empty() && let Some(closed) = s.closed.take() {
+            if s.changes.is_empty()
+                && let Some(closed) = s.closed.take()
+            {
                 body["closed"] = closed;
             }
             let mut ev = event(s.command, body);
@@ -1121,7 +1127,10 @@ impl NativeEvents {
 
     pub(crate) fn uevent_call(&mut self, name: &str, args: &[Value]) -> MixResult<Value> {
         #[cfg(not(target_os = "linux"))]
-        { let _ = (name, args); Err(refusal("UEVENT_UNSUPPORTED", "uevent requires Linux")) }
+        {
+            let _ = (name, args);
+            Err(refusal("UEVENT_UNSUPPORTED", "uevent requires Linux"))
+        }
         #[cfg(target_os = "linux")]
         {
             self.ensure_open()?;
@@ -1129,48 +1138,82 @@ impl NativeEvents {
                 let mut group = 2;
                 let mut subsystems = Vec::new();
                 if let Some(opts) = args.first() {
-                    let Value::Map(opts) = opts else { return Err(refusal("UEVENT_OPTIONS", "options must be a map")); };
+                    let Value::Map(opts) = opts else {
+                        return Err(refusal("UEVENT_OPTIONS", "options must be a map"));
+                    };
                     for (key, value) in opts.iter() {
                         match (key.as_str(), value) {
-                            ("group", Value::Number(n)) if *n == 1.0 || *n == 2.0 => group = *n as u32,
+                            ("group", Value::Number(n)) if *n == 1.0 || *n == 2.0 => {
+                                group = *n as u32
+                            }
                             ("subsystems", Value::List(list)) => {
                                 for value in list.iter() {
-                                    let Value::String(s) = value else { return Err(refusal("UEVENT_OPTIONS", "subsystems must be strings")); };
-                                    if s.is_empty() { return Err(refusal("UEVENT_OPTIONS", "empty subsystem")); }
+                                    let Value::String(s) = value else {
+                                        return Err(refusal(
+                                            "UEVENT_OPTIONS",
+                                            "subsystems must be strings",
+                                        ));
+                                    };
+                                    if s.is_empty() {
+                                        return Err(refusal("UEVENT_OPTIONS", "empty subsystem"));
+                                    }
                                     subsystems.push(s.clone());
                                 }
                             }
-                            _ => return Err(refusal("UEVENT_OPTIONS", format!("invalid option: {key}"))),
+                            _ => {
+                                return Err(refusal(
+                                    "UEVENT_OPTIONS",
+                                    format!("invalid option: {key}"),
+                                ));
+                            }
                         }
                     }
                 }
-                return self.source_watch("uevent", "uevent.received", move |queue, h| {
-                    crate::uevent::linux::Watch::new(queue, h, group, subsystems).map(crate::desktop_events::Source::Uevent)
-                }).map(Value::String);
+                return self
+                    .source_watch("uevent", "uevent.received", move |queue, h| {
+                        crate::uevent::linux::Watch::new(queue, h, group, subsystems)
+                            .map(crate::desktop_events::Source::Uevent)
+                    })
+                    .map(Value::String);
             }
-            let Some(Value::String(h)) = args.first() else { return Err(refusal("UEVENT_HANDLE", "path/handle must be a string")); };
+            let Some(Value::String(h)) = args.first() else {
+                return Err(refusal("UEVENT_HANDLE", "path/handle must be a string"));
+            };
             if name == "uevent_unwatch" {
                 self.source_unwatch("uevent", h)?;
                 return Ok(Value::Nil);
             }
             if name == "uevent_sender" {
-                if self.uevent_senders.len() >= 128 { return Err(refusal("UEVENT_LIMIT", "maximum 128 senders")); }
+                if self.uevent_senders.len() >= 128 {
+                    return Err(refusal("UEVENT_LIMIT", "maximum 128 senders"));
+                }
                 let fd = crate::uevent::linux::sender(h.clone())?;
-                let handle = format!("uevent-send:{}", NEXT_HANDLE.fetch_add(1, Ordering::Relaxed));
+                let handle = format!(
+                    "uevent-send:{}",
+                    NEXT_HANDLE.fetch_add(1, Ordering::Relaxed)
+                );
                 self.uevent_senders.insert(handle.clone(), fd);
                 return Ok(Value::String(handle));
             }
             if name == "uevent_close" {
-                if self.uevent_senders.remove(h).is_none() { return Err(refusal("UEVENT_HANDLE", "unknown sender")); }
+                if self.uevent_senders.remove(h).is_none() {
+                    return Err(refusal("UEVENT_HANDLE", "unknown sender"));
+                }
                 return Ok(Value::Nil);
             }
-            let group = match args.get(1) { Some(Value::Number(n)) if *n == 1.0 || *n == 2.0 => *n as u32, _ => return Err(refusal("UEVENT_GROUP", "group must be 1 or 2")) };
+            let group = match args.get(1) {
+                Some(Value::Number(n)) if *n == 1.0 || *n == 2.0 => *n as u32,
+                _ => return Err(refusal("UEVENT_GROUP", "group must be 1 or 2")),
+            };
             let bytes = match args.get(2) {
                 Some(Value::Bytes(b)) => b.as_ref().clone(),
                 Some(Value::Buffer(b)) => b.borrow().clone(),
                 _ => return Err(refusal("UEVENT_BYTES", "data must be bytes or buffer")),
             };
-            let fd = self.uevent_senders.get(h).ok_or_else(|| refusal("UEVENT_HANDLE", "unknown sender"))?;
+            let fd = self
+                .uevent_senders
+                .get(h)
+                .ok_or_else(|| refusal("UEVENT_HANDLE", "unknown sender"))?;
             crate::uevent::linux::send(fd, group, &bytes)?;
             Ok(Value::Nil)
         }
@@ -1624,6 +1667,26 @@ impl Drop for PumpGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn uevent_fifo_raw_buffer_and_overflow_count() {
+        let q = Queue::default();
+        q.register_source_for_test("uevent:1", "uevent.received");
+        let limit = crate::desktop_events::MAX_SOURCE_PENDING;
+        for n in 0..limit + 3 {
+            q.source("uevent:1", vec![(format!("{n:020}"), serde_json::json!({"uid":0,"raw":[0,255,n % 256]}))], false);
+        }
+        for n in 0..limit {
+            let ev = q.next(None).await.unwrap();
+            let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
+            assert_eq!(body["raw"][2], n % 256);
+            assert_eq!(body["dropped"], if n == 0 { 3 } else { 0 });
+            let value = crate::evaluator::incoming_event_to_mix_value(&ev);
+            let Value::Map(value) = value else { panic!("event map") };
+            let Value::Map(args) = &value["args"] else { panic!("args map") };
+            let Value::Buffer(raw) = &args["raw"] else { panic!("raw buffer") };
+            assert_eq!(&*raw.borrow(), &[0,255,(n % 256) as u8]);
+        }
+    }
     use std::{
         future::Future,
         pin::pin,
@@ -1700,6 +1763,8 @@ mod tests {
         let mut cx = Context::from_waker(&waker);
         assert!(wait.as_mut().poll(&mut cx).is_pending());
         let registry = NativeEvents {
+            #[cfg(target_os = "linux")]
+            uevent_senders: BTreeMap::new(),
             timers: BTreeMap::new(),
             next_timer: 0,
             processes: BTreeMap::new(),

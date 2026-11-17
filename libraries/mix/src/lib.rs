@@ -9,7 +9,6 @@ pub mod cancel;
 mod child_events;
 pub mod continuation;
 mod desktop_events;
-mod uevent;
 pub mod error;
 pub mod evaluator;
 pub mod fd_hygiene;
@@ -30,6 +29,7 @@ pub mod stats;
 mod timers;
 pub mod token;
 mod udp;
+mod uevent;
 pub mod value;
 
 #[cfg(feature = "archive")]

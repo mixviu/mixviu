@@ -41897,12 +41897,7 @@ mod strict_write_and_bool_option_tests {
             ("kill", "pid"),
             ("kill", "signal"),
             ("fs_watch", "opts"),
-            ("uevent_watch", CapabilityClass::Env, "system", "Linux evaluator-owned uevent subscription. opts {group:1|2 (default 2), subsystems:[string]} (empty accepts all). uevent.received args {watch, raw:buffer, properties:map, uid:0, overflow:bool}; rejected datagrams deliver {drop:string}, fatal errors {closed:map}. Ordered bounded queue; ENOBUFS/truncation reported. Does not re-encode wire bytes", contract!((opts?: map) -> string; failure[raises])),
-    ("uevent_unwatch", CapabilityClass::Env, "system", "Cancel a uevent watch and join its reader", contract!((handle: string) -> nil; failure[raises])),
-    ("uevent_sender", CapabilityClass::Env, "system", "Linux evaluator-owned multicast sender created in netns_path by setns on a dedicated thread. Requires root/CAP_SYS_ADMIN and CAP_NET_ADMIN. Maximum 128 handles", contract!((netns_path: string) -> string; failure[raises])),
-    ("uevent_send", CapabilityClass::Env, "system", "Send bytes verbatim through an evaluator-owned uevent sender to group 1 or 2. Kernel supplies credentials. Raises on send failure; no retries", contract!((handle: string, group: number, data: any_of(bytes, buffer)) -> nil; failure[raises])),
-    ("uevent_close", CapabilityClass::Env, "system", "Close an evaluator-owned uevent sender; all senders close on generation retirement", contract!((handle: string) -> nil; failure[raises])),
-    ("net_watch", "opts"),
+            ("net_watch", "opts"),
             ("audio_watch", "opts"),
             ("audio_state", "opts"),
         ];

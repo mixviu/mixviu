@@ -314,8 +314,20 @@ pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
     {
         let m = std::rc::Rc::make_mut(m);
         if let Some(Value::List(raw)) = m.get("raw") {
-            let raw = raw.iter().filter_map(|v| if let Value::Number(n) = v {Some(*n as u8)} else {None}).collect();
-            m.insert("raw".into(), Value::Buffer(std::rc::Rc::new(std::cell::RefCell::new(raw))));
+            let raw = raw
+                .iter()
+                .filter_map(|v| {
+                    if let Value::Number(n) = v {
+                        Some(*n as u8)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            m.insert(
+                "raw".into(),
+                Value::Buffer(std::rc::Rc::new(std::cell::RefCell::new(raw))),
+            );
         }
     }
     if event.headers.get("native-udp").is_some_and(|v| v == "1")
@@ -13869,7 +13881,12 @@ impl Evaluator {
             }
             if matches!(
                 name,
-                "uevent_watch" | "uevent_unwatch" | "uevent_sender" | "uevent_send" | "uevent_close" | "net_watch"
+                "uevent_watch"
+                    | "uevent_unwatch"
+                    | "uevent_sender"
+                    | "uevent_send"
+                    | "uevent_close"
+                    | "net_watch"
                     | "net_unwatch"
                     | "net_state"
                     | "process_watch"
@@ -14266,7 +14283,11 @@ impl Evaluator {
                             | "fs_watch"
                             | "fs_unwatch"
                             | "fs_wait"
-                            | "uevent_watch" | "uevent_unwatch" | "uevent_sender" | "uevent_send" | "uevent_close"
+                            | "uevent_watch"
+                            | "uevent_unwatch"
+                            | "uevent_sender"
+                            | "uevent_send"
+                            | "uevent_close"
                             | "net_watch"
                             | "net_unwatch"
                             | "net_state"
@@ -14496,7 +14517,8 @@ impl Evaluator {
                                         .any(|name| g.handlers.contains_key(*name)),
                                         filesystem: g.handlers.contains_key("fs.changed"),
                                         children: g.handlers.contains_key("proc.exited"),
-                                        net: g.handlers.contains_key("net.changed") || g.handlers.contains_key("uevent.received"),
+                                        net: g.handlers.contains_key("net.changed")
+                                            || g.handlers.contains_key("uevent.received"),
                                         audio: g.handlers.contains_key("audio.changed"),
                                         // Socket commands are caller-chosen, so
                                         // the family gate is source presence
