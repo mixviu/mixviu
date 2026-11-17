@@ -7,7 +7,11 @@ use datetime::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 fn leap_subtraction_across_days_matches_chrono() {
     for (left, right, seconds) in [
         ("2017-01-01T00:00:00.123Z", "2016-12-31T23:59:60.123Z", 0),
-        ("2017-01-01T01:00:00.123Z", "2016-12-31T23:59:60.123Z", 3_600),
+        (
+            "2017-01-01T01:00:00.123Z",
+            "2016-12-31T23:59:60.123Z",
+            3_600,
+        ),
         ("2017-01-01T12:00:00Z", "2016-12-31T00:29:60Z", 127_801),
         ("2016-12-31T12:00:00Z", "2016-12-31T00:29:60Z", 41_401),
     ] {
@@ -21,12 +25,23 @@ fn leap_subtraction_across_days_matches_chrono() {
 #[test]
 fn leap_nanosecond_and_year_bounds_match_chrono() {
     for (seconds, valid) in [(0, false), (58, false), (59, true), (-1, true), (-2, false)] {
-        assert_eq!(DateTime::<Utc>::from_timestamp(seconds, 1_123_000_000).is_some(), valid);
+        assert_eq!(
+            DateTime::<Utc>::from_timestamp(seconds, 1_123_000_000).is_some(),
+            valid
+        );
     }
-    for (year, valid) in [(-262144, false), (-262143, true), (262142, true), (262143, false)] {
+    for (year, valid) in [
+        (-262144, false),
+        (-262143, true),
+        (262142, true),
+        (262143, false),
+    ] {
         assert_eq!(NaiveDate::from_ymd_opt(year, 1, 1).is_some(), valid);
     }
-    assert_eq!(DateTime::<Utc>::MAX_UTC.to_string(), "+262142-12-31 23:59:59.999999999 UTC");
+    assert_eq!(
+        DateTime::<Utc>::MAX_UTC.to_string(),
+        "+262142-12-31 23:59:59.999999999 UTC"
+    );
 }
 
 #[test]
