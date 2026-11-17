@@ -197,9 +197,13 @@ fn record_changing_4k_ten_seconds() {
 #[test]
 #[ignore = "release 4K30 zero-drop acceptance on a render worker"]
 fn benchmark_record_changing_4k_zero_drop() {
-    assert!(!cfg!(debug_assertions), "use cargo test --release");
-    assert!(process::record_available());
-    changing_4k(true);
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release");
+    #[cfg(not(debug_assertions))]
+    {
+        assert!(process::record_available());
+        changing_4k(true);
+    }
 }
 
 fn changing_4k(strict: bool) {
