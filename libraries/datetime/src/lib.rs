@@ -230,7 +230,19 @@ impl From<std::time::SystemTime> for DateTime<Utc> {
 impl<Z: Zone> FromStr for DateTime<Z> {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let t = DateTime::parse_from_rfc3339(s)?;
+        let t = DateTime::parse_from_rfc3339(s).or_else(|error| {
+            // Serde/FromStr historically allow signed extended years even
+            // though the strict RFC 3339 entry point has a four-digit year.
+            if !s.starts_with(['+', '-']) { return Err(error); }
+            let end = s[1..].find('-').map(|i| i + 1).ok_or(error)?;
+            let year: i32 = s[..end].parse().map_err(invalid)?;
+            let surrogate = format!("2000{}", &s[end..]);
+            let mut t = DateTime::parse_from_rfc3339(&surrogate)?;
+            let date = time::Date::from_calendar_date(year, t.inner.month(), t.inner.day()).map_err(invalid)?;
+            t.inner = t.inner.replace_date(date);
+            if !bounded(t.inner) { return Err(invalid("timestamp outside supported range")); }
+            Ok(t)
+        })?;
         Ok(Self::new(t.inner.to_offset(Z::offset(t.inner)), t.leap))
     }
 }
@@ -450,9 +462,10 @@ fn offset_text(offset: UtcOffset, colons: usize) -> String {
     let sign = if n < 0 { '-' } else { '+' };
     let n = n.unsigned_abs();
     let (h, m, s) = (n / 3600, n / 60 % 60, n % 60);
+    let rounded_minutes = (n + 30) / 60;
     match colons {
-        0 => format!("{sign}{h:02}{m:02}"),
-        1 => format!("{sign}{h:02}:{m:02}"),
+        0 => format!("{sign}{:02}{:02}", rounded_minutes / 60, rounded_minutes % 60),
+        1 => format!("{sign}{:02}:{:02}", rounded_minutes / 60, rounded_minutes % 60),
         2 => format!("{sign}{h:02}:{m:02}:{s:02}"),
         _ => format!("{sign}{h:02}"),
     }
@@ -501,7 +514,7 @@ fn format_value(
             "Z" => out.push_str(&if utc {
                 "UTC".into()
             } else {
-                offset_text(t.offset(), 1)
+                    offset_text(t.offset(), if t.offset().seconds_past_minute() == 0 { 1 } else { 2 })
             }),
             "z" => out.push_str(&offset_text(t.offset(), 0)),
             ":z" => out.push_str(&offset_text(t.offset(), 1)),
@@ -552,6 +565,17 @@ fn format_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn extended_year_serde_and_historical_offset_spelling() {
+        let text = "\"+10000-01-01T00:00:00Z\"";
+        let t: DateTime<Utc> = serde_json::from_str(text).unwrap();
+        assert_eq!(t.timestamp(), 253_402_300_800);
+        assert_eq!(serde_json::to_string(&t).unwrap(), text);
+        let offset = UtcOffset::from_hms(0, 17, 30).unwrap();
+        let t = DateTime::<FixedOffset>::new(OffsetDateTime::UNIX_EPOCH.to_offset(offset), false);
+        assert_eq!(t.format("%z %:z %::z %:::z %Z").to_string(), "+0018 +00:18 +00:17:30 +00 +00:17:30");
+        assert_eq!(NaiveDateTime::parse_from_str("2016-12-31 23:59:60", "%Y-%m-%d %H:%M:%S").unwrap().and_utc().timestamp(), 1_483_228_799);
+    }
     #[test]
     fn serde_utc_suffix_and_fraction_groups_are_stable() {
         for (nanos, fraction) in [
