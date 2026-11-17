@@ -176,9 +176,12 @@ fn vfl_visit(path: &Path, visit: impl FnMut(&[u8])) -> (Vec<u8>, u64) {
 
 /// A live scan acknowledges only complete, CRC-checked records. The active
 /// chunk may end in a partially written record; sealed scans remain strict.
-fn vfl_scan(path: &Path, mut visit: impl FnMut(&[u8]), sealed: bool) -> std::io::Result<(Vec<u8>, u64)> {
-    let manifest: Value =
-        serde_json::from_slice(&fs::read(path.join("manifest.json"))?).unwrap();
+fn vfl_scan(
+    path: &Path,
+    mut visit: impl FnMut(&[u8]),
+    sealed: bool,
+) -> std::io::Result<(Vec<u8>, u64)> {
+    let manifest: Value = serde_json::from_slice(&fs::read(path.join("manifest.json"))?).unwrap();
     assert!([json!(1), json!(2)].contains(&manifest["version"]));
     let size = manifest["width"].as_u64().unwrap() as usize
         * manifest["height"].as_u64().unwrap() as usize
@@ -252,10 +255,10 @@ fn vfl_scan(path: &Path, mut visit: impl FnMut(&[u8]), sealed: bool) -> std::io:
         }
     }
     if sealed {
-    let complete: Value =
-        serde_json::from_slice(&fs::read(path.join("complete.json")).unwrap()).unwrap();
-    assert_eq!(complete["complete"], true);
-    assert_eq!(complete["frames"], count);
+        let complete: Value =
+            serde_json::from_slice(&fs::read(path.join("complete.json")).unwrap()).unwrap();
+        assert_eq!(complete["complete"], true);
+        assert_eq!(complete["frames"], count);
     }
     Ok((first, count))
 }
@@ -890,23 +893,32 @@ fn record_idle_output_lifecycle_and_clock() {
             // decoded pixels acknowledge this particular commit. Scan both
             // names because automatic seal can publish between Bus replies.
             for path in [
-                Path::new(next["frames_path"].as_str().unwrap()).parent().unwrap(),
+                Path::new(next["frames_path"].as_str().unwrap())
+                    .parent()
+                    .unwrap(),
                 Path::new(next["path"].as_str().unwrap()),
             ] {
                 let mut frame = 0;
-                match vfl_scan(path, |pixels| {
-                    if retained.is_none() && pixels[at..at + 4] == colour.to_le_bytes() {
-                        retained = Some(frame);
-                    }
-                    frame += 1;
-                }, false) {
+                match vfl_scan(
+                    path,
+                    |pixels| {
+                        if retained.is_none() && pixels[at..at + 4] == colour.to_le_bytes() {
+                            retained = Some(frame);
+                        }
+                        frame += 1;
+                    },
+                    false,
+                ) {
                     Ok(_) => {}
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                     Err(error) => panic!("live VFL scan: {error}"),
                 }
             }
             if let Some(frame) = retained {
-                println!("BOUNDED_RETAINED colour={colour:08x} frame={frame} readbacks={} dropped={}", status["readbacks"], status["dropped"]);
+                println!(
+                    "BOUNDED_RETAINED colour={colour:08x} frame={frame} readbacks={} dropped={}",
+                    status["readbacks"], status["dropped"]
+                );
                 admitted_colours.push(colour);
                 break;
             }
@@ -945,12 +957,18 @@ fn record_idle_output_lifecycle_and_clock() {
     // Bounded queue drops under parallel CI load are reported, not a promise
     // that every submitted state is retained. Zero-drop throughput is tested
     // separately by the isolated strict 4K30 acceptance.
-    assert_eq!(bounded["dropped"].as_u64().unwrap(), bounded["dropped_capture"].as_u64().unwrap() + bounded["dropped_queue"].as_u64().unwrap());
+    assert_eq!(
+        bounded["dropped"].as_u64().unwrap(),
+        bounded["dropped_capture"].as_u64().unwrap() + bounded["dropped_queue"].as_u64().unwrap()
+    );
     let mut previous = 0;
     let mut final_colour = 0;
     vfl_visit(Path::new(next["path"].as_str().unwrap()), |pixels| {
         let colour = u32::from_le_bytes(pixels[at..at + 4].try_into().unwrap());
-        let index = submitted_colours.iter().position(|c| *c == colour).expect("unknown recorded colour");
+        let index = submitted_colours
+            .iter()
+            .position(|c| *c == colour)
+            .expect("unknown recorded colour");
         assert!(index >= previous, "recorded colours went backwards");
         previous = index;
         final_colour = colour;
