@@ -23,8 +23,9 @@ end
 fn files($request)
   $t = $targets.checked_target($request.target)
   if $t.transport != "pct" or $t.identity_schema == 2 or $t.admission == nil then $w.refuse("preparation requires an explicit single-account CT target") end
-  if type($request.endpoint) != "string" or not re_match($request.endpoint,"^[A-Za-z0-9.-]+:[0-9]{1,5}$") or not re_match($request.hub_key,"^[A-Za-z0-9+/]{43}=$") or not valid_ipv4($request.ip) or not re_match($request.subnet,"^[0-9.]+/[0-9]{1,2}$") then $w.refuse("invalid WireGuard preparation plan") end
-  if not valid_port(to_number(split($request.endpoint,":")[1])) or not valid_port($request.port) then $w.refuse("endpoint and broker ports must be integers from 1 to 65535") end
+  if not valid_endpoint_address($request.endpoint) or not re_match($request.hub_key,"^[A-Za-z0-9+/]{43}=$") or not valid_ipv4($request.ip) or not valid_subnet($request.subnet) then $w.refuse("invalid WireGuard preparation plan") end
+  $endpoint_port = split($request.endpoint,":")[1]
+  if not re_match($endpoint_port,"^[1-9][0-9]{0,4}$") or not valid_port(to_number($endpoint_port)) or not valid_port($request.port) then $w.refuse("endpoint and broker ports must be integers from 1 to 65535") end
   $config = {node:$t.node,mesh:$request.mesh,wg_ip:$request.ip,noded:{port:$request.port,mesh_config:$t.etc .. "/noded/config.conf.mix",unix_socket:$t.run .. "/noded/bus.sock",admission:$t.admission}}
   return [{path:$t.etc .. "/noded/service.env",bytes:service_text($t)},
     {path:$t.etc .. "/node.conf.mix",bytes:data_encode($config)},
@@ -38,9 +39,21 @@ end
 fn valid_ipv4($value)
   if type($value) != "string" or not re_match($value,"^[0-9]{1,3}(\\.[0-9]{1,3}){3}$") then return false end
   for $octet in split($value,".")
-    if to_number($octet) > 255 then return false end
+    if (len($octet) > 1 and starts_with($octet,"0")) or to_number($octet) > 255 then return false end
   end
   return true
+end
+
+fn valid_subnet($value)
+  if type($value) != "string" then return false end
+  $parts = split($value,"/")
+  return len($parts) == 2 and valid_ipv4($parts[0]) and re_match($parts[1],"^[0-9]{1,2}$") and to_number($parts[1]) <= 32
+end
+
+fn valid_endpoint_address($value)
+  if type($value) != "string" or not re_match($value,"^[A-Za-z0-9.-]+:[0-9]{1,5}$") then return false end
+  $host = split($value,":")[0]
+  return not re_match($host,"^[0-9.]+$") or valid_ipv4($host)
 end
 
 -- Existing objects must already match. Never adopt/reset an old profile,

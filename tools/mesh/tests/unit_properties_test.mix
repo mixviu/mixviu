@@ -36,6 +36,13 @@ end
     $file = $root .. "/" .. $transport .. ".mix"
     write_file($file,$source)
     $worker = require($file)
+    $omitted_refused = false
+    try
+      $worker.unit_properties("noded@5.service")
+    catch $message
+      $omitted_refused = contains($message,"expected 2 argument(s), got 1")
+    end
+    check($omitted_refused,"omitted transport did not produce the expected arity refusal")
     $properties = $worker.unit_properties("noded@5.service",$transport)
     check(len(keys($properties))==len($names),"transport property count differs")
     $raw = {node:"desk",host:"host",kind:"desk",session:5,account:"desktop",admission:"enforce"}

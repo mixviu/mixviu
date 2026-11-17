@@ -5,12 +5,12 @@ $root = trim(run_argv_must(["mktemp","-d"]))
 fn check($ok,$message)
   if not $ok then raise("DESK_APPLY_TEST",$message) end
 end
-fn refused($action)
+fn refused($action,$code,$expected)
   try
     $action()
     return false
-  catch $message
-    return true
+  catch $message,$detail
+    return $detail.code == $code and $message == $expected
   end
 end
 try
@@ -35,16 +35,30 @@ try
     $before = $prep.fixture_snapshot()
     $bad = $request
     for $key in keys($changes) $bad.target[$key] = $changes[$key] end
-    check(refused(fn()=$prep.apply($bad)),"forged derived target accepted")
+    check(refused(fn()=$prep.apply($bad),"MESH_TARGET","target must be the unchanged parsed description"),"forged derived target did not produce the expected refusal")
     check(deep_eq($before,$prep.fixture_snapshot()) and len($prep.fixture_mutations())==0,"refused plan created state")
   end
-  for $changes in [{ip:"1.2"},{ip:"256.2.3.4"},{ip:"1.2.3.4.5"},{endpoint:"hub.example:0"},{endpoint:"hub.example:65536"},{port:0},{port:65536},{port:42.5},{port:"4200"}]
+  for $changes in [{ip:"1.2"},{ip:"256.2.3.4"},{ip:"1.2.3.4.5"},{ip:"01.2.3.4"},{subnet:"300.1.2.3/99"},{subnet:"1.2.3/24"},{subnet:"1.2.3.4.5/8"},{subnet:"01.2.3.4/24"},{subnet:"1.2.3.4/33"},{subnet:"1.2.3.4/-1"},{endpoint:"01.2.3.4:42"},{endpoint:"hub.example:0"},{endpoint:"hub.example:65536"},{endpoint:"host:0042"},{port:0},{port:65536},{port:42.5},{port:"4200"},{port:"0042"}]
     $prep.fixture_reset()
     $before = $prep.fixture_snapshot()
     $bad = $request
     for $key in keys($changes) $bad[$key] = $changes[$key] end
-    check(refused(fn()=$prep.apply($bad)),"invalid address or port accepted")
+    $message = if has_key($changes,"ip") or has_key($changes,"subnet") or $changes.endpoint == "01.2.3.4:42" then "invalid WireGuard preparation plan" else "endpoint and broker ports must be integers from 1 to 65535" end
+    check(refused(fn()=$prep.apply($bad),"DESK_FIXTURE",$message),"invalid address or port did not produce the expected refusal")
     check(deep_eq($before,$prep.fixture_snapshot()),"invalid plan mutated state")
+  end
+  for $case in [
+    {changes:{native:{node:"other",prefix:"/opt/mix",mix_bin:"/opt/mix/bin/mix"}},code:"MESH_TARGET",message:"native configuration must belong to the target node"},
+    {changes:{native:{node:"desk",prefix:"/opt/other",mix_bin:"/opt/other/bin/mix"}},code:"MESH_TARGET",message:"CT native install must use /opt/mix"},
+    {changes:{native:{node:"desk",prefix:"/opt/mix",mix_bin:"/opt/evil/bin/mix"}},code:"MESH_TARGET",message:"configured interpreter must be the node prefix/bin/mix"},
+    {changes:{mix_bin:"/opt/evil/bin/mix"},code:"DESK_FIXTURE",message:"preparation interpreter differs from native plan"}
+  ]
+    $prep.fixture_reset()
+    $before = $prep.fixture_snapshot()
+    $bad = $request
+    for $key in keys($case.changes) $bad[$key] = $case.changes[$key] end
+    check(refused(fn()=$prep.apply($bad),$case.code,$case.message),"forged native plan did not produce the expected refusal")
+    check(deep_eq($before,$prep.fixture_snapshot()) and len($prep.fixture_mutations())==0,"forged native plan mutated state")
   end
   $prep.fixture_reset()
   check($prep.apply($request).started==false,"apply started a service")
@@ -58,6 +72,7 @@ try
   $prep.apply($request)
   check(deep_eq($before,$prep.fixture_snapshot()) and deep_eq($mutations,$prep.fixture_mutations()),"second apply changed prepared state")
   check($prep.valid_ipv4("0.255.1.2") and $prep.valid_port(1) and $prep.valid_port(65535),"valid address/port boundary refused")
+  check($prep.valid_subnet("0.0.0.0/0") and $prep.valid_subnet("255.255.255.255/32"),"valid subnet prefix boundary refused")
 finally
   run_argv_must(["rm","-rf",$root])
 end

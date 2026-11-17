@@ -74,7 +74,7 @@ fn parse_unit_properties($text,$transport)
   return $out
 end
 
-fn unit_properties($unit,$transport = nil)
+fn unit_properties($unit,$transport)
   $argv = ["systemctl","show",$unit]
   for $name in unit_property_names($transport)
     push($argv,"--property=" .. $name)
