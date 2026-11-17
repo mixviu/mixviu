@@ -34,12 +34,25 @@ impl Zone for Utc {
 }
 impl Zone for Local {
     fn offset(at: OffsetDateTime) -> UtcOffset {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static LAST_REFRESH: AtomicU64 = AtomicU64::new(u64::MAX);
         // Refresh TZ/system zone data when time can prove tzset is safe.
         // Its unchecked variant requires a whole-process guarantee about C
         // environment mutation and timezone globals that a library cannot
         // establish. On multithreaded Unix this can decline the refresh;
         // retain the last zone rather than introducing an unsound safe API.
-        let _ = time::util::refresh_tz();
+        // Only one caller per wall-clock second probes the process thread
+        // count (a procfs read on Linux), including when refresh is declined.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let previous = LAST_REFRESH.load(Ordering::Relaxed);
+        if previous != now
+            && LAST_REFRESH.compare_exchange(previous, now, Ordering::Relaxed, Ordering::Relaxed).is_ok()
+        {
+            let _ = time::util::refresh_tz();
+        }
         UtcOffset::local_offset_at(at).unwrap_or(UtcOffset::UTC)
     }
 }

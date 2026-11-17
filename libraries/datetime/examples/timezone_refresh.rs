@@ -4,6 +4,8 @@ use datetime::{DateTime, Local};
 fn main() {
     let instant = DateTime::parse_from_rfc3339("2023-11-14T22:13:20Z").unwrap();
     for (tz, expected) in [("UTC0", "+0000"), ("AEST-10", "+1000"), ("UTC0", "+0000")] {
+        // Local refresh probes are limited to one per wall-clock second.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
         // SAFETY: this executable never creates any other thread or invokes
         // third-party code that creates threads. Environment reads are serial.
         unsafe {

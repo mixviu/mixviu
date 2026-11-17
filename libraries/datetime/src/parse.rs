@@ -150,6 +150,7 @@ impl Input<'_> {
         Ok(value)
     }
     fn offset(&mut self, zulu: bool) -> Result<UtcOffset, ParseError> {
+        self.space();
         if zulu && self.0.starts_with(['Z', 'z']) {
             self.0 = &self.0[1..];
             return Ok(UtcOffset::UTC);
