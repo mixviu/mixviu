@@ -107,6 +107,25 @@ fn readback_skips(readback_us: u64, fps: u32) -> u64 {
     readback_us.saturating_sub(budget).div_ceil(budget).min(60)
 }
 
+/// Preserve the quarter-frame rate limit while allowing one unused allowance
+/// to cover a cold allocation or a short scheduling burst. Credit is bounded;
+/// sustained over-budget readbacks still create debt through readback_skips.
+fn charge_readback(credit: &mut u64, readback_us: u64, fps: u32) -> u64 {
+    if fps == 0 {
+        return 0;
+    }
+    let budget = (1_000_000 / u64::from(fps) / 4).max(1);
+    *credit = (*credit).min(budget);
+    if readback_us <= budget {
+        *credit = (*credit + budget - readback_us).min(budget);
+        0
+    } else {
+        let spend = (*credit).min(readback_us - budget);
+        *credit -= spend;
+        readback_skips(readback_us - spend, fps)
+    }
+}
+
 fn spend_readback_budget(debt: &mut u64, damaged: bool) -> bool {
     if *debt == 0 {
         return false;
@@ -225,6 +244,7 @@ pub struct Recording {
     readbacks: u64,
     readback_max_us: u64,
     readback_debt: u64,
+    readback_credit_us: u64,
     files: TakeFiles,
     bytes: Arc<std::sync::atomic::AtomicU64>,
     encoder: Option<VideoEncoder>,
@@ -295,6 +315,7 @@ impl Recording {
             readbacks: 0,
             readback_max_us: 0,
             readback_debt: 0,
+            readback_credit_us: (1_000_000 / u64::from(fps.max(1)) / 4).max(1),
             encoder: Some(encoder),
             finishing: None,
             stop_discard: None,
@@ -317,7 +338,7 @@ impl Recording {
             self.readback_total_us += readback_us;
             self.readbacks += 1;
             self.readback_max_us = self.readback_max_us.max(readback_us);
-            self.readback_debt = readback_skips(readback_us, self.fps);
+            self.readback_debt = charge_readback(&mut self.readback_credit_us, readback_us, self.fps);
             if (w, h) != (self.source_width, self.source_height) {
                 return Err("target dimensions changed".into());
             }
@@ -479,7 +500,7 @@ mod file_tests {
             "vfl".into(),
         )
         .unwrap();
-        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 14000))).unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 25000))).unwrap();
         assert!(r.skip_readback(true));
         assert_eq!(r.dropped, 0);
         assert_eq!(r.readback_deferred, 1);
@@ -588,6 +609,26 @@ mod file_tests {
         assert!(spend_readback_budget(&mut debt, true));
         assert!(spend_readback_budget(&mut debt, true));
         assert!(!spend_readback_budget(&mut debt, true));
+    }
+    #[test]
+    fn readback_credit_absorbs_a_burst_but_still_limits_sustained_cost() {
+        let budget = 8333;
+        let mut credit = budget;
+        assert_eq!(charge_readback(&mut credit, 3000, 30), 0);
+        assert_eq!(credit, budget, "credit cannot grow without bound");
+        assert_eq!(charge_readback(&mut credit, 11633, 30), 0);
+        assert_eq!(credit, 5033);
+        assert_eq!(charge_readback(&mut credit, 3000, 30), 0);
+        assert_eq!(credit, budget);
+        let mut ticks = 0;
+        let mut skips = 0;
+        for reads in 1..=300 {
+            let debt = charge_readback(&mut credit, 9500, 30);
+            ticks += 1 + debt;
+            skips += debt;
+            assert!(reads * 9500 <= ticks * budget + budget);
+        }
+        assert!(skips > 0, "sustained 9.5ms reads must still throttle");
     }
     #[test]
     fn unsupported_publication_refused_before_take_without_residue() {
