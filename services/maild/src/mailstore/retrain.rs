@@ -242,7 +242,7 @@ fn train_order_lock() -> &'static tokio::sync::Mutex<()> {
 pub fn event_us() -> i64 {
     use std::sync::atomic::{AtomicI64, Ordering};
     static LAST: AtomicI64 = AtomicI64::new(0);
-    let now = chrono::Utc::now().timestamp_micros();
+    let now = datetime::Utc::now().timestamp_micros();
     let mut prev = LAST.load(Ordering::Relaxed);
     loop {
         let next = now.max(prev + 1);

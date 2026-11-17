@@ -705,7 +705,7 @@ async fn native_jmap_submission_replaces_a_cotenants_forged_spam_verdict() -> Re
         &[],
         Flags(0),
         Tags::new(),
-        chrono::Utc::now().timestamp_millis(),
+        datetime::Utc::now().timestamp_millis(),
     )?;
     let aliases = Arc::new(::props::Runtime::new(
         "maild",

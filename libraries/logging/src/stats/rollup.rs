@@ -122,7 +122,7 @@ pub(crate) fn perform_rollup_inner(inner: &Arc<RecorderInner>, period_seconds: u
         let guard = inner.sinks.lock().expect("stats sinks Mutex poisoned");
         guard.clone()
     };
-    let ts = chrono::Utc::now();
+    let ts = datetime::Utc::now();
     let mut ok_count = 0;
     for installed in &sinks {
         let mut prev_guard = installed

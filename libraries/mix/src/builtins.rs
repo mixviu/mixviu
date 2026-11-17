@@ -17535,7 +17535,7 @@ fn builtin_date_format(args: Vec<Value>) -> MixResult<Option<Value>> {
             ));
         }
     }
-    let dt = chrono::DateTime::from_timestamp(ts, 0).ok_or_else(|| {
+    let dt = datetime::DateTime::from_timestamp(ts, 0).ok_or_else(|| {
         MixError::structured(
             "VALUE_OUT_OF_RANGE",
             format!("date_format(): argument 1 timestamp {ts} is outside the supported range"),
@@ -17544,7 +17544,7 @@ fn builtin_date_format(args: Vec<Value>) -> MixResult<Option<Value>> {
     let text = if utc {
         dt.format(&fmt).to_string()
     } else {
-        dt.with_timezone(&chrono::Local).format(&fmt).to_string()
+        dt.with_timezone(&datetime::Local).format(&fmt).to_string()
     };
     Ok(Some(Value::String(text)))
 }
@@ -17554,13 +17554,13 @@ fn builtin_date_parse(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("date_parse", &args, 1)?;
     let s = args[0].to_mix_string();
     // Try ISO 8601 first, then common formats
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&s) {
+    if let Ok(dt) = datetime::DateTime::parse_from_rfc3339(&s) {
         return Ok(Some(Value::Number(dt.timestamp() as f64)));
     }
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
+    if let Ok(dt) = datetime::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
         return Ok(Some(Value::Number(dt.and_utc().timestamp() as f64)));
     }
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+    if let Ok(d) = datetime::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
         let dt = d.and_hms_opt(0, 0, 0).unwrap();
         return Ok(Some(Value::Number(dt.and_utc().timestamp() as f64)));
     }
@@ -17572,7 +17572,7 @@ fn builtin_date_parse(args: Vec<Value>) -> MixResult<Option<Value>> {
 
 #[cfg(feature = "datetime")]
 fn builtin_now_iso(_args: Vec<Value>) -> MixResult<Option<Value>> {
-    Ok(Some(Value::String(chrono::Local::now().to_rfc3339())))
+    Ok(Some(Value::String(datetime::Local::now().to_rfc3339())))
 }
 
 #[cfg(feature = "datetime")]
@@ -17623,7 +17623,7 @@ fn builtin_relative_time(args: Vec<Value>) -> MixResult<Option<Value>> {
         "relative_time(): argument 1",
         number_arg("relative_time", &args, 0)?.trunc(),
     )?;
-    let now = chrono::Utc::now().timestamp();
+    let now = datetime::Utc::now().timestamp();
     let diff = now - ts;
     let s = if diff < 0 {
         let d = -diff;
@@ -41172,6 +41172,120 @@ mod loud_numeric_argument_tests {
         .unwrap()
         .unwrap();
         assert_eq!(out, Value::String("2023-11-14T22:13:20Z +0000".into()));
+    }
+
+    // Migration fixtures: exercise the public builtin, rather than just the
+    // datetime dependency, so a replacement must retain the language contract.
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_format_migration_contract() {
+        for (ts, pattern, expected) in [
+            (
+                0.0,
+                "%Y-%m-%d %H:%M:%S %z %:z %Z",
+                "1970-01-01 00:00:00 +0000 +00:00 UTC",
+            ),
+            (
+                1700000000.0,
+                "%A %a %B %b %j %I:%M %p %s %%",
+                "Tuesday Tue November Nov 318 10:13 PM 1700000000 %",
+            ),
+            (1609459200.0, "%G-%V-%u %U %W %w", "2020-53-5 00 00 5"),
+            (
+                0.9,
+                "%S %f %.f %.3f %.6f %.9f",
+                "00 000000000  .000 .000000 .000000000",
+            ),
+            (-1.9, "%Y-%m-%dT%H:%M:%SZ", "1969-12-31T23:59:59Z"),
+            // Chrono's range extends beyond four-digit years. Do not silently
+            // narrow the builtin's accepted domain to a replacement's default.
+            (253402300800.0, "%Y-%m-%d", "+10000-01-01"),
+        ] {
+            assert_eq!(
+                call_builtin(
+                    "date_format",
+                    vec![
+                        Value::Number(ts),
+                        Value::String(pattern.into()),
+                        utc_opts(Value::Bool(true)),
+                    ]
+                )
+                .unwrap()
+                .unwrap(),
+                Value::String(expected.into()),
+                "timestamp {ts}, pattern {pattern}",
+            );
+        }
+    }
+
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_parse_migration_contract() {
+        for (text, expected) in [
+            ("1970-01-01", 0.0),
+            ("1970-01-01 00:00:00", 0.0),
+            ("1970-01-01T10:00:00+10:00", 0.0),
+            ("1969-12-31T23:59:59.999999999Z", -1.0),
+            ("2024-02-29", 1709164800.0),
+            ("2016-12-31T23:59:60Z", 1483228799.0),
+            ("+10000-01-01", 253402300800.0),
+        ] {
+            assert_eq!(
+                call_builtin("date_parse", vec![Value::String(text.into())])
+                    .unwrap()
+                    .unwrap(),
+                Value::Number(expected),
+                "input {text}",
+            );
+        }
+        for text in [
+            "2023-02-29",
+            "2024-02-30",
+            "2024-01-01T00:00:00",
+            "not a date",
+        ] {
+            assert!(
+                call_builtin("date_parse", vec![Value::String(text.into())]).is_err(),
+                "input {text}"
+            );
+        }
+    }
+
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_parse_padding_and_whitespace_match_pre_migration() {
+        for (text, expected) in [
+            ("2024-1-5", 1704412800.0),
+            ("2024-01-05 9:05:00", 1704445500.0),
+            ("2024-01-05  09:05:00", 1704445500.0),
+            (" 2024-01-05", 1704412800.0),
+            ("2024-1-5\t9:5:0", 1704445500.0),
+            ("2024- 1- 5 \n 9: 5: 0", 1704445500.0),
+        ] {
+            assert_eq!(
+                call_builtin("date_parse", vec![Value::String(text.into())])
+                    .unwrap()
+                    .unwrap(),
+                Value::Number(expected),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_format_weekday_padding_flags_keep_sunday_zero() {
+        let result = call_builtin(
+            "date_format",
+            vec![
+                Value::Number(1700000000.0),
+                Value::String("%w %-w %_w %0w".into()),
+                utc_opts(Value::Bool(true)),
+            ],
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result, Value::String("2 2 2 2".into()));
     }
 
     #[cfg(feature = "datetime")]

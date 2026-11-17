@@ -69,9 +69,9 @@ metrics-exporter-prometheus = { workspace = true, optional = true }
 # 0.20 alias under a distinct package name for the prometheus attach
 # path only.
 metrics-util-prometheus = { package = "metrics-util", version = "0.20", optional = true }
-# `chrono` is core — the `Snapshot.captured_at` and JSONL `ts` fields
+# `datetime` is core — the `Snapshot.captured_at` and JSONL `ts` fields
 # are on the core API surface.
-chrono = { workspace = true }
+datetime = { workspace = true }
 # FxHash for labels_hash canonical encoding.
 rustc-hash = { workspace = true }
 

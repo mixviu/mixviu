@@ -120,7 +120,7 @@ impl SqliteMailStore {
             tx.tx().execute(
                 "INSERT INTO blob_refs (blob_id, account_id, blob_hash, created_at, expires_at, temp_item_id) \
                  VALUES (?1, ?2, ?3, ?4, NULL, NULL) ON CONFLICT(blob_id) DO NOTHING",
-                params![id.to_string(), account, blob::hex(hash), chrono::Utc::now().timestamp()],
+                params![id.to_string(), account, blob::hex(hash), datetime::Utc::now().timestamp()],
             ).map_err(sql_error)?;
             // Same post-reference existence check as create_email: GC must
             // not leave an acknowledged holding row over vanished CAS bytes.
@@ -155,7 +155,7 @@ impl SqliteMailStore {
                     params![
                         hex,
                         account,
-                        chrono::Utc::now().timestamp(),
+                        datetime::Utc::now().timestamp(),
                         mds::container::UPLOAD_STAGING_NAME
                     ],
                     |r| r.get::<_, bool>(0),

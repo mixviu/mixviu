@@ -69,7 +69,7 @@ pub fn build_props_changed_message(
         "path": path.as_str(),
         "old": Json::from(old),
         "new": Json::from(new),
-        "ts": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "ts": datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Millis, true),
         "cause": cause,
     })
     .to_string();

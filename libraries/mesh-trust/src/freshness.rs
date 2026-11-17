@@ -9,7 +9,7 @@
 //! `wgd.cross_mesh.claim_nonce`) — this module is the time-window
 //! check only.
 
-use chrono::{DateTime, Duration, Utc};
+use datetime::{DateTime, Duration, Utc};
 
 /// Default freshness window per plan §6 step 4: ±5 minutes.
 pub const DEFAULT_FRESHNESS_WINDOW_SECS: i64 = 5 * 60;
@@ -46,7 +46,7 @@ pub fn check_freshness(
     now: DateTime<Utc>,
     window: Duration,
 ) -> Result<(), FreshnessError> {
-    // Compare the full chrono::Duration, not its truncated whole-second
+    // Compare the full datetime::Duration, not its truncated whole-second
     // representation: `(now - ts).num_seconds()` rounds fractional
     // drift toward zero, which would let a drift of `window + 0.999s`
     // slip through. abs() makes the check symmetric — both past- and
@@ -74,7 +74,6 @@ pub fn check_envelope_ts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone as _;
 
     fn now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 5, 20, 3, 14, 0).unwrap()
@@ -98,6 +97,29 @@ mod tests {
             parse_rfc3339("not a timestamp"),
             Err(FreshnessError::InvalidTimestamp(_))
         ));
+    }
+
+    #[test]
+    fn envelope_parser_keeps_strict_rfc3339_separator_and_padding() {
+        for separator in ["T", "t", " "] {
+            let text = format!("2024-01-05{separator}09:05:00Z");
+            assert_eq!(parse_rfc3339(&text).unwrap().timestamp(), 1_704_445_500);
+        }
+        for text in [
+            "2024-01-05u09:05:00Z",
+            "2024-01-05_09:05:00Z",
+            "2024-1-5T9:5:0Z",
+            "2024-01-05T09:05:00UTC",
+            "2024-01-05T09:05:00+0000",
+        ] {
+            assert!(
+                matches!(
+                    parse_rfc3339(text),
+                    Err(FreshnessError::InvalidTimestamp(_))
+                ),
+                "{text:?}"
+            );
+        }
     }
 
     #[test]

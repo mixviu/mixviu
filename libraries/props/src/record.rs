@@ -8,7 +8,7 @@
 //! record write. `AuditRow` is the audit-stream projection of the same
 //! event, carrying the keyed-HMAC `audit_digest`.
 
-use chrono::{DateTime, Utc};
+use datetime::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -818,6 +818,33 @@ mod tests {
         // The dispatcher renames to `ts` when projecting to
         // records.changed bodies.
         assert_eq!(j["at"].as_str().unwrap(), "2026-05-11T12:00:00Z");
+        // Persisted events use DateTime's relaxed FromStr/serde grammar.
+        for text in [
+            "2026-5-11T12:0:0UTC",
+            " 2026-05-11 12:00:00 +0000 ",
+            "2026-05-11T12:00:00+00:00",
+        ] {
+            let mut wire = j.clone();
+            wire["at"] = serde_json::json!(text);
+            let decoded: RecordEvent = serde_json::from_value(wire).unwrap();
+            assert_eq!(decoded, ev, "{text:?}");
+            assert_eq!(
+                serde_json::to_value(decoded).unwrap()["at"],
+                "2026-05-11T12:00:00Z"
+            );
+        }
+        for text in [
+            "not a date",
+            "+999999-12-31T23:59:59-01:00",
+            "-999999-01-01T00:00:00+01:00",
+        ] {
+            let mut wire = j.clone();
+            wire["at"] = serde_json::json!(text);
+            assert!(
+                serde_json::from_value::<RecordEvent>(wire).is_err(),
+                "{text:?}"
+            );
+        }
         assert!(
             j.get("ts").is_none(),
             "event-history row serialises as `at`, dispatcher remaps to `ts` on the records.changed projection"

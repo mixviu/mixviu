@@ -56,7 +56,7 @@ pub struct ReloadIdentity {
 impl ReloadIdentity {
     /// A fresh process identity at generation 0.
     pub fn new() -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = datetime::Utc::now().to_rfc3339();
         Self {
             started_at: Instant::now(),
             started_wall: now.clone(),
@@ -71,7 +71,7 @@ impl ReloadIdentity {
     /// `lifecycle.generation` sees it advance exactly once per live swap.
     pub fn committed_reload(&self) {
         self.generation.set(self.generation.get() + 1);
-        *self.script_loaded_at.borrow_mut() = chrono::Utc::now().to_rfc3339();
+        *self.script_loaded_at.borrow_mut() = datetime::Utc::now().to_rfc3339();
     }
 
     /// The current committed generation — what the serve driver stamps

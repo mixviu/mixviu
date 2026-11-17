@@ -803,7 +803,7 @@ fn metadata_event(observation: &Observation<'_>) -> EventBody {
     };
     EventBody {
         seq: 0,
-        ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        ts: datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Millis, true),
         direction: observation.direction,
         outcome: observation.outcome,
         message_type: classify_message_type(observation.message),

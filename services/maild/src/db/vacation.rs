@@ -153,7 +153,7 @@ pub async fn is_active(
         return Ok(None);
     }
 
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = datetime::Utc::now().to_rfc3339();
 
     if let Some(ref from) = vr.from_date
         && now < *from

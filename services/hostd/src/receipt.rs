@@ -157,7 +157,7 @@ impl Receipt {
             id: uuid::Uuid::now_v7().hyphenated().to_string(),
             command: command.into(),
             origin: origin.clone(),
-            at: chrono::Utc::now().to_rfc3339(),
+            at: datetime::Utc::now().to_rfc3339(),
             summary,
             files: vec![],
             outcome: Outcome::Applying,

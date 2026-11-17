@@ -46,11 +46,11 @@ pub(super) const MAX_MULTIGET_HREFS: usize = 10_000;
 /// `datetime('now')` naive form `YYYY-MM-DD HH:MM:SS` (the column
 /// default on insert). Used for DTSTART/DTEND/DTSTAMP — recovering the
 /// naive form keeps emission deterministic instead of falling back.
-pub(super) fn parse_stored_dt(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Some(dt.with_timezone(&chrono::Utc));
+pub(super) fn parse_stored_dt(s: &str) -> Option<datetime::DateTime<datetime::Utc>> {
+    if let Ok(dt) = datetime::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&datetime::Utc));
     }
-    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+    datetime::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
         .ok()
         .map(|n| n.and_utc())
 }

@@ -82,7 +82,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::NaiveDate;
+use datetime::NaiveDate;
 use mds::{ContainerId, Flags};
 
 use super::flags::{self, FlagToken};
@@ -684,7 +684,7 @@ fn decoded_value(value: &mail_parser::HeaderValue<'_>) -> String {
 
 /// UTC day of a unix-millis internal date.
 fn internal_day(received_at_ms: i64) -> NaiveDate {
-    chrono::DateTime::from_timestamp_millis(received_at_ms)
+    datetime::DateTime::from_timestamp_millis(received_at_ms)
         .unwrap_or_default()
         .date_naive()
 }

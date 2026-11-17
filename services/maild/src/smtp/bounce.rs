@@ -4,7 +4,7 @@
 //! Bounce (NDR) generation for permanently failed deliveries.
 
 use anyhow::Result;
-use chrono::Utc;
+use datetime::Utc;
 
 use super::inbound::header_value_safe;
 

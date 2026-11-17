@@ -1645,7 +1645,7 @@ async fn legacy_identities_migrate_before_login_and_cannot_collide_after_rename(
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     ms.create_mailbox(1, "Source", None, attrs_for(None, false))?;
     ms.create_mailbox(1, "Target", None, attrs_for(None, false))?;
-    let legacy = chrono::Utc::now().timestamp();
+    let legacy = datetime::Utc::now().timestamp();
     mds.with_set_tx(&maild::mailstore::account_id_to_setid(1), |tx| {
         tx.tx()
             .execute("UPDATE container SET seq_validity = ?1", [legacy * 1000])
@@ -1722,7 +1722,7 @@ async fn failed_identity_migration_is_atomic_and_authentication_can_retry() -> R
     use base64::Engine;
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let set = maild::mailstore::account_id_to_setid(1);
-    let legacy = chrono::Utc::now().timestamp() * 1000;
+    let legacy = datetime::Utc::now().timestamp() * 1000;
     mds.with_set_tx(&set, |tx| {
         tx.tx().execute("UPDATE container SET seq_validity = ?1", [legacy])
             .map_err(|e| mds::Error::Other(e.to_string()))?;
@@ -1770,7 +1770,7 @@ async fn uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation() -> 
         .id;
     // Model an existing legacy mailbox whose timestamp is ahead of the wall
     // clock; deletion must retain that high-water mark too.
-    let legacy = (chrono::Utc::now().timestamp() + 3600) as u64;
+    let legacy = (datetime::Utc::now().timestamp() + 3600) as u64;
     mds.with_set_tx(&maild::mailstore::account_id_to_setid(1), |tx| {
         tx.tx()
             .execute(

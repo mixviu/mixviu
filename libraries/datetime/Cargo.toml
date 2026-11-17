@@ -1,0 +1,21 @@
+[package]
+name = "datetime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+time.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[package.metadata.mixviu]
+component = "datetime"
+kind = "lib"
+layer = "core"
+contract = "public"

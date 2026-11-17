@@ -26,8 +26,8 @@
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
-use chrono::{Duration, SecondsFormat, Utc};
 use clap::{Parser, Subcommand};
+use datetime::{Duration, SecondsFormat, Utc};
 use ed25519_dalek::{Signer, SigningKey};
 use mesh_trust::inventory::{
     ALG_ED25519, CANONICAL_ENCODING_V1, InvSignature, InventoryPayload, KeyStatus, NodeTrustState,

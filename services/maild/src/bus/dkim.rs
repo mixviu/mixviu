@@ -302,7 +302,7 @@ async fn write_row(
                 merge: MergeMode::Replace,
                 actor: Actor::service("maild.dkim").expect("valid actor"),
                 cause: Some(cause.to_string()),
-                ts_ms: chrono::Utc::now().timestamp_millis(),
+                ts_ms: datetime::Utc::now().timestamp_millis(),
             },
         )
         .await

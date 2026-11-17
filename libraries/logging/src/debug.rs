@@ -60,6 +60,7 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "comp_service",
     "config",
     "daemon",
+    "datetime",
     "davproto",
     "decor",
     "design",

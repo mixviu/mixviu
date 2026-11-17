@@ -164,7 +164,7 @@ impl<S: tracing::Subscriber> Layer<S> for RecentLayer {
         let metadata = event.metadata();
         ring.push(Entry {
             seq: SEQ.fetch_add(1, Ordering::Relaxed) + 1,
-            ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            ts: datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Micros, true),
             level: match *metadata.level() {
                 tracing::Level::ERROR => Level::Error,
                 tracing::Level::WARN => Level::Warn,

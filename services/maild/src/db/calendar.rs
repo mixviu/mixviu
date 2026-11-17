@@ -362,7 +362,7 @@ pub async fn conditional_upsert_event_by_uid(
     let title = title.map(|s| s.to_string());
     let start = start_dt.map(|d| d.to_rfc3339());
     let end = end_dt.map(|d| d.to_rfc3339());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = datetime::Utc::now().to_rfc3339();
     let precond = precond.clone();
     tokio::task::spawn_blocking(move || {
         let conn = conn
@@ -589,8 +589,8 @@ pub async fn query_event_ids(
     conn: &Arc<Mutex<Connection>>,
     account_id: i32,
     calendar_id: Option<Uuid>,
-    after: Option<chrono::DateTime<chrono::Utc>>,
-    before: Option<chrono::DateTime<chrono::Utc>>,
+    after: Option<datetime::DateTime<datetime::Utc>>,
+    before: Option<datetime::DateTime<datetime::Utc>>,
     position: i64,
     limit: i64,
 ) -> Result<(Vec<Uuid>, i64)> {
@@ -657,8 +657,8 @@ pub async fn query_event_ids(
 /// Indexed event metadata (extracted from JSCalendar payload).
 pub struct EventMetadata<'a> {
     pub title: Option<&'a str>,
-    pub start_dt: Option<chrono::DateTime<chrono::Utc>>,
-    pub end_dt: Option<chrono::DateTime<chrono::Utc>>,
+    pub start_dt: Option<datetime::DateTime<datetime::Utc>>,
+    pub end_dt: Option<datetime::DateTime<datetime::Utc>>,
 }
 
 pub async fn create_event(
@@ -714,8 +714,8 @@ pub async fn update_event(
     id: Uuid,
     data: &serde_json::Value,
     title: Option<&str>,
-    start_dt: Option<chrono::DateTime<chrono::Utc>>,
-    end_dt: Option<chrono::DateTime<chrono::Utc>>,
+    start_dt: Option<datetime::DateTime<datetime::Utc>>,
+    end_dt: Option<datetime::DateTime<datetime::Utc>>,
 ) -> Result<bool> {
     let conn = conn.clone();
     let id_str = id.to_string();
@@ -724,7 +724,7 @@ pub async fn update_event(
     let title = title.map(|s| s.to_string());
     let start_str = start_dt.map(|d| d.to_rfc3339());
     let end_str = end_dt.map(|d| d.to_rfc3339());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = datetime::Utc::now().to_rfc3339();
     tokio::task::spawn_blocking(move || {
         let conn = conn
             .lock()

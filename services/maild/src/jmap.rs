@@ -644,7 +644,7 @@ pub async fn blob_upload(
     let ms = state.mailstore.clone();
     let hash_for_ref = blob_hash;
     let blob_id = match tokio::task::spawn_blocking(move || {
-        let expires_at = chrono::Utc::now().timestamp() + 3600;
+        let expires_at = datetime::Utc::now().timestamp() + 3600;
         ms.create_blob_ref(account_id, hash_for_ref, size as u64, expires_at)
     })
     .await
