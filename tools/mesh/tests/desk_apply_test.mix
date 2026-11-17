@@ -61,7 +61,15 @@ try
     check(deep_eq($before,$prep.fixture_snapshot()) and len($prep.fixture_mutations())==0,"forged native plan mutated state")
   end
   $prep.fixture_reset()
+  $dropin_dir = "/etc/systemd/system/" .. $target.unit .. ".d"
+  $parked = $dropin_dir .. "/zzzz-mesh-profile.conf.parked"
+  $prep.fixture_put($dropin_dir,{is_dir:true,uid:0,gid:0,perm:0o755})
+  $prep.fixture_put($parked,{is_dir:false,uid:0,gid:1000,perm:0o640,bytes:$prep.files($request)[2].bytes})
+  $parked_before = $prep.fixture_stat($parked)
   check($prep.apply($request).started==false,"apply started a service")
+  check(deep_eq($parked_before,$prep.fixture_stat($parked)),"apply changed the already parked drop-in")
+  check(not $prep.fixture_exists($dropin_dir .. "/zzzz-mesh-profile.conf"),"apply created an effective drop-in")
+  check(len(sqlexec($prep.fixture_db,"SELECT operation FROM events WHERE operation='reload'"))==0,"apply reloaded the effective unit")
   check($prep.fixture_stat($target.var .. "/noded").uid==1000,"broker state owner differs")
   for $entry in $prep.files($request)
     check($prep.fixture_read_file($entry.path)==$entry.bytes,"apply file bytes differ")

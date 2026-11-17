@@ -29,7 +29,7 @@ fn files($request)
   $config = {node:$t.node,mesh:$request.mesh,wg_ip:$request.ip,noded:{port:$request.port,mesh_config:$t.etc .. "/noded/config.conf.mix",unix_socket:$t.run .. "/noded/bus.sock",admission:$t.admission}}
   return [{path:$t.etc .. "/noded/service.env",bytes:service_text($t,$request.native ?? {})},
     {path:$t.etc .. "/node.conf.mix",bytes:data_encode($config)},
-    {path:"/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf",bytes:"[Service]\nEnvironmentFile=" .. $t.etc .. "/noded/service.env\n"}]
+    {path:"/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf.parked",bytes:"[Service]\nEnvironmentFile=" .. $t.etc .. "/noded/service.env\n"}]
 end
 
 fn valid_port($value)
@@ -90,6 +90,7 @@ fn apply($request)
   $native = $targets.checked_native($t,$request.native)
   if $request.mix_bin != $native.mix_bin then $w.refuse("preparation interpreter differs from native plan") end
   $planned = files($request)
+  if $w.file_state("/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf").present then $w.refuse("preparation requires the profile drop-in to be parked") end
   if trim(run_argv_must(["id","-u"])) != "0" then $w.refuse("preparation requires CT root") end
   $uid = to_number(trim(run_argv_must(["id","-u",$t.account])))
   $gid = to_number(trim(run_argv_must(["id","-g",$t.account])))
@@ -126,7 +127,6 @@ fn apply($request)
   $pub = trim(run_argv_must(["wg","pubkey"],{stdin:$key .. chr(10),timeout:10}))
   $wg = wireguard_text($request,$key,$pub)
   ensure_file("/etc/wireguard/wg1.conf",$wg,0,0o600)
-  run_argv_must(["systemctl","daemon-reload"],{timeout:10})
-  $w.service_binding($t,$gid)
+  $w.service_binding($t,$gid,nil,false)
   return {prepared:$t.node,unit:$t.unit,wireguard:"/etc/wireguard/wg1.conf",started:false}
 end

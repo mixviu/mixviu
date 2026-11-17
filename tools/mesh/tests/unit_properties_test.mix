@@ -63,6 +63,11 @@ end
   check(refused(fn()=$w.parse_unit_properties($pct .. "User=other\n","pct")),"CT duplicate scalar accepted")
   check(refused(fn()=$w.parse_unit_properties($pct .. "Unexpected=value\n","pct")),"unexpected property accepted")
   $properties = $w.parse_unit_properties($pct,"pct")
+  $release = $properties
+  $release.EnvironmentFiles = take($release.EnvironmentFiles,1)
+  $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$release,$prep.service_text($target),nil,false)
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),nil,false)),"inactive validation accepted an armed profile")
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$release,$prep.service_text($target))),"active validation accepted release-only environment")
   check(len($properties.ExecStartPre)==2 and len($properties.ExecStart)==1 and len($properties.EnvironmentFiles)==2,"repeated exec/environment entries were lost")
   check(deep_eq($properties.RuntimeDirectory,[]),"empty runtime directory was not retained as an empty sequence")
   $properties.EnvironmentFiles = reverse($properties.EnvironmentFiles)

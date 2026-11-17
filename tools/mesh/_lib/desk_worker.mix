@@ -143,7 +143,7 @@ end
 
 -- A final, mandatory, root-owned environment file makes the service binding
 -- explicit. The bounded format is literal KEY=value, not arbitrary shell.
-fn validate_service($target, $gid, $s, $properties, $text, $environment_prefix = nil)
+fn validate_service($target, $gid, $s, $properties, $text, $environment_prefix = nil, $active = true)
   $path = $target.etc .. "/noded/service.env"
   if not $s.present or $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 then refuse("dedicated service environment is not root-owned 0640") end
   if $properties.User != $target.account then refuse("session unit account mismatch") end
@@ -155,7 +155,12 @@ fn validate_service($target, $gid, $s, $properties, $text, $environment_prefix =
     if not contains($properties.RequiresMountsFor ?? [],$dir) or not contains(map($properties.ExecStartPre ?? [],fn($entry)=json_encode($entry)),json_encode($install)) then refuse("CT release must create the declared absolute session runtime") end
   end
   $files = $properties.EnvironmentFiles
-  if type($files) != "list" or len($files)==0 or not deep_eq($files[len($files)-1],{path:$path,ignore_errors:false}) then refuse("dedicated environment must be the final mandatory unit environment file") end
+  if $active then
+    if type($files) != "list" or len($files)==0 or not deep_eq($files[len($files)-1],{path:$path,ignore_errors:false}) then refuse("dedicated environment must be the final mandatory unit environment file") end
+  else
+    $release = if $target.transport == "pct" then "/opt/mix/etc" else "/etc/" .. $target.project end
+    if not deep_eq($files,[{path:$release .. "/session/" .. to_string($target.session) .. ".env",ignore_errors:false}]) then refuse("inactive profile requires only the release session environment") end
+  end
   $prefix = if $target.transport == "pct" then "MIX" else $environment_prefix ?? upper($target.project) end
   $expected = {}
   $expected[$prefix .. "_ETC"] = $target.etc
@@ -181,13 +186,30 @@ fn validate_service($target, $gid, $s, $properties, $text, $environment_prefix =
   if $start.ignore_errors != false or not ends_with($start.path,"/bin/noded") or not deep_eq($start.argv,[$start.path,"serve","--no-monitor","--no-log"]) then refuse("unit command overrides profile identity or endpoint") end
   -- ExecStart also carries runtime pid/timestamp/status fields. They change on
   -- restart and are not part of the immutable executable/argv configuration.
-  return {environment:$s,environment_prefix:$prefix,command:"{ path=" .. $start.path .. " ; argv[]=" .. join($start.argv," ") .. " ; ignore_errors=no"}
+  return {environment:$s,environment_prefix:$prefix,active:$active,command:"{ path=" .. $start.path .. " ; argv[]=" .. join($start.argv," ") .. " ; ignore_errors=no"}
 end
 
-fn service_binding($target,$gid,$environment_prefix = nil)
+fn service_binding($target,$gid,$environment_prefix = nil,$active = true)
   $path = $target.etc .. "/noded/service.env"
   $state = file_state($path)
-  return validate_service($target,$gid,$state,unit_properties($target.unit,$target.transport),stable_text($path,$state),$environment_prefix)
+  return validate_service($target,$gid,$state,unit_properties($target.unit,$target.transport),stable_text($path,$state),$environment_prefix,$active)
+end
+
+fn dropin_paths($target)
+  $active = "/etc/systemd/system/" .. $target.unit .. ".d/zzzz-mesh-profile.conf"
+  return {active:$active,parked:$active .. ".parked"}
+end
+
+fn checked_dropin($target,$gid)
+  $paths = dropin_paths($target)
+  directory(dirname($paths.active),0,0,0o755)
+  $active = file_state($paths.active)
+  $parked = file_state($paths.parked)
+  if $active.present == $parked.present then refuse("exactly one active or parked profile drop-in is required") end
+  $path = if $active.present then $paths.active else $paths.parked end
+  $s = if $active.present then $active else $parked end
+  if $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 or stable_text($path,$s) != "[Service]\nEnvironmentFile=" .. $target.etc .. "/noded/service.env\n" then refuse("profile drop-in ownership or bytes differ") end
+  return {active:$active.present,path:$path,state:$s}
 end
 
 fn namespace_context($request)
@@ -220,7 +242,9 @@ fn namespace_context($request)
     $dirs[$path] = directory($path,0,$gid,0o750)
   end
   $dirs[$t.var .. "/noded"] = directory($t.var .. "/noded",$uid,$gid,0o700)
-  $binding = service_binding($t,$gid,$native.environment_prefix)
+  $dropin = checked_dropin($t,$gid)
+  $binding = service_binding($t,$gid,$native.environment_prefix,$dropin.active)
+  $binding.dropin = $dropin
   $mix_hash = native_binary($request.mix_bin,$native.prefix,"mix")
   $builtins = lines(run_argv_must([$request.mix_bin,"builtins","--names"],{timeout:10}))
   for $needed in ["fs_watch","fs_wait","fs_unwatch","flock","write_new","stat","hash_sha256","data_encode","run_argv"]
@@ -395,34 +419,96 @@ fn live_process($ctx)
   return {pid:$pid,sha256:$ctx.binary.sha256,uid:$ctx.uid}
 end
 
+fn restart_session($ctx,$request,$profile)
+  $old_pid = property($ctx.target.unit,"MainPID")
+  run_argv_must(["systemctl","restart",$ctx.target.unit],{timeout:20})
+  -- Bound the event wait in a child so timeout raises here, while this root
+  -- process is still alive to park/reload/restart the release service.
+  $source = '$watch=fs_watch($directory,{recursive:true,events:["created","moved","modified","deleted"]})
+try
+  while not exists($socket,{follow_symlinks:false})
+    $_batch=fs_wait($watch)
+  end
+finally
+  fs_unwatch($watch)
+end
+'
+  $source = "$directory=" .. data_encode($ctx.target.run) .. chr(10) .. "$socket=" .. data_encode($ctx.target.run .. "/noded/bus.sock") .. chr(10) .. $source
+  run_argv_must([$request.mix_bin,"-"],{stdin:$source,timeout:10})
+  $socket = stat($ctx.target.run .. "/noded/bus.sock",{follow_symlinks:false})
+  if floor($socket.mode / 4096) % 16 != 12 or $socket.is_symlink or $socket.uid != $ctx.uid then refuse("new broker socket type or ownership mismatch") end
+  if $profile then
+    $live = live_process($ctx)
+  else
+    $pid = property($ctx.target.unit,"MainPID")
+    if not re_match($pid,"^[1-9][0-9]*$") or stat("/proc/" .. $pid).uid != $ctx.uid or hash_file("/proc/" .. $pid .. "/exe","sha256") != $ctx.binary.sha256 then refuse("release broker did not recover") end
+    $live = {pid:$pid,uid:$ctx.uid,sha256:$ctx.binary.sha256}
+  end
+  if $live.pid == $old_pid then refuse("restart did not create a fresh service process") end
+  return $live
+end
+
+fn verify_profile_authority($ctx,$request)
+  $prefix = $ctx.binding.environment_prefix
+  $env = {}
+  for $pair in [["_ETC",$ctx.target.etc],["_VAR",$ctx.target.var],["_NODE_CONFIG",$ctx.target.etc .. "/node.conf.mix"],["_RUN",$ctx.target.run],["_BROKER_ACCOUNT",$ctx.target.account],["_NODED_URL",""]]
+    $env[$prefix .. $pair[0]] = $pair[1]
+  end
+  $source = 'send noded noded.info timeout=5
+$info={rc:$rc,value:$result}
+send noded noded.inventory timeout=5
+print(json_encode({info:$info,inventory:{rc:$rc,value:$result}}))
+'
+  $reply = json_parse(run_argv_must(["runuser","-u",$ctx.target.account,"--",$request.mix_bin,"-"],{stdin:$source,env:$env,timeout:15}))
+  if $reply.info.rc != 0 or $reply.inventory.rc != 0 or $reply.info.value.node != $ctx.target.node or $reply.info.value.wg_ip != $request.ip or $reply.inventory.value.posture != "verified" or $reply.inventory.value.mesh != $request.mesh or $reply.inventory.value.epoch != $request.epoch or $reply.inventory.value.hash != $request.hash then refuse("activated broker authority differs from signed rollout") end
+  return {verified:true,node:$ctx.target.node,mesh:$request.mesh,epoch:$request.epoch,hash:$request.hash}
+end
+
+fn activate_profile($ctx,$request)
+  for $kind in ["seed","seed_receipt","genesis","roster","inventory"]
+    if $ctx.states[$kind].present != true then refuse("activation requires complete placed authority") end
+  end
+  if type($request.epoch) != "number" or type($request.hash) != "string" then refuse("activation requires the signed epoch and hash") end
+  $paths = dropin_paths($ctx.target)
+  $dropin = checked_dropin($ctx.target,$ctx.gid)
+  try
+    if not $dropin.active then rename($paths.parked,$paths.active) end
+    run_argv_must(["systemctl","daemon-reload"],{timeout:5})
+    $active = namespace_context($request)
+    if not $active.binding.active then refuse("profile did not become effective") end
+    $live = restart_session($active,$request,true)
+    $authority = verify_profile_authority($active,$request)
+    return {restarted:$ctx.target.unit,live:$live,authority:$authority}
+  catch $failure
+    -- Never roll back accepted inventory or its monotonic witness. Restore
+    -- only service selection, then load it, validate it, and restart it.
+    try
+      $current = checked_dropin($ctx.target,$ctx.gid)
+      if $current.active then rename($paths.active,$paths.parked) end
+      run_argv_must(["systemctl","daemon-reload"],{timeout:5})
+      $release = namespace_context($request)
+      if $release.binding.active then refuse("release environment did not become effective") end
+      restart_session($release,$request,false)
+    catch $recovery_failure
+      refuse("activation failed; release broker recovery also failed; inspect service and parked drop-in")
+    end
+    refuse("activation failed; profile parked and release broker restarted")
+  end
+end
+
 fn dispatch($request)
-  if not contains(["preflight","seed","sync","restart","restore","live"],$request.operation) then refuse("unknown operation") end
+  if not contains(["preflight","seed","sync","activate","restore","live"],$request.operation) then refuse("unknown operation") end
   $ctx = namespace_context($request)
   if $request.operation == "preflight" then return $ctx end
   if not deep_eq($ctx,$request.before) then refuse("namespace, service or target preimage changed") end
   if $request.operation == "restore" then return restore_files($ctx,$request.token) end
   if $request.operation == "live" then return live_process($ctx) end
-  if $request.operation == "restart" then
+  if $request.operation == "activate" then
     $lock_root = $ctx.target.profile .. "/.mesh-rollout"
     directory($lock_root,0,$ctx.gid,0o700)
     if not flock($lock_root .. "/writer.lock",{wait:0,create:false}) then refuse("desk writer lock contended during restart") end
     if not deep_eq(namespace_context($request),$request.before) then refuse("target preimage changed before restart") end
-    $old_pid = property($ctx.target.unit,"MainPID")
-    $socket = $ctx.target.run .. "/noded/bus.sock"
-    $watch = fs_watch($ctx.target.run,{recursive:true,events:["created","moved","modified","deleted"]})
-    try
-      run_argv_must(["systemctl","restart",$ctx.target.unit],{timeout:30})
-      while not exists($socket,{follow_symlinks:false})
-        $_batch = fs_wait($watch)
-      end
-      $socket_state = stat($socket,{follow_symlinks:false})
-      if floor($socket_state.mode / 4096) % 16 != 12 or $socket_state.is_symlink or $socket_state.uid != $ctx.uid then refuse("new broker socket type or ownership mismatch") end
-    finally
-      fs_unwatch($watch)
-    end
-    $live = live_process($ctx)
-    if $live.pid == $old_pid then refuse("restart did not create a fresh service process") end
-    return {restarted:$ctx.target.unit,live:$live}
+    return activate_profile($ctx,$request)
   end
   if $request.operation == "seed" then
     if len($request.payloads) != 2 or $request.payloads[0].kind != "seed" or $request.payloads[1].kind != "seed_receipt" then refuse("seed operation requires seed and provenance receipt only") end

@@ -42,8 +42,8 @@ fn simulated($job,$path)
   elif $job.operation == "sync" then
     $state.ctx.states = $state.sync_states
     $value = {status:"placed",receipt:"protected-fixture/sync"}
-  elif $job.operation == "restart" then
-    $value = {restarted:$state.ctx.target.unit}
+  elif $job.operation == "activate" then
+    $value = {restarted:$state.ctx.target.unit,live:{pid:42},authority:{verified:$state.hash=="canonical-fixture",epoch:7,hash:$state.hash}}
   elif $job.operation == "live" then
     $value = {pid:42,uid:1000,sha256:"fixture-native-binary"}
   end
@@ -59,8 +59,9 @@ fn flow($base,$program,$execute)
   $before = $ops.preflight($base,$program,$execute)
   $ops.place_seed($base,$before,"synthetic-secret","AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",$program,$execute)
   $before = $ops.preflight($base,$program,$execute)
-  $ops.place_sync($base,$before,"synthetic-roster","synthetic-signed",$program,$execute)
-  return $ops.verify_authority($base,7,"canonical-fixture",$execute)
+  $placed = $ops.place_sync($base,$before,"synthetic-roster","synthetic-signed",$program,$execute,7,"canonical-fixture")
+  check($placed.authority.verified,"activation authority failed")
+  return $placed.authority
 end
 
 $root = trim(run_argv_must(["mktemp","-d"]))
@@ -83,7 +84,7 @@ $execute = fn($job)=simulated($job,$path)
 $program = $ops.worker_program(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix")
 write_file($path,json_encode($state))
 check(flow($base,$program,$execute).verified,"complete simulated flow failed")
-$expected = ["preflight","seed","preflight","preflight","sync","preflight","restart","preflight","live","authority"]
+$expected = ["preflight","seed","preflight","preflight","sync","preflight","activate"]
 check(deep_eq(json_parse(read_file($path)).calls,$expected),"unexpected distributor stage order")
 for $index = 1 to len($expected)
   $fault = $state

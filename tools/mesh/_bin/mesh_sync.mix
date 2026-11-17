@@ -638,8 +638,8 @@ for each $node in $order
       -- Rebuild identity from authenticated bytes, never just authored input.
       $base = $desk.request($DESKS[$node],$vi.inventory,$pub,$d.remote_mix($node),$desk.node_prefix($DESKS[$node],$d),$d.node_settings($node).legacy_defaults == true)
       $d.die_if(not deep_eq($base,$DESK_BASE[$node]),"authenticated desk plan differs from preflight")
-      $placed = $desk.place_sync($base,$DESK_BEFORE[$node],read_file($roster_file),read_file($SIGNED_PRIV),$DESK_PROGRAM,nil)
-      $authority = $desk.verify_authority($base,$epoch,$vi.canonical_blake3,nil)
+      $placed = $desk.place_sync($base,$DESK_BEFORE[$node],read_file($roster_file),read_file($SIGNED_PRIV),$DESK_PROGRAM,nil,$epoch,$vi.canonical_blake3)
+      $authority = $placed.authority
       print("  desk placement receipt: " .. $placed.placement.receipt)
       print("  verified desk epoch=" .. to_string($authority.epoch) .. " hash=" .. $authority.hash)
       if not $floor_raised then
