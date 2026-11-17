@@ -4737,6 +4737,11 @@ pub(crate) fn spawn_argv_native(
     for k in &env_unset {
         command.env_remove(k);
     }
+    #[cfg(target_os = "linux")]
+    if die_with_parent {
+        // Runtime metadata wins over caller env/clear_env/env_unset options.
+        command.env(EXPECTED_PARENT_ENV, std::process::id().to_string());
+    }
     // Open output routes BEFORE spawning; a file-open failure means the
     // child is never started (like run_argv's PROCESS_STDIO). stderr:stdout
     // clones the stdout handle.
@@ -4875,6 +4880,9 @@ fn arm_die_with_parent(command: &mut std::process::Command) {
         });
     }
 }
+
+/// One-hop spawn metadata, consumed by Mix before it starts any threads.
+pub const EXPECTED_PARENT_ENV: &str = "MIX_EXPECTED_PARENT_PID";
 
 /// Children started with `spawn(argv, {die_with_parent: true})`, ended with
 /// this process (TODO-mix P2).

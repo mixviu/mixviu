@@ -39,6 +39,8 @@ mod manual;
 mod meta;
 mod native_session;
 mod node_config;
+#[cfg(target_os = "linux")]
+mod parent_death;
 mod paths;
 mod repl;
 mod repl_editor;
@@ -342,6 +344,11 @@ fn refuse_repeat_handoff(what: &str) -> Option<i32> {
 fn exec_mixd(mixd: &Path, args: &[String], what: &str) -> i32 {
     if let Some(code) = refuse_repeat_handoff(what) {
         return code;
+    }
+    #[cfg(target_os = "linux")]
+    if let Err(err) = parent_death::handoff() {
+        eprintln!("mix: {what}: {err}");
+        return 126;
     }
     use std::os::unix::process::CommandExt;
     let err = process::Command::new(mixd)
@@ -2427,6 +2434,11 @@ pub fn register_build_snapshot() {
 }
 
 pub fn main() -> process::ExitCode {
+    #[cfg(target_os = "linux")]
+    if let Err(err) = parent_death::capture() {
+        eprintln!("mix: {err}");
+        return process::ExitCode::from(126);
+    }
     register_build_snapshot();
     // Reached through a mix -> mixd handoff, yet this is not the service
     // engine: the installed `mixd` is a shell-profile build. Refuse before

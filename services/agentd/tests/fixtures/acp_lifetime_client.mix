@@ -1,0 +1,71 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$ready = env("ACP_LIFETIME_READY")
+$mode = env("ACP_LIFETIME_EXIT")
+$worker_path = dirname(realpath(env("ACP_TEST_ADAPTER"))) .. "/acp_worker.mix"
+
+fn live($pid)
+  try
+    $stat = read_file("/proc/" .. $pid .. "/stat")
+    return split(trim(slice($stat, last_index_of($stat, ")") + 2)), " ")[0] != "Z"
+  catch $message
+    return false
+  end
+end
+
+if args()[0] == "control" then
+  for $attempt = 1 to 200
+    if is_file($ready) then break end
+    sleep(0.05)
+  end
+  $proof = json_parse(read_file($ready))
+  $proc = "/proc/" .. $proof.worker
+  if not live($proof.worker) or not contains(split(read_file($proc .. "/cmdline"), "\0"), $worker_path) or not contains(split(read_file($proc .. "/environ"), "\0"), "MIX_NODE_CONFIG=" .. env("MIX_NODE_CONFIG")) then
+    raise("ACP_LIFETIME", "controller did not observe this run's live worker")
+  end
+  write_file($ready .. ".observed", to_string($proof.worker))
+  if $mode == "direct-kill" then
+    -- kill() addresses this positive PID only; no process-group signal.
+    if not kill($proof.client, 9) then raise("ACP_LIFETIME", "client kill failed") end
+  else
+    write_file($ready .. ".release", "release")
+  end
+  exit(0)
+end
+
+$watch = process_watch([env("MIX_TEST_MIX_EXE"), env("ACP_TEST_ADAPTER")],
+  -- Startup deliberately does not pump handlers: discard excess output,
+  -- while the native watch continues draining the adapter's stdout pipe.
+  {stdin: "pipe", stderr: "inherit", overflow: "drop"})
+$sent = process_write($watch, json_encode({jsonrpc: "2.0", id: 1, method: "initialize", params: {protocolVersion: 1}}) .. "\n")
+-- Keep the client alive until the independent controller observes a worker
+-- after its real engine handoff and INFO response, in EVERY exit mode.
+$found = false
+for $attempt = 1 to 100
+  for $path in glob("/proc/*/cmdline")
+    $argv = []
+    try
+      if not contains(split(read_file(dirname($path) .. "/environ"), "\0"), "ACP_LIFETIME_READY=" .. $ready) then continue end
+      $argv = split(read_file($path), "\0")
+    catch $message
+      continue
+    end
+    if not contains($argv, $worker_path) then continue end
+    $name = $argv[index_of($argv, "--name") + 1]
+    send $name INFO timeout=0.2
+    if $rc == 0 then
+      write_atomic($ready, json_encode({client: pid(), worker: to_number(basename(dirname($path)))}))
+      $found = true
+      break
+    end
+  end
+  if $found then break end
+  sleep(0.05)
+end
+if not $found then raise("ACP_LIFETIME", "worker never started") end
+for $attempt = 1 to 200
+  if is_file($ready .. ".release") then break end
+  sleep(0.05)
+end
+if not is_file($ready .. ".release") then raise("ACP_LIFETIME", "controller did not release client") end
+if $mode == "panic" then panic("ACP lifetime fixture") end
+exit(0)
