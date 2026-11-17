@@ -195,6 +195,9 @@ fn record_changing_4k_ten_seconds() {
     }
     let bus = Bus::start("record-changing");
     let mut process = process::spawn_4k("record-changing", &bus.url);
+    process.extend_watchdog(Duration::from_secs(180));
+    let seconds: u64 = std::env::var("MIX_TEST_CAPTURE_SECONDS")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(10);
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
@@ -218,11 +221,11 @@ fn record_changing_4k_ten_seconds() {
     let at = (2100 * width + 3800) * 3;
     assert_eq!(&pixels[at..at + 3], &[0xaa, 0x33, 0x77]);
     for recording in [false, true] {
-        let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.vfl"), "max_seconds":12,"fps":30,"cursor":true})));
+        let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.vfl"), "max_seconds":seconds+2,"fps":30,"cursor":true})));
         let begin_us = monotonic_ns() / 1000;
         let begin = Instant::now();
         let mut commits = 0;
-        while begin.elapsed() < Duration::from_secs(10) {
+        while begin.elapsed() < Duration::from_secs(seconds) {
             p.swap_buffer(&mut alternate);
             p.state.size = (3840, 2160);
             p.commit(true);
@@ -250,10 +253,20 @@ fn record_changing_4k_ten_seconds() {
             .collect();
         assert!(!times.is_empty());
         times.sort_unstable();
+        for stage in ["capture_offscreen_render", "capture_copy_submit", "capture_map_wait", "capture_rgb_copy", "capture_file_service"] {
+            let mut samples: Vec<u64> = trace.lines()
+                .filter(|line| line.contains(&format!("stage={stage} ")))
+                .filter(|line| (begin_us..end_us).contains(&field(line, "start_us=")))
+                .map(|line| field(line, "duration_us=")).collect();
+            samples.sort_unstable();
+            if !samples.is_empty() {
+                println!("READBACK stage={stage} n={} median_us={} p95_us={}", samples.len(), samples[samples.len()/2], samples[samples.len()*95/100]);
+            }
+        }
         println!(
-            "CHANGING_4K30 recording={recording} commits={commits} compositor_frames={} mean_us={} p95_us={} max_us={} recording_stats={stop:?}",
+            "CHANGING_4K30 recording={recording} commits={commits} compositor_frames={} median_us={} p95_us={} max_us={} recording_stats={stop:?}",
             times.len(),
-            times.iter().sum::<u64>() / times.len() as u64,
+            times[times.len()/2],
             times[times.len() * 95 / 100],
             times.last().unwrap()
         );
@@ -264,7 +277,7 @@ fn record_changing_4k_ten_seconds() {
             // release throughput is measured separately.
             assert!(stop["readbacks"].as_u64().unwrap() > 1);
             assert!(
-                (290..=320).contains(&stop["frames"].as_u64().unwrap()),
+                (seconds*30-10..=seconds*30+20).contains(&stop["frames"].as_u64().unwrap()),
                 "{stop}"
             );
         }

@@ -181,6 +181,7 @@ pub fn service<R: ExportMem>(
     kind: CaptureSource,
     cursor: bool,
 ) {
+    let _service = ledger::frame_trace::span("capture_file_service", 0);
     let requests = take(|request| {
         request.output == output.name()
             && request.spec.window.is_none()
@@ -224,15 +225,20 @@ pub(crate) fn read_pixels<R: ExportMem>(
     if size.w <= 0 || size.h <= 0 {
         return Err("capture has no usable size".to_owned());
     }
+    let copy = ledger::frame_trace::span("capture_copy_submit", 0);
     let (mapping, rgba) = start_readback(
         renderer,
         source.framebuffer,
         Rectangle::from_size(size),
         &source.readback,
     )?;
+    drop(copy);
+    let map = ledger::frame_trace::span("capture_map_wait", 0);
     let bytes = renderer
         .map_texture(&mapping)
         .map_err(|err| format!("map capture: {err}"))?;
+    drop(map);
+    let _convert = ledger::frame_trace::span("capture_rgb_copy", 0);
     rgb(
         bytes,
         size.w as usize,
