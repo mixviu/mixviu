@@ -87,7 +87,7 @@ try
   for $tool in ["mesh_join","mesh_d2_seed","mesh_sync"]
     write_file($paths.roster,$bytes.roster .. "-- drift\n")
     $r = run_argv([$exe,dirname($0) .. "/../_bin/" .. $tool .. ".mix"],{env:{MESH_HUB:$root}})
-    check(not $r.ok and contains($r.stderr .. $r.stdout,"generated roster differs"),"preflight before mutation: " .. $tool)
+    check(not $r.ok and contains($r.stderr .. $r.stdout,"generated roster differs"),"preflight before mutation: " .. $tool .. $r.stdout .. $r.stderr)
     write_file($paths.roster,$bytes.roster)
   end
 finally

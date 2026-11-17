@@ -284,7 +284,7 @@ $vi = $m.verified_inventory($SIGNED, {
 })
 $mesh = $vi["inventory"]
 $citizens = $hosts.citizens($mesh)
-$selected = filter($selected, fn($n) => contains($citizens,$n))
+$selected = filter($selected, fn($n) = contains($citizens,$n))
 $hubs = $d.mesh_hubs()
 $d.die_if(not same_strings($hubs, $mesh["hub"]),
   "authored and verified inventories disagree on hub membership")
