@@ -71,9 +71,11 @@ on the authorised PVE node. `--check` writes nothing and verifies installed
 files, executable hook, enabled/active unit, storage path and CT hook settings.
 An existing `/opt/mix/etc/udev-forwarder.conf.mix` is preserved and validated;
 otherwise the bundle default selects CTs 102, 103, 104 and input/hidraw/sound.
-The installer checks all five uevent builtins in `/opt/mix/bin/mix`, preflights
-all CTs and refuses to replace another hookscript. A binary missing a builtin
-is refused before any writes, with an instruction to install a suitable gold.
+The installer checks all five uevent builtins in `/opt/mix/bin/mix`, probes
+the plain native pump against an unavailable broker using stdin (no temporary
+file), preflights all CTs and refuses to replace another hookscript. Missing
+builtins or a failed pump probe are refused before any writes, with an
+instruction to install a suitable gold.
 Snapshot sections are preserved. It installs scripts under
 `/opt/mix/lib/udev-forwarder`, the unit under `/etc/systemd/system`, and
 `local:snippets/mix-udev-forwarder.mix`, then enables/restarts the service.

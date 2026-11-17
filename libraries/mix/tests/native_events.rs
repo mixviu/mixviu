@@ -120,16 +120,26 @@ async fn plain_native_pump_outlives_a_closed_bus_without_spinning() {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     drop(tx); // Model the CLI's lazy Bus handler on a host without a broker.
     let mut e = Evaluator::new();
-    e.set_bus_handler(Rc::new(Bus { rx: tokio::sync::Mutex::new(rx) }));
-    exec(&mut e, r#"
+    e.set_bus_handler(Rc::new(Bus {
+        rx: tokio::sync::Mutex::new(rx),
+    }));
+    exec(
+        &mut e,
+        r#"
         $ticks = 0
         $clock = interval(0.1, "native-only")
         on timer.tick
             $ticks = $ticks + 1
             if $ticks == 2 then cancel_timer($clock) end
         end
-    "#).await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), e.run_event_pump()).await.unwrap().unwrap();
+    "#,
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), e.run_event_pump())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(e.get_global("ticks"), Some(Value::Number(2.0)));
 }
 
@@ -139,9 +149,19 @@ async fn serve_pump_still_ends_when_its_bus_closes() {
     drop(tx);
     let mut e = Evaluator::new();
     e.set_serve_runtime(Rc::new(Runtime));
-    e.set_bus_handler(Rc::new(Bus { rx: tokio::sync::Mutex::new(rx) }));
-    exec(&mut e, "$clock = interval(60, \"unused\")\non timer.tick\n    $unexpected = true\nend").await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), e.run_event_pump()).await.unwrap().unwrap();
+    e.set_bus_handler(Rc::new(Bus {
+        rx: tokio::sync::Mutex::new(rx),
+    }));
+    exec(
+        &mut e,
+        "$clock = interval(60, \"unused\")\non timer.tick\n    $unexpected = true\nend",
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), e.run_event_pump())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(e.get_global("unexpected").is_none());
     e.close_native_events();
 }
