@@ -274,8 +274,23 @@ impl<Z: Zone> fmt::Display for DateTime<Z> {
 }
 impl<Z: Zone> fmt::Debug for DateTime<Z> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.format("%Y-%m-%dT%H:%M:%S%.f"),
-            if Z::UTC { "Z".into() } else { offset_text(self.inner.offset(), if self.inner.offset().seconds_past_minute() == 0 { 1 } else { 2 }) })
+        write!(
+            f,
+            "{}{}",
+            self.format("%Y-%m-%dT%H:%M:%S%.f"),
+            if Z::UTC {
+                "Z".into()
+            } else {
+                offset_text(
+                    self.inner.offset(),
+                    if self.inner.offset().seconds_past_minute() == 0 {
+                        1
+                    } else {
+                        2
+                    },
+                )
+            }
+        )
     }
 }
 impl<Z: Zone> PartialEq for DateTime<Z> {
