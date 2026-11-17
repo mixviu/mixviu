@@ -1,0 +1,12 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$watch = process_watch([env("MIX_TEST_MIX_EXE"), env("ACP_TEST_ADAPTER")],
+  {stdin: "pipe", stderr: "inherit", overflow: "block"})
+$sent = process_write($watch, json_encode({jsonrpc: "2.0", id: 1, method: "initialize", params: {protocolVersion: 1}}) .. "\n")
+on proc.line
+  $frame = json_parse($event.args.line)
+  if $frame.id == 1 and $frame.result.protocolVersion == 1 then
+    write_file(env("ACP_LIFETIME_READY"), "ready")
+    if env("ACP_LIFETIME_EXIT") == "normal" then exit(0) end
+    if env("ACP_LIFETIME_EXIT") == "panic" then panic("ACP lifetime fixture") end
+  end
+end
