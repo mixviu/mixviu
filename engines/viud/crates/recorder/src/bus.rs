@@ -466,14 +466,21 @@ impl Recording {
                 (Err("encoder finaliser disconnected".into()), None)
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
-                if self.finishing_since.is_none_or(|at| at.elapsed() < std::time::Duration::from_secs(30)) {
+                if self
+                    .finishing_since
+                    .is_none_or(|at| at.elapsed() < std::time::Duration::from_secs(30))
+                {
                     return false;
                 }
                 // The filesystem owns the blocked worker. Detach it; never join
                 // it on the compositor, including when this take is dropped.
-                self.finalise_cancel.store(true, std::sync::atomic::Ordering::Release);
+                self.finalise_cancel
+                    .store(true, std::sync::atomic::Ordering::Release);
                 self.finaliser.take();
-                (Err("encoder finaliser timed out after 30 seconds".into()), Some(self.files.video.clone()))
+                (
+                    Err("encoder finaliser timed out after 30 seconds".into()),
+                    Some(self.files.video.clone()),
+                )
             }
         };
         if let Err(error) = result {
@@ -507,7 +514,15 @@ mod file_tests {
     fn hung_finaliser_has_bounded_failure_without_joining() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
-        let mut r = Recording::new("hung".into(), dir.join("hung.vfl").to_str().unwrap().into(), 2, 2, 30, "vfl".into()).unwrap();
+        let mut r = Recording::new(
+            "hung".into(),
+            dir.join("hung.vfl").to_str().unwrap().into(),
+            2,
+            2,
+            30,
+            "vfl".into(),
+        )
+        .unwrap();
         r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
         r.stop(false);
         r.finaliser.take().unwrap().join().unwrap();
@@ -515,7 +530,12 @@ mod file_tests {
         r.finishing = Some(rx);
         r.finishing_since = Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
         assert!(r.poll());
-        assert!(r.error.as_ref().unwrap().contains("timed out after 30 seconds"));
+        assert!(
+            r.error
+                .as_ref()
+                .unwrap()
+                .contains("timed out after 30 seconds")
+        );
         assert!(r.finaliser.is_none());
         std::fs::remove_dir_all(dir).unwrap();
     }

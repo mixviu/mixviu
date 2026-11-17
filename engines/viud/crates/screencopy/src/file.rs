@@ -79,7 +79,8 @@ pub fn set_paused(output: &Output, paused: bool) {
                 if read.requests.iter().any(|r| r.output == name) {
                     // Reads submitted during the pause also get no more than
                     // their original one-second active budget.
-                    read.expires += now.saturating_duration_since(since.max(read.expires - READ_TIMEOUT));
+                    read.expires +=
+                        now.saturating_duration_since(since.max(read.expires - READ_TIMEOUT));
                 }
             }
         });
@@ -326,7 +327,14 @@ fn expire_reads(now: Instant) {
     let expired = READS.with_borrow_mut(|reads| {
         let (expired, live) = std::mem::take(reads)
             .into_iter()
-            .partition::<Vec<_>, _>(|r| now >= r.expires && !PAUSED.with_borrow(|outputs| r.requests.iter().any(|request| outputs.contains_key(&request.output))));
+            .partition::<Vec<_>, _>(|r| {
+                now >= r.expires
+                    && !PAUSED.with_borrow(|outputs| {
+                        r.requests
+                            .iter()
+                            .any(|request| outputs.contains_key(&request.output))
+                    })
+            });
         *reads = live;
         expired
     });

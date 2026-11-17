@@ -81,7 +81,9 @@ impl Write for BoundedFile {
         if next > self.budget.space_checked_until.get() {
             const INTERVAL: u64 = 8 * 1024 * 1024;
             check_space(&self.file, buf.len() as u64 + INTERVAL)?;
-            self.budget.space_checked_until.set(next.saturating_add(INTERVAL));
+            self.budget
+                .space_checked_until
+                .set(next.saturating_add(INTERVAL));
         }
         let n = self.file.write(buf)?;
         self.budget
@@ -485,8 +487,14 @@ mod disk_tests {
     fn measure_space_check_cost() {
         let file = File::open(std::env::temp_dir()).unwrap();
         let start = Instant::now();
-        for _ in 0..100_000 { check_space(&file, 0).unwrap(); }
-        println!("VFL_SPACE_CHECK calls=100000 total_us={} ns_per_call={}", start.elapsed().as_micros(), start.elapsed().as_nanos() / 100_000);
+        for _ in 0..100_000 {
+            check_space(&file, 0).unwrap();
+        }
+        println!(
+            "VFL_SPACE_CHECK calls=100000 total_us={} ns_per_call={}",
+            start.elapsed().as_micros(),
+            start.elapsed().as_nanos() / 100_000
+        );
     }
     #[test]
     fn unreadable_parent_does_not_refuse_space_probe() {

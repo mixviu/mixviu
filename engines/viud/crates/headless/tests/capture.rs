@@ -179,11 +179,14 @@ fn vfl_visit(path: &Path, mut visit: impl FnMut(&[u8])) -> (Vec<u8>, u64) {
                 0 => pixels = lz4_flex::block::decompress(payload, size).unwrap(),
                 1 => {
                     let delta = lz4_flex::block::decompress(payload, size).unwrap();
-                    for (p, d) in pixels.iter_mut().zip(delta) { *p ^= d; }
+                    for (p, d) in pixels.iter_mut().zip(delta) {
+                        *p ^= d;
+                    }
                 }
                 2 => assert!(payload.is_empty()),
                 3 => {
-                    let n = |at| u32::from_le_bytes(payload[at..at + 4].try_into().unwrap()) as usize;
+                    let n =
+                        |at| u32::from_le_bytes(payload[at..at + 4].try_into().unwrap()) as usize;
                     let (x, y, w, h) = (n(0), n(4), n(8), n(12));
                     let width = manifest["width"].as_u64().unwrap() as usize;
                     let height = manifest["height"].as_u64().unwrap() as usize;
@@ -191,7 +194,12 @@ fn vfl_visit(path: &Path, mut visit: impl FnMut(&[u8])) -> (Vec<u8>, u64) {
                     let delta = lz4_flex::block::decompress(&payload[16..], w * h * 4).unwrap();
                     for row in 0..h {
                         let at = ((y + row) * width + x) * 4;
-                        for (p, d) in pixels[at..at + w * 4].iter_mut().zip(&delta[row * w * 4..(row + 1) * w * 4]) { *p ^= d; }
+                        for (p, d) in pixels[at..at + w * 4]
+                            .iter_mut()
+                            .zip(&delta[row * w * 4..(row + 1) * w * 4])
+                        {
+                            *p ^= d;
+                        }
                     }
                 }
                 kind => panic!("unknown VFL record kind {kind}"),
@@ -282,7 +290,10 @@ fn record_small_changes_zero_drops_and_crcs() {
             expected += 1;
         }
     });
-    assert_eq!(expected, 8, "every committed colour must survive in the VFL, in order");
+    assert_eq!(
+        expected, 8,
+        "every committed colour must survive in the VFL, in order"
+    );
 }
 
 /// Throughput acceptance must run alone, with release runtime binaries.
@@ -832,7 +843,10 @@ fn record_idle_output_lifecycle_and_clock() {
     let (_, records) = vfl_first(std::path::Path::new(next["path"].as_str().unwrap()));
     assert_eq!(Some(records), bounded["frames"].as_u64());
     assert_eq!(bounded["dropped"], 0);
-    assert!(records >= submitted_commits, "bounded take lost submitted slots: commits={submitted_commits} {bounded}");
+    assert!(
+        records >= submitted_commits,
+        "bounded take lost submitted slots: commits={submitted_commits} {bounded}"
+    );
     assert_eq!(start, bus.call("comp.record.start", args));
     let discard_path = process.root.join("discard.vfl");
     let discard = bus.call("comp.record.start", json!({"request_id":"discard", "target":{"output":"headless-0"},"path":discard_path,"max_seconds":1}));

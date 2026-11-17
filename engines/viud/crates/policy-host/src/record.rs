@@ -628,7 +628,10 @@ fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
 
 fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     for output in lp.inner.space_state().state.outputs() {
-        screencopy::file::set_paused(output, matches!(lp.inner.status_session, world::state::StatusSession::Paused));
+        screencopy::file::set_paused(
+            output,
+            matches!(lp.inner.status_session, world::state::StatusSession::Paused),
+        );
     }
     let clock = recorder::bus::monotonic_us();
     {
@@ -948,8 +951,13 @@ mod tests {
 
     fn drain_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
         let session = session_fixture(id, root);
-        session.borrow_mut().recording.as_mut().unwrap()
-            .frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0))).unwrap();
+        session
+            .borrow_mut()
+            .recording
+            .as_mut()
+            .unwrap()
+            .frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0)))
+            .unwrap();
         session
     }
 
@@ -962,13 +970,13 @@ mod tests {
         use smithay::output::{Output, PhysicalProperties, Subpixel};
         use smithay::reexports::calloop::EventLoop;
         use std::sync::atomic::Ordering;
-        let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE")
-            .unwrap_or_else(|_| {
-                EGLDevice::enumerate().ok()
-                    .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "/dev/dri/no-render-device".into())
-            });
+        let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| {
+            EGLDevice::enumerate()
+                .ok()
+                .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "/dev/dri/no-render-device".into())
+        });
         if !std::path::Path::new(&node).exists() {
             assert_ne!(
                 std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref(),
@@ -1101,7 +1109,11 @@ mod tests {
         screencopy::file::set_paused(&outputs[0], true);
         std::thread::sleep(Duration::from_millis(1100));
         screencopy::file::poll(&mut renderer, &outputs[1]);
-        assert_eq!(screencopy::file::testing::read_count(), 1, "inactive output keeps its read beyond READ_TIMEOUT");
+        assert_eq!(
+            screencopy::file::testing::read_count(),
+            1,
+            "inactive output keeps its read beyond READ_TIMEOUT"
+        );
         screencopy::file::set_paused(&outputs[0], false);
         assert!(screencopy::file::pending(&outputs[0]));
         assert!(!screencopy::file::requested(&outputs[0]));
@@ -1246,15 +1258,33 @@ mod tests {
         let recording = s.recording.take().unwrap();
         let captured_us = recorder::bus::monotonic_us().unwrap();
         assign_first_capture(&mut s, recording, captured_us);
-        s.recording.as_mut().unwrap().frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0))).unwrap();
-        assert_eq!(s.recording.as_ref().unwrap().started()["t0_us"], captured_us);
-        let marker = s.recording.as_mut().unwrap().marker("aligned".into(), Value::Null).unwrap();
-        assert!(marker["t_us"].as_u64().unwrap() <= recorder::bus::monotonic_us().unwrap() - captured_us);
+        s.recording
+            .as_mut()
+            .unwrap()
+            .frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0)))
+            .unwrap();
+        assert_eq!(
+            s.recording.as_ref().unwrap().started()["t0_us"],
+            captured_us
+        );
+        let marker = s
+            .recording
+            .as_mut()
+            .unwrap()
+            .marker("aligned".into(), Value::Null)
+            .unwrap();
+        assert!(
+            marker["t_us"].as_u64().unwrap()
+                <= recorder::bus::monotonic_us().unwrap() - captured_us
+        );
         stop_stream(&mut s, false);
         while !finish_recording(&mut s) {
             std::thread::sleep(Duration::from_millis(5));
         }
-        let origin: Value = serde_json::from_slice(&std::fs::read(root.join("origin-host.vfl/origin.json")).unwrap()).unwrap();
+        let origin: Value = serde_json::from_slice(
+            &std::fs::read(root.join("origin-host.vfl/origin.json")).unwrap(),
+        )
+        .unwrap();
         assert_eq!(origin["t0_us"], captured_us);
         drop(s);
         drop(session);
@@ -1381,7 +1411,9 @@ mod tests {
                 got.set(true);
             }));
         }
-        tick(&session, || panic!("failed preflight must never schedule capture"));
+        tick(&session, || {
+            panic!("failed preflight must never schedule capture")
+        });
         assert!(answered.get());
         assert!(!session.borrow().pending);
         assert!(session.borrow().recording.is_none());
