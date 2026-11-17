@@ -25,7 +25,7 @@ end
 check($bytes.targets == $header .. data_encode({schema_version:1,project:"example",targets:$expected_targets}) .. "\n","targets exact bytes")
 $gold = {mix_bin:"/opt/mix/bin/mix",roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}
 $legacy = {mix_bin:"/opt/example/bin/mix",legacy_defaults:true,roots:{prefix:"/opt/example",etc:"/etc/example",var:"/var/lib/example",cache:"/var/cache/example",run:"/run/example",share:"/opt/example/share"}}
-check($bytes.nodes == $header .. data_encode({nodes:{anchor:$gold,local:$gold,"desk-a":$gold,relay:$legacy,worker:$gold,external:$gold}}) .. "\n","settings exact bytes")
+check($bytes.nodes == $header .. data_encode({nodes:{anchor:$gold,relay:$legacy,"desk-a":$gold,worker:$gold,external:$gold,local:$gold}}) .. "\n","settings exact bytes")
 for $case in ["missing-facts","missing-member","tombstone","roots","interpreter","duplicate","class","hub"]
   $f = $facts
   $i = $inv
