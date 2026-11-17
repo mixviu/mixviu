@@ -338,6 +338,7 @@ fn changing_4k(strict: bool) {
             "capture_map_latency",
             "capture_rgb_copy",
             "capture_file_service",
+            "headless_readback_poll_cpu",
         ] {
             let mut samples: Vec<u64> = trace
                 .lines()

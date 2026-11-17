@@ -89,6 +89,8 @@ pub(crate) struct Context {
     last: Option<Instant>,
     timer: FrameTimer,
     timer_source: Option<smithay::reexports::calloop::RegistrationToken>,
+    read_poll_at: Option<Instant>,
+    read_poll_source: Option<smithay::reexports::calloop::RegistrationToken>,
     retry: Retry,
     interval: Duration,
 }
@@ -97,6 +99,10 @@ impl Context {
     fn retire_timer(&mut self, state: &Loop) {
         self.timer.retire();
         if let Some(token) = self.timer_source.take() {
+            state.loop_handle.remove(token);
+        }
+        self.read_poll_at = None;
+        if let Some(token) = self.read_poll_source.take() {
             state.loop_handle.remove(token);
         }
     }
@@ -123,6 +129,8 @@ impl Context {
             last: None,
             timer: FrameTimer::default(),
             timer_source: None,
+            read_poll_at: None,
+            read_poll_source: None,
             retry: Retry::default(),
             interval,
         }
@@ -142,6 +150,9 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
         ctx.retire_timer(state);
         return;
     }
+    drop(ctx);
+    arm_readbacks(state, context);
+    let mut ctx = context.borrow_mut();
     if let Some(mode) = ctx.output.current_mode() {
         ctx.interval = Duration::from_nanos(1_000_000_000_000 / mode.refresh.max(1) as u64);
     }
@@ -170,6 +181,71 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
         })
         .expect("headless: frame timer");
     ctx.timer_source = Some(token);
+}
+
+/// Fence readiness is independent of presentation. Poll on the requested
+/// deadline without advancing ctx.last, preparing a scene, or presenting.
+fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
+    let Some(at) = graphics::bridge::publish::wake::take_capture_deadline() else {
+        return;
+    };
+    let mut ctx = context.borrow_mut();
+    let handle = state.loop_handle.clone();
+    if !screencopy::file::reading(&ctx.output) {
+        state.state.redraw.request_at(
+            &handle,
+            at,
+            protocols::redraw::schedule::RedrawReason::Capture,
+            |s| &mut s.state.redraw,
+        );
+        return;
+    }
+    if ctx.read_poll_at.is_some_and(|current| current <= at) {
+        return;
+    }
+    if let Some(token) = ctx.read_poll_source.take() {
+        handle.remove(token);
+    }
+    let owner = Rc::downgrade(context);
+    let token = handle.insert_source(Timer::from_deadline(at), move |_, _, state| {
+        let Some(context) = owner.upgrade() else {
+            return TimeoutAction::Drop;
+        };
+        {
+            let _cpu = ledger::frame_trace::span("headless_readback_poll_cpu", 0);
+            let mut ctx = context.borrow_mut();
+            ctx.read_poll_source = None;
+            ctx.read_poll_at = None;
+            if route(ctx.vt_session, !matches!(state.inner.status_session, world::state::StatusSession::Paused)) == Route::Kms {
+                return TimeoutAction::Drop;
+            }
+            // A renderer adopted by native remains available while its VT is
+            // parked. Keep the same ownership seam as offscreen composition.
+            let output = ctx.output.clone();
+            if let Some(renderer) = ctx.renderer.as_mut() {
+                screencopy::file::poll(renderer, &output);
+            } else if let Some(binding) = state.inner.kernel.get(&world::state::GPU_BINDING).as_ref().cloned()
+                && let Ok(mut binding) = binding.try_borrow_mut() {
+                    let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
+                    let primary = *primary;
+                    if let Ok(mut renderer) = gpus.single_renderer(&primary) {
+                        screencopy::file::poll(renderer.as_mut(), &ctx.output);
+                    }
+            }
+        }
+        arm(state, &context);
+        TimeoutAction::Drop
+    });
+    match token {
+        Ok(token) => {
+            ctx.read_poll_at = Some(at);
+            ctx.read_poll_source = Some(token);
+        }
+        Err(_) => {
+            // Preserve progress through the normal frame route on failure.
+            state.state.redraw.request_for(protocols::redraw::schedule::RedrawReason::Capture);
+        }
+    }
 }
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
@@ -245,17 +321,8 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             |s| &mut s.state.redraw,
         );
     }
-    // Recording owns a separate keep-alive deadline from UI animation. A
-    // paused KMS executor never drains it, so the offscreen owner must do so.
-    if let Some(at) = graphics::bridge::publish::wake::take_capture_deadline() {
-        let handle = state.loop_handle.clone();
-        state.state.redraw.request_at(
-            &handle,
-            at,
-            protocols::redraw::schedule::RedrawReason::Capture,
-            |s| &mut s.state.redraw,
-        );
-    }
+    // arm() routes readback deadlines to a poll timer, and recorder UI
+    // keep-alives to the normal frame timer once no snapshot is in flight.
 }
 
 fn compose_available(

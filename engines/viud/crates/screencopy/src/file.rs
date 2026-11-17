@@ -172,7 +172,12 @@ pub fn enqueue(
 }
 
 pub fn pending(output: &Output) -> bool {
-    reads_pending(output, None) || requested(output)
+    reading(output) || requested(output)
+}
+
+/// A submitted snapshot needs polling, rather than another scene render.
+pub fn reading(output: &Output) -> bool {
+    reads_pending(output, None)
 }
 
 /// Queued work needs a source render; a submitted PBO only needs polling.
