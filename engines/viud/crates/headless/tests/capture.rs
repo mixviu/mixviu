@@ -1119,6 +1119,9 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     let records = assert_recorded_colours(&process.root.join("pause-resume.vfl"), &colours);
     assert_eq!(Some(records), stopped["frames"].as_u64());
     assert!(records > 0);
+    // Recording intentionally changed the scene. Freeze its final pixels
+    // before probing binding loss and explicit VT watcher recovery.
+    let before_recovery = ppm(&bus, &process, "before-watcher-recovery", None).2;
     edge(b'P');
     edge(b'D'); // a temporarily missing binding must back off, not panic
     let restore = control.try_clone().unwrap();
