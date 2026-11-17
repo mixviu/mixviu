@@ -8,6 +8,7 @@ end
 try
   mkdir($root .. "/_etc/mesh",{parents:true})
   mkdir($root .. "/etc/noded",{parents:true})
+  mkdir($root .. "/var/mesh",{parents:true})
   $pub = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   $inventory = {schema_version:1,mesh:"example.org",subnet:"192.0.2.0/24",epoch:1,hub:["hub"],unsigned:true,members:[]}
   for $name in ["hub","desk"]
