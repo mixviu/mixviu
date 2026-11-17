@@ -18,6 +18,9 @@ pub type Pixels = (u32, u32, std::sync::Arc<Vec<u8>>, u64);
 type PixelAnswer = Box<dyn FnOnce(Result<Pixels, ControlReply>)>;
 thread_local! {
     static PIXEL_ANSWERS: RefCell<std::collections::HashMap<String, PixelAnswer>> = RefCell::new(std::collections::HashMap::new());
+    // Retain at most three RGB allocations. A writer holding a frame prevents
+    // reuse: Arc::get_mut succeeds only after every consumer has released it.
+    static PIXEL_POOL: RefCell<Vec<std::sync::Arc<Vec<u8>>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// A raw capture uses the same target fencing, crop and offscreen window path
@@ -102,7 +105,7 @@ pub fn pending_windows() -> bool {
 /// Window requests never consume an output framebuffer, including the KMS tap.
 pub(crate) fn service_windows(
     output: &Output,
-    mut capture: impl FnMut(CaptureWindow, bool) -> Result<(Readback, Vec<u8>), ControlReply>,
+    mut capture: impl FnMut(CaptureWindow, bool) -> Result<(Readback, std::sync::Arc<Vec<u8>>), ControlReply>,
 ) {
     for request in take(|request| request.output == output.name() && request.spec.window.is_some())
     {
@@ -112,7 +115,7 @@ pub(crate) fn service_windows(
             complete_timed(
                 &request.spec,
                 readback,
-                &std::sync::Arc::new(pixels),
+                &pixels,
                 output,
                 CaptureSource::Offscreen,
                 started.elapsed().as_micros() as u64,
@@ -192,7 +195,7 @@ pub fn service<R: ExportMem>(
     let _service = ledger::frame_trace::span("capture_file_service", 0);
     let readback = source.readback;
     let started = std::time::Instant::now();
-    let pixels = read_pixels(renderer, source).map(std::sync::Arc::new);
+    let pixels = read_pixels(renderer, source);
     let readback_us = started.elapsed().as_micros() as u64;
     for request in requests {
         let result = pixels
@@ -217,7 +220,7 @@ pub fn service<R: ExportMem>(
 pub(crate) fn read_pixels<R: ExportMem>(
     renderer: &mut R,
     source: Source<'_, '_, R>,
-) -> Result<Vec<u8>, String> {
+) -> Result<std::sync::Arc<Vec<u8>>, String> {
     let Readback {
         size,
         origin_bottom_left,
@@ -242,13 +245,23 @@ pub(crate) fn read_pixels<R: ExportMem>(
         .map_err(|err| format!("map capture: {err}"))?;
     drop(map);
     let _convert = ledger::frame_trace::span("capture_rgb_copy", 0);
-    rgb(
-        bytes,
-        size.w as usize,
-        size.h as usize,
-        rgba,
-        origin_bottom_left,
-    )
+    pooled_rgb(bytes, size.w as usize, size.h as usize, rgba, origin_bottom_left)
+}
+
+fn pooled_rgb(bytes: &[u8], width: usize, height: usize, rgba: bool, bottom_up: bool) -> Result<std::sync::Arc<Vec<u8>>, String> {
+    PIXEL_POOL.with_borrow_mut(|pool| {
+        for frame in pool.iter_mut() {
+            if let Some(pixels) = std::sync::Arc::get_mut(frame) {
+                rgb_into(bytes, width, height, rgba, bottom_up, pixels)?;
+                return Ok(frame.clone());
+            }
+        }
+        let frame = std::sync::Arc::new(rgb(bytes, width, height, rgba, bottom_up)?);
+        if pool.len() < 3 {
+            pool.push(frame.clone());
+        }
+        Ok(frame)
+    })
 }
 
 fn complete(
@@ -385,15 +398,22 @@ fn rgb(
     rgba: bool,
     bottom_up: bool,
 ) -> Result<Vec<u8>, String> {
+    let mut pixels = Vec::new();
+    rgb_into(bytes, width, height, rgba, bottom_up, &mut pixels)?;
+    Ok(pixels)
+}
+
+fn rgb_into(bytes: &[u8], width: usize, height: usize, rgba: bool, bottom_up: bool, pixels: &mut Vec<u8>) -> Result<(), String> {
     let row = width.checked_mul(4).ok_or("capture size overflow")?;
     let len = row.checked_mul(height).ok_or("capture size overflow")?;
     if bytes.len() < len {
         return Err("capture readback is shorter than its layout".into());
     }
     if len == 0 {
-        return Ok(Vec::new());
+        pixels.clear();
+        return Ok(());
     }
-    let mut pixels = vec![0; len / 4 * 3];
+    pixels.resize(len / 4 * 3, 0);
     for (y, out) in pixels.chunks_exact_mut(width * 3).enumerate() {
         let at = source_row(y, height, bottom_up) * row;
         if rgba {
@@ -406,7 +426,7 @@ fn rgb(
             }
         }
     }
-    Ok(pixels)
+    Ok(())
 }
 
 fn write(spec: &CaptureFrameSpec, width: u32, height: u32, pixels: &[u8]) -> Result<(), String> {
@@ -514,6 +534,25 @@ mod tests {
         assert_eq!(rgb(&bgra, 1, 2, false, true).unwrap(), [4, 5, 6, 1, 2, 3]);
         assert_eq!(rgb(&bgra, 1, 2, true, false).unwrap(), [3, 2, 1, 6, 5, 4]);
         assert!(rgb(&bgra[..3], 1, 1, false, false).is_err());
+    }
+
+    #[test]
+    fn pooled_pixels_never_overwrite_a_live_writer_frame() {
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+        let first = pooled_rgb(&[3, 2, 1, 255], 1, 1, false, false).unwrap();
+        let address = first.as_ptr();
+        let second = pooled_rgb(&[6, 5, 4, 255], 1, 1, false, false).unwrap();
+        assert_eq!(&**first, &[1, 2, 3]);
+        assert_eq!(&**second, &[4, 5, 6]);
+        drop(first);
+        let third = pooled_rgb(&[9, 8, 7, 255], 1, 1, false, false).unwrap();
+        assert_eq!(third.as_ptr(), address);
+        assert_eq!(&**second, &[4, 5, 6]);
+        assert_eq!(&**third, &[7, 8, 9]);
+        let _fourth = pooled_rgb(&[0; 4], 1, 1, true, false).unwrap();
+        let _fifth = pooled_rgb(&[0; 4], 1, 1, true, false).unwrap();
+        assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 3);
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
     }
 
     #[test]
