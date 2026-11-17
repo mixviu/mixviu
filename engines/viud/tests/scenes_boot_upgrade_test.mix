@@ -236,8 +236,8 @@ end
   -- retry, command and persistence code stays unchanged. Relative modules
   -- still come from the real script directory, not this temporary fixture.
   stop($children.loader)
-  $retry_fixture = replace(read_file($loader_script), 'on fs.changed', 'on fixture.fs.changed')
-  $retry_fixture = replace($retry_fixture, 'require("lib/', 'require("' .. dirname($loader_script) .. '/lib/')
+  $retry_fixture = replace($gated, 'on fs.changed', 'on fixture.fs.changed')
+  $retry_fixture = replace($retry_fixture, '/.task-', '/.corrupt-task-')
   write_file($tmp .. "/retry-state.mix", $retry_fixture)
   $children.loader = start("scenes", $tmp .. "/retry-state.mix")
   wait_service("scenes")
@@ -245,9 +245,13 @@ end
   -- Corrupt durable state while a new retry is pending. The task must record
   -- a diagnostic and terminal flags instead of silently abandoning the work.
   check(call("scenes", "scenes.upgrade").rc == 0, "re-arm before unreadable state")
-  $prior = rows().alpha.upgrade
+  $prior_rows = rows()
+  $snap = retry_snapshot()
+  $gate = $tmp .. "/scenes/.corrupt-task-" .. to_string($snap.seq)
+  wait_file($gate .. ".waiting")
   $saved = read_file($tmp .. "/scenes/state.conf.mix")
   write_file($tmp .. "/scenes/state.conf.mix", "{not valid state")
+  write_file($gate .. ".release", "")
   $done = false
   for $i = 1 to 400
     $view = call("scenes", "scenes.list").value
@@ -256,7 +260,12 @@ end
     sleep(0.1)
   end
   check($done, "raised retry records diagnostic and stops retryable flags")
-  check(deep_eq($r.upgrade.context, $prior.context) and $r.upgrade.reason == $prior.reason, "handler failure preserves each scene's error")
+  for $name in keys($prior_rows)
+    $prior = $prior_rows[$name].upgrade
+    if $prior == nil or $prior.retryable != true then continue end
+    $prior.retryable = false
+    check(deep_eq(rows()[$name].upgrade, $prior), "handler failure preserves own error: " .. $name)
+  end
   check($view.state_ok == false, "retry catch commits the unreadable-state guard")
   for $command in ["scenes.enable", "scenes.remove", "scenes.reset"]
     $refused = call("scenes", $command, {name:"alpha"})
