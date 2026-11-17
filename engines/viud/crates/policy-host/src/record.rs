@@ -80,6 +80,7 @@ struct Session {
     start_answers: Vec<Answer>,
     stop_answers: Vec<Answer>,
     pending: bool,
+    drain_until: Option<Instant>,
     signature: Vec<u64>,
     deferred_signature: Option<Vec<u64>>,
     failed: Option<String>,
@@ -277,6 +278,7 @@ pub fn command(
             start_answers: vec![answer],
             stop_answers: Vec::new(),
             pending: false,
+            drain_until: None,
             signature: Vec::new(),
             deferred_signature: None,
             failed: None,
@@ -376,7 +378,7 @@ fn session_command(op: RecordCommand, answer: Answer) {
                     answer(ControlReply::Body(reply.clone()));
                     return;
                 }
-                if r.stop_conflicts(discard) {
+                if r.stop_conflicts(discard) || s.drain_until.is_some() && discard {
                     answer(refused("already finishing"));
                     return;
                 }
@@ -484,6 +486,16 @@ fn superseded(pending: &mut Option<Vec<u64>>, current: &[u64]) -> bool {
 }
 
 fn stop_stream(s: &mut Session, discard: bool) -> bool {
+    // A submitted GPU snapshot already belongs to the take. Let its normal
+    // fence callback deliver it before sealing, without blocking the Bus or
+    // compositor. A failed/stalled backend still has a bounded escape path.
+    if s.pending && !discard && s.failed.is_none() {
+        let until = *s.drain_until.get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
+        if Instant::now() < until {
+            return true;
+        }
+    }
+    s.drain_until = None;
     let lost = u64::from(std::mem::take(&mut s.pending))
         + u64::from(s.deferred_signature.take().is_some());
     if let Some(r) = s.recording.as_mut() {
@@ -543,6 +555,13 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             }
         }
         if s.failed.is_some() {
+            return;
+        }
+        if let Some(until) = s.drain_until {
+            if !s.pending || Instant::now() >= until {
+                stop_stream(&mut s, false);
+                event(&s, "finishing");
+            }
             return;
         }
         let now_us = match clock {
@@ -776,6 +795,10 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 event(&s, "recording");
             }
+            if s.drain_until.is_some() {
+                stop_stream(&mut s, false);
+                event(&s, "finishing");
+            }
         });
         crate::capture::start(lp, target, Instant::now(), move |reply| {
             if !matches!(reply, ControlReply::Body(_)) {
@@ -873,6 +896,7 @@ mod tests {
             })],
             stop_answers: vec![],
             pending: true,
+            drain_until: None,
             signature: vec![],
             deferred_signature: None,
             failed: None,
