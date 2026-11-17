@@ -60,6 +60,19 @@ end
   check(refused(fn()=$w.parse_unit_properties($nspawn,"pct")),"CT accepted missing required sequence properties")
   check(refused(fn()=$w.parse_unit_properties($pct,"nspawn")),"nspawn accepted unsolicited CT properties")
   check(refused(fn()=$w.parse_unit_properties($nspawn .. "User=other\n","nspawn")),"duplicate property accepted")
+  check(refused(fn()=$w.parse_unit_properties($pct .. "User=other\n","pct")),"CT duplicate scalar accepted")
+  check(refused(fn()=$w.parse_unit_properties($pct .. "Unexpected=value\n","pct")),"unexpected property accepted")
+  $properties = $w.parse_unit_properties($pct,"pct")
+  check(len($properties.ExecStartPre)==2 and len($properties.ExecStart)==1 and len($properties.EnvironmentFiles)==2,"repeated exec/environment entries were lost")
+  check(deep_eq($properties.RuntimeDirectory,[]),"empty runtime directory was not retained as an empty sequence")
+  $properties.EnvironmentFiles = reverse($properties.EnvironmentFiles)
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target))),"profile environment accepted before session environment")
+  $properties = $w.parse_unit_properties($pct,"pct")
+  $properties.EnvironmentFiles[1].ignore_errors = true
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target))),"optional profile environment accepted")
+  $properties = $w.parse_unit_properties($pct,"pct")
+  $properties.ExecStart = concat($properties.ExecStart,$properties.ExecStart)
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target))),"two start commands accepted")
 finally
   run_argv_must(["rm","-rf",$root])
 end
