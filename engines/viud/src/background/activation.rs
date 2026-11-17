@@ -110,7 +110,12 @@ impl Activation {
     }
 }
 
-fn notice(shared: &Rc<RefCell<Activation>>, notice: Notice, failed: &AtomicBool, attempt: impl FnOnce()) {
+fn notice(
+    shared: &Rc<RefCell<Activation>>,
+    notice: Notice,
+    failed: &AtomicBool,
+    attempt: impl FnOnce(),
+) {
     if shared.borrow().handles.borrow().is_some() {
         return;
     }
@@ -212,7 +217,9 @@ pub fn install(
     let callback = shared.clone();
     handle.insert_source(source, move |event, _, state| {
         let Event::Msg(notice) = event else { return };
-        self::notice(&callback, notice, &WATCH_FAILED, || attempt(&callback, state));
+        self::notice(&callback, notice, &WATCH_FAILED, || {
+            attempt(&callback, state)
+        });
     })?;
     shared.borrow_mut().start_watcher();
     if !shared.borrow().watcher_alive {
@@ -266,9 +273,12 @@ mod tests {
                 if seat_failure {
                     notice(&activation, Notice::Active, &failed, || arm(&activation));
                 }
-                notice(&activation, Notice::Stopped("test failure".into()), &failed, || {
-                    panic!("not active")
-                });
+                notice(
+                    &activation,
+                    Notice::Stopped("test failure".into()),
+                    &failed,
+                    || panic!("not active"),
+                );
                 assert_eq!(activation.borrow().retry.0, Duration::from_millis(expected));
                 let mut activation = activation.borrow_mut();
                 let token = activation.timer.take().unwrap();
