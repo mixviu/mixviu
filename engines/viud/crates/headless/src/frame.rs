@@ -216,7 +216,14 @@ fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
             let mut ctx = context.borrow_mut();
             ctx.read_poll_source = None;
             ctx.read_poll_at = None;
-            if route(ctx.vt_session, !matches!(state.inner.status_session, world::state::StatusSession::Paused)) == Route::Kms {
+            if route(
+                ctx.vt_session,
+                !matches!(
+                    state.inner.status_session,
+                    world::state::StatusSession::Paused
+                ),
+            ) == Route::Kms
+            {
                 return TimeoutAction::Drop;
             }
             // A renderer adopted by native remains available while its VT is
@@ -224,13 +231,19 @@ fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
             let output = ctx.output.clone();
             if let Some(renderer) = ctx.renderer.as_mut() {
                 screencopy::file::poll(renderer, &output);
-            } else if let Some(binding) = state.inner.kernel.get(&world::state::GPU_BINDING).as_ref().cloned()
-                && let Ok(mut binding) = binding.try_borrow_mut() {
-                    let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
-                    let primary = *primary;
-                    if let Ok(mut renderer) = gpus.single_renderer(&primary) {
-                        screencopy::file::poll(renderer.as_mut(), &ctx.output);
-                    }
+            } else if let Some(binding) = state
+                .inner
+                .kernel
+                .get(&world::state::GPU_BINDING)
+                .as_ref()
+                .cloned()
+                && let Ok(mut binding) = binding.try_borrow_mut()
+            {
+                let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
+                let primary = *primary;
+                if let Ok(mut renderer) = gpus.single_renderer(&primary) {
+                    screencopy::file::poll(renderer.as_mut(), &ctx.output);
+                }
             }
         }
         arm(state, &context);
@@ -243,7 +256,10 @@ fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
         }
         Err(_) => {
             // Preserve progress through the normal frame route on failure.
-            state.state.redraw.request_for(protocols::redraw::schedule::RedrawReason::Capture);
+            state
+                .state
+                .redraw
+                .request_for(protocols::redraw::schedule::RedrawReason::Capture);
         }
     }
 }
