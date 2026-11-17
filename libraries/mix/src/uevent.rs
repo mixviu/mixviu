@@ -339,5 +339,4 @@ mod tests {
         let props = properties(b"add@/devices/example\0ACTION=add\0DEVPATH=/devices/example\0SUBSYSTEM=hidraw\0SEQNUM=1\0",1).unwrap();
         assert_eq!(props["SUBSYSTEM"], "hidraw");
     }
-
 }
