@@ -2,13 +2,14 @@
 -- Real signed public preparation plan; no SSH, CT, service or live custody.
 $exe = realpath("/proc/self/exe")
 $root = trim(run_argv_must(["mktemp","-d"]))
+$state = trim(run_argv_must(["mktemp","-d"]))
 fn check($ok,$message)
   if not $ok then raise("DESK_PREPARATION_TEST",$message) end
 end
 try
   mkdir($root .. "/_etc/mesh",{parents:true})
   mkdir($root .. "/etc/noded",{parents:true})
-  mkdir($root .. "/var/mesh",{parents:true})
+  mkdir($state .. "/mesh")
   $pub = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   $inventory = {schema_version:1,mesh:"example.org",subnet:"192.0.2.0/24",epoch:1,hub:["hub"],unsigned:true,members:[]}
   for $name in ["hub","desk"]
@@ -28,7 +29,7 @@ try
   write_file($root .. "/_etc/mesh_gen.conf.mix",data_encode({mesh_gen:{schema_version:1,expected_mesh:"example.org"}}))
   write_file($root .. "/_etc/mesh_targets.conf.mix",data_encode({schema_version:1,project:"example",targets:[{node:"desk",host:"pve-host",kind:"desk",transport:"pct",ct:123,profile:"/opt/mix/var/lib/example/desk-bus",session:5,account:"desktop",admission:"enforce"}]}))
   $settings = $root .. "/nodes.mix"
-  write_file($settings,data_encode({nodes:{local:{roots:{prefix:$root,etc:$root .. "/etc",var:$root .. "/var"}},desk:{mix_bin:"/opt/mix/bin/mix",roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}}}))
+  write_file($settings,data_encode({nodes:{local:{roots:{prefix:$root,etc:$root .. "/etc",var:$state}},desk:{mix_bin:"/opt/mix/bin/mix",roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}}}))
   $environment = {MESH_HUB:$root,MESH_PROJECT:"example",MESH_NODES_CONFIG:$settings}
   $tool = dirname(dirname(realpath($0))) .. "/_bin/mesh_desk_prepare.mix"
   $plan = $root .. "/plan.mix"
@@ -44,5 +45,6 @@ try
   check(not $result.ok and not exists($root .. "/bad-plan"),"tampered inventory produced a preparation plan")
 finally
   run_argv_must(["rm","-rf",$root])
+  run_argv_must(["rm","-rf",$state])
 end
 print("PASS signed CT preparation plan and tamper refusal; no namespace or network actions")
