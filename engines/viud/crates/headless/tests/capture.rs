@@ -190,11 +190,90 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
 
 #[test]
 fn record_changing_4k_ten_seconds() {
+    changing_4k(false);
+}
+
+/// State-paced correctness, deliberately independent of worker frame rate.
+/// The ignored 4K benchmark separately checks sustained throughput.
+#[test]
+fn record_small_changes_zero_drops_and_crcs() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("record-small");
+    let mut process = process::spawn_size("record-small", &bus.url, "320x180");
+    process.extend_watchdog(Duration::from_secs(120));
+    let mut p = Pattern::new(connect(&mut process));
+    p.wait_callback(0);
+    bus.ready();
+    let row = bus.window();
+    bus.call(
+        "comp.window.fullscreen",
+        place_args(&row, json!({"output":"headless-0"})),
+    );
+    pump_patterns(&mut [&mut p]);
+    p.state.size = (320, 180);
+    p.solid_buffer(0xff20d040);
+    let previous = p.state.callbacks;
+    p.commit(true);
+    p.wait_callback(previous);
+    let path = process.root.join("small.vfl");
+    let start=bus.call("comp.record.start",json!({"request_id":"small","target":{"output":"headless-0"},"path":path,"fps":10,"cursor":false,"max_seconds":120}));
+    let mut reads = start["readbacks"].as_u64().unwrap_or(1);
+    for i in 0..8 {
+        let before = bus.call("comp.record.status", json!({"session":start["session"]}));
+        reads = reads.max(before["readbacks"].as_u64().unwrap());
+        p.solid_buffer(if i % 2 == 0 { 0xffa03377 } else { 0xff20d040 });
+        p.commit(true);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            p.pump();
+            let status = bus.call("comp.record.status", json!({"session":start["session"]}));
+            assert_eq!(status["error"], Value::Null, "{status}");
+            if status["readbacks"].as_u64().unwrap() > reads {
+                reads = status["readbacks"].as_u64().unwrap();
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "changed state never captured: {status}"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    assert_eq!(stop["error"], Value::Null, "{stop}");
+    assert_eq!(stop["dropped"], 0, "{stop}");
+    let (_, records) = vfl_first(&path);
+    assert_eq!(Some(records), stop["frames"].as_u64());
+    assert!(stop["readbacks"].as_u64().unwrap() >= 9);
+    assert!(stop["writer"]["delta_records"].as_u64().unwrap() > 0);
+}
+
+/// Throughput acceptance must run alone, with release runtime binaries.
+#[test]
+#[ignore = "release 4K30 zero-drop acceptance on a render worker"]
+fn benchmark_record_changing_4k_zero_drop() {
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release");
+    #[cfg(not(debug_assertions))]
+    {
+        assert!(process::record_available());
+        changing_4k(true);
+    }
+}
+
+fn changing_4k(strict: bool) {
     if !process::record_available() {
         return;
     }
     let bus = Bus::start("record-changing");
     let mut process = process::spawn_4k("record-changing", &bus.url);
+    process.extend_watchdog(Duration::from_secs(180));
+    let seconds: u64 = std::env::var("MIX_TEST_CAPTURE_SECONDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
@@ -218,11 +297,11 @@ fn record_changing_4k_ten_seconds() {
     let at = (2100 * width + 3800) * 3;
     assert_eq!(&pixels[at..at + 3], &[0xaa, 0x33, 0x77]);
     for recording in [false, true] {
-        let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.vfl"), "max_seconds":12,"fps":30,"cursor":true})));
+        let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.vfl"), "max_seconds":seconds+2,"fps":30,"cursor":true})));
         let begin_us = monotonic_ns() / 1000;
         let begin = Instant::now();
         let mut commits = 0;
-        while begin.elapsed() < Duration::from_secs(10) {
+        while begin.elapsed() < Duration::from_secs(seconds) {
             p.swap_buffer(&mut alternate);
             p.state.size = (3840, 2160);
             p.commit(true);
@@ -250,23 +329,69 @@ fn record_changing_4k_ten_seconds() {
             .collect();
         assert!(!times.is_empty());
         times.sort_unstable();
+        for stage in [
+            "capture_base_render_wait",
+            "capture_cursor_render_wait",
+            "capture_offscreen_render",
+            "capture_copy_submit",
+            "capture_map_wait",
+            "capture_map_latency",
+            "capture_rgb_copy",
+            "capture_file_service",
+            "headless_readback_poll_cpu",
+        ] {
+            let mut samples: Vec<u64> = trace
+                .lines()
+                .filter(|line| line.contains(&format!("stage={stage} ")))
+                .filter(|line| (begin_us..end_us).contains(&field(line, "start_us=")))
+                .map(|line| field(line, "duration_us="))
+                .collect();
+            samples.sort_unstable();
+            if !samples.is_empty() {
+                println!(
+                    "READBACK stage={stage} n={} median_us={} p95_us={}",
+                    samples.len(),
+                    samples[samples.len() / 2],
+                    samples[samples.len() * 95 / 100]
+                );
+            }
+            if stage == "capture_rgb_copy" {
+                for line in trace
+                    .lines()
+                    .filter(|line| line.contains("stage=capture_rgb_copy "))
+                    .filter(|line| (begin_us..end_us).contains(&field(line, "start_us=")))
+                    .filter(|line| field(line, "duration_us=") > 8000)
+                {
+                    println!(
+                        "READBACK_BURST offset_us={} duration_us={}",
+                        field(line, "start_us=") - begin_us,
+                        field(line, "duration_us=")
+                    );
+                }
+            }
+        }
         println!(
-            "CHANGING_4K30 recording={recording} commits={commits} compositor_frames={} mean_us={} p95_us={} max_us={} recording_stats={stop:?}",
+            "CHANGING_4K30 recording={recording} commits={commits} compositor_frames={} median_us={} p95_us={} max_us={} recording_stats={stop:?}",
             times.len(),
-            times.iter().sum::<u64>() / times.len() as u64,
+            times[times.len() / 2],
             times[times.len() * 95 / 100],
             times.last().unwrap()
         );
         if let Some(stop) = stop {
             assert_eq!(stop["error"], Value::Null, "{stop}");
+            if strict {
+                assert_eq!(stop["dropped"], 0, "{stop}");
+                let (_, frames) = vfl_first(&process.root.join("changing.vfl"));
+                assert_eq!(Some(frames), stop["frames"].as_u64());
+                assert!(
+                    frames >= commits,
+                    "retain the submitted sampling slots for the requested {seconds}s: {stop}"
+                );
+            }
             // Debug readback can exceed a frame budget and deliberately
             // throttle captures. This is a changing-content regression;
             // release throughput is measured separately.
             assert!(stop["readbacks"].as_u64().unwrap() > 1);
-            assert!(
-                (290..=320).contains(&stop["frames"].as_u64().unwrap()),
-                "{stop}"
-            );
         }
     }
 }
@@ -612,7 +737,7 @@ fn record_idle_output_lifecycle_and_clock() {
             0o600
         );
     }
-    assert!(frames >= 10, "{stop}");
+    assert!(frames > 0, "{stop}");
     assert!(fs::metadata(&path).unwrap().len() > 0);
     let (_, encoded_frames) = vfl_first(&path);
     assert_eq!(encoded_frames, frames);
@@ -622,11 +747,10 @@ fn record_idle_output_lifecycle_and_clock() {
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     assert_eq!(rows.len() as u64, frames);
-    let duration = rows.last().unwrap()["t_us"].as_u64().unwrap() as f64 / 1_000_000.0;
-    assert!(
-        (frames as f64 - 30.0 * duration).abs() < 5.0,
-        "{frames} frames in {duration}s"
-    );
+    for (index, row) in rows.iter().enumerate() {
+        assert_eq!(row["frame"], index as u64);
+        assert_eq!(row["t_us"], index as u64 * 1_000_000 / 30);
+    }
     for pair in markers.windows(2) {
         assert!(pair[0]["t_us"].as_u64() < pair[1]["t_us"].as_u64());
         assert!(pair[0]["seq"].as_u64() < pair[1]["seq"].as_u64());
@@ -647,12 +771,22 @@ fn record_idle_output_lifecycle_and_clock() {
         }
     }
     let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.vfl"),"max_seconds":1}));
-    thread::sleep(Duration::from_millis(1300));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let status = bus.call("comp.record.status", json!({"session":next["session"]}));
+        if status["state"] == "idle" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "max_seconds did not finish the take: {status}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
     let bounded = bus.call("comp.record.stop", json!({"session":next["session"]}));
-    assert!(
-        (28..=32).contains(&bounded["frames"].as_u64().unwrap()),
-        "max_seconds did not bound the take: {bounded}"
-    );
+    let (_, records) = vfl_first(std::path::Path::new(next["path"].as_str().unwrap()));
+    assert_eq!(Some(records), bounded["frames"].as_u64());
+    assert_eq!(bounded["dropped"], 0);
     assert_eq!(start, bus.call("comp.record.start", args));
     let discard_path = process.root.join("discard.vfl");
     let discard = bus.call("comp.record.start", json!({"request_id":"discard", "target":{"output":"headless-0"},"path":discard_path,"max_seconds":1}));

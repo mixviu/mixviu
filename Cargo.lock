@@ -8666,6 +8666,7 @@ version = "0.1.2"
 dependencies = [
  "comp-model",
  "dispatcher",
+ "graphics",
  "image",
  "ledger",
  "model",

@@ -8,16 +8,28 @@ use comp_model::capture::{CaptureFormat, CaptureFrameSpec, CaptureWindow};
 pub use comp_model::reply::ControlReply;
 use serde_json::Value;
 use smithay::backend::renderer::ExportMem;
+use smithay::backend::renderer::{
+    ErasedContextId, Renderer,
+    gles::{GlesMapping, GlesRenderer},
+    sync::SyncPoint,
+};
 use smithay::output::Output;
 use smithay::utils::Rectangle;
 use std::cell::RefCell;
 use std::io::Write;
+use std::time::{Duration, Instant};
+
+const READ_TIMEOUT: Duration = Duration::from_secs(1);
 
 type Answer = Box<dyn FnOnce(Result<Value, ControlReply>)>;
 pub type Pixels = (u32, u32, std::sync::Arc<Vec<u8>>, u64);
 type PixelAnswer = Box<dyn FnOnce(Result<Pixels, ControlReply>)>;
 thread_local! {
     static PIXEL_ANSWERS: RefCell<std::collections::HashMap<String, PixelAnswer>> = RefCell::new(std::collections::HashMap::new());
+    // Retain at most three RGB allocations. A writer holding a frame prevents
+    // reuse: Arc::get_mut succeeds only after every consumer has released it.
+    static PIXEL_POOL: RefCell<Vec<std::sync::Arc<Vec<u8>>>> = const { RefCell::new(Vec::new()) };
+    static RELEASE_POOL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// A raw capture uses the same target fencing, crop and offscreen window path
@@ -43,7 +55,97 @@ struct Request {
 
 thread_local! {
     static REQUESTS: RefCell<Vec<Request>> = const { RefCell::new(Vec::new()) };
+    static READS: RefCell<Vec<PendingRead>> = const { RefCell::new(Vec::new()) };
     static NEXT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+struct PendingRead {
+    requests: Vec<Request>,
+    mapping: GlesMapping,
+    rgba: bool,
+    readback: Readback,
+    context: ErasedContextId,
+    fence: SyncPoint,
+    kind: CaptureSource,
+    copy_us: u64,
+    latency: ledger::frame_trace::WaitSpan,
+    expires: Instant,
+}
+
+fn reads_pending(output: &Output, cursor: Option<bool>) -> bool {
+    READS.with_borrow(|reads| {
+        reads.iter().any(|read| {
+            read.requests.iter().any(|r| {
+                r.output == output.name() && cursor.is_none_or(|cursor| r.spec.cursor == cursor)
+            })
+        })
+    })
+}
+
+fn wake_readback() {
+    graphics::bridge::publish::wake::offer_capture_deadline(
+        std::time::Instant::now() + std::time::Duration::from_millis(1),
+    );
+}
+
+/// Test-only fault injection, with real PBO ownership and a never-ready fence.
+#[cfg(feature = "test-support")]
+pub mod testing {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    thread_local! {
+        static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
+    }
+    #[derive(Debug)]
+    struct NeverFence(Arc<AtomicUsize>);
+    impl Drop for NeverFence {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    impl smithay::backend::renderer::sync::Fence for NeverFence {
+        fn is_signaled(&self) -> bool {
+            false
+        }
+        fn wait(&self) -> Result<(), smithay::backend::renderer::sync::Interrupted> {
+            panic!("stalled fence must never be waited on")
+        }
+        fn is_exportable(&self) -> bool {
+            false
+        }
+        fn export(&self) -> Option<std::os::fd::OwnedFd> {
+            None
+        }
+    }
+    pub fn stall_next_read() -> Arc<AtomicUsize> {
+        let drops = Arc::new(AtomicUsize::new(0));
+        STALL.with_borrow_mut(|slot| *slot = Some(drops.clone()));
+        drops
+    }
+    pub(super) fn replace_fence(fence: SyncPoint) -> SyncPoint {
+        STALL
+            .with_borrow_mut(|slot| slot.take())
+            .map_or(fence, |drops| SyncPoint::from(NeverFence(drops)))
+    }
+    pub fn read_count() -> usize {
+        READS.with_borrow(Vec::len)
+    }
+    pub fn pool_count() -> usize {
+        PIXEL_POOL.with_borrow(Vec::len)
+    }
+    pub fn age_reads() {
+        READS.with_borrow_mut(|reads| {
+            reads
+                .iter_mut()
+                .for_each(|read| read.expires = Instant::now())
+        });
+    }
+    pub fn take_wake() -> bool {
+        graphics::bridge::publish::wake::take_capture_deadline().is_some()
+    }
 }
 
 pub fn enqueue(
@@ -70,6 +172,16 @@ pub fn enqueue(
 }
 
 pub fn pending(output: &Output) -> bool {
+    reading(output) || requested(output)
+}
+
+/// A submitted snapshot needs polling, rather than another scene render.
+pub fn reading(output: &Output) -> bool {
+    reads_pending(output, None)
+}
+
+/// Queued work needs a source render; a submitted PBO only needs polling.
+pub fn requested(output: &Output) -> bool {
     REQUESTS.with_borrow(|requests| {
         requests
             .iter()
@@ -102,7 +214,10 @@ pub fn pending_windows() -> bool {
 /// Window requests never consume an output framebuffer, including the KMS tap.
 pub(crate) fn service_windows(
     output: &Output,
-    mut capture: impl FnMut(CaptureWindow, bool) -> Result<(Readback, Vec<u8>), ControlReply>,
+    mut capture: impl FnMut(
+        CaptureWindow,
+        bool,
+    ) -> Result<(Readback, std::sync::Arc<Vec<u8>>), ControlReply>,
 ) {
     for request in take(|request| request.output == output.name() && request.spec.window.is_some())
     {
@@ -112,7 +227,7 @@ pub(crate) fn service_windows(
             complete_timed(
                 &request.spec,
                 readback,
-                &std::sync::Arc::new(pixels),
+                &pixels,
                 output,
                 CaptureSource::Offscreen,
                 started.elapsed().as_micros() as u64,
@@ -139,48 +254,108 @@ fn take(keep: impl Fn(&Request) -> bool) -> Vec<Request> {
     })
 }
 
-pub fn fail(id: u64, reason: &str) {
-    for request in take(|request| request.id == id) {
+fn cancel(keep: impl Fn(&Request) -> bool, reason: &str) {
+    let mut cancelled = take(&keep);
+    READS.with_borrow_mut(|reads| {
+        for read in reads.iter_mut() {
+            let (taken, rest) = std::mem::take(&mut read.requests)
+                .into_iter()
+                .partition(&keep);
+            cancelled.extend(taken);
+            read.requests = rest;
+        }
+        reads.retain(|read| !read.requests.is_empty());
+    });
+    for request in cancelled {
         (request.answer)(Err(capture_failed(reason)));
     }
+}
+
+fn clear_idle_pool() {
+    if RELEASE_POOL.get() && READS.with_borrow(Vec::is_empty) {
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+        RELEASE_POOL.set(false);
+    }
+}
+
+/// Retire one recording's private raw tokens without invoking its callbacks.
+/// This is safe while its Session is borrowed during discard/timeout/seal.
+pub fn release_raw(prefix: &str) {
+    PIXEL_ANSWERS.with_borrow_mut(|answers| answers.retain(|token, _| !token.starts_with(prefix)));
+    REQUESTS.with_borrow_mut(|requests| {
+        requests.retain(|r| !(r.raw && r.spec.path.starts_with(prefix)))
+    });
+    READS.with_borrow_mut(|reads| {
+        for read in reads.iter_mut() {
+            read.requests.retain(|r| !r.spec.path.starts_with(prefix));
+        }
+        reads.retain(|read| !read.requests.is_empty());
+    });
+    RELEASE_POOL.set(true);
+    clear_idle_pool();
+}
+
+fn expire_reads(now: Instant) {
+    let expired = READS.with_borrow_mut(|reads| {
+        let (expired, live) = std::mem::take(reads)
+            .into_iter()
+            .partition::<Vec<_>, _>(|r| now >= r.expires);
+        *reads = live;
+        expired
+    });
+    for read in expired {
+        // Drop the mapping and fence before delivering an error which may
+        // synchronously seal the recorder and admit a new take.
+        let requests = read.requests;
+        drop(read.mapping);
+        drop(read.fence);
+        for request in requests {
+            raw_fail(
+                &request.spec.path,
+                capture_failed("readback fence timed out"),
+            );
+            (request.answer)(Err(capture_failed("readback fence timed out")));
+        }
+    }
+    clear_idle_pool();
+}
+
+pub fn fail(id: u64, reason: &str) {
+    cancel(|request| request.id == id, reason);
 }
 
 pub fn fail_output(output: &Output, reason: &str) {
-    for request in take(|request| request.output == output.name()) {
-        (request.answer)(Err(capture_failed(reason)));
-    }
+    cancel(|request| request.output == output.name(), reason);
 }
 
 pub fn fail_output_capture(output: &Output, reason: &str) {
-    for request in take(|request| request.output == output.name() && request.spec.window.is_none())
-    {
-        (request.answer)(Err(capture_failed(reason)));
-    }
+    cancel(
+        |request| request.output == output.name() && request.spec.window.is_none(),
+        reason,
+    );
 }
 
 pub fn fail_all(reason: &str) {
-    for request in take(|_| true) {
-        (request.answer)(Err(capture_failed(reason)));
-    }
+    cancel(|_| true, reason);
 }
 
 pub fn fail_windows(reason: &str) {
-    for request in take(|request| request.spec.window.is_some()) {
-        (request.answer)(Err(capture_failed(reason)));
-    }
+    cancel(|request| request.spec.window.is_some(), reason);
 }
 
-/// Read once for all callers, normalise to top-down RGB, then encode. Mapping
-/// may change the current GL target; nested restores its EGL surface afterwards.
-/// read_pixels maps synchronously, blocking on the copy before this returns;
-/// the backend may then rotate or reuse the source texture.
-pub fn service<R: ExportMem>(
-    renderer: &mut R,
-    source: Source<'_, '_, R>,
+/// Share one snapshot between callers. Raw recording requests retain the PBO
+/// behind an EGL fence; screenshots still map synchronously. GL ordering makes
+/// the PBO independent of subsequent source texture reuse. Mapping may change
+/// the current GL target; nested restores its EGL surface afterwards.
+pub fn service(
+    renderer: &mut GlesRenderer,
+    source: Source<'_, '_, GlesRenderer>,
     output: &Output,
     kind: CaptureSource,
     cursor: bool,
 ) {
+    expire_reads(Instant::now());
+    poll_reads(renderer, output, cursor);
     let requests = take(|request| {
         request.output == output.name()
             && request.spec.window.is_none()
@@ -189,9 +364,65 @@ pub fn service<R: ExportMem>(
     if requests.is_empty() {
         return;
     }
+    let _service = ledger::frame_trace::span("capture_file_service", 0);
     let readback = source.readback;
     let started = std::time::Instant::now();
-    let pixels = read_pixels(renderer, source).map(std::sync::Arc::new);
+    if requests.iter().all(|request| request.raw) {
+        // Each PBO is a snapshot ordered before later rendering on this context.
+        // Recording owns one request at a time; cap global in-flight memory too.
+        if READS.with_borrow(|reads| reads.len() < 3) {
+            let latency = ledger::frame_trace::wait_span("capture_map_latency", 0);
+            let copy = ledger::frame_trace::span("capture_copy_submit", 0);
+            let result = start_pixels(renderer, source).and_then(|(mapping, rgba)| {
+                let display = renderer.egl_context().display().clone();
+                let fence = renderer
+                    .with_context(|gl| {
+                        let fence = smithay::backend::egl::fence::EGLFence::create(&display);
+                        // SAFETY: with_context made this renderer's GL context current.
+                        unsafe {
+                            gl.Flush();
+                        }
+                        fence
+                    })
+                    .map_err(|e| format!("readback context: {e}"))?
+                    .map_err(|e| format!("readback fence: {e}"))?;
+                Ok((mapping, rgba, SyncPoint::from(fence)))
+            });
+            drop(copy);
+            match result {
+                Ok((mapping, rgba, fence)) => {
+                    #[cfg(feature = "test-support")]
+                    let fence = testing::replace_fence(fence);
+                    READS.with_borrow_mut(|reads| {
+                        reads.push(PendingRead {
+                            requests,
+                            mapping,
+                            rgba,
+                            readback,
+                            fence,
+                            kind,
+                            context: renderer.context_id().erased(),
+                            copy_us: started.elapsed().as_micros() as u64,
+                            latency,
+                            expires: Instant::now() + READ_TIMEOUT,
+                        })
+                    });
+                    wake_readback();
+                }
+                Err(error) => {
+                    for request in requests {
+                        (request.answer)(Err(capture_failed(&error)));
+                    }
+                }
+            }
+            return;
+        }
+        for request in requests {
+            (request.answer)(Err(capture_failed("readback ring full")));
+        }
+        return;
+    }
+    let pixels = read_pixels(renderer, source);
     let readback_us = started.elapsed().as_micros() as u64;
     for request in requests {
         let result = pixels
@@ -213,33 +444,159 @@ pub fn service<R: ExportMem>(
     }
 }
 
+fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
+    expire_reads(Instant::now());
+    let reads = READS.with_borrow_mut(std::mem::take);
+    let mut waiting = Vec::new();
+    for mut read in reads {
+        read.requests
+            .retain(|r| PIXEL_ANSWERS.with_borrow(|answers| answers.contains_key(&r.spec.path)));
+        if read.requests.is_empty() {
+            continue;
+        }
+        if !read
+            .requests
+            .iter()
+            .any(|r| r.output == output.name() && r.spec.cursor == cursor)
+        {
+            waiting.push(read);
+            continue;
+        }
+        if read.context != renderer.context_id().erased() {
+            for request in read.requests {
+                (request.answer)(Err(capture_failed("readback renderer changed")));
+            }
+            continue;
+        }
+        if !read.fence.is_reached() {
+            waiting.push(read);
+            wake_readback();
+            continue;
+        }
+        read.latency.finish();
+        let _service = ledger::frame_trace::span("capture_file_service", 0);
+        let started = std::time::Instant::now();
+        let pixels = finish_pixels(renderer, &read.mapping, read.rgba, read.readback);
+        let readback_us = read.copy_us + started.elapsed().as_micros() as u64;
+        for request in read.requests {
+            let result = pixels
+                .as_ref()
+                .map_err(Clone::clone)
+                .and_then(|pixels| {
+                    complete_timed(
+                        &request.spec,
+                        read.readback,
+                        pixels,
+                        output,
+                        read.kind,
+                        readback_us,
+                        true,
+                    )
+                })
+                .map_err(capture_failed);
+            (request.answer)(result);
+        }
+    }
+    // A callback can cancel other tokens while the queue is temporarily local.
+    waiting.iter_mut().for_each(|read| {
+        read.requests
+            .retain(|r| PIXEL_ANSWERS.with_borrow(|answers| answers.contains_key(&r.spec.path)))
+    });
+    READS.with_borrow_mut(|reads| {
+        reads.extend(waiting.into_iter().filter(|r| !r.requests.is_empty()))
+    });
+    clear_idle_pool();
+}
+
+/// Complete ready recording copies before deciding whether another capture
+/// render is needed. Unsignalled fences remain queued without a GPU wait.
+pub fn poll(renderer: &mut GlesRenderer, output: &Output) {
+    poll_reads(renderer, output, false);
+    poll_reads(renderer, output, true);
+}
+
+fn start_pixels<R: ExportMem>(
+    renderer: &mut R,
+    source: Source<'_, '_, R>,
+) -> Result<(R::TextureMapping, bool), String> {
+    let region =
+        crate::framebuffer_region(Rectangle::from_size(source.readback.size), &source.readback);
+    match renderer.copy_framebuffer(
+        source.framebuffer,
+        region,
+        smithay::backend::allocator::Fourcc::Abgr8888,
+    ) {
+        Ok(mapping) => Ok((mapping, true)),
+        Err(_) => start_readback(
+            renderer,
+            source.framebuffer,
+            Rectangle::from_size(source.readback.size),
+            &source.readback,
+        ),
+    }
+}
+
 pub(crate) fn read_pixels<R: ExportMem>(
     renderer: &mut R,
     source: Source<'_, '_, R>,
-) -> Result<Vec<u8>, String> {
-    let Readback {
-        size,
-        origin_bottom_left,
-    } = source.readback;
+) -> Result<std::sync::Arc<Vec<u8>>, String> {
+    let size = source.readback.size;
     if size.w <= 0 || size.h <= 0 {
         return Err("capture has no usable size".to_owned());
     }
-    let (mapping, rgba) = start_readback(
-        renderer,
-        source.framebuffer,
-        Rectangle::from_size(size),
-        &source.readback,
-    )?;
+    let copy = ledger::frame_trace::span("capture_copy_submit", 0);
+    // File/recording consumers normalise to RGB, so prefer the offscreen
+    // texture's native RGBA layout over the protocol's XRGB shm layout.
+    let readback = source.readback;
+    let (mapping, rgba) = start_pixels(renderer, source)?;
+    drop(copy);
+    finish_pixels(renderer, &mapping, rgba, readback)
+}
+
+fn finish_pixels<R: ExportMem>(
+    renderer: &mut R,
+    mapping: &R::TextureMapping,
+    rgba: bool,
+    readback: Readback,
+) -> Result<std::sync::Arc<Vec<u8>>, String> {
+    let map = ledger::frame_trace::span("capture_map_wait", 0);
     let bytes = renderer
-        .map_texture(&mapping)
+        .map_texture(mapping)
         .map_err(|err| format!("map capture: {err}"))?;
-    rgb(
+    drop(map);
+    let _convert = ledger::frame_trace::span("capture_rgb_copy", 0);
+    pooled_rgb(
         bytes,
-        size.w as usize,
-        size.h as usize,
+        readback.size.w as usize,
+        readback.size.h as usize,
         rgba,
-        origin_bottom_left,
+        readback.origin_bottom_left,
     )
+}
+
+fn pooled_rgb(
+    bytes: &[u8],
+    width: usize,
+    height: usize,
+    rgba: bool,
+    bottom_up: bool,
+) -> Result<std::sync::Arc<Vec<u8>>, String> {
+    PIXEL_POOL.with_borrow_mut(|pool| {
+        for frame in pool.iter_mut() {
+            if let Some(pixels) = std::sync::Arc::get_mut(frame) {
+                rgb_into(bytes, width, height, rgba, bottom_up, pixels)?;
+                return Ok(frame.clone());
+            }
+        }
+        let frame = std::sync::Arc::new(rgb(bytes, width, height, rgba, bottom_up)?);
+        if pool.len() < 3 {
+            pool.push(frame.clone());
+        } else {
+            pool.remove(0);
+            pool.push(frame.clone());
+        }
+        Ok(frame)
+    })
 }
 
 fn complete(
@@ -294,12 +651,12 @@ fn complete_timed(
         pixels,
         output.current_scale().fractional_scale(),
     )?;
-    let raw = if raw {
+    let answer = if raw {
         PIXEL_ANSWERS.with_borrow_mut(|answers| answers.remove(&spec.path))
     } else {
         None
     };
-    if let Some(answer) = raw {
+    if let Some(answer) = answer {
         answer(Ok((
             width,
             height,
@@ -310,6 +667,8 @@ fn complete_timed(
             },
             readback_us,
         )));
+    } else if raw {
+        return Err("raw capture was cancelled".into());
     } else {
         write(spec, width, height, &cropped)?;
     }
@@ -376,23 +735,116 @@ fn rgb(
     rgba: bool,
     bottom_up: bool,
 ) -> Result<Vec<u8>, String> {
+    let mut pixels = Vec::new();
+    rgb_into(bytes, width, height, rgba, bottom_up, &mut pixels)?;
+    Ok(pixels)
+}
+
+fn rgb_into(
+    bytes: &[u8],
+    width: usize,
+    height: usize,
+    rgba: bool,
+    bottom_up: bool,
+    pixels: &mut Vec<u8>,
+) -> Result<(), String> {
     let row = width.checked_mul(4).ok_or("capture size overflow")?;
     let len = row.checked_mul(height).ok_or("capture size overflow")?;
     if bytes.len() < len {
         return Err("capture readback is shorter than its layout".into());
     }
-    let mut pixels = Vec::with_capacity(len / 4 * 3);
-    for y in 0..height {
+    if len == 0 {
+        pixels.clear();
+        return Ok(());
+    }
+    pixels.resize(len / 4 * 3, 0);
+    for (y, out) in pixels.chunks_exact_mut(width * 3).enumerate() {
         let at = source_row(y, height, bottom_up) * row;
-        for px in bytes[at..at + row].chunks_exact(4) {
+        let mut packed = 0;
+        #[cfg(target_arch = "x86_64")]
+        if std::arch::is_x86_feature_detected!("ssse3") {
+            // SAFETY: runtime feature check; input and output are complete
+            // rows with respectively four and three bytes per pixel.
+            packed = unsafe { pack_rgb_ssse3(&bytes[at..at + row], out, rgba) };
+        }
+        let at = at + packed * 4;
+        let out = &mut out[packed * 3..];
+        let width = width - packed;
+        // Four pixels expose a fixed byte shuffle to LLVM, rather than a
+        // succession of three-byte copies with loop-carried bounds checks.
+        let bulk = width / 4;
+        for (px, rgb) in bytes[at..at + bulk * 16]
+            .chunks_exact(16)
+            .zip(out[..bulk * 12].chunks_exact_mut(12))
+        {
             if rgba {
-                pixels.extend_from_slice(&px[..3]);
+                rgb.copy_from_slice(&[
+                    px[0], px[1], px[2], px[4], px[5], px[6], px[8], px[9], px[10], px[12], px[13],
+                    px[14],
+                ]);
             } else {
-                pixels.extend_from_slice(&[px[2], px[1], px[0]]);
+                rgb.copy_from_slice(&[
+                    px[2], px[1], px[0], px[6], px[5], px[4], px[10], px[9], px[8], px[14], px[13],
+                    px[12],
+                ]);
+            }
+        }
+        let out = &mut out[bulk * 12..];
+        let at = at + bulk * 16;
+        let row = width % 4 * 4;
+        if rgba {
+            for (px, rgb) in bytes[at..at + row]
+                .chunks_exact(4)
+                .zip(out.chunks_exact_mut(3))
+            {
+                rgb.copy_from_slice(&px[..3]);
+            }
+        } else {
+            for (px, rgb) in bytes[at..at + row]
+                .chunks_exact(4)
+                .zip(out.chunks_exact_mut(3))
+            {
+                rgb.copy_from_slice(&[px[2], px[1], px[0]]);
             }
         }
     }
-    Ok(pixels)
+    Ok(())
+}
+
+/// Pack sixteen pixels with four loads and three stores, including BGRA
+/// channel reversal. Other CPUs retain the portable fixed-size shuffle.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "ssse3")]
+unsafe fn pack_rgb_ssse3(input: &[u8], output: &mut [u8], rgba: bool) -> usize {
+    use std::arch::x86_64::*;
+    let mask = if rgba {
+        _mm_setr_epi8(0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, -1, -1, -1, -1)
+    } else {
+        _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1)
+    };
+    let groups = (input.len() / 64).min(output.len() / 48);
+    for i in 0..groups {
+        // SAFETY: each iteration reads exactly 64 available bytes and writes
+        // exactly 48 available bytes. Loads and stores permit unaligned rows.
+        unsafe {
+            let src = input.as_ptr().add(i * 64);
+            let dst = output.as_mut_ptr().add(i * 48);
+            let a = _mm_shuffle_epi8(_mm_loadu_si128(src.cast()), mask);
+            let b = _mm_shuffle_epi8(_mm_loadu_si128(src.add(16).cast()), mask);
+            let c = _mm_shuffle_epi8(_mm_loadu_si128(src.add(32).cast()), mask);
+            let d = _mm_shuffle_epi8(_mm_loadu_si128(src.add(48).cast()), mask);
+            _mm_storeu_si128(dst.cast(), _mm_or_si128(a, _mm_slli_si128::<12>(b)));
+            _mm_storeu_si128(
+                dst.add(16).cast(),
+                _mm_or_si128(_mm_srli_si128::<4>(b), _mm_slli_si128::<8>(c)),
+            );
+            _mm_storeu_si128(
+                dst.add(32).cast(),
+                _mm_or_si128(_mm_srli_si128::<8>(c), _mm_slli_si128::<4>(d)),
+            );
+        }
+    }
+    groups * 16
 }
 
 fn write(spec: &CaptureFrameSpec, width: u32, height: u32, pixels: &[u8]) -> Result<(), String> {
@@ -500,6 +952,101 @@ mod tests {
         assert_eq!(rgb(&bgra, 1, 2, false, true).unwrap(), [4, 5, 6, 1, 2, 3]);
         assert_eq!(rgb(&bgra, 1, 2, true, false).unwrap(), [3, 2, 1, 6, 5, 4]);
         assert!(rgb(&bgra[..3], 1, 1, false, false).is_err());
+        for width in 1..=65 {
+            let bytes: Vec<u8> = (0..width * 3 * 4).map(|i| i as u8).collect();
+            for rgba in [false, true] {
+                for flipped in [false, true] {
+                    let expected: Vec<u8> = (0..3)
+                        .flat_map(|y| {
+                            let at = source_row(y, 3, flipped) * width * 4;
+                            bytes[at..at + width * 4].chunks_exact(4).flat_map(|px| {
+                                if rgba {
+                                    [px[0], px[1], px[2]]
+                                } else {
+                                    [px[2], px[1], px[0]]
+                                }
+                            })
+                        })
+                        .collect();
+                    assert_eq!(rgb(&bytes, width, 3, rgba, flipped).unwrap(), expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pooled_pixels_never_overwrite_a_live_writer_frame() {
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+        let first = pooled_rgb(&[3, 2, 1, 255], 1, 1, false, false).unwrap();
+        let address = first.as_ptr();
+        let second = pooled_rgb(&[6, 5, 4, 255], 1, 1, false, false).unwrap();
+        assert_eq!(&**first, &[1, 2, 3]);
+        assert_eq!(&**second, &[4, 5, 6]);
+        drop(first);
+        let third = pooled_rgb(&[9, 8, 7, 255], 1, 1, false, false).unwrap();
+        assert_eq!(third.as_ptr(), address);
+        assert_eq!(&**second, &[4, 5, 6]);
+        assert_eq!(&**third, &[7, 8, 9]);
+        let _fourth = pooled_rgb(&[0; 4], 1, 1, true, false).unwrap();
+        let _fifth = pooled_rgb(&[0; 4], 1, 1, true, false).unwrap();
+        assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 3);
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+    }
+
+    #[test]
+    fn shared_pool_slot_is_replaced_and_stop_reclaims_pool() {
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+        let held: Vec<_> = (0..3)
+            .map(|i| pooled_rgb(&[i, 2, 3, 255], 1, 1, true, false).unwrap())
+            .collect();
+        let replacement = pooled_rgb(&[9, 8, 7, 255], 1, 1, true, false).unwrap();
+        let address = replacement.as_ptr();
+        drop(replacement);
+        let reused = pooled_rgb(&[6, 5, 4, 255], 1, 1, true, false).unwrap();
+        assert_eq!(address, reused.as_ptr());
+        assert_eq!(&**held[0], &[0, 2, 3]);
+        release_raw("/pool-test-");
+        assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 0);
+        assert_eq!(&**reused, &[6, 5, 4]);
+    }
+
+    #[test]
+    fn cancelled_raw_answer_never_becomes_a_file_capture() {
+        use smithay::output::{PhysicalProperties, Subpixel};
+        let output = Output::new(
+            "cancelled".into(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: "test".into(),
+                model: "test".into(),
+                serial_number: "test".into(),
+            },
+        );
+        let path = std::env::temp_dir().join(format!(
+            "cancelled-raw-{}-{}.ppm",
+            std::process::id(),
+            ledger::frame_trace::monotonic_us()
+        ));
+        let spec =
+            comp_model::capture::parse(&serde_json::json!({"path":path,"format":"ppm"})).unwrap();
+        let result = complete_timed(
+            &spec,
+            Readback {
+                size: (1, 1).into(),
+                origin_bottom_left: false,
+            },
+            &std::sync::Arc::new(vec![0; 3]),
+            &output,
+            CaptureSource::Offscreen,
+            0,
+            true,
+        );
+        assert!(result.is_err());
+        assert!(
+            !path.exists(),
+            "a retired raw token must never be opened as a path"
+        );
     }
 
     #[test]
