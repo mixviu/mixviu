@@ -63,8 +63,11 @@ fn apply($request)
   $w.native_binary($request.native.prefix .. "/bin/noded",$request.native.prefix,"noded")
   -- The release owns /opt/mix and its state ancestors. Do not chmod them.
   $ancestor = dirname($t.profile)
-  if not exists($ancestor,{follow_symlinks:false}) then
-    ensure_dir($ancestor,0,0,0o755)
+  for $parent in ["/opt/mix/var","/opt/mix/var/lib",$ancestor]
+    $w.no_links($parent)
+    if not exists($parent,{follow_symlinks:false}) then ensure_dir($parent,0,0,0o755) end
+    $s = stat($parent,{follow_symlinks:false})
+    if not $s.is_dir or $s.uid != 0 or floor($s.perm / 16) % 2 != 0 or floor($s.perm / 2) % 2 != 0 then $w.refuse("unprotected preparation parent") end
   end
   $cursor = $ancestor
   while $cursor != "/"

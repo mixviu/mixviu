@@ -147,6 +147,10 @@ fn plan($target)
     $out.client_config = $target.client_config
     $out.identity_boundary = "separate-principal-preview"
   end
+  if $target.transport == "pct" then
+    $out.transport = "pct"
+    $out.ct = $target.ct
+  end
   return $out
 end
 
@@ -167,7 +171,19 @@ fn checked_native($target, $native)
   $prefix = $native.prefix
   if type($prefix) != "string" or not starts_with($prefix,"/") or $prefix == "/" or ends_with($prefix,"/") or contains($prefix,"/../") or contains($prefix,"/./") or contains($prefix,"//") or ends_with($prefix,"/..") or ends_with($prefix,"/.") then fail("native prefix must be an absolute normalized install path") end
   if $native.mix_bin != $prefix .. "/bin/mix" then fail("configured interpreter must be the node prefix/bin/mix") end
+  if $target.transport == "pct" and $prefix != "/opt/mix" then fail("CT native install must use /opt/mix") end
   return $native
+end
+
+-- A CT's layout is not its PVE host's layout. Refuse missing explicit roots
+-- before any host query, including for read-only probes.
+fn node_prefix($target,$deployment)
+  if $target.transport == "pct" then
+    $roots = $deployment.checked_roots($deployment.node_settings($target.node).roots,$target.node)
+    if $roots.prefix != "/opt/mix" then fail("CT native prefix must be /opt/mix") end
+    return $roots.prefix
+  end
+  return $deployment.remote_roots($target.node,$target.host).prefix
 end
 
 fn stdin_job($target, $program, $bindings, $role, $mix_bin, $native)

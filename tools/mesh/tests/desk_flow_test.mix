@@ -162,8 +162,13 @@ $files = $prep.files($ctbase)
 check(len($files)==3 and $files[2].bytes == "[Service]\nEnvironmentFile=/opt/mix/var/lib/example/desk-bus/etc/noded/service.env\n","preparation drop-in")
 $ctprops = $properties
 $ctprops.RuntimeDirectory = ""
+$ctprops.RequiresMountsFor = $ct.run .. "/noded"
+$ctprops.ExecStartPre = "{ path=/usr/bin/install ; argv[]=/usr/bin/install -d -m 0711 " .. $ct.run .. "/noded ; ignore_errors=no }"
 $ctprops.EnvironmentFiles = "/opt/mix/etc/session/5.env (ignore_errors=no) /opt/mix/var/lib/example/desk-bus/etc/noded/service.env (ignore_errors=no)"
 $w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes)
+$wrong_runtime = $ctprops
+$wrong_runtime.ExecStartPre = ""
+check(refused(fn()=$w.validate_service($ct,1000,$metadata,$wrong_runtime,$files[0].bytes)),"CT missing runtime creation accepted")
 $ctprops.EnvironmentFiles = $ctprops.EnvironmentFiles .. " /tmp/later (ignore_errors=no)"
 check(refused(fn()=$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes)),"CT final environment refusal")
 $flattened = $root .. "/prepare-generated.mix"

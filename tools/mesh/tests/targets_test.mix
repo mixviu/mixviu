@@ -87,6 +87,8 @@ $ct = {node:"desk-ct",host:"pve-host",kind:"desk",transport:"pct",ct:123,profile
 $ctdoc = {schema_version:1,project:"example",targets:[$ct]}
 $cttarget = $targets.parse_targets($ctdoc).targets[0]
 check($cttarget.run == "/opt/mix/run/session/5","CT runtime follows release prefix")
+$layout = {checked_roots:fn($roots,$node)=$roots,node_settings:fn($node)={roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}},remote_roots:fn($node,$host)=raise("TEST","CT layout queried PVE host")}
+check($targets.node_prefix($cttarget,$layout)=="/opt/mix","CT layout must not query PVE host")
 for $role in ["admin","citizen"]
   $job = $targets.stdin_job($cttarget,"print(1)",{secret:$marker},$role,"/opt/mix/bin/mix",{node:"desk-ct",mix_bin:"/opt/mix/bin/mix",prefix:"/opt/mix"})
   check(deep_eq(take($job.argv,4),["pct","exec","123","--"]),"CT namespace argv")

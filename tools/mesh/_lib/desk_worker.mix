@@ -57,14 +57,14 @@ fn property($unit, $name)
 end
 
 fn unit_properties($unit)
-  $text = run_argv_must(["systemctl","show",$unit,"--property=User","--property=EnvironmentFiles","--property=UnsetEnvironment","--property=ExecStart","--property=Type","--property=KillMode","--property=RuntimeDirectory","--no-pager"],{timeout:10})
+  $text = run_argv_must(["systemctl","show",$unit,"--property=User","--property=EnvironmentFiles","--property=UnsetEnvironment","--property=ExecStart","--property=Type","--property=KillMode","--property=RuntimeDirectory","--property=RequiresMountsFor","--property=ExecStartPre","--no-pager"],{timeout:10})
   $out = {}
   for $line in lines($text)
     $key = split($line,"=")[0]
-    if not contains(["User","EnvironmentFiles","UnsetEnvironment","ExecStart","Type","KillMode","RuntimeDirectory"],$key) or has_key($out,$key) then refuse("unexpected or duplicate unit property") end
+    if not contains(["User","EnvironmentFiles","UnsetEnvironment","ExecStart","Type","KillMode","RuntimeDirectory","RequiresMountsFor","ExecStartPre"],$key) or has_key($out,$key) then refuse("unexpected or duplicate unit property") end
     $out[$key] = substr($line,len($key)+1)
   end
-  if len(keys($out)) != 7 then refuse("unit property reply incomplete") end
+  if len(keys($out)) != 9 then refuse("unit property reply incomplete") end
   return $out
 end
 
@@ -82,6 +82,10 @@ fn validate_service($target, $gid, $s, $properties, $text)
   if $properties.User != $target.account then refuse("session unit account mismatch") end
   $runtime = if $target.transport == "pct" then "" else $target.project .. "/session/" .. to_string($target.session) .. "/noded" end
   if $properties.Type != "simple" or $properties.KillMode != "control-group" or $properties.RuntimeDirectory != $runtime then refuse("unit lifecycle or runtime directory differs from native session contract") end
+  if $target.transport == "pct" then
+    $dir = $target.run .. "/noded"
+    if not contains(split($properties.RequiresMountsFor ?? ""," "),$dir) or not contains($properties.ExecStartPre ?? "","argv[]=/usr/bin/install -d -m 0711 " .. $dir .. " ;") then refuse("CT release must create the declared absolute session runtime") end
+  end
   $final_file = $path .. " (ignore_errors=no)"
   if $properties.EnvironmentFiles != $final_file and not ends_with($properties.EnvironmentFiles," " .. $final_file) then refuse("dedicated environment must be the final mandatory unit environment file") end
   $prefix = upper($target.project)

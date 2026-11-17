@@ -50,6 +50,10 @@ fn request($target, $inventory, $genesis, $mix_bin, $prefix)
     admission:$target.admission,genesis:$genesis,mix_bin:$mix_bin,native:$native,d2_keys:$d2_keys}
 end
 
+fn node_prefix($target,$deployment)
+  return $targets.node_prefix($target,$deployment)
+end
+
 fn worker_program($path)
   return read_file($path) .. chr(10) .. 'try
   $value = dispatch($request)
