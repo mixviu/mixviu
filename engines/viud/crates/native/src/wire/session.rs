@@ -128,6 +128,7 @@ pub fn register(
 
 /// The first attachment and every libseat resume run this same transaction.
 pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderContext>>) {
+    crate::wire::input::resumed();
     let session_loop_handle = state.loop_handle.clone();
     let render_kick = |ctx, state: &mut Loop| {
         let handle = state.loop_handle.clone();

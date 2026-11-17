@@ -63,14 +63,17 @@ struct Activation {
     stop: std::sync::Arc<AtomicBool>,
 }
 
+fn spawn_watcher(stop: &AtomicBool, run: impl FnOnce() + Send + 'static) -> std::io::Result<std::thread::JoinHandle<()>> {
+    stop.store(false, Ordering::Relaxed);
+    std::thread::Builder::new().name("viud-vt-wait".into()).spawn(run)
+}
+
 impl Activation {
     fn start_watcher(&mut self) {
         self.watcher_alive = true;
         let tx = self.tx.clone();
         let stop = self.stop.clone();
-        let started = std::thread::Builder::new()
-            .name("viud-vt-wait".into())
-            .spawn(move || {
+        let started = spawn_watcher(&self.stop, move || {
                 WATCH_RUNNING.store(true, Ordering::Relaxed);
                 let result = std::panic::catch_unwind(|| {
                     kms::seat::session::vt_wait::watch_own_vt(
@@ -100,6 +103,25 @@ impl Activation {
             self.watcher_alive = false;
             WATCH_FAILED.store(true, Ordering::Relaxed);
             warn!("VT watcher start failed; retrying: {error}");
+        }
+    }
+}
+
+fn notice(shared: &Rc<RefCell<Activation>>, notice: Notice, attempt: impl FnOnce()) {
+    if shared.borrow().handles.borrow().is_some() {
+        return;
+    }
+    match notice {
+        // Readiness alone proves no progress: a source can fail immediately,
+        // and the no-own-VT source ends after its first activation notice.
+        Notice::Ready => {}
+        Notice::Active => attempt(),
+        Notice::Stopped(error) => {
+            shared.borrow_mut().watcher_alive = false;
+            if !WATCH_FAILED.swap(true, Ordering::Relaxed) {
+                warn!("VT watcher stopped; offscreen desk will re-arm it: {error}");
+            }
+            arm(shared);
         }
     }
 }
@@ -187,27 +209,7 @@ pub fn install(
     let callback = shared.clone();
     handle.insert_source(source, move |event, _, state| {
         let Event::Msg(notice) = event else { return };
-        if callback.borrow().handles.borrow().is_some() {
-            // Ignore queued notices after handover. Successful attachment
-            // explicitly clears any failure left by an earlier watcher.
-            return;
-        }
-        match notice {
-            Notice::Ready => {
-                WATCH_FAILED.store(false, Ordering::Relaxed);
-                callback.borrow_mut().retry.reset();
-            }
-            Notice::Active => {
-                attempt(&callback, state);
-            }
-            Notice::Stopped(error) => {
-                callback.borrow_mut().watcher_alive = false;
-                if !WATCH_FAILED.swap(true, Ordering::Relaxed) {
-                    warn!("VT watcher stopped; offscreen desk will re-arm it: {error}");
-                }
-                arm(&callback);
-            }
-        }
+        self::notice(&callback, notice, || attempt(&callback, state));
     })?;
     shared.borrow_mut().start_watcher();
     if !shared.borrow().watcher_alive {
@@ -219,6 +221,42 @@ pub fn install(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn watcher_spawn_clears_stop_before_running() {
+        let stop = std::sync::Arc::new(AtomicBool::new(true));
+        let observed = stop.clone();
+        spawn_watcher(&stop, move || assert!(!observed.load(Ordering::Relaxed))).unwrap().join().unwrap();
+    }
+    #[test]
+    fn ready_then_seat_failure_or_watcher_failure_grows_retry_interval() {
+        // Exercise the production notice handler without opening a VT/seat.
+        for seat_failure in [true, false] {
+            let event_loop = smithay::reexports::calloop::EventLoop::<Loop>::try_new().unwrap();
+            let (tx, _) = channel();
+            let activation = Rc::new(RefCell::new(Activation {
+                handles: Rc::new(RefCell::new(None)),
+                output: Output::new("test".into(), smithay::output::PhysicalProperties {
+                    size: (0, 0).into(), subpixel: smithay::output::Subpixel::Unknown,
+                    make: "test".into(), model: "test".into(),
+                }),
+                socket: "test".into(), handle: event_loop.handle(), tx,
+                watcher_alive: true, retry: Backoff::default(), timer: None,
+                stop: Default::default(),
+            }));
+            for expected in [250, 500, 1000, 2000, 4000, 5000] {
+                notice(&activation, Notice::Ready, || panic!("not active"));
+                if seat_failure {
+                    notice(&activation, Notice::Active, || arm(&activation));
+                }
+                notice(&activation, Notice::Stopped("test failure".into()), || panic!("not active"));
+                assert_eq!(activation.borrow().retry.0, Duration::from_millis(expected));
+                let mut activation = activation.borrow_mut();
+                let token = activation.timer.take().unwrap();
+                activation.handle.remove(token);
+            }
+        }
+    }
+
     #[test]
     fn successful_attach_clears_a_previous_watcher_failure() {
         fixture_watcher_failed(true);

@@ -4,6 +4,7 @@
 //! scheduling. (Ex wire.rs `start()` libinput closure.)
 
 mod hotplug;
+pub(super) use hotplug::resumed;
 pub mod map;
 
 mod inventory;
