@@ -281,7 +281,7 @@ fn first_location(data: &serde_json::Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
 
     #[test]
     fn retired_ical_key_errors_before_raw_or_field_fallback() {

@@ -833,7 +833,7 @@ async fn addressbook_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
 
     #[test]
     fn report_text_preserves_predefined_and_numeric_entities() {

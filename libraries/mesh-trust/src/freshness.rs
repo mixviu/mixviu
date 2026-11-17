@@ -74,7 +74,7 @@ pub fn check_envelope_ts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
 
     fn now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 5, 20, 3, 14, 0).unwrap()

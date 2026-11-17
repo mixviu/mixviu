@@ -76,7 +76,7 @@ yaml = ["dep:yaml-rust2"]
 # shared-mime-info database (globs, magic, text check), as the desktop names
 # it, through the in-tree mimedb crate (GLib's rules over the same files).
 mime = ["dep:mimedb"]
-# `ws_connect`/`ws_send`/`ws_recv`/`ws_close` (0.74.0) — a syndatetimeus
+# `ws_connect`/`ws_send`/`ws_recv`/`ws_close` (0.74.0) — a synchronous
 # websocket CLIENT with recv-driven control flow, which is what a stateful
 # request/response protocol (LG SSAP, Home Assistant, Grafana live) needs
 # and what a blind `(cat msgs; sleep) | websocat` pipeline cannot express.

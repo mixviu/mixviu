@@ -526,7 +526,7 @@ mod tests {
         }
     }
 
-    
+
 
     fn read_lines(path: &Path) -> Vec<String> {
         let f = File::open(path).expect("open .open file");

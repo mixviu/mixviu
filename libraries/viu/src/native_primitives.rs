@@ -225,7 +225,7 @@ pub(crate) fn markdown_detect() -> mix::evaluator::ExtFn {
 /// relative-date policy remain in the Mix row expression.
 pub(crate) fn instants() -> mix::evaluator::ExtFn {
     mix::sync_ext(|args| {
-        
+
         let fail = || MixError::RuntimeError {
             msg: "viu_instants expects at most 65536 timestamp strings".into(),
             span: None,

@@ -216,7 +216,7 @@ pub fn resolve_cross_mesh_caps(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
 
     fn caps(tokens: &[&str]) -> CapabilitySet {
         tokens.iter().map(|s| Cap::new(*s)).collect()
