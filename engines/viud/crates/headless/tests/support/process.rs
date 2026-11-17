@@ -10,10 +10,20 @@ use std::{
     time::Duration,
 };
 
+#[allow(dead_code)]
+pub fn render_node() -> String {
+    std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| {
+        smithay::backend::egl::EGLDevice::enumerate()
+            .ok()
+            .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "/dev/dri/no-render-device".into())
+    })
+}
+
 #[allow(dead_code)] // Only recording tests need these optional host facilities.
 pub fn record_available() -> bool {
-    let node =
-        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let node = render_node();
     let mut missing = Vec::new();
     if let Err(error) = fs::OpenOptions::new().read(true).write(true).open(&node) {
         missing.push(format!("render node {node}: {error}"));
@@ -175,8 +185,7 @@ fn spawn_with_seat_size(
     let root = std::env::temp_dir().join(format!("viud-headless-{}-{label}", std::process::id()));
     fs::create_dir(&root).unwrap();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
-    let node =
-        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let node = render_node();
     let mut config = model::environment::config::base::default_settings();
     // Default priority is realtime: headless must override the startup policy.
     assert_eq!(config.priority, "realtime");

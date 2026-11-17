@@ -299,7 +299,7 @@ pub fn command(
         if lp
             .loop_handle
             .insert_source(Timer::immediate(), move |_, _, lp| {
-                tick(lp, &tick_session);
+                tick(&tick_session, || capture_tick(lp, &tick_session));
                 let s = tick_session.borrow();
                 if s.failed.is_some() && s.recording.is_none()
                     || s.recording.as_ref().is_some_and(|r| r.terminal.is_some())
@@ -608,11 +608,7 @@ fn finish_recording(s: &mut Session) -> bool {
     true
 }
 
-fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
-    for output in lp.inner.space_state().state.outputs() {
-        screencopy::file::set_paused(output, matches!(lp.inner.status_session, world::state::StatusSession::Paused));
-    }
-    let clock = recorder::bus::monotonic_us();
+fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
     {
         let s = session.borrow();
         if s.recording.is_none()
@@ -627,6 +623,14 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     if !preflight_ready(session) {
         return;
     }
+    capture();
+}
+
+fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
+    for output in lp.inner.space_state().state.outputs() {
+        screencopy::file::set_paused(output, matches!(lp.inner.status_session, world::state::StatusSession::Paused));
+    }
+    let clock = recorder::bus::monotonic_us();
     {
         let mut s = session.borrow_mut();
         if finish_recording(&mut s) {
@@ -848,9 +852,8 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     s.encoder.clone(),
                     s.max_bytes,
                 ) {
-                    Ok(mut recording) => {
-                        recording.t0_us = captured_us;
-                        s.recording = Some(recording);
+                    Ok(recording) => {
+                        assign_first_capture(&mut s, recording, captured_us);
                     }
                     Err(error) => {
                         drop(s);
@@ -887,6 +890,11 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             }
         });
     }
+}
+
+fn assign_first_capture(s: &mut Session, mut recording: Recording, captured_us: u64) {
+    recording.t0_us = captured_us;
+    s.recording = Some(recording);
 }
 
 #[cfg(test)]
@@ -951,7 +959,12 @@ mod tests {
         use smithay::reexports::calloop::EventLoop;
         use std::sync::atomic::Ordering;
         let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE")
-            .unwrap_or_else(|_| "/dev/dri/renderD128".into());
+            .unwrap_or_else(|_| {
+                EGLDevice::enumerate().ok()
+                    .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "/dev/dri/no-render-device".into())
+            });
         if !std::path::Path::new(&node).exists() {
             assert_ne!(
                 std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref(),
@@ -1081,6 +1094,11 @@ mod tests {
         install_stop_waker(&old, events.handle());
         let fence = screencopy::file::testing::stall_next_read();
         submit(&old, &mut renderer, &outputs[0]);
+        screencopy::file::set_paused(&outputs[0], true);
+        std::thread::sleep(Duration::from_millis(1100));
+        screencopy::file::poll(&mut renderer, &outputs[1]);
+        assert_eq!(screencopy::file::testing::read_count(), 1, "inactive output keeps its read beyond READ_TIMEOUT");
+        screencopy::file::set_paused(&outputs[0], false);
         assert!(screencopy::file::pending(&outputs[0]));
         assert!(!screencopy::file::requested(&outputs[0]));
         assert!(!screencopy::file::pending_picture(&outputs[0], true));
@@ -1116,6 +1134,9 @@ mod tests {
             let s = drain_fixture(&format!("reuse-{index}"), &root);
             install_stop_waker(&s, events.handle());
             submit(&s, &mut renderer, output);
+            screencopy::file::set_paused(output, true);
+            std::thread::sleep(Duration::from_millis(1100));
+            screencopy::file::set_paused(output, false);
             let reply = stop(&s, false);
             let limit = Instant::now() + Duration::from_secs(2);
             while reply.borrow().is_none() && Instant::now() < limit {
@@ -1209,6 +1230,26 @@ mod tests {
         while !finish_recording(&mut session.borrow_mut()) {
             std::thread::sleep(Duration::from_millis(5));
         }
+        drop(session);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn host_assigns_origin_from_capture_completion() {
+        let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());
+        std::fs::create_dir(&root).unwrap();
+        let session = drain_fixture("origin-host", &root);
+        let mut s = session.borrow_mut();
+        let recording = s.recording.take().unwrap();
+        let captured_us = recorder::bus::monotonic_us().unwrap();
+        assign_first_capture(&mut s, recording, captured_us);
+        assert_eq!(s.recording.as_ref().unwrap().started()["t0_us"], captured_us);
+        let marker = s.recording.as_mut().unwrap().marker("aligned".into(), Value::Null).unwrap();
+        assert!(marker["t_us"].as_u64().unwrap() <= recorder::bus::monotonic_us().unwrap() - captured_us);
+        stop_stream(&mut s, false);
+        while !finish_recording(&mut s) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        drop(s);
         drop(session);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1324,6 +1365,7 @@ mod tests {
         {
             let mut s = session.borrow_mut();
             s.failed = None;
+            s.admitted = Instant::now();
             s.pending = false;
             s.probe = Some(rx);
             let got = answered.clone();
@@ -1332,7 +1374,7 @@ mod tests {
                 got.set(true);
             }));
         }
-        assert!(!preflight_ready(&session));
+        tick(&session, || panic!("failed preflight must never schedule capture"));
         assert!(answered.get());
         assert!(!session.borrow().pending);
         assert!(session.borrow().recording.is_none());

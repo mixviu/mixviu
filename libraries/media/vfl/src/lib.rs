@@ -481,6 +481,25 @@ impl Writer {
 mod disk_tests {
     use super::*;
     #[test]
+    #[ignore = "filesystem syscall measurement on CBC"]
+    fn measure_space_check_cost() {
+        let file = File::open(std::env::temp_dir()).unwrap();
+        let start = Instant::now();
+        for _ in 0..100_000 { check_space(&file, 0).unwrap(); }
+        println!("VFL_SPACE_CHECK calls=100000 total_us={} ns_per_call={}", start.elapsed().as_micros(), start.elapsed().as_nanos() / 100_000);
+    }
+    #[test]
+    fn unreadable_parent_does_not_refuse_space_probe() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join(format!("vfl-parent-{}", std::process::id()));
+        std::fs::create_dir(&path).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o300)).unwrap();
+        let result = check_free_space(&path);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::remove_dir(path).unwrap();
+        result.unwrap();
+    }
+    #[test]
     fn free_space_floor_refuses_start_and_crossing_write() {
         assert!(
             check_available(FREE_SPACE_FLOOR - 1, 0)

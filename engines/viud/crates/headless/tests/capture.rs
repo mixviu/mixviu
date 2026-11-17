@@ -143,6 +143,10 @@ fn record_idle_content_clock_ignores_capture_repaints() {
 // Test-only container inspection, independent of the writer's counters. R2
 // owns a production reader. Retain only the first image so 4K tests stay bounded.
 fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
+    vfl_visit(path, |_| {})
+}
+
+fn vfl_visit(path: &Path, mut visit: impl FnMut(&[u8])) -> (Vec<u8>, u64) {
     let manifest: Value =
         serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
     assert!([json!(1), json!(2)].contains(&manifest["version"]));
@@ -157,6 +161,7 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
     chunks.sort();
     let mut first = Vec::new();
     let mut count = 0;
+    let mut pixels = vec![0; size];
     for chunk in chunks {
         let bytes = fs::read(chunk).unwrap();
         let mut at = 0;
@@ -169,10 +174,32 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
                 u32::from_le_bytes(h[4..8].try_into().unwrap())
             );
             assert_eq!(u64::from_le_bytes(h[8..16].try_into().unwrap()), count);
+            let payload = &body[9..];
+            match h[16] {
+                0 => pixels = lz4_flex::block::decompress(payload, size).unwrap(),
+                1 => {
+                    let delta = lz4_flex::block::decompress(payload, size).unwrap();
+                    for (p, d) in pixels.iter_mut().zip(delta) { *p ^= d; }
+                }
+                2 => assert!(payload.is_empty()),
+                3 => {
+                    let n = |at| u32::from_le_bytes(payload[at..at + 4].try_into().unwrap()) as usize;
+                    let (x, y, w, h) = (n(0), n(4), n(8), n(12));
+                    let width = manifest["width"].as_u64().unwrap() as usize;
+                    let height = manifest["height"].as_u64().unwrap() as usize;
+                    assert!(x + w <= width && y + h <= height);
+                    let delta = lz4_flex::block::decompress(&payload[16..], w * h * 4).unwrap();
+                    for row in 0..h {
+                        let at = ((y + row) * width + x) * 4;
+                        for (p, d) in pixels[at..at + w * 4].iter_mut().zip(&delta[row * w * 4..(row + 1) * w * 4]) { *p ^= d; }
+                    }
+                }
+                kind => panic!("unknown VFL record kind {kind}"),
+            }
+            visit(&pixels);
             if count == 0 {
                 assert_eq!(h[16], 0);
-                let bgra = lz4_flex::block::decompress(&body[9..], size).unwrap();
-                first = bgra
+                first = pixels
                     .chunks_exact(4)
                     .flat_map(|p| [p[2], p[1], p[0]])
                     .collect();
@@ -223,7 +250,7 @@ fn record_small_changes_zero_drops_and_crcs() {
     for i in 0..8 {
         let before = bus.call("comp.record.status", json!({"session":start["session"]}));
         reads = reads.max(before["readbacks"].as_u64().unwrap());
-        p.solid_buffer(if i % 2 == 0 { 0xffa03377 } else { 0xff20d040 });
+        p.solid_buffer(0xffa03370 + i);
         p.commit(true);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -248,6 +275,14 @@ fn record_small_changes_zero_drops_and_crcs() {
     assert_eq!(Some(records), stop["frames"].as_u64());
     assert!(stop["readbacks"].as_u64().unwrap() >= 9);
     assert!(stop["writer"]["delta_records"].as_u64().unwrap() > 0);
+    let mut expected = 0u8;
+    vfl_visit(&path, |pixels| {
+        let at = (90 * 320 + 160) * 4;
+        if expected < 8 && pixels[at..at + 4] == [0x70 + expected, 0x33, 0xa0, 0xff] {
+            expected += 1;
+        }
+    });
+    assert_eq!(expected, 8, "every committed colour must survive in the VFL, in order");
 }
 
 /// Throughput acceptance must run alone, with release runtime binaries.
@@ -787,6 +822,7 @@ fn record_idle_output_lifecycle_and_clock() {
     let (_, records) = vfl_first(std::path::Path::new(next["path"].as_str().unwrap()));
     assert_eq!(Some(records), bounded["frames"].as_u64());
     assert_eq!(bounded["dropped"], 0);
+    assert!(records >= 1, "the bounded take must retain its submitted initial scene");
     assert_eq!(start, bus.call("comp.record.start", args));
     let discard_path = process.root.join("discard.vfl");
     let discard = bus.call("comp.record.start", json!({"request_id":"discard", "target":{"output":"headless-0"},"path":discard_path,"max_seconds":1}));
@@ -895,8 +931,7 @@ fn inactive_seat_maps_clients_and_captures_output_and_window() {
 }
 
 fn inactive_fixture_available() -> bool {
-    let node =
-        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let node = process::render_node();
     let ready = Path::new(&node).exists()
         && binary("viud").is_file()
         && binary("noded").is_file()
