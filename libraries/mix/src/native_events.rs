@@ -42,6 +42,7 @@ struct PendingSource {
     changes: BTreeMap<String, serde_json::Value>,
     overflow: bool,
     closed: Option<serde_json::Value>,
+    dropped: u64,
 }
 
 impl PendingSource {
@@ -374,6 +375,7 @@ impl Queue {
                 s.changes.insert(key, change);
             } else {
                 s.overflow = true;
+                s.dropped = s.dropped.saturating_add(1);
             }
         }
         drop(p);
@@ -600,6 +602,7 @@ impl Queue {
             let mut body = s.changes.pop_first().map(|(_, v)| v).unwrap_or_else(|| serde_json::json!({}));
             body["watch"] = handle.into();
             body["overflow"] = std::mem::take(&mut s.overflow).into();
+            body["dropped"] = std::mem::take(&mut s.dropped).into();
             if s.changes.is_empty() && let Some(closed) = s.closed.take() {
                 body["closed"] = closed;
             }
@@ -1116,7 +1119,7 @@ impl NativeEvents {
         })
     }
 
-    pub(crate) fn uevent_call(&mut self, name: &str, args: Vec<Value>) -> MixResult<Value> {
+    pub(crate) fn uevent_call(&mut self, name: &str, args: &[Value]) -> MixResult<Value> {
         #[cfg(not(target_os = "linux"))]
         { let _ = (name, args); Err(refusal("UEVENT_UNSUPPORTED", "uevent requires Linux")) }
         #[cfg(target_os = "linux")]

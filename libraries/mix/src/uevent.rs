@@ -60,6 +60,9 @@ pub(crate) mod linux {
     }
 
     pub(crate) fn sender(path: String) -> crate::error::MixResult<OwnedFd> {
+        if unsafe { libc::geteuid() } != 0 {
+            return Err(refusal("UEVENT_NETNS", "sender must run as uid 0 with CAP_SYS_ADMIN and CAP_NET_ADMIN"));
+        }
         // Never setns on an evaluator or runtime thread. The short-lived worker
         // exits in the target namespace, so no restore can fail or contaminate it.
         thread::Builder::new().name("mix-uevent-netns".into()).spawn(move || {

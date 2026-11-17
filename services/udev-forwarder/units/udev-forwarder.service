@@ -1,0 +1,19 @@
+[Unit]
+Description=MixViu host processed-udev forwarder for desk containers
+After=systemd-udevd.service noded.service pve-cluster.service
+Wants=systemd-udevd.service noded.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/mix/bin/mix --serve /opt/mix/lib/udev-forwarder/forwarder.mix --name udev_forwarder
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+# setns needs the host /proc; do not enable PrivateNetwork/RestrictNamespaces.
+
+[Install]
+WantedBy=multi-user.target
