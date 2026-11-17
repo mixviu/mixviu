@@ -96,7 +96,9 @@ end
       check($w.fixture_exists($paths.active) and not $w.fixture_exists($paths.parked),"successful activation was not retained")
     else
       $refused=false
+      $actual="no refusal"
       try $w.activate_profile($ctx,$request) catch $message,$detail
+        $actual=$message
         if $phase=="authority,restart_release" then
           $expected="activation failed [verify profile authority: authority]; release broker recovery also failed [restart release broker: restart_release]"
         else
@@ -104,7 +106,7 @@ end
         end
         $refused=$detail.code=="DESK_DISTRIBUTOR" and $message==$expected
       end
-      check($refused,"activation failure escaped owning recovery refusal")
+      check($refused,"activation failure escaped owning recovery refusal at " .. $phase .. ": " .. $actual)
       $events=$w.activation_events()
       check(deep_eq(take($events,-5),["park","reload","release_binding","reset_failed","restart_release"]),"release recovery order differs")
       check(not $w.fixture_exists($paths.active) and $w.fixture_read_file($paths.parked)==$bytes,"failure left profile armed or changed parked bytes")

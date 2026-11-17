@@ -100,11 +100,13 @@ end
     $ctx = $w.namespace_context($request)
     check(not $ctx.binding.active,"initial namespace did not use release-only unit")
     $refused = false
+    $actual = "no refusal"
     try $w.activate_profile($ctx,$request) catch $message,$detail
+      $actual = $message
       $cause = if $damage==1 then "validate profile: dedicated service environment is not root-owned 0640" else "restart profile broker: profile start failure" end
       $refused = $detail.code=="DESK_DISTRIBUTOR" and $message=="activation failed [" .. $cause .. "]; profile parked and release broker restarted"
     end
-    check($refused,"activation/recovery lost the original cause")
+    check($refused,"activation/recovery lost the original cause: " .. $actual)
     $events = map(sqlexec($w.fixture_db,"SELECT operation FROM events WHERE operation NOT IN ('chmod')"),fn($row)=$row.operation)
     check(deep_eq(take($events,-6),["park","reload","release_binding","reset_failed","restart_release","wait_socket"]),"real release restart recovery order differs")
     check(not $w.fixture_exists($active) and $w.fixture_exists($active .. ".parked"),"recovery left active drop-in")
