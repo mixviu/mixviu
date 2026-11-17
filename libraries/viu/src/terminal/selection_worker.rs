@@ -857,7 +857,10 @@ mod tests {
         reads.answer(2, Err(ReadError::Busy));
         assert!(reads.last_error_log.get().is_none());
         reads.answer(3, Err(ReadError::Failed("private diagnostic".into())));
-        assert!(reads.last_error_log.get().is_some(), "failure must log immediately");
+        assert!(
+            reads.last_error_log.get().is_some(),
+            "failure must log immediately"
+        );
         assert_eq!(rx.try_iter().count(), 3);
     }
 

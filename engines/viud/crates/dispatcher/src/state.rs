@@ -835,7 +835,7 @@ impl SeatHandler for Dispatch {
             // seat may grant selection focus to the XWayland bridge. Passing
             // None also revokes any previous Wayland focus on the agent seat.
             // A client cannot acquire focus before being identified as XWayland:
-            // start_xwayland records its id immediately after spawn, before the
+            // xwayland::start records its id immediately after spawn, before the
             // event loop can dispatch even its registry request (src/xwayland.rs).
             .filter(|client| *seat == self.seat.seat || !protocols::xwm::base::is_xwayland(client));
         // Selection authority follows THIS seat only, before pointer delivery.

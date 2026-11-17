@@ -5247,7 +5247,10 @@ fn spawn_route_journal_with(
             command.stderr(fd);
         }
         Err(error) => {
-            let _ = writeln!(std::io::stderr(), "spawn: journal unavailable for {identifier}; keeping stderr route: {error}");
+            let _ = writeln!(
+                std::io::stderr(),
+                "spawn: journal unavailable for {identifier}; keeping stderr route: {error}"
+            );
         }
     }
 }
@@ -42383,18 +42386,33 @@ mod spawn_journal_tests {
             }
         }
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
-        child.args(["--exact", "builtins::spawn_journal_tests::child_stderr_marker", "--ignored", "--nocapture"]);
+        child.args([
+            "--exact",
+            "builtins::spawn_journal_tests::child_stderr_marker",
+            "--ignored",
+            "--nocapture",
+        ]);
         child.stderr(std::process::Stdio::piped());
         let start = Instant::now();
         super::spawn_route_journal_with(&mut child, "term", || {
             let error = super::spawn_journal_header("term", stream).unwrap_err();
-            assert!(matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut), "{error}");
+            assert!(
+                matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ),
+                "{error}"
+            );
             Err(error)
         });
         assert!(start.elapsed() >= Duration::from_millis(150));
         let output = child.output().unwrap();
         assert!(output.status.success());
-        assert!(String::from_utf8(output.stderr).unwrap().contains("child-fd-two-marker"));
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("child-fd-two-marker")
+        );
         // EOF, rather than a read timeout, proves setup dropped its socket even
         // while Command is alive. No fd count races with other harness threads.
         peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
@@ -42408,8 +42426,14 @@ mod spawn_journal_tests {
     #[test]
     fn unavailable_journal_with_closed_launcher_stderr_still_spawns() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "builtins::spawn_journal_tests::closed_stderr_launcher", "--ignored", "--nocapture"])
-            .output().unwrap();
+            .args([
+                "--exact",
+                "builtins::spawn_journal_tests::closed_stderr_launcher",
+                "--ignored",
+                "--nocapture",
+            ])
+            .output()
+            .unwrap();
         assert!(output.status.success(), "{output:?}");
     }
 
