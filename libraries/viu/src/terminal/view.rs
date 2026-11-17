@@ -1214,7 +1214,7 @@ impl Views {
                 } = event
                     && !blocked
                 {
-                        tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %mouse.app,
+                    tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %mouse.app,
                             raw = ?button, effect = "nothing:another-widget-grab", "terminal.press.swallowed");
                 }
             }

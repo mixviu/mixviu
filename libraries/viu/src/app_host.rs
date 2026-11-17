@@ -522,7 +522,12 @@ impl Host {
 }
 impl eframe::App for Host {
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        ctx.data_mut(|d| d.insert_temp(egui::Id::unique("viu-paste-trace-app"), self.service.clone()));
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                egui::Id::unique("viu-paste-trace-app"),
+                self.service.clone(),
+            )
+        });
         self.selection.app.clone_from(&self.service);
         if self.framed
             && self.model["window_close"] != true
