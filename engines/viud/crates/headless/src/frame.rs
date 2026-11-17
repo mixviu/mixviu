@@ -453,6 +453,9 @@ fn compose(
     // precede subsequent texture writes in GL command order, so their fences
     // can complete after targets rotate or the cached cursor is reused.
     captures.finish(renderer);
+    // Rendering can signal a previously submitted fence. Complete it now,
+    // rather than waiting another paced frame after an unsuccessful entry poll.
+    screencopy::file::poll(renderer, &ctx.output);
     ctx.next ^= 1;
     // A capture of unchanged content is not a new presentation.
     Ok(damaged)
