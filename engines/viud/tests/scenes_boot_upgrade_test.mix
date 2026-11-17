@@ -12,6 +12,7 @@ $bus = nil
 $children = {loader:nil, host:nil}
 $load_children = []
 $vars = {}
+$started = monotonic()
 
 fn check($ok, $message)
   if not $ok then raise("SCENES_BOOT_TEST", $message .. "; evidence: " .. $tmp) end
@@ -70,6 +71,18 @@ fn fixture_source($name, $text)
   return "---\nscene: 1\nname: " .. $name .. "\ncitizen: scene-" .. $name .. "\nwindow: {\"kind\":\"edge\",\"edge\":\"right\"}\n---\n```mix\nroot: {widget: text, text: '" .. $text .. "'}\n```\n"
 end
 
+fn wait_file($path)
+  for $i = 1 to 400
+    if is_file($path) then return end
+    sleep(0.01)
+  end
+  check(false, "missing ordered task marker: " .. $path)
+end
+
+fn retry_snapshot()
+  return call("scenes", "fixture.retry").value
+end
+
 try
   if env("SCENES_BOOT_LOAD", "0") == "1" then
     for $i = 1 to 4
@@ -82,7 +95,7 @@ $v = $result
 if type($v) == "string" then
   try $v = json_parse($v) catch $ignored end
 end
-print(json_encode({rc:$rc, value:$v}))
+print(json_encode({rc:$rc, value:$v, reply:$reply}))
 ')
   mkdir($tmp .. "/templates")
   mkdir($tmp .. "/scenes")
@@ -94,9 +107,30 @@ print(json_encode({rc:$rc, value:$v}))
   $bus = $pb.start({dir:$tmp .. "/bus", name:"scenes-boot-test", noded:$noded})
   $vars = merge($pb.client_env($bus), {PATH:env("PATH"), HOME:$tmp .. "/home", MIX_STATS:"off",
     SCENES_DIR:$tmp .. "/scenes", SCENES_TEMPLATES:$tmp .. "/templates", SCENES_FIRST_RUN:"0",
+    MIX_VIUD_SCENES_UPGRADE_DELAYS:"[1,1,1,1,1,1,1]",
     SCENES_EDITOR_APP:"0", SCENE_HOST:"fakeshell", FAKE_SHELL_OWNER:"scenes"})
   $host_script = $here .. "/fixtures/scene-editor/fake_shell.mix"
   $loader_script = env("SCENES_BOOT_REPO", $repo) .. "/engines/viud/scripts/scenes.mix"
+  $bad_config = run_argv([$mix, "--serve", $loader_script, "--name", "scenes"],
+    {clear_env:true, env:merge($vars, {MIX_VIUD_SCENES_UPGRADE_DELAYS:"[broken"}), timeout:5})
+  -- serve renders only the message; the loader unit test checks the typed code.
+  check(not $bad_config.ok and contains($bad_config.stderr, "upgrade delays must be valid JSON"), "malformed delay JSON refuses startup: " .. json_encode($bad_config))
+  -- Ordinary body= callers must retain their string result and nil parsed
+  -- body. The loader alone opts into a structured route error below.
+  $absent = call("fakeshell", "INFO")
+  check($absent.rc == 10 and $absent.value == "Service 'fakeshell' not found" and $absent.reply == nil, "default not-found result remains a string and parsed body remains nil")
+  write_file($tmp .. "/compat.mix", replace('
+$app = require("@repo@/libraries/viu/mix/app-call.mix")
+$r = $app.viu_app_raw("absent-app", "absent-app.open", {}, 1)
+if not $app.viu_app_absent($r, "absent-app") then raise("COMPAT", "absent apps must still enter the launch path") end
+$runtime = require("@repo@/share/scenes/lib/runtime.mix")
+$r = $runtime.call("absent-tray", "absent-tray.open", {})
+if $r.absent != true then raise("COMPAT", "scene runtime must still recognise an absent tray") end
+print("PASS legacy app-call and scene runtime absence on the real Bus")
+', "@repo@", $repo))
+  $compat = run_argv([$mix, $tmp .. "/compat.mix"], {clear_env:true, env:$vars, timeout:5})
+  check($compat.ok, "legacy callers: " .. $compat.stderr)
+  print($compat.stdout)
   $children.host = start("fakeshell", $host_script)
   wait_service("fakeshell")
   $children.loader = start("scenes", $loader_script)
@@ -148,7 +182,7 @@ print(json_encode({rc:$rc, value:$v}))
   check($done, "reload commit refreshes when host arrives")
   check(call("scenes", "scenes.upgrade.retry", {delay:0}).rc != 0, "wire cannot trigger local retry")
   -- Start a fresh boot with the host absent, then remove one pending scene.
-  -- Other scenes run the entire real ladder, so the removed scene cannot be
+  -- Other scenes run all seven rungs with configured delays, so removal cannot be
   -- hidden by a later manual upgrade/reload clearing all flags for it.
   check(call("scenes", "scenes.install", {template:"removed"}).rc == 0, "reinstall removal fixture")
   stop($children.loader)
@@ -167,13 +201,81 @@ print(json_encode({rc:$rc, value:$v}))
   sleep(2)
   check(len(split(read_file($tmp .. "/scenes.log"), "scenes upgrade:")) == $before, "no idle retry after exhaustion")
   check(not contains(slice(read_file($tmp .. "/scenes.log"), $removal_log), '"scene":"removed"'), "removed scene has no later retry failures or exhaustion log through the entire ladder")
+  -- Gate the real task's async wait in a fixture. Advance to the 64-second
+  -- rung by release order, then keep that waiter blocked across a manual
+  -- pass. No wall-clock window decides whether the manual pass woke work.
+  stop($children.loader)
+  $gated = replace(read_file($loader_script), 'require("lib/', 'require("' .. dirname($loader_script) .. '/lib/')
+  $gated = replace($gated, '  sleep($event.args.delay)', '
+  $gate = $ROOT .. "/.task-" .. to_string($event.args.seq)
+  write_file($gate .. ".waiting", "")
+  while not is_file($gate .. ".release") sleep(0.01) end
+')
+  $gated = replace($gated, "on scenes.upgrade.retry\n", 'on scenes.upgrade.retry
+  write_file($ROOT .. "/.task-" .. to_string($event.args.seq) .. ".done", "")
+')
+  $gated = $gated .. '
+on fixture.retry
+  if $event.args.drop == true then $state.upgrades = delete($state.upgrades, "gamma") end
+  reply(0, json_encode({seq:$state.upgrade_seq, delay:$state.upgrade_delay, armed:$state.upgrade_armed}))
+end
+on fixture.rung
+  $probe = $state
+  $probe.upgrade_armed = false
+  $probe.upgrade_delay = 2
+  $probe.upgrade_delays = []
+  try
+    $probe = schedule_upgrade($probe)
+    reply(0, "{}")
+  catch $message, $error
+    reply(10, json_encode({error_code:$error.code, message:$message}))
+  end
+end
+'
+  write_file($tmp .. "/gated.mix", $gated)
+  $children.loader = start("scenes", $tmp .. "/gated.mix")
+  wait_service("scenes")
+  $bad_rung = call("scenes", "fixture.rung")
+  check($bad_rung.rc == 10 and $bad_rung.value.error_code == "SCENES_CONFIG" and contains($bad_rung.value.message, "outside"), "rung guard refuses a short delay list")
+  for $rung = 1 to 6
+    $snap = retry_snapshot()
+    $gate = $tmp .. "/scenes/.task-" .. to_string($snap.seq)
+    wait_file($gate .. ".waiting")
+    write_file($gate .. ".release", "")
+    wait_file($gate .. ".done")
+  end
+  $old = retry_snapshot()
+  check($old.delay == 128 and $old.armed, "old ladder reached its long final wait")
+  $old_gate = $tmp .. "/scenes/.task-" .. to_string($old.seq)
+  wait_file($old_gate .. ".waiting")
+  check(call("scenes", "scenes.upgrade", []).rc == 10, "manual upgrade rejects malformed arguments")
+  check(deep_eq(retry_snapshot(), $old), "refused manual upgrade retains waiter and budget")
+  check(call("scenes", "fixture.retry", {drop:true}).rc == 0 and rows().gamma.upgrade == nil, "new work starts without a pending flag")
+  check(call("scenes", "scenes.upgrade").rc == 0, "manual upgrade during long wait")
+  check(rows().gamma.upgrade.retryable == true, "manual pass newly flags work")
+  $fresh = retry_snapshot()
+  check($fresh.seq != $old.seq and $fresh.delay == 2 and $fresh.armed, "manual pass arms a fresh first rung")
+  $fresh_gate = $tmp .. "/scenes/.task-" .. to_string($fresh.seq)
+  wait_file($fresh_gate .. ".waiting")
+  $retry_log = len(read_file($tmp .. "/scenes.log"))
+  write_file($fresh_gate .. ".release", "")
+  wait_file($fresh_gate .. ".done")
+  $after = retry_snapshot()
+  check($after.delay == 4 and $after.armed, "fresh retry runs before old wait is released")
+  check(contains(slice(read_file($tmp .. "/scenes.log"), $retry_log), '"scene":"gamma"'), "fresh retry takes up newly flagged work")
+  $before = read_file($tmp .. "/scenes.log")
+  write_file($old_gate .. ".release", "")
+  wait_file($old_gate .. ".done")
+  check(deep_eq(retry_snapshot(), $after), "stale completion cannot consume new budget or clear its arm")
+  check(read_file($tmp .. "/scenes.log") == $before, "stale completion cannot run another upgrade")
+  print("PASS scenes manual wake: new retry precedes old release; stale completion fenced")
   -- Reproduce the window before a separate fs.changed callback refreshes
   -- state_ok: run the shipped loader with only that callback renamed. All
   -- retry, command and persistence code stays unchanged. Relative modules
   -- still come from the real script directory, not this temporary fixture.
   stop($children.loader)
-  $retry_fixture = replace(read_file($loader_script), 'on fs.changed', 'on fixture.fs.changed')
-  $retry_fixture = replace($retry_fixture, 'require("lib/', 'require("' .. dirname($loader_script) .. '/lib/')
+  $retry_fixture = replace($gated, 'on fs.changed', 'on fixture.fs.changed')
+  $retry_fixture = replace($retry_fixture, '/.task-', '/.corrupt-task-')
   write_file($tmp .. "/retry-state.mix", $retry_fixture)
   $children.loader = start("scenes", $tmp .. "/retry-state.mix")
   wait_service("scenes")
@@ -181,16 +283,30 @@ print(json_encode({rc:$rc, value:$v}))
   -- Corrupt durable state while a new retry is pending. The task must record
   -- a diagnostic and terminal flags instead of silently abandoning the work.
   check(call("scenes", "scenes.upgrade").rc == 0, "re-arm before unreadable state")
+  $prior_rows = rows()
+  $snap = retry_snapshot()
+  $gate = $tmp .. "/scenes/.corrupt-task-" .. to_string($snap.seq)
+  wait_file($gate .. ".waiting")
   $saved = read_file($tmp .. "/scenes/state.conf.mix")
   write_file($tmp .. "/scenes/state.conf.mix", "{not valid state")
+  $failed_manual = call("scenes", "scenes.upgrade")
+  check($failed_manual.rc == 10 and $failed_manual.value.error_code == "SCENES_STATE_UNREADABLE", "manual upgrade refuses unreadable state before budget reset")
+  check(deep_eq(retry_snapshot(), $snap), "failed manual pass does not spend a rung")
+  write_file($gate .. ".release", "")
   $done = false
   for $i = 1 to 400
     $view = call("scenes", "scenes.list").value
     $r = rows().alpha
-    if ($view.diagnostic ?? {}).error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.retryable == false then $done = true; break end
+    if ($view.diagnostic ?? {}).error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.error_code == "SCENES_UPSTREAM" and $r.upgrade.retryable == false then $done = true; break end
     sleep(0.1)
   end
   check($done, "raised retry records diagnostic and stops retryable flags")
+  for $name in keys($prior_rows)
+    $prior = $prior_rows[$name].upgrade
+    if $prior == nil or $prior.retryable != true then continue end
+    $prior.retryable = false
+    check(deep_eq(rows()[$name].upgrade, $prior), "handler failure preserves own error: " .. $name)
+  end
   check($view.state_ok == false, "retry catch commits the unreadable-state guard")
   for $command in ["scenes.enable", "scenes.remove", "scenes.reset"]
     $refused = call("scenes", $command, {name:"alpha"})
@@ -199,7 +315,7 @@ print(json_encode({rc:$rc, value:$v}))
   end
   check(contains(read_file($tmp .. "/scenes.log"), "scenes upgrade retry failed:"), "raised retry is logged")
   write_file($tmp .. "/scenes/state.conf.mix", $saved)
-  print("PASS scenes boot/reload upgrade: late host, edited copy, validation refusal, bounded exhaustion; load_workers=" .. to_string(len($load_children)) .. " load=" .. trim(read_file("/proc/loadavg")))
+  print("PASS scenes boot/reload upgrade: late host, edited copy, validation refusal, bounded exhaustion; seconds=" .. to_string(monotonic() - $started) .. " load_workers=" .. to_string(len($load_children)) .. " load=" .. trim(read_file("/proc/loadavg")))
 catch $message, $error
   for $path in glob($tmp .. "/*.log") eprint($path .. "\n" .. read_file($path)) end
   raise($error.code, $message, $error.details)
