@@ -25,7 +25,7 @@ All handles belong to the evaluator generation and retire with it.
 | --- | --- |
 | `uevent_watch({group:2, subsystems:["input"]})` | Watch handle; group 1 also supported. Default group 2, empty subsystem list accepts all. |
 | `uevent_unwatch(handle)` | Discard pending records, cancel and join reader. |
-| `uevent_sender(netns_path)` | Sender handle; dedicated short-lived thread opens the namespace, calls setns, creates socket, then exits. Requires uid 0 and namespace capabilities. |
+| `uevent_sender(netns_path)` | Sender handle; dedicated short-lived thread opens the namespace, calls setns, creates socket, then exits. Requires uid 0 and namespace capabilities; the unit grants `CAP_SYS_ADMIN`, `CAP_NET_ADMIN` and `CAP_SYS_PTRACE` (opening another process's `/proc/<pid>/ns/net` is a ptrace-mode access check). |
 | `uevent_send(handle, group, buffer)` | Send unchanged bytes. True on send, false for ECONNREFUSED (no listeners); other errors raise. |
 | `uevent_close(handle)` | Close sender immediately. |
 

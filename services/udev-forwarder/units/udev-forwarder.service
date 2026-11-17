@@ -11,7 +11,9 @@ Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN
+# CAP_SYS_PTRACE: opening a CT init's /proc/<pid>/ns/net is a ptrace-mode
+# access check; without it every attach fails with EACCES.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_SYS_PTRACE
 RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
 # setns needs the host /proc; do not enable PrivateNetwork/RestrictNamespaces.
 
