@@ -1074,6 +1074,10 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
         edge(b'P');
         assert_eq!(bus.call("comp.session.get", json!({}))["active"], false);
         thread::sleep(Duration::from_millis(1100));
+        let paused_before = bus.call(
+            "comp.record.status",
+            json!({"session":recording["session"]}),
+        );
         let colour = 0xff507090 + index * 0x00101010;
         pattern.solid_buffer(colour);
         pattern.commit(true);
@@ -1094,7 +1098,7 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
                 status["state"], "recording",
                 "pause take unexpectedly sealed: {status}"
             );
-            if status["readbacks"].as_u64().unwrap() > before["readbacks"].as_u64().unwrap() + 1 {
+            if status["readbacks"].as_u64().unwrap() > paused_before["readbacks"].as_u64().unwrap() {
                 break;
             }
             assert!(
