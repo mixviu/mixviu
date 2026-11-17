@@ -153,7 +153,7 @@ fn reconcile_at(
     if let Some(probed) = retry.probed.take() {
         KNOWN.with_borrow(|known| {
             for (path, identity) in probed {
-                if known.get(&path) != Some(&identity) {
+                if current.get(&path) == Some(&identity) && known.get(&path) != Some(&identity) {
                     retry.declined.entry(path).or_insert_with_key(|path| {
                         info!("libinput declined {}; one retry in 5s", path.display());
                         Declined {

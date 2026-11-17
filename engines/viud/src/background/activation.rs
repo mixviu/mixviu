@@ -110,7 +110,7 @@ impl Activation {
     }
 }
 
-fn notice(shared: &Rc<RefCell<Activation>>, notice: Notice, attempt: impl FnOnce()) {
+fn notice(shared: &Rc<RefCell<Activation>>, notice: Notice, failed: &AtomicBool, attempt: impl FnOnce()) {
     if shared.borrow().handles.borrow().is_some() {
         return;
     }
@@ -121,7 +121,7 @@ fn notice(shared: &Rc<RefCell<Activation>>, notice: Notice, attempt: impl FnOnce
         Notice::Active => attempt(),
         Notice::Stopped(error) => {
             shared.borrow_mut().watcher_alive = false;
-            if !WATCH_FAILED.swap(true, Ordering::Relaxed) {
+            if !failed.swap(true, Ordering::Relaxed) {
                 warn!("VT watcher stopped; offscreen desk will re-arm it: {error}");
             }
             arm(shared);
@@ -212,7 +212,7 @@ pub fn install(
     let callback = shared.clone();
     handle.insert_source(source, move |event, _, state| {
         let Event::Msg(notice) = event else { return };
-        self::notice(&callback, notice, || attempt(&callback, state));
+        self::notice(&callback, notice, &WATCH_FAILED, || attempt(&callback, state));
     })?;
     shared.borrow_mut().start_watcher();
     if !shared.borrow().watcher_alive {
@@ -237,6 +237,7 @@ mod tests {
     fn ready_then_seat_failure_or_watcher_failure_grows_retry_interval() {
         // Exercise the production notice handler without opening a VT/seat.
         for seat_failure in [true, false] {
+            let failed = AtomicBool::new(true);
             let event_loop = smithay::reexports::calloop::EventLoop::<Loop>::try_new().unwrap();
             let (tx, _) = channel();
             let activation = Rc::new(RefCell::new(Activation {
@@ -260,11 +261,12 @@ mod tests {
                 stop: Default::default(),
             }));
             for expected in [250, 500, 1000, 2000, 4000, 5000] {
-                notice(&activation, Notice::Ready, || panic!("not active"));
+                notice(&activation, Notice::Ready, &failed, || panic!("not active"));
+                assert!(failed.load(Ordering::Relaxed));
                 if seat_failure {
-                    notice(&activation, Notice::Active, || arm(&activation));
+                    notice(&activation, Notice::Active, &failed, || arm(&activation));
                 }
-                notice(&activation, Notice::Stopped("test failure".into()), || {
+                notice(&activation, Notice::Stopped("test failure".into()), &failed, || {
                     panic!("not active")
                 });
                 assert_eq!(activation.borrow().retry.0, Duration::from_millis(expected));
