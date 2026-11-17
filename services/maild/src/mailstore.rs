@@ -2571,7 +2571,7 @@ impl MailStore for SqliteMailStore {
     ) -> Result<BlobId> {
         let set = account_id_to_setid(account);
         let blob_id = BlobId::new();
-        let now = chrono::Utc::now().timestamp();
+        let now = datetime::Utc::now().timestamp();
         let staging_attrs = ContainerAttrs {
             special_use: None,
             subscribed: false,
@@ -3292,7 +3292,7 @@ impl MailStore for SqliteMailStore {
                     let to_junk = dest == junk;
                     if from_junk ^ to_junk {
                         let label = if to_junk { "junk" } else { "ham" };
-                        let now = chrono::Utc::now().timestamp();
+                        let now = datetime::Utc::now().timestamp();
                         tx.tx()
                             .execute(
                                 "INSERT OR REPLACE INTO mail_retrain_outbox \
@@ -3436,7 +3436,7 @@ impl MailStore for SqliteMailStore {
                 let to_junk = dest == junk;
                 if from_junk ^ to_junk {
                     let label = if to_junk { "junk" } else { "ham" };
-                    let now = chrono::Utc::now().timestamp();
+                    let now = datetime::Utc::now().timestamp();
                     tx.tx()
                         .execute(
                             "INSERT OR REPLACE INTO mail_retrain_outbox \
@@ -5796,7 +5796,7 @@ fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<i64> 
     let high = previous
         .unwrap_or(0)
         .max(present)
-        .max(chrono::Utc::now().timestamp().max(1));
+        .max(datetime::Utc::now().timestamp().max(1));
     conn.execute("INSERT INTO mail_imap_uidvalidity(id, value) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET value = excluded.value", [high])
         .map_err(|e| mds::Error::Other(e.to_string()))?;
     Ok(high)

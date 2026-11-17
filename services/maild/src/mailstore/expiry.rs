@@ -84,7 +84,7 @@ impl ExpiryWorker {
 }
 
 fn now_secs() -> i64 {
-    chrono::Utc::now().timestamp()
+    datetime::Utc::now().timestamp()
 }
 
 /// Synchronous sweep. Exposed for unit tests that drive a fake clock

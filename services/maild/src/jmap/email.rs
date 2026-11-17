@@ -162,12 +162,12 @@ fn record_to_jmap(r: &EmailRecord) -> serde_json::Value {
 
 /// Format a unix-millis timestamp as a JMAP `UTCDate` (RFC 3339
 /// with a literal `Z` suffix). Out-of-range inputs (extremely large
-/// negatives / positives that overflow `chrono::DateTime`) project
+/// negatives / positives that overflow `datetime::DateTime`) project
 /// as `null`; the alternative — surfacing an error — would force
 /// every `Email/get` row through `Result` plumbing for a case that
 /// can only arise from corrupted state.
 fn utc_millis_to_jmap(millis: i64) -> serde_json::Value {
-    match chrono::DateTime::<chrono::Utc>::from_timestamp_millis(millis) {
+    match datetime::DateTime::<datetime::Utc>::from_timestamp_millis(millis) {
         Some(dt) => serde_json::Value::String(dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
         None => serde_json::Value::Null,
     }
@@ -176,7 +176,7 @@ fn utc_millis_to_jmap(millis: i64) -> serde_json::Value {
 /// Format a unix-seconds timestamp as a JMAP `UTCDate`.
 /// See [`utc_millis_to_jmap`] for the out-of-range disposition.
 fn utc_seconds_to_jmap(secs: i64) -> serde_json::Value {
-    match chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0) {
+    match datetime::DateTime::<datetime::Utc>::from_timestamp(secs, 0) {
         Some(dt) => serde_json::Value::String(dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
         None => serde_json::Value::Null,
     }
@@ -1197,7 +1197,7 @@ fn parse_utcdate_ms(v: &serde_json::Value, field: &str) -> Result<i64> {
             type_name_of_json(v)
         )),
     })?;
-    chrono::DateTime::parse_from_rfc3339(s)
+    datetime::DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.timestamp_millis())
         .map_err(|e| {
             JmapMethodError {
@@ -2338,7 +2338,7 @@ async fn create_from_blob(
                     .received()
                     .and_then(|r| r.date())
                     .map(|d| d.to_timestamp() * 1000)
-                    .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+                    .unwrap_or_else(|| datetime::Utc::now().timestamp_millis()),
             };
             drop(message);
             Ok((

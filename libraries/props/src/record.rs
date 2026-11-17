@@ -8,7 +8,7 @@
 //! record write. `AuditRow` is the audit-stream projection of the same
 //! event, carrying the keyed-HMAC `audit_digest`.
 
-use chrono::{DateTime, Utc};
+use datetime::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

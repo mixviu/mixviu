@@ -224,11 +224,11 @@ pub async fn event_query(
     let after = filter
         .and_then(|f| f.get("after"))
         .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+        .and_then(|s| s.parse::<datetime::DateTime<datetime::Utc>>().ok());
     let before = filter
         .and_then(|f| f.get("before"))
         .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+        .and_then(|s| s.parse::<datetime::DateTime<datetime::Utc>>().ok());
     let position = args.get("position").and_then(|v| v.as_u64()).unwrap_or(0) as i64;
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as i64;
 
@@ -287,11 +287,11 @@ pub async fn event_set(
             let start_dt = obj
                 .get("start")
                 .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+                .and_then(|s| s.parse::<datetime::DateTime<datetime::Utc>>().ok());
             let end_dt = obj
                 .get("end")
                 .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+                .and_then(|s| s.parse::<datetime::DateTime<datetime::Utc>>().ok());
 
             // The full JSCalendar object is the data
             match db::calendar::create_event(
@@ -329,9 +329,9 @@ pub async fn event_set(
             };
             // Values this patch actually names (None = "not changed").
             let parse_rfc = |s: &str| {
-                chrono::DateTime::parse_from_rfc3339(s)
+                datetime::DateTime::parse_from_rfc3339(s)
                     .ok()
-                    .map(|d| d.with_timezone(&chrono::Utc))
+                    .map(|d| d.with_timezone(&datetime::Utc))
             };
             let patch_title = patch.get("title").and_then(|v| v.as_str());
             let patch_start = patch

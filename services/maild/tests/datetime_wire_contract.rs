@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Golden wire fixtures captured before replacing chrono. These spellings are
 // shared by this crate’s timestamps; do not adopt a dependency’s default serde.
-use chrono::{DateTime, SecondsFormat, Utc};
+use datetime::{DateTime, SecondsFormat, Utc};
 
 #[test]
 fn datetime_wire_contract() {

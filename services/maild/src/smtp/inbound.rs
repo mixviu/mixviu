@@ -858,7 +858,7 @@ pub async fn deliver(
                      Content-Type: text/plain; charset=utf-8\r\n\
                      \r\n\
                      {vacation_body}",
-                chrono::Utc::now().to_rfc2822(),
+                datetime::Utc::now().to_rfc2822(),
                 uuid::Uuid::new_v4(),
                 message_id_host,
             );

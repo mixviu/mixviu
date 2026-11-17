@@ -26,7 +26,7 @@ toml = ["dep:toml"]
 # `_doc/planned/2026-05-29-conf-mix-config-migration.md`. Off by default
 # so the bare interpreter stays lean.
 serde = ["dep:serde"]
-datetime = ["dep:chrono"]
+datetime = ["dep:datetime"]
 url = ["dep:url"]
 # `bcrypt` joined 0.71.0 for password_hash()/password_verify() — client-side
 # bcrypt for maild.accounts.password writes over the Bus (a raw props.set
@@ -76,7 +76,7 @@ yaml = ["dep:yaml-rust2"]
 # shared-mime-info database (globs, magic, text check), as the desktop names
 # it, through the in-tree mimedb crate (GLib's rules over the same files).
 mime = ["dep:mimedb"]
-# `ws_connect`/`ws_send`/`ws_recv`/`ws_close` (0.74.0) — a synchronous
+# `ws_connect`/`ws_send`/`ws_recv`/`ws_close` (0.74.0) — a syndatetimeus
 # websocket CLIENT with recv-driven control flow, which is what a stateful
 # request/response protocol (LG SSAP, Home Assistant, Grafana live) needs
 # and what a blind `(cat msgs; sleep) | websocat` pipeline cannot express.
@@ -130,7 +130,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 socket2 = { version = "0.6", optional = true }
 blake3 = { version = "1", optional = true }
 yaml-rust2 = { version = "0.12", optional = true }
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
+datetime = { workspace = true, optional = true }
 regex = { version = "1", optional = true }
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"], optional = true }
 # `datastar` feature only — framework-agnostic SSE event serializer. We

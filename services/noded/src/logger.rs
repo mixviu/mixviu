@@ -24,7 +24,7 @@ use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use anyhow::Result;
-use chrono::Local;
+use datetime::Local;
 
 use crate::log_props::{LogPropsSnapshot, LogStats};
 
@@ -43,7 +43,7 @@ struct ObserveEvent {
 
 pub async fn run(noded_url: &str) -> Result<()> {
     let started_instant = Instant::now();
-    let started_at_iso = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let started_at_iso = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
 
     let log_dir = logging::default_log_dir("noded");
     let _ = std::fs::create_dir_all(&log_dir);

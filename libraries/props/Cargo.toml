@@ -19,8 +19,8 @@ mod_module_files = "deny"
 
 [features]
 default = []
-bus = ["dep:bus", "dep:chrono"]
-store = ["dep:anyhow", "dep:chrono", "dep:hmac", "dep:sha2", "dep:hex", "dep:rand", "dep:tokio"]
+bus = ["dep:bus", "dep:datetime"]
+store = ["dep:anyhow", "dep:datetime", "dep:hmac", "dep:sha2", "dep:hex", "dep:rand", "dep:tokio"]
 sqlite = ["store", "dep:rusqlite"]
 router = ["bus", "store", "dep:tracing", "tokio/rt", "tokio/macros"]
 
@@ -28,7 +28,7 @@ router = ["bus", "store", "dep:tracing", "tokio/rt", "tokio/macros"]
 serde.workspace = true
 serde_json.workspace = true
 bus = { workspace = true, optional = true, default-features = false }
-chrono = { workspace = true, optional = true }
+datetime = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 hmac = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }

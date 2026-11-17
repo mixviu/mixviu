@@ -231,7 +231,7 @@ fn serialize_snapshot(snap: &Snapshot) -> String {
         "service": snap.service,
         "captured_at": snap
             .captured_at
-            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            .to_rfc3339_opts(datetime::SecondsFormat::Millis, true),
         "metrics": metrics,
     })
     .to_string()

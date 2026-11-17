@@ -18,7 +18,7 @@
 //! Operators register specific tokens on both sides. Wildcard
 //! expansion is a v2 concern.
 
-use chrono::{DateTime, Duration, Utc};
+use datetime::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -187,7 +187,7 @@ pub fn resolve_cross_mesh_caps(
     // < now → reject. `max_pubkey_age_secs` is operator-supplied, so
     // both the seconds→Duration conversion and the timestamp addition
     // must use checked APIs — a malicious / accidental u64::MAX (or
-    // any value outside chrono::TimeDelta's range) must not panic.
+    // any value outside datetime::TimeDelta's range) must not panic.
     // Both forms of overflow fail closed.
     let clamped = trusted.max_pubkey_age_secs.min(i64::MAX as u64) as i64;
     let Some(max_age) = Duration::try_seconds(clamped) else {
@@ -216,7 +216,7 @@ pub fn resolve_cross_mesh_caps(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone as _;
+    
 
     fn caps(tokens: &[&str]) -> CapabilitySet {
         tokens.iter().map(|s| Cap::new(*s)).collect()

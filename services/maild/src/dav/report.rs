@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use davproto::{etag, ical, vcard};
 
-use chrono::{DateTime, Utc};
+use datetime::{DateTime, Utc};
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use uuid::Uuid;
@@ -69,7 +69,7 @@ type TimeRange = (Option<DateTime<Utc>>, Option<DateTime<Utc>>);
 
 /// Parse an RFC 4791 UTC basic date-time (`YYYYMMDDTHHMMSSZ`).
 fn parse_caldav_utc(s: &str) -> Option<DateTime<Utc>> {
-    chrono::NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%SZ")
+    datetime::NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%SZ")
         .ok()
         .map(|n| n.and_utc())
 }
@@ -305,7 +305,7 @@ fn vevent_facts(data: &serde_json::Value) -> anyhow::Result<VeventFacts> {
 
 /// Largest real UTC offset is UTC+14 (Kiribati); an instant indexed
 /// local-as-UTC is at most this far from its true UTC value.
-const TZ_SLACK: chrono::Duration = chrono::Duration::hours(14);
+const TZ_SLACK: datetime::Duration = datetime::Duration::hours(14);
 
 /// RFC 4791 §9.9 time-range overlap on the indexed UTC instants.
 ///
@@ -338,13 +338,13 @@ fn event_in_range(ev: &CalendarEvent, range: &Option<TimeRange>) -> anyhow::Resu
         return Ok(true);
     };
     let slack = if facts.utc_certain {
-        chrono::Duration::zero()
+        datetime::Duration::zero()
     } else {
         TZ_SLACK
     };
     // Saturating add: a range edge or stored instant near the datetime
     // ceiling must clamp, never panic (range edges are client input).
-    let plus = |dt: DateTime<Utc>, d: chrono::Duration| {
+    let plus = |dt: DateTime<Utc>, d: datetime::Duration| {
         dt.checked_add_signed(d).unwrap_or(DateTime::<Utc>::MAX_UTC)
     };
     let starts_before_range_end = range_end.is_none_or(|re| start < plus(re, slack));
@@ -362,9 +362,9 @@ fn event_in_range(ev: &CalendarEvent, range: &Option<TimeRange>) -> anyhow::Resu
         return Ok(starts_before_range_end);
     }
     let default_dur = if facts.all_day {
-        chrono::Duration::days(1)
+        datetime::Duration::days(1)
     } else {
-        chrono::Duration::seconds(1)
+        datetime::Duration::seconds(1)
     };
     let end = stored_end.unwrap_or_else(|| plus(start, default_dur));
     Ok(starts_before_range_end && range_start.is_none_or(|rs| plus(end, slack) > rs))
@@ -833,7 +833,7 @@ async fn addressbook_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
+    
 
     #[test]
     fn report_text_preserves_predefined_and_numeric_entities() {
@@ -893,11 +893,11 @@ mod tests {
         let (start, end) = p.time_range.expect("time-range captured");
         assert_eq!(
             start,
-            Some(chrono::Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap())
+            Some(datetime::Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap())
         );
         assert_eq!(
             end,
-            Some(chrono::Utc.with_ymd_and_hms(2026, 6, 30, 0, 0, 0).unwrap())
+            Some(datetime::Utc.with_ymd_and_hms(2026, 6, 30, 0, 0, 0).unwrap())
         );
     }
 

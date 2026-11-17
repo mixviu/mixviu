@@ -107,7 +107,7 @@ struct Inner {
     /// midnight inside `record_period`.
     bytes_today: u64,
     /// UTC day the `bytes_today` counter is tracking.
-    budget_day: chrono::NaiveDate,
+    budget_day: datetime::NaiveDate,
     last_soft_warn: Option<Instant>,
     /// Hard-budget pause flag for the current UTC day. Resets at
     /// midnight along with `bytes_today`.
@@ -170,7 +170,7 @@ impl JsonlSink {
         );
         let (open_path, done_path, file) = open_with_collision_retry(&log_dir, &base_stem)?;
         let writer = BufWriter::new(file);
-        let today = chrono::Utc::now().date_naive();
+        let today = datetime::Utc::now().date_naive();
         Ok(Self {
             inner: Mutex::new(Inner {
                 open_path,
@@ -293,7 +293,7 @@ impl StatsSink for JsonlSink {
                 "JsonlSink already flushed; no further records accepted",
             ));
         }
-        let today = chrono::Utc::now().date_naive();
+        let today = datetime::Utc::now().date_naive();
         if today != inner.budget_day {
             inner.budget_day = today;
             inner.bytes_today = 0;
@@ -485,7 +485,7 @@ fn num_or_null(x: f64) -> Value {
 /// ISO-8601 UTC with millisecond precision, trailing `Z`. Matches
 /// `logging.md` §5 and plan §4.1 (Codex-anticipated MINOR:
 /// no offset, always Z).
-fn format_ts(ts: chrono::DateTime<chrono::Utc>) -> String {
+fn format_ts(ts: datetime::DateTime<datetime::Utc>) -> String {
     ts.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }
 
@@ -498,7 +498,7 @@ mod tests {
 
     fn make_period(records: Vec<PeriodRecord>) -> PeriodSnapshot {
         PeriodSnapshot {
-            ts: chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap(),
+            ts: datetime::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap(),
             host: "test-host".into(),
             service: "test-svc".into(),
             period_seconds: 60,
@@ -526,7 +526,7 @@ mod tests {
         }
     }
 
-    use chrono::TimeZone;
+    
 
     fn read_lines(path: &Path) -> Vec<String> {
         let f = File::open(path).expect("open .open file");

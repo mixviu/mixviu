@@ -8,7 +8,7 @@
 //! combinator does not — it operates on a `PeerIdentity` that has
 //! already been signature-verified by the verifier.
 
-use chrono::{DateTime, Utc};
+use datetime::{DateTime, Utc};
 use ed25519_dalek::{
     SECRET_KEY_LENGTH, SIGNATURE_LENGTH, Signature, Signer, SigningKey, VerifyingKey,
 };
@@ -129,7 +129,7 @@ pub fn select_pubkey<'a>(
     // Same overflow-safe arithmetic as caps::resolve_cross_mesh_caps:
     // operator-supplied u64 → checked Duration → checked timestamp add.
     let clamped = trusted.max_pubkey_age_secs.min(i64::MAX as u64) as i64;
-    let Some(max_age) = chrono::Duration::try_seconds(clamped) else {
+    let Some(max_age) = datetime::Duration::try_seconds(clamped) else {
         return Err(KeySelectError::StaleTrust);
     };
     match trusted.last_verified_at.checked_add_signed(max_age) {
@@ -158,7 +158,7 @@ pub fn select_pubkey<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Duration, TimeZone as _};
+    use datetime::Duration;
     use ed25519_dalek::{Signer, SigningKey};
     use rand::rngs::OsRng;
 

@@ -9,7 +9,7 @@
 //! participants are a later refinement; the JSCalendar payload is the
 //! authority and is preserved verbatim in storage regardless.
 
-use chrono::{DateTime, Utc};
+use datetime::{DateTime, Utc};
 use icalendar::{
     Calendar, CalendarComponent, CalendarDateTime, Component, DatePerhapsTime, Event, EventLike,
 };
@@ -59,18 +59,18 @@ pub fn event_to_ics(
     let dtstamp = updated
         .or(start)
         .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).expect("epoch is valid"));
-    ev.timestamp(dtstamp);
+    ev.add_property(icalendar::Property::new("DTSTAMP", &dtstamp.format("%Y%m%dT%H%M%SZ").to_string()).done());
     if let Some(t) = title {
         ev.summary(t);
     }
     if let Some(s) = start {
-        ev.starts(s);
+        ev.add_property(icalendar::Property::new("DTSTART", &s.format("%Y%m%dT%H%M%SZ").to_string()).done());
     }
     if let Some(e) = end {
-        ev.ends(e);
+        ev.add_property(icalendar::Property::new("DTEND", &e.format("%Y%m%dT%H%M%SZ").to_string()).done());
     }
     if let Some(u) = updated {
-        ev.last_modified(u);
+        ev.add_property(icalendar::Property::new("LAST-MODIFIED", &u.format("%Y%m%dT%H%M%SZ").to_string()).done());
     }
     if let Some(d) = data.get("description").and_then(|v| v.as_str()) {
         ev.description(d);
@@ -104,12 +104,19 @@ pub struct ParsedEvent {
 /// value for the client.
 fn to_utc(dt: &DatePerhapsTime) -> Option<DateTime<Utc>> {
     match dt {
-        DatePerhapsTime::DateTime(CalendarDateTime::Utc(d)) => Some(*d),
-        DatePerhapsTime::DateTime(CalendarDateTime::Floating(n)) => Some(n.and_utc()),
+        DatePerhapsTime::DateTime(CalendarDateTime::Utc(d)) => DateTime::from_timestamp(d.timestamp(), d.timestamp_subsec_nanos()),
+        DatePerhapsTime::DateTime(CalendarDateTime::Floating(n)) => {
+            let d = n.and_utc();
+            DateTime::from_timestamp(d.timestamp(), d.timestamp_subsec_nanos())
+        },
         DatePerhapsTime::DateTime(CalendarDateTime::WithTimezone { date_time, .. }) => {
-            Some(date_time.and_utc())
+            let d = date_time.and_utc();
+            DateTime::from_timestamp(d.timestamp(), d.timestamp_subsec_nanos())
         }
-        DatePerhapsTime::Date(d) => d.and_hms_opt(0, 0, 0).map(|n| n.and_utc()),
+        DatePerhapsTime::Date(d) => d.and_hms_opt(0, 0, 0).and_then(|n| {
+            let d = n.and_utc();
+            DateTime::from_timestamp(d.timestamp(), d.timestamp_subsec_nanos())
+        }),
     }
 }
 
@@ -274,7 +281,7 @@ fn first_location(data: &serde_json::Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
+    
 
     #[test]
     fn retired_ical_key_errors_before_raw_or_field_fallback() {

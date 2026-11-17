@@ -17535,7 +17535,7 @@ fn builtin_date_format(args: Vec<Value>) -> MixResult<Option<Value>> {
             ));
         }
     }
-    let dt = chrono::DateTime::from_timestamp(ts, 0).ok_or_else(|| {
+    let dt = datetime::DateTime::from_timestamp(ts, 0).ok_or_else(|| {
         MixError::structured(
             "VALUE_OUT_OF_RANGE",
             format!("date_format(): argument 1 timestamp {ts} is outside the supported range"),
@@ -17544,7 +17544,7 @@ fn builtin_date_format(args: Vec<Value>) -> MixResult<Option<Value>> {
     let text = if utc {
         dt.format(&fmt).to_string()
     } else {
-        dt.with_timezone(&chrono::Local).format(&fmt).to_string()
+        dt.with_timezone(&datetime::Local).format(&fmt).to_string()
     };
     Ok(Some(Value::String(text)))
 }
@@ -17554,13 +17554,13 @@ fn builtin_date_parse(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("date_parse", &args, 1)?;
     let s = args[0].to_mix_string();
     // Try ISO 8601 first, then common formats
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&s) {
+    if let Ok(dt) = datetime::DateTime::parse_from_rfc3339(&s) {
         return Ok(Some(Value::Number(dt.timestamp() as f64)));
     }
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
+    if let Ok(dt) = datetime::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
         return Ok(Some(Value::Number(dt.and_utc().timestamp() as f64)));
     }
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+    if let Ok(d) = datetime::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
         let dt = d.and_hms_opt(0, 0, 0).unwrap();
         return Ok(Some(Value::Number(dt.and_utc().timestamp() as f64)));
     }
@@ -17572,7 +17572,7 @@ fn builtin_date_parse(args: Vec<Value>) -> MixResult<Option<Value>> {
 
 #[cfg(feature = "datetime")]
 fn builtin_now_iso(_args: Vec<Value>) -> MixResult<Option<Value>> {
-    Ok(Some(Value::String(chrono::Local::now().to_rfc3339())))
+    Ok(Some(Value::String(datetime::Local::now().to_rfc3339())))
 }
 
 #[cfg(feature = "datetime")]
@@ -17623,7 +17623,7 @@ fn builtin_relative_time(args: Vec<Value>) -> MixResult<Option<Value>> {
         "relative_time(): argument 1",
         number_arg("relative_time", &args, 0)?.trunc(),
     )?;
-    let now = chrono::Utc::now().timestamp();
+    let now = datetime::Utc::now().timestamp();
     let diff = now - ts;
     let s = if diff < 0 {
         let d = -diff;

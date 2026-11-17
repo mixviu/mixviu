@@ -50,7 +50,7 @@ pub trait StatsSink: Send + Sync {
     /// across processes. JSONL implements this by scanning the log
     /// dir (slice 5+); the v1 default returns `Unsupported` so v2
     /// backends that don't aggregate compile without a stub.
-    fn snapshot_since(&self, _since: chrono::DateTime<chrono::Utc>) -> std::io::Result<Snapshot> {
+    fn snapshot_since(&self, _since: datetime::DateTime<datetime::Utc>) -> std::io::Result<Snapshot> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "this sink does not support cross-process aggregation",
@@ -64,7 +64,7 @@ pub struct PeriodSnapshot {
     /// Period-end timestamp (UTC, milliseconds). The JSONL `ts` field
     /// is this value formatted per `logging.md` §5 ISO-8601
     /// discipline.
-    pub ts: chrono::DateTime<chrono::Utc>,
+    pub ts: datetime::DateTime<datetime::Utc>,
     /// Kernel hostname at recorder startup (mesh-DNS convention).
     pub host: String,
     /// Service identity (matches `LogDefaults.identity`).

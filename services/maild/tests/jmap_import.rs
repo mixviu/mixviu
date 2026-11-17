@@ -448,7 +448,7 @@ async fn email_import_eai_and_foreign_blobs() {
             2,
             hash,
             bytes.len() as u64,
-            chrono::Utc::now().timestamp_millis() + 3_600_000,
+            datetime::Utc::now().timestamp_millis() + 3_600_000,
         )
         .unwrap();
     for id in [alias.0.to_string(), mds::blob::hex(&hash)] {
@@ -586,7 +586,7 @@ async fn email_import_null_received_at_uses_received_header_or_server_time() {
     let no_header = f
         .upload_message("Date: Mon, 1 Jan 2024 00:00:00 +0000\r\nFrom: alice@example.com\r\nSubject: no-received\r\n\r\nHello")
         .await;
-    let before = chrono::Utc::now().timestamp_millis();
+    let before = datetime::Utc::now().timestamp_millis();
     let response = f.call("Email/import", json!({"emails": {
         "header": {"blobId": header, "mailboxIds": {&f.inbox: true}, "receivedAt": null},
         "clock": {"blobId": no_header, "mailboxIds": {&f.inbox: true}, "receivedAt": null},
@@ -597,10 +597,10 @@ async fn email_import_null_received_at_uses_received_header_or_server_time() {
         "2024-01-01T00:00:00.000Z"
     );
     let clock = f.get(&response["created"]["clock"]["id"]).await;
-    let clock = chrono::DateTime::parse_from_rfc3339(clock["receivedAt"].as_str().unwrap())
+    let clock = datetime::DateTime::parse_from_rfc3339(clock["receivedAt"].as_str().unwrap())
         .unwrap()
         .timestamp_millis();
-    assert!(clock >= before && clock <= chrono::Utc::now().timestamp_millis());
+    assert!(clock >= before && clock <= datetime::Utc::now().timestamp_millis());
     assert_eq!(
         response["notCreated"]["offset"]["type"],
         "invalidProperties"

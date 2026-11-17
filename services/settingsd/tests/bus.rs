@@ -179,8 +179,8 @@ impl Fixture {
             mesh: "example.test".into(),
             subnet: "127.0.0.0/24".into(),
             epoch: 1,
-            signed_at: chrono::Utc::now().to_rfc3339(),
-            valid_until: (chrono::Utc::now() + chrono::Duration::minutes(30)).to_rfc3339(),
+            signed_at: datetime::Utc::now().to_rfc3339(),
+            valid_until: (datetime::Utc::now() + datetime::Duration::minutes(30)).to_rfc3339(),
             hub: vec![names[0].into()],
             verify_keys: vec![VerifyKey {
                 key_id: "genesis".into(),

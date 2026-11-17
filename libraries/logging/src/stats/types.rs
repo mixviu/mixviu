@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone)]
 pub struct Snapshot {
     pub service: String,
-    pub captured_at: chrono::DateTime<chrono::Utc>,
+    pub captured_at: datetime::DateTime<datetime::Utc>,
     pub metrics: Vec<MetricFamily>,
 }
 

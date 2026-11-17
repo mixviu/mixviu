@@ -462,7 +462,7 @@ pub async fn conditional_upsert_contact_by_uid(
     let full_name = full_name.map(|s| s.to_string());
     let email = email.map(|s| s.to_string());
     let company = company.map(|s| s.to_string());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = datetime::Utc::now().to_rfc3339();
     let precond = precond.clone();
     tokio::task::spawn_blocking(move || {
         let conn = conn
@@ -681,7 +681,7 @@ pub async fn update_contact(
     let full_name = full_name.map(|s| s.to_string());
     let email = email.map(|s| s.to_string());
     let company = company.map(|s| s.to_string());
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = datetime::Utc::now().to_rfc3339();
     tokio::task::spawn_blocking(move || {
         let conn = conn
             .lock()

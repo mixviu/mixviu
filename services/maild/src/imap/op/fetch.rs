@@ -1897,7 +1897,7 @@ fn apply_partial<'a>(bytes: &'a [u8], partial: Option<&BodyPartial>) -> &'a [u8]
 }
 
 fn render_internaldate(received_at_ms: i64) -> String {
-    use chrono::{TimeZone, Utc};
+    use datetime::{TimeZone, Utc};
     // EmailHandle.received_at is unix-millis (see Mds spec and the
     // SqliteMailStore populator). Out-of-range timestamps fall back
     // to the unix epoch — a synthetic INTERNALDATE is more useful to

@@ -48,7 +48,7 @@ pub fn local_snapshot() -> Snapshot {
     let Some(inner) = shared() else {
         return Snapshot {
             service: String::new(),
-            captured_at: chrono::Utc::now(),
+            captured_at: datetime::Utc::now(),
             metrics: Vec::new(),
         };
     };
@@ -139,7 +139,7 @@ pub(crate) fn snapshot_from_inner(inner: &Arc<RecorderInner>) -> Snapshot {
     }
     Snapshot {
         service: inner.identity.clone(),
-        captured_at: chrono::Utc::now(),
+        captured_at: datetime::Utc::now(),
         metrics,
     }
 }

@@ -164,7 +164,7 @@ pub(crate) fn export_set(
         format_version: FORMAT_VERSION,
         set_id: set_id.0.to_string(),
         schema_version,
-        exported_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        exported_at: datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true),
         item_count,
         blob_count,
     };

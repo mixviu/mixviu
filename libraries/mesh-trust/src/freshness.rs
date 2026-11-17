@@ -9,7 +9,7 @@
 //! `wgd.cross_mesh.claim_nonce`) — this module is the time-window
 //! check only.
 
-use chrono::{DateTime, Duration, Utc};
+use datetime::{DateTime, Duration, Utc};
 
 /// Default freshness window per plan §6 step 4: ±5 minutes.
 pub const DEFAULT_FRESHNESS_WINDOW_SECS: i64 = 5 * 60;
@@ -46,7 +46,7 @@ pub fn check_freshness(
     now: DateTime<Utc>,
     window: Duration,
 ) -> Result<(), FreshnessError> {
-    // Compare the full chrono::Duration, not its truncated whole-second
+    // Compare the full datetime::Duration, not its truncated whole-second
     // representation: `(now - ts).num_seconds()` rounds fractional
     // drift toward zero, which would let a drift of `window + 0.999s`
     // slip through. abs() makes the check symmetric — both past- and
@@ -74,7 +74,7 @@ pub fn check_envelope_ts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone as _;
+    
 
     fn now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 5, 20, 3, 14, 0).unwrap()

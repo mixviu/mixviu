@@ -405,7 +405,7 @@ async fn deliver_inner(
                     &crate::jmap::email::extract_in_reply_to(&message),
                     flags,
                     tags,
-                    chrono::Utc::now().timestamp_millis(),
+                    datetime::Utc::now().timestamp_millis(),
                 )?
                 .0)
         })
@@ -466,7 +466,7 @@ async fn deliver_inner(
                     let mut outgoing = format!(
                         "Received: from {host} by {host} with ESMTP; {date}\r\n",
                         host = crate::smtp::inbound::header_value_safe(&db.sieve_hostname),
-                        date = chrono::Utc::now().to_rfc2822()
+                        date = datetime::Utc::now().to_rfc2822()
                     )
                     .into_bytes();
                     outgoing.extend(strip_headers(bytes, |name| {
@@ -506,7 +506,7 @@ fn rejection_report(domain: &str, sender: &str, recipient: &str, reason: &str) -
         .replace("\r\n", "\n")
         .replace('\r', "\n")
         .replace('\n', "\r\n");
-    let date = chrono::Utc::now().to_rfc2822();
+    let date = datetime::Utc::now().to_rfc2822();
     // RFC 3464 multipart/report: readable reason and machine-readable status.
     // Do not attach the original message or reflect its headers.
     format!("From: <postmaster@{domain}>\r\nTo: <{sender}>\r\nDate: {date}\r\nMessage-ID: <{boundary}@{domain}>\r\nSubject: Message refused by recipient filter\r\nAuto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=delivery-status; boundary=\"{boundary}\"\r\n\r\n--{boundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\nThe recipient's mail filter refused your message.\r\n\r\n{reason}\r\n\r\n--{boundary}\r\nContent-Type: message/delivery-status\r\n\r\nReporting-MTA: dns; {domain}\r\n\r\nFinal-Recipient: rfc822; {recipient}\r\nAction: failed\r\nStatus: 5.7.1\r\n\r\n--{boundary}--\r\n").into_bytes()

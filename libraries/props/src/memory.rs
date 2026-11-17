@@ -32,7 +32,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Mutex;
 
-use chrono::{DateTime, Utc};
+use datetime::{DateTime, Utc};
 
 use crate::audit::{AuditKey, compute_digest, tombstone_value};
 use crate::lifecycle::{LIFECYCLE_FIELD, Lifecycle};
