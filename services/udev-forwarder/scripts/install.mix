@@ -28,59 +28,33 @@ $hook_ref = "local:snippets/mix-udev-forwarder.mix"
 $hook_path = "/var/lib/vz/snippets/mix-udev-forwarder.mix"
 if trim(run_argv_must(["pvesm", "path", $hook_ref])) != $hook_path then die("local snippets storage has a different path; configure storage before installing") end
 
--- Preflight every CT before writing anything. Never replace another hook.
-$ct_updates = {}
-for $id in $cfg.cts
-  $path = "/etc/pve/lxc/" .. $id .. ".conf"
-  $text = read_file($path)
-  $lines = []
-  $snapshot = false
-  $found = false
-  for $line in split($text, "\n")
-    if starts_with($line, "[") then
-      if not $found then
-        push($lines, "hookscript: " .. $hook_ref)
-        $found = true
-      end
-      $snapshot = true
-    end
-    if not $snapshot and starts_with($line, "hookscript:") then
-      if trim(after($line, ":")) != $hook_ref then die("CT " .. $id .. " already has another hookscript; refusing to replace it") end
-      $found = true
-    end
-    push($lines, $line)
-  end
-  if not $found then push($lines, "hookscript: " .. $hook_ref) end
-  $ct_updates[$path] = join($lines, "\n")
-end
+-- Preflight all current and desired CTs before writing anything.
+$hooks = require("install_hooks.mix")
+$ct_updates = $hooks.plan($cfg.cts, $hook_ref)
 
 $files = {}
 for $name in ["config.mix", "forwarder.mix"]
   $files[$roots.lib .. "/udev-forwarder/" .. $name] = read_file($base .. "/scripts/" .. $name)
 end
-$files[$hook_path] = read_file($base .. "/scripts/hook.mix")
 $files["/etc/systemd/system/udev-forwarder.service"] = $renderer.external(read_file($base .. "/units/udev-forwarder.service"), $roots, "unit")
 if not exists($cfg_path) then $files[$cfg_path] = read_file($cfg_source) end
-for $path in keys($ct_updates)
-  $files[$path] = $ct_updates[$path]
-end
 
 $changed = false
 for $path in keys($files)
   if not exists($path) or read_file($path) != $files[$path] then
     if $check then die("install differs: " .. $path) end
     run_argv_must(["mkdir", "-p", dirname($path)])
-    -- pmxcfs implements its own atomic updates; rename is unsupported there.
-    if starts_with($path, "/etc/pve/") then write_file($path, $files[$path]) else write_atomic($path, $files[$path]) end
+    write_atomic($path, $files[$path])
     $changed = true
   end
 end
 if $check then
-  run_argv_must(["test", "-x", $hook_path])
+  $hooks.check(read_file($base .. "/scripts/hook.mix"), $hook_path, $ct_updates)
   run_argv_must(["systemctl", "is-enabled", "udev-forwarder.service"])
   run_argv_must(["systemctl", "is-active", "udev-forwarder.service"])
 else
-  run_argv_must(["chmod", "0755", $hook_path])
+  -- Explicit final phase: publish and verify the executable hook BEFORE pct.
+  if $hooks.activate(read_file($base .. "/scripts/hook.mix"), $hook_path, $hook_ref, $ct_updates) then $changed = true end
   run_argv_must(["systemctl", "daemon-reload"])
   run_argv_must(["systemctl", "enable", "--now", "udev-forwarder.service"])
   if $changed then run_argv_must(["systemctl", "restart", "udev-forwarder.service"]) end

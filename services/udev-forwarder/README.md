@@ -38,6 +38,10 @@ intentional filtering, not loss. ENOBUFS reports overflow with unknown kernel
 loss count; queue overflow reports an exact `dropped` count. Records remain
 ordered, without deduplication or coalescing. Limits: 16 watches, 64 pending
 records per uevent watch, 256 KiB datagrams, 128 senders per evaluator.
+Watch sockets request a 128 MiB receive buffer with `SO_RCVBUFFORCE`, falling
+back to `SO_RCVBUF` (subject to the host's `rmem_max`) without that capability.
+The larger kernel queue absorbs hub-replug/trigger bursts while earlier events
+are handled; it cannot eliminate loss, which is still reported as overflow.
 The existing string-only IncomingEvent envelope carries a private hex copy;
 the evaluator restores Buffer before dispatch. Outbound bytes are that copy,
 not a new libudev message or a serialization of the properties map.
@@ -49,7 +53,9 @@ on post-start and pre-stop. It also does so on post-stop: pre-stop runs while
 the CT init may still exist, so that first reconciliation can reattach it;
 post-stop reconciles after init exits, leaving stopped CTs without a socket.
 Startup enumerates configured CT init PIDs with `lxc-info`; it checks each PID
-again after creating its socket. No lifecycle polling or custom transport.
+again after creating its socket. A namespace open/setns failure or a changed
+PID closes that attempt, logs `attach-failed`, and skips that CT until the next
+reconciliation; other CTs keep forwarding. No lifecycle polling or custom transport.
 Each restart closes all old sockets and reopens the running CT namespaces.
 It can lose events during the restart, normally about a second while a CT is
 starting or stopping, including events for other running CTs. Slow startup or
@@ -76,9 +82,15 @@ the plain native pump against an unavailable broker using stdin (no temporary
 file), preflights all CTs and refuses to replace another hookscript. Missing
 builtins or a failed pump probe are refused before any writes, with an
 instruction to install a suitable gold.
-Snapshot sections are preserved. It installs scripts under
+CT changes use `pct config` and `pct set`, taking Proxmox's own update lock
+and validation rather than rewriting config files (including snapshots). It
+checks all local CTs, removes its hook from CTs removed from the configuration,
+and reports stale hooks in `--check`. It installs scripts under
 `<lib>/udev-forwarder`, the unit under `/etc/systemd/system`, and
-`local:snippets/mix-udev-forwarder.mix`, then enables/restarts the service.
+`local:snippets/mix-udev-forwarder.mix`. An explicit final phase atomically
+publishes the hook, chmods it, verifies it is a regular executable file, and
+only then issues any CT updates. Any failure before that phase finishes leaves
+every CT config untouched. It then enables/restarts the service.
 It never starts or restarts CTs. Re-running a converged install does not
 restart the service. When changing only config, restart the service explicitly.
 
@@ -92,7 +104,7 @@ present. The executable hook uses the managed `/usr/local/bin/mix` entrance,
 which follows the installed prefix; it embeds no prefix. No runtime directory
 is created, so no runtime-leaf stop cleanup is needed.
 
-Host edge programs: lxc-info (service); mkdir/chmod/test/systemctl/pvesm
+Host edge programs: lxc-info (service); pct/mkdir/chmod/test/systemctl/pvesm
 (installer); systemctl (hook). Logs contain event action,
 subsystem, device node name and target CT IDs, plus loss/lifecycle errors;
 datagrams and other properties are never logged.
@@ -115,7 +127,8 @@ relocated prefix/lib/etc quoting with the shared renderer; the repository-wide
 `mix services/udev-forwarder/tests/namespace.mix` is the root-only CBC proof:
 it subscribes in namespace A, creates B with `run_argv`/managed spawn, triggers
 a real input change through udevd, then copies those exact bytes into B.
-A libudev monitor there must print the same SEQNUM. Its bounded retries handle
+Only a change for the exact triggered DEVPATH selects the oracle SEQNUM.
+A libudev monitor there must print that same SEQNUM. Its bounded retries handle
 monitor startup only, not service lifecycle. It fails if sysfs writes or
 unshare are denied, or no real udevd message arrives; there is no fake fallback.
 Test-only edge programs: unshare, sleep, readlink, stdbuf, nsenter, udevadm.

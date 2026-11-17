@@ -35,13 +35,13 @@ fn attach($id)
     $again = run_argv(["lxc-info", "-n", $id, "-p", "-H"], {timeout:5})
     if not $again.ok or trim($again.stdout) != $pid then
       uevent_close($h)
-      die("CT init changed while opening namespace")
+      print(json_encode({event:"attach-failed", ct:$id, error:"CT init changed while opening namespace; skipped until next reconciliation"}))
+      return
     end
     $senders[$id] = $h
     print(json_encode({event:"attach", ct:$id}))
   catch $err
     print(json_encode({event:"attach-failed", ct:$id, error:to_string($err)}))
-    die("cannot attach CT " .. $id)
   end
 end
 

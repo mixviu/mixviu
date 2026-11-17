@@ -3,6 +3,7 @@
 -- version: 0.2.0
 -- Proxmox invokes hookscript VMID PHASE. post-stop reconciles after init exits.
 $argv = args()
+if len($argv) != 2 then die("usage: hook.mix VMID PHASE") end
 $id = $argv[0]
 $phase = $argv[1]
 if not contains(["post-start", "pre-stop", "post-stop"], $phase) then exit(0) end

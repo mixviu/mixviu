@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Child runner: real installer phases, command stand-ins supplied by PATH.
+$argv = args()
+$lab = $argv[0]
+$mode = $argv[1]
+$hooks = require("../scripts/install_hooks.mix")
+$ref = "local:snippets/mix-udev-forwarder.mix"
+$updates = $hooks.plan(["102"], $ref)
+$path = $lab .. "/hook.mix"
+if $mode == "write-fail" then $path = $lab .. "/blocked/hook.mix" end
+if $mode == "check" then
+  $hooks.check("test-hook\n", $path, $updates)
+else
+  if $mode == "race" then write_file($lab .. "/102.conf", "hookscript: local:snippets/other.mix\n") end
+  print($hooks.activate("test-hook\n", $path, $ref, $updates))
+end

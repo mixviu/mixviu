@@ -1684,6 +1684,7 @@ mod tests {
             let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
             assert_eq!(body["raw"], format!("00ff{n:02x}"));
             assert_eq!(body["dropped"], if n == 0 { 3 } else { 0 });
+            assert_eq!(body["overflow"], n == 0);
             let value = crate::evaluator::incoming_event_to_mix_value(&ev);
             let Value::Map(value) = &value else {
                 panic!("event map")
@@ -1696,6 +1697,19 @@ mod tests {
             };
             assert_eq!(&*raw.borrow(), &[0, 255, (n % 256) as u8]);
         }
+        // ENOBUFS is signalled independently of bounded-queue drops. It must
+        // survive the private envelope and reach the handler's $event.args.
+        q.source("uevent:1", vec![("loss".into(), serde_json::json!({"drop":"ENOBUFS"}))], true);
+        let ev = q.next(None).await.unwrap();
+        let Value::Map(value) = crate::evaluator::incoming_event_to_mix_value(&ev) else {
+            panic!("event map")
+        };
+        let Value::Map(args) = &value["args"] else {
+            panic!("args map")
+        };
+        assert_eq!(args["overflow"], Value::Bool(true));
+        assert_eq!(args["dropped"], Value::Number(0.0));
+        assert_eq!(args["drop"], Value::String("ENOBUFS".into()));
     }
     use std::{
         future::Future,

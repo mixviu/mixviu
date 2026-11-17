@@ -5,6 +5,9 @@ $argv = args()
 $lab = $argv[0]
 $bin = $lab .. "/mix"
 $source = dirname(dirname(script_path())) .. "/scripts/forwarder.mix"
+$faults = len($argv) > 1 and $argv[1] == "attach-faults"
+if $faults then write_file($lab .. "/init.pid", to_string(pid())) end
+$failed = []
 $props = "ACTION=change\0DEVPATH=/devices/example\0SUBSYSTEM=input\0SEQNUM=42\0DEVNAME=/dev/input/event999\0"
 -- Synthetic fixture for native event dispatch, not libudev acceptance proof.
 $wire = buffer(["libudev",0,254,237,202,254,40,0,0,0,40,0,0,0,len($props),0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,$props])
@@ -15,12 +18,16 @@ $child = process_watch($command, {stderr:"lines"})
 $deadline = timer_once(5, "deadline")
 $send_timer = nil
 on proc.line
-  global $send_timer
   if $event.args.stream != "stdout" then return end
   $line = json_parse($event.args.line)
-  if $line.event == "ready" then $send_timer = timer_once(0.1, "send") end
+  if $line.event == "attach-failed" then push($failed, $line.ct) end
+  if $line.event == "ready" then
+    if $faults and (not deep_eq($failed, ["999991", "999992"]) or not deep_eq($line.cts, ["999993"])) then die("bad CT prevented healthy attach or PID race was missed") end
+    $send_timer = timer_once(0.1, "send")
+  end
   if $line.event == "forward" then
     if $line.action != "change" or $line.subsystem != "input" or $line.devname != "/dev/input/event999" then die("wrong forwarded metadata") end
+    if $faults and not deep_eq($line.cts, ["999993"]) then die("healthy CT did not forward after another CT failed") end
     print("PASS: actual forwarder consumes native uevent in plain Mix without broker or mixd")
     exit(0)
   end

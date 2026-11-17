@@ -1,0 +1,49 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run with the CBC-built Mix. All writes and pct/chmod commands are lab-only.
+$root = dirname(dirname(dirname(dirname(script_path()))))
+$bin = $root .. "/target/debug/mix"
+$here = dirname(script_path())
+$lab = trim(run_argv_must(["mktemp", "-d"]))
+try
+  write_file($lab .. "/pct", "#!" .. $bin .. "\n" .. read_file($here .. "/pct_standin.mix"))
+  chmod($lab .. "/pct", "0755")
+  write_file($lab .. "/chmod", "#!" .. $bin .. "\nif exists(dirname(script_path()) .. \"/chmod-fail\") then exit(1) end\nexit(run_argv(concat([\"/usr/bin/chmod\"], args())).exit_code)\n")
+  chmod($lab .. "/chmod", "0755")
+  $child_env = {PATH:$lab .. ":/usr/bin:/bin"}
+  $ref = "local:snippets/mix-udev-forwarder.mix"
+  $stale = "cores: 2\nhookscript: " .. $ref .. "\n"
+  $foreign = "hookscript: local:snippets/other.mix\n"
+  write_file($lab .. "/102.conf", "cores: 2\n")
+  write_file($lab .. "/103.conf", $stale)
+  write_file($lab .. "/104.conf", $foreign)
+  write_file($lab .. "/blocked", "not a directory")
+  write_file($lab .. "/chmod-fail", "")
+  for $mode in ["write-fail", "install"]
+    $r = run_argv([$bin, $here .. "/install_case.mix", $lab, $mode], {env:$child_env})
+    if $r.ok then die("hook failure was ignored: " .. $mode) end
+    if exists($lab .. "/sets.log") or read_file($lab .. "/102.conf") != "cores: 2\n" or read_file($lab .. "/103.conf") != $stale then die("CT touched before hook was executable") end
+  end
+  remove($lab .. "/chmod-fail")
+  chmod($lab .. "/hook.mix", "0755")
+  $r = run_argv([$bin, $here .. "/install_case.mix", $lab, "check"], {env:$child_env})
+  if $r.ok or not contains($r.stderr, "103") or exists($lab .. "/sets.log") then die("--check missed stale hook or wrote CT") end
+  run_argv_must([$bin, $here .. "/install_case.mix", $lab, "install"], {env:$child_env})
+  $sets = read_file($lab .. "/sets.log")
+  if not contains($sets, '["set","102","--hookscript","' .. $ref .. '"]') or not contains($sets, '["set","103","--delete","hookscript"]') then die("incorrect pct updates: " .. $sets) end
+  if read_file($lab .. "/104.conf") != $foreign then die("unrelated hook replaced") end
+  run_argv_must([$bin, $here .. "/install_case.mix", $lab, "check"], {env:$child_env})
+  run_argv_must([$bin, $here .. "/install_case.mix", $lab, "install"], {env:$child_env})
+  if read_file($lab .. "/sets.log") != $sets then die("converged install mutated CTs") end
+  write_file($lab .. "/102.conf", $foreign)
+  $r = run_argv([$bin, $here .. "/install_case.mix", $lab, "install"], {env:$child_env})
+  if $r.ok or read_file($lab .. "/sets.log") != $sets then die("foreign desired hook replaced") end
+  write_file($lab .. "/102.conf", "cores: 2\n")
+  $r = run_argv([$bin, $here .. "/install_case.mix", $lab, "race"], {env:$child_env})
+  if $r.ok or read_file($lab .. "/102.conf") != $foreign or read_file($lab .. "/sets.log") != $sets then die("preflight race replaced foreign hook") end
+  print("PASS: hook write/chmod failure leaves all CTs untouched; pct adds/removes hooks, check flags stale CT, foreign/raced hooks refused, rerun converges")
+catch $err
+  run_argv_must(["rm", "-rf", $lab])
+  die($err)
+end
+run_argv_must(["rm", "-rf", $lab])

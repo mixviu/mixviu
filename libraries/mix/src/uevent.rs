@@ -110,6 +110,25 @@ pub(crate) mod linux {
         {
             return Err(io::Error::last_os_error());
         }
+        if group != 0 {
+            // Match libudev's 128 MiB monitor request: a hub replug or trigger
+            // can queue a burst while the evaluator is handling earlier events.
+            // FORCE bypasses rmem_max with CAP_NET_ADMIN; ordinary callers fall
+            // back to RCVBUF (which Linux may clamp to the host's rmem_max).
+            let bytes: libc::c_int = 128 * 1024 * 1024;
+            let set_buffer = |option| unsafe {
+                libc::setsockopt(
+                    fd.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    option,
+                    (&bytes as *const libc::c_int).cast(),
+                    size_of_val(&bytes) as _,
+                )
+            };
+            if set_buffer(libc::SO_RCVBUFFORCE) < 0 && set_buffer(libc::SO_RCVBUF) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
         let mut addr: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
         addr.nl_family = libc::AF_NETLINK as _;
         addr.nl_groups = group;
@@ -338,5 +357,22 @@ mod tests {
     fn kernel_fixture() {
         let props = properties(b"add@/devices/example\0ACTION=add\0DEVPATH=/devices/example\0SUBSYSTEM=hidraw\0SEQNUM=1\0",1).unwrap();
         assert_eq!(props["SUBSYSTEM"], "hidraw");
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn monitor_socket_grows_kernel_receive_buffer() {
+        use std::os::fd::AsRawFd;
+        let fd = linux::socket(2).unwrap();
+        let mut actual: libc::c_int = 0;
+        let mut len = size_of_val(&actual) as libc::socklen_t;
+        assert_eq!(unsafe {
+            libc::getsockopt(fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_RCVBUF,
+                (&mut actual as *mut libc::c_int).cast(), &mut len)
+        }, 0);
+        let max: i32 = std::fs::read_to_string("/proc/sys/net/core/rmem_max")
+            .unwrap().trim().parse().unwrap();
+        // Linux doubles the requested accounting size. FORCE can exceed max;
+        // without CAP_NET_ADMIN the fallback is clamped to max, not the default.
+        assert!(actual >= 2 * max.min(128 * 1024 * 1024), "SO_RCVBUF={actual}, rmem_max={max}");
     }
 }

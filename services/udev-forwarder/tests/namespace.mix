@@ -4,7 +4,6 @@
 -- Uses only real udevd bytes; a refused trigger FAILS, never fabricates one.
 $wire = nil
 $seq = nil
-$seen = false
 $sender = nil
 $watch = uevent_watch({group:2, subsystems:["input"]})
 $pid = spawn(["unshare", "-n", "sleep", "30"], {exit_event:true, tag:"test-netns"})
@@ -22,14 +21,16 @@ $monitor = process_watch(["stdbuf", "-oL", "nsenter", "-t", to_string($pid), "-n
 sleep(0.3)
 $devices = glob("/sys/class/input/event*")
 if len($devices) == 0 then die("worker has no input device for real oracle") end
-run_argv_must(["udevadm", "trigger", "--action=change", $devices[0]])
+$device = realpath($devices[0])
+$devpath = slice($device, len("/sys"))
+run_argv_must(["udevadm", "trigger", "--action=change", $device])
 $retry = interval(0.1, "proof-readiness")
 $deadline = timer_once(5, "proof-timeout")
 
 on uevent.received
   global $wire, $seq
   if $event.args.overflow or $event.args.drop != nil or $event.args.closed != nil then die("oracle watch lost an event") end
-  if $wire == nil then
+  if $wire == nil and $event.args.properties.DEVPATH == $devpath and $event.args.properties.ACTION == "change" then
     $wire = $event.args.raw
     $seq = $event.args.properties.SEQNUM
   end

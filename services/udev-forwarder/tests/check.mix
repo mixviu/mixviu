@@ -18,6 +18,11 @@ try
   mkdir($child_env.MIX_ETC)
   copy($lab .. "/test.conf.mix", $child_env.MIX_ETC .. "/udev-forwarder.conf.mix")
   print(run_argv_must([which("unshare"), "-n", $lab .. "/mix", dirname(script_path()) .. "/brokerless.mix", $lab, "default-config"], {env:$child_env, timeout:15}))
+  remove($lab .. "/lxc-info")
+  write_file($lab .. "/lxc-info", "#!" .. $lab .. "/mix\n" .. read_file(dirname(script_path()) .. "/lxc_info_standin.mix"))
+  chmod($lab .. "/lxc-info", "0755")
+  write_file($lab .. "/test.conf.mix", 'cts: ["999991", "999992", "999993"]' .. "\n" .. 'subsystems: ["input"]' .. "\n")
+  print(run_argv_must([which("unshare"), "-n", $lab .. "/mix", dirname(script_path()) .. "/brokerless.mix", $lab, "attach-faults"], {env:$child_env, timeout:15}))
 
   -- Hook tests use a stand-in systemctl; they never operate the worker's unit.
   write_file($lab .. "/systemctl", "#!" .. $lab .. "/mix\nwrite_file(env(\"HOOK_TEST_LOG\"), json_encode(args()))\n")
@@ -33,6 +38,10 @@ try
   if exists($child_env.HOOK_TEST_LOG) then die("pre-start must not restart") end
   $bad = run_argv([$lab .. "/mix", $hook, "bad-id", "pre-stop"], {env:$child_env})
   if $bad.ok or exists($child_env.HOOK_TEST_LOG) then die("invalid CT ID reached systemctl") end
+  for $short in [[], ["102"], ["102", "pre-stop", "extra"]]
+    $bad = run_argv(concat([$lab .. "/mix", $hook], $short), {env:$child_env})
+    if $bad.ok or not contains($bad.stderr, "usage: hook.mix VMID PHASE") or exists($child_env.HOOK_TEST_LOG) then die("hook arity not checked before indexing") end
+  end
   print("PASS: lifecycle phases restart via systemctl; ignored/invalid calls do not")
 catch $err
   run_argv_must(["rm", "-rf", $lab])
