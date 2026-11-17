@@ -31,9 +31,6 @@ try
         ACP_LIFETIME_READY: $ready, ACP_LIFETIME_EXIT: $mode, MIX_STATS: "off"}), timeout: 15, max_output: 200000})
     print($r.stdout .. $r.stderr)
     if not is_file($ready) then raise("ACP_LIFETIME", "client never received initialize: " .. $mode) end
-    if ($mode == "normal" and not $r.ok) or ($mode == "panic" and $r.ok) or ($mode == "timeout" and not $r.timed_out) then
-      raise("ACP_LIFETIME", "fixture did not take expected exit: " .. $mode)
-    end
     $left = workers()
     for $i = 1 to 100
       if len($left) == 0 then break end
@@ -41,6 +38,9 @@ try
       $left = workers()
     end
     if len($left) != 0 then raise("ACP_LIFETIME", "acp_worker survived " .. $mode .. ": " .. json_encode($left)) end
+    if ($mode == "normal" and not $r.ok) or ($mode == "panic" and $r.ok) or ($mode == "timeout" and not $r.timed_out) then
+      raise("ACP_LIFETIME", "fixture did not take expected exit: " .. $mode .. ": " .. json_encode($r))
+    end
     print("PASS no acp_worker survives client " .. $mode)
   end
 finally
