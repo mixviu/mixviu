@@ -5,6 +5,7 @@ use smithay::reexports::calloop::EventLoop;
 mod activation;
 mod test_seat;
 pub(crate) use activation::watcher_failed;
+pub(crate) use activation::watcher_running;
 use std::{cell::RefCell, ffi::OsString, rc::Rc};
 use world::state::{Loop, StatusSession};
 
@@ -35,7 +36,7 @@ pub fn initial_mode() -> Result<InitialOutput, Box<dyn std::error::Error>> {
             return Ok(InitialOutput {
                 mode: smithay::output::Mode {
                     size: (3840, 2160).into(),
-                    refresh: 60_000,
+                    refresh: discovered.as_ref().map_or(60_000, |(mode, _)| mode.refresh),
                 },
                 output: discovered.map(|(_, output)| output),
             });

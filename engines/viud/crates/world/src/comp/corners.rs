@@ -173,16 +173,16 @@ impl Corners {
         let events = self.detector.sample(self.now_ms(), local, attempted);
         if PANEL_INPUT.load(std::sync::atomic::Ordering::Acquire) {
             let after = self.detector.contact_corner();
-            if after != before {
-                if let Some(corner) = after {
-                    self.topics.push(CornerTopic::Input {
-                        output: output.into(),
-                        corner,
-                        phase: "engaged",
-                        button: None,
-                        consumed: false,
-                    });
-                }
+            if after != before
+                && let Some(corner) = after
+            {
+                self.topics.push(CornerTopic::Input {
+                    output: output.into(),
+                    corner,
+                    phase: "engaged",
+                    button: None,
+                    consumed: false,
+                });
             }
             for event in events.iter().flatten() {
                 if let CornerEvent::Entered { corner, .. } = event {

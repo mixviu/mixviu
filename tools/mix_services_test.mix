@@ -1,8 +1,11 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Headless services: owned loopback brokers, fake agents and HTTP fixtures.
-$g = getopt(args(), {mix: {arg: true}, bin: {arg: true}})
+$g = getopt(args(), {mix: {arg: true}, bin: {arg: true}, service: {arg: true}})
 if len($g.errors) != 0 or $g.opts.mix == nil or $g.opts.bin == nil then
-  raise("USAGE", "mix_services_test.mix --mix EXE --bin DIR")
+  raise("USAGE", "mix_services_test.mix --mix EXE --bin DIR [--service NAME]")
+end
+if $g.opts.service != nil and not contains(["agentd", "peersd", "releasesd", "daylight", "scenes"], $g.opts.service) then
+  raise("USAGE", "unknown --service")
 end
 $mix = realpath($g.opts.mix)
 $bin = realpath($g.opts.bin)
@@ -10,6 +13,7 @@ $bundle = run_argv([$mix, "tests/mix_services_bundle_test.mix"], {timeout: 30, s
 if not $bundle.ok then raise("BUNDLE", "installed template closure failed") end
 $failed = []
 for $svc in ["agentd", "peersd", "releasesd", "daylight"]
+  if $g.opts.service != nil and $g.opts.service != $svc then continue end
   $passed_checks = 0
   $failed_checks = 0
   $scripts = 0
@@ -44,7 +48,9 @@ if len($failed) > 0 then raise("SERVICE_TEST", join($failed, ", ")) end
 
 -- The scene loader is a headless Mix citizen too. Exercise its real startup
 -- ordering without bringing up a compositor or touching a desktop Bus.
+if $g.opts.service != nil and $g.opts.service != "scenes" then exit(0) end
 $case = "engines/viud/tests/scenes_boot_upgrade_test.mix"
 $r = run_argv([$mix, $case], {timeout:600, stdout:"inherit", stderr:"inherit",
   env:{MIX_TEST_MIX_EXE:$mix, MIX_TEST_NODED_EXE:$bin .. "/noded", MIX_STATS:"off"}})
+print("SERVICE_TEST " .. json_encode({service:"scenes", case:$case, rc:$r.exit_code, duration_ms:$r.duration_ms}))
 if not $r.ok then raise("SCENES_TEST", "scene loader boot upgrade regression failed") end

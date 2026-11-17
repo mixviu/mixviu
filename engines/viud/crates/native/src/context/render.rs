@@ -164,6 +164,7 @@ pub struct NativeRenderContext {
     pub drm_output_manager: Rc<RefCell<NativeDrmOutputManager>>,
     pub gpu_binding: Rc<RefCell<StateDRMBinding>>,
     pub libinput_context: Libinput,
+    pub libinput_dispatch: std::rc::Rc<std::cell::Cell<bool>>,
     pub tap_subscriptions: TapSubscriptions,
     // No `vulkan_mode` or `VulkanRenderer`: GLES composes and scans out.
     /// Law-7 enablement, live: seeded from
