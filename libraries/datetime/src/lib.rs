@@ -105,7 +105,15 @@ impl<Z: Zone> DateTime<Z> {
         self.inner.year()
     }
     pub fn checked_add_signed(&self, d: Duration) -> Option<Self> {
-        let t = self.inner.checked_add(d.0)?;
+        let mut delta = d.0;
+        if self.leap {
+            let fraction = i128::from(self.inner.nanosecond()) + delta.whole_nanoseconds();
+            if (0..1_000_000_000).contains(&fraction) {
+                return Some(Self::new(self.inner.replace_nanosecond(fraction as u32).ok()?, true));
+            }
+            if fraction < 0 { delta += time::Duration::SECOND; }
+        }
+        let t = self.inner.checked_add(delta)?;
         bounded(t).then(|| Self::new(t, false))
     }
     pub fn to_rfc3339(&self) -> String {
@@ -307,7 +315,18 @@ impl<Z: Zone> Sub<Duration> for DateTime<Z> {
 impl<Z: Zone> Sub for DateTime<Z> {
     type Output = Duration;
     fn sub(self, b: Self) -> Duration {
-        Duration(self.inner - b.inner)
+        // The previous timestamp model represents a leap second as second 59
+        // plus an extra billion fractional nanoseconds. Preserve that model
+        // when comparing signed envelope freshness, including same-second
+        // comparisons and crossing midnight.
+        let order = self.timestamp().rem_euclid(86_400).cmp(&b.timestamp().rem_euclid(86_400));
+        let correction = match (self.leap, b.leap, order) {
+            (_, true, std::cmp::Ordering::Greater) => 1,
+            (true, _, std::cmp::Ordering::Less) => -1,
+            _ => 0,
+        };
+        let extra = i64::from(self.leap) - i64::from(b.leap) + correction;
+        Duration((self.inner - b.inner) + time::Duration::seconds(extra))
     }
 }
 
@@ -662,5 +681,11 @@ mod tests {
         assert_eq!(t.timestamp_millis(), 1_483_228_800_123);
         assert_eq!(t.to_rfc3339(), "2016-12-31T23:59:60.123+00:00");
         assert_eq!(t.format("%S %.3f").to_string(), "60 .123");
+        let regular = DateTime::parse_from_rfc3339("2016-12-31T23:59:59.123Z").unwrap();
+        assert_eq!(t - regular, Duration::seconds(1));
+        assert_eq!((t + Duration::zero()).to_rfc3339(), t.to_rfc3339());
+        assert_eq!((t - Duration::seconds(1)).to_rfc3339(), regular.to_rfc3339());
+        assert_eq!((t + Duration::milliseconds(1)).to_rfc3339(), "2016-12-31T23:59:60.124+00:00");
+        assert_eq!((t + Duration::seconds(1)).to_rfc3339(), "2017-01-01T00:00:00.123+00:00");
     }
 }
