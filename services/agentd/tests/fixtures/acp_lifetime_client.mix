@@ -2,11 +2,35 @@
 $watch = process_watch([env("MIX_TEST_MIX_EXE"), env("ACP_TEST_ADAPTER")],
   {stdin: "pipe", stderr: "inherit", overflow: "block"})
 $sent = process_write($watch, json_encode({jsonrpc: "2.0", id: 1, method: "initialize", params: {protocolVersion: 1}}) .. "\n")
+if env("ACP_LIFETIME_EXIT") == "panic" then
+  -- Handler panics are contained by --serve. Panic during top-level init
+  -- instead, once the actual worker has completed its engine handoff.
+  $worker = dirname(realpath(env("ACP_TEST_ADAPTER"))) .. "/acp_worker.mix"
+  for $attempt = 1 to 100
+    for $path in glob("/proc/*/cmdline")
+      $argv = []
+      try
+        if not contains(split(read_file(dirname($path) .. "/environ"), "\0"), "ACP_LIFETIME_READY=" .. env("ACP_LIFETIME_READY")) then continue end
+        $argv = split(read_file($path), "\0")
+      catch $message
+        continue
+      end
+      if not contains($argv, $worker) then continue end
+      $name = $argv[index_of($argv, "--name") + 1]
+      send $name INFO timeout=0.2
+      if $rc == 0 then
+        write_file(env("ACP_LIFETIME_READY"), "ready")
+        panic("ACP lifetime fixture")
+      end
+    end
+    sleep(0.05)
+  end
+  raise("ACP_LIFETIME", "worker never started before panic")
+end
 on proc.line
   $frame = json_parse($event.args.line)
   if $frame.id == 1 and $frame.result.protocolVersion == 1 then
     write_file(env("ACP_LIFETIME_READY"), "ready")
     if env("ACP_LIFETIME_EXIT") == "normal" then exit(0) end
-    if env("ACP_LIFETIME_EXIT") == "panic" then panic("ACP lifetime fixture") end
   end
 end
