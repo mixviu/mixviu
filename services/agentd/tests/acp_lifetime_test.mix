@@ -10,7 +10,7 @@ fn workers()
   $found = []
   for $path in glob("/proc/*/cmdline")
     try
-      if not contains(split(read_file($path), "\0"), $here .. "/../scripts/acp_worker.mix") then continue end
+      if not contains(split(read_file($path), "\0"), realpath($here .. "/../scripts/acp_worker.mix")) then continue end
       $proc = dirname($path)
       if not contains(split(read_file($proc .. "/environ"), "\0"), "MIX_NODE_CONFIG=" .. $bus.conf) then continue end
       $rest = split(trim(slice(read_file($proc .. "/stat"), last_index_of(read_file($proc .. "/stat"), ")") + 2)), " ")
