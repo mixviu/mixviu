@@ -147,13 +147,16 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
 }
 
 fn assert_recorded_colours(path: &Path, expected: &[u32]) -> u64 {
-    let manifest: Value = serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
     let width = manifest["width"].as_u64().unwrap() as usize;
     let height = manifest["height"].as_u64().unwrap() as usize;
     let at = ((height * 3 / 4) * width + width * 3 / 4) * 4;
     let mut found = 0;
     let (_, records) = vfl_visit(path, |pixels| {
-        if found < expected.len() && pixels[at..at + 4] == expected[found].to_le_bytes() { found += 1; }
+        if found < expected.len() && pixels[at..at + 4] == expected[found].to_le_bytes() {
+            found += 1;
+        }
     });
     assert_eq!(found, expected.len(), "VFL lost an admitted colour change");
     records
@@ -832,7 +835,10 @@ fn record_idle_output_lifecycle_and_clock() {
     let mut bounded_pattern = Pattern::new(connect(&mut process));
     bounded_pattern.wait_callback(0);
     let row = bus.window();
-    bus.call("comp.window.fullscreen", place_args(&row, json!({"output":"headless-0"})));
+    bus.call(
+        "comp.window.fullscreen",
+        place_args(&row, json!({"output":"headless-0"})),
+    );
     bounded_pattern.state.size = (1280, 720);
     bounded_pattern.solid_buffer(0xff103050);
     let previous = bounded_pattern.state.callbacks;
@@ -842,7 +848,9 @@ fn record_idle_output_lifecycle_and_clock() {
     let mut admitted_colours = vec![0xff103050];
     'changes: for colour in [0xff507090, 0xff90b0d0, 0xffd0f010] {
         let before = bus.call("comp.record.status", json!({"session":next["session"]}));
-        if before["state"] != "recording" { break; }
+        if before["state"] != "recording" {
+            break;
+        }
         bounded_pattern.solid_buffer(colour);
         let previous = bounded_pattern.state.callbacks;
         bounded_pattern.commit(true);
@@ -857,8 +865,13 @@ fn record_idle_output_lifecycle_and_clock() {
             }
             // A commit can land after the one-second take seals on a loaded
             // runner. Only acknowledged readbacks belong to its expectation.
-            if status["state"] != "recording" { break 'changes; }
-            assert!(Instant::now() < deadline, "bounded capture never advanced: {status}");
+            if status["state"] != "recording" {
+                break 'changes;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "bounded capture never advanced: {status}"
+            );
             thread::sleep(Duration::from_millis(10));
         }
     }
@@ -875,7 +888,10 @@ fn record_idle_output_lifecycle_and_clock() {
         thread::sleep(Duration::from_millis(20));
     }
     let bounded = bus.call("comp.record.stop", json!({"session":next["session"]}));
-    let records = assert_recorded_colours(std::path::Path::new(next["path"].as_str().unwrap()), &admitted_colours);
+    let records = assert_recorded_colours(
+        std::path::Path::new(next["path"].as_str().unwrap()),
+        &admitted_colours,
+    );
     assert_eq!(Some(records), bounded["frames"].as_u64());
     assert_eq!(bounded["dropped"], 0);
     assert!(
@@ -1029,7 +1045,10 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
     let (_, _, owned_active) = ppm(&bus, &process, "owned-active", None);
     let expected_active = owned_active.clone();
-    bus.call("comp.window.fullscreen", place_args(&window, json!({"output":"headless-0"})));
+    bus.call(
+        "comp.window.fullscreen",
+        place_args(&window, json!({"output":"headless-0"})),
+    );
     pattern.state.size = (1280, 720);
     pattern.solid_buffer(0xff103050);
     let previous = pattern.state.callbacks;
@@ -1044,8 +1063,14 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     );
     let mut colours = vec![0xff103050];
     for index in 0..3 {
-        let before = bus.call("comp.record.status", json!({"session":recording["session"]}));
-        assert_eq!(before["state"], "recording", "pause take sealed before its explicit stop: {before}");
+        let before = bus.call(
+            "comp.record.status",
+            json!({"session":recording["session"]}),
+        );
+        assert_eq!(
+            before["state"], "recording",
+            "pause take sealed before its explicit stop: {before}"
+        );
         edge(b'P');
         assert_eq!(bus.call("comp.session.get", json!({}))["active"], false);
         thread::sleep(Duration::from_millis(1100));
@@ -1061,10 +1086,21 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
         );
         let until = Instant::now() + Duration::from_secs(10);
         loop {
-            let status = bus.call("comp.record.status", json!({"session":recording["session"]}));
-            assert_eq!(status["state"], "recording", "pause take unexpectedly sealed: {status}");
-            if status["readbacks"].as_u64().unwrap() > before["readbacks"].as_u64().unwrap() + 1 { break; }
-            assert!(Instant::now() < until, "paused change never sampled: {status}");
+            let status = bus.call(
+                "comp.record.status",
+                json!({"session":recording["session"]}),
+            );
+            assert_eq!(
+                status["state"], "recording",
+                "pause take unexpectedly sealed: {status}"
+            );
+            if status["readbacks"].as_u64().unwrap() > before["readbacks"].as_u64().unwrap() + 1 {
+                break;
+            }
+            assert!(
+                Instant::now() < until,
+                "paused change never sampled: {status}"
+            );
             pattern.pump();
             thread::sleep(Duration::from_millis(10));
         }

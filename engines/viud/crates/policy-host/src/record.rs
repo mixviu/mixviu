@@ -1164,12 +1164,18 @@ mod tests {
         let (_probe_tx, probe_rx) = std::sync::mpsc::channel();
         s.borrow_mut().probe = Some(probe_rx);
         screencopy::file::session_paused(true);
-        tick(&s, || panic!("a preflight pause must not need a capture tick"));
+        tick(&s, || {
+            panic!("a preflight pause must not need a capture tick")
+        });
         let fence = screencopy::file::testing::stall_next_read();
         submit(&s, &mut renderer, &outputs[0]);
         std::thread::sleep(Duration::from_millis(1100));
         screencopy::file::poll(&mut renderer, &outputs[1]);
-        assert_eq!(screencopy::file::testing::read_count(), 1, "reads admitted during a preflight pause inherit the paused clock");
+        assert_eq!(
+            screencopy::file::testing::read_count(),
+            1,
+            "reads admitted during a preflight pause inherit the paused clock"
+        );
         let reply = stop(&s, true);
         assert_eq!(
             screencopy::file::testing::read_count(),
@@ -1177,7 +1183,11 @@ mod tests {
             "discard must release immediately"
         );
         assert_eq!(fence.load(Ordering::Relaxed), 1);
-        assert_eq!(screencopy::file::testing::paused_count(), 0, "stopping a paused take must retire its output entries");
+        assert_eq!(
+            screencopy::file::testing::paused_count(),
+            0,
+            "stopping a paused take must retire its output entries"
+        );
         await_reply(&mut events, &reply);
         screencopy::file::session_paused(false);
 
@@ -1243,12 +1253,30 @@ mod tests {
         install_stop_waker(&session, events.handle());
         let began = Instant::now();
         assert!(stop_stream(&mut session.borrow_mut(), false));
-        session.borrow_mut().recording.as_mut().unwrap().delay_finaliser_for_test(Duration::from_millis(650));
-        while session.borrow().recording.as_ref().unwrap().terminal.is_none() {
+        session
+            .borrow_mut()
+            .recording
+            .as_mut()
+            .unwrap()
+            .delay_finaliser_for_test(Duration::from_millis(650));
+        while session
+            .borrow()
+            .recording
+            .as_ref()
+            .unwrap()
+            .terminal
+            .is_none()
+        {
             assert!(began.elapsed() < Duration::from_secs(2));
-            events.dispatch(Some(Duration::from_millis(10)), &mut ()).unwrap();
+            events
+                .dispatch(Some(Duration::from_millis(10)), &mut ())
+                .unwrap();
         }
-        assert!(began.elapsed() < Duration::from_millis(850), "650ms finaliser reply took {:?}", began.elapsed());
+        assert!(
+            began.elapsed() < Duration::from_millis(850),
+            "650ms finaliser reply took {:?}",
+            began.elapsed()
+        );
         drop(session);
         std::fs::remove_dir_all(root).unwrap();
     }

@@ -63,14 +63,31 @@ thread_local! {
 
 /// Session authority, independent of recording admission and pacing timers.
 pub fn session_paused(paused: bool) {
-    if SESSION_PAUSED.replace(paused) == paused { return; }
+    if SESSION_PAUSED.replace(paused) == paused {
+        return;
+    }
     if paused {
-        let mut names = REQUESTS.with_borrow(|requests| requests.iter().map(|r| r.output.clone()).collect::<Vec<_>>());
-        READS.with_borrow(|reads| names.extend(reads.iter().flat_map(|r| r.requests.iter().map(|r| r.output.clone()))));
-        for name in names { set_paused_name(name, true); }
+        let mut names = REQUESTS.with_borrow(|requests| {
+            requests
+                .iter()
+                .map(|r| r.output.clone())
+                .collect::<Vec<_>>()
+        });
+        READS.with_borrow(|reads| {
+            names.extend(
+                reads
+                    .iter()
+                    .flat_map(|r| r.requests.iter().map(|r| r.output.clone())),
+            )
+        });
+        for name in names {
+            set_paused_name(name, true);
+        }
     } else {
         let names = PAUSED.with_borrow(|outputs| outputs.keys().cloned().collect::<Vec<_>>());
-        for name in names { set_paused_name(name, false); }
+        for name in names {
+            set_paused_name(name, false);
+        }
     }
 }
 
@@ -143,13 +160,16 @@ pub mod testing {
     };
     pub fn render_node() -> String {
         std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| {
-            smithay::backend::egl::EGLDevice::enumerate().ok()
+            smithay::backend::egl::EGLDevice::enumerate()
+                .ok()
                 .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "/dev/dri/no-render-device".into())
         })
     }
-    pub fn paused_count() -> usize { PAUSED.with_borrow(|outputs| outputs.len()) }
+    pub fn paused_count() -> usize {
+        PAUSED.with_borrow(|outputs| outputs.len())
+    }
     thread_local! {
         static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
     }
@@ -207,7 +227,9 @@ pub fn enqueue(
     spec: CaptureFrameSpec,
     answer: impl FnOnce(Result<Value, ControlReply>) + 'static,
 ) -> u64 {
-    if SESSION_PAUSED.get() { set_paused(output, true); }
+    if SESSION_PAUSED.get() {
+        set_paused(output, true);
+    }
     let id = NEXT_ID.with(|next| {
         let id = next.get();
         next.set(id.wrapping_add(1));
@@ -340,7 +362,12 @@ pub fn prepare_raw_pool(first: &std::sync::Arc<Vec<u8>>) {
     PIXEL_POOL.with_borrow_mut(|pool| {
         // Stitched multi-target frames have their own allocation. Warming from
         // one would copy bytes that this per-source conversion pool cannot use.
-        if !pool.iter().any(|frame| std::sync::Arc::ptr_eq(frame, first)) { return; }
+        if !pool
+            .iter()
+            .any(|frame| std::sync::Arc::ptr_eq(frame, first))
+        {
+            return;
+        }
         while pool.len() < 3 {
             pool.push(std::sync::Arc::new(first.as_ref().clone()));
         }
@@ -362,10 +389,16 @@ pub fn release_raw(prefix: &str) {
     });
     // Completed reads no longer have tokens in READS, so prune idle outputs
     // too. New reads inherit SESSION_PAUSED directly on admission.
-    PAUSED.with_borrow_mut(|outputs| outputs.retain(|name, _| {
-        REQUESTS.with_borrow(|requests| requests.iter().any(|r| &r.output == name))
-            || READS.with_borrow(|reads| reads.iter().any(|read| read.requests.iter().any(|r| &r.output == name)))
-    }));
+    PAUSED.with_borrow_mut(|outputs| {
+        outputs.retain(|name, _| {
+            REQUESTS.with_borrow(|requests| requests.iter().any(|r| &r.output == name))
+                || READS.with_borrow(|reads| {
+                    reads
+                        .iter()
+                        .any(|read| read.requests.iter().any(|r| &r.output == name))
+                })
+        })
+    });
     RELEASE_POOL.set(true);
     clear_idle_pool();
 }

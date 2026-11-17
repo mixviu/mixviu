@@ -230,10 +230,22 @@ struct FinaliseOutcome {
 impl FinaliseOutcome {
     fn complete(&self, result: FinaliseResult) -> bool {
         let _ = self.result.set(result);
-        self.state.compare_exchange(FINALISING, COMPLETE, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Acquire).is_ok()
+        self.state
+            .compare_exchange(
+                FINALISING,
+                COMPLETE,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_ok()
     }
     fn timeout(&self) -> bool {
-        match self.state.compare_exchange(FINALISING, TIMED_OUT, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Acquire) {
+        match self.state.compare_exchange(
+            FINALISING,
+            TIMED_OUT,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        ) {
             Ok(_) => true,
             Err(state) => state == TIMED_OUT,
         }
@@ -254,7 +266,9 @@ fn finalise_files(
         let cleanup = files.cleanup();
         result.and(cleanup)
     } else if failed {
-        result.and(Err("recording failed; staged VFL retained for recovery".into()))
+        result.and(Err(
+            "recording failed; staged VFL retained for recovery".into()
+        ))
     } else if outcome.state.load(std::sync::atomic::Ordering::Acquire) == TIMED_OUT {
         Err("encoder finaliser timed out; staged VFL retained for recovery".into())
     } else {
@@ -312,7 +326,9 @@ impl Recording {
     #[cfg(feature = "test-support")]
     pub fn delay_finaliser_for_test(&mut self, delay: std::time::Duration) {
         assert!(self.encoder.is_none());
-        if let Some(join) = self.finaliser.take() { join.join().unwrap(); }
+        if let Some(join) = self.finaliser.take() {
+            join.join().unwrap();
+        }
         self.finalise_outcome = Default::default();
         let outcome = self.finalise_outcome.clone();
         let (tx, rx) = channel();
@@ -499,7 +515,14 @@ impl Recording {
                 Some(error) => encoder.finish_failed(error),
                 None => encoder.finish_result(),
             };
-            let reply = finalise_files(&files, &outcome, discard, failed, result.map(|_| ()), |published| files.publish_tracked(published));
+            let reply = finalise_files(
+                &files,
+                &outcome,
+                discard,
+                failed,
+                result.map(|_| ()),
+                |published| files.publish_tracked(published),
+            );
             let _ = tx.send(reply);
         }));
         true
@@ -533,12 +556,16 @@ impl Recording {
                 self.finaliser.take();
                 if self.finalise_outcome.timeout() {
                     (
-                    Err("encoder finaliser timed out after 30 seconds".into()),
-                    Some(self.files.video.clone()),
+                        Err("encoder finaliser timed out after 30 seconds".into()),
+                        Some(self.files.video.clone()),
                     )
                 } else {
                     // Completion won even if its channel send has not run yet.
-                    self.finalise_outcome.result.get().expect("completed outcome").clone()
+                    self.finalise_outcome
+                        .result
+                        .get()
+                        .expect("completed outcome")
+                        .clone()
                 }
             }
         };
@@ -551,7 +578,12 @@ impl Recording {
         self.terminal = Some(
             json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
-        if self.finalise_outcome.state.load(std::sync::atomic::Ordering::Acquire) == TIMED_OUT {
+        if self
+            .finalise_outcome
+            .state
+            .load(std::sync::atomic::Ordering::Acquire)
+            == TIMED_OUT
+        {
             let terminal = self.terminal.as_mut().unwrap();
             terminal["manual_cleanup_required"] = json!(true);
             terminal["recovery_paths"] = json!([self.files.video, self.files.path]);
@@ -608,8 +640,17 @@ mod file_tests {
                 .contains("timed out after 30 seconds")
         );
         assert!(r.finaliser.is_none());
-        assert_eq!(r.terminal.as_ref().unwrap()["manual_cleanup_required"], true);
-        assert_eq!(r.terminal.as_ref().unwrap()["recovery_paths"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            r.terminal.as_ref().unwrap()["manual_cleanup_required"],
+            true
+        );
+        assert_eq!(
+            r.terminal.as_ref().unwrap()["recovery_paths"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
@@ -625,29 +666,49 @@ mod file_tests {
             let worker_files = files.clone();
             let worker_outcome = outcome.clone();
             let worker = std::thread::spawn(move || {
-                finalise_files(&worker_files, &worker_outcome, false, false, Ok(()), |published| {
-                    if stop_in_sync {
-                        worker_files.publish_with(published, |_| {
+                finalise_files(
+                    &worker_files,
+                    &worker_outcome,
+                    false,
+                    false,
+                    Ok(()),
+                    |published| {
+                        if stop_in_sync {
+                            worker_files.publish_with(published, |_| {
+                                entered.send(()).unwrap();
+                                blocked.recv().unwrap();
+                                Ok(())
+                            })
+                        } else {
                             entered.send(()).unwrap();
                             blocked.recv().unwrap();
-                            Ok(())
-                        })
-                    } else {
-                        entered.send(()).unwrap();
-                        blocked.recv().unwrap();
-                        worker_files.publish_tracked(published)
-                    }
-                })
+                            worker_files.publish_tracked(published)
+                        }
+                    },
+                )
             });
             wait.recv().unwrap();
             assert!(outcome.timeout());
             release.send(()).unwrap();
             worker.join().unwrap();
-            assert_eq!(outcome.state.load(std::sync::atomic::Ordering::Acquire), TIMED_OUT);
+            assert_eq!(
+                outcome.state.load(std::sync::atomic::Ordering::Acquire),
+                TIMED_OUT
+            );
             assert!(!std::path::Path::new(&files.path).exists());
             assert!(std::path::Path::new(&files.video).exists());
             // A late discard still removes its private files after timeout.
-            finalise_files(&files, &FinaliseOutcome { state: std::sync::atomic::AtomicU8::new(TIMED_OUT), result: Default::default() }, true, false, Ok(()), |_| panic!("discard must not publish"));
+            finalise_files(
+                &files,
+                &FinaliseOutcome {
+                    state: std::sync::atomic::AtomicU8::new(TIMED_OUT),
+                    result: Default::default(),
+                },
+                true,
+                false,
+                Ok(()),
+                |_| panic!("discard must not publish"),
+            );
             assert!(!std::path::Path::new(&files.video).exists());
             // A durable result that wins before the channel send cannot be
             // changed into a timeout by the compositor.
