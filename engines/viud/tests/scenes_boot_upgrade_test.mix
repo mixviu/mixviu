@@ -194,6 +194,7 @@ print(json_encode({rc:$rc, value:$v}))
   $gated = replace($gated, 'on scenes.upgrade.retry\n', 'on scenes.upgrade.retry\n  write_file($ROOT .. "/.task-" .. to_string($event.args.seq) .. ".done", "")\n')
   $gated = $gated .. '
 on fixture.retry
+  if $event.args.drop == true then $state.upgrades = delete($state.upgrades, "gamma") end
   reply(0, json_encode({seq:$state.upgrade_seq, delay:$state.upgrade_delay, armed:$state.upgrade_armed}))
 end
 '
@@ -211,15 +212,19 @@ end
   check($old.delay == 128 and $old.armed, "old ladder reached its long final wait")
   $old_gate = $tmp .. "/scenes/.task-" .. to_string($old.seq)
   wait_file($old_gate .. ".waiting")
+  check(call("scenes", "fixture.retry", {drop:true}).rc == 0 and rows().gamma.upgrade == nil, "new work starts without a pending flag")
   check(call("scenes", "scenes.upgrade").rc == 0, "manual upgrade during long wait")
+  check(rows().gamma.upgrade.retryable == true, "manual pass newly flags work")
   $fresh = retry_snapshot()
   check($fresh.seq != $old.seq and $fresh.delay == 2 and $fresh.armed, "manual pass arms a fresh first rung")
   $fresh_gate = $tmp .. "/scenes/.task-" .. to_string($fresh.seq)
   wait_file($fresh_gate .. ".waiting")
+  $retry_log = len(read_file($tmp .. "/scenes.log"))
   write_file($fresh_gate .. ".release", "")
   wait_file($fresh_gate .. ".done")
   $after = retry_snapshot()
   check($after.delay == 4 and $after.armed, "fresh retry runs before old wait is released")
+  check(contains(slice(read_file($tmp .. "/scenes.log"), $retry_log), '"scene":"gamma"'), "fresh retry takes up newly flagged work")
   $before = read_file($tmp .. "/scenes.log")
   write_file($old_gate .. ".release", "")
   wait_file($old_gate .. ".done")
