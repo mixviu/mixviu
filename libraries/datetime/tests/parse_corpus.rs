@@ -6,6 +6,12 @@ use datetime::{DateTime, NaiveDate, NaiveDateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 
 #[test]
+fn offset_without_pattern_space_accepts_input_whitespace() {
+    let t = DateTime::parse_from_str("2023-01-07 12:34:56 +0000", "%Y-%m-%d %H:%M:%S%z").unwrap();
+    assert_eq!(t.timestamp(), 1_673_094_896);
+}
+
+#[test]
 fn pre_migration_parse_corpus() {
     let rows: Vec<Value> = serde_json::from_str(include_str!("data/parse.json")).unwrap();
     for row in rows {

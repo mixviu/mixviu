@@ -10,6 +10,10 @@ use uuid::Uuid;
 use super::types::*;
 use crate::db::{self, Db};
 
+#[cfg(test)]
+#[path = "calendar_compat_tests.rs"]
+mod compat_tests;
+
 fn invalid_date(field: &str) -> JmapMethodError {
     JmapMethodError {
         error_type: "invalidArguments".into(),
