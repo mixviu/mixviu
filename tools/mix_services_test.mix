@@ -52,4 +52,5 @@ if $g.opts.service != nil and $g.opts.service != "scenes" then exit(0) end
 $case = "engines/viud/tests/scenes_boot_upgrade_test.mix"
 $r = run_argv([$mix, $case], {timeout:600, stdout:"inherit", stderr:"inherit",
   env:{MIX_TEST_MIX_EXE:$mix, MIX_TEST_NODED_EXE:$bin .. "/noded", MIX_STATS:"off"}})
+print("SERVICE_TEST " .. json_encode({service:"scenes", case:$case, rc:$r.exit_code, duration_ms:$r.duration_ms}))
 if not $r.ok then raise("SCENES_TEST", "scene loader boot upgrade regression failed") end
