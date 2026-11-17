@@ -5233,18 +5233,26 @@ fn spawn_detached(mut command: std::process::Command) -> MixResult<Option<Value>
 }
 
 fn spawn_route_journal(command: &mut std::process::Command, identifier: &str, path: &str) {
-    match spawn_journal_at(identifier, path) {
+    spawn_route_journal_with(command, identifier, || spawn_journal_at(identifier, path));
+}
+
+fn spawn_route_journal_with(
+    command: &mut std::process::Command,
+    identifier: &str,
+    open: impl FnOnce() -> std::io::Result<std::os::fd::OwnedFd>,
+) {
+    use std::io::Write;
+    match open() {
         Ok(fd) => {
             command.stderr(fd);
         }
         Err(error) => {
-            eprintln!("spawn: journal unavailable for {identifier}; keeping stderr route: {error}")
+            let _ = writeln!(std::io::stderr(), "spawn: journal unavailable for {identifier}; keeping stderr route: {error}");
         }
     }
 }
 
 fn spawn_journal_at(identifier: &str, path: &str) -> std::io::Result<std::os::fd::OwnedFd> {
-    use std::io::Write;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     use std::os::unix::net::UnixStream;
     let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
@@ -5281,7 +5289,14 @@ fn spawn_journal_at(identifier: &str, path: &str) -> std::io::Result<std::os::fd
     {
         return Err(std::io::Error::last_os_error());
     }
-    let mut stream = UnixStream::from(fd);
+    spawn_journal_header(identifier, UnixStream::from(fd))
+}
+
+fn spawn_journal_header(
+    identifier: &str,
+    mut stream: std::os::unix::net::UnixStream,
+) -> std::io::Result<std::os::fd::OwnedFd> {
+    use std::io::Write;
     stream.set_nonblocking(false)?;
     stream.set_write_timeout(Some(std::time::Duration::from_millis(200)))?;
     // systemd v257, journal-send.c, sd_journal_stream_fd[_with_namespace]:
@@ -42346,6 +42361,66 @@ mod strict_write_and_bool_option_tests {
 
 #[cfg(test)]
 mod spawn_journal_tests {
+    #[test]
+    fn header_timeout_preserves_child_stderr_and_closes_socket() {
+        use std::io::{Read, Write};
+        use std::os::unix::net::{UnixListener, UnixStream};
+        use std::time::{Duration, Instant};
+        let dir = std::env::temp_dir().join(format!("mix-journal-timeout-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("journal");
+        let listener = UnixListener::bind(&path).unwrap();
+        let mut stream = UnixStream::connect(&path).unwrap();
+        let (mut peer, _) = listener.accept().unwrap();
+        // The accepted peer never reads during setup. Saturate the sender first:
+        // a valid (at most 255-byte) identifier alone cannot fill a Unix socket.
+        stream.set_nonblocking(true).unwrap();
+        loop {
+            match stream.write(&[b'x'; 4096]) {
+                Ok(n) => assert!(n > 0),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => panic!("prefill: {e}"),
+            }
+        }
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+        child.args(["--exact", "builtins::spawn_journal_tests::child_stderr_marker", "--ignored", "--nocapture"]);
+        child.stderr(std::process::Stdio::piped());
+        let start = Instant::now();
+        super::spawn_route_journal_with(&mut child, "term", || {
+            let error = super::spawn_journal_header("term", stream).unwrap_err();
+            assert!(matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut), "{error}");
+            Err(error)
+        });
+        assert!(start.elapsed() >= Duration::from_millis(150));
+        let output = child.output().unwrap();
+        assert!(output.status.success());
+        assert!(String::from_utf8(output.stderr).unwrap().contains("child-fd-two-marker"));
+        // EOF, rather than a read timeout, proves setup dropped its socket even
+        // while Command is alive. No fd count races with other harness threads.
+        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let mut received = Vec::new();
+        peer.read_to_end(&mut received).unwrap();
+        assert!(!received.is_empty());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn unavailable_journal_with_closed_launcher_stderr_still_spawns() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "builtins::spawn_journal_tests::closed_stderr_launcher", "--ignored", "--nocapture"])
+            .output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
+
+    #[test]
+    #[ignore = "helper subprocess: closes fd 2 without affecting the parent harness"]
+    fn closed_stderr_launcher() {
+        // SAFETY: only this dedicated subprocess loses stderr.
+        assert_eq!(unsafe { libc::close(2) }, 0);
+        unavailable_journal_preserves_child_stderr_route();
+    }
+
     #[test]
     fn unavailable_journal_preserves_child_stderr_route() {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
