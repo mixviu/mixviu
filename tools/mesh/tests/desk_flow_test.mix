@@ -158,6 +158,10 @@ check(flow($ctbase,$program,$execute).verified,"CT typed flow failed")
 $ctbase.endpoint = "192.0.2.1:51822"
 $ctbase.hub_key = $base.genesis
 $ctbase.subnet = "192.0.2.0/24"
+$ctbase.wg_keys = [$base.genesis]
+$wg = $prep.wireguard_text($ctbase,$base.genesis,$base.genesis)
+check(contains($wg,"Address = 192.0.2.14/32") and contains($wg,"Endpoint = 192.0.2.1:51822") and contains($wg,"AllowedIPs = 192.0.2.0/24"),"desk WG recipe")
+check(refused(fn()=$prep.wireguard_text($ctbase,$base.genesis,"wrong-key")),"unadmitted WG key accepted")
 $files = $prep.files($ctbase)
 check(len($files)==3 and $files[2].bytes == "[Service]\nEnvironmentFile=/opt/mix/var/lib/example/desk-bus/etc/noded/service.env\n","preparation drop-in")
 $ctprops = $properties

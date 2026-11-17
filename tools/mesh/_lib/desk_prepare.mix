@@ -52,6 +52,13 @@ fn ensure_file($path,$bytes,$gid,$mode)
   end
 end
 
+fn wireguard_text($request,$key,$public)
+  files($request)
+  if type($request.wg_keys) != "list" or not contains($request.wg_keys,$public) then $w.refuse("local WireGuard key differs from signed inventory") end
+  if not re_match($key,"^[A-Za-z0-9+/]{43}=$") then $w.refuse("invalid local WireGuard key") end
+  return "[Interface]\nAddress = " .. $request.ip .. "/32\nPrivateKey = " .. $key .. "\n\n[Peer]\nPublicKey = " .. $request.hub_key .. "\nEndpoint = " .. $request.endpoint .. "\nAllowedIPs = " .. $request.subnet .. "\nPersistentKeepalive = 25\n"
+end
+
 fn apply($request)
   $planned = files($request)
   $t = $request.target
@@ -89,8 +96,7 @@ fn apply($request)
   if not $key_stat.present or $key_stat.uid != 0 or $key_stat.perm != 0o600 then $w.refuse("wg1 key must already be root-owned 0600") end
   $key = trim(read_file($key_path))
   $pub = trim(run_argv_must(["wg","pubkey"],{stdin:$key .. chr(10),timeout:10}))
-  if not contains($request.wg_keys,$pub) then $w.refuse("local WireGuard key differs from signed inventory") end
-  $wg = "[Interface]\nAddress = " .. $request.ip .. "/32\nPrivateKey = " .. $key .. "\n\n[Peer]\nPublicKey = " .. $request.hub_key .. "\nEndpoint = " .. $request.endpoint .. "\nAllowedIPs = " .. $request.subnet .. "\nPersistentKeepalive = 25\n"
+  $wg = wireguard_text($request,$key,$pub)
   ensure_file("/etc/wireguard/wg1.conf",$wg,0,0o600)
   run_argv_must(["systemctl","daemon-reload"],{timeout:10})
   $w.service_binding($t,$gid)
