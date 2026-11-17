@@ -998,7 +998,8 @@ impl Engine<'_> {
             world::comp::session_lock::active(self.lp),
         ) {
             Ok(effects) => effects,
-            Err((refusal, effects)) => {
+            Err(error) => {
+                let (refusal, effects) = *error;
                 policy_host::control::execute(self.lp, effects);
                 reply.send(refusal);
                 return;
@@ -1050,7 +1051,7 @@ impl CompEngine for Engine<'_> {
             identity(self.context, self.binding_profile),
             scopes,
         );
-        snapshot.session = Some(self.session);
+        snapshot.session = Some(self.session.clone());
         Some(snapshot)
     }
 

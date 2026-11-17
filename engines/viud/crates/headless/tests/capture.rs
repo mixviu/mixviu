@@ -932,8 +932,7 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     edge(b'A'); // first two fake seat opens fail, then retry without another edge
     assert!(start.elapsed() >= Duration::from_millis(650));
     assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
-    let (_, _, owned_active) = ppm(&bus, &process, "owned-active", None);
-    let expected_active = owned_active.clone();
+    ppm(&bus, &process, "owned-active", None);
     for index in 0..3 {
         edge(b'P');
         assert_eq!(bus.call("comp.session.get", json!({}))["active"], false);
@@ -966,6 +965,7 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
         bus.call("comp.session.get", json!({}))["render_state"],
         "offscreen-retrying"
     );
+    edge(b'R');
     let until = Instant::now() + Duration::from_secs(4);
     while bus.call("comp.session.get", json!({}))["render_state"] != "offscreen" {
         assert!(Instant::now() < until);
@@ -973,8 +973,9 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     }
     ppm(&bus, &process, "after-watcher-recovery", None);
     assert_eq!(
-        owned_active, expected_active,
-        "copied capture pixels survive all buffer reuse and transitions"
+        before.2,
+        ppm(&bus, &process, "after-switch-loop", None).2,
+        "the static scene survives all buffer reuse and transitions"
     );
     assert_eq!(
         before.2,
