@@ -624,7 +624,11 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         if finish_recording(&mut s) {
             return;
         }
-        if s.recording.as_ref().is_some_and(|r| r.terminal.is_some() || !r.is_recording()) || s.failed.is_some() {
+        if s.recording
+            .as_ref()
+            .is_some_and(|r| r.terminal.is_some() || !r.is_recording())
+            || s.failed.is_some()
+        {
             return;
         }
         if let Some(until) = s.drain_until {
