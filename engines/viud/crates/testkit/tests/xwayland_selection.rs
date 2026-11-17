@@ -50,11 +50,13 @@ fn agent_focus_excludes_xwayland_selection_bridge() {
     h.roundtrip_client(replacement);
     h.mark_client_xwayland(replacement);
     h.focus_agent_keyboard_client(bridge, &surface);
+    h.roundtrip_client(bridge);
     assert!(h.extra_clients[bridge].state.clipboard.primary_selections[&1].is_some());
     h.focus_agent_keyboard_client(replacement, &replacement_surface);
     h.roundtrip_client(bridge);
     let _refused = h.extra_clients[bridge].set_primary_selection(1, b"stale-overwrite");
     h.roundtrip_client(bridge);
+    h.roundtrip_client(replacement);
     assert!(
         h.extra_clients[replacement]
             .state

@@ -42364,16 +42364,40 @@ mod strict_write_and_bool_option_tests {
 
 #[cfg(test)]
 mod spawn_journal_tests {
+    struct TestDir(std::path::PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            loop {
+                let path = std::env::temp_dir().join(format!("mix-journal-{:016x}", rand::random::<u64>()));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => return Self(path),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => panic!("create journal test directory: {e}"),
+                }
+            }
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[test]
     fn header_timeout_preserves_child_stderr_and_closes_socket() {
         use std::io::{Read, Write};
         use std::os::unix::net::{UnixListener, UnixStream};
         use std::time::{Duration, Instant};
-        let dir = std::env::temp_dir().join(format!("mix-journal-timeout-{}", std::process::id()));
-        std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("journal");
+        let dir = TestDir::new();
+        let path = dir.0.join("journal");
         let listener = UnixListener::bind(&path).unwrap();
         let mut stream = UnixStream::connect(&path).unwrap();
+        use std::os::fd::AsRawFd;
+        // SAFETY: stream owns this fd. Check the fixture cannot survive exec.
+        let flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFD) };
+        assert!(flags >= 0 && flags & libc::FD_CLOEXEC != 0);
         let (mut peer, _) = listener.accept().unwrap();
         // The accepted peer never reads during setup. Saturate the sender first:
         // a valid (at most 255-byte) identifier alone cannot fill a Unix socket.
@@ -42406,42 +42430,52 @@ mod spawn_journal_tests {
             Err(error)
         });
         assert!(start.elapsed() >= Duration::from_millis(150));
-        let output = child.output().unwrap();
-        assert!(output.status.success());
-        assert!(
-            String::from_utf8(output.stderr)
-                .unwrap()
-                .contains("child-fd-two-marker")
-        );
-        // EOF, rather than a read timeout, proves setup dropped its socket even
-        // while Command is alive. No fd count races with other harness threads.
+        // EOF before spawning proves failed setup closed the parent's socket;
+        // the CLOEXEC assertion above independently covers exec inheritance.
         peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let mut received = Vec::new();
         peer.read_to_end(&mut received).unwrap();
         assert!(!received.is_empty());
-        std::fs::remove_file(path).unwrap();
-        std::fs::remove_dir(dir).unwrap();
+        let output = child.output().unwrap();
+        assert!(output.status.success());
+        assert!(String::from_utf8(output.stderr).unwrap().contains("child-fd-two-marker"));
     }
 
     #[test]
-    fn unavailable_journal_with_closed_launcher_stderr_still_spawns() {
+    fn unavailable_journal_with_broken_launcher_stderr_still_spawns() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "builtins::spawn_journal_tests::closed_stderr_launcher",
+                "builtins::spawn_journal_tests::broken_stderr_launcher",
                 "--ignored",
                 "--nocapture",
             ])
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
+        assert!(String::from_utf8(output.stdout).unwrap().contains("SIGPIPE=SIG_IGN; fd2=EPIPE"));
     }
 
     #[test]
-    #[ignore = "helper subprocess: closes fd 2 without affecting the parent harness"]
-    fn closed_stderr_launcher() {
-        // SAFETY: only this dedicated subprocess loses stderr.
-        assert_eq!(unsafe { libc::close(2) }, 0);
+    #[ignore = "helper subprocess: gives fd 2 a broken pipe"]
+    fn broken_stderr_launcher() {
+        use std::io::Write;
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+        // SAFETY: query the disposition without changing it in this subprocess.
+        let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+        assert_eq!(unsafe { libc::sigaction(libc::SIGPIPE, std::ptr::null(), &mut action) }, 0);
+        assert_eq!(action.sa_sigaction, libc::SIG_IGN);
+        let mut fds = [-1; 2];
+        // SAFETY: valid storage for two fresh descriptors, owned below.
+        assert_eq!(unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) }, 0);
+        let read = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+        let write = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+        // SAFETY: replace only this dedicated subprocess's stderr.
+        assert_eq!(unsafe { libc::dup2(write.as_raw_fd(), 2) }, 2);
+        drop(read);
+        drop(write);
+        assert_eq!(std::io::stderr().write_all(b"probe").unwrap_err().raw_os_error(), Some(libc::EPIPE));
+        println!("SIGPIPE=SIG_IGN; fd2=EPIPE");
         unavailable_journal_preserves_child_stderr_route();
     }
 
@@ -42475,9 +42509,8 @@ mod spawn_journal_tests {
     fn stderr_stream_has_app_identifier_and_warning_priority() {
         use std::io::Read;
         use std::os::unix::net::UnixListener;
-        let dir = std::env::temp_dir().join(format!("mix-journal-{}", std::process::id()));
-        std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("journal");
+        let dir = TestDir::new();
+        let path = dir.0.join("journal");
         let listener = UnixListener::bind(&path).unwrap();
         let fd = super::spawn_journal_at("mixviu.term", path.to_str().unwrap()).unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
@@ -42494,8 +42527,6 @@ mod spawn_journal_tests {
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();
         assert_eq!(text, "mixviu.term\n\n4\n0\n0\n0\n0\nchild-fd-two-marker\n");
-        assert!(super::spawn_journal_at("term", dir.join("absent").to_str().unwrap()).is_err());
-        std::fs::remove_file(path).unwrap();
-        std::fs::remove_dir(dir).unwrap();
+        assert!(super::spawn_journal_at("term", dir.0.join("absent").to_str().unwrap()).is_err());
     }
 }

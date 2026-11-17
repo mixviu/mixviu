@@ -229,6 +229,9 @@ impl Reads {
 
     // Share one budget across real failures, including no-focus paths. Empty
     // selections and pending reads must not hide failures. Never log payloads.
+    // Busy is transient: start installs a timeout before setting current, and
+    // finish clears current on completion or timeout (which logs TimedOut).
+    // If the event loop itself stalls, it cannot process Busy requests either.
     fn allow_error_log(&self) -> bool {
         let now = std::time::Instant::now();
         if self
