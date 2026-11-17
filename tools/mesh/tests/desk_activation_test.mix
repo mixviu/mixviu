@@ -8,7 +8,7 @@ end
 try
   $lib = dirname(dirname(realpath($0))) .. "/_lib"
   $source = read_file($lib .. "/desk_worker.mix")
-  for $name in ["file_state","namespace_context","restart_session","verify_profile_authority"]
+  for $name in ["file_state","namespace_context","restart_session","verify_profile_authority","unit_properties"]
     $source = replace($source,"fn " .. $name .. "(","fn unused_" .. $name .. "(")
     $source = replace($source,$name .. "(","activation_" .. $name .. "(")
   end
@@ -22,7 +22,7 @@ try
 $_activation_schema=sqlexec($fixture_db,"CREATE TABLE fault (phase TEXT)")
 fn activation_fault($phase)
   $_clear=sqlexec($fixture_db,"DELETE FROM fault")
-  $_set=sqlexec($fixture_db,"INSERT INTO fault VALUES (?)",[$phase])
+  for $entry in split($phase,",") $_set=sqlexec($fixture_db,"INSERT INTO fault VALUES (?)",[$entry]) end
 end
 fn activation_event($phase)
   fixture_event($phase,"")
@@ -52,6 +52,10 @@ fn activation_namespace_context($request)
   activation_event(if $ctx.binding.active then "profile_binding" else "release_binding" end)
   return $ctx
 end
+fn activation_unit_properties($unit,$transport)
+  activation_event("release_binding")
+  return $request_properties
+end
 fn activation_restart_session($ctx,$request,$profile)
   if $ctx.binding.active != $profile then raise("FIXTURE","restart selected wrong environment") end
   if not $profile and len(sqlexec($fixture_db,"SELECT operation FROM events WHERE operation=?",["reset_failed"]))==0 then raise("FIXTURE","release restart did not clear start limit") end
@@ -68,16 +72,20 @@ fn activation_events()
 end
 '
   $path = $root .. "/activation.mix"
+  $properties = require("../_lib/desk_worker.mix").parse_unit_properties(read_file(dirname(realpath($0)) .. "/fixtures/pct-unit-show.txt"),"pct")
+  $properties.EnvironmentFiles = take($properties.EnvironmentFiles,1)
+  $stubs = "$request_properties=" .. data_encode($properties) .. chr(10) .. $stubs
   write_file($path,$stubs .. chr(10) .. $source)
   $w = require($path)
   $target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",transport:"pct",ct:123,session:5,account:"desktop",profile:"/opt/mix/var/lib/example/desk-bus",admission:"enforce"}]}).targets[0]
   $ctx = {target:$target,gid:1000,states:{}}
   for $kind in ["seed","seed_receipt","genesis","roster","inventory"] $ctx.states[$kind]={present:true} end
-  $request = {before:$ctx,epoch:7,hash:"fixture-hash"}
+  $request = {before:$ctx,epoch:7,hash:"fixture-hash",native:{prefix:"/opt/mix",environment_prefix:"MIX"}}
   $paths = $w.dropin_paths($target)
   $bytes = "[Service]\nEnvironmentFile=" .. $target.etc .. "/noded/service.env\n"
   $success = ["activate","reload","profile_binding","restart_profile","authority"]
-  for $phase in ["","activate","reload","profile_binding","restart_profile","authority"]
+  $stages = {activate:"activate drop-in",reload:"reload profile unit",profile_binding:"validate profile",restart_profile:"restart profile broker",authority:"verify profile authority"}
+  for $phase in ["","activate","reload","profile_binding","restart_profile","authority","authority,restart_release"]
     $w.fixture_reset()
     $w.fixture_put(dirname($paths.active),{is_dir:true,uid:0,gid:0,perm:0o755})
     $w.fixture_put($paths.parked,{is_dir:false,uid:0,gid:1000,perm:0o640,bytes:$bytes})
@@ -89,7 +97,12 @@ end
     else
       $refused=false
       try $w.activate_profile($ctx,$request) catch $message,$detail
-        $refused=$detail.code=="DESK_DISTRIBUTOR" and $message=="activation failed; profile parked and release broker restarted"
+        if $phase=="authority,restart_release" then
+          $expected="activation failed [verify profile authority: authority]; release broker recovery also failed [restart release broker: restart_release]"
+        else
+          $expected="activation failed [" .. $stages[$phase] .. ": " .. $phase .. "]; profile parked and release broker restarted"
+        end
+        $refused=$detail.code=="DESK_DISTRIBUTOR" and $message==$expected
       end
       check($refused,"activation failure escaped owning recovery refusal")
       $events=$w.activation_events()

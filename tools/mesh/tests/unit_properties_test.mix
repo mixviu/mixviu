@@ -55,7 +55,8 @@ end
       $raw.profile="/var/lib/example/desk-bus"
     end
     $target = $targets.parse_targets({schema_version:1,project:"example",targets:[$raw]}).targets[0]
-    $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target))
+    $native = {prefix:"/opt/mix",environment_prefix:if $transport=="pct" then "MIX" else "EXAMPLE" end}
+    $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native)
   end
   check(refused(fn()=$w.parse_unit_properties($nspawn,"pct")),"CT accepted missing required sequence properties")
   check(refused(fn()=$w.parse_unit_properties($pct,"nspawn")),"nspawn accepted unsolicited CT properties")
@@ -65,19 +66,34 @@ end
   $properties = $w.parse_unit_properties($pct,"pct")
   $release = $properties
   $release.EnvironmentFiles = take($release.EnvironmentFiles,1)
-  $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$release,$prep.service_text($target),nil,false)
-  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),nil,false)),"inactive validation accepted an armed profile")
-  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$release,$prep.service_text($target))),"active validation accepted release-only environment")
+  $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$release,$prep.service_text($target),$native,false)
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native,false)),"inactive validation accepted an armed profile")
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$release,$prep.service_text($target),$native)),"active validation accepted release-only environment")
   check(len($properties.ExecStartPre)==2 and len($properties.ExecStart)==1 and len($properties.EnvironmentFiles)==2,"repeated exec/environment entries were lost")
   check(deep_eq($properties.RuntimeDirectory,[]),"empty runtime directory was not retained as an empty sequence")
   $properties.EnvironmentFiles = reverse($properties.EnvironmentFiles)
-  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target))),"profile environment accepted before session environment")
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native)),"profile environment accepted before session environment")
   $properties = $w.parse_unit_properties($pct,"pct")
   $properties.EnvironmentFiles[1].ignore_errors = true
-  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target))),"optional profile environment accepted")
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native)),"optional profile environment accepted")
   $properties = $w.parse_unit_properties($pct,"pct")
   $properties.ExecStart = concat($properties.ExecStart,$properties.ExecStart)
-  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target))),"two start commands accepted")
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native)),"two start commands accepted")
+  $properties = $w.parse_unit_properties($pct,"pct")
+  $properties.ExecStart = [$w.parse_exec_property("{ path=/tmp/bin/noded ; argv[]=/tmp/bin/noded serve --no-monitor --no-log ; ignore_errors=no }")]
+  $pinned = false
+  try $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native) catch $message,$detail
+    $pinned = $detail.code=="DESK_DISTRIBUTOR" and $message=="unit command overrides profile identity or endpoint"
+  end
+  check($pinned,"foreign ExecStart did not produce the native-path refusal")
+  -- Gold nspawn layout uses MIX and the release env below the native prefix.
+  $gold_target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",machine:"desk",session:5,account:"desktop",profile:"/var/lib/example/desk-bus",admission:"enforce"}]}).targets[0]
+  $gold = {prefix:"/opt/mix",environment_prefix:"MIX"}
+  $properties = $w.parse_unit_properties($nspawn,"nspawn")
+  $properties.EnvironmentFiles = [{path:"/opt/mix/etc/session/5.env",ignore_errors:false}]
+  $w.validate_service($gold_target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($gold_target,$gold),$gold,false)
+  $properties.EnvironmentFiles = [{path:"/etc/example/session/5.env",ignore_errors:false}]
+  check(refused(fn()=$w.validate_service($gold_target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($gold_target,$gold),$gold,false)),"gold nspawn accepted the legacy release path")
 finally
   run_argv_must(["rm","-rf",$root])
 end

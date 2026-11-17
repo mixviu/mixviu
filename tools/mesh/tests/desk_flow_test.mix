@@ -128,14 +128,14 @@ check(refused(fn()=$ops.load_targets($config_path,"example",["desk"])),"implicit
 $text = "EXAMPLE_ETC=/var/lib/example/desk-bus/etc\nEXAMPLE_VAR=/var/lib/example/desk-bus/var\nEXAMPLE_NODE_CONFIG=/var/lib/example/desk-bus/etc/node.conf.mix\nEXAMPLE_RUN=/run/example/session/3\nEXAMPLE_BROKER_ACCOUNT=desktop\nEXAMPLE_NODED_URL=\n"
 $metadata = {present:true,uid:0,gid:1000,perm:0o640}
 $properties = {Type:"simple",KillMode:"control-group",RuntimeDirectory:["example/session/3/noded"],User:"desktop",EnvironmentFiles:[{path:"/var/lib/example/desk-bus/etc/noded/service.env",ignore_errors:false}],UnsetEnvironment:[],ExecStart:[$w.parse_exec_property("{ path=/srv/example/bin/noded ; argv[]=/srv/example/bin/noded serve --no-monitor --no-log ; ignore_errors=no ; start_time=[old] ; pid=42 }")]}
-$w.validate_service($target,1000,$metadata,$properties,$text)
+$w.validate_service($target,1000,$metadata,$properties,$text,$base.native)
 for $bad in [{User:"root"},{EnvironmentFiles:[{path:"/evil/var/lib/example/desk-bus/etc/noded/service.env",ignore_errors:false}]},{EnvironmentFiles:concat($properties.EnvironmentFiles,[{path:"/tmp/later.env",ignore_errors:false}])},{UnsetEnvironment:["EXAMPLE_ETC"]},{ExecStart:[{path:"/srv/example/bin/noded",argv:["/srv/example/bin/noded","serve","--node","other"],ignore_errors:false}]}]
   $changed = $properties
   for $key in keys($bad) $changed[$key]=$bad[$key] end
-  check(refused(fn()=$w.validate_service($target,1000,$metadata,$changed,$text)),"unsafe service binding accepted")
+  check(refused(fn()=$w.validate_service($target,1000,$metadata,$changed,$text,$base.native)),"unsafe service binding accepted")
 end
-check(refused(fn()=$w.validate_service($target,1000,$metadata,$properties,$text .. "EXAMPLE_ETC=/tmp/other\n")),"duplicate environment assignment accepted")
-check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:1000,gid:1000,perm:0o640},$properties,$text)),"user-owned service environment accepted")
+check(refused(fn()=$w.validate_service($target,1000,$metadata,$properties,$text .. "EXAMPLE_ETC=/tmp/other\n",$base.native)),"duplicate environment assignment accepted")
+check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:1000,gid:1000,perm:0o640},$properties,$text,$base.native)),"user-owned service environment accepted")
 
 -- Exercise actual generated source parsing/RPC without any namespace I/O:
 -- the invalid operation is rejected before dispatch can inspect a target.
@@ -166,16 +166,17 @@ check(refused(fn()=$prep.wireguard_text($ctbase,$base.genesis,"wrong-key")),"una
 $files = $prep.files($ctbase)
 check(len($files)==3 and $files[2].bytes == "[Service]\nEnvironmentFile=/opt/mix/var/lib/example/desk-bus/etc/noded/service.env\n","preparation drop-in")
 $ctprops = $properties
+$ctprops.ExecStart = [$w.parse_exec_property("{ path=/opt/mix/bin/noded ; argv[]=/opt/mix/bin/noded serve --no-monitor --no-log ; ignore_errors=no }")]
 $ctprops.RuntimeDirectory = []
 $ctprops.RequiresMountsFor = [$ct.run .. "/noded"]
 $ctprops.ExecStartPre = [$w.parse_exec_property("{ path=/usr/bin/install ; argv[]=/usr/bin/install -d -m 0711 " .. $ct.run .. "/noded ; ignore_errors=no }")]
 $ctprops.EnvironmentFiles = [{path:"/opt/mix/etc/session/5.env",ignore_errors:false},{path:"/opt/mix/var/lib/example/desk-bus/etc/noded/service.env",ignore_errors:false}]
-$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes)
+$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes,$ctbase.native)
 $wrong_runtime = $ctprops
 $wrong_runtime.ExecStartPre = []
-check(refused(fn()=$w.validate_service($ct,1000,$metadata,$wrong_runtime,$files[0].bytes)),"CT missing runtime creation accepted")
+check(refused(fn()=$w.validate_service($ct,1000,$metadata,$wrong_runtime,$files[0].bytes,$ctbase.native)),"CT missing runtime creation accepted")
 $ctprops.EnvironmentFiles = push($ctprops.EnvironmentFiles,{path:"/tmp/later",ignore_errors:false})
-check(refused(fn()=$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes)),"CT final environment refusal")
+check(refused(fn()=$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes,$ctbase.native)),"CT final environment refusal")
 $flattened = $root .. "/prepare-generated.mix"
 write_file($flattened,$prep.program(dirname(dirname(realpath($0))) .. "/_lib") .. chr(10) .. "print(1)")
 run_argv_must([$native_mix,"lint",$flattened])

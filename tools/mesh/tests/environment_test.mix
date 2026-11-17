@@ -34,10 +34,10 @@ for $target in $targets
     check(starts_with($text,"MIX_ETC=" .. $target.etc) and not contains($text,"EXAMPLE_"),"pct service used artifact namespace")
     check(contains($job.stdin,"MIX_NODE_CONFIG") and not contains($job.stdin,"EXAMPLE_NODE_CONFIG"),"pct job used artifact namespace")
     $props = $w.parse_unit_properties(read_file(dirname(realpath($0)) .. "/fixtures/pct-unit-show.txt"),"pct")
-    $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$props,$text)
+    $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$props,$text,$native)
     $refused = false
     try
-      $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$props,replace($text,"MIX_","EXAMPLE_"))
+      $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$props,replace($text,"MIX_","EXAMPLE_"),$native)
     catch $message,$detail
       $refused = $detail.code=="DESK_DISTRIBUTOR" and $message=="service environment differs from target plan"
     end

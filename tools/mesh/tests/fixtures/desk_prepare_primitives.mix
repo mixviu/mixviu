@@ -71,8 +71,9 @@ fn fixture_native_binary($path,$prefix,$component)
   if $path != "/opt/mix/bin/" .. $component or $prefix != "/opt/mix" then fixture_refuse("native binary differs") end
   return "fixture-native-hash"
 end
-fn fixture_service_binding($target,$gid,$prefix = nil,$active = true)
+fn fixture_service_binding($target,$gid,$native,$active = true)
   if $active then fixture_refuse("preparation armed the profile") end
+  if $native.prefix != "/opt/mix" or $native.environment_prefix != "MIX" then fixture_refuse("preparation omitted native layout") end
   $t = $targets.checked_target($target)
   if fixture_exists("/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf") then fixture_refuse("active drop-in exists") end
   $env = fixture_file_state($t.etc .. "/noded/service.env")

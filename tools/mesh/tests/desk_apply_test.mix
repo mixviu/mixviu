@@ -38,7 +38,7 @@ try
     check(refused(fn()=$prep.apply($bad),"MESH_TARGET","target must be the unchanged parsed description"),"forged derived target did not produce the expected refusal")
     check(deep_eq($before,$prep.fixture_snapshot()) and len($prep.fixture_mutations())==0,"refused plan created state")
   end
-  for $changes in [{ip:"1.2"},{ip:"256.2.3.4"},{ip:"1.2.3.4.5"},{ip:"01.2.3.4"},{subnet:"300.1.2.3/99"},{subnet:"1.2.3/24"},{subnet:"1.2.3.4.5/8"},{subnet:"01.2.3.4/24"},{subnet:"1.2.3.4/33"},{subnet:"1.2.3.4/-1"},{endpoint:"01.2.3.4:42"},{endpoint:"hub.example:0"},{endpoint:"hub.example:65536"},{endpoint:"host:0042"},{port:0},{port:65536},{port:42.5},{port:"4200"},{port:"0042"}]
+  for $changes in [{ip:"1.2"},{ip:"256.2.3.4"},{ip:"1.2.3.4.5"},{ip:"01.2.3.4"},{subnet:"300.1.2.3/99"},{subnet:"1.2.3/24"},{subnet:"1.2.3.4.5/8"},{subnet:"01.2.3.4/24"},{subnet:"1.2.3.4/33"},{subnet:"1.2.3.4/08"},{subnet:"1.2.3.4/-1"},{endpoint:"01.2.3.4:42"},{endpoint:"hub.example:0"},{endpoint:"hub.example:65536"},{endpoint:"host:0042"},{port:0},{port:65536},{port:42.5},{port:"4200"},{port:"0042"}]
     $prep.fixture_reset()
     $before = $prep.fixture_snapshot()
     $bad = $request

@@ -53,9 +53,9 @@ try
     symlink("mixd",$noded)
     check($w.native_binary($noded,$prefix,"noded") == hash_file($mixd,"sha256"),"release personality link must hash resolved mixd")
     check(native_refuses(fn()=$w.no_links($noded)),"generic profile path check accepted personality link")
-    for $target in [$mixd,"../mixd","other"]
+    for $link_target in [$mixd,"../mixd","other"]
       remove($noded)
-      symlink($target,$noded)
+      symlink($link_target,$noded)
       check(native_refuses(fn()=$w.native_binary($noded,$prefix,"noded")),"nonliteral personality target accepted")
     end
     remove($noded)

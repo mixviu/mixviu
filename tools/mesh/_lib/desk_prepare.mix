@@ -47,7 +47,7 @@ end
 fn valid_subnet($value)
   if type($value) != "string" then return false end
   $parts = split($value,"/")
-  return len($parts) == 2 and valid_ipv4($parts[0]) and re_match($parts[1],"^[0-9]{1,2}$") and to_number($parts[1]) <= 32
+  return len($parts) == 2 and valid_ipv4($parts[0]) and re_match($parts[1],"^(0|[1-9][0-9]?)$") and to_number($parts[1]) <= 32
 end
 
 fn valid_endpoint_address($value)
@@ -127,6 +127,6 @@ fn apply($request)
   $pub = trim(run_argv_must(["wg","pubkey"],{stdin:$key .. chr(10),timeout:10}))
   $wg = wireguard_text($request,$key,$pub)
   ensure_file("/etc/wireguard/wg1.conf",$wg,0,0o600)
-  $w.service_binding($t,$gid,nil,false)
+  $w.service_binding($t,$gid,$native,false)
   return {prepared:$t.node,unit:$t.unit,wireguard:"/etc/wireguard/wg1.conf",started:false}
 end

@@ -143,9 +143,8 @@ end
 
 -- A final, mandatory, root-owned environment file makes the service binding
 -- explicit. The bounded format is literal KEY=value, not arbitrary shell.
-fn validate_service($target, $gid, $s, $properties, $text, $environment_prefix = nil, $active = true)
+fn validate_unit($target,$properties,$native,$active)
   $path = $target.etc .. "/noded/service.env"
-  if not $s.present or $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 then refuse("dedicated service environment is not root-owned 0640") end
   if $properties.User != $target.account then refuse("session unit account mismatch") end
   $runtime = if $target.transport == "pct" then [] else [$target.project .. "/session/" .. to_string($target.session) .. "/noded"] end
   if $properties.Type != "simple" or $properties.KillMode != "control-group" or not deep_eq($properties.RuntimeDirectory,$runtime) then refuse("unit lifecycle or runtime directory differs from native session contract") end
@@ -158,10 +157,20 @@ fn validate_service($target, $gid, $s, $properties, $text, $environment_prefix =
   if $active then
     if type($files) != "list" or len($files)==0 or not deep_eq($files[len($files)-1],{path:$path,ignore_errors:false}) then refuse("dedicated environment must be the final mandatory unit environment file") end
   else
-    $release = if $target.transport == "pct" then "/opt/mix/etc" else "/etc/" .. $target.project end
+    $release = if $native.prefix == "/opt/mix" then $native.prefix .. "/etc" else "/etc/" .. $target.project end
     if not deep_eq($files,[{path:$release .. "/session/" .. to_string($target.session) .. ".env",ignore_errors:false}]) then refuse("inactive profile requires only the release session environment") end
   end
-  $prefix = if $target.transport == "pct" then "MIX" else $environment_prefix ?? upper($target.project) end
+  $starts = $properties.ExecStart
+  if type($starts) != "list" or len($starts) != 1 then refuse("unit must contain one mandatory native start command") end
+  $start = $starts[0]
+  if $start.ignore_errors != false or $start.path != $native.prefix .. "/bin/noded" or not deep_eq($start.argv,[$start.path,"serve","--no-monitor","--no-log"]) then refuse("unit command overrides profile identity or endpoint") end
+  return {environment_prefix:$native.environment_prefix,active:$active,command:"{ path=" .. $start.path .. " ; argv[]=" .. join($start.argv," ") .. " ; ignore_errors=no"}
+end
+
+fn validate_service($target, $gid, $s, $properties, $text, $native, $active = true)
+  if not $s.present or $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 then refuse("dedicated service environment is not root-owned 0640") end
+  $binding = validate_unit($target,$properties,$native,$active)
+  $prefix = $native.environment_prefix
   $expected = {}
   $expected[$prefix .. "_ETC"] = $target.etc
   $expected[$prefix .. "_VAR"] = $target.var
@@ -180,19 +189,16 @@ fn validate_service($target, $gid, $s, $properties, $text, $environment_prefix =
   for $key in keys($expected)
     if contains($properties.UnsetEnvironment,$key) then refuse("unit unsets required profile environment") end
   end
-  $starts = $properties.ExecStart
-  if type($starts) != "list" or len($starts) != 1 then refuse("unit must contain one mandatory native start command") end
-  $start = $starts[0]
-  if $start.ignore_errors != false or not ends_with($start.path,"/bin/noded") or not deep_eq($start.argv,[$start.path,"serve","--no-monitor","--no-log"]) then refuse("unit command overrides profile identity or endpoint") end
   -- ExecStart also carries runtime pid/timestamp/status fields. They change on
   -- restart and are not part of the immutable executable/argv configuration.
-  return {environment:$s,environment_prefix:$prefix,active:$active,command:"{ path=" .. $start.path .. " ; argv[]=" .. join($start.argv," ") .. " ; ignore_errors=no"}
+  $binding.environment = $s
+  return $binding
 end
 
-fn service_binding($target,$gid,$environment_prefix = nil,$active = true)
+fn service_binding($target,$gid,$native,$active = true)
   $path = $target.etc .. "/noded/service.env"
   $state = file_state($path)
-  return validate_service($target,$gid,$state,unit_properties($target.unit,$target.transport),stable_text($path,$state),$environment_prefix,$active)
+  return validate_service($target,$gid,$state,unit_properties($target.unit,$target.transport),stable_text($path,$state),$native,$active)
 end
 
 fn dropin_paths($target)
@@ -243,7 +249,7 @@ fn namespace_context($request)
   end
   $dirs[$t.var .. "/noded"] = directory($t.var .. "/noded",$uid,$gid,0o700)
   $dropin = checked_dropin($t,$gid)
-  $binding = service_binding($t,$gid,$native.environment_prefix,$dropin.active)
+  $binding = service_binding($t,$gid,$native,$dropin.active)
   $binding.dropin = $dropin
   $mix_hash = native_binary($request.mix_bin,$native.prefix,"mix")
   $builtins = lines(run_argv_must([$request.mix_bin,"builtins","--names"],{timeout:10}))
@@ -471,29 +477,42 @@ fn activate_profile($ctx,$request)
   if type($request.epoch) != "number" or type($request.hash) != "string" then refuse("activation requires the signed epoch and hash") end
   $paths = dropin_paths($ctx.target)
   $dropin = checked_dropin($ctx.target,$ctx.gid)
+  $stage = "activate drop-in"
   try
     if not $dropin.active then rename($paths.parked,$paths.active) end
+    $stage = "reload profile unit"
     run_argv_must(["systemctl","daemon-reload"],{timeout:5})
+    $stage = "validate profile"
     $active = namespace_context($request)
     if not $active.binding.active then refuse("profile did not become effective") end
+    $stage = "restart profile broker"
     $live = restart_session($active,$request,true)
+    $stage = "verify profile authority"
     $authority = verify_profile_authority($active,$request)
     return {restarted:$ctx.target.unit,live:$live,authority:$authority}
   catch $failure
+    $original = $stage .. ": " .. $failure
     -- Never roll back accepted inventory or its monotonic witness. Restore
     -- only service selection, then load it, validate it, and restart it.
+    $recovery_stage = "park profile drop-in"
     try
       $current = checked_dropin($ctx.target,$ctx.gid)
       if $current.active then rename($paths.active,$paths.parked) end
+      $recovery_stage = "reload release unit"
       run_argv_must(["systemctl","daemon-reload"],{timeout:5})
-      $release = namespace_context($request)
-      if $release.binding.active then refuse("release environment did not become effective") end
+      -- Reuse the already checked account/binary identity. A damaged profile
+      -- must not prevent recovery of the independent release session broker.
+      $recovery_stage = "validate release unit"
+      $release = $ctx
+      $release.binding = validate_unit($ctx.target,unit_properties($ctx.target.unit,$ctx.target.transport),$request.native,false)
+      $recovery_stage = "reset release failure"
       run_argv_must(["systemctl","reset-failed",$ctx.target.unit],{timeout:5})
+      $recovery_stage = "restart release broker"
       restart_session($release,$request,false)
     catch $recovery_failure
-      refuse("activation failed; release broker recovery also failed; inspect service and parked drop-in")
+      refuse("activation failed [" .. $original .. "]; release broker recovery also failed [" .. $recovery_stage .. ": " .. $recovery_failure .. "]")
     end
-    refuse("activation failed; profile parked and release broker restarted")
+    refuse("activation failed [" .. $original .. "]; profile parked and release broker restarted")
   end
 end
 
