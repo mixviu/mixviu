@@ -370,7 +370,7 @@ impl Queue {
         s.overflow |= overflow;
         for (key, change) in changes {
             if s.changes.contains_key(&key)
-                || s.changes.len() < crate::desktop_events::MAX_SOURCE_PENDING
+                || s.changes.len() < if s.command == "uevent.received" { crate::uevent::MAX_PENDING } else { crate::desktop_events::MAX_SOURCE_PENDING }
             {
                 s.changes.insert(key, change);
             } else {
@@ -1671,17 +1671,17 @@ mod tests {
     async fn uevent_fifo_raw_buffer_and_overflow_count() {
         let q = Queue::default();
         q.register_source_for_test("uevent:1", "uevent.received");
-        let limit = crate::desktop_events::MAX_SOURCE_PENDING;
+        let limit = crate::uevent::MAX_PENDING;
         for n in 0..limit + 3 {
-            q.source("uevent:1", vec![(format!("{n:020}"), serde_json::json!({"uid":0,"raw":[0,255,n % 256]}))], false);
+            q.source("uevent:1", vec![(format!("{n:020}"), serde_json::json!({"uid":0,"raw":crate::uevent::envelope_bytes(&[0,255,(n % 256) as u8])}))], false);
         }
         for n in 0..limit {
             let ev = q.next(None).await.unwrap();
             let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
-            assert_eq!(body["raw"][2], n % 256);
+            assert_eq!(body["raw"], format!("00ff{n:02x}"));
             assert_eq!(body["dropped"], if n == 0 { 3 } else { 0 });
             let value = crate::evaluator::incoming_event_to_mix_value(&ev);
-            let Value::Map(value) = value else { panic!("event map") };
+            let Value::Map(value) = &value else { panic!("event map") };
             let Value::Map(args) = &value["args"] else { panic!("args map") };
             let Value::Buffer(raw) = &args["raw"] else { panic!("raw buffer") };
             assert_eq!(&*raw.borrow(), &[0,255,(n % 256) as u8]);

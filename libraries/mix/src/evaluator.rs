@@ -313,20 +313,13 @@ pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
         && let Value::Map(m) = &mut args
     {
         let m = std::rc::Rc::make_mut(m);
-        if let Some(Value::List(raw)) = m.get("raw") {
-            let raw = raw
-                .iter()
-                .filter_map(|v| {
-                    if let Value::Number(n) = v {
-                        Some(*n as u8)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+        if let Some(Value::String(raw)) = m.get("raw")
+            && let Ok(Some(decoded)) = crate::builtins::call_builtin("bytes_from_hex", vec![Value::String(raw.clone())])
+            && let Value::Bytes(bytes) = &decoded
+        {
             m.insert(
                 "raw".into(),
-                Value::Buffer(std::rc::Rc::new(std::cell::RefCell::new(raw))),
+                Value::Buffer(std::rc::Rc::new(std::cell::RefCell::new(bytes.as_ref().clone()))),
             );
         }
     }

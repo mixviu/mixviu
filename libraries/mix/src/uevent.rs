@@ -1,5 +1,14 @@
 //! Linux uevent datagrams: inspect properties, retain the original wire bytes.
 use std::collections::BTreeMap;
+pub(crate) const MAX_PENDING: usize = 64;
+
+// IncomingEvent's private envelope is JSON. Hex keeps that envelope bounded
+// without constructing one JSON number allocation per byte; it is decoded to
+// Buffer on the evaluator thread, never used to construct a udev datagram.
+pub(crate) fn envelope_bytes(bytes: &[u8]) -> String {
+    const HEX: &[u8] = b"0123456789abcdef";
+    bytes.iter().flat_map(|b| [HEX[(b >> 4) as usize] as char, HEX[(b & 15) as usize] as char]).collect()
+}
 
 pub(crate) fn properties(
     bytes: &[u8],
@@ -242,7 +251,7 @@ pub(crate) mod linux {
                     match receive(&fd, &mut bytes) {
                         Ok((n, uid)) => {
                             let body = match properties(&bytes[..n], group) {
-                                Ok(props) if matches(&props, &subsystems) => serde_json::json!({"properties":props,"uid":uid,"raw":bytes[..n]}),
+                                Ok(props) if matches(&props, &subsystems) => serde_json::json!({"properties":props,"uid":uid,"raw":envelope_bytes(&bytes[..n])}),
                                 Ok(_) => continue,
                                 Err(reason) => serde_json::json!({"drop":reason}),
                             };
