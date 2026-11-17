@@ -120,6 +120,15 @@ fn remote_bin($node, $name)
   return remote_roots($node).prefix .. "/bin/" .. $name
 end
 
+fn node_environment($node)
+  $targets = require("targets.mix")
+  $target = $targets.parse_targets({schema_version:1,project:project(),targets:[{node:$node,host:$node,kind:"system"}]}).targets[0]
+  $settings = node_settings($node)
+  $roots = remote_roots($node)
+  $native = $targets.checked_native($target,{node:$node,mix_bin:remote_mix($node),prefix:$roots.prefix,roots:$roots,legacy_defaults:$settings.legacy_defaults == true})
+  return $targets.stdin_job($target,"",{},"admin",$native.mix_bin,$native).env
+end
+
 fn etc_root()
   return local_roots().etc
 end

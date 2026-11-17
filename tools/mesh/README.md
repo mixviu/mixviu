@@ -61,6 +61,16 @@ multi-call binary. Its resolved mixd file supplies the binary hash. Chains,
 other targets, symlinked ancestors and a symlinked mix remain refused.
 An absent entry refuses rather than guessing another installation.
 
+The project names hub artifacts and legacy state paths, not the gold binary's
+environment. Nodes using `legacy_defaults:true` keep the uppercase project
+environment prefix. Gold nodes installed under `/opt/mix` without that flag,
+and all pct desks, use `MIX_*`. System jobs use the node's configured etc/var
+roots; desk jobs and service environments use the dedicated profile roots.
+Preparation refuses an existing service.env with the old project prefix.
+Preserve that file for inspection, remove only service.env, regenerate the
+public plan and rerun explicit preparation with the reviewed tools. Matching
+profile/config/drop-in/WG files are retained; no baseline or seed is reset.
+
 `_etc/mesh/project.mix` is the hub's copy of the project name:
 
 ```

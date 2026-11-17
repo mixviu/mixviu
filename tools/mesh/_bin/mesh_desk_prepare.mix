@@ -20,7 +20,7 @@ if len($argv) == 5 and $argv[0] == "--plan" then
   if $target == nil or $target.transport != "pct" then raise("DESK_PREPARE","explicit CT target required") end
   -- No SSH root query: a preparation plan requires explicit CT native roots.
   $prefix = $targets.node_prefix($target,$d)
-  $request = $ops.request($target,$inventory,trim(read_file($m.MESH_GENESIS_PUB)),$d.remote_mix($target.node),$prefix)
+  $request = $ops.request($target,$inventory,trim(read_file($m.MESH_GENESIS_PUB)),$d.remote_mix($target.node),$prefix,$d.node_settings($target.node).legacy_defaults == true)
   $hub = $ops.member_named($inventory,$inventory.hub[0])
   $pubs = $m.wg_current_pubkeys($hub,$inventory.epoch)
   if len($pubs) != 1 then raise("DESK_PREPARE","one current hub WG key required") end

@@ -35,9 +35,9 @@ fn member_named($inventory, $node)
   fail("desk must be an authenticated active Bus member")
 end
 
-fn request($target, $inventory, $genesis, $mix_bin, $prefix)
+fn request($target, $inventory, $genesis, $mix_bin, $prefix, $legacy_defaults = false)
   $target = $targets.checked_target($target)
-  $native = $targets.checked_native($target,{node:$target.node,mix_bin:$mix_bin,prefix:$prefix})
+  $native = $targets.checked_native($target,{node:$target.node,mix_bin:$mix_bin,prefix:$prefix,legacy_defaults:$legacy_defaults})
   if $target.kind != "desk" or $target.admission == nil then fail("desk target lacks explicit policy") end
   $member = member_named($inventory,$target.node)
   $d2_keys = []

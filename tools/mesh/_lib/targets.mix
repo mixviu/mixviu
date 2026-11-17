@@ -172,7 +172,19 @@ fn checked_native($target, $native)
   if type($prefix) != "string" or not starts_with($prefix,"/") or $prefix == "/" or ends_with($prefix,"/") or contains($prefix,"/../") or contains($prefix,"/./") or contains($prefix,"//") or ends_with($prefix,"/..") or ends_with($prefix,"/.") then fail("native prefix must be an absolute normalized install path") end
   if $native.mix_bin != $prefix .. "/bin/mix" then fail("configured interpreter must be the node prefix/bin/mix") end
   if $target.transport == "pct" and $prefix != "/opt/mix" then fail("CT native install must use /opt/mix") end
+  $native.environment_prefix = environment_prefix($target,$native)
   return $native
+end
+
+fn environment_prefix($target,$native)
+  if $target.transport == "pct" or ($native.prefix == "/opt/mix" and $native.legacy_defaults != true) then return "MIX" end
+  return upper($target.project)
+end
+
+fn node_native($target,$deployment)
+  $settings = $deployment.node_settings($target.node)
+  $roots = if $target.transport == "pct" then $deployment.checked_roots($settings.roots,$target.node) else $deployment.remote_roots($target.node,$target.host) end
+  return checked_native($target,{node:$target.node,mix_bin:$deployment.remote_mix($target.node),prefix:$roots.prefix,roots:$roots,legacy_defaults:$settings.legacy_defaults == true})
 end
 
 -- A CT's layout is not its PVE host's layout. Refuse missing explicit roots
@@ -199,12 +211,19 @@ fn stdin_job($target, $program, $bindings, $role, $mix_bin, $native)
     $body = $body .. "$" .. $key .. " = " .. data_encode($bindings[$key]) .. "\n"
   end
   $body = $body .. $program
-  $prefix = upper($target.project)
+  $prefix = $native.environment_prefix
+  $etc = $target.etc
+  $var = $target.var
+  if $target.kind == "system" then
+    $roots = $native.roots ?? {}
+    $etc = $roots.etc ?? (if $native.prefix == "/opt/mix" and $native.legacy_defaults != true then "/opt/mix/etc" else $etc end)
+    $var = $roots.var ?? (if $native.prefix == "/opt/mix" and $native.legacy_defaults != true then "/opt/mix/var" else $var end)
+  end
   $environment = {}
-  $environment[$prefix .. "_ETC"] = $target.etc
+  $environment[$prefix .. "_ETC"] = $etc
   -- Citizen queries must not inherit the broker's private state directory.
-  if $target.identity_schema != 2 or $role == "admin" then $environment[$prefix .. "_VAR"] = $target.var end
-  $environment[$prefix .. "_NODE_CONFIG"] = if $target.identity_schema == 2 and $role == "citizen" then $target.client_config else $target.etc .. "/node.conf.mix" end
+  if $target.identity_schema != 2 or $role == "admin" then $environment[$prefix .. "_VAR"] = $var end
+  $environment[$prefix .. "_NODE_CONFIG"] = if $target.identity_schema == 2 and $role == "citizen" then $target.client_config else $etc .. "/node.conf.mix" end
   -- Never inherit another desk or host broker URL. Empty selects the explicit
   -- profile node config in the native client locator.
   $environment[$prefix .. "_NODED_URL"] = ""

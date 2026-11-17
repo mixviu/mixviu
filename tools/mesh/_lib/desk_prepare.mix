@@ -11,9 +11,9 @@ fn program($lib)
   return read_file($lib .. "/targets.mix") .. chr(10) .. read_file($lib .. "/desk_worker.mix") .. chr(10) .. $source
 end
 
-fn service_text($target)
+fn service_text($target,$native = {})
   $out = ""
-  $prefix = upper($target.project)
+  $prefix = $targets.environment_prefix($target,$native)
   for $pair in [["_ETC",$target.etc],["_VAR",$target.var],["_NODE_CONFIG",$target.etc .. "/node.conf.mix"],["_RUN",$target.run],["_BROKER_ACCOUNT",$target.account],["_NODED_URL",""]]
     $out = $out .. $prefix .. $pair[0] .. "=" .. $pair[1] .. chr(10)
   end
@@ -27,7 +27,7 @@ fn files($request)
   $endpoint_port = split($request.endpoint,":")[1]
   if not re_match($endpoint_port,"^[1-9][0-9]{0,4}$") or not valid_port(to_number($endpoint_port)) or not valid_port($request.port) then $w.refuse("endpoint and broker ports must be integers from 1 to 65535") end
   $config = {node:$t.node,mesh:$request.mesh,wg_ip:$request.ip,noded:{port:$request.port,mesh_config:$t.etc .. "/noded/config.conf.mix",unix_socket:$t.run .. "/noded/bus.sock",admission:$t.admission}}
-  return [{path:$t.etc .. "/noded/service.env",bytes:service_text($t)},
+  return [{path:$t.etc .. "/noded/service.env",bytes:service_text($t,$request.native ?? {})},
     {path:$t.etc .. "/node.conf.mix",bytes:data_encode($config)},
     {path:"/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf",bytes:"[Service]\nEnvironmentFile=" .. $t.etc .. "/noded/service.env\n"}]
 end

@@ -71,6 +71,16 @@ try
   $mutations = $prep.fixture_mutations()
   $prep.apply($request)
   check(deep_eq($before,$prep.fixture_snapshot()) and deep_eq($mutations,$prep.fixture_mutations()),"second apply changed prepared state")
+  $env_path = $target.etc .. "/noded/service.env"
+  $old = $prep.fixture_stat($env_path)
+  $old.bytes = replace($old.bytes,"MIX_","EXAMPLE_")
+  $prep.fixture_put($env_path,$old)
+  $old_snapshot = $prep.fixture_snapshot()
+  check(refused(fn()=$prep.apply($request),"DESK_FIXTURE","existing preparation file differs; inspect before retry"),"apply accepted an existing old-prefix service environment")
+  check(deep_eq($old_snapshot,$prep.fixture_snapshot()),"old-prefix refusal changed prepared files")
+  $prep.fixture_remove($env_path)
+  $prep.apply($request)
+  check(deep_eq($before,$prep.fixture_snapshot()),"removing only old service.env did not restore the exact new-prefix preparation")
   check($prep.valid_ipv4("0.255.1.2") and $prep.valid_port(1) and $prep.valid_port(65535),"valid address/port boundary refused")
   check($prep.valid_subnet("0.0.0.0/0") and $prep.valid_subnet("255.255.255.255/32"),"valid subnet prefix boundary refused")
 finally

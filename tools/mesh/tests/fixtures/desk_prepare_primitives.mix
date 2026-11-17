@@ -99,6 +99,9 @@ end
 fn fixture_snapshot()
   return sqlexec($fixture_db,"SELECT path,document FROM objects ORDER BY path")
 end
+fn fixture_remove($path)
+  $_removed = sqlexec($fixture_db,"DELETE FROM objects WHERE path=?",[$path])
+end
 fn fixture_mutations()
   return sqlexec($fixture_db,"SELECT operation,path FROM events WHERE operation NOT IN ('reload','service_binding')")
 end

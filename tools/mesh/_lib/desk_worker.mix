@@ -143,7 +143,7 @@ end
 
 -- A final, mandatory, root-owned environment file makes the service binding
 -- explicit. The bounded format is literal KEY=value, not arbitrary shell.
-fn validate_service($target, $gid, $s, $properties, $text)
+fn validate_service($target, $gid, $s, $properties, $text, $environment_prefix = nil)
   $path = $target.etc .. "/noded/service.env"
   if not $s.present or $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 then refuse("dedicated service environment is not root-owned 0640") end
   if $properties.User != $target.account then refuse("session unit account mismatch") end
@@ -156,7 +156,7 @@ fn validate_service($target, $gid, $s, $properties, $text)
   end
   $files = $properties.EnvironmentFiles
   if type($files) != "list" or len($files)==0 or not deep_eq($files[len($files)-1],{path:$path,ignore_errors:false}) then refuse("dedicated environment must be the final mandatory unit environment file") end
-  $prefix = upper($target.project)
+  $prefix = if $target.transport == "pct" then "MIX" else $environment_prefix ?? upper($target.project) end
   $expected = {}
   $expected[$prefix .. "_ETC"] = $target.etc
   $expected[$prefix .. "_VAR"] = $target.var
@@ -181,13 +181,13 @@ fn validate_service($target, $gid, $s, $properties, $text)
   if $start.ignore_errors != false or not ends_with($start.path,"/bin/noded") or not deep_eq($start.argv,[$start.path,"serve","--no-monitor","--no-log"]) then refuse("unit command overrides profile identity or endpoint") end
   -- ExecStart also carries runtime pid/timestamp/status fields. They change on
   -- restart and are not part of the immutable executable/argv configuration.
-  return {environment:$s,command:"{ path=" .. $start.path .. " ; argv[]=" .. join($start.argv," ") .. " ; ignore_errors=no"}
+  return {environment:$s,environment_prefix:$prefix,command:"{ path=" .. $start.path .. " ; argv[]=" .. join($start.argv," ") .. " ; ignore_errors=no"}
 end
 
-fn service_binding($target,$gid)
+fn service_binding($target,$gid,$environment_prefix = nil)
   $path = $target.etc .. "/noded/service.env"
   $state = file_state($path)
-  return validate_service($target,$gid,$state,unit_properties($target.unit,$target.transport),stable_text($path,$state))
+  return validate_service($target,$gid,$state,unit_properties($target.unit,$target.transport),stable_text($path,$state),$environment_prefix)
 end
 
 fn namespace_context($request)
@@ -220,7 +220,7 @@ fn namespace_context($request)
     $dirs[$path] = directory($path,0,$gid,0o750)
   end
   $dirs[$t.var .. "/noded"] = directory($t.var .. "/noded",$uid,$gid,0o700)
-  $binding = service_binding($t,$gid)
+  $binding = service_binding($t,$gid,$native.environment_prefix)
   $mix_hash = native_binary($request.mix_bin,$native.prefix,"mix")
   $builtins = lines(run_argv_must([$request.mix_bin,"builtins","--names"],{timeout:10}))
   for $needed in ["fs_watch","fs_wait","fs_unwatch","flock","write_new","stat","hash_sha256","data_encode","run_argv"]
@@ -388,7 +388,7 @@ fn live_process($ctx)
       $environment[$pair[0]] = $pair[1]
     end
   end
-  $prefix = upper($ctx.target.project)
+  $prefix = $ctx.binding.environment_prefix
   for $pair in [["_ETC",$ctx.target.etc],["_VAR",$ctx.target.var],["_NODE_CONFIG",$ctx.target.etc .. "/node.conf.mix"],["_RUN",$ctx.target.run],["_BROKER_ACCOUNT",$ctx.target.account],["_NODED_URL",""]]
     if $environment[$prefix .. $pair[0]] != $pair[1] then refuse("live daemon profile environment mismatch") end
   end
