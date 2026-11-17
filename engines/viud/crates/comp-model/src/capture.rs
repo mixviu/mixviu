@@ -59,6 +59,7 @@ pub enum RecordCommand {
         fps: u32,
         encoder: String,
         max_seconds: u64,
+        max_bytes: Option<u64>,
     },
     Marker {
         session: String,
@@ -86,6 +87,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
             "fps",
             "cursor",
             "max_seconds",
+            "max_bytes",
             "encoder",
         ],
         "comp.record.marker" => &["session", "label", "data"],
@@ -111,11 +113,11 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
         "comp.record.start" => {
             let request_id = text("request_id")?;
             let path = text("path")?;
-            if !path.ends_with(".mkv") {
+            if !path.ends_with(".vfl") {
                 return Err(invalid_argument(
                     "path",
-                    "Matroska path",
-                    "absolute .mkv path",
+                    "VFL directory",
+                    "absolute .vfl path",
                 ));
             }
             let fps = fields
@@ -136,6 +138,13 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 Some(Value::Bool(b)) => *b,
                 _ => return Err(invalid_argument("cursor", "boolean", "true|false")),
             };
+            let max_bytes =
+                match fields.get("max_bytes") {
+                    None => None,
+                    Some(value) => Some(value.as_u64().filter(|n| *n > 0).ok_or_else(|| {
+                        invalid_argument("max_bytes", "positive integer", "bytes")
+                    })?),
+                };
             let target = fields
                 .get("target")
                 .and_then(Value::as_object)
@@ -153,10 +162,9 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 ));
             }
             let encoder = match fields.get("encoder").and_then(Value::as_str) {
-                None if !fields.contains_key("encoder") => "x264",
-                Some("x264") => "x264",
-                Some("vaapi") => "vaapi",
-                _ => return Err(invalid_argument("encoder", "encoder name", "x264|vaapi")),
+                None if !fields.contains_key("encoder") => "vfl",
+                Some("vfl") => "vfl",
+                _ => return Err(invalid_argument("encoder", "encoder name", "vfl")),
             }
             .to_owned();
             let mut targets = Vec::new();
@@ -190,6 +198,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 fps,
                 encoder,
                 max_seconds,
+                max_bytes,
             })
         }
         "comp.record.marker" => Ok(RecordCommand::Marker {
@@ -397,20 +406,37 @@ mod tests {
 
     #[test]
     fn recording_validation_and_read_only_classification() {
-        let args = json!({"request_id":"take","target":{"windows":[{"id":1,"generation":2},{"id":3,"generation":4}]},"path":"/tmp/take.mkv","max_seconds":60});
-        let RecordCommand::Start { targets, fps, .. } =
-            parse_record("comp.record.start", &args).unwrap()
+        let args = json!({"request_id":"take","target":{"windows":[{"id":1,"generation":2},{"id":3,"generation":4}]},"path":"/tmp/take.vfl","max_seconds":60});
+        let RecordCommand::Start {
+            targets,
+            fps,
+            max_bytes,
+            ..
+        } = parse_record("comp.record.start", &args).unwrap()
         else {
             panic!()
         };
         assert_eq!(targets.len(), 2);
         assert_eq!(fps, 30);
+        assert_eq!(max_bytes, None);
+        let mut bounded = args.clone();
+        bounded["max_bytes"] = json!(1048576);
+        assert!(matches!(
+            parse_record("comp.record.start", &bounded).unwrap(),
+            RecordCommand::Start {
+                max_bytes: Some(1048576),
+                ..
+            }
+        ));
         assert!(targets[0].cursor);
         for (key, value) in [
-            ("path", json!("relative.mkv")),
+            ("path", json!("relative.vfl")),
             ("fps", json!(0)),
             ("fps", json!(61)),
             ("max_seconds", json!(0)),
+            ("max_bytes", json!(0)),
+            ("max_bytes", json!(-1)),
+            ("max_bytes", json!(null)),
             ("request_id", json!("")),
             ("cursor", json!("false")),
             ("unknown", json!(true)),

@@ -1483,9 +1483,13 @@ pub fn execute(
 
     // wlr-screencopy: every pipe's frame is queued; now map the readbacks and
     // answer the copies (mapping waits for the GPU, which must not delay a flip).
-    if !screencopy.is_empty() {
+    {
         let mut r = gles_renderer.borrow_mut();
         let gles: &mut smithay::backend::renderer::gles::GlesRenderer = r.as_mut();
+        let outputs: Vec<_> = state.inner.space_state().state.outputs().cloned().collect();
+        for output in outputs {
+            screencopy::file::poll(gles, &output);
+        }
         for captures in screencopy.drain(..) {
             captures.finish(gles);
         }

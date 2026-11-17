@@ -3626,10 +3626,12 @@ dependencies = [
  "glow",
  "image",
  "libc",
+ "media-vfl",
  "model",
  "pkg-config",
  "pollster 1.0.1",
  "render-gles",
+ "serde_json",
  "slots",
  "smithay",
  "thiserror 2.0.21",
@@ -3768,11 +3770,13 @@ name = "headless"
 version = "0.1.2"
 dependencies = [
  "comp-model",
+ "crc32fast",
  "decor",
  "frames",
  "graphics",
  "ledger",
  "libc",
+ "lz4_flex",
  "model",
  "outputs",
  "protocols",
@@ -5251,6 +5255,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
+name = "lz4_flex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
+
+[[package]]
 name = "macro_rules_attribute"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5517,6 +5527,16 @@ dependencies = [
 [[package]]
 name = "media-frame"
 version = "0.1.2"
+
+[[package]]
+name = "media-vfl"
+version = "0.1.2"
+dependencies = [
+ "crc32fast",
+ "libc",
+ "lz4_flex",
+ "serde_json",
+]
 
 [[package]]
 name = "memchr"
@@ -8646,6 +8666,7 @@ version = "0.1.2"
 dependencies = [
  "comp-model",
  "dispatcher",
+ "graphics",
  "image",
  "ledger",
  "model",

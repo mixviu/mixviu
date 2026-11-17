@@ -1,0 +1,42 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Focused CBC development helper. Does not run the workspace gate.
+$mode = args()[0] ?? "encoder"
+if $mode == "capture" or $mode == "bench" then
+  -- Fixture executables must match the code under test. This is a focused
+  -- render-node integration test, never the workspace gate or a release build.
+  $r = run_argv(["cargo","build","-p","viud","-p","noded","-p","testkit","--bins"],{timeout:1800,stdout:"inherit",stderr:"inherit"})
+  if not $r.ok then exit($r.exit_code ?? 124) end
+  export MIX_TEST_REQUIRE_RECORD=1
+  export MIX_TEST_MIX_EXE=realpath("target/debug/mix")
+end
+if $mode == "bench" then
+  -- Measure the optimised compositor, not debug compression throughput.
+  $r = run_argv(["cargo","build","--release","-p","viud"],{timeout:1800,stdout:"inherit",stderr:"inherit"})
+  if not $r.ok then exit($r.exit_code ?? 124) end
+  export MIX_TEST_VIUD_EXE=realpath("target/release/viud")
+end
+$command = if $mode == "fmt" then
+  ["cargo","fmt","-p","graphics","-p","recorder","-p","comp-model","-p","policy-host","-p","headless","-p","media-vfl","-p","protocols","-p","viud"]
+elif $mode == "encoder" then
+  ["cargo","test","-p","media-vfl","-p","recorder","-p","graphics"]
+elif $mode == "capture" then
+  ["cargo","test","-p","headless","--test","capture","record_","--","--nocapture","--test-threads=1"]
+elif $mode == "bench" then
+  ["cargo","test","-p","headless","--test","capture","benchmark_record_ui_static_10min","--","--ignored","--nocapture","--test-threads=1"]
+elif $mode == "foreign" then
+  ["mix","tools/foreign_gate.mix"]
+elif $mode == "clippy" then
+  ["cargo","clippy","--locked","-p","graphics","-p","recorder","-p","comp-model","-p","policy-host","-p","headless","-p","media-vfl","-p","protocols","--all-targets"]
+else
+  raise("VFL_CHECK","unknown mode")
+end
+try
+  $r = run_argv($command,{timeout:1800,stdout:"inherit",stderr:"inherit"})
+  exit($r.exit_code ?? 124)
+finally
+  print("VFL_WORKER_DIFF_BEGIN")
+  print(run_argv_must(["git","diff"]))
+  print("VFL_WORKER_DIFF_END")
+  -- Only files this job changed; the worker's checkout is job-owned.
+  print(run_argv(["git","checkout","-q","--","."]).stderr)
+end
