@@ -191,7 +191,9 @@ print(json_encode({rc:$rc, value:$v}))
   write_file($gate .. ".waiting", "")
   while not is_file($gate .. ".release") sleep(0.01) end
 ')
-  $gated = replace($gated, 'on scenes.upgrade.retry\n', 'on scenes.upgrade.retry\n  write_file($ROOT .. "/.task-" .. to_string($event.args.seq) .. ".done", "")\n')
+  $gated = replace($gated, "on scenes.upgrade.retry\n", 'on scenes.upgrade.retry
+  write_file($ROOT .. "/.task-" .. to_string($event.args.seq) .. ".done", "")
+')
   $gated = $gated .. '
 on fixture.retry
   if $event.args.drop == true then $state.upgrades = delete($state.upgrades, "gamma") end
