@@ -183,7 +183,114 @@ impl Mouse {
         }
         for event in events {
             self.trace_press(placements, sessions, event, focused);
-            self.event(placements, sessions, event, copy_on_select, now, &mut out);
+            match event {
+                Event::ModifiersChanged(value) => self.modifiers = *value,
+                Event::PointerMoved(position) => {
+                    self.position = Some(*position);
+                    let current = hit(placements, *position, None);
+                    let changed = self.hover != current;
+                    self.hover = current;
+                    if (changed || (self.hover.is_none() && self.pressed.is_some()))
+                        && (self.hover.is_some() || self.pressed.is_some())
+                    {
+                        self.moved(
+                            placements,
+                            sessions,
+                            *position,
+                            false,
+                            copy_on_select,
+                            &mut out,
+                        );
+                    }
+                }
+                Event::PointerButton {
+                    pos,
+                    button,
+                    pressed,
+                    modifiers,
+                } => {
+                    self.modifiers = *modifiers;
+                    self.position = Some(*pos);
+                    if *pressed {
+                        if self.pressed.is_some() {
+                            self.cancel();
+                        }
+                        self.hover = hit(placements, *pos, None);
+                        let Some(button) = code(*button) else {
+                            continue;
+                        };
+                        let Some(hit) = self.hover.clone() else {
+                            continue;
+                        };
+                        let Ok(terminal) = sessions.get(&hit.handle) else {
+                            continue;
+                        };
+                        sessions.activity();
+                        out.push(Effect::Focus(hit.handle.clone()));
+                        let local = modifiers.shift || !terminal.lock().unwrap().mouse_reporting();
+                        if local && button == 0 {
+                            sessions.clear_other_selections(&hit.handle);
+                        }
+                        self.pressed = Some(Press {
+                            terminal: terminal.clone(),
+                            last: hit.clone(),
+                            button,
+                            local,
+                            origin: *pos,
+                            mods: mods(*modifiers),
+                        });
+                        if !local {
+                            self.clicks = None;
+                            terminal.lock().unwrap().mouse_button(
+                                hit.col,
+                                hit.row,
+                                button,
+                                true,
+                                mods(*modifiers),
+                            );
+                        } else if button == 0 {
+                            let kind = self.click(hit.clone(), now);
+                            terminal
+                                .lock()
+                                .unwrap()
+                                .selection_start(hit.col, hit.row, hit.side, kind);
+                        } else if button == 1 {
+                            self.clicks = None;
+                            out.push(Effect::Read {
+                                handle: hit.handle,
+                                primary: true,
+                            });
+                        }
+                    } else if code(*button).is_some_and(|button| {
+                        self.pressed.as_ref().is_some_and(|p| p.button == button)
+                    }) {
+                        self.moved(placements, sessions, *pos, true, copy_on_select, &mut out);
+                    }
+                }
+                Event::MouseWheel {
+                    unit,
+                    delta,
+                    modifiers,
+                    ..
+                } => {
+                    if let Some(hit) = self.position.and_then(|pos| hit(placements, pos, None)) {
+                        sessions.activity();
+                        out.push(Effect::Wheel {
+                            handle: hit.handle,
+                            col: hit.col,
+                            row: hit.row,
+                            unit: *unit,
+                            delta: *delta,
+                            modifiers: *modifiers,
+                        });
+                    }
+                }
+                Event::PointerGone => {
+                    self.hover = None;
+                    self.position = None;
+                }
+                _ => {}
+            }
         }
         out
     }
@@ -229,117 +336,6 @@ impl Mouse {
                     pane = ?target.as_ref().map(|h| h.handle.as_str()), mouse_reporting = ?reporting,
                     shift = modifiers.shift, cancelled_pending = self.pressed.is_some(), effect,
                     "terminal.press");
-        }
-    }
-    fn event(
-        &mut self,
-        placements: &[Placement],
-        sessions: &Sessions,
-        event: &Event,
-        copy_on_select: bool,
-        now: Instant,
-        out: &mut Vec<Effect>,
-    ) {
-        match event {
-            Event::ModifiersChanged(value) => self.modifiers = *value,
-            Event::PointerMoved(position) => {
-                self.position = Some(*position);
-                let current = hit(placements, *position, None);
-                let changed = self.hover != current;
-                self.hover = current;
-                if (changed || (self.hover.is_none() && self.pressed.is_some()))
-                    && (self.hover.is_some() || self.pressed.is_some())
-                {
-                    self.moved(placements, sessions, *position, false, copy_on_select, out);
-                }
-            }
-            Event::PointerButton {
-                pos,
-                button,
-                pressed,
-                modifiers,
-            } => {
-                self.modifiers = *modifiers;
-                self.position = Some(*pos);
-                if *pressed {
-                    if self.pressed.is_some() {
-                        self.cancel();
-                    }
-                    self.hover = hit(placements, *pos, None);
-                    let Some(button) = code(*button) else {
-                        return;
-                    };
-                    let Some(hit) = self.hover.clone() else {
-                        return;
-                    };
-                    let Ok(terminal) = sessions.get(&hit.handle) else {
-                        return;
-                    };
-                    sessions.activity();
-                    out.push(Effect::Focus(hit.handle.clone()));
-                    let local = modifiers.shift || !terminal.lock().unwrap().mouse_reporting();
-                    if local && button == 0 {
-                        sessions.clear_other_selections(&hit.handle);
-                    }
-                    self.pressed = Some(Press {
-                        terminal: terminal.clone(),
-                        last: hit.clone(),
-                        button,
-                        local,
-                        origin: *pos,
-                        mods: mods(*modifiers),
-                    });
-                    if !local {
-                        self.clicks = None;
-                        terminal.lock().unwrap().mouse_button(
-                            hit.col,
-                            hit.row,
-                            button,
-                            true,
-                            mods(*modifiers),
-                        );
-                    } else if button == 0 {
-                        let kind = self.click(hit.clone(), now);
-                        terminal
-                            .lock()
-                            .unwrap()
-                            .selection_start(hit.col, hit.row, hit.side, kind);
-                    } else if button == 1 {
-                        self.clicks = None;
-                        out.push(Effect::Read {
-                            handle: hit.handle,
-                            primary: true,
-                        });
-                    }
-                } else if code(*button)
-                    .is_some_and(|button| self.pressed.as_ref().is_some_and(|p| p.button == button))
-                {
-                    self.moved(placements, sessions, *pos, true, copy_on_select, out);
-                }
-            }
-            Event::MouseWheel {
-                unit,
-                delta,
-                modifiers,
-                ..
-            } => {
-                if let Some(hit) = self.position.and_then(|pos| hit(placements, pos, None)) {
-                    sessions.activity();
-                    out.push(Effect::Wheel {
-                        handle: hit.handle,
-                        col: hit.col,
-                        row: hit.row,
-                        unit: *unit,
-                        delta: *delta,
-                        modifiers: *modifiers,
-                    });
-                }
-            }
-            Event::PointerGone => {
-                self.hover = None;
-                self.position = None;
-            }
-            _ => {}
         }
     }
     fn moved(
