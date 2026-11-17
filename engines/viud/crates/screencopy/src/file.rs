@@ -181,7 +181,6 @@ pub fn service<R: ExportMem>(
     kind: CaptureSource,
     cursor: bool,
 ) {
-    let _service = ledger::frame_trace::span("capture_file_service", 0);
     let requests = take(|request| {
         request.output == output.name()
             && request.spec.window.is_none()
@@ -190,6 +189,7 @@ pub fn service<R: ExportMem>(
     if requests.is_empty() {
         return;
     }
+    let _service = ledger::frame_trace::span("capture_file_service", 0);
     let readback = source.readback;
     let started = std::time::Instant::now();
     let pixels = read_pixels(renderer, source).map(std::sync::Arc::new);
@@ -226,12 +226,15 @@ pub(crate) fn read_pixels<R: ExportMem>(
         return Err("capture has no usable size".to_owned());
     }
     let copy = ledger::frame_trace::span("capture_copy_submit", 0);
-    let (mapping, rgba) = start_readback(
-        renderer,
-        source.framebuffer,
-        Rectangle::from_size(size),
-        &source.readback,
-    )?;
+    // File/recording consumers normalise to RGB, so prefer the offscreen
+    // texture's native RGBA layout over the protocol's XRGB shm layout.
+    let region = crate::framebuffer_region(Rectangle::from_size(size), &source.readback);
+    let (mapping, rgba) = match renderer.copy_framebuffer(
+        source.framebuffer, region, smithay::backend::allocator::Fourcc::Abgr8888,
+    ) {
+        Ok(mapping) => (mapping, true),
+        Err(_) => start_readback(renderer, source.framebuffer, Rectangle::from_size(size), &source.readback)?,
+    };
     drop(copy);
     let map = ledger::frame_trace::span("capture_map_wait", 0);
     let bytes = renderer
@@ -386,6 +389,9 @@ fn rgb(
     let len = row.checked_mul(height).ok_or("capture size overflow")?;
     if bytes.len() < len {
         return Err("capture readback is shorter than its layout".into());
+    }
+    if len == 0 {
+        return Ok(Vec::new());
     }
     let mut pixels = vec![0; len / 4 * 3];
     for (y, out) in pixels.chunks_exact_mut(width * 3).enumerate() {
