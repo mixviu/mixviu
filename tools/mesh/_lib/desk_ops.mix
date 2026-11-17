@@ -2,7 +2,7 @@
 -- Shared guarded desk path for the signed-inventory and private-seed owners.
 -- Loading this module does not contact a host or read private configuration.
 $targets = require("targets.mix")
-$ROLLOUT_READY = false
+$ROLLOUT_READY = true
 
 fn fail($message)
   raise("DESK_DISTRIBUTOR",$message)

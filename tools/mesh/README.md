@@ -145,8 +145,8 @@ child of `/var/lib/<project>`. See `tests/targets.conf.mix`.
 The model distinguishes the host SSH endpoint from the admitted node and the
 container namespace. It derives profile-local genesis, seed, inventory and
 anti-rollback baseline paths and `noded@N.service`. The distributor integration
-is currently parked behind `desk_ops.ROLLOUT_READY=false`; every new live desk
-operation refuses, and the preview still reports mutation unsupported. Existing
+was parked behind `desk_ops.ROLLOUT_READY` until the reviewed live proof on two
+Proxmox CT desks (2026-11-17); the switch is now on. Existing
 read-only probes remain available. Never use a path-only override to provision
 a desk. The guard must stay closed until the complete integration is reviewed.
 Run `mix tests/targets_test.mix` for the hermetic model checks.
@@ -337,7 +337,7 @@ is used only inside the CT to write root:root0600 `/etc/wireguard/wg1.conf`.
 This is the desk-side generator; `mesh_gen seal` retains its existing hub WG
 generation. No private key enters the hub plan or process argv.
 
-`desk_ops.ROLLOUT_READY` remains the sole sync/seed rollout switch, false here.
+`desk_ops.ROLLOUT_READY` remains the sole sync/seed rollout switch.
 Explicit preparation is a separate administrative tool, not a sync override.
 Live proof must establish WG routing, effective unit/session environment,
 cross-node addressed ABP and recovery before the orchestrator reviews/flips
