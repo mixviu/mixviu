@@ -104,11 +104,13 @@ pub struct ParsedEvent {
 /// value for the client.
 fn to_utc(dt: &DatePerhapsTime) -> Option<DateTime<Utc>> {
     match dt {
-        DatePerhapsTime::DateTime(CalendarDateTime::Utc(d)) => DateTime::from_timestamp(d.timestamp(), d.timestamp_subsec_nanos()),
+        DatePerhapsTime::DateTime(CalendarDateTime::Utc(d)) => {
+            DateTime::from_timestamp(d.timestamp(), d.timestamp_subsec_nanos())
+        }
         DatePerhapsTime::DateTime(CalendarDateTime::Floating(n)) => {
             let d = n.and_utc();
             DateTime::from_timestamp(d.timestamp(), d.timestamp_subsec_nanos())
-        },
+        }
         DatePerhapsTime::DateTime(CalendarDateTime::WithTimezone { date_time, .. }) => {
             let d = date_time.and_utc();
             DateTime::from_timestamp(d.timestamp(), d.timestamp_subsec_nanos())
@@ -281,7 +283,6 @@ fn first_location(data: &serde_json::Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn retired_ical_key_errors_before_raw_or_field_fallback() {

@@ -135,7 +135,8 @@ pub(crate) fn provenance(
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     let modified = mtime.map(|t| {
-        datetime::DateTime::<datetime::Utc>::from(t).to_rfc3339_opts(datetime::SecondsFormat::Secs, true)
+        datetime::DateTime::<datetime::Utc>::from(t)
+            .to_rfc3339_opts(datetime::SecondsFormat::Secs, true)
     });
     let header = parse_script_header(&String::from_utf8_lossy(bytes));
     ScriptProvenance {

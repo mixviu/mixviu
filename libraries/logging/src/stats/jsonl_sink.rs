@@ -498,7 +498,9 @@ mod tests {
 
     fn make_period(records: Vec<PeriodRecord>) -> PeriodSnapshot {
         PeriodSnapshot {
-            ts: datetime::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap(),
+            ts: datetime::Utc
+                .with_ymd_and_hms(2026, 5, 22, 12, 0, 0)
+                .unwrap(),
             host: "test-host".into(),
             service: "test-svc".into(),
             period_seconds: 60,
@@ -525,8 +527,6 @@ mod tests {
             delta: PeriodValue::Counter(d),
         }
     }
-
-
 
     fn read_lines(path: &Path) -> Vec<String> {
         let f = File::open(path).expect("open .open file");

@@ -834,7 +834,6 @@ async fn addressbook_report(
 mod tests {
     use super::*;
 
-
     #[test]
     fn report_text_preserves_predefined_and_numeric_entities() {
         let parsed = parse(br#"<D:calendar-multiget xmlns:D="DAV:"><D:href>/a&amp;b&#47;c&#x2E;ics</D:href></D:calendar-multiget>"#);
@@ -897,7 +896,11 @@ mod tests {
         );
         assert_eq!(
             end,
-            Some(datetime::Utc.with_ymd_and_hms(2026, 6, 30, 0, 0, 0).unwrap())
+            Some(
+                datetime::Utc
+                    .with_ymd_and_hms(2026, 6, 30, 0, 0, 0)
+                    .unwrap()
+            )
         );
     }
 

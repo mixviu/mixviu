@@ -50,7 +50,10 @@ pub trait StatsSink: Send + Sync {
     /// across processes. JSONL implements this by scanning the log
     /// dir (slice 5+); the v1 default returns `Unsupported` so v2
     /// backends that don't aggregate compile without a stub.
-    fn snapshot_since(&self, _since: datetime::DateTime<datetime::Utc>) -> std::io::Result<Snapshot> {
+    fn snapshot_since(
+        &self,
+        _since: datetime::DateTime<datetime::Utc>,
+    ) -> std::io::Result<Snapshot> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "this sink does not support cross-process aggregation",
