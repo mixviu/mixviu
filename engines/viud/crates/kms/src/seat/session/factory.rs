@@ -34,7 +34,9 @@ pub fn seat_error() -> Option<&'static str> {
 }
 
 fn remember_failure(last: &mut Option<String>, message: String) -> bool {
-    if last.as_ref() == Some(&message) { return false; }
+    if last.as_ref() == Some(&message) {
+        return false;
+    }
     *last = Some(message);
     true
 }
@@ -88,9 +90,18 @@ mod tests {
     #[test]
     fn distinct_libseat_errors_are_not_deduped() {
         let mut last = None;
-        assert!(remember_failure(&mut last, "permission denied; creation failed".into()));
-        assert!(!remember_failure(&mut last, "permission denied; creation failed".into()));
-        assert!(remember_failure(&mut last, "connection refused; creation failed".into()));
+        assert!(remember_failure(
+            &mut last,
+            "permission denied; creation failed".into()
+        ));
+        assert!(!remember_failure(
+            &mut last,
+            "permission denied; creation failed".into()
+        ));
+        assert!(remember_failure(
+            &mut last,
+            "connection refused; creation failed".into()
+        ));
         assert!(last.unwrap().contains("connection refused"));
     }
 }

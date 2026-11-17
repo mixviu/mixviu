@@ -63,9 +63,14 @@ struct Activation {
     stop: std::sync::Arc<AtomicBool>,
 }
 
-fn spawn_watcher(stop: &AtomicBool, run: impl FnOnce() + Send + 'static) -> std::io::Result<std::thread::JoinHandle<()>> {
+fn spawn_watcher(
+    stop: &AtomicBool,
+    run: impl FnOnce() + Send + 'static,
+) -> std::io::Result<std::thread::JoinHandle<()>> {
     stop.store(false, Ordering::Relaxed);
-    std::thread::Builder::new().name("viud-vt-wait".into()).spawn(run)
+    std::thread::Builder::new()
+        .name("viud-vt-wait".into())
+        .spawn(run)
 }
 
 impl Activation {
@@ -74,31 +79,29 @@ impl Activation {
         let tx = self.tx.clone();
         let stop = self.stop.clone();
         let started = spawn_watcher(&self.stop, move || {
-                WATCH_RUNNING.store(true, Ordering::Relaxed);
-                let result = std::panic::catch_unwind(|| {
-                    kms::seat::session::vt_wait::watch_own_vt(
-                        || {
-                            let _ = tx.send(Notice::Active);
-                        },
-                        || {
-                            let _ = tx.send(Notice::Ready);
-                        },
-                        &stop,
-                    )
-                });
-                let error = match result {
-                    Ok(Err(error)) => error.to_string(),
-                    Ok(Ok(())) => "VT source ended".into(),
-                    Err(_) => "VT source panicked".into(),
-                };
-                WATCH_RUNNING.store(false, Ordering::Relaxed);
-                if stop.load(Ordering::Relaxed) {
-                    info!(
-                        "VT watcher exited after native attachment; libseat owns VT notifications"
-                    );
-                }
-                let _ = tx.send(Notice::Stopped(error));
+            WATCH_RUNNING.store(true, Ordering::Relaxed);
+            let result = std::panic::catch_unwind(|| {
+                kms::seat::session::vt_wait::watch_own_vt(
+                    || {
+                        let _ = tx.send(Notice::Active);
+                    },
+                    || {
+                        let _ = tx.send(Notice::Ready);
+                    },
+                    &stop,
+                )
             });
+            let error = match result {
+                Ok(Err(error)) => error.to_string(),
+                Ok(Ok(())) => "VT source ended".into(),
+                Err(_) => "VT source panicked".into(),
+            };
+            WATCH_RUNNING.store(false, Ordering::Relaxed);
+            if stop.load(Ordering::Relaxed) {
+                info!("VT watcher exited after native attachment; libseat owns VT notifications");
+            }
+            let _ = tx.send(Notice::Stopped(error));
+        });
         if let Err(error) = started {
             self.watcher_alive = false;
             WATCH_FAILED.store(true, Ordering::Relaxed);
@@ -225,7 +228,10 @@ mod tests {
     fn watcher_spawn_clears_stop_before_running() {
         let stop = std::sync::Arc::new(AtomicBool::new(true));
         let observed = stop.clone();
-        spawn_watcher(&stop, move || assert!(!observed.load(Ordering::Relaxed))).unwrap().join().unwrap();
+        spawn_watcher(&stop, move || assert!(!observed.load(Ordering::Relaxed)))
+            .unwrap()
+            .join()
+            .unwrap();
     }
     #[test]
     fn ready_then_seat_failure_or_watcher_failure_grows_retry_interval() {
@@ -235,12 +241,22 @@ mod tests {
             let (tx, _) = channel();
             let activation = Rc::new(RefCell::new(Activation {
                 handles: Rc::new(RefCell::new(None)),
-                output: Output::new("test".into(), smithay::output::PhysicalProperties {
-                    size: (0, 0).into(), subpixel: smithay::output::Subpixel::Unknown,
-                    make: "test".into(), model: "test".into(),
-                }),
-                socket: "test".into(), handle: event_loop.handle(), tx,
-                watcher_alive: true, retry: Backoff::default(), timer: None,
+                output: Output::new(
+                    "test".into(),
+                    smithay::output::PhysicalProperties {
+                        size: (0, 0).into(),
+                        subpixel: smithay::output::Subpixel::Unknown,
+                        make: "test".into(),
+                        model: "test".into(),
+                        serial_number: "test".into(),
+                    },
+                ),
+                socket: "test".into(),
+                handle: event_loop.handle(),
+                tx,
+                watcher_alive: true,
+                retry: Backoff::default(),
+                timer: None,
                 stop: Default::default(),
             }));
             for expected in [250, 500, 1000, 2000, 4000, 5000] {
@@ -248,7 +264,9 @@ mod tests {
                 if seat_failure {
                     notice(&activation, Notice::Active, || arm(&activation));
                 }
-                notice(&activation, Notice::Stopped("test failure".into()), || panic!("not active"));
+                notice(&activation, Notice::Stopped("test failure".into()), || {
+                    panic!("not active")
+                });
                 assert_eq!(activation.borrow().retry.0, Duration::from_millis(expected));
                 let mut activation = activation.borrow_mut();
                 let token = activation.timer.take().unwrap();
