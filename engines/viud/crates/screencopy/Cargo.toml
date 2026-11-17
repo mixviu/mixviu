@@ -20,6 +20,10 @@ warnings = "allow"
 [lints.clippy]
 mod_module_files = "deny"
 
+[features]
+# Fault injection for owning-crate tests; absent from normal viud builds.
+test-support = []
+
 [dependencies]
 comp-model = { workspace = true }
 dispatcher = { workspace = true }

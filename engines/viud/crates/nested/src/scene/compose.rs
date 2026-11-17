@@ -70,6 +70,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
     if !screencopy::file::pending(&context.output) {
         return;
     }
+    screencopy::file::poll(context.winit_backend.renderer(), &context.output);
     let scale = context.output.current_scale().fractional_scale();
     screencopy::offscreen::capture_windows(
         context.winit_backend.renderer(),
@@ -123,6 +124,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
     );
     state.inner.render_output = previous_output;
     // The next window frame's age query and swap require its EGL surface.
+    screencopy::file::poll(context.winit_backend.renderer(), &context.output);
     if let Err(err) = crate::frame::submit::ensure_surface_current(&mut context.winit_backend) {
         warn!("winit: restore window after capture failed ({err})");
     }

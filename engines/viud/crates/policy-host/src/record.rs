@@ -81,6 +81,8 @@ struct Session {
     stop_answers: Vec<Answer>,
     pending: bool,
     drain_until: Option<Instant>,
+    stop_wake: Option<Rc<dyn Fn(Instant) -> bool>>,
+    stop_timer_at: Option<Instant>,
     signature: Vec<u64>,
     deferred_signature: Option<Vec<u64>>,
     failed: Option<String>,
@@ -279,11 +281,14 @@ pub fn command(
             stop_answers: Vec::new(),
             pending: false,
             drain_until: None,
+            stop_wake: None,
+            stop_timer_at: None,
             signature: Vec::new(),
             deferred_signature: None,
             failed: None,
             last_state: Cell::new(""),
         }));
+        install_stop_waker(&session, lp.loop_handle.clone());
         CURRENT.with_borrow_mut(|current| *current = Some(session.clone()));
         let tick_session = session.clone();
         let period = Duration::from_nanos(1_000_000_000 / u64::from(fps));
@@ -407,6 +412,7 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
         return;
     }
     s.failed = Some(error.into());
+    screencopy::file::release_raw(&format!("/{}-", s.pixel_secret));
     s.probe_cancel
         .store(true, std::sync::atomic::Ordering::Release);
     for answer in std::mem::take(&mut s.start_answers) {
@@ -420,6 +426,7 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
             r.superseded_capture();
         }
         r.stop(false);
+        schedule_stop(&mut s, Instant::now() + Duration::from_millis(5));
     } else {
         let mut status = empty_status("failed", Some(error));
         status["session"] = json!(s.id);
@@ -493,21 +500,87 @@ fn stop_stream(s: &mut Session, discard: bool) -> bool {
         let until = *s
             .drain_until
             .get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
-        if Instant::now() < until {
-            return true;
+        if Instant::now() < until && schedule_stop(s, until) {
+            return false;
         }
     }
     s.drain_until = None;
+    screencopy::file::release_raw(&format!("/{}-", s.pixel_secret));
     let lost = u64::from(std::mem::take(&mut s.pending))
         + u64::from(s.deferred_signature.take().is_some());
     if let Some(r) = s.recording.as_mut() {
         for _ in 0..lost {
             r.superseded_capture();
         }
-        r.stop(discard)
+        let sealed = r.stop(discard);
+        if sealed {
+            schedule_stop(s, Instant::now() + Duration::from_millis(5));
+        }
+        sealed
     } else {
         false
     }
+}
+
+fn schedule_stop(s: &mut Session, at: Instant) -> bool {
+    if s.stop_timer_at.is_some_and(|current| current <= at) {
+        return true;
+    }
+    if s.stop_wake.as_ref().is_some_and(|wake| wake(at)) {
+        s.stop_timer_at = Some(at);
+        true
+    } else {
+        false
+    }
+}
+
+// The timer captures this Session weakly, never CURRENT. A late old-take
+// timeout cannot seal a newer recording, even after CURRENT has changed.
+fn install_stop_waker<D: 'static>(session: &Rc<RefCell<Session>>, handle: smithay::reexports::calloop::LoopHandle<'static, D>) {
+    let owner = Rc::downgrade(session);
+    let token = Rc::new(RefCell::new(None));
+    session.borrow_mut().stop_wake = Some(Rc::new(move |at| {
+        if let Some(old) = token.borrow_mut().take() {
+            handle.remove(old);
+        }
+        let owner = owner.clone();
+        let slot = token.clone();
+        match handle.insert_source(Timer::from_deadline(at), move |_, _, _| {
+            slot.borrow_mut().take();
+            if let Some(session) = owner.upgrade() {
+                let mut s = session.borrow_mut();
+                s.stop_timer_at = None;
+                if s.drain_until.is_some() && stop_stream(&mut s, false) {
+                    event(&s, "finishing");
+                }
+                if !finish_recording(&mut s) && s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
+                    schedule_stop(&mut s, Instant::now() + Duration::from_millis(5));
+                }
+            }
+            TimeoutAction::Drop
+        }) {
+            Ok(next) => { *token.borrow_mut() = Some(next); true }
+            Err(_) => false,
+        }
+    }));
+}
+
+fn finish_recording(s: &mut Session) -> bool {
+    let Some(r) = s.recording.as_mut() else { return false };
+    if r.terminal.is_some() { return true }
+    if !r.poll() { return false }
+    let reply = r.terminal.clone().unwrap();
+    if r.error.is_some() { s.failed = r.error.clone(); }
+    let past = Past {
+        id: s.id.clone(), params: s.params.clone(), start: s.start.clone(),
+        terminal: reply.clone(), status: r.status(), start_error: None,
+    };
+    PAST.with_borrow_mut(|all| all.insert(s.request_id.clone(), past));
+    for answer in std::mem::take(&mut s.stop_answers) {
+        answer(ControlReply::Body(reply.clone()));
+    }
+    event(s, if s.failed.is_some() { "failed" } else { "idle" });
+    true
 }
 
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
@@ -528,30 +601,8 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     }
     {
         let mut s = session.borrow_mut();
+        if finish_recording(&mut s) { return; }
         if let Some(r) = s.recording.as_mut() {
-            if r.poll() {
-                let reply = r.terminal.clone().unwrap();
-                let error = r.error.clone();
-                if error.is_some() {
-                    s.failed = error;
-                }
-                let past = Past {
-                    id: s.id.clone(),
-                    params: s.params.clone(),
-                    start: s.start.clone(),
-                    terminal: reply.clone(),
-                    status: s.recording.as_ref().unwrap().status(),
-                    start_error: None,
-                };
-                PAST.with_borrow_mut(|all| {
-                    all.insert(s.request_id.clone(), past);
-                });
-                for answer in std::mem::take(&mut s.stop_answers) {
-                    answer(ControlReply::Body(reply.clone()));
-                }
-                event(&s, if s.failed.is_some() { "failed" } else { "idle" });
-                return;
-            }
             if r.terminal.is_some() || !r.is_recording() || s.failed.is_some() {
                 return;
             }
@@ -561,8 +612,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         }
         if let Some(until) = s.drain_until {
             if !s.pending || Instant::now() >= until {
-                stop_stream(&mut s, false);
-                event(&s, "finishing");
+                if stop_stream(&mut s, false) { event(&s, "finishing"); }
             }
             return;
         }
@@ -578,8 +628,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             .as_ref()
             .is_some_and(|r| now_us.saturating_sub(r.t0_us) >= s.max_seconds * 1_000_000)
         {
-            stop_stream(&mut s, false);
-            event(&s, "finishing");
+            if stop_stream(&mut s, false) { event(&s, "finishing"); }
             return;
         }
     }
@@ -797,8 +846,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 event(&s, "recording");
             }
-            if s.drain_until.is_some() {
-                stop_stream(&mut s, false);
+            if s.drain_until.is_some() && stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
         });
@@ -813,6 +861,154 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn drain_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
+        let path = root.join(format!("{id}.vfl")).to_string_lossy().into_owned();
+        let params = comp_model::capture::parse_record("comp.record.start", &json!({"request_id":id,"path":path,"target":{},"max_seconds":60})).unwrap();
+        let mut recording = Recording::new_bounded(id.into(), path.clone(), 2, 2, 30, "vfl".into(), None).unwrap();
+        recording.frame(Some((2,2,std::sync::Arc::new(vec![7;12]),0))).unwrap();
+        Rc::new(RefCell::new(Session {
+            frames_parked: |_| false, request_id:id.into(), admitted:Instant::now(),
+            id:id.into(),pixel_secret:format!("test-{id}"),pixel_counter:0,params,path,
+            targets:vec![],fps:30,encoder:"vfl".into(),probe:None,probe_cancel:Default::default(),probe_join:None,
+            max_seconds:60,max_bytes:None,start:Some(recording.started()),recording:Some(recording),
+            start_answers:vec![],stop_answers:vec![],pending:false,drain_until:None,
+            stop_wake:None,stop_timer_at:None,signature:vec![],deferred_signature:None,failed:None,last_state:Cell::new("recording"),
+        }))
+    }
+
+    #[test]
+    fn stalled_fence_stop_timer_reclaims_slot_and_allows_same_and_other_output() {
+        use smithay::backend::{egl::{EGLDevice,EGLDisplay,EGLContext}, renderer::{Bind,ImportMem,gles::GlesRenderer}};
+        use smithay::output::{Output,PhysicalProperties,Subpixel};
+        use smithay::reexports::calloop::EventLoop;
+        use std::sync::atomic::Ordering;
+        let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        if !std::path::Path::new(&node).exists() {
+            assert_ne!(std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref(), Ok("1"), "render node required");
+            return;
+        }
+        let device = EGLDevice::enumerate().unwrap().find(|d| d.render_device_path().ok().as_deref() == Some(std::path::Path::new(&node))).unwrap();
+        // SAFETY: the owned display/context are used only on this test thread.
+        let display = unsafe { EGLDisplay::new(device).unwrap() };
+        let context = EGLContext::new(&display).unwrap();
+        let mut renderer = unsafe { GlesRenderer::new(context).unwrap() };
+        let outputs: Vec<_> = ["same", "other"].into_iter().map(|name| Output::new(name.into(), PhysicalProperties {
+            size:(0,0).into(),subpixel:Subpixel::Unknown,make:"test".into(),model:"test".into(),serial_number:name.into(),
+        })).collect();
+        let root = std::env::temp_dir().join(format!("record-stall-{}-{}",std::process::id(),recorder::bus::monotonic_us().unwrap()));
+        std::fs::create_dir(&root).unwrap();
+        let mut events: EventLoop<'static, ()> = EventLoop::try_new().unwrap();
+
+        let submit = |session: &Rc<RefCell<Session>>, renderer: &mut GlesRenderer, output: &Output| {
+            let token = format!("/{}-0-0", session.borrow().pixel_secret);
+            session.borrow_mut().pending = true;
+            let owner = session.clone();
+            screencopy::file::raw_answer(token.clone(), move |result| {
+                match result {
+                    Ok((w,h,pixels,cost)) => {
+                        let mut s = owner.borrow_mut();
+                        s.pending = false;
+                        s.recording.as_mut().unwrap().frame(Some((w,h,pixels,cost))).unwrap();
+                        if s.drain_until.is_some() && stop_stream(&mut s,false) { event(&s,"finishing"); }
+                    }
+                    Err(_) => fail(&owner,"readback expired"),
+                }
+            });
+            let spec = comp_model::capture::parse(&json!({"path":token,"format":"ppm"})).unwrap();
+            let failed_token = token.clone();
+            screencopy::file::enqueue(output,spec, move |result| {
+                if let Err(error) = result { screencopy::file::raw_fail(&failed_token,error); }
+            });
+            let mut texture = renderer.import_memory(&[9;16],smithay::backend::allocator::Fourcc::Abgr8888,(2,2).into(),false).unwrap();
+            let target = renderer.bind(&mut texture).unwrap();
+            screencopy::file::service(renderer,screencopy::Source {framebuffer:&target,readback:screencopy::Readback {size:(2,2).into(),origin_bottom_left:false}},output,screencopy::file::CaptureSource::Offscreen,true);
+        };
+        let stop = |session: &Rc<RefCell<Session>>, discard| {
+            CURRENT.with_borrow_mut(|current| *current = Some(session.clone()));
+            let reply = Rc::new(RefCell::new(None));
+            let answer = reply.clone();
+            let id = session.borrow().id.clone();
+            session_command(RecordCommand::Stop {session:id,discard},Box::new(move |value| {
+                let ControlReply::Body(value) = value else { panic!("stop refused") };
+                *answer.borrow_mut() = Some(value);
+            }));
+            reply
+        };
+        let await_reply = |events: &mut EventLoop<'static, ()>, reply: &Rc<RefCell<Option<Value>>>| {
+            let limit = Instant::now()+Duration::from_secs(2);
+            while reply.borrow().is_none() && Instant::now()<limit {
+                events.dispatch(Some(Duration::from_millis(10)),&mut ()).unwrap();
+            }
+            assert!(reply.borrow().is_some(),"stop must complete without recording ticks or a fence answer");
+        };
+
+        // No pacing timer and no renderer polls: only the real stop deadline
+        // can deliver this reply. Changing CURRENT also probes timer ownership.
+        let old = drain_fixture("hung", &root);
+        install_stop_waker(&old,events.handle());
+        let fence = screencopy::file::testing::stall_next_read();
+        submit(&old,&mut renderer,&outputs[0]);
+        assert!(screencopy::file::pending(&outputs[0]));
+        assert!(!screencopy::file::requested(&outputs[0]));
+        assert!(!screencopy::file::pending_picture(&outputs[0],true));
+        let began = Instant::now();
+        let reply = stop(&old,false);
+        assert!(reply.borrow().is_none());
+        assert_eq!(old.borrow().last_state.get(),"recording","deferred stop must not emit finishing");
+        let newer = drain_fixture("newer", &root);
+        install_stop_waker(&newer,events.handle());
+        CURRENT.with_borrow_mut(|current| *current=Some(newer.clone()));
+        await_reply(&mut events,&reply);
+        let stopped_ms = began.elapsed().as_millis();
+        assert!(began.elapsed()<Duration::from_secs(2));
+        assert!(newer.borrow().recording.as_ref().unwrap().is_recording(),"old timeout sealed the new take");
+        assert_eq!(screencopy::file::testing::read_count(),0);
+        assert_eq!(screencopy::file::testing::pool_count(),0);
+        assert_eq!(fence.load(Ordering::Relaxed),1,"fence ownership must be released");
+        await_reply(&mut events,&stop(&newer,false));
+
+        // Reuse the real queue/GPU/writer on the same and a different output.
+        for (index, output) in outputs.iter().enumerate() {
+            let s = drain_fixture(&format!("reuse-{index}"),&root);
+            install_stop_waker(&s,events.handle());
+            submit(&s,&mut renderer,output);
+            let reply = stop(&s,false);
+            let limit=Instant::now()+Duration::from_secs(2);
+            while reply.borrow().is_none() && Instant::now()<limit {
+                screencopy::file::poll(&mut renderer,output);
+                events.dispatch(Some(Duration::from_millis(2)),&mut ()).unwrap();
+            }
+            assert!(reply.borrow().is_some());
+            assert_eq!(reply.borrow().as_ref().unwrap()["dropped"],0);
+            assert_eq!(screencopy::file::testing::read_count(),0);
+            assert_eq!(screencopy::file::testing::pool_count(),0);
+        }
+        let s = drain_fixture("discard",&root);
+        install_stop_waker(&s,events.handle());
+        let fence=screencopy::file::testing::stall_next_read();
+        submit(&s,&mut renderer,&outputs[0]);
+        let reply=stop(&s,true);
+        assert_eq!(screencopy::file::testing::read_count(),0,"discard must release immediately");
+        assert_eq!(fence.load(Ordering::Relaxed),1);
+        await_reply(&mut events,&reply);
+
+        let s = drain_fixture("expire",&root);
+        install_stop_waker(&s,events.handle());
+        let fence=screencopy::file::testing::stall_next_read();
+        submit(&s,&mut renderer,&outputs[0]);
+        assert!(screencopy::file::testing::take_wake());
+        screencopy::file::testing::age_reads();
+        screencopy::file::poll(&mut renderer,&outputs[1]);
+        assert_eq!(screencopy::file::testing::read_count(),0,"expiry must apply across outputs");
+        assert_eq!(fence.load(Ordering::Relaxed),1);
+        assert!(!screencopy::file::testing::take_wake(),"expired reads must not re-offer 1ms wakes");
+        await_reply(&mut events,&stop(&s,false));
+        CURRENT.with_borrow_mut(|current| *current=None);
+        drop((old,newer,s));
+        std::fs::remove_dir_all(root).unwrap();
+        println!("STALLED_FENCE stop_bound_ms=1000 reply_ms={stopped_ms} same_output=true other_output=true discard=true expiry=true");
+    }
     #[test]
     fn no_session_status_has_uniform_keys() {
         CURRENT.with_borrow_mut(|current| *current = None);
@@ -899,6 +1095,8 @@ mod tests {
             stop_answers: vec![],
             pending: true,
             drain_until: None,
+            stop_wake: None,
+            stop_timer_at: None,
             signature: vec![],
             deferred_signature: None,
             failed: None,

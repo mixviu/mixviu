@@ -17,6 +17,9 @@ use smithay::output::Output;
 use smithay::utils::Rectangle;
 use std::cell::RefCell;
 use std::io::Write;
+use std::time::{Duration, Instant};
+
+const READ_TIMEOUT: Duration = Duration::from_secs(1);
 
 type Answer = Box<dyn FnOnce(Result<Value, ControlReply>)>;
 pub type Pixels = (u32, u32, std::sync::Arc<Vec<u8>>, u64);
@@ -26,6 +29,7 @@ thread_local! {
     // Retain at most three RGB allocations. A writer holding a frame prevents
     // reuse: Arc::get_mut succeeds only after every consumer has released it.
     static PIXEL_POOL: RefCell<Vec<std::sync::Arc<Vec<u8>>>> = const { RefCell::new(Vec::new()) };
+    static RELEASE_POOL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// A raw capture uses the same target fencing, crop and offscreen window path
@@ -65,6 +69,7 @@ struct PendingRead {
     kind: CaptureSource,
     copy_us: u64,
     latency: ledger::frame_trace::WaitSpan,
+    expires: Instant,
 }
 
 fn reads_pending(output: &Output, cursor: Option<bool>) -> bool {
@@ -81,6 +86,39 @@ fn wake_readback() {
     graphics::bridge::publish::wake::offer_capture_deadline(
         std::time::Instant::now() + std::time::Duration::from_millis(1),
     );
+}
+
+/// Test-only fault injection, with real PBO ownership and a never-ready fence.
+#[cfg(feature = "test-support")]
+pub mod testing {
+    use super::*;
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    thread_local! {
+        static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
+    }
+    #[derive(Debug)]
+    struct NeverFence(Arc<AtomicUsize>);
+    impl Drop for NeverFence {
+        fn drop(&mut self) { self.0.fetch_add(1, Ordering::Relaxed); }
+    }
+    impl smithay::backend::renderer::sync::Fence for NeverFence {
+        fn is_signaled(&self) -> bool { false }
+        fn wait(&self) -> Result<(), smithay::backend::renderer::sync::Interrupted> { panic!("stalled fence must never be waited on") }
+        fn is_exportable(&self) -> bool { false }
+        fn export(&self) -> Option<std::os::fd::OwnedFd> { None }
+    }
+    pub fn stall_next_read() -> Arc<AtomicUsize> {
+        let drops = Arc::new(AtomicUsize::new(0));
+        STALL.with_borrow_mut(|slot| *slot = Some(drops.clone()));
+        drops
+    }
+    pub(super) fn replace_fence(fence: SyncPoint) -> SyncPoint {
+        STALL.with_borrow_mut(|slot| slot.take()).map_or(fence, |drops| SyncPoint::from(NeverFence(drops)))
+    }
+    pub fn read_count() -> usize { READS.with_borrow(Vec::len) }
+    pub fn pool_count() -> usize { PIXEL_POOL.with_borrow(Vec::len) }
+    pub fn age_reads() { READS.with_borrow_mut(|reads| reads.iter_mut().for_each(|read| read.expires = Instant::now())); }
+    pub fn take_wake() -> bool { graphics::bridge::publish::wake::take_capture_deadline().is_some() }
 }
 
 pub fn enqueue(
@@ -107,8 +145,12 @@ pub fn enqueue(
 }
 
 pub fn pending(output: &Output) -> bool {
-    reads_pending(output, None)
-        || REQUESTS.with_borrow(|requests| {
+    reads_pending(output, None) || requested(output)
+}
+
+/// Queued work needs a source render; a submitted PBO only needs polling.
+pub fn requested(output: &Output) -> bool {
+    REQUESTS.with_borrow(|requests| {
             requests
                 .iter()
                 .any(|request| request.output == output.name())
@@ -116,8 +158,7 @@ pub fn pending(output: &Output) -> bool {
 }
 
 pub fn pending_output(output: &Output) -> bool {
-    reads_pending(output, None)
-        || REQUESTS.with_borrow(|requests| {
+    REQUESTS.with_borrow(|requests| {
             requests
                 .iter()
                 .any(|request| request.output == output.name() && request.spec.window.is_none())
@@ -125,8 +166,7 @@ pub fn pending_output(output: &Output) -> bool {
 }
 
 pub fn pending_picture(output: &Output, cursor: bool) -> bool {
-    reads_pending(output, Some(cursor))
-        || REQUESTS.with_borrow(|requests| {
+    REQUESTS.with_borrow(|requests| {
             requests.iter().any(|request| {
                 request.output == output.name()
                     && request.spec.window.is_none()
@@ -199,6 +239,48 @@ fn cancel(keep: impl Fn(&Request) -> bool, reason: &str) {
     }
 }
 
+fn clear_idle_pool() {
+    if RELEASE_POOL.get() && READS.with_borrow(Vec::is_empty) {
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+        RELEASE_POOL.set(false);
+    }
+}
+
+/// Retire one recording's private raw tokens without invoking its callbacks.
+/// This is safe while its Session is borrowed during discard/timeout/seal.
+pub fn release_raw(prefix: &str) {
+    PIXEL_ANSWERS.with_borrow_mut(|answers| answers.retain(|token, _| !token.starts_with(prefix)));
+    REQUESTS.with_borrow_mut(|requests| requests.retain(|r| !(r.raw && r.spec.path.starts_with(prefix))));
+    READS.with_borrow_mut(|reads| {
+        for read in reads.iter_mut() {
+            read.requests.retain(|r| !r.spec.path.starts_with(prefix));
+        }
+        reads.retain(|read| !read.requests.is_empty());
+    });
+    RELEASE_POOL.set(true);
+    clear_idle_pool();
+}
+
+fn expire_reads(now: Instant) {
+    let expired = READS.with_borrow_mut(|reads| {
+        let (expired, live) = std::mem::take(reads).into_iter().partition::<Vec<_>, _>(|r| now >= r.expires);
+        *reads = live;
+        expired
+    });
+    for read in expired {
+        // Drop the mapping and fence before delivering an error which may
+        // synchronously seal the recorder and admit a new take.
+        let requests = read.requests;
+        drop(read.mapping);
+        drop(read.fence);
+        for request in requests {
+            raw_fail(&request.spec.path, capture_failed("readback fence timed out"));
+            (request.answer)(Err(capture_failed("readback fence timed out")));
+        }
+    }
+    clear_idle_pool();
+}
+
 pub fn fail(id: u64, reason: &str) {
     cancel(|request| request.id == id, reason);
 }
@@ -233,6 +315,7 @@ pub fn service(
     kind: CaptureSource,
     cursor: bool,
 ) {
+    expire_reads(Instant::now());
     poll_reads(renderer, output, cursor);
     let requests = take(|request| {
         request.output == output.name()
@@ -269,6 +352,8 @@ pub fn service(
             drop(copy);
             match result {
                 Ok((mapping, rgba, fence)) => {
+                    #[cfg(feature = "test-support")]
+                    let fence = testing::replace_fence(fence);
                     READS.with_borrow_mut(|reads| {
                         reads.push(PendingRead {
                             requests,
@@ -280,6 +365,7 @@ pub fn service(
                             context: renderer.context_id().erased(),
                             copy_us: started.elapsed().as_micros() as u64,
                             latency,
+                            expires: Instant::now() + READ_TIMEOUT,
                         })
                     });
                     wake_readback();
@@ -320,6 +406,7 @@ pub fn service(
 }
 
 fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
+    expire_reads(Instant::now());
     let reads = READS.with_borrow_mut(std::mem::take);
     let mut waiting = Vec::new();
     for read in reads {
@@ -366,7 +453,11 @@ fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
             (request.answer)(result);
         }
     }
-    READS.with_borrow_mut(|reads| reads.extend(waiting));
+    // A callback can cancel other tokens while the queue is temporarily local.
+    waiting.iter_mut().for_each(|read| read.requests.retain(|r|
+        PIXEL_ANSWERS.with_borrow(|answers| answers.contains_key(&r.spec.path))));
+    READS.with_borrow_mut(|reads| reads.extend(waiting.into_iter().filter(|r| !r.requests.is_empty())));
+    clear_idle_pool();
 }
 
 /// Complete ready recording copies before deciding whether another capture
@@ -451,6 +542,9 @@ fn pooled_rgb(
         }
         let frame = std::sync::Arc::new(rgb(bytes, width, height, rgba, bottom_up)?);
         if pool.len() < 3 {
+            pool.push(frame.clone());
+        } else {
+            pool.remove(0);
             pool.push(frame.clone());
         }
         Ok(frame)
@@ -847,6 +941,21 @@ mod tests {
         let _fifth = pooled_rgb(&[0; 4], 1, 1, true, false).unwrap();
         assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 3);
         PIXEL_POOL.with_borrow_mut(Vec::clear);
+    }
+
+    #[test]
+    fn shared_pool_slot_is_replaced_and_stop_reclaims_pool() {
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+        let held: Vec<_> = (0..3).map(|i| pooled_rgb(&[i,2,3,255],1,1,true,false).unwrap()).collect();
+        let replacement = pooled_rgb(&[9,8,7,255],1,1,true,false).unwrap();
+        let address = replacement.as_ptr();
+        drop(replacement);
+        let reused = pooled_rgb(&[6,5,4,255],1,1,true,false).unwrap();
+        assert_eq!(address, reused.as_ptr());
+        assert_eq!(&**held[0], &[0,2,3]);
+        release_raw("/pool-test-");
+        assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 0);
+        assert_eq!(&**reused, &[6,5,4]);
     }
 
     #[test]

@@ -45,3 +45,6 @@ smithay.workspace = true
 
 [lints.clippy]
 mod_module_files = "deny"
+
+[dev-dependencies]
+screencopy = { workspace = true, features = ["test-support"] }

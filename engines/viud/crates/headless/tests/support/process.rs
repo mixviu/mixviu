@@ -323,6 +323,11 @@ pub fn spawn_transitions(label: &str, bus: &str) -> Process {
 
 #[allow(dead_code)] // Used by capture.rs; this module is shared with other targets.
 pub fn spawn_4k(label: &str, bus: &str) -> Process {
+    spawn_size(label, bus, "3840x2160")
+}
+
+#[allow(dead_code)]
+pub fn spawn_size(label: &str, bus: &str, size: &str) -> Process {
     spawn_with_seat_size(
         1,
         None,
@@ -333,6 +338,6 @@ pub fn spawn_4k(label: &str, bus: &str) -> Process {
         true,
         true,
         None,
-        "3840x2160",
+        size,
     )
 }
