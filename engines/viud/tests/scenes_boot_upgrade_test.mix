@@ -107,7 +107,7 @@ print(json_encode({rc:$rc, value:$v}))
   $bus = $pb.start({dir:$tmp .. "/bus", name:"scenes-boot-test", noded:$noded})
   $vars = merge($pb.client_env($bus), {PATH:env("PATH"), HOME:$tmp .. "/home", MIX_STATS:"off",
     SCENES_DIR:$tmp .. "/scenes", SCENES_TEMPLATES:$tmp .. "/templates", SCENES_FIRST_RUN:"0",
-    MIX_VIUD_SCENES_UPGRADE_DELAYS:"[0.1,0.1,0.1,0.1,0.1,0.1,0.1]",
+    MIX_VIUD_SCENES_UPGRADE_DELAYS:"[1,1,1,1,1,1,1]",
     SCENES_EDITOR_APP:"0", SCENE_HOST:"fakeshell", FAKE_SHELL_OWNER:"scenes"})
   $host_script = $here .. "/fixtures/scene-editor/fake_shell.mix"
   $loader_script = env("SCENES_BOOT_REPO", $repo) .. "/engines/viud/scripts/scenes.mix"
@@ -162,7 +162,7 @@ print(json_encode({rc:$rc, value:$v}))
   check($done, "reload commit refreshes when host arrives")
   check(call("scenes", "scenes.upgrade.retry", {delay:0}).rc != 0, "wire cannot trigger local retry")
   -- Start a fresh boot with the host absent, then remove one pending scene.
-  -- Other scenes run the entire real ladder, so the removed scene cannot be
+  -- Other scenes run all seven rungs with configured delays, so removal cannot be
   -- hidden by a later manual upgrade/reload clearing all flags for it.
   check(call("scenes", "scenes.install", {template:"removed"}).rc == 0, "reinstall removal fixture")
   stop($children.loader)
