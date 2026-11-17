@@ -1163,7 +1163,13 @@ impl Views {
                             .is_some_and(|layer| layer != ui.layer_id())
                     });
                 if blocked {
-                    if let egui::Event::PointerButton { button, pressed: true, modifiers, pos } = event {
+                    if let egui::Event::PointerButton {
+                        button,
+                        pressed: true,
+                        modifiers,
+                        pos,
+                    } = event
+                    {
                         tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %mouse.app,
                             raw = ?button, code = ?super::pointer::code(*button),
                             shift = modifiers.shift, cancelled_pending = mouse.grabbed(),
@@ -1201,7 +1207,12 @@ impl Views {
                     for effect in effects {
                         self.pointer_effect(ui, widget, sessions, events, effect);
                     }
-                } else if let egui::Event::PointerButton { button, pressed: true, .. } = event {
+                } else if let egui::Event::PointerButton {
+                    button,
+                    pressed: true,
+                    ..
+                } = event
+                {
                     if !blocked {
                         tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %mouse.app,
                             raw = ?button, effect = "nothing:another-widget-grab", "terminal.press.swallowed");

@@ -187,137 +187,160 @@ impl Mouse {
         }
         out
     }
-    fn trace_press(&self, placements: &[Placement], sessions: &Sessions, event: &Event, focused: bool) {
-            if let Event::PointerButton { pos, button, pressed: true, modifiers } = event {
-                let mapped = code(*button);
-                let target = hit(placements, *pos, None);
-                let reporting = target.as_ref().and_then(|h| sessions.get(&h.handle).ok())
-                    .map(|t| t.lock().unwrap().mouse_reporting());
-                let effect = if !focused { "nothing:unfocused-or-disabled" }
-                    else if mapped.is_none() { "nothing:unsupported-button" }
-                    else if target.is_none() { "nothing:no-hit" }
-                    else if reporting.is_none() { "nothing:missing-session" }
-                    else if !modifiers.shift && reporting == Some(true) { "reported-to-application" }
-                    else if mapped == Some(0) { "local-selection-start" }
-                    else if mapped == Some(1) { "Read{primary:true}" }
-                    else { "nothing:local-secondary" };
-                tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.app,
+    fn trace_press(
+        &self,
+        placements: &[Placement],
+        sessions: &Sessions,
+        event: &Event,
+        focused: bool,
+    ) {
+        if let Event::PointerButton {
+            pos,
+            button,
+            pressed: true,
+            modifiers,
+        } = event
+        {
+            let mapped = code(*button);
+            let target = hit(placements, *pos, None);
+            let reporting = target
+                .as_ref()
+                .and_then(|h| sessions.get(&h.handle).ok())
+                .map(|t| t.lock().unwrap().mouse_reporting());
+            let effect = if !focused {
+                "nothing:unfocused-or-disabled"
+            } else if mapped.is_none() {
+                "nothing:unsupported-button"
+            } else if target.is_none() {
+                "nothing:no-hit"
+            } else if reporting.is_none() {
+                "nothing:missing-session"
+            } else if !modifiers.shift && reporting == Some(true) {
+                "reported-to-application"
+            } else if mapped == Some(0) {
+                "local-selection-start"
+            } else if mapped == Some(1) {
+                "Read{primary:true}"
+            } else {
+                "nothing:local-secondary"
+            };
+            tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.app,
                     raw = ?button, code = ?mapped, accepted = mapped.is_some(),
                     pane = ?target.as_ref().map(|h| h.handle.as_str()), mouse_reporting = ?reporting,
                     shift = modifiers.shift, cancelled_pending = self.pressed.is_some(), effect,
                     "terminal.press");
-            }
+        }
     }
-    fn event(&mut self, placements: &[Placement], sessions: &Sessions, event: &Event,
-        copy_on_select: bool, now: Instant, out: &mut Vec<Effect>) {
-            match event {
-                Event::ModifiersChanged(value) => self.modifiers = *value,
-                Event::PointerMoved(position) => {
-                    self.position = Some(*position);
-                    let current = hit(placements, *position, None);
-                    let changed = self.hover != current;
-                    self.hover = current;
-                    if (changed || (self.hover.is_none() && self.pressed.is_some()))
-                        && (self.hover.is_some() || self.pressed.is_some())
-                    {
-                        self.moved(
-                            placements,
-                            sessions,
-                            *position,
-                            false,
-                            copy_on_select,
-                            out,
-                        );
-                    }
+    fn event(
+        &mut self,
+        placements: &[Placement],
+        sessions: &Sessions,
+        event: &Event,
+        copy_on_select: bool,
+        now: Instant,
+        out: &mut Vec<Effect>,
+    ) {
+        match event {
+            Event::ModifiersChanged(value) => self.modifiers = *value,
+            Event::PointerMoved(position) => {
+                self.position = Some(*position);
+                let current = hit(placements, *position, None);
+                let changed = self.hover != current;
+                self.hover = current;
+                if (changed || (self.hover.is_none() && self.pressed.is_some()))
+                    && (self.hover.is_some() || self.pressed.is_some())
+                {
+                    self.moved(placements, sessions, *position, false, copy_on_select, out);
                 }
-                Event::PointerButton {
-                    pos,
-                    button,
-                    pressed,
-                    modifiers,
-                } => {
-                    self.modifiers = *modifiers;
-                    self.position = Some(*pos);
-                    if *pressed {
-                        if self.pressed.is_some() {
-                            self.cancel();
-                        }
-                        self.hover = hit(placements, *pos, None);
-                        let Some(button) = code(*button) else {
-                            return;
-                        };
-                        let Some(hit) = self.hover.clone() else {
-                            return;
-                        };
-                        let Ok(terminal) = sessions.get(&hit.handle) else {
-                            return;
-                        };
-                        sessions.activity();
-                        out.push(Effect::Focus(hit.handle.clone()));
-                        let local = modifiers.shift || !terminal.lock().unwrap().mouse_reporting();
-                        if local && button == 0 {
-                            sessions.clear_other_selections(&hit.handle);
-                        }
-                        self.pressed = Some(Press {
-                            terminal: terminal.clone(),
-                            last: hit.clone(),
-                            button,
-                            local,
-                            origin: *pos,
-                            mods: mods(*modifiers),
-                        });
-                        if !local {
-                            self.clicks = None;
-                            terminal.lock().unwrap().mouse_button(
-                                hit.col,
-                                hit.row,
-                                button,
-                                true,
-                                mods(*modifiers),
-                            );
-                        } else if button == 0 {
-                            let kind = self.click(hit.clone(), now);
-                            terminal
-                                .lock()
-                                .unwrap()
-                                .selection_start(hit.col, hit.row, hit.side, kind);
-                        } else if button == 1 {
-                            self.clicks = None;
-                            out.push(Effect::Read {
-                                handle: hit.handle,
-                                primary: true,
-                            });
-                        }
-                    } else if code(*button).is_some_and(|button| {
-                        self.pressed.as_ref().is_some_and(|p| p.button == button)
-                    }) {
-                        self.moved(placements, sessions, *pos, true, copy_on_select, out);
-                    }
-                }
-                Event::MouseWheel {
-                    unit,
-                    delta,
-                    modifiers,
-                    ..
-                } => {
-                    if let Some(hit) = self.position.and_then(|pos| hit(placements, pos, None)) {
-                        sessions.activity();
-                        out.push(Effect::Wheel {
-                            handle: hit.handle,
-                            col: hit.col,
-                            row: hit.row,
-                            unit: *unit,
-                            delta: *delta,
-                            modifiers: *modifiers,
-                        });
-                    }
-                }
-                Event::PointerGone => {
-                    self.hover = None;
-                    self.position = None;
-                }
-                _ => {}
             }
+            Event::PointerButton {
+                pos,
+                button,
+                pressed,
+                modifiers,
+            } => {
+                self.modifiers = *modifiers;
+                self.position = Some(*pos);
+                if *pressed {
+                    if self.pressed.is_some() {
+                        self.cancel();
+                    }
+                    self.hover = hit(placements, *pos, None);
+                    let Some(button) = code(*button) else {
+                        return;
+                    };
+                    let Some(hit) = self.hover.clone() else {
+                        return;
+                    };
+                    let Ok(terminal) = sessions.get(&hit.handle) else {
+                        return;
+                    };
+                    sessions.activity();
+                    out.push(Effect::Focus(hit.handle.clone()));
+                    let local = modifiers.shift || !terminal.lock().unwrap().mouse_reporting();
+                    if local && button == 0 {
+                        sessions.clear_other_selections(&hit.handle);
+                    }
+                    self.pressed = Some(Press {
+                        terminal: terminal.clone(),
+                        last: hit.clone(),
+                        button,
+                        local,
+                        origin: *pos,
+                        mods: mods(*modifiers),
+                    });
+                    if !local {
+                        self.clicks = None;
+                        terminal.lock().unwrap().mouse_button(
+                            hit.col,
+                            hit.row,
+                            button,
+                            true,
+                            mods(*modifiers),
+                        );
+                    } else if button == 0 {
+                        let kind = self.click(hit.clone(), now);
+                        terminal
+                            .lock()
+                            .unwrap()
+                            .selection_start(hit.col, hit.row, hit.side, kind);
+                    } else if button == 1 {
+                        self.clicks = None;
+                        out.push(Effect::Read {
+                            handle: hit.handle,
+                            primary: true,
+                        });
+                    }
+                } else if code(*button)
+                    .is_some_and(|button| self.pressed.as_ref().is_some_and(|p| p.button == button))
+                {
+                    self.moved(placements, sessions, *pos, true, copy_on_select, out);
+                }
+            }
+            Event::MouseWheel {
+                unit,
+                delta,
+                modifiers,
+                ..
+            } => {
+                if let Some(hit) = self.position.and_then(|pos| hit(placements, pos, None)) {
+                    sessions.activity();
+                    out.push(Effect::Wheel {
+                        handle: hit.handle,
+                        col: hit.col,
+                        row: hit.row,
+                        unit: *unit,
+                        delta: *delta,
+                        modifiers: *modifiers,
+                    });
+                }
+            }
+            Event::PointerGone => {
+                self.hover = None;
+                self.position = None;
+            }
+            _ => {}
+        }
     }
     fn moved(
         &mut self,
@@ -401,26 +424,52 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         let capture = Capture(Arc::new(Mutex::new(Vec::new())));
         let writer = capture.clone();
-        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
-            .with_max_level(tracing::Level::INFO).with_writer(move || writer.clone()).finish();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(move || writer.clone())
+            .finish();
         let (sessions, places, receiver) = setup(false);
-        let mut mouse = Mouse { app: "term".into(), ..Default::default() };
-        let effects = tracing::subscriber::with_default(subscriber, || mouse.update(
-            &places, &sessions, &[button_event(PointerButton::Middle, true)],
-            true, false, Instant::now(),
-        ));
-        assert!(matches!(&effects[..], [Effect::Focus(focus), Effect::Read { handle, primary: true }]
-            if focus == "vt-1" && handle == "vt-1"));
+        let mut mouse = Mouse {
+            app: "term".into(),
+            ..Default::default()
+        };
+        let effects = tracing::subscriber::with_default(subscriber, || {
+            mouse.update(
+                &places,
+                &sessions,
+                &[button_event(PointerButton::Middle, true)],
+                true,
+                false,
+                Instant::now(),
+            )
+        });
+        assert!(
+            matches!(&effects[..], [Effect::Focus(focus), Effect::Read { handle, primary: true }]
+            if focus == "vt-1" && handle == "vt-1")
+        );
         assert!(bytes(&receiver).is_empty());
         let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
         assert_eq!(log.lines().count(), 1, "{log}");
-        for field in ["terminal.press", "app=term", "raw=Middle", "code=Some(1)",
-            "accepted=true", "vt-1", "mouse_reporting=Some(false)", "shift=false",
-            "cancelled_pending=false", "Read{primary:true}"] {
+        for field in [
+            "terminal.press",
+            "app=term",
+            "raw=Middle",
+            "code=Some(1)",
+            "accepted=true",
+            "vt-1",
+            "mouse_reporting=Some(false)",
+            "shift=false",
+            "cancelled_pending=false",
+            "Read{primary:true}",
+        ] {
             assert!(log.contains(field), "missing {field}: {log}");
         }
         assert!(log.contains(&format!("pid={}", std::process::id())));

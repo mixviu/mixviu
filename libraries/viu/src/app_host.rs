@@ -2130,7 +2130,10 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         .collect::<Vec<_>>();
     let _logging = toolkit::debug::init(
         preview.manifest.app(),
-        &format!("{},viu::paste_trace=info", preview.manifest.log_filter.as_deref().unwrap_or("warn")),
+        &format!(
+            "{},viu::paste_trace=info",
+            preview.manifest.log_filter.as_deref().unwrap_or("warn")
+        ),
         &mut logging_args,
     )
     .unwrap_or_else(|e| {
