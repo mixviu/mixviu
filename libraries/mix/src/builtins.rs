@@ -357,6 +357,11 @@ builtin_table! {
     ("send_mail", CapabilityClass::Process,       "system",  "Send a plain-text email through the local MTA: send_mail({to, from, subject, body[, headers]}[, {host, sendmail, timeout, mix_bin}]) -> run_argv's process_result + message_id (+ host, only with the host opt). Renders an RFC 5322 message (From, To, Subject, Date, Message-ID, MIME-Version, text/plain utf-8) and pipes it to `sendmail -t -i -f <envelope>` on stdin — never a network SMTP client; ok means the MTA accepted it, not that it was delivered. to is a string or list of strings; Cc/Bcc go in headers. from is exactly one mailbox, addr or Name <addr> (a comment, a second mailbox or <> raises); its address is the envelope sender. Long headers are folded within 78 columns (an unbreakable run over 998 raises); a non-ASCII body or one with a line over 998 bytes goes quoted-printable, else 7bit. A non-ASCII subject is RFC 2047-encoded; every other header value must be ASCII, and CR/LF/NUL in any header raises. headers adds headers or replaces the generated Date/Message-ID/MIME-Version; From/To/Subject there raise (set them in msg), and so do Content-Type/Content-Transfer-Encoding (send_mail encodes the body itself, always text/plain utf-8). sendmail is found on PATH, then /usr/sbin/sendmail, /usr/lib/sendmail, unless the sendmail opt names it. host sends from that host via ssh_exec (remote default /usr/sbin/sendmail); mix_bin (host only) names the remote mix binary, as for ssh_mix. An MTA failure or missing sendmail is DATA (ok:false, exit_code, stderr, error_code); bad input raises before anything runs: OPTION_INVALID (msg fields, options), TYPE_MISMATCH (msg not a map, arity), or ssh_exec's own validation errors with host", contract!((msg: map("send_mail_msg", {to: any_of(string, list), from: string, subject: string, body: string, headers: map}), opts?: any_of(map("send_mail_options", {host: string, sendmail: string, timeout: number, mix_bin: string}), nil)) -> map("process_result", {ok: bool, exit_code: any, stdout: string, stderr: string, timed_out: bool, interrupted: bool, signal: any, duration_ms: number, stdout_truncated: bool, stderr_truncated: bool, utf8_lossy: bool, error_code: any, error: any, message_id: string, host: string}); effects[must_use, blocking]; failure[returns_result]; cond_caps[host: Network])),
     ("ssh_exec", CapabilityClass::Network,        "system",  "Run an argv list DIRECTLY on a remote host via a strict-data driver and remote run_argv. Remote stdio allowlist: stdin nil|string|{file}|{null:true} (a stdin STRING is always data, as locally — there is no stdin \"inherit\" route on either side); stdout capture|null|{file}; stderr capture|null|stdout|{file}. File paths resolve remotely. stdout/stderr inherit and stream:true raise OPTION_INVALID locally before ssh because they would corrupt or bypass the result envelope. Binary stdin also raises locally. Transport/protocol failures and remote command failure are returned in the process_result plus host; a remote without run_argv returns SSH_REMOTE_UNSUPPORTED without running the command. The remote mix binary is the mix_bin opt (older name remote_mix), else local env MIX_REMOTE_EXE, else bare mix", contract!((host: string, argv: list(string), opts?: any_of(map, nil)) -> map("process_result", {ok: bool, exit_code: any, stdout: string, stderr: string, timed_out: bool, interrupted: bool, signal: any, duration_ms: number, stdout_truncated: bool, stderr_truncated: bool, utf8_lossy: bool, error_code: any, error: any, host: string}); effects[must_use, blocking]; failure[returns_result])),
     ("process_alive", CapabilityClass::Process,   "system",  "Test if a process exists (signal 0 check). EPERM counts as alive: existence does not imply permission to signal, including another user's process. pid must be a positive whole NUMBER; no coercion. Nonpositive, bool or string PIDs raise TYPE_MISMATCH. Reaps exited unmanaged children; controller-owned job and registered native-task PIDs use only signal 0 so their sole wait owner retains every status (zombies may briefly report alive).", contract!((pid: number) -> bool)),
+    ("uevent_watch", CapabilityClass::Env, "system", "Linux evaluator-owned uevent subscription. opts {group:1|2 (default 2), subsystems:[string]} (empty accepts all). uevent.received args {watch, raw:buffer, properties:map, uid:0, overflow:bool}; rejected datagrams deliver {drop:string}, fatal errors {closed:map}. Ordered bounded queue; ENOBUFS/truncation reported. Does not re-encode wire bytes", contract!((opts?: map) -> string; failure[raises])),
+    ("uevent_unwatch", CapabilityClass::Env, "system", "Cancel a uevent watch and join its reader", contract!((handle: string) -> nil; failure[raises])),
+    ("uevent_sender", CapabilityClass::Env, "system", "Linux evaluator-owned multicast sender created in netns_path by setns on a dedicated thread. Requires root/CAP_SYS_ADMIN and CAP_NET_ADMIN. Maximum 128 handles", contract!((netns_path: string) -> string; failure[raises])),
+    ("uevent_send", CapabilityClass::Env, "system", "Send bytes verbatim through an evaluator-owned uevent sender to group 1 or 2. Kernel supplies credentials. True on send, false for ECONNREFUSED (no listeners, retain sender); other errors raise. No retries", contract!((handle: string, group: number, data: any_of(bytes, buffer)) -> bool; failure[raises])),
+    ("uevent_close", CapabilityClass::Env, "system", "Close an evaluator-owned uevent sender; all senders close on generation retirement", contract!((handle: string) -> nil; failure[raises])),
     ("net_watch", CapabilityClass::Env, "system", "Subscribe to Linux rtnetlink link/address changes; returns an evaluator-owned opaque handle. Delivers net.changed {watch, changes:[{kind:\"link\"|\"addr\", ifname, index, up, removed, operstate?, loopback?, wireless?, family?, address?, prefix?}], overflow, closed?} via $event.args; bursts coalesce per link/address, repeats that change nothing are dropped, overflow means re-read net_state(). opts {events: [\"link\",\"addr\"]}. No polling fallback", contract!((opts?: map("net_watch_options", {events: list(string)})) -> string; failure[raises])),
     ("net_unwatch", CapabilityClass::Env, "system", "Cancel a net_watch handle and its pending changes", contract!((handle: string) -> nil; failure[raises])),
     ("net_state", CapabilityClass::Env, "system", "Snapshot of network links and addresses from an rtnetlink dump: {links:[{ifname, index, up, operstate?, loopback, wireless}], addresses:[{ifname, index, family, address, prefix}]}. up = operstate up, or IFF_UP+IFF_RUNNING when the driver reports unknown (lo, WireGuard)", contract!(() -> map("net_state", {links: list(map), addresses: list(map)}); effects[must_use, blocking]; failure[raises])),
@@ -1037,6 +1042,11 @@ pub const EVAL_SPECIAL_BUILTINS: &[&str] = &[
     "dir_open",
     "dir_rename",
     "dir_close",
+    "uevent_watch",
+    "uevent_unwatch",
+    "uevent_sender",
+    "uevent_send",
+    "uevent_close",
     "net_watch",
     "net_unwatch",
     "net_state",
@@ -4727,6 +4737,11 @@ pub(crate) fn spawn_argv_native(
     for k in &env_unset {
         command.env_remove(k);
     }
+    #[cfg(target_os = "linux")]
+    if die_with_parent {
+        // Runtime metadata wins over caller env/clear_env/env_unset options.
+        command.env(EXPECTED_PARENT_ENV, std::process::id().to_string());
+    }
     // Open output routes BEFORE spawning; a file-open failure means the
     // child is never started (like run_argv's PROCESS_STDIO). stderr:stdout
     // clones the stdout handle.
@@ -4865,6 +4880,9 @@ fn arm_die_with_parent(command: &mut std::process::Command) {
         });
     }
 }
+
+/// One-hop spawn metadata, consumed by Mix before it starts any threads.
+pub const EXPECTED_PARENT_ENV: &str = "MIX_EXPECTED_PARENT_PID";
 
 /// Children started with `spawn(argv, {die_with_parent: true})`, ended with
 /// this process (TODO-mix P2).
@@ -5233,18 +5251,29 @@ fn spawn_detached(mut command: std::process::Command) -> MixResult<Option<Value>
 }
 
 fn spawn_route_journal(command: &mut std::process::Command, identifier: &str, path: &str) {
-    match spawn_journal_at(identifier, path) {
+    spawn_route_journal_with(command, identifier, || spawn_journal_at(identifier, path));
+}
+
+fn spawn_route_journal_with(
+    command: &mut std::process::Command,
+    identifier: &str,
+    open: impl FnOnce() -> std::io::Result<std::os::fd::OwnedFd>,
+) {
+    use std::io::Write;
+    match open() {
         Ok(fd) => {
             command.stderr(fd);
         }
         Err(error) => {
-            eprintln!("spawn: journal unavailable for {identifier}; keeping stderr route: {error}")
+            let _ = writeln!(
+                std::io::stderr(),
+                "spawn: journal unavailable for {identifier}; keeping stderr route: {error}"
+            );
         }
     }
 }
 
 fn spawn_journal_at(identifier: &str, path: &str) -> std::io::Result<std::os::fd::OwnedFd> {
-    use std::io::Write;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     use std::os::unix::net::UnixStream;
     let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
@@ -5281,7 +5310,14 @@ fn spawn_journal_at(identifier: &str, path: &str) -> std::io::Result<std::os::fd
     {
         return Err(std::io::Error::last_os_error());
     }
-    let mut stream = UnixStream::from(fd);
+    spawn_journal_header(identifier, UnixStream::from(fd))
+}
+
+fn spawn_journal_header(
+    identifier: &str,
+    mut stream: std::os::unix::net::UnixStream,
+) -> std::io::Result<std::os::fd::OwnedFd> {
+    use std::io::Write;
     stream.set_nonblocking(false)?;
     stream.set_write_timeout(Some(std::time::Duration::from_millis(200)))?;
     // systemd v257, journal-send.c, sd_journal_stream_fd[_with_namespace]:
@@ -42346,6 +42382,139 @@ mod strict_write_and_bool_option_tests {
 
 #[cfg(test)]
 mod spawn_journal_tests {
+    struct TestDir(std::path::PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            loop {
+                let path = std::env::temp_dir()
+                    .join(format!("mix-journal-{:016x}", rand::random::<u64>()));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => return Self(path),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => panic!("create journal test directory: {e}"),
+                }
+            }
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn header_timeout_preserves_child_stderr_and_closes_socket() {
+        use std::io::{Read, Write};
+        use std::os::unix::net::{UnixListener, UnixStream};
+        use std::time::{Duration, Instant};
+        let dir = TestDir::new();
+        let path = dir.0.join("journal");
+        let listener = UnixListener::bind(&path).unwrap();
+        let mut stream = UnixStream::connect(&path).unwrap();
+        use std::os::fd::AsRawFd;
+        // SAFETY: stream owns this fd. Check the fixture cannot survive exec.
+        let flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFD) };
+        assert!(flags >= 0 && flags & libc::FD_CLOEXEC != 0);
+        let (mut peer, _) = listener.accept().unwrap();
+        // The accepted peer never reads during setup. Saturate the sender first:
+        // a valid (at most 255-byte) identifier alone cannot fill a Unix socket.
+        stream.set_nonblocking(true).unwrap();
+        loop {
+            match stream.write(&[b'x'; 4096]) {
+                Ok(n) => assert!(n > 0),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => panic!("prefill: {e}"),
+            }
+        }
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+        child.args([
+            "--exact",
+            "builtins::spawn_journal_tests::child_stderr_marker",
+            "--ignored",
+            "--nocapture",
+        ]);
+        child.stderr(std::process::Stdio::piped());
+        let start = Instant::now();
+        super::spawn_route_journal_with(&mut child, "term", || {
+            let error = super::spawn_journal_header("term", stream).unwrap_err();
+            assert!(
+                matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ),
+                "{error}"
+            );
+            Err(error)
+        });
+        assert!(start.elapsed() >= Duration::from_millis(150));
+        // EOF before spawning proves failed setup closed the parent's socket;
+        // the CLOEXEC assertion above independently covers exec inheritance.
+        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let mut received = Vec::new();
+        peer.read_to_end(&mut received).unwrap();
+        assert!(!received.is_empty());
+        let output = child.output().unwrap();
+        assert!(output.status.success());
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("child-fd-two-marker")
+        );
+    }
+
+    #[test]
+    fn unavailable_journal_with_broken_launcher_stderr_still_spawns() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "builtins::spawn_journal_tests::broken_stderr_launcher",
+                "--ignored",
+                "--nocapture",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .contains("SIGPIPE=SIG_IGN; fd2=EPIPE")
+        );
+    }
+
+    #[test]
+    #[ignore = "helper subprocess: gives fd 2 a broken pipe"]
+    fn broken_stderr_launcher() {
+        use std::io::Write;
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+        // SAFETY: query the disposition without changing it in this subprocess.
+        let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+        assert_eq!(
+            unsafe { libc::sigaction(libc::SIGPIPE, std::ptr::null(), &mut action) },
+            0
+        );
+        assert_eq!(action.sa_sigaction, libc::SIG_IGN);
+        let mut fds = [-1; 2];
+        // SAFETY: valid storage for two fresh descriptors, owned below.
+        assert_eq!(unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) }, 0);
+        let read = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+        let write = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+        // SAFETY: replace only this dedicated subprocess's stderr.
+        assert_eq!(unsafe { libc::dup2(write.as_raw_fd(), 2) }, 2);
+        drop(read);
+        drop(write);
+        assert_eq!(
+            std::io::stderr()
+                .write_all(b"probe")
+                .unwrap_err()
+                .raw_os_error(),
+            Some(libc::EPIPE)
+        );
+        println!("SIGPIPE=SIG_IGN; fd2=EPIPE");
+        unavailable_journal_preserves_child_stderr_route();
+    }
+
     #[test]
     fn unavailable_journal_preserves_child_stderr_route() {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
@@ -42376,9 +42545,8 @@ mod spawn_journal_tests {
     fn stderr_stream_has_app_identifier_and_warning_priority() {
         use std::io::Read;
         use std::os::unix::net::UnixListener;
-        let dir = std::env::temp_dir().join(format!("mix-journal-{}", std::process::id()));
-        std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("journal");
+        let dir = TestDir::new();
+        let path = dir.0.join("journal");
         let listener = UnixListener::bind(&path).unwrap();
         let fd = super::spawn_journal_at("mixviu.term", path.to_str().unwrap()).unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
@@ -42395,8 +42563,6 @@ mod spawn_journal_tests {
         let mut text = String::new();
         stream.read_to_string(&mut text).unwrap();
         assert_eq!(text, "mixviu.term\n\n4\n0\n0\n0\n0\nchild-fd-two-marker\n");
-        assert!(super::spawn_journal_at("term", dir.join("absent").to_str().unwrap()).is_err());
-        std::fs::remove_file(path).unwrap();
-        std::fs::remove_dir(dir).unwrap();
+        assert!(super::spawn_journal_at("term", dir.0.join("absent").to_str().unwrap()).is_err());
     }
 }

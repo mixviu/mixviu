@@ -115,6 +115,73 @@ async fn exec(eval: &mut Evaluator, source: &str) -> MixResult<Value> {
     eval.execute(&stmts).await
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn plain_native_pump_outlives_a_closed_bus_without_spinning() {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    drop(tx); // Model the CLI's lazy Bus handler on a host without a broker.
+    let mut e = Evaluator::new();
+    e.set_bus_handler(Rc::new(Bus {
+        rx: tokio::sync::Mutex::new(rx),
+    }));
+    exec(
+        &mut e,
+        r#"
+        $ticks = 0
+        $clock = interval(0.6, "native-only")
+        on timer.tick
+            $ticks = $ticks + 1
+            if $ticks == 2 then cancel_timer($clock) end
+        end
+    "#,
+    )
+    .await
+    .unwrap();
+    // Thread CPU excludes other concurrently running tests; this current-thread
+    // Tokio runtime runs the entire pump on this thread. A ready-loop would use
+    // about 1.2 CPU seconds, whereas an idle readiness wait uses almost none.
+    let cpu_time = || {
+        let mut t: libc::timespec = unsafe { std::mem::zeroed() };
+        assert_eq!(
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut t) },
+            0
+        );
+        Duration::new(t.tv_sec as u64, t.tv_nsec as u32)
+    };
+    let started = cpu_time();
+    tokio::time::timeout(Duration::from_secs(5), e.run_event_pump())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(e.get_global("ticks"), Some(Value::Number(2.0)));
+    assert!(
+        cpu_time() - started < Duration::from_millis(200),
+        "idle pump consumed CPU instead of parking"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn serve_pump_still_ends_when_its_bus_closes() {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    drop(tx);
+    let mut e = Evaluator::new();
+    e.set_serve_runtime(Rc::new(Runtime));
+    e.set_bus_handler(Rc::new(Bus {
+        rx: tokio::sync::Mutex::new(rx),
+    }));
+    exec(
+        &mut e,
+        "$clock = interval(60, \"unused\")\non timer.tick\n    $unexpected = true\nend",
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), e.run_event_pump())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(e.get_global("unexpected").is_none());
+    e.close_native_events();
+}
+
 async fn watcher(root: &Path, recursive: bool) -> Evaluator {
     let mut e = Evaluator::new();
     e.set_serve_runtime(Rc::new(Runtime));

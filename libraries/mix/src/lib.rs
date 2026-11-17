@@ -29,6 +29,7 @@ pub mod stats;
 mod timers;
 pub mod token;
 mod udp;
+mod uevent;
 pub mod value;
 
 #[cfg(feature = "archive")]

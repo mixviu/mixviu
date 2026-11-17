@@ -1,0 +1,74 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+if platform().os != "linux" then
+  print("SKIP ACP lifetime: requires Linux /proc and parent-death signals")
+  exit(0)
+end
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath(script_path()))
+$mix = env("MIX_TEST_MIX_EXE", realpath("/proc/self/exe"))
+$tmp = env("TMPDIR", "/tmp") .. "/acp-lifetime-" .. uuid()
+$bus = nil
+
+fn members($only_workers = false)
+  $found = []
+  if $bus == nil then return $found end
+  for $path in glob("/proc/*/environ")
+    try
+      $proc = dirname($path)
+      $pid = to_number(basename($proc))
+      if $pid == pid() or $pid == $bus.pid then continue end
+      if not contains(split(read_file($path), "\0"), "MIX_NODE_CONFIG=" .. $bus.conf) then continue end
+      if $only_workers and not contains(split(read_file($proc .. "/cmdline"), "\0"), realpath($here .. "/../scripts/acp_worker.mix")) then continue end
+      $stat = read_file($proc .. "/stat")
+      if split(trim(slice($stat, last_index_of($stat, ")") + 2)), " ")[0] != "Z" then push($found, $pid) end
+    catch $message
+      continue
+    end
+  end
+  return $found
+end
+
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "acp-lifetime", noded: env("MIX_TEST_NODED_EXE", mix_path("prefix", "bin/noded"))})
+  for $mode in ["normal", "panic", "direct-kill"]
+    $ready = $tmp .. "/" .. $mode .. ".ready"
+    $env = merge($pb.client_env($bus), {MIX_TEST_MIX_EXE: $mix, ACP_TEST_ADAPTER: $here .. "/../scripts/acp.mix",
+      ACP_LIFETIME_READY: $ready, ACP_LIFETIME_EXIT: $mode, MIX_STATS: "off"})
+    $fixture = $here .. "/fixtures/acp_lifetime_client.mix"
+    $results = run_parallel([
+      {argv: [$mix, "--serve", $fixture, "--name", "lifetime-client"], env: $env},
+      {argv: [$mix, $fixture, "control"], env: $env}], {timeout: 25})
+    $r = $results[0]
+    print($r.stdout .. $r.stderr .. $results[1].stdout .. $results[1].stderr)
+    if not $results[1].ok or not is_file($ready .. ".observed") then raise("ACP_LIFETIME", "no observed live worker: " .. $mode) end
+    $left = members(true)
+    for $i = 1 to 100
+      if len($left) == 0 then break end
+      sleep(0.05)
+      $left = members(true)
+    end
+    if len($left) != 0 then raise("ACP_LIFETIME", "acp_worker survived " .. $mode .. ": " .. json_encode($left)) end
+    if $r.timed_out or ($mode == "normal" and not $r.ok) or ($mode == "panic" and $r.exit_code != 101) or ($mode == "direct-kill" and $r.signal != 9) then
+      raise("ACP_LIFETIME", "unexpected client exit: " .. $mode .. ": " .. json_encode($r))
+    end
+    print("PASS observed live acp_worker then none survives client " .. $mode)
+  end
+finally
+  try
+    -- Every process carrying this unique bus config: client, controller,
+    -- adapter and worker. The broker itself is retired by private_bus.stop.
+    try
+      for $attempt = 1 to 100
+        $left = members()
+        if len($left) == 0 then break end
+        for $pid in $left $stopped = kill($pid, 9) end
+        sleep(0.05)
+      end
+      if len(members()) != 0 then raise("ACP_LIFETIME", "per-run process cleanup failed") end
+    finally
+      if $bus != nil then $stopped = $pb.stop($bus) end
+    end
+  finally
+    run_argv_must(["rm", "-rf", "--", $tmp])
+  end
+end

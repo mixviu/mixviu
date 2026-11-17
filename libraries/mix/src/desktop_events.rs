@@ -1581,6 +1581,9 @@ pub(crate) use other::{AudioSource, NetSource, audio_state, net_state};
 
 /// One registration, owned by `NativeEvents`. Dropping it cancels and joins.
 pub(crate) enum Source {
+    #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
+    Uevent(crate::uevent::linux::Watch),
     #[allow(dead_code)]
     Net(NetSource),
     #[allow(dead_code)]

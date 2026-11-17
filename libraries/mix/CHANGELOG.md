@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Runtime behaviour
+
+- Plain scripts keep pumping native events after their Bus stream closes,
+  including when no broker is installed. An uncancelled `interval` therefore
+  keeps a plain script alive until cancelled or explicitly terminated. The
+  closed Bus lane is retired and idle waits park on native readiness; serve
+  runtime transport-close behaviour is unchanged.
+
 ### Fixed
 
 - Bare hyphenated commands in `send`, `emit` and implicit `address` sends

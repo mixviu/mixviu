@@ -309,6 +309,23 @@ pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
     event_map.insert("headers".to_string(), Value::map(headers_map));
     event_map.insert("body".to_string(), Value::String(event.body.clone()));
     let mut args = parse_event_args(&event.body);
+    if event.headers.get("native-uevent").is_some_and(|v| v == "1")
+        && let Value::Map(m) = &mut args
+    {
+        let m = std::rc::Rc::make_mut(m);
+        if let Some(Value::String(raw)) = m.get("raw")
+            && let Ok(Some(decoded)) =
+                crate::builtins::call_builtin("bytes_from_hex", vec![Value::String(raw.clone())])
+            && let Value::Bytes(bytes) = &decoded
+        {
+            m.insert(
+                "raw".into(),
+                Value::Buffer(std::rc::Rc::new(std::cell::RefCell::new(
+                    bytes.as_ref().clone(),
+                ))),
+            );
+        }
+    }
     if event.headers.get("native-udp").is_some_and(|v| v == "1")
         && let Value::Map(m) = &mut args
         && let Some(Value::Map(d)) = std::rc::Rc::make_mut(m).get_mut("datagram")
@@ -3196,6 +3213,11 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     "dir_open",
     "dir_rename",
     "dir_close",
+    "uevent_watch",
+    "uevent_unwatch",
+    "uevent_sender",
+    "uevent_send",
+    "uevent_close",
     "net_watch",
     "net_unwatch",
     "net_state",
@@ -3371,6 +3393,11 @@ pub const EXPR_MODE_DENIED_BUILTINS: &[&str] = &[
     "dir_close",
     // Native desktop sources: threads, sockets and child processes owned by
     // the evaluator generation, and bounded waits on host daemons.
+    "uevent_watch",
+    "uevent_unwatch",
+    "uevent_sender",
+    "uevent_send",
+    "uevent_close",
     "net_watch",
     "net_unwatch",
     "net_state",
@@ -7000,6 +7027,10 @@ impl Evaluator {
     ///     registry is append-only, so this branch is future-proofing)
     pub async fn run_event_pump(&mut self) -> MixResult<()> {
         let _native_consumer = self.globals.borrow().native_events.enter_pump()?;
+        // Plain scripts may have native sources on machines without a broker.
+        // Once their Bus stream ends, stop polling it (None is immediately
+        // ready) and let native readiness/lifetime govern the remaining pump.
+        let mut bus_closed = false;
         tracing::info!(
             handler_count = self.handler_count(),
             command_count = self.handler_command_count(),
@@ -7072,7 +7103,11 @@ impl Evaluator {
             // The `Rc` keeps the handler alive while the future is
             // suspended; nothing on the shared globals is held across
             // the yield point.
-            let bus_handler = self.globals.borrow().bus_handler.clone();
+            let bus_handler = if bus_closed {
+                None
+            } else {
+                self.globals.borrow().bus_handler.clone()
+            };
             let native = self.globals.borrow().native_events.queue.clone();
             let has_native_sources = self.globals.borrow_mut().native_events.has_sources();
             if bus_handler.is_none() && !has_native_sources {
@@ -7253,7 +7288,13 @@ impl Evaluator {
                         break "handlers_drained";
                     }
                 }
-                None => break "transport_closed",
+                None => {
+                    if self.globals.borrow().serve_runtime.is_none() && has_native_sources {
+                        bus_closed = true;
+                        continue;
+                    }
+                    break "transport_closed";
+                }
             }
         };
 
@@ -13850,7 +13891,12 @@ impl Evaluator {
             }
             if matches!(
                 name,
-                "net_watch"
+                "uevent_watch"
+                    | "uevent_unwatch"
+                    | "uevent_sender"
+                    | "uevent_send"
+                    | "uevent_close"
+                    | "net_watch"
                     | "net_unwatch"
                     | "net_state"
                     | "process_watch"
@@ -13864,6 +13910,7 @@ impl Evaluator {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
                 return match name {
+                    "uevent_watch" | "uevent_unwatch" | "uevent_sender" | "uevent_send" | "uevent_close" => self.globals.borrow_mut().native_events.uevent_call(name, eval_args),
                     "process_watch" => {
                         if self.globals.borrow().reload_candidate {
                             return Err(crate::native_events::refusal("PROC_WATCH_RELOAD_CANDIDATE", "process_watch cannot start during reload preparation; use on lifecycle.commit"));
@@ -14246,6 +14293,11 @@ impl Evaluator {
                             | "fs_watch"
                             | "fs_unwatch"
                             | "fs_wait"
+                            | "uevent_watch"
+                            | "uevent_unwatch"
+                            | "uevent_sender"
+                            | "uevent_send"
+                            | "uevent_close"
                             | "net_watch"
                             | "net_unwatch"
                             | "net_state"
@@ -14475,7 +14527,8 @@ impl Evaluator {
                                         .any(|name| g.handlers.contains_key(*name)),
                                         filesystem: g.handlers.contains_key("fs.changed"),
                                         children: g.handlers.contains_key("proc.exited"),
-                                        net: g.handlers.contains_key("net.changed"),
+                                        net: g.handlers.contains_key("net.changed")
+                                            || g.handlers.contains_key("uevent.received"),
                                         audio: g.handlers.contains_key("audio.changed"),
                                         // Socket commands are caller-chosen, so
                                         // the family gate is source presence

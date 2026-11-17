@@ -1,0 +1,73 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Source-bundle installer support. CT writes go through Proxmox's own locks.
+fn current_hook($id)
+  $hook = nil
+  for $line in split(run_argv_must(["pct", "config", $id]), "\n")
+    if starts_with($line, "hookscript:") then
+      if $hook != nil then die("duplicate hookscript for CT " .. $id) end
+      $hook = trim(after($line, ":"))
+    end
+  end
+  return $hook
+end
+
+fn plan($desired, $hook_ref)
+  $ids = $desired
+  -- pct list includes stopped CTs too. Do not leave our hook on removed CTs.
+  for $line in split(run_argv_must(["pct", "list"]), "\n")
+    $columns = re_split(trim($line), "\\s+")
+    if len($columns) > 0 and re_match($columns[0], "^[1-9][0-9]*$") and not contains($ids, $columns[0]) then push($ids, $columns[0]) end
+  end
+  $updates = []
+  for $id in $ids
+    $old = current_hook($id)
+    if contains($desired, $id) then
+      if $old != nil and $old != $hook_ref then die("CT " .. $id .. " already has another hookscript; refusing to replace it") end
+      if $old != $hook_ref then push($updates, {id:$id, old:$old, hook:$hook_ref}) end
+    elif $old == $hook_ref then
+      push($updates, {id:$id, old:$old, hook:nil})
+    end
+  end
+  return $updates
+end
+
+fn verify_hook($path)
+  run_argv_must(["test", "-f", $path])
+  run_argv_must(["test", "-x", $path])
+end
+
+fn check($source, $path, $updates)
+  if not exists($path) or read_file($path) != $source then die("install differs: " .. $path) end
+  verify_hook($path)
+  if len($updates) != 0 then die("CT hookscript reconciliation required: " .. json_encode($updates)) end
+end
+
+fn activate($source, $path, $hook_ref, $updates)
+  $changed = false
+  -- Phase 1 is complete before ANY CT mutation. A failure leaves all CTs alone.
+  if not exists($path) or read_file($path) != $source then
+    run_argv_must(["mkdir", "-p", dirname($path)])
+    write_atomic($path, $source)
+    $changed = true
+  end
+  if not run_argv(["test", "-x", $path]).ok then $changed = true end
+  run_argv_must(["chmod", "0755", $path])
+  verify_hook($path)
+
+  -- Phase 2 changes only the hook field through pct, never whole config files.
+  for $update in $updates
+    -- Recheck immediately before pct's locked/validated update. Refuse a hook
+    -- another operator installed since preflight instead of replacing it.
+    if current_hook($update.id) != $update.old then die("CT " .. $update.id .. " hookscript changed since preflight; rerun installer") end
+    if $update.hook == nil then
+      run_argv_must(["pct", "set", $update.id, "--delete", "hookscript"])
+    else
+      run_argv_must(["pct", "set", $update.id, "--hookscript", $hook_ref])
+    end
+    $changed = true
+  end
+  return $changed
+end
+
+{plan:plan, check:check, activate:activate}

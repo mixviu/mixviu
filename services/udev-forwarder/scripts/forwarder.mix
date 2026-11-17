@@ -1,0 +1,76 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- Plain Mix native event pump; no serve runtime or broker required.
+$config = require("config.mix")
+$argv = args()
+if len($argv) > 1 then die("usage: mix forwarder.mix [config.conf.mix]") end
+$cfg_path = if len($argv) == 1 then $argv[0] else mix_path("etc", "udev-forwarder.conf.mix", {tier:"system"}) end
+$cfg = $config.load($cfg_path)
+$senders = {}
+
+fn detach($id)
+  global $senders
+  if $senders[$id] != nil then
+    uevent_close($senders[$id])
+    $next = {}
+    for $k in keys($senders)
+      if $k != $id then $next[$k] = $senders[$k] end
+    end
+    $senders = $next
+    print(json_encode({event:"detach", ct:$id}))
+  end
+end
+
+fn attach($id)
+  global $senders
+  detach($id)
+  $r = run_argv(["lxc-info", "-n", $id, "-p", "-H"], {timeout:5})
+  $pid = trim($r.stdout)
+  if not $r.ok or not re_match($pid, "^[1-9][0-9]*$") then
+    print(json_encode({event:"no-running-init", ct:$id}))
+    return
+  end
+  try
+    $h = uevent_sender("/proc/" .. $pid .. "/ns/net")
+    $again = run_argv(["lxc-info", "-n", $id, "-p", "-H"], {timeout:5})
+    if not $again.ok or trim($again.stdout) != $pid then
+      uevent_close($h)
+      print(json_encode({event:"attach-failed", ct:$id, error:"CT init changed while opening namespace; skipped until next reconciliation"}))
+      return
+    end
+    $senders[$id] = $h
+    print(json_encode({event:"attach", ct:$id}))
+  catch $err
+    print(json_encode({event:"attach-failed", ct:$id, error:to_string($err)}))
+  end
+end
+
+-- Subscribe before startup enumeration so processed events queue during it.
+$watch = uevent_watch({group:2, subsystems:$cfg.subsystems})
+for $id in $cfg.cts
+  attach($id)
+end
+
+on uevent.received
+  $a = $event.args
+  if $a.overflow then print(json_encode({event:"drop", reason:"receive/queue overflow; kernel loss count unknown", queued_drops:$a.dropped})) end
+  if $a.drop != nil then print(json_encode({event:"drop", reason:$a.drop})) end
+  if $a.closed != nil then die("uevent watch closed: " .. json_encode($a.closed)) end
+  if $a.raw == nil then return end
+  $forwarded = []
+  for $id in keys($senders)
+    try
+      if uevent_send($senders[$id], 2, $a.raw) then
+        push($forwarded, $id)
+      else
+        print(json_encode({event:"drop", ct:$id, reason:"no multicast listeners"}))
+      end
+    catch $err
+      print(json_encode({event:"drop", ct:$id, reason:to_string($err)}))
+      detach($id)
+    end
+  end
+  print(json_encode({event:"forward", action:$a.properties.ACTION, subsystem:$a.properties.SUBSYSTEM, devname:$a.properties.DEVNAME, cts:$forwarded}))
+end
+
+print(json_encode({event:"ready", cts:keys($senders)}))

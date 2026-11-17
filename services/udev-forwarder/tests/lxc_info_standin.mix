@@ -1,0 +1,20 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Attachment-fault mode only: IDs never reach a real lxc-info.
+$lab = dirname(script_path())
+$argv = args()
+$id = $argv[1]
+if $id == "999991" then
+  print("2147483647")
+elif $id == "999992" then
+  if exists($lab .. "/race-opened") then
+    print("2147483647")
+  else
+    write_file($lab .. "/race-opened", "")
+    print(read_file($lab .. "/init.pid"))
+  end
+elif $id == "999993" then
+  print(read_file($lab .. "/init.pid"))
+else
+  exit(1)
+end

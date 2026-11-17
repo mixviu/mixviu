@@ -38,6 +38,7 @@ pub const EDITD_RECOVERY_DIR: &str = "MIX_EDITD_RECOVERY_DIR";
 pub const EDITOR: &str = "MIX_EDITOR";
 pub const ENGINE_HANDOFF: &str = "MIX_ENGINE_HANDOFF";
 pub const ETC: &str = "MIX_ETC";
+pub const EXPECTED_PARENT_PID: &str = "MIX_EXPECTED_PARENT_PID";
 pub const EXE: &str = "MIX_EXE";
 pub const INDEXD_SEARCH: &str = "MIX_INDEXD_SEARCH";
 pub const INPUTD_LOG: &str = "MIX_INPUTD_LOG";
