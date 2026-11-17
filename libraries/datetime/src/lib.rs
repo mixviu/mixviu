@@ -339,7 +339,10 @@ impl<Z: Zone> Sub for DateTime<Z> {
         // The previous timestamp model represents a leap second as second 59
         // plus an extra billion fractional nanoseconds. Preserve that model
         // when comparing signed envelope freshness, including same-second
-        // comparisons and crossing midnight.
+        // comparisons and crossing midnight. Chrono 0.4.45 deliberately adds
+        // date subtraction to NaiveTime::signed_duration_since: its correction
+        // compares seconds within the day, not full timestamps (naive/time/
+        // mod.rs:752-759 and naive/datetime/mod.rs:818-822).
         let order = self
             .timestamp()
             .rem_euclid(86_400)

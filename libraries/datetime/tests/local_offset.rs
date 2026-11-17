@@ -3,10 +3,15 @@
 use datetime::{DateTime, Local};
 
 #[test]
-fn local_offset_child() {
+fn local_offset_multithreaded_child() {
     let Ok(expected) = std::env::var("DATETIME_OFFSET_PROBE") else {
         return;
     };
+    // Keep another thread alive throughout the lookup. TZ was supplied by
+    // Command::env before this process started; no environment mutation races
+    // with localtime_r or the safe refresh_tz call in Local::offset.
+    let (release, wait) = std::sync::mpsc::channel();
+    let other = std::thread::spawn(move || wait.recv().unwrap());
     let t = DateTime::parse_from_rfc3339("2023-11-14T22:13:20Z")
         .unwrap()
         .with_timezone(&Local);
@@ -14,10 +19,12 @@ fn local_offset_child() {
         t.format("%Y-%m-%d %H:%M:%S %z %:z %Z").to_string(),
         expected
     );
+    release.send(()).unwrap();
+    other.join().unwrap();
 }
 
 #[test]
-fn local_offsets_are_process_scoped() {
+fn local_offsets_are_available_in_multithreaded_processes() {
     for (zone, expected) in [
         ("UTC0", "2023-11-14 22:13:20 +0000 +00:00 +00:00"),
         ("AEST-10", "2023-11-15 08:13:20 +1000 +10:00 +10:00"),
@@ -28,7 +35,7 @@ fn local_offsets_are_process_scoped() {
     ] {
         assert!(
             std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "local_offset_child"])
+                .args(["--exact", "local_offset_multithreaded_child"])
                 .env("TZ", zone)
                 .env("DATETIME_OFFSET_PROBE", expected)
                 .status()
