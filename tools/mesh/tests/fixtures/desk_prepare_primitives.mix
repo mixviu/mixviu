@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Virtual CT root. Only SQLite memory is mutated; no privileged operation.+$fixture_db = sqlopen(":memory:","rw")
+-- Virtual CT root. Only SQLite memory is mutated; no privileged operation.
+$fixture_db = sqlopen(":memory:","rw")
 $_fixture_schema = sqlexec($fixture_db,"CREATE TABLE objects (path TEXT PRIMARY KEY, document TEXT NOT NULL)")
 $_fixture_events = sqlexec($fixture_db,"CREATE TABLE events (operation TEXT, path TEXT)")
 
