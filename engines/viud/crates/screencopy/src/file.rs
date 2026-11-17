@@ -8,6 +8,7 @@ use comp_model::capture::{CaptureFormat, CaptureFrameSpec, CaptureWindow};
 pub use comp_model::reply::ControlReply;
 use serde_json::Value;
 use smithay::backend::renderer::ExportMem;
+use smithay::backend::renderer::{Renderer, ErasedContextId, gles::{GlesRenderer, GlesMapping}, sync::SyncPoint};
 use smithay::output::Output;
 use smithay::utils::Rectangle;
 use std::cell::RefCell;
@@ -46,7 +47,30 @@ struct Request {
 
 thread_local! {
     static REQUESTS: RefCell<Vec<Request>> = const { RefCell::new(Vec::new()) };
+    static READS: RefCell<Vec<PendingRead>> = const { RefCell::new(Vec::new()) };
     static NEXT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+struct PendingRead {
+    requests: Vec<Request>,
+    mapping: GlesMapping,
+    rgba: bool,
+    readback: Readback,
+    context: ErasedContextId,
+    fence: SyncPoint,
+    kind: CaptureSource,
+    copy_us: u64,
+    latency: ledger::frame_trace::WaitSpan,
+}
+
+fn reads_pending(output: &Output, cursor: Option<bool>) -> bool {
+    READS.with_borrow(|reads| reads.iter().any(|read| read.requests.iter().any(|r|
+        r.output == output.name() && cursor.is_none_or(|cursor| r.spec.cursor == cursor))))
+}
+
+fn wake_readback() {
+    graphics::bridge::publish::wake::offer_capture_deadline(
+        std::time::Instant::now() + std::time::Duration::from_millis(1));
 }
 
 pub fn enqueue(
@@ -73,7 +97,7 @@ pub fn enqueue(
 }
 
 pub fn pending(output: &Output) -> bool {
-    REQUESTS.with_borrow(|requests| {
+    reads_pending(output, None) || REQUESTS.with_borrow(|requests| {
         requests
             .iter()
             .any(|request| request.output == output.name())
@@ -81,7 +105,7 @@ pub fn pending(output: &Output) -> bool {
 }
 
 pub fn pending_output(output: &Output) -> bool {
-    REQUESTS.with_borrow(|requests| {
+    reads_pending(output, None) || REQUESTS.with_borrow(|requests| {
         requests
             .iter()
             .any(|request| request.output == output.name() && request.spec.window.is_none())
@@ -89,7 +113,7 @@ pub fn pending_output(output: &Output) -> bool {
 }
 
 pub fn pending_picture(output: &Output, cursor: bool) -> bool {
-    REQUESTS.with_borrow(|requests| {
+    reads_pending(output, Some(cursor)) || REQUESTS.with_borrow(|requests| {
         requests.iter().any(|request| {
             request.output == output.name()
                 && request.spec.window.is_none()
@@ -177,13 +201,14 @@ pub fn fail_windows(reason: &str) {
 /// may change the current GL target; nested restores its EGL surface afterwards.
 /// read_pixels maps synchronously, blocking on the copy before this returns;
 /// the backend may then rotate or reuse the source texture.
-pub fn service<R: ExportMem>(
-    renderer: &mut R,
-    source: Source<'_, '_, R>,
+pub fn service(
+    renderer: &mut GlesRenderer,
+    source: Source<'_, '_, GlesRenderer>,
     output: &Output,
     kind: CaptureSource,
     cursor: bool,
 ) {
+    poll_reads(renderer, output, cursor);
     let requests = take(|request| {
         request.output == output.name()
             && request.spec.window.is_none()
@@ -195,6 +220,44 @@ pub fn service<R: ExportMem>(
     let _service = ledger::frame_trace::span("capture_file_service", 0);
     let readback = source.readback;
     let started = std::time::Instant::now();
+    if requests.iter().all(|request| request.raw) {
+        // Each PBO is a snapshot ordered before later rendering on this context.
+        // Recording owns one request at a time; cap global in-flight memory too.
+        if READS.with_borrow(|reads| reads.len() < 3) {
+            let latency = ledger::frame_trace::wait_span("capture_map_latency", 0);
+            let copy = ledger::frame_trace::span("capture_copy_submit", 0);
+            let result = start_pixels(renderer, source).and_then(|(mapping, rgba)| {
+                let display = renderer.egl_context().display().clone();
+                let fence = renderer.with_context(|gl| {
+                    let fence = smithay::backend::egl::fence::EGLFence::create(&display);
+                    // SAFETY: with_context made this renderer's GL context current.
+                    unsafe { gl.Flush(); }
+                    fence
+                }).map_err(|e| format!("readback context: {e}"))?
+                    .map_err(|e| format!("readback fence: {e}"))?;
+                Ok((mapping, rgba, SyncPoint::from(fence)))
+            });
+            drop(copy);
+            match result {
+                Ok((mapping, rgba, fence)) => {
+                    READS.with_borrow_mut(|reads| reads.push(PendingRead {
+                        requests, mapping, rgba, readback, fence, kind,
+                        context: renderer.context_id().erased(),
+                        copy_us: started.elapsed().as_micros() as u64, latency,
+                    }));
+                    wake_readback();
+                }
+                Err(error) => for request in requests {
+                    (request.answer)(Err(capture_failed(&error)));
+                },
+            }
+            return;
+        }
+        for request in requests {
+            (request.answer)(Err(capture_failed("readback ring full")));
+        }
+        return;
+    }
     let pixels = read_pixels(renderer, source);
     let readback_us = started.elapsed().as_micros() as u64;
     for request in requests {
@@ -217,6 +280,48 @@ pub fn service<R: ExportMem>(
     }
 }
 
+fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
+    let reads = READS.with_borrow_mut(std::mem::take);
+    let mut waiting = Vec::new();
+    for read in reads {
+        if !read.requests.iter().any(|r| r.output == output.name() && r.spec.cursor == cursor) {
+            waiting.push(read);
+            continue;
+        }
+        if read.context != renderer.context_id().erased() {
+            for request in read.requests {
+                (request.answer)(Err(capture_failed("readback renderer changed")));
+            }
+            continue;
+        }
+        if !read.fence.is_reached() {
+            waiting.push(read);
+            wake_readback();
+            continue;
+        }
+        read.latency.finish();
+        let _service = ledger::frame_trace::span("capture_file_service", 0);
+        let started = std::time::Instant::now();
+        let pixels = finish_pixels(renderer, &read.mapping, read.rgba, read.readback);
+        let readback_us = read.copy_us + started.elapsed().as_micros() as u64;
+        for request in read.requests {
+            let result = pixels.as_ref().map_err(Clone::clone).and_then(|pixels|
+                complete_timed(&request.spec, read.readback, pixels, output, read.kind, readback_us, true))
+                .map_err(capture_failed);
+            (request.answer)(result);
+        }
+    }
+    READS.with_borrow_mut(|reads| reads.extend(waiting));
+}
+
+fn start_pixels<R: ExportMem>(renderer: &mut R, source: Source<'_, '_, R>) -> Result<(R::TextureMapping, bool), String> {
+    let region = crate::framebuffer_region(Rectangle::from_size(source.readback.size), &source.readback);
+    match renderer.copy_framebuffer(source.framebuffer, region, smithay::backend::allocator::Fourcc::Abgr8888) {
+        Ok(mapping) => Ok((mapping, true)),
+        Err(_) => start_readback(renderer, source.framebuffer, Rectangle::from_size(source.readback.size), &source.readback),
+    }
+}
+
 pub(crate) fn read_pixels<R: ExportMem>(
     renderer: &mut R,
     source: Source<'_, '_, R>,
@@ -231,21 +336,20 @@ pub(crate) fn read_pixels<R: ExportMem>(
     let copy = ledger::frame_trace::span("capture_copy_submit", 0);
     // File/recording consumers normalise to RGB, so prefer the offscreen
     // texture's native RGBA layout over the protocol's XRGB shm layout.
-    let region = crate::framebuffer_region(Rectangle::from_size(size), &source.readback);
-    let (mapping, rgba) = match renderer.copy_framebuffer(
-        source.framebuffer, region, smithay::backend::allocator::Fourcc::Abgr8888,
-    ) {
-        Ok(mapping) => (mapping, true),
-        Err(_) => start_readback(renderer, source.framebuffer, Rectangle::from_size(size), &source.readback)?,
-    };
+    let readback = source.readback;
+    let (mapping, rgba) = start_pixels(renderer, source)?;
     drop(copy);
+    finish_pixels(renderer, &mapping, rgba, readback)
+}
+
+fn finish_pixels<R: ExportMem>(renderer: &mut R, mapping: &R::TextureMapping, rgba: bool, readback: Readback) -> Result<std::sync::Arc<Vec<u8>>, String> {
     let map = ledger::frame_trace::span("capture_map_wait", 0);
     let bytes = renderer
-        .map_texture(&mapping)
+        .map_texture(mapping)
         .map_err(|err| format!("map capture: {err}"))?;
     drop(map);
     let _convert = ledger::frame_trace::span("capture_rgb_copy", 0);
-    pooled_rgb(bytes, size.w as usize, size.h as usize, rgba, origin_bottom_left)
+    pooled_rgb(bytes, readback.size.w as usize, readback.size.h as usize, rgba, readback.origin_bottom_left)
 }
 
 fn pooled_rgb(bytes: &[u8], width: usize, height: usize, rgba: bool, bottom_up: bool) -> Result<std::sync::Arc<Vec<u8>>, String> {
@@ -416,6 +520,20 @@ fn rgb_into(bytes: &[u8], width: usize, height: usize, rgba: bool, bottom_up: bo
     pixels.resize(len / 4 * 3, 0);
     for (y, out) in pixels.chunks_exact_mut(width * 3).enumerate() {
         let at = source_row(y, height, bottom_up) * row;
+        // Four pixels expose a fixed byte shuffle to LLVM, rather than a
+        // succession of three-byte copies with loop-carried bounds checks.
+        let bulk = width / 4;
+        for (px, rgb) in bytes[at..at + bulk * 16].chunks_exact(16)
+            .zip(out[..bulk * 12].chunks_exact_mut(12)) {
+            if rgba {
+                rgb.copy_from_slice(&[px[0],px[1],px[2],px[4],px[5],px[6],px[8],px[9],px[10],px[12],px[13],px[14]]);
+            } else {
+                rgb.copy_from_slice(&[px[2],px[1],px[0],px[6],px[5],px[4],px[10],px[9],px[8],px[14],px[13],px[12]]);
+            }
+        }
+        let out = &mut out[bulk * 12..];
+        let at = at + bulk * 16;
+        let row = width % 4 * 4;
         if rgba {
             for (px, rgb) in bytes[at..at + row].chunks_exact(4).zip(out.chunks_exact_mut(3)) {
                 rgb.copy_from_slice(&px[..3]);

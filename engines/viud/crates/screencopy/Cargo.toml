@@ -24,6 +24,7 @@ mod_module_files = "deny"
 comp-model = { workspace = true }
 dispatcher = { workspace = true }
 ledger = { workspace = true }
+graphics = { workspace = true }
 model = { workspace = true }
 protocols = { workspace = true }
 image = { workspace = true }
