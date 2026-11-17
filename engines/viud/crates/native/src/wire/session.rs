@@ -333,7 +333,6 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
 /// Publish exactly one edge, including late first activation. Kept separate
 /// from hardware resume so the fake-seat fixture uses the real publication.
 pub fn transition(state: &mut Loop, active: bool) -> bool {
-    screencopy::file::session_paused(!active);
     if active == matches!(state.inner.status_session, StatusSession::Active) {
         return false;
     }

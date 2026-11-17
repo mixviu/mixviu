@@ -20,6 +20,7 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(1);
+const MAX_POLL_GAP: Duration = Duration::from_millis(50);
 
 type Answer = Box<dyn FnOnce(Result<Value, ControlReply>)>;
 pub type Pixels = (u32, u32, std::sync::Arc<Vec<u8>>, u64);
@@ -57,67 +58,25 @@ thread_local! {
     static REQUESTS: RefCell<Vec<Request>> = const { RefCell::new(Vec::new()) };
     static READS: RefCell<Vec<PendingRead>> = const { RefCell::new(Vec::new()) };
     static NEXT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-    static PAUSED: RefCell<std::collections::HashMap<String, Instant>> = RefCell::new(std::collections::HashMap::new());
-    static SESSION_PAUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Session authority, independent of recording admission and pacing timers.
-pub fn session_paused(paused: bool) {
-    if SESSION_PAUSED.replace(paused) == paused {
-        return;
+struct PollBudget {
+    previous: Instant,
+    spent: Duration,
+}
+
+impl PollBudget {
+    fn new(now: Instant) -> Self {
+        Self { previous: now, spent: Duration::ZERO }
     }
-    if paused {
-        let mut names = REQUESTS.with_borrow(|requests| {
-            requests
-                .iter()
-                .map(|r| r.output.clone())
-                .collect::<Vec<_>>()
-        });
-        READS.with_borrow(|reads| {
-            names.extend(
-                reads
-                    .iter()
-                    .flat_map(|r| r.requests.iter().map(|r| r.output.clone())),
-            )
-        });
-        for name in names {
-            set_paused_name(name, true);
-        }
-    } else {
-        let names = PAUSED.with_borrow(|outputs| outputs.keys().cloned().collect::<Vec<_>>());
-        for name in names {
-            set_paused_name(name, false);
-        }
-    }
-}
 
-/// Stop the fence clock while a session cannot service this output. Keep
-/// ownership of the snapshot, and preserve its remaining active-time budget.
-pub fn set_paused(output: &Output, paused: bool) {
-    set_paused_name(output.name(), paused);
-}
-
-fn set_paused_name(name: String, paused: bool) {
-    let now = Instant::now();
-    let resumed = PAUSED.with_borrow_mut(|outputs| {
-        if paused {
-            outputs.entry(name.clone()).or_insert(now);
-            None
-        } else {
-            outputs.remove(&name)
-        }
-    });
-    if let Some(since) = resumed {
-        READS.with_borrow_mut(|reads| {
-            for read in reads {
-                if read.requests.iter().any(|r| r.output == name) {
-                    // Reads submitted during the pause also get no more than
-                    // their original one-second active budget.
-                    read.expires +=
-                        now.saturating_duration_since(since.max(read.expires - READ_TIMEOUT));
-                }
-            }
-        });
+    /// Charge only serviced reads. A KMS/offscreen hand-over or a suspended
+    /// event loop can leave a long gap; it costs at most one polling interval.
+    /// Paused sessions still poll offscreen and must detect a real GPU hang.
+    fn unsignalled(&mut self, now: Instant) -> bool {
+        self.spent += now.saturating_duration_since(self.previous).min(MAX_POLL_GAP);
+        self.previous = now;
+        self.spent >= READ_TIMEOUT
     }
 }
 
@@ -131,7 +90,7 @@ struct PendingRead {
     kind: CaptureSource,
     copy_us: u64,
     latency: ledger::frame_trace::WaitSpan,
-    expires: Instant,
+    budget: PollBudget,
 }
 
 fn reads_pending(output: &Output, cursor: Option<bool>) -> bool {
@@ -166,9 +125,6 @@ pub mod testing {
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "/dev/dri/no-render-device".into())
         })
-    }
-    pub fn paused_count() -> usize {
-        PAUSED.with_borrow(|outputs| outputs.len())
     }
     thread_local! {
         static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
@@ -210,13 +166,6 @@ pub mod testing {
     pub fn pool_count() -> usize {
         PIXEL_POOL.with_borrow(Vec::len)
     }
-    pub fn age_reads() {
-        READS.with_borrow_mut(|reads| {
-            reads
-                .iter_mut()
-                .for_each(|read| read.expires = Instant::now())
-        });
-    }
     pub fn take_wake() -> bool {
         graphics::bridge::publish::wake::take_capture_deadline().is_some()
     }
@@ -227,9 +176,6 @@ pub fn enqueue(
     spec: CaptureFrameSpec,
     answer: impl FnOnce(Result<Value, ControlReply>) + 'static,
 ) -> u64 {
-    if SESSION_PAUSED.get() {
-        set_paused(output, true);
-    }
     let id = NEXT_ID.with(|next| {
         let id = next.get();
         next.set(id.wrapping_add(1));
@@ -387,38 +333,11 @@ pub fn release_raw(prefix: &str) {
         }
         reads.retain(|read| !read.requests.is_empty());
     });
-    // Completed reads no longer have tokens in READS, so prune idle outputs
-    // too. New reads inherit SESSION_PAUSED directly on admission.
-    PAUSED.with_borrow_mut(|outputs| {
-        outputs.retain(|name, _| {
-            REQUESTS.with_borrow(|requests| requests.iter().any(|r| &r.output == name))
-                || READS.with_borrow(|reads| {
-                    reads
-                        .iter()
-                        .any(|read| read.requests.iter().any(|r| &r.output == name))
-                })
-        })
-    });
     RELEASE_POOL.set(true);
     clear_idle_pool();
 }
 
-fn expire_reads(now: Instant) {
-    let expired = READS.with_borrow_mut(|reads| {
-        let (expired, live) = std::mem::take(reads)
-            .into_iter()
-            .partition::<Vec<_>, _>(|r| {
-                now >= r.expires
-                    && !PAUSED.with_borrow(|outputs| {
-                        r.requests
-                            .iter()
-                            .any(|request| outputs.contains_key(&request.output))
-                    })
-            });
-        *reads = live;
-        expired
-    });
-    for read in expired {
+fn expire_read(read: PendingRead) {
         // Drop the mapping and fence before delivering an error which may
         // synchronously seal the recorder and admit a new take.
         let requests = read.requests;
@@ -431,8 +350,6 @@ fn expire_reads(now: Instant) {
             );
             (request.answer)(Err(capture_failed("readback fence timed out")));
         }
-    }
-    clear_idle_pool();
 }
 
 pub fn fail(id: u64, reason: &str) {
@@ -469,7 +386,6 @@ pub fn service(
     kind: CaptureSource,
     cursor: bool,
 ) {
-    expire_reads(Instant::now());
     poll_reads(renderer, output, cursor);
     let requests = take(|request| {
         request.output == output.name()
@@ -519,7 +435,7 @@ pub fn service(
                             context: renderer.context_id().erased(),
                             copy_us: started.elapsed().as_micros() as u64,
                             latency,
-                            expires: Instant::now() + READ_TIMEOUT,
+                            budget: PollBudget::new(Instant::now()),
                         })
                     });
                     wake_readback();
@@ -560,7 +476,6 @@ pub fn service(
 }
 
 fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
-    expire_reads(Instant::now());
     let reads = READS.with_borrow_mut(std::mem::take);
     let mut waiting = Vec::new();
     for mut read in reads {
@@ -584,6 +499,10 @@ fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
             continue;
         }
         if !read.fence.is_reached() {
+            if read.budget.unsignalled(Instant::now()) {
+                expire_read(read);
+                continue;
+            }
             waiting.push(read);
             wake_readback();
             continue;
@@ -987,6 +906,19 @@ fn write(spec: &CaptureFrameSpec, width: u32, height: u32, pixels: &[u8]) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fence_budget_counts_serviced_time_and_caps_unpolled_gaps() {
+        let start = Instant::now();
+        let mut budget = PollBudget::new(start);
+        let resumed = start + Duration::from_secs(30);
+        assert!(!budget.unsignalled(resumed));
+        assert_eq!(budget.spent, MAX_POLL_GAP);
+        for ms in 1..950 {
+            assert!(!budget.unsignalled(resumed + Duration::from_millis(ms)));
+        }
+        assert!(budget.unsignalled(resumed + Duration::from_millis(950)));
+    }
+
     #[test]
     fn fractional_regions_round_outwards_and_clip() {
         let spec = comp_model::capture::parse(&serde_json::json!({"path":"/tmp/a",

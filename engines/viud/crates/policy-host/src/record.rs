@@ -1097,16 +1097,14 @@ mod tests {
         submit(&old, &mut renderer, &outputs[0]);
         let (_probe_tx, probe_rx) = std::sync::mpsc::channel();
         old.borrow_mut().probe = Some(probe_rx);
-        screencopy::file::session_paused(true);
         tick(&old, || panic!("preflight is still pending"));
         std::thread::sleep(Duration::from_millis(1100));
         screencopy::file::poll(&mut renderer, &outputs[1]);
         assert_eq!(
             screencopy::file::testing::read_count(),
             1,
-            "inactive output keeps its read beyond READ_TIMEOUT"
+            "an unpolled output keeps its read beyond READ_TIMEOUT"
         );
-        screencopy::file::session_paused(false);
         old.borrow_mut().probe = None;
         assert!(screencopy::file::pending(&outputs[0]));
         assert!(!screencopy::file::requested(&outputs[0]));
@@ -1143,9 +1141,7 @@ mod tests {
             let s = drain_fixture(&format!("reuse-{index}"), &root);
             install_stop_waker(&s, events.handle());
             submit(&s, &mut renderer, output);
-            screencopy::file::set_paused(output, true);
             std::thread::sleep(Duration::from_millis(1100));
-            screencopy::file::set_paused(output, false);
             let reply = stop(&s, false);
             let limit = Instant::now() + Duration::from_secs(2);
             while reply.borrow().is_none() && Instant::now() < limit {
@@ -1156,6 +1152,7 @@ mod tests {
             }
             assert!(reply.borrow().is_some());
             assert_eq!(reply.borrow().as_ref().unwrap()["dropped"], 0);
+            assert_eq!(reply.borrow().as_ref().unwrap()["error"], Value::Null);
             assert_eq!(screencopy::file::testing::read_count(), 0);
             assert_eq!(screencopy::file::testing::pool_count(), 0);
         }
@@ -1163,7 +1160,6 @@ mod tests {
         install_stop_waker(&s, events.handle());
         let (_probe_tx, probe_rx) = std::sync::mpsc::channel();
         s.borrow_mut().probe = Some(probe_rx);
-        screencopy::file::session_paused(true);
         tick(&s, || {
             panic!("a preflight pause must not need a capture tick")
         });
@@ -1174,7 +1170,7 @@ mod tests {
         assert_eq!(
             screencopy::file::testing::read_count(),
             1,
-            "reads admitted during a preflight pause inherit the paused clock"
+            "reads admitted during preflight keep their unpolled budget"
         );
         let reply = stop(&s, true);
         assert_eq!(
@@ -1183,25 +1179,28 @@ mod tests {
             "discard must release immediately"
         );
         assert_eq!(fence.load(Ordering::Relaxed), 1);
-        assert_eq!(
-            screencopy::file::testing::paused_count(),
-            0,
-            "stopping a paused take must retire its output entries"
-        );
         await_reply(&mut events, &reply);
-        screencopy::file::session_paused(false);
 
         let s = drain_fixture("expire", &root);
         install_stop_waker(&s, events.handle());
         let fence = screencopy::file::testing::stall_next_read();
         submit(&s, &mut renderer, &outputs[0]);
         assert!(screencopy::file::testing::take_wake());
-        screencopy::file::testing::age_reads();
+        // Polling another output must not consume this read's budget.
+        std::thread::sleep(Duration::from_millis(1100));
         screencopy::file::poll(&mut renderer, &outputs[1]);
+        assert_eq!(screencopy::file::testing::read_count(), 1);
+        let began = Instant::now();
+        while screencopy::file::testing::read_count() != 0 {
+            assert!(began.elapsed() < Duration::from_secs(2));
+            screencopy::file::testing::take_wake();
+            screencopy::file::poll(&mut renderer, &outputs[0]);
+            events.dispatch(Some(Duration::from_millis(2)), &mut ()).unwrap();
+        }
         assert_eq!(
             screencopy::file::testing::read_count(),
             0,
-            "expiry must apply across outputs"
+            "a serviced hung fence must expire"
         );
         assert_eq!(fence.load(Ordering::Relaxed), 1);
         assert!(
@@ -1251,7 +1250,6 @@ mod tests {
         let session = drain_fixture("slow-finaliser", &root);
         let mut events = smithay::reexports::calloop::EventLoop::<()>::try_new().unwrap();
         install_stop_waker(&session, events.handle());
-        let began = Instant::now();
         assert!(stop_stream(&mut session.borrow_mut(), false));
         session
             .borrow_mut()
@@ -1259,6 +1257,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .delay_finaliser_for_test(Duration::from_millis(650));
+        let began = Instant::now();
         while session
             .borrow()
             .recording
