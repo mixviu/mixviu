@@ -351,6 +351,7 @@ fn compose(
     // The normal target is always cursorless. No second allocation or pass
     // occurs unless a protocol or Bus capture explicitly asks for the cursor.
     {
+        let _render = ledger::frame_trace::span("capture_base_render_wait", 0);
         let elements: Vec<_> = scene
             .elements
             .iter()
@@ -381,6 +382,7 @@ fn compose(
             )?);
         }
         {
+            let _render = ledger::frame_trace::span("capture_cursor_render_wait", 0);
             let mut target = renderer.bind(ctx.cursor.as_mut().expect("cursor texture"))?;
             OutputDamageTracker::from_output(&ctx.output)
                 .render_output(
