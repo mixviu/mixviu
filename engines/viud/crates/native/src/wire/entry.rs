@@ -217,6 +217,7 @@ pub fn wire(
     let libinput_context =
         kms::input::libinput::factory::create(display.session.clone(), &display.seat_name);
     let libinput_source = kms::input::loop_::libinput::source(libinput_context.clone());
+    let libinput_dispatch = libinput_source.dispatch_waker();
 
     info!("Backend initialization - Native.start()");
 
@@ -300,6 +301,7 @@ pub fn wire(
         drm_output_manager: renderer.drm_output_manager,
         gpu_binding: renderer.gpu_binding.clone(),
         libinput_context,
+        libinput_dispatch,
         tap_subscriptions: frames::draw::plan::tap::TapSubscriptions::new(),
         safety: render_gles::preference::enable::safety::get(),
         drm_fd: display.drm_fd.clone(),

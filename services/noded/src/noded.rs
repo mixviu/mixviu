@@ -3543,6 +3543,31 @@ fn session_delivery_error(
     reply
 }
 
+// Keep the historic empty body and error message unless the caller explicitly
+// requests structured route errors. Mix send has no response-header binding.
+fn unavailable_service_reply(
+    msg: &BusMessage,
+    service: &str,
+    code: &str,
+    status: &str,
+) -> BusMessage {
+    let message = format!("Service '{service}' {status}");
+    let mut reply = BusMessage::new()
+        .with_header("rc", "10")
+        .with_header("type", "response")
+        .with_header("error", &message)
+        .with_header("error_code", code);
+    if msg.get("error_format") == Some("json") {
+        reply.body = serde_json::json!({
+            "error_code": code,
+            "message": message,
+            "service": service,
+        })
+        .to_string();
+    }
+    reply
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn route_local(
     state: &AppState,
@@ -3782,10 +3807,8 @@ async fn route_local(
                     Some(ref bid) => pending_responses.take(bid).await.map(|p| p.caller_id),
                     None => None,
                 };
-                let mut err = BusMessage::new()
-                    .with_header("rc", "10")
-                    .with_header("type", "response")
-                    .with_header("error", &format!("Service '{service}' disconnected"));
+                let mut err =
+                    unavailable_service_reply(msg, service, "SERVICE_DISCONNECTED", "disconnected");
                 if let Some(id) = caller_id {
                     err.set("id", &id);
                 }
@@ -3806,10 +3829,7 @@ async fn route_local(
         }
     } else {
         drop(reg);
-        let mut err = BusMessage::new()
-            .with_header("rc", "10")
-            .with_header("type", "response")
-            .with_header("error", &format!("Service '{service}' not found"));
+        let mut err = unavailable_service_reply(msg, service, "SERVICE_NOT_FOUND", "not found");
         if let Some(id) = msg.get("id") {
             err.set("id", id);
         }
@@ -5122,6 +5142,34 @@ mod tests {
     };
     use crate::observe::ObserveManager;
     use crate::subscription::SubscriptionBroker;
+
+    #[test]
+    fn unavailable_service_reply_keeps_legacy_body_unless_requested() {
+        for (code, status) in [
+            ("SERVICE_NOT_FOUND", "not found"),
+            ("SERVICE_DISCONNECTED", "disconnected"),
+        ] {
+            for format in [None, Some("text"), Some("json")] {
+                let mut request = super::BusMessage::new();
+                if let Some(format) = format {
+                    request.set("error_format", format);
+                }
+                let reply = super::unavailable_service_reply(&request, "ghost", code, status);
+                let message = format!("Service 'ghost' {status}");
+                assert_eq!(reply.get("rc"), Some("10"));
+                assert_eq!(reply.get("error"), Some(message.as_str()));
+                assert_eq!(reply.get("error_code"), Some(code));
+                if format == Some("json") {
+                    let body: serde_json::Value = serde_json::from_str(&reply.body).unwrap();
+                    assert_eq!(body["error_code"], code);
+                    assert_eq!(body["message"], message);
+                    assert_eq!(body["service"], "ghost");
+                } else {
+                    assert!(reply.body.is_empty());
+                }
+            }
+        }
+    }
 
     #[derive(Default)]
     struct EventNameVisitor {
@@ -6619,17 +6667,35 @@ mod tests {
             .with_header("to", "ghost")
             .with_header("type", "request")
             .with_header("id", "missing-route-1");
-        assert_eq!(
-            raw_call(
-                &mut alice_sink,
-                &mut alice_stream,
-                missing_route,
-                "missing-route-1"
-            )
-            .await
-            .get("rc"),
-            Some("10")
-        );
+        let missing = raw_call(
+            &mut alice_sink,
+            &mut alice_stream,
+            missing_route,
+            "missing-route-1",
+        )
+        .await;
+        assert_eq!(missing.get("rc"), Some("10"));
+        assert_eq!(missing.get("error_code"), Some("SERVICE_NOT_FOUND"));
+        assert_eq!(missing.get("error"), Some("Service 'ghost' not found"));
+        assert!(missing.body.is_empty());
+        let structured_route = BusMessage::new()
+            .with_header("command", "ghost.read")
+            .with_header("from", "alice")
+            .with_header("to", "ghost")
+            .with_header("type", "request")
+            .with_header("error_format", "json")
+            .with_header("id", "structured-route-1");
+        let structured = raw_call(
+            &mut alice_sink,
+            &mut alice_stream,
+            structured_route,
+            "structured-route-1",
+        )
+        .await;
+        assert_eq!(structured.get("rc"), Some("10"));
+        let body: serde_json::Value = serde_json::from_str(&structured.body).unwrap();
+        assert_eq!(body["error_code"], "SERVICE_NOT_FOUND");
+        assert_eq!(body["service"], "ghost");
 
         let mut collision_canonical = false;
         let mut failed_command_rejected = false;

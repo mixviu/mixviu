@@ -3,7 +3,12 @@
 //! Input wiring: the libinput source -> compositor lifecycle + redraw
 //! scheduling. (Ex wire.rs `start()` libinput closure.)
 
+mod hotplug;
+pub(super) use hotplug::resumed;
 pub mod map;
+
+mod inventory;
+pub use inventory::snapshot as device_snapshot;
 
 use crate::context::render::NativeRenderContext;
 use dispatcher::state::Dispatch;
@@ -21,6 +26,21 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use world::state::Loop;
 use world::state::StatusSession;
+
+// Lifecycle events still own bookkeeping while the session drops human input.
+fn drop_paused_event(paused: bool, lifecycle: bool) -> bool {
+    paused && !lifecycle
+}
+
+fn remember_device<T: PartialEq>(devices: &mut Vec<T>, device: T) {
+    if !devices.contains(&device) {
+        devices.push(device);
+    }
+}
+
+fn forget_device<T: PartialEq>(devices: &mut Vec<T>, device: &T) {
+    devices.retain(|d| d != device);
+}
 
 /// Drive the external `zwp_tablet_pad_v2` senders from a libinput pad event
 /// (delivered via smithay's `SpecialEvent`; see the local smithay patch). Pads are
@@ -116,31 +136,6 @@ fn pad_button_edge(button: u32, pressed: bool) -> world::comp::blank::Edge {
     }
 }
 
-#[cfg(test)]
-mod pad_blank_tests {
-    use super::pad_button_edge;
-    use world::comp::blank::{BlankPolicy, Edge};
-
-    #[test]
-    fn waking_pad_button_and_its_release_do_not_pass_to_bindings() {
-        let mut policy = BlankPolicy::default();
-        policy.blanked = true;
-        assert!(policy.consume_edge(pad_button_edge(3, true)));
-        policy.blanked = false;
-        assert!(policy.consume_edge(pad_button_edge(3, false)));
-        assert!(!policy.consume_edge(pad_button_edge(3, true)));
-    }
-
-    #[test]
-    fn waking_pad_ring_strip_or_dial_does_not_reach_its_action() {
-        let mut policy = BlankPolicy::default();
-        policy.blanked = true;
-        assert!(policy.consume_edge(Edge::Other));
-        policy.blanked = false;
-        assert!(!policy.consume_edge(Edge::Other));
-    }
-}
-
 /// Should the dial zoom now? Reuses the pen input layer's check — true in the Hand
 /// tool (canvas grab OR touch pane) AND while any canvas pan is in progress.
 fn dial_zoom_active(state: &Loop) -> bool {
@@ -202,9 +197,22 @@ pub fn register(
     libinput_source: LibinputSource,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
 ) {
+    hotplug::register(
+        event_loop,
+        ctx_rc.borrow().libinput_context.clone(),
+        ctx_rc.borrow().libinput_dispatch.clone(),
+    );
     event_loop
         .insert_source(libinput_source, move |event, _, state| {
-            if let StatusSession::Paused = state.inner.status_session {
+            inventory::observe(&event);
+            let lifecycle = matches!(
+                &event,
+                InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. }
+            );
+            if drop_paused_event(
+                matches!(state.inner.status_session, StatusSession::Paused),
+                lifecycle,
+            ) {
                 return;
             }
             let cursor_before = (
@@ -245,7 +253,7 @@ pub fn register(
                         if let Some(keyboard) = state.state.seat.seat.get_keyboard() {
                             device.led_update(keyboard.led_state().into());
                         }
-                        state.state.seat.keyboards.push(device.clone());
+                        remember_device(&mut state.state.seat.keyboards, device.clone());
                     }
                     // NOT `else if`: a single evdev node can advertise both Keyboard and
                     // Touch (some touch panels expose keyboard-ish keys for their bezel
@@ -253,13 +261,13 @@ pub fn register(
                     // claim list — it would then never appear in the settings UI and
                     // could not be mapped to an output.
                     if device.has_capability(DeviceCapability::Touch) {
-                        state.state.seat.touch_devices.push(device);
+                        remember_device(&mut state.state.seat.touch_devices, device);
                         crate::wire::input::map::write_touch_snapshot(state);
                     }
                 }
                 InputEvent::DeviceRemoved { device } => {
-                    state.state.seat.keyboards.retain(|d| d != device);
-                    state.state.seat.touch_devices.retain(|d| d != device);
+                    forget_device(&mut state.state.seat.keyboards, device);
+                    forget_device(&mut state.state.seat.touch_devices, device);
                     if device.has_capability(DeviceCapability::TabletTool) {
                         state
                             .state
@@ -281,6 +289,9 @@ pub fn register(
                     return;
                 }
                 _ => {}
+            }
+            if lifecycle {
+                return;
             }
             // A touch must land on the touch device's OWN display: resolve its
             // output via libinput `output_name`, pin the cursor there, else discard.
@@ -339,4 +350,75 @@ pub fn register(
             }
         })
         .unwrap();
+}
+
+/// Input ownership is about to be lost. Send releases before closing devices,
+/// while grabs and focused clients can still consume them.
+pub(super) fn release_held(state: &mut world::state::Loop) {
+    seat::keyboard::input::keyboard::release_held_keys(state);
+    seat::pointer::input::tablet::revoke::flush(state, 0);
+    if let Some(pointer) = state.state.seat.seat.get_pointer() {
+        for button in pointer.current_pressed() {
+            pointer.button(
+                &mut state.state,
+                &smithay::input::pointer::ButtonEvent {
+                    serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                    time: world::seat::event_time_ms(),
+                    button,
+                    state: smithay::backend::input::ButtonState::Released,
+                },
+            );
+        }
+        pointer.frame(&mut state.state);
+    }
+    seat::modifier::clear::clear_held_modifiers(state);
+}
+
+#[cfg(test)]
+mod pad_blank_tests {
+    use super::pad_button_edge;
+    use world::comp::blank::{BlankPolicy, Edge};
+
+    #[test]
+    fn paused_removals_then_resumed_additions_keep_each_device_once() {
+        let mut keyboards = vec![1, 2];
+        let mut touch = vec![2];
+        for device in [1, 2] {
+            assert!(!super::drop_paused_event(true, true));
+            super::forget_device(&mut keyboards, &device);
+            super::forget_device(&mut touch, &device);
+        }
+        assert!(keyboards.is_empty() && touch.is_empty());
+        assert!(super::drop_paused_event(true, false));
+        for _ in 0..2 {
+            for device in [1, 2] {
+                assert!(!super::drop_paused_event(false, true));
+                super::remember_device(&mut keyboards, device);
+                if device == 2 {
+                    super::remember_device(&mut touch, device);
+                }
+            }
+        }
+        assert_eq!(keyboards, [1, 2]);
+        assert_eq!(touch, [2]);
+    }
+
+    #[test]
+    fn waking_pad_button_and_its_release_do_not_pass_to_bindings() {
+        let mut policy = BlankPolicy::default();
+        policy.blanked = true;
+        assert!(policy.consume_edge(pad_button_edge(3, true)));
+        policy.blanked = false;
+        assert!(policy.consume_edge(pad_button_edge(3, false)));
+        assert!(!policy.consume_edge(pad_button_edge(3, true)));
+    }
+
+    #[test]
+    fn waking_pad_ring_strip_or_dial_does_not_reach_its_action() {
+        let mut policy = BlankPolicy::default();
+        policy.blanked = true;
+        assert!(policy.consume_edge(Edge::Other));
+        policy.blanked = false;
+        assert!(!policy.consume_edge(Edge::Other));
+    }
 }

@@ -145,17 +145,8 @@ pub fn install(
                 }
                 b'F' => {
                     super::activation::fixture_watcher_failed(true);
-                    state
-                        .loop_handle
-                        .insert_source(
-                            Timer::from_duration(std::time::Duration::from_secs(1)),
-                            |_, _, _| {
-                                super::activation::fixture_watcher_failed(false);
-                                TimeoutAction::Drop
-                            },
-                        )
-                        .expect("fake watcher recovery");
                 }
+                b'R' => super::activation::fixture_watcher_failed(false),
                 _ => return Ok(PostAction::Continue),
             }
             let _ = socket.send(&command);

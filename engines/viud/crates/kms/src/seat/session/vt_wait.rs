@@ -8,8 +8,8 @@
 //! 4, minor 1–63. Anything else (a pipe, a pty, no tty: a nested or
 //! dev run) does not wait. The kernel notifies `/sys/class/tty/tty0/active`
 //! (POLLPRI) on every console switch — the attribute systemd-logind watches
-//! the same way — so the wait is a blocking poll with no timeout: no clock,
-//! no restart loop. Nothing here switches VT; only a human does.
+//! the same way. Before attachment, a bounded poll also covers missing
+//! notifications in containers. Nothing here switches VT; only a human does.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
@@ -41,7 +41,23 @@ pub fn parse_active(text: &str) -> Option<u32> {
 
 /// Read the active VT once, if the attribute can be read and parsed.
 pub(super) fn active_vt() -> Option<u32> {
+    // Query the session tty directly: containers need not expose /dev/tty0
+    // and may expose a sysfs mount without working switch notifications.
+    if let Some(active) = ioctl_active() {
+        return Some(active);
+    }
     parse_active(&std::fs::read_to_string(ACTIVE).ok()?)
+}
+
+fn ioctl_active() -> Option<u32> {
+    let mut state = [0u16; 3]; // struct vt_stat
+    // SAFETY: VT_GETSTATE writes three unsigned shorts to valid storage.
+    let result = unsafe { libc::ioctl(0, 0x5603, state.as_mut_ptr()) };
+    (result == 0 && (1..=63).contains(&state[0])).then_some(u32::from(state[0]))
+}
+
+pub fn source_available() -> bool {
+    own_vt().is_none() || active_vt().is_some()
 }
 
 /// Where the active VT is read from and waited on.
@@ -76,34 +92,121 @@ pub fn wait_until_active(own: u32, source: &mut impl ActiveVt) -> usize {
 /// for POLLPRI (sysfs notification).
 struct SysfsActive(std::fs::File);
 
-/// Notify each activation without polling or switching consoles. The initial
+/// Notify each activation without switching consoles. The initial
 /// read also notifies an already active VT. Libseat takes over after attach.
-pub fn watch_own_vt(mut activated: impl FnMut(), ready: impl FnOnce()) -> std::io::Result<()> {
+pub fn watch_own_vt(
+    mut activated: impl FnMut(),
+    ready: impl FnOnce(),
+    stop: &std::sync::atomic::AtomicBool,
+) -> std::io::Result<()> {
     let Some(own) = own_vt() else {
         ready();
         activated();
         return Ok(());
     };
-    let mut source = SysfsActive(std::fs::File::open(ACTIVE)?);
+    let file = std::fs::File::open(ACTIVE).ok();
+    if file.is_none() && ioctl_active().is_none() {
+        return Err(std::io::Error::other(
+            "no active VT source: expose the session tty (VT_GETSTATE) or /sys/class/tty/tty0/active; /dev/tty0 is not required",
+        ));
+    }
+    let mut source = Monitor(file);
+    if source.read().is_none() {
+        return Err(std::io::Error::other(
+            "VT source unreadable: expose the session tty or /sys/class/tty/tty0/active",
+        ));
+    }
     ready();
-    watch_changes(own, &mut source, activated)
+    watch_until_stopped(own, &mut source, stop, activated)
+}
+
+struct Monitor(Option<std::fs::File>);
+impl ActiveVt for Monitor {
+    fn read(&mut self) -> Option<u32> {
+        active_vt()
+    }
+    fn wait(&mut self) -> std::io::Result<()> {
+        if let Some(file) = &self.0 {
+            let mut fd = libc::pollfd {
+                fd: file.as_raw_fd(),
+                events: libc::POLLPRI,
+                revents: 0,
+            };
+            poll_monitor(&mut fd, |fd| {
+                // SAFETY: a valid owned fd; the deadline covers lost sysfs edges.
+                let rc = unsafe { libc::poll(fd, 1, 200) };
+                if rc < 0 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            })?;
+            // Clear the sysfs notification before the next wait.
+            let mut text = String::new();
+            let mut file = file;
+            let _ = file.seek(SeekFrom::Start(0));
+            let _ = file.read_to_string(&mut text);
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        Ok(())
+    }
+}
+
+fn poll_monitor(
+    fd: &mut libc::pollfd,
+    mut poll: impl FnMut(&mut libc::pollfd) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    loop {
+        fd.revents = 0;
+        match poll(fd) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        }
+        // kernfs reports a changed attribute as POLLERR | POLLPRI.
+        if fd.revents & (libc::POLLNVAL | libc::POLLHUP) != 0
+            || (fd.revents & libc::POLLERR != 0 && fd.revents & libc::POLLPRI == 0)
+        {
+            return Err(std::io::Error::other(
+                "VT monitor poll error; re-arm watcher",
+            ));
+        }
+        return Ok(());
+    }
 }
 
 /// A failed read is a failed watcher, not an immediately-readable poll loop.
 pub fn watch_changes(
     own: u32,
     source: &mut impl ActiveVt,
+    activated: impl FnMut(),
+) -> std::io::Result<()> {
+    watch_until_stopped(
+        own,
+        source,
+        &std::sync::atomic::AtomicBool::new(false),
+        activated,
+    )
+}
+
+fn watch_until_stopped(
+    own: u32,
+    source: &mut impl ActiveVt,
+    stop: &std::sync::atomic::AtomicBool,
     mut activated: impl FnMut(),
 ) -> std::io::Result<()> {
-    loop {
+    let mut previous = None;
+    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
         let active = source
             .read()
             .ok_or_else(|| std::io::Error::other("VT source unreadable"))?;
-        if active == own {
+        if active == own && previous != Some(active) {
             activated();
         }
+        previous = Some(active);
         source.wait()?;
     }
+    Ok(())
 }
 
 /// A retry timer may attempt a seat open only while this VT is active.
@@ -161,6 +264,85 @@ pub fn wait_for_own_vt() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monitor_accepts_kernfs_priority_edges_with_or_without_pollerr() {
+        for bits in [libc::POLLPRI, libc::POLLERR | libc::POLLPRI] {
+            let mut fd = libc::pollfd {
+                fd: -1,
+                events: libc::POLLPRI,
+                revents: 0,
+            };
+            poll_monitor(&mut fd, |fd| {
+                fd.revents = bits;
+                Ok(())
+            })
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn monitor_retries_eintr_and_rejects_poll_error_bits() {
+        for bit in [
+            libc::POLLERR,
+            libc::POLLNVAL,
+            libc::POLLHUP,
+            libc::POLLNVAL | libc::POLLPRI,
+            libc::POLLHUP | libc::POLLPRI,
+        ] {
+            let mut fd = libc::pollfd {
+                fd: -1,
+                events: libc::POLLPRI,
+                revents: 0,
+            };
+            let mut calls = 0;
+            assert!(
+                poll_monitor(&mut fd, |fd| {
+                    calls += 1;
+                    if calls == 1 {
+                        return Err(std::io::Error::from_raw_os_error(libc::EINTR));
+                    }
+                    fd.revents = bit;
+                    Ok(())
+                })
+                .is_err()
+            );
+            assert_eq!(calls, 2);
+        }
+    }
+
+    #[test]
+    fn repeated_active_reads_notify_only_on_changes() {
+        let mut source = Script {
+            readings: vec![Some(4), Some(4), Some(1), Some(4), Some(4), None],
+            at: 0,
+            waits: 0,
+        };
+        let mut notices = 0;
+        assert!(watch_changes(4, &mut source, || notices += 1).is_err());
+        assert_eq!(notices, 2);
+    }
+
+    #[test]
+    fn lost_notification_recheck_attaches_and_stops_after_handover() {
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let mut source = Script {
+            readings: vec![Some(1), Some(4)],
+            at: 0,
+            waits: 0,
+        };
+        let mut attached = 0;
+        watch_until_stopped(4, &mut source, &stop, || {
+            attached += 1;
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        })
+        .unwrap();
+        assert_eq!(attached, 1);
+        assert_eq!(
+            source.at, 2,
+            "a timed recheck can replace the lost sysfs edge"
+        );
+    }
 
     #[test]
     fn watcher_waits_for_edges_and_returns_source_failures_for_rearming() {

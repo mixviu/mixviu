@@ -9,9 +9,11 @@ use input as libinput;
 use input::event;
 
 use std::{
+    cell::Cell,
     io,
     os::unix::io::{AsFd, BorrowedFd},
     path::PathBuf,
+    rc::Rc,
     // compd: opt-in per-turn dispatch budget
     time::{Duration, Instant},
 };
@@ -38,6 +40,7 @@ pub struct LibinputInputBackend {
     dispatch_budget: Option<(usize, Duration)>,
     dispatch_pending: bool,
     dispatched_this_turn: bool,
+    dispatch_requested: Rc<Cell<bool>>,
 }
 
 impl LibinputInputBackend {
@@ -58,12 +61,19 @@ impl LibinputInputBackend {
             dispatch_budget: None,
             dispatch_pending: false,
             dispatched_this_turn: false,
+            dispatch_requested: Rc::new(Cell::new(false)),
         }
     }
 
     /// Returns a reference to the underlying libinput context
     pub fn context(&self) -> &libinput::Libinput {
         &self.context
+    }
+
+    /// Request dispatch of events queued by seat assignment or resume even
+    /// when no kernel input fd has become readable. Set this on the loop thread.
+    pub fn dispatch_waker(&self) -> Rc<Cell<bool>> {
+        self.dispatch_requested.clone()
     }
 
     // compd: opt-in per-turn dispatch budget
@@ -785,6 +795,7 @@ impl EventSource for LibinputInputBackend {
     const NEEDS_EXTRA_LIFECYCLE_EVENTS: bool = true;
 
     fn before_sleep(&mut self) -> calloop::Result<Option<(Readiness, Token)>> {
+        self.dispatch_pending |= self.dispatch_requested.replace(false);
         Ok(self.token.filter(|_| self.dispatch_pending).map(|token| {
             (
                 Readiness {

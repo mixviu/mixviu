@@ -27,6 +27,7 @@ timing-predict = ["kms/timing-predict", "flip-estimate"]
 timing-throttle = ["kms/timing-throttle"]
 
 [dependencies]
+comp-model.workspace = true
 headless = { workspace = true }
 drm-ffi = { workspace = true }
 recorder = { workspace = true }
@@ -49,3 +50,6 @@ world = { workspace = true }
 x11-wm = { workspace = true }
 smithay = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+libc.workspace = true

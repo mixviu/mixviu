@@ -69,8 +69,8 @@ pub fn register(
                     // (recorder::bus in the recording feature) owns copied frames.
 
                     // The keys-up for anything held at switch time will be
-                    // consumed by the other VT — forget held modifiers now.
-                    seat::modifier::clear::clear_held_modifiers(state);
+                    // consumed by the other VT — release keys and buttons now.
+                    crate::wire::input::release_held(state);
 
                     // Release every live pipe's CRTC/planes NOW, while the device is
                     // still active. Once `pause()` below flips it inactive, smithay's
@@ -103,7 +103,10 @@ pub fn register(
                                 &mut manager.borrow_mut(),
                             )
                         },
-                        || libinput.suspend(),
+                        || {
+                            libinput.suspend();
+                            ctx_ref.libinput_dispatch.set(true);
+                        },
                     );
 
                     *state.inner.kernel.get_mut(&drivers::resume::base::VBLANK_SEEN_MUT) = false;
@@ -125,6 +128,7 @@ pub fn register(
 
 /// The first attachment and every libseat resume run this same transaction.
 pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderContext>>) {
+    crate::wire::input::resumed();
     let session_loop_handle = state.loop_handle.clone();
     let render_kick = |ctx, state: &mut Loop| {
         let handle = state.loop_handle.clone();
@@ -182,6 +186,7 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
 
         kms::seat::lifecycle::resume::resume(kms::seat::lifecycle::resume::ResumeSteps {
             resume_input: || {
+                ctx_ref.libinput_dispatch.set(true);
                 libinput
                     .resume()
                     .map_err(|e| format!("libinput resume failed: {e:?}"))
