@@ -294,10 +294,17 @@ fn changing_4k(strict: bool) {
                 );
             }
             if stage == "capture_rgb_copy" {
-                for line in trace.lines().filter(|line| line.contains("stage=capture_rgb_copy "))
+                for line in trace
+                    .lines()
+                    .filter(|line| line.contains("stage=capture_rgb_copy "))
                     .filter(|line| (begin_us..end_us).contains(&field(line, "start_us=")))
-                    .filter(|line| field(line, "duration_us=") > 8000) {
-                    println!("READBACK_BURST offset_us={} duration_us={}", field(line, "start_us=") - begin_us, field(line, "duration_us="));
+                    .filter(|line| field(line, "duration_us=") > 8000)
+                {
+                    println!(
+                        "READBACK_BURST offset_us={} duration_us={}",
+                        field(line, "start_us=") - begin_us,
+                        field(line, "duration_us=")
+                    );
                 }
             }
         }

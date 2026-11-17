@@ -338,7 +338,8 @@ impl Recording {
             self.readback_total_us += readback_us;
             self.readbacks += 1;
             self.readback_max_us = self.readback_max_us.max(readback_us);
-            self.readback_debt = charge_readback(&mut self.readback_credit_us, readback_us, self.fps);
+            self.readback_debt =
+                charge_readback(&mut self.readback_credit_us, readback_us, self.fps);
             if (w, h) != (self.source_width, self.source_height) {
                 return Err("target dimensions changed".into());
             }
