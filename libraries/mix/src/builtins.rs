@@ -41253,6 +41253,28 @@ mod loud_numeric_argument_tests {
 
     #[cfg(feature = "datetime")]
     #[test]
+    fn date_parse_padding_and_whitespace_match_pre_migration() {
+        for (text, expected) in [
+            ("2024-1-5", 1704412800.0),
+            ("2024-01-05 9:05:00", 1704445500.0),
+            ("2024-01-05  09:05:00", 1704445500.0),
+            (" 2024-01-05", 1704412800.0),
+            ("2024-1-5\t9:5:0", 1704445500.0),
+            ("2024- 1- 5 \n 9: 5: 0", 1704445500.0),
+        ] {
+            assert_eq!(call_builtin("date_parse", vec![Value::String(text.into())]).unwrap().unwrap(), Value::Number(expected), "{text:?}");
+        }
+    }
+
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_format_weekday_padding_flags_keep_sunday_zero() {
+        let result = call_builtin("date_format", vec![Value::Number(1700000000.0), Value::String("%w %-w %_w %0w".into()), utc_opts(Value::Bool(true))]).unwrap().unwrap();
+        assert_eq!(result, Value::String("2 2 2 2".into()));
+    }
+
+    #[cfg(feature = "datetime")]
+    #[test]
     fn date_format_nil_fmt_selects_the_default_pattern() {
         let out = call_builtin(
             "date_format",

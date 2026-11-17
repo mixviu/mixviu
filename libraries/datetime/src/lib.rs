@@ -13,6 +13,7 @@ use std::{
     str::FromStr,
 };
 use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
+mod parse;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Utc;
@@ -33,6 +34,12 @@ impl Zone for Utc {
 }
 impl Zone for Local {
     fn offset(at: OffsetDateTime) -> UtcOffset {
+        // Refresh TZ/system zone data when time can prove tzset is safe.
+        // Its unchecked variant requires a whole-process guarantee about C
+        // environment mutation and timezone globals that a library cannot
+        // establish. On multithreaded Unix this can decline the refresh;
+        // retain the last zone rather than introducing an unsound safe API.
+        let _ = time::util::refresh_tz();
         UtcOffset::local_offset_at(at).unwrap_or(UtcOffset::UTC)
     }
 }
@@ -73,7 +80,8 @@ fn invalid(e: impl fmt::Display) -> ParseError {
 const MIN_YEAR: i32 = -262_143;
 const MAX_YEAR: i32 = 262_142;
 fn bounded(t: OffsetDateTime) -> bool {
-    (MIN_YEAR..=MAX_YEAR).contains(&t.to_offset(UtcOffset::UTC).year())
+    t.checked_to_offset(UtcOffset::UTC)
+        .is_some_and(|utc| (MIN_YEAR..=MAX_YEAR).contains(&utc.year()))
 }
 
 impl<Z: Zone> DateTime<Z> {
@@ -96,7 +104,7 @@ impl<Z: Zone> DateTime<Z> {
             + if self.leap { 1_000_000 } else { 0 }
     }
     pub fn with_timezone<T: Zone>(&self, _: &T) -> DateTime<T> {
-        DateTime::new(self.inner.to_offset(T::offset(self.inner)), self.leap)
+        DateTime::new(self.inner.checked_to_offset(T::offset(self.inner)).unwrap_or(self.inner), self.leap)
     }
     pub fn date_naive(&self) -> NaiveDate {
         NaiveDate(self.inner.date())
@@ -175,6 +183,9 @@ impl Default for DateTime<Utc> {
 }
 impl DateTime<FixedOffset> {
     pub fn parse_from_rfc3339(text: &str) -> Result<Self, ParseError> {
+        if !matches!(text.as_bytes().get(10), Some(b'T' | b't' | b' ')) {
+            return Err(invalid("invalid RFC 3339 date-time separator"));
+        }
         // Preserve second 60 rather than time's RFC parser's leap-second clamp.
         let leap = text.as_bytes().get(17..19) == Some(b"60");
         let mut s = text.to_owned();
@@ -189,12 +200,8 @@ impl DateTime<FixedOffset> {
         Ok(Self::new(t, leap))
     }
     pub fn parse_from_str(s: &str, pattern: &str) -> Result<Self, ParseError> {
-        let desc = time::format_description::parse_strftime_borrowed(pattern).map_err(invalid)?;
-        let t = OffsetDateTime::parse(&month_case(s), &desc).map_err(invalid)?;
-        if !bounded(t) {
-            return Err(invalid("timestamp outside supported range"));
-        }
-        Ok(Self::new(t, false))
+        let (t, leap) = parse::strftime(s, pattern, true)?.zoned()?;
+        Ok(Self::new(t, leap))
     }
 }
 impl Utc {
@@ -243,28 +250,9 @@ impl From<std::time::SystemTime> for DateTime<Utc> {
 impl<Z: Zone> FromStr for DateTime<Z> {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let t = DateTime::parse_from_rfc3339(s).or_else(|error| {
-            // Serde/FromStr historically allow signed extended years even
-            // though the strict RFC 3339 entry point has a four-digit year.
-            if !s.starts_with(['+', '-']) {
-                return Err(error);
-            }
-            let end = s[1..].find('-').map(|i| i + 1).ok_or(error)?;
-            let year: i32 = s[..end].parse().map_err(invalid)?;
-            if !(MIN_YEAR..=MAX_YEAR).contains(&year) {
-                return Err(invalid("timestamp outside supported range"));
-            }
-            let surrogate = format!("2000{}", &s[end..]);
-            let mut t = DateTime::parse_from_rfc3339(&surrogate)?;
-            let date = time::Date::from_calendar_date(year, t.inner.month(), t.inner.day())
-                .map_err(invalid)?;
-            t.inner = t.inner.replace_date(date);
-            if !bounded(t.inner) {
-                return Err(invalid("timestamp outside supported range"));
-            }
-            Ok(t)
-        })?;
-        Ok(Self::new(t.inner.to_offset(Z::offset(t.inner)), t.leap))
+        let (t, leap) = parse::relaxed(s)?.zoned()?;
+        let inner = t.checked_to_offset(Z::offset(t)).ok_or_else(|| invalid("local datetime outside supported range"))?;
+        Ok(Self::new(inner, leap))
     }
 }
 impl<Z: Zone> fmt::Display for DateTime<Z> {
@@ -421,10 +409,7 @@ impl NaiveDate {
         ))
     }
     pub fn parse_from_str(s: &str, p: &str) -> Result<Self, ParseError> {
-        let desc = time::format_description::parse_strftime_borrowed(p).map_err(invalid)?;
-        let d = time::Date::parse(&month_case(s), &desc).map_err(invalid)?;
-        Self::from_ymd_opt(d.year(), d.month() as u32, d.day() as u32)
-            .ok_or_else(|| invalid("date outside supported range"))
+        Ok(Self(parse::strftime(s, p, false)?.naive.date()))
     }
     pub fn and_hms_opt(self, h: u32, m: u32, s: u32) -> Option<NaiveDateTime> {
         Some(NaiveDateTime(
@@ -457,47 +442,14 @@ impl fmt::Display for NaiveDate {
 pub struct NaiveDateTime(PrimitiveDateTime, bool);
 impl NaiveDateTime {
     pub fn parse_from_str(s: &str, p: &str) -> Result<Self, ParseError> {
-        let desc = time::format_description::parse_strftime_borrowed(p).map_err(invalid)?;
-        let mut input = month_case(s);
-        let seconds = match p {
-            "%Y-%m-%d %H:%M:%S" => Some(17..19),
-            "%Y%m%dT%H%M%SZ" => Some(13..15),
-            _ => None,
-        };
-        let leap = seconds
-            .as_ref()
-            .is_some_and(|r| input.as_bytes().get(r.clone()) == Some(b"60"));
-        if leap {
-            input.replace_range(seconds.expect("seconds field"), "59");
-        }
-        let t = PrimitiveDateTime::parse(&input, &desc).map_err(invalid)?;
-        if !bounded(t.assume_utc()) {
-            return Err(invalid("datetime outside supported range"));
-        }
-        Ok(Self(t, leap))
+        let parsed = parse::strftime(s, p, true)?;
+        Ok(Self(parsed.naive, parsed.leap))
     }
     pub fn and_utc(self) -> DateTime<Utc> {
         DateTime::new(self.0.assume_utc(), self.1)
     }
 }
 
-fn month_case(s: &str) -> String {
-    let mut s = s.to_owned();
-    for month in [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ] {
-        // IMAP dates have ASCII month names. Preserve all other input bytes.
-        for i in (0..s.len().saturating_sub(2)).rev() {
-            if s.is_char_boundary(i)
-                && s.is_char_boundary(i + 3)
-                && s[i..i + 3].eq_ignore_ascii_case(month)
-            {
-                s.replace_range(i..i + 3, month);
-            }
-        }
-    }
-    s
-}
 fn fraction(n: u32, p: SecondsFormat) -> String {
     match p {
         SecondsFormat::Secs => String::new(),
@@ -598,7 +550,7 @@ fn format_value(
             "f" => out.push_str(&format!("{:09}", t.nanosecond())),
             ".f" => out.push_str(&fraction(t.nanosecond(), SecondsFormat::AutoSi)),
             "S" if leap => out.push_str("60"),
-            "w" => out.push_str(&t.weekday().number_days_from_sunday().to_string()),
+            "w" | "-w" | "_w" | "0w" => out.push_str(&t.weekday().number_days_from_sunday().to_string()),
             "C" => {
                 // Retain the historical two-column century representation,
                 // including extended/negative years, in the Mix formatter.

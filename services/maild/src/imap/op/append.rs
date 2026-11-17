@@ -405,6 +405,27 @@ mod tests {
     }
 
     #[test]
+    fn append_date_parse_corpus_keeps_padding_and_whitespace() {
+        for text in [" 7-Jan-2023 12:34:56 +0000", "7-Jan-2023 12:34:56 +0000", "07-jAn-2023 12:34:56 +0000", "7-JAN-2023\t12:34:56\n+00:00"] {
+            let request = format!("INBOX \"{text}\"");
+            let args = parse_args(&request).unwrap();
+            assert_eq!(args.received_at_ms, Some(1_673_094_896_000), "{text:?}");
+        }
+        assert_eq!(parse_args("INBOX \"7-jAn-2023 1:2:3 +1000\"").unwrap().received_at_ms, Some(1_673_017_323_000));
+    }
+
+    #[test]
+    fn append_extended_years_return_bad_without_panicking() {
+        for text in ["31-Dec-+999999 23:59:59 -0100", "01-Jan--999999 00:00:00 +0100"] {
+            let request = format!("INBOX \"{text}\"");
+            let result = std::panic::catch_unwind(|| parse_args(&request));
+            assert!(result.is_ok(), "panic: {text}");
+            let error = result.unwrap().unwrap_err();
+            assert!(error.contains("invalid date-time"), "{error}");
+        }
+    }
+
+    #[test]
     fn parse_args_with_flags_and_date_time() {
         let r = parse_args(r#"INBOX (\Seen) "01-Jan-2026 10:00:00 +1000""#).unwrap();
         assert_eq!(r.flags.0, Flags::SEEN);
