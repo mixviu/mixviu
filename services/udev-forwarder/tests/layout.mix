@@ -12,3 +12,11 @@ $expected = 'ExecStart="/srv/example prefix/bin/mix" "/srv/example lib/udev-forw
 if not contains($unit, $expected .. "\n") then die("relocated roots are not rendered as separate quoted arguments") end
 if contains($unit, "/opt/mix") or contains($unit, "@{") then die("unit kept an unresolved or hardwired root") end
 print("PASS: registered forwarder unit renders relocated prefix/lib/etc with correct quoting")
+if contains(args(), "--show-default") then
+  $defaults = {}
+  for $name in ["prefix", "lib", "etc", "share", "var", "run", "cache"]
+    $defaults[$name] = mix_path($name, "", {tier:"system"})
+  end
+  print(json_encode($defaults))
+  print($render.external(read_file($source), $defaults, "unit"))
+end
