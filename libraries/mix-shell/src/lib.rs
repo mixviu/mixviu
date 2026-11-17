@@ -39,9 +39,9 @@ mod manual;
 mod meta;
 mod native_session;
 mod node_config;
-mod paths;
 #[cfg(target_os = "linux")]
 mod parent_death;
+mod paths;
 mod repl;
 mod repl_editor;
 mod result_fd;

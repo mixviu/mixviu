@@ -57,8 +57,17 @@ finally
   try
     -- Every process carrying this unique bus config: client, controller,
     -- adapter and worker. The broker itself is retired by private_bus.stop.
-    for $pid in members() $stopped = kill($pid, 9) end
-    if $bus != nil then $stopped = $pb.stop($bus) end
+    try
+      for $attempt = 1 to 100
+        $left = members()
+        if len($left) == 0 then break end
+        for $pid in $left $stopped = kill($pid, 9) end
+        sleep(0.05)
+      end
+      if len(members()) != 0 then raise("ACP_LIFETIME", "per-run process cleanup failed") end
+    finally
+      if $bus != nil then $stopped = $pb.stop($bus) end
+    end
   finally
     run_argv_must(["rm", "-rf", "--", $tmp])
   end
