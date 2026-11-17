@@ -227,8 +227,11 @@ impl Reads {
         self.current.is_some()
     }
 
-    // Share one budget across refusal and read diagnostics, including no-focus
-    // paths. Never log an upstream diagnostic or selection payload.
+    // Share one budget across real failures, including no-focus paths. Empty
+    // selections and pending reads must not hide failures. Never log payloads.
+    // Busy is transient: start installs a timeout before setting current, and
+    // finish clears current on completion or timeout (which logs TimedOut).
+    // If the event loop itself stalls, it cannot process Busy requests either.
     fn allow_error_log(&self) -> bool {
         let now = std::time::Instant::now();
         if self
@@ -244,6 +247,7 @@ impl Reads {
 
     pub fn answer(&self, id: u64, result: Result<String, ReadError>) {
         if let Err(error) = &result
+            && !matches!(error, ReadError::Empty | ReadError::Busy)
             && self.allow_error_log()
         {
             let reason = match error {
@@ -847,6 +851,21 @@ delegate_registry!(Selection);
 mod tests {
     use super::*;
     use std::os::fd::{FromRawFd, OwnedFd};
+
+    #[test]
+    fn benign_answers_do_not_spend_failure_log_budget() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let reads = Reads::new(tx, Arc::new(|| {}));
+        reads.answer(1, Err(ReadError::Empty));
+        reads.answer(2, Err(ReadError::Busy));
+        assert!(reads.last_error_log.get().is_none());
+        reads.answer(3, Err(ReadError::Failed("private diagnostic".into())));
+        assert!(
+            reads.last_error_log.get().is_some(),
+            "failure must log immediately"
+        );
+        assert_eq!(rx.try_iter().count(), 3);
+    }
 
     #[test]
     fn error_storm_shares_one_diagnostic_budget_without_losing_answers() {
