@@ -25,7 +25,7 @@ fn parse_targets($document)
   $seen = []
   $normal = []
   for $item in $document.targets
-    exact_keys($item, ["node", "host", "kind", "machine", "profile", "session", "account", "client_account", "broker_account", "admission"], "target")
+    exact_keys($item, ["node", "host", "kind", "transport", "ct", "machine", "profile", "session", "account", "client_account", "broker_account", "admission"], "target")
     $node = plain_label($item.node, "node")
     $host = plain_label($item.host, "host")
     if contains($seen, $node) then fail("duplicate node " .. $node) end
@@ -33,13 +33,22 @@ fn parse_targets($document)
     $kind = $item.kind
     if $kind != "system" and $kind != "desk" then fail("kind must be system or desk") end
     if $kind == "system" then
-      for $key in ["machine", "profile", "session", "account", "client_account", "broker_account", "admission"]
+      for $key in ["transport", "ct", "machine", "profile", "session", "account", "client_account", "broker_account", "admission"]
         if has_key($item, $key) then fail("system target cannot carry " .. $key) end
       end
       push($normal, {project:$project, node:$node, host:$host, kind:$kind, profile:nil, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
         unit:"noded.service", account:"root", machine:nil, session:nil, run:nil})
     else
-      $machine = plain_label($item.machine, "machine")
+      $transport = $item.transport ?? "nspawn"
+      if not contains(["nspawn","pct"],$transport) then fail("unknown desk transport") end
+      $machine = nil
+      if $transport == "pct" then
+        if has_key($item,"machine") or type($item.ct) != "number" or floor($item.ct) != $item.ct or $item.ct < 100 or $item.ct > 999999999 then fail("pct requires an integer CT id and no machine") end
+        $machine = "ct-" .. to_string($item.ct)
+      else
+        if has_key($item,"ct") then fail("nspawn cannot carry ct") end
+        $machine = plain_label($item.machine, "machine")
+      end
       $account = nil
       $broker = nil
       if $document.schema_version == 1 then
@@ -55,12 +64,18 @@ fn parse_targets($document)
       $session = $item.session
       if type($session) != "number" or $session < 1 or $session > 6 or floor($session) != $session then fail("session must be an integer from 1 to 6") end
       $profile = $item.profile
-      if type($profile) != "string" or not re_match($profile, "^/var/lib/" .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
+      $state = if $transport == "pct" then "/opt/mix/var/lib/" else "/var/lib/" end
+      if type($profile) != "string" or not re_match($profile, "^" .. $state .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
       $admission = $item.admission ?? nil
       if $admission != nil and not contains(["off","observe","enforce"],$admission) then fail("invalid admission posture") end
       $entry = {project:$project, node:$node, host:$host, kind:$kind, profile:$profile, etc:$profile .. "/etc", var:$profile .. "/var",
         unit:"noded@" .. to_string($session) .. ".service", account:$account, machine:$machine, session:$session,
         run:"/run/" .. $project .. "/session/" .. to_string($session),admission:$admission}
+      if $transport == "pct" then
+        $entry.transport = "pct"
+        $entry.ct = $item.ct
+        $entry.run = "/opt/mix/run/session/" .. to_string($session)
+      end
       if $broker != nil then
         $entry.identity_schema = 2
         $entry.client_account = $account
@@ -97,7 +112,12 @@ end
 fn checked_target($target)
   $raw = {node:$target.node,host:$target.host,kind:$target.kind}
   if $target.kind == "desk" then
-    $raw.machine = $target.machine
+    if $target.transport == "pct" then
+      $raw.transport = "pct"
+      $raw.ct = $target.ct
+    else
+      $raw.machine = $target.machine
+    end
     $raw.profile = $target.profile
     $raw.session = $target.session
     if $target.identity_schema == 2 then
@@ -181,6 +201,12 @@ fn stdin_job($target, $program, $bindings, $role, $mix_bin, $native)
   -- Native namespace execution uses a pipe, not a terminal or source argv.
   -- The outer native Mix sets the profile env for the inner stdin process.
   $wrapper = "$r = run_argv([" .. json_encode($mix_bin) .. ", \"-\"], {stdin: " .. data_encode($body) .. ", env: " .. data_encode($environment) .. ", timeout: 120}); print($r.stdout); if not $r.ok then raise(\"MESH_TARGET_JOB\", \"namespace job failed\") end\n"
+  if $target.transport == "pct" then
+    $argv = ["pct","exec",to_string($target.ct),"--","systemd-run","--pipe","--wait","--collect","--quiet",
+      "--property=RuntimeMaxSec=135s","--property=TimeoutStopSec=5s","--property=KillMode=control-group"]
+    if $role == "citizen" then $argv = concat($argv,["runuser","-u",$account,"--"]) end
+    return {host:$target.host,argv:concat($argv,[$mix_bin,"-"]),stdin:$wrapper,env:{}}
+  end
   return {host:$target.host, argv:["sudo","-n","systemd-run","--machine=" .. $target.machine,
     "--pipe","--wait","--collect","--quiet","--property=RuntimeMaxSec=135s","--property=TimeoutStopSec=5s",
     "--property=KillMode=control-group","--uid=" .. $account,$mix_bin,"-"], stdin:$wrapper, env:{}}

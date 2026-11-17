@@ -146,5 +146,29 @@ check(type($native_mix)=="string" and starts_with($native_mix,"/"),"running inte
 run_argv_must([$native_mix,"lint",$generated])
 $rpc = json_parse(run_argv_must([$native_mix,$generated]))
 check($rpc.ok==false and $rpc.error=="DESK_DISTRIBUTOR","generated native RPC refusal failed")
+$prep = require("../_lib/desk_prepare.mix")
+$ctdoc = $description
+$ctdoc.targets[0] = {node:"desk",host:"pve-host",kind:"desk",transport:"pct",ct:123,profile:"/opt/mix/var/lib/example/desk-bus",session:5,account:"desktop",admission:"observe"}
+$ct = $targets.parse_targets($ctdoc).targets[0]
+$ctbase = $ops.request($ct,$inventory,$base.genesis,"/opt/mix/bin/mix","/opt/mix")
+$ctstate = $state
+$ctstate.ctx.target = $ct
+write_file($path,json_encode($ctstate))
+check(flow($ctbase,$program,$execute).verified,"CT typed flow failed")
+$ctbase.endpoint = "192.0.2.1:51822"
+$ctbase.hub_key = $base.genesis
+$ctbase.subnet = "192.0.2.0/24"
+$files = $prep.files($ctbase)
+check(len($files)==3 and $files[2].bytes == "[Service]\nEnvironmentFile=/opt/mix/var/lib/example/desk-bus/etc/noded/service.env\n","preparation drop-in")
+$ctprops = $properties
+$ctprops.RuntimeDirectory = ""
+$ctprops.EnvironmentFiles = "/opt/mix/etc/session/5.env (ignore_errors=no) /opt/mix/var/lib/example/desk-bus/etc/noded/service.env (ignore_errors=no)"
+$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes)
+$ctprops.EnvironmentFiles = $ctprops.EnvironmentFiles .. " /tmp/later (ignore_errors=no)"
+check(refused(fn()=$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes)),"CT final environment refusal")
+$flattened = $root .. "/prepare-generated.mix"
+write_file($flattened,$prep.program(dirname(dirname(realpath($0))) .. "/_lib") .. chr(10) .. "print(1)")
+run_argv_must([$native_mix,"lint",$flattened])
+check(trim(run_argv_must([$native_mix,$flattened]))=="1","generated preparation source failed")
 print("PASS hermetic desk flow: exact namespace stages, ten fail-stop boundaries, policy, effective unit and generated RPC")
 run_argv_must(["rm","-rf",$root])

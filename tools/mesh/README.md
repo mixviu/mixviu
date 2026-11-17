@@ -264,3 +264,55 @@ fixtures and `tests/desk_flow_test.mix` for typed executor order/failure, unit
 binding and generated-source/RPC fixtures. Neither contacts production SSH,
 services or secrets. A real disposable namespace exercise remains a separate
 proof requirement before claiming deployed readiness.
+
+### Proxmox CT preparation
+
+Schema 1 desks may instead specify `transport:"pct", ct:123` with no
+`machine`. `host` is the PVE SSH alias. Their dedicated profile is a direct
+child of `/opt/mix/var/lib/<project>`; runtime is `/opt/mix/run/session/N`.
+Configure each CT's explicit native roots and interpreter in nodes.conf.mix
+(prefix `/opt/mix`, etc `/opt/mix/etc`, var `/opt/mix/var/lib/<project>`).
+Never query CT layout by running a layout probe on its PVE host. The PVE host
+must also have the same native Mix interpreter path for the SSH stdin adapter.
+CT jobs use `pct exec ID -- systemd-run --pipe ...`, with the same transient
+unit deadline and control-group kill policy as nspawn; citizen commands then
+use `runuser -u ACCOUNT --`. Bindings and source remain on stdin.
+
+Prepare explicitly, separately from sync/seed, using a reviewed public plan:
+
+```text
+# Hub, with MESH_HUB and node settings pointing to the intended inventory:
+mix tools/mesh/_bin/mesh_desk_prepare.mix --plan SIGNED NODE 192.0.2.1:51822 /tmp/desk-plan.mix
+# Copy the public plan and this reviewed tools/mesh tree to the PVE host.
+# PVE root (does not use SSH):
+/opt/mix/bin/mix tools/mesh/_bin/mesh_desk_prepare.mix --apply /tmp/desk-plan.mix
+# Separate, explicit network activation inside the CT:
+pct exec 123 -- systemctl enable --now wg-quick@wg1.service
+```
+
+Preparation creates root:session-group0750 profile/etc/etc-noded/var and
+account:session-group0700 var/noded; existing directories must already match.
+It writes root:session-group0640 service.env, node.conf.mix and a per-instance
+`zzzz-mesh-profile.conf` drop-in, then reloads and validates the effective unit.
+No seed, genesis, baseline or inventory is created or reset. Existing files
+must match exactly, making completed preparation idempotent and conflicting
+state an explicit refusal. It does not restart noded or start WireGuard.
+
+Reuse the release's `noded@N` to preserve User, PartOf, native argv and session
+cleanup. A second unit would compete for the same socket and lifetime. The
+drop-in adds the profile environment last; later overrides cause refusal.
+Unlike nspawn's draft contract, this release creates its absolute runtime path
+through ExecStartPre and RequiresMountsFor, leaving RuntimeDirectory empty.
+
+The preparation plan derives the address, current desk/hub WG keys and subnet
+from authenticated inventory; the endpoint is explicit private operator input.
+The CT key stays in `/etc/wireguard/wg1.key`, is checked with `wg pubkey`, and
+is used only inside the CT to write root:root0600 `/etc/wireguard/wg1.conf`.
+This is the desk-side generator; `mesh_gen seal` retains its existing hub WG
+generation. No private key enters the hub plan or process argv.
+
+`desk_ops.ROLLOUT_READY` remains the sole sync/seed rollout switch, false here.
+Explicit preparation is a separate administrative tool, not a sync override.
+Live proof must establish WG routing, effective unit/session environment,
+cross-node addressed ABP and recovery before the orchestrator reviews/flips
+that one line. Schema 2 remains preview only.

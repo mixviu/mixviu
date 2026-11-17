@@ -80,7 +80,8 @@ fn validate_service($target, $gid, $s, $properties, $text)
   $path = $target.etc .. "/noded/service.env"
   if not $s.present or $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 then refuse("dedicated service environment is not root-owned 0640") end
   if $properties.User != $target.account then refuse("session unit account mismatch") end
-  if $properties.Type != "simple" or $properties.KillMode != "control-group" or $properties.RuntimeDirectory != $target.project .. "/session/" .. to_string($target.session) .. "/noded" then refuse("unit lifecycle or runtime directory differs from native session contract") end
+  $runtime = if $target.transport == "pct" then "" else $target.project .. "/session/" .. to_string($target.session) .. "/noded" end
+  if $properties.Type != "simple" or $properties.KillMode != "control-group" or $properties.RuntimeDirectory != $runtime then refuse("unit lifecycle or runtime directory differs from native session contract") end
   $final_file = $path .. " (ignore_errors=no)"
   if $properties.EnvironmentFiles != $final_file and not ends_with($properties.EnvironmentFiles," " .. $final_file) then refuse("dedicated environment must be the final mandatory unit environment file") end
   $prefix = upper($target.project)
@@ -125,8 +126,10 @@ fn namespace_context($request)
   if $t.identity_schema == 2 then refuse("separate-principal transactions are not implemented; target preview only") end
   if type($t) != "map" or $t.kind != "desk" or not plain($t.project) or not plain($t.node) or not plain($t.account) or $t.account == "root" then refuse("invalid desk identity") end
   if type($t.session) != "number" or floor($t.session) != $t.session or $t.session < 1 or $t.session > 6 then refuse("invalid session") end
-  if not re_match($t.profile,"^/var/lib/" .. $t.project .. "/[a-z][a-z0-9-]{0,31}$") then refuse("invalid profile") end
-  if $t.etc != $t.profile .. "/etc" or $t.var != $t.profile .. "/var" or $t.run != "/run/" .. $t.project .. "/session/" .. to_string($t.session) or $t.unit != "noded@" .. to_string($t.session) .. ".service" then refuse("inconsistent desk paths") end
+  $state = if $t.transport == "pct" then "/opt/mix/var/lib/" else "/var/lib/" end
+  $runtime = if $t.transport == "pct" then "/opt/mix/run/session/" else "/run/" .. $t.project .. "/session/" end
+  if not re_match($t.profile,"^" .. $state .. $t.project .. "/[a-z][a-z0-9-]{0,31}$") then refuse("invalid profile") end
+  if $t.etc != $t.profile .. "/etc" or $t.var != $t.profile .. "/var" or $t.run != $runtime .. to_string($t.session) or $t.unit != "noded@" .. to_string($t.session) .. ".service" then refuse("inconsistent desk paths") end
   if trim(run_argv_must(["id","-u"])) != "0" then refuse("admin operation requires namespace root") end
   $uid = to_number(trim(run_argv_must(["id","-u",$t.account])))
   $gid = to_number(trim(run_argv_must(["id","-g",$t.account])))
