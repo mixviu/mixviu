@@ -630,6 +630,7 @@ mod tests {
             )
             .unwrap();
         let target = renderer.bind(&mut texture).unwrap();
+        let began = Instant::now();
         screencopy::file::service(
             &mut renderer,
             screencopy::Source {
@@ -644,7 +645,6 @@ mod tests {
             true,
         );
         drop(target);
-        let began = Instant::now();
         let mut events =
             EventLoop::<(GlesRenderer, Output, world::state::StatusSession)>::try_new().unwrap();
         events
