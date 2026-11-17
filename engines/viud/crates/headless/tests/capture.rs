@@ -893,9 +893,7 @@ fn record_idle_output_lifecycle_and_clock() {
             // decoded pixels acknowledge this particular commit. Scan both
             // names because automatic seal can publish between Bus replies.
             for path in [
-                Path::new(next["frames_path"].as_str().unwrap())
-                    .parent()
-                    .unwrap(),
+                Path::new(next["recovery_path"].as_str().unwrap()),
                 Path::new(next["path"].as_str().unwrap()),
             ] {
                 let mut frame = 0;
