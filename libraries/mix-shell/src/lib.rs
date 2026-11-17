@@ -40,6 +40,8 @@ mod meta;
 mod native_session;
 mod node_config;
 mod paths;
+#[cfg(target_os = "linux")]
+mod parent_death;
 mod repl;
 mod repl_editor;
 mod result_fd;
@@ -344,8 +346,8 @@ fn exec_mixd(mixd: &Path, args: &[String], what: &str) -> i32 {
         return code;
     }
     #[cfg(target_os = "linux")]
-    if let Err(err) = restore_parent_death_signal() {
-        eprintln!("mix: {what}: cannot preserve parent lifetime for engine handoff: {err}");
+    if let Err(err) = parent_death::handoff() {
+        eprintln!("mix: {what}: {err}");
         return 126;
     }
     use std::os::unix::process::CommandExt;
@@ -357,47 +359,6 @@ fn exec_mixd(mixd: &Path, args: &[String], what: &str) -> i32 {
         .exec();
     eprintln!("mix: {what}: cannot hand off to {}: {err}", mixd.display());
     126
-}
-
-// Linux stores pdeath_signal per task. The initial thread inherits the
-// spawn-time setting, but the evaluation thread starts with zero. An exec
-// from that thread replaces the process using ITS setting, silently losing
-// die_with_parent on the mix -> mixd handoff unless we transfer it first.
-#[cfg(target_os = "linux")]
-static INHERITED_PARENT_DEATH: std::sync::OnceLock<(libc::pid_t, libc::c_int)> =
-    std::sync::OnceLock::new();
-
-#[cfg(target_os = "linux")]
-fn capture_parent_death_signal() -> io::Result<()> {
-    let mut signal: libc::c_int = 0;
-    // SAFETY: prctl writes one int into our live local; getppid has no args.
-    unsafe {
-        let parent = libc::getppid();
-        if libc::prctl(libc::PR_GET_PDEATHSIG, &mut signal) == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        let _ = INHERITED_PARENT_DEATH.set((parent, signal));
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn restore_parent_death_signal() -> io::Result<()> {
-    if let Some(&(parent, signal)) = INHERITED_PARENT_DEATH.get()
-        && signal != 0
-    {
-        // SAFETY: raw syscalls only. The check closes the interval in which
-        // exec can retire the originally protected thread after parent death.
-        unsafe {
-            if libc::prctl(libc::PR_SET_PDEATHSIG, signal, 0, 0, 0) == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            if libc::getppid() != parent {
-                libc::_exit(126);
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Shell profile: Bus citizens are served by the mixd engine (engine-split
@@ -2474,8 +2435,8 @@ pub fn register_build_snapshot() {
 
 pub fn main() -> process::ExitCode {
     #[cfg(target_os = "linux")]
-    if let Err(err) = capture_parent_death_signal() {
-        eprintln!("mix: cannot capture inherited parent lifetime: {err}");
+    if let Err(err) = parent_death::capture() {
+        eprintln!("mix: {err}");
         return process::ExitCode::from(126);
     }
     register_build_snapshot();

@@ -347,6 +347,15 @@ async fn spawn_die_with_parent_needs_a_host_leads_its_group_and_refuses_detach()
         pgid, pid,
         "die_with_parent child must lead its own process group"
     );
+    let marker = marker_path("expected-parent");
+    let source = format!(
+        "$child = spawn([\"/usr/bin/printenv\", \"MIX_EXPECTED_PARENT_PID\"], {{die_with_parent: true, clear_env: true, env: {{MIX_EXPECTED_PARENT_PID: \"wrong\"}}, stdout: {{file: \"{}\"}}}})\n\
+         for $attempt = 1 to 100\n  if not process_alive($child) then break end\n  sleep(0.01)\nend\n\
+         print(trim(read_file(\"{}\")) == to_string(pid()))\n",
+        marker.display(), marker.display()
+    );
+    assert_eq!(run_ok(&source).await, "true\n");
+    let _ = std::fs::remove_file(marker);
 }
 
 /// A top-level run_parallel timeout replaces each job's own, so a job's
