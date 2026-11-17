@@ -363,6 +363,7 @@ impl NaiveDate {
             self.0
                 .with_hms(h.try_into().ok()?, m.try_into().ok()?, s.try_into().ok()?)
                 .ok()?,
+            false,
         ))
     }
     pub fn num_days_from_ce(self) -> i32 {
@@ -385,18 +386,26 @@ impl fmt::Display for NaiveDate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NaiveDateTime(PrimitiveDateTime);
+pub struct NaiveDateTime(PrimitiveDateTime, bool);
 impl NaiveDateTime {
     pub fn parse_from_str(s: &str, p: &str) -> Result<Self, ParseError> {
         let desc = time::format_description::parse_strftime_borrowed(p).map_err(invalid)?;
-        let t = PrimitiveDateTime::parse(&month_case(s), &desc).map_err(invalid)?;
+        let mut input = month_case(s);
+        let seconds = match p {
+            "%Y-%m-%d %H:%M:%S" => Some(17..19),
+            "%Y%m%dT%H%M%SZ" => Some(13..15),
+            _ => None,
+        };
+        let leap = seconds.as_ref().is_some_and(|r| input.as_bytes().get(r.clone()) == Some(b"60"));
+        if leap { input.replace_range(seconds.expect("seconds field"), "59"); }
+        let t = PrimitiveDateTime::parse(&input, &desc).map_err(invalid)?;
         if !bounded(t.assume_utc()) {
             return Err(invalid("datetime outside supported range"));
         }
-        Ok(Self(t))
+        Ok(Self(t, leap))
     }
     pub fn and_utc(self) -> DateTime<Utc> {
-        DateTime::new(self.0.assume_utc(), false)
+        DateTime::new(self.0.assume_utc(), self.1)
     }
 }
 
