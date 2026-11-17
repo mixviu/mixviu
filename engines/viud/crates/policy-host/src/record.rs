@@ -1248,9 +1248,18 @@ mod tests {
         assert!(session.borrow().drain_until.is_none());
         assert_eq!(session.borrow().last_state.get(), "failed");
         let deadline = Instant::now() + Duration::from_secs(2);
-        while session.borrow().recording.as_ref().unwrap().terminal.is_none() {
+        while session
+            .borrow()
+            .recording
+            .as_ref()
+            .unwrap()
+            .terminal
+            .is_none()
+        {
             assert!(Instant::now() < deadline);
-            events.dispatch(Some(Duration::from_millis(10)), &mut ()).unwrap();
+            events
+                .dispatch(Some(Duration::from_millis(10)), &mut ())
+                .unwrap();
         }
         assert_eq!(session.borrow().last_state.get(), "failed");
         drop(session);
