@@ -1,0 +1,51 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Root-only CBC harness. Requires writable input sysfs and a real udevd.
+-- Uses only real udevd bytes; a refused trigger FAILS, never fabricates one.
+$wire = nil
+$seq = nil
+$seen = false
+$sender = nil
+$watch = uevent_watch({group:2, subsystems:["input"]})
+$pid = spawn(["unshare", "-n", "sleep", "30"], {exit_event:true, tag:"test-netns"})
+$own = trim(run_argv_must(["readlink", "/proc/self/ns/net"]))
+$path = "/proc/" .. $pid .. "/ns/net"
+$ready = false
+for $n in range(0, 30)
+  $ns = run_argv(["readlink", $path])
+  if $ns.ok and trim($ns.stdout) != $own then $ready = true; break end
+  sleep(0.1)
+end
+if not $ready then die("unshare -n unavailable") end
+$sender = uevent_sender($path)
+$monitor = process_watch(["stdbuf", "-oL", "nsenter", "-t", to_string($pid), "-n", "udevadm", "monitor", "--udev", "--property"], {stderr:"lines"})
+sleep(0.3)
+$devices = glob("/sys/class/input/event*")
+if len($devices) == 0 then die("worker has no input device for real oracle") end
+run_argv_must(["udevadm", "trigger", "--action=change", $devices[0]])
+$retry = interval(0.1, "proof-readiness")
+$deadline = timer_once(5, "proof-timeout")
+
+on uevent.received
+  global $wire, $seq
+  if $event.args.overflow or $event.args.drop != nil or $event.args.closed != nil then die("oracle watch lost an event") end
+  if $wire == nil then
+    $wire = $event.args.raw
+    $seq = $event.args.properties.SEQNUM
+  end
+end
+on timer.tick
+  if $event.args.tag == "proof-timeout" then die("libudev namespace receiver did not accept the real oracle") end
+  if $wire != nil then
+    $sent = uevent_send($sender, 2, $wire)
+  end
+end
+on proc.line
+  if $seq != nil and $event.args.line == "SEQNUM=" .. $seq then
+    print("PASS: real uid-0 udevd datagram copied verbatim into namespace B and accepted by libudev")
+    exit(0)
+  end
+end
+on "proc.watch_exited"
+  die("libudev monitor exited before acceptance")
+end

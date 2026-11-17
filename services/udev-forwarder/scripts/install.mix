@@ -4,6 +4,7 @@
 $argv = args()
 if len($argv) > 1 or (len($argv) == 1 and $argv[0] != "--check") then die("usage: mix install.mix [--check]") end
 $check = contains($argv, "--check")
+run_argv_must(["/opt/mix/bin/mix", "builtins", "uevent_sender"])
 $base = dirname(dirname(script_path()))
 $config = require("config.mix")
 $cfg_path = "/opt/mix/etc/udev-forwarder.conf.mix"
@@ -11,6 +12,7 @@ $cfg_source = if exists($cfg_path) then $cfg_path else $base .. "/udev-forwarder
 $cfg = $config.load($cfg_source)
 $hook_ref = "local:snippets/mix-udev-forwarder.mix"
 $hook_path = "/var/lib/vz/snippets/mix-udev-forwarder.mix"
+if trim(run_argv_must(["pvesm", "path", $hook_ref])) != $hook_path then die("local snippets storage has a different path; configure storage before installing") end
 
 -- Preflight every CT before writing anything. Never replace another hook.
 $ct_updates = {}

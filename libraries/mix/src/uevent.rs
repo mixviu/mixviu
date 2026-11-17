@@ -7,7 +7,15 @@ pub(crate) const MAX_PENDING: usize = 64;
 // Buffer on the evaluator thread, never used to construct a udev datagram.
 pub(crate) fn envelope_bytes(bytes: &[u8]) -> String {
     const HEX: &[u8] = b"0123456789abcdef";
-    bytes.iter().flat_map(|b| [HEX[(b >> 4) as usize] as char, HEX[(b & 15) as usize] as char]).collect()
+    bytes
+        .iter()
+        .flat_map(|b| {
+            [
+                HEX[(b >> 4) as usize] as char,
+                HEX[(b & 15) as usize] as char,
+            ]
+        })
+        .collect()
 }
 
 pub(crate) fn properties(
@@ -147,7 +155,7 @@ pub(crate) mod linux {
             })
     }
 
-    pub(crate) fn send(fd: &OwnedFd, group: u32, bytes: &[u8]) -> MixResult<()> {
+    pub(crate) fn send(fd: &OwnedFd, group: u32, bytes: &[u8]) -> MixResult<bool> {
         if group != 1 && group != 2 {
             return Err(refusal("UEVENT_GROUP", "group must be 1 or 2"));
         }
@@ -165,6 +173,11 @@ pub(crate) mod linux {
             )
         };
         if n < 0 {
+            // libudev treats this as normal for a multicast with no monitor.
+            // A socket pins its netns; lack of listeners is not a dead CT.
+            if io::Error::last_os_error().raw_os_error() == Some(libc::ECONNREFUSED) {
+                return Ok(false);
+            }
             return Err(refusal(
                 "UEVENT_SEND",
                 io::Error::last_os_error().to_string(),
@@ -173,7 +186,7 @@ pub(crate) mod linux {
         if n as usize != bytes.len() {
             return Err(refusal("UEVENT_SEND", "short datagram send"));
         }
-        Ok(())
+        Ok(true)
     }
 
     pub(crate) fn receive(fd: &OwnedFd, bytes: &mut [u8]) -> io::Result<(usize, u32)> {
@@ -327,91 +340,4 @@ mod tests {
         assert_eq!(props["SUBSYSTEM"], "hidraw");
     }
 
-    #[cfg(target_os = "linux")]
-    #[test]
-    #[ignore = "root-only discovery; creates a temporary network namespace"]
-    fn namespace_discovery() {
-        use std::{
-            os::fd::AsRawFd,
-            process::{Command, Stdio},
-            time::Duration,
-        };
-        assert_eq!(unsafe { libc::geteuid() }, 0, "root required");
-        let listener = linux::socket(2).unwrap();
-        let device = std::fs::read_dir("/sys/class/input")
-            .unwrap()
-            .filter_map(Result::ok)
-            .find(|e| e.file_name().to_string_lossy().starts_with("event"))
-            .map(|e| e.path())
-            .expect("worker input device for real oracle");
-        let trigger = Command::new("udevadm")
-            .args(["trigger", "--action=change"])
-            .arg(&device)
-            .output()
-            .unwrap();
-        eprintln!(
-            "oracle trigger: {:?}: {}",
-            trigger.status,
-            String::from_utf8_lossy(&trigger.stderr)
-        );
-        assert!(trigger.status.success(), "cannot capture real oracle");
-        let mut poll = libc::pollfd {
-            fd: listener.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        assert!(
-            unsafe { libc::poll(&mut poll, 1, 3000) } > 0,
-            "no real host udev event"
-        );
-        let mut wire = vec![0; 256 * 1024];
-        let (n, uid) = linux::receive(&listener, &mut wire).unwrap();
-        wire.truncate(n);
-        let props = properties(&wire, 2).unwrap();
-        eprintln!(
-            "real oracle accepted: uid={uid} action={} subsystem={} bytes={n}",
-            props["ACTION"], props["SUBSYSTEM"]
-        );
-        let mut ns = Command::new("unshare")
-            .args(["-n", "sleep", "30"])
-            .spawn()
-            .unwrap();
-        // This is a bounded discovery probe; the child owns its ephemeral ns.
-        std::thread::sleep(Duration::from_millis(300));
-        let path = format!("/proc/{}/ns/net", ns.id());
-        let sender = linux::sender(path).unwrap();
-        let monitor = Command::new("timeout")
-            .env("SYSTEMD_LOG_LEVEL", "debug")
-            .args([
-                "3",
-                "nsenter",
-                "-t",
-                &ns.id().to_string(),
-                "-n",
-                "udevadm",
-                "monitor",
-                "--udev",
-                "--property",
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        std::thread::sleep(Duration::from_millis(300));
-        let sent = linux::send(&sender, 2, &wire);
-        let output = monitor.wait_with_output().unwrap();
-        let _ = ns.kill();
-        let _ = ns.wait();
-        eprintln!(
-            "namespace send: {sent:?}; monitor stdout: {}; stderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        sent.unwrap();
-        assert!(
-            String::from_utf8_lossy(&output.stdout)
-                .contains(&format!("SEQNUM={}", props["SEQNUM"])),
-            "libudev must accept copied datagram"
-        );
-    }
 }

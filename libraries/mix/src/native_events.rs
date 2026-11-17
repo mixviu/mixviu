@@ -370,7 +370,12 @@ impl Queue {
         s.overflow |= overflow;
         for (key, change) in changes {
             if s.changes.contains_key(&key)
-                || s.changes.len() < if s.command == "uevent.received" { crate::uevent::MAX_PENDING } else { crate::desktop_events::MAX_SOURCE_PENDING }
+                || s.changes.len()
+                    < if s.command == "uevent.received" {
+                        crate::uevent::MAX_PENDING
+                    } else {
+                        crate::desktop_events::MAX_SOURCE_PENDING
+                    }
             {
                 s.changes.insert(key, change);
             } else {
@@ -1214,8 +1219,7 @@ impl NativeEvents {
                 .uevent_senders
                 .get(h)
                 .ok_or_else(|| refusal("UEVENT_HANDLE", "unknown sender"))?;
-            crate::uevent::linux::send(fd, group, &bytes)?;
-            Ok(Value::Nil)
+            crate::uevent::linux::send(fd, group, &bytes).map(Value::Bool)
         }
     }
 
@@ -1681,10 +1685,16 @@ mod tests {
             assert_eq!(body["raw"], format!("00ff{n:02x}"));
             assert_eq!(body["dropped"], if n == 0 { 3 } else { 0 });
             let value = crate::evaluator::incoming_event_to_mix_value(&ev);
-            let Value::Map(value) = &value else { panic!("event map") };
-            let Value::Map(args) = &value["args"] else { panic!("args map") };
-            let Value::Buffer(raw) = &args["raw"] else { panic!("raw buffer") };
-            assert_eq!(&*raw.borrow(), &[0,255,(n % 256) as u8]);
+            let Value::Map(value) = &value else {
+                panic!("event map")
+            };
+            let Value::Map(args) = &value["args"] else {
+                panic!("args map")
+            };
+            let Value::Buffer(raw) = &args["raw"] else {
+                panic!("raw buffer")
+            };
+            assert_eq!(&*raw.borrow(), &[0, 255, (n % 256) as u8]);
         }
     }
     use std::{

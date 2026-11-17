@@ -55,8 +55,11 @@ on uevent.received
   $forwarded = []
   for $id in keys($senders)
     try
-      uevent_send($senders[$id], 2, $a.raw)
-      push($forwarded, $id)
+      if uevent_send($senders[$id], 2, $a.raw) then
+        push($forwarded, $id)
+      else
+        print(json_encode({event:"drop", ct:$id, reason:"no multicast listeners"}))
+      end
     catch $err
       print(json_encode({event:"drop", ct:$id, reason:to_string($err)}))
       detach($id)
