@@ -238,6 +238,9 @@ impl<Z: Zone> FromStr for DateTime<Z> {
             }
             let end = s[1..].find('-').map(|i| i + 1).ok_or(error)?;
             let year: i32 = s[..end].parse().map_err(invalid)?;
+            if !(MIN_YEAR..=MAX_YEAR).contains(&year) {
+                return Err(invalid("timestamp outside supported range"));
+            }
             let surrogate = format!("2000{}", &s[end..]);
             let mut t = DateTime::parse_from_rfc3339(&surrogate)?;
             let date = time::Date::from_calendar_date(year, t.inner.month(), t.inner.day())
