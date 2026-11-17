@@ -45,8 +45,14 @@ also ended before the leader is reaped. Descendants that deliberately leave the
 group are outside this guarantee.
 
 Completed child monitors are pruned when checking native-source liveness.
-A plain script's event pump exits once its last managed child exit is delivered
-and no filesystem watches or Bus handler remain; no explicit `quit()` is needed.
+A plain script (`mix FILE`) keeps its event pump running while native sources
+remain, even if its Bus stream closes or no broker is available. The closed
+Bus lane is retired and the pump parks on native readiness. This includes
+timers: an uncancelled `interval` keeps the script alive indefinitely; cancel
+it with `cancel_timer` or terminate explicitly when that is no longer wanted.
+After the last native source ends and its queued events drain, a plain script
+with a closed Bus exits without an explicit `quit()`. `--serve` retains its
+supervised transport-close and shutdown behaviour.
 
 ```mix
 $pid = spawn(["worker", "scene.mix"], {exit_event: true, tag: "scene:12"})

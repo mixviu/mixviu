@@ -1,0 +1,62 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run from this source bundle on the PVE host. --check is read-only.
+$argv = args()
+if len($argv) > 1 or (len($argv) == 1 and $argv[0] != "--check") then die("usage: mix install.mix [--check]") end
+$check = contains($argv, "--check")
+$roots = {}
+for $name in ["prefix", "share", "lib", "etc", "var", "run", "cache"]
+  $roots[$name] = mix_path($name, "", {tier:"system"})
+end
+$mix_bin = $roots.prefix .. "/bin/mix"
+$renderer = require("../../../share/layout/render.mix")
+for $name in ["uevent_watch", "uevent_unwatch", "uevent_sender", "uevent_send", "uevent_close"]
+  $probe = run_argv([$mix_bin, "builtins", $name])
+  if not $probe.ok then die("installed " .. $mix_bin .. " lacks " .. $name .. "; install a gold containing the udev builtins and brokerless native pump fix first") end
+end
+-- Builtins alone do not identify an older binary with the broken plain pump.
+-- Stdin avoids a temporary file, keeping --check read-only.
+$pump_probe = "$clock = timer_once(0.1, \"preflight\")\non timer.tick\n  print(\"native-pump-ready\")\n  exit(0)\nend\n"
+$pump = run_argv([$mix_bin, "-"], {stdin:$pump_probe, env:{MIX_NODED_URL:"ws://127.0.0.1:1/ws"}, timeout:5})
+if not $pump.ok or trim($pump.stdout) != "native-pump-ready" then die("installed " .. $mix_bin .. " cannot keep the native event pump alive without a broker; install a gold containing the brokerless pump fix first") end
+$base = dirname(dirname(script_path()))
+$config = require("config.mix")
+$cfg_path = $roots.etc .. "/udev-forwarder.conf.mix"
+$cfg_source = if exists($cfg_path) then $cfg_path else $base .. "/udev-forwarder.conf.mix" end
+$cfg = $config.load($cfg_source)
+$hook_ref = "local:snippets/mix-udev-forwarder.mix"
+$hook_path = "/var/lib/vz/snippets/mix-udev-forwarder.mix"
+if trim(run_argv_must(["pvesm", "path", $hook_ref])) != $hook_path then die("local snippets storage has a different path; configure storage before installing") end
+
+-- Preflight all current and desired CTs before writing anything.
+$hooks = require("install_hooks.mix")
+$ct_updates = $hooks.plan($cfg.cts, $hook_ref)
+
+$files = {}
+for $name in ["config.mix", "forwarder.mix"]
+  $files[$roots.lib .. "/udev-forwarder/" .. $name] = read_file($base .. "/scripts/" .. $name)
+end
+$files["/etc/systemd/system/udev-forwarder.service"] = $renderer.external(read_file($base .. "/units/udev-forwarder.service"), $roots, "unit")
+if not exists($cfg_path) then $files[$cfg_path] = read_file($cfg_source) end
+
+$changed = false
+for $path in keys($files)
+  if not exists($path) or read_file($path) != $files[$path] then
+    if $check then die("install differs: " .. $path) end
+    run_argv_must(["mkdir", "-p", dirname($path)])
+    write_atomic($path, $files[$path])
+    $changed = true
+  end
+end
+if $check then
+  $hooks.check(read_file($base .. "/scripts/hook.mix"), $hook_path, $ct_updates)
+  run_argv_must(["systemctl", "is-enabled", "udev-forwarder.service"])
+  run_argv_must(["systemctl", "is-active", "udev-forwarder.service"])
+else
+  -- Explicit final phase: publish and verify the executable hook BEFORE pct.
+  if $hooks.activate(read_file($base .. "/scripts/hook.mix"), $hook_path, $hook_ref, $ct_updates) then $changed = true end
+  run_argv_must(["systemctl", "daemon-reload"])
+  run_argv_must(["systemctl", "enable", "--now", "udev-forwarder.service"])
+  if $changed then run_argv_must(["systemctl", "restart", "udev-forwarder.service"]) end
+end
+print("udev-forwarder install verified")
