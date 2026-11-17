@@ -444,8 +444,11 @@ fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
     let reads = READS.with_borrow_mut(std::mem::take);
     let mut waiting = Vec::new();
     for mut read in reads {
-        read.requests.retain(|r| PIXEL_ANSWERS.with_borrow(|answers| answers.contains_key(&r.spec.path)));
-        if read.requests.is_empty() { continue; }
+        read.requests
+            .retain(|r| PIXEL_ANSWERS.with_borrow(|answers| answers.contains_key(&r.spec.path)));
+        if read.requests.is_empty() {
+            continue;
+        }
         if !read
             .requests
             .iter()
@@ -1005,12 +1008,40 @@ mod tests {
     #[test]
     fn cancelled_raw_answer_never_becomes_a_file_capture() {
         use smithay::output::{PhysicalProperties, Subpixel};
-        let output=Output::new("cancelled".into(),PhysicalProperties {size:(0,0).into(),subpixel:Subpixel::Unknown,make:"test".into(),model:"test".into(),serial_number:"test".into()});
-        let path=std::env::temp_dir().join(format!("cancelled-raw-{}-{}.ppm",std::process::id(),ledger::frame_trace::monotonic_us()));
-        let spec=comp_model::capture::parse(&serde_json::json!({"path":path,"format":"ppm"})).unwrap();
-        let result=complete_timed(&spec,Readback {size:(1,1).into(),origin_bottom_left:false},&std::sync::Arc::new(vec![0;3]),&output,CaptureSource::Offscreen,0,true);
+        let output = Output::new(
+            "cancelled".into(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: "test".into(),
+                model: "test".into(),
+                serial_number: "test".into(),
+            },
+        );
+        let path = std::env::temp_dir().join(format!(
+            "cancelled-raw-{}-{}.ppm",
+            std::process::id(),
+            ledger::frame_trace::monotonic_us()
+        ));
+        let spec =
+            comp_model::capture::parse(&serde_json::json!({"path":path,"format":"ppm"})).unwrap();
+        let result = complete_timed(
+            &spec,
+            Readback {
+                size: (1, 1).into(),
+                origin_bottom_left: false,
+            },
+            &std::sync::Arc::new(vec![0; 3]),
+            &output,
+            CaptureSource::Offscreen,
+            0,
+            true,
+        );
         assert!(result.is_err());
-        assert!(!path.exists(),"a retired raw token must never be opened as a path");
+        assert!(
+            !path.exists(),
+            "a retired raw token must never be opened as a path"
+        );
     }
 
     #[test]

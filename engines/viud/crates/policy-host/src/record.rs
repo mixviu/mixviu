@@ -624,19 +624,12 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         if finish_recording(&mut s) {
             return;
         }
-        if let Some(r) = s.recording.as_mut() {
-            if r.terminal.is_some() || !r.is_recording() || s.failed.is_some() {
-                return;
-            }
-        }
-        if s.failed.is_some() {
+        if s.recording.as_ref().is_some_and(|r| r.terminal.is_some() || !r.is_recording()) || s.failed.is_some() {
             return;
         }
         if let Some(until) = s.drain_until {
-            if !s.pending || Instant::now() >= until {
-                if stop_stream(&mut s, false) {
-                    event(&s, "finishing");
-                }
+            if (!s.pending || Instant::now() >= until) && stop_stream(&mut s, false) {
+                event(&s, "finishing");
             }
             return;
         }
