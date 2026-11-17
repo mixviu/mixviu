@@ -29,7 +29,11 @@ $state.handover_armed = false
 $state.upgrade_armed = false
 $state.upgrade_delay = 1
 $state.upgrade_seq = 0
-$state.upgrade_delays = json_parse(env("MIX_VIUD_SCENES_UPGRADE_DELAYS", "[1,2,4,8,16,32,64]"))
+try
+  $state.upgrade_delays = json_parse(env("MIX_VIUD_SCENES_UPGRADE_DELAYS", "[1,2,4,8,16,32,64]"))
+catch $message
+  raise("SCENES_CONFIG", "upgrade delays must be valid JSON: " .. $message)
+end
 if type($state.upgrade_delays) != "list" or len($state.upgrade_delays) != 7 then
   raise("SCENES_CONFIG", "upgrade delays must contain seven positive seconds")
 end
@@ -123,14 +127,17 @@ fn schedule_upgrade($s)
     end
     return $s
   end
-  $s.upgrade_armed = true
-  $s.upgrade_seq = $s.upgrade_seq + 1
   $rung = 0
   $delay = $s.upgrade_delay
   while $delay > 1
     $rung = $rung + 1
     $delay = $delay / 2
   end
+  if $rung < 0 or $rung >= len($s.upgrade_delays) then
+    raise("SCENES_CONFIG", "upgrade retry rung is outside configured delays")
+  end
+  $s.upgrade_armed = true
+  $s.upgrade_seq = $s.upgrade_seq + 1
   task_start("scenes.upgrade.retry", json_encode({delay:$s.upgrade_delays[$rung], seq:$s.upgrade_seq}))
   $s.upgrade_delay = $s.upgrade_delay * 2
   return $s
@@ -404,10 +411,8 @@ on scenes.reset desc "Restore recorded template defaults {name}; retain recovery
 end
 
 on scenes.upgrade desc "Refresh unedited template copies; flag edited copies for review"
-  -- Retire the old waiter before the manual pass, even if that pass fails.
-  -- Its completion must neither clear the new arm nor spend its budget.
-  $state.upgrade_seq = $state.upgrade_seq + 1
-  $state.upgrade_armed = false
+  -- upgrade() retires the waiter only when it resets the budget. A refused
+  -- request retains both, so scheduling cannot spend an unattempted rung.
   $state = $loader.request($state, "upgrade", $event.args ?? {})
   $state = schedule_upgrade($state)
   reply($state.rc, json_encode($state.response))

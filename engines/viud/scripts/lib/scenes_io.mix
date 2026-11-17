@@ -2,7 +2,9 @@
 fn rpc($target, $command, $body)
   try
     $wire = type($body) == "string" ? $body : json_encode($body)
-    send $target $command body=$wire timeout=5
+    -- send does not expose response headers. Opt into noded's structured
+    -- route errors; ordinary callers retain the legacy empty-body reply.
+    send $target $command body=$wire error_format=json timeout=5
     $code = $rc
     $value = $result
     if type($value) == "string" then

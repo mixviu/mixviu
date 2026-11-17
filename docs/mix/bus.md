@@ -208,6 +208,23 @@ rc=10
 result=Service 'nonesuch' not found
 ```
 
+Noded's local routing failures retain an empty body and the existing `error`
+message header. An additional `error_code` header identifies
+`SERVICE_NOT_FOUND` or `SERVICE_DISCONNECTED`. `send` does not expose response
+headers, so a caller needing the code can explicitly opt into a JSON error
+body (containing `error_code`, `message` and `service`):
+
+```mix
+send nonesuch some.cmd body="{}" error_format=json
+if $rc == 10 and $reply.error_code == "SERVICE_NOT_FOUND" then
+  print("service is absent")
+end
+```
+
+This only changes these routing failures for the requesting call. Ordinary
+callers retain their string `$result` and nil `$reply`; application replies
+are unaffected.
+
 A **negative** `$rc` is a *local*, non-fatal signal — the send never reached a
 peer, so `$result` carries the reason string and the script continues: `-1`
 transport failure (a broker was there but the send failed — lost or broken

@@ -95,7 +95,7 @@ $v = $result
 if type($v) == "string" then
   try $v = json_parse($v) catch $ignored end
 end
-print(json_encode({rc:$rc, value:$v}))
+print(json_encode({rc:$rc, value:$v, reply:$reply}))
 ')
   mkdir($tmp .. "/templates")
   mkdir($tmp .. "/scenes")
@@ -111,6 +111,25 @@ print(json_encode({rc:$rc, value:$v}))
     SCENES_EDITOR_APP:"0", SCENE_HOST:"fakeshell", FAKE_SHELL_OWNER:"scenes"})
   $host_script = $here .. "/fixtures/scene-editor/fake_shell.mix"
   $loader_script = env("SCENES_BOOT_REPO", $repo) .. "/engines/viud/scripts/scenes.mix"
+  $bad_config = run_argv([$mix, "--serve", $loader_script, "--name", "scenes"],
+    {clear_env:true, env:merge($vars, {MIX_VIUD_SCENES_UPGRADE_DELAYS:"[broken"}), timeout:5})
+  check(not $bad_config.ok and contains($bad_config.stderr, "SCENES_CONFIG:"), "malformed delay JSON reports SCENES_CONFIG")
+  -- Ordinary body= callers must retain their string result and nil parsed
+  -- body. The loader alone opts into a structured route error below.
+  $absent = call("fakeshell", "INFO")
+  check($absent.rc == 10 and $absent.value == "Service 'fakeshell' not found" and $absent.reply == nil, "default not-found result remains a string and parsed body remains nil")
+  write_file($tmp .. "/compat.mix", replace('
+$app = require("@repo@/libraries/viu/mix/app-call.mix")
+$r = $app.viu_app_raw("absent-app", "absent-app.open", {}, 1)
+if not $app.viu_app_absent($r, "absent-app") then raise("COMPAT", "absent apps must still enter the launch path") end
+$runtime = require("@repo@/share/scenes/lib/runtime.mix")
+$r = $runtime.call("absent-tray", "absent-tray.open", {})
+if $r.absent != true then raise("COMPAT", "scene runtime must still recognise an absent tray") end
+print("PASS legacy app-call and scene runtime absence on the real Bus")
+', "@repo@", $repo))
+  $compat = run_argv([$mix, $tmp .. "/compat.mix"], {clear_env:true, env:$vars, timeout:5})
+  check($compat.ok, "legacy callers: " .. $compat.stderr)
+  print($compat.stdout)
   $children.host = start("fakeshell", $host_script)
   wait_service("fakeshell")
   $children.loader = start("scenes", $loader_script)
@@ -199,10 +218,24 @@ on fixture.retry
   if $event.args.drop == true then $state.upgrades = delete($state.upgrades, "gamma") end
   reply(0, json_encode({seq:$state.upgrade_seq, delay:$state.upgrade_delay, armed:$state.upgrade_armed}))
 end
+on fixture.rung
+  $probe = $state
+  $probe.upgrade_armed = false
+  $probe.upgrade_delay = 2
+  $probe.upgrade_delays = []
+  try
+    $probe = schedule_upgrade($probe)
+    reply(0, "{}")
+  catch $message, $error
+    reply(10, json_encode({error_code:$error.code, message:$message}))
+  end
+end
 '
   write_file($tmp .. "/gated.mix", $gated)
   $children.loader = start("scenes", $tmp .. "/gated.mix")
   wait_service("scenes")
+  $bad_rung = call("scenes", "fixture.rung")
+  check($bad_rung.rc == 10 and $bad_rung.value.error_code == "SCENES_CONFIG" and contains($bad_rung.value.message, "outside"), "rung guard refuses a short delay list")
   for $rung = 1 to 6
     $snap = retry_snapshot()
     $gate = $tmp .. "/scenes/.task-" .. to_string($snap.seq)
@@ -214,6 +247,8 @@ end
   check($old.delay == 128 and $old.armed, "old ladder reached its long final wait")
   $old_gate = $tmp .. "/scenes/.task-" .. to_string($old.seq)
   wait_file($old_gate .. ".waiting")
+  check(call("scenes", "scenes.upgrade", []).rc == 10, "manual upgrade rejects malformed arguments")
+  check(deep_eq(retry_snapshot(), $old), "refused manual upgrade retains waiter and budget")
   check(call("scenes", "fixture.retry", {drop:true}).rc == 0 and rows().gamma.upgrade == nil, "new work starts without a pending flag")
   check(call("scenes", "scenes.upgrade").rc == 0, "manual upgrade during long wait")
   check(rows().gamma.upgrade.retryable == true, "manual pass newly flags work")
@@ -253,6 +288,9 @@ end
   wait_file($gate .. ".waiting")
   $saved = read_file($tmp .. "/scenes/state.conf.mix")
   write_file($tmp .. "/scenes/state.conf.mix", "{not valid state")
+  $failed_manual = call("scenes", "scenes.upgrade")
+  check($failed_manual.rc == 10 and $failed_manual.value.error_code == "SCENES_STATE_UNREADABLE", "manual upgrade refuses unreadable state before budget reset")
+  check(deep_eq(retry_snapshot(), $snap), "failed manual pass does not spend a rung")
   write_file($gate .. ".release", "")
   $done = false
   for $i = 1 to 400
