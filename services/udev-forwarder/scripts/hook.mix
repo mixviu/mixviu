@@ -1,11 +1,10 @@
 #!/opt/mix/bin/mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Proxmox invokes hookscript VMID PHASE. No shell or second transport.
+-- version: 0.2.0
+-- Proxmox invokes hookscript VMID PHASE. post-stop reconciles after init exits.
 $argv = args()
 $id = $argv[0]
 $phase = $argv[1]
-if not contains(["post-start", "pre-stop"], $phase) then exit(0) end
+if not contains(["post-start", "pre-stop", "post-stop"], $phase) then exit(0) end
 if type($id) != "string" or not re_match($id, "^[1-9][0-9]{2,8}$") then die("invalid CT ID") end
-$wire = json_encode({id:$phase, params:{ct:$id}})
-send udev_forwarder udev_forwarder.execute body=$wire timeout=15
-if $rc != 0 then die("udev forwarder hook failed: " .. $result) end
+run_argv_must(["systemctl", "restart", "udev-forwarder.service"], {timeout:30})

@@ -1,12 +1,12 @@
 [Unit]
 Description=MixViu host processed-udev forwarder for desk containers
-After=systemd-udevd.service noded.service pve-cluster.service
-Wants=systemd-udevd.service noded.service
+After=systemd-udevd.service pve-cluster.service
+Wants=systemd-udevd.service
 
 [Service]
 Type=simple
 User=root
-ExecStart=/opt/mix/bin/mix --serve /opt/mix/lib/udev-forwarder/forwarder.mix --name udev_forwarder
+ExecStart=/opt/mix/bin/mix /opt/mix/lib/udev-forwarder/forwarder.mix /opt/mix/etc/udev-forwarder.conf.mix
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10

@@ -1,9 +1,20 @@
 # Host udev forwarder
 
-A Mix Bus citizen copies the host udevd's processed group-2 datagrams into
+A plain long-running Mix program copies the host udevd's processed group-2 datagrams into
 configured privileged LXC network namespaces. This lives under `services/`,
-following the existing Mix citizens' `scripts/` and `units/` convention.
+following the existing services' `scripts/` and `units/` convention.
 There is no second daemon, transport, udev database reader or wire encoder.
+Run `mix scripts/forwarder.mix [config.conf.mix]`; there is no `--serve`,
+mixd or broker dependency. Config defaults to
+`/opt/mix/etc/udev-forwarder.conf.mix`. An explicit path lets a lab copy run
+without editing source or installing configuration.
+
+Plain Mix enters the native event pump after script initialisation when `on`
+handlers exist. The uevent socket keeps it alive and parks it on readiness.
+The pump now retires a closed Bus stream in plain scripts while native sources
+remain, rather than terminating the script or spinning on an exhausted stream.
+Serve-runtime transport-close behaviour stays unchanged. No new receive
+primitive is required; the uevent primitives are unchanged in this round.
 
 ## Primitives
 
@@ -33,19 +44,23 @@ not a new libudev message or a serialization of the properties map.
 
 ## Lifecycle and installation
 
-`udev_forwarder.actions` lists `post-start` and `pre-stop`;
-`udev_forwarder.execute` accepts `{id, params:{ct:"102"}}`. Only configured
-IDs are accepted. The Proxmox hook calls these synchronously over the Bus.
-Startup enumerates CT init PIDs with `lxc-info`; it checks the PID again after
-creating each socket. No polling. Pre-stop closes the old socket, post-start
-opens the new namespace; restarting the service reconciles every configured CT.
+The Proxmox hook synchronously runs `systemctl restart udev-forwarder.service`
+on post-start and pre-stop. It also does so on post-stop: pre-stop runs while
+the CT init may still exist, so that first reconciliation can reattach it;
+post-stop reconciles after init exits, leaving stopped CTs without a socket.
+Startup enumerates configured CT init PIDs with `lxc-info`; it checks each PID
+again after creating its socket. No polling or interprocess transport.
+Each restart closes all old sockets and reopens the running CT namespaces.
+It can lose events during the restart, normally about a second while a CT is
+starting or stopping, including events for other running CTs. Slow startup or
+failed lxc-info calls can extend that gap; events are not replayed.
 Other send failures drop the socket and log once, until another start hook or
 service restart. No-listener drops retain the socket so a compositor starting
 later can receive future events. A socket pins its namespace: an empty multicast
 group alone cannot establish that a CT has died.
 
 Prerequisites: a PVE host with the new Mix binary at `/opt/mix/bin/mix`, the
-native noded broker configured for root clients, `local` snippets storage at
+new brokerless native-pump fix, `local` snippets storage at
 `/var/lib/vz/snippets`, configured privileged CTs with separate net namespaces,
 and the host `/run/udev` plus relevant device nodes mounted into them. libudev
 can disable its subscription if `/run/udev/control` is absent and `/dev` is not
@@ -56,7 +71,9 @@ on the authorised PVE node. `--check` writes nothing and verifies installed
 files, executable hook, enabled/active unit, storage path and CT hook settings.
 An existing `/opt/mix/etc/udev-forwarder.conf.mix` is preserved and validated;
 otherwise the bundle default selects CTs 102, 103, 104 and input/hidraw/sound.
-The installer preflights all CTs and refuses to replace another hookscript.
+The installer checks all five uevent builtins in `/opt/mix/bin/mix`, preflights
+all CTs and refuses to replace another hookscript. A binary missing a builtin
+is refused before any writes, with an instruction to install a suitable gold.
 Snapshot sections are preserved. It installs scripts under
 `/opt/mix/lib/udev-forwarder`, the unit under `/etc/systemd/system`, and
 `local:snippets/mix-udev-forwarder.mix`, then enables/restarts the service.
@@ -64,13 +81,21 @@ It never starts or restarts CTs. Re-running a converged install does not
 restart the service. When changing only config, restart the service explicitly.
 
 Host edge programs: lxc-info (service); mkdir/chmod/test/systemctl/pvesm
-(installer). Hooks call only Mix and the native Bus. Logs contain event action,
+(installer); systemctl (hook). Logs contain event action,
 subsystem, device node name and target CT IDs, plus loss/lifecycle errors;
 datagrams and other properties are never logged.
 
 ## Proof
 
 Parser/filter and ordered Buffer/overflow tests live with lib-mix.
+`mix services/udev-forwarder/tests/check.mix` is the CBC root-only regression
+harness. It copies only the built Mix executable into an isolated PATH (no
+mixd), starts the actual forwarder in a private network namespace with an
+explicit lab config and a stand-in lxc-info, and requires consumption of a
+synthetic netlink fixture with no broker. It also exercises the real hook with
+a stand-in systemctl; it never restarts a worker service or contacts a CT.
+This checks the plain native event path, not real libudev acceptance. Library
+regressions cover native progress after Bus closure and unchanged serve closure.
 `mix services/udev-forwarder/tests/namespace.mix` is the root-only CBC proof:
 it subscribes in namespace A, creates B with `run_argv`/managed spawn, triggers
 a real input change through udevd, then copies those exact bytes into B.

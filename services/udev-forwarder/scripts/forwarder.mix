@@ -1,6 +1,11 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- Plain Mix native event pump; no serve runtime or broker required.
 $config = require("config.mix")
-$cfg = $config.load("/opt/mix/etc/udev-forwarder.conf.mix")
+$argv = args()
+if len($argv) > 1 then die("usage: mix forwarder.mix [config.conf.mix]") end
+$cfg_path = if len($argv) == 1 then $argv[0] else "/opt/mix/etc/udev-forwarder.conf.mix" end
+$cfg = $config.load($cfg_path)
 $senders = {}
 
 fn detach($id)
@@ -68,16 +73,4 @@ on uevent.received
   print(json_encode({event:"forward", action:$a.properties.ACTION, subsystem:$a.properties.SUBSYSTEM, devname:$a.properties.DEVNAME, cts:$forwarded}))
 end
 
-on udev_forwarder.actions
-  reply(0, json_encode({actions:[{id:"post-start", params:{ct:"configured CT ID"}}, {id:"pre-stop", params:{ct:"configured CT ID"}}]}))
-end
-
-on udev_forwarder.execute
-  $a = $event.args
-  if type($a) != "map" or type($a.params) != "map" or not contains($cfg.cts, $a.params.ct) or not contains(["post-start", "pre-stop"], $a.id) then
-    reply(10, json_encode({error:"expected configured CT and post-start/pre-stop"}))
-    return
-  end
-  if $a.id == "post-start" then attach($a.params.ct) else detach($a.params.ct) end
-  reply(0, json_encode({ok:true}))
-end
+print(json_encode({event:"ready", cts:keys($senders)}))

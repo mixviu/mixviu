@@ -7027,6 +7027,10 @@ impl Evaluator {
     ///     registry is append-only, so this branch is future-proofing)
     pub async fn run_event_pump(&mut self) -> MixResult<()> {
         let _native_consumer = self.globals.borrow().native_events.enter_pump()?;
+        // Plain scripts may have native sources on machines without a broker.
+        // Once their Bus stream ends, stop polling it (None is immediately
+        // ready) and let native readiness/lifetime govern the remaining pump.
+        let mut bus_closed = false;
         tracing::info!(
             handler_count = self.handler_count(),
             command_count = self.handler_command_count(),
@@ -7099,7 +7103,11 @@ impl Evaluator {
             // The `Rc` keeps the handler alive while the future is
             // suspended; nothing on the shared globals is held across
             // the yield point.
-            let bus_handler = self.globals.borrow().bus_handler.clone();
+            let bus_handler = if bus_closed {
+                None
+            } else {
+                self.globals.borrow().bus_handler.clone()
+            };
             let native = self.globals.borrow().native_events.queue.clone();
             let has_native_sources = self.globals.borrow_mut().native_events.has_sources();
             if bus_handler.is_none() && !has_native_sources {
@@ -7280,7 +7288,13 @@ impl Evaluator {
                         break "handlers_drained";
                     }
                 }
-                None => break "transport_closed",
+                None => {
+                    if self.globals.borrow().serve_runtime.is_none() && has_native_sources {
+                        bus_closed = true;
+                        continue;
+                    }
+                    break "transport_closed";
+                }
             }
         };
 

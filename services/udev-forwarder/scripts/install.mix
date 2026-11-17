@@ -4,7 +4,10 @@
 $argv = args()
 if len($argv) > 1 or (len($argv) == 1 and $argv[0] != "--check") then die("usage: mix install.mix [--check]") end
 $check = contains($argv, "--check")
-run_argv_must(["/opt/mix/bin/mix", "builtins", "uevent_sender"])
+for $name in ["uevent_watch", "uevent_unwatch", "uevent_sender", "uevent_send", "uevent_close"]
+  $probe = run_argv(["/opt/mix/bin/mix", "builtins", $name])
+  if not $probe.ok then die("installed /opt/mix/bin/mix lacks " .. $name .. "; install a gold containing the udev builtins and brokerless native pump fix first") end
+end
 $base = dirname(dirname(script_path()))
 $config = require("config.mix")
 $cfg_path = "/opt/mix/etc/udev-forwarder.conf.mix"
