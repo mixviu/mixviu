@@ -133,7 +133,9 @@ fn pick_output(
         return window_at;
     }
     match named {
-        Some(name) => names.iter().position(|n| n == name),
+        Some(name) => names
+            .iter()
+            .position(|n| n == name || comp_model::snapshot::output_key(n) == name),
         None => pointer
             .filter(|at| *at < names.len())
             .or((!names.is_empty()).then_some(0)),
@@ -154,6 +156,10 @@ mod tests {
             Some(0)
         );
         assert_eq!(pick_output(&names, false, None, Some("VGA"), Some(1)), None);
+        assert_eq!(
+            pick_output(&names, false, None, Some("o_hdmi_a_1"), Some(0)),
+            Some(1)
+        );
         assert_eq!(
             pick_output(&names, true, Some(1), Some("DP-1"), Some(0)),
             Some(1)

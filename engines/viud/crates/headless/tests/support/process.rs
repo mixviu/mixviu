@@ -18,13 +18,6 @@ pub fn record_available() -> bool {
     if let Err(error) = fs::OpenOptions::new().read(true).write(true).open(&node) {
         missing.push(format!("render node {node}: {error}"));
     }
-    if !Command::new("ffmpeg")
-        .arg("-version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-    {
-        missing.push("ffmpeg is absent from PATH or cannot run".into());
-    }
     if missing.is_empty() {
         return true;
     }
@@ -330,6 +323,11 @@ pub fn spawn_transitions(label: &str, bus: &str) -> Process {
 
 #[allow(dead_code)] // Used by capture.rs; this module is shared with other targets.
 pub fn spawn_4k(label: &str, bus: &str) -> Process {
+    spawn_size(label, bus, "3840x2160")
+}
+
+#[allow(dead_code)]
+pub fn spawn_size(label: &str, bus: &str, size: &str) -> Process {
     spawn_with_seat_size(
         1,
         None,
@@ -340,6 +338,6 @@ pub fn spawn_4k(label: &str, bus: &str) -> Process {
         true,
         true,
         None,
-        "3840x2160",
+        size,
     )
 }

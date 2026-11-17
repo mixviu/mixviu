@@ -20,6 +20,8 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+media-vfl = { path = "../../../../libraries/media/vfl" }
+serde_json = { workspace = true }
 libc = { workspace = true }
 model = { workspace = true }
 render-gles = { workspace = true }

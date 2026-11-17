@@ -1,0 +1,50 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- CBC-only harness: built Mix and namespace capabilities required.
+$root = dirname(dirname(dirname(dirname(script_path()))))
+$bin = $root .. "/target/debug/mix"
+$lab = trim(run_argv_must(["mktemp", "-d"]))
+try
+  copy($bin, $lab .. "/mix")
+  chmod($lab .. "/mix", "0755")
+  -- Only these stand-ins are on PATH: there is no mixd or broker executable.
+  run_argv_must(["ln", "-s", "/usr/bin/false", $lab .. "/lxc-info"])
+  write_file($lab .. "/test.conf.mix", 'cts: ["999999"]' .. "\n" .. 'subsystems: ["input"]' .. "\n")
+  $child_env = {PATH:$lab, MIX_NODED_URL:"ws://127.0.0.1:1/ws", MIX_BUS_SOCKET:$lab .. "/absent.sock"}
+  print(run_argv_must([which("unshare"), "-n", $lab .. "/mix", dirname(script_path()) .. "/brokerless.mix", $lab], {env:$child_env, timeout:15}))
+  -- A relocated etc root (including a space) must also work without an argv
+  -- config path. This exercises the actual forwarder's mix_path default.
+  $child_env.MIX_ETC = $lab .. "/relocated etc"
+  mkdir($child_env.MIX_ETC)
+  copy($lab .. "/test.conf.mix", $child_env.MIX_ETC .. "/udev-forwarder.conf.mix")
+  print(run_argv_must([which("unshare"), "-n", $lab .. "/mix", dirname(script_path()) .. "/brokerless.mix", $lab, "default-config"], {env:$child_env, timeout:15}))
+  remove($lab .. "/lxc-info")
+  write_file($lab .. "/lxc-info", "#!" .. $lab .. "/mix\n" .. read_file(dirname(script_path()) .. "/lxc_info_standin.mix"))
+  chmod($lab .. "/lxc-info", "0755")
+  write_file($lab .. "/test.conf.mix", 'cts: ["999991", "999992", "999993"]' .. "\n" .. 'subsystems: ["input"]' .. "\n")
+  print(run_argv_must([which("unshare"), "-n", $lab .. "/mix", dirname(script_path()) .. "/brokerless.mix", $lab, "attach-faults"], {env:$child_env, timeout:15}))
+
+  -- Hook tests use a stand-in systemctl; they never operate the worker's unit.
+  write_file($lab .. "/systemctl", "#!" .. $lab .. "/mix\nwrite_file(env(\"HOOK_TEST_LOG\"), json_encode(args()))\n")
+  chmod($lab .. "/systemctl", "0755")
+  $child_env.HOOK_TEST_LOG = $lab .. "/hook.json"
+  $hook = dirname(dirname(script_path())) .. "/scripts/hook.mix"
+  for $phase in ["post-start", "pre-stop", "post-stop"]
+    run_argv_must([$lab .. "/mix", $hook, "102", $phase], {env:$child_env})
+    if not deep_eq(json_parse(read_file($child_env.HOOK_TEST_LOG)), ["restart", "udev-forwarder.service"]) then die("wrong hook command") end
+    remove($child_env.HOOK_TEST_LOG)
+  end
+  run_argv_must([$lab .. "/mix", $hook, "102", "pre-start"], {env:$child_env})
+  if exists($child_env.HOOK_TEST_LOG) then die("pre-start must not restart") end
+  $bad = run_argv([$lab .. "/mix", $hook, "bad-id", "pre-stop"], {env:$child_env})
+  if $bad.ok or exists($child_env.HOOK_TEST_LOG) then die("invalid CT ID reached systemctl") end
+  for $short in [[], ["102"], ["102", "pre-stop", "extra"]]
+    $bad = run_argv(concat([$lab .. "/mix", $hook], $short), {env:$child_env})
+    if $bad.ok or not contains($bad.stderr, "usage: hook.mix VMID PHASE") or exists($child_env.HOOK_TEST_LOG) then die("hook arity not checked before indexing") end
+  end
+  print("PASS: lifecycle phases restart via systemctl; ignored/invalid calls do not")
+catch $err
+  run_argv_must(["rm", "-rf", $lab])
+  die($err)
+end
+run_argv_must(["rm", "-rf", $lab])

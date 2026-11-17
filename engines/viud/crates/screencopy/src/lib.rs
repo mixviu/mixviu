@@ -871,6 +871,7 @@ where
 {
     use smithay::backend::renderer::Bind;
     use smithay::backend::renderer::damage::OutputDamageTracker;
+    let _render = ledger::frame_trace::span("capture_offscreen_render", 0);
     let mut texture = offscreen_texture(renderer, size)?;
     {
         let mut target = renderer

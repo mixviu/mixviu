@@ -1,0 +1,2 @@
+cts: ["102", "103", "104"]
+subsystems: ["input", "hidraw", "sound"]

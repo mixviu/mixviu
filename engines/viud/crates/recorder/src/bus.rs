@@ -2,11 +2,10 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Overlay-free recording core. The host owns target validation and scheduling.
 use graphics::capture::encode::VideoEncoder;
-pub use graphics::capture::encode::video::probe_vaapi;
 use serde_json::{Value, json};
 use std::{
     fs::File,
-    io::{BufWriter, Read, Write},
+    io::{Read, Write},
     os::unix::fs::OpenOptionsExt,
     sync::Arc,
     sync::mpsc::{Receiver, channel},
@@ -25,24 +24,30 @@ fn secure_file(path: &str) -> Result<File, String> {
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
+        .custom_flags(libc::O_EXCL | libc::O_NOFOLLOW)
         .open(path)
         .map_err(|e| format!("create {path}: {e}"))
 }
 
 pub fn check_destination(path: &str) -> Result<(), String> {
-    for name in [
-        path.to_owned(),
-        format!("{path}.frames.jsonl"),
-        format!("{path}.markers.jsonl"),
-    ] {
+    check_destination_with(path, rename_no_replace)
+}
+fn check_destination_with(
+    path: &str,
+    rename: impl Fn(&str, &str) -> std::io::Result<()>,
+) -> Result<(), String> {
+    for name in [path.to_owned()] {
         match std::fs::symlink_metadata(&name) {
             Ok(_) => return Err("recording destination already exists".into()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.to_string()),
         }
     }
-    probe_publication(path, rename_no_replace)
+    let parent = std::path::Path::new(path)
+        .parent()
+        .ok_or("take has no parent")?;
+    graphics::capture::encode::vfl::check_free_space(parent).map_err(|e| e.to_string())?;
+    probe_publication(path, rename)
 }
 
 fn rename_no_replace(src: &str, dst: &str) -> std::io::Result<()> {
@@ -81,14 +86,17 @@ fn probe_publication(
     match rename(&files.video, &files.frames) {
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
         result => {
+            let _ = files.cleanup();
             return Err(format!(
                 "destination does not support no-replace publication: {result:?}"
             ));
         }
     }
     std::fs::remove_file(&files.frames).map_err(|e| e.to_string())?;
-    rename(&files.video, &files.frames)
-        .map_err(|e| format!("destination does not support no-replace publication: {e}"))
+    let result = rename(&files.video, &files.frames)
+        .map_err(|e| format!("destination does not support no-replace publication: {e}"));
+    let _ = files.cleanup();
+    result
 }
 
 fn readback_skips(readback_us: u64, fps: u32) -> u64 {
@@ -97,6 +105,25 @@ fn readback_skips(readback_us: u64, fps: u32) -> u64 {
     }
     let budget = (1_000_000 / u64::from(fps) / 4).max(1);
     readback_us.saturating_sub(budget).div_ceil(budget).min(60)
+}
+
+/// Preserve the quarter-frame rate limit while allowing one unused allowance
+/// to cover a cold allocation or a short scheduling burst. Credit is bounded;
+/// sustained over-budget readbacks still create debt through readback_skips.
+fn charge_readback(credit: &mut u64, readback_us: u64, fps: u32) -> u64 {
+    if fps == 0 {
+        return 0;
+    }
+    let budget = (1_000_000 / u64::from(fps) / 4).max(1);
+    *credit = (*credit).min(budget);
+    if readback_us <= budget {
+        *credit = (*credit + budget - readback_us).min(budget);
+        0
+    } else {
+        let spend = (*credit).min(readback_us - budget);
+        *credit -= spend;
+        readback_skips(readback_us - spend, fps)
+    }
 }
 
 fn spend_readback_budget(debt: &mut u64, damaged: bool) -> bool {
@@ -116,7 +143,6 @@ struct TakeFiles {
 }
 impl TakeFiles {
     fn create(path: &str) -> Result<Self, String> {
-        check_destination(path)?;
         let base = format!("{path}.{}.part", private_token()?);
         Ok(Self {
             path: path.into(),
@@ -125,34 +151,49 @@ impl TakeFiles {
             markers: format!("{base}.markers"),
         })
     }
-    fn cleanup(&self) {
+    fn cleanup(&self) -> Result<(), String> {
         for path in [&self.video, &self.frames, &self.markers] {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-    fn publish(&self) -> Result<(), String> {
-        let mut published = Vec::new();
-        for (src, dst) in [
-            (&self.frames, format!("{}.frames.jsonl", self.path)),
-            (&self.markers, format!("{}.markers.jsonl", self.path)),
-            (&self.video, self.path.clone()),
-        ] {
-            if let Err(error) = rename_no_replace(src, &dst) {
-                for name in published {
-                    let _ = std::fs::remove_file(name);
+            let result = if std::path::Path::new(path).is_dir() {
+                std::fs::remove_dir_all(path)
+            } else {
+                std::fs::remove_file(path)
+            };
+            if let Err(error) = result {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    return Err(format!("remove private take: {error}"));
                 }
-                self.cleanup();
-                return Err(error.to_string());
             }
-            published.push(dst);
         }
         Ok(())
+    }
+    fn publish(&self) -> Result<(), String> {
+        self.publish_tracked(&mut false)
+    }
+    fn publish_tracked(&self, published: &mut bool) -> Result<(), String> {
+        self.publish_with(published, |parent| File::open(parent)?.sync_all())
+    }
+    fn publish_with(
+        &self,
+        published: &mut bool,
+        sync_parent: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+    ) -> Result<(), String> {
+        rename_no_replace(&self.video, &self.path).map_err(|e| e.to_string())?;
+        *published = true;
+        let parent = std::path::Path::new(&self.path)
+            .parent()
+            .ok_or("take has no parent")?;
+        sync_parent(parent)
+            .map_err(|e| format!("take published at {}; parent sync failed: {e}", self.path))
+    }
+    fn retained_path(&self, published: bool) -> Option<String> {
+        let path = if published { &self.path } else { &self.video };
+        std::path::Path::new(path).is_dir().then(|| path.clone())
     }
 }
 
 impl Drop for TakeFiles {
     fn drop(&mut self) {
-        self.cleanup();
+        // Preserve interrupted logs for recovery.
     }
 }
 
@@ -175,6 +216,8 @@ fn read_clock(clock: libc::clockid_t) -> Result<u64, String> {
     Ok(ts.tv_sec as u64 * 1_000_000 + ts.tv_nsec as u64 / 1000)
 }
 
+type FinaliseResult = (Result<(), String>, Option<String>);
+
 pub struct Recording {
     pub session: String,
     pub fps: u32,
@@ -182,6 +225,10 @@ pub struct Recording {
     pub frames: u64,
     pub repeated: u64,
     pub dropped: u64,
+    dropped_capture: u64,
+    readback_deferred: u64,
+    pending_ticks: u64,
+    writer_metrics: graphics::capture::encode::vfl::Metrics,
     pub error: Option<String>,
     pub terminal: Option<Value>,
     path: String,
@@ -197,13 +244,11 @@ pub struct Recording {
     readbacks: u64,
     readback_max_us: u64,
     readback_debt: u64,
-    skipped_readback: bool,
+    readback_credit_us: u64,
     files: TakeFiles,
-    bytes: u64,
-    frames_file: BufWriter<File>,
-    markers_file: File,
+    bytes: Arc<std::sync::atomic::AtomicU64>,
     encoder: Option<VideoEncoder>,
-    finishing: Option<Receiver<Result<(), String>>>,
+    finishing: Option<Receiver<FinaliseResult>>,
     stop_discard: Option<bool>,
     finaliser: Option<std::thread::JoinHandle<()>>,
 }
@@ -217,19 +262,31 @@ impl Recording {
         fps: u32,
         encoder_name: String,
     ) -> Result<Self, String> {
+        Self::new_bounded(session, path, width, height, fps, encoder_name, None)
+    }
+    pub fn new_bounded(
+        session: String,
+        path: String,
+        width: u32,
+        height: u32,
+        fps: u32,
+        encoder_name: String,
+        max_bytes: Option<u64>,
+    ) -> Result<Self, String> {
         let (source_width, source_height) = (width, height);
         let width = width.checked_add(1).ok_or("capture width overflow")? & !1;
         let height = height.checked_add(1).ok_or("capture height overflow")? & !1;
         let files = TakeFiles::create(&path)?;
-        let frames_file = BufWriter::with_capacity(256 * 1024, secure_file(&files.frames)?);
-        let markers_file = secure_file(&files.markers)?;
-        let encoder = VideoEncoder::start_with_encoder(
+        let encoder = VideoEncoder::start_bounded(
             width,
             height,
             fps,
             Some(files.video.clone().into()),
             &encoder_name,
+            max_bytes,
         )?;
+        let bytes = encoder.bytes_handle();
+        let writer_metrics = encoder.metrics_handle();
         Ok(Self {
             session,
             path,
@@ -240,10 +297,14 @@ impl Recording {
             fps,
             t0_us: monotonic_us()?,
             files,
-            bytes: 0,
+            bytes,
             frames: 0,
             repeated: 0,
             dropped: 0,
+            dropped_capture: 0,
+            readback_deferred: 0,
+            pending_ticks: 0,
+            writer_metrics,
             error: None,
             terminal: None,
             seq: 0,
@@ -254,9 +315,7 @@ impl Recording {
             readbacks: 0,
             readback_max_us: 0,
             readback_debt: 0,
-            skipped_readback: false,
-            frames_file,
-            markers_file,
+            readback_credit_us: (1_000_000 / u64::from(fps.max(1)) / 4).max(1),
             encoder: Some(encoder),
             finishing: None,
             stop_discard: None,
@@ -265,7 +324,7 @@ impl Recording {
     }
 
     pub fn started(&self) -> Value {
-        json!({"session":self.session,"path":self.path,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}.frames.jsonl",self.path),"markers_path":format!("{}.markers.jsonl",self.path)})
+        json!({"session":self.session,"path":self.path,"recovery_path":self.files.video,"width":self.width,"height":self.height,"fps":self.fps,"clock":"monotonic","t0_us":self.t0_us,"frames_path":format!("{}/frames.jsonl",self.path),"markers_path":format!("{}/markers.jsonl",self.path)})
     }
 
     pub fn is_recording(&self) -> bool {
@@ -273,14 +332,14 @@ impl Recording {
     }
 
     pub fn frame(&mut self, pixels: Option<(u32, u32, Arc<Vec<u8>>, u64)>) -> Result<(), String> {
-        let budget_drop = std::mem::take(&mut self.skipped_readback);
         let changed = pixels.is_some();
         if let Some((w, h, rgb, readback_us)) = pixels {
             self.readback_us = readback_us;
             self.readback_total_us += readback_us;
             self.readbacks += 1;
             self.readback_max_us = self.readback_max_us.max(readback_us);
-            self.readback_debt = readback_skips(readback_us, self.fps);
+            self.readback_debt =
+                charge_readback(&mut self.readback_credit_us, readback_us, self.fps);
             if (w, h) != (self.source_width, self.source_height) {
                 return Err("target dimensions changed".into());
             }
@@ -293,29 +352,23 @@ impl Recording {
             self.repeated += 1;
         }
         let encoder = self.encoder.as_ref().ok_or("recording is finishing")?;
+        encoder.set_summary(self.dropped, self.t0_us);
         if let Some(error) = encoder.error() {
             return Err(error);
         }
-        if !encoder.try_push_rgb(self.last.clone(), self.source_width, self.source_height) {
-            if !budget_drop {
+        if !encoder.try_push_rgb_change(
+            self.last.clone(),
+            self.source_width,
+            self.source_height,
+            changed,
+        ) {
+            if changed {
                 self.dropped += 1;
             }
             if changed {
                 self.repeated += 1;
             }
         }
-        let now = monotonic_us()?;
-        let t_us = if self.frames == 0 {
-            0
-        } else {
-            now - self.t0_us
-        };
-        writeln!(
-            self.frames_file,
-            "{}",
-            json!({"frame":self.frames,"t_us":t_us})
-        )
-        .map_err(|e| e.to_string())?;
         self.frames += 1;
         Ok(())
     }
@@ -324,10 +377,11 @@ impl Recording {
         if self.encoder.is_none() || self.frames == 0 {
             return Err("session is not recording".into());
         }
-        self.frames_file.flush().map_err(|e| e.to_string())?;
         let row = json!({"seq":self.seq,"frame":self.frames-1,"t_us":monotonic_us()?-self.t0_us,"label":label,"data":data});
-        writeln!(self.markers_file, "{row}").map_err(|e| e.to_string())?;
-        self.markers_file.flush().map_err(|e| e.to_string())?;
+        self.encoder
+            .as_ref()
+            .ok_or("recording is finishing")?
+            .marker(row.clone())?;
         self.seq += 1;
         Ok(json!({"session":self.session,"seq":row["seq"],"frame":row["frame"],"t_us":row["t_us"]}))
     }
@@ -338,13 +392,19 @@ impl Recording {
         if !spend_readback_budget(&mut self.readback_debt, damaged) {
             return false;
         }
-        self.dropped += 1;
-        self.skipped_readback = true;
+        self.readback_deferred += 1;
         true
+    }
+    pub fn superseded_capture(&mut self) {
+        self.dropped += 1;
+        self.dropped_capture += 1;
+    }
+    pub fn pending_tick(&mut self) {
+        self.pending_ticks += 1;
     }
 
     pub fn status(&self) -> Value {
-        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes,"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
+        json!({"session":self.session,"state":if self.error.is_some(){"failed"}else if self.terminal.is_some(){"idle"}else if self.finishing.is_some(){"finishing"}else{"recording"},"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"encoders":["vfl"],"queue":self.encoder.as_ref().map(VideoEncoder::queue).unwrap_or(0),"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error})
     }
 
     pub fn stop(&mut self, discard: bool) -> bool {
@@ -353,26 +413,30 @@ impl Recording {
         };
         self.stop_discard = Some(discard);
         self.last = Arc::new(Vec::new());
-        if let Err(error) = self
-            .frames_file
-            .flush()
-            .and_then(|_| self.markers_file.flush())
-        {
-            self.error = Some(error.to_string());
-        }
+        encoder.set_summary(self.dropped, self.t0_us);
         let files = self.files.clone();
-        let failed = self.error.is_some();
+        let failure = self.error.clone();
+        let failed = failure.is_some();
         let (tx, rx) = channel();
         self.finishing = Some(rx);
         self.finaliser = Some(std::thread::spawn(move || {
-            let result = encoder.finish_result();
-            let result = if discard || failed || result.is_err() {
-                files.cleanup();
-                result.map(|_| ())
-            } else {
-                files.publish()
+            let mut published = false;
+            let result = match failure {
+                Some(error) => encoder.finish_failed(error),
+                None => encoder.finish_result(),
             };
-            let _ = tx.send(result);
+            let result = if discard {
+                let cleanup = files.cleanup();
+                result.map(|_| ()).and(cleanup)
+            } else if failed {
+                result.and(Err(
+                    "recording failed; staged VFL retained for recovery".into()
+                ))
+            } else {
+                result.and_then(|_| files.publish_tracked(&mut published))
+            };
+            let recovery = files.retained_path(published);
+            let _ = tx.send((result, recovery));
         }));
         true
     }
@@ -388,25 +452,23 @@ impl Recording {
         let Some(rx) = &self.finishing else {
             return false;
         };
-        let result = match rx.try_recv() {
+        let (result, recovery_path) = match rx.try_recv() {
             Ok(result) => result,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                Err("encoder finaliser disconnected".into())
+                (Err("encoder finaliser disconnected".into()), None)
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => return false,
         };
         if let Err(error) = result {
-            self.error = Some(error);
+            self.error.get_or_insert(error);
         }
         self.finishing = None;
         if let Some(join) = self.finaliser.take() {
             let _ = join.join();
         }
-        self.bytes = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
-        let kept = std::path::Path::new(&format!("{}.frames.jsonl", self.path)).exists()
-            && self.error.is_none();
+        let kept = self.stop_discard == Some(false) && self.error.is_none();
         self.terminal = Some(
-            json!({"path":self.path,"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}.frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}.markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
+            json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
         true
     }
@@ -414,7 +476,7 @@ impl Recording {
 
 impl Drop for Recording {
     fn drop(&mut self) {
-        // VideoEncoder::drop kills/reaps its process group before returning.
+        // Closing admission leaves an interrupted VFL recoverable on disk.
         drop(self.encoder.take());
         if let Some(join) = self.finaliser.take() {
             let _ = join.join();
@@ -427,10 +489,80 @@ mod file_tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
     #[test]
+    fn readback_deferral_is_not_a_lost_change() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let mut r = Recording::new(
+            "debt".into(),
+            dir.join("debt.vfl").to_str().unwrap().into(),
+            2,
+            2,
+            30,
+            "vfl".into(),
+        )
+        .unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 25000))).unwrap();
+        assert!(r.skip_readback(true));
+        assert_eq!(r.dropped, 0);
+        assert_eq!(r.readback_deferred, 1);
+        r.frame(None).unwrap();
+        assert!(!r.skip_readback(false));
+        assert_eq!(r.dropped, 0);
+        r.superseded_capture();
+        assert_eq!(r.dropped, 1);
+        assert_eq!(r.dropped_capture, 1);
+        r.stop(true);
+        while !r.poll() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn failed_parent_sync_reports_published_directory() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("sync.vfl").to_str().unwrap().to_owned();
+        let files = TakeFiles::create(&path).unwrap();
+        std::fs::create_dir(&files.video).unwrap();
+        let mut published = false;
+        assert!(
+            files
+                .publish_with(&mut published, |_| Err(std::io::Error::from_raw_os_error(
+                    libc::EIO
+                )))
+                .is_err()
+        );
+        assert!(published);
+        assert_eq!(files.retained_path(published), Some(path));
+        assert!(!std::path::Path::new(&files.video).exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn failed_discard_reports_no_recovery_directory() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("discard.vfl").to_str().unwrap().to_owned();
+        let mut recording = Recording::new("test".into(), path, 2, 2, 30, "vfl".into()).unwrap();
+        recording
+            .frame(Some((2, 2, Arc::new(vec![0; 12]), 0)))
+            .unwrap();
+        recording.error = Some("capture failed".into());
+        assert!(recording.stop(true));
+        while !recording.poll() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(
+            recording.terminal.as_ref().unwrap()["recovery_path"],
+            Value::Null
+        );
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
     fn private_staging_no_clobber_and_cleanup() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("take.mkv").to_str().unwrap().to_owned();
+        let path = dir.join("take.vfl").to_str().unwrap().to_owned();
         {
             let files = TakeFiles::create(&path).unwrap();
             for name in [&files.video, &files.frames, &files.markers] {
@@ -443,6 +575,7 @@ mod file_tests {
             assert!(files.publish().is_err());
             assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep");
             assert!(!std::path::Path::new(&format!("{path}.frames.jsonl")).exists());
+            let _ = files.cleanup();
         }
         assert!(check_destination(&path).is_err());
         std::fs::remove_file(&path).unwrap();
@@ -455,6 +588,7 @@ mod file_tests {
             secure_file(name).unwrap().write_all(b"private").unwrap();
         }
         files.publish().unwrap();
+        let _ = files.cleanup();
         drop(files);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "private");
         std::fs::remove_dir_all(dir).unwrap();
@@ -478,11 +612,31 @@ mod file_tests {
         assert!(!spend_readback_budget(&mut debt, true));
     }
     #[test]
+    fn readback_credit_absorbs_a_burst_but_still_limits_sustained_cost() {
+        let budget = 8333;
+        let mut credit = budget;
+        assert_eq!(charge_readback(&mut credit, 3000, 30), 0);
+        assert_eq!(credit, budget, "credit cannot grow without bound");
+        assert_eq!(charge_readback(&mut credit, 11633, 30), 0);
+        assert_eq!(credit, 5033);
+        assert_eq!(charge_readback(&mut credit, 3000, 30), 0);
+        assert_eq!(credit, budget);
+        let mut ticks = 0;
+        let mut skips = 0;
+        for reads in 1..=300 {
+            let debt = charge_readback(&mut credit, 9500, 30);
+            ticks += 1 + debt;
+            skips += debt;
+            assert!(reads * 9500 <= ticks * budget + budget);
+        }
+        assert!(skips > 0, "sustained 9.5ms reads must still throttle");
+    }
+    #[test]
     fn unsupported_publication_refused_before_take_without_residue() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("take.mkv").to_str().unwrap().to_owned();
-        let error = probe_publication(&path, |_, _| {
+        let path = dir.join("take.vfl").to_str().unwrap().to_owned();
+        let error = check_destination_with(&path, |_, _| {
             Err(std::io::Error::from_raw_os_error(libc::EINVAL))
         })
         .unwrap_err();
@@ -493,34 +647,86 @@ mod file_tests {
         std::fs::remove_dir(dir).unwrap();
     }
     #[test]
+    fn origin_uses_first_capture_completion_for_marker_alignment() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("origin.vfl").to_str().unwrap().to_owned();
+        let mut r = Recording::new("origin".into(), path.clone(), 2, 2, 30, "vfl".into()).unwrap();
+        // The host supplies this timestamp from the first capture callback.
+        let captured_us = monotonic_us().unwrap();
+        r.t0_us = captured_us;
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+        let marker = r.marker("aligned".into(), Value::Null).unwrap();
+        assert!(marker["t_us"].as_u64().unwrap() <= monotonic_us().unwrap() - captured_us);
+        r.stop(false);
+        while !r.poll() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(r.error.is_none(), "{:?}", r.error);
+        let origin: Value =
+            serde_json::from_slice(&std::fs::read(format!("{path}/origin.json")).unwrap()).unwrap();
+        assert_eq!(origin["t0_us"], captured_us);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn byte_limit_failure_reports_retained_part_without_publication() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("limited.vfl").to_str().unwrap().to_owned();
+        let mut r = Recording::new_bounded(
+            "limited".into(),
+            path.clone(),
+            2,
+            2,
+            30,
+            "vfl".into(),
+            Some(1024),
+        )
+        .unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+        r.marker("oversized".into(), json!("x".repeat(2048)))
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while r.encoder.as_ref().unwrap().error().is_none() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        r.stop(false);
+        while !r.poll() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(r.error.as_ref().unwrap().contains("max_bytes"));
+        assert!(!std::path::Path::new(&path).exists());
+        let recovery = r.terminal.as_ref().unwrap()["recovery_path"]
+            .as_str()
+            .unwrap();
+        assert!(recovery.ends_with(".part"));
+        assert!(std::path::Path::new(recovery).is_dir());
+        assert!(
+            !std::path::Path::new(recovery)
+                .join("complete.json")
+                .exists()
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn invalid_clock_reports_error_without_panic() {
         assert!(read_clock(-1).is_err());
         assert!(monotonic_us().unwrap() > 0);
     }
     #[test]
     fn finishing_preserves_original_discard_choice() {
-        if !std::process::Command::new("ffmpeg")
-            .arg("-version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-        {
-            assert!(
-                std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref() != Ok("1"),
-                "recording test requires ffmpeg"
-            );
-            eprintln!("recording test skipped: ffmpeg is absent");
-            return;
-        }
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
         for discard in [false, true] {
             let path = dir
-                .join(format!("{discard}.mkv"))
+                .join(format!("{discard}.vfl"))
                 .to_str()
                 .unwrap()
                 .to_owned();
             let mut recording =
-                Recording::new("test".into(), path, 2, 2, 30, "x264".into()).unwrap();
+                Recording::new("test".into(), path, 2, 2, 30, "vfl".into()).unwrap();
             recording
                 .frame(Some((2, 2, Arc::new(vec![0; 12]), 0)))
                 .unwrap();
@@ -540,7 +746,7 @@ mod file_tests {
     fn failed_encoder_setup_removes_private_sidecars() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();
-        let path = dir.join("failed.mkv").to_str().unwrap().to_owned();
+        let path = dir.join("failed.vfl").to_str().unwrap().to_owned();
         assert!(Recording::new("failed".into(), path, 2, 2, 30, "invalid".into()).is_err());
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         std::fs::remove_dir(dir).unwrap();

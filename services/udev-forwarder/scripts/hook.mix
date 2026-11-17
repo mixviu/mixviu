@@ -1,0 +1,11 @@
+#!/usr/local/bin/mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.2.0
+-- Proxmox invokes hookscript VMID PHASE. post-stop reconciles after init exits.
+$argv = args()
+if len($argv) != 2 then die("usage: hook.mix VMID PHASE") end
+$id = $argv[0]
+$phase = $argv[1]
+if not contains(["post-start", "pre-stop", "post-stop"], $phase) then exit(0) end
+if type($id) != "string" or not re_match($id, "^[1-9][0-9]{2,8}$") then die("invalid CT ID") end
+run_argv_must(["systemctl", "restart", "udev-forwarder.service"], {timeout:30})
