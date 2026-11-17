@@ -1,6 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- CBC entry point: hermetic suites, site-name gate and existing lint baseline.
-$exe = realpath("/proc/self/exe")
+-- Run this entry point through CBC only. The installed worker interpreter is
+-- not necessarily this repository's engine (notably for mesh signer dispatch).
+$built = run_argv(["cargo","build","--locked","-p","mix","--bin","mix"],{stdout:"inherit",stderr:"inherit",timeout:14400})
+if not $built.ok then exit($built.exit_code) end
+$exe = realpath("target/debug/mix")
 for $argv in [[$exe,"tools/mesh/tests/all.mix"],[$exe,"tools/mesh/_bin/name_gate.mix"],[$exe,"tools/ci.mix","mix-lint","--mix",$exe]]
   $r = run_argv($argv,{stdout:"inherit",stderr:"inherit",timeout:600})
   if not $r.ok then exit($r.exit_code) end
