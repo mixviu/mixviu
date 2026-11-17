@@ -568,6 +568,11 @@ fn format_value(
                 }
             }
             "F" => out.push_str(&format_value(t, leap, utc, "%Y-%m-%d")?),
+            "D" | "x" => out.push_str(&format_value(t, leap, utc, "%m/%d/%y")?),
+            "T" | "X" => out.push_str(&format_value(t, leap, utc, "%H:%M:%S")?),
+            "R" => out.push_str(&format_value(t, leap, utc, "%H:%M")?),
+            "r" => out.push_str(&format_value(t, leap, utc, "%I:%M:%S %p")?),
+            "c" => out.push_str(&format_value(t, leap, utc, "%a %b %e %H:%M:%S %Y")?),
             "v" => out.push_str(&format_value(t, leap, utc, "%e-%b-%Y")?),
             "q" => out.push_str(&((t.month() as u8 - 1) / 3 + 1).to_string()),
             _ if spec.ends_with('f') => {
