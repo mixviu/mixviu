@@ -323,6 +323,16 @@ fn crash_root($label, $kind, $t, $st, $b, $phase, $to_text, $tpl)
   return $x
 end
 try
+  check(deep_eq($l.upgrade_delays("[1,2,4,8,16,32,64]"), [1,2,4,8,16,32,64]), "configured upgrade delays retain the production ladder")
+  for $raw in ["[broken", "null", "[]", "[1,2,4,8,16,32,0]"]
+    $caught = nil
+    try
+      $ignored = $l.upgrade_delays($raw)
+    catch $message, $error
+      $caught = $error.code
+    end
+    check($caught == "SCENES_CONFIG", "invalid upgrade delays have SCENES_CONFIG: " .. $raw)
+  end
   mkdir($tmp .. "/scenes")
   mkdir($tmp .. "/templates")
   $io = {rpc:fn($a,$b,$c) = rpc($a,$b,$c), check:fn($a,$b) = check_behaviour($a,$b),

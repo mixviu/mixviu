@@ -179,6 +179,23 @@ fn editor_entry($templates)
   return $e
 end
 
+fn upgrade_delays($raw)
+  try
+    $delays = json_parse($raw)
+  catch $message
+    raise("SCENES_CONFIG", "upgrade delays must be valid JSON: " .. $message)
+  end
+  if type($delays) != "list" or len($delays) != 7 then
+    raise("SCENES_CONFIG", "upgrade delays must contain seven positive seconds")
+  end
+  for $delay in $delays
+    if type($delay) != "number" or not ($delay > 0 and $delay <= 64) then
+      raise("SCENES_CONFIG", "upgrade delays must be positive seconds at most 64")
+    end
+  end
+  return $delays
+end
+
 fn initial($root, $templates, $host, $me, $io)
   if not stat($root, {follow_symlinks:false}).is_dir then fail("SCENES_FILES", "scene root must be a real directory", {}) end
   $root = realpath($root)

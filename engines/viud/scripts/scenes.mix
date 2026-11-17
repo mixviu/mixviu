@@ -29,19 +29,7 @@ $state.handover_armed = false
 $state.upgrade_armed = false
 $state.upgrade_delay = 1
 $state.upgrade_seq = 0
-try
-  $state.upgrade_delays = json_parse(env("MIX_VIUD_SCENES_UPGRADE_DELAYS", "[1,2,4,8,16,32,64]"))
-catch $message
-  raise("SCENES_CONFIG", "upgrade delays must be valid JSON: " .. $message)
-end
-if type($state.upgrade_delays) != "list" or len($state.upgrade_delays) != 7 then
-  raise("SCENES_CONFIG", "upgrade delays must contain seven positive seconds")
-end
-for $delay in $state.upgrade_delays
-  if type($delay) != "number" or not ($delay > 0 and $delay <= 64) then
-    raise("SCENES_CONFIG", "upgrade delays must be positive seconds at most 64")
-  end
-end
+$state.upgrade_delays = $loader.upgrade_delays(env("MIX_VIUD_SCENES_UPGRADE_DELAYS", "[1,2,4,8,16,32,64]"))
 $state.editor_diagnostics_armed = false
 $state.editor_activation_armed = false
 $state.editor_activation_seq = 0
