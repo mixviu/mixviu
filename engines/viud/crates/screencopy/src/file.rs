@@ -387,14 +387,16 @@ fn rgb(
     if bytes.len() < len {
         return Err("capture readback is shorter than its layout".into());
     }
-    let mut pixels = Vec::with_capacity(len / 4 * 3);
-    for y in 0..height {
+    let mut pixels = vec![0; len / 4 * 3];
+    for (y, out) in pixels.chunks_exact_mut(width * 3).enumerate() {
         let at = source_row(y, height, bottom_up) * row;
-        for px in bytes[at..at + row].chunks_exact(4) {
-            if rgba {
-                pixels.extend_from_slice(&px[..3]);
-            } else {
-                pixels.extend_from_slice(&[px[2], px[1], px[0]]);
+        if rgba {
+            for (px, rgb) in bytes[at..at + row].chunks_exact(4).zip(out.chunks_exact_mut(3)) {
+                rgb.copy_from_slice(&px[..3]);
+            }
+        } else {
+            for (px, rgb) in bytes[at..at + row].chunks_exact(4).zip(out.chunks_exact_mut(3)) {
+                rgb.copy_from_slice(&[px[2], px[1], px[0]]);
             }
         }
     }

@@ -190,6 +190,19 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
 
 #[test]
 fn record_changing_4k_ten_seconds() {
+    changing_4k(false);
+}
+
+/// Throughput acceptance must run alone, with release runtime binaries.
+#[test]
+#[ignore = "release 4K30 zero-drop acceptance on a render worker"]
+fn benchmark_record_changing_4k_zero_drop() {
+    assert!(!cfg!(debug_assertions), "use cargo test --release");
+    assert!(process::record_available());
+    changing_4k(true);
+}
+
+fn changing_4k(strict: bool) {
     if !process::record_available() {
         return;
     }
@@ -253,7 +266,7 @@ fn record_changing_4k_ten_seconds() {
             .collect();
         assert!(!times.is_empty());
         times.sort_unstable();
-        for stage in ["capture_offscreen_render", "capture_copy_submit", "capture_map_wait", "capture_rgb_copy", "capture_file_service"] {
+        for stage in ["capture_base_render_wait", "capture_cursor_render_wait", "capture_offscreen_render", "capture_copy_submit", "capture_map_wait", "capture_rgb_copy", "capture_file_service"] {
             let mut samples: Vec<u64> = trace.lines()
                 .filter(|line| line.contains(&format!("stage={stage} ")))
                 .filter(|line| (begin_us..end_us).contains(&field(line, "start_us=")))
@@ -272,6 +285,12 @@ fn record_changing_4k_ten_seconds() {
         );
         if let Some(stop) = stop {
             assert_eq!(stop["error"], Value::Null, "{stop}");
+            if strict {
+                assert_eq!(stop["dropped"], 0, "{stop}");
+                let (_, frames) = vfl_first(&process.root.join("changing.vfl"));
+                assert_eq!(Some(frames), stop["frames"].as_u64());
+                assert!(frames >= 300, "at least ten seconds at 30 fps: {stop}");
+            }
             // Debug readback can exceed a frame budget and deliberately
             // throttle captures. This is a changing-content regression;
             // release throughput is measured separately.
