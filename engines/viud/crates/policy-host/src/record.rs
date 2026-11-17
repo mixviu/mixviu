@@ -860,8 +860,6 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     }
                 }
             }
-            let at = ((height as usize * 3 / 4) * width as usize + width as usize * 3 / 4) * 3;
-            eprintln!("RAW_COLOUR rgb={:02x}{:02x}{:02x} prior={}", pixels[at], pixels[at+1], pixels[at+2], s.recording.as_ref().unwrap().status());
             if let Err(error) =
                 s.recording
                     .as_mut()
