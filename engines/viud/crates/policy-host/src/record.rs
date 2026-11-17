@@ -901,7 +901,7 @@ fn assign_first_capture(s: &mut Session, mut recording: Recording, captured_us: 
 mod tests {
     use super::*;
 
-    fn drain_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
+    fn session_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
         let path = root
             .join(format!("{id}.vfl"))
             .to_string_lossy()
@@ -911,11 +911,8 @@ mod tests {
             &json!({"request_id":id,"path":path,"target":{},"max_seconds":60}),
         )
         .unwrap();
-        let mut recording =
+        let recording =
             Recording::new_bounded(id.into(), path.clone(), 2, 2, 30, "vfl".into(), None).unwrap();
-        recording
-            .frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0)))
-            .unwrap();
         Rc::new(RefCell::new(Session {
             frames_parked: |_| false,
             request_id: id.into(),
@@ -947,6 +944,13 @@ mod tests {
             failed: None,
             last_state: Cell::new("recording"),
         }))
+    }
+
+    fn drain_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
+        let session = session_fixture(id, root);
+        session.borrow_mut().recording.as_mut().unwrap()
+            .frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0))).unwrap();
+        session
     }
 
     #[test]
@@ -1237,11 +1241,12 @@ mod tests {
     fn host_assigns_origin_from_capture_completion() {
         let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());
         std::fs::create_dir(&root).unwrap();
-        let session = drain_fixture("origin-host", &root);
+        let session = session_fixture("origin-host", &root);
         let mut s = session.borrow_mut();
         let recording = s.recording.take().unwrap();
         let captured_us = recorder::bus::monotonic_us().unwrap();
         assign_first_capture(&mut s, recording, captured_us);
+        s.recording.as_mut().unwrap().frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0))).unwrap();
         assert_eq!(s.recording.as_ref().unwrap().started()["t0_us"], captured_us);
         let marker = s.recording.as_mut().unwrap().marker("aligned".into(), Value::Null).unwrap();
         assert!(marker["t_us"].as_u64().unwrap() <= recorder::bus::monotonic_us().unwrap() - captured_us);
@@ -1249,6 +1254,8 @@ mod tests {
         while !finish_recording(&mut s) {
             std::thread::sleep(Duration::from_millis(5));
         }
+        let origin: Value = serde_json::from_slice(&std::fs::read(root.join("origin-host.vfl/origin.json")).unwrap()).unwrap();
+        assert_eq!(origin["t0_us"], captured_us);
         drop(s);
         drop(session);
         std::fs::remove_dir_all(root).unwrap();
