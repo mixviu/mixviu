@@ -249,6 +249,7 @@ pub struct Recording {
     bytes: Arc<std::sync::atomic::AtomicU64>,
     encoder: Option<VideoEncoder>,
     finishing: Option<Receiver<FinaliseResult>>,
+    finishing_since: Option<std::time::Instant>,
     stop_discard: Option<bool>,
     finaliser: Option<std::thread::JoinHandle<()>>,
 }
@@ -318,6 +319,7 @@ impl Recording {
             readback_credit_us: (1_000_000 / u64::from(fps.max(1)) / 4).max(1),
             encoder: Some(encoder),
             finishing: None,
+            finishing_since: None,
             stop_discard: None,
             finaliser: None,
         })
@@ -419,6 +421,7 @@ impl Recording {
         let failed = failure.is_some();
         let (tx, rx) = channel();
         self.finishing = Some(rx);
+        self.finishing_since = Some(std::time::Instant::now());
         self.finaliser = Some(std::thread::spawn(move || {
             let mut published = false;
             let result = match failure {
@@ -457,7 +460,15 @@ impl Recording {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 (Err("encoder finaliser disconnected".into()), None)
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                if self.finishing_since.is_none_or(|at| at.elapsed() < std::time::Duration::from_secs(30)) {
+                    return false;
+                }
+                // The filesystem owns the blocked worker. Detach it; never join
+                // it on the compositor, including when this take is dropped.
+                self.finaliser.take();
+                (Err("encoder finaliser timed out after 30 seconds".into()), Some(self.files.video.clone()))
+            }
         };
         if let Err(error) = result {
             self.error.get_or_insert(error);
@@ -478,9 +489,7 @@ impl Drop for Recording {
     fn drop(&mut self) {
         // Closing admission leaves an interrupted VFL recoverable on disk.
         drop(self.encoder.take());
-        if let Some(join) = self.finaliser.take() {
-            let _ = join.join();
-        }
+        self.finaliser.take();
     }
 }
 
@@ -488,6 +497,22 @@ impl Drop for Recording {
 mod file_tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
+    #[test]
+    fn hung_finaliser_has_bounded_failure_without_joining() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let mut r = Recording::new("hung".into(), dir.join("hung.vfl").to_str().unwrap().into(), 2, 2, 30, "vfl".into()).unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+        r.stop(false);
+        r.finaliser.take().unwrap().join().unwrap();
+        let (_tx, rx) = channel();
+        r.finishing = Some(rx);
+        r.finishing_since = Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
+        assert!(r.poll());
+        assert!(r.error.as_ref().unwrap().contains("timed out after 30 seconds"));
+        assert!(r.finaliser.is_none());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn readback_deferral_is_not_a_lost_change() {
         let dir = std::env::temp_dir().join(private_token().unwrap());

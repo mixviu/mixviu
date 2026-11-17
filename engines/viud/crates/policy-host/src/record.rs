@@ -83,6 +83,7 @@ struct Session {
     drain_until: Option<Instant>,
     stop_wake: Option<Rc<dyn Fn(Instant) -> bool>>,
     stop_timer_at: Option<Instant>,
+    finalise_delay: Duration,
     signature: Vec<u64>,
     deferred_signature: Option<Vec<u64>>,
     failed: Option<String>,
@@ -283,6 +284,7 @@ pub fn command(
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
+            finalise_delay: Duration::from_millis(5),
             signature: Vec::new(),
             deferred_signature: None,
             failed: None,
@@ -420,6 +422,7 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
     }
     let lost = u64::from(std::mem::take(&mut s.pending))
         + u64::from(s.deferred_signature.take().is_some());
+    s.drain_until = None;
     if let Some(r) = s.recording.as_mut() {
         r.error = Some(error.into());
         for _ in 0..lost {
@@ -559,7 +562,9 @@ fn install_stop_waker<D: 'static>(
                 if !finish_recording(&mut s)
                     && s.recording.as_ref().is_some_and(|r| !r.is_recording())
                 {
-                    schedule_stop(&mut s, Instant::now() + Duration::from_millis(5));
+                    let delay = s.finalise_delay;
+                    s.finalise_delay = (delay * 2).min(Duration::from_secs(1));
+                    schedule_stop(&mut s, Instant::now() + delay);
                 }
             }
             TimeoutAction::Drop
@@ -604,6 +609,9 @@ fn finish_recording(s: &mut Session) -> bool {
 }
 
 fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
+    for output in lp.inner.space_state().state.outputs() {
+        screencopy::file::set_paused(output, matches!(lp.inner.status_session, world::state::StatusSession::Paused));
+    }
     let clock = recorder::bus::monotonic_us();
     {
         let s = session.borrow();
@@ -925,6 +933,7 @@ mod tests {
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
+            finalise_delay: Duration::from_millis(5),
             signature: vec![],
             deferred_signature: None,
             failed: None,
@@ -1187,6 +1196,23 @@ mod tests {
         }
     }
     #[test]
+    fn failure_during_drain_clears_capture_and_drain_state() {
+        let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());
+        std::fs::create_dir(&root).unwrap();
+        let session = drain_fixture("failed-drain", &root);
+        session.borrow_mut().pending = true;
+        session.borrow_mut().drain_until = Some(Instant::now());
+        fail(&session, "capture failure during drain");
+        assert!(!session.borrow().pending);
+        assert!(session.borrow().drain_until.is_none());
+        assert_eq!(session.borrow().last_state.get(), "failed");
+        while !finish_recording(&mut session.borrow_mut()) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        drop(session);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn stable_deferred_content_is_not_dropped_every_tick() {
         let mut waiting = Some(vec![7]);
         for _ in 0..602 {
@@ -1246,6 +1272,7 @@ mod tests {
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
+            finalise_delay: Duration::from_millis(5),
             signature: vec![],
             deferred_signature: None,
             failed: None,

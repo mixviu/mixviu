@@ -113,7 +113,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
         "comp.record.start" => {
             let request_id = text("request_id")?;
             let path = text("path")?;
-            if !path.ends_with(".vfl") {
+            if !std::path::Path::new(&path).is_absolute() || !path.ends_with(".vfl") {
                 return Err(invalid_argument(
                     "path",
                     "VFL directory",

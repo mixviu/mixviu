@@ -57,6 +57,33 @@ thread_local! {
     static REQUESTS: RefCell<Vec<Request>> = const { RefCell::new(Vec::new()) };
     static READS: RefCell<Vec<PendingRead>> = const { RefCell::new(Vec::new()) };
     static NEXT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static PAUSED: RefCell<std::collections::HashMap<String, Instant>> = RefCell::new(std::collections::HashMap::new());
+}
+
+/// Stop the fence clock while a session cannot service this output. Keep
+/// ownership of the snapshot, and preserve its remaining active-time budget.
+pub fn set_paused(output: &Output, paused: bool) {
+    let name = output.name();
+    let now = Instant::now();
+    let resumed = PAUSED.with_borrow_mut(|outputs| {
+        if paused {
+            outputs.entry(name.clone()).or_insert(now);
+            None
+        } else {
+            outputs.remove(&name)
+        }
+    });
+    if let Some(since) = resumed {
+        READS.with_borrow_mut(|reads| {
+            for read in reads {
+                if read.requests.iter().any(|r| r.output == name) {
+                    // Reads submitted during the pause also get no more than
+                    // their original one-second active budget.
+                    read.expires += now.saturating_duration_since(since.max(read.expires - READ_TIMEOUT));
+                }
+            }
+        });
+    }
 }
 
 struct PendingRead {
@@ -299,7 +326,7 @@ fn expire_reads(now: Instant) {
     let expired = READS.with_borrow_mut(|reads| {
         let (expired, live) = std::mem::take(reads)
             .into_iter()
-            .partition::<Vec<_>, _>(|r| now >= r.expires);
+            .partition::<Vec<_>, _>(|r| now >= r.expires && !PAUSED.with_borrow(|outputs| r.requests.iter().any(|request| outputs.contains_key(&request.output))));
         *reads = live;
         expired
     });

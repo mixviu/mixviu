@@ -22,7 +22,13 @@ pub const CHUNK_BYTES: u64 = 64 * 1024 * 1024;
 pub const FREE_SPACE_FLOOR: u64 = 1024 * 1024 * 1024;
 
 pub fn check_free_space(path: &Path) -> io::Result<()> {
-    check_space(&File::open(path)?, 0)
+    match File::open(path) {
+        Ok(file) => check_space(&file, 0),
+        // A searchable, writable parent need not be readable. The new files
+        // still get the mandatory fd-based check before their first write.
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn check_space(file: &File, incoming: u64) -> io::Result<()> {
@@ -48,6 +54,7 @@ fn check_available(available: u64, incoming: u64) -> io::Result<()> {
 #[derive(Clone)]
 struct Budget {
     written: std::rc::Rc<std::cell::Cell<u64>>,
+    space_checked_until: std::rc::Rc<std::cell::Cell<u64>>,
     max_bytes: Option<u64>,
 }
 struct BoundedFile {
@@ -71,7 +78,11 @@ impl Write for BoundedFile {
         if self.budget.max_bytes.is_some_and(|max| next > max) {
             return Err(io::Error::other("VFL max_bytes exceeded"));
         }
-        check_space(&self.file, buf.len() as u64)?;
+        if next > self.budget.space_checked_until.get() {
+            const INTERVAL: u64 = 8 * 1024 * 1024;
+            check_space(&self.file, buf.len() as u64 + INTERVAL)?;
+            self.budget.space_checked_until.set(next.saturating_add(INTERVAL));
+        }
         let n = self.file.write(buf)?;
         self.budget
             .written
@@ -376,6 +387,7 @@ impl Writer {
         check_free_space(parent)?;
         let budget = Budget {
             written: Default::default(),
+            space_checked_until: Default::default(),
             max_bytes,
         };
         std::fs::DirBuilder::new().mode(0o700).create(&path)?;
