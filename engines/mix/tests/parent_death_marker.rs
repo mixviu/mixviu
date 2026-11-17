@@ -8,7 +8,10 @@ const MARKER: &str = "MIX_EXPECTED_PARENT_PID";
 
 fn probe(marker: &str, signal: i32, source: &str) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
-    command.args(["--no-prelude", "-c", source]).env(MARKER, marker).env("MIX_STATS", "off");
+    command
+        .args(["--no-prelude", "-c", source])
+        .env(MARKER, marker)
+        .env("MIX_STATS", "off");
     // SAFETY: pre_exec calls only prctl, with integer arguments.
     unsafe {
         command.pre_exec(move || {

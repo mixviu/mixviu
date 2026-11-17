@@ -54,7 +54,9 @@ fn scoped_parent(
         return Ok(actual);
     }
     let parent = match marker {
-        Some(value) => value.to_str().and_then(|s| s.parse::<libc::pid_t>().ok())
+        Some(value) => value
+            .to_str()
+            .and_then(|s| s.parse::<libc::pid_t>().ok())
             .filter(|pid| *pid > 0)
             .ok_or_else(|| "die_with_parent: invalid expected parent PID".to_string())?,
         None => actual,
@@ -115,8 +117,14 @@ mod tests {
     #[test]
     fn ambient_marker_is_inert_unless_kernel_confirms_armed_task() {
         for marker in ["1", "not-a-pid"] {
-            assert_eq!(scoped_parent(Some(marker.as_ref()), &Ok(0), 42).unwrap(), 42);
-            assert_eq!(scoped_parent(Some(marker.as_ref()), &Err("injected EPERM".into()), 42).unwrap(), 42);
+            assert_eq!(
+                scoped_parent(Some(marker.as_ref()), &Ok(0), 42).unwrap(),
+                42
+            );
+            assert_eq!(
+                scoped_parent(Some(marker.as_ref()), &Err("injected EPERM".into()), 42).unwrap(),
+                42
+            );
             assert!(scoped_parent(Some(marker.as_ref()), &Ok(libc::SIGKILL), 42).is_err());
         }
     }
