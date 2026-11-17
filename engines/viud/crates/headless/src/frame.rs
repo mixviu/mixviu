@@ -434,14 +434,17 @@ fn compose(
 
     // The normal target is always cursorless. No second allocation or pass
     // occurs unless a protocol or Bus capture explicitly asks for the cursor.
-    {
+    let base = if damaged { ctx.next } else { ctx.next ^ 1 };
+    // The last completed target already contains this exact scene. Capture
+    // requests do not invalidate it; PBO copies precede later writes in GL order.
+    if damaged {
         let _render = ledger::frame_trace::span("capture_base_render_wait", 0);
         let elements: Vec<_> = scene
             .elements
             .iter()
             .filter(|element| !element.is_cursor())
             .collect();
-        let mut target = renderer.bind(&mut ctx.targets[ctx.next])?;
+        let mut target = renderer.bind(&mut ctx.targets[base])?;
         // No buffer-age assumptions: each target is repainted completely.
         OutputDamageTracker::from_output(&ctx.output)
             .render_output(renderer, &mut target, 0, &elements, [0.1, 0.1, 0.1, 1.0])?
@@ -486,7 +489,7 @@ fn compose(
         .filter(|_| cursor_needed)
         .map(|texture| renderer.bind(texture))
         .transpose()?;
-    let target = renderer.bind(&mut ctx.targets[ctx.next])?;
+    let target = renderer.bind(&mut ctx.targets[base])?;
     let readback = screencopy::Readback {
         size,
         origin_bottom_left: false,
@@ -539,7 +542,9 @@ fn compose(
     // Rendering can signal a previously submitted fence. Complete it now,
     // rather than waiting another paced frame after an unsuccessful entry poll.
     screencopy::file::poll(renderer, &ctx.output);
-    ctx.next ^= 1;
+    if damaged {
+        ctx.next ^= 1;
+    }
     // A capture of unchanged content is not a new presentation.
     Ok(damaged)
 }
