@@ -1195,7 +1195,9 @@ mod tests {
             assert!(began.elapsed() < Duration::from_secs(2));
             screencopy::file::testing::take_wake();
             screencopy::file::poll(&mut renderer, &outputs[0]);
-            events.dispatch(Some(Duration::from_millis(2)), &mut ()).unwrap();
+            events
+                .dispatch(Some(Duration::from_millis(2)), &mut ())
+                .unwrap();
         }
         assert_eq!(
             screencopy::file::testing::read_count(),

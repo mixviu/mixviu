@@ -67,14 +67,19 @@ struct PollBudget {
 
 impl PollBudget {
     fn new(now: Instant) -> Self {
-        Self { previous: now, spent: Duration::ZERO }
+        Self {
+            previous: now,
+            spent: Duration::ZERO,
+        }
     }
 
     /// Charge only serviced reads. A KMS/offscreen hand-over or a suspended
     /// event loop can leave a long gap; it costs at most one polling interval.
     /// Paused sessions still poll offscreen and must detect a real GPU hang.
     fn unsignalled(&mut self, now: Instant) -> bool {
-        self.spent += now.saturating_duration_since(self.previous).min(MAX_POLL_GAP);
+        self.spent += now
+            .saturating_duration_since(self.previous)
+            .min(MAX_POLL_GAP);
         self.previous = now;
         self.spent >= READ_TIMEOUT
     }
@@ -338,18 +343,18 @@ pub fn release_raw(prefix: &str) {
 }
 
 fn expire_read(read: PendingRead) {
-        // Drop the mapping and fence before delivering an error which may
-        // synchronously seal the recorder and admit a new take.
-        let requests = read.requests;
-        drop(read.mapping);
-        drop(read.fence);
-        for request in requests {
-            raw_fail(
-                &request.spec.path,
-                capture_failed("readback fence timed out"),
-            );
-            (request.answer)(Err(capture_failed("readback fence timed out")));
-        }
+    // Drop the mapping and fence before delivering an error which may
+    // synchronously seal the recorder and admit a new take.
+    let requests = read.requests;
+    drop(read.mapping);
+    drop(read.fence);
+    for request in requests {
+        raw_fail(
+            &request.spec.path,
+            capture_failed("readback fence timed out"),
+        );
+        (request.answer)(Err(capture_failed("readback fence timed out")));
+    }
 }
 
 pub fn fail(id: u64, reason: &str) {
