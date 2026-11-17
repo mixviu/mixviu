@@ -18,7 +18,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 pub type Pasted = (u64, Result<String, ReadError>);
 
 pub(crate) fn trace_app(ctx: &egui::Context) -> String {
-    ctx.data(|d| d.get_temp::<String>(egui::Id::new("viu-paste-trace-app")))
+    ctx.data(|d| d.get_temp::<String>(egui::Id::unique("viu-paste-trace-app")))
         .unwrap_or_else(|| "unknown".into())
 }
 

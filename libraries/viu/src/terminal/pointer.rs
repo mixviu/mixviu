@@ -433,10 +433,8 @@ mod tests {
             .with_writer(move || writer.clone())
             .finish();
         let (sessions, places, receiver) = setup(false);
-        let mut mouse = Mouse {
-            app: "term".into(),
-            ..Default::default()
-        };
+        let mut mouse = Mouse::default();
+        mouse.app = "term".into();
         let effects = tracing::subscriber::with_default(subscriber, || {
             mouse.update(
                 &places,
